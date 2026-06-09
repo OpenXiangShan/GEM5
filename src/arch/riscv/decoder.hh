@@ -30,12 +30,16 @@
 #ifndef __ARCH_RISCV_DECODER_HH__
 #define __ARCH_RISCV_DECODER_HH__
 
+#include <deque>
+
 #include "arch/generic/decode_cache.hh"
 #include "arch/generic/decoder.hh"
 #include "arch/riscv/insts/vector.hh"
 #include "arch/riscv/types.hh"
+#include "arch/riscv/vtype_pred.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
+#include "cpu/inst_seq.hh"
 #include "cpu/static_inst.hh"
 #include "debug/Decode.hh"
 #include "params/RiscvDecoder.hh"
@@ -55,7 +59,26 @@ class Decoder : public InstDecoder
     uint32_t machInst;
 
     bool vtypeReady = true;
-    VTYPE machVtype;
+    VTYPE machVtype = (uint64_t)1 << 63;  // default vtype illegal
+
+    // Known VL tracking for micro-op splitting optimization
+    bool vlIsKnown = false;
+    uint32_t machVl = 0;
+
+    // vtype prediction state
+    VtypePredictor vtypePred;
+    bool    vtypeIsPredicted  = false;
+    uint8_t predictedVtypeVal = 0;
+
+    struct VectorStateCheckpoint
+    {
+        InstSeqNum seqNum = 0;
+        VTYPE vtype = 0;
+        uint32_t vl = 0;
+        bool vlKnown = false;
+    };
+
+    std::deque<VectorStateCheckpoint> vectorStateHistory;
 
     /// A cache of decoded instruction objects.
     static GenericISA::BasicDecodeCache<Decoder, ExtMachInst> defaultCache;
@@ -69,12 +92,21 @@ class Decoder : public InstDecoder
     StaticInstPtr decode(ExtMachInst mach_inst, Addr addr);
 
   public:
-    Decoder(const RiscvDecoderParams &p) : InstDecoder(p, &machInst)
+    Decoder(const RiscvDecoderParams &p)
+        : InstDecoder(p, &machInst),
+          vtypePred(p.vtype_pred_entries)
     {
         reset();
     }
 
     void reset() override;
+
+    /** Returns true when the last decoded VectorConfig used a speculative
+     *  vtype prediction rather than stalling fetch. */
+    bool isVtypePredicted() const { return vtypeIsPredicted; }
+
+    /** Returns the predicted vtype value that was speculatively used. */
+    uint8_t getPredictedVtypeVal() const { return predictedVtypeVal; }
 
     inline bool compressed(ExtMachInst inst) { return (inst & 0x3) < 0x3; }
     inline bool vconf(ExtMachInst inst) {
@@ -93,9 +125,37 @@ class Decoder : public InstDecoder
 
     void setVtype(VTYPE vtype);
 
+    void setVectorState(VTYPE vtype, uint32_t vl, bool vl_known = true);
+
+    void checkpointVectorState(InstSeqNum seq_num);
+    void updateVectorStateCheckpoint(InstSeqNum seq_num, VTYPE vtype,
+                                     uint32_t vl, bool vl_known);
+    void commitVectorStateCheckpoints(InstSeqNum seq_num);
+    void rollbackVectorState(InstSeqNum seq_num, VTYPE committed_vtype,
+                             uint32_t committed_vl, bool committed_vl_known);
+
+    void updateKnownVl(ExtMachInst emi, int earlyVtype);
+
     void clearVtype();
 
     bool stall() override;
+
+    /**
+     * Attempt to predict vtype for a register-form vsetvl at @p pc.
+     * Returns true and writes the prediction into @p pred when a valid
+     * entry exists. Caller should call setVtype(pred) on success and
+     * clearVtype() on failure.
+     */
+    bool tryPredictVtype(Addr pc, uint8_t &pred)
+    {
+        return vtypePred.predict(pc, pred);
+    }
+
+    /** Record the confirmed vtype for the vsetvl at @p pc. */
+    void updateVtypePredictor(Addr pc, uint8_t vtype)
+    {
+        vtypePred.update(pc, vtype);
+    }
 };
 
 } // namespace RiscvISA

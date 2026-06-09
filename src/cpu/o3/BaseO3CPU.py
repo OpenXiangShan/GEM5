@@ -218,10 +218,12 @@ class BaseO3CPU(BaseCPU):
             "Number of physical integer registers")
     numPhysFloatRegs = Param.Unsigned(192, "Number of physical floating point "
                                       "registers")
-    numPhysVecRegs = Param.Unsigned(192, "Number of physical vector "
+    numPhysVecRegs = Param.Unsigned(384, "Number of physical vector "
                                       "registers")
     numPhysVecPredRegs = Param.Unsigned(32, "Number of physical predicate "
                                       "registers")
+    numPhysVecBufRegs = Param.Unsigned(128, "Number of physical vector "
+                                      "buffer registers")
 
     # most ISAs don't use condition-code regs, so default is 0
     numPhysCCRegs = Param.Unsigned(0, "Number of physical cc registers")

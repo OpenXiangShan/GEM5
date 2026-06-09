@@ -42,8 +42,12 @@
 #ifndef __CPU_O3_RENAME_HH__
 #define __CPU_O3_RENAME_HH__
 
+#include <deque>
 #include <list>
+#include <memory>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -276,6 +280,47 @@ class Rename
      * undo rename mappings or free old physical registers.
      */
     std::list<RenameHistory> historyBuffer[MaxThreads];
+
+    enum class VecBufTxnState
+    {
+        Allocated,
+        Active,
+        CommittedReleased,
+        SquashedReleased
+    };
+
+    struct VecBufArenaTxn
+    {
+        uint64_t txnId = 0;
+        ThreadID tid = 0;
+        InstSeqNum seqStart = 0;
+        InstSeqNum seqEnd = 0;
+        VecBufTxnState state = VecBufTxnState::Allocated;
+        std::unordered_map<RegIndex, VirtRegId> slotMap;
+        std::unordered_map<RegIndex, uint32_t> expectedWrites;
+        std::vector<VirtRegId> allocatedRegs;
+    };
+
+    struct VecBufArenaState
+    {
+        uint64_t nextTxnId = 1;
+        std::shared_ptr<VecBufArenaTxn> activeTxn;
+        std::deque<std::shared_ptr<VecBufArenaTxn>> commitQueue;
+    };
+
+    VecBufArenaState vecBufArena[MaxThreads];
+
+    bool hasVecBufOperand(const DynInstPtr &inst) const;
+    std::shared_ptr<VecBufArenaTxn> ensureVecBufTxn(const DynInstPtr &inst,
+                                                    ThreadID tid);
+    VirtRegId allocOrGetVecBufSlot(std::shared_ptr<VecBufArenaTxn> &txn,
+                                   RegIndex logicalSlot,
+                                   uint32_t expectedWrites);
+    void markTxnBoundaryIfNeeded(const DynInstPtr &inst, ThreadID tid);
+    void releaseVecBufTxn(std::shared_ptr<VecBufArenaTxn> &txn,
+                          const char *reason);
+    void releaseCommittedVecBufTxns(InstSeqNum committed_seq, ThreadID tid);
+    void releaseSquashedVecBufTxns(InstSeqNum squash_seq, ThreadID tid);
 
     InstSeqNum finalCommitSeq[MaxThreads] = {};
 

@@ -185,6 +185,10 @@ class PhysRegFile
     RegFile vecPredRegFile;
     std::vector<PhysRegId> vecPredRegIds;
 
+    /** Vector buffer register file. */
+    RegFile vecBufRegFile;
+    std::vector<PhysRegId> vecBufRegIds;
+
     /** Condition-code register file. */
     RegFile ccRegFile;
     std::vector<PhysRegId> ccRegIds;
@@ -221,6 +225,8 @@ class PhysRegFile
      */
     unsigned numPhysicalVecPredRegs;
 
+    unsigned numPhysicalVecBufRegs;
+
     /**
      * Number of physical CC registers
      */
@@ -240,6 +246,7 @@ class PhysRegFile
                 unsigned _numPhysicalFloatRegs,
                 unsigned _numPhysicalVecRegs,
                 unsigned _numPhysicalVecPredRegs,
+                unsigned _numPhysicalVecBufRegs,
                 unsigned _numPhysicalCCRegs,
                 unsigned _numPhysicalRMiscRegs,
                 const BaseISA::RegClasses &classes);
@@ -335,6 +342,11 @@ class PhysRegFile
             DPRINTF(Scoreboard, "RegFile: Access to predicate register %i, has "
                     "data %s\n", idx, vecPredRegFile.regClass.valString(val));
             break;
+          case VecBufRegClass:
+            vecBufRegFile.get(idx, val);
+            DPRINTF(Scoreboard, "RegFile: Access to vector buffer register %i, "
+                    "has data %s\n", idx, vecBufRegFile.regClass.valString(val));
+            break;
           case CCRegClass:
             *(RegVal *)val = getReg(phys_reg);
             break;
@@ -357,6 +369,8 @@ class PhysRegFile
             return vectorRegFile.ptr(idx);
           case VecPredRegClass:
             return vecPredRegFile.ptr(idx);
+          case VecBufRegClass:
+            return vecBufRegFile.ptr(idx);
           default:
             panic("Unrecognized register class type %d.", type);
         }
@@ -424,6 +438,11 @@ class PhysRegFile
             DPRINTF(Scoreboard, "RegFile: Setting predicate register %i to %s\n",
                     idx, vectorRegFile.regClass.valString(val));
             vecPredRegFile.set(idx, val);
+            break;
+          case VecBufRegClass:
+            DPRINTF(Scoreboard, "RegFile: Setting vector buffer register %i "
+                    "to %s\n", idx, vecBufRegFile.regClass.valString(val));
+            vecBufRegFile.set(idx, val);
             break;
           case CCRegClass:
             setReg(phys_reg, *(RegVal *)val);

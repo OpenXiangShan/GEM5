@@ -46,6 +46,7 @@
 #include <limits>
 
 #include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/regs/vector.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/checker/cpu.hh"
@@ -101,6 +102,7 @@ CPU::CPU(const BaseO3CPUParams &params)
               params.numPhysFloatRegs,
               params.numPhysVecRegs,
               params.numPhysVecPredRegs,
+              params.numPhysVecBufRegs,
               params.numPhysCCRegs,
               params.numPhysRMiscRegs,
               params.isa[0]->regClasses()),
@@ -224,6 +226,8 @@ CPU::CPU(const BaseO3CPUParams &params)
             numThreads * regClasses.at(VecRegClass).numRegs());
     assert(params.numPhysVecPredRegs >=
             numThreads * regClasses.at(VecPredRegClass).numRegs());
+    assert(params.numPhysVecBufRegs >=
+            numThreads * regClasses.at(VecBufRegClass).numRegs());
     assert(params.numPhysCCRegs >=
             numThreads * regClasses.at(CCRegClass).numRegs());
 
@@ -1166,6 +1170,7 @@ CPU::getReg(PhysRegIdPtr phys_reg)
         break;
       case VecRegClass:
       case VecElemClass:
+      case VecBufRegClass:
         cpuStats.vecRegfileReads++;
         break;
       case VecPredRegClass:
@@ -1192,6 +1197,7 @@ CPU::getReg(VirtRegId virt_reg)
         break;
       case VecRegClass:
       case VecElemClass:
+      case VecBufRegClass:
         cpuStats.vecRegfileReads++;
         break;
       case VecPredRegClass:
@@ -1218,6 +1224,7 @@ CPU::getReg(PhysRegIdPtr phys_reg, void *val)
         break;
       case VecRegClass:
       case VecElemClass:
+      case VecBufRegClass:
         cpuStats.vecRegfileReads++;
         break;
       case VecPredRegClass:
@@ -1234,6 +1241,7 @@ CPU::getWritableReg(PhysRegIdPtr phys_reg)
 {
     switch (phys_reg->classValue()) {
       case VecRegClass:
+      case VecBufRegClass:
         cpuStats.vecRegfileReads++;
         break;
       case VecPredRegClass:
@@ -1260,6 +1268,7 @@ CPU::setReg(PhysRegIdPtr phys_reg, RegVal val)
         break;
       case VecRegClass:
       case VecElemClass:
+      case VecBufRegClass:
         cpuStats.vecRegfileWrites++;
         break;
       case VecPredRegClass:
@@ -1286,6 +1295,7 @@ CPU::setReg(PhysRegIdPtr phys_reg, const void *val)
         break;
       case VecRegClass:
       case VecElemClass:
+      case VecBufRegClass:
         cpuStats.vecRegfileWrites++;
         break;
       case VecPredRegClass:
@@ -1774,11 +1784,15 @@ void
 CPU::readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid)
 {
     cpuStats.vecRegfileReads++;
-    PhysRegIdPtr phys_reg =
-        commitRenameMap[tid].lookup(RegId(VecRegClass, reg_idx)).PhyReg();
-    DPRINTF(Scoreboard, "Get map: v%i -> p%i\n", reg_idx, phys_reg->flatIndex());
-
-    regFile.getReg(phys_reg, val);
+    auto *dst = reinterpret_cast<uint8_t *>(val);
+    for (uint32_t bank = 0; bank < RiscvISA::VregBanks; bank++) {
+        const int sub_idx = reg_idx * RiscvISA::VregBanks + bank;
+        PhysRegIdPtr phys_reg =
+            commitRenameMap[tid].lookup(RegId(VecRegClass, sub_idx)).PhyReg();
+        DPRINTF(Scoreboard, "Get map: v%i[%u] -> p%i\n", reg_idx, bank,
+                phys_reg->flatIndex());
+        regFile.getReg(phys_reg, dst + bank * RiscvISA::DPLENB);
+    }
 }
 
 bool

@@ -48,52 +48,146 @@ def template VleConstructor {{
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     const int32_t nf = _machInst.nf + 1;
-    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    uint32_t emul = get_emul(eew, sew, vflmul, false);
+
     const uint32_t elem_num_per_vreg = VLEN / eew;
-    // panic_if(nf * emul > 8, "invalid nf and emul");
+    const uint32_t elem_num_per_bank = DPLEN / eew;
+    const uint32_t vreg_banks = ((VLEN + DPLEN - 1) / DPLEN);
+    const uint32_t elem_num_per_phy_reg = elem_num_per_vreg / vreg_banks;
+    const uint32_t elem_bytes = eew / 8;
+    const uint32_t max_fields_per_load =
+        std::max(1u, static_cast<uint32_t>(DPLENB / elem_bytes));
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    if (nf == 1) { // sequence load
-        const uint32_t num_microops = emul;
-        for (int i = 0; i < num_microops; ++i) {
-            vmi.rs = i * elem_num_per_vreg;
-            vmi.re = (i+1) * elem_num_per_vreg;
-            vmi.microVd = VD + i;
+
+    if (nf == 1) {
+        const uint32_t num_microops =
+            calculateActiveBanksByEewWithKnownVl(eew, sew, vflmul, _machInst);
+        for (uint32_t i = 0; i < num_microops; i++) {
+            vmi.rs = i * elem_num_per_phy_reg;
+            vmi.re = (i + 1) * elem_num_per_phy_reg;
             vmi.fn = 0;
-            vmi.offset = (i * VLEN) / 8;
-            if (vmi.microVd >= 32) {
-                break;
-            }
+            vmi.microVd = 0;
+            vmi.offset = i * DPLENB;
             microop = new %(class_name)sMicro(_machInst, i, vmi);
+            microop->setNF(1);
             microop->setDelayedCommit();
             microop->setFlag(IsLoad);
+            this->microops.push_back(microop);
+
+            uint32_t arch_vd = VD + i / vreg_banks;
+            uint32_t bank = i % vreg_banks;
+            vmi.microVd = arch_vd * VregBanks + bank;
+            assert(vmi.microVd < NumVecStandardRegs);
+            switch (eew) {
+                case 8:
+                    microop = new VregMergeMicroInst<uint8_t>(_machInst, 1, vmi);
+                    break;
+                case 16:
+                    microop = new VregMergeMicroInst<uint16_t>(_machInst, 1, vmi);
+                    break;
+                case 32:
+                    microop = new VregMergeMicroInst<uint32_t>(_machInst, 1, vmi);
+                    break;
+                case 64:
+                    microop = new VregMergeMicroInst<uint64_t>(_machInst, 1, vmi);
+                    break;
+                default:
+                    panic("Unsupported eew: %d", eew);
+            }
             microop->setNF(1);
+            microop->setDelayedCommit();
             this->microops.push_back(microop);
         }
-    } else {
-        // segment load
-        uint32_t vlmax = VLEN / sew * vflmul;
-        for (int i=0; i < vlmax; i++) {
-            for (int fn=0; fn < nf; fn++) {
-                // baseAddr = Rs1 + (i*nf + fn) * eew / 8
-                // (vd + fn * emul)<eew>[i] = mem<eew>[baseAddr];
-                vmi.rs = i;
-                vmi.re = i+1;
+        this->microops.front()->setFirstMicroop();
+        this->microops.back()->setLastMicroop();
+        return;
+    }
+
+    uint32_t vlmax = calculateVlmax(VLEN, sew, vflmul);
+    if (_machInst.vlKnown) {
+        vlmax = std::min(vlmax, static_cast<uint32_t>(_machInst.vlValue));
+    }
+    vlmax = std::min(vlmax, calculateActiveElemSpan(eew, sew, vflmul));
+    uint32_t load_micro_idx = 0;
+    for (uint32_t bank_start = 0; bank_start < vlmax;
+         bank_start += elem_num_per_bank) {
+        const uint32_t bank_elems = std::min(elem_num_per_bank, vlmax - bank_start);
+        const uint32_t group_idx = bank_start / elem_num_per_bank;
+        const uint32_t group_slot_base = (group_idx * nf) % NumVecBufRegs;
+        const uint32_t total_tokens = bank_elems * nf;
+        const uint32_t chunks_per_bank =
+            (total_tokens + max_fields_per_load - 1) / max_fields_per_load;
+
+        for (uint32_t token_start = 0; token_start < total_tokens;
+             token_start += max_fields_per_load) {
+            vmi.rs = bank_start;
+            vmi.re = bank_start + bank_elems;
+            vmi.rb = bank_start;
+            vmi.fn = token_start;
+            vmi.microVd = group_slot_base;
+            vmi.offset = (bank_start * nf + token_start) * elem_bytes;
+            microop = new %(class_name)sMicro(_machInst, load_micro_idx++,
+                                              vmi, chunks_per_bank, nf);
+            microop->resetOpClass(VectorSegUnitStrideLoadOp);
+            microop->setFlag(IsSegLoad);
+            microop->setNF(nf);
+            microop->setDelayedCommit();
+            microop->setFlag(IsLoad);
+            this->microops.push_back(microop);
+        }
+
+        uint32_t rs = bank_start;
+        const uint32_t batch_end = bank_start + bank_elems;
+        while (rs < batch_end) {
+            vmi.rs = rs;
+            const uint32_t bank_end =
+                ((rs / elem_num_per_bank) + 1) * elem_num_per_bank;
+            vmi.re = std::min(bank_end, batch_end);
+
+            for (int fn = 0; fn < nf; fn++) {
                 vmi.fn = fn;
-                vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
-                vmi.offset = (i*nf+fn) * eew / 8;
-                microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
+                uint32_t vreg_idx_in_field = vmi.rs / elem_num_per_vreg;
+                uint32_t arch_vd = VD + fn * emul + vreg_idx_in_field;
+                uint32_t bank =
+                    (vmi.rs % elem_num_per_vreg) / (elem_num_per_vreg / VregBanks);
+                vmi.microVd = arch_vd * VregBanks + bank;
+                assert(vmi.microVd < NumVecStandardRegs);
 
-                // segment vl related
-                microop->resetOpClass(VectorSegUnitStrideLoadOp);
-                microop->setNF(nf);
-                microop->setFlag(IsSegLoad);
+                const uint8_t src_start =
+                    static_cast<uint8_t>(((vmi.rs / elem_num_per_bank) * nf) %
+                                         NumVecBufRegs);
+                const uint8_t merge_src = static_cast<uint8_t>(src_start + fn);
+                VectorMicroInfo merge_vmi = vmi;
+                merge_vmi.fn = 0;
+                merge_vmi.offset = 0;
+                switch (eew) {
+                    case 8:
+                        microop = new VregMergeMicroInst<uint8_t>(
+                            _machInst, 1, merge_vmi, false, merge_src);
+                        break;
+                    case 16:
+                        microop = new VregMergeMicroInst<uint16_t>(
+                            _machInst, 1, merge_vmi, false, merge_src);
+                        break;
+                    case 32:
+                        microop = new VregMergeMicroInst<uint32_t>(
+                            _machInst, 1, merge_vmi, false, merge_src);
+                        break;
+                    case 64:
+                        microop = new VregMergeMicroInst<uint64_t>(
+                            _machInst, 1, merge_vmi, false, merge_src);
+                        break;
+                    default:
+                        panic("Unsupported eew: %d", eew);
+                }
 
+                microop->setNF(1);
                 microop->setDelayedCommit();
-                microop->setFlag(IsLoad);
                 this->microops.push_back(microop);
             }
+            rs = vmi.re;
         }
     }
 
@@ -109,22 +203,32 @@ class %(class_name)s : public %(base_class)s
 {
 private:
     RegId srcRegIdxArr[8];
-    RegId destRegIdxArr[1];
+    RegId destRegIdxArr[8];
+    uint32_t expectedWrites;
+    uint32_t fieldWrites;
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx,
+                   VectorMicroInfo& _vmi, uint32_t _expectedWrites = 1,
+                   uint32_t _fieldWrites = 1)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
         vmi = _vmi;
+        expectedWrites = _expectedWrites > 0 ? _expectedWrites : 1;
+        fieldWrites = _fieldWrites > 0 ? _fieldWrites : 1;
         assert(~vmi.microVd);
         assert(~vmi.offset);
+        assert(vmi.microVd + fieldWrites <= NumVecBufRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
-        _numTypedDestRegs[VecRegClass]++;
+        for (uint32_t f = 0; f < fieldWrites; ++f) {
+            RegId dst_reg(VecBufRegClass, vmi.microVd + f);
+            dst_reg.setNumPinnedWrites(expectedWrites - 1);
+            setDestRegIdx(_numDestRegs++, dst_reg);
+            _numTypedDestRegs[VecBufRegClass]++;
+        }
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         SET_VL_SRC();
-        SET_OLDDST_SRC();
         SET_VM_SRC();
 
         this->flags[IsVector] = true;
@@ -152,7 +256,8 @@ Fault
     // EA = Rs1 + vmi.offset;
     %(ea_code)s;
 
-    uint32_t elem_num_per_vreg = VLEN / eew;
+    uint32_t elem_num_per_vreg = DPLEN / eew;
+    const uint32_t seg_nf = machInst.nf + 1;
     uint32_t mem_size = calc_memsize(vmi.rs, vmi.re, eew, rVl);
 
     VM_REQUIRED();
@@ -163,8 +268,6 @@ Fault
     if (fault != NoFault)
         return fault;
 
-    COPY_OLD_VD();
-
     size_t ei;
     for (size_t i = 0; i < vmi.re - vmi.rs; i++) {
         uint32_t vdElemIdx = (vmi.rs % elem_num_per_vreg) + i;
@@ -174,6 +277,181 @@ Fault
 
     %(op_wb)s;
     return fault;
+}
+
+}};
+
+def template VleMicroInitiateAcc {{
+
+Fault
+%(class_name)s::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
+    %(op_src_decl)s;
+    %(op_rd)s;
+
+#if !(%(is_vecWhole)s)
+    VM_REQUIRED();
+    bool vm_zero = !this->vm && popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+#else
+    bool vm_zero = false;
+#endif
+
+    Fault fault = NoFault;
+
+    uint32_t eew_ = eew;
+    uint32_t elem_num_per_vreg = VLEN / eew_;
+    uint32_t eewb = eew_ / 8;
+
+    Addr EA;
+    %(ea_code)s;
+
+    // 计算内存大小（按有效元素裁剪）
+    uint32_t active_elems = 0;
+    if (vmi.rs < rVl) {
+        active_elems = std::min<uint32_t>(vmi.re, rVl) - vmi.rs;
+    }
+    uint32_t mem_size = active_elems * eewb;
+    const uint32_t seg_nf = getNF();
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass)) {
+        if (seg_nf > 1) {
+            const uint32_t bank_base_bytes = vmi.rs * seg_nf * eewb;
+            const uint32_t bytes_in_bank = (vmi.re - vmi.rs) * seg_nf * eewb;
+            const uint32_t byte_off = vmi.offset - bank_base_bytes;
+            const uint32_t remain = (byte_off < bytes_in_bank) ?
+                (bytes_in_bank - byte_off) : 0;
+            mem_size = std::min<uint32_t>(DPLENB, remain);
+        } else {
+            mem_size = active_elems * eewb;
+        }
+    }
+
+    // 检查mask：如果mask全为0，则不发起内存访问
+    mem_size = vm_zero ? 0 : mem_size;
+
+    panic_if(mem_size > DPLENB,
+             "%s initiateAcc mem_size=%u exceeds DPLENB=%u",
+             mnemonic, mem_size, (uint32_t)DPLENB);
+
+    // 创建字节使能向量（全部为true，因为不处理mask）
+    std::vector<bool> byte_enable(mem_size, true);
+
+    // 发起内存读取
+    fault = initiateMemRead(xc, EA, mem_size, memAccessFlags,
+                                  byte_enable);
+
+    return fault;
+}
+
+}};
+
+def template VleMicroCompleteAcc {{
+
+Fault
+%(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                            Trace::InstRecord *traceData) const
+{
+    %(op_decl)s;
+    %(op_rd)s;
+
+#if !(%(is_vecWhole)s)
+    VM_REQUIRED();
+    bool vm_zero = !this->vm && popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+#else
+    bool vm_zero = false;
+#endif
+
+    uint32_t eew_ = eew;
+    uint32_t elem_num_per_bank = DPLEN / eew_;
+    uint32_t eewb = eew_ / 8;
+    uint32_t active_elems = 0;
+    if (vmi.rs < rVl) {
+        active_elems = std::min<uint32_t>(vmi.re, rVl) - vmi.rs;
+    }
+    uint32_t mem_size = active_elems * eewb;
+    const uint32_t seg_nf = getNF();
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass)) {
+        if (seg_nf > 1) {
+            const uint32_t bank_base_bytes = vmi.rs * seg_nf * eewb;
+            const uint32_t bytes_in_bank = (vmi.re - vmi.rs) * seg_nf * eewb;
+            const uint32_t byte_off = vmi.offset - bank_base_bytes;
+            const uint32_t remain = (byte_off < bytes_in_bank) ?
+                (bytes_in_bank - byte_off) : 0;
+            mem_size = std::min<uint32_t>(DPLENB, remain);
+        } else {
+            mem_size = active_elems * eewb;
+        }
+    }
+
+    // 检查mask：如果mask全为0，则不处理数据
+    mem_size = vm_zero ? 0 : mem_size;
+
+    const uint8_t *mem_bytes = nullptr;
+    // 从packet拷贝数据到Mem缓冲区
+    if (pkt) {
+        mem_bytes = pkt->getPtr<uint8_t>();
+        assert(mem_size <= pkt->getSize());
+    } else {
+        assert(mem_size == 0);
+    }
+
+    %(divrVl)s;
+
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass)) {
+        if (seg_nf > 1) {
+            const uint32_t token_start = vmi.fn;
+            const uint32_t token_cnt = mem_size / eewb;
+            for (uint32_t t = 0; t < token_cnt; ++t) {
+                const uint32_t g = token_start + t;
+                const uint32_t elem_off = g / seg_nf;
+                const uint32_t field = g % seg_nf;
+                const uint32_t vdElemIdx = (vmi.rs % elem_num_per_bank) + elem_off;
+                size_t ei = vmi.rs + elem_off;
+                if (%(wb_elem_mask)s) {
+                    auto &dst = *(RiscvISA::VecBufRegContainer *)
+                        xc->getWritableRegOperand(this, field);
+                    auto dst_bytes = dst.as<uint8_t>();
+                    memcpy(dst_bytes + vdElemIdx * eewb,
+                           mem_bytes + t * eewb, eewb);
+                    xc->setRegOperand(this, field, &dst);
+                    if (traceData && field == 0) {
+                        traceData->setData(dst);
+                    }
+                }
+            }
+        } else {
+            const uint32_t elems_loaded = mem_size / eewb;
+            for (uint32_t elem_off = 0; elem_off < elems_loaded; ++elem_off) {
+                uint32_t vdElemIdx = (vmi.rs % elem_num_per_bank) + elem_off;
+                size_t ei = elem_off + vmi.rs;
+                if (%(wb_elem_mask)s) {
+                    auto &dst = *(RiscvISA::VecBufRegContainer *)
+                        xc->getWritableRegOperand(this, 0);
+                    auto dst_bytes = dst.as<uint8_t>();
+                    memcpy(dst_bytes + vdElemIdx * eewb,
+                           mem_bytes + elem_off * eewb, eewb);
+                    xc->setRegOperand(this, 0, &dst);
+                    if (traceData) {
+                        traceData->setData(dst);
+                    }
+                }
+            }
+        }
+        return NoFault;
+    }
+
+    // 将内存数据写入vtemp向量寄存器,不用检查mask
+    // i是从0开始的相对索引，直接用作vdElemIdx
+    for (size_t i = 0; i < mem_size / eewb; i++) {
+        uint32_t vdElemIdx = i;
+        memcpy(Mem.as<uint8_t>() + i * eewb, mem_bytes + i * eewb, eewb);
+        // 直接执行内存访问代码，不检查mask
+        %(memacc_code)s;
+    }
+
+    // 写回向量寄存器
+    %(op_wb)s;
+    return NoFault;
 }
 
 }};
@@ -201,11 +479,18 @@ Fault
     %(op_src_decl)s;
     %(op_rd)s;
 
+#if %(is_vecIndex)s
+    // 手动读取vs2寄存器（索引向量）- 源操作数1
+    RiscvISAInst::VecRegContainer tmp_vs2_container;
+    xc->getRegOperand(this, 1, &tmp_vs2_container);
+    auto &tmp_vs2 = tmp_vs2_container;
+#endif
+
 #if %(is_vecWhole)s
     bool vm_zero = false;
 #else
     VM_REQUIRED();
-    bool vm_zero = !this->vm && popcount_in_byte(tmp_v0.as<uint64_t>(), vmi.rs, vmi.re) == 0;
+    bool vm_zero = !this->vm && popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
 #endif
 
     Fault fault = NoFault;
@@ -213,7 +498,17 @@ Fault
     uint32_t eew_ = eew;
 #if %(is_vecIndex)s
     eew_ = sizeof(vu) * 8;// eew_ = sew
-    uint32_t vs2ElemIdx = vmi.rs % (VLEN / eew);
+    uint32_t vs2ElemIdx = vmi.rs % (DPLEN / eew);
+
+    // 读取vs2寄存器中的索引值
+    uint64_t vs2_index = 0;
+    switch(eew) {
+        case 8:  vs2_index = tmp_vs2.as<uint8_t>()[vs2ElemIdx]; break;
+        case 16: vs2_index = tmp_vs2.as<uint16_t>()[vs2ElemIdx]; break;
+        case 32: vs2_index = tmp_vs2.as<uint32_t>()[vs2ElemIdx]; break;
+        case 64: vs2_index = tmp_vs2.as<uint64_t>()[vs2ElemIdx]; break;
+        default: panic("Invalid eew: %%d", eew);
+    }
 #endif
     uint32_t elem_num_per_vreg = VLEN / eew_;
     uint32_t eewb = eew_ / 8;
@@ -224,11 +519,26 @@ Fault
     // mem_size = calc_memsize(vmi.rs, vmi.re, eew_, rVl);
     // if is vecWhole l/s mem_size = VLENB
     uint32_t mem_size = %(calc_memsize_code)s;
-    uint32_t new_mem_size = vm_zero ? 0 : mem_size;
 
-    std::vector<bool> byte_enable(new_mem_size, true);
+#if %(is_vecCopy)s
+    // uint32_t vend = std::min(rVl, re);  // TODO
+    mem_size = std::min((vmi.re - vmi.rs) * getNF() * eewb - vmi.offset, DPLENB);
+#endif
+    mem_size = vm_zero ? 0 : mem_size;
 
-    fault = initiateMemRead(xc, EA, new_mem_size, memAccessFlags,
+#if !(%(is_vecWhole)s)
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+#endif
+    panic_if(mem_size > DPLENB,
+             "%s initiateAcc mem_size=%u exceeds DPLENB=%u",
+             mnemonic, mem_size, (uint32_t)DPLENB);
+
+
+    std::vector<bool> byte_enable(mem_size, true);
+
+    fault = initiateMemRead(xc, EA, mem_size, memAccessFlags,
                                   byte_enable);
 
     %(vfof_set_code)s;
@@ -239,50 +549,389 @@ Fault
 
 }};
 
-def template VloadMicroCompleteAcc {{
+def template VlStrideMicroInitiateAcc {{
 
-#if %(is_vecIndex)s
-template<typename ElemType>
 Fault
-%(class_name)s<ElemType>::completeAcc(PacketPtr pkt, ExecContext *xc,
-                            Trace::InstRecord *traceData) const
+%(class_name)s::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
+    %(op_src_decl)s;
+    %(op_rd)s;
 
-#else
+    VM_REQUIRED();
+    bool vm_zero = !this->vm &&
+        popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+
+    Fault fault = NoFault;
+
+    uint32_t eew_ = eew;
+    uint32_t eewb = eew_ / 8;
+
+    Addr EA;
+    %(ea_code)s;
+
+    // Stride load micro-op fetches a chunk of one segment element.
+    uint32_t mem_size = (vmi.re - vmi.rs) * fieldWrites * eewb;
+    mem_size = vm_zero ? 0 : mem_size;
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+    panic_if(mem_size > DPLENB,
+             "%s initiateAcc mem_size=%u exceeds DPLENB=%u",
+             mnemonic, mem_size, (uint32_t)DPLENB);
+
+    std::vector<bool> byte_enable(mem_size, true);
+    fault = initiateMemRead(xc, EA, mem_size, memAccessFlags, byte_enable);
+
+    %(vfof_set_code)s;
+    %(vfof_zero_idx_check_code)s;
+
+    return fault;
+}
+
+}};
+
+def template VlStrideMicroCompleteAcc {{
 
 Fault
 %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
                             Trace::InstRecord *traceData) const
-
-#endif
 {
-#if %(is_vecIndex)s
+    %(op_decl)s;
+    %(op_rd)s;
+
+    VM_REQUIRED();
+    bool vm_zero = !this->vm &&
+        popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+
+    uint32_t eew_ = eew;
+    uint32_t elem_num_per_phy_reg = DPLEN / eew_;
+    uint32_t eewb = eew_ / 8;
+    uint32_t mem_size = (vmi.re - vmi.rs) * fieldWrites * eewb;
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+    mem_size = vm_zero ? 0 : mem_size;
+
+    const uint8_t *mem_bytes = nullptr;
+    if (pkt) {
+        mem_bytes = pkt->getPtr<uint8_t>();
+        assert(mem_size == pkt->getSize());
+    } else {
+        assert(mem_size == 0);
+    }
+
+    %(divrVl)s;
+
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass)) {
+        const uint32_t field_writes = numDestRegs();
+        if (field_writes > 1) {
+            const uint32_t elems_loaded =
+                (field_writes > 0) ? (mem_size / (eewb * field_writes)) : 0;
+            for (uint32_t elem_off = 0; elem_off < elems_loaded; ++elem_off) {
+                uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + elem_off;
+                size_t ei = elem_off + vmi.rs;
+                if (%(wb_elem_mask)s) {
+                    for (uint32_t f = 0; f < field_writes; ++f) {
+                        auto &dst = *(RiscvISA::VecBufRegContainer *)
+                            xc->getWritableRegOperand(this, f);
+                        auto dst_bytes = dst.as<uint8_t>();
+                        const uint32_t src_off = (elem_off * field_writes + f) * eewb;
+                        memcpy(dst_bytes + vdElemIdx * eewb,
+                               mem_bytes + src_off, eewb);
+                        xc->setRegOperand(this, f, &dst);
+                        if (traceData && f == 0) {
+                            traceData->setData(dst);
+                        }
+                    }
+                }
+            }
+        } else {
+            for (size_t i = 0; i < mem_size / eewb; ++i) {
+                uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + i;
+                size_t ei = i + vmi.rs;
+                if (%(wb_elem_mask)s) {
+                    auto &dst = *(RiscvISA::VecBufRegContainer *)
+                        xc->getWritableRegOperand(this, 0);
+                    auto dst_bytes = dst.as<uint8_t>();
+                    memcpy(dst_bytes + vdElemIdx * eewb,
+                           mem_bytes + i * eewb, eewb);
+                    xc->setRegOperand(this, 0, &dst);
+                    if (traceData) {
+                        traceData->setData(dst);
+                    }
+                }
+            }
+        }
+        %(vfof_get_code)s;
+        return NoFault;
+    }
+
+    size_t ei;
+    for (size_t i = 0; i < mem_size / eewb; i++) {
+        uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + i;
+        ei = i + vmi.rs;
+        if (%(wb_elem_mask)s) {
+            memcpy(Mem.as<uint8_t>() + i * eewb, mem_bytes + i * eewb, eewb);
+            %(memacc_code)s;
+        }
+    }
+
+    %(tail_agnostic_code)s;
+    %(vfof_get_code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
+def template VlIndexMicroInitiateAcc {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
     using vu = std::make_unsigned_t<ElemType>;
-#endif
+    %(op_src_decl)s;
+    %(op_rd)s;
+
+    // Read vs2 (index vector) explicitly.
+    RiscvISAInst::VecRegContainer tmp_vs2_container;
+    xc->getRegOperand(this, 1, &tmp_vs2_container);
+    auto &tmp_vs2 = tmp_vs2_container;
+
+    VM_REQUIRED();
+    bool vm_zero = !this->vm &&
+        popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+
+    Fault fault = NoFault;
+
+    uint32_t eew_ = sizeof(vu) * 8;
+    uint32_t vs2ElemIdx = vmi.rs % (DPLEN / eew);
+
+    uint64_t vs2_index = 0;
+    switch(eew) {
+        case 8:  vs2_index = tmp_vs2.as<uint8_t>()[vs2ElemIdx]; break;
+        case 16: vs2_index = tmp_vs2.as<uint16_t>()[vs2ElemIdx]; break;
+        case 32: vs2_index = tmp_vs2.as<uint32_t>()[vs2ElemIdx]; break;
+        case 64: vs2_index = tmp_vs2.as<uint64_t>()[vs2ElemIdx]; break;
+        default: panic("Invalid eew: %d", eew);
+    }
+
+    uint32_t eewb = eew_ / 8;
+
+    Addr EA;
+    %(ea_code)s;
+
+    // Indexed load micro-op fetches a chunk of one segment element.
+    uint32_t mem_size = (vmi.re - vmi.rs) * fieldWrites * eewb;
+    mem_size = vm_zero ? 0 : mem_size;
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+    panic_if(mem_size > DPLENB,
+             "%s initiateAcc mem_size=%u exceeds DPLENB=%u",
+             mnemonic, mem_size, (uint32_t)DPLENB);
+
+    std::vector<bool> byte_enable(mem_size, true);
+    fault = initiateMemRead(xc, EA, mem_size, memAccessFlags, byte_enable);
+
+    %(vfof_set_code)s;
+    %(vfof_zero_idx_check_code)s;
+
+    return fault;
+}
+
+}};
+
+def template VlIndexMicroCompleteAcc {{
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::completeAcc(PacketPtr pkt, ExecContext *xc,
+                            Trace::InstRecord *traceData) const
+{
+    using vu = std::make_unsigned_t<ElemType>;
 
     %(op_decl)s;
     %(op_rd)s;
 
-#if %(is_vecWhole)s
-    // VM_REQUIRED();
-    // COPY_OLD_VD();
-    bool vm_zero = false;
-#else
     VM_REQUIRED();
-    COPY_OLD_VD();
-    bool vm_zero = !this->vm && popcount_in_byte(tmp_v0.as<uint64_t>(), vmi.rs, vmi.re) == 0;
-#endif
+    bool vm_zero = !this->vm &&
+        popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+
+    uint32_t eew_ = sizeof(vu) * 8;
+    uint32_t elem_num_per_phy_reg = DPLEN / eew_;
+    uint32_t eewb = eew_ / 8;
+    uint32_t mem_size = (vmi.re - vmi.rs) * fieldWrites * eewb;
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+    mem_size = vm_zero ? 0 : mem_size;
+
+    const uint8_t *mem_bytes = nullptr;
+    if (pkt) {
+        mem_bytes = pkt->getPtr<uint8_t>();
+        assert(mem_size == pkt->getSize());
+    } else {
+        assert(mem_size == 0);
+    }
+
+    %(divrVl)s;
+
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass)) {
+        const uint32_t field_writes = numDestRegs();
+        if (field_writes > 1) {
+            const uint32_t elems_loaded =
+                (field_writes > 0) ? (mem_size / (eewb * field_writes)) : 0;
+            for (uint32_t elem_off = 0; elem_off < elems_loaded; ++elem_off) {
+                uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + elem_off;
+                size_t ei = elem_off + vmi.rs;
+                if (%(wb_elem_mask)s) {
+                    for (uint32_t f = 0; f < field_writes; ++f) {
+                        auto &dst = *(RiscvISA::VecBufRegContainer *)
+                            xc->getWritableRegOperand(this, f);
+                        auto dst_bytes = dst.as<uint8_t>();
+                        const uint32_t src_off = (elem_off * field_writes + f) * eewb;
+                        memcpy(dst_bytes + vdElemIdx * eewb,
+                               mem_bytes + src_off, eewb);
+                        xc->setRegOperand(this, f, &dst);
+                        if (traceData && f == 0) {
+                            traceData->setData(dst);
+                        }
+                    }
+                }
+            }
+        } else {
+            for (size_t i = 0; i < mem_size / eewb; ++i) {
+                uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + i;
+                size_t ei = i + vmi.rs;
+                if (%(wb_elem_mask)s) {
+                    auto &dst = *(RiscvISA::VecBufRegContainer *)
+                        xc->getWritableRegOperand(this, 0);
+                    auto dst_bytes = dst.as<uint8_t>();
+                    memcpy(dst_bytes + vdElemIdx * eewb,
+                           mem_bytes + i * eewb, eewb);
+                    xc->setRegOperand(this, 0, &dst);
+                    if (traceData) {
+                        traceData->setData(dst);
+                    }
+                }
+            }
+        }
+        %(vfof_get_code)s;
+        return NoFault;
+    }
+
+    size_t ei;
+    for (size_t i = 0; i < mem_size / eewb; i++) {
+        uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + i;
+        ei = i + vmi.rs;
+        if (getNF() > 1) {
+            vdElemIdx = (ei - vmi.rs) * getNF() + vmi.fn;
+        }
+        if (%(wb_elem_mask)s) {
+            memcpy(Mem.as<uint8_t>() + i * eewb, mem_bytes + i * eewb, eewb);
+            %(memacc_code)s;
+        }
+    }
+
+    %(tail_agnostic_code)s;
+    %(vfof_get_code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
+
+def template VleffMicroInitiateAcc {{
+
+Fault
+%(class_name)s::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+{
+    %(op_src_decl)s;
+    %(op_rd)s;
+
+    VM_REQUIRED();
+    bool vm_zero = !this->vm &&
+        popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+
+    Fault fault = NoFault;
+    uint32_t eew_ = eew;
+    uint32_t eewb = eew_ / 8;
+    const uint32_t seg_nf = machInst.nf + 1;
+
+    Addr EA;
+    %(ea_code)s;
+
+    uint32_t mem_size = %(calc_memsize_code)s;
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass) && seg_nf > 1) {
+        const uint32_t bank_base_bytes = vmi.rs * seg_nf * eewb;
+        const uint32_t bytes_in_bank = (vmi.re - vmi.rs) * seg_nf * eewb;
+        const uint32_t byte_off =
+            (vmi.offset >= bank_base_bytes) ? (vmi.offset - bank_base_bytes) : 0;
+        const uint32_t remain = (byte_off < bytes_in_bank) ?
+            (bytes_in_bank - byte_off) : 0;
+        mem_size = std::min<uint32_t>(DPLENB, remain);
+    }
+
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+    mem_size = vm_zero ? 0 : mem_size;
+    panic_if(mem_size > DPLENB,
+             "%s initiateAcc mem_size=%u exceeds DPLENB=%u",
+             mnemonic, mem_size, (uint32_t)DPLENB);
+
+    std::vector<bool> byte_enable(mem_size, true);
+    fault = initiateMemRead(xc, EA, mem_size, memAccessFlags, byte_enable);
+
+    %(vfof_set_code)s;
+    %(vfof_zero_idx_check_code)s;
+    return fault;
+}
+
+}};
+
+
+def template VleffMicroCompleteAcc {{
+
+Fault
+%(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                            Trace::InstRecord *traceData) const
+{
+    %(op_decl)s;
+    %(op_rd)s;
+
+    VM_REQUIRED();
+    bool vm_zero = !this->vm && popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
 
     uint32_t eew_ = eew;
-#if %(is_vecIndex)s
-    eew_ = sizeof(vu) * 8;
-#endif
-
-    uint32_t elem_num_per_vreg = VLEN / eew_;
+    uint32_t elem_num_per_phy_reg = DPLEN / eew;
     uint32_t eewb = eew_ / 8;
+    const uint32_t seg_nf = machInst.nf + 1;
     uint32_t mem_size = %(calc_memsize_code)s;
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass) && seg_nf > 1) {
+        const uint32_t bank_base_bytes = vmi.rs * seg_nf * eewb;
+        const uint32_t bytes_in_bank = (vmi.re - vmi.rs) * seg_nf * eewb;
+        const uint32_t byte_off =
+            (vmi.offset >= bank_base_bytes) ? (vmi.offset - bank_base_bytes) : 0;
+        const uint32_t remain = (byte_off < bytes_in_bank) ?
+            (bytes_in_bank - byte_off) : 0;
+        mem_size = std::min<uint32_t>(DPLENB, remain);
+    }
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
     mem_size = vm_zero ? 0 : mem_size;
+
+    const uint8_t *mem_bytes = nullptr;
     if (pkt) {
-        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
+        mem_bytes = pkt->getPtr<uint8_t>();
+        memcpy(Mem.as<uint8_t>(), mem_bytes, pkt->getSize());
         assert(mem_size == pkt->getSize());
     } else {
         assert(mem_size == 0);
@@ -291,16 +940,84 @@ Fault
     %(divrVl)s;
 
     size_t ei;
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass) && seg_nf > 1) {
+        const uint32_t token_start = vmi.fn;
+        const uint32_t token_cnt = mem_size / eewb;
+        const uint32_t fof_dst_idx = seg_nf;
+        for (uint32_t t = 0; t < token_cnt; ++t) {
+            const uint32_t g = token_start + t;
+            const uint32_t elem_off = g / seg_nf;
+            const uint32_t field = g % seg_nf;
+            uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + elem_off;
+            ei = vmi.rs + elem_off;
+            if (%(wb_elem_mask)s) {
+                auto &dst = *(RiscvISA::VecBufRegContainer *)
+                    xc->getWritableRegOperand(this, field);
+                auto dst_bytes = dst.as<uint8_t>();
+                memcpy(dst_bytes + vdElemIdx * eewb, mem_bytes + t * eewb, eewb);
+                xc->setRegOperand(this, field, &dst);
+                if (traceData && field == 0) {
+                    traceData->setData(dst);
+                }
+            }
+        }
+
+        auto &vfof_dst = *(RiscvISA::VecBufRegContainer *)
+            xc->getWritableRegOperand(this, fof_dst_idx);
+        auto Vfof_ud = vfof_dst.as<uint64_t>();
+        Vfof_ud[0] = *fault_elem_idx;
+        xc->setRegOperand(this, fof_dst_idx, &vfof_dst);
+        return NoFault;
+    }
+    if (numDestRegs() > 0 && destRegIdx(0).is(VecBufRegClass) &&
+        seg_nf == 1 && packedFof) {
+        const uint32_t elems_loaded = mem_size / eewb;
+        for (uint32_t elem_off = 0; elem_off < elems_loaded; ++elem_off) {
+            uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + elem_off;
+            ei = elem_off + vmi.rs;
+            if (%(wb_elem_mask)s) {
+                auto &dst = *(RiscvISA::VecBufRegContainer *)
+                    xc->getWritableRegOperand(this, 0);
+                auto dst_bytes = dst.as<uint8_t>();
+                memcpy(dst_bytes + vdElemIdx * eewb,
+                       mem_bytes + elem_off * eewb, eewb);
+                xc->setRegOperand(this, 0, &dst);
+                if (traceData) {
+                    traceData->setData(dst);
+                }
+            }
+        }
+        const uint32_t fof_dst_idx = fieldWrites;
+        auto &vfof_dst = *(RiscvISA::VecBufRegContainer *)
+            xc->getWritableRegOperand(this, fof_dst_idx);
+        auto Vfof_ub = vfof_dst.as<uint8_t>();
+        const size_t clipped_fault = std::min<size_t>(*fault_elem_idx, 0xFF);
+        Vfof_ub[packedFofSlot] = static_cast<uint8_t>(clipped_fault);
+        xc->setRegOperand(this, fof_dst_idx, &vfof_dst);
+        return NoFault;
+    }
+
+    const uint32_t elem_num_per_vtmp = DPLENB / (eew / 8);
     for (size_t i = 0; i < mem_size / eewb; i++) {
-        uint32_t vdElemIdx = (vmi.rs % elem_num_per_vreg) + i;
+        uint32_t vdElemIdx = (vmi.rs % elem_num_per_phy_reg) + i;
         ei = i + vmi.rs;
+        if (seg_nf > 1) {
+            // For segment ff, each vtemp bank stores elem_num_per_vtmp fields.
+            vdElemIdx = vmi.fn % elem_num_per_vtmp;
+        }
         if (%(wb_elem_mask)s) {
             %(memacc_code)s;
         }
     }
 
+    %(tail_agnostic_code)s;
     %(vfof_get_code)s;
     %(op_wb)s;
+
+    if (traceData) {
+        // For vleff, prefer tracing loaded destination data over VFOF index.
+        traceData->setData(tmp_d0);
+    }
     return NoFault;
 }
 
@@ -312,23 +1029,307 @@ def template VleffConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-
+    const int32_t nf = _machInst.nf + 1;
+    const uint32_t emul = get_emul(eew, sew, vflmul, false);
     const int32_t elem_num_per_vreg = VLEN / eew;
-    const uint32_t num_microops = vflmul < 1 ? 1 : vflmul;
+    const uint32_t elem_num_per_bank = DPLEN / eew;
+    // panic_if(nf * emul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    for (int i = 0; i < num_microops; ++i) {
-        vmi.rs = i * elem_num_per_vreg;
-        vmi.re = (i + 1) * elem_num_per_vreg;
-        vmi.microVd = VD + i;
-        microop = new %(class_name)sMicro(_machInst, i, vmi);
-        microop->setDelayedCommit();
-        microop->setFlag(IsLoad);
-        this->microops.push_back(microop);
+
+    const uint32_t vleff_group_sz = VregBanks;
+    if (nf == 1) {
+        const uint32_t vreg_banks = ((VLEN + DPLEN - 1) / DPLEN);
+        const uint32_t elem_num_per_bank = elem_num_per_vreg / vreg_banks;
+        const uint32_t num_microops =
+            calculateActiveBanksByEewWithKnownVl(eew, sew, vflmul, _machInst);
+
+        // Parallel-VleffEnd path: emit all loads first, then a single VleffEnd,
+        // then all merges.  Each load gets a unique fault-info slot (0..N-1) and
+        // a unique data slot (N..2N-1), so no load depends on an intermediate
+        // VleffEnd and all N loads can issue in parallel.
+        // Requires 2*num_microops <= NumVecBufRegs; fall back to per-group when
+        // this is violated (e.g. LMUL=8 with VLEN=256).
+        if (num_microops * 2 <= NumVecBufRegs) {
+            // Phase 1: all load micro-ops. Data goes to unique VecBuf slots,
+            // while fault indices are packed into one shared fault bank.
+            for (uint32_t i = 0; i < num_microops; ++i) {
+                const uint32_t fault_bank = 0;
+                const uint8_t fault_slot = static_cast<uint8_t>(i);
+                uint32_t data_slot  = num_microops + i;
+                vmi.rs     = i * elem_num_per_bank;
+                vmi.re     = (i + 1) * elem_num_per_bank;
+                vmi.microVd = data_slot;
+                vmi.fn     = 0;
+                vmi.offset = i * DPLENB;
+                microop = new %(class_name)sMicro(_machInst, i, vmi,
+                                                  fault_bank, 1, 1,
+                                                  true, fault_slot, num_microops);
+                microop->setDelayedCommit();
+                microop->setFlag(IsLoad);
+                microop->setNF(1);
+                this->microops.push_back(microop);
+            }
+
+            // Phase 2: single VleffEnd reads packed fault bytes from one bank.
+            microop = new VleffEndMicroInst(_machInst,
+                                            static_cast<uint8_t>(num_microops), 0,
+                                            true, static_cast<uint8_t>(num_microops));
+            microop->setDelayedCommit();
+            this->microops.push_back(microop);
+
+            // Phase 3: all merge micro-ops use the data slots [N..2N-1].
+            for (uint32_t i = 0; i < num_microops; ++i) {
+                uint32_t arch_vreg  = i / vreg_banks;
+                uint32_t bank       = i % vreg_banks;
+                uint32_t data_slot  = num_microops + i;
+                uint32_t merge_vbuf = (VD + arch_vreg) * VregBanks + bank;
+                vmi.rs     = i * elem_num_per_bank;
+                vmi.re     = (i + 1) * elem_num_per_bank;
+                vmi.fn     = 0;
+                vmi.microVd = merge_vbuf;
+                assert(vmi.microVd < NumVecStandardRegs);
+
+                switch (eew) {
+                    case 8:
+                        microop = new VregMergeMicroInst<uint8_t>(
+                            _machInst, 1, vmi, false, data_slot);
+                        break;
+                    case 16:
+                        microop = new VregMergeMicroInst<uint16_t>(
+                            _machInst, 1, vmi, false, data_slot);
+                        break;
+                    case 32:
+                        microop = new VregMergeMicroInst<uint32_t>(
+                            _machInst, 1, vmi, false, data_slot);
+                        break;
+                    case 64:
+                        microop = new VregMergeMicroInst<uint64_t>(
+                            _machInst, 1, vmi, false, data_slot);
+                        break;
+                    default:
+                        panic("Unsupported eew: %d", eew);
+                }
+                microop->setNF(1);
+                microop->setDelayedCommit();
+                this->microops.push_back(microop);
+            }
+        } else {
+        // Fallback: per-group VleffEnd (used when 2*num_microops > NumVecBufRegs).
+        uint32_t group_count = 0;
+        uint32_t group_start = 0;
+        for (int i = 0; i < (int)num_microops; ++i) {
+            uint32_t local_idx = group_count;
+            vmi.rs = i * elem_num_per_bank;
+            vmi.re = (i + 1) * elem_num_per_bank;
+            // Use vecbuf temp slots for load data; _microIdx keeps VFOF index.
+            vmi.microVd = local_idx + vleff_group_sz;
+            vmi.fn = 0;
+            vmi.offset = i * DPLENB;
+            microop = new %(class_name)sMicro(_machInst, group_count, vmi,
+                                              group_count, 1, 1);
+            microop->setDelayedCommit();
+            microop->setFlag(IsLoad);
+            microop->setNF(1);
+            this->microops.push_back(microop);
+            group_count++;
+            if (group_count == vleff_group_sz) {
+                microop = new VleffEndMicroInst(_machInst, vleff_group_sz);
+                microop->setDelayedCommit();
+                this->microops.push_back(microop);
+
+                for (uint32_t j = group_start; j <= (uint32_t)i; ++j) {
+                    uint32_t local_merge_idx = j - group_start;
+                    uint32_t merge_arch_vreg = j / vreg_banks;
+                    uint32_t merge_bank = j % vreg_banks;
+                    uint32_t merge_vbuf = (VD + merge_arch_vreg) * VregBanks + merge_bank;
+                    vmi.rs = j * elem_num_per_bank;
+                    vmi.re = (j + 1) * elem_num_per_bank;
+                    vmi.fn = 0;
+                    vmi.microVd = merge_vbuf;
+                    assert(vmi.microVd < NumVecStandardRegs);
+
+                    switch (eew) {
+                        case 8:
+                            microop = new VregMergeMicroInst<uint8_t>(
+                                _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                            break;
+                        case 16:
+                            microop = new VregMergeMicroInst<uint16_t>(
+                                _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                            break;
+                        case 32:
+                            microop = new VregMergeMicroInst<uint32_t>(
+                                _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                            break;
+                        case 64:
+                            microop = new VregMergeMicroInst<uint64_t>(
+                                _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                            break;
+                        default:
+                            panic("Unsupported eew: %d", eew);
+                    }
+                    microop->setNF(1);
+                    microop->setDelayedCommit();
+                    this->microops.push_back(microop);
+                }
+
+                group_count = 0;
+                group_start = i + 1;
+            }
+        }
+        if (group_count > 0) {
+            microop = new VleffEndMicroInst(_machInst, group_count);
+            microop->setDelayedCommit();
+            this->microops.push_back(microop);
+
+            for (uint32_t j = group_start; j < group_start + group_count; ++j) {
+                uint32_t local_merge_idx = j - group_start;
+                uint32_t merge_arch_vreg = j / vreg_banks;
+                uint32_t merge_bank = j % vreg_banks;
+                uint32_t merge_vbuf = (VD + merge_arch_vreg) * VregBanks + merge_bank;
+                vmi.rs = j * elem_num_per_bank;
+                vmi.re = (j + 1) * elem_num_per_bank;
+                vmi.fn = 0;
+                vmi.microVd = merge_vbuf;
+                assert(vmi.microVd < NumVecStandardRegs);
+
+                switch (eew) {
+                    case 8:
+                        microop = new VregMergeMicroInst<uint8_t>(
+                            _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                        break;
+                    case 16:
+                        microop = new VregMergeMicroInst<uint16_t>(
+                            _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                        break;
+                    case 32:
+                        microop = new VregMergeMicroInst<uint32_t>(
+                            _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                        break;
+                    case 64:
+                        microop = new VregMergeMicroInst<uint64_t>(
+                            _machInst, 1, vmi, false, local_merge_idx + vleff_group_sz);
+                        break;
+                    default:
+                        panic("Unsupported eew: %d", eew);
+                }
+                microop->setNF(1);
+                microop->setDelayedCommit();
+                this->microops.push_back(microop);
+            }
+        }
+        } // end else (fallback per-group VleffEnd)
+    } else {
+        // Segment fault-only-first load (vlseg*ff), aligned with vleseg token chunking.
+        uint32_t vlmax = calculateVlmax(VLEN, sew, vflmul);
+        if (_machInst.vlKnown) {
+            vlmax = std::min(vlmax, static_cast<uint32_t>(_machInst.vlValue));
+        }
+        vlmax = std::min(vlmax, calculateActiveElemSpan(eew, sew, vflmul));
+        const uint32_t max_tokens_per_bank = elem_num_per_bank * nf;
+        const uint32_t seg_elem_size = eew / 8;
+        const uint32_t max_tokens_per_load =
+            std::max(1u, static_cast<uint32_t>(DPLENB / seg_elem_size));
+        const uint32_t max_chunks_per_bank =
+            (max_tokens_per_bank + max_tokens_per_load - 1) /
+            max_tokens_per_load;
+        const uint32_t fof_slots = std::max(1u, max_chunks_per_bank);
+        panic_if(fof_slots >= NumVecBufRegs,
+                 "Not enough vecbuf slots for vlseg*ff fof_slots=%u", fof_slots);
+        const uint32_t slot_ring = NumVecBufRegs - fof_slots;
+        panic_if(slot_ring < static_cast<uint32_t>(nf),
+                 "Not enough vecbuf slots for vlseg*ff nf=%d", nf);
+        const uint32_t ring_span = slot_ring - nf + 1;
+        const uint32_t fof_slot_base = slot_ring;
+
+        uint32_t load_micro_idx = 0;
+        for (uint32_t bank_start = 0; bank_start < vlmax;
+             bank_start += elem_num_per_bank) {
+            const uint32_t bank_elems = std::min(elem_num_per_bank, vlmax - bank_start);
+            const uint32_t group_idx = bank_start / elem_num_per_bank;
+            // Keep data-slot packing consistent with vlseg: nf adjacent vbuf dsts.
+            const uint32_t group_slot_base =
+                (group_idx * nf) % std::max(1u, ring_span);
+            const uint32_t total_tokens = bank_elems * nf;
+            const uint32_t chunks_per_bank =
+                (total_tokens + max_tokens_per_load - 1) / max_tokens_per_load;
+
+            uint32_t chunk_count = 0;
+            for (uint32_t token_start = 0; token_start < total_tokens;
+                 token_start += max_tokens_per_load) {
+                vmi.rs = bank_start;
+                vmi.re = bank_start + bank_elems;
+                vmi.rb = bank_start;
+                vmi.fn = token_start;
+                vmi.microVd = group_slot_base;
+                vmi.offset = (bank_start * nf + token_start) * seg_elem_size;
+                microop = new %(class_name)sMicro(
+                    _machInst, load_micro_idx++, vmi, fof_slot_base + chunk_count,
+                    chunks_per_bank, nf);
+                microop->resetOpClass(VectorSegUnitStrideLoadOp);
+                microop->setFlag(IsSegLoad);
+                microop->setDelayedCommit();
+                microop->setFlag(IsLoad);
+                microop->setNF(nf);
+                this->microops.push_back(microop);
+                chunk_count++;
+            }
+
+            microop = new VleffEndMicroInst(_machInst, chunk_count, fof_slot_base);
+            this->microops.push_back(microop);
+
+            // Merge after VleffEnd so merge uses updated VL from ff logic.
+            uint32_t rs = bank_start;
+            const uint32_t batch_end = bank_start + bank_elems;
+            while (rs < batch_end) {
+                vmi.rs = rs;
+                const uint32_t bank_end =
+                    ((rs / elem_num_per_bank) + 1) * elem_num_per_bank;
+                vmi.re = std::min(bank_end, batch_end);
+                for (int fn_merge = 0; fn_merge < nf; fn_merge++) {
+                    vmi.fn = fn_merge;
+                    uint32_t vreg_idx_in_field = vmi.rs / elem_num_per_vreg;
+                    uint32_t arch_vd = VD + fn_merge * emul + vreg_idx_in_field;
+                    uint32_t bank =
+                        (vmi.rs % elem_num_per_vreg) / (elem_num_per_vreg / VregBanks);
+                    vmi.microVd = arch_vd * VregBanks + bank;
+                    assert(vmi.microVd < NumVecStandardRegs);
+
+                    const uint8_t merge_src =
+                        static_cast<uint8_t>(group_slot_base + fn_merge);
+                    VectorMicroInfo merge_vmi = vmi;
+                    merge_vmi.fn = 0;
+                    merge_vmi.offset = 0;
+                    switch (eew) {
+                        case 8:
+                            microop = new VregMergeMicroInst<uint8_t>(
+                                _machInst, 1, merge_vmi, false, merge_src);
+                            break;
+                        case 16:
+                            microop = new VregMergeMicroInst<uint16_t>(
+                                _machInst, 1, merge_vmi, false, merge_src);
+                            break;
+                        case 32:
+                            microop = new VregMergeMicroInst<uint32_t>(
+                                _machInst, 1, merge_vmi, false, merge_src);
+                            break;
+                        case 64:
+                            microop = new VregMergeMicroInst<uint64_t>(
+                                _machInst, 1, merge_vmi, false, merge_src);
+                            break;
+                        default:
+                            panic("Unsupported eew: %d", eew);
+                    }
+                    microop->setNF(1);
+                    microop->setDelayedCommit();
+                    this->microops.push_back(microop);
+                }
+                rs = vmi.re;
+            }
+        }
     }
-    microop = new VleffEndMicroInst(_machInst, num_microops);
-    this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
@@ -337,28 +1338,47 @@ def template VleffConstructor {{
 }};
 
 def template VleffMicroDeclare {{
-
 class %(class_name)s : public %(base_class)s
 {
 private:
     RegId srcRegIdxArr[8];
-    RegId destRegIdxArr[2];
+    RegId destRegIdxArr[10];
+    uint32_t expectedWrites;
+    uint32_t fieldWrites;
+    bool packedFof;
+    uint8_t packedFofSlot;
     std::unique_ptr<size_t> fault_elem_idx;
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi,
+                   uint8_t _fofSlot,
+                   uint32_t _expectedWrites = 1, uint32_t _fieldWrites = 1,
+                   bool _packedFof = false, uint8_t _packedFofSlot = 0,
+                   uint32_t _fofExpectedWrites = 1)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
         vmi = _vmi;
+        expectedWrites = _expectedWrites > 0 ? _expectedWrites : 1;
+        fieldWrites = _fieldWrites > 0 ? _fieldWrites : 1;
+        packedFof = _packedFof;
+        packedFofSlot = _packedFofSlot;
+        assert(vmi.microVd + fieldWrites <= NumVecBufRegs);
+        assert(_fofSlot < NumVecBufRegs);
+        assert(!packedFof || packedFofSlot < DPLENB);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
-        _numTypedDestRegs[VecRegClass]++;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, VecTempReg0 + _microIdx));
-        _numTypedDestRegs[VecRegClass]++;
+        for (uint32_t f = 0; f < fieldWrites; ++f) {
+            RegId dst_reg(VecBufRegClass, vmi.microVd + f);
+            dst_reg.setNumPinnedWrites(expectedWrites - 1);
+            setDestRegIdx(_numDestRegs++, dst_reg);
+            _numTypedDestRegs[VecBufRegClass]++;
+        }
+        RegId fof_dst_reg(VecBufRegClass, _fofSlot);
+        fof_dst_reg.setNumPinnedWrites((_fofExpectedWrites > 0 ? _fofExpectedWrites : 1) - 1);
+        setDestRegIdx(_numDestRegs++, fof_dst_reg);
+        _numTypedDestRegs[VecBufRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         SET_VL_SRC();
-        SET_OLDDST_SRC();
         SET_VM_SRC();
 
         fault_elem_idx = std::make_unique<size_t>(0);
@@ -385,11 +1405,12 @@ Fault
     %(ea_code)s;
 
     VM_REQUIRED();
-    COPY_OLD_VD();
+    uint32_t elem_num_per_vreg = DPLEN / eew;
+    const uint32_t seg_nf = machInst.nf + 1;
 
-    uint32_t elem_num_per_vreg = VLEN / eew;
-
-    uint32_t mem_size = calc_memsize(microIdx * elem_num_per_vreg, (microIdx + 1) * elem_num_per_vreg, eew, rVl);
+    // For segment loads, mem_size is calculated based on vmi.rs and vmi.re
+    // For normal loads, it's based on microIdx
+    uint32_t mem_size = calc_memsize(vmi.rs, vmi.re, eew, rVl);
 
     const std::vector<bool> byte_enable(mem_size, true);
     Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size, memAccessFlags,
@@ -399,11 +1420,22 @@ Fault
         %(vfof_zero_idx_check_code)s;
         %(vfof_get_code)s;
 
-        size_t elem_num_per_vreg = VLEN / width_EEW(machInst.width);
-
         size_t ei;
-        for (size_t i = 0; i < std::min(elem_num_per_vreg, *fault_elem_idx); i++) {
-            ei = i + elem_num_per_vreg * microIdx;
+        // For segment loads, we process elements based on vmi.rs/vmi.re
+        // For normal loads, we use microIdx
+        uint32_t start_elem = vmi.rs;
+        uint32_t end_elem = std::min((uint32_t)vmi.re, start_elem + (uint32_t)*fault_elem_idx);
+
+
+        const uint32_t seg_elem_size = eew / 8;
+        const uint32_t elem_num_per_vtmp = DPLENB / seg_elem_size;
+        for (size_t i = 0; i < end_elem - start_elem; i++) {
+            uint32_t vdElemIdx = (vmi.rs % elem_num_per_vreg) + i;
+            ei = i + start_elem;
+            if (seg_nf > 1) {
+                // For segment ff, each vtemp bank stores elem_num_per_vtmp fields.
+                vdElemIdx = vmi.fn % elem_num_per_vtmp;
+            }
             %(memacc_code)s;
         }
     } else {
@@ -423,16 +1455,17 @@ def template VlWholeConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    %(set_reg_idx_arr)s;
-
+    const size_t vreg_banks = ((VLEN + DPLEN - 1) / DPLEN);
     size_t NFIELDS = machInst.nf + 1;
-    eew = 8;
+    size_t microop_num = vreg_banks * NFIELDS;
+    const uint32_t eew = width_EEW(_machInst.width);
+    size_t elem_num_per_bank = DPLEN / eew;
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    for (int i = 0; i < NFIELDS; ++i) {
-        vmi.rs = 0;
-        vmi.re = VLEN / eew;
-        vmi.microVd = VD + i;
+    for (int i = 0; i < microop_num; ++i) {
+        vmi.rs = elem_num_per_bank * i;
+        vmi.re = elem_num_per_bank * (i + 1);
+        vmi.microVd = (VD + i / vreg_banks) * VregBanks + (i % vreg_banks);
         microop = new %(class_name)sMicro(_machInst, i, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsLoad);
@@ -458,11 +1491,13 @@ public:
     {
         %(set_reg_idx_arr)s;
         vmi = _vmi;
+        assert(vmi.microVd < NumVecStandardRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
         _numTypedDestRegs[VecRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
+        SET_VL_SRC();  // 声明rVl操作数以满足模板要求，但whole register指令不实际使用vl
         this->flags[IsVector] = true;
         this->flags[IsLoad] = true;
     }
@@ -490,11 +1525,48 @@ Fault
     if (fault != NoFault)
         return fault;
 
-    size_t elem_per_reg = VLEN / eew;
+    size_t elem_per_reg = DPLEN / eew;
     for (size_t i = 0; i < elem_per_reg; i++) {
+        size_t vdElemIdx = i;
         %(memacc_code)s;
     }
 
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
+def template VlWholeMicroCompleteAcc {{
+
+Fault
+%(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                            Trace::InstRecord *traceData) const
+{
+    %(op_decl)s;
+    %(op_rd)s;
+
+    const bool vm_zero = false;
+    const uint32_t eew_ = eew;
+    const uint32_t eewb = eew_ / 8;
+    const uint32_t mem_size = vm_zero ? 0 : DPLENB;
+
+    if (pkt) {
+        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
+        assert(mem_size == pkt->getSize());
+    } else {
+        assert(mem_size == 0);
+    }
+
+    %(divrVl)s;
+
+    for (size_t i = 0; i < mem_size / eewb; i++) {
+        uint32_t vdElemIdx = i;
+        %(memacc_code)s;
+    }
+
+    %(tail_agnostic_code)s;
+    %(vfof_get_code)s;
     %(op_wb)s;
     return NoFault;
 }
@@ -507,35 +1579,130 @@ def template VlStrideConstructor {{
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     const int32_t nf = _machInst.nf + 1;
-    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    uint32_t emul = get_emul(eew, sew, vflmul, false);
     const uint32_t elem_num_per_vreg = VLEN / eew;
+    const uint32_t elem_num_per_bank = DPLEN / eew;
+    const uint32_t elem_num_per_vtmp = DPLEN / eew;
     // panic_if(nf * emul > 8, "invalid nf and emul");
-
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    uint32_t vlmax = VLEN / sew * vflmul;
-    for (int i=0; i < vlmax; i++) {
-        for (int fn=0; fn < nf; fn++) {
-            // baseAddr = Rs1 + i*Rs2 + fn * eew / 8
-            // mem<eew>[baseAddr] = (vd + fn * emul)<eew>[i]
-            vmi.rs = i;
-            vmi.re = i+1;
-            vmi.fn = fn;
-            vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
-            vmi.offset = fn * eew / 8;
-            microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
+
+    uint32_t vlmax = calculateVlmax(VLEN, sew, vflmul);
+    if (_machInst.vlKnown) {
+        vlmax = std::min(vlmax, static_cast<uint32_t>(_machInst.vlValue));
+    }
+    vlmax = std::min(vlmax, calculateActiveElemSpan(eew, sew, vflmul));
+
+    // Stride load: 同一bank组内复用同一组NF个vbuf槽。
+    // 单个load micro最多搬运DPLENB字节；当nf*eewb超过DPLENB时按field分块。
+    const uint32_t elem_bytes = eew / 8;
+    const uint32_t max_fields_per_load =
+        std::max(1u, static_cast<uint32_t>(DPLENB / elem_bytes));
+    uint32_t load_micro_idx = 0;
+    uint32_t rs_bak = 0;
+
+    // 按照vlmax循环，每个元素创建一个load op
+    for (uint32_t i = rs_bak; i < vlmax; i++) {
+        // 为当前元素创建一个load micro op，加载完整segment（nf个field）
+        vmi.rs = i;  // 元素索引（用于EA计算：EA = Rs1 + Rs2*i, 用于vl和mask检查）
+        vmi.re = i + 1;
+
+        const uint32_t bank_start = (i / elem_num_per_bank) * elem_num_per_bank;
+        const uint32_t group_idx = i / elem_num_per_bank;
+        const uint32_t bank_expected_writes =
+            std::min(elem_num_per_bank, vlmax - bank_start);
+        const uint32_t group_slot_base = (group_idx * nf) % NumVecBufRegs;
+        for (uint32_t fbase = 0; fbase < static_cast<uint32_t>(nf);
+             fbase += max_fields_per_load) {
+            const uint32_t field_writes = std::min(
+                max_fields_per_load, static_cast<uint32_t>(nf) - fbase);
+            vmi.fn = i;
+            vmi.microVd = group_slot_base + fbase;
+            vmi.offset = fbase * elem_bytes;
+            microop = new %(class_name)sMicro(
+                _machInst, load_micro_idx++, vmi, bank_expected_writes,
+                field_writes);
+            microop->setNF(nf);
             microop->setDelayedCommit();
             microop->setFlag(IsLoad);
+            microop->resetOpClass(VectorSegStridedLoadOp);
+            microop->setFlag(IsSegLoad);
+            this->microops.push_back(microop);
+        }
 
-            microop->setNF(nf);
-            if (nf > 1) {
-                // segment vl related
-                microop->resetOpClass(VectorSegStridedLoadOp);
-                microop->setFlag(IsSegLoad);
+        // 每个DPLEN bank完成后merge（或尾组收尾）。
+        if (((i + 1) % elem_num_per_bank == 0) || (vlmax - 1 == i)) {
+            // 计算当前批次的元素范围
+            uint32_t batch_start = rs_bak;  // 批次起始元素索引
+            uint32_t batch_end = i + 1;              // 批次结束元素索引
+            rs_bak = batch_end;
+            vmi.rb = batch_start;          // vtemp对应的起始elem_idx
+
+            // Merge 必须按 bank 边界切分，避免跨 bank 写入同一个 micro-op
+            // （例如 e8 时 bank 容量是16个元素，而不是整寄存器32个元素）
+            uint32_t rs = batch_start;
+            while (rs < batch_end) {
+                vmi.rs = rs;
+                const uint32_t bank_end =
+                    ((rs / elem_num_per_bank) + 1) * elem_num_per_bank;
+                vmi.re = std::min(bank_end, batch_end);
+
+                // Merge阶段：创建nf个merge ops，从vtemp转置到目标寄存器
+                for (int fn = 0; fn < nf; fn++) {
+                    vmi.fn = fn;
+
+                    // 计算目标寄存器：VD + fn * emul + 当前批次在该field内的vreg索引
+                    uint32_t vreg_idx_in_field = vmi.rs / elem_num_per_vreg;
+                    uint32_t arch_vd = VD + fn * emul + vreg_idx_in_field;
+                    uint32_t bank = (vmi.rs % elem_num_per_vreg) / (elem_num_per_vreg / VregBanks);
+                    vmi.microVd = arch_vd * VregBanks + bank;
+                    assert(vmi.microVd < NumVecStandardRegs);
+
+                    const uint8_t src_start = (nf == 1)
+                        ? static_cast<uint8_t>((vmi.rs / elem_num_per_bank) % NumVecBufRegs)
+                        : static_cast<uint8_t>(((vmi.rs / elem_num_per_bank) * nf) % NumVecBufRegs);
+                    // nf>1 时每个 field 已写入独立 vbuf，merge 按单源连续布局读取。
+                    const uint8_t merge_src = (nf == 1) ? src_start :
+                        static_cast<uint8_t>(src_start + fn);
+                    VectorMicroInfo merge_vmi = vmi;
+                    if (nf > 1) {
+                        merge_vmi.fn = 0;
+                    }
+                    merge_vmi.offset = 0;
+                    switch(eew) {
+                        case 8:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint8_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        case 16:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint16_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        case 32:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint32_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        case 64:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint64_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        default:
+                            panic("Unsupported eew: %d", eew);
+                    }
+
+                    microop->setNF(1);
+                    microop->setDelayedCommit();
+                    this->microops.push_back(microop);
+                }
+
+                rs = vmi.re;
             }
 
-            this->microops.push_back(microop);
         }
     }
 
@@ -552,23 +1719,33 @@ class %(class_name)s : public %(base_class)s
 private:
     // rs1, rs2, vd, vm
     RegId srcRegIdxArr[8];
-    RegId destRegIdxArr[1];
+    RegId destRegIdxArr[8];
+    uint32_t expectedWrites;
+    uint32_t fieldWrites;
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx,
+                   VectorMicroInfo& _vmi, uint32_t _expectedWrites = 1,
+                   uint32_t _fieldWrites = 1)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
         vmi = _vmi;
+        expectedWrites = _expectedWrites > 0 ? _expectedWrites : 1;
+        fieldWrites = _fieldWrites > 0 ? _fieldWrites : 1;
         assert(~vmi.microVd);
         assert(~vmi.offset);
+        assert(vmi.microVd + fieldWrites <= NumVecBufRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
-        _numTypedDestRegs[VecRegClass]++;
+        for (uint32_t f = 0; f < fieldWrites; ++f) {
+            RegId dst_reg(VecBufRegClass, vmi.microVd + f);
+            dst_reg.setNumPinnedWrites(expectedWrites - 1);
+            setDestRegIdx(_numDestRegs++, dst_reg);
+            _numTypedDestRegs[VecBufRegClass]++;
+        }
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
         SET_VL_SRC();
-        SET_OLDDST_SRC();
         SET_VM_SRC();
         this->flags[IsLoad] = true;
     }
@@ -593,24 +1770,28 @@ Fault
     Fault fault = NoFault;
     Addr EA;
 
-    // EA = Rs1 + Rs2*vmi.rs + vmi.offset;
+    // EA = Rs1 + Rs2*vmi.fn + vmi.offset;
+    // vmi.fn存储的是元素索引i，vmi.offset为0
+    // 所以EA = Rs1 + Rs2 * i（stride load的标准地址计算）
     %(ea_code)s;
 
-    uint32_t elem_num_per_vreg = VLEN / eew;
-    uint32_t mem_size = calc_memsize(vmi.rs, vmi.re, eew, rVl);
+    uint32_t elem_num_per_phy_reg = DPLEN / eew;
+    uint32_t elem_size = eew / 8;
 
     VM_REQUIRED();
 
-    COPY_OLD_VD();
-
-    uint32_t vdElemIdx = (vmi.rs % elem_num_per_vreg);
+    // vmi.rs是元素索引
     size_t ei = vmi.rs;
     if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
-        const std::vector<bool> byte_enable(mem_size, true);
-        fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
+        // 加载单个元素
+        std::vector<bool> byte_enable(elem_size, true);
+        fault = xc->readMem(EA, Mem.as<uint8_t>(), elem_size,
                                 memAccessFlags, byte_enable);
         if (fault != NoFault)
             return fault;
+
+        // 计算目标元素索引
+        uint32_t vdElemIdx = ei % elem_num_per_phy_reg;
         %(memacc_code)s;
     }
 
@@ -628,46 +1809,144 @@ template<typename ElemType>
 {
     const int32_t nf = _machInst.nf + 1;
     const uint32_t eew = width_EEW(_machInst.width); // vs2 : index[i]
-    const uint32_t sew = getSew(_machInst.vtype8.vsew); // vs3 : stored elem
-    const uint32_t emul = get_emul(eew, sew, vflmul, false);
+    const uint32_t sew = getSew(_machInst.vtype8.vsew); // 数据元素宽度
+    const uint32_t emul = get_emul(sew, sew, vflmul, false);
     uint32_t flmul = vflmul < 1 ? 1 : vflmul;
     const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t elem_num_per_bank = DPLEN / sew;
+    const uint32_t elem_num_per_vtmp = DPLEN / sew;
+    const uint32_t vs2_elts_per_vreg = VLEN / eew;
+    const uint32_t vs2_elts_per_bank = DPLEN / eew;
     // panic_if(nf * flmul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    uint32_t vlmax = VLEN / sew * vflmul;
-    for (int i = 0; i < vlmax; i++) {
-        for (int fn = 0; fn < nf; fn++) {
-            // baseAddr = Rs1 + fn * sew / 8
-            // (vd + fn * flmul)<sew>[i] = mem<sew>[baseAddr + vs2<eew>[i]]
-            vmi.fn = fn;
-            vmi.rs = i;
-            vmi.re = i+1;
-            vmi.microVd = elem_gen_idx(VD + fn * flmul, i, sew/8);
-            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
-            vmi.offset = fn * sew / 8;
-            if (vmi.microVd >= 32) {
-                break;
-            }
-            microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
-            microop->setFlag(IsDelayedCommit);
-            microop->setFlag(IsLoad);
 
+    // 计算vlmax：向量长度的最大值
+    uint32_t vlmax = calculateVlmax(VLEN, sew, vflmul);
+    if (_machInst.vlKnown) {
+        vlmax = std::min(vlmax, static_cast<uint32_t>(_machInst.vlValue));
+    }
+    vlmax = std::min(vlmax, calculateActiveElemSpan(sew, sew, vflmul));
+
+    // Index load: 同一bank组内复用同一组NF个vbuf槽。
+    // 单个load micro最多搬运DPLENB字节；当nf*sewb超过DPLENB时按field分块。
+    const uint32_t data_bytes = sew / 8;
+    const uint32_t max_fields_per_load =
+        std::max(1u, static_cast<uint32_t>(DPLENB / data_bytes));
+    uint32_t load_micro_idx = 0;
+    uint32_t rs_bak = 0;
+
+    // 按照vlmax循环，每个元素创建一个load op
+    for (uint32_t i = rs_bak; i < vlmax; i++) {
+        // 为当前元素创建一个load micro op，加载完整segment（nf个field）
+        vmi.rs = i;  // 元素索引（用于EA计算：EA = Rs1 + vs2[i] + offset, 用于vl和mask检查）
+        vmi.re = i + 1;
+
+        // 计算vs2寄存器索引（包含bank映射）
+        uint32_t arch_vs2 = elem_gen_idx(VS2, i, eew / 8);
+        vmi.microVs2 = arch_vs2 * VregBanks +
+                       (i % vs2_elts_per_vreg) / vs2_elts_per_bank;
+
+        const uint32_t bank_start = (i / elem_num_per_bank) * elem_num_per_bank;
+        const uint32_t group_idx = i / elem_num_per_bank;
+        const uint32_t bank_expected_writes =
+            std::min(elem_num_per_bank, vlmax - bank_start);
+        const uint32_t group_slot_base = (group_idx * nf) % NumVecBufRegs;
+        for (uint32_t fbase = 0; fbase < static_cast<uint32_t>(nf);
+             fbase += max_fields_per_load) {
+            const uint32_t field_writes = std::min(
+                max_fields_per_load, static_cast<uint32_t>(nf) - fbase);
+            vmi.fn = i;
+            vmi.microVd = group_slot_base + fbase;
+            vmi.offset = fbase * data_bytes;
+            microop = new %(class_name)sMicro<ElemType>(
+                _machInst, load_micro_idx++, vmi, bank_expected_writes,
+                field_writes);
             microop->setNF(nf);
-            if (nf > 1) {
-                // segment vl related
-                microop->resetOpClass(VectorSegIndexedLoadOp);
-                microop->setFlag(IsSegLoad);
+            microop->setDelayedCommit();
+            microop->setFlag(IsLoad);
+            microop->resetOpClass(VectorSegIndexedLoadOp);
+            microop->setFlag(IsSegLoad);
+            this->microops.push_back(microop);
+        }
+
+        // 每个DPLEN bank完成后merge（或尾组收尾）。
+        if (((i + 1) % elem_num_per_bank == 0) || (vlmax - 1 == i)) {
+            // 计算当前批次的元素范围
+            uint32_t batch_start = rs_bak;  // 批次起始元素索引
+            uint32_t batch_end = i + 1;              // 批次结束元素索引
+            rs_bak = batch_end;
+            vmi.rb = batch_start;          // vtemp对应的起始elem_idx
+
+            // Merge 必须按 bank 边界切分，避免跨 bank 写入同一个 micro-op
+            uint32_t rs = batch_start;
+            while (rs < batch_end) {
+                vmi.rs = rs;
+                const uint32_t bank_end =
+                    ((rs / elem_num_per_bank) + 1) * elem_num_per_bank;
+                vmi.re = std::min(bank_end, batch_end);
+
+                // Merge阶段：创建nf个merge ops，从vtemp转置到目标寄存器
+                for (int fn = 0; fn < nf; fn++) {
+                    vmi.fn = fn;
+
+                    // 计算目标寄存器：VD + fn * emul + 当前批次在该field内的vreg索引
+                    uint32_t vreg_idx_in_field = vmi.rs / elem_num_per_vreg;
+                    uint32_t arch_vd = VD + fn * emul + vreg_idx_in_field;
+                    uint32_t bank = (vmi.rs % elem_num_per_vreg) / (elem_num_per_vreg / VregBanks);
+                    vmi.microVd = arch_vd * VregBanks + bank;
+                    assert(vmi.microVd < NumVecStandardRegs);
+
+                    const uint8_t src_start = (nf == 1)
+                        ? static_cast<uint8_t>((vmi.rs / elem_num_per_bank) % NumVecBufRegs)
+                        : static_cast<uint8_t>(((vmi.rs / elem_num_per_bank) * nf) % NumVecBufRegs);
+                    // nf>1 时每个 field 已写入独立 vbuf，merge 按单源连续布局读取。
+                    const uint8_t merge_src = (nf == 1) ? src_start :
+                        static_cast<uint8_t>(src_start + fn);
+                    VectorMicroInfo merge_vmi = vmi;
+                    if (nf > 1) {
+                        merge_vmi.fn = 0;
+                    }
+                    merge_vmi.offset = 0;
+                    switch(sew) {
+                        case 8:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint8_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        case 16:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint16_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        case 32:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint32_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        case 64:
+                            microop = static_cast<StaticInstPtr>(
+                                new VregMergeMicroInst<uint64_t>(
+                                    _machInst, 1, merge_vmi, false, merge_src));
+                            break;
+                        default:
+                            panic("Unsupported sew: %d", sew);
+                    }
+
+                    microop->setNF(1);
+                    microop->setDelayedCommit();
+                    this->microops.push_back(microop);
+                }
+
+                rs = vmi.re;
             }
 
-            this->microops.push_back(microop);
         }
     }
 
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
-    this->flags[IsVector] = true;
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
 }
 
 }};
@@ -678,29 +1957,39 @@ template<typename ElemType>
 class %(class_name)s : public %(base_class)s
 {
 private:
-    // rs1, vs2, vd, vm
+    // rs1, vs2, vd(vtemp), vm
     RegId srcRegIdxArr[8];
-    RegId destRegIdxArr[1];
+    RegId destRegIdxArr[8];
+    uint32_t expectedWrites;
+    uint32_t fieldWrites;
 public:
-    %(class_name)s(ExtMachInst _machInst, uint32_t _microIdx, VectorMicroInfo& _vmi)
+    %(class_name)s(ExtMachInst _machInst, uint32_t _microIdx,
+                   VectorMicroInfo& _vmi, uint32_t _expectedWrites = 1,
+                   uint32_t _fieldWrites = 1)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
         vmi = _vmi;
-        vmi = _vmi;
-        assert(~vmi.fn);
+        expectedWrites = _expectedWrites > 0 ? _expectedWrites : 1;
+        fieldWrites = _fieldWrites > 0 ? _fieldWrites : 1;
         assert(~vmi.microVd);
         assert(~vmi.microVs2);
         assert(~vmi.offset);
+        assert(vmi.microVd + fieldWrites <= NumVecBufRegs);
+        assert(vmi.microVs2 < NumVecStandardRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
-        _numTypedDestRegs[VecRegClass]++;
+        // 目标寄存器是vtmp slots (VecBufRegClass)
+        for (uint32_t f = 0; f < fieldWrites; ++f) {
+            RegId dst_reg(VecBufRegClass, vmi.microVd + f);
+            dst_reg.setNumPinnedWrites(expectedWrites - 1);
+            setDestRegIdx(_numDestRegs++, dst_reg);
+            _numTypedDestRegs[VecBufRegClass]++;
+        }
+        // 源寄存器：Rs1（基地址）、Vs2（索引向量）
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs2));
-        // We treat agnostic as undistrubed
         SET_VL_SRC();
-        SET_OLDDST_SRC();
         SET_VM_SRC();
         this->flags[IsLoad] = true;
     }
@@ -725,28 +2014,50 @@ Fault
     %(op_decl)s;
     %(op_rd)s;
 
+    // 手动读取vs2寄存器（索引向量）- 源操作数1
+    RiscvISAInst::VecRegContainer tmp_vs2_container;
+    xc->getRegOperand(this, 1, &tmp_vs2_container);
+    auto &tmp_vs2 = tmp_vs2_container;
+
     Fault fault = NoFault;
     Addr EA;
-    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
+
+    // 读取vs2中的索引值
+    uint32_t eew = width_EEW(machInst.width);
+    uint32_t vs2ElemIdx = vmi.rs % (DPLEN / eew);
+
+    // 根据eew读取索引值
+    uint64_t vs2_index = 0;
+    switch(eew) {
+        case 8:  vs2_index = tmp_vs2.as<uint8_t>()[vs2ElemIdx]; break;
+        case 16: vs2_index = tmp_vs2.as<uint16_t>()[vs2ElemIdx]; break;
+        case 32: vs2_index = tmp_vs2.as<uint32_t>()[vs2ElemIdx]; break;
+        case 64: vs2_index = tmp_vs2.as<uint64_t>()[vs2ElemIdx]; break;
+        default: panic("Invalid eew: %d", eew);
+    }
+
+    // EA = Rs1 + vs2_index + vmi.offset
     %(ea_code)s;
 
+    uint32_t nf = getNF();
+    uint32_t sew = sizeof(vu) * 8;
+    uint32_t elem_size = sew / 8;
 
     VM_REQUIRED();
-
-    COPY_OLD_VD();
-
-    constexpr uint8_t elem_size = sizeof(vu);
-    uint32_t mem_size = elem_size;
-    const std::vector<bool> byte_enable(mem_size, true);
-
-    uint32_t vdElemIdx = vmi.rs % (VLENB / elem_size);
+    // vmi.rs是元素索引
     size_t ei = vmi.rs;
-    if (machInst.vm || elem_mask(v0, ei)) {
+    if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
+        // 加载完整segment（nf个field）到vtemp
+        uint32_t mem_size = std::min(nf * elem_size - vmi.offset, (uint32_t)DPLENB);
+        std::vector<bool> byte_enable(mem_size, true);
         fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
                                 memAccessFlags, byte_enable);
         if (fault != NoFault)
             return fault;
-        %(memacc_code)s;
+
+        // 将数据写入vtemp（不进行转置，直接按字节拷贝）
+        // Vd是ElemType*类型，需要转换为uint8_t*
+        memcpy(reinterpret_cast<uint8_t*>(Vd), Mem.as<uint8_t>(), mem_size);
     }
 
     %(op_wb)s;
@@ -754,6 +2065,7 @@ Fault
 }
 
 }};
+
 
 def template VseConstructor {{
 
@@ -763,39 +2075,48 @@ def template VseConstructor {{
     const int32_t nf = _machInst.nf + 1;
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     const uint32_t elem_num_per_vreg = VLEN / eew;
+    const uint32_t elem_num_per_bank = DPLEN / eew;
+    const uint32_t vreg_banks = VLEN / DPLEN;
     // panic_if(nf * emul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
 
     VectorMicroInfo vmi;
-    if (nf == 1) {
-        const uint32_t num_microops = emul;
+    // if (nf == 1) {
+    //     const uint32_t num_microops = (vflmul < 1.0 ? 1 : emul) * vreg_banks;
+    //     for (int i = 0; i < num_microops; ++i) {
+    //         vmi.rs = i * elem_num_per_bank;
+    //         vmi.re = (i+1) * elem_num_per_bank;
+    //         vmi.microVs3 = VS3 + i / vreg_banks;
+    //         vmi.fn = 0;
+    //         vmi.offset = (i * DPLENB * nf);
+    //         microop = new %(class_name)sMicro(_machInst, nf, i, vmi);
+    //         microop->setDelayedCommit();
+    //         microop->setFlag(IsStore);
+    //         microop->setNF(nf);
+    //         this->microops.push_back(microop);
+    //     }
+    // } else
+    {
+        const uint32_t num_microops =
+            calculateActiveBanksByEewWithKnownVl(eew, sew, vflmul, _machInst);
+        // One store micro-op handles at most one DPLEN bank worth of bytes.
+        // Using 2 banks here creates holes in offsets (e.g. 0,32,64... for e8),
+        // while execute path caps each access to DPLENB.
+        const uint32_t elem_num_lsu = elem_num_per_bank;
+        const uint32_t elem_num_max = elem_num_per_bank * nf;
         for (int i = 0; i < num_microops; ++i) {
-            vmi.rs = i * elem_num_per_vreg;
-            vmi.re = (i+1) * elem_num_per_vreg;
-            vmi.microVs3 = VS3 + i;
-            vmi.fn = 0;
-            vmi.offset = (i * VLEN) / 8;
-            microop = new %(class_name)sMicro(_machInst, i, vmi);
-            microop->setDelayedCommit();
-            microop->setFlag(IsStore);
-            this->microops.push_back(microop);
-        }
-    } else {
-        uint32_t vlmax = VLEN / sew * vflmul;
-        for (int i=0; i < vlmax; i++) {
-            for (int fn=0; fn < nf; fn++) {
-                // baseAddr = Rs1 + (i*nf + fn) * eew / 8
-                // mem<eew>[baseAddr] = (vs3 + fn * emul)<eew>[i];
-                vmi.rs = i;
-                vmi.re = i+1;
-                vmi.fn = fn;
-                vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
-                vmi.offset = (i*nf+fn) * eew / 8;
-                microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
-                microop->resetOpClass(VectorSegUnitStrideStoreOp);
+            auto elem_start =  elem_num_per_bank * nf * i;
+            for (int j=0; j<elem_num_max; j+=elem_num_lsu) {
+                vmi.rs = j + elem_start;
+                vmi.re = std::min((j + elem_num_lsu), elem_num_max) + elem_start;
+                vmi.microVs3 = (VS3 + i / vreg_banks) * VregBanks + (i % vreg_banks);
+                vmi.fn = 0;
+                vmi.offset = (i * DPLENB * nf) + j * eew / 8;
+                microop = new %(class_name)sMicro(_machInst, nf, i, vmi);
                 microop->setDelayedCommit();
                 microop->setFlag(IsStore);
+                microop->setNF(nf);
                 this->microops.push_back(microop);
             }
         }
@@ -812,20 +2133,28 @@ def template VseMicroDeclare {{
 class %(class_name)s : public %(base_class)s
 {
 private:
-    RegId srcRegIdxArr[8];
+    RegId srcRegIdxArr[16];
     RegId destRegIdxArr[0];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
+    %(class_name)s(ExtMachInst _machInst, uint8_t vsrc_num, uint8_t _microIdx, VectorMicroInfo& _vmi)
         : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
         vmi = _vmi;
         assert(~vmi.microVs3);
         assert(~vmi.offset);
+        assert(vmi.microVs3 < NumVecStandardRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs3));
+        vregsrcIdx = _numSrcRegs;
+        vregsrcNum = vsrc_num;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        for (uint8_t i=0; i<vregsrcNum; i++) {
+            RegIndex src_idx = vmi.microVs3 + i * emul * VregBanks;
+            assert(src_idx < NumVecStandardRegs);
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, src_idx));
+        }
         SET_VL_SRC();
         SET_VM_SRC();
         this->flags[IsVector] = true;
@@ -866,7 +2195,7 @@ Fault
     Addr EA;
 
 #if %(is_vecIndex)s
-    uint32_t vs2ElemIdx = vmi.rs % (VLEN / eew);
+    uint32_t vs2ElemIdx = vmi.rs % (DPLEN / eew);
 #endif
 
     %(ea_code)s;
@@ -890,7 +2219,7 @@ Fault
 
     size_t ei;
     for (size_t i = 0; i < mem_size / eewb; i++) {
-        uint32_t vs3ElemIdx = (vmi.rs % (VLEN / eew_)) + i;
+        uint32_t vs3ElemIdx = (vmi.rs % (DPLEN / eew_)) + i;
         ei = i + vmi.rs;
         if (%(wb_elem_mask)s) {
             %(memacc_code)s;
@@ -934,7 +2263,7 @@ Fault
     Addr EA;
 
 #if %(is_vecIndex)s
-    uint32_t vs2ElemIdx = vmi.rs % (VLEN / eew);
+    uint32_t vs2ElemIdx = vmi.rs % (DPLEN / eew);
 #endif
 
     %(ea_code)s;
@@ -950,6 +2279,15 @@ Fault
     // calc_memsize(vmi.rs, vmi.re, eew_, rVl);
     uint32_t mem_size = %(calc_memsize_code)s;
 
+#if !(%(is_vecWhole)s)
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+#endif
+    panic_if(mem_size > DPLENB,
+             "%s initiateAcc mem_size=%u exceeds DPLENB=%u",
+             mnemonic, mem_size, (uint32_t)DPLENB);
+
 #if %(is_vecWhole)s
 #else
     VM_REQUIRED();
@@ -959,7 +2297,7 @@ Fault
 
     size_t ei;
     for (size_t i = 0; i < mem_size / eewb; i++) {
-        uint32_t vs3ElemIdx = (vmi.rs % (VLEN / eew_)) + i;
+        uint32_t vs3ElemIdx = (vmi.rs % (DPLEN / eew_)) + i;
         ei = i + vmi.rs;
         if (%(wb_elem_mask)s) {
             %(memacc_code)s;
@@ -1008,27 +2346,40 @@ def template VlmConstructor {{
     const int32_t nf = _machInst.nf + 1;
     eew = 8;
     _machInst.width = 0;
-    const uint32_t emul = 1;
-    const uint32_t elem_num_per_vreg = VLEN / eew;
+    const uint32_t elem_num_per_bank = DPLEN / eew;
+    const uint32_t vreg_banks = VLEN / DPLEN;
     // panic_if(nf * emul > 8, "invalid nf and emul");
-
-    uint32_t vlmax = VLENB;
-    StaticInstPtr microop;
 
     VectorMicroInfo vmi;
     if (nf == 1) {
-        vmi.rs = 0;
-        vmi.re = vlmax;
-        vmi.microVd = VD;
-        vmi.offset = 0;
-        microop = new Vlm_vMicro(_machInst, 0, vmi);
-        microop->setDelayedCommit();
-        microop->setFlag(IsLoad);
+        const uint32_t active_mask_banks = calculateActiveMaskMemBanks(sew, vflmul);
+        for (uint32_t i = 0; i < active_mask_banks; i++) {
+            StaticInstPtr microop;
+            vmi.rs = i * elem_num_per_bank;
+            vmi.re = (i + 1) * elem_num_per_bank;
+            vmi.microVd = i;
+            vmi.offset = i * DPLENB;
+            microop = new Vlm_vMicro(_machInst, i, vmi);
+            microop->setDelayedCommit();
+            microop->setFlag(IsLoad);
+            microop->setNF(nf);
+            this->microops.push_back(microop);
+
+            VectorMicroInfo merge_vmi;
+            merge_vmi.rs = i * DPLEN;
+            merge_vmi.re = (i + 1) * DPLEN;
+            merge_vmi.fn = 0;
+            merge_vmi.microVd = VD * VregBanks + i;
+            microop = new BitMaskMergeMicroInst(
+                _machInst, merge_vmi, i, false, false, true);
+            microop->setDelayedCommit();
+            microop->setNF(nf);
+            this->microops.push_back(microop);
+        }
     } else {
         // TODO
         panic("not implemented");
     }
-    this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
@@ -1036,6 +2387,130 @@ def template VlmConstructor {{
 
 }};
 
+def template VssegMicroInitiateAcc {{
+
+#if %(is_vecIndex)s
+
+template<typename ElemType>
+Fault
+%(class_name)s<ElemType>::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+
+#else
+
+Fault
+%(class_name)s::initiateAcc(ExecContext* xc,
+                            Trace::InstRecord* traceData) const
+
+#endif
+{
+#if %(is_vecIndex)s
+    using vu = std::make_unsigned_t<ElemType>;
+#endif
+
+    %(op_decl)s;
+    %(op_rd)s;
+
+#if %(is_vecSeg)s
+    RiscvISA::vreg_t vtmp_s[8];  // 最多8个vtemp
+    for (uint8_t src_idx = 0; src_idx < vregsrcNum; src_idx++) {
+        xc->getRegOperand(this, src_idx + vregsrcIdx, &vtmp_s[src_idx]);
+    }
+    const size_t chunk_nf = vregsrcNum;
+#endif
+
+    Addr EA;
+
+#if %(is_vecIndex)s
+    uint32_t vs2ElemIdx = vmi.rs % (DPLEN / eew);
+#endif
+
+    %(ea_code)s;
+
+    uint32_t eew_ = eew;
+#if %(is_vecIndex)s
+    eew_ = sizeof(vu) * 8;
+#endif
+    const uint32_t eewb = eew_/8;
+
+    %(divrVl)s;
+
+    // Vse constructor uses flattened field indices for rs/re.
+#if %(is_vse)s
+    uint32_t mem_size = (vmi.re - vmi.rs) * eewb;
+#else
+    // VsStride/VsIndex constructors use segment indices for rs/re.
+    uint32_t mem_size = (vmi.re - vmi.rs) * chunk_nf * eewb;
+#endif
+    panic_if(mem_size > DPLENB,
+             "%s initiateAcc mem_size=%u exceeds DPLENB=%u",
+             mnemonic, mem_size, (uint32_t)DPLENB);
+
+#if %(is_vecWhole)s
+#else
+    VM_REQUIRED();
+#endif
+
+    std::vector<bool> byte_enable(mem_size, false);
+
+#if %(is_vse)s
+    auto start_idx = vmi.rs;
+#else
+    auto start_idx = vmi.rs * chunk_nf;
+#endif
+
+    size_t ei;
+    for (size_t i = 0; i < mem_size / eewb; i++) {
+        uint32_t elem_idx = i + start_idx;
+        uint32_t idx = elem_idx / chunk_nf;
+        uint32_t vreg_idx = elem_idx % chunk_nf;
+        uint32_t vs3ElemIdx = (idx % (DPLEN / eew_));
+        ei = idx;
+        if (%(wb_elem_mask)s) {
+#if %(is_vecSeg)s
+            // 为segment store根据eew_使用正确类型的指针
+            switch (eew_) {
+                case 8: {
+                    auto Vs3 = vtmp_s[vreg_idx].as<uint8_t>();
+                    %(memacc_code)s;
+                    break;
+                }
+                case 16: {
+                    auto Vs3 = vtmp_s[vreg_idx].as<uint16_t>();
+                    %(memacc_code)s;
+                    break;
+                }
+                case 32: {
+                    auto Vs3 = vtmp_s[vreg_idx].as<uint32_t>();
+                    %(memacc_code)s;
+                    break;
+                }
+                case 64: {
+                    auto Vs3 = vtmp_s[vreg_idx].as<uint64_t>();
+                    %(memacc_code)s;
+                    break;
+                }
+                default:
+                    assert(0 && "invalid eew for vec store.");
+            }
+#else
+            %(memacc_code)s;
+#endif
+            auto it = byte_enable.begin() + i * eewb;
+            std::fill(it, it + eewb, true);
+        }
+    }
+
+
+    Fault fault = NoFault;
+    if (mem_size > 0) {
+        fault = xc->writeMem(Mem.as<uint8_t>(), mem_size, EA, memAccessFlags,
+                            nullptr, byte_enable);
+    }
+    return fault;
+}
+
+}};
 
 def template VlmMicroDeclare {{
 
@@ -1052,13 +2527,13 @@ public:
         vmi = _vmi;
         assert(~vmi.microVd);
         assert(~vmi.offset);
+        assert(vmi.microVd < NumVecBufRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
-        _numTypedDestRegs[VecRegClass]++;
+        setDestRegIdx(_numDestRegs++, RegId(VecBufRegClass, vmi.microVd));
+        _numTypedDestRegs[VecBufRegClass]++;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         SET_VL_SRC();
-        SET_OLDDST_SRC();
         SET_VM_SRC();
 
         this->flags[IsVector] = true;
@@ -1086,7 +2561,7 @@ Fault
     // EA = Rs1 + vmi.offset;
     %(ea_code)s;
 
-    uint32_t elem_num_per_vreg = VLEN / eew;
+    uint32_t elem_num_per_vreg = DPLEN / eew;
     uint32_t mem_size = calc_memsize(vmi.rs, vmi.re, eew, rVl);
 
     VM_REQUIRED();
@@ -1097,18 +2572,59 @@ Fault
     if (fault != NoFault)
         return fault;
 
-    COPY_OLD_VD();
-
-    rVl = (rVl + 7) / 8;
-    size_t ei;
     for (size_t i = 0; i < vmi.re - vmi.rs; i++) {
         uint32_t vdElemIdx = (vmi.rs % elem_num_per_vreg) + i;
-        ei = i + vmi.rs;
         %(memacc_code)s;
     }
 
     %(op_wb)s;
     return fault;
+}
+
+}};
+
+def template VlmMicroCompleteAcc {{
+
+Fault
+%(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+                            Trace::InstRecord *traceData) const
+{
+    %(op_decl)s;
+    %(op_rd)s;
+
+    VM_REQUIRED();
+    bool vm_zero = !this->vm &&
+        popcount_in_byte((uint64_t*)tmp_v0_storage, vmi.rs, vmi.re) == 0;
+
+    const uint32_t eew_ = eew;
+    const uint32_t eewb = eew_ / 8;
+    uint32_t mem_size = %(calc_memsize_code)s;
+    if (vmi.rs >= rVl) {
+        mem_size = 0;
+    }
+    mem_size = vm_zero ? 0 : mem_size;
+
+    if (pkt) {
+        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
+        assert(mem_size == pkt->getSize());
+    } else {
+        assert(mem_size == 0);
+    }
+
+    %(divrVl)s;
+
+    for (size_t i = 0; i < mem_size / eewb; i++) {
+        uint32_t vdElemIdx = (vmi.rs % (DPLEN / eew_)) + i;
+        size_t ei = i + vmi.rs;
+        if (%(wb_elem_mask)s) {
+            %(memacc_code)s;
+        }
+    }
+
+    %(tail_agnostic_code)s;
+    %(vfof_get_code)s;
+    %(op_wb)s;
+    return NoFault;
 }
 
 }};
@@ -1122,26 +2638,29 @@ def template VsmConstructor {{
     eew = 8;
     _machInst.width = 0;
     const uint32_t emul = 1;
-    const uint32_t elem_num_per_vreg = VLEN / eew;
+    const uint32_t elem_num_per_bank = DPLEN / eew;
+    const uint32_t vreg_banks = VLEN / DPLEN;
     // panic_if(nf * emul > 8, "invalid nf and emul");
 
-    uint32_t vlmax = 16;
     StaticInstPtr microop;
-
     VectorMicroInfo vmi;
     if (nf == 1) {
-        vmi.rs = 0;
-        vmi.re = vlmax;
-        vmi.microVs3 = VS3;
-        vmi.offset = 0;
-        microop = new Vsm_vMicro(_machInst, 0, vmi);
-        microop->setDelayedCommit();
-        microop->setFlag(IsStore);
+        const uint32_t active_mask_banks = calculateActiveMaskMemBanks(sew, vflmul);
+        for (uint32_t i=0; i<active_mask_banks; i++) {
+            vmi.rs = i * elem_num_per_bank;
+            vmi.re = (i + 1) * elem_num_per_bank;
+            vmi.microVs3 = VS3 * VregBanks + i;
+            vmi.offset = i * DPLENB;
+            microop = new Vsm_vMicro(_machInst, i, vmi);
+            microop->setDelayedCommit();
+            microop->setFlag(IsStore);
+            microop->setNF(nf);
+            this->microops.push_back(microop);
+        }
     } else {
         // TODO
         panic("not implemented");
     }
-    this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();
     this->microops.back()->setLastMicroop();
@@ -1164,6 +2683,7 @@ public:
         vmi = _vmi;
         assert(~vmi.microVs3);
         assert(~vmi.offset);
+        assert(vmi.microVs3 < NumVecStandardRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
@@ -1188,13 +2708,17 @@ def template VsWholeConstructor {{
 %(class_name)s::%(class_name)s(ExtMachInst _machInst)
   : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
+    const size_t vreg_banks = ((VLEN + DPLEN - 1) / DPLEN);
     size_t NFIELDS = machInst.nf + 1;
+    size_t microop_num = vreg_banks * NFIELDS;
     eew = 8;
+    size_t elem_num_per_bank = DPLEN / eew;
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    for (int i = 0; i < NFIELDS; ++i) {
-        vmi.rs = 0;
-        vmi.re = VLEN / eew;
+    for (int i = 0; i < microop_num; ++i) {
+        vmi.rs = elem_num_per_bank * i;
+        vmi.re = elem_num_per_bank * (i + 1);
+        vmi.microVs3 = (VS3 + i / vreg_banks) * VregBanks + (i % vreg_banks);
         microop = new %(class_name)sMicro(_machInst, i, vmi);
         microop->setDelayedCommit();
         microop->setFlag(IsStore);
@@ -1222,8 +2746,10 @@ public:
         vmi = _vmi;
         _numSrcRegs = 0;
         _numDestRegs = 0;
+        assert(vmi.microVs3 < NumVecStandardRegs);
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _machInst.vs3 + _microIdx));
+        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs3));
+        SET_VL_SRC();  // 声明rVl操作数以满足模板要求，但whole register指令不实际使用vl
         this->flags[IsVector] = true;
         this->flags[IsStore] = true;
     }
@@ -1246,23 +2772,43 @@ def template VsStrideConstructor {{
     const uint32_t sew = getSew(_machInst.vtype8.vsew);
     const uint32_t emul = get_emul(eew, sew, vflmul, false);
     const uint32_t elem_num_per_vreg = VLEN / eew;
+    const uint32_t elem_num_per_bank = DPLEN / eew;
+    const uint32_t bytes_per_elem = eew / 8;
+    const uint32_t max_fields_per_store =
+        std::max(1u, static_cast<uint32_t>(DPLENB / bytes_per_elem));
     // panic_if(nf * emul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    uint32_t vlmax = VLEN / sew * vflmul;
+    uint32_t vlmax = calculateVlmax(VLEN, sew, vflmul);
+    if (_machInst.vlKnown) {
+        vlmax = std::min(vlmax, static_cast<uint32_t>(_machInst.vlValue));
+    }
+    vlmax = std::min(vlmax, calculateActiveElemSpan(eew, sew, vflmul));
+    uint32_t store_micro_idx = 0;
+
+    // baseAddr = Rs1 + i*Rs2
+    // mem<eew>[baseAddr+eewb*0] = (vs3+emul*0)<eew>[i];
+    // mem<eew>[baseAddr+eewb*1] = (vs3+emul*1)<eew>[i];
+    // mem<eew>[baseAddr+eewb*nf] = (vs3+emul*nf)<eew>[i];
     for (int i=0; i < vlmax; i++) {
-        for (int fn=0; fn < nf; fn++) {
-            // baseAddr = Rs1 + i*Rs2 + fn * eew / 8
-            // mem<eew>[baseAddr] = (vs3 + fn * emul)<eew>[i];
-            vmi.rs = i;
-            vmi.re = i+1;
-            vmi.fn = fn;
-            vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
-            vmi.offset = fn * eew / 8;
-            microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
+        vmi.rs = i;
+        vmi.re = (i + 1);
+        uint32_t arch_reg = VS3 + i / elem_num_per_vreg;
+        uint32_t bank = (i % elem_num_per_vreg) / elem_num_per_bank;
+        vmi.microVs3 = arch_reg * VregBanks + bank;
+        for (uint32_t fbase = 0; fbase < static_cast<uint32_t>(nf);
+             fbase += max_fields_per_store) {
+            const uint32_t field_writes = std::min(
+                max_fields_per_store, static_cast<uint32_t>(nf) - fbase);
+            vmi.fn = 0;
+            vmi.microVs3 = arch_reg * VregBanks + bank + fbase * emul * VregBanks;
+            vmi.offset = fbase * bytes_per_elem;
+            microop = new %(class_name)sMicro(_machInst, field_writes,
+                                              store_micro_idx++, vmi);
             microop->setDelayedCommit();
             microop->setFlag(IsStore);
+            microop->setNF(nf);
             this->microops.push_back(microop);
         }
     }
@@ -1279,23 +2825,32 @@ class %(class_name)s : public %(base_class)s
 {
 private:
     // rs1, rs2, vs3, vm
-    RegId srcRegIdxArr[8];
+    RegId srcRegIdxArr[16];
     RegId destRegIdxArr[0];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
-        : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s,  _microIdx)
+    %(class_name)s(ExtMachInst _machInst, uint8_t vsrc_num, uint8_t _microIdx, VectorMicroInfo& _vmi)
+        : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
         vmi = _vmi;
         assert(~vmi.microVs3);
         assert(~vmi.offset);
+        assert(vmi.microVs3 < NumVecStandardRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs3));
+        vregsrcIdx = _numSrcRegs;
+        vregsrcNum = vsrc_num;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        for (uint8_t i=0; i<vregsrcNum; i++) {
+            RegIndex src_idx = vmi.microVs3 + i * emul * VregBanks;
+            assert(src_idx < NumVecStandardRegs);
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, src_idx));
+        }
         SET_VL_SRC();
         SET_VM_SRC();
+        this->flags[IsVector] = true;
         this->flags[IsStore] = true;
     }
 
@@ -1315,34 +2870,51 @@ template<typename ElemType>
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
     const int32_t nf = _machInst.nf + 1;
-    const uint32_t emul = get_emul(eew, sew, vflmul, false);
-    uint32_t flmul = vflmul < 1 ? 1 : vflmul;
+    const uint32_t emul = get_emul(sew, sew, vflmul, false);    // 注意vsrc使用sew
+    const uint32_t flmul = vflmul < 1 ? 1 : vflmul;
     const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t elem_num_per_bank = DPLEN / sew;
+    const uint32_t vs2_elts_per_vreg = VLEN / eew;
+    const uint32_t vs2_elts_per_bank = DPLEN / eew;
+    const uint32_t bytes_per_elem = sew / 8;
+    const uint32_t max_fields_per_store =
+        std::max(1u, static_cast<uint32_t>(DPLENB / bytes_per_elem));
     // panic_if(nf * flmul > 8, "invalid nf and emul");
 
     StaticInstPtr microop;
     VectorMicroInfo vmi;
-    uint32_t vlmax = VLEN / sew * vflmul;
+    uint32_t vlmax = calculateVlmax(VLEN, sew, vflmul);
+    if (_machInst.vlKnown) {
+        vlmax = std::min(vlmax, static_cast<uint32_t>(_machInst.vlValue));
+    }
+    vlmax = std::min(vlmax, calculateActiveElemSpan(sew, sew, vflmul));
+    uint32_t store_micro_idx = 0;
     for (int i=0; i < vlmax; i++) {
-        // can be optimized
-        for (int fn=0; fn<nf; fn++) {
-            // baseAddr = Rs1 + fn * sew / 8
-            // mem<sew>[baseAddr + vs2<eew>[i]] = (vs3 + fn * flmul)<sew>[i]
-            vmi.fn = fn;
-            vmi.rs = i;
-            vmi.re = i+1;
-            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
-            vmi.microVs3 = elem_gen_idx(VS3 + fn * flmul, i, sew / 8);
-            vmi.offset = fn * sew / 8;
-            if (vmi.microVs2 >= 32 || vmi.microVs3 >= 32) {
-                break;
-            }
-            microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
-            microop->setFlag(IsDelayedCommit);
+        vmi.rs = i;
+        vmi.re = (i + 1);
+        uint32_t arch_vs2 = elem_gen_idx(VS2, i, eew / 8);
+        uint32_t arch_vs3 = VS3 + i / elem_num_per_vreg;
+        vmi.microVs2 = arch_vs2 * VregBanks + (i % vs2_elts_per_vreg) / vs2_elts_per_bank;
+        vmi.microVs3 = arch_vs3 * VregBanks + (i % elem_num_per_vreg) / elem_num_per_bank;
+        for (uint32_t fbase = 0; fbase < static_cast<uint32_t>(nf);
+             fbase += max_fields_per_store) {
+            const uint32_t field_writes = std::min(
+                max_fields_per_store, static_cast<uint32_t>(nf) - fbase);
+            vmi.fn = 0;
+            vmi.microVs3 =
+                arch_vs3 * VregBanks +
+                (i % elem_num_per_vreg) / elem_num_per_bank +
+                fbase * emul * VregBanks;
+            vmi.offset = fbase * bytes_per_elem;
+            microop = new %(class_name)sMicro<ElemType>(
+                _machInst, field_writes, store_micro_idx++, vmi);
+            microop->setDelayedCommit();
             microop->setFlag(IsStore);
+            microop->setNF(nf);
             this->microops.push_back(microop);
         }
     }
+
     this->microops.front()->setFlag(IsFirstMicroop);
     this->microops.back()->setFlag(IsLastMicroop);
     this->flags[IsVector] = true;
@@ -1357,10 +2929,10 @@ class %(class_name)s : public %(base_class)s
 {
 private:
     // rs1, vs2, vs3, vm
-    RegId srcRegIdxArr[8];
+    RegId srcRegIdxArr[16];
     RegId destRegIdxArr[0];
 public:
-    %(class_name)s(ExtMachInst _machInst, uint32_t _microIdx, VectorMicroInfo& _vmi)
+    %(class_name)s(ExtMachInst _machInst, uint8_t vsrc_num, uint8_t _microIdx, VectorMicroInfo& _vmi)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
     {
         %(set_reg_idx_arr)s;
@@ -1369,14 +2941,23 @@ public:
         assert(~vmi.microVs2);
         assert(~vmi.microVs3);
         assert(~vmi.offset);
+        assert(vmi.microVs2 < NumVecStandardRegs);
+        assert(vmi.microVs3 < NumVecStandardRegs);
         _numSrcRegs = 0;
         _numDestRegs = 0;
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs2));
-        // We treat agnostic as undistrubed
-        setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, vmi.microVs3));
+        vregsrcIdx = _numSrcRegs;
+        vregsrcNum = vsrc_num;
+        const uint32_t emul = get_emul(sew, sew, vflmul, false);  // 注意vsrc使用sew
+        for (uint8_t i=0; i<vregsrcNum; i++) {
+            RegIndex src_idx = vmi.microVs3 + i * emul * VregBanks;
+            assert(src_idx < NumVecStandardRegs);
+            setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, src_idx));
+        }
         SET_VL_SRC();
         SET_VM_SRC();
+        this->flags[IsVector] = true;
         this->flags[IsStore] = true;
     }
 
@@ -1390,25 +2971,189 @@ public:
 }};
 
 def template VMemTemplateDecodeBlock {{
+    {
+        const uint32_t sew = 8 << machInst.vtype8.vsew;
+        const float vflmul = getVflmul(machInst.vtype8.vlmul);
+        const uint32_t eew = width_EEW(machInst.width);
+        const int32_t nf = machInst.nf + 1;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        const uint32_t flmul = vflmul < 1 ? 1 : (uint32_t)vflmul;
+        if (emul > 8 || emul * nf > 8) {
+            return new Unknown(machInst);
+        }
+        uint32_t max_reg = machInst.vd + nf * flmul - 1;
+        if (max_reg >= 32) {
+            return new Unknown(machInst);
+        }
 
-switch(machInst.vtype8.vsew) {
-    case 0b000: {
-        return new %(class_name)s<uint8_t>(machInst);
+        switch(machInst.vtype8.vsew) {
+            case 0b000: return new %(class_name)s<uint8_t>(machInst);
+            case 0b001: return new %(class_name)s<uint16_t>(machInst);
+            case 0b010: return new %(class_name)s<uint32_t>(machInst);
+            case 0b011: return new %(class_name)s<uint64_t>(machInst);
+            default: return new Unknown(machInst);
+        }
     }
-    case 0b001: {
-        return new %(class_name)s<uint16_t>(machInst);
-    }
-    case 0b010: {
-        return new %(class_name)s<uint32_t>(machInst);
-    }
-    case 0b011: {
-        return new %(class_name)s<uint64_t>(machInst);
-    }
-    default: GEM5_UNREACHABLE;
-}
-
 }};
 
-def template VleffDecodeBlock {{
-    return new %(class_name)s(machInst);
+def template VMemValidateDecodeBlock {{
+    {
+        const uint32_t sew = 8 << machInst.vtype8.vsew;
+        const float vflmul = getVflmul(machInst.vtype8.vlmul);
+        const uint32_t eew = width_EEW(machInst.width);
+        const int32_t nf = machInst.nf + 1;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        if (emul > 8 || emul * nf > 8) {
+            return new Unknown(machInst);
+
+        }
+
+        // Validate segment destination fields with EMUL granularity.
+        // This matches stride/index decode behavior and avoids over-strict
+        // alignment on whole-group checks for fractional LMUL cases.
+        for (int i = 0; i < nf; i++) {
+            uint32_t field_start = machInst.vd + i * emul;
+            if (!check_vreg_idx_valid(field_start, emul, true)) {
+                return new Unknown(machInst);
+            }
+        }
+
+        return new %(class_name)s(machInst);
+    }
+}};
+
+def template VlWholeDecodeBlock {{
+    {
+        const int32_t nf = machInst.nf + 1;
+        if (!check_vreg_idx_valid(machInst.vd, nf, true)) {
+            return new Unknown(machInst);
+        }
+
+        return new %(class_name)s(machInst);
+    }
+}};
+
+def template VsWholeDecodeBlock {{
+    {
+        const int32_t nf = machInst.nf + 1;
+        if (!check_vreg_idx_valid(machInst.vs3, nf, true)) {
+            return new Unknown(machInst);
+        }
+
+        return new %(class_name)s(machInst);
+    }
+}};
+
+def template VlStrideDecodeBlock {{
+    {
+        const uint32_t sew = 8 << machInst.vtype8.vsew;
+        const float vflmul = getVflmul(machInst.vtype8.vlmul);
+        const uint32_t eew = width_EEW(machInst.width);
+        const int32_t nf = machInst.nf + 1;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        if (emul > 8 || emul * nf > 8) {
+            return new Unknown(machInst);
+        }
+
+        // Segment alignment is checked per-field with EMUL granularity.
+        for (int i = 0; i < nf; i++) {
+            uint32_t field_start = machInst.vd + i * emul;
+            if (!check_vreg_idx_valid(field_start, emul, true)) {
+                return new Unknown(machInst);
+            }
+        }
+
+        return new %(class_name)s(machInst);
+    }
+}};
+
+def template VlIndexDecodeBlock {{
+    {
+        const uint32_t sew = 8 << machInst.vtype8.vsew;
+        const float vflmul = getVflmul(machInst.vtype8.vlmul);
+        const uint32_t eew = width_EEW(machInst.width);
+        const int32_t nf = machInst.nf + 1;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        const uint32_t seg_emul = get_emul(sew, sew, vflmul, false);
+        const uint32_t vs2_regs = std::max<uint32_t>(1, (uint32_t)((float)eew * vflmul / (float)sew));
+
+        if (emul > 8 || seg_emul * nf > 8) {
+            return new Unknown(machInst);
+        }
+
+        for (int i = 0; i < nf; i++) {
+            uint32_t field_start = machInst.vd + i * seg_emul;
+            if (!check_vreg_idx_valid(field_start, seg_emul, true)) {
+                return new Unknown(machInst);
+            }
+        }
+        if (!check_vreg_idx_valid(machInst.vs2, vs2_regs, true)) {
+            return new Unknown(machInst);
+        }
+
+        switch(machInst.vtype8.vsew) {
+            case 0b000: return new %(class_name)s<uint8_t>(machInst);
+            case 0b001: return new %(class_name)s<uint16_t>(machInst);
+            case 0b010: return new %(class_name)s<uint32_t>(machInst);
+            case 0b011: return new %(class_name)s<uint64_t>(machInst);
+            default: return new Unknown(machInst);
+        }
+    }
+}};
+
+def template VsStrideDecodeBlock {{
+    {
+        const uint32_t sew = 8 << machInst.vtype8.vsew;
+        const float vflmul = getVflmul(machInst.vtype8.vlmul);
+        const uint32_t eew = width_EEW(machInst.width);
+        const int32_t nf = machInst.nf + 1;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        if (emul > 8 || emul * nf > 8) {
+            return new Unknown(machInst);
+        }
+
+        // Segment alignment is checked per-field with EMUL granularity.
+        for (int i = 0; i < nf; i++) {
+            uint32_t field_start = machInst.vs3 + i * emul;
+            if (!check_vreg_idx_valid(field_start, emul, true)) {
+                return new Unknown(machInst);
+            }
+        }
+
+        return new %(class_name)s(machInst);
+    }
+}};
+
+def template VsIndexDecodeBlock {{
+    {
+        const uint32_t sew = 8 << machInst.vtype8.vsew;
+        const float vflmul = getVflmul(machInst.vtype8.vlmul);
+        const uint32_t eew = width_EEW(machInst.width);
+        const int32_t nf = machInst.nf + 1;
+        const uint32_t emul = get_emul(eew, sew, vflmul, false);
+        const uint32_t seg_emul = get_emul(sew, sew, vflmul, false);
+        const uint32_t vs2_regs = std::max<uint32_t>(1, (uint32_t)((float)eew * vflmul / (float)sew));
+
+        if (emul > 8 || seg_emul * nf > 8) {
+            return new Unknown(machInst);
+        }
+
+        for (int i = 0; i < nf; i++) {
+            uint32_t field_start = machInst.vs3 + i * seg_emul;
+            if (!check_vreg_idx_valid(field_start, seg_emul, true)) {
+                return new Unknown(machInst);
+            }
+        }
+        if (!check_vreg_idx_valid(machInst.vs2, vs2_regs, true)) {
+            return new Unknown(machInst);
+        }
+
+        switch(machInst.vtype8.vsew) {
+            case 0b000: return new %(class_name)s<uint8_t>(machInst);
+            case 0b001: return new %(class_name)s<uint16_t>(machInst);
+            case 0b010: return new %(class_name)s<uint32_t>(machInst);
+            case 0b011: return new %(class_name)s<uint64_t>(machInst);
+            default: return new Unknown(machInst);
+        }
+    }
 }};

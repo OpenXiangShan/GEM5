@@ -151,6 +151,7 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
                             reg_classes.at(VecElemClass).numRegs() /
                             reg_classes.at(VecRegClass).numRegs()) +
                     params.numPhysVecPredRegs +
+                    params.numPhysVecBufRegs +
                     params.numPhysCCRegs +
                     params.numPhysRMiscRegs;
 

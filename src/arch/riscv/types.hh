@@ -54,11 +54,22 @@ namespace RiscvISA
 
 constexpr auto XLEN = sizeof(RegVal) * 8;
 
-constexpr unsigned NumVecElemPerVecReg = 2;
 using VecElem = uint64_t;
-constexpr size_t VLENB = NumVecElemPerVecReg * sizeof(VecElem);
-constexpr size_t VLEN = VLENB * 8;
+
+constexpr size_t VLEN = 256;
+constexpr size_t VLENB = VLEN / 8;
 constexpr uint32_t ELEN = sizeof(VecElem) * 8;
+
+constexpr uint32_t DPLEN = 128;
+constexpr uint32_t DPLENB = DPLEN / 8;
+
+constexpr uint32_t VregBanks = VLEN / DPLEN;
+
+constexpr size_t VBUF_SIZE = DPLENB;
+
+constexpr unsigned NumVecElemPerVecReg = DPLENB / sizeof(VecElem);
+
+constexpr unsigned NumArchVecElemPerReg = VLENB / sizeof(VecElem);
 
 
 typedef uint32_t MachInst;
@@ -180,6 +191,12 @@ BitUnion64(ExtMachInst)
     Bitfield<19, 15>    uimm_vsetivli;
     // vsetvl
     Bitfield<31, 25>    bit31_25;
+
+    // Known VL for micro-op splitting optimization.
+    // Set by the decoder when VL is deterministic (e.g. vsetivli,
+    // vsetvli with rs1=x0).
+    Bitfield<41>        vlKnown;
+    Bitfield<51, 42>    vlValue;
 
 EndBitUnion(ExtMachInst)
 

@@ -54,6 +54,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                          unsigned _numPhysicalFloatRegs,
                          unsigned _numPhysicalVecRegs,
                          unsigned _numPhysicalVecPredRegs,
+                         unsigned _numPhysicalVecBufRegs,
                          unsigned _numPhysicalCCRegs,
                          unsigned _numPhysicalRMiscRegs,
                          const BaseISA::RegClasses &reg_classes)
@@ -64,6 +65,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                   reg_classes.at(VecElemClass).numRegs() /
                   reg_classes.at(VecRegClass).numRegs())),
       vecPredRegFile(reg_classes.at(VecPredRegClass), _numPhysicalVecPredRegs),
+      vecBufRegFile(reg_classes.at(VecBufRegClass), _numPhysicalVecBufRegs),
       ccRegFile(reg_classes.at(CCRegClass), _numPhysicalCCRegs),
       rMiscRegFile(reg_classes.at(RMiscRegClass), _numPhysicalRMiscRegs),
       numPhysicalIntRegs(_numPhysicalIntRegs),
@@ -73,6 +75,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                   reg_classes.at(VecElemClass).numRegs() /
                   reg_classes.at(VecRegClass).numRegs())),
       numPhysicalVecPredRegs(_numPhysicalVecPredRegs),
+      numPhysicalVecBufRegs(_numPhysicalVecBufRegs),
       numPhysicalCCRegs(_numPhysicalCCRegs),
       numPhysicalRMiscRegs(_numPhysicalRMiscRegs),
       totalNumRegs(_numPhysicalIntRegs
@@ -80,6 +83,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                    + _numPhysicalVecRegs
                    + numPhysicalVecElemRegs
                    + _numPhysicalVecPredRegs
+                   + _numPhysicalVecBufRegs
                    + _numPhysicalCCRegs
                    + numPhysicalRMiscRegs)
 {
@@ -112,6 +116,12 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
     // registers; put them onto the predicate free list.
     for (phys_reg = 0; phys_reg < numPhysicalVecPredRegs; phys_reg++) {
         vecPredRegIds.emplace_back(VecPredRegClass, phys_reg, flat_reg_idx++);
+    }
+
+    // Vector buffer registers are temporary physical registers used by RVV
+    // banked micro-ops.
+    for (phys_reg = 0; phys_reg < numPhysicalVecBufRegs; phys_reg++) {
+        vecBufRegIds.emplace_back(VecBufRegClass, phys_reg, flat_reg_idx++);
     }
 
     // The rest of the registers are the condition-code physical
@@ -177,6 +187,11 @@ PhysRegFile::initFreeList(UnifiedFreeList *freeList)
     }
     freeList->addRegs(vecPredRegIds.begin(), vecPredRegIds.end());
 
+    for (reg_idx = 0; reg_idx < numPhysicalVecBufRegs; reg_idx++) {
+        assert(vecBufRegIds[reg_idx].index() == reg_idx);
+    }
+    freeList->addRegs(vecBufRegIds.begin(), vecBufRegIds.end());
+
     // The rest of the registers are the condition-code physical
     // registers; put them onto the condition-code free list.
     for (reg_idx = 0; reg_idx < numPhysicalCCRegs; reg_idx++) {
@@ -205,6 +220,8 @@ PhysRegFile::getRegIds(RegClassType cls)
         return std::make_pair(vecElemIds.begin(), vecElemIds.end());
       case VecPredRegClass:
         return std::make_pair(vecPredRegIds.begin(), vecPredRegIds.end());
+      case VecBufRegClass:
+        return std::make_pair(vecBufRegIds.begin(), vecBufRegIds.end());
       case CCRegClass:
         return std::make_pair(ccRegIds.begin(), ccRegIds.end());
       case MiscRegClass:
@@ -227,6 +244,8 @@ PhysRegFile::getTrueId(PhysRegIdPtr reg)
         return &vecRegIds[reg->index()];
     case VecElemClass:
         return &vecElemIds[reg->index()];
+    case VecBufRegClass:
+        return &vecBufRegIds[reg->index()];
     default:
         panic_if(!reg->is(VecElemClass),
             "Trying to get the register of a %s register", reg->className());

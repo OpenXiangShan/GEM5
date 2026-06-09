@@ -87,13 +87,14 @@ def operands {{
     'Fp2': FloatRegOp('df', 'FP2 + 8', 'IsFloating', 2),
     'Fp2_bits': FloatRegOp('ud', 'FP2 + 8', 'IsFloating', 2),
 
-    'Vd':  VecRegOp('vc', 'VD', 'IsVector', 1),
-    'Vs1': VecRegOp('vc', 'VS1', 'IsVector', 2),
-    'Vs2': VecRegOp('vc', 'VS2', 'IsVector', 3),
-    'Vs3': VecRegOp('vc', 'VS3', 'IsVector', 4),
+    'Vd':  VecRegOp('vc', 'VD * VregBanks', 'IsVector', 1),
+    'Vs1': VecRegOp('vc', 'VS1 * VregBanks', 'IsVector', 2),
+    'Vs2': VecRegOp('vc', 'VS2 * VregBanks', 'IsVector', 3),
+    'Vs3': VecRegOp('vc', 'VS3 * VregBanks', 'IsVector', 4),
     'Vfof': VecRegOp('vc', 'VecFofTempReg', 'IsVector', 5),
 
     'rVl' : RMiscRegOp('ud', 'VecRenamedVLReg', None, 10),
+    'rVs' : RMiscRegOp('ud', 'VecRenamedVSTARTReg', None, 11),
 
 
 #Memory Operand

@@ -1566,6 +1566,9 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
         if (dst->isFixedMapping()) {
             continue;
         }
+        if (dst->getNumPinnedWritesToComplete() != 1) {
+            continue;
+        }
         scoreboard[dst->flatIndex()] = true;
     }
     for (auto it : issueQues) {
@@ -1584,6 +1587,9 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
     for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
+            continue;
+        }
+        if (dst->getNumPinnedWritesToComplete() != 1) {
             continue;
         }
         bypassScoreboard[dst->flatIndex()] = true;

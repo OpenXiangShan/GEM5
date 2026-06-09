@@ -27,12 +27,86 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+// ---------------------------------------------------------------------------
+// VLReadOp: csrr rd, vl  (FUNCT12=0xC20)
+// Reads the renamed VL register (VecRenamedVLReg) into an integer dest
+// register without any pipeline serialization.
+// ---------------------------------------------------------------------------
+def template VLReadDeclare {{
+    class %(class_name)s : public VConfOp
+    {
+      private:
+        RegId srcRegIdxArr[1];
+        RegId destRegIdxArr[1];
+      public:
+        %(class_name)s(ExtMachInst machInst);
+        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        using VConfOp::generateDisassembly;
+    };
+}};
+
+def template VLReadConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
+        : VConfOp("%(mnemonic)s", machInst, IntAluOp)
+    {
+        setRegIdxArrays(
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+            reinterpret_cast<RegIdArrayPtr>(
+                &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+        // dest: integer Rd (handle x0)
+        setDestRegIdx(_numDestRegs++,
+            ((RD) == 0) ? RegId() : RegId(IntRegClass, RD));
+        _numTypedDestRegs[IntRegClass]++;
+        // src: renamed VL register
+        SET_VL_SRC();
+    }
+}};
+
+def template VLReadExecute {{
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+        Trace::InstRecord *traceData) const
+    {
+        assert(vlsrcIdx >= 0);
+        const RegVal vl = xc->getRegOperand(this, vlsrcIdx);
+        xc->setRegOperand(this, 0, vl);
+        if (traceData)
+            traceData->setData(vl);
+        return NoFault;
+    }
+}};
+
+def format VLReadOp() {{
+    iop = InstObjParams(name, Name, 'VConfOp', {}, [])
+    header_output  = VLReadDeclare.subst(iop)
+    decoder_output = VLReadConstructor.subst(iop)
+    decode_block   = BasicDecode.subst(iop)
+    exec_output    = VLReadExecute.subst(iop)
+}};
+
+// ---------------------------------------------------------------------------
+
 def format VConfOp(code, *flags) {{
 
     if name == "vsetvli" or name == "vsetivli":
         vtypeIsImm = 'true'
     else:
         vtypeIsImm = 'false'
+
+    if name == "vsetvl":
+        setVlSrc = 'SET_VL_SRC();'
+        currentVlExpr = 'rVl'
+    elif name == "vsetvli":
+        setVlSrc = '''
+        if (RD == 0 && RS1 == 0) {
+            SET_VL_SRC();
+        }
+        '''
+        currentVlExpr = '(((RD) == 0 && (RS1) == 0) ? rVl : 0)'
+    else:
+        setVlSrc = ''
+        currentVlExpr = '0'
 
     earlyVtype = "-1";
     if name == "vsetvli":
@@ -43,6 +117,8 @@ def format VConfOp(code, *flags) {{
     iop = InstObjParams(name, Name, 'VConfOp',
                         {
                             'code' : code,
+                            'setVlSrc' : setVlSrc,
+                            'currentVlExpr' : currentVlExpr,
                             'vtypeIsImm' : vtypeIsImm,
                             'earlyVtype' : earlyVtype
                         },
@@ -79,10 +155,7 @@ def template VConfConstructor {{
         setDestRegIdx(_numDestRegs++, VecRenamedVTYPEReg); // 2
         _numTypedDestRegs[RMiscRegClass]++;
 
-        SET_VL_SRC();
-        // renamed vtype
-        vtypesrcIdx = _numSrcRegs;
-        setSrcRegIdx(_numSrcRegs++, VecRenamedVTYPEReg);
+        %(setVlSrc)s
         vtypeIsImm = %(vtypeIsImm)s;
         earlyVtype = %(earlyVtype)s;
     }
@@ -95,38 +168,65 @@ def template VConfExecute {{
     {
         auto tc = xc->tcBase();
 
+        // Per RISC-V V spec: any vector instruction (including vset*vl*)
+        // raises Illegal Instruction when mstatus.VS = Off (0).
+        STATUS mstatus = xc->readMiscReg(MISCREG_STATUS);
+        if (mstatus.vs == 0) {
+            return std::make_shared<IllegalInstFault>(
+                    "Vector instruction with mstatus.VS=Off\n",
+                    machInst);
+        }
+
         %(op_decl)s;
         %(op_rd)s;
         %(code)s;
 
-        assert(vtypesrcIdx > 0);
-        VTYPE current_vtype = xc->getRegOperand(this, vtypesrcIdx);
-
         tc->setMiscReg(MISCREG_VSTART, 0);
 
         uint32_t vlen = xc->readMiscReg(MISCREG_VLENB) * 8;
-        uint32_t vlmax = getVlmax(requested_vtype, vlen);
+        uint32_t vlmax = 0;
 
         VTYPE new_vtype = requested_vtype;
         {
-            vlmax = getVlmax(new_vtype, vlen);
-            float vflmul = getVflmul(new_vtype.vlmul);
-            uint32_t sew = getSew(new_vtype.vsew);
-            uint32_t new_vill =
-                !(vflmul >= 0.125 && vflmul <= 8) ||
-                sew > std::min(vflmul, 1.0f) * ELEN ||
-                bits(requested_vtype, 30, 8) != 0;
-
-            if (new_vill) {
+            // 首先检查输入的vill位，如果已经设置则直接认为非法
+            if (new_vtype.vill) {
                 vlmax = 0;
                 new_vtype = 0;
                 new_vtype.vill = 1;
+            } else {
+                // 先验证vtype的合法性，避免在getSew/getVlmax中触发断言
+                uint32_t vsew_bits = new_vtype.vsew;
+                int64_t vlmul_bits = sext<3>(new_vtype.vlmul);
+                float vflmul = vlmul_bits >= 0 ? (1 << vlmul_bits) : 1.0f / (1 << -vlmul_bits);
+                bool vsew_valid = (vsew_bits <= 3);
+                bool vlmul_valid = (vflmul >= 0.125 && vflmul <= 8);
+                // Check reserved bits [62:8] (bit 63 is vill, bits 7:0 are vtype fields)
+                bool reserved_valid = (bits(requested_vtype, 62, 8) == 0);
+
+                uint32_t new_vill = 0;
+                if (vsew_valid && vlmul_valid && reserved_valid) {
+                    uint32_t sew = getSew(vsew_bits);
+                    vlmax = getVlmax(new_vtype, vlen);
+                    float min_vflmul = std::min(vflmul, 1.0f);
+                    float sew_limit = min_vflmul * ELEN;
+                    if (sew > sew_limit) {
+                        new_vill = 1;
+                    }
+                } else {
+                    new_vill = 1;
+                }
+
+                if (new_vill) {
+                    vlmax = 0;
+                    new_vtype = 0;
+                    new_vtype.vill = 1;
+                }
             }
         }
 
         xc->setMiscReg(MISCREG_VTYPE, new_vtype);
 
-        uint32_t current_vl = rVl;
+        uint32_t current_vl = %(currentVlExpr)s;
         uint32_t new_vl = 0;
         if (vlmax == 0) {
             new_vl = 0;

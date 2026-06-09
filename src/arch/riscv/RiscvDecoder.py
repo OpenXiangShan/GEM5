@@ -23,9 +23,14 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from m5.params import *
 from m5.objects.InstDecoder import InstDecoder
 
 class RiscvDecoder(InstDecoder):
     type = 'RiscvDecoder'
     cxx_class = 'gem5::RiscvISA::Decoder'
     cxx_header = "arch/riscv/decoder.hh"
+
+    vtype_pred_entries = Param.Unsigned(64,
+        "Number of entries in the vtype predictor table for register-form "
+        "vsetvl instructions. Must be a power of two.")

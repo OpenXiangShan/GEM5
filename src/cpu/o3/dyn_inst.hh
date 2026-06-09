@@ -1569,6 +1569,13 @@ class DynInst : public ExecContext, public RefCounted
                     setRegOperand(staticInst.get(), idx, &val);
                 }
                 break;
+              case VecBufRegClass:
+                {
+                    TheISA::VecBufRegContainer val;
+                    cpu->getReg(prev_phys_reg.PhyReg(), &val);
+                    setRegOperand(staticInst.get(), idx, &val);
+                }
+                break;
               case InvalidRegClass:
               case MiscRegClass:
                 // no need to forward misc reg values

@@ -169,9 +169,13 @@ class MinorDefaultVecFU(MinorFU):
             'VectorIndexedLoad', 'VectorIndexedStore',
             'VectorUnitStrideFaultOnlyFirstLoad',
             'VectorWholeRegisterLoad', 'VectorWholeRegisterStore',
-            'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
-            'VectorIntegerReduce', 'VectorFloatReduce',
-            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig'
+            'VectorArith', 'VectorSpecialFunc', 'VectorMult',
+            'VectorMultAcc', 'VectorReduction', 'VectorDiv',
+            'VectorMisc0', 'VectorMisc1', 'VectorPermute',
+            'VectorFloatArith', 'VectorFloatCmp', 'VectorFloatMult',
+            'VectorFloatMultAcc', 'VectorFloatDiv',
+            'VectorConvertF2F', 'VectorConvertF2I',
+            'VectorConvertI2F', 'VectorConvertI2I', 'VectorConfig'
         ])
     opLat = 1
 

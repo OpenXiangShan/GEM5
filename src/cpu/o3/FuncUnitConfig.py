@@ -104,13 +104,24 @@ class FP_MAC(FUDesc):
     opList = [ OpDesc(opClass='FloatMultAcc', opLat=4)]
 
 class SIMD_Unit(FUDesc):
-    opList = [ OpDesc(opClass='VectorIntegerArith'),
+    opList = [ OpDesc(opClass='VectorArith'),
+               OpDesc(opClass='VectorSpecialFunc'),
+               OpDesc(opClass='VectorMult'),
+               OpDesc(opClass='VectorMultAcc'),
+               OpDesc(opClass='VectorReduction'),
+               OpDesc(opClass='VectorDiv', pipelined=False),
+               OpDesc(opClass='VectorMisc0'),
+               OpDesc(opClass='VectorMisc1'),
+               OpDesc(opClass='VectorPermute'),
                OpDesc(opClass='VectorFloatArith'),
-               OpDesc(opClass='VectorFloatConvert'),
-               OpDesc(opClass='VectorIntegerReduce'),
-               OpDesc(opClass='VectorFloatReduce'),
-               OpDesc(opClass='VectorMisc'),
-               OpDesc(opClass='VectorIntegerExtension')]
+               OpDesc(opClass='VectorFloatCmp'),
+               OpDesc(opClass='VectorFloatMult'),
+               OpDesc(opClass='VectorFloatMultAcc'),
+               OpDesc(opClass='VectorFloatDiv', pipelined=False),
+               OpDesc(opClass='VectorConvertF2F'),
+               OpDesc(opClass='VectorConvertF2I'),
+               OpDesc(opClass='VectorConvertI2F'),
+               OpDesc(opClass='VectorConvertI2I')]
 
 class ReadPort(FUDesc):
     opList = [ OpDesc(opClass='MemRead', opLat=4), # actually execute cycle = loadpipe's stage

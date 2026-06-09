@@ -492,6 +492,9 @@ class ISAParser(Grammar):
         self.files = {}
         self.splits = {}
 
+        # Number of parallel compilation units for template instantiation.
+        self.templateSplits = 32
+
         # isa_name / namespace identifier from namespace declaration.
         # before the namespace declaration, None.
         self.isa_name = None
@@ -588,6 +591,210 @@ class ISAParser(Grammar):
 
         return f
 
+    def extract_template_impls_from_header(self):
+        """Extract template method implementations from the header (.hh.inc)
+        into a separate impl file (decoder-ns-impl.hh.inc).
+
+        Template class *declarations* stay in decoder-ns.hh.inc (included
+        everywhere via decoder.hh).  Template method *definitions* go into
+        decoder-ns-impl.hh.inc, which is only #include'd by decoder.cc.
+        This way the 4-5 other translation units that include decoder.hh
+        only parse the slim declarations, while decoder.cc still gets
+        implicit template instantiation from the decode block.
+        """
+        import os
+        hdr_path = os.path.join(self.output_dir, 'decoder-ns.hh.inc')
+        impl_path = os.path.join(self.output_dir, 'decoder-ns-impl.hh.inc')
+
+        if not os.path.exists(hdr_path):
+            return
+
+        with open(hdr_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # Pre-process: resolve compile-time-constant #if directives that
+        # result from template parameter substitution (e.g. %(is_vecIndex)s
+        # expanding to 'true' or 'false').  These span across template impls
+        # and class declarations and would otherwise break block extraction.
+        def resolve_const_ifs(lines):
+            out = []
+            # Stack entries: (is_const, cond_value, in_else)
+            stack = []
+            for line in lines:
+                s = line.strip()
+
+                const_val = None
+                if s == '#if true' or s == '#if !(false)':
+                    const_val = True
+                elif s == '#if false' or s == '#if !(true)':
+                    const_val = False
+
+                if const_val is not None:
+                    stack.append((True, const_val, False))
+                    continue
+
+                if s == '#else' and stack and stack[-1][0]:
+                    is_c, val, _ = stack[-1]
+                    stack[-1] = (is_c, val, True)
+                    continue
+
+                if s == '#endif' and stack and stack[-1][0]:
+                    stack.pop()
+                    continue
+
+                # Determine whether current line is in an active region.
+                skip = False
+                for is_c, val, in_else in stack:
+                    if not is_c:
+                        continue
+                    active = val if not in_else else not val
+                    if not active:
+                        skip = True
+                        break
+
+                if not skip:
+                    out.append(line)
+            return out
+
+        lines = resolve_const_ifs(lines)
+
+        keep = []
+        # Each element of moved_blocks is (class_name, [lines])
+        moved_blocks = []
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            if stripped.startswith('template') and '<' in stripped:
+                j = i + 1
+                while j < len(lines) and lines[j].strip() == '':
+                    j += 1
+
+                if j < len(lines):
+                    next_line = lines[j].strip()
+
+                    if next_line.startswith('class '):
+                        # Template class declaration — keep in header.
+                        brace_depth = 0
+                        k = i
+                        while k < len(lines):
+                            brace_depth += lines[k].count('{')
+                            brace_depth -= lines[k].count('}')
+                            if brace_depth == 0 and k > i \
+                               and '{' in ''.join(lines[i:k+1]):
+                                break
+                            k += 1
+                        keep.extend(lines[i:k+1])
+                        i = k + 1
+                        continue
+                    else:
+                        # Template method or free function impl.
+                        brace_depth = 0
+                        k = i
+                        found_open = False
+                        while k < len(lines):
+                            brace_depth += lines[k].count('{')
+                            brace_depth -= lines[k].count('}')
+                            if '{' in lines[k]:
+                                found_open = True
+                            if found_open and brace_depth == 0:
+                                break
+                            k += 1
+                        block = lines[i:k+1]
+                        # Identify class name (ClassName<T>::method).
+                        # Free template functions lack '::' and stay
+                        # in the header.
+                        cls_name = None
+                        for bl in block:
+                            m = re.match(r'.*?(\w+)<\w+>::', bl)
+                            if m:
+                                cls_name = m.group(1)
+                                break
+                        if cls_name:
+                            moved_blocks.append((cls_name, block))
+                        else:
+                            keep.extend(block)
+                        i = k + 1
+                        continue
+
+            keep.append(line)
+            i += 1
+
+        if not moved_blocks:
+            return
+        moved = []
+        for _, bl in moved_blocks:
+            moved.extend(bl)
+
+        with open(hdr_path, 'w', encoding='utf-8') as f:
+            f.writelines(keep)
+
+        # Group blocks by base class name (strip Micro suffix to keep
+        # Micro+Macro blocks together).
+        from collections import OrderedDict
+        chunks = OrderedDict()  # base_name -> [lines]
+        for cls_name, block in moved_blocks:
+            base = re.sub(r'Micro$', '', cls_name) if cls_name else '_misc'
+            chunks.setdefault(base, []).extend(block)
+
+        # Parse decode block for explicit instantiation pairs.
+        dec_method_path = os.path.join(self.output_dir,
+                                       'decode-method.cc.inc')
+        impl_classes = set(cls for cls, _ in moved_blocks if cls)
+
+        class_inst = {}  # base_name -> list of 'template class X<T>;'
+        if os.path.exists(dec_method_path):
+            dec_content = open(dec_method_path, encoding='utf-8').read()
+            pairs = re.findall(r'new\s+(\w+)<(\w+)>\s*\(', dec_content)
+            seen = set()
+            for cls, typ in pairs:
+                key = (cls, typ)
+                if key not in seen and cls in impl_classes:
+                    seen.add(key)
+                    base = re.sub(r'Micro$', '', cls)
+                    class_inst.setdefault(base, []).append(
+                        'template class %s<%s>;\n' % (cls, typ))
+
+        # Split into N files for parallel compilation.
+        n_splits = self.templateSplits
+        chunk_list = list(chunks.items())
+        # Distribute round-robin by line count for balance.
+        buckets = [[] for _ in range(n_splits)]
+        bucket_sizes = [0] * n_splits
+        for base, clines in sorted(chunk_list, key=lambda x: -len(x[1])):
+            smallest = min(range(n_splits), key=lambda i: bucket_sizes[i])
+            buckets[smallest].append((base, clines))
+            bucket_sizes[smallest] += len(clines)
+
+        for idx in range(n_splits):
+            impl_fn = 'decoder-tpl-%d.cc.inc' % (idx + 1)
+            impl_p = os.path.join(self.output_dir, impl_fn)
+            with open(impl_p, 'w', encoding='utf-8') as f:
+                f.write('// DO NOT EDIT — auto-split template '
+                        'implementations part %d/%d\n\n'
+                        % (idx + 1, n_splits))
+                for base, clines in buckets[idx]:
+                    f.writelines(clines)
+                    for inst_line in class_inst.get(base, []):
+                        f.write(inst_line)
+
+        # Write a placeholder combined impl file (required by scons target).
+        with open(impl_path, 'w', encoding='utf-8') as f:
+            f.write('// DO NOT EDIT\n// Template implementations '
+                    'have been split into decoder-tpl-*.cc.inc\n')
+
+        import sys
+        total_inst = sum(len(v) for v in class_inst.values())
+        print('extract_template_impls: header %d -> %d lines, '
+              '%d impl lines split into %d files (%s), '
+              '%d inst pairs' %
+              (len(lines), len(keep), len(moved), n_splits,
+               '+'.join(str(s) for s in bucket_sizes),
+               total_inst),
+              file=sys.stderr)
+
     # Weave together the parts of the different output sections by
     # #include'ing them into some very short top-level .cc/.hh files.
     # These small files make it much clearer how this tool works, since
@@ -677,6 +884,22 @@ class ISAParser(Grammar):
                 if splits > 1:
                     print('#define __SPLIT %u' % i, file=f)
                 print('#include "%s"' % fn, file=f)
+                print('} // namespace %s' % self.namespace, file=f)
+                print('} // namespace gem5', file=f)
+
+        # template instantiation units (split for parallelism)
+        for i in range(1, self.templateSplits + 1):
+            tpl_inc = 'decoder-tpl-%d.cc.inc' % i
+            tpl_p = os.path.join(self.output_dir, tpl_inc)
+            if not os.path.exists(tpl_p):
+                continue
+            file = 'template-inst-%d.cc' % i
+            with self.open(file) as f:
+                f.write('#include "decoder-g.cc.inc"\n')
+                f.write('#include "decoder.hh"\n')
+                print('namespace gem5\n{\n', file=f)
+                print('namespace %s {' % self.namespace, file=f)
+                print('#include "%s"' % tpl_inc, file=f)
                 print('} // namespace %s' % self.namespace, file=f)
                 print('} // namespace gem5', file=f)
 
@@ -867,6 +1090,8 @@ class ISAParser(Grammar):
 
         for f in self.files.values(): # close ALL the files;
             f.close() # not doing so can cause compilation to fail
+
+        self.extract_template_impls_from_header()
 
         self.write_top_level_files()
 
@@ -1173,9 +1398,10 @@ StaticInstPtr
         '''
         codeObj = t[1]
         if len(t) == 3:
-            # reverse the order of the two blocks
-            codeObj = t[2] # normal inst block
-            codeObj += t[1] # vector inst block
+            codeObj = t[2]
+            codeObj.exec_output += self.split('exec')
+            codeObj.decoder_output += self.split('decoder')
+            codeObj += t[1]
         t[0] = codeObj
 
     def p_decode_block(self, t):
@@ -1528,7 +1754,7 @@ StaticInstPtr
     def open(self, name, bare=False):
         '''Open the output file for writing and include scary warning.'''
         filename = os.path.join(self.output_dir, name)
-        f = open(filename, 'w')
+        f = open(filename, 'w', encoding='utf-8')
         if f:
             if not bare:
                 f.write(ISAParser.scaremonger_template % self)
@@ -1568,7 +1794,7 @@ StaticInstPtr
 
         current_dir = os.path.dirname(filename)
         try:
-            contents = open(filename).read()
+            contents = open(filename, encoding='utf-8').read()
         except OSError:
             error('Error including file "%s"' % filename)
 

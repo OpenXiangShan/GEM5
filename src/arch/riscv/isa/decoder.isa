@@ -2308,6 +2308,8 @@ decode QUADRANT {
                         data |= Rs1_use;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    // csrr rd, vl (CSR_VL): read the renamed VL directly.
+                    0xC20: VLReadOp::csrrs_vl();
                     0x100:csrrs_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)

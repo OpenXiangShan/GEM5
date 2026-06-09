@@ -31,8 +31,6 @@
 #define __ARCH_RISCV_REGS_VECTOR_HH__
 
 #include <cstdint>
-#include <string>
-#include <vector>
 
 #include "arch/generic/vec_pred_reg.hh"
 #include "arch/generic/vec_reg.hh"
@@ -49,36 +47,32 @@ namespace RiscvISA
 {
 
 using VecRegContainer =
-    gem5::VecRegContainer<VLENB>;
+    gem5::VecRegContainer<DPLENB>;
 using vreg_t = VecRegContainer;
 
+using VecBufRegContainer = gem5::VecRegContainer<VBUF_SIZE>;
+// vlseg*ff needs slot_ring >= nf_max=8, and fof_slots == nf, so
+// NumVecBufRegs >= 2 * nf_max = 16, independent of VregBanks.
+constexpr int NumVecBufRegs = 16;
+
 using VecPredReg =
-    gem5::VecPredRegT<VecElem, NumVecElemPerVecReg, false, false>;
+    gem5::VecPredRegT<VecElem, NumArchVecElemPerReg, false, false>;
 using ConstVecPredReg =
-    gem5::VecPredRegT<VecElem, NumVecElemPerVecReg, false, true>;
+    gem5::VecPredRegT<VecElem, NumArchVecElemPerReg, false, true>;
 using VecPredRegContainer = VecPredReg::Container;
 
-const int NumVecStandardRegs = 32;
-const int NumVecInternalRegs = 8;
-const int NumVecRegs = NumVecStandardRegs + NumVecInternalRegs;
+const int NumVecStandardRegs = 32 * VregBanks;
+const int NumVecRegs = NumVecStandardRegs;
 
-const std::vector<std::string> VecRegNames = {
-    "v0",   "v1",   "v2",   "v3",   "v4",   "v5",   "v6",   "v7",
-    "v8",   "v9",   "v10",  "v11",  "v12",  "v13",  "v14",  "v15",
-    "v16",  "v17",  "v18",  "v19",  "v20",  "v21",  "v22",  "v23",
-    "v24",  "v25",  "v26",  "v27",  "v28",  "v29",  "v30",  "v31",
-    "vtmp0", "vtmp1", "vtmp2", "vtmp3", "vtmp4", "vtmp5", "vtmp6", "vtmp7"
-};
-
-const int VecTempReg0 = NumVecStandardRegs;
 
 static inline VecElemRegClassOps<RiscvISA::VecElem>
     vecRegElemClassOps(NumVecElemPerVecReg);
 static inline TypedRegClassOps<RiscvISA::VecRegContainer> vecRegClassOps;
 
-inline const auto VecCompressCntReg = RegId(VecRegClass, NumVecRegs - 1);
+inline const auto VecCompressCntReg = RegId(VecBufRegClass, NumVecBufRegs - 1);
 
 inline const auto VecRenamedVLReg = RegId(RMiscRegClass, rmisc_reg::_VlIdx);
+inline const auto VecRenamedVSTARTReg = RegId(RMiscRegClass, rmisc_reg::_VstartIdx);
 inline const auto VecRenamedVTYPEReg = RegId(RMiscRegClass, rmisc_reg::_VtypeIdx);
 
 BitUnion64(VTYPE)

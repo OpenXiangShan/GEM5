@@ -29,6 +29,7 @@
 
 #include "arch/riscv/decoder.hh"
 #include "arch/riscv/types.hh"
+#include "arch/riscv/utility.hh"
 #include "base/bitfield.hh"
 #include "debug/Decode.hh"
 
@@ -44,6 +45,8 @@ void Decoder::reset()
 {
     machInst = 0;
     emi = 0;
+    vlIsKnown = false;
+    machVl = 0;
     instDone = false;
     outOfBytes = true;
 }
@@ -106,15 +109,26 @@ Decoder::decode(PCStateBase &_next_pc)
     }
 
     emi.vtype8 = this->machVtype & 0xff;
+    emi.vlKnown = this->vlIsKnown ? 1 : 0;
+    emi.vlValue = this->vlIsKnown ? this->machVl : 0;
     StaticInstPtr inst = decode(emi, next_pc.instAddr());
     if (inst->isVectorConfig()) {
         auto vset = static_cast<VConfOp*>(inst.get());
+        vtypeIsPredicted = false;
         if (vset->vtypeIsImm) {
             this->setVtype(vset->earlyVtype);
-            VTYPE new_vtype = vset->earlyVtype;
-        }
-        else {
-            this->clearVtype();
+            updateKnownVl(emi, vset->earlyVtype);
+        } else {
+            uint8_t pred;
+            if (tryPredictVtype(next_pc.instAddr(), pred)) {
+                vtypeIsPredicted  = true;
+                predictedVtypeVal = pred;
+                this->setVtype(pred);  // speculative, verified at IEW
+                updateKnownVl(emi, pred);
+            } else {
+                this->clearVtype();    // cold-start: stall until commit
+                this->vlIsKnown = false;
+            }
         }
     }
 
@@ -135,9 +149,113 @@ Decoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &_next_pc)
 }
 
 void
+Decoder::updateKnownVl(ExtMachInst emi, int earlyVtype) {
+    if (earlyVtype < 0) {
+        this->vlIsKnown = false;
+        return;
+    }
+    VTYPE newVtype = 0;
+    newVtype.vlmul = earlyVtype & 0x7;
+    newVtype.vsew = (earlyVtype >> 3) & 0x7;
+    uint32_t sew_bits = newVtype.vsew;
+    if (sew_bits > 3) {
+        this->vlIsKnown = false;
+        return;
+    }
+    int vlmul_signed = (int32_t)sext<3>(newVtype.vlmul);
+    float vflmul = vlmul_signed >= 0
+        ? (float)(1 << vlmul_signed)
+        : 1.0f / (float)(1 << (-vlmul_signed));
+    uint32_t sew = 8 << sew_bits;
+    uint32_t vlmax = (uint32_t)((float)VLEN / (float)sew * vflmul);
+    if (vlmax < 1) {
+        this->vlIsKnown = false;
+        return;
+    }
+    uint8_t rs1 = emi.rs1;
+    uint8_t rd = emi.rd;
+
+    if (emi.bit31_30 == 3) {
+        // vsetivli: VL = min(uimm, VLMAX)
+        uint32_t uimm = emi.uimm_vsetivli;
+        this->machVl = std::min(uimm, vlmax);
+        this->vlIsKnown = true;
+    } else {
+        // vsetvli/vsetvl
+        if (rs1 == 0 && rd != 0) {
+            this->machVl = vlmax;
+            this->vlIsKnown = true;
+        } else if (rs1 == 0 && rd == 0) {
+            if (this->vlIsKnown) {
+                this->machVl = std::min(this->machVl, vlmax);
+            }
+        } else {
+            this->vlIsKnown = false;
+        }
+    }
+}
+
+void
 Decoder::setVtype(VTYPE vtype) {
     vtypeReady = true;
     this->machVtype = vtype;
+}
+
+void
+Decoder::setVectorState(VTYPE vtype, uint32_t vl, bool vl_known)
+{
+    setVtype(vtype);
+    this->machVl = vl;
+    this->vlIsKnown = vl_known;
+}
+
+void
+Decoder::checkpointVectorState(InstSeqNum seq_num)
+{
+    updateVectorStateCheckpoint(seq_num, machVtype, machVl, vlIsKnown);
+}
+
+void
+Decoder::updateVectorStateCheckpoint(InstSeqNum seq_num, VTYPE vtype,
+                                     uint32_t vl, bool vl_known)
+{
+    for (auto &checkpoint : vectorStateHistory) {
+        if (checkpoint.seqNum == seq_num) {
+            checkpoint.vtype = vtype;
+            checkpoint.vl = vl;
+            checkpoint.vlKnown = vl_known;
+            return;
+        }
+    }
+
+    vectorStateHistory.push_back({seq_num, vtype, vl, vl_known});
+}
+
+void
+Decoder::commitVectorStateCheckpoints(InstSeqNum seq_num)
+{
+    while (!vectorStateHistory.empty() &&
+           vectorStateHistory.front().seqNum <= seq_num) {
+        vectorStateHistory.pop_front();
+    }
+}
+
+void
+Decoder::rollbackVectorState(InstSeqNum seq_num, VTYPE committed_vtype,
+                             uint32_t committed_vl, bool committed_vl_known)
+{
+    while (!vectorStateHistory.empty() &&
+           vectorStateHistory.back().seqNum > seq_num) {
+        vectorStateHistory.pop_back();
+    }
+
+    if (vectorStateHistory.empty()) {
+        setVectorState(committed_vtype, committed_vl, committed_vl_known);
+        return;
+    }
+
+    const auto &checkpoint = vectorStateHistory.back();
+    setVectorState(checkpoint.vtype, checkpoint.vl, checkpoint.vlKnown);
 }
 
 void

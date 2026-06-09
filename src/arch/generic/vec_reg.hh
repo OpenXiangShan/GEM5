@@ -208,10 +208,10 @@ class VecRegContainer
         // When printing for human consumption, break into 4 byte chunks.
         ccprintf(os, "[");
         size_t count = 0;
-        for (auto& b: v.container) {
+        for (auto it = v.container.rbegin(); it != v.container.rend(); ++it) {
             if (count && (count % 4) == 0)
                 os << "_";
-            ccprintf(os, "%02x", b);
+            ccprintf(os, "%02x", *it);
             count++;
         }
         ccprintf(os, "]");

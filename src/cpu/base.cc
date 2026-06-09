@@ -1022,31 +1022,33 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
             bool maybe_error = false;
             int error_idx = 0;
-            for (int i=0; i < RiscvISA::NumVecElemPerVecReg * 32; i++) {
+            for (int i=0; i < RiscvISA::NumArchVecElemPerReg * 32; i++) {
                 if (nemu_val[i] != gem5_val[i]) {
                     // diff_at = ValueDiff;
                     maybe_error = true;
-                    error_idx = (i >> 1) * 2;
+                    error_idx = i / RiscvISA::NumArchVecElemPerReg;
                     break;
                 }
             }
 
             if (maybe_error) {
                 std::string gem5_val_, nemu_val_;
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
+                for (int j=RiscvISA::NumArchVecElemPerReg-1; j>=0; j--) {
+                    gem5_val_ += csprintf("%016lx",
+                        gem5_val[j + error_idx * RiscvISA::NumArchVecElemPerReg]);
                     if (j != 0) {
                         gem5_val_+="_";
                     }
                 }
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
+                for (int j=RiscvISA::NumArchVecElemPerReg-1; j>=0; j--) {
+                    nemu_val_ += csprintf("%016lx",
+                        nemu_val[j + error_idx * RiscvISA::NumArchVecElemPerReg]);
                     if (j != 0) {
                         nemu_val_ += "_";
                     }
                 }
                 warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
-                    (error_idx>>1), nemu_val_, gem5_val_);
+                    error_idx, nemu_val_, gem5_val_);
                 diff_at = ValueDiff;
             }
         }
@@ -1814,7 +1816,7 @@ BaseCPU::displayGem5Regs(ThreadID tid)
     for (size_t i = 0; i < 32; i++)
     {
         str += csprintf("v%02d : ", i);
-        for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+        for (int j=RiscvISA::NumArchVecElemPerReg-1; j>=0; j--) {
             str +=csprintf("%016lx", diffAllStates->gem5RegFile.vr[i]._64[j]);
             if (j != 0) {
                 str+="_";

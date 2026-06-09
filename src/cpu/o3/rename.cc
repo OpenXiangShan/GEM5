@@ -41,6 +41,7 @@
 
 #include "cpu/o3/rename.hh"
 
+#include <algorithm>
 #include <list>
 
 #include "cpu/o3/cpu.hh"
@@ -92,6 +93,149 @@ std::string
 Rename::name() const
 {
     return cpu->name() + ".rename";
+}
+
+bool
+Rename::hasVecBufOperand(const DynInstPtr &inst) const
+{
+    for (int i = 0; i < inst->numDestRegs(); ++i) {
+        if (inst->destRegIdx(i).is(VecBufRegClass)) {
+            return true;
+        }
+    }
+    for (int i = 0; i < inst->numSrcRegs(); ++i) {
+        if (inst->srcRegIdx(i).is(VecBufRegClass)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::shared_ptr<Rename::VecBufArenaTxn>
+Rename::ensureVecBufTxn(const DynInstPtr &inst, ThreadID tid)
+{
+    auto &arena = vecBufArena[tid];
+    if (arena.activeTxn) {
+        return arena.activeTxn;
+    }
+
+    auto txn = std::make_shared<VecBufArenaTxn>();
+    txn->txnId = arena.nextTxnId++;
+    txn->tid = tid;
+    txn->seqStart = inst->seqNum;
+    txn->seqEnd = inst->seqNum;
+    txn->state = VecBufTxnState::Active;
+    arena.activeTxn = txn;
+    DPRINTF(Rename, "[tid:%i] Create VecBuf txn=%llu at [sn:%llu]\n",
+            tid, txn->txnId, txn->seqStart);
+    return txn;
+}
+
+VirtRegId
+Rename::allocOrGetVecBufSlot(std::shared_ptr<VecBufArenaTxn> &txn,
+                             RegIndex logical_slot, uint32_t expected_writes)
+{
+    auto it = txn->slotMap.find(logical_slot);
+    if (it != txn->slotMap.end()) {
+        const uint32_t writes = std::max(1u, expected_writes);
+        auto ew_it = txn->expectedWrites.find(logical_slot);
+        if (ew_it == txn->expectedWrites.end() || writes > ew_it->second) {
+            txn->expectedWrites[logical_slot] = writes;
+            auto *preg = it->second.PhyReg();
+            preg->setNumPinnedWrites(static_cast<int>(writes - 1));
+            preg->setNumPinnedWritesToComplete(static_cast<int>(writes));
+        }
+        return it->second;
+    }
+
+    panic_if(!freeList->hasFreeRegs(VecBufRegClass),
+             "No free VecBuf physical registers for txn=%llu slot=%u",
+             txn->txnId, logical_slot);
+
+    PhysRegIdPtr preg = freeList->getReg(VecBufRegClass);
+    VirtRegId virt(preg);
+    const uint32_t writes = std::max(1u, expected_writes);
+    preg->setNumPinnedWrites(static_cast<int>(writes - 1));
+    preg->setNumPinnedWritesToComplete(static_cast<int>(writes));
+
+    txn->slotMap.emplace(logical_slot, virt);
+    txn->expectedWrites[logical_slot] = writes;
+    txn->allocatedRegs.push_back(virt);
+    DPRINTF(Rename,
+            "[tid:%i] VecBuf txn=%llu alloc slot=%u -> p%u expected=%u\n",
+            txn->tid, txn->txnId, logical_slot, preg->flatIndex(), writes);
+    return virt;
+}
+
+void
+Rename::markTxnBoundaryIfNeeded(const DynInstPtr &inst, ThreadID tid)
+{
+    auto &arena = vecBufArena[tid];
+    if (!arena.activeTxn) {
+        return;
+    }
+
+    if (!inst->isMicroop() || inst->isLastMicroop()) {
+        arena.activeTxn->seqEnd = inst->seqNum;
+        arena.commitQueue.push_back(arena.activeTxn);
+        DPRINTF(Rename,
+                "[tid:%i] VecBuf txn=%llu close at [sn:%llu], slots=%u\n",
+                tid, arena.activeTxn->txnId, arena.activeTxn->seqEnd,
+                arena.activeTxn->slotMap.size());
+        arena.activeTxn.reset();
+    }
+}
+
+void
+Rename::releaseVecBufTxn(std::shared_ptr<VecBufArenaTxn> &txn,
+                         const char *reason)
+{
+    if (!txn || txn->state == VecBufTxnState::CommittedReleased ||
+        txn->state == VecBufTxnState::SquashedReleased) {
+        return;
+    }
+
+    for (auto &virt : txn->allocatedRegs) {
+        tryFreePReg(virt.PhyReg());
+        DPRINTF(Rename, "[tid:%i] VecBuf txn=%llu free p%u (%s)\n",
+                txn->tid, txn->txnId, virt.PhyReg()->flatIndex(), reason);
+    }
+    txn->state = reason[0] == 'c' ?
+        VecBufTxnState::CommittedReleased : VecBufTxnState::SquashedReleased;
+}
+
+void
+Rename::releaseCommittedVecBufTxns(InstSeqNum committed_seq, ThreadID tid)
+{
+    auto &arena = vecBufArena[tid];
+    while (!arena.commitQueue.empty()) {
+        auto &txn = arena.commitQueue.front();
+        if (txn->seqEnd > committed_seq) {
+            break;
+        }
+        releaseVecBufTxn(txn, "commit");
+        arena.commitQueue.pop_front();
+    }
+}
+
+void
+Rename::releaseSquashedVecBufTxns(InstSeqNum squash_seq, ThreadID tid)
+{
+    auto &arena = vecBufArena[tid];
+
+    if (arena.activeTxn && arena.activeTxn->seqStart > squash_seq) {
+        releaseVecBufTxn(arena.activeTxn, "squash");
+        arena.activeTxn.reset();
+    }
+
+    for (auto it = arena.commitQueue.begin(); it != arena.commitQueue.end();) {
+        if ((*it)->seqEnd > squash_seq) {
+            releaseVecBufTxn(*it, "squash");
+            it = arena.commitQueue.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
@@ -487,6 +631,7 @@ Rename::releasePhysRegs()
             finalCommitSeq[tid] = fromCommit->commitInfo[tid].doneSeqNum;
             releaseSeq[tid] =
                 historyBuffer[tid].empty() ? 0 : historyBuffer[tid].back().instSeqNum;
+            releaseCommittedVecBufTxns(finalCommitSeq[tid], tid);
         }
     }
 }
@@ -519,6 +664,7 @@ Rename::canRename(ThreadID tid)
             case IntRegClass:
             case FloatRegClass:
             case VecRegClass:
+            case VecBufRegClass:
             case RMiscRegClass:
                 demand_phy_regs[i] = std::max(demand_phy_regs[i], (int)renameWidth);
                 break;
@@ -585,6 +731,7 @@ Rename::renameInsts(ThreadID tid)
         renameSrcRegs(inst, inst->threadNumber);
 
         renameDestRegs(inst, inst->threadNumber);
+        markTxnBoundaryIfNeeded(inst, inst->threadNumber);
 
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtRename);
 
@@ -742,6 +889,8 @@ Rename::tryFreePReg(PhysRegIdPtr preg)
 void
 Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
 {
+    releaseSquashedVecBufTxns(squashed_seq_num, tid);
+
     auto hb_it = historyBuffer[tid].begin();
 
     // After a syscall squashes everything, the history buffer may be empty
@@ -850,7 +999,23 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
         const RegId& src_reg = inst->srcRegIdx(src_idx);
         VirtRegId renamed_reg;
 
-        renamed_reg = map->lookup(tc->flattenRegId(src_reg));
+        if (src_reg.is(VecBufRegClass)) {
+            auto &active = vecBufArena[tid].activeTxn;
+            if (!active && hasVecBufOperand(inst)) {
+                active = ensureVecBufTxn(inst, tid);
+            }
+            if (active) {
+                auto it = active->slotMap.find(src_reg.index());
+                if (it != active->slotMap.end()) {
+                    renamed_reg = it->second;
+                }
+            }
+            if (renamed_reg.PhyReg() == nullptr) {
+                renamed_reg = map->lookup(tc->flattenRegId(src_reg));
+            }
+        } else {
+            renamed_reg = map->lookup(tc->flattenRegId(src_reg));
+        }
         switch (src_reg.classValue()) {
           case InvalidRegClass:
             break;
@@ -867,6 +1032,7 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
           case VecPredRegClass:
             stats.vecPredLookups++;
             break;
+          case VecBufRegClass:
           case CCRegClass:
           case RMiscRegClass:
           case MiscRegClass:
@@ -919,6 +1085,42 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
         RegId flat_dest_regid = tc->flattenRegId(dest_reg);
         flat_dest_regid.setNumPinnedWrites(dest_reg.getNumPinnedWrites());
+
+        if (dest_reg.is(VecBufRegClass)) {
+            auto txn = ensureVecBufTxn(inst, tid);
+            const uint32_t expected_writes =
+                std::max(1, dest_reg.getNumPinnedWrites() + 1);
+            const bool append_producer =
+                expected_writes > 1 &&
+                txn->slotMap.find(flat_dest_regid.index()) != txn->slotMap.end();
+            VirtRegId mapped;
+            if (expected_writes > 1) {
+                mapped = allocOrGetVecBufSlot(txn, flat_dest_regid.index(),
+                                              expected_writes);
+            } else {
+                panic_if(!freeList->hasFreeRegs(VecBufRegClass),
+                         "No free VecBuf physical registers for txn=%llu slot=%u",
+                         txn->txnId, flat_dest_regid.index());
+                PhysRegIdPtr preg = freeList->getReg(VecBufRegClass);
+                mapped = VirtRegId(preg);
+                preg->setNumPinnedWrites(0);
+                preg->setNumPinnedWritesToComplete(1);
+                txn->slotMap[flat_dest_regid.index()] = mapped;
+                txn->expectedWrites[flat_dest_regid.index()] = 1;
+                txn->allocatedRegs.push_back(mapped);
+            }
+
+            inst->flattenedDestIdx(dest_idx, flat_dest_regid);
+            scoreboard->unsetReg(mapped.PhyReg());
+            inst->renameDestReg(dest_idx, mapped, mapped);
+
+            DPRINTF(Rename,
+                    "[tid:%i] Rename VecBuf slot %i to %s%s.\n",
+                    tid, flat_dest_regid.index(), mapped.toString(),
+                    append_producer ? " (append producer)" : "");
+            ++stats.renamedOperands;
+            continue;
+        }
 
         VirtRegId bypass_reg;
         bool inc_ref_of_last_dest_phy_reg = false;

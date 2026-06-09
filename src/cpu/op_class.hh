@@ -62,6 +62,9 @@ static const OpClass Int2FpOp = enums::Int2Fp;
 static const OpClass FloatAddOp = enums::FloatAdd;
 static const OpClass FloatCmpOp = enums::FloatCmp;
 static const OpClass FloatCvtOp = enums::FloatCvt;
+static const OpClass FloatCvtF2FOp = enums::FloatCvtF2F;
+static const OpClass FloatCvtF2IOp = enums::FloatCvtF2I;
+static const OpClass FloatCvtI2FOp = enums::FloatCvtI2F;
 static const OpClass FloatMvOp = enums::FloatMv;
 static const OpClass FloatMultOp = enums::FloatMult;
 static const OpClass FloatMultAccOp = enums::FloatMultAcc;
@@ -98,13 +101,24 @@ static const OpClass VectorWholeRegisterLoadOp
 static const OpClass VectorWholeRegisterStoreOp
              = enums::VectorWholeRegisterStore;
 
-static const OpClass VectorIntegerArithOp = enums::VectorIntegerArith;
+static const OpClass VectorArithOp = enums::VectorArith;
+static const OpClass VectorSpecialFuncOp = enums::VectorSpecialFunc;
+static const OpClass VectorReductionOp = enums::VectorReduction;
+static const OpClass VectorDivOp = enums::VectorDiv;
+static const OpClass VectorMisc0Op = enums::VectorMisc0;
+static const OpClass VectorMisc1Op = enums::VectorMisc1;
 static const OpClass VectorFloatArithOp = enums::VectorFloatArith;
-static const OpClass VectorFloatConvertOp = enums::VectorFloatConvert;
-static const OpClass VectorIntegerReduceOp = enums::VectorIntegerReduce;
-static const OpClass VectorFloatReduceOp = enums::VectorFloatReduce;
-static const OpClass VectorMiscOp = enums::VectorMisc;
-static const OpClass VectorIntegerExtensionOp = enums::VectorIntegerExtension;
+static const OpClass VectorFloatCmpOp = enums::VectorFloatCmp;
+static const OpClass VectorFloatMultOp = enums::VectorFloatMult;
+static const OpClass VectorFloatMultAccOp = enums::VectorFloatMultAcc;
+static const OpClass VectorFloatDivOp = enums::VectorFloatDiv;
+static const OpClass VectorConvertF2FOp = enums::VectorConvertF2F;
+static const OpClass VectorConvertF2IOp = enums::VectorConvertF2I;
+static const OpClass VectorConvertI2FOp = enums::VectorConvertI2F;
+static const OpClass VectorConvertI2IOp = enums::VectorConvertI2I;
+static const OpClass VectorMultOp = enums::VectorMult;
+static const OpClass VectorMultAccOp = enums::VectorMultAcc;
+static const OpClass VectorPermuteOp = enums::VectorPermute;
 static const OpClass VectorConfigOp = enums::VectorConfig;
 static const OpClass Num_OpClasses = enums::Num_OpClass;
 

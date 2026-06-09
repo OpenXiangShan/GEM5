@@ -17,6 +17,7 @@ enum : RegIndex
     _VlIdx,
     _VtypeIdx,
     _FuseTmp,
+    _VstartIdx,
     NumRegs=10
 };
 

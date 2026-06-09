@@ -62,6 +62,7 @@ enum RegClassType
     /** Vector Register Native Elem lane. */
     VecElemClass,
     VecPredRegClass,
+    VecBufRegClass,     ///< Vector Buffer register (wide scratchpad)
     CCRegClass,         ///< Condition-code register
     RMiscRegClass,      ///< Renameable misc/temp register
     MiscRegClass,       ///< Control (misc) register

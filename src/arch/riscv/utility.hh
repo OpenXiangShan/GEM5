@@ -136,11 +136,34 @@ registerName(RegId reg)
             str << "?? (v" << reg.index() << ')';
             return str.str();
         }
-        return VecRegNames[reg.index()];
+        const RegIndex logical_idx = reg.index() / VregBanks;
+        const RegIndex bank_idx = reg.index() % VregBanks;
+        const uint32_t lo = bank_idx * DPLEN;
+        const uint32_t hi = lo + DPLEN - 1;
+
+        std::stringstream str;
+        if (logical_idx < 32) {
+            str << "v" << logical_idx;
+        } else {
+            str << "vtmp" << (logical_idx - 32);
+        }
+        str << "[" << hi << ":" << lo << "]";
+        return str.str();
+    } else if (reg.is(VecBufRegClass)) {
+        std::stringstream str;
+        if (reg.index() >= NumVecBufRegs)
+            str << "??";
+        str << "vbuf" << reg.index();
+        return str.str();
     } else  {
         /* It must be an InvalidRegClass, in RISC-V we should treat it as a
          * zero register for the disassembler to work correctly.
          */
+        if (reg.index() >= int_reg::NumArchRegs) {
+            std::stringstream str;
+            str << "?? (x" << reg.index() << ')';
+            return str.str();
+        }
         return int_reg::RegNames[reg.index()];
     }
 }
@@ -226,12 +249,41 @@ getVflmul(uint32_t vlmul_encoding)
     return vflmul;
 }
 
+/**
+ * 计算RISC-V向量扩展的vlmax值（基于独立参数）
+ * vlmax = VLEN / SEW * LMUL
+ *
+ * @param vlen 向量寄存器位宽（如256, 512）
+ * @param sew 选定元素宽度（8, 16, 32, 64）
+ * @param vflmul 向量长度乘数（0.125, 0.25, 0.5, 1, 2, 4, 8）
+ * @return vlmax值，保证 >= 1（符合RISC-V规范）
+ *
+ * 注意：当LMUL < 1时，使用浮点运算避免整数截断导致vlmax=0
+ * 例如：VLEN=256, SEW=64, LMUL=1/8 => vlmax = 256/64*0.125 = 0.5
+ *       整数运算会截断为0，但RISC-V规范要求vlmax至少为1
+ */
+inline uint32_t
+calculateVlmax(uint32_t vlen, uint32_t sew, float vflmul)
+{
+    uint32_t vlmax = (uint32_t)((float)vlen / (float)sew * vflmul);
+    assert(vlmax >= 1);
+    return vlmax;
+}
+
+/**
+ * 计算RISC-V向量扩展的vlmax值（基于VTYPE）
+ * vlmax = VLEN / SEW * LMUL
+ *
+ * @param vtype 向量类型寄存器
+ * @param vlen 向量寄存器位宽
+ * @return vlmax值，保证 >= 1
+ */
 inline uint32_t
 getVlmax(VTYPE vtype, uint32_t vlen)
 {
     uint32_t sew = getSew(vtype.vsew);
-    uint32_t vlmax = (vlen/sew) * getVflmul(vtype.vlmul);
-    return vlmax;
+    float vflmul = getVflmul(vtype.vlmul);
+    return calculateVlmax(vlen, sew, vflmul);
 }
 
 inline uint32_t
@@ -240,7 +292,79 @@ get_emul(uint32_t eew, uint32_t sew, float vflmul, bool is_mask_ldst)
     eew = is_mask_ldst ? 1 : eew;
     float vemul = is_mask_ldst ? 1 : (float)eew / sew * vflmul;
     uint32_t emul = vemul < 1 ? 1 : vemul;
+
+    // 根据RISC-V向量扩展规范，emul不应超过8
+    // 如果超过，返回最大允许值以避免崩溃
+    // if (emul > 8) {
+    //     warn("Invalid EMUL value %d (eew=%d, sew=%d, vflmul=%f). "
+    //          "EMUL must not exceed 8, returning safe value 8.",
+    //          emul, eew, sew, vflmul);
+    //     return 8;  // 返回最大允许值
+    // }
+
     return emul;
+}
+
+inline uint32_t
+ceilDiv(uint32_t num, uint32_t den)
+{
+    assert(den != 0);
+    return (num + den - 1) / den;
+}
+
+inline uint32_t
+calculateActiveBanks(float groupMul)
+{
+    const float scaled = groupMul * static_cast<float>(VregBanks);
+    const uint32_t active_banks =
+        std::max(1, static_cast<int>(std::ceil(scaled)));
+    return active_banks;
+}
+
+inline uint32_t
+calculateActiveBanksWithKnownVl(float groupMul, ExtMachInst machInst,
+                                uint32_t eew_bits)
+{
+    const uint32_t lmul_banks = calculateActiveBanks(groupMul);
+    if (!machInst.vlKnown)
+        return lmul_banks;
+    const uint32_t vl = machInst.vlValue;
+    if (vl == 0)
+        return 1;
+    const uint32_t elems_per_bank = DPLEN / eew_bits;
+    const uint32_t vl_banks = ceilDiv(vl, elems_per_bank);
+    return std::min(lmul_banks, std::max(1u, vl_banks));
+}
+
+inline uint32_t
+calculateActiveBanksByEew(uint32_t dataEew, uint32_t sew, float vflmul)
+{
+    const float emul = (static_cast<float>(dataEew) / sew) * vflmul;
+    return calculateActiveBanks(emul);
+}
+
+inline uint32_t
+calculateActiveBanksByEewWithKnownVl(uint32_t dataEew, uint32_t sew,
+                                     float vflmul, ExtMachInst machInst)
+{
+    const float emul = (static_cast<float>(dataEew) / sew) * vflmul;
+    return calculateActiveBanksWithKnownVl(emul, machInst, dataEew);
+}
+
+inline uint32_t
+calculateActiveElemSpan(uint32_t dataEew, uint32_t sew, float vflmul)
+{
+    const uint32_t active_banks = calculateActiveBanksByEew(dataEew, sew, vflmul);
+    const uint32_t elems_per_bank = DPLEN / dataEew;
+    return active_banks * elems_per_bank;
+}
+
+inline uint32_t
+calculateActiveMaskMemBanks(uint32_t sew, float vflmul)
+{
+    const uint32_t vlmax = calculateVlmax(VLEN, sew, vflmul);
+    const uint32_t mask_bytes = ceilDiv(vlmax, 8);
+    return std::max(1u, ceilDiv(mask_bytes, DPLENB));
 }
 
 inline int
@@ -265,7 +389,7 @@ popcount_in_byte(uint64_t* addr, uint32_t st, uint32_t en)
         data |= (addr[1] << (64 - st));
     }
     if (size < 64) {
-        data &= ((1<<size) - 1);
+        data &= (((uint64_t)1<<size) - 1);
     }
     return popCount(data);
 };

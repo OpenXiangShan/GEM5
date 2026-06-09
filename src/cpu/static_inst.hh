@@ -233,7 +233,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     void resetOpClass(OpClass op_class) { _opClass = op_class; }
 
     void setNF(unsigned _nf) { nf = _nf; }
-    unsigned getNF() { return nf; }
+    unsigned getNF() const { return nf; }
 
     /// Return logical index (architectural reg num) of i'th destination reg.
     /// Only the entries from 0 through numDestRegs()-1 are valid.

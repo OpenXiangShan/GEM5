@@ -67,16 +67,23 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
         vfof_set_code = '''
         auto base_addr = Rs1;
         uint32_t elem_size = (eew / 8);
+        const uint32_t nf = machInst.nf + 1;
         if (fault != NoFault) {
             auto addr_fault = dynamic_cast<AddressFault*>(fault.get());
             assert(addr_fault != nullptr);
             if (addr_fault) {
                 auto fault_addr = addr_fault->trap_value();
                 assert(fault_addr >= EA);
-                *fault_elem_idx = (fault_addr - base_addr) / elem_size;
+                uint64_t raw_fault_elem_idx = (fault_addr - base_addr) / elem_size;
+                // For segment ff loads, vl is counted in segments rather than
+                // scalar fields. Convert memory element index to segment index.
+                if (nf > 1) {
+                    raw_fault_elem_idx /= nf;
+                }
+                *fault_elem_idx = raw_fault_elem_idx;
             }
         } else {
-            *fault_elem_idx = mem_size / elem_size;
+            *fault_elem_idx = 0;
         }
         '''
         vfof_zero_idx_check_code = '''
@@ -89,27 +96,82 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
 
     vecWhole = base_type == 'VlWhole' or base_type == 'VsWhole'
     vecIndex = base_type == 'VlIndex' or base_type == 'VsIndex'
+    vecStride = base_type == 'VlStride' or base_type == 'VsStride'
     vecSMask = exec_template_base == 'Vlm' or exec_template_base == 'Vsm'
+    vecStore = (
+        base_type == 'VsWhole' or base_type == 'VsIndex' or
+        base_type == 'VsStride' or exec_template_base == 'Vsm'
+    )
+    vecSegStore = base_type == 'Vse'or base_type == 'VsIndex' or base_type == 'VsStride'
+
+    # Initialize variables so every branch has a definition.
+    is_vecWhole = 'false'
+    is_vecIndex = 'false'
+    is_vecCopy = 'false'
+    is_vecSeg = 'false'
+    is_vse = 'false'
 
     if vecWhole:
-        calc_memsize_code = 'VLENB'
+        # 注意：这里添加(void)rVl是为了让ISA解析器将rVl添加到操作数列表中
+        # whole register指令不实际使用vl，但模板中的vl检查代码需要rVl操作数
+        calc_memsize_code = '((void)rVl, DPLENB)'
         is_vecWhole = 'true'
         wb_elem_mask = 'true'
+    elif vecStride and base_type == 'VlStride':
+        # 注意：这里使用rVl是为了让ISA解析器将rVl添加到操作数列表中
+        # 实际的内存大小计算在execute模板中完成
+        calc_memsize_code = 'calc_memsize(vmi.rs, vmi.re, eew_, rVl)'
+        # calc_memsize_code = 'std::min((vmi.re - vmi.rs) * getNF(), DPLENB)'
+        is_vecCopy = 'true'
+        wb_elem_mask = 'true'
+    elif vecIndex and base_type == 'VlIndex':
+        # 注意：这里使用rVl是为了让ISA解析器将rVl添加到操作数列表中
+        # 实际的内存大小计算在execute模板中完成
+        calc_memsize_code = 'calc_memsize(vmi.rs, vmi.re, eew_, rVl)'
+        # calc_memsize_code = 'std::min((vmi.re - vmi.rs) * getNF(), DPLENB)'
+        is_vecCopy = 'true'
+        wb_elem_mask = 'true'
+    elif vecStore and (exec_template_base == 'VsIndex' or exec_template_base == 'VsStride'):
+        is_vecSeg = 'true'
+        calc_memsize_code = 'calc_memsize(vmi.rs*nf, vmi.re*nf, eew_, rVl*nf)'
+        wb_elem_mask = '(ei < rVl) && (this->vm || elem_mask(v0, ei))'
+    elif base_type == 'Vse':
+        is_vecSeg = 'true'
+        is_vse = 'true'
+        calc_memsize_code = 'calc_memsize(vmi.rs, vmi.re, eew_, rVl*nf)'
+        wb_elem_mask = '(ei < rVl) && (this->vm || elem_mask(v0, ei))'
     else:
         calc_memsize_code = 'calc_memsize(vmi.rs, vmi.re, eew_, rVl)'
-        is_vecWhole = 'false'
         wb_elem_mask = '(ei < rVl) && (this->vm || elem_mask(v0, ei))'
 
+    if vecStore and base_type != 'VsWhole' and base_type != 'Vse':
+        wb_elem_mask = '(ei < rVl) && (this->vm || elem_mask(v0, ei))'
 
     if vecIndex:
-        is_vecIndex = 'true';
+        is_vecIndex = 'true'
+
+    if vecStore and (exec_template_base == 'VsIndex' or exec_template_base == 'VsStride'):
+        recalc_idx = '''
+        auto start_idx = vmi.rs * nf;
+        '''
     else:
-        is_vecIndex = 'false';
+        recalc_idx = '''
+        auto start_idx = vmi.rs;
+        '''
 
     if vecSMask:
         divrVl = 'rVl = (rVl + 7) / 8'
+        is_vecSMask = 'true'
+        tail_agnostic_code = '''// Tail-agnostic: 设置 ei >= vl 的位为 1, 对齐nemu实现
+        if (RVV_AGNOSTIC && rVl > 0) {
+            for (uint32_t byte_idx = rVl; byte_idx < VLEN / 8; byte_idx++) {
+                Vd[byte_idx] = 0xff;
+            }
+        }'''
     else:
         divrVl = ''
+        is_vecSMask = 'false'
+        tail_agnostic_code = ''  # 非mask指令不需要tail处理
 
     microiop = InstObjParams(name + '_micro',
         Name + 'Micro',
@@ -126,10 +188,16 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
             'calc_memsize_code' : calc_memsize_code,
             'is_vecWhole'   : is_vecWhole,
             'is_vecIndex'   : is_vecIndex,
+            'is_vecSMask'   : is_vecSMask,
+            'is_vecCopy'    : is_vecCopy,
+            'is_vecSeg'     : is_vecSeg,
+            'is_vse'        : is_vse,
 
             'wb_elem_mask'  : wb_elem_mask,
 
-            'divrVl'        : divrVl
+            'recalc_idx'    : recalc_idx,
+            'divrVl'        : divrVl,
+            'tail_agnostic_code' : tail_agnostic_code
         },
         inst_flags)
 
@@ -146,6 +214,28 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
         exe_template_base  = 'Vstore'
         init_template_base = 'Vstore'
         comp_template_base = 'Vstore'
+
+    # 添加对Vle的特殊处理，使用简化的模版（不处理mask和tail）
+    if exec_template_base == 'Vle':
+        init_template_base = 'Vle'
+        comp_template_base = 'Vle'
+    elif exec_template_base == 'Vlm':
+        comp_template_base = 'Vlm'
+    elif exec_template_base == 'VlWhole':
+        comp_template_base = 'VlWhole'
+    elif exec_template_base == 'VlStride':
+        init_template_base = 'VlStride'
+        comp_template_base = 'VlStride'
+    elif exec_template_base == 'VlIndex':
+        init_template_base = 'VlIndex'
+        comp_template_base = 'VlIndex'
+    elif exec_template_base == 'Vleff':
+        init_template_base = 'Vleff'
+        comp_template_base = 'Vleff'
+
+    # vse直接做segment处理数据
+    if exec_template_base == 'Vse' or exec_template_base == 'VsIndex' or exec_template_base == 'VsStride':
+        init_template_base = 'Vsseg'
 
     microDeclTemplate = eval(exec_template_base + 'Micro' + 'Declare')
     microExecTemplate = eval(exe_template_base + 'Micro' + 'Execute')
@@ -172,18 +262,20 @@ def format VleOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                'Vle', exec_template_base='Vle')
+                'Vle', decode_template=VMemValidateDecodeBlock,
+                exec_template_base='Vle')
 }};
 
 def format VleffOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    ea_code={{ EA = Rs1 + vmi.offset; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                'Vle', exec_template_base='Vleff', vfof=True)
+                'Vle', decode_template=VMemValidateDecodeBlock,
+                exec_template_base='Vleff', vfof=True)
 }};
 
 def format VlmOp(
@@ -199,13 +291,14 @@ def format VlmOp(
 
 def format VlWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    ea_code={{ EA = Rs1 + DPLENB * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                'VlWhole', exec_template_base='VlWhole')
+                'VlWhole', decode_template=VlWholeDecodeBlock,
+                exec_template_base='VlWhole')
 }};
 
 def format VlStrideOp(
@@ -216,8 +309,9 @@ def format VlStrideOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                'VlStride', exec_template_base='VlStride')
+                'VlStride', decode_template=VlStrideDecodeBlock, exec_template_base='VlStride')
 }};
+
 
 def format VlIndexOp(
     memacc_code,
@@ -228,7 +322,8 @@ def format VlIndexOp(
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
                 'VlIndex', declare_template_base=VMemTemplateMacroDeclare,
-                decode_template=VMemTemplateDecodeBlock, exec_template_base='VlIndex')
+                decode_template=VlIndexDecodeBlock,
+                exec_template_base='VlIndex')
 }};
 
 def format VseOp(
@@ -239,7 +334,8 @@ def format VseOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                'Vse', exec_template_base='Vse')
+                'Vse', decode_template=VMemValidateDecodeBlock,
+                exec_template_base='Vse')
 }};
 
 def format VsmOp(
@@ -255,13 +351,14 @@ def format VsmOp(
 
 def format VsWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    ea_code={{ EA = Rs1 + DPLENB * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                'VsWhole', exec_template_base='VsWhole')
+                'VsWhole', decode_template=VsWholeDecodeBlock,
+                exec_template_base='VsWhole')
 }};
 
 def format VsStrideOp(
@@ -272,7 +369,8 @@ def format VsStrideOp(
 ) {{
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
-                'VsStride', exec_template_base='VsStride')
+                'VsStride', decode_template=VsStrideDecodeBlock,
+                exec_template_base='VsStride')
 }};
 
 def format VsIndexOp(
@@ -284,5 +382,5 @@ def format VsIndexOp(
     (header_output, decoder_output, decode_block, exec_output) = \
         VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
                 'VsIndex', declare_template_base=VMemTemplateMacroDeclare,
-                decode_template=VMemTemplateDecodeBlock, exec_template_base='VsIndex')
+                decode_template=VsIndexDecodeBlock, exec_template_base='VsIndex')
 }};

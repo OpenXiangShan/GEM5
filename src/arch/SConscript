@@ -184,7 +184,8 @@ IsaDescBuilder = Builder(action=desc_action)
 
 # ISAs should use this function to set up an IsaDescBuilder and not try to
 # set one up manually.
-def ISADesc(desc, decoder_splits=1, exec_splits=1, tags=None, add_tags=None):
+def ISADesc(desc, decoder_splits=1, exec_splits=1, template_splits=4,
+            tags=None, add_tags=None):
     '''Set up a builder for an ISA description.
 
     The decoder_splits and exec_splits parameters let us determine what
@@ -238,6 +239,7 @@ def ISADesc(desc, decoder_splits=1, exec_splits=1, tags=None, add_tags=None):
     add_gen('decoder.hh')
     add_gen('decoder-g.hh.inc')
     add_gen('decoder-ns.hh.inc')
+    add_gen('decoder-ns-impl.hh.inc')
 
     add_gen('exec-g.cc.inc')
     add_gen('exec-ns.cc.inc')
@@ -264,6 +266,10 @@ def ISADesc(desc, decoder_splits=1, exec_splits=1, tags=None, add_tags=None):
     else:
         for i in range(1, exec_splits + 1):
             source_gen('generic_cpu_exec_%d.cc' % i)
+
+    for i in range(1, template_splits + 1):
+        add_gen('decoder-tpl-%d.cc.inc' % i)
+        source_gen('template-inst-%d.cc' % i)
 
     # Actually create the builder.
     sources = [desc, micro_asm_py] + parser_files

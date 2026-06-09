@@ -45,7 +45,8 @@ class OpClass(Enum):
             'IntAlu', 'IntBr', 'IntJp', 'IntMult', 'IntDiv', 'Int2Fp', 'StoreData',
 
             'FloatAdd', 'FloatMult', 'FloatMultAcc', 'FloatDiv', 'FloatSqrt',
-            'FloatCmp', 'FloatCvt', 'FloatMv','FloatMisc',
+            'FloatCmp', 'FloatCvt', 'FloatCvtF2F', 'FloatCvtF2I',
+            'FloatCvtI2F', 'FloatMv', 'FloatMisc',
 
             'IprAccess', 'InstPrefetch',
 
@@ -72,9 +73,11 @@ class OpClass(Enum):
             'VectorIndexedStore',
             'VectorWholeRegisterStore',
 
-            'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
-            'VectorIntegerReduce', 'VectorFloatReduce',
-            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig'
+            'VectorArith', 'VectorSpecialFunc', 'VectorMult', 'VectorMultAcc', 'VectorReduction', 'VectorDiv',
+            'VectorMisc0', 'VectorMisc1', 'VectorPermute',
+            'VectorFloatArith', 'VectorFloatCmp', 'VectorFloatMult', 'VectorFloatMultAcc', 'VectorFloatDiv',
+            'VectorConvertF2F', 'VectorConvertF2I', 'VectorConvertI2F', 'VectorConvertI2I',
+            'VectorConfig'
             ]
 
 class OpDesc(SimObject):

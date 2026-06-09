@@ -157,9 +157,13 @@ AddOption('--debug-cycle', action='store_true',
           help='Enable print cycle in DPRINTF')
 AddOption('--rvv-impl', action='store', default='base',
           choices=['base', 'simple'],
-          help='Select the implementation of the RVV extension to use')
+          help='Select the implementation of the RVV extension to use. '
+               'simple is kept as a compatibility alias for base.')
 
-os.environ['rvv_impl'] = GetOption('rvv_impl')
+rvv_impl = GetOption('rvv_impl')
+if rvv_impl == 'simple':
+    rvv_impl = 'base'
+os.environ['rvv_impl'] = rvv_impl
 
 # Inject the built_tools directory into the python path.
 sys.path[1:1] = [ Dir('#build_tools').abspath ]
