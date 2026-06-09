@@ -62,31 +62,39 @@
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
+#include "enums/PrefetchSourceType.hh"
 #include "mem/htm.hh"
 #include "sim/cur_tick.hh"
 
 namespace gem5
 {
 
-enum PrefetchSourceType
+using enums::PrefetchSourceType;
+using enums::PF_NONE;
+using enums::SStream;
+using enums::SStride;
+using enums::SPht;
+using enums::HWP_BOP;
+using enums::SPP;
+using enums::CMC;
+using enums::IPCP;
+using enums::IPCP_CS;
+using enums::IPCP_CPLX;
+using enums::Berti;
+using enums::StoreStream;
+using enums::CDP;
+using enums::SOpt;
+using enums::DespacitoStream;
+
+static constexpr unsigned NUM_PF_SOURCES = enums::Num_PrefetchSourceType;
+
+inline const char *
+prefetchSourceTypeName(unsigned source)
 {
-    PF_NONE = 0,
-    SStream,
-    SStride,
-    SPht,
-    HWP_BOP,
-    SPP,
-    CMC,
-    IPCP,
-    IPCP_CS,
-    IPCP_CPLX,
-    Berti,
-    StoreStream,
-    CDP,
-    SOpt,
-    DespacitoStream,
-    NUM_PF_SOURCES
-};
+    return source < NUM_PF_SOURCES ?
+        enums::PrefetchSourceTypeStrings[source] :
+        enums::PrefetchSourceTypeStrings[PF_NONE];
+}
 
 enum DcacheRespType
 {

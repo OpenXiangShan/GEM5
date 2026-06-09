@@ -589,8 +589,10 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
         // no MSHR
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).mshrMisses[pkt->req->requestorId()]++;
-        if (prefetcher && pkt->isDemand())
+        if (prefetcher && pkt->isDemand()) {
             prefetcher->incrDemandMhsrMisses();
+            prefetcher->notifyDemandMshrMiss(pkt->getAddr(), pkt->isSecure());
+        }
 
         if (pkt->isEviction() || pkt->cmd == MemCmd::WriteClean) {
             // We use forward_time here because there is an
@@ -1023,6 +1025,11 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     bool is_fill = !mshr->isForward &&
         (pkt->isRead() || pkt->cmd == MemCmd::UpgradeResp ||
          mshr->wasWholeLineWrite);
+    const bool pure_prefetch_fill =
+        mshr->hasFromPref() && !mshr->hasFromCPU();
+    if (pure_prefetch_fill) {
+        pkt->req->setPFSource(mshr->getPFSource());
+    }
 
     // make sure that if the mshr was due to a whole line write then
     // the response is an invalidation
@@ -1066,8 +1073,13 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         }
         blk = handleFill(
             pkt, blk, writebacks, allocate,
+            pure_prefetch_fill ? mshr->getPFSource() :
+                PrefetchSourceType::PF_NONE,
             &dcache_refill_need_data_read);
         assert(blk != nullptr);
+        if (prefetcher) {
+            prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
+        }
         ppFill->notify(pkt);
     }
 
@@ -2219,8 +2231,9 @@ BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 }
 
 CacheBlk*
-BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
-                      bool allocate, bool *refill_need_data_read)
+BaseCache::handleFill(
+    PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
+    PrefetchSourceType prefetch_fill_source, bool *refill_need_data_read)
 {
     assert(pkt->isResponse());
     Addr addr = pkt->getAddr();
@@ -2243,8 +2256,9 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         // need to do a replacement if allocating, otherwise we stick
         // with the temporary storage
         blk = allocate ?
-            allocateBlock(pkt, writebacks, refill_need_data_read) :
-            nullptr;
+            allocateBlock(
+                pkt, writebacks, prefetch_fill_source,
+                refill_need_data_read) : nullptr;
 
         if (!blk) {
             // No replaceable block or a mostly exclusive
@@ -2333,17 +2347,18 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     }
 
     Request::XsMetadata blk_meta = blk->getXsMetadata();
-    blk_meta.prefetchSource = pkt->req->getPFSource();
+    blk_meta.prefetchSource = prefetch_fill_source;
     blk->setXsMetadata(blk_meta);
-    DPRINTF(Cache, "%s: Mark blk as prefetched by source %i, form req %p\n", __func__,
-            pkt->req->getPFSource(), pkt->req);
+    DPRINTF(Cache, "%s: Mark blk prefetch source %i from req %p\n",
+            __func__, prefetch_fill_source, pkt->req);
 
     return blk;
 }
 
 CacheBlk*
-BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks,
-                         bool *evicted_dirty)
+BaseCache::allocateBlock(
+    const PacketPtr pkt, PacketList &writebacks,
+    PrefetchSourceType prefetch_fill_source, bool *evicted_dirty)
 {
     // Get address
     const Addr addr = pkt->getAddr();
@@ -2381,9 +2396,35 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks,
     // Print victim block's information
     DPRINTF(CacheRepl, "Replacement victim: %s\n", victim->print());
 
+    struct PfBadVictim
+    {
+        Addr addr;
+        bool secure;
+    };
+    std::vector<PfBadVictim> pfbad_victims;
+    if (prefetcher && prefetch_fill_source != PrefetchSourceType::PF_NONE) {
+        for (const auto &evict_blk : evict_blks) {
+            if (!evict_blk->isValid()) {
+                continue;
+            }
+            const bool prefetch_only =
+                evict_blk->wasPrefetched() &&
+                evict_blk->getDemandHits() == 0;
+            if (!prefetch_only) {
+                pfbad_victims.push_back(
+                    {regenerateBlkAddr(evict_blk), evict_blk->isSecure()});
+            }
+        }
+    }
+
     // Try to evict blocks; if it fails, give up on allocation
     if (!handleEvictions(evict_blks, writebacks, evicted_dirty)) {
         return nullptr;
+    }
+
+    for (const auto &victim_info : pfbad_victims) {
+        prefetcher->notifyPrefetchEvictsDemand(
+            victim_info.addr, victim_info.secure, prefetch_fill_source);
     }
 
     // Insert new block at victimized entry
