@@ -526,6 +526,22 @@ IssueQue::issueToFu()
         if (!checkScoreboard(inst)) {
             continue;
         }
+        if (inst->isVector() && !inst->isSquashed() && inst->isMemRef()){
+            if (vectorReadyQSeqs.insert(inst->seqNum).second) {
+                assert(cpu);
+                const Tick releaseTick = cpu->clockEdge(Cycles(3));
+                const bool needSchedule = vectorReadyQ.empty();
+                vectorReadyQ.push(inst);
+                vectorReadyQReleaseTicks.push(releaseTick);
+                DPRINTF(Schedule,
+                        "[sn:%llu] add to vectorReadyQ, release at %llu\n",
+                        inst->seqNum, releaseTick);
+                if (needSchedule && !vectorReadyQEvent.scheduled()) {
+                    cpu->schedule(vectorReadyQEvent, releaseTick);
+                }
+            }
+            continue;
+        }
 
         if (inst->isLoad()) {
             issuedLoad++;
@@ -659,23 +675,23 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            if (inst->isVector() && !inst->isSquashed() && inst->isMemRef()) {
-                if (vectorReadyQSeqs.insert(inst->seqNum).second) {
-                    assert(cpu);
-                    const Tick releaseTick = cpu->clockEdge(Cycles(3));
-                    const bool needSchedule = vectorReadyQ.empty();
-                    vectorReadyQ.push(inst);
-                    vectorReadyQReleaseTicks.push(releaseTick);
-                    DPRINTF(Schedule,
-                            "[sn:%llu] add to vectorReadyQ, release at %llu\n",
-                            inst->seqNum, releaseTick);
-                    if (needSchedule && !vectorReadyQEvent.scheduled()) {
-                        cpu->schedule(vectorReadyQEvent, releaseTick);
-                    }
-                }
-            } else {
+            // if (inst->isVector() && !inst->isSquashed() && inst->isMemRef()) {
+            //     if (vectorReadyQSeqs.insert(inst->seqNum).second) {
+            //         assert(cpu);
+            //         const Tick releaseTick = cpu->clockEdge(Cycles(3));
+            //         const bool needSchedule = vectorReadyQ.empty();
+            //         vectorReadyQ.push(inst);
+            //         vectorReadyQReleaseTicks.push(releaseTick);
+            //         DPRINTF(Schedule,
+            //                 "[sn:%llu] add to vectorReadyQ, release at %llu\n",
+            //                 inst->seqNum, releaseTick);
+            //         if (needSchedule && !vectorReadyQEvent.scheduled()) {
+            //             cpu->schedule(vectorReadyQEvent, releaseTick);
+            //         }
+            //     }
+            // } else {
                 READYQ_PUSH(inst);
-            }
+            // }
         }
     }
 }
