@@ -2771,11 +2771,16 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
     }
 
     if (debug::LoadPipeline) {
-        char buffer[8] = {0};
-        if (inst->memData)
-            std::memcpy(buffer, inst->memData, inst->effSize);
+        uint64_t first_word = 0;
+        if (inst->memData) {
+            auto copy_size = inst->effSize;
+            if (copy_size > sizeof(first_word)) {
+                copy_size = sizeof(first_word);
+            }
+            std::memcpy(&first_word, inst->memData, copy_size);
+        }
         DPRINTF(LoadPipeline, "WritebackReg: %s [sn:%lli] data: %#lx\n", enums::OpClassStrings[inst->opClass()],
-                inst->seqNum, ((uint64_t *)buffer));
+                inst->seqNum, first_word);
     }
 
 
@@ -3592,11 +3597,17 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 }
 
                 if (debug::LoadPipeline) {
-                    char buffer[8] = {0};
-                    if (load_inst->memData) std::memcpy(buffer, load_inst->memData, load_inst->effSize);
+                    uint64_t first_word = 0;
+                    if (load_inst->memData) {
+                        auto copy_size = load_inst->effSize;
+                        if (copy_size > sizeof(first_word)) {
+                            copy_size = sizeof(first_word);
+                        }
+                        std::memcpy(&first_word, load_inst->memData, copy_size);
+                    }
                     DPRINTF(LoadPipeline, "Forwarding from store [sn:%llu] to load [sn:%llu] "
                             "addr %#x, data: %#lx\n", store_it->instruction()->seqNum, load_inst->seqNum,
-                            request->mainReq()->getPaddr(), *((uint64_t*)buffer));
+                            request->mainReq()->getPaddr(), first_word);
                 }
                 load_inst->setFullForward();
 
@@ -3663,10 +3674,16 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
                 load_inst->setFullForward();
                 if (debug::LoadPipeline) {
-                    char buffer[8] = {0};
-                    if (load_inst->memData) std::memcpy(buffer, load_inst->memData, load_inst->effSize);
+                    uint64_t first_word = 0;
+                    if (load_inst->memData) {
+                        auto copy_size = load_inst->effSize;
+                        if (copy_size > sizeof(first_word)) {
+                            copy_size = sizeof(first_word);
+                        }
+                        std::memcpy(&first_word, load_inst->memData, copy_size);
+                    }
                     DPRINTF(LoadPipeline, "Load [sn:%llu] forward from sbuffer, data: %lx\n",
-                            load_inst->seqNum, *((uint64_t*)buffer));
+                            load_inst->seqNum, first_word);
                 }
                 return NoFault;
             }
@@ -3730,9 +3747,21 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
         if (!request->isSent() && !load_inst->needBankConflictReplay() && !load_inst->needMshrArbFailReplay() &&
             !load_inst->needMshrAliasFailReplay() &&!load_inst->needHitInWriteBufferReplay()) {
+            const bool partialSplitRequest =
+                request->isSplit() && request->_numOutstandingPackets > 0;
             iewStage->blockMemInst(load_inst);
             load_inst->setCacheBlockedReplay();
             DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheBlockedReplay\n", load_inst->seqNum);
+            if (partialSplitRequest) {
+                // A split load may have already sent one fragment before a
+                // later fragment is rejected. Drop the old request so the
+                // in-flight fragment response is ignored and the retry starts
+                // from a clean request.
+                DPRINTF(LoadPipeline,
+                        "Load [sn:%llu] discards partially sent split request\n",
+                        load_inst->seqNum);
+                loadSetReplay(load_inst, request, true);
+            }
         }
     }
 

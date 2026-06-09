@@ -90,7 +90,8 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     // This buffer preserves the fetch->decode pipeline contents when decode
     // stalls while TimeBuffer keeps advancing. Its depth matches the original
     // forward pipeline window; fetch is backpressured before full to absorb
-    // the fetch groups already in that window.
+    // both the decode->fetch feedback delay and the request already issued in
+    // the current cycle before decode computes backpressure.
     const auto stallGroupDepth = fetchToDecodeDelay + 1;
     stallBuffer = boost::circular_buffer<DynInstPtr>(
         decodeWidth * stallGroupDepth);
@@ -493,13 +494,10 @@ Decode::tick()
         toFetch->decodeInfo[tid].blockReason =
             stallSig->fetchBlockReason[tid];
     };
-    // Single-thread mode already uses blockDecode feedback for real backend
-    // stalls; this extra FIFO guard is only needed when SMT arbitration can
-    // leave a non-selected thread's fetch groups queued behind another thread.
+    const auto fetchFeedbackReserve = decodeToFetchDelay + 1;
     const bool fifoBackpressured =
-        numThreads > 1 &&
         !stallBuffer.empty() &&
-        eachstallSize.size() + fetchToDecodeDelay >=
+        eachstallSize.size() + fetchFeedbackReserve >=
             eachstallSize.capacity();
     const ThreadID fifoHeadTid =
         !stallBuffer.empty() ? stallBuffer.front()->threadNumber : InvalidThreadID;
