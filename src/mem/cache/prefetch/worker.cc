@@ -59,23 +59,41 @@ WorkerPrefetcher::transfer()
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
+        auto drop_local_packet = [&dpp_it]() {
+            if (dpp_it->pkt != nullptr) {
+                delete dpp_it->pkt;
+                dpp_it->pkt = nullptr;
+            }
+        };
         if (queueFilter) {
             if (alreadyInQueue(pfq, dpp_it->pfInfo, dpp_it->priority)) {
+                drop_local_packet();
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
             } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo,
                                       dpp_it->priority)) {
+                drop_local_packet();
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
+            } else if (!admitPfControlDeferredPacket(*dpp_it)) {
+                drop_local_packet();
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] dropped by PF control admission\n",
+                        dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
             } else {
                 addToQueue(pfq, *dpp_it);
                 DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
             }
         } else {
-            addToQueue(pfq, *dpp_it);
-            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
-                    dpp_it->pfahead_host);
+            if (!admitPfControlDeferredPacket(*dpp_it)) {
+                drop_local_packet();
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] dropped by PF control admission\n",
+                        dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+            } else {
+                addToQueue(pfq, *dpp_it);
+                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
+                        dpp_it->pfahead_host);
+            }
         }
         dpp_it = localBuffer.erase(dpp_it);
         count++;

@@ -131,6 +131,11 @@ PrefetcherForwarder::nofityHitToDownStream(const PacketPtr &pkt)
 void
 PrefetcherForwarder::recvPrefetchFromCache(const PacketPtr &pkt)
 {
+    if (real_pf && !real_pf->ownsPrefetchRequest(pkt) &&
+        !real_pf->admitIncomingPrefetchPacket(pkt)) {
+        delete pkt;
+        return;
+    }
     prefetch_queue.push(pkt);
 }
 
@@ -142,6 +147,9 @@ PrefetcherForwarder::getPacket()
     }
     PacketPtr pkt = prefetch_queue.front();
     prefetch_queue.pop();
+    if (real_pf && !real_pf->ownsPrefetchRequest(pkt)) {
+        real_pf->recordIssuedPrefetch(pkt);
+    }
     return pkt;
 }
 
@@ -166,6 +174,49 @@ PrefetcherForwarder::incrDemandMhsrMisses()
 {
     if (real_pf) {
         real_pf->incrDemandMhsrMisses();
+    }
+}
+
+void
+PrefetcherForwarder::notifyDemandAccess(
+    Addr paddr, bool is_secure, bool miss)
+{
+    if (real_pf) {
+        real_pf->notifyDemandAccess(paddr, is_secure, miss);
+    }
+}
+
+void
+PrefetcherForwarder::notifyDemandMshrMiss(Addr paddr, bool is_secure)
+{
+    if (real_pf) {
+        real_pf->notifyDemandMshrMiss(paddr, is_secure);
+    }
+}
+
+void
+PrefetcherForwarder::notifyPrefetchUseful(PrefetchSourceType source)
+{
+    if (real_pf) {
+        real_pf->notifyPrefetchUseful(source);
+    }
+}
+
+void
+PrefetcherForwarder::notifyPrefetchEvictsDemand(
+    Addr victim_paddr, bool is_secure, PrefetchSourceType source)
+{
+    if (real_pf) {
+        real_pf->notifyPrefetchEvictsDemand(
+            victim_paddr, is_secure, source);
+    }
+}
+
+void
+PrefetcherForwarder::notifyCachelineRefill(Addr paddr, bool is_secure)
+{
+    if (real_pf) {
+        real_pf->notifyCachelineRefill(paddr, is_secure);
     }
 }
 
