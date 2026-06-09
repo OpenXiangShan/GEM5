@@ -634,6 +634,12 @@ class LSQ
             return flags.isSet(Flag::Sent);
         }
 
+        virtual bool
+        hasCachePacketProgress() const
+        {
+            return _numOutstandingPackets > 0;
+        }
+
         bool
         isPartialFault()
         {
@@ -795,6 +801,11 @@ class LSQ
         virtual void initiateTranslation();
         virtual bool sendPacketToCache();
         virtual void buildPackets();
+        bool
+        hasCachePacketProgress() const override
+        {
+            return numReceivedPackets > 0 || _numOutstandingPackets > 0;
+        }
 
         virtual Cycles handleLocalAccess(
                 gem5::ThreadContext *thread, PacketPtr pkt);

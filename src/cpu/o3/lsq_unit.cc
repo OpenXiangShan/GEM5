@@ -2970,6 +2970,38 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
 
     DPRINTF(LSQUnit, "Attempting to send packet for inst [sn:%llu], addr: %#x\n",
             inst->seqNum, data_pkt->getAddr());
+
+    if (isLoad) {
+        const int fwd_base =
+            pkt->req->getVaddr() - request->mainReq()->getVaddr();
+        const int fwd_end = fwd_base + pkt->req->getSize();
+        assert(fwd_base >= 0);
+        for (auto it = request->SBforwardPackets.begin();
+             it != request->SBforwardPackets.end();) {
+            if (it->idx >= fwd_base && it->idx < fwd_end) {
+                it = request->SBforwardPackets.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        const Addr block_addr = pkt->getAddr() & cacheBlockMask;
+        auto entry = lsq->findForwardingStoreBufferEntry(
+            block_addr, lsqID, request->instruction()->seqNum);
+        if (entry) {
+            DPRINTF(StoreBuffer, "sbuffer entry[%#x] coverage %s\n",
+                    entry->blockPaddr, pkt->print());
+            if (entry->recordForward(
+                    pkt->req, request, lsqID,
+                    request->instruction()->seqNum)) {
+                assert(request->isSplit()); // here must be split request
+                stats.sbufferFullForward++;
+            } else if (!request->SBforwardPackets.empty()) {
+                stats.sbufferPartiForward++;
+            }
+        }
+    }
+
     if (!lsq->cacheBlocked() && lsq->cachePortAvailable(isLoad)) {
         if (bank_conflict) {
             ++stats.bankConflictTimes;
@@ -3002,23 +3034,6 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         }
         lsq->cachePortBusy(isLoad);
         request->packetSent();
-
-        if (isLoad) {
-            const Addr block_addr = pkt->getAddr() & cacheBlockMask;
-            auto entry = lsq->findForwardingStoreBufferEntry(
-                block_addr, lsqID, request->instruction()->seqNum);
-            if (entry) {
-                DPRINTF(StoreBuffer, "sbuffer entry[%#x] coverage %s\n", entry->blockPaddr, pkt->print());
-                if (entry->recordForward(
-                        pkt->req, request, lsqID,
-                        request->instruction()->seqNum)) {
-                    assert(request->isSplit()); // here must be split request
-                    stats.sbufferFullForward++;
-                } else if (!request->SBforwardPackets.empty()) {
-                    stats.sbufferPartiForward++;
-                }
-            }
-        }
     } else {
         if (cache_got_blocked) {
             lsq->cacheBlocked(true);
@@ -3432,7 +3447,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         return NoFault;
     }
 
-    if (request) {
+    if (request && !request->hasCachePacketProgress()) {
         request->SBforwardPackets.clear();
         request->SQforwardPackets.clear();
         request->_sbufferBypass = false;

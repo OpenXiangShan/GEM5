@@ -171,7 +171,9 @@ class IssueQue : public SimObject
     std::queue<DynInstPtr> replayQ;  // only for mem
     std::queue<DynInstPtr> vectorReadyQ;
     std::queue<Tick> vectorReadyQReleaseTicks;
+    std::queue<bool> vectorReadyQReplay;
     std::queue<DynInstPtr> vectorDelayedReadyQ;
+    std::queue<bool> vectorDelayedReadyQReplay;
     std::unordered_set<InstSeqNum> vectorReadyQSeqs;
     EventFunctionWrapper vectorReadyQEvent;
 
@@ -202,6 +204,9 @@ class IssueQue : public SimObject
     void replay(const DynInstPtr& inst);
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
+    bool isVectorMemInst(const DynInstPtr& inst) const;
+    void enqueueVectorMemDelay(const DynInstPtr& inst, bool replay);
+    void releaseVectorDelayedReadyQ();
     void issueToFu();
     void wakeUpDependents(const DynInstPtr& inst, bool speculative);
     void selectInst();
