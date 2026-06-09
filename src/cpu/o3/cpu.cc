@@ -615,6 +615,12 @@ CPU::tick()
     tryDrain();
 }
 
+LSQ*
+CPU::getLSQ()
+{
+    return &iew.ldstQueue;
+}
+
 void
 CPU::init()
 {

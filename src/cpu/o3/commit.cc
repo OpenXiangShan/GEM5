@@ -1211,6 +1211,38 @@ Commit::commitInsts()
 
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
 
+    // Per-cycle, unconditional load-stall self-attribution
+    // Runs even when commit makes forward progress -- otherwise a load
+    // that is in flight (between i and c in pipeview) shows `.` for the
+    // entire cache-miss window because nothing else records on it.
+
+    for (ThreadID t : *activeThreads) {
+        (void)cpu->getLSQ()->attributeAndGetDeepestLoadStall(t);
+    }
+
+    for (ThreadID t : *activeThreads) {
+        DynInstPtr rob_head = rob->isEmpty(t)
+                                  ? DynInstPtr()
+                                  : rob->readHeadInst(t);
+        for (const DynInstPtr &resident : rob->getInstList(t)) {
+            if (!resident || resident->isSquashed()) {
+                continue;
+            }
+            if (resident == rob_head) {
+                continue;
+            }
+            // True head-of-line blocking only: the inst has finished and is
+            // ready to retire, but is stuck behind an older head. Insts still
+            // in IQ / executing in a FU / servicing a cache access are NOT
+            // blocked by the head (they are doing their own work), so they
+            // must not be charged HoLBlocked.
+            if (!resident->readyToCommit()) {
+                continue;
+            }
+            resident->recordStall(StallReason::HoLBlocked);
+        }
+    }
+
     unsigned num_committed = 0;
     std::array<unsigned, MaxThreads> num_committed_per_thread = {};
     std::array<unsigned, MaxThreads> commit_width_per_thread = {};
@@ -1272,6 +1304,44 @@ Commit::commitInsts()
                         "is not all ready, last done inst [sn:%llu]\n",
                         head_inst->seqNum, seqnum);
                 }
+
+                if (head_inst) {
+                    StallReason head_reason =
+                        robInfoFromIEW->iewInfo[commit_thread].robHeadStallReason;
+                    if (head_reason == StallReason::NoStall) {
+                        // Group is not ready but IEW didn't pinpoint a reason;
+                        // fall back to a generic "waiting on producer" reason.
+                        head_reason = StallReason::InstNotReady;
+                    }
+
+                    // Walk LSQ inflight loads this cycle.
+                    StallReason lsq_reason =
+                        cpu->getLSQ()->attributeAndGetDeepestLoadStall(
+                            commit_thread);
+
+                    // Promote head_reason to the more specific LSQ reason
+                    StallReason propagate = head_reason;
+                    if (lsq_reason != StallReason::NoStall &&
+                        (head_reason == StallReason::InstNotReady ||
+                         head_reason == StallReason::OtherStall)) {
+                        propagate = lsq_reason;
+                    }
+
+                    // Per-inst attribution split:
+                    //   head_inst itself  -> the specific blocker reason (`propagate`)
+                    //   every other alive inst in ROB -> HoLBlocked
+                    for (const DynInstPtr &waiter :
+                            rob->getInstList(commit_thread)) {
+                        if (!waiter || waiter->isSquashed())
+                            continue;
+                        if (waiter == head_inst) {
+                            waiter->recordStall(propagate);
+                        } else if (waiter->readyToCommit()) {
+                            // only insts done & waiting to retire are HoL-blocked
+                            waiter->recordStall(StallReason::HoLBlocked);
+                        }
+                    }
+                }
                 break;
             }
 
@@ -1315,6 +1385,18 @@ Commit::commitInsts()
                             head_inst->seqNum, InstDetail::Result,
                             res.as<RegVal>());
                     }
+                    cpu->perfCCT->updateInstMeta(head_inst->seqNum,
+                        InstDetail::StallReason,
+                        (uint64_t)head_inst->dominantStallReason());
+                    cpu->perfCCT->updateInstMeta(head_inst->seqNum,
+                        InstDetail::StallCycles,
+                        (uint64_t)head_inst->totalStallCyclesExclHoL());
+                    cpu->perfCCT->updateInstMeta(head_inst->seqNum,
+                        InstDetail::SecondaryReason,
+                        (uint64_t)head_inst->secondaryStallReason());
+                    cpu->perfCCT->updateInstMetaStr(head_inst->seqNum,
+                        InstDetail::StallSpans,
+                        head_inst->stallSpanString());
                     cpu->perfCCT->commitMeta(head_inst->seqNum);
 
                     DPRINTF(CommitTrace, "CT [tid:%d]: %s\n",
@@ -1607,6 +1689,30 @@ Commit::commitInsts()
                     DPRINTF(Commit, "Unable to commit head instruction PC:%s "
                             "[tid:%i] [sn:%llu].\n",
                             head_inst->pcState(), tid ,head_inst->seqNum);
+
+                    // Second commit-failure path: isHeadGroupReady() said
+                    // "yes" but commitHead() itself returned false (the inst
+                    // isn't actually ready to retire -- usually waiting for
+                    // its own operand or for some completion signal). The
+                    // top-of-commit HoLBlocked walk skips head_inst on
+                    // purpose so we don't smear the head's specific reason;
+                    // we attribute it here with the same head_reason / LSQ
+                    // promotion logic used in the HOL block above.
+                    if (head_inst && !head_inst->isSquashed()) {
+                        StallReason head_reason =
+                            robInfoFromIEW->iewInfo[tid].robHeadStallReason;
+                        if (head_reason == StallReason::NoStall) {
+                            head_reason = StallReason::InstNotReady;
+                        }
+                        StallReason lsq_reason =
+                            cpu->getLSQ()->attributeAndGetDeepestLoadStall(tid);
+                        if (lsq_reason != StallReason::NoStall &&
+                            (head_reason == StallReason::InstNotReady ||
+                             head_reason == StallReason::OtherStall)) {
+                            head_reason = lsq_reason;
+                        }
+                        head_inst->recordStall(head_reason);
+                    }
                     break;
                 }
             }

@@ -110,7 +110,28 @@ def process_trace(trace, outfile, cycle_time, width, color, timestamps,
 
     if store_completions:
         outfile.write(', s = store-complete')
-    outfile.write('\n\n')
+    outfile.write('\n')
+    outfile.write(
+        '// stall reason chars: '
+        'F=IcacheStall T=ITlbStall t=DTlbStall B=BpStall M=MisPredict '
+        'Q=FTQBubble S=SerializeStall X=LongExec/Trap V=VectorLongExec\n')
+    outfile.write(
+        '//                     '
+        '?=InstNotReady ~=MemNotReady Y=ReadyButNoFU '
+        '1/2/3=LoadL1/L2/L3 m=LoadMem !/@/#/$=StoreL1/L2/L3/Mem\n')
+    outfile.write(
+        '//                     '
+        'R=RegFull O=ROBFull C=CommitSquash A=Atomic L=CommitRate '
+        'D/d/v=DQBandwidth(mem/int/fv) u=ResumeUnblock\n')
+    outfile.write(
+        '//                     '
+        'H=HoLBlocked (waiting in ROB behind a stuck older inst, '
+        'not the blocker itself; the real blocker is an older inst '
+        'in the same cycle with a specific reason letter)\n')
+    outfile.write(
+        '//                     '
+        '.=idle (no reason recorded) ==squashed (inst never retired) '
+        '*=other/unknown stall\n\n')
 
     outfile.write(' ' + 'timeline'.center(width) +
                   '   ' + 'tick'.center(15) +
@@ -125,22 +146,29 @@ def process_trace(trace, outfile, cycle_time, width, color, timestamps,
     curr_inst = {}
     while True:
         if fields[0] == 'O3PipeView':
-            curr_inst[fields[1]] = int(fields[2])
-            if fields[1] == 'fetch':
-                if ((stop_tick > 0 and int(fields[2]) > stop_tick+insts['tick_drift']) or
-                    (stop_sn > 0 and int(fields[5]) > (stop_sn+insts['max_threshold']))):
-                    print_insts(outfile, cycle_time, width, color, timestamps,
-                                store_completions, 0)
-                    return
-                (curr_inst['pc'], curr_inst['upc']) = fields[3:5]
-                curr_inst['sn'] = int(fields[5])
-                curr_inst['disasm'] = ' '.join(fields[6][:-1].split())
-            elif fields[1] == 'retire':
-                if curr_inst['retire'] == 0:
-                    curr_inst['disasm'] = '-----' + curr_inst['disasm']
-                if store_completions:
-                    curr_inst[fields[3]] = int(fields[4])
-                queue_inst(outfile, curr_inst, cycle_time, width, color, timestamps, store_completions)
+            tag = fields[1]
+            if tag == 'stallspan':
+                if 'stallspans' not in curr_inst:
+                    curr_inst['stallspans'] = []
+                curr_inst['stallspans'].append(
+                    (int(fields[2]), int(fields[3]), fields[4].strip()))
+            else:
+                curr_inst[tag] = int(fields[2])
+                if tag == 'fetch':
+                    if ((stop_tick > 0 and int(fields[2]) > stop_tick+insts['tick_drift']) or
+                        (stop_sn > 0 and int(fields[5]) > (stop_sn+insts['max_threshold']))):
+                        print_insts(outfile, cycle_time, width, color, timestamps, store_completions, 0)
+                        return
+                    (curr_inst['pc'], curr_inst['upc']) = fields[3:5]
+                    curr_inst['sn'] = int(fields[5])
+                    curr_inst['disasm'] = ' '.join(fields[6][:-1].split())
+                    curr_inst['stallspans'] = []
+                elif tag == 'retire':
+                    if curr_inst['retire'] == 0:
+                        curr_inst['disasm'] = '-----' + curr_inst['disasm']
+                    if store_completions:
+                        curr_inst[fields[3]] = int(fields[4])
+                    queue_inst(outfile, curr_inst, cycle_time, width, color, timestamps, store_completions)
 
         line = trace.readline()
         if not line:
@@ -182,6 +210,121 @@ def print_insts(outfile, cycle_time, width, color, timestamps, store_completions
         if (insts['only_committed'] != 0 and print_item['retire'] == 0):
             continue; # retire is set to zero if it hasn't been completed
         print_inst(outfile,  print_item, cycle_time, width, color, timestamps, store_completions)
+
+# StallReason is set:
+#   - src/cpu/o3/iew.cc::checkDispatchStall (most backend reasons)
+#   - src/cpu/o3/iew.cc::checkLoadStoreInst (mem reasons by cache depth)
+#   - src/cpu/o3/rename.cc                  (RegFull / RegFile-side)
+#   - src/cpu/o3/commit.cc                  (CommitSquash / ROBFull)
+STALL_CHAR = {
+    # Frontend bound (F)
+    'IcacheStall':              'F',  # fetch waiting on I-cache miss
+    'ITlbStall':                'T',  # fetch waiting on I-TLB miss
+    'DTlbStall':                't',  # load/store waiting on D-TLB miss
+    'BpStall':                  'B',  # branch predictor stall
+    'IntStall':                 'X',  # fetch blocked by pending interrupt
+    'TrapStall':                'X',  # trap handling in progress
+    'FTQBubble':                'Q',  # Fetch Target Queue empty
+    'FetchFragStall':           'f',  # fetch line-boundary fragmentation
+    'OtherFetchStall':          'f',  # any other fetch-side stall
+    'OtherFragStall':           'f',  # any other fragmentation stall
+    # Bad Speculation (BS)
+    'SquashStall':              'q',  # pipeline being squashed this cycle
+    'InstMisPred':              'M',  # this branch resolved as mispredicted
+    'InstSquashed':             'x',  # this inst was squashed pre-retire
+    'SerializeStall':           'S',  # non-spec inst at ROB head, draining
+    # Backend bound, core (B)
+    'ScalarLongExecute':        'X',  # scalar long-latency (div/fdiv/sqrt) executing at head
+    'VectorLongExecute':        'V',  # vector long-latency executing at head
+    'InstNotReady':             '?',  # ROB head waiting for source operand (most common)
+    # Backend bound, memory (B-M) by cache depth
+    'LoadL1Bound':              '1',  # load in flight, hit L1
+    'LoadL2Bound':              '2',  # load in flight, missed L1 -> hit L2
+    'LoadL3Bound':              '3',  # load in flight, missed L1/L2 -> hit L3
+    'LoadMemBound':             'm',  # load in flight, missed all caches -> DRAM
+    'StoreL1Bound':             '!',  # store in flight, hit L1
+    'StoreL2Bound':             '@',  # store in flight, hit L2
+    'StoreL3Bound':             '#',  # store in flight, hit L3
+    'StoreMemBound':            '$',  # store going to DRAM
+    'MemSquashed':              'q',  # head mem op was squashed
+    'MemNotReady':              '~',  # mem op ready check failed (memdep/addr)
+    'MemCommitRateLimit':       'L',  # committed but commit rate-limit held
+    'Atomic':                   'A',  # atomic / store-conditional in progress
+    'OtherMemStall':            'o',  # mem op in flight, cache depth unknown
+    # Backend bound, dispatch queue bandwidth (B)
+    'MemDQBandwidth':           'D',  # memory dispatch queue full
+    'IntDQBandwidth':           'd',  # integer dispatch queue full
+    'FVDQBandwidth':            'v',  # float/vector dispatch queue full
+    # Backend bound, issue port / FU contention (B)
+    'VectorReadyButNotIssued':  'Y',  # vector op ready but no issue port/FU
+    'ScalarReadyButNotIssued':  'Y',  # scalar op ready but no issue port/FU
+    'ResumeUnblock':            'u',  # pipeline resuming after previous block
+    # Backend bound, capacity / commit (B / BS)
+    'CommitSquash':             'C',  # commit in squashing/trap-pending mode
+    'ROBFull':                  'O',  # ROB has no free entry
+    'RegFull':                  'R',  # physical register free list empty
+    'OtherStall':               '*',  # catch-all backend stall
+    # Per-inst HOL victim marker
+    'HoLBlocked':               'H',  # waiting in ROB behind a blocked head
+
+}
+
+
+def _build_reason_map(inst, cycle_time, base_tick, width):
+    """Given an inst's stallspans, return a dict {column_offset: char} for
+    columns within [base_tick, base_tick + width*cycle_time).
+
+    Pre-issue stall reasons (InstNotReady, MemNotReady, dispatch-bandwidth,
+    rename-side, HoLBlocked, etc.) are clipped to NEVER paint past the issue
+    column.
+    """
+    out = {}
+    spans = inst.get('stallspans')
+    if not spans:
+        return out
+    end_tick = base_tick + width * cycle_time
+
+    issue_tick = inst.get('issue', 0)
+    pre_issue_reasons = {
+        'InstNotReady', 'MemNotReady',
+        'IntDQBandwidth', 'MemDQBandwidth', 'FVDQBandwidth',
+        'ScalarReadyButNotIssued', 'VectorReadyButNotIssued',
+        'OtherStall', 'OtherMemStall',
+    }
+
+    for first_tick, last_tick, reason in spans:
+        # clip pre-issue reasons to not bleed past the issue cycle
+        if issue_tick and reason in pre_issue_reasons:
+            last_tick = min(last_tick, issue_tick - 1)
+            if last_tick < first_tick:
+                continue
+        # clip span to the current line's tick window
+        s = max(first_tick, base_tick)
+        e = min(last_tick, end_tick - 1)
+        if e < s:
+            continue
+        ch = STALL_CHAR.get(reason, '*')
+        # paint every column the span covers
+        c = ((s - base_tick) // cycle_time)
+        c_end = ((e - base_tick) // cycle_time)
+        for col in range(c, c_end + 1):
+            # later spans should not overwrite an earlier-painted same column
+            # (first writer wins keeps things deterministic for overlap)
+            if col not in out:
+                out[col] = ch
+    return out
+
+
+def _paint_fill(run_len, start_col, reason_map, default_dot):
+    """Build a `run_len` character string starting at column `start_col`,
+    using reason letters where available, else `default_dot` (`.` or `=`)."""
+    if not reason_map:
+        return default_dot * run_len
+    s = []
+    for i in range(run_len):
+        s.append(reason_map.get(start_col + i, default_dot))
+    return ''.join(s)
+
 
 # Prints a single instruction
 def print_inst(outfile, inst, cycle_time, width, color, timestamps, store_completions):
@@ -257,6 +400,10 @@ def print_inst(outfile, inst, cycle_time, width, color, timestamps, store_comple
                                    stages[stage_idx]['name'],
                                    stage_idx, tick))
         events.sort()
+        # Pre-compute the per-column reason map for this row, so any `.`
+        # column that falls inside a stall span gets painted with the
+        # reason's single-char code instead.
+        reason_map = _build_reason_map(inst, cycle_time, start_tick, width)
         outfile.write('[')
         pos = 0
         if num_lines == 1 and events[0][2] != 0:  # event is not fetch
@@ -265,7 +412,10 @@ def print_inst(outfile, inst, cycle_time, width, color, timestamps, store_comple
             if (stages[event[2]]['name'] == 'dispatch' and
                 inst['dispatch'] == inst['issue']):
                 continue
-            outfile.write(curr_color + dot * ((event[0] // cycle_time) - pos))
+            run_len = (event[0] // cycle_time) - pos
+            if run_len > 0:
+                outfile.write(curr_color + _paint_fill(
+                    run_len, pos, reason_map, dot))
             outfile.write(stages[event[2]]['color'] +
                           stages[event[2]]['shorthand'])
 
@@ -275,7 +425,12 @@ def print_inst(outfile, inst, cycle_time, width, color, timestamps, store_comple
                 curr_color = termcap.Normal
 
             pos = (event[0] // cycle_time) + 1
-        outfile.write(curr_color + dot * (width - pos) + termcap.Normal +
+        tail_len = width - pos
+        if tail_len > 0:
+            tail = _paint_fill(tail_len, pos, reason_map, dot)
+        else:
+            tail = ''
+        outfile.write(curr_color + tail + termcap.Normal +
                       ']-(' + str(base_tick + i * time_width).rjust(15) + ') ')
         if i == 0:
             outfile.write('%s.%s %s [%s]' % (

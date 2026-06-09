@@ -620,6 +620,10 @@ Rename::renameInsts(ThreadID tid)
         blockReason = breakRename;
         DPRINTF(Rename, "[tid:%i] Stalling because there are still instructions to "
                 "rename.\n", tid);
+
+        for (const DynInstPtr &stalled : fixedbuffer[tid]) {
+            stalled->recordStall(breakRename);
+        }
     }
 
     if (!rename_stalls.empty()) {

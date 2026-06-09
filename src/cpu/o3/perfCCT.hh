@@ -20,6 +20,10 @@ enum class InstDetail
     PAddress,
     LastReplay,
     ReplayStr,
+    StallReason,
+    StallCycles,
+    SecondaryReason,
+    StallSpans,
 };
 
 enum ReplayReason
@@ -61,6 +65,12 @@ class InstMeta
     Addr paddr;
     Tick lastReplay;
     std::stringstream replayStr;
+
+    // Per-instruction stall attribution (mirrors dyn_inst stallProfile).
+    std::string stallReason;
+    uint64_t stallCycles;
+    std::string secondaryReason;
+    std::string stallSpans;
   public:
 
     void reset(const DynInstPtr inst);
@@ -90,6 +100,9 @@ class PerfCCT
     void updateInstPos(InstSeqNum sn, const PerfRecord pos);
 
     void updateInstMeta(InstSeqNum sn, const InstDetail detail, const uint64_t val);
+
+    void updateInstMetaStr(InstSeqNum sn, const InstDetail detail,
+                           const std::string& val);
 
     void commitMeta(InstSeqNum sn);
 };

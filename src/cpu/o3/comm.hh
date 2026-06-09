@@ -58,54 +58,128 @@ namespace gem5
 namespace o3
 {
 
-/** stall reasons in each stages*/
-enum StallReason {
-    NoStall,  // Base
-    IcacheStall,  // F
-    ITlbStall,  // F
-    DTlbStall,  // B
-    BpStall,  // BS, bad speculation: Frontend is squashed
-    IntStall,  // F
-    TrapStall,  // F
-    FTQBubble,  // F
-    FetchFragStall,  // F
-    OtherFetchStall,  // F
-    OtherFragStall,
-    SquashStall,  // BS
-    FetchBufferInvalid,  // Never used
-    InstMisPred,  // BS
-    InstSquashed,  // BS
-    SerializeStall,  // F
-    ScalarLongExecute,  // B
-    VectorLongExecute,  // B
-    InstNotReady,  // B
+/**
+ *
+ * Categories follow
+ *   F   = Frontend bound        (instruction supply problem)
+ *   BS  = Bad Speculation       (work thrown away by squash)
+ *   B   = Backend bound         (general backend resource / dependency)
+ *   B-M = Backend bound, Memory (specifically memory subsystem)
+ *
+ * Single-char codes in brackets are the letters used to paint timelines by
+ * `util/o3-pipeview.py` (STALL_CHAR).
+ */
+enum StallReason
+{
+    NoStall,                  // [.] /?
+    /*
+     FRONTEND BOUND (F)
+     Instruction supply (fetch / decode) couldn't keep the backend fed.
+     */
+    IcacheStall,              // [F]  fetch waiting on I-cache miss
+    ITlbStall,                // [T]  fetch waiting on instruction TLB miss
+    DTlbStall,                // [t]  load/store waiting on data TLB miss (set by checkLoadStoreInst when a mem
+                              //        op is issued but translation not done)
+    BpStall,                  // [B]  branch predictor not delivering target
+    IntStall,                 // [X]  fetch stalled by pending interrupt
+    TrapStall,                // [X]  trap handling in progress
+    FTQBubble,                // [Q]  Fetch Target Queue empty
+    FetchFragStall,           // [f]  fetch fragmented (cache-line boundary)
+    OtherFetchStall,          // [f]  any other fetch-side stall
+    OtherFragStall,           // [f]  any other fragmentation stall
 
-    LoadL1Bound,
-    LoadL2Bound,
-    LoadL3Bound,
-    LoadMemBound,
-    StoreL1Bound,
-    StoreL2Bound,
-    StoreL3Bound,
-    StoreMemBound,
-    MemSquashed,  // maybe never used
-    MemNotReady,
-    MemCommitRateLimit,
-    Atomic,
-    OtherMemStall,  // B
+    /*
+     BAD SPECULATION (BS)
+     Work that was done but had to be thrown away.
+     */
+    SquashStall,              // [q]  pipeline being squashed this cycle
+    FetchBufferInvalid,       //
+    InstMisPred,              // [M]  this branch resolved as mispredicted
+    InstSquashed,             // [x]  this inst was squashed before retire
+    SerializeStall,           // [S]  non-speculative inst at ROB head must drain pipeline before issuing
 
-    MemDQBandwidth,
-    IntDQBandwidth,
-    FVDQBandwidth,
-    VectorReadyButNotIssued,  // B
-    ScalarReadyButNotIssued,  // B
-    ResumeUnblock,  // B
-    CommitSquash,  // BS
-    ROBFull,  // B
-    RegFull,  // B
-    OtherStall,  // B
+    /*
+    BACKEND BOUND (B) - core / scheduling
+    Backend can't accept more work, or producer not ready. */
+    ScalarLongExecute,        // [X]  scalar long-latency op (div, fdiv, fsqrt) still executing at ROB head
+    VectorLongExecute,        // [V]  vector long-latency op still executing
+    InstNotReady,             // [?]  ROB head's readyTick == -1: waiting for a source operand to be produced
+
+    /*
+     BACKEND BOUND - MEMORY (B-M)
+     Set by checkLoadStoreInst() using pendingCacheReq->depth:
+     depth 0 -> L1, 1 -> L2, 2 -> L3, >=3 -> DRAM */
+    LoadL1Bound,              // [1]  load in flight, hit L1
+    LoadL2Bound,              // [2]  load in flight, missed L1, hit L2
+    LoadL3Bound,              // [3]  load in flight, missed L1+L2, hit L3
+    LoadMemBound,             // [m]  load in flight, all miss -> DRAM
+    StoreL1Bound,             // [!]  store in flight, hit L1
+    StoreL2Bound,             // [@]  store in flight, hit L2
+    StoreL3Bound,             // [#]  store in flight, hit L3
+    StoreMemBound,            // [$]  store going to DRAM
+    MemSquashed,              // [q]  load/store at head was squashed
+    MemNotReady,              // [~]  load/store ready check failed (waiting on address dependency / memdep)
+    MemCommitRateLimit,       // [L]  inst already committed but commit rate-limit holding it
+    Atomic,                   // [A]  atomic or store-conditional in progress
+    OtherMemStall,            // [o]  mem op in flight but cache depth unknown
+
+    /*
+     BACKEND BOUND - dispatch queue bandwidth (B)
+     Specific DQ is full and this inst targets that DQ.
+     */
+    MemDQBandwidth,           // [D]  memory dispatch queue bandwidth limit
+    IntDQBandwidth,           // [d]  integer dispatch queue bandwidth limit
+    FVDQBandwidth,            // [v]  float/vector dispatch queue bandwidth
+
+    /*
+      BACKEND BOUND - issue port / FU contention (B)
+      Head is ready but couldn't issue this cycle.
+     */
+    VectorReadyButNotIssued,  // [Y]  vector op ready but no issue port/FU
+    ScalarReadyButNotIssued,  // [Y]  scalar op ready but no issue port/FU
+    ResumeUnblock,            // [u]  pipeline resuming after a previous block
+
+    // BACKEND BOUND - capacity (B) and commit-side (BS)
+    CommitSquash,        // [C]  commit in ROBSquashing/TrapPending mode
+    ROBFull,             // [O]  ROB has no free entry (backpressure)
+    RegFull,             // [R]  physical register free list empty
+    OtherStall,          // [*]  catch-all backend stall
+
+    /*
+     Per-instruction attribution helper (not a stage-level signal).*/
+    HoLBlocked,         // [H]  waiting in ROB behind a blocked head
+
     NumStallReasons
 };
+
+/** Human-readable name for a StallReason. Order MUST match the enum above.
+ *  Shared by dyn_inst.cc (O3PipeView:stallspan trace) and perfCCT.cc
+ *  (LifeTimeCommitTrace.StallReason column). */
+inline const char*
+stallReasonToString(int reason)
+{
+    static const char *names[StallReason::NumStallReasons] = {
+        "NoStall", "IcacheStall", "ITlbStall", "DTlbStall",
+        "BpStall", "IntStall", "TrapStall", "FTQBubble",
+        "FetchFragStall", "OtherFetchStall", "OtherFragStall",
+        "SquashStall", "FetchBufferInvalid", "InstMisPred",
+        "InstSquashed", "SerializeStall", "ScalarLongExecute",
+        "VectorLongExecute", "InstNotReady",
+        "LoadL1Bound", "LoadL2Bound", "LoadL3Bound",
+        "LoadMemBound", "StoreL1Bound", "StoreL2Bound",
+        "StoreL3Bound", "StoreMemBound", "MemSquashed",
+        "MemNotReady", "MemCommitRateLimit", "Atomic",
+        "OtherMemStall", "MemDQBandwidth", "IntDQBandwidth",
+        "FVDQBandwidth", "VectorReadyButNotIssued",
+        "ScalarReadyButNotIssued", "ResumeUnblock",
+        "CommitSquash", "ROBFull", "RegFull", "OtherStall",
+        "HoLBlocked"
+    };
+    if (reason < 0 || reason >= StallReason::NumStallReasons) {
+        return "NoStall";
+    }
+    return names[reason];
+}
 
 /** Struct that defines the information passed from fetch to decode. */
 struct FetchStruct

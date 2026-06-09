@@ -441,6 +441,8 @@ class CPU : public BaseCPU
     InstSeqNum getOldestInFlightSeqNum() const;
 
   public:
+    LSQ* getLSQ();
+
 #ifndef NDEBUG
     /** Count of total number of dynamic instructions in flight. */
     int instcount;

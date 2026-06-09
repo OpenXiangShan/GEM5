@@ -70,7 +70,15 @@ class PerfRecord(ScopedEnum):
         # position tick
         'AtFetch', 'AtDecode', 'AtRename', 'AtDispQue', 'AtIssueQue', 'AtIssueArb', 'AtIssueReadReg',
         'AtFU', 'AtBypassVal', 'AtWriteVal', 'AtCommit',
-        'Result', 'DisAsm', 'PC'
+        'Result', 'DisAsm', 'PC',
+        # Per-instruction stall attribution (from dyn_inst stallProfile):
+        #   StallReason   = dominant stall reason name
+        #   StallCycles   = total stalled cycles
+        #   SecondaryReason = dominant reason excluding HoLBlocked (the inst's
+        #                     own real problem when StallReason==HoLBlocked)
+        #   StallSpans = chronological "reason:cycles;..." breakdown of every
+        #                stall span (full per-phase detail, includes HoLBlocked)
+        'StallReason', 'StallCycles', 'SecondaryReason', 'StallSpans'
     ]
 
 class BaseO3CPU(BaseCPU):

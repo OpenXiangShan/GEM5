@@ -76,9 +76,22 @@ def dump_txt(pos, records):
     print(records)
 
 
+def print_legend():
+    print("// PerfCCT pipeline timeline  (1 char = 1 cycle, period={} ticks, "
+          "{} cycles/line)".format(tick_per_cycle, cycle_per_line))
+    print("// stage chars: f=fetch/ibuffer  d=decode  r=rename  D=dispQ  "
+          "i=issueQ  a=issue0(arb)  g=issue1(readReg)/issue2")
+    print("//              e=FU(execute)  b=bypass(写回前1拍)  "
+          "w=writeback(已完成待提交)  c=commit")
+    print("//              .=该拍不在上述阶段(等待/空槽)   "
+          "末尾 [ ... ] 后为 [Result, 'disasm', 'pc']")
+    print()
+
+
 dump = dump_txt
 if args.visual:
     dump = dump_visual
+    print_legend()
 
 with sql.connect(sqldb) as con:
     cur = con.cursor()

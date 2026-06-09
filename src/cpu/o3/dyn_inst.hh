@@ -59,6 +59,7 @@
 #include "cpu/exetrace.hh"
 #include "cpu/inst_res.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/comm.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
@@ -1451,6 +1452,146 @@ class DynInst : public ExecContext, public RefCounted
     int32_t commitTick = -1;
     int32_t storeTick = -1;
 #endif
+
+    /**
+     * Per-instruction stall profile.
+     */
+    struct StallSpan
+    {
+        Tick firstTick;          // absolute tick of first stalled cycle
+        Tick lastTick;              // absolute tick of last stalled cycle
+        StallReason reason;
+        uint32_t cycles;            // recorded stalled cycles in this span
+    };
+
+    struct StallProfile
+    {
+        std::vector<StallSpan> spans;
+        StallReason lastReason = StallReason::NoStall;
+        Tick lastUpdateTick = 0;
+        /** Total cycles this inst was held up anywhere in the pipeline. */
+        uint32_t totalStallCycles = 0;
+        /** Of those, cycles spent passively HoL-blocked (ROB head stuck). */
+        uint32_t holStallCycles = 0;
+    };
+
+    StallProfile stallProfile;
+
+    /**
+     * Attribute one cycle of stall to this instruction.
+     *
+     * Behavior:
+     *  - dedup: a second call from another stage in the *same simulator
+     *    tick* is ignored (otherwise dispatch+issue both blocked would
+     *    double-count one cycle).
+     *  - coalesce: if `reason` matches the last open span, extend it;
+     *    otherwise open a new span starting this tick. Same-reason spans
+     *    that bridge short gaps with no recording are fused.
+     */
+    void
+    recordStall(StallReason reason)
+    {
+        if (reason == StallReason::NoStall ||
+            reason >= StallReason::NumStallReasons) {
+            return;
+        }
+        Tick now = curTick();
+        if (stallProfile.lastUpdateTick == now) {
+            // already attributed this tick; remember the latest caller's reason
+            stallProfile.lastReason = reason;
+            return;
+        }
+        if (!stallProfile.spans.empty() &&
+            stallProfile.spans.back().reason == reason) {
+            stallProfile.spans.back().lastTick = now;
+            stallProfile.spans.back().cycles++;
+        } else {
+            stallProfile.spans.push_back({now, now, reason, 1});
+        }
+        stallProfile.lastReason = reason;
+        stallProfile.lastUpdateTick = now;
+        stallProfile.totalStallCycles++;
+        if (reason == StallReason::HoLBlocked) {
+            stallProfile.holStallCycles++;
+        }
+    }
+
+    /** Returns the reason that covered the most ticks across all spans. */
+    StallReason
+    dominantStallReason() const
+    {
+        std::array<uint64_t, StallReason::NumStallReasons> per{};
+        for (const auto& s : stallProfile.spans) {
+            per[s.reason] += (s.lastTick - s.firstTick + 1);
+        }
+        StallReason best = StallReason::NoStall;
+        uint64_t bestTicks = 0;
+        for (int r = 1; r < StallReason::NumStallReasons; ++r) {
+            if (per[r] > bestTicks) {
+                bestTicks = per[r];
+                best = static_cast<StallReason>(r);
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Returns the reason covering the most ticks, ignoring HoLBlocked (and
+     * NoStall). HoLBlocked just means "waiting in ROB behind a stuck older
+     * inst" and dominates almost every committed inst, hiding the inst's own
+     * real problem. This secondary reason surfaces that real problem; it is
+     * NoStall when the inst never had any stall of its own (a pure victim).
+     */
+    StallReason
+    secondaryStallReason() const
+    {
+        std::array<uint64_t, StallReason::NumStallReasons> per{};
+        for (const auto& s : stallProfile.spans) {
+            per[s.reason] += (s.lastTick - s.firstTick + 1);
+        }
+        StallReason best = StallReason::NoStall;
+        uint64_t bestTicks = 0;
+        for (int r = 1; r < StallReason::NumStallReasons; ++r) {
+            if (r == StallReason::HoLBlocked) {
+                continue;
+            }
+            if (per[r] > bestTicks) {
+                bestTicks = per[r];
+                best = static_cast<StallReason>(r);
+            }
+        }
+        return best;
+    }
+
+    uint32_t totalStallCycles() const { return stallProfile.totalStallCycles; }
+
+    /** Stall cycles excluding passive HoL-blocked waiting (the inst's own
+     *  real stall time). This is what PerfCCT records as StallCycles. */
+    uint32_t totalStallCyclesExclHoL() const {
+        return stallProfile.totalStallCycles - stallProfile.holStallCycles;
+    }
+
+    /** Chronological breakdown of every stall span this inst went through,
+     *  as "reason:cycles:firstTick:lastTick;..." (includes HoLBlocked). The
+     *  absolute first/last ticks let the tooling place each span at the cycle
+     *  it actually happened (so a stall timeline can be aligned in time with
+     *  the per-stage module timeline). Empty when the inst never stalled. */
+    std::string stallSpanString() const {
+        std::string out;
+        for (const auto& s : stallProfile.spans) {
+            if (!out.empty()) {
+                out += ";";
+            }
+            out += stallReasonToString(s.reason);
+            out += ":";
+            out += std::to_string(s.cycles);
+            out += ":";
+            out += std::to_string(s.firstTick);
+            out += ":";
+            out += std::to_string(s.lastTick);
+        }
+        return out;
+    }
 
     /* Values used by LoadToUse stat */
     Tick enterDQTick = -1;

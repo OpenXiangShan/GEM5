@@ -365,8 +365,8 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         print("Simulating single core with RVH, demanding GCPT restorer size of 0x1000.")
         sys.gcpt_restorer_size_limit = 0x1000
     else:
-        print("Simulating single core without RVV, demanding GCPT restorer size of 0x700.")
-        sys.gcpt_restorer_size_limit = 0x700
+        print("Simulating single core without RVV, demanding GCPT restorer size of 0x1000.")
+        sys.gcpt_restorer_size_limit = 0x1000
 
     # configure gcpt input
     if args.generic_rv_cpt is not None:
@@ -682,7 +682,10 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
         for i in range(1, len(PerfRecord.vals)):
             name = PerfRecord.vals[i]
-            type_str = "bigint unsigned" if name.lower().startswith(('at', 'pc', 'result')) else "char(20)"
+            type_str = ("bigint unsigned"
+                if name.lower().startswith(
+                    ('at', 'pc', 'result', 'stallcycles'))
+                else "char(20)")
             perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
         perfCCT_cmd += ");"
 

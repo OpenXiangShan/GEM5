@@ -1704,6 +1704,70 @@ int LSQ::anyInflightLoadsNotComplete()
     return l1miss | l2miss | l3miss | any;
 }
 
+StallReason
+LSQ::attributeAndGetDeepestLoadStall(ThreadID tid)
+{
+    if (tid >= thread.size()) {
+        return StallReason::NoStall;
+    }
+    // Severity ordering: Mem > L3 > L2 > L1 > OtherMem > NoStall.
+    // We rank by enum value implicitly: higher Bound = deeper miss.
+    StallReason deepest = StallReason::NoStall;
+    auto severity = [](StallReason r) {
+        switch (r) {
+            case StallReason::LoadMemBound:
+                return 4;
+            case StallReason::LoadL3Bound:
+                return 3;
+            case StallReason::LoadL2Bound:
+                return 2;
+            case StallReason::LoadL1Bound:
+                return 1;
+            case StallReason::OtherMemStall:
+                return 0;
+            default:
+                return -1;
+        }
+    };
+
+    for (auto it : thread.at(tid).inflightLoads) {
+        if (!it || !it->isAnyOutstandingRequest()) {
+            continue;
+        }
+        // depth convention (matches iew.cc::checkLoadStoreInst):
+        //   0 -> L1, 1 -> L2, 2 -> L3, >=3 -> DRAM, -1 -> unknown
+        int depth = it->mainReq() ? it->mainReq()->depth : -1;
+        StallReason r;
+        switch (depth) {
+            case 0:
+                r = StallReason::LoadL1Bound;
+                break;
+            case 1:
+                r = StallReason::LoadL2Bound;
+                break;
+            case 2:
+                r = StallReason::LoadL3Bound;
+                break;
+            case -1:
+                r = StallReason::OtherMemStall;
+                break;
+            default:
+                r = StallReason::LoadMemBound;
+                break;  //DRAM
+        }
+        // Attribute one cycle of this reason to the load itself
+        //  1/2/3/m instead of `.`.
+        const DynInstPtr &load_inst = it->instruction();
+        if (load_inst && !load_inst->isSquashed()) {
+            load_inst->recordStall(r);
+        }
+        if (severity(r) > severity(deepest)) {
+            deepest = r;
+        }
+    }
+    return deepest;
+}
+
 bool
 LSQ::anyStoreNotExecute()
 {

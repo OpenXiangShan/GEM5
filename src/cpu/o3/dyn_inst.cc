@@ -253,6 +253,21 @@ DynInst::~DynInst()
             DPRINTFR(O3PipeView, "O3PipeView:complete:%llu\n", val);
             val = (commitTick == -1) ? 0 : fetch + commitTick;
 
+            // Per-instruction stall timeline. MUST be emitted BEFORE the
+            // retire line
+
+            // One line per span:
+            //   O3PipeView:stallspan:<firstTick>:<lastTick>:<reasonName>
+            // Insts that never stalled emit nothing. Old consumers ignore unknown lines.
+            if (!stallProfile.spans.empty()) {
+                for (const auto& span : stallProfile.spans) {
+                    DPRINTFR(O3PipeView,
+                             "O3PipeView:stallspan:%llu:%llu:%s\n",
+                             span.firstTick, span.lastTick,
+                             stallReasonToString(span.reason));
+                }
+            }
+
             Tick valS = (storeTick == -1) ? 0 : fetch + storeTick;
             DPRINTFR(O3PipeView, "O3PipeView:retire:%llu:store:%llu\n",
                     val, valS);

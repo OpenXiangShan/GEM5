@@ -21,6 +21,11 @@ InstMeta::reset(const DynInstPtr inst)
     paddr = 0;
     lastReplay = 0;
     replayStr.str(std::string());
+
+    stallReason = "NoStall";
+    stallCycles = 0;
+    secondaryReason = "NoStall";
+    stallSpans = "";
 }
 
 
@@ -98,6 +103,38 @@ PerfCCT::updateInstMeta(InstSeqNum sn, const InstDetail detail, const uint64_t v
         meta->replayStr << ReplayReasonStr[val];
         break;
     }
+    case InstDetail::StallReason:{
+        meta->stallReason = stallReasonToString((int)val);
+        break;
+    }
+    case InstDetail::StallCycles:{
+        meta->stallCycles = val;
+        break;
+    }
+    case InstDetail::SecondaryReason:{
+        meta->secondaryReason = stallReasonToString((int)val);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+void
+PerfCCT::updateInstMetaStr(InstSeqNum sn, const InstDetail detail,
+                           const std::string& val)
+{
+    if (!enableCCT) [[likely]] {
+        return;
+    }
+    auto meta = getMeta(sn);
+    switch (detail) {
+    case InstDetail::StallSpans:{
+        meta->stallSpans = val;
+        break;
+    }
+    default:
+        break;
     }
 }
 
@@ -117,6 +154,10 @@ PerfCCT::commitMeta(InstSeqNum sn)
     ss << "," << (meta->value & 0x0fffffffffffffffllu);
     ss << ",\'" << meta->disasm << "\'";
     ss << "," << (meta->pc & 0x0fffffffffffffffllu);
+    ss << ",\'" << meta->stallReason << "\'";
+    ss << "," << meta->stallCycles;
+    ss << ",\'" << meta->secondaryReason << "\'";
+    ss << ",\'" << meta->stallSpans << "\'";
     ss << ");";
     archdb->execmd(ss.str());
     ss.str(std::string());

@@ -65,6 +65,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/limits.hh"
@@ -971,6 +972,10 @@ class LSQ
     int numLoads(ThreadID tid) const;
 
     int anyInflightLoadsNotComplete();
+
+
+    // Load{L1,L2,L3,Mem}
+    StallReason attributeAndGetDeepestLoadStall(ThreadID tid);
 
     bool anyStoreNotExecute();
 

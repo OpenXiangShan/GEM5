@@ -325,14 +325,19 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::MemCommitRateLimit, "MemCommitRateLimit"},
         {StallReason::OtherMemStall, "OtherMemStall"},
         {StallReason::VectorReadyButNotIssued, "VectorReadyButNotIssued"},
-        {StallReason::ScalarReadyButNotIssued, "ScalarReadyButNotIssued"}
+        {StallReason::ScalarReadyButNotIssued, "ScalarReadyButNotIssued"},
+        {StallReason::HoLBlocked, "HoLBlocked"}
     };
 
     for (int i = 0;i < NumStallReasons;i++) {
-        fetchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
-        decodeStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
-        renameStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
-        dispatchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        auto it = stallReasonStr.find(static_cast<StallReason>(i));
+        const char *name = (it != stallReasonStr.end() && it->second)
+                               ? it->second
+                               : "UnknownStallReason";
+        fetchStallReason.subname(i, name);
+        decodeStallReason.subname(i, name);
+        renameStallReason.subname(i, name);
+        dispatchStallReason.subname(i, name);
     }
 }
 
@@ -1217,7 +1222,21 @@ IEW::dispatchInstFromRename(ThreadID tid)
 
         iewStats.stallEvents[DispBWFull]++;
         iewStats.smtStallEvents[DispBWFull].sample(tid);
-        
+
+        // Attribution for dispatch back-pressure. Every inst stuck in the
+        // dispatch buffer is blocked by the same downstream-full cause `r`,
+        // so charge `r` to all of them. HoLBlocked is NOT used here: it is
+        // reserved for true ROB head-of-line blocking (an inst that has
+        // finished and is waiting to retire behind a stuck head), recorded
+        // only at commit.
+        StallReason r = (breakDispatch != StallReason::NoStall)
+                            ? breakDispatch : StallReason::OtherStall;
+        for (auto &stalled : insts_to_dispatch) {
+            if (!stalled || stalled->isSquashed()) {
+                continue;
+            }
+            stalled->recordStall(r);
+        }
     }
 
 }
@@ -1333,6 +1352,19 @@ IEW::classifyInstToDispQue(ThreadID tid)
         DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
         iewStats.stallEvents[DispBWFull]++;
         iewStats.smtStallEvents[DispBWFull].sample(tid);
+
+        // Same per-inst attribution as dispatchInstFromRename: all insts
+        // stuck in the dispatch buffer share the back-pressure cause `r`;
+        // HoLBlocked is reserved for true ROB head-of-line blocking (commit).
+        StallReason r = (breakDispatch != StallReason::NoStall)
+                            ? breakDispatch
+                            : StallReason::OtherStall;
+        for (auto &stalled : insts_to_dispatch) {
+            if (!stalled || stalled->isSquashed()) {
+                continue;
+            }
+            stalled->recordStall(r);
+        }
     }
 }
 
