@@ -108,8 +108,8 @@ def setKmhV3IdealParams(args, system):
                 system.l2_caches[i].wpu = NULL
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 1
-                l2_wrapper.dir_sram_banks = 1
+                l2_wrapper.data_sram_banks = 2
+                l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
