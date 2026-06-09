@@ -1570,6 +1570,7 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
             continue;
         }
         scoreboard[dst->flatIndex()] = true;
+        bypassScoreboard[dst->flatIndex()] = true;
     }
     for (auto it : issueQues) {
         it->wakeUpDependents(inst, false);
