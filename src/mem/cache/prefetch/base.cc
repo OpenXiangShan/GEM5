@@ -304,28 +304,39 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
 
     pfIssued_srcs
         .init(NUM_PF_SOURCES)
-        .flags(total);
+        .flags(total | nozero);
 
     pfUnused.flags(nozero);
     pfUnused_srcs
         .init(NUM_PF_SOURCES)
-        .flags(total);
+        .flags(total | nozero);
     pfUseful_srcs
         .init(NUM_PF_SOURCES)
-        .flags(total);
+        .flags(total | nozero);
 
     pfHitInCache_srcs
         .init(NUM_PF_SOURCES)
-        .flags(total);
+        .flags(total | nozero);
     pfHitInMSHR_srcs
         .init(NUM_PF_SOURCES)
-        .flags(total);
+        .flags(total | nozero);
     pfHitInWB_srcs
         .init(NUM_PF_SOURCES)
-        .flags(total);
+        .flags(total | nozero);
     late_srcs
         .init(NUM_PF_SOURCES)
-        .flags(total);
+        .flags(total | nozero);
+
+    for (unsigned source = 0; source < NUM_PF_SOURCES; ++source) {
+        const auto source_name = prefetchSourceTypeName(source);
+        pfIssued_srcs.subname(source, source_name);
+        pfUnused_srcs.subname(source, source_name);
+        pfUseful_srcs.subname(source, source_name);
+        pfHitInCache_srcs.subname(source, source_name);
+        pfHitInMSHR_srcs.subname(source, source_name);
+        pfHitInWB_srcs.subname(source, source_name);
+        late_srcs.subname(source, source_name);
+    }
 
 
     accuracy.flags(total);
@@ -465,11 +476,16 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     DPRINTF(HWPrefetch, "Reach condition checked\n");
 
+    if (pkt->isDemand()) {
+        notifyDemandAccess(pkt->getAddr(), pkt->isSecure(), miss);
+    }
+
     if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
         prefetchStats.pfUseful_srcs[pf_source]++;
+        notifyPrefetchUseful(pf_source);
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.
