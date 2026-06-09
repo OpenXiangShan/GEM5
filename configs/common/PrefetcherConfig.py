@@ -5,20 +5,14 @@ from common import ObjectList
 from m5.objects.Prefetcher import XSPhysicalSmallBOP, XSVirtualLargeBOP
 
 
-DEFAULT_ENABLE_PF_BUFFER = True
-
-
 def _get_hwp(hwp_option):
-    if hwp_option == None:
+    if hwp_option is None:
         return NULL
     hwpClass = ObjectList.hwp_list.get(hwp_option)
     return hwpClass()
 
 def is_pf_buffer_enabled(options):
-    option_value = getattr(options, 'enable_pf_buffer', None)
-    if option_value is None:
-        return DEFAULT_ENABLE_PF_BUFFER
-    return option_value
+    return getattr(options, 'enable_pf_buffer', True)
 
 def _configure_pf_buffer(prefetcher, pf_buffer_enabled):
     if prefetcher != NULL and hasattr(prefetcher, 'use_pf_buffer'):
