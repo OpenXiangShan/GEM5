@@ -12,6 +12,8 @@ def _get_hwp(hwp_option):
     return hwpClass()
 
 def is_pf_buffer_enabled(options):
+    # The pf-buffer is enabled by default; --disable-pf-buffer is an explicit
+    # opt-out for experiments that need the legacy training/filtering path.
     return getattr(options, 'enable_pf_buffer', True)
 
 def _configure_pf_buffer(prefetcher, pf_buffer_enabled):
@@ -19,6 +21,8 @@ def _configure_pf_buffer(prefetcher, pf_buffer_enabled):
         prefetcher.use_pf_buffer = pf_buffer_enabled
 
 def _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled):
+    # Legacy training/filtering is used only when the optional pf-buffer is
+    # disabled. Keep this policy centralized so XS/L2 composite profiles agree.
     if hasattr(prefetcher, 'prefetch_train'):
         prefetcher.prefetch_train = not pf_buffer_enabled
     if hasattr(prefetcher, 'queue_filter'):
@@ -76,6 +80,8 @@ def _configure_xs_composite_kmh_align(prefetcher):
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
 
+    # Select the L1D composite profile first, then apply optional component
+    # overrides from explicit command-line switches.
     if options.kmh_align:
         _configure_xs_composite_kmh_align(prefetcher)
     else:
@@ -89,12 +95,14 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
 def _configure_l2_composite_default(prefetcher):
+    # Default L2 composite profile used by normal XiangShan configs.
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = True
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = True
 
 def _configure_l2_composite_kmh_align(prefetcher):
+    # RTL-aligned L2 profile: use CMC/BOP and disable CDP/despacito stream.
     prefetcher.enable_cmc = True
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = False
@@ -105,9 +113,6 @@ def _configure_l2_composite_kmh_align(prefetcher):
                                               enable_adaptoffset=False)
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
-    if hasattr(prefetcher, 'enable_bop'):
-        prefetcher.enable_bop = True
-
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
         _configure_l2_composite_kmh_align(prefetcher)
@@ -116,26 +121,35 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
-    if options.classic_l2:
-        _configure_l2_composite(prefetcher, prefetcher_name, options)
-        _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
-        if options.l1_to_l2_pf_hint:
-            prefetcher.queue_size = 64
-            prefetcher.max_prefetch_requests_with_pending_translation = 128
-    else:
+    # In aligned L2 mode, slice inner caches only forward requests to the
+    # wrapper-level real prefetcher.
+    if not options.classic_l2:
         assert prefetcher_name == 'PrefetcherForwarder'
+        return
+
+    # In classic L2 mode, the real L2 prefetcher is attached to the L2 cache.
+    _configure_l2_composite(prefetcher, prefetcher_name, options)
+    _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
+    if options.l1_to_l2_pf_hint:
+        prefetcher.queue_size = 64
+        prefetcher.max_prefetch_requests_with_pending_translation = 128
 
 def _configure_l2_wrapper_prefetcher(prefetcher, prefetcher_name, options,
                                      pf_buffer_enabled):
-    if not options.classic_l2:
-        _configure_l2_composite(prefetcher, prefetcher_name, options)
-        _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
-        if options.l1_to_l2_pf_hint:
-            prefetcher.queue_size = 32
-            prefetcher.max_prefetch_requests_with_pending_translation = 128
+    # Classic L2 has no wrapper-level real prefetcher to configure.
+    if options.classic_l2:
+        return
+
+    # In aligned L2 mode, the real L2 prefetcher is attached to l2_wrapper.
+    _configure_l2_composite(prefetcher, prefetcher_name, options)
+    _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
+    if options.l1_to_l2_pf_hint:
+        prefetcher.queue_size = 32
+        prefetcher.max_prefetch_requests_with_pending_translation = 128
 
 def _configure_l3_prefetcher(prefetcher, options):
     if options.l2_to_l3_pf_hint:
+        # L2-to-L3 hints need enough queue and translation capacity at L3.
         prefetcher.queue_size = 64
         prefetcher.max_prefetch_requests_with_pending_translation = 128
 
