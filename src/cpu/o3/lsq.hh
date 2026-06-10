@@ -634,6 +634,12 @@ class LSQ
             return flags.isSet(Flag::Sent);
         }
 
+        virtual bool
+        hasCachePacketProgress() const
+        {
+            return _numOutstandingPackets > 0;
+        }
+
         bool
         isPartialFault()
         {
@@ -785,25 +791,30 @@ class LSQ
                 bool isLoad, const Addr& addr, const uint32_t& size,
                 const Request::Flags & flags_, PacketDataPtr data=nullptr,
                 uint64_t* res=nullptr);
-        virtual ~SplitDataRequest();
-        virtual void markAsStaleTranslation();
-        virtual void finish(const Fault &fault, const RequestPtr &req,
-                gem5::ThreadContext* tc, BaseMMU::Mode mode);
-        virtual bool recvTimingResp(PacketPtr pkt);
-        virtual void recvFunctionalCustomSignal(PacketPtr pkt);
-        virtual void assemblePackets();
-        virtual void initiateTranslation();
-        virtual bool sendPacketToCache();
-        virtual void buildPackets();
+        ~SplitDataRequest() override;
+        void markAsStaleTranslation() override;
+        void finish(const Fault &fault, const RequestPtr &req,
+                gem5::ThreadContext* tc, BaseMMU::Mode mode) override;
+        bool recvTimingResp(PacketPtr pkt) override;
+        void recvFunctionalCustomSignal(PacketPtr pkt) override;
+        void assemblePackets() override;
+        void initiateTranslation() override;
+        bool sendPacketToCache() override;
+        void buildPackets() override;
+        bool
+        hasCachePacketProgress() const override
+        {
+            return numReceivedPackets > 0 || _numOutstandingPackets > 0;
+        }
 
-        virtual Cycles handleLocalAccess(
-                gem5::ThreadContext *thread, PacketPtr pkt);
-        virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask);
+        Cycles handleLocalAccess(
+                gem5::ThreadContext *thread, PacketPtr pkt) override;
+        bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask) override;
 
-        virtual RequestPtr mainReq();
-        virtual RequestPtr mainReq() const;
-        virtual PacketPtr mainPacket();
-        virtual std::string name() const { return "SplitDataRequest"; }
+        RequestPtr mainReq() override;
+        RequestPtr mainReq() const override;
+        PacketPtr mainPacket() override;
+        std::string name() const override { return "SplitDataRequest"; }
     };
 
     class SbufferRequest : public LSQRequest

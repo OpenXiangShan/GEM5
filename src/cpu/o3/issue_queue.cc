@@ -198,6 +198,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
       scheduleToExecDelay(params.scheduleToExecDelay),
       iqname(params.name),
       inflightIssues(scheduleToExecDelay, 0),
+      vectorReadyQEvent([this]() { processVectorReadyQ(); },
+                        csprintf("%s.vectorReadyQEvent", params.name)),
       selector(params.sel)
 {
     // TODO: keep this in sync with the current load IQ naming convention.
@@ -378,6 +380,107 @@ IssueQue::addToFu(const DynInstPtr& inst)
     scheduler->addToFU(inst);
 }
 
+bool
+IssueQue::isVectorMemInst(const DynInstPtr& inst) const
+{
+    return inst && inst->isVector() && inst->isMemRef() && !inst->isSquashed();
+}
+
+void
+IssueQue::enqueueVectorMemDelay(const DynInstPtr& inst, bool replay)
+{
+    if (!isVectorMemInst(inst) || (!replay && inst->canceled())) {
+        return;
+    }
+
+    if (!vectorReadyQSeqs.insert(inst->seqNum).second) {
+        return;
+    }
+
+    assert(cpu);
+    const Tick releaseTick = cpu->clockEdge(Cycles(3));
+    const bool needSchedule = vectorReadyQ.empty();
+    vectorReadyQ.push(inst);
+    vectorReadyQReleaseTicks.push(releaseTick);
+    vectorReadyQReplay.push(replay);
+    DPRINTF(Schedule,
+            "[sn:%llu] add to vectorReadyQ, replay:%d, release at %llu\n",
+            inst->seqNum, replay, releaseTick);
+
+    if (needSchedule && !vectorReadyQEvent.scheduled()) {
+        cpu->schedule(vectorReadyQEvent, releaseTick);
+    }
+}
+
+void
+IssueQue::releaseVectorDelayedReadyQ()
+{
+    assert(vectorDelayedReadyQ.size() == vectorDelayedReadyQReplay.size());
+    while (!vectorDelayedReadyQ.empty() && !vectorDelayedReadyQReplay.empty()) {
+        auto inst = vectorDelayedReadyQ.front();
+        const bool replay = vectorDelayedReadyQReplay.front();
+        vectorDelayedReadyQ.pop();
+        vectorDelayedReadyQReplay.pop();
+
+        if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
+            if (inst) {
+                vectorReadyQSeqs.erase(inst->seqNum);
+            }
+            continue;
+        }
+
+        vectorReadyQSeqs.erase(inst->seqNum);
+        if (replay) {
+            replayQ.push(inst);
+            DPRINTF(Schedule, "[sn:%llu] released to replayQ after vector delay\n",
+                    inst->seqNum);
+        } else {
+            inst->clearCancel();
+            if (!inst->inReadyQ()) {
+                READYQ_PUSH(inst);
+                DPRINTF(Schedule,
+                        "[sn:%llu] released to readyQ after vector delay\n",
+                        inst->seqNum);
+            }
+        }
+    }
+}
+
+void
+IssueQue::processVectorReadyQ()
+{
+    assert(vectorReadyQ.size() == vectorReadyQReleaseTicks.size());
+    assert(vectorReadyQ.size() == vectorReadyQReplay.size());
+    while (!vectorReadyQ.empty() && !vectorReadyQReleaseTicks.empty() &&
+           !vectorReadyQReplay.empty() &&
+           vectorReadyQReleaseTicks.front() <= curTick()) {
+        auto inst = vectorReadyQ.front();
+        const bool replay = vectorReadyQReplay.front();
+        vectorReadyQ.pop();
+        vectorReadyQReleaseTicks.pop();
+        vectorReadyQReplay.pop();
+
+        if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
+            if (inst) {
+                vectorReadyQSeqs.erase(inst->seqNum);
+            }
+            continue;
+        }
+
+        vectorDelayedReadyQ.push(inst);
+        vectorDelayedReadyQReplay.push(replay);
+        DPRINTF(Schedule, "[sn:%llu] moved to vectorDelayedReadyQ, replay:%d\n",
+                inst->seqNum, replay);
+    }
+
+    if (!vectorReadyQ.empty() && !vectorReadyQReleaseTicks.empty() &&
+        !vectorReadyQEvent.scheduled()) {
+        cpu->schedule(vectorReadyQEvent, vectorReadyQReleaseTicks.front());
+    }
+
+    releaseVectorDelayedReadyQ();
+}
+
 void
 IssueQue::issueToFu()
 {
@@ -431,7 +534,7 @@ IssueQue::issueToFu()
             incTagRefillBlockStats = true;
         }
 
-        if ((i + replayed >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
+        if ((issued >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad) {
             inst->clearScheduled();
             // only for load/store
@@ -484,6 +587,10 @@ IssueQue::retryMem(const DynInstPtr& inst)
             DynInst::LoadPipeSource::ReplayQueue);
     }
     DPRINTF(Schedule, "retry %s [sn:%llu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
+    if (isVectorMemInst(inst)) {
+        enqueueVectorMemDelay(inst, true);
+        return;
+    }
     replayQ.push(inst);
 }
 
@@ -497,6 +604,8 @@ IssueQue::idle()
         }
     }
     idle |= replayQ.size() > 0;
+    idle |= vectorReadyQ.size() > 0;
+    idle |= vectorDelayedReadyQ.size() > 0;
     return idle;
 }
 
@@ -568,10 +677,16 @@ IssueQue::addIfReady(const DynInstPtr& inst)
             }
         }
 
+
+
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            READYQ_PUSH(inst);
+            if (isVectorMemInst(inst)) {
+                enqueueVectorMemDelay(inst, false);
+            } else {
+                READYQ_PUSH(inst);
+            }
         }
     }
 }
@@ -710,6 +825,7 @@ IssueQue::tick()
     instNumInsert = 0;
 
     scheduleInst();
+    processVectorReadyQ();
     inflightIssues.advance();
 
     for (auto& t : portBusy) {
@@ -793,6 +909,31 @@ IssueQue::insertNonSpec(const DynInstPtr& inst)
     }
 }
 
+DynInstPtr
+IssueQue::popReadyVectorInst()
+{
+    assert(vectorDelayedReadyQ.size() == vectorDelayedReadyQReplay.size());
+    while (!vectorDelayedReadyQ.empty() && !vectorDelayedReadyQReplay.empty()) {
+        auto inst = vectorDelayedReadyQ.front();
+        vectorDelayedReadyQ.pop();
+        vectorDelayedReadyQReplay.pop();
+
+        if (!inst) {
+            continue;
+        }
+
+        vectorReadyQSeqs.erase(inst->seqNum);
+
+        if (inst->isSquashed()) {
+            continue;
+        }
+
+        return inst;
+    }
+
+    return nullptr;
+}
+
 void
 IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
@@ -800,11 +941,17 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
         const auto &inst = *it;
         if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
             assert(inst->isIssued());
+            vectorReadyQSeqs.erase(inst->seqNum);
             it = instList.erase(it);
         } else {
             ++it;
         }
     }
+    // while (!instList.empty() && instList.front()->seqNum <= seqNum) {
+    //     assert(instList.front()->isIssued());
+    //     vectorReadyQSeqs.erase(instList.front()->seqNum);
+    //     instList.pop_front();
+    // }
 }
 
 void
@@ -827,6 +974,7 @@ IssueQue::doSquash(SquashInfo squashInfo)
             (*it)->setCanCommit();
             (*it)->clearScheduled();
             (*it)->setCancel();
+            vectorReadyQSeqs.erase((*it)->seqNum);
             it = instList.erase(it);
             assert(instList.size() >= instNum);
         } else {
