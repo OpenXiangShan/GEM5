@@ -33,7 +33,7 @@ def _register_prefetcher_tlb(prefetcher, cpu):
 def _configure_xs_composite_common(prefetcher, options):
     # Keep only option/profile-dependent overrides here. Stable model defaults
     # belong to XSCompositePrefetcher in Prefetcher.py.
-    prefetcher.short_stride_thres = options.short_stride_thres
+    prefetcher.short_stride_thres = getattr(options, "short_stride_thres", 0)
 
     if options.ideal_cache:
         prefetcher.stream_pf_ahead = False
