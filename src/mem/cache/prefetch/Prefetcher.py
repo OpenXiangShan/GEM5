@@ -1048,6 +1048,8 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
 
+    queue_size = 128
+    max_prefetch_requests_with_pending_translation = 128
     region_size = Param.Int(1024, "region size")
 
     # TrainFilter configuration
@@ -1216,10 +1218,16 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pf_gen"
     )
-    bop_large = Param.BasePrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
-                                     "Large BOP used in composite prefetcher ")
-    bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
-                                     "Small BOP used in composite prefetcher ")
+    bop_large = Param.BasePrefetcher(
+        BOPPrefetcher(is_sub_prefetcher=True, bad_score=10),
+        "Large BOP used in composite prefetcher "
+    )
+    bop_small = Param.BasePrefetcher(
+        SmallBOPPrefetcher(is_sub_prefetcher=True,
+                           delay_queue_enable=True,
+                           bad_score=5),
+        "Small BOP used in composite prefetcher "
+    )
     bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(is_sub_prefetcher=True),
                                        "Learned BOP used in composite prefetcher ")
     bop_pf_level = Param.Int(2, "L1 BOP prefetch target level")

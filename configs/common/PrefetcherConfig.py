@@ -12,6 +12,7 @@ def _get_hwp(hwp_option):
     return hwpClass()
 
 def is_pf_buffer_enabled(options):
+    # Enabled by default; --disable-pf-buffer is the only CLI override.
     return getattr(options, 'enable_pf_buffer', True)
 
 def _configure_pf_buffer(prefetcher, pf_buffer_enabled):
@@ -19,6 +20,7 @@ def _configure_pf_buffer(prefetcher, pf_buffer_enabled):
         prefetcher.use_pf_buffer = pf_buffer_enabled
 
 def _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled):
+    # These controls are disabled when the pf-buffer handles filtering.
     if hasattr(prefetcher, 'prefetch_train'):
         prefetcher.prefetch_train = not pf_buffer_enabled
     if hasattr(prefetcher, 'queue_filter'):
@@ -29,24 +31,9 @@ def _register_prefetcher_tlb(prefetcher, cpu):
         prefetcher.registerTLB(cpu.mmu.dtb, cpu.mmu.functional)
 
 def _configure_xs_composite_common(prefetcher, options):
-    prefetcher.enable_spp = False
-    prefetcher.enable_cplx = False
+    # Keep only option/profile-dependent overrides here. Stable model defaults
+    # belong to XSCompositePrefetcher in Prefetcher.py.
     prefetcher.short_stride_thres = options.short_stride_thres
-    prefetcher.fuzzy_stride_matching = False
-    prefetcher.stream_pf_ahead = True
-
-    prefetcher.bop_large.delay_queue_enable = True
-    prefetcher.bop_large.bad_score = 10
-    prefetcher.bop_small.delay_queue_enable = True
-    prefetcher.bop_small.bad_score = 5
-
-    prefetcher.queue_size = 128
-    prefetcher.max_prefetch_requests_with_pending_translation = 128
-    prefetcher.region_size = 64*16  # 64B * blocks per region
-
-    prefetcher.berti.use_byte_addr = True
-    prefetcher.berti.aggressive_pf = False
-    prefetcher.berti.trigger_pht = True
 
     if options.ideal_cache:
         prefetcher.stream_pf_ahead = False
@@ -76,6 +63,7 @@ def _configure_xs_composite_kmh_align(prefetcher):
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
 
+    # Start from the selected XSComposite profile, then apply explicit overrides.
     if options.kmh_align:
         _configure_xs_composite_kmh_align(prefetcher)
     else:
@@ -89,12 +77,14 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
 def _configure_l2_composite_default(prefetcher):
+    # Normal L2CompositeWithWorker profile.
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = True
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = True
 
 def _configure_l2_composite_kmh_align(prefetcher):
+    # RTL-aligned L2CompositeWithWorker profile.
     prefetcher.enable_cmc = True
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = False
@@ -105,9 +95,6 @@ def _configure_l2_composite_kmh_align(prefetcher):
                                               enable_adaptoffset=False)
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
-    if hasattr(prefetcher, 'enable_bop'):
-        prefetcher.enable_bop = True
-
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
         _configure_l2_composite_kmh_align(prefetcher)
@@ -116,6 +103,8 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
+    # classic_l2 attaches the real L2 prefetcher directly to the L2 cache.
+    # Aligned L2 uses this level only as a forwarder to l2_wrapper.
     if options.classic_l2:
         _configure_l2_composite(prefetcher, prefetcher_name, options)
         _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
@@ -127,6 +116,8 @@ def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
 
 def _configure_l2_wrapper_prefetcher(prefetcher, prefetcher_name, options,
                                      pf_buffer_enabled):
+    # Aligned L2 attaches the real L2 prefetcher to l2_wrapper.
+    # Classic L2 has no wrapper-level real prefetcher.
     if not options.classic_l2:
         _configure_l2_composite(prefetcher, prefetcher_name, options)
         _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
