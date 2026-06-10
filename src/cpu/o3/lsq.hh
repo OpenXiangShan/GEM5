@@ -1492,7 +1492,13 @@ class LSQ
         statistics::Scalar dcacheMainPipeStoreBlockedByRefill;
         statistics::Scalar dcacheMainPipeStoreBlockedBySet;
         statistics::Scalar dcacheMainPipeBlockedByS1Backpressure;
+        statistics::Scalar dcacheMainPipeStoreBlockedByS1Backpressure;
+        statistics::Scalar dcacheMainPipeRefillBlockedByS1Backpressure;
+        statistics::Scalar dcacheMainPipeStoreBlockedByTagWrite;
+        statistics::Scalar dcacheMainPipeRefillBlocked;
+        statistics::Scalar dcacheMainPipeRefillBlockedByPipeResource;
         statistics::Scalar dcacheMainPipeBlockedByDataConflict;
+        statistics::Scalar dcacheMainPipeStoreS2IssueBlocked;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);
