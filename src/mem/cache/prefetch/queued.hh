@@ -248,15 +248,15 @@ class Queued : public Base
     /** Per-window gradient step in percentage points. */
     const int pfAdaptiveGradientStep;
 
-    /** PFBad penalty multiplier represented as a fixed-point ratio. */
+    /** PFBad penalty multiplier as numerator / denominator. */
     const unsigned pfAdaptivePfBadWeightNumerator;
     const unsigned pfAdaptivePfBadWeightDenominator;
 
     /** Minimum useful+bad samples before trusting a source gradient. */
-    const unsigned pfAdaptiveDpfMinSamples;
+    const unsigned pfAdaptiveGradientMinSamples;
 
-    /** Deadband around zero useful-bad score. */
-    const int pfAdaptiveDpfDeadband;
+    /** Deadband around zero useful-minus-weighted-bad score. */
+    const int pfAdaptiveGradientDeadband;
 
     /** Required miss-rate improvement in basis points. */
     const unsigned pfAdaptiveImproveMarginBps;
@@ -280,8 +280,9 @@ class Queued : public Base
     uint64_t pfAdaptiveWindowDemandAccesses;
     uint64_t pfAdaptiveWindowDemandMisses;
     std::array<uint64_t, NUM_PF_SOURCES> pfAdaptiveWindowPfUsefulBySource;
-    std::array<uint64_t, NUM_PF_SOURCES> pfAdaptiveWindowPfBadBySource;
-    std::array<int, NUM_PF_SOURCES> pfAdaptiveLastDpfBySource;
+    std::array<uint64_t, NUM_PF_SOURCES> pfAdaptiveWindowPfUnusedBySource;
+    /** Cache miss requests hitting the PFBad table; overflow is not included. */
+    std::array<uint64_t, NUM_PF_SOURCES> pfAdaptiveWindowPfBadHitsBySource;
     uint64_t pfAdaptiveSampleCount;
 
     struct PfAdaptiveSample
@@ -290,9 +291,10 @@ class Queued : public Base
         uint64_t demandAccesses = 0;
         uint64_t demandMisses = 0;
         std::array<unsigned, NUM_PF_SOURCES> pctBySource{};
-        std::array<int, NUM_PF_SOURCES> dpfBySource{};
+        std::array<int, NUM_PF_SOURCES> gradientBySource{};
         std::array<uint64_t, NUM_PF_SOURCES> pfUsefulBySource{};
-        std::array<uint64_t, NUM_PF_SOURCES> pfBadBySource{};
+        std::array<uint64_t, NUM_PF_SOURCES> pfUnusedBySource{};
+        std::array<uint64_t, NUM_PF_SOURCES> pfBadHitsBySource{};
     };
 
     struct PfBadEntry
@@ -300,7 +302,7 @@ class Queued : public Base
         bool valid = false;
         Addr blockAddr = 0;
         bool secure = false;
-        PrefetchSourceType source = PrefetchSourceType::PF_NONE;
+        PrefetchSourceType evictorSource = PrefetchSourceType::PF_NONE;
         uint64_t insertWindow = 0;
     };
 
@@ -353,12 +355,14 @@ class Queued : public Base
         statistics::Scalar pfAdaptiveTableEvictions;
         statistics::Scalar pfAdaptivePfBadTableSize;
         statistics::Scalar pfAdaptivePfBadTableEvictions;
-        statistics::Scalar pfAdaptivePfBadOverflowBad;
+        statistics::Scalar pfAdaptivePfBadCandidates;
+        statistics::Vector pfAdaptivePfBadCandidatesBySource;
+        statistics::Scalar pfAdaptivePfBadOverflowEvictions;
         statistics::Scalar pfAdaptivePfBadHits;
         statistics::Vector pfAdaptivePctBySource;
-        statistics::Vector pfAdaptiveDpfBySource;
+        statistics::Vector pfAdaptiveGradientBySource;
         statistics::Vector pfAdaptivePfUsefulBySource;
-        statistics::Vector pfAdaptivePfBadBySource;
+        statistics::Vector pfAdaptivePfBadHitsBySource;
         statistics::Vector pfAdaptivePfBadOverflowBySource;
     } statsQueued;
 
@@ -446,6 +450,7 @@ class Queued : public Base
     PrefetchSourceType sanitizePfControlSourceType(
         PrefetchSourceType source) const;
     unsigned sanitizePfControlSource(PrefetchSourceType source) const;
+    bool isPfControlSourceNone(PrefetchSourceType source) const;
     unsigned getPfControlActionPct(uint64_t window_index) const;
     unsigned getPfControlActionPctForSource(
         uint64_t window_index, PrefetchSourceType source) const;
@@ -458,22 +463,33 @@ class Queued : public Base
     bool isPfAdaptiveLevel() const;
     unsigned quantizePfAdaptivePct(unsigned pct) const;
     unsigned clampPfAdaptivePct(int pct) const;
-    int computePfAdaptiveDpf(PrefetchSourceType source) const;
+    int computePfAdaptiveSourceGradient(
+        uint64_t useful, uint64_t pfbad_hits, uint64_t unused) const;
     uint64_t pfAdaptiveMissRateBps(
         uint64_t misses, uint64_t accesses) const;
     unsigned getPfAdaptiveBestPct(PrefetchSourceType source) const;
     void pushPfAdaptiveSample(const PfAdaptiveSample &sample);
     void applyPfAdaptiveUpdate(const PfAdaptiveSample &sample);
     void resetPfAdaptiveWindowCounters();
-    void recordPfAdaptiveDemandMiss(Addr paddr, bool is_secure);
+    std::deque<PfBadEntry>::iterator findPfAdaptivePfBadEntry(
+        Addr paddr, bool is_secure);
+    void recordPfAdaptiveDemandMiss();
+    void recordPfAdaptivePfBadHit(PrefetchSourceType evictor_source);
+    bool recordPfAdaptivePfBadMissHit(Addr paddr, bool is_secure);
+    bool clearPfAdaptivePfBadEntry(Addr paddr, bool is_secure);
+    void recordPfAdaptivePfBadOverflowEviction(
+        PrefetchSourceType evictor_source);
 
   public:
     void notifyDemandAccess(Addr paddr, bool is_secure, bool miss) override;
+    void notifyCacheMissRequest(Addr paddr, bool is_secure) override;
     void notifyDemandMshrMiss(Addr paddr, bool is_secure) override;
     void notifyPrefetchUseful(PrefetchSourceType source) override;
     void notifyPrefetchEvictsDemand(
-        Addr victim_paddr, bool is_secure, PrefetchSourceType source) override;
+        Addr victim_paddr, bool is_secure,
+        PrefetchSourceType evictor_source) override;
     void notifyCachelineRefill(Addr paddr, bool is_secure) override;
+    void prefetchUnused(PrefetchSourceType pf_source) override;
 
   public:
     void rxHint(BaseMMU::Translation *dpp) override {

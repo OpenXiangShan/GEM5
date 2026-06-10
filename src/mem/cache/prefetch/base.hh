@@ -930,6 +930,9 @@ class Base : public ClockedObject
          * reference. */
         statistics::Scalar pfUnused;
         statistics::Vector pfUnused_srcs;
+        /** The number of cache miss requests hitting the PFBad table. */
+        statistics::Scalar pfBad;
+        statistics::Vector pfBad_srcs;
         /** The number of times a HW-prefetch is useful. */
         statistics::Scalar pfUseful;
 
@@ -1011,7 +1014,7 @@ class Base : public ClockedObject
 
     virtual void recordIssuedPrefetch(PrefetchSourceType source)
     {
-        const int source_idx = static_cast<int>(source);
+        const int source_idx = int(source);
         if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
             source = PrefetchSourceType::PF_NONE;
         }
@@ -1042,6 +1045,16 @@ class Base : public ClockedObject
 
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
 
+    virtual void recordPfBadHit(PrefetchSourceType source)
+    {
+        const int source_idx = int(source);
+        if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
+            source = PrefetchSourceType::PF_NONE;
+        }
+        prefetchStats.pfBad++;
+        prefetchStats.pfBad_srcs[source]++;
+    }
+
     virtual void
     incrDemandMhsrMisses()
     {
@@ -1052,10 +1065,12 @@ class Base : public ClockedObject
 
     virtual void notifyDemandAccess(Addr paddr, bool is_secure, bool miss) {}
 
+    virtual void notifyCacheMissRequest(Addr paddr, bool is_secure) {}
+
     virtual void notifyPrefetchUseful(PrefetchSourceType source) {}
 
     virtual void notifyPrefetchEvictsDemand(
-        Addr victim_paddr, bool is_secure, PrefetchSourceType source)
+        Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
     {}
 
     virtual void notifyCachelineRefill(Addr paddr, bool is_secure) {}

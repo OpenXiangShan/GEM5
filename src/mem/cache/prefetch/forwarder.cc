@@ -187,6 +187,14 @@ PrefetcherForwarder::notifyDemandAccess(
 }
 
 void
+PrefetcherForwarder::notifyCacheMissRequest(Addr paddr, bool is_secure)
+{
+    if (real_pf) {
+        real_pf->notifyCacheMissRequest(paddr, is_secure);
+    }
+}
+
+void
 PrefetcherForwarder::notifyDemandMshrMiss(Addr paddr, bool is_secure)
 {
     if (real_pf) {
@@ -204,11 +212,11 @@ PrefetcherForwarder::notifyPrefetchUseful(PrefetchSourceType source)
 
 void
 PrefetcherForwarder::notifyPrefetchEvictsDemand(
-    Addr victim_paddr, bool is_secure, PrefetchSourceType source)
+    Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
 {
     if (real_pf) {
         real_pf->notifyPrefetchEvictsDemand(
-            victim_paddr, is_secure, source);
+            victim_paddr, is_secure, evictor_source);
     }
 }
 
