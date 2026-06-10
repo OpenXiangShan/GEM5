@@ -174,9 +174,6 @@ if __name__ == '__m5_main__':
 
     assert not args.external_memory_system
 
-    # Enable prefetch buffers for all hardware prefetchers in this config.
-    args.enable_pf_buffer = True
-
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'

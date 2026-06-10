@@ -1048,6 +1048,8 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
 
+    queue_size = 128
+    max_prefetch_requests_with_pending_translation = 128
     region_size = Param.Int(1024, "region size")
 
     # TrainFilter configuration
@@ -1216,10 +1218,16 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pf_gen"
     )
-    bop_large = Param.BasePrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
-                                     "Large BOP used in composite prefetcher ")
-    bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
-                                     "Small BOP used in composite prefetcher ")
+    bop_large = Param.BasePrefetcher(
+        BOPPrefetcher(is_sub_prefetcher=True, bad_score=10),
+        "Large BOP used in composite prefetcher "
+    )
+    bop_small = Param.BasePrefetcher(
+        SmallBOPPrefetcher(is_sub_prefetcher=True,
+                           delay_queue_enable=True,
+                           bad_score=5),
+        "Small BOP used in composite prefetcher "
+    )
     bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(is_sub_prefetcher=True),
                                        "Learned BOP used in composite prefetcher ")
     bop_pf_level = Param.Int(2, "L1 BOP prefetch target level")
@@ -1232,21 +1240,20 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     opt = Param.OptPrefetcher(OptPrefetcher(is_sub_prefetcher=True), "")
     xsstream = Param.XsStreamPrefetcher(XsStreamPrefetcher(is_sub_prefetcher=True), "")
 
-    enable_activepage = Param.Bool(True,"Enable activepage stream prefetcher")
-    enable_pht = Param.Bool(True,"Enable sms pht prefetcher")
-    enable_cplx = Param.Bool(False, "Enable CPLX component")
-    enable_spp = Param.Bool(False, "Enable SPP component")
-    enable_temporal = Param.Bool(False, "Enable temporal component")
-    enable_berti = Param.Bool(True,"Enable berti component")
-    enable_bop = Param.Bool(True, "Enable BOP")
-
-    enable_sstride = Param.Bool(False,"Enable sms stride component")
-    enable_opt = Param.Bool(False,"Enable opt component")
-    enable_xsstream = Param.Bool(False,"Enable xs_stream component")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     pht_early_update = Param.Bool(True, "Enable update pht earlier")
     neighbor_pht_update = Param.Bool(True, "Enable use nearby act entry to update pht")
 
+    enable_activepage = Param.Bool(False,"Enable activepage stream prefetcher")
+    enable_xsstream = Param.Bool(False,"Enable xs_stream component")
+    enable_sstride = Param.Bool(False,"Enable sms stride component")
+    enable_pht = Param.Bool(False,"Enable sms pht prefetcher")
+    enable_bop = Param.Bool(False, "Enable BOP")
+    enable_temporal = Param.Bool(False, "Enable temporal component")
+    enable_berti = Param.Bool(False,"Enable berti component")
+    enable_cplx = Param.Bool(False, "Enable CPLX component")
+    enable_spp = Param.Bool(False, "Enable SPP component")
+    enable_opt = Param.Bool(False,"Enable opt component")
 
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'
@@ -1277,9 +1284,9 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")
-    enable_cdp = Param.Bool(True, "Enable CDP")
+    enable_cdp = Param.Bool(False, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
-    enable_despacito_stream = Param.Bool(True, "Enable despacito stream")
+    enable_despacito_stream = Param.Bool(False, "Enable despacito stream")
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'
