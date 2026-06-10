@@ -268,6 +268,11 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
              "number of HardPF blocks evicted w/o reference"),
     ADD_STAT(pfUnused_srcs, statistics::units::Count::get(),
              "number of HardPF blocks evicted w/o reference"),
+    ADD_STAT(pfBad, statistics::units::Count::get(),
+             "number of cache miss requests hitting the PFBad table"),
+    ADD_STAT(pfBad_srcs, statistics::units::Count::get(),
+             "number of cache miss requests hitting the PFBad table "
+             "by evictor source"),
     ADD_STAT(pfUseful, statistics::units::Count::get(),
         "number of useful prefetch"),
     ADD_STAT(pfUseful_srcs, statistics::units::Count::get(),
@@ -310,6 +315,10 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     pfUnused_srcs
         .init(NUM_PF_SOURCES)
         .flags(total | nozero);
+    pfBad.flags(nozero);
+    pfBad_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero);
     pfUseful_srcs
         .init(NUM_PF_SOURCES)
         .flags(total | nozero);
@@ -331,6 +340,7 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         const auto source_name = prefetchSourceTypeName(source);
         pfIssued_srcs.subname(source, source_name);
         pfUnused_srcs.subname(source, source_name);
+        pfBad_srcs.subname(source, source_name);
         pfUseful_srcs.subname(source, source_name);
         pfHitInCache_srcs.subname(source, source_name);
         pfHitInMSHR_srcs.subname(source, source_name);

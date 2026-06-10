@@ -16,13 +16,13 @@ def enable_prefetch_control():
     PrefetcherConfig.PF_CONTROL_CONFIG = {
         "control": {
             "enabled": True,
-            "window": 5000,
+            "window": 8000,
             "admit_pct": 100,
         },
         "adaptive": {
             "enabled": True,
             "pfbad_entries": {
-                "l1d": 256,
+                "l1d": 128,
                 "l2": 512,
                 "l2_wrapper": 512,
             },

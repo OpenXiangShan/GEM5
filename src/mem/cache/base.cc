@@ -817,6 +817,14 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             calculateSliceBusy(pkt);
         }
 
+        if (prefetcher && pkt->req && !pkt->isEviction() &&
+            !pkt->isWriteback() &&
+            !pkt->req->isUncacheable() &&
+            !pkt->req->isCacheMaintenance()) {
+            prefetcher->notifyCacheMissRequest(
+                pkt->getAddr(), pkt->isSecure());
+        }
+
         // ArchDB: for now we only track packet which has PC
         // and is normal load/store
         // TODO: for now there are some bugs in vaddrs
@@ -1028,7 +1036,17 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     const bool pure_prefetch_fill =
         mshr->hasFromPref() && !mshr->hasFromCPU();
     if (pure_prefetch_fill) {
-        pkt->req->setPFSource(mshr->getPFSource());
+        const PrefetchSourceType pf_source = mshr->getPFSource();
+        const int pf_depth = mshr->getPFDepth();
+        pkt->req->setPFSource(pf_source);
+        pkt->req->setPFDepth(pf_depth);
+        Request::XsMetadata xs_meta =
+            pkt->req->hasXsMetadata() ?
+            pkt->req->getXsMetadata() :
+            Request::XsMetadata(pf_source, pf_depth);
+        xs_meta.prefetchSource = pf_source;
+        xs_meta.prefetchDepth = pf_depth;
+        pkt->req->setXsMetadata(xs_meta);
     }
 
     // make sure that if the mshr was due to a whole line write then
@@ -2347,10 +2365,20 @@ BaseCache::handleFill(
     }
 
     Request::XsMetadata blk_meta = blk->getXsMetadata();
-    blk_meta.prefetchSource = prefetch_fill_source;
+    if (prefetch_fill_source != PrefetchSourceType::PF_NONE) {
+        blk_meta.prefetchSource = prefetch_fill_source;
+        if (pkt->req && pkt->req->hasXsMetadata()) {
+            blk_meta.prefetchDepth =
+                pkt->req->getXsMetadata().prefetchDepth;
+        }
+    } else {
+        blk_meta.prefetchSource = PrefetchSourceType::PF_NONE;
+        blk_meta.prefetchDepth = 0;
+    }
     blk->setXsMetadata(blk_meta);
-    DPRINTF(Cache, "%s: Mark blk prefetch source %i from req %p\n",
-            __func__, prefetch_fill_source, pkt->req);
+    DPRINTF(Cache, "%s: Mark blk prefetch source %i depth %i from req %p\n",
+            __func__, blk_meta.prefetchSource, blk_meta.prefetchDepth,
+            pkt->req);
 
     return blk;
 }
@@ -2407,13 +2435,8 @@ BaseCache::allocateBlock(
             if (!evict_blk->isValid()) {
                 continue;
             }
-            const bool prefetch_only =
-                evict_blk->wasPrefetched() &&
-                evict_blk->getDemandHits() == 0;
-            if (!prefetch_only) {
-                pfbad_victims.push_back(
-                    {regenerateBlkAddr(evict_blk), evict_blk->isSecure()});
-            }
+            pfbad_victims.push_back(
+                {regenerateBlkAddr(evict_blk), evict_blk->isSecure()});
         }
     }
 
