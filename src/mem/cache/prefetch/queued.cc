@@ -76,7 +76,7 @@ buildPfControlSourceAdmitPct(const std::vector<int> &values)
     panic_if(values.size() != NUM_PF_SOURCES,
              "pf_control_source_admit_pcts must be empty or have "
              "%u entries, got %zu",
-             static_cast<unsigned>(NUM_PF_SOURCES), values.size());
+             unsigned(NUM_PF_SOURCES), values.size());
 
     for (size_t idx = 0; idx < values.size(); ++idx) {
         const int pct = values[idx];
@@ -210,8 +210,8 @@ Queued::Queued(const QueuedPrefetcherParams &p)
           std::max<unsigned>(1, p.pf_adaptive_pfbad_weight_numer)),
       pfAdaptivePfBadWeightDenominator(
           std::max<unsigned>(1, p.pf_adaptive_pfbad_weight_denom)),
-      pfAdaptiveDpfMinSamples(p.pf_adaptive_dpf_min_samples),
-      pfAdaptiveDpfDeadband(p.pf_adaptive_dpf_deadband),
+      pfAdaptiveGradientMinSamples(p.pf_adaptive_dpf_min_samples),
+      pfAdaptiveGradientDeadband(p.pf_adaptive_dpf_deadband),
       pfAdaptiveImproveMarginBps(p.pf_adaptive_improve_margin_bps),
       pfAdaptiveBestTopK(std::max<unsigned>(1, p.pf_adaptive_best_topk)),
       pfAdaptiveTableEntries(p.pf_adaptive_table_entries),
@@ -221,8 +221,8 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       pfAdaptiveWindowDemandAccesses(0),
       pfAdaptiveWindowDemandMisses(0),
       pfAdaptiveWindowPfUsefulBySource{},
-      pfAdaptiveWindowPfBadBySource{},
-      pfAdaptiveLastDpfBySource{},
+      pfAdaptiveWindowPfUnusedBySource{},
+      pfAdaptiveWindowPfBadHitsBySource{},
       pfAdaptiveSampleCount(0),
       pfAdaptiveSamples(),
       pfAdaptivePfBadTable(),
@@ -262,8 +262,8 @@ Queued::Queued(const QueuedPrefetcherParams &p)
     panic_if(pfAdaptive && pfAdaptiveMaxSourceStep == 0,
              "pf_adaptive_max_source_step must be positive");
     pfAdaptiveWindowPfUsefulBySource.fill(0);
-    pfAdaptiveWindowPfBadBySource.fill(0);
-    pfAdaptiveLastDpfBySource.fill(0);
+    pfAdaptiveWindowPfUnusedBySource.fill(0);
+    pfAdaptiveWindowPfBadHitsBySource.fill(0);
     refreshPfControlCurrentPcts();
 }
 
@@ -336,7 +336,7 @@ Queued::sanitizePfControlPct(unsigned pct) const
 PrefetchSourceType
 Queued::sanitizePfControlSourceType(PrefetchSourceType source) const
 {
-    const int source_idx = static_cast<int>(source);
+    const int source_idx = int(source);
     if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
         return PrefetchSourceType::PF_NONE;
     }
@@ -346,7 +346,13 @@ Queued::sanitizePfControlSourceType(PrefetchSourceType source) const
 unsigned
 Queued::sanitizePfControlSource(PrefetchSourceType source) const
 {
-    return static_cast<unsigned>(sanitizePfControlSourceType(source));
+    return unsigned(sanitizePfControlSourceType(source));
+}
+
+bool
+Queued::isPfControlSourceNone(PrefetchSourceType source) const
+{
+    return sanitizePfControlSourceType(source) == PrefetchSourceType::PF_NONE;
 }
 
 unsigned
@@ -401,7 +407,7 @@ Queued::refreshPfControlCurrentPcts()
     statsQueued.pfControlCurrentAdmitPct = pfControlCurrentAdmitPct;
 
     for (unsigned source = 0; source < NUM_PF_SOURCES; ++source) {
-        const auto pf_source = static_cast<PrefetchSourceType>(source);
+        const auto pf_source = PrefetchSourceType(source);
         const unsigned pct =
             getPfControlActionPctForSource(
                 pfControlWindowIndex, pf_source);
@@ -427,39 +433,41 @@ Queued::quantizePfAdaptivePct(unsigned pct) const
 unsigned
 Queued::clampPfAdaptivePct(int pct) const
 {
-    const int min_pct = static_cast<int>(pfAdaptiveMinPct);
+    const int min_pct = int(pfAdaptiveMinPct);
     const int clamped = std::min<int>(100, std::max<int>(min_pct, pct));
-    return quantizePfAdaptivePct(static_cast<unsigned>(clamped));
+    return quantizePfAdaptivePct(unsigned(clamped));
 }
 
 int
-Queued::computePfAdaptiveDpf(PrefetchSourceType source) const
+Queued::computePfAdaptiveSourceGradient(
+    uint64_t useful, uint64_t pfbad_hits, uint64_t unused) const
 {
-    const unsigned source_idx = sanitizePfControlSource(source);
-    const uint64_t useful = pfAdaptiveWindowPfUsefulBySource[source_idx];
-    const uint64_t bad = pfAdaptiveWindowPfBadBySource[source_idx];
-    const uint64_t samples = useful + bad;
-    if (samples < pfAdaptiveDpfMinSamples) {
+    const uint64_t samples = useful + pfbad_hits + unused;
+    if (samples < pfAdaptiveGradientMinSamples) {
         return 0;
     }
 
-    const int64_t useful_score =
-        static_cast<int64_t>(useful) *
-        static_cast<int64_t>(pfAdaptivePfBadWeightDenominator);
-    const int64_t bad_score =
-        static_cast<int64_t>(bad) *
-        static_cast<int64_t>(pfAdaptivePfBadWeightNumerator);
-    const int64_t score = useful_score - bad_score;
-    const int64_t deadband =
-        static_cast<int64_t>(pfAdaptiveDpfDeadband) *
-        static_cast<int64_t>(pfAdaptivePfBadWeightDenominator);
+    // Gradient input is intentionally simple:
+    //   useful     = prefetches later hit by demand,
+    //   pfbad_hits = cache misses for lines evicted by this prefetch source,
+    //   unused     = prefetches evicted without a demand hit.
+    // FIFO overflow is diagnostic only; feeding it back here would make table
+    // capacity directly change the controller decision.
+    const double pfbad_weight =
+        double(pfAdaptivePfBadWeightNumerator) /
+        pfAdaptivePfBadWeightDenominator;
+    const double useful_score = useful;
+    const double bad_score =
+        pfbad_hits * pfbad_weight + unused * 0.5;
+    const double score = useful_score - bad_score;
+    const double deadband = pfAdaptiveGradientDeadband;
 
-    const int64_t abs_score = score < 0 ? -score : score;
-    if (pfAdaptiveDpfDeadband > 0 && abs_score <= deadband) {
+    const double abs_score = score < 0.0 ? -score : score;
+    if (pfAdaptiveGradientDeadband > 0 && abs_score <= deadband) {
         return 0;
     }
 
-    return score > 0 ? pfAdaptiveGradientStep :
+    return score > 0.0 ? pfAdaptiveGradientStep :
         -pfAdaptiveGradientStep;
 }
 
@@ -513,7 +521,7 @@ Queued::getPfAdaptiveBestPct(PrefetchSourceType source) const
         sum += ranked[idx]->pctBySource[source_idx];
     }
     return quantizePfAdaptivePct(
-        static_cast<unsigned>((sum + take / 2) / take));
+        unsigned((sum + take / 2) / take));
 }
 
 void
@@ -556,14 +564,13 @@ Queued::applyPfAdaptiveUpdate(const PfAdaptiveSample &sample)
             best_rate * (10000 - pfAdaptiveImproveMarginBps);
 
     for (unsigned source = 0; source < NUM_PF_SOURCES; ++source) {
-        const auto pf_source = static_cast<PrefetchSourceType>(source);
+        const auto pf_source = PrefetchSourceType(source);
         const int current_pct =
-            static_cast<int>(pfControlCurrentAdmitPctBySource[source]);
-        const int dpf = sample.dpfBySource[source];
-        pfAdaptiveLastDpfBySource[source] = dpf;
+            int(pfControlCurrentAdmitPctBySource[source]);
+        const int gradient = sample.gradientBySource[source];
 
         const unsigned pred_pct =
-            clampPfAdaptivePct(current_pct + dpf);
+            clampPfAdaptivePct(current_pct + gradient);
         const unsigned best_pct = getPfAdaptiveBestPct(pf_source);
         unsigned next_pct = pred_pct;
         if (!update) {
@@ -572,21 +579,19 @@ Queued::applyPfAdaptiveUpdate(const PfAdaptiveSample &sample)
         }
 
         const int max_step =
-            static_cast<int>(std::max<unsigned>(
-                1, pfAdaptiveMaxSourceStep));
-        const int delta =
-            static_cast<int>(next_pct) - current_pct;
+            int(std::max<unsigned>(1, pfAdaptiveMaxSourceStep));
+        const int delta = int(next_pct) - current_pct;
         if (delta > max_step) {
             next_pct = current_pct + max_step;
         } else if (delta < -max_step) {
             next_pct = current_pct - max_step;
         }
 
-        next_pct = clampPfAdaptivePct(static_cast<int>(next_pct));
+        next_pct = clampPfAdaptivePct(int(next_pct));
         pfControlCurrentAdmitPctBySource[source] = next_pct;
         statsQueued.pfControlCurrentAdmitPctBySource[source] = next_pct;
         statsQueued.pfAdaptivePctBySource[source] = next_pct;
-        statsQueued.pfAdaptiveDpfBySource[source] = dpf;
+        statsQueued.pfAdaptiveGradientBySource[source] = gradient;
     }
 
     statsQueued.pfAdaptiveUpdates++;
@@ -598,33 +603,83 @@ Queued::resetPfAdaptiveWindowCounters()
     pfAdaptiveWindowDemandAccesses = 0;
     pfAdaptiveWindowDemandMisses = 0;
     pfAdaptiveWindowPfUsefulBySource.fill(0);
-    pfAdaptiveWindowPfBadBySource.fill(0);
+    pfAdaptiveWindowPfUnusedBySource.fill(0);
+    pfAdaptiveWindowPfBadHitsBySource.fill(0);
 }
 
 void
-Queued::recordPfAdaptiveDemandMiss(Addr paddr, bool is_secure)
+Queued::recordPfAdaptiveDemandMiss()
 {
     pfAdaptiveWindowDemandMisses++;
+}
 
+std::deque<Queued::PfBadEntry>::iterator
+Queued::findPfAdaptivePfBadEntry(Addr paddr, bool is_secure)
+{
     const Addr block_addr = blockAddress(paddr);
-    auto it = std::find_if(
+    return std::find_if(
         pfAdaptivePfBadTable.begin(),
         pfAdaptivePfBadTable.end(),
         [block_addr, is_secure](const PfBadEntry &entry) {
             return entry.valid && entry.blockAddr == block_addr &&
                 entry.secure == is_secure;
         });
+}
 
+bool
+Queued::recordPfAdaptivePfBadMissHit(Addr paddr, bool is_secure)
+{
+    auto it = findPfAdaptivePfBadEntry(paddr, is_secure);
     if (it == pfAdaptivePfBadTable.end()) {
-        return;
+        return false;
     }
 
-    const unsigned source_idx = sanitizePfControlSource(it->source);
-    pfAdaptiveWindowPfBadBySource[source_idx]++;
-    statsQueued.pfAdaptivePfBadHits++;
+    recordPfAdaptivePfBadHit(it->evictorSource);
     pfAdaptivePfBadTable.erase(it);
     statsQueued.pfAdaptivePfBadTableSize =
         pfAdaptivePfBadTable.size();
+    return true;
+}
+
+void
+Queued::recordPfAdaptivePfBadHit(PrefetchSourceType evictor_source)
+{
+    if (isPfControlSourceNone(evictor_source)) {
+        return;
+    }
+    const unsigned source_idx = sanitizePfControlSource(evictor_source);
+
+    pfAdaptiveWindowPfBadHitsBySource[source_idx]++;
+    recordPfBadHit(evictor_source);
+    statsQueued.pfAdaptivePfBadHits++;
+    statsQueued.pfAdaptivePfBadHitsBySource[source_idx]++;
+}
+
+bool
+Queued::clearPfAdaptivePfBadEntry(Addr paddr, bool is_secure)
+{
+    auto it = findPfAdaptivePfBadEntry(paddr, is_secure);
+    if (it == pfAdaptivePfBadTable.end()) {
+        return false;
+    }
+
+    pfAdaptivePfBadTable.erase(it);
+    statsQueued.pfAdaptivePfBadTableSize =
+        pfAdaptivePfBadTable.size();
+    return true;
+}
+
+void
+Queued::recordPfAdaptivePfBadOverflowEviction(
+    PrefetchSourceType evictor_source)
+{
+    if (isPfControlSourceNone(evictor_source)) {
+        return;
+    }
+    const unsigned source_idx = sanitizePfControlSource(evictor_source);
+
+    statsQueued.pfAdaptivePfBadOverflowEvictions++;
+    statsQueued.pfAdaptivePfBadOverflowBySource[source_idx]++;
 }
 
 void
@@ -654,12 +709,15 @@ Queued::updatePfControlWindow()
             sample.demandMisses = pfAdaptiveWindowDemandMisses;
             sample.pctBySource = pfControlCurrentAdmitPctBySource;
             sample.pfUsefulBySource = pfAdaptiveWindowPfUsefulBySource;
-            sample.pfBadBySource = pfAdaptiveWindowPfBadBySource;
+            sample.pfUnusedBySource = pfAdaptiveWindowPfUnusedBySource;
+            sample.pfBadHitsBySource =
+                pfAdaptiveWindowPfBadHitsBySource;
             for (unsigned source = 0; source < NUM_PF_SOURCES; ++source) {
-                const auto pf_source =
-                    static_cast<PrefetchSourceType>(source);
-                sample.dpfBySource[source] =
-                    computePfAdaptiveDpf(pf_source);
+                sample.gradientBySource[source] =
+                    computePfAdaptiveSourceGradient(
+                        sample.pfUsefulBySource[source],
+                        sample.pfBadHitsBySource[source],
+                        sample.pfUnusedBySource[source]);
             }
 
             if (sample.demandAccesses != 0) {
@@ -670,8 +728,6 @@ Queued::updatePfControlWindow()
                 for (unsigned source = 0; source < NUM_PF_SOURCES; ++source) {
                     statsQueued.pfAdaptivePfUsefulBySource[source] +=
                         sample.pfUsefulBySource[source];
-                    statsQueued.pfAdaptivePfBadBySource[source] +=
-                        sample.pfBadBySource[source];
                 }
 
                 if (pfAdaptiveSampleCount < pfAdaptiveWarmupWindows) {
@@ -704,7 +760,7 @@ Queued::shouldPfControlAdmitLocally(
     if (!pfahead || !hasHintDownStream() || cache == nullptr) {
         return true;
     }
-    return pfahead_host <= static_cast<int>(cache->level());
+    return pfahead_host <= int(cache->level());
 }
 
 bool
@@ -716,10 +772,10 @@ Queued::admitPfControlCandidate(PrefetchSourceType source)
 
     updatePfControlWindow();
 
-    const unsigned source_idx = sanitizePfControlSource(source);
-    if (source_idx == PrefetchSourceType::PF_NONE) {
+    if (isPfControlSourceNone(source)) {
         return true;
     }
+    const unsigned source_idx = sanitizePfControlSource(source);
     const unsigned pct = pfControlCurrentAdmitPctBySource[source_idx];
     statsQueued.pfControlCandidates++;
     statsQueued.pfControlCandidatesByPct[pct]++;
@@ -779,8 +835,18 @@ Queued::notifyDemandAccess(Addr paddr, bool is_secure, bool miss)
     updatePfControlWindow();
     pfAdaptiveWindowDemandAccesses++;
     if (miss) {
-        recordPfAdaptiveDemandMiss(paddr, is_secure);
+        recordPfAdaptiveDemandMiss();
     }
+}
+
+void
+Queued::notifyCacheMissRequest(Addr paddr, bool is_secure)
+{
+    if (!isPfAdaptiveLevel()) {
+        return;
+    }
+    updatePfControlWindow();
+    recordPfAdaptivePfBadMissHit(paddr, is_secure);
 }
 
 void
@@ -799,37 +865,35 @@ Queued::notifyPrefetchUseful(PrefetchSourceType source)
         return;
     }
     updatePfControlWindow();
-    const unsigned source_idx = sanitizePfControlSource(source);
-    if (source_idx == PrefetchSourceType::PF_NONE) {
+    if (isPfControlSourceNone(source)) {
         return;
     }
+    const unsigned source_idx = sanitizePfControlSource(source);
     pfAdaptiveWindowPfUsefulBySource[source_idx]++;
 }
 
 void
 Queued::notifyPrefetchEvictsDemand(
-    Addr victim_paddr, bool is_secure, PrefetchSourceType source)
+    Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
 {
     if (!isPfAdaptiveLevel() || pfAdaptivePfBadEntries == 0) {
         return;
     }
     updatePfControlWindow();
 
-    const unsigned source_idx = sanitizePfControlSource(source);
-    if (source_idx == PrefetchSourceType::PF_NONE) {
+    evictor_source = sanitizePfControlSourceType(evictor_source);
+    if (isPfControlSourceNone(evictor_source)) {
         return;
     }
+    const unsigned source_idx = sanitizePfControlSource(evictor_source);
+
+    statsQueued.pfAdaptivePfBadCandidates++;
+    statsQueued.pfAdaptivePfBadCandidatesBySource[source_idx]++;
 
     const Addr block_addr = blockAddress(victim_paddr);
-    auto it = std::find_if(
-        pfAdaptivePfBadTable.begin(),
-        pfAdaptivePfBadTable.end(),
-        [block_addr, is_secure](const PfBadEntry &entry) {
-            return entry.valid && entry.blockAddr == block_addr &&
-                entry.secure == is_secure;
-        });
+    auto it = findPfAdaptivePfBadEntry(block_addr, is_secure);
     if (it != pfAdaptivePfBadTable.end()) {
-        it->source = source;
+        it->evictorSource = evictor_source;
         it->insertWindow = pfControlWindowIndex;
         return;
     }
@@ -837,22 +901,15 @@ Queued::notifyPrefetchEvictsDemand(
     if (pfAdaptivePfBadTable.size() >= pfAdaptivePfBadEntries) {
         const auto &oldest = pfAdaptivePfBadTable.front();
         if (oldest.valid) {
-            const unsigned evicted_source =
-                sanitizePfControlSource(oldest.source);
-            if (evicted_source !=
-                static_cast<unsigned>(PrefetchSourceType::PF_NONE)) {
-                pfAdaptiveWindowPfBadBySource[evicted_source]++;
-                statsQueued.pfAdaptivePfBadOverflowBad++;
-                statsQueued.pfAdaptivePfBadOverflowBySource[evicted_source]++;
-            }
+            recordPfAdaptivePfBadOverflowEviction(oldest.evictorSource);
         }
         pfAdaptivePfBadTable.pop_front();
         statsQueued.pfAdaptivePfBadTableEvictions++;
     }
 
     pfAdaptivePfBadTable.push_back(
-        PfBadEntry{true, block_addr, is_secure, source,
-                      pfControlWindowIndex});
+        PfBadEntry{true, block_addr, is_secure, evictor_source,
+                   pfControlWindowIndex});
     statsQueued.pfAdaptivePfBadTableSize =
         pfAdaptivePfBadTable.size();
 }
@@ -863,19 +920,23 @@ Queued::notifyCachelineRefill(Addr paddr, bool is_secure)
     if (!isPfAdaptiveLevel()) {
         return;
     }
-    const Addr block_addr = blockAddress(paddr);
-    auto it = std::find_if(
-        pfAdaptivePfBadTable.begin(),
-        pfAdaptivePfBadTable.end(),
-        [block_addr, is_secure](const PfBadEntry &entry) {
-            return entry.valid && entry.blockAddr == block_addr &&
-                entry.secure == is_secure;
-        });
-    if (it != pfAdaptivePfBadTable.end()) {
-        pfAdaptivePfBadTable.erase(it);
-        statsQueued.pfAdaptivePfBadTableSize =
-            pfAdaptivePfBadTable.size();
+    clearPfAdaptivePfBadEntry(paddr, is_secure);
+}
+
+void
+Queued::prefetchUnused(PrefetchSourceType pf_source)
+{
+    Base::prefetchUnused(pf_source);
+    if (!isPfAdaptiveLevel()) {
+        return;
     }
+
+    updatePfControlWindow();
+    if (isPfControlSourceNone(pf_source)) {
+        return;
+    }
+    const unsigned source_idx = sanitizePfControlSource(pf_source);
+    pfAdaptiveWindowPfUnusedBySource[source_idx]++;
 }
 
 void
@@ -1150,23 +1211,30 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     ADD_STAT(pfAdaptivePfBadTableEvictions,
              statistics::units::Count::get(),
              "adaptive prefetch PFBad table evictions"),
-    ADD_STAT(pfAdaptivePfBadOverflowBad,
+    ADD_STAT(pfAdaptivePfBadCandidates,
              statistics::units::Count::get(),
-             "adaptive prefetch bad counts charged when PFBad table "
-             "overflows"),
+             "adaptive prefetch PFBad candidate evictions"),
+    ADD_STAT(pfAdaptivePfBadCandidatesBySource,
+             statistics::units::Count::get(),
+             "adaptive prefetch PFBad candidates by evictor source"),
+    ADD_STAT(pfAdaptivePfBadOverflowEvictions,
+             statistics::units::Count::get(),
+             "adaptive prefetch PFBad table entries evicted by FIFO "
+             "overflow"),
     ADD_STAT(pfAdaptivePfBadHits, statistics::units::Count::get(),
-             "adaptive prefetch demand misses hitting PFBad table"),
+             "adaptive prefetch cache miss requests hitting PFBad table"),
     ADD_STAT(pfAdaptivePctBySource, statistics::units::Count::get(),
              "adaptive prefetch current admission percentage by source"),
-    ADD_STAT(pfAdaptiveDpfBySource, statistics::units::Count::get(),
-             "adaptive prefetch latest per-source gradient"),
+    ADD_STAT(pfAdaptiveGradientBySource, statistics::units::Count::get(),
+             "adaptive prefetch latest per-source threshold gradient"),
     ADD_STAT(pfAdaptivePfUsefulBySource, statistics::units::Count::get(),
              "adaptive prefetch useful counts by source"),
-    ADD_STAT(pfAdaptivePfBadBySource, statistics::units::Count::get(),
-             "adaptive prefetch bad counts by source"),
+    ADD_STAT(pfAdaptivePfBadHitsBySource, statistics::units::Count::get(),
+             "adaptive prefetch cache miss requests hitting PFBad table "
+             "by evictor source"),
     ADD_STAT(pfAdaptivePfBadOverflowBySource,
              statistics::units::Count::get(),
-             "adaptive prefetch PFBad overflow bad counts by source")
+             "adaptive prefetch PFBad FIFO overflow evictions by source")
 {
     using namespace statistics;
     pfRemovedFull_srcs
@@ -1199,13 +1267,16 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     pfAdaptivePctBySource
         .init(NUM_PF_SOURCES)
         .flags(total);
-    pfAdaptiveDpfBySource
+    pfAdaptiveGradientBySource
         .init(NUM_PF_SOURCES)
         .flags(total);
     pfAdaptivePfUsefulBySource
         .init(NUM_PF_SOURCES)
         .flags(total | nozero);
-    pfAdaptivePfBadBySource
+    pfAdaptivePfBadCandidatesBySource
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero);
+    pfAdaptivePfBadHitsBySource
         .init(NUM_PF_SOURCES)
         .flags(total | nozero);
     pfAdaptivePfBadOverflowBySource
@@ -1227,9 +1298,10 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
         pfControlCurrentAdmitPctBySource.subname(
             source, source_name);
         pfAdaptivePctBySource.subname(source, source_name);
-        pfAdaptiveDpfBySource.subname(source, source_name);
+        pfAdaptiveGradientBySource.subname(source, source_name);
         pfAdaptivePfUsefulBySource.subname(source, source_name);
-        pfAdaptivePfBadBySource.subname(source, source_name);
+        pfAdaptivePfBadCandidatesBySource.subname(source, source_name);
+        pfAdaptivePfBadHitsBySource.subname(source, source_name);
         pfAdaptivePfBadOverflowBySource.subname(
             source, source_name);
     }
