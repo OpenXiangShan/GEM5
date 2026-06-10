@@ -321,9 +321,27 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
       ADD_STAT(dcacheMainPipeBlockedByS1Backpressure,
                statistics::units::Count::get(),
                "Number of requests blocked by fake dcache mainpipe S1 backpressure"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByS1Backpressure,
+               statistics::units::Count::get(),
+               "Number of store buffer requests blocked by fake dcache mainpipe S1 backpressure"),
+      ADD_STAT(dcacheMainPipeRefillBlockedByS1Backpressure,
+               statistics::units::Count::get(),
+               "Number of refill requests blocked by fake dcache mainpipe S1 backpressure"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByTagWrite,
+               statistics::units::Count::get(),
+               "Number of store buffer requests blocked by fake dcache mainpipe tag write"),
+      ADD_STAT(dcacheMainPipeRefillBlocked,
+               statistics::units::Count::get(),
+               "Number of pending refill requests blocked before fake dcache mainpipe entry"),
+      ADD_STAT(dcacheMainPipeRefillBlockedByPipeResource,
+               statistics::units::Count::get(),
+               "Number of pending refill requests blocked by fake dcache mainpipe resources"),
       ADD_STAT(dcacheMainPipeBlockedByDataConflict,
                statistics::units::Count::get(),
-               "Number of fake dcache mainpipe S1 data reads blocked by S3 data writes")
+               "Number of fake dcache mainpipe S1 data reads blocked by S3 data writes"),
+      ADD_STAT(dcacheMainPipeStoreS2IssueBlocked,
+               statistics::units::Count::get(),
+               "Number of store buffer requests blocked when issuing from fake dcache mainpipe S2")
 {
 }
 
@@ -626,6 +644,9 @@ LSQ::advanceDcacheMainPipe()
             next_s1_data_read.req = queued_refill;
             dcacheMainPipeRefillQ.pop();
             ++stats.dcacheMainPipeRefillEnter;
+        } else {
+            ++stats.dcacheMainPipeRefillBlocked;
+            ++stats.dcacheMainPipeRefillBlockedByPipeResource;
         }
     }
 
@@ -809,11 +830,23 @@ LSQ::canEnterDcacheMainPipe(
     const bool s1_backpressured =
         next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S1DataRead)).valid;
 
+    bool blocked = false;
     if (s1_backpressured) {
         ++stats.dcacheMainPipeBlockedByS1Backpressure;
-        return false;
+        if (request.isStoreBuffer()) {
+            ++stats.dcacheMainPipeStoreBlockedByS1Backpressure;
+        } else if (request.isRefill()) {
+            ++stats.dcacheMainPipeRefillBlockedByS1Backpressure;
+        }
+        blocked = true;
     }
     if (s0_tag_read_blocked) {
+        if (request.isStoreBuffer()) {
+            ++stats.dcacheMainPipeStoreBlockedByTagWrite;
+        }
+        blocked = true;
+    }
+    if (blocked) {
         return false;
     }
     return !isDcacheMainPipeSetBlocked(request.setKey);
@@ -829,13 +862,32 @@ LSQ::canEnterDcacheMainPipeNow(const DcacheMainPipeRequest &request)
 bool
 LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
 {
+    const auto req = makeStoreBufferMainPipeRequest(entry);
+    const bool set_blocked = isDcacheMainPipeSetBlocked(req.setKey);
+    const bool s1_backpressured =
+        dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead).valid;
+    const bool s0_tag_read_blocked =
+        dcacheMainPipeStage(DcacheMainPipeStage::S3Write).valid &&
+        dcacheMainPipeStage(DcacheMainPipeStage::S3Write).req.needTagWrite;
+
     if (!dcacheMainPipeRefillQ.empty()) {
+        if (s1_backpressured) {
+            ++stats.dcacheMainPipeStoreBlockedByS1Backpressure;
+        }
+        if (s0_tag_read_blocked) {
+            ++stats.dcacheMainPipeStoreBlockedByTagWrite;
+        }
         ++stats.dcacheMainPipeStoreBlockedByRefill;
         return false;
     }
 
-    const auto req = makeStoreBufferMainPipeRequest(entry);
-    if (isDcacheMainPipeSetBlocked(req.setKey)) {
+    if (set_blocked) {
+        if (s1_backpressured) {
+            ++stats.dcacheMainPipeStoreBlockedByS1Backpressure;
+        }
+        if (s0_tag_read_blocked) {
+            ++stats.dcacheMainPipeStoreBlockedByTagWrite;
+        }
         ++stats.dcacheMainPipeStoreBlockedBySet;
         return false;
     }
@@ -1336,6 +1388,7 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     } else {
         auto *entry = request->sbuffer_entry;
         stats.sbufferDcacheReqBlocked++;
+        ++stats.dcacheMainPipeStoreS2IssueBlocked;
         entry->inDcacheMainPipe = false;
         // S2 issue failed. Exit the fake pipe and let the StoreBuffer replay
         // this eviction from S0 through the replay queue.
