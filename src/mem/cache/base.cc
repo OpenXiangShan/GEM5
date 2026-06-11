@@ -664,6 +664,8 @@ BaseCache::calReqInterval(PacketPtr pkt)
 void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
+    registerDcacheMainPipeLSQ(pkt->getLSQPtr());
+
     calReqInterval(pkt);
 
     if (pkt->isStorePFTrain()) {
@@ -902,6 +904,19 @@ BaseCache::dcacheMainPipeCanPrefetch() const
 }
 
 void
+BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
+{
+    if (!lsq || !simulateDcacheRefill || cacheLevel != 1) {
+        return;
+    }
+
+    panic_if(dcacheMainPipeLSQ && dcacheMainPipeLSQ != lsq,
+             "%s: DCache fake mainpipe LSQ owner already set\n",
+             name().c_str());
+    dcacheMainPipeLSQ = lsq;
+}
+
+void
 BaseCache::holdDcacheMainPipeMSHRCredit()
 {
     ++dcacheMainPipeHeldMSHRCredits;
@@ -1010,14 +1025,31 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
-        // Optionally indicate that the Dcache received a refill request
-        // to drive LSQ-side modelling.
-        if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
-            dcache_refill_lsq = pkt->getLSQPtr();
-            dcache_refill_addr =
-                pkt->req && pkt->req->hasVaddr() ? pkt->req->getVaddr() :
-                pkt->getAddr();
-            stats.DcacheRefillTimes++;
+        const bool is_dcache_mainpipe_refill =
+            allocate && pkt->isRead() &&
+            (mshr->hasFromCPU() || mshr->hasFromPref());
+        // Send L1D fill traffic into the fake mainpipe. Demand responses
+        // carry the LSQ pointer in the packet; prefetch-only responses use
+        // the LSQ owner learned from earlier demand traffic.
+        if (simulateDcacheRefill && cacheLevel == 1 &&
+            is_dcache_mainpipe_refill) {
+            o3::LSQ *packet_lsq = pkt->getLSQPtr();
+            registerDcacheMainPipeLSQ(packet_lsq);
+            dcache_refill_lsq = packet_lsq ? packet_lsq : dcacheMainPipeLSQ;
+
+            if (dcache_refill_lsq) {
+                dcache_refill_addr =
+                    pkt->req && pkt->req->hasVaddr() ? pkt->req->getVaddr() :
+                    pkt->getAddr();
+                stats.DcacheRefillTimes++;
+                if (packet_lsq) {
+                    stats.DcacheRefillNotifyFromPacketLSQ++;
+                } else {
+                    stats.DcacheRefillNotifyFromOwnerLSQ++;
+                }
+            } else {
+                stats.DcacheRefillNotifyWithoutLSQ++;
+            }
         }
         blk = handleFill(pkt, blk, writebacks, allocate);
         assert(blk != nullptr);
@@ -3024,6 +3056,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR arbitration fails (one miss per cycle)"),
     ADD_STAT(DcacheRefillTimes, statistics::units::Count::get(),
              "number of Dcache refill events"),
+    ADD_STAT(DcacheRefillNotifyFromPacketLSQ, statistics::units::Count::get(),
+             "number of L1D refill events notified with packet LSQ pointer"),
+    ADD_STAT(DcacheRefillNotifyFromOwnerLSQ, statistics::units::Count::get(),
+             "number of L1D refill events notified with cache owner LSQ"),
+    ADD_STAT(DcacheRefillNotifyWithoutLSQ, statistics::units::Count::get(),
+             "number of L1D refill events skipped without an LSQ target"),
     ADD_STAT(MSHRAliasFails, statistics::units::Count::get(),
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),
