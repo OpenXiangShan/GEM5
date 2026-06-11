@@ -17,6 +17,10 @@ from common.SysPaths import *
 from common.Benchmarks import *
 from common import Simulation
 from common.Caches import *
+from common.PrefetcherConfig import (
+    _configure_l2_composite_kmh_align,
+    _configure_xs_composite_kmh_align,
+)
 from common.xiangshan import *
 
 from m5.objects.ValuePredictor import *
@@ -98,6 +102,9 @@ def setKmhV3IdealParams(args, system):
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
             cpu.dcache.simulate_dcache_refill = True
+            cpu.dcache.prefetch_can_offload = False
+            if cpu.dcache.prefetcher != NULL:
+                _configure_xs_composite_kmh_align(cpu.dcache.prefetcher)
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
@@ -105,13 +112,20 @@ def setKmhV3IdealParams(args, system):
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                if system.l2_caches[i].prefetcher != NULL:
+                    _configure_l2_composite_kmh_align(
+                        system.l2_caches[i].prefetcher)
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
+                if l2_wrapper.prefetcher != NULL:
+                    _configure_l2_composite_kmh_align(l2_wrapper.prefetcher)
+                    l2_wrapper.prefetcher.enable_cmc = False
                 for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
@@ -130,6 +144,7 @@ def setKmhV3IdealParams(args, system):
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 128
+        system.l3.prefetch_can_offload = False
 
 if __name__ == '__m5_main__':
     FutureClass = None
