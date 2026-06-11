@@ -99,7 +99,7 @@ def create_prefetcher(cpu, cache_level, options):
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False
                 prefetcher.enable_bop = True
-                prefetcher.enable_cdp = False
+                prefetcher.enable_cdp = True
                 prefetcher.enable_despacito_stream = False
                 if prefetcher.enable_despacito_stream:
                     # if you want to check despacito pattern trace, set this to True
