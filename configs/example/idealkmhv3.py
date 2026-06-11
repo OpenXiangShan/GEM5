@@ -7,27 +7,25 @@ from m5.objects import *
 from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
-addToPath('../')
+addToPath("../")
 
-from ruby import Ruby
-from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
-
-from common.FSConfig import *
-from common.SysPaths import *
-from common.Benchmarks import *
 from common import Simulation
+from common.Benchmarks import *
 from common.Caches import *
+from common.FSConfig import *
+from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
+from common.SysPaths import *
 from common.xiangshan import *
-
 from m5.objects.ValuePredictor import *
+from ruby import Ruby
+
 
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
-
         # fetch
         cpu.mmu.itb.size = 96
         cpu.fetchWidth = 32
-        cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
+        cpu.iewToFetchDelay = 2  # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
 
@@ -54,9 +52,9 @@ def setKmhV3IdealParams(args, system):
         cpu.commitWidth = 12
         cpu.squashWidth = 12
         cpu.phyregReleaseWidth = 8
-        cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = 160
-        cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.RobCompressPolicy = "none"
+        cpu.numROBEntries = 352
+        cpu.CROB_instPerGroup = 2  # 1 if not using ROB compression
 
         # lsu
         cpu.StoreWbStage = 4
@@ -83,18 +81,27 @@ def setKmhV3IdealParams(args, system):
         cpu.store_prefetch_train = False
 
         # branch predictor
-        if args.bp_type == 'DecoupledBPUWithBTB':
+        if args.bp_type == "DecoupledBPUWithBTB":
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
             # TAGE table sizes and numWays tunning
-            cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
+            cpu.branchPred.tage.tableSizes = [
+                2048,
+                2048,
+                8192,
+                8192,
+                8192,
+                8192,
+                8192,
+                2048,
+            ]
             cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
             # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
         if args.caches:
-            cpu.icache.size = '64kB'
-            cpu.dcache.size = '64kB'
+            cpu.icache.size = "64kB"
+            cpu.dcache.size = "64kB"
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
             cpu.dcache.simulate_dcache_refill = True
@@ -104,7 +111,7 @@ def setKmhV3IdealParams(args, system):
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
-                system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].slice_num = 0  # 4 -> 0, no slice
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
@@ -114,7 +121,9 @@ def setKmhV3IdealParams(args, system):
                 for j in range(args.l2_slices):
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(
+                        mode=2, num_sets=1024
+                    )
             system.tol2bus_list[i].forward_latency = 3  # 0->3
             system.tol2bus_list[i].response_latency = 3  # 0->3
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
@@ -131,7 +140,8 @@ def setKmhV3IdealParams(args, system):
     if args.l3cache:
         system.l3.mshrs = 128
 
-if __name__ == '__m5_main__':
+
+if __name__ == "__m5_main__":
     FutureClass = None
 
     args = xiangshan_system_init()
@@ -140,9 +150,9 @@ if __name__ == '__m5_main__':
 
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
-    args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '2MB'
-    args.l3_size = '32MB'
+    args.bp_type = "DecoupledBPUWithBTB"
+    args.l2_size = "2MB"
+    args.l3_size = "32MB"
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 
