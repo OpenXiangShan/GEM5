@@ -813,8 +813,12 @@ struct MgscTrace : public Record
         int64_t gPercsum, int64_t pPercsum, int64_t biasPercsum,
         // SC decision
         int64_t totalSum, int64_t totalThres, int64_t effectiveGate, int64_t margin,
-        uint64_t bwIndexSig, uint64_t lIndexSig, uint64_t iIndexSig,
-        uint64_t gIndexSig, uint64_t pIndexSig, uint64_t biasIndexSig,
+        uint64_t bwIndex0, uint64_t bwIndex1,
+        uint64_t lIndex0, uint64_t lIndex1,
+        uint64_t iIndex0,
+        uint64_t gIndex0, uint64_t gIndex1,
+        uint64_t pIndex0, uint64_t pIndex1,
+        uint64_t biasIndex0,
         uint64_t useSc, uint64_t scPred, uint64_t scWrong,
         // Result
         uint64_t actualTaken)
@@ -840,12 +844,16 @@ struct MgscTrace : public Record
         _uint64_data["totalThres"] = static_cast<uint64_t>(totalThres);
         _uint64_data["effectiveGate"] = static_cast<uint64_t>(effectiveGate);
         _uint64_data["margin"] = static_cast<uint64_t>(margin);
-        _uint64_data["bwIndexSig"] = bwIndexSig;
-        _uint64_data["lIndexSig"] = lIndexSig;
-        _uint64_data["iIndexSig"] = iIndexSig;
-        _uint64_data["gIndexSig"] = gIndexSig;
-        _uint64_data["pIndexSig"] = pIndexSig;
-        _uint64_data["biasIndexSig"] = biasIndexSig;
+        _uint64_data["bwIndex0"] = bwIndex0;
+        _uint64_data["bwIndex1"] = bwIndex1;
+        _uint64_data["lIndex0"] = lIndex0;
+        _uint64_data["lIndex1"] = lIndex1;
+        _uint64_data["iIndex0"] = iIndex0;
+        _uint64_data["gIndex0"] = gIndex0;
+        _uint64_data["gIndex1"] = gIndex1;
+        _uint64_data["pIndex0"] = pIndex0;
+        _uint64_data["pIndex1"] = pIndex1;
+        _uint64_data["biasIndex0"] = biasIndex0;
         _uint64_data["useSc"] = useSc;
         _uint64_data["scPred"] = scPred;
         _uint64_data["scWrong"] = scWrong;
