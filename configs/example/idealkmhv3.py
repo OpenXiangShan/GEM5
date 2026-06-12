@@ -149,7 +149,7 @@ def setKmhV3IdealParams(args, system):
                 if l2_wrapper.prefetcher != NULL:
                     l2_wrapper.prefetcher.enable_cmc = False
                     l2_wrapper.prefetcher.enable_bop = True
-                    l2_wrapper.prefetcher.enable_cdp = False
+                    l2_wrapper.prefetcher.enable_cdp = True
                     l2_wrapper.prefetcher.enable_despacito_stream = False
                     l2_wrapper.prefetcher.bop_large = XSVirtualLargeBOP(
                         is_sub_prefetcher=True, enable_adaptoffset=False)
