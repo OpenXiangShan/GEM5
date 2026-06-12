@@ -92,8 +92,8 @@ def setKmhV3IdealParams(args, system):
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
-        cpu.SbufferEntries = 24
-        cpu.SbufferEvictThreshold = 16
+        cpu.SbufferEntries = 16
+        cpu.SbufferEvictThreshold = 7
         cpu.enable_storeSet_train = True
         cpu.store_prefetch_train = False
 
