@@ -545,7 +545,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
     bool is_zstd = hasZSTDMagic(fd);
     close(fd);
     if (!is_gz && !is_zstd) {  // Restoring from memory image checkpoint
-        fd = open(filepath.c_str(), O_RDWR);
+        fd = open(filepath.c_str(), O_RDONLY);
 
         assert(mapToRawCpt &&
                "When using raw checkpoint, the memory must be directly mapped "
