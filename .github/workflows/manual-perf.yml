@@ -66,7 +66,7 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.benchmark_type }}" = "gcc12-spec06-smt-0.3c" ]; then
             echo "config_path=configs/example/smt_idealkmhv3.py" >> $GITHUB_OUTPUT
-            echo "extra_args=--dramsim3-ini=ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini" >> $GITHUB_OUTPUT
+            echo "extra_args=" >> $GITHUB_OUTPUT
           else
             echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
             echo "extra_args=" >> $GITHUB_OUTPUT

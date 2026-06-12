@@ -494,7 +494,8 @@ Decode::tick()
         toFetch->decodeInfo[tid].blockReason =
             stallSig->fetchBlockReason[tid];
     };
-    const auto fetchFeedbackReserve = decodeToFetchDelay + 1;
+    const auto fetchFeedbackReserve =
+        numThreads > 1 ? fetchToDecodeDelay : decodeToFetchDelay + 1;
     const bool fifoBackpressured =
         !stallBuffer.empty() &&
         eachstallSize.size() + fetchFeedbackReserve >=

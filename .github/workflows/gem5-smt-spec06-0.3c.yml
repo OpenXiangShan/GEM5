@@ -21,6 +21,5 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/smt_idealkmhv3.py
-      extra_args: "--dramsim3-ini=ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
       benchmark_type: "gcc12-spec06-smt-0.3c"
       pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
