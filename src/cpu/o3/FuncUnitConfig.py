@@ -103,6 +103,69 @@ class FP_MISC(FUDesc):
 class FP_MAC(FUDesc):
     opList = [ OpDesc(opClass='FloatMultAcc', opLat=4)]
 
+class VAU(FUDesc):
+    opList = [ OpDesc(opClass='VectorArith', opLat=2) ]
+
+class VMA(FUDesc):
+    opList = [ OpDesc(opClass='VectorMult', opLat=2),
+               OpDesc(opClass='VectorMultAcc', opLat=3) ]
+
+class SFT(FUDesc):
+    opList = [ OpDesc(opClass='VectorSpecialFunc', opLat=2) ]
+
+class RED(FUDesc):
+    opList = [ OpDesc(opClass='VectorReduction', opLat=2) ]
+
+class DIV(FUDesc):
+    opList = [ OpDesc(opClass='VectorDiv', opLat=23, pipelined=False) ]
+
+class MSC_0(FUDesc):
+    opList = [ OpDesc(opClass='VectorMisc0', opLat=2) ]
+
+class MSC_1(FUDesc):
+    opList = [ OpDesc(opClass='VectorMisc1', opLat=2) ]
+
+class PRM(FUDesc):
+    opList = [ OpDesc(opClass='VectorPermute', opLat=2) ]
+
+class FAU(FUDesc):
+    opList = [ OpDesc(opClass='VectorFloatArith', opLat=2),
+               OpDesc(opClass='FloatAdd', opLat=2),
+               OpDesc(opClass='FloatMisc', opLat=2) ]
+
+class FAU_CMP(FUDesc):
+    opList = [ OpDesc(opClass='VectorFloatCmp', opLat=2),
+               OpDesc(opClass='FloatCmp', opLat=2) ]
+
+class FMA(FUDesc):
+    opList = [ OpDesc(opClass='VectorFloatMult', opLat=3),
+               OpDesc(opClass='VectorFloatMultAcc', opLat=4),
+               OpDesc(opClass='FloatMult', opLat=3),
+               OpDesc(opClass='FloatMultAcc', opLat=4) ]
+
+class FDV(FUDesc):
+    opList = [ OpDesc(opClass='VectorFloatDiv', opLat=20,
+                      pipelined=False),
+               OpDesc(opClass='FloatDiv', opLat=14, pipelined=False),
+               OpDesc(opClass='FloatSqrt', opLat=17, pipelined=False) ]
+
+class FCV_F2F(FUDesc):
+    opList = [ OpDesc(opClass='VectorConvertF2F', opLat=3),
+               OpDesc(opClass='FloatCvtF2F', opLat=3),
+               OpDesc(opClass='FloatCvt', opLat=4) ]
+
+class FCV_F2I(FUDesc):
+    opList = [ OpDesc(opClass='VectorConvertF2I', opLat=3),
+               OpDesc(opClass='FloatCvtF2I', opLat=3) ]
+
+class FCV_I2F(FUDesc):
+    opList = [ OpDesc(opClass='VectorConvertI2F', opLat=3),
+               OpDesc(opClass='FloatCvtI2F', opLat=3) ]
+
+class INT_VFP(FUDesc):
+    opList = [ OpDesc(opClass='VectorConvertI2I', opLat=1),
+               OpDesc(opClass='FloatMv', opLat=1) ]
+
 class SIMD_Unit(FUDesc):
     opList = [ OpDesc(opClass='VectorArith'),
                OpDesc(opClass='VectorSpecialFunc'),

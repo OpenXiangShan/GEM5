@@ -138,11 +138,22 @@ jobs:
               exit 1
               ;;
           esac
+      - name: Select NEMU reference
+        id: ref
+        run: |
+          case "${{ inputs.benchmark_type }}" in
+            "spec06-rvv-1.0c"|"spec06int-rvv-0.8c")
+              echo "gcbv_ref_so=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-vlen256-notama-so" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "gcbv_ref_so=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so" >> $GITHUB_OUTPUT
+              ;;
+          esac
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 fast
         run: |
           export GEM5_HOME=$(pwd)
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          export GCBV_REF_SO="${{ steps.ref.outputs.gcbv_ref_so }}"
           case "${{ inputs.vector_type }}" in
             "base")
               # use pgo profile to build gem5
@@ -197,6 +208,7 @@ jobs:
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
+          echo "gcbv_ref_so: ${{ steps.ref.outputs.gcbv_ref_so }}" >> "$TARGET_DIR/metadata.txt"
           echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
 
           {
@@ -207,7 +219,7 @@ jobs:
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
-          GCBV_REF_SO: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          GCBV_REF_SO: ${{ steps.ref.outputs.gcbv_ref_so }}
           GEM5_HOME: ${{ github.workspace }}
           GEM5_BUILD_TYPE: fast
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}

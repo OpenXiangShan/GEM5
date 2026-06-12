@@ -24,6 +24,21 @@ def FpRD(id, p):
     ret = (1 << 6) | (id << 2) | (p)
     return ret
 
+def jtv2_vpipe0_fus():
+    return [VAU(), VMA(), SFT(), MSC_0(), FAU(), FMA()]
+
+def jtv2_vpipe1_fus():
+    return [VAU(), VMA(), SFT(), MSC_0(), FAU(), FMA()]
+
+def jtv2_vpipe2_fus():
+    return [VAU(), SFT(), RED(), MSC_0(), MSC_1(),
+            FAU(), FAU_CMP(), FMA(), FCV_F2F(), FCV_F2I(), FCV_I2F()]
+
+def jtv2_vpipe3_fus():
+    return [VAU(), SFT(), RED(), DIV(), MSC_0(), MSC_1(), PRM(),
+            FAU(), FAU_CMP(), FMA(), FDV(), FCV_F2F(), FCV_F2I(),
+            FCV_I2F()]
+
 def IntWR(id, p):
     # [8] [7:6] [5:2] [1:0]
     assert id < 16
@@ -118,7 +133,8 @@ class KunminghuScheduler(Scheduler):
         ]),
         IssueQue(name='intIQ3', inports=2, size=2*12, oports=[
             IssuePort(fu=[IntALU()], rp=[IntRD(6, 0), IntRD(7, 0)]),
-            IssuePort(fu=[IntDiv()], rp=[IntRD(0, 1), IntRD(1, 1)])
+            IssuePort(fu=[IntDiv(), INT_VFP()],
+                      rp=[IntRD(0, 1), IntRD(1, 1)])
         ])
     ]
     __memIQs = [
@@ -146,23 +162,21 @@ class KunminghuScheduler(Scheduler):
     ]
     __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()], rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
-            IssuePort(fu=[FP_SLOW()], rp=[FpRD(2,1), FpRD(5,1)])
+            IssuePort(fu=jtv2_vpipe0_fus(),
+                      rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)])
         ], scheduleToExecDelay=2),
         IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()], rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)]),
-            IssuePort(fu=[FP_SLOW()], rp=[FpRD(8,1), FpRD(9,1)]),
+            IssuePort(fu=jtv2_vpipe1_fus(),
+                      rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)])
         ], scheduleToExecDelay=2),
         IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()], rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
+            IssuePort(fu=jtv2_vpipe2_fus(),
+                      rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
         ], scheduleToExecDelay=2),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3)
+        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
+            IssuePort(fu=jtv2_vpipe3_fus(),
+                      rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
+        ], scheduleToExecDelay=2)
     ]
     IQs = __intIQs + __memIQs + __fpIQs
 
@@ -213,7 +227,7 @@ class KMHV3Scheduler(Scheduler):
                       rp=[IntRD(8, 0), IntRD(9, 1)]),
         ]),
         IssueQue(name='intIQ5', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntDiv(), IntMisc()],
+            IssuePort(fu=[IntALU(), IntDiv(), IntMisc(), INT_VFP()],
                       rp=[IntRD(10, 0), IntRD(11, 1)])
         ]),
     ]
@@ -242,30 +256,21 @@ class KMHV3Scheduler(Scheduler):
     ]
     __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()],
+            IssuePort(fu=jtv2_vpipe0_fus(),
                       rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
-            IssuePort(fu=[FP_SLOW()],
-                      rp=[FpRD(2,1), FpRD(5,1)])
         ]),
         IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
+            IssuePort(fu=jtv2_vpipe1_fus(),
                       rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)])
         ]),
         IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
+            IssuePort(fu=jtv2_vpipe2_fus(),
                       rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
         ]),
         IssueQue(name='fpIQ3', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
+            IssuePort(fu=jtv2_vpipe3_fus(),
                       rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
         ]),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3),
     ]
 
     intRegfileBanks = 2
