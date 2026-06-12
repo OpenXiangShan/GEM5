@@ -1026,11 +1026,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
         const bool is_dcache_mainpipe_refill =
-            allocate && pkt->isRead() &&
-            (mshr->hasFromCPU() || mshr->hasFromPref());
-        // Send L1D fill traffic into the fake mainpipe. Demand responses
-        // carry the LSQ pointer in the packet; prefetch-only responses use
-        // the LSQ owner learned from earlier demand traffic.
+            allocate && (mshr->hasFromCPU() || mshr->hasFromPref());
+        // Send allocated L1D fill/update traffic into the fake mainpipe.
+        // Demand responses carry the LSQ pointer in the packet; prefetch-only
+        // responses use the LSQ owner learned from earlier demand traffic.
         if (simulateDcacheRefill && cacheLevel == 1 &&
             is_dcache_mainpipe_refill) {
             o3::LSQ *packet_lsq = pkt->getLSQPtr();
