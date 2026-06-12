@@ -361,6 +361,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Test switches for SC tables
     bool forceUseSC;
+    bool allowMissingTageInfo;
     bool enableBwTable;
     bool enableLTable;
     bool enableITable;
@@ -537,6 +538,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static unsigned biasTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.biasTableIdxWidth; }
 
         static bool &forceUseSC(BTBMGSC &mgsc) { return mgsc.forceUseSC; }
+        static bool &allowMissingTageInfo(BTBMGSC &mgsc) { return mgsc.allowMissingTageInfo; }
         static bool &enableBwTable(BTBMGSC &mgsc) { return mgsc.enableBwTable; }
         static bool &enableLTable(BTBMGSC &mgsc) { return mgsc.enableLTable; }
         static bool &enableITable(BTBMGSC &mgsc) { return mgsc.enableITable; }

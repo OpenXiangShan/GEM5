@@ -113,6 +113,13 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
+            if getattr(args, 'standalone_sc', False):
+                cpu.branchPred.microtage.enabled = False
+                cpu.branchPred.tage.enabled = False
+
+                cpu.branchPred.mgsc.forceUseSC = True
+                cpu.branchPred.mgsc.allowMissingTageInfo = True
+
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'

@@ -1,6 +1,7 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 
 #include "base/intmath.hh"
+#include "base/logging.hh"
 
 #ifdef UNIT_TEST
 #include "cpu/pred/btb/test/test_dprintf.hh"
@@ -173,6 +174,7 @@ BTBMGSC::BTBMGSC()
       // This models "read a whole SRAM line, then pick a lane" behavior in `posHash()`.
       numCtrsPerLine(8),
       forceUseSC(false),
+      allowMissingTageInfo(false),
       enableBwTable(true),
       enableLTable(true),
       enableITable(true),
@@ -217,6 +219,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       weightTableIdxWidth(p.weightTableIdxWidth),
       numCtrsPerLine(p.numCtrsPerLine),
       forceUseSC(p.forceUseSC),
+      allowMissingTageInfo(p.allowMissingTageInfo),
       enableBwTable(p.enableBwTable),
       enableLTable(p.enableLTable),
       enableITable(p.enableITable),
@@ -542,15 +545,18 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
-            if (tage_info != tageInfoForMgscs.end()) {
-                auto pred = generateSinglePrediction(btb_entry, startPC,
-                                                     tage_info->second, tid,
-                                                     asidHash);
-                threadMeta[tid]->preds[btb_entry.pc] = pred;
-                results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            } else {
-                assert(false);
-            }
+            panic_if(tage_info == tageInfoForMgscs.end() && !allowMissingTageInfo,
+                     "MGSC missing TAGE info for conditional branch pc %#lx "
+                     "startPC %#lx tid %u asidHash %#x",
+                     btb_entry.pc, startPC, static_cast<unsigned>(tid),
+                     static_cast<unsigned>(asidHash));
+
+            const TageInfoForMGSC missing_tage_info;
+            const auto &info =
+                tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
+            auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
+            threadMeta[tid]->preds[btb_entry.pc] = pred;
+            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
         }
     }
 }

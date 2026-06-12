@@ -730,6 +730,51 @@ TEST(BTBMGSCTest, BiasTableLearnsTwoTageContexts)
     EXPECT_GE(acc, 0.90) << "Accuracy too low for two-context bias learning: " << acc;
 }
 
+TEST(BTBMGSCTest, MissingTageInfoUsesDefaultFallbackContext)
+{
+    MgscHarness h;
+    h.setOnlyBiasTable();
+    BTBMGSC::TestAccess::allowMissingTageInfo(h.mgsc) = true;
+
+    const TageInfoForMGSC fallback_ctx;
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+
+    setAllTableCountersForPc(h.mgsc, start_pc, branch_pc, fallback_ctx,
+                             /*bw=*/0, /*l=*/0, /*i=*/0, /*g=*/0, /*p=*/0,
+                             /*bias=*/4);
+
+    boost::dynamic_bitset<> history(64, 0);
+    std::vector<FullBTBPrediction> stage_preds(2);
+    for (auto &pred : stage_preds) {
+        pred.bbStart = start_pc;
+        pred.btbEntries = {entry};
+        pred.tageInfoForMgscs.clear();
+    }
+
+    h.mgsc.putPCHistory(start_pc, history, stage_preds);
+
+    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    ASSERT_TRUE(found);
+    EXPECT_TRUE(taken);
+
+    const auto &preds = BTBMGSC::TestAccess::preds(h.mgsc);
+    auto it = preds.find(branch_pc);
+    ASSERT_NE(it, preds.end());
+    EXPECT_TRUE(it->second.use_mgsc);
+    EXPECT_FALSE(it->second.taken_before_sc);
+    EXPECT_FALSE(it->second.tage_conf_low);
+
+    const auto [expected_bias_idx, _] =
+        lineLaneForBiasIndex(h.mgsc, start_pc, branch_pc,
+                             BTBMGSC::TestAccess::biasTableIdxWidth(h.mgsc),
+                             fallback_ctx);
+    ASSERT_FALSE(it->second.biasIndex.empty());
+    EXPECT_EQ(it->second.biasIndex[0], expected_bias_idx);
+}
+
 TEST(BTBMGSCTest, LTableLearnsTwoIndependentLocalHistories)
 {
     MgscHarness h;
