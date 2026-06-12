@@ -815,7 +815,7 @@ struct MgscTrace : public Record
         int64_t totalSum, int64_t totalThres, int64_t effectiveGate, int64_t margin,
         uint64_t bwIndexSig, uint64_t lIndexSig, uint64_t iIndexSig,
         uint64_t gIndexSig, uint64_t pIndexSig, uint64_t biasIndexSig,
-        uint64_t useSc, uint64_t scPred,
+        uint64_t useSc, uint64_t scPred, uint64_t scWrong,
         // Result
         uint64_t actualTaken)
     {
@@ -848,6 +848,7 @@ struct MgscTrace : public Record
         _uint64_data["biasIndexSig"] = biasIndexSig;
         _uint64_data["useSc"] = useSc;
         _uint64_data["scPred"] = scPred;
+        _uint64_data["scWrong"] = scWrong;
         // Result
         _uint64_data["actualTaken"] = actualTaken;
     }

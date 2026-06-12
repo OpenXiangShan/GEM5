@@ -293,6 +293,7 @@ BTBMGSC::setTrace()
             std::make_pair("biasIndexSig", UINT64),
             std::make_pair("useSc", UINT64),
             std::make_pair("scPred", UINT64),
+            std::make_pair("scWrong", UINT64),
             std::make_pair("actualTaken", UINT64),
         };
         mgscMissTrace = _db->addAndGetTrace("MGSCTRACE", fields_vec);
@@ -883,7 +884,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
             total_sum, total_thres, effective_gate, margin,
             foldIndexSig(pred.bwIndex), foldIndexSig(pred.lIndex), foldIndexSig(pred.iIndex),
             foldIndexSig(pred.gIndex), foldIndexSig(pred.pIndex), foldIndexSig(pred.biasIndex),
-            use_mgsc, sc_pred_taken,
+            use_mgsc, sc_pred_taken, sc_pred_taken != actual_taken,
             actual_taken);
         mgscMissTrace->write_record(t);
     }
