@@ -1962,6 +1962,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         delete updateMetaData;
     }
 
+    if (head_inst->isLoad()) {
+        head_inst->clearProducerStorePC();
+    }
+
     rob->noteMatrixAmuCommit(head_inst);
     // Finally clear the head ROB entry.
     rob->retireHead(tid);
@@ -2003,8 +2007,7 @@ Commit::moveInstsToBuffer()
     ThreadID tid = InvalidThreadID;
     for (int i = 0; i < numThreads; i++) {
         bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
-        const bool robEntryBlock =
-            rob->getMaxEntries(i) - rob->getThreadEntries(i) < fixedbuffer[i].size();
+        const bool robEntryBlock = !rob->canAllocate(i, fixedbuffer[i].size());
         unsigned amuEntryDemand = 0;
         for (const auto &inst : fixedbuffer[i]) {
             if (inst && !inst->isSquashed()) {
