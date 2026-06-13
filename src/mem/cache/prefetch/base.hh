@@ -163,6 +163,10 @@ class Base : public ClockedObject
         Addr pc;
         /** The requestor ID that generated this address. */
         RequestorID requestorId;
+        /** The thread context that generated this address. */
+        ContextID _contextId;
+        /** Whether the thread context is valid. */
+        bool validContextId;
         /** Validity bit for the PC of this address. */
         bool validPC;
         /** Whether this address targets the secure memory space. */
@@ -242,6 +246,17 @@ class Base : public ClockedObject
             return requestorId;
         }
 
+        bool hasContextId() const
+        {
+            return validContextId;
+        }
+
+        ContextID contextId() const
+        {
+            assert(hasContextId());
+            return _contextId;
+        }
+
         /**
          * Gets the size of the request triggering this event
          * @return the size in bytes of the request triggering this event
@@ -317,7 +332,16 @@ class Base : public ClockedObject
         bool sameAddr(PrefetchInfo const &pfi) const
         {
             return this->getAddr() == pfi.getAddr() &&
-                this->isSecure() == pfi.isSecure();
+                this->isSecure() == pfi.isSecure() &&
+                this->sameContext(pfi);
+        }
+
+        bool sameContext(PrefetchInfo const &pfi) const
+        {
+            if (hasContextId() != pfi.hasContextId()) {
+                return false;
+            }
+            return !hasContextId() || _contextId == pfi.contextId();
         }
 
         bool sameAddr(Addr addr, bool isSecure) const
@@ -407,6 +431,10 @@ class Base : public ClockedObject
         Addr pc;
         /** The requestor ID that generated this address. */
         RequestorID requestorId;
+        /** The thread context that generated this address. */
+        ContextID _contextId;
+        /** Whether the thread context is valid. */
+        bool validContextId;
         /** Validity bit for the PC of this address. */
         bool validPC;
         /** Whether this address targets the secure memory space. */
@@ -486,6 +514,17 @@ class Base : public ClockedObject
             return requestorId;
         }
 
+        bool hasContextId() const
+        {
+            return validContextId;
+        }
+
+        ContextID contextId() const
+        {
+            assert(hasContextId());
+            return _contextId;
+        }
+
         /**
          * Gets the size of the request triggering this event
          * @return the size in bytes of the request triggering this event
@@ -561,7 +600,16 @@ class Base : public ClockedObject
         bool sameAddr(PrefetchInfo_old const &pfi) const
         {
             return this->getAddr() == pfi.getAddr() &&
-                this->isSecure() == pfi.isSecure();
+                this->isSecure() == pfi.isSecure() &&
+                this->sameContext(pfi);
+        }
+
+        bool sameContext(PrefetchInfo_old const &pfi) const
+        {
+            if (hasContextId() != pfi.hasContextId()) {
+                return false;
+            }
+            return !hasContextId() || _contextId == pfi.contextId();
         }
 
         bool sameAddr(Addr addr, bool isSecure) const

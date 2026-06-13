@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
+#include <algorithm>
 #include <queue>
 #include <string>
 
@@ -17,6 +18,50 @@ namespace gem5 {
 namespace branch_prediction {
 
 namespace btb_pred {
+
+inline uint8_t
+foldAsidHash16To4(uint16_t asid)
+{
+    return (asid & 0xf) ^ ((asid >> 4) & 0xf) ^
+           ((asid >> 8) & 0xf) ^ ((asid >> 12) & 0xf);
+}
+
+inline Addr
+expandAsidHash(uint8_t asid_hash, unsigned bits)
+{
+    if (bits == 0) {
+        return 0;
+    }
+
+    Addr expanded = 0;
+    for (unsigned shift = 0; shift < bits; shift += 4) {
+        expanded |= static_cast<Addr>(asid_hash) << shift;
+    }
+    return expanded & mask(bits);
+}
+
+inline Addr
+injectAsidHashIntoTag(Addr base_tag, unsigned tag_bits, uint8_t asid_hash)
+{
+    if (tag_bits == 0) {
+        return 0;
+    }
+
+    const unsigned hash_bits = std::min<unsigned>(4, tag_bits);
+    const Addr hash_mask = mask(hash_bits);
+    return (base_tag ^ (static_cast<Addr>(asid_hash) & hash_mask)) &
+           mask(tag_bits);
+}
+
+inline Addr
+xorAsidHashIntoIndex(Addr base_index, unsigned index_bits, uint8_t asid_hash)
+{
+    if (index_bits == 0) {
+        return 0;
+    }
+
+    return (base_index ^ expandAsidHash(asid_hash, index_bits)) & mask(index_bits);
+}
 
 enum EndType
 {
@@ -263,6 +308,22 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
+struct DirectionHistoryUpdate
+{
+    int shamt = 0;
+    bool taken = false;
+};
+
+struct PathHistoryUpdate
+{
+    static constexpr int NumShift = 2;
+
+    int shamt = NumShift;
+    bool taken = false;
+    Addr pc = 0;
+    Addr target = 0;
+};
+
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
  *
@@ -276,6 +337,7 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 struct FetchTarget
 {
     ThreadID tid;
+    uint8_t asidHash;
     Addr startPC;       // start pc of the stream
     bool predTaken;     // whether the FetchTarget has taken branch
     Addr predEndPC;     // predicted stream end pc (fall through pc)
@@ -323,7 +385,9 @@ struct FetchTarget
     int s3Source; // which stage the prediction comes from
 
    FetchTarget()
-       : startPC(0),
+       : tid(0),
+         asidHash(0),
+         startPC(0),
          predTaken(false),
          predEndPC(0),
          predBranchInfo(BranchInfo()),
@@ -371,36 +435,48 @@ struct FetchTarget
         return startPC;
     }
 
-    std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
+    DirectionHistoryUpdate getGHistUpdateDuringSquash(
+        Addr squash_pc, bool is_cond, bool actually_taken) const
     {
-        int shamt = 0;
-        bool cond_taken = false;
+        DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                shamt++;
+                update.shamt++;
             }
         }
         if (is_cond) {
-            shamt++;
-            cond_taken = actually_taken;
+            update.shamt++;
+            update.taken = actually_taken;
         }
-        return std::make_pair(shamt, cond_taken);
+        return update;
     }
 
-    std::pair<int, bool> getBwHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target)
+    DirectionHistoryUpdate getBwHistUpdateDuringSquash(
+        Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
-        int shamt = 0;
-        bool cond_taken = false;
+        DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                shamt++;
+                update.shamt++;
             }
         }
         if (is_cond) {
-            shamt++;
-            cond_taken = actually_taken && (squash_pc > target);
+            update.shamt++;
+            update.taken = actually_taken && (squash_pc > target);
         }
-        return std::make_pair(shamt, cond_taken);
+        return update;
+    }
+
+    PathHistoryUpdate getPHistUpdateDuringSquash(
+        Addr squash_pc, bool actually_taken, Addr target) const
+    {
+        PathHistoryUpdate update;
+        update.taken = actually_taken && getControlPC() == squash_pc;
+        if (update.taken) {
+            update.pc = squash_pc;
+            update.target = target;
+        }
+        return update;
     }
 
     // should be called before components update
@@ -452,6 +528,7 @@ struct FetchTarget
 struct FullBTBPrediction
 {
     ThreadID tid;
+    uint8_t asidHash;
     Addr bbStart;
     std::vector<BTBEntry> btbEntries; // for BTB, only assigned when hit, sorted by inst order
     // for conditional branch predictors, mapped with lowest bits of branches
@@ -472,6 +549,8 @@ struct FullBTBPrediction
     int s3Source;
 
     FullBTBPrediction() :
+        tid(0),
+        asidHash(0),
         bbStart(0),
         btbEntries(),
         condTakens(),
@@ -582,19 +661,18 @@ struct FullBTBPrediction
         }
     }
 
-    std::pair<int, bool> getHistInfo()  //global or local
+    DirectionHistoryUpdate getGHistUpdate()  //global or local
     {
-        int shamt = 0; // shamt is the number of bits to shift in history update
-        bool taken = false;
+        DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) { // if found a cond branch, shamt++
-                    shamt++;
+                    update.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) { // if the cond branch is taken, taken = true
-                            taken = true;
+                            update.taken = true;
                             break;
                         }
                     }
@@ -606,22 +684,21 @@ struct FullBTBPrediction
         }
         // For example, return (3, true) means 3 bits to shift in history update,
         // and the third branch is taken, new hist = xxx001
-        return std::make_pair(shamt, taken);
+        return update;
     }
 
-    std::pair<int, bool> getBwHistInfo() //global backward or imli
+    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
     {
-        int shamt = 0;
-        bool taken = false;
+        DirectionHistoryUpdate update;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) {
-                    shamt++;
+                    update.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
-                            taken = (entry.target < entry.pc); // branch is backward if target < pc
+                            update.taken = (entry.target < entry.pc); // branch is backward if target < pc
                             break;
                         }
                     }
@@ -631,16 +708,19 @@ struct FullBTBPrediction
                 }
             }
         }
-        return std::make_pair(shamt, taken);
+        return update;
     }
 
-    std::tuple<Addr, Addr, bool> getPHistInfo() //path
+    PathHistoryUpdate getPHistUpdate() //path
     {
+        PathHistoryUpdate update;
         const auto &entry = getTakenEntry();
         if (entry.valid) {
-            return std::make_tuple(entry.pc, getEntryTarget(entry), true);
+            update.taken = true;
+            update.pc = entry.pc;
+            update.target = getEntryTarget(entry);
         }
-        return std::make_tuple(0, 0, false);
+        return update;
     }
 
 };

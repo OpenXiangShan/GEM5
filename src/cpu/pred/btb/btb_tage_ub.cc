@@ -322,30 +322,26 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 }
 
 std::shared_ptr<void>
-BTBTAGEUpperBound::getPredictionMeta()
+BTBTAGEUpperBound::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     return ubMeta;
 }
 
 void
-BTBTAGEUpperBound::specUpdateHist(const boost::dynamic_bitset<> &history,
-                                  FullBTBPrediction &pred)
-{
-    (void)history;
-    (void)pred;
-}
-
-void
 BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
-                                   FullBTBPrediction &pred)
+                                   FullBTBPrediction &pred,
+                                   const PathHistoryUpdate &update)
 {
+    (void)pred;
+
     if (historySource != HistorySource::PathHash) {
         return;
     }
 
     exactPathHistory = history;
-    auto [pc, target, taken] = pred.getPHistInfo();
-    updatePathHistory(exactPathHistory, taken, pc, target);
+    updatePathHistory(exactPathHistory, update.taken, update.pc,
+                      update.target);
 }
 
 void
@@ -361,18 +357,18 @@ BTBTAGEUpperBound::recoverHist(const boost::dynamic_bitset<> &history,
 
 void
 BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
-                                const FetchTarget &entry, int shamt,
-                                bool cond_taken)
+                                const FetchTarget &entry,
+                                const PathHistoryUpdate &update)
 {
-    (void)shamt;
+    (void)entry;
 
     if (historySource != HistorySource::PathHash) {
         return;
     }
 
     exactPathHistory = history;
-    updatePathHistory(exactPathHistory, cond_taken,
-                      entry.getControlPC(), entry.getTakenTarget());
+    updatePathHistory(exactPathHistory, update.taken, update.pc,
+                      update.target);
 }
 
 bool

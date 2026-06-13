@@ -40,6 +40,7 @@
 
 #include "cpu/o3/rob.hh"
 
+#include <algorithm>
 #include <list>
 
 #include "arch/riscv/isa.hh"
@@ -202,6 +203,7 @@ ROB::allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid)
 
 ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     : robPolicy(params.smtROBPolicy),
+      borrowingDonorReserveEntries(params.smtBorrowDonorReserveEntries),
       robWalkPolicy(params.robWalkPolicy),
       cpu(_cpu),
       numEntries(params.numROBEntries),
@@ -215,11 +217,23 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       stats(_cpu)
 {
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        borrowingDonor[tid] = false;
+    }
+
     //Figure out rob policy
     if (robPolicy == SMTQueuePolicy::Dynamic) {
         //Set Max Entries to Total ROB Capacity
         for (ThreadID tid = 0; tid < numThreads; tid++) {
             maxEntries[tid] = numEntries;
+        }
+
+    } else if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        DPRINTF(Fetch, "ROB sharing policy set to DynamicBorrowing\n");
+
+        int part_amt = numEntries / numThreads;
+        for (ThreadID tid = 0; tid < numThreads; tid++) {
+            maxEntries[tid] = part_amt;
         }
 
     } else if (robPolicy == SMTQueuePolicy::Partitioned) {
@@ -287,6 +301,7 @@ ROB::resetState()
         squashIt[tid] = instList[tid].end();
         squashedSeqNum[tid] = 0;
         doneSquashing[tid] = true;
+        borrowingDonor[tid] = false;
     }
     numInstsInROB = 0;
 
@@ -411,6 +426,8 @@ ROB::resetEntries()
 
             if (robPolicy == SMTQueuePolicy::Partitioned) {
                 maxEntries[tid] = numEntries / active_threads;
+            } else if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
+                maxEntries[tid] = numEntries / active_threads;
             } else if (robPolicy == SMTQueuePolicy::Threshold &&
                        active_threads == 1) {
                 maxEntries[tid] = numEntries;
@@ -424,9 +441,93 @@ ROB::entryAmount(ThreadID num_threads)
 {
     if (robPolicy == SMTQueuePolicy::Partitioned) {
         return numEntries / num_threads;
+    } else if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        return numEntries / num_threads;
     } else {
         return 0;
     }
+}
+
+unsigned
+ROB::activeThreadCount() const
+{
+    if (!activeThreads || activeThreads->empty()) {
+        return numThreads == 0 ? 1 : numThreads;
+    }
+    return activeThreads->size();
+}
+
+unsigned
+ROB::totalEntries() const
+{
+    unsigned total = 0;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        total += threadGroups[tid].size();
+    }
+    return total;
+}
+
+bool
+ROB::canBorrow(ThreadID tid) const
+{
+    return robPolicy == SMTQueuePolicy::DynamicBorrowing &&
+           tid < numThreads;
+}
+
+unsigned
+ROB::borrowingLimit(ThreadID tid) const
+{
+    if (tid >= numThreads) {
+        return 0;
+    }
+
+    if (!canBorrow(tid)) {
+        return maxEntries[tid];
+    }
+
+    const unsigned active_threads = std::max(1U, activeThreadCount());
+    const unsigned base = std::max(1U, numEntries / active_threads);
+    const unsigned donor_resume_quota =
+        std::min(base, borrowingDonorReserveEntries);
+
+    unsigned reserved = 0;
+    for (ThreadID other = 0; other < numThreads; ++other) {
+        if (other == tid) {
+            continue;
+        }
+
+        const unsigned reserve =
+            borrowingDonor[other] ? donor_resume_quota : base;
+        const unsigned used = threadGroups[other].size();
+        if (used < reserve) {
+            reserved += reserve - used;
+        }
+    }
+
+    if (reserved >= numEntries) {
+        return 0;
+    }
+
+    return numEntries - reserved;
+}
+
+bool
+ROB::canAllocate(ThreadID tid, unsigned entries) const
+{
+    if (tid >= numThreads) {
+        return false;
+    }
+
+    const unsigned used = threadGroups[tid].size();
+
+    if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        if (totalEntries() + entries > numEntries) {
+            return false;
+        }
+        return used + entries <= borrowingLimit(tid);
+    }
+
+    return used + entries <= maxEntries[tid];
 }
 
 int
@@ -447,14 +548,22 @@ ROB::countInsts(ThreadID tid)
 }
 
 uint32_t
+ROB::countInstsOfGroups(ThreadID tid, int groups)
+{
+    int sum = 0;
+    auto it = threadGroups[tid].begin();
+    for (int i = 0; i < groups && it != threadGroups[tid].end(); i++, it++) {
+        sum += *it;
+    }
+    return sum;
+}
+
+uint32_t
 ROB::countInstsOfGroups(int groups)
 {
     int sum = 0;
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        auto it = threadGroups[tid].begin();
-        for (int i = 0; i < groups && it != threadGroups[tid].end(); i++, it++) {
-            sum += *it;
-        }
+        sum += countInstsOfGroups(tid, groups);
     }
     return sum;
 }
@@ -495,6 +604,7 @@ ROB::insertInst(const DynInstPtr &inst)
     assert(numInstsInROB <= numEntries * instsPerGroup);
 
     ThreadID tid = inst->threadNumber;
+    assert(canAllocate(tid, 1));
 
     // allocate group
     bool alloc = (this->*allocateNewGroup)(inst, tid);
@@ -586,6 +696,36 @@ ROB::retireHead(ThreadID tid)
     cpu->removeFrontInst(head_inst);
 }
 
+void
+ROB::drainSquashedHead(ThreadID tid)
+{
+    stats.writes++;
+
+    assert(numInstsInROB > 0);
+
+    InstIt head_it = instList[tid].begin();
+
+    DynInstPtr head_inst = std::move(*head_it);
+    instList[tid].erase(head_it);
+
+    assert(head_inst->readyToCommit());
+    assert(head_inst->isSquashed());
+
+    DPRINTF(ROB, "[tid:%i] Draining squashed head instruction, "
+            "instruction PC %s, [sn:%llu]\n", tid, head_inst->pcState(),
+            head_inst->seqNum);
+
+    --numInstsInROB;
+
+    commitGroup(head_inst, tid);
+
+    head_inst->clearInROB();
+
+    updateHead();
+
+    cpu->removeFrontInst(head_inst);
+}
+
 bool
 ROB::isHeadGroupReady(ThreadID tid)
 {
@@ -636,6 +776,15 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
 unsigned
 ROB::numFreeEntries(ThreadID tid)
 {
+    if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        const unsigned limit = borrowingLimit(tid);
+        const unsigned used = threadGroups[tid].size();
+        if (limit <= used) {
+            return 0;
+        }
+        return limit - used;
+    }
+
     return maxEntries[tid] - threadGroups[tid].size();
 }
 

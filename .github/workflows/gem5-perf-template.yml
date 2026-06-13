@@ -34,15 +34,28 @@ on:
         required: false
         type: string
         description: "Specific commit SHA to checkout (takes precedence)"
+
+permissions:
+  contents: read
+
 jobs:
   run_performance_test:
     runs-on: [self-hosted, node]
     continue-on-error: false
     name: XS-GEM5 - Run performance test (${{ inputs.benchmark_type }})
     steps:
-      - uses: actions/checkout@v4
+      - name: Reject untrusted PR head checkout
+        if: |
+          github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Refusing to checkout an external fork PR head under pull_request_target."
+          exit 1
+
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.pr_sha || github.sha }}
+          persist-credentials: false
       
       - name: Set benchmark configuration
         id: config
@@ -113,10 +126,10 @@ jobs:
               echo "comment=run 100% coverage spec06 rvv checkpoints" >> $GITHUB_OUTPUT
               ;;
             "spec06int-rvv-0.8c")
-              echo "checkpoint_list=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint_0.8c_int.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_list=/nfs/home/share/zhenhao/runnable_tests.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster_0.8c_int.json" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/zhenhao/runnable_tests.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-spec06int-0.8c-with-rvv-extension" >> $GITHUB_OUTPUT
               echo "comment=run 80% coverage spec06 int rvv checkpoints" >> $GITHUB_OUTPUT
               ;;
@@ -303,7 +316,7 @@ jobs:
       - name: Upload score artifact
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.config.outputs.artifact_name }}
           path: score.txt

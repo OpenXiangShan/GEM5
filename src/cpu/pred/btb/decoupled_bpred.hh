@@ -19,20 +19,20 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ftq.hh"
+#include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
 #include "cpu/pred/btb/ras.hh"
-#include "cpu/pred/general_arch_db.hh"
-
-// #include "cpu/pred/btb/uras.hh"
-#include "cpu/pred/btb/common.hh"
-#include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
+#include "cpu/pred/general_arch_db.hh"
 #include "cpu/timebuf.hh"
 #include "debug/DBPBTBStats.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPProbe.hh"
+#include "enums/SMTFTQMode.hh"
+#include "enums/SMTFTQPolicy.hh"
 #include "params/DecoupledBPUWithBTB.hh"
 
 namespace gem5
@@ -75,8 +75,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     // FetchTargetId fetchHeadFtqId{1}; // next FSQ id to be consumed by fetch
 
     CPU *cpu;
-
-    const int numThreads = 2;
+    ThreadID nextPredictTid = 0;
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
@@ -122,6 +121,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     // std::vector<FullBTBPrediction> predsOfEachStage{};
     unsigned numComponents{};
     unsigned numStages{};
+    unsigned ftqEntries;
+    SMTFTQMode ftqMode;
+    SMTFTQPolicy ftqPolicy;
+    unsigned smtFTQThreshold;
 
     FetchTargetQueue ftq;
 
@@ -141,11 +144,19 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool blockPredictionPending{false};
     } threads[MaxThreads];
 
-    HistoryManager historyManager;
-    unsigned resolveDequeueFailCounter{0};
+    std::vector<HistoryManager> historyManagers;
+    std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
 
-    ThreadID scheduleThread() { return 0; }
+    bool sharedFTQMode() const;
+    unsigned activeFTQThreads() const;
+    unsigned totalFTQEntries() const;
+    unsigned sharedFTQAllocation(unsigned entries) const;
+    unsigned logicalMaxFTQEntries(ThreadID tid) const;
+    unsigned logicalFreeFTQEntries(ThreadID tid) const;
+    bool ftqFull(ThreadID tid) const;
+
+    ThreadID scheduleThread();
 
     void processNewPrediction(ThreadID tid);
 
@@ -188,10 +199,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void generateFinalPredAndCreateBubbles(ThreadID tid);
 
     void clearPreds(ThreadID tid) {
-        for (auto &stagePred : threads[tid].predsOfEachStage) {
-            stagePred.condTakens.clear();
-            stagePred.indirectTargets.clear();
-            stagePred.btbEntries.clear();
+        for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
+            threads[tid].predsOfEachStage[i] = FullBTBPrediction();
+            threads[tid].predsOfEachStage[i].predSource = i;
         }
     }
 
@@ -332,6 +342,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     }
 
     void setCpu(CPU *_cpu) { cpu = _cpu; }
+    uint8_t getThreadAsidHash(ThreadID tid) const;
 
     void consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid);
 
@@ -425,7 +436,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void overrideStats(OverrideReason overrideReason);
 
-    void checkHistory(const boost::dynamic_bitset<> &history);
+    void checkHistories(const boost::dynamic_bitset<> &history,
+                        const boost::dynamic_bitset<> &phistory,
+                        ThreadID tid);
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
@@ -704,6 +717,7 @@ class DecoupledBPUWithBTB : public BPredUnit
                       unsigned control_inst_size = 0);
 
     void resetPC(Addr new_pc);
+    void resetPC(ThreadID tid, Addr new_pc);
 
     // Helper functions for update
     bool resolveUpdate(unsigned &target_id, ThreadID tid);
@@ -711,9 +725,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
     void updatePredictorComponents(FetchTarget &target);
     void updateStatistics(const FetchTarget &target);
-    void notifyResolveSuccess();
-    void notifyResolveFailure();
-    void blockPredictionOnce();
+    void notifyResolveSuccess(ThreadID tid);
+    void notifyResolveFailure(ThreadID tid);
+    void blockPredictionOnce(ThreadID tid);
 
     /**
      * @brief Types of control flow instructions for misprediction tracking

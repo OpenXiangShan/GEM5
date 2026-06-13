@@ -2,17 +2,27 @@ name: On-Demand RVV SPEC Test (Tier 1.5)
 
 on:
   # Label触发: 添加 'rvv' 标签自动跑 gcc15-spec06-0.8c
+  push:
+    branches: [ xs-dev ]
   pull_request_target:
     types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   trigger:
     name: Trigger RVV SPEC Test
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'pull_request_target' &&
-      github.event.label.name == 'rvv' &&
-      github.event.pull_request.base.ref == 'xs-dev'
+      (github.event_name == 'push' && github.ref == 'refs/heads/xs-dev') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.label.name == 'rvv' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     
     outputs:
       benchmark_type: ${{ steps.setup.outputs.benchmark }}
@@ -20,27 +30,16 @@ jobs:
       pr_sha: ${{ steps.setup.outputs.pr_sha }}
     
     steps:
-      - name: Setup RVV parameters
+      - name: Set RVV parameters
         id: setup
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = context.payload.pull_request.number;
-            const benchmark = 'spec06int-rvv-0.8c';
-            const prSha = context.payload.pull_request.head.sha;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body: '🚀 RVV Performance test triggered: **spec06int-rvv-0.8c**'
-            });
-            
-            const vectorType = benchmark.includes('rvv') ? 'simple' : '';
-            
-            core.setOutput('benchmark', benchmark);
-            core.setOutput('vector_type', vectorType);
-            core.setOutput('pr_sha', prSha);
+        run: |
+          echo "benchmark=spec06int-rvv-0.8c" >> "$GITHUB_OUTPUT"
+          echo "vector_type=simple" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pr_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
   run_rvv_spec_test:
     name: Run RVV SPEC Test

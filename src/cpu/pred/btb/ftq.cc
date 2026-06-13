@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "ftq.hh"
 
 namespace gem5
@@ -51,6 +53,19 @@ FetchTargetQueue::squashAfter(FetchTargetId squashId, ThreadID tid)
         queue[tid].cap.pop_back();
     }
     queue[tid].fetchptr = squashId + 1;
+}
+
+void
+FetchTargetQueue::clear(ThreadID tid)
+{
+    const FetchTargetId nextTargetId = std::max(
+        queue[tid].fetchptr,
+        queue[tid].baseTargetId +
+            static_cast<FetchTargetId>(queue[tid].cap.size()));
+
+    queue[tid].cap.clear();
+    queue[tid].baseTargetId = nextTargetId;
+    queue[tid].fetchptr = nextTargetId;
 }
 
 

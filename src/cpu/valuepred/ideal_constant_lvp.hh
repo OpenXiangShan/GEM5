@@ -2,6 +2,7 @@
 #define __IDEAL_CONSTANT_LVP_HH__
 
 #include <unordered_map>
+#include <vector>
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
@@ -30,7 +31,7 @@ class IdealConstantLVP : public VPUnit
         }
     };
 
-    std::unordered_map<Addr, ICEntry> idealConstTable;
+    std::vector<std::unordered_map<Addr, ICEntry>> idealConstTables;
 
     const unsigned satCounterBits;
     const bool resetConfidence;
@@ -46,7 +47,7 @@ class IdealConstantLVP : public VPUnit
 
     void specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData) override;
 
-    void squash(const uint64_t seq_no) override;
+    void squash(ThreadID tid, const uint64_t seq_no) override;
 
     virtual ValuePredType getValuePredictorType() override { return ValuePredType::IdealConstantLVP; }
 };

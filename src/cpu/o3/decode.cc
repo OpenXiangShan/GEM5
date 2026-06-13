@@ -72,6 +72,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       iewToDecodeDelay(params.iewToDecodeDelay),
       commitToDecodeDelay(params.commitToDecodeDelay),
       fetchToDecodeDelay(params.fetchToDecodeDelay),
+      decodeToFetchDelay(params.decodeToFetchDelay),
       decodeWidth(params.decodeWidth),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
@@ -86,8 +87,15 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     for (int i=0;i<numThreads;i++) {
         fixedbuffer[i] = boost::circular_buffer<DynInstPtr>(decodeWidth);
     }
-    stallBuffer = boost::circular_buffer<DynInstPtr>(decodeWidth * (fetchToDecodeDelay + 1));
-    eachstallSize = boost::circular_buffer<int>(fetchToDecodeDelay + 1);
+    // This buffer preserves the fetch->decode pipeline contents when decode
+    // stalls while TimeBuffer keeps advancing. Its depth matches the original
+    // forward pipeline window; fetch is backpressured before full to absorb
+    // both the decode->fetch feedback delay and the request already issued in
+    // the current cycle before decode computes backpressure.
+    const auto stallGroupDepth = fetchToDecodeDelay + 1;
+    stallBuffer = boost::circular_buffer<DynInstPtr>(
+        decodeWidth * stallGroupDepth);
+    eachstallSize = boost::circular_buffer<int>(stallGroupDepth);
 
 
     decodeStalls.resize(decodeWidth, StallReason::NoStall);
@@ -130,8 +138,14 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     : statistics::Group(cpu, "decode"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is idle"),
+      ADD_STAT(smtidleCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch was idle per tid"),           
       ADD_STAT(blockedCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is blocked"),
+      ADD_STAT(smtblockedCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch has spent blocked per tid"),  
+      ADD_STAT(smtnotactiveCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch no active per tid"),                
       ADD_STAT(runCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is running"),
       ADD_STAT(unblockCycles, statistics::units::Cycle::get(),
@@ -171,6 +185,16 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     mispredictedByPC.flags(statistics::total);
     mispredictedByNPC.flags(statistics::total);
     fusedInsts.init(128).flags(statistics::nozero);
+
+    smtidleCycles
+            .init(4)
+            .flags(statistics::total);
+    smtblockedCycles
+            .init(4)
+            .flags(statistics::total);    
+    smtnotactiveCycles
+            .init(4)
+            .flags(statistics::total);          
 }
 
 void
@@ -373,6 +397,38 @@ Decode::updateActivate()
 void
 Decode::moveInstsToBuffer()
 {
+    auto tryMoveHeadGroupToFixedBuffer = [&]() -> bool {
+        if (stallBuffer.empty()) {
+            return false;
+        }
+
+        // stallbuffer moves to fixedbuffer in strict FIFO order.
+        ThreadID tid = stallBuffer.front()->threadNumber;
+        if (!fixedbuffer[tid].empty()) {
+            return false;
+        }
+
+        int insts_from_stall = eachstallSize.front();
+        eachstallSize.pop_front();
+        for (int i = 0; i < insts_from_stall; ++i) {
+            const DynInstPtr &inst = stallBuffer.front();
+            assert(tid == inst->threadNumber);
+            if (localSquashVer[tid].largerThan(inst->getVersion())) {
+                inst->setSquashed();
+            }
+            assert(!fixedbuffer[inst->threadNumber].full());
+            fixedbuffer[inst->threadNumber].push_back(inst);
+            stallBuffer.pop_front();
+        }
+
+        return true;
+    };
+
+    // Model one stage advance before latching the next cycle's input so a
+    // full stall buffer can still accept a new fetch bundle when its head
+    // group moves forward in the same cycle.
+    const bool moved_group = tryMoveHeadGroupToFixedBuffer();
+
     // do not support mixed thread instructions in one fetch group
     int insts_from_fetch = fromFetch->size;
     if (insts_from_fetch != 0) {
@@ -392,23 +448,12 @@ Decode::moveInstsToBuffer()
     if (stallBuffer.empty()) {
         return;
     }
-    // stallbuffer move to fixedbuffer
-    ThreadID tid = stallBuffer.front()->threadNumber;
-    if (!fixedbuffer[tid].empty())
-        return;
-    insts_from_fetch = eachstallSize.front();
-    eachstallSize.pop_front();
-    for (int i = 0; i < insts_from_fetch; ++i) {
-        const DynInstPtr &inst = stallBuffer.front();
-        assert(tid == inst->threadNumber);
-        if (localSquashVer.largerThan(inst->getVersion())) {
-            inst->setSquashed();
-        }
-        assert(!fixedbuffer[inst->threadNumber].full());
-        fixedbuffer[inst->threadNumber].push_back(inst);
-        stallBuffer.pop_front();
-    }
 
+    // If nothing advanced before latching new input, allow the current head
+    // (possibly the just-arrived group) to fill an empty stage this cycle.
+    if (!moved_group) {
+        tryMoveHeadGroupToFixedBuffer();
+    }
 }
 
 void
@@ -419,9 +464,10 @@ Decode::checkSquash()
             DPRINTF(Decode, "[tid:%i] Squashing instructions due to squash "
                     "from commit.\n", i);
             squash(i);
-            localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
+            localSquashVer[i].update(
+                fromCommit->commitInfo[i].squashVersion.getVersion());
             DPRINTF(Decode, "Updating squash version to %u\n",
-                    localSquashVer.getVersion());
+                    localSquashVer[i].getVersion());
         }
     }
 }
@@ -440,30 +486,60 @@ Decode::tick()
     checkSquash();
 
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
     ThreadID blocked_tid = InvalidThreadID;
+    SmtActiveThreadArbiter active_arbiter;
+    auto freezeActiveThread = [this](ThreadID tid) {
+        stallSig->blockFetch[tid] = true;
+        stallSig->fetchBlockReason[tid] = StallReason::OtherFragStall;
+        toFetch->decodeInfo[tid].blockReason =
+            stallSig->fetchBlockReason[tid];
+    };
+    const auto fetchFeedbackReserve = decodeToFetchDelay + 1;
+    const bool fifoBackpressured =
+        !stallBuffer.empty() &&
+        eachstallSize.size() + fetchFeedbackReserve >=
+            eachstallSize.capacity();
+    const ThreadID fifoHeadTid =
+        !stallBuffer.empty() ? stallBuffer.front()->threadNumber : InvalidThreadID;
+    const StallReason fifoBlockReason =
+        (fifoBackpressured && fifoHeadTid != InvalidThreadID &&
+         stallSig->blockDecode[fifoHeadTid]) ?
+            stallSig->decodeBlockReason[fifoHeadTid] :
+            (fifoBackpressured ? StallReason::OtherFragStall :
+                                 StallReason::NoStall);
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
 
-        stallSig->blockFetch[i] = block;
+        if(block){
+            ++stats.smtblockedCycles[i];
+        }
+
+        if(!active)
+        {
+            ++stats.smtnotactiveCycles[i];
+        }
+
+        stallSig->blockFetch[i] = block || fifoBackpressured;
         stallSig->fetchBlockReason[i] =
-            block ? stallSig->decodeBlockReason[i] : StallReason::NoStall;
+            stallSig->blockFetch[i] ?
+                (block ? stallSig->decodeBlockReason[i] : fifoBlockReason) :
+                StallReason::NoStall;
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
-            if (tid == InvalidThreadID)
-                tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockFetch[tid] = true;
-                stallSig->blockFetch[i] = true;
-                DPRINTF(Decode, "Multiple active threads detected, blocking all threads\n");
+            const auto freeze = active_arbiter.observe(
+                i, smtBorrowPriority(fromIEW->iewInfo[i]));
+            if (freeze.previousActive != InvalidThreadID) {
+                freezeActiveThread(freeze.previousActive);
+            }
+            if (freeze.freezeCurrent) {
+                freezeActiveThread(i);
             }
         } else if (block && blocked_tid == InvalidThreadID) {
             blocked_tid = i;
         }
     }
+    const ThreadID tid = active_arbiter.selected();
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         if (blocked_tid != InvalidThreadID) {
@@ -539,6 +615,7 @@ Decode::decodeInsts(ThreadID tid)
                 " early.\n",tid);
         // Should I change the status to idle?
         ++stats.idleCycles;
+        ++stats.smtidleCycles[tid];
 
         StallReason stall = StallReason::NoStall;
         for (auto iter : fromFetch->fetchStallReason) {

@@ -1008,6 +1008,8 @@ IEW::dispatchInsts()
 
         bool ldst_block = threadNeedsScalarLsq(i) && !canInsertLDSTQue(i);
         bool rename_block = stallSig->blockIEW[i] || ldst_block;
+        // LDST queue reservation gates new rename input, but the already
+        // buffered tail must still drain through per-instruction LSQ checks.
         bool active = !stallSig->blockIEW[i] && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockIEW[i]) {
@@ -1053,6 +1055,9 @@ IEW::dispatchInsts()
         }
 
         toRename->iewInfo[tid].blockReason = blockReason;
+        toRename->iewInfo[tid].ldstqCount = ldstQueue.getCount(tid);
+        toRename->iewInfo[tid].robCount = rob->getThreadEntries(tid);
+        toRename->iewInfo[tid].iqCount = scheduler->getIQInsts(tid);
     }
 }
 

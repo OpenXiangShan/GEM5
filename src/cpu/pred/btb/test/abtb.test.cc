@@ -19,6 +19,8 @@ namespace test
 
 FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) {
     FetchTarget stream;
+    stream.tid = pred.tid;
+    stream.asidHash = pred.asidHash;
     stream.startPC = startPC;
     Addr fallThroughAddr = pred.getFallThrough(abtb->predictWidth);
     stream.isHit = pred.btbEntries.size() > 0; // TODO: fix isHit and falseHit
@@ -26,7 +28,7 @@ FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) 
     stream.predBTBEntries = pred.btbEntries;
     stream.predTaken = pred.isTaken();
     stream.predEndPC = fallThroughAddr;
-    stream.predMetas[0] = abtb->getPredictionMeta();
+    stream.predMetas[0] = abtb->getPredictionMeta(stream.tid);
     return stream;
 }
 
@@ -39,11 +41,24 @@ void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool
     stream.exeTaken = taken;
 }
 
-FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb) {
+FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
+                                 ThreadID tid = 0, uint8_t asidHash = 0) {
     std::vector<FullBTBPrediction> stagePreds(2);  // 2 stages
+    for (int i = 0; i < stagePreds.size(); i++) {
+        stagePreds[i].tid = tid;
+        stagePreds[i].asidHash = asidHash;
+        stagePreds[i].bbStart = startPC;
+        stagePreds[i].predSource = i;
+    }
     boost::dynamic_bitset<> history(8, 0); // history does not matter for BTB
     abtb->putPCHistory(startPC, history, stagePreds);
     return stagePreds[1];
+}
+
+void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
+    FetchTarget stream;
+    stream.tid = tid;
+    abtb->recoverState(stream);
 }
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb, MBTB *mbtb) {
@@ -149,6 +164,39 @@ TEST_F(ABTBTest, AliasAvoidance){
     auto pred_A_test = makePrediction(startPC_A, bigAbtb);
     auto pred_C_test = makePrediction(startPC_C, bigAbtb);
     EXPECT_EQ(pred_C_test.btbEntries.size(), 0);
+}
+
+TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
+    AheadBTB twoThreadAbtb(1024, 20, 1, 0, 2);
+
+    Addr t0PrevPC = 0x1000;
+    Addr t0StartPC = 0x2000;
+    Addr t0BrPC = 0x2004;
+    Addr t0Target = 0x3000;
+    Addr t1PrevPC = 0x1040;
+
+    // Train a thread-0 ABTB entry indexed by t0PrevPC and tagged by t0StartPC.
+    auto pred_t0 = makePrediction(t0StartPC, &twoThreadAbtb, 0);
+    auto stream_t0 = createStream(t0StartPC, pred_t0, &twoThreadAbtb);
+    stream_t0.previousPCs.push(t0PrevPC);
+    resolveStream(stream_t0, true, t0BrPC, t0Target, true);
+    updateBTB(stream_t0, &twoThreadAbtb, mbtb);
+
+    clearAheadPipeline(&twoThreadAbtb, 0);
+    clearAheadPipeline(&twoThreadAbtb, 1);
+
+    // Interleave another thread between thread 0's previous/current blocks.
+    // With a shared ahead FIFO, thread 0's current lookup would consume the
+    // set read by thread 1 and miss the trained entry.
+    makePrediction(t0PrevPC, &twoThreadAbtb, 0);
+    makePrediction(t1PrevPC, &twoThreadAbtb, 1);
+    auto pred_t0_test = makePrediction(t0StartPC, &twoThreadAbtb, 0);
+
+    EXPECT_EQ(pred_t0_test.btbEntries.size(), 1);
+    if (!pred_t0_test.btbEntries.empty()) {
+        EXPECT_EQ(pred_t0_test.btbEntries[0].pc, t0BrPC);
+        EXPECT_EQ(pred_t0_test.btbEntries[0].target, t0Target);
+    }
 }
 
 } // namespace test

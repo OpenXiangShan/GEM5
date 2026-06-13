@@ -16,6 +16,8 @@ VPDataStructFactory::buildPredMetaData(ValuePredType type)
     switch (type) {
         case ValuePredType::EStride:
             return new ESPredMetaData();
+        case ValuePredType::MemoryRenaming:
+            return new VPPredMetaData();
         case ValuePredType::IdealConstantLVP:
             return new VPPredMetaData();
         default:
@@ -30,6 +32,8 @@ VPDataStructFactory::buildUpdateMetaData(ValuePredType type)
     switch (type) {
         case ValuePredType::EStride:
             return new ESUpdateMetaData();
+        case ValuePredType::MemoryRenaming:
+            return new VPUpdateMetaData();
         case ValuePredType::IdealConstantLVP:
             return new VPUpdateMetaData();
         default:
@@ -44,6 +48,8 @@ VPDataStructFactory::buildSpecUpdateMetaData(ValuePredType type)
     switch (type) {
         case ValuePredType::EStride:
             return new ESSpecUpdateMetaData();
+        case ValuePredType::MemoryRenaming:
+            return new VPSpecUpdateMetaData();
         case ValuePredType::IdealConstantLVP:
             return new VPSpecUpdateMetaData();
         default:

@@ -44,6 +44,7 @@
 
 #include "base/types.hh"
 #include "cpu/pred/btb/common.hh"
+#include "cpu/pred/btb/test_stats.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
@@ -147,13 +148,7 @@ class MBTB : public TimedBaseBTBPredictor
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
-    std::shared_ptr<void> getPredictionMeta() override;
-
-    // not used
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-
-    void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchTarget &entry, int shamt, bool cond_taken) override;
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
@@ -215,8 +210,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC) {
-        return (instPC >> idxShiftAmt) & idxMask;
+    inline Addr getIndex(Addr instPC, uint8_t asidHash) {
+        Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
+        return xorAsidHashIntoIndex(baseIndex, floorLog2(numSets), asidHash);
     }
 
     /** Returns the tag bits of a given address.
@@ -225,8 +221,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC) {
-        return (instPC >> tagShiftAmt) & tagMask;
+    inline Addr getTag(Addr instPC, uint8_t asidHash) {
+        Addr baseTag = (instPC >> tagShiftAmt) & tagMask;
+        return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
 
     /** Update the 2-bit saturating counter for conditional branches
@@ -340,16 +337,16 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The address of the block to look up.
      *  @return Returns all hit BTB entries.
      */
-    std::vector<TickedBTBEntry> lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta);
+    std::vector<TickedBTBEntry> lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta);
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
-    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, uint8_t asidHash);
 
     /** Victim cache operations */
-    std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc, uint8_t asidHash);
     void insertVictimCache(const TickedBTBEntry& evicted_entry);
     bool eraseFromVictimCacheByPC(Addr pc);
 
@@ -406,11 +403,8 @@ class MBTB : public TimedBaseBTBPredictor
         READ, WRITE, EVICT
     };
 
-#ifdef UNIT_TEST
-    typedef uint64_t Scalar;
-#else
-    typedef statistics::Scalar Scalar;
-#endif
+    using Scalar = test_stats::Scalar;
+    using Distribution = test_stats::Distribution;
 
 #ifdef UNIT_TEST
 public:
@@ -468,10 +462,11 @@ public:
         // Victim cache statistics
         Scalar victimCacheHit;
 
+        Distribution predHitCount;
 #ifndef UNIT_TEST
-        statistics::Distribution predHitCount;
         BTBStats(statistics::Group* parent, int numWays);
 #endif
+        void init(int numWays);
     } btbStats;
 
 };

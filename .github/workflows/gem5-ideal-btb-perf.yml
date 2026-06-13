@@ -4,14 +4,26 @@ on:
   # Tier 2: Post-Merge testing
   push:
     branches: [ xs-dev, '*-perf' ]  # xs-dev for post-merge CI, *-perf for auto performance testing
-  # Removed pull_request trigger - use /run-spec for on-demand testing
-  
+  # Label-triggered PR performance testing
+  pull_request_target:
+    types: [labeled]
+
   # Support manual trigger
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   perf_test:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'perf' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "gcc15-spec06-0.8c"
+      pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}

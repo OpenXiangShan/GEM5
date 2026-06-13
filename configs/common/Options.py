@@ -306,9 +306,10 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="""
                         Prefetching cache level for SMS'pht""")
 
-    parser.add_argument("--enable-pf-buffer", action="store_true", default=False,
+    parser.add_argument("--disable-pf-buffer", action="store_false",
+                        dest="enable_pf_buffer", default=True,
                         help="""
-                        Force all hardware prefetchers to enable their
+                        Force all hardware prefetchers to disable their
                         optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""")
 
     parser.add_argument("--cpu-clock", action="store", type=str,
@@ -349,16 +350,14 @@ def addCommonOptions(parser, configure_xiangshan=False):
         "that are present under any of the roots. If not given, dump all "
         "stats. ")
 
+    parser.add_argument("--smt", action="store_true", default=False,
+                        help=""" RISCV SMT support, which requires multitThread-supported gcpt restore and diff-ref-so""")
+
     if configure_xiangshan:
         return
     # Following options are not available in XiangShan
 
     parser.add_argument("--checker", action="store_true")
-    parser.add_argument("--smt", action="store_true", default=False,
-                        help="""
-                      Only used if multiple programs are specified. If true,
-                      then the number of threads per cpu is same as the
-                      number of programs.""")
     parser.add_argument(
         "--elastic-trace-en", action="store_true",
         help="""Enable capture of data dependency and instruction

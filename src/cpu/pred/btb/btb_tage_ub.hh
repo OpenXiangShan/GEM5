@@ -95,20 +95,18 @@ class BTBTAGEUpperBound : public BTBTAGE
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
-    std::shared_ptr<void> getPredictionMeta() override;
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    void specUpdateHist(const boost::dynamic_bitset<> &history,
-                        FullBTBPrediction &pred) override;
     void specUpdatePHist(const boost::dynamic_bitset<> &history,
-                         FullBTBPrediction &pred) override;
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
     void recoverHist(const boost::dynamic_bitset<> &history,
                      const FetchTarget &entry,
                      int shamt,
                      bool cond_taken) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
                       const FetchTarget &entry,
-                      int shamt,
-                      bool cond_taken) override;
+                      const PathHistoryUpdate &update) override;
     void update(const FetchTarget &entry) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 

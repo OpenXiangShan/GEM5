@@ -1,0 +1,4 @@
+interface:
+  display_name: "CPU Performance Modeling"
+  short_description: "Behavior-level CPU performance modeling guide"
+  default_prompt: "Use $cpu-performance-modeling to write a concrete modeling contract, choose control/resource states, decide fine/coarse granularity, and design a parameterized CPU performance model with stats validation."

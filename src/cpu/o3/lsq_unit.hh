@@ -156,6 +156,7 @@ class LSQUnit
         }
 
         LSQRequest* request() { return _request; }
+        const LSQRequest* request() const { return _request; }
         void setRequest(LSQRequest* r) { _request = r; }
         bool hasRequest() { return _request != nullptr; }
         /** Member accessors. */
@@ -214,6 +215,8 @@ class LSQUnit
 
         bool addrReady() const { return _addrReady; }
         bool dataReady() const { return _dataReady; }
+        bool staFinish() const { return _staFinish; }
+        bool stdFinish() const { return _stdFinish; }
         bool canForwardToLoad() const { return _addrReady && _dataReady; }
         bool splitStoreFinish() const { return _staFinish && _stdFinish; }
 
@@ -304,6 +307,7 @@ class LSQUnit
     void insertLoad(const DynInstPtr &load_inst);
     /** Inserts a store instruction. */
     void insertStore(const DynInstPtr &store_inst);
+    bool splitStoreAddrSquashed(const DynInstPtr &inst);
 
     /** Check for ordering violations in the LSQ. For a store squash if we
      * ever find a conflicting load. For a load, only squash if we
@@ -328,6 +332,8 @@ class LSQUnit
      * of the intermediate invalidate.
      */
     void checkSnoop(PacketPtr pkt);
+    void checkLocalStoreVisible(Addr store_paddr,
+                                const std::vector<bool> &store_byte_enable);
 
     /** Iq issues a load to load pipeline. */
     void issueToLoadPipe(const DynInstPtr &inst);
@@ -356,11 +362,14 @@ class LSQUnit
     uint32_t countStoreBufferOffloadableEntries(uint32_t max_entries) const;
 
     /** Writes back stores. */
-    void offloadToStoreBuffer(uint32_t max_entries);
+    void offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_fail);
 
-    bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask);
+    bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
+                           uint64_t size, const std::vector<bool>& mask,
+                           InstSeqNum store_seq);
 
     bool storeBufferEmpty() { return lsq->storeBufferEmpty(); }
+    bool storeBufferEmpty(ThreadID tid) { return lsq->storeBufferEmpty(tid); }
     bool storeBufferSQWillFull() const
     {
         return storeQueue.size() > sqFullUpperLimit;
@@ -385,6 +394,12 @@ class LSQUnit
     /** Check if there exists raw nuke between load and store. */
     bool pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst);
 
+    /** Returns the current request attached to an active LQ entry. */
+    LSQRequest *currentLoadRequest(const DynInstPtr &inst);
+
+    /** Returns the current request attached to an active SQ entry. */
+    LSQRequest *currentStoreRequest(const DynInstPtr &inst);
+
     /** Returns the number of free LQ entries. */
     unsigned numFreeLoadEntries();
 
@@ -398,10 +413,16 @@ class LSQUnit
     unsigned getAndResetLastClockSQPopEntries();
 
     /** Returns the number of loads in the LQ. */
-    int numLoads() { return loadQueue.size(); }
+    int numLoads() const { return loadQueue.size(); }
 
     /** Returns the number of stores in the SQ. */
-    int numStores() { return storeQueue.size(); }
+    int numStores() const { return storeQueue.size(); }
+
+    /** Returns the number of entries in the per-thread RAR queue. */
+    int numRAREntries() const { return RARQueue.size(); }
+
+    /** Returns the number of entries in the per-thread RAW queue. */
+    int numRAWEntries() const { return RAWQueue.size(); }
 
     // hardware transactional memory
     int numHtmStarts() const { return htmStarts; }
@@ -443,8 +464,11 @@ class LSQUnit
     /** Returns if there are any stores to writeback. */
     bool hasStoresToWB() { return storesToWB > 0; }
 
+    /** Returns if there are older stores/atomics still pending writeback. */
+    bool hasStoresToWBBefore(InstSeqNum seq_num) const;
+
     /** Returns the number of stores to writeback. */
-    int numStoresToSbuffer() { return storesToWB; }
+    int numStoresToSbuffer() const { return storesToWB; }
 
     /** Update loadCompletedIdx and storeCompletedIdx */
     void updateCompletedIdx();
@@ -576,6 +600,9 @@ class LSQUnit
       private:
         /** Instruction whose results are being written back. */
         DynInstPtr inst;
+
+        /** Request that owns the delayed writeback lifecycle. */
+        LSQRequest *request;
 
         /** The packet that would have been sent to memory. */
         PacketPtr pkt;
@@ -794,6 +821,24 @@ class LSQUnit
 
         /** Total number of store-load violation events. */
         statistics::Scalar stLdViolation;
+
+        /** RAW memory ordering violations caused by a younger load. */
+        statistics::Scalar rawMemOrderViolation;
+
+        /** RAW violations where replay-based MDP had no producer prediction. */
+        statistics::Scalar rawViolationMdpNoPred;
+
+        /** RAW violations where replay-based MDP predicted the violating store. */
+        statistics::Scalar rawViolationMdpHit;
+
+        /** RAW violations where replay-based MDP predicted other stores only. */
+        statistics::Scalar rawViolationMdpMiss;
+
+        /** RAW violations where replay-based MDP used strict wait. */
+        statistics::Scalar rawViolationMdpStrict;
+
+        /** Load-load/snoop ordering violations. */
+        statistics::Scalar loadOrderViolation;
 
         /** Tota number of successfully forwarding from bus. */
         statistics::Scalar busForwardSuccess;

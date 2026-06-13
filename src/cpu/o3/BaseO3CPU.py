@@ -51,7 +51,10 @@ class SMTFetchPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'Branch', 'IQCount', 'LSQCount' ]
 
 class SMTQueuePolicy(ScopedEnum):
-    vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
+    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
+
+class SMTLSQMode(ScopedEnum):
+    vals = [ 'Independent', 'Shared' ]
 
 class CommitPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'OldestReady' ]
@@ -258,8 +261,10 @@ class BaseO3CPU(BaseCPU):
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
+    smtLSQMode = Param.SMTLSQMode('Independent',
+                                  "SMT LSQ mode: per-thread independent or shared quota")
     smtLSQPolicy    = Param.SMTQueuePolicy('Partitioned',
-                                           "SMT LSQ Sharing Policy")
+                                           "SMT shared LSQ allocation policy")
     smtLSQThreshold = Param.Int(100, "SMT LSQ Threshold Sharing Parameter")
     smtIQPolicy    = Param.SMTQueuePolicy('Partitioned',
                                           "SMT IQ Sharing Policy")
@@ -268,6 +273,16 @@ class BaseO3CPU(BaseCPU):
                                           "SMT ROB Sharing Policy")
     smtROBThreshold = Param.Int(100, "SMT ROB Threshold Sharing Parameter")
     smtCommitPolicy = Param.CommitPolicy('RoundRobin', "SMT Commit Policy")
+    smtBorrowThrottleCycles = Param.Unsigned(
+        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch")
+    smtBorrowLdstqHighWater = Param.Unsigned(
+        0, "Explicit SMT borrowing LSQ high-water threshold; 0 uses percentage")
+    smtBorrowLdstqHighWaterPercent = Param.Percent(
+        75, "SMT borrowing LSQ high-water threshold as a percentage of LQ+SQ")
+    smtBorrowDonorHoldCycles = Param.Unsigned(
+        8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
+    smtBorrowDonorReserveEntries = Param.Unsigned(
+        8, "Minimum ROB entries reserved for a borrowing donor to resume")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")

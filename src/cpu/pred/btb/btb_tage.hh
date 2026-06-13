@@ -4,14 +4,17 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
+#include "cpu/pred/btb/test_stats.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
@@ -43,6 +46,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 {
     using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
+    static constexpr unsigned MaxThreads = o3::MaxThreads;
   public:
 #ifdef UNIT_TEST
     // Test constructor
@@ -140,19 +144,23 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
-    std::shared_ptr<void> getPredictionMeta() override;
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     // Update folded history from GHR when configured in direction-history mode.
-    void specUpdateHist(const boost::dynamic_bitset<> &history,
-                        FullBTBPrediction &pred) override;
+    void specUpdateGHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update) override;
     // Update folded history from PHR when configured in path-history mode.
-    void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
 
     void recoverHist(const boost::dynamic_bitset<> &history,
                      const FetchTarget &entry, int shamt,
                      bool cond_taken) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                        const FetchTarget &entry,int shamt, bool cond_taken) override;
+                      const FetchTarget &entry,
+                      const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;
@@ -167,6 +175,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // check folded hists after speculative update and recover
     virtual void checkFoldedHist(const bitset &history, const char *when);
+    void checkFoldedHist(const bitset &history, ThreadID tid, const char *when);
 
 #ifndef UNIT_TEST
   protected:
@@ -174,21 +183,23 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
+                    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+                    CondTakens& results, ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
-    Addr getTageIndex(Addr pc, int table);
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0);
 
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, Addr position = 0);
+    Addr getTageTag(Addr pc, int table, Addr position = 0, uint8_t asidHash = 0);
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist,
+                    Addr position = 0, uint8_t asidHash = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -204,7 +215,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Update branch history
     void doUpdateHist(const bitset &history, int shamt, bool taken,
-                      Addr pc, Addr target);
+                      Addr pc, Addr target, ThreadID tid);
     void recoverFoldedHist(const FetchTarget &entry);
 
     // Number of TAGE predictor tables
@@ -231,17 +242,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // History lengths for each table
     std::vector<unsigned> histLengths;
 
-    // Folded history for tag calculation
-    std::vector<TageFoldedHist> tagFoldedHist;
-
-    // Folded history for alternative tag calculation
-    std::vector<TageFoldedHist> altTagFoldedHist;
-
-    // Folded history for index calculation
-    std::vector<TageFoldedHist> indexFoldedHist;
-
-    // Select whether BTBTAGE consumes PHR or GHR folded history.
     const bool usePathHistory;
+
+    struct ThreadHistoryState
+    {
+        std::vector<TageFoldedHist> tagFoldedHist;
+        std::vector<TageFoldedHist> altTagFoldedHist;
+        std::vector<TageFoldedHist> indexFoldedHist;
+    };
+
+    std::vector<ThreadHistoryState> threadHistory;
 
     // Linear feedback shift register for allocation
     LFSR64 allocLFSR;
@@ -319,11 +329,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
 
-#ifdef UNIT_TEST
-    typedef uint64_t Scalar;
-#else
-    typedef statistics::Scalar Scalar;
-#endif
+    using Scalar = test_stats::Scalar;
+    using Vector = test_stats::Vector;
+    using Distribution = test_stats::Distribution;
 
     // Statistics for TAGE predictor
 #ifdef UNIT_TEST
@@ -373,27 +381,25 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateBankConflict;           // Number of bank conflicts detected
         Scalar updateDeferredDueToConflict;  // Number of updates deferred due to bank conflict (retried later)
 
-#ifndef UNIT_TEST
         // Fine-grained per-bank statistics
-        statistics::Vector updateBankConflictPerBank;  // Conflicts per bank
-        statistics::Vector updateAccessPerBank;        // Update accesses per bank
-        statistics::Vector predAccessPerBank;          // Prediction accesses per bank
+        Vector updateBankConflictPerBank;  // Conflicts per bank
+        Vector updateAccessPerBank;        // Update accesses per bank
+        Vector predAccessPerBank;          // Prediction accesses per bank
 
-        statistics::Vector resolveProviderTable;
-        statistics::Vector resolveAltTable;
-        statistics::Vector resolveUseProviderTable;
-        statistics::Vector resolveUseAltTable;
-        statistics::Vector mispredictUseProviderTable;
-        statistics::Vector mispredictUseAltTable;
+        Vector resolveProviderTable;
+        Vector resolveAltTable;
+        Vector resolveUseProviderTable;
+        Vector resolveUseAltTable;
+        Vector mispredictUseProviderTable;
+        Vector mispredictUseAltTable;
 
-        statistics::Distribution predTableHits;
-        statistics::Distribution updateTableHits;
+        Distribution predTableHits;
+        Distribution updateTableHits;
 
-        statistics::Vector updateTableMispreds;
-        statistics::Vector predFinalSourceTable;
-        statistics::Vector updateFinalSourceTableCorrect;
-        statistics::Vector updateFinalSourceTableWrong;
-#endif
+        Vector updateTableMispreds;
+        Vector predFinalSourceTable;
+        Vector updateFinalSourceTableCorrect;
+        Vector updateFinalSourceTableWrong;
 
         Scalar condPredwrong;
         Scalar condMissTakens;
@@ -411,6 +417,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #ifndef UNIT_TEST
         TageStats(statistics::Group* parent, int numPredictors, int numBanks);
 #endif
+        void init(int numPredictors, int numBanks);
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
     } ;
 
@@ -461,7 +468,9 @@ private:
     // If predMeta is nullptr, use current folded history (prediction path)
     TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
                                            const Addr &startPC,
-                                           const std::shared_ptr<TageMeta> predMeta = nullptr);
+                                           const std::shared_ptr<TageMeta> predMeta = nullptr,
+                                           ThreadID tid = 0,
+                                           uint8_t asidHash = 0);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
@@ -478,6 +487,7 @@ private:
                                  bool actual_taken,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
+                                 uint8_t asidHash,
                                  AllocationTraceInfo &allocInfo);
 
 
@@ -486,7 +496,11 @@ private:
     unsigned getLRUVictim(int table, Addr index);
     unsigned getNumWays(unsigned table) const;
 
-    std::shared_ptr<TageMeta> meta;
+    std::vector<std::shared_ptr<TageMeta>> threadMeta;
+
+    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
+    ThreadHistoryState &historyState(ThreadID tid);
+    const ThreadHistoryState &historyState(ThreadID tid) const;
 };
 
 // Close conditional namespace wrapper for testing

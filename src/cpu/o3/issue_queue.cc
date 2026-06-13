@@ -520,22 +520,24 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         for (auto& it : depgraph) {
             int srcIdx = it.first;
             auto& consumer = it.second;
-            if (consumer->readySrcIdx(srcIdx)) {
-                continue;
-            }
-            consumer->markSrcRegReady(srcIdx);
+            if (consumer->threadNumber == inst->threadNumber) {
+                if (consumer->readySrcIdx(srcIdx)) {
+                    continue;
+                }
+                consumer->markSrcRegReady(srcIdx);
 
-
-            DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
-            if (inst->isMatrixInst() || consumer->isMatrixInst()) {
-                DPRINTF(Schedule,
-                        "Matrix wakeup %s via p%lu: producer [sn:%llu] -> "
-                        "consumer [sn:%llu] in %s src%d\n",
-                        speculative ? "spec" : "wb",
-                        dst->flatIndex(), inst->seqNum, consumer->seqNum,
-                        getName(), srcIdx);
+                DPRINTF(Schedule, "[sn:%llu] src%d was woken\n",
+                        consumer->seqNum, srcIdx);
+                if (inst->isMatrixInst() || consumer->isMatrixInst()) {
+                    DPRINTF(Schedule,
+                            "Matrix wakeup %s via p%lu: producer [sn:%llu] -> "
+                            "consumer [sn:%llu] in %s src%d\n",
+                            speculative ? "spec" : "wb",
+                            dst->flatIndex(), inst->seqNum, consumer->seqNum,
+                            getName(), srcIdx);
+                }
+                addIfReady(consumer);
             }
-            addIfReady(consumer);
         }
 
         if (!speculative) {

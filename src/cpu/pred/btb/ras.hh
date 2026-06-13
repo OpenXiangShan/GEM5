@@ -94,11 +94,11 @@ namespace btb_pred {
         void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                           std::vector<FullBTBPrediction> &stagePreds) override;
         
-        std::shared_ptr<void> getPredictionMeta() override;
+        std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-        void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+        void specUpdateState(FullBTBPrediction &pred);
 
-        void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
+        void recoverState(const FetchTarget &entry);
 
         void update(const FetchTarget &entry) override;
 
@@ -112,14 +112,28 @@ namespace btb_pred {
         Addr getTopAddrFromMetas(const FetchTarget &stream);
 
     private:
+        struct ThreadRASState
+        {
+            int TOSW = 0; // inflight pointer to the write top of stack
+            int TOSR = 0; // inflight pointer to the read top of stack
+            int BOS = 0;  // inflight pointer to the bottom of stack
+            int ssp = 0;  // speculative stack pointer
+            int nsp = 0;  // committed stack pointer
+            int sctr = 0;
+            std::vector<RASEntry> stack;
+            std::vector<RASInflightEntry> inflightStack;
+            std::shared_ptr<RASMeta> meta;
+        };
 
-        void push(Addr retAddr);
+        void initThreadState(ThreadRASState &state);
 
-        void pop();
+        void push(ThreadID tid, Addr retAddr);
 
-        void push_stack(Addr retAddr);
-        
-        void pop_stack();
+        void pop(ThreadID tid);
+
+        void push_stack(ThreadID tid, Addr retAddr);
+
+        void pop_stack(ThreadID tid);
 
         void ptrInc(int &ptr);
 
@@ -129,38 +143,43 @@ namespace btb_pred {
         
         void inflightPtrDec(int &ptr);
 
-        bool inflightInRange(int &ptr);
+        bool inflightInRange(const ThreadRASState &state, int ptr);
 
         int inflightPtrPlus1(int ptr);
 
-        void checkCorrectness();
+        void checkCorrectness(ThreadID tid);
 
-        RASEssential getTop();
+        RASEssential getTop(ThreadID tid);
 
-        RASEssential getTop_meta();
+        RASEssential getTop_meta(ThreadID tid);
 
-        void printStack(const char *when) {
-            DPRINTF(RAS, "printStack when %s: \n", when);
+        void printStack(const char *when, ThreadID tid) {
+            auto &state = threadStates[tid];
+            DPRINTF(RAS, "[tid:%u] printStack when %s: \n", tid, when);
             for (int i = 0; i < numEntries; i++) {
-                DPRINTFR(RAS, "entry [%d], retAddr %#lx, ctr %d", i, stack[i].data.retAddr, stack[i].data.ctr);
-                if (ssp == i) {
+                DPRINTFR(RAS, "entry [%d], retAddr %#lx, ctr %d", i,
+                         state.stack[i].data.retAddr, state.stack[i].data.ctr);
+                if (state.ssp == i) {
                     DPRINTFR(RAS, " <-- SSP");
                 }
-                if (nsp == i) {
+                if (state.nsp == i) {
                     DPRINTFR(RAS, " <-- NSP");
                 }
                 DPRINTFR(RAS, "\n");
             }
             DPRINTFR(RAS, "non-volatile stack:\n");
             for (int i = 0; i < numInflightEntries; i++) {
-                DPRINTFR(RAS, "entry [%d] retAddr %#lx, ctr %u nos %d", i, inflightStack[i].data.retAddr, inflightStack[i].data.ctr, inflightStack[i].nos);
-                if (TOSW == i) {
+                DPRINTFR(RAS, "entry [%d] retAddr %#lx, ctr %u nos %d", i,
+                         state.inflightStack[i].data.retAddr,
+                         state.inflightStack[i].data.ctr,
+                         state.inflightStack[i].nos);
+                if (state.TOSW == i) {
                     DPRINTFR(RAS, " <-- TOSW");
                 }
-                if (TOSR == i) {
+                if (state.TOSR == i) {
                     DPRINTFR(RAS, " <-- TOSR");
                 }
-                if (BOS == i) {
+                if (state.BOS == i) {
                     DPRINTFR(RAS, " <-- BOS");
                 }
                 DPRINTFR(RAS, "\n");
@@ -190,27 +209,11 @@ namespace btb_pred {
 
         unsigned numInflightEntries;
 
-        int TOSW; // inflight pointer to the write top of stack
-
-        int TOSR; // inflight pointer to the read top of stack
-
-        int BOS; // inflight pointer to the bottom of stack
-
         int maxCtr;
 
-        int ssp; // spec sp
-        
-        int nsp; // non-spec sp
+        unsigned numThreads;
 
-        int sctr;
-
-        //int ndepth;
-
-        std::vector<RASEntry> stack;
-        
-        std::vector<RASInflightEntry> inflightStack;
-
-        std::shared_ptr<RASMeta> meta;
+        std::vector<ThreadRASState> threadStates;
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;

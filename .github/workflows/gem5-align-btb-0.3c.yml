@@ -1,0 +1,27 @@
+name: gem5 Align BTB Performance Test(0.3c)
+
+on:
+  push:
+    branches: [ xs-dev, '*-align' ]  # xs-dev for normal CI, *-align for BTB-only performance testing (align to RTL)
+  # Label-triggered PR align performance testing
+  pull_request_target:
+    types: [labeled]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  perf_test:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'perf-align' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: configs/example/kmhv3.py
+      benchmark_type: "gcc15-spec06-0.3c"
+      pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
