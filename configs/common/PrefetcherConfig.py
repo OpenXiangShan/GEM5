@@ -79,7 +79,7 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
 def _configure_l2_composite_default(prefetcher):
     # Normal L2CompositeWithWorker profile.
     prefetcher.enable_bop = True
-    prefetcher.enable_cdp = True
+    prefetcher.enable_cdp = False
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = True
 
