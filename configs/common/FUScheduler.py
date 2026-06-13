@@ -410,4 +410,4 @@ class IdealScheduler(Scheduler):
     useOldDisp = True
 
 
-DefaultScheduler = KMHV3Scheduler
+DefaultScheduler = KunminghuScheduler

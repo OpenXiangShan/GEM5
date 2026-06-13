@@ -314,7 +314,7 @@ ROB::resetState()
 bool
 ROB::shouldTrackMatrixAmu(const DynInstPtr &inst) const
 {
-    return static_cast<bool>(inst);
+    return inst && inst->isMatrixInst() && inst->matrixNeedAmuCtrl();
 }
 
 void
@@ -325,10 +325,8 @@ ROB::insertMatrixAmuEntry(const DynInstPtr &inst)
     }
 
     matrixAmuBuffers[inst->threadNumber].allocate(
-        inst->threadNumber, inst->seqNum,
-        inst->isMatrixInst() && inst->matrixNeedAmuCtrl(),
-        inst->isMatrixInst() ? inst->matrixInstClassName() : "non-matrix",
-        inst->isMatrixInst() ? inst->matrixRouteName() : "rob-shadow");
+        inst->threadNumber, inst->seqNum, true,
+        inst->matrixInstClassName(), inst->matrixRouteName());
 }
 
 void
