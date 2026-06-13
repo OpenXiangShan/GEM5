@@ -993,9 +993,22 @@ IEW::dispatchInsts()
     // check threads stall & status
     ThreadID tid = InvalidThreadID;
     for (int i = 0; i < numThreads; i++) {
+        auto &iew_info = toRename->iewInfo[i];
+        iew_info.robHeadStallReason =
+            checkDispatchStall(i, NumDQ, nullptr, -1);
+        iew_info.lqHeadStallReason =
+            ldstQueue.lqEmpty(i) ? StallReason::NoStall :
+                                   checkLSQStall(i, true);
+        iew_info.sqHeadStallReason =
+            ldstQueue.sqEmpty(i) ? StallReason::NoStall :
+                                   checkLSQStall(i, false);
+        iew_info.ldstqCount = ldstQueue.getCount(i);
+        iew_info.robCount = rob->getThreadEntries(i);
+        iew_info.iqCount = scheduler->getIQInsts(i);
+
         bool ldst_block = threadNeedsScalarLsq(i) && !canInsertLDSTQue(i);
-        bool block = stallSig->blockIEW[i] || ldst_block;
-        bool active = !block && !fixedbuffer[i].empty();
+        bool rename_block = stallSig->blockIEW[i] || ldst_block;
+        bool active = !stallSig->blockIEW[i] && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockIEW[i]) {
             block_reason = stallSig->iewBlockReason[i];
@@ -1006,8 +1019,9 @@ IEW::dispatchInsts()
             }
         }
 
-        stallSig->blockRename[i] = block;
-        stallSig->renameBlockReason[i] = block ? block_reason : StallReason::NoStall;
+        stallSig->blockRename[i] = rename_block;
+        stallSig->renameBlockReason[i] =
+            rename_block ? block_reason : StallReason::NoStall;
         if (active) {
             if (tid == InvalidThreadID) tid = i;
             else {
@@ -1032,14 +1046,12 @@ IEW::dispatchInsts()
         // check stall again
         if (!fixedbuffer[tid].empty()) {
             stallSig->blockRename[tid] = true;
+            stallSig->renameBlockReason[tid] =
+                blockReason == StallReason::NoStall ?
+                    StallReason::OtherFragStall : blockReason;
             DPRINTF(IEW, "Dispatch bandwidth full, blocking thread %i\n", tid);
         }
 
-        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid, NumDQ, nullptr, -1);
-        toRename->iewInfo[tid].lqHeadStallReason =
-            ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
-        toRename->iewInfo[tid].sqHeadStallReason =
-            ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
         toRename->iewInfo[tid].blockReason = blockReason;
     }
 }

@@ -364,6 +364,7 @@ class Scheduler : public SimObject
     void doCommit(const InstSeqNum seqNum);
     void doSquash(const InstSeqNum seqNum);
     uint32_t getIQInsts();
+    uint32_t getIQInsts(ThreadID tid);
 
     SchedulerStats& getStats() { return stats; }
 };

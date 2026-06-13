@@ -746,12 +746,14 @@ IssueQue::insert(const DynInstPtr& inst)
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 
-    DPRINTF(Schedule, "[sn:%llu] %s insert into %s\n", inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
+    DPRINTF(Schedule, "[tid:%u] [sn:%llu] %s insert into %s\n",
+            inst->threadNumber, inst->seqNum,
+            enums::OpClassStrings[inst->opClass()], iqname);
     if (inst->isMatrixInst()) {
         DPRINTF(Schedule,
-                "Matrix IQ insert [sn:%llu] class=%s route=%s iq=%s "
+                "Matrix IQ insert [tid:%u] [sn:%llu] class=%s route=%s iq=%s "
                 "opClass=%s numSrc=%d numDest=%d\n",
-                inst->seqNum, inst->matrixInstClassName(),
+                inst->threadNumber, inst->seqNum, inst->matrixInstClassName(),
                 inst->matrixRouteName(), iqname,
                 enums::OpClassStrings[inst->opClass()],
                 inst->numSrcRegs(), inst->numDestRegs());
@@ -1673,6 +1675,16 @@ Scheduler::getIQInsts()
     uint32_t total = 0;
     for (auto iq : issueQues) {
         total += iq->instNum;
+    }
+    return total;
+}
+
+uint32_t
+Scheduler::getIQInsts(ThreadID tid)
+{
+    uint32_t total = 0;
+    for (auto iq : issueQues) {
+        total += iq->getInstsCounter()->getCounter(tid);
     }
     return total;
 }
