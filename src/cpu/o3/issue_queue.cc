@@ -58,6 +58,7 @@
 
 #define RF_INTID 0
 #define RF_FPID 1
+#define RF_RMISCID 2
 
 namespace gem5
 {
@@ -223,7 +224,9 @@ IssueQue::IssueQue(const IssueQueParams& params)
 
     intRdRfTPI.resize(outports);
     fpRdRfTPI.resize(outports);
+    rMiscRdRfTPI.resize(outports);
     intWrRfTPI.resize(outports);
+    rMiscWrRfTPI.resize(outports);
 
     readyQs.resize(outports, nullptr);
 
@@ -250,6 +253,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
             if (is_wr) {
                 if (rf_type == RF_INTID) {
                     intWrRfTPI[i].push_back(rf_typeportid_pair);
+                } else if (rf_type == RF_RMISCID) {
+                    rMiscWrRfTPI[i].push_back(rf_typeportid_pair);
                 } else {
                     panic("%s: Unknown write RF type %d\n", iqname, rf_type);
                 }
@@ -263,6 +268,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
                     intRdRfTPI[i].push_back(rf_typeportid_pair);
                 } else if (rf_type == RF_FPID) {
                     fpRdRfTPI[i].push_back(rf_typeportid_pair);
+                } else if (rf_type == RF_RMISCID) {
+                    rMiscRdRfTPI[i].push_back(rf_typeportid_pair);
                 } else {
                     panic("%s: Unknown RF type %d\n", iqname, rf_type);
                 }
@@ -636,14 +643,21 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         for (auto& it : depgraph) {
             int srcIdx = it.first;
             auto& consumer = it.second;
-            if(consumer->threadNumber == inst->threadNumber){
+            if (consumer->threadNumber == inst->threadNumber) {
                 if (consumer->readySrcIdx(srcIdx)) {
                     continue;
                 }
                 consumer->markSrcRegReady(srcIdx);
 
-
                 DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
+                if (inst->isMatrixInst() || consumer->isMatrixInst()) {
+                    DPRINTF(Schedule,
+                            "Matrix wakeup %s via p%lu: producer [sn:%llu] -> "
+                            "consumer [sn:%llu] in %s src%d\n",
+                            speculative ? "spec" : "wb",
+                            dst->flatIndex(), inst->seqNum, consumer->seqNum,
+                            getName(), srcIdx);
+                }
                 addIfReady(consumer);
             }
         }
@@ -716,7 +730,7 @@ IssueQue::selectInst()
             DPRINTF(Schedule, "readyQ for port %d has [sn:%llu] %s [tid:%u]\n", pi, (*it)->seqNum,
                     (*it)->genDisassembly(), (*it)->threadNumber);
         }
-        
+
         selector->begin(readyQ);
         for (auto it = selector->select(readyQ->begin(), pi); it != readyQ->end(); it = selector->select(it, pi)) {
             auto& inst = *it;
@@ -740,6 +754,11 @@ IssueQue::selectInst()
                     if (pdst->isIntReg() && intWrRfTPI[pi].size() > i) {
                         rfTypePortId = intWrRfTPI[pi][i];
                         scheduler->useRfWrPort(inst, pdst, rfTypePortId.first, rfTypePortId.second);
+                    } else if (pdst->is(RMiscRegClass) &&
+                               rMiscWrRfTPI[pi].size() > i) {
+                        rfTypePortId = rMiscWrRfTPI[pi][i];
+                        scheduler->useRfWrPort(
+                            inst, pdst, rfTypePortId.first, rfTypePortId.second);
                     }
                 }
 
@@ -763,6 +782,11 @@ IssueQue::selectInst()
                     } else if (psrc->isFloatReg() && fpRdRfTPI[pi].size() > i) {
                         rfTypePortId = fpRdRfTPI[pi][i];
                         scheduler->useRfRdPort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                    } else if (psrc->is(RMiscRegClass) &&
+                               rMiscRdRfTPI[pi].size() > i) {
+                        rfTypePortId = rMiscRdRfTPI[pi][i];
+                        scheduler->useRfRdPort(
+                            inst, psrc, rfTypePortId.first, rfTypePortId.second);
                     }
                 }
 
@@ -857,7 +881,18 @@ IssueQue::insert(const DynInstPtr& inst)
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 
-    DPRINTF(Schedule, "[tid:%u] [sn:%llu] %s insert into %s\n", inst->threadNumber, inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
+    DPRINTF(Schedule, "[tid:%u] [sn:%llu] %s insert into %s\n",
+            inst->threadNumber, inst->seqNum,
+            enums::OpClassStrings[inst->opClass()], iqname);
+    if (inst->isMatrixInst()) {
+        DPRINTF(Schedule,
+                "Matrix IQ insert [tid:%u] [sn:%llu] class=%s route=%s iq=%s "
+                "opClass=%s numSrc=%d numDest=%d\n",
+                inst->threadNumber, inst->seqNum, inst->matrixInstClassName(),
+                inst->matrixRouteName(), iqname,
+                enums::OpClassStrings[inst->opClass()],
+                inst->numSrcRegs(), inst->numDestRegs());
+    }
     selector->allocate(inst);
     inst->issueQue = this;
     instList.emplace_back(inst);
@@ -875,6 +910,12 @@ IssueQue::insert(const DynInstPtr& inst)
                     inst->markSrcRegReady(i);
                 }
                 DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
+                if (inst->isMatrixInst()) {
+                    DPRINTF(Schedule,
+                            "Matrix depGraph insert [sn:%llu] iq=%s src%d "
+                            "waiting on p%lu\n",
+                            inst->seqNum, iqname, i, src->flatIndex());
+                }
                 subDepGraph[src->flatIndex()].push_back({i, inst});
                 addToDepGraph = true;
             }
@@ -1015,7 +1056,7 @@ IssueQue::incInIQInstsCounter(ThreadID tid)
         iqstats->instsNum[tid]++;
     }
 }
-    
+
 void
 IssueQue::decInIQInstsCounter(ThreadID tid)
 {
@@ -1108,9 +1149,21 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 rdRfportChecker[typePortId.first] += 1;
             }
         }
+        for (auto& rfTypePortId : issueQues[i]->rMiscRdRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxRdTypePortId = std::max(maxRdTypePortId, typePortId.first);
+                rdRfportChecker[typePortId.first] += 1;
+            }
+        }
 
         // write port check
         for (auto& rfTypePortId : issueQues[i]->intWrRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxWrTypePortId = std::max(maxWrTypePortId, typePortId.first);
+                wrRfportChecker[typePortId.first] += 1;
+            }
+        }
+        for (auto& rfTypePortId : issueQues[i]->rMiscWrRfTPI) {
             for (auto& typePortId : rfTypePortId) {
                 maxWrTypePortId = std::max(maxWrTypePortId, typePortId.first);
                 wrRfportChecker[typePortId.first] += 1;
@@ -1477,6 +1530,14 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
 
         DPRINTF(Schedule, "[sn:%llu] %s create wakeupEvent to %s, delay %d cycles\n", inst->seqNum,
                 from_issue_queue->getName(), to->getName(), wakeDelay);
+        if (inst->isMatrixInst()) {
+            DPRINTF(Schedule,
+                    "Matrix spec wakeup route [sn:%llu] %s -> %s "
+                    "delay=%d opClass=%s\n",
+                    inst->seqNum, from_issue_queue->getName(),
+                    to->getName(), wakeDelay,
+                    enums::OpClassStrings[inst->opClass()]);
+        }
         if (wakeDelay == 0) {
             to->wakeUpDependents(inst, true);
             if (!(inst->isFloating() || inst->isVector())) {
@@ -1736,6 +1797,14 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
         }
         bypassScoreboard[dst->flatIndex()] = true;
         DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
+        if (inst->isMatrixInst()) {
+            DPRINTF(Schedule,
+                    "Matrix bypass ready [sn:%llu] dst p%lu class=%s "
+                    "route=%s\n",
+                    inst->seqNum, dst->flatIndex(),
+                    inst->matrixInstClassName(),
+                    inst->matrixRouteName());
+        }
     }
     if (inst->canLVP()) {
         RegVal actualValue = cpu->getReg(inst->extRenamedDestIdx(0));
@@ -1827,11 +1896,10 @@ Scheduler::getIQInsts(ThreadID tid)
 {
     uint32_t total = 0;
     for (auto iq : issueQues) {
-        total += iq->getInstsCounter()->getCounter(tid);;   
+        total += iq->getInstsCounter()->getCounter(tid);
     }
     return total;
 }
-
 
 void
 Scheduler::setMainRdpOpt(bool enable)

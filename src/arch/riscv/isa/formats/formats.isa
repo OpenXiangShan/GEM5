@@ -37,8 +37,6 @@
 ##include "fp.isa"
 ##include "amo.isa"
 ##include "matrix_conf.isa"
-##include "matrix_mem.isa"
-##include "matrix_arith.isa"
 
 // Include formats for nonstandard extensions
 ##include "compressed.isa"

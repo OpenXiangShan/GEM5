@@ -664,6 +664,8 @@ namespace ArmISA
                 return RegId(CCRegClass, flattenCCIndex(regId.index()));
               case MiscRegClass:
                 return RegId(MiscRegClass, flattenMiscIndex(regId.index()));
+              case RMiscRegClass:
+                return regId;
               case InvalidRegClass:
                 return RegId();
             }

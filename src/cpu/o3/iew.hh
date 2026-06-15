@@ -56,6 +56,7 @@
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/o3/mls_unit.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
@@ -352,6 +353,7 @@ class IEW
     void writebackInsts();
 
     bool checkSerialize(const DynInstPtr& inst);
+    bool threadNeedsScalarLsq(ThreadID tid) const;
 
     /** Processes inputs and changes state accordingly. */
     void checkSquash();

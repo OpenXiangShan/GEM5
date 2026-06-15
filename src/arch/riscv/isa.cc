@@ -58,10 +58,7 @@
 #include "debug/VecRegs.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
-#include "mem/se_translating_port_proxy.hh"
-#include "mem/translating_port_proxy.hh"
 #include "params/RiscvISA.hh"
-#include "sim/faults.hh"
 #include "sim/full_system.hh"
 #include "sim/pseudo_inst.hh"
 
@@ -74,40 +71,25 @@ namespace RiscvISA
 namespace
 {
 
-Fault
-matrixReadBlob(ThreadContext *tc, Addr addr, void *dst, size_t size)
+constexpr RegVal MatrixXmisa = 0x2e6;
+constexpr RegVal MatrixXTLenB = 8192;
+constexpr RegVal MatrixXTRLenB = 64;
+constexpr RegVal MatrixXALenB = 65536;
+constexpr RegVal MatrixTokenCount = 32;
+constexpr RegVal MatrixRowNum = MatrixXTLenB / MatrixXTRLenB;
+constexpr RegVal MatrixArLenBPerRow = MatrixXALenB / MatrixRowNum;
+constexpr RegVal MatrixSewE8 = 0;
+constexpr RegVal MatrixSewE32 = 2;
+
+inline RegVal
+packXmcsr(RegVal xmxrm, RegVal xmsat, RegVal xmfflags, RegVal xmfrm,
+          RegVal xmsaten)
 {
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
-}
-
-Fault
-matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
-{
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
+    return (xmxrm & 0x3) |
+           ((xmsat & 0x1) << 2) |
+           ((xmfflags & 0x1f) << 3) |
+           ((xmfrm & 0x7) << 8) |
+           ((xmsaten & 0x1) << 11);
 }
 
 } // namespace
@@ -279,6 +261,20 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_VL]            = "VL",
     [MISCREG_VTYPE]         = "VTYPE",
     [MISCREG_VLENB]         = "VLENB",
+    [MISCREG_XMCSR]         = "XMCSR",
+    [MISCREG_XMXRM]         = "XMXRM",
+    [MISCREG_XMSAT]         = "XMSAT",
+    [MISCREG_XMFFLAGS]      = "XMFFLAGS",
+    [MISCREG_XMFRM]         = "XMFRM",
+    [MISCREG_XMSATEN]       = "XMSATEN",
+    [MISCREG_XMISA]         = "XMISA",
+    [MISCREG_XTLENB]        = "XTLENB",
+    [MISCREG_XTRLENB]       = "XTRLENB",
+    [MISCREG_XALENB]        = "XALENB",
+    [MISCREG_MTOK]          = "MTOK",
+    [MISCREG_MTILEM]        = "MTILEM",
+    [MISCREG_MTILEN]        = "MTILEN",
+    [MISCREG_MTILEK]        = "MTILEK",
 
     [MISCREG_HSTATUS]       = "HSTATUS",
     [MISCREG_HEDELEG]       = "HEDELEG",
@@ -329,7 +325,6 @@ ISA::ISA(const Params &p) : BaseISA(p)
     _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs, sizeof(RegVal));
 
     miscRegFile.resize(NUM_MISCREGS);
-    resetMatrixState();
     clear();
 }
 
@@ -394,130 +389,120 @@ void ISA::clear()
 void
 ISA::resetMatrixState()
 {
+    matrixXmxrm = 0;
+    matrixXmsat = 0;
+    matrixXmfflags = 0;
+    matrixXmfrm = 0;
+    matrixXmsaten = 0;
     matrixTileM = 0;
     matrixTileK = 0;
     matrixTileN = 0;
-    matrixTileA.assign(MatrixTileABytes, 0);
-    matrixTileB.assign(MatrixTileBBytes, 0);
-    matrixAcc.assign(MatrixAccElems, 0);
-    matrixTokens.assign(32, 0);
+    matrixTokens.assign(MatrixTokenCount, 0);
+    clearMatrixStubRequests();
 }
 
 void
-ISA::matrixSyncReset(uint64_t token_idx)
+ISA::clearMatrixStubRequests()
 {
-    matrixToken(token_idx) = 0;
+    matrixLastLsuReq = {};
+    matrixLastMmaReq = {};
+    matrixLastArithReq = {};
 }
 
 void
-ISA::matrixRelease(uint64_t token_idx)
+ISA::recordMatrixLsuRequest(const MatrixLsuStubRequest &req)
 {
-    ++matrixToken(token_idx);
+    clearMatrixStubRequests();
+    matrixLastLsuReq = req;
 }
 
 void
-ISA::matrixAcquire(uint64_t token_idx, uint64_t target)
+ISA::recordMatrixMmaRequest(const MatrixMmaStubRequest &req)
 {
-    panic_if(matrixToken(token_idx) < target,
-        "macquire tok%u target=%llu observed=%llu",
-        token_idx, target, matrixToken(token_idx));
+    clearMatrixStubRequests();
+    matrixLastMmaReq = req;
 }
 
 void
-ISA::setMatrixTileM(uint64_t value)
+ISA::recordMatrixArithRequest(const MatrixArithStubRequest &req)
 {
-    matrixTileM = clampMatrixTileM(value);
+    clearMatrixStubRequests();
+    matrixLastArithReq = req;
 }
 
 void
-ISA::setMatrixTileK(uint64_t value)
+ISA::resetMatrixToken(RegVal token_idx)
 {
-    matrixTileK = clampMatrixTileK(value);
+    assert(token_idx < matrixTokens.size());
+    DPRINTF(RiscvMisc, "Reset matrix token %llu.\n", token_idx);
+    matrixTokens[token_idx] = 0;
 }
 
 void
-ISA::setMatrixTileN(uint64_t value)
+ISA::releaseMatrixToken(RegVal token_idx)
 {
-    matrixTileN = clampMatrixTileN(value);
+    assert(token_idx < matrixTokens.size());
+    matrixTokens[token_idx]++;
+    DPRINTF(RiscvMisc, "Release matrix token %llu -> %#x.\n",
+            token_idx, matrixTokens[token_idx]);
 }
 
-Fault
-ISA::matrixLoadA8(ExecContext *xc, Addr base, Addr stride)
+bool
+ISA::matrixTokenReady(RegVal token_idx, RegVal threshold) const
 {
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileA[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
+    assert(token_idx < matrixTokens.size());
+    return matrixTokens[token_idx] >= threshold;
 }
 
-Fault
-ISA::matrixLoadB8(ExecContext *xc, Addr base, Addr stride)
+bool
+ISA::readMatrixMiscReg(int misc_reg, RegVal &val) const
 {
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileN; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileB[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixLoadC32(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixReadBlob(
-            tc, base + row * stride, dst, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixStoreC32(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *src = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixWriteBlob(
-            tc, base + row * stride, src, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-void
-ISA::matrixZeroAcc()
-{
-    std::fill(matrixAcc.begin(), matrixAcc.end(), 0);
-}
-
-void
-ISA::matrixMMAccWB()
-{
-    for (uint32_t m = 0; m < matrixTileM; ++m) {
-        for (uint32_t n = 0; n < matrixTileN; ++n) {
-            int32_t acc = matrixAcc[m * MatrixMaxN + n];
-            for (uint32_t k = 0; k < matrixTileK; ++k) {
-                int8_t a = matrixTileA[m * MatrixMaxK + k];
-                int8_t b = matrixTileB[n * MatrixMaxK + k];
-                acc += static_cast<int32_t>(a) * static_cast<int32_t>(b);
-            }
-            matrixAcc[m * MatrixMaxN + n] = acc;
-        }
+    switch (misc_reg) {
+      case MISCREG_XMCSR:
+        val = packXmcsr(matrixXmxrm, matrixXmsat, matrixXmfflags,
+                        matrixXmfrm, matrixXmsaten);
+        return true;
+      case MISCREG_XMXRM:
+        val = matrixXmxrm;
+        return true;
+      case MISCREG_XMSAT:
+        val = matrixXmsat;
+        return true;
+      case MISCREG_XMFFLAGS:
+        val = matrixXmfflags;
+        return true;
+      case MISCREG_XMFRM:
+        val = matrixXmfrm;
+        return true;
+      case MISCREG_XMSATEN:
+        val = matrixXmsaten;
+        return true;
+      case MISCREG_XMISA:
+        val = MatrixXmisa;
+        return true;
+      case MISCREG_XTLENB:
+        val = MatrixXTLenB;
+        return true;
+      case MISCREG_XTRLENB:
+        val = MatrixXTRLenB;
+        return true;
+      case MISCREG_XALENB:
+        val = MatrixXALenB;
+        return true;
+      case MISCREG_MTOK:
+        val = MatrixTokenCount;
+        return true;
+      case MISCREG_MTILEM:
+        val = matrixTileM;
+        return true;
+      case MISCREG_MTILEN:
+        val = matrixTileN;
+        return true;
+      case MISCREG_MTILEK:
+        val = matrixTileK;
+        return true;
+      default:
+        return false;
     }
 }
 
@@ -567,6 +552,13 @@ ISA::readMiscRegNoEffect(int misc_reg) const
         panic("Illegal CSR index %#x\n", misc_reg);
         return -1;
     }
+    RegVal val;
+    if (readMatrixMiscReg(misc_reg, val)) {
+        DPRINTF(RiscvMisc, "Reading MiscReg %s (%d): %#x.\n",
+                MiscRegNames[misc_reg], misc_reg, val);
+        return val;
+    }
+
     DPRINTF(RiscvMisc, "Reading MiscReg %s (%d): %#x.\n",
             MiscRegNames[misc_reg], misc_reg, miscRegFile[misc_reg]);
     return miscRegFile[misc_reg];
@@ -666,6 +658,21 @@ ISA::readMiscReg(int misc_reg)
             return VLENB;
         }
         break;
+      case MISCREG_XMCSR:
+      case MISCREG_XMXRM:
+      case MISCREG_XMSAT:
+      case MISCREG_XMFFLAGS:
+      case MISCREG_XMFRM:
+      case MISCREG_XMSATEN:
+      case MISCREG_XMISA:
+      case MISCREG_XTLENB:
+      case MISCREG_XTRLENB:
+      case MISCREG_XALENB:
+      case MISCREG_MTOK:
+      case MISCREG_MTILEM:
+      case MISCREG_MTILEN:
+      case MISCREG_MTILEK:
+        return readMiscRegNoEffect(misc_reg);
       case MISCREG_VCSR:
         {
             return readMiscRegNoEffect(MISCREG_VXSAT) |
@@ -703,6 +710,47 @@ ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
     }
     DPRINTF(RiscvMisc, "Setting MiscReg %s (%d) to %#x.\n",
             MiscRegNames[misc_reg], misc_reg, val);
+    switch (misc_reg) {
+      case MISCREG_XMCSR:
+        matrixXmxrm = val & 0x3;
+        matrixXmsat = (val >> 2) & 0x1;
+        matrixXmfflags = (val >> 3) & 0x1f;
+        matrixXmfrm = (val >> 8) & 0x7;
+        matrixXmsaten = (val >> 11) & 0x1;
+        return;
+      case MISCREG_XMXRM:
+        matrixXmxrm = val & 0x3;
+        return;
+      case MISCREG_XMSAT:
+        matrixXmsat = val & 0x1;
+        return;
+      case MISCREG_XMFFLAGS:
+        matrixXmfflags = val & 0x1f;
+        return;
+      case MISCREG_XMFRM:
+        matrixXmfrm = val & 0x7;
+        return;
+      case MISCREG_XMSATEN:
+        matrixXmsaten = val & 0x1;
+        return;
+      case MISCREG_MTILEM:
+        matrixTileM = val;
+        return;
+      case MISCREG_MTILEN:
+        matrixTileN = val;
+        return;
+      case MISCREG_MTILEK:
+        matrixTileK = val;
+        return;
+      case MISCREG_XMISA:
+      case MISCREG_XTLENB:
+      case MISCREG_XTRLENB:
+      case MISCREG_XALENB:
+      case MISCREG_MTOK:
+        return;
+      default:
+        break;
+    }
     miscRegFile[misc_reg] = val;
 }
 
@@ -975,6 +1023,25 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 setMiscRegNoEffect(misc_reg, val);
             }
             break;
+          case MISCREG_XMCSR:
+          case MISCREG_XMXRM:
+          case MISCREG_XMSAT:
+          case MISCREG_XMFFLAGS:
+          case MISCREG_XMFRM:
+          case MISCREG_XMSATEN:
+            setMiscRegNoEffect(misc_reg, val);
+            break;
+          case MISCREG_XMISA:
+          case MISCREG_XTLENB:
+          case MISCREG_XTRLENB:
+          case MISCREG_XALENB:
+          case MISCREG_MTOK:
+            break;
+          case MISCREG_MTILEM:
+          case MISCREG_MTILEN:
+          case MISCREG_MTILEK:
+            setMiscRegNoEffect(misc_reg, val);
+            break;
           case MISCREG_MIDELEG:
             {
                RegVal writeVal = val|((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
@@ -999,12 +1066,14 @@ ISA::serialize(CheckpointOut &cp) const
 {
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
     SERIALIZE_CONTAINER(miscRegFile);
+    SERIALIZE_SCALAR(matrixXmxrm);
+    SERIALIZE_SCALAR(matrixXmsat);
+    SERIALIZE_SCALAR(matrixXmfflags);
+    SERIALIZE_SCALAR(matrixXmfrm);
+    SERIALIZE_SCALAR(matrixXmsaten);
     SERIALIZE_SCALAR(matrixTileM);
     SERIALIZE_SCALAR(matrixTileK);
     SERIALIZE_SCALAR(matrixTileN);
-    SERIALIZE_CONTAINER(matrixTileA);
-    SERIALIZE_CONTAINER(matrixTileB);
-    SERIALIZE_CONTAINER(matrixAcc);
     SERIALIZE_CONTAINER(matrixTokens);
 }
 
@@ -1013,29 +1082,15 @@ ISA::unserialize(CheckpointIn &cp)
 {
     DPRINTF(Checkpoint, "Unserializing Riscv Misc Registers\n");
     UNSERIALIZE_CONTAINER(miscRegFile);
+    UNSERIALIZE_SCALAR(matrixXmxrm);
+    UNSERIALIZE_SCALAR(matrixXmsat);
+    UNSERIALIZE_SCALAR(matrixXmfflags);
+    UNSERIALIZE_SCALAR(matrixXmfrm);
+    UNSERIALIZE_SCALAR(matrixXmsaten);
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);
-    UNSERIALIZE_CONTAINER(matrixTileA);
-    UNSERIALIZE_CONTAINER(matrixTileB);
-    UNSERIALIZE_CONTAINER(matrixAcc);
     UNSERIALIZE_CONTAINER(matrixTokens);
-}
-
-RegVal &
-ISA::matrixToken(size_t idx)
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
-}
-
-const RegVal &
-ISA::matrixToken(size_t idx) const
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
 }
 
 const int WARN_FAILURE = 10000;

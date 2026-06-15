@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <list>
 
+#include "arch/riscv/isa.hh"
 #include "base/logging.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
@@ -55,6 +56,76 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+bool
+toCuteRequest(const ExecContext::MatrixExecPayload &payload,
+              InstSeqNum seq, matrix::CuteRequest &out)
+{
+    if (!payload.valid) {
+        return false;
+    }
+
+    switch (payload.kind) {
+      case ExecContext::MatrixExecPayload::Kind::Release:
+        out = matrix::CuteRequest::makeRelease(seq, payload.tokenIndex);
+        return true;
+      case ExecContext::MatrixExecPayload::Kind::Arith:
+        if (payload.op == 0x06) {
+            out = matrix::CuteRequest::makeArithZero(
+                seq, matrix::MatrixBankKind::C, payload.md,
+                payload.mtilem, payload.mtilen,
+                payload.elemType);
+            return true;
+        }
+        return false;
+      case ExecContext::MatrixExecPayload::Kind::Mma:
+        out = matrix::CuteRequest::makeMma(
+            seq, payload.md, payload.ms1, payload.ms2,
+            payload.mtilem, payload.mtilen, payload.mtilek);
+        out.mma.isFp = payload.isFp;
+        out.mma.rm = payload.rm;
+        out.mma.frm = payload.frm;
+        out.mma.types1 = payload.types1;
+        out.mma.types2 = payload.types2;
+        out.mma.typed = payload.typed;
+        out.mma.lhsElemType = payload.lhsElemType;
+        out.mma.rhsElemType = payload.rhsElemType;
+        out.mma.dstElemType = payload.dstElemType;
+        out.mma.sat = payload.sat;
+        return true;
+      case ExecContext::MatrixExecPayload::Kind::Lsu:
+        if (!payload.isLoad && !payload.isStore) {
+            return false;
+        }
+        out = {};
+        out.seq = seq;
+        out.kind = matrix::CuteRequestKind::Lsu;
+        out.op = payload.op;
+        out.lsu.ms = payload.ms;
+        out.lsu.widths = payload.widths;
+        out.lsu.isStore = payload.isStore;
+        out.lsu.transpose = payload.transpose;
+        out.lsu.isAcc = payload.isAcc;
+        out.lsu.isA = payload.isA;
+        out.lsu.isB = payload.isB;
+        out.lsu.baseAddr = payload.baseAddr;
+        out.lsu.physBaseAddr = payload.physBaseAddr;
+        out.lsu.stride = payload.stride;
+        out.lsu.row = payload.row;
+        out.lsu.column = payload.column;
+        out.lsu.elemType = payload.elemType;
+        return true;
+      case ExecContext::MatrixExecPayload::Kind::None:
+        return false;
+    }
+
+    return false;
+}
+
+} // anonymous namespace
 
 bool
 ROB::allocateGroup_none(const DynInstPtr inst, ThreadID tid)
@@ -136,6 +207,8 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       robWalkPolicy(params.robWalkPolicy),
       cpu(_cpu),
       numEntries(params.numROBEntries),
+      matrixAmuBufferEntries(params.numROBEntries),
+      matrixAmuWindowEntries(params.commitWidth),
       instsPerGroup(params.CROB_instPerGroup),
       rollbackWidth(params.squashWidth),
       replayWidth(params.squashWidth),
@@ -223,6 +296,8 @@ ROB::resetState()
 {
     for (ThreadID tid = 0; tid  < MaxThreads; tid++) {
         threadGroups[tid].clear();
+        matrixAmuBuffers[tid].reset(
+            matrixAmuBufferEntries, matrixAmuWindowEntries);
         squashIt[tid] = instList[tid].end();
         squashedSeqNum[tid] = 0;
         doneSquashing[tid] = true;
@@ -234,6 +309,91 @@ ROB::resetState()
     // pointers
     head = instList[0].end();
     tail = instList[0].end();
+}
+
+bool
+ROB::shouldTrackMatrixAmu(const DynInstPtr &inst) const
+{
+    return cpu->isMatrixBackendEnabled() && inst && inst->isMatrixInst() &&
+           inst->matrixNeedAmuCtrl();
+}
+
+void
+ROB::insertMatrixAmuEntry(const DynInstPtr &inst)
+{
+    if (!shouldTrackMatrixAmu(inst)) {
+        return;
+    }
+
+    matrixAmuBuffers[inst->threadNumber].allocate(
+        inst->threadNumber, inst->seqNum, true,
+        inst->matrixInstClassName(), inst->matrixRouteName());
+}
+
+void
+ROB::noteMatrixAmuWriteback(const DynInstPtr &inst)
+{
+    if (!shouldTrackMatrixAmu(inst)) {
+        return;
+    }
+
+    matrix::CuteRequest backend_req = {};
+    const bool backend_req_valid =
+        inst->isMatrixInst() && inst->matrixPayloadValid() &&
+        toCuteRequest(inst->matrixPayload(), inst->seqNum, backend_req);
+
+    matrixAmuBuffers[inst->threadNumber].noteWriteback(
+        inst->threadNumber, inst->seqNum, inst->getFault() != NoFault,
+        backend_req_valid,
+        backend_req,
+        inst->isMatrixInst() ? inst->matrixPayloadKindName() : "none");
+}
+
+void
+ROB::noteMatrixAmuCommit(const DynInstPtr &inst)
+{
+    if (!shouldTrackMatrixAmu(inst)) {
+        return;
+    }
+
+    matrixAmuBuffers[inst->threadNumber].noteCommit(
+        inst->threadNumber, inst->seqNum);
+}
+
+bool
+ROB::peekReadyMatrixAmuEntry(ThreadID tid, MatrixAmuEntry &entry_out)
+{
+    if (!cpu->isMatrixBackendEnabled()) {
+        return false;
+    }
+    return matrixAmuBuffers[tid].peekReady(tid, entry_out);
+}
+
+bool
+ROB::popReadyMatrixAmuEntry(ThreadID tid, MatrixAmuEntry &entry_out)
+{
+    if (!cpu->isMatrixBackendEnabled()) {
+        return false;
+    }
+    return matrixAmuBuffers[tid].popReady(tid, entry_out);
+}
+
+unsigned
+ROB::numFreeMatrixAmuEntries(ThreadID tid)
+{
+    if (!cpu->isMatrixBackendEnabled()) {
+        return matrixAmuBufferEntries;
+    }
+    return matrixAmuBuffers[tid].numFreeEntries(tid);
+}
+
+void
+ROB::squashMatrixAmuEntry(ThreadID tid, InstSeqNum seq_num)
+{
+    if (!cpu->isMatrixBackendEnabled()) {
+        return;
+    }
+    matrixAmuBuffers[tid].squash(tid, seq_num);
 }
 
 std::string
@@ -484,10 +644,27 @@ ROB::insertInst(const DynInstPtr &inst)
     tail--;
 
     inst->setInROB();
+    inst->noteMatrixRobInserted();
+    insertMatrixAmuEntry(inst);
 
     ++numInstsInROB;
 
     assert((*tail) == inst);
+
+    if (inst->isMatrixInst()) {
+        const auto &info = inst->matrixInstInfo();
+        DPRINTF(ROB,
+                "[tid:%i] Matrix inserted into ROB [sn:%llu] class=%s "
+                "route=%s boundary=%s needAmu=%d dirtyMs=%d renamed=%d rob=%d "
+                "squashed=%d renameAttempt=%u robAttempt=%u "
+                "squashAttempt=%u.\n",
+                tid, inst->seqNum, inst->matrixInstClassName(),
+                inst->matrixRouteName(), inst->matrixCommitBoundaryName(),
+                inst->matrixNeedAmuCtrl(), inst->matrixDirtyMs(),
+                info.renameSeen,
+                info.robInserted, info.squashed, info.renameAttempt,
+                info.robAttempt, info.squashAttempt);
+    }
 
     DPRINTF(ROB, "[tid:%i] Now has %d instructions.\n", tid,
             threadGroups[tid].size());
@@ -668,6 +845,7 @@ ROB::doSquash(ThreadID tid)
         // Mark the instruction as squashed, and ready to commit so that
         // it can drain out of the pipeline.
         (*squashIt[tid])->setSquashed();
+        squashMatrixAmuEntry(tid, (*squashIt[tid])->seqNum);
 
         (*squashIt[tid])->setCanCommit();
 

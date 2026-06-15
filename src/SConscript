@@ -566,6 +566,7 @@ def makeTheISA(source, target, env):
     isas = sorted(set(env.Split('${ALL_ISAS}')))
     target_isa = env['CONF']['TARGET_ISA']
     is_null_isa = '1' if (target_isa.lower() == 'null') else '0'
+    is_riscv_isa = '1' if (target_isa.lower() == 'riscv') else '0'
 
     def namespace(isa):
         return isa[0].upper() + isa[1:].lower() + 'ISA'
@@ -577,6 +578,7 @@ def makeTheISA(source, target, env):
 #define __CONFIG_THE_ISA_HH__
 
 #define IS_NULL_ISA ${{is_null_isa}}
+#define THE_ISA_IS_RISCV ${{is_riscv_isa}}
 #define TheISA ${{namespace(target_isa)}}
 
 #endif // __CONFIG_THE_ISA_HH__''')

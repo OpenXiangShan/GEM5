@@ -49,6 +49,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <vector>
 
@@ -66,6 +67,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/o3/mls_unit.hh"
 #include "cpu/o3/replay_events.hh"
 #include "cpu/timebuf.hh"
 #include "debug/HtmCpu.hh"
@@ -344,6 +346,9 @@ class LSQUnit
     /** Iq issues a store to store pipeline. */
     void issueToStorePipe(const DynInstPtr &inst);
 
+    MlsUnit::IssueResult issueMatrixMem(const DynInstPtr &inst);
+    bool matrixReplayReady(const MlsReplayQueue::ReplayState &state) const;
+
     /** Commits the head load. */
     void commitLoad();
     /** Commits loads older than a specific sequence number. */
@@ -572,6 +577,8 @@ class LSQUnit
 
     /** Pointer to the LSQ. */
     LSQ *lsq;
+
+    std::optional<MlsUnit> mlsUnit;
 
     /** Pointer to the dcache port.  Used only for sending. */
     RequestPort *dcachePort;

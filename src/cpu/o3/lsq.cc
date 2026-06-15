@@ -61,6 +61,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
@@ -434,6 +435,14 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       RARQEntries(params.RARQEntries),
       RAWQEntries(params.RAWQEntries),
       dcachePort(this, cpu_ptr),
+      enableMatrixMlsQueue(params.enableMatrixMlsQueue),
+      mlsReplayQueue(
+          params.numThreads,
+          params.matrixMlsReplayQueueEntries,
+          params.matrixMlsReplaySelectLatency),
+      mlsVirtualQueue(
+          params.numThreads,
+          params.matrixMlsVirtualQueueEntries),
       numThreads(params.numThreads)
 {
     assert(numThreads > 0 && numThreads <= MaxThreads);
@@ -833,6 +842,110 @@ LSQ::executePipeSx()
 
         thread[tid].executePipeSx();
     }
+}
+
+MlsUnit::IssueResult
+LSQ::issueMatrixMem(const DynInstPtr &inst)
+{
+    panic_if(!enableMatrixMlsQueue,
+             "Matrix memory instruction [sn:%llu] reached LSQ while "
+             "enableMatrixMlsQueue=false",
+             inst ? inst->seqNum : 0);
+    ThreadID tid = inst->threadNumber;
+    return thread[tid].issueMatrixMem(inst);
+}
+
+bool
+LSQ::canAllocateMatrixMem(ThreadID tid, unsigned count) const
+{
+    if (!enableMatrixMlsQueue) {
+        return false;
+    }
+    return mlsVirtualQueue.canAllocate(tid, count);
+}
+
+bool
+LSQ::hasMatrixMemEntry(const DynInstPtr &inst) const
+{
+    if (!enableMatrixMlsQueue) {
+        return false;
+    }
+    return mlsVirtualQueue.hasEntry(inst);
+}
+
+bool
+LSQ::allocateMatrixMemEntry(const DynInstPtr &inst)
+{
+    panic_if(!enableMatrixMlsQueue,
+             "Matrix memory instruction [sn:%llu] tried to allocate MLSQ "
+             "while enableMatrixMlsQueue=false",
+             inst ? inst->seqNum : 0);
+    return mlsVirtualQueue.allocate(inst);
+}
+
+void
+LSQ::scheduleMatrixMemReplay()
+{
+    if (!enableMatrixMlsQueue) {
+        return;
+    }
+    for (auto tid : *activeThreads) {
+        mlsReplayQueue.refreshReady(
+            tid,
+            [this, tid](const MlsReplayQueue::ReplayState &state) {
+                return thread[tid].matrixReplayReady(state);
+            });
+
+        DynInstPtr replay_inst;
+        if (!mlsReplayQueue.scheduleNext(tid, replay_inst)) {
+            continue;
+        }
+
+        panic_if(!replay_inst || !replay_inst->issueQue,
+                 "Matrix replay inst missing issue queue [tid:%i]", tid);
+        replay_inst->issueQue->retryMem(replay_inst);
+        DPRINTF(LSQ,
+                "[tid:%i] Matrix replay scheduled [sn:%llu].\n",
+                tid, replay_inst->seqNum);
+    }
+}
+
+unsigned
+LSQ::squashMatrixMem(ThreadID tid, InstSeqNum squash_seq)
+{
+    if (!enableMatrixMlsQueue) {
+        return 0;
+    }
+    const unsigned mlsqCanceled = mlsVirtualQueue.squash(tid, squash_seq);
+    if (mlsqCanceled != 0) {
+        DPRINTF(LSQ,
+                "[tid:%i] MlsVirtualQueue squash canceled=%u free=%u.\n",
+                tid, mlsqCanceled, mlsVirtualQueue.freeEntries(tid));
+    }
+
+    const unsigned replayCanceled = mlsReplayQueue.squash(tid, squash_seq);
+    if (replayCanceled != 0) {
+        DPRINTF(LSQ,
+                "[tid:%i] MlsReplayQueue squash canceled=%u free=%u.\n",
+                tid, replayCanceled, mlsReplayQueue.freeEntries(tid));
+    }
+
+    return mlsqCanceled + replayCanceled;
+}
+
+unsigned
+LSQ::retireCommittedMatrixMem(ThreadID tid, InstSeqNum committed_seq)
+{
+    if (!enableMatrixMlsQueue) {
+        return 0;
+    }
+    const unsigned retired = mlsVirtualQueue.retireCommitted(tid, committed_seq);
+    if (retired != 0) {
+        DPRINTF(LSQ,
+                "[tid:%i] MlsVirtualQueue retire count=%u free=%u.\n",
+                tid, retired, mlsVirtualQueue.freeEntries(tid));
+    }
+    return retired;
 }
 
 Fault

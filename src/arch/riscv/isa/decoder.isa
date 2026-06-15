@@ -2284,6 +2284,15 @@ decode QUADRANT {
                         data = Rs1;
                         write = RS1 != 0;
                     }}, IsSerializeAfter,IsNonSpeculative, No_OpClass);
+                    0xCC5:MatrixCarrierRs1WriteCSROp::csrrw_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierRs1WriteCSROp::csrrw_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierRs1WriteCSROp::csrrw_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
                     0x100:csrrw_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2308,6 +2317,15 @@ decode QUADRANT {
                         data |= Rs1_use;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    0xCC5:MatrixCarrierRs1SetCSROp::csrrs_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierRs1SetCSROp::csrrs_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierRs1SetCSROp::csrrs_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
                     0x100:csrrs_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2336,6 +2354,15 @@ decode QUADRANT {
                         data &= ~Rs1_use;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    0xCC5:MatrixCarrierRs1ClearCSROp::csrrc_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierRs1ClearCSROp::csrrc_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierRs1ClearCSROp::csrrc_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
                     0x100:csrrc_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2360,6 +2387,15 @@ decode QUADRANT {
                         data = uimm;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    0xCC5:MatrixCarrierUimmWriteCSROp::csrrwi_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierUimmWriteCSROp::csrrwi_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierUimmWriteCSROp::csrrwi_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
                     0x100:csrrwi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2384,6 +2420,15 @@ decode QUADRANT {
                         data |= uimm_use;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    0xCC5:MatrixCarrierUimmSetCSROp::csrrsi_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierUimmSetCSROp::csrrsi_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierUimmSetCSROp::csrrsi_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
                     0x100:csrrsi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2408,6 +2453,15 @@ decode QUADRANT {
                         data &= ~uimm;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                    0xCC5:MatrixCarrierUimmClearCSROp::csrrci_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierUimmClearCSROp::csrrci_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierUimmClearCSROp::csrrci_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
                     0x100:csrrci_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2427,121 +2481,474 @@ decode QUADRANT {
         }
 
         0x0a: decode FUNCT7 {
-            0x40: decode RD {
-                0x0: MatrixConfOp::msyncreset({{
-                    auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                    assert(isa != nullptr);
-                    isa->matrixSyncReset(RS2);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
-            }
-            0x48: decode RD {
-                0x0: MatrixConfOp::mrelease({{
-                    auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                    assert(isa != nullptr);
-                    isa->matrixRelease(RS2);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
-            }
-            0x50: decode RD {
-                0x0: MatrixConfOp::macquire({{
-                    auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                    assert(isa != nullptr);
-                    isa->matrixAcquire(RS2, Rs1_ud);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
-            }
-            0x11: decode RS2 {
-                0x0: decode FUNCT3 {
-                    0x0: decode RD {
-                        0x0: MatrixConfOp::msettilem({{
-                            auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                            assert(isa != nullptr);
-                            isa->setMatrixTileM(Rs1_ud);
-                        }}, No_OpClass);
+            0x00: decode RS2 {
+                0x0: decode RS1 {
+                    0x0: decode FUNCT3 {
+                        0x0: decode RD {
+                            0x0: MatrixConfOp::minit({{
+                                return std::make_shared<IllegalInstFault>(
+                                    "minit control path not implemented yet",
+                                    machInst);
+                            }}, No_OpClass);
+                        }
                     }
+                }
+            }
+            0x08: decode FUNCT3 {
+                0x0: decode RD {
+                    0x0: MatrixCarrierOp::msettileki({{
+                        uint64_t atx =
+                            (static_cast<uint64_t>(RS2) << 5) | RS1;
+                        xc->setMiscReg(MISCREG_MTILEK, atx);
+                    }}, {{
+                        setDestRegIdx(_numDestRegs++, MatrixRenamedTileKReg);
+                        _numTypedDestRegs[RMiscRegClass]++;
+                    }}, {{
+                        xc->setRegOperand(this, 0, atx);
+                    }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
                 }
             }
             0x09: decode RS2 {
                 0x0: decode FUNCT3 {
                     0x0: decode RD {
-                        0x0: MatrixConfOp::msettilek({{
-                            auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                            assert(isa != nullptr);
-                            isa->setMatrixTileK(Rs1_ud);
-                        }}, No_OpClass);
+                        0x0: MatrixCarrierOp::msettilek({{
+                            xc->setMiscReg(MISCREG_MTILEK, Rs1_ud);
+                        }}, {{
+                            setDestRegIdx(_numDestRegs++, MatrixRenamedTileKReg);
+                            _numTypedDestRegs[RMiscRegClass]++;
+                        }}, {{
+                            xc->setRegOperand(this, 0, Rs1_ud);
+                        }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
                     }
+                }
+            }
+            0x10: decode FUNCT3 {
+                0x0: decode RD {
+                    0x0: MatrixCarrierOp::msettilemi({{
+                        uint64_t atx =
+                            (static_cast<uint64_t>(RS2) << 5) | RS1;
+                        xc->setMiscReg(MISCREG_MTILEM, atx);
+                    }}, {{
+                        setDestRegIdx(_numDestRegs++, MatrixRenamedTileMReg);
+                        _numTypedDestRegs[RMiscRegClass]++;
+                    }}, {{
+                        xc->setRegOperand(this, 0, atx);
+                    }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                }
+            }
+            0x11: decode RS2 {
+                0x0: decode FUNCT3 {
+                    0x0: decode RD {
+                        0x0: MatrixCarrierOp::msettilem({{
+                            xc->setMiscReg(MISCREG_MTILEM, Rs1_ud);
+                        }}, {{
+                            setDestRegIdx(_numDestRegs++, MatrixRenamedTileMReg);
+                            _numTypedDestRegs[RMiscRegClass]++;
+                        }}, {{
+                            xc->setRegOperand(this, 0, Rs1_ud);
+                        }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                    }
+                }
+            }
+            0x18: decode FUNCT3 {
+                0x0: decode RD {
+                    0x0: MatrixCarrierOp::msettileni({{
+                        uint64_t atx =
+                            (static_cast<uint64_t>(RS2) << 5) | RS1;
+                        xc->setMiscReg(MISCREG_MTILEN, atx);
+                    }}, {{
+                        setDestRegIdx(_numDestRegs++, MatrixRenamedTileNReg);
+                        _numTypedDestRegs[RMiscRegClass]++;
+                    }}, {{
+                        xc->setRegOperand(this, 0, atx);
+                    }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
                 }
             }
             0x19: decode RS2 {
                 0x0: decode FUNCT3 {
                     0x0: decode RD {
-                        0x0: MatrixConfOp::msettilen({{
-                            auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                            assert(isa != nullptr);
-                            isa->setMatrixTileN(Rs1_ud);
-                        }}, No_OpClass);
+                        0x0: MatrixCarrierOp::msettilen({{
+                            xc->setMiscReg(MISCREG_MTILEN, Rs1_ud);
+                        }}, {{
+                            setDestRegIdx(_numDestRegs++, MatrixRenamedTileNReg);
+                            _numTypedDestRegs[RMiscRegClass]++;
+                        }}, {{
+                            xc->setRegOperand(this, 0, Rs1_ud);
+                        }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
                     }
                 }
             }
-            0x06: decode RS2 {
-                0x0: decode RS1 {
-                    0x0: decode FUNCT3 {
-                        0x0: decode RD {
-                            0x4: MatrixConfOp::mzero1r({{
-                                auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                                assert(isa != nullptr);
-                                isa->matrixZeroAcc();
-                            }}, No_OpClass);
-                        }
+            0x40: decode RS1 {
+                0x0: decode FUNCT3 {
+                    0x0: decode RD {
+                        0x0: MatrixConfOp::msyncregreset({{
+                            if (!xc->stageMatrixTokenReset(RS2)) {
+                                auto *isa = static_cast<RiscvISA::ISA *>(
+                                    xc->tcBase()->getIsaPtr());
+                                isa->resetMatrixToken(RS2);
+                            }
+                        }}, IsSerializeAfter, MatrixSyncOp);
                     }
+                }
+            }
+            0x48: decode RS1 {
+                0x0: decode FUNCT3 {
+                    0x0: decode RD {
+                        0x0: MatrixConfOp::mrelease({{
+                            // Phase 1 stub: collapse the post-commit backend
+                            // release event into this conservative
+                            // non-speculative execute point.
+                            ExecContext::MatrixExecPayload payload;
+                            payload.valid = true;
+                            payload.kind =
+                                ExecContext::MatrixExecPayload::Kind::Release;
+                            payload.tokenIndex = RS2;
+                            if (!xc->stageMatrixExecPayload(payload)) {
+                                auto *isa = static_cast<RiscvISA::ISA *>(
+                                    xc->tcBase()->getIsaPtr());
+                                isa->releaseMatrixToken(RS2);
+                            }
+                        }}, IsSerializeAfter, MatrixReleaseOp);
+                    }
+                }
+            }
+            0x50: decode FUNCT3 {
+                0x0: decode RD {
+                    0x0: MatrixConfOp::macquire({{
+                        bool ready = false;
+                        if (xc->readStagedMatrixTokenReady(
+                                RS2, Rs1_ud, ready)) {
+                            if (!ready) {
+                                return std::make_shared<ReExec>();
+                            }
+                        } else {
+                            auto *isa = static_cast<RiscvISA::ISA *>(
+                                xc->tcBase()->getIsaPtr());
+                            if (!isa->matrixTokenReady(RS2, Rs1_ud)) {
+                                return std::make_shared<ReExec>();
+                            }
+                        }
+                    }}, IsSerializeAfter, MatrixSyncOp);
                 }
             }
             0x02: decode FUNCT3 {
-                0x0: decode RD {
-                    0x0: MatrixMemOp::mlae8({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixLoadA8(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
+                0x0: MatrixCarrierOp::mlae({{
+                    auto *isa = static_cast<RiscvISA::ISA *>(
+                        xc->tcBase()->getIsaPtr());
+                    // Matrix state reads still follow the normal slot-based
+                    // operand contract: src slot 2/3 carry Mtilem/Mtilek.
+                    auto mtilem = xc->getRegOperand(this, 2);
+                    auto mtilek = xc->getRegOperand(this, 3);
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    const bool isE8 =
+                        width == RiscvISA::ISA::MatrixSewE8;
+                    const bool isE16 =
+                        width == RiscvISA::ISA::MatrixSewE16;
+                    const auto maxK = isE8 ?
+                        RiscvISA::ISA::MatrixTrLenE8Max :
+                        RiscvISA::ISA::MatrixTrLenE16Max;
+                    if (md >= 4 || (!isE8 && !isE16) ||
+                        mtilem > RiscvISA::ISA::MatrixRowNum ||
+                        mtilek > maxK) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mlae parameter check failed", machInst);
+                    }
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isA = true;
+                    req.op = 0x02;
+                    req.ms = md;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilem;
+                    req.column = mtilek;
+                    req.widths = width;
+                    req.elemType = isE8 ? matrix::MatrixElemType::Int8 :
+                        matrix::MatrixElemType::Fp16;
+                    isa->recordMatrixLsuRequest(req);
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
+                }}, {{
+                }}, MatrixMemOp);
             }
             0x0a: decode FUNCT3 {
-                0x0: decode RD {
-                    0x1: MatrixMemOp::mlbe8({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixLoadB8(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
+                0x0: MatrixCarrierOp::mlbe({{
+                    auto *isa = static_cast<RiscvISA::ISA *>(
+                        xc->tcBase()->getIsaPtr());
+                    // src slot 2/3 carry Mtilek/Mtilen.
+                    auto mtilek = xc->getRegOperand(this, 2);
+                    auto mtilen = xc->getRegOperand(this, 3);
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    const bool isE8 =
+                        width == RiscvISA::ISA::MatrixSewE8;
+                    const bool isE16 =
+                        width == RiscvISA::ISA::MatrixSewE16;
+                    const auto maxK = isE8 ?
+                        RiscvISA::ISA::MatrixTrLenE8Max :
+                        RiscvISA::ISA::MatrixTrLenE16Max;
+                    if (md >= 4 || (!isE8 && !isE16) ||
+                        mtilen > RiscvISA::ISA::MatrixRowNum ||
+                        mtilek > maxK) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mlbe parameter check failed", machInst);
+                    }
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isB = true;
+                    req.transpose = true;
+                    req.op = 0x0a;
+                    req.ms = md;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilek;
+                    req.column = mtilen;
+                    req.widths = width;
+                    req.elemType = isE8 ? matrix::MatrixElemType::Int8 :
+                        matrix::MatrixElemType::Fp16;
+                    isa->recordMatrixLsuRequest(req);
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
+                }}, {{
+                }}, MatrixMemOp);
             }
             0x12: decode FUNCT3 {
-                0x0: decode RD {
-                    0x14: MatrixMemOp::mlce32({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixLoadC32(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
+                0x0: MatrixCarrierOp::mlce32({{
+                    auto *isa = static_cast<RiscvISA::ISA *>(
+                        xc->tcBase()->getIsaPtr());
+                    // src slot 2/3 carry Mtilem/Mtilen.
+                    auto mtilem = xc->getRegOperand(this, 2);
+                    auto mtilen = xc->getRegOperand(this, 3);
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    if (md < 4 ||
+                        width != RiscvISA::ISA::MatrixSewE32 ||
+                        mtilem > RiscvISA::ISA::MatrixRowNum ||
+                        mtilen > RiscvISA::ISA::MatrixAccE32Max) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mlce32 parameter check failed", machInst);
+                    }
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isAcc = true;
+                    req.op = 0x12;
+                    req.ms = md;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilem;
+                    req.column = mtilen;
+                    req.widths = RiscvISA::ISA::MatrixSewE32;
+                    req.elemType = matrix::MatrixElemType::Int32;
+                    isa->recordMatrixLsuRequest(req);
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
+                }}, {{
+                }}, MatrixMemOp);
             }
             0x13: decode FUNCT3 {
-                0x0: decode RD {
-                    0x14: MatrixMemOp::msce32({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixStoreC32(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
+                0x0: MatrixCarrierOp::msce32({{
+                    auto *isa = static_cast<RiscvISA::ISA *>(
+                        xc->tcBase()->getIsaPtr());
+                    // src slot 2/3 carry Mtilem/Mtilen.
+                    auto mtilem = xc->getRegOperand(this, 2);
+                    auto mtilen = xc->getRegOperand(this, 3);
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    if (md < 4 ||
+                        width != RiscvISA::ISA::MatrixSewE32 ||
+                        mtilem > RiscvISA::ISA::MatrixRowNum ||
+                        mtilen > RiscvISA::ISA::MatrixAccE32Max) {
+                        return std::make_shared<IllegalInstFault>(
+                            "msce32 parameter check failed", machInst);
+                    }
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isAcc = true;
+                    req.isLoad = false;
+                    req.op = 0x13;
+                    req.ms = md;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilem;
+                    req.column = mtilen;
+                    req.widths = RiscvISA::ISA::MatrixSewE32;
+                    req.elemType = matrix::MatrixElemType::Int32;
+                    isa->recordMatrixLsuRequest(req);
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
+                }}, {{
+                }}, MatrixMemOp);
+            }
+                0x06: decode FUNCT3 {
+                0x0: MatrixCarrierOp::mzero({{
+                    // src slot 0/1 carry Mtilem/Mtilen.
+                    auto mtilem = xc->getRegOperand(this, 0);
+                    auto mtilen = xc->getRegOperand(this, 1);
+                    ExecContext::MatrixExecPayload payload;
+                    payload.valid = true;
+                    payload.kind =
+                        ExecContext::MatrixExecPayload::Kind::Arith;
+                    payload.op = 0x06;
+                    payload.md = RD & 0x7;
+                    payload.mtilem = mtilem;
+                    payload.mtilen = mtilen;
+                    payload.elemType = matrix::MatrixElemType::Int32;
+                    if (!xc->stageMatrixExecPayload(payload)) {
+                        auto *isa = static_cast<RiscvISA::ISA *>(
+                            xc->tcBase()->getIsaPtr());
+                        RiscvISA::ISA::MatrixArithStubRequest req;
+                        req.valid = true;
+                        req.op = payload.op;
+                        req.md = payload.md;
+                        isa->recordMatrixArithRequest(req);
+                    }
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
+                }}, {{
+                }}, MatrixArithOp);
+            }
+            0x04: decode FUNCT3 {
+                0x0: MatrixCarrierOp::mfmacc_s_h({{
+                    // src slot 0..2 carry Mtilem/Mtilen/Mtilek.
+                    auto mtilem = xc->getRegOperand(this, 0);
+                    auto mtilen = xc->getRegOperand(this, 1);
+                    auto mtilek = xc->getRegOperand(this, 2);
+                    auto xmxrm = xc->readMiscReg(MISCREG_XMXRM);
+                    auto xmfrm = xc->readMiscReg(MISCREG_XMFRM);
+                    auto xmsaten = xc->readMiscReg(MISCREG_XMSATEN);
+                    if ((RD & 0x4) == 0 || (RS1 & 0x4) != 0 || (RS2 & 0x4) != 0 ||
+                        mtilem > RiscvISA::ISA::MatrixRowNum ||
+                        mtilen > RiscvISA::ISA::MatrixAccE32Max ||
+                        mtilek > (RiscvISA::ISA::MatrixTrLenE8Max / 2)) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mfmacc_s_h parameter check failed", machInst);
+                    }
+                    ExecContext::MatrixExecPayload payload;
+                    payload.valid = true;
+                    payload.kind =
+                        ExecContext::MatrixExecPayload::Kind::Mma;
+                    payload.isFp = true;
+                    payload.op = 0x04;
+                    payload.md = RD & 0x7;
+                    payload.ms1 = RS1 & 0x7;
+                    payload.ms2 = RS2 & 0x7;
+                    payload.mtilem = mtilem;
+                    payload.mtilen = mtilen;
+                    payload.mtilek = mtilek;
+                    payload.rm = xmxrm;
+                    payload.frm = xmfrm;
+                    payload.types1 = 0x1;
+                    payload.types2 = 0x1;
+                    payload.typed = 0x2;
+                    payload.lhsElemType = matrix::MatrixElemType::Fp16;
+                    payload.rhsElemType = matrix::MatrixElemType::Fp16;
+                    payload.dstElemType = matrix::MatrixElemType::Int32;
+                    payload.sat = xmsaten;
+                    if (!xc->stageMatrixExecPayload(payload)) {
+                        auto *isa = static_cast<RiscvISA::ISA *>(
+                            xc->tcBase()->getIsaPtr());
+                        RiscvISA::ISA::MatrixMmaStubRequest req;
+                        req.valid = true;
+                        req.isFp = payload.isFp;
+                        req.op = payload.op;
+                        req.md = payload.md;
+                        req.ms1 = payload.ms1;
+                        req.ms2 = payload.ms2;
+                        req.mtilem = payload.mtilem;
+                        req.mtilen = payload.mtilen;
+                        req.mtilek = payload.mtilek;
+                        req.rm = payload.rm;
+                        req.frm = payload.frm;
+                        req.types1 = payload.types1;
+                        req.types2 = payload.types2;
+                        req.typed = payload.typed;
+                        req.lhsElemType = payload.lhsElemType;
+                        req.rhsElemType = payload.rhsElemType;
+                        req.dstElemType = payload.dstElemType;
+                        req.sat = payload.sat;
+                        isa->recordMatrixMmaRequest(req);
+                    }
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
+                }}, {{
+                }}, MatrixMmaOp);
             }
             0x0c: decode FUNCT3 {
-                0x0: decode RS1 {
-                    0x0: decode RS2 {
-                        0x19: decode RD {
-                            0x14: MatrixArithOp::mmacc_w_b({{
-                                auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                                assert(isa != nullptr);
-                                isa->matrixMMAccWB();
-                            }}, No_OpClass);
-                        }
+                0x0: MatrixCarrierOp::mmacc_w_b({{
+                    // src slot 0..2 carry Mtilem/Mtilen/Mtilek.
+                    auto mtilem = xc->getRegOperand(this, 0);
+                    auto mtilen = xc->getRegOperand(this, 1);
+                    auto mtilek = xc->getRegOperand(this, 2);
+                    auto xmxrm = xc->readMiscReg(MISCREG_XMXRM);
+                    auto xmfrm = xc->readMiscReg(MISCREG_XMFRM);
+                    auto xmsaten = xc->readMiscReg(MISCREG_XMSATEN);
+                    if ((RD & 0x4) == 0 || (RS1 & 0x4) != 0 || (RS2 & 0x4) != 0 ||
+                        mtilem > RiscvISA::ISA::MatrixRowNum ||
+                        mtilen > RiscvISA::ISA::MatrixAccE32Max ||
+                        mtilek > RiscvISA::ISA::MatrixTrLenE8Max) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mmacc_w_b parameter check failed", machInst);
                     }
-                }
+                    ExecContext::MatrixExecPayload payload;
+                    payload.valid = true;
+                    payload.kind =
+                        ExecContext::MatrixExecPayload::Kind::Mma;
+                    payload.op = 0x0c;
+                    payload.md = RD & 0x7;
+                    payload.ms1 = RS1 & 0x7;
+                    payload.ms2 = RS2 & 0x7;
+                    payload.mtilem = mtilem;
+                    payload.mtilen = mtilen;
+                    payload.mtilek = mtilek;
+                    payload.rm = xmxrm;
+                    payload.frm = xmfrm;
+                    payload.types1 = 0x4;
+                    payload.types2 = 0x4;
+                    payload.typed = 0x2;
+                    payload.lhsElemType = matrix::MatrixElemType::Int8;
+                    payload.rhsElemType = matrix::MatrixElemType::Int8;
+                    payload.dstElemType = matrix::MatrixElemType::Int32;
+                    payload.sat = xmsaten;
+                    if (!xc->stageMatrixExecPayload(payload)) {
+                        auto *isa = static_cast<RiscvISA::ISA *>(
+                            xc->tcBase()->getIsaPtr());
+                        RiscvISA::ISA::MatrixMmaStubRequest req;
+                        req.valid = true;
+                        req.op = payload.op;
+                        req.md = payload.md;
+                        req.ms1 = payload.ms1;
+                        req.ms2 = payload.ms2;
+                        req.mtilem = payload.mtilem;
+                        req.mtilen = payload.mtilen;
+                        req.mtilek = payload.mtilek;
+                        req.rm = payload.rm;
+                        req.frm = payload.frm;
+                        req.types1 = payload.types1;
+                        req.types2 = payload.types2;
+                        req.typed = payload.typed;
+                        req.lhsElemType = payload.lhsElemType;
+                        req.rhsElemType = payload.rhsElemType;
+                        req.dstElemType = payload.dstElemType;
+                        req.sat = payload.sat;
+                        isa->recordMatrixMmaRequest(req);
+                    }
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
+                }}, {{
+                }}, MatrixMmaOp);
             }
         }
 

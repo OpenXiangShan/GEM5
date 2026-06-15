@@ -45,6 +45,7 @@
 #include <cstring>
 
 #include "arch/riscv/insts/mem.hh"
+#include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/pcstate.hh"
 #include "base/intmath.hh"
 #include "cpu/o3/trace/TraceInstruction.hh"
@@ -79,6 +80,11 @@ DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
     instFlags[Predicate] = true;
     instFlags[MemAccPredicate] = true;
 
+    initMatrixInstInfo();
+    matrixExecPayload = {};
+    stagedMatrixTokenResetValid = false;
+    stagedMatrixTokenReset = 0;
+
 #ifndef NDEBUG
     ++cpu->instcount;
 
@@ -94,6 +100,21 @@ DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
         "DynInst: [sn:%lli] Instruction created. Instcount for %s = %i\n",
         seqNum, cpu->name(), cpu->instcount);
 #endif
+
+    if (isMatrixInst()) {
+        DPRINTF(DynInst,
+                "Matrix dyninst created [sn:%lli] class=%s route=%s "
+                "boundary=%s opcode7=%#x funct7=%#x rd=x%u rs1=x%u rs2=x%u "
+                "loadLike=%d storeLike=%d tokenLike=%d needAmu=%d "
+                "dirtyMs=%d usesLsq=%d srcs=%u dests=%u.\n",
+                seqNum, matrixInstClassName(), matrixRouteName(),
+                matrixCommitBoundaryName(), matrixInst.opcode7,
+                matrixInst.funct7, matrixInst.rd, matrixInst.rs1,
+                matrixInst.rs2, matrixInst.loadLike,
+                matrixInst.storeLike, matrixInst.tokenLike,
+                matrixNeedAmuCtrl(), matrixDirtyMs(), matrixInst.usesLsq,
+                matrixInst.staticNumSrcs, matrixInst.staticNumDests);
+    }
 
 #ifdef DEBUG
     cpu->snList.insert(seqNum);
@@ -358,10 +379,107 @@ void DynInst::resetNumSrcRegReady(uint8_t n) {
 }
 
 void
+DynInst::initMatrixInstInfo()
+{
+    auto *riscv_inst =
+        dynamic_cast<const RiscvISA::RiscvStaticInst *>(staticInst.get());
+    if (!riscv_inst) {
+        return;
+    }
+
+    const auto &static_info = riscv_inst->matrixStaticInfo();
+    if (!static_info.valid) {
+        return;
+    }
+
+    static_cast<RiscvISA::MatrixStaticInfo &>(matrixInst) = static_info;
+    matrixInst.staticNumSrcs = staticInst->numSrcRegs();
+    matrixInst.staticNumDests = staticInst->numDestRegs();
+
+    const auto max_srcs =
+        std::min<size_t>(matrixInst.staticNumSrcs, MaxMatrixSummarySrcs);
+    for (size_t i = 0; i < max_srcs; ++i) {
+        const auto &reg = staticInst->srcRegIdx(i);
+        matrixInst.staticSrcClasses[i] = reg.classValue();
+        matrixInst.staticSrcIndices[i] = reg.index();
+    }
+
+    const auto max_dests =
+        std::min<size_t>(matrixInst.staticNumDests, MaxMatrixSummaryDests);
+    for (size_t i = 0; i < max_dests; ++i) {
+        const auto &reg = staticInst->destRegIdx(i);
+        matrixInst.staticDestClasses[i] = reg.classValue();
+        matrixInst.staticDestIndices[i] = reg.index();
+    }
+}
+
+const char *
+DynInst::matrixInstClassName() const
+{
+    return RiscvISA::matrixInstClassName(matrixInst.instClass);
+}
+
+const char *
+DynInst::matrixRouteName() const
+{
+    return RiscvISA::matrixRouteName(matrixInst.route);
+}
+
+const char *
+DynInst::matrixCommitBoundaryName() const
+{
+    return RiscvISA::matrixCommitBoundaryName(matrixInst.commitBoundary);
+}
+
+const char *
+DynInst::matrixPayloadKindName() const
+{
+    return matrixExecPayload.kindName();
+}
+
+void
+DynInst::noteMatrixRenamed()
+{
+    if (!matrixInst.valid) {
+        return;
+    }
+    matrixInst.renameAttempt++;
+    matrixInst.renameSeen = true;
+    matrixInst.robInserted = false;
+    matrixInst.robAttempt = 0;
+    matrixInst.squashed = false;
+}
+
+void
+DynInst::noteMatrixRobInserted()
+{
+    if (!matrixInst.valid) {
+        return;
+    }
+    matrixInst.robInserted = true;
+    matrixInst.robAttempt = matrixInst.renameAttempt;
+}
+
+void
 DynInst::setSquashed()
 {
     status.set(Squashed);
     xsMeta->squashed = true;
+    matrixInst.squashed = matrixInst.valid;
+    if (matrixInst.valid) {
+        matrixInst.squashAttempt = matrixInst.renameAttempt;
+    }
+
+    if (matrixInst.valid) {
+        DPRINTF(DynInst,
+                "Matrix dyninst squashed [sn:%llu] class=%s route=%s "
+                "boundary=%s renamed=%d rob=%d renameAttempt=%u "
+                "robAttempt=%u squashAttempt=%u.\n",
+                seqNum, matrixInstClassName(), matrixRouteName(),
+                matrixCommitBoundaryName(), matrixInst.renameSeen,
+                matrixInst.robInserted, matrixInst.renameAttempt,
+                matrixInst.robAttempt, matrixInst.squashAttempt);
+    }
 
     if (!isPinnedRegsRenamed() || isPinnedRegsSquashDone())
         return;

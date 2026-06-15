@@ -43,10 +43,14 @@
 #ifndef __CPU_O3_CPU_HH__
 #define __CPU_O3_CPU_HH__
 
+#include <deque>
 #include <iostream>
 #include <list>
+#include <memory>
 #include <queue>
 #include <set>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -55,6 +59,7 @@
 #include "cpu/activity.hh"
 #include "cpu/base.hh"
 #include "cpu/difftest.hh"
+#include "cpu/exec_context.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/cpu_def.hh"
@@ -72,7 +77,9 @@
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
+#include "matrix/MemoryLoader.hh"
 #include "mem/cache/prefetch/base.hh"
+#include "mem/port.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/process.hh"
 #include "sim/rolling.hh"
@@ -86,6 +93,14 @@ class ThreadContext;
 
 class Checkpoint;
 class Process;
+
+#if THE_ISA_IS_RISCV
+namespace matrix
+{
+struct CuteRequest;
+class MatrixBackend;
+} // namespace matrix
+#endif
 
 namespace o3
 {
@@ -141,6 +156,53 @@ class CPU : public BaseCPU
 
     /** The exit event used for terminating all ready-to-exit threads */
     EventFunctionWrapper threadExitEvent;
+
+#if THE_ISA_IS_RISCV
+    class MatrixMemPort : public RequestPort,
+                          public matrix::MatrixTimingMemoryAdapter
+    {
+      public:
+        MatrixMemPort(const std::string &name, CPU *cpu);
+
+        bool connected() const override { return isConnected(); }
+        bool sendTimingRequest(const Request &request) override;
+
+      protected:
+        bool recvTimingResp(PacketPtr pkt) override;
+        void recvReqRetry() override;
+
+      private:
+        struct SenderState : public Packet::SenderState
+        {
+            SenderState(uint32_t source_id, bool is_store,
+                        uint64_t byte_mask,
+                        bool awaiting_store_invalidate=false,
+                        const Request &store_request={})
+                : sourceId(source_id), isStore(is_store),
+                  byteMask(byte_mask),
+                  awaitingStoreInvalidate(awaiting_store_invalidate),
+                  storeRequest(store_request)
+            {
+            }
+
+            uint32_t sourceId = 0;
+            bool isStore = false;
+            uint64_t byteMask = 0;
+            bool awaitingStoreInvalidate = false;
+            Request storeRequest = {};
+        };
+
+        PacketPtr buildTimingPacket(const Request &request);
+        PacketPtr buildStoreInvalidatePacket(const Request &request);
+        void sendOrBlock(PacketPtr pkt);
+        void trySendBlocked();
+
+        CPU *cpu = nullptr;
+        std::deque<PacketPtr> blockedPackets;
+    };
+
+    MatrixMemPort matrixMemPort;
+#endif
 
     /** Schedule tick event, regardless of its current state. */
     void
@@ -210,6 +272,9 @@ class CPU : public BaseCPU
 
     /** Initialize the CPU */
     void init() override;
+
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
     void startup() override;
 
@@ -342,6 +407,23 @@ class CPU : public BaseCPU
      * might have as defined by the architecture.
      */
     void setMiscReg(int misc_reg, RegVal val, ThreadID tid);
+    bool isMatrixBackendEnabled() const { return enableMatrixBackend; }
+    bool isMatrixMemPortEnabled() const { return enableMatrixMemPort; }
+    bool isMatrixMlsQueueEnabled() const { return enableMatrixMlsQueue; }
+    void commitMatrixResetToken(
+        ThreadID tid, RegVal token_idx, InstSeqNum seq_num);
+    void releaseMatrixShadowToken(ThreadID tid, RegVal token_idx);
+    bool matrixShadowTokenReady(ThreadID tid, RegVal token_idx,
+                                RegVal threshold) const;
+    void commitMatrixReleaseToken(
+        ThreadID tid, RegVal token_idx, InstSeqNum seq_num);
+    bool canAcceptMatrixBackendReq(const matrix::CuteRequest &req,
+                                   InstSeqNum seq_num);
+    bool submitMatrixBackendReq(ThreadID tid, const matrix::CuteRequest &req,
+                                InstSeqNum seq_num);
+    void serviceMatrixBackend();
+    void consumeMatrixAmuProxy(ThreadID tid,
+        const o3::MatrixAmuBuffer::Entry &entry);
 
     RegVal getReg(PhysRegIdPtr phys_reg);
     RegVal getReg(VirtRegId phys_reg);
@@ -616,6 +698,21 @@ class CPU : public BaseCPU
 
     /** Available thread ids in the cpu*/
     std::vector<ThreadID> tids;
+
+
+#if THE_ISA_IS_RISCV
+    bool enableMatrixBackend = true;
+    bool enableMatrixMemPort = true;
+    bool enableMatrixMlsQueue = true;
+    std::vector<std::vector<RegVal>> matrixShadowTokens;
+    std::vector<std::vector<InstSeqNum>> matrixTokenResetSeqs;
+    std::unique_ptr<matrix::MatrixBackend> matrixBackend;
+#else
+    bool enableMatrixBackend = false;
+    bool enableMatrixMemPort = false;
+    bool enableMatrixMlsQueue = false;
+#endif
+    std::unordered_map<InstSeqNum, ThreadID> matrixBackendOwners;
 
     /** CPU pushRequest function, forwards request to LSQ. */
     Fault

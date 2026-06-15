@@ -24,11 +24,25 @@ def FpRD(id, p):
     ret = (1 << 6) | (id << 2) | (p)
     return ret
 
+def RMiscRD(id, p):
+    # [7:6] [5:2] [1:0]
+    assert id < 16
+    assert p < 4
+    ret = (2 << 6) | (id << 2) | (p)
+    return ret
+
 def IntWR(id, p):
     # [8] [7:6] [5:2] [1:0]
     assert id < 16
     assert p < 4
     ret = (1 << 8) | (0 << 6) | (id << 2) | (p)
+    return ret
+
+def RMiscWR(id, p):
+    # [8] [7:6] [5:2] [1:0]
+    assert id < 16
+    assert p < 4
+    ret = (1 << 8) | (2 << 6) | (id << 2) | (p)
     return ret
 
 class ECoreScheduler(Scheduler):
@@ -213,7 +227,7 @@ class KMHV3Scheduler(Scheduler):
                       rp=[IntRD(8, 0), IntRD(9, 1)]),
         ]),
         IssueQue(name='intIQ5', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntDiv(), IntMisc()],
+            IssuePort(fu=[IntALU(), IntDiv(), IntMisc(), MatrixSyncFU()],
                       rp=[IntRD(10, 0), IntRD(11, 1)])
         ]),
     ]
@@ -267,17 +281,50 @@ class KMHV3Scheduler(Scheduler):
             IssuePort(fu=[SIMD_Unit()])
         ], scheduleToExecDelay=3),
     ]
+    __matrixIQs = [
+        IssueQue(name='matrixIntIQ', inports=2, size=16, oports=[
+            IssuePort(fu=[MatrixIntFU()],
+                      rp=[IntRD(12, 0), RMiscWR(0, 0)]),
+            IssuePort(fu=[MatrixReleaseFU()],
+                      rp=[IntRD(13, 1)])
+        ], scheduleToExecDelay=2),
+        IssueQue(name='matrixCsrIQ', inports=2, size=16, oports=[
+            IssuePort(fu=[MatrixCsrFU()],
+                      rp=[IntRD(12, 0), RMiscRD(0, 0),
+                          IntWR(3, 0), RMiscWR(1, 0)])
+        ], scheduleToExecDelay=2),
+        IssueQue(name='matrixExecIQ', inports=2, size=16, oports=[
+            IssuePort(fu=[MatrixMmaFU()],
+                      rp=[RMiscRD(1, 0), RMiscRD(2, 0), RMiscRD(3, 0),
+                          RMiscRD(4, 0), RMiscRD(5, 0), RMiscRD(6, 0)]),
+            IssuePort(fu=[MatrixArithFU()],
+                      rp=[RMiscRD(1, 1), RMiscRD(2, 1)])
+        ], scheduleToExecDelay=2),
+        IssueQue(name='matrixMemIQ', inports=2, size=16, oports=[
+            IssuePort(fu=[MatrixMemFU()],
+                      rp=[IntRD(14, 0), IntRD(15, 1),
+                          RMiscRD(7, 0), RMiscRD(8, 0)])
+        ], scheduleToExecDelay=3),
+    ]
 
     intRegfileBanks = 2
 
-    IQs = __intIQs + __memIQs + __fpIQs
+    IQs = __intIQs + __memIQs + __fpIQs + __matrixIQs
     __int_bank = [i.name for i in __intIQs]
     __mem_bank = [i.name for i in __memIQs]
     __fp_bank = [i.name for i in __fpIQs]
+    __matrix_bank = [i.name for i in __matrixIQs]
     specWakeupNetwork = [
         SpecWakeupChannel(srcs=__int_bank + __mem_bank + ['fpIQ0'], dsts=__int_bank + __mem_bank),
         SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank + ['std0', 'std1'])
+        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank + ['std0', 'std1']),
+        SpecWakeupChannel(
+            srcs=__int_bank + __mem_bank,
+            dsts=['matrixIntIQ', 'matrixCsrIQ', 'matrixExecIQ',
+                  'matrixMemIQ']
+        ),
+        SpecWakeupChannel(srcs=['matrixIntIQ'], dsts=__matrix_bank),
+        SpecWakeupChannel(srcs=['matrixCsrIQ'], dsts=__int_bank + __matrix_bank)
     ]
 
     enableMainRdpOpt = True  # TX dynamic read port optimization

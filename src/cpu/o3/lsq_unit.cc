@@ -485,6 +485,11 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     iewStage = iew_ptr;
 
     lsq = lsq_ptr;
+    if (lsq->matrixMlsEnabled()) {
+        mlsUnit.emplace(cpu_ptr);
+        mlsUnit->setReplayQueue(lsq->matrixReplayQueue());
+        mlsUnit->setVirtualQueue(lsq->matrixVirtualQueue());
+    }
 
     cpu->addStatGroup(csprintf("lsq%i", lsqID).c_str(), &stats);
 
@@ -1326,6 +1331,20 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
         stats.loadPipeFastReplayAccepted[load_pipe_id]++;
     }
 
+    if (inst->isMatrixInst()) {
+        const auto &info = inst->matrixInstInfo();
+        DPRINTF(LoadPipeline,
+                "Matrix issueToLoadPipe [sn:%llu] class=%s route=%s "
+                "boundary=%s funct7=%#x rd=x%u rs1=x%u rs2=x%u "
+                "needAmu=%d renamed=%d rob=%d squashed=%d.\n",
+                inst->seqNum, inst->matrixInstClassName(),
+                inst->matrixRouteName(), inst->matrixCommitBoundaryName(),
+                info.funct7,
+                info.rd, info.rs1, info.rs2,
+                info.needAmuCtrlCandidate, info.renameSeen,
+                info.robInserted, info.squashed);
+    }
+
     DPRINTF(LoadPipeline, "issueToLoadPipe: [sn:%llu]\n", inst->seqNum);
 }
 
@@ -1342,7 +1361,43 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
     storePipeSx[0]->size++;
     stats.storePipeAccepted[idx]++;
 
+    if (inst->isMatrixInst()) {
+        const auto &info = inst->matrixInstInfo();
+        DPRINTF(LSQUnit,
+                "Matrix issueToStorePipe [sn:%llu] class=%s route=%s "
+                "boundary=%s funct7=%#x rd=x%u rs1=x%u rs2=x%u "
+                "needAmu=%d renamed=%d rob=%d squashed=%d.\n",
+                inst->seqNum, inst->matrixInstClassName(),
+                inst->matrixRouteName(), inst->matrixCommitBoundaryName(),
+                info.funct7,
+                info.rd, info.rs1, info.rs2,
+                info.needAmuCtrlCandidate, info.renameSeen,
+                info.robInserted, info.squashed);
+    }
+
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
+}
+
+MlsUnit::IssueResult
+LSQUnit::issueMatrixMem(const DynInstPtr &inst)
+{
+    panic_if(!lsq->matrixMlsEnabled(),
+             "Matrix MLS execution is disabled [sn:%llu]",
+             inst ? inst->seqNum : 0);
+    panic_if(!mlsUnit.has_value(),
+             "Matrix MLS execution helper is not initialized [sn:%llu]",
+             inst ? inst->seqNum : 0);
+    return mlsUnit->issue(inst);
+}
+
+bool
+LSQUnit::matrixReplayReady(const MlsReplayQueue::ReplayState &state) const
+{
+    panic_if(!lsq->matrixMlsEnabled(),
+             "Matrix MLS replay is disabled");
+    panic_if(!mlsUnit.has_value(),
+             "Matrix MLS execution helper is not initialized for replay check");
+    return mlsUnit->replayReady(state);
 }
 
 Fault
@@ -1350,6 +1405,20 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
 {
     DPRINTF(LoadPipeline, "loadDoTranslate: load [sn:%llu]\n", inst->seqNum);
     assert(!inst->isSquashed());
+
+    if (inst->isMatrixInst()) {
+        const auto &info = inst->matrixInstInfo();
+        DPRINTF(LoadPipeline,
+                "Matrix loadDoTranslate [sn:%llu] class=%s route=%s "
+                "boundary=%s funct7=%#x rd=x%u rs1=x%u rs2=x%u "
+                "needAmu=%d renamed=%d rob=%d squashed=%d.\n",
+                inst->seqNum, inst->matrixInstClassName(),
+                inst->matrixRouteName(), inst->matrixCommitBoundaryName(),
+                info.funct7,
+                info.rd, info.rs1, info.rs2,
+                info.needAmuCtrlCandidate, info.renameSeen,
+                info.robInserted, info.squashed);
+    }
 
     Fault load_fault = NoFault;
     // Now initiateAcc only does TLB access
@@ -1785,6 +1854,20 @@ LSQUnit::storeDoTranslate(const DynInstPtr &inst)
     assert(!inst->isSquashed());
 
     DPRINTF(StorePipeline, "storeDoTranslate: Store [sn:%llu]\n", inst->seqNum);
+
+    if (inst->isMatrixInst()) {
+        const auto &info = inst->matrixInstInfo();
+        DPRINTF(StorePipeline,
+                "Matrix storeDoTranslate [sn:%llu] class=%s route=%s "
+                "boundary=%s funct7=%#x rd=x%u rs1=x%u rs2=x%u "
+                "needAmu=%d renamed=%d rob=%d squashed=%d.\n",
+                inst->seqNum, inst->matrixInstClassName(),
+                inst->matrixRouteName(), inst->matrixCommitBoundaryName(),
+                info.funct7,
+                info.rd, info.rs1, info.rs2,
+                info.needAmuCtrlCandidate, info.renameSeen,
+                info.robInserted, info.squashed);
+    }
 
     // Now initiateAcc only does TLB access
     Fault store_fault = inst->initiateAcc();

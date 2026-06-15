@@ -49,6 +49,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst_fwd.hh"
 #include "cpu/translation.hh"
+#include "matrix/CUTEParameters.hh"
 #include "mem/request.hh"
 
 namespace gem5
@@ -73,6 +74,78 @@ namespace gem5
 class ExecContext
 {
   public:
+    struct MatrixExecPayload
+    {
+        enum class Kind : uint8_t
+        {
+            None,
+            Lsu,
+            Mma,
+            Arith,
+            Release
+        };
+
+        static const char *
+        kindName(Kind kind)
+        {
+            switch (kind) {
+              case Kind::Lsu:
+                return "lsu";
+              case Kind::Mma:
+                return "mma";
+              case Kind::Arith:
+                return "arith";
+              case Kind::Release:
+                return "release";
+              case Kind::None:
+                return "none";
+            }
+
+            return "none";
+        }
+
+        const char *
+        kindName() const
+        {
+            return kindName(kind);
+        }
+
+        Kind kind = Kind::None;
+        bool valid = false;
+        bool isLoad = false;
+        bool isStore = false;
+        bool transpose = false;
+        bool isAcc = false;
+        bool isA = false;
+        bool isB = false;
+        bool isFp = false;
+        bool sat = false;
+        RegVal op = 0;
+        RegVal md = 0;
+        RegVal ms = 0;
+        RegVal ms1 = 0;
+        RegVal ms2 = 0;
+        RegVal tokenIndex = 0;
+        RegVal baseAddr = 0;
+        RegVal physBaseAddr = 0;
+        RegVal stride = 0;
+        RegVal row = 0;
+        RegVal column = 0;
+        RegVal widths = 0;
+        RegVal mtilem = 0;
+        RegVal mtilen = 0;
+        RegVal mtilek = 0;
+        RegVal rm = 0;
+        RegVal frm = 0;
+        RegVal types1 = 0;
+        RegVal types2 = 0;
+        RegVal typed = 0;
+        matrix::MatrixElemType elemType = matrix::MatrixElemType::Int8;
+        matrix::MatrixElemType lhsElemType = matrix::MatrixElemType::Int8;
+        matrix::MatrixElemType rhsElemType = matrix::MatrixElemType::Int8;
+        matrix::MatrixElemType dstElemType = matrix::MatrixElemType::Int32;
+    };
+
 
     virtual RegVal getRegOperand(const StaticInst *si, int idx) = 0;
     virtual void getRegOperand(const StaticInst *si, int idx, void *val) = 0;
@@ -230,6 +303,32 @@ class ExecContext
     virtual AddressMonitor *getAddrMonitor() = 0;
 
     /** @} */
+
+    virtual bool
+    stageMatrixExecPayload(const MatrixExecPayload &payload)
+    {
+        return false;
+    }
+
+    virtual bool
+    stageMatrixTokenReset(RegVal token_idx)
+    {
+        return false;
+    }
+
+    virtual bool
+    stageMatrixTokenRelease(RegVal token_idx)
+    {
+        return false;
+    }
+
+    virtual bool
+    readStagedMatrixTokenReady(RegVal token_idx, RegVal threshold,
+                               bool &ready)
+    {
+        ready = false;
+        return false;
+    }
 };
 
 } // namespace gem5

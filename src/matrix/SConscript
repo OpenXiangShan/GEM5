@@ -1,0 +1,13 @@
+# -*- mode:python -*-
+
+Import('*')
+
+DebugFlag('MatrixCuteTrace')
+
+Source('LocalMMUModel.cc')
+Source('TaskController.cc')
+Source('CUTETOP.cc')
+Source('Scoreboard.cc')
+Source('MRegFile.cc')
+Source('MemoryLoader.cc')
+Source('MatrixTE.cc')

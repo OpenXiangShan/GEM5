@@ -65,6 +65,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/mls_unit.hh"
 #include "cpu/utils.hh"
 #include "enums/SMTLSQMode.hh"
 #include "enums/SMTQueuePolicy.hh"
@@ -83,7 +84,6 @@ namespace o3
 class CPU;
 class IEW;
 class LSQUnit;
-
 
 class LSQ
 {
@@ -884,6 +884,18 @@ class LSQ
     /** Process instructions in each load/store pipeline stages. */
     void executePipeSx();
 
+    MlsUnit::IssueResult issueMatrixMem(const DynInstPtr &inst);
+
+    bool canAllocateMatrixMem(ThreadID tid, unsigned count = 1) const;
+    bool hasMatrixMemEntry(const DynInstPtr &inst) const;
+    bool allocateMatrixMemEntry(const DynInstPtr &inst);
+    void scheduleMatrixMemReplay();
+    unsigned squashMatrixMem(ThreadID tid, InstSeqNum squash_seq);
+    unsigned retireCommittedMatrixMem(ThreadID tid, InstSeqNum committed_seq);
+    bool matrixMlsEnabled() const { return enableMatrixMlsQueue; }
+    MlsReplayQueue *matrixReplayQueue() { return &mlsReplayQueue; }
+    MlsVirtualQueue *matrixVirtualQueue() { return &mlsVirtualQueue; }
+
     /**
      * Commits loads up until the given sequence number for a specific thread.
      */
@@ -1362,6 +1374,10 @@ class LSQ
 
     /** The LSQ units for individual threads. */
     std::vector<LSQUnit> thread;
+
+    bool enableMatrixMlsQueue = true;
+    MlsReplayQueue mlsReplayQueue;
+    MlsVirtualQueue mlsVirtualQueue;
 
     /** Number of Threads. */
     ThreadID numThreads;

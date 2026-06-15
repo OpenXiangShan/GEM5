@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_ROB_HH__
 #define __CPU_O3_ROB_HH__
 
+#include <list>
 #include <queue>
 #include <string>
 #include <utility>
@@ -49,9 +50,11 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
+#include "cpu/exec_context.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/matrix_amu_buffer.hh"
 #include "cpu/reg_class.hh"
 #include "enums/ROBCompressPolicy.hh"
 #include "enums/ROBWalkPolicy.hh"
@@ -77,6 +80,8 @@ class ROB
   public:
     typedef std::pair<RegIndex, RegIndex> UnmapInfo;
     typedef typename std::list<DynInstPtr>::iterator InstIt;
+
+    using MatrixAmuEntry = MatrixAmuBuffer::Entry;
 
     /** Possible ROB statuses. */
     enum Status
@@ -254,6 +259,13 @@ class ROB
      */
     void squash(InstSeqNum squash_num, ThreadID tid);
 
+    void noteMatrixAmuWriteback(const DynInstPtr &inst);
+    void noteMatrixAmuCommit(const DynInstPtr &inst);
+    bool peekReadyMatrixAmuEntry(ThreadID tid, MatrixAmuEntry &entry_out);
+    bool popReadyMatrixAmuEntry(ThreadID tid, MatrixAmuEntry &entry_out);
+    unsigned numFreeMatrixAmuEntries(ThreadID tid);
+
+
     /** Updates the head instruction with the new oldest instruction. */
     void updateHead();
 
@@ -306,6 +318,9 @@ class ROB
   private:
     /** Reset the ROB state */
     void resetState();
+    bool shouldTrackMatrixAmu(const DynInstPtr &inst) const;
+    void insertMatrixAmuEntry(const DynInstPtr &inst);
+    void squashMatrixAmuEntry(ThreadID tid, InstSeqNum seq_num);
 
     /** Pointer to the CPU. */
     CPU *cpu;
@@ -315,6 +330,10 @@ class ROB
 
     /** Number of instructions in the ROB. */
     unsigned numEntries;
+    /** Number of entries in the ROB-parallel AMU control shadow buffer. */
+    unsigned matrixAmuBufferEntries;
+    /** Number of oldest AMU entries considered for a single toAMU fire. */
+    unsigned matrixAmuWindowEntries;
 
     unsigned instsPerGroup;
 
@@ -327,6 +346,7 @@ class ROB
 
     /** ROB List of Instructions */
     std::list<DynInstPtr> instList[MaxThreads];
+    MatrixAmuBuffer matrixAmuBuffers[MaxThreads];
 
     /** Number of instructions that can be squashed in a single cycle. */
     unsigned rollbackWidth;
