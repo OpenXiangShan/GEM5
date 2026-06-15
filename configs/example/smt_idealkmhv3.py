@@ -1,5 +1,7 @@
 from m5.objects import Root
 
+import os
+
 from m5.util import addToPath
 
 addToPath('../')
@@ -38,6 +40,13 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
+
+    if args.dramsim3_ini is None:
+        gem5_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+        args.dramsim3_ini = os.path.join(
+            gem5_root,
+            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini'
+        )
 
     Simulation.setMemClass(args)
 
