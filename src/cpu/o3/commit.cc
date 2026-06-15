@@ -1236,9 +1236,12 @@ Commit::commitInsts()
             continue;
         }
 
-            while (num_committed < commit_width &&
-                num_committed_per_thread[commit_thread] <
-                    commit_width_per_thread[commit_thread]) {
+        while (num_committed < commit_width &&
+               num_committed_per_thread[commit_thread] <
+                   commit_width_per_thread[commit_thread] &&
+               (commitStatus[commit_thread] == Running ||
+                commitStatus[commit_thread] == Idle ||
+                commitStatus[commit_thread] == FetchTrapPending)) {
             // hardware transactionally memory
             // If executing within a transaction,
             // need to handle interrupts specially

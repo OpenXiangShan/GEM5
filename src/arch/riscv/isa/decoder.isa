@@ -2190,7 +2190,8 @@ decode QUADRANT {
                             }
 
 
-                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn,
+                            IsSquashAfter);
                         0x5: wfi({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
                             auto pm = (PrivilegeMode)xc->readMiscReg(
@@ -2250,7 +2251,8 @@ decode QUADRANT {
                             NPC = xc->readMiscReg(MISCREG_MEPC);
                             xc->setMiscReg(MISCREG_VIRMODE,status_mpv);
                         }
-                    }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsReturn,
+                        IsSquashAfter);
                     0x31: priv({{
                         auto pm = (PrivilegeMode)xc->readMiscReg(
                                 MISCREG_PRV);
