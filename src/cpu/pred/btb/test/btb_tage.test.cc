@@ -38,9 +38,9 @@ namespace test
 BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
                         bool alwaysTaken = false, int ctr = 0, Addr target = 0) {
     BTBEntry entry;
-    entry.pc = pc;
-    entry.target = target ? target : (pc + 4);
-    entry.isCond = isCond;
+    entry.slot.pc = pc;
+    entry.slot.target = target ? target : (pc + 4);
+    entry.slot.setTypeFromFlags(isCond, false, !isCond, false, false);
     entry.valid = valid;
     entry.alwaysTaken = alwaysTaken;
     entry.ctr = ctr;
@@ -62,20 +62,20 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
                          std::shared_ptr<void> meta) {
     FetchTarget stream;
     stream.startPC = startPC;
-    stream.exeBranchInfo = entry;
-    stream.exeTaken = taken;
-    // Mark as resolved so recover paths use exe* info
-    stream.resolved = true;
-    stream.predBranchInfo = entry; // keep fields consistent
-    stream.updateBTBEntries = {entry};
-    stream.updateIsOldEntry = true;
+    stream.resolve.branchSlot = entry.slot;
+    stream.resolve.taken = taken;
+    // Mark as resolved so recover paths use actual branch info
+    stream.resolve.valid = true;
+    stream.prediction.branchSlot = entry.slot; // keep fields consistent
+    stream.update.btbEntries = {entry};
+    stream.update.isOldEntry = true;
     stream.predMetas[0] = meta;
     return stream;
 }
 
 FetchTarget setMispredStream(FetchTarget stream) {
-    stream.squashType = SquashType::SQUASH_CTRL;
-    stream.squashPC = stream.exeBranchInfo.pc;
+    stream.resolve.squashType = SquashType::SQUASH_CTRL;
+    stream.resolve.squashPC = stream.resolve.branchSlot.pc;
     return stream;
 }
 
@@ -143,7 +143,7 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
 {
     if (tage->usesPathHistory()) {
         if (taken) {
-            applyPathHistoryTaken(history, entry.pc, entry.target);
+            applyPathHistoryTaken(history, entry.slot.pc, entry.slot.target);
         }
     } else {
         applyOutcomeHistory(history, shamt, taken);
@@ -153,7 +153,7 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
 PathHistoryUpdate getActualPathUpdate(const FetchTarget& stream)
 {
     return stream.getPHistUpdateDuringSquash(
-        stream.squashPC, stream.exeTaken, stream.exeBranchInfo.target);
+        stream.resolve.squashPC, stream.resolve.taken, stream.resolve.branchSlot.target);
 }
 
 TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
@@ -283,11 +283,11 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
 
         FetchTarget stream;
         stream.startPC = 0x1000;
-        stream.predBTBEntries = c.predictedBeforeSquash;
-        stream.exeBranchInfo = c.resolvedEntry;
-        stream.exeTaken = c.actualTaken;
-        stream.resolved = true;
-        stream.squashPC = c.squashPC;
+        stream.prediction.btbEntries = c.predictedBeforeSquash;
+        stream.resolve.branchSlot = c.resolvedEntry.slot;
+        stream.resolve.taken = c.actualTaken;
+        stream.resolve.valid = true;
+        stream.resolve.squashPC = c.squashPC;
 
         const auto ghist = stream.getGHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken);
@@ -345,7 +345,8 @@ bool predictTAGE(BTBTAGE* tage, Addr startPC,
 
     // Return prediction for first entry if exists
     if (!entries.empty()) {
-        auto result = findCondTaken(stagePreds[1].condTakens, entries[0].pc);
+        auto result = findCondTaken(stagePreds[1].condTakens,
+                                    entries[0].slot.pc);
         bool found = result.first;
         bool taken = result.second;
         if (found) {
@@ -375,9 +376,9 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     tage->putPCHistory(startPC, history, stagePreds);
 
     // 2. Get predicted result
-    Addr branch_pc = entry.pc;
+    Addr branch_pc = entry.slot.pc;
     auto it = CondTakens_find(stagePreds[1].condTakens, branch_pc);
-    // ASSERT_TRUE(it != stagePreds[1].condTakens.end()) << "Prediction not found for PC " << std::hex << entry.pc;
+    // ASSERT_TRUE(it != stagePreds[1].condTakens.end());
     bool predicted_taken = it->second;
 
     // 3. Speculatively update folded history
@@ -414,7 +415,7 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
         const auto path_update = getActualPathUpdate(stream);
         recoverSelectedHistory(tage, history, stream, 1, actual_taken,
                                path_update);
-        applyActualHistory(tage, history, stream.exeBranchInfo, 1, actual_taken);
+        applyActualHistory(tage, history, stream.resolve.branchSlot, 1, actual_taken);
         tage->checkFoldedHist(history, "recover");
     }
 
@@ -709,8 +710,8 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Although it has the same PC, we'll treat it as a different branch context
     // by setting a specific tag that doesn't match existing entries
     FetchTarget stream = createStream(0x1000, entry2, !predicted, meta);
-    stream.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
-    stream.squashPC = 0x1000;
+    stream.resolve.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
+    stream.resolve.squashPC = 0x1000;
 
     // Update the predictor. With RTL-aligned highest-table gating, this should
     // not report a final allocation failure.
@@ -732,8 +733,8 @@ TEST_F(BTBTAGETest, HighestTableProviderSuppressesAllocation) {
     auto meta = tage->getPredictionMeta();
 
     FetchTarget stream = createStream(0x1000, entry, false, meta);
-    stream.squashType = SquashType::SQUASH_CTRL;
-    stream.squashPC = 0x1000;
+    stream.resolve.squashType = SquashType::SQUASH_CTRL;
+    stream.resolve.squashPC = 0x1000;
 
     int alloc_failed_before = tage->tageStats.updateAllocFailureNoValidTable;
     tage->update(stream);
@@ -812,8 +813,8 @@ TEST_F(BTBTAGETest, MultipleBranchSequence) {
 
     // Update second branch (incorrect prediction), allocate 1 entry
     FetchTarget stream2 = createStream(0x1000, btbEntries[1], !second_pred, meta);
-    stream2.squashType = SquashType::SQUASH_CTRL;
-    stream2.squashPC = 0x1004;
+    stream2.resolve.squashType = SquashType::SQUASH_CTRL;
+    stream2.resolve.squashPC = 0x1004;
     tage->update(stream2);
 
     // Verify both branches have entries allocated
@@ -1025,7 +1026,8 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 
     // Get prediction for entry1
     bool pred1 = false;
-    auto result_entry1 = findCondTaken(stagePreds[1].condTakens, entry1.pc);
+    auto result_entry1 = findCondTaken(stagePreds[1].condTakens,
+                                       entry1.slot.pc);
     if (result_entry1.first) {
         pred1 = result_entry1.second;
     }
@@ -1043,7 +1045,8 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 
     // Get prediction for entry2
     bool pred2 = false;
-    auto result_entry2 = findCondTaken(stagePreds[1].condTakens, entry2.pc);
+    auto result_entry2 = findCondTaken(stagePreds[1].condTakens,
+                                       entry2.slot.pc);
     if (result_entry2.first) {
         pred2 = result_entry2.second;
     }
@@ -1177,7 +1180,7 @@ TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
     bool found = false;
     for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid &&
-            tage->tageTable[testTable][testIndex][way].pc == newEntry.pc) {
+            tage->tageTable[testTable][testIndex][way].pc == newEntry.slot.pc) {
             found = true;
             break;
         }
@@ -1195,19 +1198,19 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry;
-    stream.exeTaken = true;
-    stream.resolved = true;
-    stream.predBranchInfo = newEntry;
-    stream.updateBTBEntries.clear();
-    stream.updateIsOldEntry = false;
-    stream.updateNewBTBEntry = newEntry;
+    stream.resolve.branchSlot = newEntry.slot;
+    stream.resolve.taken = true;
+    stream.resolve.valid = true;
+    stream.prediction.branchSlot = newEntry.slot;
+    stream.update.btbEntries.clear();
+    stream.update.isOldEntry = false;
+    stream.update.newBTBEntry = newEntry;
     stream.predMetas[0] = meta;
     stream = setMispredStream(stream);
 
     tage->update(stream);
 
-    int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
+    int table = findTableWithEntry(tage, 0x1000, newEntry.slot.pc);
     EXPECT_GE(table, 0)
         << "New conditional entry should still allocate without prediction-time meta";
 }
@@ -1327,9 +1330,9 @@ TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
     boost::dynamic_bitset<> historyB(128, 0);
     historyB[0] = true;
 
-    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, historyA, 2));
-    EXPECT_TRUE(tage->hasExactEntry(3, entry.pc, historyA));
-    EXPECT_FALSE(tage->hasExactEntry(3, entry.pc, historyB));
+    ASSERT_TRUE(tage->insertExactEntry(3, entry.slot.pc, historyA, 2));
+    EXPECT_TRUE(tage->hasExactEntry(3, entry.slot.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(3, entry.slot.pc, historyB));
 
     bool predA = predictTAGE(tage, 0x1000, {entry}, historyA, stagePreds);
     bool predB = predictTAGE(tage, 0x1000, {entry}, historyB, stagePreds);
@@ -1341,12 +1344,12 @@ TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
 TEST_F(BTBTAGEUpperBoundTest, ProviderAltSelection) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
 
-    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, history, 0));
-    ASSERT_TRUE(tage->insertExactEntry(1, entry.pc, history, -2));
+    ASSERT_TRUE(tage->insertExactEntry(3, entry.slot.pc, history, 0));
+    ASSERT_TRUE(tage->insertExactEntry(1, entry.slot.pc, history, -2));
 
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
     auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
-    auto pred = meta->preds[entry.pc];
+    auto pred = meta->preds[entry.slot.pc];
 
     EXPECT_EQ(pred.mainInfo.table, 3u);
     EXPECT_EQ(pred.altInfo.table, 1u);
@@ -1369,8 +1372,8 @@ TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
     tage->recoverHist(historyB, stream, 1, true);
     tage->update(stream);
 
-    EXPECT_TRUE(tage->hasExactEntry(0, entry.pc, historyA));
-    EXPECT_FALSE(tage->hasExactEntry(0, entry.pc, historyB));
+    EXPECT_TRUE(tage->hasExactEntry(0, entry.slot.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(0, entry.slot.pc, historyB));
 }
 
 TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
@@ -1382,32 +1385,32 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry;
-    stream.exeTaken = true;
-    stream.resolved = true;
-    stream.predBranchInfo = newEntry;
-    stream.updateBTBEntries.clear();
-    stream.updateIsOldEntry = false;
-    stream.updateNewBTBEntry = newEntry;
+    stream.resolve.branchSlot = newEntry.slot;
+    stream.resolve.taken = true;
+    stream.resolve.valid = true;
+    stream.prediction.branchSlot = newEntry.slot;
+    stream.update.btbEntries.clear();
+    stream.update.isOldEntry = false;
+    stream.update.newBTBEntry = newEntry;
     stream.predMetas[0] = meta;
     stream = setMispredStream(stream);
 
     tage->update(stream);
 
-    EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));
+    EXPECT_TRUE(tage->hasExactEntry(0, newEntry.slot.pc, historyA));
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
     boost::dynamic_bitset<> pathHistoryA(128, 0);
     boost::dynamic_bitset<> pathHistoryB(128, 0);
-    applyPathHistoryTaken(pathHistoryB, entry.pc, entry.target);
+    applyPathHistoryTaken(pathHistoryB, entry.slot.pc, entry.slot.target);
 
-    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.slot.pc, pathHistoryB, 2));
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, true});
+    pred.condTakens.push_back({entry.slot.pc, true});
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
 
     bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
@@ -1416,54 +1419,55 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnapshot) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
-    entry.isIndirect = true;
+    BTBEntry indirectEntry = createBTBEntry(0x1000, false, true, false, -1, 0x2000);
+    indirectEntry.slot.setTypeFromFlags(false, true, false, false, false);
+    BTBEntry condEntry = createBTBEntry(0x1004, true, true, false, -1, 0x2010);
     const Addr indirectTarget = 0x3000;
 
-    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, indirectTarget));
+    ASSERT_NE(pathHash(indirectEntry.slot.pc, indirectEntry.slot.target),
+              pathHash(indirectEntry.slot.pc, indirectTarget));
 
     boost::dynamic_bitset<> pathHistoryA(128, 0);
     boost::dynamic_bitset<> pathHistoryB(128, 0);
-    applyPathHistoryTaken(pathHistoryB, entry.pc, indirectTarget);
+    applyPathHistoryTaken(pathHistoryB, indirectEntry.slot.pc, indirectTarget);
 
-    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+    ASSERT_TRUE(tage->insertExactEntry(2, condEntry.slot.pc, pathHistoryB, 2));
 
     FullBTBPrediction pred;
-    pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, true});
-    pred.indirectTargets.push_back({entry.pc, indirectTarget});
+    pred.btbEntries.push_back(indirectEntry);
+    pred.indirectTargets.push_back({indirectEntry.slot.pc, indirectTarget});
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "indirect target override");
 
-    bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
+    bool predicted = predictTAGE(tage, 0x1000, {condEntry}, outcomeHistory, stagePreds);
 
     EXPECT_TRUE(predicted);
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapshot) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
-    entry.isIndirect = true;
-    entry.isReturn = true;
+    BTBEntry returnEntry = createBTBEntry(0x1000, false, true, false, -1, 0x2000);
+    returnEntry.slot.setTypeFromFlags(false, true, false, false, true);
+    BTBEntry condEntry = createBTBEntry(0x1004, true, true, false, -1, 0x2010);
     const Addr returnTarget = 0x3400;
 
-    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, returnTarget));
+    ASSERT_NE(pathHash(returnEntry.slot.pc, returnEntry.slot.target),
+              pathHash(returnEntry.slot.pc, returnTarget));
 
     boost::dynamic_bitset<> pathHistoryA(128, 0);
     boost::dynamic_bitset<> pathHistoryB(128, 0);
-    applyPathHistoryTaken(pathHistoryB, entry.pc, returnTarget);
+    applyPathHistoryTaken(pathHistoryB, returnEntry.slot.pc, returnTarget);
 
-    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+    ASSERT_TRUE(tage->insertExactEntry(2, condEntry.slot.pc, pathHistoryB, 2));
 
     FullBTBPrediction pred;
-    pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, true});
+    pred.btbEntries.push_back(returnEntry);
     pred.returnTarget = returnTarget;
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "return target override");
 
-    bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
+    bool predicted = predictTAGE(tage, 0x1000, {condEntry}, outcomeHistory, stagePreds);
 
     EXPECT_TRUE(predicted);
 }
@@ -1472,7 +1476,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     BTBEntry entry = createBTBEntry(0x1000, false, true, true, -1, 0x2040);
     boost::dynamic_bitset<> pathHistoryBefore(128, 0);
     boost::dynamic_bitset<> pathHistoryAfter(128, 0);
-    applyPathHistoryTaken(pathHistoryAfter, entry.pc, entry.target);
+    applyPathHistoryTaken(pathHistoryAfter, entry.slot.pc, entry.slot.target);
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
@@ -1482,14 +1486,15 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     FetchTarget stream = createStream(0x1000, entry, true, meta);
     stream = setMispredStream(stream);
 
-    const auto ghist = stream.getGHistUpdateDuringSquash(entry.pc, false, true);
+    const auto ghist = stream.getGHistUpdateDuringSquash(
+        entry.slot.pc, false, true);
     const auto phist = stream.getPHistUpdateDuringSquash(
-        entry.pc, true, entry.target);
+        entry.slot.pc, true, entry.slot.target);
     EXPECT_EQ(ghist.shamt, 0);
     EXPECT_FALSE(ghist.taken);
     EXPECT_TRUE(phist.taken);
-    EXPECT_EQ(phist.pc, entry.pc);
-    EXPECT_EQ(phist.target, entry.target);
+    EXPECT_EQ(phist.pc, entry.slot.pc);
+    EXPECT_EQ(phist.target, entry.slot.target);
 
     tage->recoverPHist(pathHistoryBefore, stream, phist);
     tage->checkFoldedHist(pathHistoryAfter, "recover taken control path");

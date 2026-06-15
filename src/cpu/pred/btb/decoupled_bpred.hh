@@ -20,6 +20,7 @@
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/common.hh"
+#include "cpu/pred/btb/final_prediction_selector.hh"
 #include "cpu/pred/btb/ftq.hh"
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
@@ -138,6 +139,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
         FullBTBPrediction finalPred;      ///< Final prediction
+        FinalPredictionMetadata finalPredMetadata; ///< Final attribution
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
@@ -176,7 +178,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printTarget(const FetchTarget &e)
     {
-        if (!e.resolved) {
+        if (!e.resolve.valid) {
             DPRINTFR(DecoupleBPProbe, "FSQ Predicted target: ");
         } else {
             DPRINTFR(DecoupleBPProbe, "FSQ Resolved target: ");
@@ -201,7 +203,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void clearPreds(ThreadID tid) {
         for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
             threads[tid].predsOfEachStage[i] = FullBTBPrediction();
-            threads[tid].predsOfEachStage[i].predSource = i;
         }
     }
 
@@ -209,7 +210,10 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printBTBEntry(const BTBEntry &e) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken);
+            e.valid, e.slot.pc, e.tag, e.slot.size, e.slot.target,
+            e.slot.isCond(), e.slot.isIndirect(), e.slot.isCall(),
+            e.slot.isReturn(),
+            e.alwaysTaken);
     }
 
     void printFullBTBPrediction(const FullBTBPrediction &pred) {
@@ -384,9 +388,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         PredictionTrace(uint64_t id, const FetchTarget &entry) {
             _tick = curTick();
-            set(id, entry.startPC, entry.predTaken, entry.predEndPC,
+            set(id, entry.startPC, entry.prediction.taken,
+                entry.prediction.fallThrough,
                 entry.getControlPC(), entry.getTakenTarget(),
-                entry.predSource, entry.isHit ? 1 : 0);
+                entry.finalPredMetadata.firstMatchingStage,
+                entry.prediction.btbHit ? 1 : 0);
         }
     };
 

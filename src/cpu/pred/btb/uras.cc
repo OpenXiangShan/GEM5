@@ -99,8 +99,9 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
     auto &sp = specSp;
     // do push & pops on prediction
     pred.returnTarget = stack[sp].retAddr;
-    auto takenSlot = pred.getTakenEntry();
-    if (takenSlot.isCall) {
+    auto takenEntry = pred.getTakenEntry();
+    auto takenSlot = takenEntry.slot;
+    if (takenSlot.isCall()) {
         Addr retAddr = takenSlot.pc + takenSlot.size;
         if (enableDB) {
             SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc,
@@ -110,7 +111,7 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
         DPRINTF(URAS, "spec stack push addr 0x%llx\n", retAddr);
         push(retAddr, stack, sp);
     }
-    if (takenSlot.isReturn) {
+    if (takenSlot.isReturn()) {
         if (enableDB) {
             SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.pc,
                 stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
@@ -132,7 +133,7 @@ BTBuRAS::recoverState(const FetchTarget &entry)
     printStack("before recoverState", stack, sp);
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenSlot = entry.exeBranchInfo;
+    auto takenSlot = entry.resolve.branchSlot;
     if (enableDB) {
         SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
         specRasTrace->write_record(rec);
@@ -140,9 +141,9 @@ BTBuRAS::recoverState(const FetchTarget &entry)
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
-    if (entry.exeTaken) {
+    if (entry.resolve.taken) {
         // do push & pops on control squash
-        if (takenSlot.isReturn) {
+        if (takenSlot.isReturn()) {
             if (enableDB) {
                 SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
                 specRasTrace->write_record(rec);
@@ -150,7 +151,7 @@ BTBuRAS::recoverState(const FetchTarget &entry)
             DPRINTF(URAS, "recover stack pop at pc 0x%llx target %llx\n", entry.startPC, stack[sp].retAddr);
             pop(stack, sp);
         }
-        if (takenSlot.isCall) {
+        if (takenSlot.isCall()) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
             if (enableDB) {
                 SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
@@ -169,13 +170,13 @@ BTBuRAS::update(const FetchTarget &entry)
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;
     printStack("before update", stack, sp);
-    auto takenSlot = entry.exeBranchInfo;
-    if (entry.exeTaken && (takenSlot.isReturn || takenSlot.isCall)) {
+    auto takenSlot = entry.resolve.branchSlot;
+    if (entry.resolve.taken && (takenSlot.isReturn() || takenSlot.isCall())) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
-        auto miss = entry.squashType == SQUASH_CTRL && entry.squashPC == entry.exeBranchInfo.pc;
-        if (takenSlot.isCall) {
+        auto miss = entry.resolve.squashType == SQUASH_CTRL && entry.resolve.squashPC == entry.resolve.branchSlot.pc;
+        if (takenSlot.isCall()) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
             if (enableDB) {
                 NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr,
@@ -184,7 +185,7 @@ BTBuRAS::update(const FetchTarget &entry)
             }
             push(retAddr, stack, sp);
         }
-        if (takenSlot.isReturn) {
+        if (takenSlot.isReturn()) {
             if (enableDB) {
                 NonSpecRASTrace rec(RAS_OP::POP, entry.startPC, takenSlot.pc, takenSlot.target,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);

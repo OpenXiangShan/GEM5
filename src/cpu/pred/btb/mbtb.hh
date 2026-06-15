@@ -151,12 +151,11 @@ class MBTB : public TimedBaseBTBPredictor
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     /**
-     * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
-     *        only in L1BTB will this function be called before update
-     * 
-     * @param stream 
+     * @brief derive the old or new BTB entry used by update payload
+     *
+     * Only the L1 BTB prepares this selection before component updates.
      */
-    void getAndSetNewBTBEntry(FetchTarget &stream);
+    FetchUpdateEntrySelection selectUpdateEntry(const FetchTarget &stream);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
@@ -171,7 +170,10 @@ class MBTB : public TimedBaseBTBPredictor
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
+            e.valid, e.slot.pc, e.tag, e.slot.size, e.slot.target,
+            e.slot.isCond(), e.slot.isIndirect(), e.slot.isCall(),
+            e.slot.isReturn(),
+            e.alwaysTaken, tick);
     }
 
     void printTickedBTBEntry(const TickedBTBEntry &e) {
@@ -322,11 +324,11 @@ class MBTB : public TimedBaseBTBPredictor
         Addr last = 0;
         bool misorder = false;
         for (auto &entry : es) {
-            if (entry.pc <= last) {
+            if (entry.slot.pc <= last) {
                 misorder = true;
                 break;
             }
-            last = entry.pc;
+            last = entry.slot.pc;
         }
         if (misorder) {
             panic("BTB entries are not in ascending order");

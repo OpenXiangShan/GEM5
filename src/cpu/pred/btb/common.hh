@@ -10,6 +10,7 @@
 // #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/prediction_result.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/static_inst.hh"
 
@@ -103,6 +104,14 @@ enum class OverrideReason
     HIST_INFO
 };
 
+struct FinalPredictionMetadata
+{
+    unsigned firstMatchingStage = 0;
+    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
+    int s1Source = -1;
+    int s3Source = -1;
+};
+
 enum class HistoryType
 {
     GLOBAL,
@@ -112,18 +121,18 @@ enum class HistoryType
     PATH
 };
 
-
 /**
- * @brief Branch information structure containing branch properties and targets
+ * @brief Branch slot observed in a fetch block
  *
- * Stores essential information about a branch instruction including:
+ * Stores essential information about a branch instruction slot including:
  * - PC and target address
  * - Resolved bit
  * - Branch type (conditional, indirect, call, return)
  * - Instruction size
  */
-struct BranchInfo
+struct BranchSlot
 {
+  public:
     Addr pc;
     Addr target;
     // An independent resolved bit to indicate whether CFI is resolved
@@ -131,54 +140,162 @@ struct BranchInfo
     // it's necessary to know whether the branch is resolved and skip
     // the BTB entry or not.
     bool resolved;
-    bool isCond;
-    bool isIndirect;
-    bool isDirect;
-    bool isCall;
-    bool isReturn;
+
+  private:
+    /**
+     * Branch control-flow class and RAS action.
+     *
+     * This keeps branch kind and RAS behavior as one semantic attribute instead
+     * of spreading legal combinations across public bools.
+     */
+    struct Attribute
+    {
+        Attribute() = default;
+
+        static Attribute
+        fromFlags(bool is_cond, bool is_indirect, bool is_direct,
+                  bool is_call, bool is_return)
+        {
+            ControlType control_type = ControlType::None;
+            if (is_cond) {
+                control_type = ControlType::Conditional;
+            } else if (is_indirect) {
+                control_type = ControlType::Indirect;
+            } else if (is_direct || is_call || is_return) {
+                control_type = ControlType::Direct;
+            }
+
+            RasAction ras_action = RasAction::None;
+            if (is_call && is_return) {
+                ras_action = RasAction::PopAndPush;
+            } else if (is_call) {
+                ras_action = RasAction::Push;
+            } else if (is_return) {
+                ras_action = RasAction::Pop;
+            }
+
+            return Attribute(control_type, ras_action);
+        }
+
+        bool isConditional() const
+        {
+            return controlType == ControlType::Conditional;
+        }
+
+        bool isDirect() const { return controlType == ControlType::Direct; }
+
+        bool isIndirect() const
+        {
+            return controlType == ControlType::Indirect;
+        }
+
+        bool isCall() const
+        {
+            return rasAction == RasAction::Push ||
+                   rasAction == RasAction::PopAndPush;
+        }
+
+        bool isReturn() const
+        {
+            return rasAction == RasAction::Pop ||
+                   rasAction == RasAction::PopAndPush;
+        }
+
+        bool needIttage() const { return isIndirect() && !isReturn(); }
+
+      private:
+        enum class ControlType : uint8_t
+        {
+            None,
+            Conditional,
+            Direct,
+            Indirect
+        };
+
+        enum class RasAction : uint8_t
+        {
+            None,
+            Push,
+            Pop,
+            PopAndPush
+        };
+
+        Attribute(ControlType control_type, RasAction ras_action)
+            : controlType(control_type), rasAction(ras_action)
+        {
+        }
+
+        ControlType controlType = ControlType::None;
+        RasAction rasAction = RasAction::None;
+    };
+
+    Attribute attribute;
+
+  public:
     uint8_t size;
-    bool isUncond() const { return !this->isCond; }
-    Addr getEnd() { return this->pc + this->size; }
-    BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+
+    bool isCond() const { return attribute.isConditional(); }
+    bool isIndirect() const { return attribute.isIndirect(); }
+    bool isDirect() const { return attribute.isDirect(); }
+    bool isCall() const { return attribute.isCall(); }
+    bool isReturn() const { return attribute.isReturn(); }
+    bool isUncond() const { return !isCond(); }
+    bool needIttage() const { return attribute.needIttage(); }
+    Addr getEnd() const { return this->pc + this->size; }
+    BranchSlot()
+        : pc(0),
+          target(0),
+          resolved(false),
+          attribute(),
+          size(0)
     {
     }
-    // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
-    // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
+    BranchSlot(const Addr &control_pc, const Addr &target_pc,
+               const StaticInstPtr &static_inst, unsigned size)
         : pc(control_pc),
           target(target_pc),
           resolved(false),
-          isCond(static_inst->isCondCtrl()),
-          isIndirect(static_inst->isIndirectCtrl()),
-          isDirect(static_inst->isDirectCtrl()),
-          isCall(static_inst->isCall()),
-          isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
+          attribute(Attribute::fromFlags(
+              static_inst->isCondCtrl(),
+              static_inst->isIndirectCtrl(),
+              static_inst->isDirectCtrl(),
+              static_inst->isCall(),
+              static_inst->isReturn() && !static_inst->isNonSpeculative() &&
+                  !static_inst->isDirectCtrl())),
           size(size)
     {
     }
+
+    void
+    setTypeFromFlags(bool is_cond, bool is_indirect, bool is_direct,
+                     bool is_call, bool is_return)
+    {
+        attribute = Attribute::fromFlags(is_cond, is_indirect, is_direct,
+                                         is_call, is_return);
+    }
+
     int getType() const {
-        if (isCond) {
+        if (isCond()) {
             return BR_COND;
-        } else if (!isIndirect) { // uncond direct
-            if (isReturn) {
+        } else if (!isIndirect()) { // uncond direct
+            if (isReturn()) {
                 fatal("jal return detected!\n");
                 return BR_DIRECT_RET;
             }
-            if (!isCall) {
+            if (!isCall()) {
                 return BR_DIRECT_NORMAL;
             } else {
                 return BR_DIRECT_CALL;
             }
         } else {  // uncond indirect
-            if (!isCall) {
-                if (!isReturn) {
+            if (!isCall()) {
+                if (!isReturn()) {
                     return BR_INDIRECT_NORMAL; // normal indirect
                 } else {
                     return BR_INDIRECT_RET; // indirect return
                 }
             } else {
-                if (!isReturn) { // indirect call
+                if (!isReturn()) { // indirect call
                     return BR_INDIRECT_CALL;
                 } else { // call & return
                     return BR_INDIRECT_CALL_RET;
@@ -187,48 +304,87 @@ struct BranchInfo
         }
     }
 
-    bool operator < (const BranchInfo &other) const
+    bool operator < (const BranchSlot &other) const
     {
         return this->pc < other.pc;
     }
 
-    bool operator == (const BranchInfo &other) const
+    bool operator == (const BranchSlot &other) const
     {
         return this->pc == other.pc;
     }
 
-    bool operator > (const BranchInfo &other) const
+    bool operator > (const BranchSlot &other) const
     {
         return this->pc > other.pc;
     }
 
-    bool operator != (const BranchInfo &other) const
+    bool operator != (const BranchSlot &other) const
     {
         return this->pc != other.pc;
     }
+
 };
+
+using BranchInfo = BranchSlot;
 
 
 /**
- * @brief Branch Target Buffer entry extending BranchInfo with prediction metadata
+ * @brief Branch Target Buffer entry containing a branch slot plus BTB metadata
  *
- * Contains branch information plus prediction state:
+ * Contains the branch slot observed in a fetch block plus prediction state:
  * - Valid bit
  * - Always taken bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
-struct BTBEntry : BranchInfo
+struct BTBEntry
 {
+    BranchSlot slot;
     bool valid;
     bool alwaysTaken;
     int ctr;
     Addr tag;
     int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(-1){}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(-1){}
-    BranchInfo getBranchInfo() { return BranchInfo(*this); }
+    BTBEntry()
+        : slot(),
+          valid(false),
+          alwaysTaken(false),
+          ctr(0),
+          tag(0),
+          source(-1)
+    {
+    }
+    BTBEntry(const BranchSlot &branch_slot)
+        : slot(branch_slot),
+          valid(true),
+          alwaysTaken(true),
+          ctr(0),
+          tag(0),
+          source(-1)
+    {
+    }
+
+    bool operator < (const BTBEntry &other) const
+    {
+        return slot < other.slot;
+    }
+
+    bool operator == (const BTBEntry &other) const
+    {
+        return slot == other.slot;
+    }
+
+    bool operator > (const BTBEntry &other) const
+    {
+        return slot > other.slot;
+    }
+
+    bool operator != (const BTBEntry &other) const
+    {
+        return slot != other.slot;
+    }
 
     int getsource() const {
         return source;
@@ -299,6 +455,46 @@ using CondTakens = std::vector<std::pair<Addr, bool>>;
 // {branch pc -> target pc} maps
 using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
+struct FetchPredictionSnapshot
+{
+    bool taken = false;        // whether the final prediction is taken
+    Addr fallThrough = 0;      // predicted stream end pc
+    BranchSlot branchSlot;     // predicted taken branch slot
+    bool btbHit = false;       // whether any BTB entry was predicted
+    bool falseHit = false;     // not used
+    std::vector<BTBEntry> btbEntries; // predicted BTB entries
+};
+
+struct FetchResolveResult
+{
+    bool valid = false;        // whether execution resolved this stream
+    bool taken = false;        // actual taken result
+    BranchSlot branchSlot;     // executed branch slot
+    SquashType squashType = SquashType::SQUASH_NONE;
+    Addr squashPC = 0;         // pc of the squash inst
+};
+
+struct FetchUpdateEntrySelection
+{
+    BTBEntry entry;            // old entry to update, or possible new entry
+    bool isOldEntry = false;   // true: update old entry; false: use entry
+};
+
+struct FetchUpdatePayload
+{
+    BTBEntry newBTBEntry;      // possible new entry from L1 BTB update prep
+    bool isOldEntry = false;   // true: update old entry; false: use newBTBEntry
+    Addr endInstPC = 0;        // end pc of the squash inst/taken inst
+    std::vector<BTBEntry> btbEntries; // entries that were actually executed
+
+    void
+    setEntrySelection(const FetchUpdateEntrySelection &selection)
+    {
+        newBTBEntry = selection.entry;
+        isOldEntry = selection.isOldEntry;
+    }
+};
+
 #define CondTakens_find(condTakens, branch_pc) \
     std::find_if(condTakens.begin(), condTakens.end(), \
                  [&branch_pc](const auto &p) { return p.first == branch_pc; })
@@ -307,22 +503,6 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
                  [&branch_pc](const auto &p) { return p.first == branch_pc; })
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
-
-struct DirectionHistoryUpdate
-{
-    int shamt = 0;
-    bool taken = false;
-};
-
-struct PathHistoryUpdate
-{
-    static constexpr int NumShift = 2;
-
-    int shamt = NumShift;
-    bool taken = false;
-    Addr pc = 0;
-    Addr target = 0;
-};
 
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
@@ -339,32 +519,11 @@ struct FetchTarget
     ThreadID tid;
     uint8_t asidHash;
     Addr startPC;       // start pc of the stream
-    bool predTaken;     // whether the FetchTarget has taken branch
-    Addr predEndPC;     // predicted stream end pc (fall through pc)
-    BranchInfo predBranchInfo; // predicted branch info
+    FetchPredictionSnapshot prediction; // final prediction snapshot
 
-    bool isHit;          // whether the predicted btb entry is hit
-    bool falseHit;       // not used
-    std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
-
-    // for commit, write at redirect or fetch
-    bool exeTaken;         // whether the branch is taken(resolved)
-    BranchInfo exeBranchInfo; // executed branch info
-
-    BTBEntry updateNewBTBEntry; // the possible new entry, set by L1BTB.getAndSetNewBTBEntry, used by L1BTB/L0BTB.update
-    bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
-    bool resolved;  // whether the branch is resolved/executed
-
-    // below two should be set before components update
-    // used to decide which branches to update (don't update if not actually executed)
-    Addr updateEndInstPC;   // end pc of the squash inst/taken inst
-    // for components to decide which entries to update
-    std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
-
-    int squashType;         // squash type
-    Addr squashPC;         // pc of the squash inst
-    unsigned predSource;   // source of the prediction(numStage)
-    OverrideReason overrideReason; // reason of the override(for profiling)
+    FetchResolveResult resolve; // execution result written by squash/commit
+    FetchUpdatePayload update;  // payload prepared before predictor update
+    FinalPredictionMetadata finalPredMetadata; // final prediction attribution
 
     // prediction metas
     // FIXME: use vec
@@ -381,55 +540,45 @@ struct FetchTarget
     int fetchInstNum;
     int commitInstNum;
 
-    int s1Source; // which stage the prediction comes from
-    int s3Source; // which stage the prediction comes from
-
    FetchTarget()
        : tid(0),
          asidHash(0),
          startPC(0),
-         predTaken(false),
-         predEndPC(0),
-         predBranchInfo(BranchInfo()),
-         isHit(false),
-         falseHit(false),
-         exeTaken(false),
-         exeBranchInfo(BranchInfo()),
-         updateNewBTBEntry(BTBEntry()),
-         updateIsOldEntry(false),
-         resolved(false),
-         updateEndInstPC(0),
-         squashType(SquashType::SQUASH_NONE),
-         squashPC(0),
-         predSource(0),
+         prediction(),
+         resolve(),
+         update(),
+         finalPredMetadata(),
          predTick(0),
          history(),
          phistory(),
          bwhistory(),
          lhistory(),
          fetchInstNum(0),
-         commitInstNum(0),
-         s1Source(-1),
-         s3Source(-1)
+         commitInstNum(0)
    {
        predMetas.fill(nullptr);
-       predBTBEntries.clear();
-       updateBTBEntries.clear();
    }
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
-        resolved = false;
-        exeBranchInfo = predBranchInfo;
-        exeTaken = predTaken;
+        resolve.valid = false;
+        resolve.branchSlot = prediction.branchSlot;
+        resolve.taken = prediction.taken;
+        resolve.squashType = SQUASH_NONE;
+        resolve.squashPC = 0;
     }
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
-    BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
-    Addr getTaken() const { return resolved ? exeTaken : predTaken; }
-    Addr getTakenTarget() const { return getBranchInfo().target; }
+    BranchSlot getBranchSlot() const
+    {
+        return resolve.valid ? resolve.branchSlot : prediction.branchSlot;
+    }
+    BranchSlot getBranchInfo() const { return getBranchSlot(); }
+    Addr getControlPC() const { return getBranchSlot().pc; }
+    // FIXME: should be end of squash inst when non-control squash of trap squash.
+    Addr getEndPC() const { return getBranchSlot().getEnd(); }
+    Addr getTaken() const { return resolve.valid ? resolve.taken : prediction.taken; }
+    Addr getTakenTarget() const { return getBranchSlot().target; }
 
     Addr getRealStartPC() const {
         return startPC;
@@ -439,8 +588,9 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+        for (auto &entry : prediction.btbEntries) {
+            if (entry.valid && entry.slot.pc >= startPC &&
+                entry.slot.pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -455,8 +605,9 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+        for (auto &entry : prediction.btbEntries) {
+            if (entry.valid && entry.slot.pc >= startPC &&
+                entry.slot.pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -482,25 +633,27 @@ struct FetchTarget
     // should be called before components update
     void setUpdateInstEndPC(unsigned predictWidth)
     {
-        if (squashType == SQUASH_NONE) {
-            if (exeTaken) { // taken inst pc
-                updateEndInstPC = getControlPC();
+        if (resolve.squashType == SQUASH_NONE) {
+            if (resolve.taken) { // taken inst pc
+                update.endInstPC = getControlPC();
             } else { // natural fall through, align to the next block
                 // assert(halfAligned);
-                updateEndInstPC = (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
+                update.endInstPC =
+                    (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
             }
         } else {
-            updateEndInstPC = squashPC;
+            update.endInstPC = resolve.squashPC;
         }
     }
 
     // should be called before components update, after setUpdateInstEndPC
     void setUpdateBTBEntries()
     {
-        updateBTBEntries.clear();
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
-                updateBTBEntries.push_back(entry);
+        update.btbEntries.clear();
+        for (auto &entry : prediction.btbEntries) {
+            if (entry.valid && entry.slot.pc >= startPC &&
+                entry.slot.pc <= update.endInstPC) {
+                update.btbEntries.push_back(entry);
             }
         }
     }
@@ -509,9 +662,9 @@ struct FetchTarget
     // Just ignore it in that case.
     void markBTBEntryResolved(Addr resolvedInstPC)
     {
-        for (auto &entry : updateBTBEntries) {
-            if (entry.valid && entry.pc == resolvedInstPC) {
-                entry.resolved = true;
+        for (auto &entry : update.btbEntries) {
+            if (entry.valid && entry.slot.pc == resolvedInstPC) {
+                entry.slot.resolved = true;
             }
         }
     }
@@ -527,6 +680,11 @@ struct FetchTarget
  */
 struct FullBTBPrediction
 {
+    using PredictionResult =
+        PredictionBlockResultView<std::vector<BTBEntry>, CondTakens,
+                                  IndirectTargets>;
+    using TakenSlotResult = PredictionResult::TakenSlotResult;
+
     ThreadID tid;
     uint8_t asidHash;
     Addr bbStart;
@@ -540,13 +698,7 @@ struct FullBTBPrediction
 
     std::unordered_map<Addr, TageInfoForMGSC> tageInfoForMgscs;
 
-    unsigned predSource;
-    OverrideReason overrideReason;
     Tick predTick;
-
-    //only use for countering the source of the prediction
-    int s1Source;
-    int s3Source;
 
     FullBTBPrediction() :
         tid(0),
@@ -557,172 +709,89 @@ struct FullBTBPrediction
         indirectTargets(),
         returnTarget(0),
         tageInfoForMgscs(),
-        predSource(0),
-        predTick(0),
-        s1Source(-1),
-        s3Source(-1) {}
+        predTick(0) {}
 
-    BTBEntry getTakenEntry() {
-        // IMPORTANT: assume entries are sorted
-        for (auto &entry : this->btbEntries) {
-            // hit
-            if (entry.valid) {
-                if (entry.isCond) {
-                    // find corresponding direction pred in condTakens
-                    // TODO: use lower-bit offset of branch instruction
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {   // find and taken, return the entry
-                            return entry;
-                        }
-                    }
-                }
-                if (entry.isUncond()) { // find the first uncond entry
-                    return entry;
-                }
-            }
-        }
-        return BTBEntry(); // not found, return empty entry
-    }
-
-    bool isTaken() {
-        return getTakenEntry().valid;   // if find a taken entry, return true
-    }
-
-    Addr getFallThrough(Addr predictWidth) {
-        // max 64 byte block, 32 byte aligned
-        return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-    }
-
-    Addr getEntryTarget(const BTBEntry &entry) {
-        Addr target = entry.target;
-        // indirect target should come from ipred or ras,
-        // or btb itself when ipred miss
-        if (entry.isIndirect) {
-            if (!entry.isReturn) { // normal indirect, see ittage
-                auto& pc = entry.pc;
-                auto it = IndirectTakens_find(indirectTargets, pc);
-                if (it != indirectTargets.end()) { // found in ittage, use it
-                    target = it->second;
-                }
-            } else { // indirect return, use RAS target
-                target = returnTarget;
-            }
-        } // else: normal taken, use btb target
-        return target;
-    }
-
-    Addr getTarget(Addr predictWidth) {
-        Addr target;
-        const auto &entry = getTakenEntry();
-        if (entry.valid) { // found a taken entry
-            target = getEntryTarget(entry);
-        } else {
-            target = getFallThrough(predictWidth);
-        }
-        return target;
-    }
-
-    Addr getEnd(Addr predictWidth) {
-        if (isTaken()) {
-            return getTakenEntry().getEnd();
-        } else {
-            return getFallThrough(predictWidth);
-        }
-    }
-
-
-    Addr controlAddr() {
-        return getTakenEntry().pc;
-    }
-
-    std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
+    PredictionResult
+    resultView() const
     {
-        auto this_taken_entry = this->getTakenEntry();
-        auto other_taken_entry = other.getTakenEntry();
-        if (this_taken_entry.valid != other_taken_entry.valid) {
-            return std::make_pair(false, OverrideReason::FALL_THRU);
-        } else {
-            // all taken or all not taken, check target and end
-            if (this_taken_entry.valid && other_taken_entry.valid) {
-                if (this->controlAddr() != other.controlAddr()) {
-                    return std::make_pair(false, OverrideReason::CONTROL_ADDR);
-                }
-                else if (this->getTarget(predictWidth) != other.getTarget(predictWidth)) {
-                    return std::make_pair(false, OverrideReason::TARGET);
-                }
-                else {
-                    return std::make_pair(true, btb_pred::OverrideReason::NO_OVERRIDE);
-                }
-            } else {
-                return std::make_pair(true, btb_pred::OverrideReason::NO_OVERRIDE);
-            }
-        }
+        return PredictionResult(bbStart, btbEntries, condTakens,
+                                indirectTargets, returnTarget);
     }
 
-    DirectionHistoryUpdate getGHistUpdate()  //global or local
+    BTBEntry getTakenEntry() const {
+        return resultView().getTakenEntry();
+    }
+
+    bool isTaken() const {
+        return resultView().isTaken();
+    }
+
+    Addr getFallThrough(Addr predictWidth) const {
+        return resultView().getFallThrough(predictWidth);
+    }
+
+    Addr getEntryTarget(const BTBEntry &entry) const {
+        return resultView().getEntryTarget(entry);
+    }
+
+    TakenSlotResult getTakenSlotResult(Addr predictWidth) const
     {
-        DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
-        for (auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.isCond) { // if found a cond branch, shamt++
-                    update.shamt++;
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) { // if the cond branch is taken, taken = true
-                            update.taken = true;
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
-            }
-        }
-        // For example, return (3, true) means 3 bits to shift in history update,
-        // and the third branch is taken, new hist = xxx001
-        return update;
+        return resultView().getTakenSlotResult(predictWidth);
     }
 
-    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
+    Addr getTarget(Addr predictWidth) const {
+        return resultView().getTarget(predictWidth);
+    }
+
+    Addr getEnd(Addr predictWidth) const {
+        return resultView().getEnd(predictWidth);
+    }
+
+    Addr controlAddr() const {
+        return resultView().controlAddr();
+    }
+
+    std::pair<bool, OverrideReason> match(const FullBTBPrediction &other,
+                                          Addr predictWidth) const
     {
-        DirectionHistoryUpdate update;
-        for (auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.isCond) {
-                    update.shamt++;
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {
-                            update.taken = (entry.target < entry.pc); // branch is backward if target < pc
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
-            }
-        }
-        return update;
+        const auto match =
+            resultView().match(other.resultView(), predictWidth);
+        return std::make_pair(match.matches,
+                              toOverrideReason(match.reason));
     }
 
-    PathHistoryUpdate getPHistUpdate() //path
+    DirectionHistoryUpdate getGHistUpdate() const  //global or local
     {
-        PathHistoryUpdate update;
-        const auto &entry = getTakenEntry();
-        if (entry.valid) {
-            update.taken = true;
-            update.pc = entry.pc;
-            update.target = getEntryTarget(entry);
-        }
-        return update;
+        return resultView().getGHistUpdate();
     }
 
+    DirectionHistoryUpdate getBwHistUpdate() const //global backward or imli
+    {
+        return resultView().getBwHistUpdate();
+    }
+
+    PathHistoryUpdate getPHistUpdate() const //path
+    {
+        return resultView().getPHistUpdate();
+    }
+
+  private:
+    static OverrideReason
+    toOverrideReason(PredictionResultMismatchReason reason)
+    {
+        switch (reason) {
+          case PredictionResultMismatchReason::NoOverride:
+            return OverrideReason::NO_OVERRIDE;
+          case PredictionResultMismatchReason::FallThrough:
+            return OverrideReason::FALL_THRU;
+          case PredictionResultMismatchReason::ControlAddr:
+            return OverrideReason::CONTROL_ADDR;
+          case PredictionResultMismatchReason::Target:
+            return OverrideReason::TARGET;
+        }
+
+        return OverrideReason::NO_OVERRIDE;
+    }
 };
 
 struct TageMissTrace : public Record

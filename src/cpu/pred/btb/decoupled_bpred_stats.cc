@@ -320,9 +320,7 @@ DecoupledBPUWithBTB::dumpStats()
         for (int i = 0; i <= outputTopNEntries && i < btbEntries.size(); i++) {
             const auto &entry = btbEntries[i];
             out << "," << std::hex << std::get<0>(entry);
-            // BTBEntry.getType() is not a const method, need to create a copy
-            BTBEntry btbEntry = std::get<1>(entry);
-            out << "," << std::dec << btbEntry.getType();
+            out << "," << std::dec << std::get<1>(entry).slot.getType();
         }
 
         out << std::endl;
@@ -344,7 +342,9 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const
     Addr targetpc = rv_pc.npc();
     Addr fallThru = rv_pc.getFallThruPC();
     BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
-    set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
+    set(fsqId, target.startPC, pc, info.getType(), inst->branching(),
+        mispred, fallThru, target.finalPredMetadata.firstMatchingStage,
+        targetpc);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
     // }
@@ -695,56 +695,57 @@ void
 DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
 {
     // Check if this target was mispredicted
-    bool miss_predicted = target.squashType == SQUASH_CTRL;
+    bool miss_predicted = target.resolve.squashType == SQUASH_CTRL;
     // Track indirect mispredictions
-    if (miss_predicted && target.exeBranchInfo.isIndirect) {
+    if (miss_predicted && target.resolve.branchSlot.isIndirect()) {
         topMispredIndirect[target.startPC]++;
     }
 
     // --- BTB Statistics ---
-    if (target.isHit) {
+    if (target.prediction.btbHit) {
         // Count BTB hits
         dbpBtbStats.btbHit++;
     } else {
         // Count BTB misses for taken branches
-        if (target.exeTaken) {
+        if (target.resolve.taken) {
             dbpBtbStats.btbMiss++;
             DPRINTF(BTB, "BTB miss detected when update, target start %#lx, predTick %lu, printing branch info:\n",
                     target.startPC, target.predTick);
-            auto &slot = target.exeBranchInfo;
+            auto &slot = target.resolve.branchSlot;
             DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+                slot.pc, slot.size, slot.target, slot.isCond(), slot.isIndirect(), slot.isCall(), slot.isReturn());
         }
 
         // Count false hits
-        if (target.falseHit) {
+        if (target.prediction.falseHit) {
             dbpBtbStats.commitFalseHit++;
         }
     }
 
-    if (target.isHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.resolve.taken) {
         // Update BTB entry statistics
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            auto &btb_entry = target.updateNewBTBEntry;
+            auto &btb_entry = target.update.newBTBEntry;
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = target.updateNewBTBEntry;
+            it->second.first = target.update.newBTBEntry;
         }
     }
 
     // Track which predictor stage was used
-    dbpBtbStats.commitPredsFromEachStage[target.predSource]++;
-    overrideStats(target.overrideReason);
+    dbpBtbStats.commitPredsFromEachStage[
+        target.finalPredMetadata.firstMatchingStage]++;
+    overrideStats(target.finalPredMetadata.overrideReason);
 
     // --- Instruction Statistics ---
     // Track committed instruction counts
     dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
     if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
         commitFsqEntryHasInstsVector[target.commitInstNum]++;
-        if (target.commitInstNum == 1 && target.exeBranchInfo.isUncond()) {
+        if (target.commitInstNum == 1 && target.resolve.branchSlot.isUncond()) {
             dbpBtbStats.commitFsqEntryOnlyHasOneJump++;
         }
     }
@@ -757,11 +758,11 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
 
     // --- Misprediction Statistics ---
     // Track control squashes (mispredictions)
-    if (target.squashType == SQUASH_CTRL) {
+    if (target.resolve.squashType == SQUASH_CTRL) {
         // Record mispredict pair (start PC, branch PC)
-        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.exeBranchInfo.pc));
+        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.resolve.branchSlot.pc));
         if (find_it == topMispredicts.end()) {
-            topMispredicts[std::make_pair(target.startPC, target.exeBranchInfo.pc)] = 1;
+            topMispredicts[std::make_pair(target.startPC, target.resolve.branchSlot.pc)] = 1;
         } else {
             find_it->second++;
         }
@@ -844,12 +845,12 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     int ittageid = ittage->getComponentIdx();
     int rasid = ras->getComponentIdx();
 
-    int s1PredSource = entry.s1Source;
-    int s3PredSource = entry.s3Source;
+    int s1PredSource = entry.finalPredMetadata.s1Source;
+    int s3PredSource = entry.finalPredMetadata.s3Source;
 
-    auto exeBranchInfo = entry.exeBranchInfo;
+    auto resolvedSlot = entry.resolve.branchSlot;
 
-    bool onlyDirectionWrong = entry.exeTaken != entry.predTaken;
+    bool onlyDirectionWrong = entry.resolve.taken != entry.prediction.taken;
 
     assert(s1PredSource < mbtbid);
     if (s1PredSource == ubtbid) {
@@ -861,23 +862,23 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     }
 
     if (s3PredSource == rasid) {
-        if (exeBranchInfo.isCond) {
+        if (resolvedSlot.isCond()) {
             dbpBtbStats.s3PredWrongTage++;
-        } else if (exeBranchInfo.isReturn) {
+        } else if (resolvedSlot.isReturn()) {
             dbpBtbStats.s3PredWrongRas++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == ittageid) {
-        if (exeBranchInfo.isIndirect) {
+        if (resolvedSlot.isIndirect()) {
             dbpBtbStats.s3PredWrongIttage++;
-        } else if (exeBranchInfo.isCond) {
+        } else if (resolvedSlot.isCond()) {
             dbpBtbStats.s3PredWrongTage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == tageid) {
-        if (exeBranchInfo.isCond) {
+        if (resolvedSlot.isCond()) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
@@ -887,13 +888,13 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
             dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == mbtbid) {
-        if (exeBranchInfo.isCond) {
+        if (resolvedSlot.isCond()) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
                 dbpBtbStats.s3PredWrongMbtb++;
             }
-        } else if (exeBranchInfo.isIndirect) {
+        } else if (resolvedSlot.isIndirect()) {
             dbpBtbStats.s3PredWrongIttage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
@@ -983,13 +984,13 @@ DecoupledBPUWithBTB::processMisprediction(
     if (mispred) {
         if (!taken) {
             // Only conditional branches can be not-taken
-            assert(info.isCond);
+            assert(info.isCond());
             mispredType = DIR_WRONG; // Direction was wrong
         } else {
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
-            for (auto &e: entry.predBTBEntries) {
-                if (e.pc == branchAddr) {
+            for (auto &e: entry.prediction.btbEntries) {
+                if (e.slot.pc == branchAddr) {
                     predBranchInBTB = true;
                     break;
                 }
@@ -997,7 +998,8 @@ DecoupledBPUWithBTB::processMisprediction(
 
             if (!predBranchInBTB) {
                 mispredType = NO_PRED; // Branch wasn't predicted at all
-            } else if (entry.predTaken && entry.predBranchInfo.pc == branchAddr) {
+            } else if (entry.prediction.taken &&
+                       entry.prediction.branchSlot.pc == branchAddr) {
                 mispredType = TARGET_WRONG; // Branch predicted taken but wrong target
             } else {
                 // Branch predicted not taken or different branch predicted taken

@@ -154,7 +154,9 @@ class UBTB : public TimedBaseBTBPredictor
     void printTickedUBTBEntry(const TickedUBTBEntry &e) {
         DPRINTF(UBTB, "uBTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.tick);
+            e.valid, e.slot.pc, e.tag, e.slot.size, e.slot.target,
+            e.slot.isCond(), e.slot.isIndirect(), e.slot.isCall(),
+            e.slot.isReturn(), e.tick);
     }
 
     void dumpMruList() {

@@ -300,7 +300,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
                                  uint8_t asidHash) {
-    DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+    DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.slot.pc);
     const auto &state = historyState(tid);
 
     // Find main and alternative predictions
@@ -311,7 +311,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(btb_entry.slot.pc, startPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
@@ -341,7 +341,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
                 DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.slot.pc, position);
                 break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
             }
         }
@@ -362,7 +362,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             }
         } else {
             DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
+                i, index, tag, position, btb_entry.slot.pc);
         }
     }
 
@@ -373,7 +373,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool base_taken = btb_entry.ctr >= 0;
     //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
-    Addr use_alt_idx = getUseAltIdx(btb_entry.pc);
+    Addr use_alt_idx = getUseAltIdx(btb_entry.slot.pc);
     short use_alt_ctr = useAlt[use_alt_idx];
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
@@ -398,13 +398,13 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         final_provider_is_alt = true;
     }
 
-    DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
+    DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.slot.pc, taken);
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
         use_alt, alt_provided, alt_taken, base_taken, main_taken);
     DPRINTF(TAGE, "tage final source %#lx table %d alt %d\n",
-        btb_entry.pc, final_provider_table, final_provider_is_alt);
+        btb_entry.slot.pc, final_provider_table, final_provider_is_alt);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
+    return TagePrediction(btb_entry.slot.pc, main_info, alt_info, use_alt, taken,
         alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
         use_alt_ctr, hit_table_mask);
 }
@@ -426,22 +426,23 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
-        if (btb_entry.isCond && btb_entry.valid) {
+        if (btb_entry.slot.isCond() && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
+            threadMeta[tid]->preds[btb_entry.slot.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
-            tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
+            results.push_back({btb_entry.slot.pc, pred.taken || btb_entry.alwaysTaken});
+            tageInfoForMgscs[btb_entry.slot.pc].tage_pred_taken = pred.taken;
+            tageInfoForMgscs[btb_entry.slot.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
+            tageInfoForMgscs[btb_entry.slot.pc].tage_pred_conf_high = pred.mainInfo.found &&
                                          abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
+            tageInfoForMgscs[btb_entry.slot.pc].tage_pred_conf_mid = pred.mainInfo.found &&
                                          (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
                                          abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
+            tageInfoForMgscs[btb_entry.slot.pc].tage_pred_conf_low = !pred.mainInfo.found ||
                                          (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
             // main predict is different from alt predict/base predict
-            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+            tageInfoForMgscs[btb_entry.slot.pc].tage_pred_alt_diff =
+                pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
     }
 }
@@ -520,12 +521,12 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
  */
 std::vector<BTBEntry>
 BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
+    auto all_entries = stream.update.btbEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
+    if (!stream.update.isOldEntry) {
+        BTBEntry potential_new_entry = stream.update.newBTBEntry;
+        bool new_entry_taken = stream.resolve.taken && stream.getControlPC() == potential_new_entry.slot.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;
         }
@@ -535,11 +536,15 @@ BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     // Filter: only keep conditional branches that are not always taken
     if (getResolvedUpdate()) {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
+            [](const BTBEntry &e) {
+                return !(e.slot.isCond() && !e.alwaysTaken && e.slot.resolved);
+            });
         all_entries.erase(remove_it, all_entries.end());
     } else {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
+            [](const BTBEntry &e) {
+                return !(e.slot.isCond() && !e.alwaysTaken);
+            });
         all_entries.erase(remove_it, all_entries.end());
     }
 
@@ -596,7 +601,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
         if (main_weak) {
             tageStats.updateProviderNa++;
-            Addr uidx = getUseAltIdx(entry.pc);
+            Addr uidx = getUseAltIdx(entry.slot.pc);
             bool alt_correct = (alt_taken == actual_taken);
             updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
@@ -651,8 +656,8 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
+    bool this_fb_mispred = stream.resolve.squashType == SquashType::SQUASH_CTRL &&
+                               stream.resolve.squashPC == entry.slot.pc;
     if (this_fb_mispred) {
         tageStats.mispredictBranchHasProvider += main_info.found;
         tageStats.mispredictBranchUseProvider += use_provider;
@@ -733,7 +738,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     // 3) any not-useful way
 
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(entry.slot.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get(), asidHash);
@@ -776,7 +781,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             short newCounter = actual_taken ? 0 : -1;
             auto &victim = set[selected_way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                    ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
+                    ti, newIndex, selected_way, newTag, position, newCounter, entry.slot.pc);
             allocInfo.success = true;
             allocInfo.table = ti;
             allocInfo.index = newIndex;
@@ -787,7 +792,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocInfo.victimCounter = victim.counter;
             allocInfo.victimUseful = victim.useful;
             allocInfo.victimPC = victim.pc;
-            set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            set[selected_way] = TageEntry(newTag, newCounter, entry.slot.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
@@ -879,20 +884,21 @@ BTBTAGE::update(const FetchTarget &stream) {
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.pc == stream.updateNewBTBEntry.pc;
-        auto orig_it = predMeta->preds.find(btb_entry.pc);
+        bool actual_taken = stream.resolve.taken &&
+            stream.resolve.branchSlot == btb_entry.slot;
+        const bool is_new_entry = !stream.update.isOldEntry &&btb_entry.slot.pc == stream.update.newBTBEntry.slot.pc;
+        auto orig_it = predMeta->preds.find(btb_entry.slot.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;
         if (has_original_pred) {
             original_pred = orig_it->second;
         } else if (!is_new_entry) {
             DPRINTF(TAGE, "update: missing original prediction for old entry pc %#lx, skip\n",
-                    btb_entry.pc);
+                    btb_entry.slot.pc);
             continue;
         } else {
             DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
-                    btb_entry.pc);
+                    btb_entry.slot.pc);
         }
 
         if (has_original_pred && original_pred.finalProviderTable >= 0) {
@@ -913,7 +919,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
                                                  stream.tid, stream.asidHash);
             // Track differences for statistics
-            auto it = predMeta->preds.find(btb_entry.pc);
+            auto it = predMeta->preds.find(btb_entry.slot.pc);
             if (has_original_pred && it != predMeta->preds.end() && recomputed.taken != original_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
@@ -957,7 +963,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             }
             boost::to_string(history_low50, history_str);
             boost::to_string(phistory_low50, phistory_str);
-            TagePrediction trace_pred = predMeta->preds[btb_entry.pc];
+            TagePrediction trace_pred = predMeta->preds[btb_entry.slot.pc];
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
             const uint64_t history_hash = hashBitset(predMeta->history);
@@ -968,7 +974,7 @@ BTBTAGE::update(const FetchTarget &stream) {
                 hashFoldedHistVec(predMeta->tagFoldedHist);
             const uint64_t alt_tag_folded_hist_hash =
                 hashFoldedHistVec(predMeta->altTagFoldedHist);
-            t.set(startAddr, btb_entry.pc, main_info.way,
+            t.set(startAddr, btb_entry.slot.pc, main_info.way,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
                 main_info.table, main_info.index, main_info.entry.tag,
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
@@ -1024,9 +1030,9 @@ BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                (first_taken_pc != 0 && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred = (first_taken_pc == 0 && stream.resolve.taken) ||
+                                (first_taken_pc != 0 && !stream.resolve.taken);
+    bool branch_mispred = stream.resolve.taken && first_taken_pc != stream.resolve.branchSlot.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -1497,7 +1503,7 @@ BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = stream.resolve.taken && stream.resolve.branchSlot.pc == pc;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

@@ -201,7 +201,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
     uint64_t hitTableMask = 0;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        auto key = buildKey(btbEntry.pc, historyWords, histLengths[i]);
+        auto key = buildKey(btbEntry.slot.pc, historyWords, histLengths[i]);
         auto it = exactTables[i].find(key);
         if (it == exactTables[i].end()) {
             continue;
@@ -230,7 +230,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
     const bool altTaken = altInfo.taken();
     const bool baseTaken = btbEntry.ctr >= 0;
     const bool altPred = altProvided ? altTaken : baseTaken;
-    Addr useAltIdx = getUseAltIdx(btbEntry.pc);
+    Addr useAltIdx = getUseAltIdx(btbEntry.slot.pc);
     short useAltCtr = useAlt[useAltIdx];
 
     bool useAltPred = false;
@@ -254,7 +254,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
         finalProviderIsAlt = true;
     }
 
-    return TagePrediction(btbEntry.pc, mainInfo, altInfo, useAltPred, taken,
+    return TagePrediction(btbEntry.slot.pc, mainInfo, altInfo, useAltPred, taken,
                           altPred, finalProviderTable, finalProviderIsAlt,
                           useAltIdx, useAltCtr, hitTableMask);
 }
@@ -266,20 +266,20 @@ BTBTAGEUpperBound::notePredictionResult(
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
     CondTakens &results) const
 {
-    results.push_back({btbEntry.pc, pred.taken || btbEntry.alwaysTaken});
-    tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
-    tageInfoForMgscs[btbEntry.pc].tage_main_taken =
+    results.push_back({btbEntry.slot.pc, pred.taken || btbEntry.alwaysTaken});
+    tageInfoForMgscs[btbEntry.slot.pc].tage_pred_taken = pred.taken;
+    tageInfoForMgscs[btbEntry.slot.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_high =
+    tageInfoForMgscs[btbEntry.slot.pc].tage_pred_conf_high =
         pred.mainInfo.found && abs(pred.mainInfo.entry.counter * 2 + 1) == 7;
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_mid =
+    tageInfoForMgscs[btbEntry.slot.pc].tage_pred_conf_mid =
         pred.mainInfo.found &&
         (abs(pred.mainInfo.entry.counter * 2 + 1) < 7 &&
          abs(pred.mainInfo.entry.counter * 2 + 1) > 1);
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_low =
+    tageInfoForMgscs[btbEntry.slot.pc].tage_pred_conf_low =
         !pred.mainInfo.found ||
         (abs(pred.mainInfo.entry.counter * 2 + 1) <= 1);
-    tageInfoForMgscs[btbEntry.pc].tage_pred_alt_diff =
+    tageInfoForMgscs[btbEntry.slot.pc].tage_pred_alt_diff =
         pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
 }
 
@@ -305,15 +305,15 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
         stagePred.tageInfoForMgscs.clear();
 
         for (auto &btbEntry : stagePred.btbEntries) {
-            if (!(btbEntry.isCond && btbEntry.valid)) {
+            if (!(btbEntry.slot.isCond() && btbEntry.valid)) {
                 continue;
             }
 
             BranchPredictionMeta branchMeta;
             auto pred = lookupExactPrediction(
                 btbEntry, ubMeta->historyWords, &branchMeta);
-            ubMeta->preds[btbEntry.pc] = pred;
-            ubMeta->branchMeta[btbEntry.pc] = branchMeta;
+            ubMeta->preds[btbEntry.slot.pc] = pred;
+            ubMeta->branchMeta[btbEntry.slot.pc] = branchMeta;
             tageStats.updateStatsWithTagePrediction(pred, true);
             notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs,
                                  stagePred.condTakens);
@@ -389,7 +389,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
             (mainInfo.entry.counter == 0 || mainInfo.entry.counter == -1);
         if (mainWeak) {
             tageStats.updateProviderNa++;
-            Addr uidx = getUseAltIdx(entry.pc);
+            Addr uidx = getUseAltIdx(entry.slot.pc);
             bool altCorrect = (altTaken == actualTaken);
             updateCounter(altCorrect, useAltOnNaWidth, useAlt[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
@@ -443,8 +443,8 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     }
 
     const bool thisFbMispred =
-        stream.squashType == SquashType::SQUASH_CTRL &&
-        stream.squashPC == entry.pc;
+        stream.resolve.squashType == SquashType::SQUASH_CTRL &&
+        stream.resolve.squashPC == entry.slot.pc;
     if (getDelay() == 2 && thisFbMispred) {
         tageStats.updateMispred++;
         if (!usedAlt && mainInfo.found) {
@@ -472,9 +472,9 @@ BTBTAGEUpperBound::allocateExactEntry(
     uint64_t &allocatedTable)
 {
     for (unsigned ti = startTable; ti < numPredictors; ++ti) {
-        auto key = buildKey(entry.pc, historyWords, histLengths[ti]);
+        auto key = buildKey(entry.slot.pc, historyWords, histLengths[ti]);
         auto [it, inserted] = exactTables[ti].emplace(
-            key, TageEntry(0, actualTaken ? 0 : -1, entry.pc));
+            key, TageEntry(0, actualTaken ? 0 : -1, entry.slot.pc));
         if (!inserted) {
             continue;
         }
@@ -494,12 +494,12 @@ BTBTAGEUpperBound::allocateExactEntry(
 std::vector<BTBEntry>
 BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
 {
-    auto allEntries = stream.updateBTBEntries;
+    auto allEntries = stream.update.btbEntries;
 
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potentialNewEntry = stream.updateNewBTBEntry;
+    if (!stream.update.isOldEntry) {
+        BTBEntry potentialNewEntry = stream.update.newBTBEntry;
         bool newEntryTaken =
-            stream.exeTaken && stream.getControlPC() == potentialNewEntry.pc;
+            stream.resolve.taken && stream.getControlPC() == potentialNewEntry.slot.pc;
         if (!newEntryTaken) {
             potentialNewEntry.alwaysTaken = false;
         }
@@ -510,14 +510,14 @@ BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
         auto removeIt = std::remove_if(
             allEntries.begin(), allEntries.end(),
             [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken && e.resolved);
+                return !(e.slot.isCond() && !e.alwaysTaken && e.slot.resolved);
             });
         allEntries.erase(removeIt, allEntries.end());
     } else {
         auto removeIt = std::remove_if(
             allEntries.begin(), allEntries.end(),
             [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken);
+                return !(e.slot.isCond() && !e.alwaysTaken);
             });
         allEntries.erase(removeIt, allEntries.end());
     }
@@ -543,10 +543,10 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
 
     bool hasStoredVsActualDiff = false;
     for (auto &btbEntry : entriesToUpdate) {
-        auto predIt = predMeta->preds.find(btbEntry.pc);
-        auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
+        auto predIt = predMeta->preds.find(btbEntry.slot.pc);
+        auto metaIt = predMeta->branchMeta.find(btbEntry.slot.pc);
         const bool actualTaken =
-            stream.exeTaken && stream.exeBranchInfo == btbEntry;
+            stream.resolve.taken && stream.resolve.branchSlot == btbEntry.slot;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
         if (predIt != predMeta->preds.end() &&

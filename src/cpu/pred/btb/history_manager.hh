@@ -123,8 +123,8 @@ class HistoryManager
                             const uint64_t stream_id)
     {
         // Extract branch type information from BranchInfo
-        bool is_call = bi.isCall;
-        bool is_return = bi.isReturn;
+        bool is_call = bi.isCall();
+        bool is_return = bi.isReturn();
         Addr retAddr = bi.getEnd();
 
         // Add new entry to the end of speculative history list
@@ -206,8 +206,8 @@ class HistoryManager
                 it->phistUpdate = phist_update;
 
                 // Update branch type information
-                it->is_call = bi.isCall;
-                it->is_return = bi.isReturn;
+                it->is_call = bi.isCall();
+                it->is_return = bi.isReturn();
                 it->retAddr = bi.getEnd();
 
                 // Move to next entry

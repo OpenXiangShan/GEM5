@@ -32,11 +32,10 @@ protected:
     BTBEntry createCallEntry(Addr pc, Addr target, unsigned size = 4) {
         BTBEntry entry;
         entry.valid = true;
-        entry.pc = pc;
-        entry.isCall = true;
-        entry.isReturn = false;
-        entry.size = size;
-        entry.target = target;
+        entry.slot.pc = pc;
+        entry.slot.setTypeFromFlags(false, false, true, true, false);
+        entry.slot.size = size;
+        entry.slot.target = target;
         return entry;
     }
 
@@ -44,11 +43,10 @@ protected:
     BTBEntry createReturnEntry(Addr pc, Addr target, unsigned size = 4) {
         BTBEntry entry;
         entry.valid = true;
-        entry.pc = pc;
-        entry.isCall = false;
-        entry.isReturn = true;
-        entry.size = size;
-        entry.target = target;
+        entry.slot.pc = pc;
+        entry.slot.setTypeFromFlags(false, true, false, false, true);
+        entry.slot.size = size;
+        entry.slot.target = target;
         return entry;
     }
 
@@ -81,11 +79,10 @@ protected:
                                        std::shared_ptr<void> meta, bool taken = true) {
         FetchTarget stream;
         stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = true;
-        stream.exeBranchInfo.isReturn = false;
-        stream.exeBranchInfo.size = size;
+        stream.resolve.taken = taken;
+        stream.resolve.branchSlot.pc = branchPC;
+        stream.resolve.branchSlot.setTypeFromFlags(false, false, true, true, false);
+        stream.resolve.branchSlot.size = size;
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -95,11 +92,10 @@ protected:
                                          std::shared_ptr<void> meta, bool taken = true) {
         FetchTarget stream;
         stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = false;
-        stream.exeBranchInfo.isReturn = true;
-        stream.exeBranchInfo.size = size;
+        stream.resolve.taken = taken;
+        stream.resolve.branchSlot.pc = branchPC;
+        stream.resolve.branchSlot.setTypeFromFlags(false, true, false, false, true);
+        stream.resolve.branchSlot.size = size;
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -109,11 +105,11 @@ protected:
                                      std::shared_ptr<void> meta, bool taken = false) {
         FetchTarget stream;
         stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = isCall;
-        stream.exeBranchInfo.isReturn = !isCall;
-        stream.exeBranchInfo.size = size;
+        stream.resolve.taken = taken;
+        stream.resolve.branchSlot.pc = branchPC;
+        stream.resolve.branchSlot.setTypeFromFlags(false, !isCall, isCall,
+                                              isCall, !isCall);
+        stream.resolve.branchSlot.size = size;
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -224,7 +220,7 @@ TEST_F(RASTest, BasicRecovery) {
     // Create recovery stream
     FetchTarget recoverStream;
     recoverStream.startPC = 0x1000;
-    recoverStream.exeTaken = false;  // Not taken, so no actual call
+    recoverStream.resolve.taken = false;  // Not taken, so no actual call
     recoverStream.predMetas[0] = initialMeta;
 
     // Recover to initial state
@@ -407,10 +403,11 @@ TEST_F(RASTest, ComplexRecovery) {
     // Recover to the state after first call (simulate misprediction)
     FetchTarget recoverStream;
     recoverStream.startPC = 0x2000;
-    recoverStream.exeTaken = true;  // The first call was actually taken
-    recoverStream.exeBranchInfo.pc = 0x1000;
-    recoverStream.exeBranchInfo.isCall = true;
-    recoverStream.exeBranchInfo.size = 4;
+    recoverStream.resolve.taken = true;  // The first call was actually taken
+    recoverStream.resolve.branchSlot.pc = 0x1000;
+    recoverStream.resolve.branchSlot.setTypeFromFlags(false, false, true, true,
+                                                 false);
+    recoverStream.resolve.branchSlot.size = 4;
     recoverStream.predMetas[0] = meta1;
 
     ras->recoverState(recoverStream);

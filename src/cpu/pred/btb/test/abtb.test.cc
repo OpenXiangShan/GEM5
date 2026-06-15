@@ -23,22 +23,22 @@ FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) 
     stream.asidHash = pred.asidHash;
     stream.startPC = startPC;
     Addr fallThroughAddr = pred.getFallThrough(abtb->predictWidth);
-    stream.isHit = pred.btbEntries.size() > 0; // TODO: fix isHit and falseHit
-    stream.falseHit = false;
-    stream.predBTBEntries = pred.btbEntries;
-    stream.predTaken = pred.isTaken();
-    stream.predEndPC = fallThroughAddr;
+    stream.prediction.btbHit = pred.btbEntries.size() > 0;
+    stream.prediction.falseHit = false;
+    stream.prediction.btbEntries = pred.btbEntries;
+    stream.prediction.taken = pred.isTaken();
+    stream.prediction.fallThrough = fallThroughAddr;
     stream.predMetas[0] = abtb->getPredictionMeta(stream.tid);
     return stream;
 }
 
 void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool isCond, int size=4) {
-    stream.resolved = true;
-    stream.exeBranchInfo.pc = brPc;
-    stream.exeBranchInfo.target = target;
-    stream.exeBranchInfo.isCond = isCond;
-    stream.exeBranchInfo.size = size;
-    stream.exeTaken = taken;
+    stream.resolve.valid = true;
+    stream.resolve.branchSlot.pc = brPc;
+    stream.resolve.branchSlot.target = target;
+    stream.resolve.branchSlot.setTypeFromFlags(isCond, false, !isCond, false, false);
+    stream.resolve.branchSlot.size = size;
+    stream.resolve.taken = taken;
 }
 
 FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
@@ -48,7 +48,6 @@ FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
         stagePreds[i].tid = tid;
         stagePreds[i].asidHash = asidHash;
         stagePreds[i].bbStart = startPC;
-        stagePreds[i].predSource = i;
     }
     boost::dynamic_bitset<> history(8, 0); // history does not matter for BTB
     abtb->putPCHistory(startPC, history, stagePreds);
@@ -62,7 +61,7 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 }
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb, MBTB *mbtb) {
-    mbtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
+    stream.update.setEntrySelection(mbtb->selectUpdateEntry(stream));
     abtb->update(stream);
 }
 
@@ -118,8 +117,8 @@ TEST_F(ABTBTest, BasicPredictionUpdateCycle){
     auto pred_B_test = makePrediction(startPC_B, abtb);
     EXPECT_EQ(pred_B_test.btbEntries.size(), 1);
     if (!pred_B_test.btbEntries.empty()) {
-        EXPECT_EQ(pred_B_test.btbEntries[0].pc, brPC_B);
-        EXPECT_EQ(pred_B_test.btbEntries[0].target, target_B);
+        EXPECT_EQ(pred_B_test.btbEntries[0].slot.pc, brPC_B);
+        EXPECT_EQ(pred_B_test.btbEntries[0].slot.target, target_B);
     }
 
 }
@@ -194,8 +193,8 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
 
     EXPECT_EQ(pred_t0_test.btbEntries.size(), 1);
     if (!pred_t0_test.btbEntries.empty()) {
-        EXPECT_EQ(pred_t0_test.btbEntries[0].pc, t0BrPC);
-        EXPECT_EQ(pred_t0_test.btbEntries[0].target, t0Target);
+        EXPECT_EQ(pred_t0_test.btbEntries[0].slot.pc, t0BrPC);
+        EXPECT_EQ(pred_t0_test.btbEntries[0].slot.target, t0Target);
     }
 }
 

@@ -3,7 +3,6 @@ Import('*')
 # all below tests must add --unit-test to enable unit test mode!
 # eg: scons build/RISCV/cpu/pred/btb/test/tage.test.debug --unit-test -j100
 
-# Add the test source files
 GTest('uras.test', 'uras_test.cc')
 
 # Add BTB test with minimal dependencies
@@ -45,6 +44,14 @@ GTest('history_manager.test',
     'history_manager.test.cc',
 )
 
+GTest('prediction_result.test',
+    'prediction_result.test.cc',
+)
+
+GTest('final_prediction_selector.test',
+    'final_prediction_selector.test.cc',
+)
+
 # add --unit-test to enable unit test mode for RAS
 # TODO: Fix RAS test
 # GTest('ras.test',
@@ -60,6 +67,8 @@ env.Append(UNITTESTS=['uras.test',
         'mgsc.test',
         'folded_hist.test',
         'history_manager.test',
+        'prediction_result.test',
+        'final_prediction_selector.test',
         'jump_ahead.test',
         'fetch_target_queue.test',
         'decoupled_bpred.test'])

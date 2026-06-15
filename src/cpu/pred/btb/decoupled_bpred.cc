@@ -122,9 +122,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
 
         thread.s0PC = 0x80000000;
         thread.predsOfEachStage.resize(numStages);
-        for (unsigned i = 0; i < numStages; i++) {
-            thread.predsOfEachStage[i].predSource = i;
-        }
         thread.s0History.resize(historyBits, 0);
         thread.s0PHistory.resize(historyBits, 0);
         thread.s0BwHistory.resize(historyBits, 0);
@@ -323,7 +320,6 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
         predsOfEachStage[i].tid = tid;
         predsOfEachStage[i].asidHash = asid_hash;
         predsOfEachStage[i].bbStart = thread.s0PC;
-        predsOfEachStage[i].predSource = i;
     }
 
     // Query each predictor component with current PC and history
@@ -347,92 +343,31 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     auto& predsOfEachStage = threads[tid].predsOfEachStage;
     auto& finalPred = threads[tid].finalPred;
+    auto& finalPredMetadata = threads[tid].finalPredMetadata;
 
     // 1. Debug output: dump predictions from all stages
     for (int i = 0; i < numStages; i++) {
         printFullBTBPrediction(predsOfEachStage[i]);
     }
 
-    // 2. Select the most accurate prediction (prioritize later stages)
-    // Initially assume stage 0 (UBTB) prediction
-    FullBTBPrediction *chosenPrediction = &predsOfEachStage[0];
-
-    // Search from last stage to first for valid predictions
-    for (int i = (int)numStages - 1; i >= 0; i--) {
-        if (predsOfEachStage[i].btbEntries.size() > 0) {
-            chosenPrediction = &predsOfEachStage[i];
-            DPRINTF(Override, "Selected prediction from stage %d\n", i);
-            break;
-        }
-    }
+    const FinalPredictionSelectorConfig selector_config{
+        ras->getComponentIdx(),
+        ittage->getComponentIdx(),
+        tage->getComponentIdx(),
+        mbtb->getComponentIdx(),
+    };
+    const auto selection =
+        selectFinalPrediction(predsOfEachStage, predictWidth, selector_config,
+                              [this]() { return ittage->tageHit(); });
+    DPRINTF(Override, "Selected prediction from stage %u\n",
+            selection.chosenStage);
 
     // Store the chosen prediction as our final prediction
-    finalPred = *chosenPrediction;
-
-    finalPred.s1Source = -1;//meaning fallthrough
-    finalPred.s3Source = -1;
-
-    if (predsOfEachStage[0].btbEntries.size() != 0) {
-        for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 ||entry.alwaysTaken){
-                finalPred.s1Source = entry.source;
-                break;
-            }
-        }
-    }
-
-    bool found_s3_taken = false;
-    bool na_s3_taken_but_have_cond = false;
-
-    for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0 || entry.alwaysTaken) {
-            found_s3_taken = true;
-        }else if (entry.isCond){
-            //only use when there's no taken prediction in s3
-            na_s3_taken_but_have_cond = true;
-        }
-    }
-
-    if (found_s3_taken) {
-        auto pred_taken_entry = finalPred.getTakenEntry();
-        if (pred_taken_entry.valid) {
-            if (pred_taken_entry.isReturn) {
-                finalPred.s3Source = ras->getComponentIdx();
-            } else if (pred_taken_entry.isIndirect && ittage->tageHit()) {
-                finalPred.s3Source = ittage->getComponentIdx();
-            }else if (pred_taken_entry.isCond) {
-                finalPred.s3Source = tage->getComponentIdx();
-            } else {
-                finalPred.s3Source = mbtb->getComponentIdx();
-            }
-        }else {
-            if (na_s3_taken_but_have_cond) {
-                finalPred.s3Source = tage->getComponentIdx();
-            }else {
-                finalPred.s3Source = -1;
-            }
-        }
-    }
-
-
-
-    // 3. Calculate override bubbles needed for pipeline consistency
-    // Override bubbles are needed when earlier stages predict differently from later stages
-    unsigned first_hit_stage = 0;
-    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
-
-    // Find first stage that matches the chosen prediction
-    while (first_hit_stage < numStages - 1) {
-        auto [matches, reason] = predsOfEachStage[first_hit_stage].match(*chosenPrediction, predictWidth);
-        if (matches) {
-            break;
-        }
-        first_hit_stage++;
-        overrideReason = reason;
-    }
+    finalPred = predsOfEachStage[selection.chosenStage];
+    finalPredMetadata = selection.metadata;
 
     // update ubtb/abtb using final S3 prediction
-    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+    if (selection.updateAheadFromLastStage) {
         if (ubtb->isEnabled()) {
             ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
         }
@@ -445,23 +380,20 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 
     // 4. Record override bubbles and update statistics
-    if (first_hit_stage > 0) {
+    if (finalPredMetadata.firstMatchingStage > 0) {
         dbpBtbStats.overrideCount++;
     }
 
-    // 5. Finalize prediction process
-    finalPred.predSource = first_hit_stage;
-    finalPred.overrideReason = overrideReason;
-
     // Debug output for final prediction
     printFullBTBPrediction(finalPred);
-    dbpBtbStats.predsOfEachStage[first_hit_stage]++;
+    dbpBtbStats.predsOfEachStage[finalPredMetadata.firstMatchingStage]++;
 
     // Clear stage predictions for next cycle
     clearPreds(tid);
 
-    DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
-    threads[tid].numOverrideBubbles = first_hit_stage;
+    DPRINTF(Override, "Prediction complete: override bubbles=%d\n",
+            finalPredMetadata.firstMatchingStage);
+    threads[tid].numOverrideBubbles = finalPredMetadata.firstMatchingStage;
 }
 
 // this function enqueues fsq and update s0PC and s0History
@@ -579,15 +511,15 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     auto &target = ftq.get(target_id, tid);
 
     // Update target state
-    target.resolved = true;
-    target.exeTaken = actually_taken;
-    target.squashPC = squash_pc.instAddr();
-    target.squashType = squash_type;
+    target.resolve.valid = true;
+    target.resolve.taken = actually_taken;
+    target.resolve.squashPC = squash_pc.instAddr();
+    target.resolve.squashType = squash_type;
 
     // Special handling for control squash - create branch info
     if (squash_type == SQUASH_CTRL && static_inst) {
         // Use full branch info with static_inst if available
-        target.exeBranchInfo = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
+        target.resolve.branchSlot = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
         dumpFsq("Before control squash");
     }
 
@@ -701,8 +633,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                 "Commit target start %#lx, which is predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
-                target.startPC, target.exeBranchInfo.pc, target.exeBranchInfo.target, target.predBranchInfo.pc,
-                target.predBranchInfo.target);
+                target.startPC, target.resolve.branchSlot.pc,
+                target.resolve.branchSlot.target, target.prediction.branchSlot.pc,
+                target.prediction.branchSlot.target);
 
         // Update statistics
         updateStatistics(target);
@@ -733,7 +666,7 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
     auto &target = ftq.get(target_id, tid);
 
     // Update predictor components only if the target is hit or taken
-    if (!(target.isHit || target.exeTaken)) {
+    if (!(target.prediction.btbHit || target.resolve.taken)) {
         return true;
     }
 
@@ -788,14 +721,15 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID t
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.isHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.resolve.taken) {
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
 
         // only mbtb can generate new entry
         if (mbtb->isEnabled()) {
-            mbtb->getAndSetNewBTBEntry(target);
+            target.update.setEntrySelection(
+                mbtb->selectUpdateEntry(target));
         }
     }
 }
@@ -810,8 +744,8 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstP
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.updateNewBTBEntry.pc == resolvedInstPC) {
-        target.updateNewBTBEntry.resolved = true;
+    if (target.update.newBTBEntry.slot.pc == resolvedInstPC) {
+        target.update.newBTBEntry.slot.resolved = true;
     }
 
     target.markBTBEntryResolved(resolvedInstPC);
@@ -821,14 +755,15 @@ void
 DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
 {
     // Update predictor components only if the target is hit or taken
-    if (target.isHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.resolve.taken) {
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
 
         // only mbtb can generate new entry
         if (mbtb->isEnabled()) {
-            mbtb->getAndSetNewBTBEntry(target);
+            target.update.setEntrySelection(
+                mbtb->selectUpdateEntry(target));
         }
 
         // Update predictor components
@@ -883,6 +818,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     auto& s0BwHistory = threads[tid].s0BwHistory;
     auto& s0LHistory = threads[tid].s0LHistory;
     auto& finalPred = threads[tid].finalPred;
+    const auto &finalPredMetadata = threads[tid].finalPredMetadata;
 
     // Create a new fetch target entry
     FetchTarget entry;
@@ -891,21 +827,20 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     entry.startPC = s0PC;
 
     // Extract branch prediction information
-    bool taken = finalPred.isTaken();
-    Addr fallThroughAddr = finalPred.getFallThrough(predictWidth);
-    Addr nextPC = finalPred.getTarget(predictWidth);
+    auto takenResult = finalPred.getTakenSlotResult(predictWidth);
+    bool taken = takenResult.taken();
+    Addr fallThroughAddr = takenResult.fallThrough;
 
     // Configure target entry with prediction details
-    entry.isHit = !finalPred.btbEntries.empty();
-    entry.falseHit = false;
-    entry.predBTBEntries = finalPred.btbEntries;
-    entry.predTaken = taken;
-    entry.predEndPC = fallThroughAddr;
+    entry.prediction.btbHit = !finalPred.btbEntries.empty();
+    entry.prediction.falseHit = false;
+    entry.prediction.btbEntries = finalPred.btbEntries;
+    entry.prediction.taken = taken;
+    entry.prediction.fallThrough = fallThroughAddr;
 
     // Set branch info for taken predictions
     if (taken) {
-        entry.predBranchInfo = finalPred.getTakenEntry().getBranchInfo();
-        entry.predBranchInfo.target = nextPC; // Use final target (may not be from BTB)
+        entry.prediction.branchSlot = takenResult.resolvedSlot();
     }
 
     // Record current history and prediction metadata
@@ -914,11 +849,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     entry.bwhistory = s0BwHistory;
     entry.lhistory = s0LHistory;
     entry.predTick = finalPred.predTick;
-    entry.predSource = finalPred.predSource;
-    entry.overrideReason = finalPred.overrideReason;
-
-    entry.s1Source = finalPred.s1Source;
-    entry.s3Source = finalPred.s3Source;
+    entry.finalPredMetadata = finalPredMetadata;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {
@@ -1031,7 +962,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     // Update history manager and verify TAGE folded history
     historyManagers[tid].addSpeculativeHist(
         entry.startPC, entry.history, entry.phistory, ghist_update,
-        phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
+        phist_update, entry.prediction.branchSlot,
+        ftq.backId(tid) + 1);
 
     // Update global backward history
     histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
@@ -1153,7 +1085,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     if (squash_type == SQUASH_CTRL) {
         historyManagers[tid].squash(target_id, ghist_update,
                                     phist_update,
-                                    target.exeBranchInfo);
+                                    target.resolve.branchSlot);
     } else {
         historyManagers[tid].squash(target_id, ghist_update,
                                     phist_update, BranchInfo());

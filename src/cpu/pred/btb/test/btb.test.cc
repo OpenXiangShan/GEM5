@@ -36,10 +36,7 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
     BranchInfo info;
     info.pc = pc;
     info.target = target;
-    info.isCond = isCond;
-    info.isIndirect = isIndirect;
-    info.isCall = isCall;
-    info.isReturn = isReturn;
+    info.setTypeFromFlags(isCond, isIndirect, false, isCall, isReturn);
     info.size = size;
     return info;
 }
@@ -58,12 +55,12 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
                        std::shared_ptr<void> meta, Addr endInstPC) {
     FetchTarget stream;
     stream.startPC = startPC;
-    stream.resolved = true;
-    stream.exeBranchInfo = branch;
-    stream.exeTaken = taken;
+    stream.resolve.valid = true;
+    stream.resolve.branchSlot = branch;
+    stream.resolve.taken = taken;
     stream.predMetas[0] = meta;
-    stream.updateEndInstPC = endInstPC;
-    stream.squashType = SQUASH_CTRL; // mispredict default
+    stream.update.endInstPC = endInstPC;
+    stream.resolve.squashType = SQUASH_CTRL; // mispredict default
     return stream;
 }
 
@@ -130,15 +127,16 @@ predictUpdateCycle(MBTB* btb,
     // Populate predicted BTB entries in stream from stage predictions
     // Use entries from the first valid stage (delay)
     if (btb->getDelay() < stagePreds.size()) {
-        stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
+        stream.prediction.btbEntries =
+            stagePreds[btb->getDelay()].btbEntries;
     }
     stream.setUpdateBTBEntries();
-    btb->getAndSetNewBTBEntry(stream);
+    stream.update.setEntrySelection(btb->selectUpdateEntry(stream));
 
-    for (auto &entry : stream.updateBTBEntries) {
-        entry.resolved = true;
+    for (auto &entry : stream.update.btbEntries) {
+        entry.slot.resolved = true;
     }
-    stream.updateNewBTBEntry.resolved = true;
+    stream.update.newBTBEntry.slot.resolved = true;
 
     btb->update(stream);
 
@@ -164,8 +162,10 @@ void verifyPrediction(const std::vector<FullBTBPrediction>& stagePreds,
     for (int i = delay; i < stagePreds.size(); i++) {
         ASSERT_EQ(stagePreds[i].btbEntries.size(), expectedEntries.size());
         for (size_t j = 0; j < expectedEntries.size(); j++) {
-            EXPECT_EQ(stagePreds[i].btbEntries[j].pc, expectedEntries[j].pc);
-            EXPECT_EQ(stagePreds[i].btbEntries[j].target, expectedEntries[j].target);
+            EXPECT_EQ(stagePreds[i].btbEntries[j].slot.pc,
+                      expectedEntries[j].pc);
+            EXPECT_EQ(stagePreds[i].btbEntries[j].slot.target,
+                      expectedEntries[j].target);
         }
     }
 }
@@ -210,7 +210,7 @@ TEST_F(BTBTest, EmptyPrediction) {
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]
-// 3. getAndSetNewBTBEntry, only L1 BTB has this function
+// 3. selectUpdateEntry, only L1 BTB has this function
 // 4. update, update btb entries
 
 // Test basic prediction after update
@@ -367,7 +367,7 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     auto meta = mbtb->getPredictionMeta();
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
-    mbtb->getAndSetNewBTBEntry(stream);
+    stream.update.setEntrySelection(mbtb->selectUpdateEntry(stream));
     mbtb->update(stream);
     
     // Check final predictions

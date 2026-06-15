@@ -91,7 +91,7 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
 {
     if (entry.valid) {
         Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-        assert(entry.pc >= startAddr && entry.pc < mbtb_end);
+        assert(entry.slot.pc >= startAddr && entry.slot.pc < mbtb_end);
         DPRINTF(UBTB, "UBTB: lookup hit: \n");
         ubtbStats.predHit += 1;
         printTickedUBTBEntry(entry);
@@ -118,16 +118,20 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 
     if (entry.valid) {
         FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
-        if (entry.isCond) {
+        if (entry.slot.isCond()) {
             // the always taken field of BTBEntry is ignored in uBTB
             // uBTB always assumes present entries to be taken
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({entry.pc, true});
-        } else if (entry.isIndirect) {
+            FillStageLoop(s) stagePreds[s].condTakens.push_back(
+                {entry.slot.pc, true});
+        } else if (entry.slot.isIndirect()) {
             // Set predicted target for indirect branches
-            DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n", entry.pc, entry.target);
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({entry.pc, entry.target});
-            if (entry.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = entry.target;
+            DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n",
+                    entry.slot.pc, entry.slot.target);
+            FillStageLoop(s) stagePreds[s].indirectTargets.push_back(
+                {entry.slot.pc, entry.slot.target});
+            if (entry.slot.isReturn()) {
+                FillStageLoop(s) stagePreds[s].returnTarget =
+                    entry.slot.target;
             }
         }
     }
@@ -166,7 +170,8 @@ UBTB::lookup(Addr startAddr, uint8_t asidHash)
     auto it = std::find_if(ubtb.begin(), ubtb.end(),
                            [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
                                return way.valid && way.tag == current_tag &&
-                                      way.pc >= startAddr && way.pc < block_end;
+                                      way.slot.pc >= startAddr &&
+                                      way.slot.pc < block_end;
                            });
 
     if (it != ubtb.end()) {
@@ -174,7 +179,7 @@ UBTB::lookup(Addr startAddr, uint8_t asidHash)
         auto duplicate = std::find_if(std::next(it), ubtb.end(),
                                       [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
             return way.valid && way.tag == current_tag &&
-                   way.pc >= startAddr && way.pc < block_end;
+                   way.slot.pc >= startAddr && way.slot.pc < block_end;
         });
         if (duplicate != ubtb.end()) {
             DPRINTF(UBTB, "UBTB: Multiple hits found in uBTB for the same tag %#lx\n", current_tag);
@@ -197,7 +202,7 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry,
     assert(newTakenEntry.valid);
     TickedUBTBEntry newEntry = TickedUBTBEntry(newTakenEntry, curTick());
     // important! this is so that target set by RAS or ITTAGE is used
-    newEntry.target = newTakenEntry.target;
+    newEntry.slot.target = newTakenEntry.slot.target;
     newEntry.ctr = 0; // have a bug here:ubtb will accept ctr from mbtb, reset it to 0 at here
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
     newEntry.tag = getTag(startAddr, asidHash);
@@ -273,7 +278,8 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
         } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
             ubtbStats.s1Hits3Taken++;
             // both S0 and S3 predict taken
-            if (oldEntryIter->pc != takenEntry.pc || oldEntryIter->target != takenEntry.target) {
+            if (oldEntryIter->slot.pc != takenEntry.slot.pc ||
+                oldEntryIter->slot.target != takenEntry.slot.target) {
                 // S0 and S3 predict different branch instruction
                 updateUCtr(oldEntryIter->uctr, false);
                 if (oldEntryIter->uctr == 0) {
@@ -296,12 +302,12 @@ UBTB::update(const FetchTarget &stream)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = stream.updateEndInstPC;
+    Addr end_inst_pc = stream.update.endInstPC;
 
     auto pred_hit_entry = meta->hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
      // Use BTBEntry instead of BranchInfo; make it invalid when not taken
-    BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
+    BTBEntry takenEntry = stream.resolve.taken ? BTBEntry(stream.resolve.branchSlot) : BTBEntry();
     auto startAddr = stream.getRealStartPC();
     Addr oldtag = getTag(startAddr, stream.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
@@ -311,12 +317,15 @@ UBTB::update(const FetchTarget &stream)
     oldEntryIter = meta->hit_entry.valid ?
                     std::find_if(ubtb.begin(), ubtb.end(), [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
                         return e.valid && e.tag == oldtag &&
-                               e.pc >= startAddr && e.pc < block_end;
+                               e.slot.pc >= startAddr && e.slot.pc < block_end;
                     }) : ubtb.end();
 
-    if (stream.exeTaken) {
-        if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
-            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (stream.resolve.taken) {
+        if (!pred_hit_entry.valid ||
+            pred_hit_entry.slot != stream.resolve.branchSlot) {
+            DPRINTF(UBTB, "update miss detected, pc %#lx, "
+                    "predTick %lu\n",
+                    stream.resolve.branchSlot.pc, stream.predTick);
             ubtbStats.updateMiss++;
         }else {
             ubtbStats.updateHit++;
@@ -337,10 +346,10 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     auto &hit_entry = meta->hit_entry;
     auto pc = inst->getPC();
     auto npc = inst->getNPC();
-    bool this_branch_hit = hit_entry.pc == pc;
+    bool this_branch_hit = hit_entry.slot.pc == pc;
 
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc;  // all uncond should be taken
+    bool this_branch_taken = stream.resolve.taken && stream.getControlPC() == pc;  // all uncond should be taken
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         ubtbStats.allBranchHits++;
@@ -371,7 +380,7 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         if (!inst->isNonSpeculative()) {
             if (inst->isIndirectCtrl()) {
                 ubtbStats.indirectHits++;
-                Addr pred_target = hit_entry.target;
+                Addr pred_target = hit_entry.slot.target;
                 if (pred_target == this_branch_target) {
                     ubtbStats.indirectPredCorrect++;
                 } else {

@@ -180,7 +180,10 @@ class AheadBTB : public TimedBaseBTBPredictor
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
+            e.valid, e.slot.pc, e.tag, e.slot.size, e.slot.target,
+            e.slot.isCond(), e.slot.isIndirect(), e.slot.isCall(),
+            e.slot.isReturn(),
+            e.alwaysTaken, tick);
     }
 
     std::vector<BTBEntry> collectEntriesToUpdateFromS3Pred(
@@ -368,11 +371,11 @@ class AheadBTB : public TimedBaseBTBPredictor
         Addr last = 0;
         bool misorder = false;
         for (auto &entry : es) {
-            if (entry.pc <= last) {
+            if (entry.slot.pc <= last) {
                 misorder = true;
                 break;
             }
-            last = entry.pc;
+            last = entry.slot.pc;
         }
         if (misorder) {
             panic("BTB entries are not in ascending order");
