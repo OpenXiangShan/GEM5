@@ -432,7 +432,7 @@ TraceFetch::ensureTraceStreamFilled(ThreadID tid, size_t min_count)
 }
 
 StallReason
-TraceFetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc)
+TraceFetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc)
 {
     // 防御：正常情况下 traceMode 必然伴随有效的 traceReader
     panic_if(!traceReader, "traceMode enabled but traceReader is unavailable");
@@ -440,7 +440,7 @@ TraceFetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc)
 }
 
 StallReason
-TraceFetch::fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc)
+TraceFetch::fetchTraceInstruction(ThreadID tid, PCStateBase &this_pc)
 {
     const bool wrong_path = (traceEnableWrongPath && traceWrongPathActive);
     if (wrong_path) {
@@ -470,6 +470,18 @@ TraceFetch::fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc)
     if (traceEnableWrongPath && traceBPValidation &&
         head.isCtrlFlowChange() && !head.isAnyBranch()) {
         head.setInstSizeBytes(2);
+    }
+    if (this_pc.instAddr() != head.getPC()) {
+        DPRINTF(Fetch,
+                "[tid:%i] Trace on-demand: align fetch PC from 0x%#lx to "
+                "trace PC 0x%#lx\n",
+                tid, (unsigned long)this_pc.instAddr(),
+                (unsigned long)head.getPC());
+        auto &rv_pc = this_pc.as<RiscvISA::PCState>();
+        rv_pc.pc(head.getPC());
+        rv_pc.npc(head.getPC() + sizeof(TheISA::MachInst));
+        rv_pc.uReset();
+        rv_pc.compressed(false);
     }
     pendingTraceInstr = head;
     pendingTraceValid = true;
@@ -1165,20 +1177,33 @@ TraceFetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
     uint64_t index = findTraceIndexForSeqNum(seqNum);
     bool found = index != 0;
     if (!found) {
-        if (squash_itself) {
-            // If squashing the instruction itself, try one earlier
-            DPRINTF(Fetch,
-                    "rollbackTraceReader[sn:%lli]: No mapped trace index, "
-                    "trying earlier instruction\n",
-                    seqNum);
-            index = findTraceIndexForSeqNum(seqNum - 1);
-            if (index != 0) {
-                found = true;
-                need_to_decrement_index = false; // already moved back
-            } else {
-                DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n", seqNum);
-                return false;
+        InstSeqNum prev_seq = 0;
+        uint64_t prev_index = 0;
+        for (const auto &entry : seqNumToTraceIndex) {
+            if (entry.first < seqNum &&
+                (prev_index == 0 || entry.first > prev_seq)) {
+                prev_seq = entry.first;
+                prev_index = entry.second;
             }
+        }
+
+        if (prev_index != 0) {
+            if (squash_itself) {
+                index = prev_index;
+                need_to_decrement_index = false;
+            } else {
+                index = prev_index + 1;
+            }
+            found = true;
+            DPRINTF(Fetch,
+                    "rollbackTraceReader[sn:%lli]: No direct trace index, "
+                    "using previous sn:%lli traceIndex=%lu -> target=%lu\n",
+                    seqNum, prev_seq, prev_index, index);
+        } else {
+            DPRINTF(Fetch,
+                    "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n",
+                    seqNum);
+            return false;
         }
     }
 

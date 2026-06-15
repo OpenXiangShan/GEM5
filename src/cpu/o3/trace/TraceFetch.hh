@@ -92,7 +92,7 @@ class TraceFetch
     bool maybeStallFetch(ThreadID tid);
 
     /** Trace-mode checkMemoryNeeds fast path (called from Fetch::checkMemoryNeeds). */
-    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc);
+    StallReason checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc);
 
     /** Bind pending trace metadata to a built DynInst (called from Fetch). */
     void bindPendingTraceMetadata(ThreadID tid, const DynInstPtr &instruction,
@@ -149,7 +149,7 @@ class TraceFetch
     TheISA::MachInst createMachInstFromTrace(const o3::TraceInstruction &traceInstr);
 
     unsigned chooseWrongPathNopSize(ThreadID tid, Addr pc);
-    StallReason fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc);
+    StallReason fetchTraceInstruction(ThreadID tid, PCStateBase &this_pc);
     void supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
                               TheISA::MachInst machInst, Addr instrPC,
                               const char *tag);

@@ -686,7 +686,7 @@ class Fetch
      * @param curMacroop Current macroop (if any)
      * @return StallReason if stalled, NoStall otherwise
      */
-    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+    StallReason checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop);
 
 

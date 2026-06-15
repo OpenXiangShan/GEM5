@@ -2869,7 +2869,7 @@ Fetch::fetch(bool &status_change)
 }
 
 StallReason
-Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+Fetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                         const StaticInstPtr &curMacroop)
 {
     // If we are in the middle of a macro-op, the decoder does not need
