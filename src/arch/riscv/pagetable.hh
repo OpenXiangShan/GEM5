@@ -210,6 +210,7 @@ struct TlbEntry : public Serializable
     PTE pteVS;
 
     bool isCompressed;
+    bool l1CompressedNarrow;
     uint8_t validIdx;
     uint8_t pteIdx;
     std::array<uint8_t, 8> ppnLow;
@@ -243,6 +244,7 @@ struct TlbEntry : public Serializable
           pte(),
           pteVS(),
           isCompressed(false),
+          l1CompressedNarrow(false),
           validIdx(0),
           pteIdx(0),
           ppnLow{},

@@ -96,6 +96,16 @@ hasSameCompressionAttrs(PTE lhs, PTE rhs)
            lhs.d == rhs.d;
 }
 
+static int
+firstValidIdx(uint8_t valid_idx)
+{
+    for (int i = 0; i < l2tlbLineSize; i++) {
+        if (valid_idx & (1 << i))
+            return i;
+    }
+    return -1;
+}
+
 TLB::TLB(const Params &p) :
     BaseTLB(p), is_dtlb(p.is_dtlb),is_L1tlb(p.is_L1tlb),isStage2(p.is_stage2),
     isTheSharedL2(p.is_the_sharedL2),
@@ -339,10 +349,24 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     if (entry && entry->isCompressed) {
         const uint8_t sub_idx = (vpn >> PageShift) & 0x7;
         if (!(entry->validIdx & (1 << sub_idx))) {
-            if (!hidden && !is_prefetch)
-                stats.l1CompressedLookupMisses++;
-            entry = nullptr;
+            TlbEntry *fallback_entry =
+                lookupL1CompressedFallback(vpn, asid, translateMode, entry);
+            if (fallback_entry) {
+                entry = fallback_entry;
+                if (!hidden && !is_prefetch) {
+                    stats.l1CompressedLookupHits++;
+                    stats.l1CompressedLookupFallbackHits++;
+                }
+            } else {
+                if (!hidden && !is_prefetch) {
+                    stats.l1CompressedLookupMisses++;
+                    stats.l1CompressedLookupFallbackMisses++;
+                }
+                entry = nullptr;
+            }
         } else if (!hidden && !is_prefetch) {
+            if (entry->l1CompressedNarrow)
+                stats.l1CompressedLookupFallbackHits++;
             stats.l1CompressedLookupHits++;
         }
     }
@@ -663,7 +687,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     }
 
     if (!squashed_update) {
-        TlbEntry *merged_entry = prepareL1CompressedInsert(entry, translateMode);
+        TlbEntry *merged_entry = prepareL1CompressedInsert(
+            entry, translateMode);
         if (merged_entry)
             return merged_entry;
     }
@@ -688,6 +713,12 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
             DPRINTF(TLBVerbosel2, "update isSquashed flag but no entry\n");
         }
         return newEntry;
+    }
+
+    if (newEntry) {
+        if (entry.isCompressed && translateMode == direct &&
+            newEntry->isCompressed && newEntry->l1CompressedNarrow)
+            newEntry = nullptr;
     }
 
     if (newEntry) {
@@ -720,7 +751,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     newEntry->translateMode = translateMode;
     newEntry->lruSeq = nextSeq();
     newEntry->vaddr = vpn;
-    newEntry->trieHandle = trie.insert(key, TlbEntryTrie::MaxBits - entry.logBytes + PGSHFT, newEntry);
+    newEntry->trieHandle = trie.insert(
+        key, TlbEntryTrie::MaxBits - entry.logBytes + PGSHFT, newEntry);
     DPRINTF(TLBVerbosel2, "trie insert key %#x logbytes %#x paddr %#x\n", key,
             entry.logBytes, newEntry->paddr);
     // stats all insert number
@@ -947,12 +979,23 @@ TLB::demapPage(Addr vpn, uint64_t asid)
         DPRINTF(TLB, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         DPRINTF(TLB, "l1tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
         if (vpn != 0 && asid != 0) {
-            for (uint8_t i = 0; i < 4; i++) {
-                TlbEntry *newEntry = lookup(vpn, asid, BaseMMU::Read, true, false, i);
-                if (newEntry)
-                    remove(newEntry - tlb.data());
-                l2tlb->demapPageL2(vpn, asid);
+            for (i = 0; i < size; i++) {
+                if (!tlb[i].trieHandle)
+                    continue;
+                Addr mask = ~(tlb[i].size() - 1);
+                if ((vpn & mask) == (tlb[i].vaddr & mask) &&
+                    tlb[i].asid == asid) {
+                    remove(i);
+                    continue;
+                }
+                if (tlb[i].trieHandle) {
+                    mask = ~(tlb[i].size() - 1);
+                    if ((vpn & mask) == (tlb[i].gpaddr & mask) &&
+                        tlb[i].vmid == asid)
+                        remove(i);
+                }
             }
+            l2tlb->demapPageL2(vpn, asid);
         } else {
             for (i = 0; i < size; i++) {
                 if (tlb[i].trieHandle) {
@@ -1253,11 +1296,43 @@ TLB::getEntryPaddr(const TlbEntry *entry, Addr vaddr) const
     if (!entry->isCompressed || entry->level != 0)
         return (entry->paddr << PageShift) | (vaddr & mask(entry->logBytes));
 
-    const uint8_t sub_idx = (vaddr >> PageShift) & 0x7;
+    const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
     assert(entry->validIdx & (1 << sub_idx));
 
-    const Addr ppn = (entry->paddr << 3) | entry->ppnLow[sub_idx];
+    const Addr ppn =
+        (entry->paddr << L2TLB_BLK_OFFSET) | entry->ppnLow[sub_idx];
     return (ppn << PageShift) | (vaddr & mask(PageShift));
+}
+
+TlbEntry *
+TLB::lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
+                                uint8_t translateMode,
+                                const TlbEntry *missed_entry)
+{
+    if (!enableL1DirectCompression || translateMode != direct)
+        return nullptr;
+
+    const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
+    const Addr block_base = (vaddr >> (PageShift + L2TLB_BLK_OFFSET))
+        << (PageShift + L2TLB_BLK_OFFSET);
+
+    TlbEntry *fallback = nullptr;
+    for (size_t i = 0; i < size; i++) {
+        TlbEntry &entry = tlb[i];
+        if (&entry == missed_entry || !entry.trieHandle)
+            continue;
+        if (!entry.isCompressed || entry.translateMode != direct)
+            continue;
+        if (entry.asid != asid || entry.vaddr != block_base || entry.level != 0)
+            continue;
+        if (!(entry.validIdx & (1 << sub_idx)))
+            continue;
+
+        if (!fallback || entry.lruSeq > fallback->lruSeq)
+            fallback = &entry;
+    }
+
+    return fallback;
 }
 
 TlbEntry *
@@ -1269,6 +1344,49 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
     TlbEntry *merged_entry = nullptr;
     const Addr block_base = entry.vaddr;
     const Addr block_limit = block_base + entry.size();
+
+    auto reinsert_narrow = [this](TlbEntry &narrow_entry,
+                                  size_t entry_idx) {
+        const int narrow_idx = firstValidIdx(narrow_entry.validIdx);
+        panic_if(narrow_idx < 0,
+                 "compressed TLB entry has no valid subentry\n");
+
+        if (narrow_entry.trieHandle) {
+            trie.remove(narrow_entry.trieHandle);
+            narrow_entry.trieHandle = nullptr;
+        }
+        narrow_entry.l1CompressedNarrow = true;
+
+        const Addr narrow_vaddr =
+            narrow_entry.vaddr + (static_cast<Addr>(narrow_idx) << PageShift);
+        for (size_t j = 0; j < size; j++) {
+            if (j == entry_idx)
+                continue;
+
+            TlbEntry &other_entry = tlb[j];
+            if (!other_entry.trieHandle || !other_entry.isCompressed ||
+                !other_entry.l1CompressedNarrow ||
+                other_entry.translateMode != direct ||
+                other_entry.asid != narrow_entry.asid)
+                continue;
+
+            const int other_idx = firstValidIdx(other_entry.validIdx);
+            if (other_idx < 0) {
+                remove(j);
+                continue;
+            }
+
+            Addr other_vaddr =
+                other_entry.vaddr + (static_cast<Addr>(other_idx) << PageShift);
+            if (other_vaddr == narrow_vaddr)
+                remove(j);
+        }
+
+        const Addr narrow_key =
+            buildKey(narrow_vaddr, narrow_entry.asid, direct);
+        narrow_entry.trieHandle =
+            trie.insert(narrow_key, TlbEntryTrie::MaxBits, &narrow_entry);
+    };
 
     for (size_t i = 0; i < size; i++) {
         TlbEntry &old_entry = tlb[i];
@@ -1285,22 +1403,44 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
             continue;
 
         if (old_entry.isCompressed) {
-            if (old_entry.vaddr != block_base ||
-                old_entry.logBytes != entry.logBytes ||
+            if (old_entry.vaddr != block_base || old_entry.logBytes != entry.logBytes ||
                 old_entry.paddr != entry.paddr ||
                 !hasSameCompressionAttrs(old_entry.pte, entry.pte)) {
-                remove(i);
+                old_entry.validIdx &= ~entry.validIdx;
+                old_entry.pteIdx &= ~entry.validIdx;
+                if (!old_entry.validIdx) {
+                    remove(i);
+                    continue;
+                }
+
+                const bool was_narrow = old_entry.l1CompressedNarrow;
+                reinsert_narrow(old_entry, i);
+                if (!was_narrow)
+                    stats.l1CompressedNarrowInserts++;
                 continue;
             }
+            if (old_entry.l1CompressedNarrow) {
+                old_entry.validIdx &= ~entry.validIdx;
+                old_entry.pteIdx &= ~entry.validIdx;
+                if (!old_entry.validIdx) {
+                    remove(i);
+                } else {
+                    reinsert_narrow(old_entry, i);
+                }
+                continue;
+            }
+            const uint8_t new_valid_idx =
+                entry.validIdx & static_cast<uint8_t>(~old_entry.validIdx);
             for (int sub_idx = 0; sub_idx < l2tlbLineSize; sub_idx++) {
-                if (entry.validIdx & (1 << sub_idx))
+                if (new_valid_idx & (1 << sub_idx))
                     old_entry.ppnLow[sub_idx] = entry.ppnLow[sub_idx];
             }
-            old_entry.validIdx |= entry.validIdx;
-            old_entry.pteIdx |= entry.pteIdx;
+            old_entry.validIdx |= new_valid_idx;
+            old_entry.pteIdx |= entry.pteIdx & old_entry.validIdx;
             old_entry.pte = entry.pte;
             old_entry.lruSeq = nextSeq();
-            merged_entry = &old_entry;
+            if (!old_entry.l1CompressedNarrow)
+                merged_entry = &old_entry;
             continue;
         }
 
@@ -2789,13 +2929,22 @@ TLB::unserialize(CheckpointIn &cp)
         freeList.pop_front();
 
         newEntry->unserializeSection(cp, csprintf("Entry%d", x));
-        Addr key = buildKey(newEntry->vaddr, newEntry->asid,
+        Addr key_vaddr = newEntry->vaddr;
+        unsigned trie_width =
+            TlbEntryTrie::MaxBits - newEntry->logBytes + PGSHFT;
+        if (newEntry->isCompressed && newEntry->l1CompressedNarrow) {
+            const int narrow_idx = firstValidIdx(newEntry->validIdx);
+            panic_if(narrow_idx < 0,
+                     "compressed TLB entry has no valid subentry\n");
+            key_vaddr += static_cast<Addr>(narrow_idx) << PageShift;
+            trie_width = TlbEntryTrie::MaxBits;
+        }
+        Addr key = buildKey(key_vaddr, newEntry->asid,
                             newEntry->translateMode);
         if (newEntry->translateMode == gstage)
-            key = buildKey(newEntry->vaddr, newEntry->vmid,
+            key = buildKey(key_vaddr, newEntry->vmid,
                            newEntry->translateMode);
-        newEntry->trieHandle = trie.insert(key,
-            TlbEntryTrie::MaxBits - newEntry->logBytes + PGSHFT, newEntry);
+        newEntry->trieHandle = trie.insert(key, trie_width, newEntry);
     }
 }
 
@@ -2880,6 +3029,12 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "number of demand L1 lookups served by valid compressed entries"),
       ADD_STAT(l1CompressedLookupMisses, statistics::units::Count::get(),
                "number of demand L1 lookups that matched a compressed entry but missed its valid index"),
+      ADD_STAT(l1CompressedLookupFallbackHits, statistics::units::Count::get(),
+               "number of demand L1 compressed lookups recovered by fallback candidates"),
+      ADD_STAT(l1CompressedLookupFallbackMisses, statistics::units::Count::get(),
+               "number of demand L1 compressed lookups still missing after fallback"),
+      ADD_STAT(l1CompressedNarrowInserts, statistics::units::Count::get(),
+               "number of L1 compressed entries stored with a narrow fallback key"),
       ADD_STAT(l1InitialLookupHits, statistics::units::Count::get(),
                "number of non-prefetch direct one-stage initial L1 lookup hits"),
       ADD_STAT(l1InitialLookupMisses, statistics::units::Count::get(),

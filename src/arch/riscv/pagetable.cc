@@ -48,6 +48,7 @@ TlbEntry::serialize(CheckpointOut &cp) const
     SERIALIZE_SCALAR(asid);
     SERIALIZE_SCALAR(pte);
     SERIALIZE_SCALAR(isCompressed);
+    SERIALIZE_SCALAR(l1CompressedNarrow);
     SERIALIZE_SCALAR(validIdx);
     SERIALIZE_SCALAR(pteIdx);
     SERIALIZE_CONTAINER(ppnLow);
@@ -65,6 +66,7 @@ TlbEntry::unserialize(CheckpointIn &cp)
     UNSERIALIZE_SCALAR(asid);
     UNSERIALIZE_SCALAR(pte);
     UNSERIALIZE_SCALAR(isCompressed);
+    UNSERIALIZE_SCALAR(l1CompressedNarrow);
     UNSERIALIZE_SCALAR(validIdx);
     UNSERIALIZE_SCALAR(pteIdx);
     arrayParamIn(cp, "ppnLow", ppnLow.data(), ppnLow.size());

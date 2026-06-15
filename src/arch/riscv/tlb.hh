@@ -170,6 +170,9 @@ class TLB : public BaseTLB
         statistics::Scalar l1CompressedSavedEntries;
         statistics::Scalar l1CompressedLookupHits;
         statistics::Scalar l1CompressedLookupMisses;
+        statistics::Scalar l1CompressedLookupFallbackHits;
+        statistics::Scalar l1CompressedLookupFallbackMisses;
+        statistics::Scalar l1CompressedNarrowInserts;
         statistics::Scalar l1InitialLookupHits;
         statistics::Scalar l1InitialLookupMisses;
         statistics::Scalar l1InitialCompressedHits;
@@ -245,6 +248,9 @@ class TLB : public BaseTLB
     Port *getTableWalkerPort() override;
 
     Addr getEntryPaddr(const TlbEntry *entry, Addr vaddr) const;
+    TlbEntry *lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
+                                         uint8_t translateMode,
+                                         const TlbEntry *missed_entry);
     TlbEntry *prepareL1CompressedInsert(const TlbEntry &entry,
                                         uint8_t translateMode);
     bool buildL1CompressedEntry(Addr vaddr, const TlbEntry &base_entry,
