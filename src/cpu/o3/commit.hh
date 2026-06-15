@@ -632,6 +632,10 @@ class Commit
         statistics::Scalar loadEAReused;
         statistics::Scalar loadsWithProducer;
         statistics::Scalar producerStable;
+        /** Number of committed loads that ever saw a TLB miss and were fully forwarded from SQ. */
+        statistics::Vector tlbMissSqForwardLoads;
+        /** Ratio of committed loads that ever saw a TLB miss and were fully forwarded from SQ. */
+        statistics::Formula tlbMissSqForwardLoadRatio;
 
         statistics::Distribution segUnitStrideNF;
         statistics::Distribution segStrideNF;

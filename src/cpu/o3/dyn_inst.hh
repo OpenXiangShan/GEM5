@@ -266,6 +266,8 @@ class DynInst : public ExecContext, public RefCounted
 
     bool _hasProducerStorePC = false;
     Addr _producerStorePC = 0;
+    bool _everTLBMissed = false;
+    bool _loadDataForwardedFromSQ = false;
 
   protected:
     /** The result of the instruction; assumes an instruction can have many
@@ -1152,6 +1154,8 @@ class DynInst : public ExecContext, public RefCounted
 
     void setTLBMissReplay() { setReplay(LdStReplayType::TLBMissReplay); }
     bool needTLBMissReplay() const { return getReplayType() == LdStReplayType::TLBMissReplay; }
+    void setEverTLBMissed() { _everTLBMissed = true; }
+    bool everTLBMissed() const { return _everTLBMissed; }
 
     void setCacheMissReplay() { setReplay(LdStReplayType::CacheMissReplay); }
     bool needCacheMissReplay() const { return getReplayType() == LdStReplayType::CacheMissReplay; }
@@ -1193,6 +1197,8 @@ class DynInst : public ExecContext, public RefCounted
 
     void setFullForward() { status.set(FullForward); }
     bool fullForward() const { return status[FullForward]; }
+    void setLoadDataForwardedFromSQ() { _loadDataForwardedFromSQ = true; }
+    bool loadDataForwardedFromSQ() const { return _loadDataForwardedFromSQ; }
 
     void setWakeUpEarly() { status.set(WakeUpEarly); }
     bool wakeUpEarly() const { return status[WakeUpEarly]; }

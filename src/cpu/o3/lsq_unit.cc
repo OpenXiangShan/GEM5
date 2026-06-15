@@ -1356,6 +1356,7 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
     load_fault = inst->initiateAcc();
 
     if (inst->isTranslationDelayed() && load_fault == NoFault) {
+        inst->setEverTLBMissed();
         inst->setTLBMissReplay();
         DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
     }
@@ -3625,6 +3626,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                             request->mainReq()->getPaddr(), first_word);
                 }
                 load_inst->setFullForward();
+                load_inst->setLoadDataForwardedFromSQ();
 
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;

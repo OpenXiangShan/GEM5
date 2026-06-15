@@ -287,6 +287,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "store-load related"),
       ADD_STAT(producerStable, statistics::units::Cycle::get(),
                "Loads whose producer store PC equals last time for same static load (PC)"),
+      ADD_STAT(tlbMissSqForwardLoads, statistics::units::Count::get(),
+               "Committed loads that ever saw a TLB miss and were fully forwarded from SQ"),
+      ADD_STAT(tlbMissSqForwardLoadRatio, statistics::units::Ratio::get(),
+               "Ratio of committed loads that ever saw a TLB miss and were fully forwarded from SQ"),
       ADD_STAT(segUnitStrideNF, statistics::units::Count::get(),
                "Distribution of segment unit stride NF"),
       ADD_STAT(segStrideNF, statistics::units::Count::get(),
@@ -358,6 +362,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .init(cpu->numThreads)
         .flags(total);
 
+    tlbMissSqForwardLoads
+        .init(cpu->numThreads)
+        .flags(total);
+
     stores
         .init(cpu->numThreads)
         .flags(total);
@@ -395,6 +403,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(total | pdf | dist);
 
     committedInstType.ysubnames(enums::OpClassStrings);
+
+    tlbMissSqForwardLoadRatio
+        .precision(6);
+    tlbMissSqForwardLoadRatio = tlbMissSqForwardLoads / loads;
 
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
         squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
@@ -1496,6 +1508,11 @@ Commit::commitInsts()
                     }
 
                     if (head_inst->isLoad()) {
+                        if (head_inst->everTLBMissed() &&
+                            head_inst->loadDataForwardedFromSQ()) {
+                            stats.tlbMissSqForwardLoads[tid]++;
+                        }
+
                         Addr load_pc = head_inst->pcState().instAddr();
                         Addr load_addr = head_inst->physEffAddr;
                         char buffer[8] = {0};
