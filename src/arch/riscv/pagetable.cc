@@ -44,6 +44,7 @@ TlbEntry::serialize(CheckpointOut &cp) const
     SERIALIZE_SCALAR(paddr);
     SERIALIZE_SCALAR(vaddr);
     SERIALIZE_SCALAR(logBytes);
+    SERIALIZE_SCALAR(translateMode);
     SERIALIZE_SCALAR(asid);
     SERIALIZE_SCALAR(pte);
     SERIALIZE_SCALAR(isCompressed);
@@ -60,6 +61,7 @@ TlbEntry::unserialize(CheckpointIn &cp)
     UNSERIALIZE_SCALAR(paddr);
     UNSERIALIZE_SCALAR(vaddr);
     UNSERIALIZE_SCALAR(logBytes);
+    UNSERIALIZE_SCALAR(translateMode);
     UNSERIALIZE_SCALAR(asid);
     UNSERIALIZE_SCALAR(pte);
     UNSERIALIZE_SCALAR(isCompressed);
