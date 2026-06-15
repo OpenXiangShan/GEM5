@@ -2,8 +2,8 @@ name: gem5 SMT SPEC2006 Performance Test(0.3c)
 
 on:
   schedule:
-    # Run every Tuesday and Thursday at 23:59 UTC+8 (15:59 UTC)
-    - cron: '59 15 * * 2,4'
+    # Run every Tuesday at 23:59 UTC+8 (15:59 UTC)
+    - cron: '59 15 * * 2'
   pull_request_target:
     types: [labeled]
   workflow_dispatch:
