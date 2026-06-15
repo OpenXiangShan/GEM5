@@ -192,7 +192,7 @@ if __name__ == '__m5_main__':
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
-    args.l3_size = '32MB'
+    args.l3_size = '16MB'
     args.pht_pf_level = 2
     # Enable prefetch buffers for all hardware prefetchers in this config.
     args.enable_pf_buffer = True
