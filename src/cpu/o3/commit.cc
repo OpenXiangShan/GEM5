@@ -1866,6 +1866,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isSerializeAfter() && head_inst->isNonSpeculative() &&
         head_inst->isReturn()) {
         traceLogPrivReturn(head_inst, tid);
+        // Restart fetch after the committed privilege state takes effect.
+        squashAfter(tid, head_inst);
     }
 
     committedPC[tid] = head_inst->pcState().instAddr();
