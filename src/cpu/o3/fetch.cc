@@ -557,6 +557,13 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     threads[tid].cacheReq.addRequest(first_mem_req); // packet will be created later
 
+    // Initiate translation for first request
+    updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
+    setAllFetchStalls(StallReason::ITlbStall);
+    FetchTranslation *trans = new FetchTranslation(this);
+    cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
+                              trans, BaseMMU::Execute);
+
     // Prepare second request (head of second cache line)
     fetchPC += fetchSize;  // Move to start of next cache line
     assert(fetchPC % cacheBlkSize == 0);
@@ -576,18 +583,6 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     second_mem_req->setReqNum(2);
 
     threads[tid].cacheReq.addRequest(second_mem_req);  // Add second request to cache request
-
-    // Initiate translations after both requests are registered. Some MMU paths
-    // complete synchronously, so callbacks must see the full request group.
-    updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
-    FetchTranslation *trans = new FetchTranslation(this);
-    cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
-                              trans, BaseMMU::Execute);
-
-    if (threads[tid].cacheReq.findRequestIndex(second_mem_req) == SIZE_MAX) {
-        return true;
-    }
 
     DPRINTF(Fetch, "[tid:%i] Initiating translation for second cache line\n", tid);
 
@@ -955,12 +950,17 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 bool
 Fetch::validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req)
 {
-    const size_t reqIndex = threads[tid].cacheReq.findRequestIndex(mem_req);
+    // Check if this request belongs to current cache request
+    bool isExpectedReq = false;
+    for (size_t i = 0; i < threads[tid].cacheReq.requests.size(); i++) {
+        if (mem_req == threads[tid].cacheReq.requests[i]) {
+            isExpectedReq = true;
+            break;
+        }
+    }
 
-    // Check this request's status, not the request group's overall status:
-    // another cacheline in the same fetch may already have failed.
-    if (reqIndex == SIZE_MAX ||
-        threads[tid].cacheReq.requestStatus[reqIndex] != TlbWait) {
+    // Check if request should be processed using new state system
+    if (!isExpectedReq || !hasPendingCacheRequests(tid)) {
         DPRINTF(Fetch, "[tid:%i] Ignoring translation completed after squash or unexpected request\n", tid);
         DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n", tid, mem_req->getVaddr());
         ++fetchStats.tlbSquashes;

@@ -1531,8 +1531,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             inst->pcState(*new_pc);
         }
 
-        if (inst->mispredicted() && !loadNotExecuted &&
-            !inst->isNonSpeculative()) {
+        if (inst->mispredicted() && !loadNotExecuted) {
             fetchRedirect[tid] = true;
 
             DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
@@ -1979,7 +1978,7 @@ IEW::checkMisprediction(const DynInstPtr& inst)
             inst->pcState(*new_pc);
         }
 
-        if (inst->mispredicted() && !inst->isNonSpeculative()) {
+        if (inst->mispredicted()) {
             fetchRedirect[tid] = true;
 
             DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
