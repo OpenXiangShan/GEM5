@@ -892,6 +892,7 @@ class LSQ
     void scheduleMatrixMemReplay();
     unsigned squashMatrixMem(ThreadID tid, InstSeqNum squash_seq);
     unsigned retireCommittedMatrixMem(ThreadID tid, InstSeqNum committed_seq);
+    bool matrixMlsEnabled() const { return enableMatrixMlsQueue; }
     MlsReplayQueue *matrixReplayQueue() { return &mlsReplayQueue; }
     MlsVirtualQueue *matrixVirtualQueue() { return &mlsVirtualQueue; }
 
@@ -1374,6 +1375,7 @@ class LSQ
     /** The LSQ units for individual threads. */
     std::vector<LSQUnit> thread;
 
+    bool enableMatrixMlsQueue = true;
     MlsReplayQueue mlsReplayQueue;
     MlsVirtualQueue mlsVirtualQueue;
 

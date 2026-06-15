@@ -79,7 +79,6 @@ class BaseO3CPU(BaseCPU):
     cxx_header = 'cpu/o3/dyn_inst.hh'
     if buildEnv['TARGET_ISA'] == 'riscv':
         matrix_mem_port = RequestPort("Matrix memory timing port")
-        _cached_ports = BaseCPU._cached_ports + ['matrix_mem_port']
     cxx_exports = [
         PyBindMethod("addHintDownStream"),
     ]
@@ -87,21 +86,32 @@ class BaseO3CPU(BaseCPU):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._downstream_pf = []
+        self._sync_matrix_cached_port()
 
-    def _add_matrix_cached_port(self):
+    def _sync_matrix_cached_port(self):
         if buildEnv['TARGET_ISA'] != 'riscv':
+            return
+        if not self.enableMatrixMemPort:
+            self._cached_ports = [
+                port for port in self._cached_ports
+                if port != 'matrix_mem_port'
+            ]
             return
         if 'matrix_mem_port' not in self._cached_ports:
             self._cached_ports += ['matrix_mem_port']
 
     def addPrivateSplitL1Caches(self, ic, dc, iwc=None, dwc=None):
         super().addPrivateSplitL1Caches(ic, dc, iwc, dwc)
-        self._add_matrix_cached_port()
+        self._sync_matrix_cached_port()
 
     def addTwoLevelCacheHierarchy(self, ic, dc, l2c, iwc=None, dwc=None,
                                   xbar=None):
         super().addTwoLevelCacheHierarchy(ic, dc, l2c, iwc, dwc, xbar)
-        self._add_matrix_cached_port()
+        self._sync_matrix_cached_port()
+
+    def connectCachedPorts(self, in_ports):
+        self._sync_matrix_cached_port()
+        super().connectCachedPorts(in_ports)
 
     # Override the normal SimObject::regProbeListeners method and
     # register deferred event handlers.
@@ -167,6 +177,14 @@ class BaseO3CPU(BaseCPU):
     enableDispatchStage = Param.Bool(False, "Enable the dispatch stage")
     numDQEntries = VectorParam.Unsigned([32, 16, 16], "Number of entries in the dispQue, (Int, Float/Vector, Mem)")
     dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
+
+    enableMatrixBackend = Param.Bool(
+        True,
+        "Enable matrix backend timing, AMU shadow admission, and toAMU proxy")
+    enableMatrixMemPort = Param.Bool(
+        True, "Expose and connect the matrix memory timing port")
+    enableMatrixMlsQueue = Param.Bool(
+        True, "Enable matrix memory virtual and replay queues")
 
     wbWidth = Param.Unsigned(20, "Writeback width")
 

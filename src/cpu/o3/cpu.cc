@@ -367,11 +367,18 @@ CPU::CPU(const BaseO3CPUParams &params)
     matrixTokenResetSeqs.assign(
         numThreads,
         std::vector<InstSeqNum>(TheISA::ISA::MatrixTokenCount, 0));
-    constexpr unsigned detailedCuteFifoDepth = 8;
-    auto detailed_backend = std::make_unique<matrix::DetailedCuteBackend>(
-        detailedCuteFifoDepth);
-    detailed_backend->setTimingMemoryAdapter(&matrixMemPort);
-    matrixBackend = std::move(detailed_backend);
+    enableMatrixBackend = params.enableMatrixBackend;
+    enableMatrixMemPort = params.enableMatrixMemPort;
+    enableMatrixMlsQueue = params.enableMatrixMlsQueue;
+    if (enableMatrixBackend) {
+        constexpr unsigned detailedCuteFifoDepth = 8;
+        auto detailed_backend = std::make_unique<matrix::DetailedCuteBackend>(
+            detailedCuteFifoDepth);
+        if (enableMatrixMemPort) {
+            detailed_backend->setTimingMemoryAdapter(&matrixMemPort);
+        }
+        matrixBackend = std::move(detailed_backend);
+    }
 #endif
 
     // The stages also need their CPU pointer setup.  However this
@@ -858,6 +865,8 @@ CPU::getPort(const std::string &if_name, PortID idx)
 {
 #if THE_ISA_IS_RISCV
     if (if_name == "matrix_mem_port") {
+        panic_if(!enableMatrixMemPort,
+                 "matrix_mem_port requested while enableMatrixMemPort=false");
         return matrixMemPort;
     }
 #endif
@@ -1489,7 +1498,8 @@ CPU::canAcceptMatrixBackendReq(const matrix::CuteRequest &req,
 {
 #if THE_ISA_IS_RISCV
     if (!matrixBackend) {
-        return true;
+        panic("Matrix backend request [sn:%llu] reached CPU while "
+              "enableMatrixBackend=false", seq_num);
     }
 
     const bool accepted = matrixBackend->canAccept(req);
@@ -1510,7 +1520,8 @@ CPU::submitMatrixBackendReq(ThreadID tid, const matrix::CuteRequest &req,
 {
 #if THE_ISA_IS_RISCV
     if (!matrixBackend) {
-        return true;
+        panic("Matrix backend request [sn:%llu] reached CPU while "
+              "enableMatrixBackend=false", seq_num);
     }
 
     if (!matrixBackend->canAccept(req)) {

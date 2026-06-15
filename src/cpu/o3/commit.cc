@@ -1671,6 +1671,7 @@ Commit::commitInsts()
 
     bool firedMatrixAmuProxy = false;
     for (auto it = activeThreads->begin();
+         cpu->isMatrixBackendEnabled() &&
          it != activeThreads->end() && !firedMatrixAmuProxy; ++it) {
         ThreadID tid = *it;
         ROB::MatrixAmuEntry entry;

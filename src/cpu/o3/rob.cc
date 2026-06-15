@@ -314,7 +314,8 @@ ROB::resetState()
 bool
 ROB::shouldTrackMatrixAmu(const DynInstPtr &inst) const
 {
-    return inst && inst->isMatrixInst() && inst->matrixNeedAmuCtrl();
+    return cpu->isMatrixBackendEnabled() && inst && inst->isMatrixInst() &&
+           inst->matrixNeedAmuCtrl();
 }
 
 void
@@ -362,24 +363,36 @@ ROB::noteMatrixAmuCommit(const DynInstPtr &inst)
 bool
 ROB::peekReadyMatrixAmuEntry(ThreadID tid, MatrixAmuEntry &entry_out)
 {
+    if (!cpu->isMatrixBackendEnabled()) {
+        return false;
+    }
     return matrixAmuBuffers[tid].peekReady(tid, entry_out);
 }
 
 bool
 ROB::popReadyMatrixAmuEntry(ThreadID tid, MatrixAmuEntry &entry_out)
 {
+    if (!cpu->isMatrixBackendEnabled()) {
+        return false;
+    }
     return matrixAmuBuffers[tid].popReady(tid, entry_out);
 }
 
 unsigned
 ROB::numFreeMatrixAmuEntries(ThreadID tid)
 {
+    if (!cpu->isMatrixBackendEnabled()) {
+        return matrixAmuBufferEntries;
+    }
     return matrixAmuBuffers[tid].numFreeEntries(tid);
 }
 
 void
 ROB::squashMatrixAmuEntry(ThreadID tid, InstSeqNum seq_num)
 {
+    if (!cpu->isMatrixBackendEnabled()) {
+        return;
+    }
     matrixAmuBuffers[tid].squash(tid, seq_num);
 }
 

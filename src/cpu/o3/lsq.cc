@@ -435,6 +435,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       RARQEntries(params.RARQEntries),
       RAWQEntries(params.RAWQEntries),
       dcachePort(this, cpu_ptr),
+      enableMatrixMlsQueue(params.enableMatrixMlsQueue),
       mlsReplayQueue(
           params.numThreads,
           params.matrixMlsReplayQueueEntries,
@@ -846,6 +847,10 @@ LSQ::executePipeSx()
 MlsUnit::IssueResult
 LSQ::issueMatrixMem(const DynInstPtr &inst)
 {
+    panic_if(!enableMatrixMlsQueue,
+             "Matrix memory instruction [sn:%llu] reached LSQ while "
+             "enableMatrixMlsQueue=false",
+             inst ? inst->seqNum : 0);
     ThreadID tid = inst->threadNumber;
     return thread[tid].issueMatrixMem(inst);
 }
@@ -853,24 +858,37 @@ LSQ::issueMatrixMem(const DynInstPtr &inst)
 bool
 LSQ::canAllocateMatrixMem(ThreadID tid, unsigned count) const
 {
+    if (!enableMatrixMlsQueue) {
+        return false;
+    }
     return mlsVirtualQueue.canAllocate(tid, count);
 }
 
 bool
 LSQ::hasMatrixMemEntry(const DynInstPtr &inst) const
 {
+    if (!enableMatrixMlsQueue) {
+        return false;
+    }
     return mlsVirtualQueue.hasEntry(inst);
 }
 
 bool
 LSQ::allocateMatrixMemEntry(const DynInstPtr &inst)
 {
+    panic_if(!enableMatrixMlsQueue,
+             "Matrix memory instruction [sn:%llu] tried to allocate MLSQ "
+             "while enableMatrixMlsQueue=false",
+             inst ? inst->seqNum : 0);
     return mlsVirtualQueue.allocate(inst);
 }
 
 void
 LSQ::scheduleMatrixMemReplay()
 {
+    if (!enableMatrixMlsQueue) {
+        return;
+    }
     for (auto tid : *activeThreads) {
         mlsReplayQueue.refreshReady(
             tid,
@@ -895,6 +913,9 @@ LSQ::scheduleMatrixMemReplay()
 unsigned
 LSQ::squashMatrixMem(ThreadID tid, InstSeqNum squash_seq)
 {
+    if (!enableMatrixMlsQueue) {
+        return 0;
+    }
     const unsigned mlsqCanceled = mlsVirtualQueue.squash(tid, squash_seq);
     if (mlsqCanceled != 0) {
         DPRINTF(LSQ,
@@ -915,6 +936,9 @@ LSQ::squashMatrixMem(ThreadID tid, InstSeqNum squash_seq)
 unsigned
 LSQ::retireCommittedMatrixMem(ThreadID tid, InstSeqNum committed_seq)
 {
+    if (!enableMatrixMlsQueue) {
+        return 0;
+    }
     const unsigned retired = mlsVirtualQueue.retireCommitted(tid, committed_seq);
     if (retired != 0) {
         DPRINTF(LSQ,

@@ -407,6 +407,9 @@ class CPU : public BaseCPU
      * might have as defined by the architecture.
      */
     void setMiscReg(int misc_reg, RegVal val, ThreadID tid);
+    bool isMatrixBackendEnabled() const { return enableMatrixBackend; }
+    bool isMatrixMemPortEnabled() const { return enableMatrixMemPort; }
+    bool isMatrixMlsQueueEnabled() const { return enableMatrixMlsQueue; }
     void commitMatrixResetToken(
         ThreadID tid, RegVal token_idx, InstSeqNum seq_num);
     void releaseMatrixShadowToken(ThreadID tid, RegVal token_idx);
@@ -698,9 +701,16 @@ class CPU : public BaseCPU
 
 
 #if THE_ISA_IS_RISCV
+    bool enableMatrixBackend = true;
+    bool enableMatrixMemPort = true;
+    bool enableMatrixMlsQueue = true;
     std::vector<std::vector<RegVal>> matrixShadowTokens;
     std::vector<std::vector<InstSeqNum>> matrixTokenResetSeqs;
     std::unique_ptr<matrix::MatrixBackend> matrixBackend;
+#else
+    bool enableMatrixBackend = false;
+    bool enableMatrixMemPort = false;
+    bool enableMatrixMlsQueue = false;
 #endif
     std::unordered_map<InstSeqNum, ThreadID> matrixBackendOwners;
 
