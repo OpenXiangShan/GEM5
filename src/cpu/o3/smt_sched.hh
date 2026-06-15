@@ -107,23 +107,25 @@ class MultiPrioritySched : public SMTScheduler
 
     ThreadID getThread() override
     {
-        for (size_t i = 0; i < counter.size(); ++i) {
-            bool set = false;
-            ThreadID selectedTid = 0;
-            uint64_t minCount = counter[i]->getCounter(0);
-            for (ThreadID tid = 1; tid < numThreads; ++tid) {
-                uint64_t count = counter[i]->getCounter(tid);
-                if (count < minCount) {
-                    minCount = count;
+        ThreadID selectedTid = 0;
+
+        for (ThreadID tid = 1; tid < numThreads; ++tid) {
+            for (size_t i = 0; i < counter.size(); ++i) {
+                uint64_t candidateCount = counter[i]->getCounter(tid);
+                uint64_t selectedCount = counter[i]->getCounter(selectedTid);
+
+                if (candidateCount < selectedCount) {
                     selectedTid = tid;
-                    set = true;
+                    break;
+                }
+
+                if (candidateCount > selectedCount) {
+                    break;
                 }
             }
-            if (set) {
-                return selectedTid;
-            }
         }
-        return 0;
+
+        return selectedTid;
     }
 };
 
