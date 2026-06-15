@@ -99,7 +99,115 @@ export full_work_dir=$ds/$tag # work dir wheter stats data stored
 mkdir -p $full_work_dir
 ln -sf $full_work_dir .  # optional, you can customize it yourself
 
+export progress_status_file="$full_work_dir/progress.status"
+export progress_lock_file="$full_work_dir/progress.lock"
+exec 3>&1
+
 declare -a filtered_workloads=()
+
+function format_progress_line() {
+    local progress_line
+    printf -v progress_line \
+        'issued[%d/%d], running[%d/%d], success[%d/%d], fail[%d/%d], skipped[%d/%d]' \
+        "$1" "$6" "$2" "$6" "$3" "$6" "$4" "$6" "$5" "$6"
+
+    if [ -t 3 ]; then
+        printf '\033[1;97;44m[PARALLEL_PROGRESS]\033[0m \033[1;33m%s\033[0m\n' \
+            "$progress_line"
+    else
+        printf '[PARALLEL_PROGRESS] %s\n' "$progress_line"
+    fi
+}
+
+function count_selected_workloads() {
+    if [ "${#filtered_workloads[@]}" -gt 0 ]; then
+        echo "${#filtered_workloads[@]}"
+    else
+        grep -cve '^[[:space:]]*$' "$workload_list"
+    fi
+}
+
+function init_progress() {
+    local total="$1"
+    printf '%s %s %s %s %s %s\n' "$total" 0 0 0 0 0 > "$progress_status_file"
+    format_progress_line 0 0 0 0 0 "$total" >&3
+}
+
+function update_progress() {
+    local action="$1"
+    local xtrace_was_on=0
+    local current_total=0
+    local current_issued=0
+    local current_running=0
+    local current_success=0
+    local current_fail=0
+    local current_skipped=0
+
+    if [[ $- == *x* ]]; then
+        xtrace_was_on=1
+        set +x
+    fi
+
+    (
+        flock -x 200
+        if ! read -r current_total current_issued current_running current_success current_fail current_skipped < "$progress_status_file"; then
+            current_total="${total_workloads:-0}"
+            current_issued=0
+            current_running=0
+            current_success=0
+            current_fail=0
+            current_skipped=0
+        fi
+
+        case "$action" in
+            issue)
+                ((current_issued++))
+                ((current_running++))
+                ;;
+            success)
+                ((current_running--))
+                ((current_success++))
+                ;;
+            fail)
+                ((current_running--))
+                ((current_fail++))
+                ;;
+            skip)
+                ((current_issued++))
+                ((current_skipped++))
+                ;;
+            *)
+                echo "Unknown progress action: $action" >&2
+                exit 1
+                ;;
+        esac
+
+        if [ "$current_running" -lt 0 ]; then
+            current_running=0
+        fi
+
+        printf '%s %s %s %s %s %s\n' \
+            "$current_total" \
+            "$current_issued" \
+            "$current_running" \
+            "$current_success" \
+            "$current_fail" \
+            "$current_skipped" > "$progress_status_file"
+        format_progress_line \
+            "$current_issued" \
+            "$current_running" \
+            "$current_success" \
+            "$current_fail" \
+            "$current_skipped" \
+            "$current_total" >&3
+    ) 200>"$progress_lock_file"
+
+    local rc=$?
+    if [ "$xtrace_was_on" -eq 1 ]; then
+        set -x
+    fi
+    return "$rc"
+}
 
 function apply_benchmark_filter() {
     if [ -z "${benchmark_filters//[[:space:],]/}" ]; then
@@ -145,9 +253,10 @@ function apply_benchmark_filter() {
 check() {
     if [ $1 -ne 0 ]; then
         echo FAIL
-        rm running
+        rm -f running
         touch abort
-        exit
+        update_progress fail
+        exit "$1"
     fi
 }
 
@@ -167,6 +276,7 @@ function run() {
 
     if test -f "completed"; then
         echo "Already completed; skip $1"
+        update_progress skip
         return
     fi
 
@@ -175,10 +285,11 @@ function run() {
     rm -f completed
 
     touch running
+    update_progress issue
 
     if [ "$use_legacy_mode" = true ]; then
         # Legacy mode: call wrapper script
-        bash $arch_script $1 # checkpoint
+        bash "$arch_script" "$1" # checkpoint
         check $?
     else
         # New mode: directly call gem5 with config file
@@ -187,8 +298,9 @@ function run() {
         check $?
     fi
 
-    rm running
+    rm -f running
     touch completed
+    update_progress success
 }
 
 function prepare_env() {
@@ -232,16 +344,21 @@ export -f check
 export -f run
 export -f arg_wrapper
 export -f prepare_env
+export -f format_progress_line
+export -f update_progress
 
 # xsgem5_para_jobs define in docker compose
 num_threads=${xsgem5_para_jobs:-63}
 function parallel_run() {
     # We use gnu parallel to control the parallelism.
     # If your server has 32 core and 64 SMT threads, we suggest to run with no more than 32 threads.
+    export total_workloads=$(count_selected_workloads)
+    init_progress "$total_workloads"
+
     if [ "${#filtered_workloads[@]}" -gt 0 ]; then
         printf '%s\n' "${filtered_workloads[@]}" | parallel -a - -j $num_threads arg_wrapper {}
     else
-        cat "$workload_list" | parallel -a - -j $num_threads arg_wrapper {}
+        grep -v '^[[:space:]]*$' "$workload_list" | parallel -a - -j $num_threads arg_wrapper {}
     fi
 }
 
