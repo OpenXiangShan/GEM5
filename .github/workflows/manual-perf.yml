@@ -18,6 +18,7 @@ on:
           - 'kmhv2.py'
           - 'kmhv3.py'
           - 'idealkmhv3.py'
+          - 'smt_idealkmhv3.py'
       benchmark_type:
         description: 'Benchmark coverage type'
         required: true
@@ -25,6 +26,8 @@ on:
         default: 'gcc15-spec06-0.8c'
         options:
           - gcc12-spec06-0.3c
+          - gcc12-spec06-smt-0.3c
+          - gcc12-spec06-smt-1.0c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
           - gcc15-spec06-0.3c
@@ -56,12 +59,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       config_path: ${{ steps.resolve.outputs.config_path }}
+      extra_args: ${{ steps.resolve.outputs.extra_args }}
       pr_sha: ${{ steps.resolve.outputs.pr_sha }}
     steps:
       - name: Resolve parameters
         id: resolve
         run: |
-          echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event.inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
+            echo "config_path=configs/example/smt_idealkmhv3.py" >> $GITHUB_OUTPUT
+            echo "extra_args=" >> $GITHUB_OUTPUT
+          else
+            echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
+            echo "extra_args=" >> $GITHUB_OUTPUT
+          fi
           
           if [ -n "${{ github.event.inputs.branch }}" ]; then
             echo "pr_sha=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
@@ -74,6 +84,7 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: ${{ needs.setup.outputs.config_path }}
+      extra_args: ${{ needs.setup.outputs.extra_args }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       vector_type: ${{ github.event.inputs.vector_type }}
