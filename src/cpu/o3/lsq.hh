@@ -1264,12 +1264,16 @@ class LSQ
 
     bool hasDcacheMainPipeDataArrayConflict() const;
     bool isDcacheMainPipeSetBlocked(uint64_t set_key) const;
+    bool isDcacheMainPipeSetBlocked(
+        uint64_t set_key, const DcacheMainPipeBufferedPipe &pipe) const;
     bool canEnterDcacheMainPipe(
         const DcacheMainPipeRequest &request,
         const DcacheMainPipeBufferedPipe &next_pipe);
     bool canEnterDcacheMainPipeNow(
         const DcacheMainPipeRequest &request);
     bool canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry);
+    void recordDcacheMainPipeStoreCandidateCycle(
+        const StoreBufferEntry &entry);
 
     // Put a StoreBuffer request into fake S1 and attach its fake S2 issue hook.
     void enterStoreBufferDcacheMainPipe(StoreBufferEntry &entry,
@@ -1285,6 +1289,11 @@ class LSQ
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
+    DcacheMainPipeBufferedPipe dcacheMainPipeBeforeS0Arb = {};
+    bool dcacheMainPipeRefillPendingBeforeAdvance = false;
+    bool dcacheMainPipeRefillEnteredThisCycle = false;
+    bool dcacheMainPipeS1BlockedBeforeS0Arb = false;
+    bool dcacheMainPipeTagReadBlockedBeforeS0Arb = false;
 
     bool isDcacheRefillTagWrite() const
     {
@@ -1388,6 +1397,12 @@ class LSQ
         statistics::Scalar sbufferDcacheReqBlockedByMainPipe;
         statistics::Scalar dcacheMainPipeRefillEnter;
         statistics::Scalar dcacheMainPipeStoreEnter;
+        statistics::Scalar dcacheMainPipeStoreValidCycles;
+        statistics::Scalar dcacheMainPipeStoreBlockedCycles;
+        statistics::Scalar dcacheMainPipeStoreBlockedByRefillCycles;
+        statistics::Scalar dcacheMainPipeStoreBlockedBySetCycles;
+        statistics::Scalar dcacheMainPipeStoreBlockedByS1BackpressureCycles;
+        statistics::Scalar dcacheMainPipeStoreBlockedByTagWriteCycles;
         statistics::Scalar dcacheMainPipeStoreBlockedByRefill;
         statistics::Scalar dcacheMainPipeStoreBlockedBySet;
         statistics::Scalar dcacheMainPipeBlockedByS1Backpressure;
