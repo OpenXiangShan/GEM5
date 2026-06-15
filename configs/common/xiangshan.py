@@ -881,6 +881,12 @@ def xiangshan_system_init():
         default=False,
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
     )
+    parser.add_argument(
+        "--standalone-sc",
+        action="store_true",
+        default=False,
+        help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

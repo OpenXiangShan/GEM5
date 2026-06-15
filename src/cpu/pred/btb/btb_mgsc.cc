@@ -1,6 +1,7 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 
 #include "base/intmath.hh"
+#include "base/logging.hh"
 
 #ifdef UNIT_TEST
 #include "cpu/pred/btb/test/test_dprintf.hh"
@@ -173,6 +174,7 @@ BTBMGSC::BTBMGSC()
       // This models "read a whole SRAM line, then pick a lane" behavior in `posHash()`.
       numCtrsPerLine(8),
       forceUseSC(false),
+      allowMissingTageInfo(false),
       enableBwTable(true),
       enableLTable(true),
       enableITable(true),
@@ -217,6 +219,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       weightTableIdxWidth(p.weightTableIdxWidth),
       numCtrsPerLine(p.numCtrsPerLine),
       forceUseSC(p.forceUseSC),
+      allowMissingTageInfo(p.allowMissingTageInfo),
       enableBwTable(p.enableBwTable),
       enableLTable(p.enableLTable),
       enableITable(p.enableITable),
@@ -282,14 +285,19 @@ BTBMGSC::setTrace()
             std::make_pair("totalThres", UINT64),
             std::make_pair("effectiveGate", UINT64),
             std::make_pair("margin", UINT64),
-            std::make_pair("bwIndexSig", UINT64),
-            std::make_pair("lIndexSig", UINT64),
-            std::make_pair("iIndexSig", UINT64),
-            std::make_pair("gIndexSig", UINT64),
-            std::make_pair("pIndexSig", UINT64),
-            std::make_pair("biasIndexSig", UINT64),
+            std::make_pair("bwIndex0", UINT64),
+            std::make_pair("bwIndex1", UINT64),
+            std::make_pair("lIndex0", UINT64),
+            std::make_pair("lIndex1", UINT64),
+            std::make_pair("iIndex0", UINT64),
+            std::make_pair("gIndex0", UINT64),
+            std::make_pair("gIndex1", UINT64),
+            std::make_pair("pIndex0", UINT64),
+            std::make_pair("pIndex1", UINT64),
+            std::make_pair("biasIndex0", UINT64),
             std::make_pair("useSc", UINT64),
             std::make_pair("scPred", UINT64),
+            std::make_pair("scWrong", UINT64),
             std::make_pair("actualTaken", UINT64),
         };
         mgscMissTrace = _db->addAndGetTrace("MGSCTRACE", fields_vec);
@@ -542,15 +550,18 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
-            if (tage_info != tageInfoForMgscs.end()) {
-                auto pred = generateSinglePrediction(btb_entry, startPC,
-                                                     tage_info->second, tid,
-                                                     asidHash);
-                threadMeta[tid]->preds[btb_entry.pc] = pred;
-                results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            } else {
-                assert(false);
-            }
+            panic_if(tage_info == tageInfoForMgscs.end() && !allowMissingTageInfo,
+                     "MGSC missing TAGE info for conditional branch pc %#lx "
+                     "startPC %#lx tid %u asidHash %#x",
+                     btb_entry.pc, startPC, static_cast<unsigned>(tid),
+                     static_cast<unsigned>(asidHash));
+
+            const TageInfoForMGSC missing_tage_info;
+            const auto &info =
+                tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
+            auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
+            threadMeta[tid]->preds[btb_entry.pc] = pred;
+            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
         }
     }
 }
@@ -861,12 +872,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         auto effective_gate = pred.tage_conf_high ? (total_thres / 2)
             : (pred.tage_conf_mid ? (total_thres / 4) : (total_thres / 8));
         auto margin = std::abs(total_sum) - effective_gate;
-        auto foldIndexSig = [](const std::vector<unsigned> &indices) -> uint64_t {
-            uint64_t sig = 0xcbf29ce484222325ULL;
-            for (auto idx : indices) {
-                sig ^= static_cast<uint64_t>(idx) + 0x9e3779b97f4a7c15ULL + (sig << 6) + (sig >> 2);
-            }
-            return sig;
+        auto indexAt = [](const std::vector<unsigned> &indices, size_t idx) -> uint64_t {
+            return idx < indices.size() ? indices[idx] : 0;
         };
         MgscTrace t;
         t.set(entry.pc,
@@ -875,9 +882,13 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
             pred.bw_percsum, pred.l_percsum, pred.i_percsum,
             pred.g_percsum, pred.p_percsum, pred.bias_percsum,
             total_sum, total_thres, effective_gate, margin,
-            foldIndexSig(pred.bwIndex), foldIndexSig(pred.lIndex), foldIndexSig(pred.iIndex),
-            foldIndexSig(pred.gIndex), foldIndexSig(pred.pIndex), foldIndexSig(pred.biasIndex),
-            use_mgsc, sc_pred_taken,
+            indexAt(pred.bwIndex, 0), indexAt(pred.bwIndex, 1),
+            indexAt(pred.lIndex, 0), indexAt(pred.lIndex, 1),
+            indexAt(pred.iIndex, 0),
+            indexAt(pred.gIndex, 0), indexAt(pred.gIndex, 1),
+            indexAt(pred.pIndex, 0), indexAt(pred.pIndex, 1),
+            indexAt(pred.biasIndex, 0),
+            use_mgsc, sc_pred_taken, sc_pred_taken != actual_taken,
             actual_taken);
         mgscMissTrace->write_record(t);
     }
