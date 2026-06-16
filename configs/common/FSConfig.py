@@ -693,6 +693,9 @@ def makeXiangshanPlatformSystem(mem_mode, mdesc=None, np=1, ruby=False,
     self.lint.pio = self.iobus.mem_side_ports
     self.lint.pio_addr = 0x38000000
     self.lint.num_threads = num_threads
+    # Keep CLINT mtime in step with the 1MHz timebase advertised in the DTB.
+    self.rtc = RiscvRTC(frequency=Frequency("1MHz"))
+    self.lint.int_pin = self.rtc.int_pin
 
     self.hartctrl = HartCtrl()
     self.hartctrl.pio = self.iobus.mem_side_ports

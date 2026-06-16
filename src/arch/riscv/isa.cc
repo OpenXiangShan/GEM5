@@ -61,6 +61,7 @@
 #include "mem/se_translating_port_proxy.hh"
 #include "mem/translating_port_proxy.hh"
 #include "params/RiscvISA.hh"
+#include "sim/core.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
 #include "sim/pseudo_inst.hh"
@@ -376,8 +377,14 @@ void ISA::clear()
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
                                     (1ULL << FS_OFFSET);
     }
-    miscRegFile[MISCREG_MCOUNTEREN] = 0;
-    miscRegFile[MISCREG_SCOUNTEREN] = 0;
+    if (FullSystem) {
+        miscRegFile[MISCREG_MCOUNTEREN] = 0;
+        miscRegFile[MISCREG_SCOUNTEREN] = 0;
+    } else {
+        // SE runs user-mode code without firmware or an OS to enable counters.
+        miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
+        miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
+    }
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
     miscRegFile[MISCREG_TSELECT] = 1;
@@ -622,9 +629,16 @@ ISA::readMiscReg(int misc_reg)
         }
       case MISCREG_TIME:
         if (hpmCounterEnabled(MISCREG_TIME)) {
-            DPRINTF(RiscvMisc, "Wall-clock counter at: %llu.\n",
-                    std::time(nullptr));
-            return readMiscRegNoEffect(MISCREG_TIME);
+            if (!FullSystem) {
+                const uint64_t seTimebaseHz = 1000000;
+                RegVal time = curTick() / (sim_clock::Frequency / seTimebaseHz);
+                DPRINTF(RiscvMisc, "SE time counter at: %llu.\n", time);
+                return time;
+            } else {
+                DPRINTF(RiscvMisc, "Wall-clock counter at: %llu.\n",
+                        std::time(nullptr));
+                return readMiscRegNoEffect(MISCREG_TIME);
+            }
         } else {
             return 0;
         }
