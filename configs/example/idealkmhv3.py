@@ -33,7 +33,7 @@ def setKmhV3IdealParams(args, system):
         cpu.fetchQueueSize = 64
 
         # decode
-        cpu.fetchToDecodeDelay = 5
+        cpu.fetchToDecodeDelay = 6
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
@@ -92,8 +92,8 @@ def setKmhV3IdealParams(args, system):
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
-        cpu.SbufferEntries = 24
-        cpu.SbufferEvictThreshold = 16
+        cpu.SbufferEntries = 16
+        cpu.SbufferEvictThreshold = 9
         cpu.enable_storeSet_train = True
         cpu.store_prefetch_train = False
 
