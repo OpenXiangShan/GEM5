@@ -285,9 +285,10 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    // 1. Request new prediction if FSQ not full, we are idle, and not off-path
+    // 1. Request new prediction if FSQ not full and we are idle.
+    // If UDP marks off-path, stall branch prediction.
     if (!threads[curTid].validprediction && !ftqFull(curTid) &&
-        !bpOffPath(curTid)) {
+        !prefetchFilteredByUDP(curTid)) {
         if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
@@ -313,9 +314,10 @@ DecoupledBPUWithBTB::tick()
 }
 
 bool
-DecoupledBPUWithBTB::bpOffPath(ThreadID tid) const
+DecoupledBPUWithBTB::prefetchFilteredByUDP(ThreadID tid) const
 {
     if (enableUdp) {
+        // if confidence < 0, consider BP as off-path, stop prefetching
         return threads[tid].udpConfidence < 0;
     } else {
         return false;
@@ -332,7 +334,7 @@ bool
 DecoupledBPUWithBTB::prefetchAvailable(ThreadID tid) const
 {
 
-    return ftqHasFetching(tid) && !prefetchTooFar(tid);
+    return ftqHasFetching(tid) && !(prefetchTooFar(tid) || prefetchFilteredByUDP(tid));
 }
 
 bool
@@ -342,8 +344,8 @@ DecoupledBPUWithBTB::prefetchAvailable() const
 }
 
 bool
-DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush,
-                                     bool fetchIsStall, ThreadID tid)
+DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, PrefetchFailReason &failReason,
+                                     bool &flush, bool fetchIsStall, ThreadID tid)
 {
     FetchTargetId fetchID = ftq.fetchId(tid);
     flush = fsqFlushFlag[tid];
@@ -361,9 +363,19 @@ DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush,
         enablePrefetch[tid] = true;
     }
 
-    if (prefetchTooFar(tid) ||
-        !enablePrefetch[tid]) {
+    if (!enablePrefetch[tid]) {
         fetchStallCycles[tid] += Cycles(1);
+        failReason = PrefetchFailReason::NO_CANDIDATE;
+        return false;
+    }
+
+    if (prefetchTooFar(tid)) {
+        failReason = PrefetchFailReason::TOO_FAR;
+        return false;
+    }
+
+    if (prefetchFilteredByUDP(tid)) {
+        failReason = PrefetchFailReason::UDP_FILTERED;
         return false;
     }
 
@@ -382,6 +394,7 @@ DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush,
         }
     }
 
+    failReason = PrefetchFailReason::NO_CANDIDATE;
     return false;
 }
 

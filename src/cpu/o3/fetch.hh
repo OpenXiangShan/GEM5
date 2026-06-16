@@ -1100,6 +1100,10 @@ class Fetch
         statistics::Scalar trySendPrefetch;
         /** Stat for total number of demand send prefetch req. */
         statistics::Scalar demandSendPrefetch;
+        /** Stat for total number of distance-filtered prefetch requests. */
+        statistics::Scalar distanceFilteredPrefetch;
+        /** Stat for total number of UDP-filtered prefetch requests. */
+        statistics::Scalar udpFilteredPrefetch;
         /** Total number of outstanding icache accesses that were dropped
          * due to a squash.
          */

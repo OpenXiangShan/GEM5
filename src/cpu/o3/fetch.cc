@@ -244,6 +244,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of try to send prefetch req"),
     ADD_STAT(demandSendPrefetch, statistics::units::Count::get(),
              "Number of demand send prefetch req"),
+    ADD_STAT(distanceFilteredPrefetch, statistics::units::Count::get(),
+             "Number of prefetches filtered by distance"),
+    ADD_STAT(udpFilteredPrefetch, statistics::units::Count::get(),
+             "Number of prefetches filtered by UDP"),
     ADD_STAT(icacheSquashes, statistics::units::Count::get(),
              "Number of outstanding Icache misses that were squashed"),
     ADD_STAT(tlbSquashes, statistics::units::Count::get(),
@@ -333,6 +337,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(trySendPrefetch);
         demandSendPrefetch
             .prereq(demandSendPrefetch);
+        distanceFilteredPrefetch
+            .prereq(distanceFilteredPrefetch);
+        udpFilteredPrefetch
+            .prereq(udpFilteredPrefetch);
         miscStallCycles
             .prereq(miscStallCycles);
         pendingDrainCycles
@@ -2351,7 +2359,9 @@ Fetch::handlePrefetch(ThreadID tid, bool fetchIsStall)
 {
     Addr prefetchAddr;
     bool flushPrefetchPipe;
-    bool getReq = dbpbtb->getPrefetchAddr(prefetchAddr, flushPrefetchPipe,
+    using branch_prediction::btb_pred::DecoupledBPUWithBTB;
+    DecoupledBPUWithBTB::PrefetchFailReason failReason;
+    bool getReq = dbpbtb->getPrefetchAddr(prefetchAddr, failReason, flushPrefetchPipe,
                                           fetchIsStall, tid);
 
     if (getReq) {
@@ -2363,6 +2373,13 @@ Fetch::handlePrefetch(ThreadID tid, bool fetchIsStall)
                 ++fetchStats.demandSendPrefetch;
                 dbpbtb->updatePrefetch(prefetchAddr, tid);
             }
+        }
+    } else {
+        if (failReason == DecoupledBPUWithBTB::PrefetchFailReason::UDP_FILTERED) {
+            assert(enableUdp);
+            ++fetchStats.udpFilteredPrefetch;
+        } else if (failReason == DecoupledBPUWithBTB::PrefetchFailReason::TOO_FAR) {
+            ++fetchStats.distanceFilteredPrefetch;
         }
     }
 }

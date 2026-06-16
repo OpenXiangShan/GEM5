@@ -430,12 +430,20 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
-    bool bpOffPath(ThreadID tid) const;
+
+    bool prefetchFilteredByUDP(ThreadID tid) const;
+
+    enum PrefetchFailReason
+    {
+        NO_CANDIDATE, // no candidate is generated, i.e. pfPtr == ifPtr
+        TOO_FAR,      // candidate is too far from fetch point
+        UDP_FILTERED, // candidate is filtered by UDP (off-path)
+    };
     bool prefetchTooFar(ThreadID tid) const;
     bool prefetchAvailable(ThreadID tid) const;
     bool prefetchAvailable() const;
-    bool getPrefetchAddr(Addr &prefetchAddr, bool &flush, bool fetchIsStall,
-                         ThreadID tid = 0);
+    bool getPrefetchAddr(Addr &prefetchAddr, PrefetchFailReason &failReason,
+                         bool &flush, bool fetchIsStall, ThreadID tid = 0);
     void updatePrefetch(Addr prefetchAddr, ThreadID tid = 0);
 
     void dumpFsq(const char *when);
