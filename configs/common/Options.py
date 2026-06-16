@@ -335,6 +335,43 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--ideal-kmhv3", action= "store_true",
                         help="Use KunminghuV3 ideal params, which take priority over command-line arguments.")
 
+    # Coarse CUTE matrix timing knobs. These are intentionally behavior-level
+    # controls for sensitivity studies, not cycle-accurate RTL stage controls.
+    parser.add_argument("--matrix-issue-interval-cycles", type=int,
+                        default=None,
+                        help="CUTE matrix task issue interval in CPU cycles")
+    parser.add_argument("--matrix-load-base-cycles", type=int, default=None,
+                        help="CUTE matrix load base latency in CPU cycles")
+    parser.add_argument("--matrix-store-base-cycles", type=int, default=None,
+                        help="CUTE matrix store base latency in CPU cycles")
+    parser.add_argument("--matrix-zero-cycles", type=int, default=None,
+                        help="CUTE matrix zero latency in CPU cycles")
+    parser.add_argument("--matrix-compute-base-cycles", type=int,
+                        default=None,
+                        help="Fixed CUTE matrix compute ready latency in CPU cycles")
+    parser.add_argument("--matrix-compute-read-cycles", type=int,
+                        default=None,
+                        help="Fixed CUTE matrix compute source read latency in CPU cycles")
+    parser.add_argument("--matrix-release-cycles", type=int, default=None,
+                        help="CUTE matrix release latency in CPU cycles")
+    parser.add_argument("--matrix-local-mmu-issue-per-cycle", type=int,
+                        default=None,
+                        help="CUTE LocalMMU request issue throughput per CPU cycle")
+    parser.add_argument("--matrix-local-mmu-arb-cycles", type=int,
+                        default=None,
+                        help="CUTE LocalMMU arbitration latency in CPU cycles")
+    parser.add_argument("--matrix-l2-request-pipeline-cycles", type=int,
+                        default=None,
+                        help="CUTE-to-L2 request pipeline latency in CPU cycles")
+    parser.add_argument("--matrix-l2-response-pipeline-cycles", type=int,
+                        default=None,
+                        help="CUTE L2 response service interval in CPU cycles")
+    parser.add_argument("--matrix-local-mmu-read-latency-cycles", type=int,
+                        default=None,
+                        help="CUTE LocalMMU read response latency in CPU cycles")
+    parser.add_argument("--matrix-local-mmu-write-ack-latency-cycles",
+                        type=int, default=None,
+                        help="CUTE LocalMMU write acknowledgement latency in CPU cycles")
 
     # for warmup without switching cpu
     parser.add_argument("--warmup-insts-no-switch", action="store", type=int,

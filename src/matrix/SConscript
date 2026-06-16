@@ -1,0 +1,6 @@
+Import('*')
+
+Source('matrix_controller.cc')
+GTest('matrix_controller.test', 'matrix_controller.test.cc',
+    'matrix_controller.cc', '../sim/cur_tick.cc', '../base/debug.cc',
+    '../base/str.cc', 'matrix_stats_test_stub.cc')

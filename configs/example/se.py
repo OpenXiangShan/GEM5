@@ -124,7 +124,23 @@ Options.addSEOptions(parser)
 if '--ruby' in sys.argv:
     Ruby.define_options(parser)
 
-def setDefaultArgs(args):
+def explicitOptionDests(parser, argv):
+    option_to_dest = {}
+    for action in parser._actions:
+        for option in action.option_strings:
+            option_to_dest[option] = action.dest
+
+    explicit = set()
+    for arg in argv[1:]:
+        if arg == '--':
+            break
+        option = arg.split('=', 1)[0]
+        dest = option_to_dest.get(option)
+        if dest is not None:
+            explicit.add(dest)
+    return explicit
+
+def setDefaultArgs(args, explicit_options):
     """Set default configurations to match xiangshan.py SE mode defaults"""
 
     # Set defaults only if not already specified by user
@@ -154,7 +170,10 @@ def setDefaultArgs(args):
     }   # default warmup 100k instructions!
 
     for key, value in defaults.items():
-        # if not hasattr(args, key) or getattr(args, key) is None:
+        if key in explicit_options:
+            continue
+        if key == 'l3cache' and 'no_l3cache' in explicit_options:
+            continue
         setattr(args, key, value)
 
     # Set dramsim3_ini path
@@ -165,7 +184,7 @@ def setDefaultArgs(args):
 args = parser.parse_args()
 
 # Set default configurations
-setDefaultArgs(args)
+setDefaultArgs(args, explicitOptionDests(parser, sys.argv))
 
 multiprocesses = []
 numThreads = 1

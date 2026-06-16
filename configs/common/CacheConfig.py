@@ -72,6 +72,28 @@ def _get_cache_opts(cpu, level, options):
 
     return opts
 
+def apply_matrix_timing_options(cpu, options):
+    timing_attrs = [
+        "matrix_issue_interval_cycles",
+        "matrix_load_base_cycles",
+        "matrix_store_base_cycles",
+        "matrix_zero_cycles",
+        "matrix_compute_base_cycles",
+        "matrix_compute_read_cycles",
+        "matrix_release_cycles",
+        "matrix_local_mmu_issue_per_cycle",
+        "matrix_local_mmu_arb_cycles",
+        "matrix_l2_request_pipeline_cycles",
+        "matrix_l2_response_pipeline_cycles",
+        "matrix_local_mmu_read_latency_cycles",
+        "matrix_local_mmu_write_ack_latency_cycles",
+    ]
+    for isa in getattr(cpu, "isa", []):
+        for attr in timing_attrs:
+            value = getattr(options, attr, None)
+            if value is not None and hasattr(isa, attr):
+                setattr(isa, attr, value)
+
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
     # So we need to move the prefetcher from l2Wrapper to l2cache
@@ -298,6 +320,8 @@ def config_cache(options, system):
         system.memchecker = MemChecker()
 
     for i in range(options.num_cpus):
+        apply_matrix_timing_options(system.cpu[i], options)
+
         if options.caches:
             icache = icache_class(**_get_cache_opts(system.cpu[i], 'l1i', options))
             dcache = dcache_class(**_get_cache_opts(system.cpu[i], 'l1d', options))
