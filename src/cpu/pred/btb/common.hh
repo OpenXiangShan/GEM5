@@ -237,6 +237,10 @@ struct BTBEntry : BranchInfo
     void setsource(int src) {
         source = src;
     }
+
+    short confidence() const {
+        return std::abs(ctr * 2 + 1) / 2; // -4...3 -> 3...0,0...3
+    }
 };
 
 /**
@@ -296,11 +300,16 @@ using FetchTargetId = uint64_t;
 
 // {branch pc -> istaken} maps
 using CondTakens = std::vector<std::pair<Addr, bool>>;
+// {branch pc -> confidence} maps
+using CondConfidence = std::vector<std::pair<Addr, short>>;
 // {branch pc -> target pc} maps
 using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 #define CondTakens_find(condTakens, branch_pc) \
     std::find_if(condTakens.begin(), condTakens.end(), \
+                 [&branch_pc](const auto &p) { return p.first == branch_pc; })
+#define CondConfidence_find(condConfidence, branch_pc) \
+    std::find_if(condConfidence.begin(), condConfidence.end(), \
                  [&branch_pc](const auto &p) { return p.first == branch_pc; })
 #define IndirectTakens_find(indirectTargets, branch_pc) \
     std::find_if(indirectTargets.begin(), indirectTargets.end(), \
@@ -533,6 +542,7 @@ struct FullBTBPrediction
     std::vector<BTBEntry> btbEntries; // for BTB, only assigned when hit, sorted by inst order
     // for conditional branch predictors, mapped with lowest bits of branches
     CondTakens condTakens;
+    CondConfidence condConfidence;
 
     // for indirect predictor, mapped with lowest bits of branches
     IndirectTargets indirectTargets;
@@ -544,6 +554,37 @@ struct FullBTBPrediction
     OverrideReason overrideReason;
     Tick predTick;
 
+    int getUdpConfidenceDelta() const {
+        int delta = 0;
+        for (const auto &entry : btbEntries) {
+            if (!entry.valid) {
+                continue;
+            }
+
+            if (entry.isCond) {
+                const auto &pc = entry.pc;
+                auto conf_it = CondConfidence_find(condConfidence, pc);
+                if (conf_it != condConfidence.end()) {
+                    short confidence = conf_it->second;
+                    if (confidence == 0) {
+                        delta += 2;
+                    } else if (confidence < 3) {
+                        delta += 1;
+                    }
+                }
+
+                auto taken_it = CondTakens_find(condTakens, pc);
+                if (taken_it != condTakens.end() && taken_it->second) {
+                    break;
+                }
+            } else if (entry.isUncond()) {
+                break;
+            }
+        }
+
+        return delta;
+    }
+
     //only use for countering the source of the prediction
     int s1Source;
     int s3Source;
@@ -554,6 +595,7 @@ struct FullBTBPrediction
         bbStart(0),
         btbEntries(),
         condTakens(),
+        condConfidence(),
         indirectTargets(),
         returnTarget(0),
         tageInfoForMgscs(),

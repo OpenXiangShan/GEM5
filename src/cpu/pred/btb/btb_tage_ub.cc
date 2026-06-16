@@ -245,6 +245,10 @@ BTBTAGEUpperBound::lookupExactPrediction(
     }
 
     const bool taken = useAltPred ? altPred : mainTaken;
+    const short mainConfidence = mainInfo.entry.confidence();
+    const short altConfidence = altProvided ?
+        altInfo.entry.confidence() : btbEntry.confidence();
+    const short confidence = useAltPred ? altConfidence : mainConfidence;
     int finalProviderTable = -1;
     bool finalProviderIsAlt = false;
     if (!useAltPred && provided) {
@@ -256,7 +260,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
     return TagePrediction(btbEntry.pc, mainInfo, altInfo, useAltPred, taken,
                           altPred, finalProviderTable, finalProviderIsAlt,
-                          useAltIdx, useAltCtr, hitTableMask);
+                          useAltIdx, useAltCtr, hitTableMask, confidence);
 }
 
 void
@@ -302,6 +306,7 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         auto &stagePred = stagePreds[s];
         stagePred.condTakens.clear();
+        stagePred.condConfidence.clear();
         stagePred.tageInfoForMgscs.clear();
 
         for (auto &btbEntry : stagePred.btbEntries) {
@@ -317,6 +322,7 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
             tageStats.updateStatsWithTagePrediction(pred, true);
             notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs,
                                  stagePred.condTakens);
+            stagePred.condConfidence.push_back({btbEntry.pc, pred.confidence});
         }
     }
 }

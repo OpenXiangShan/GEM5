@@ -66,8 +66,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftqPolicy(p.smtFTQPolicy),
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
-      useStaticPrefetchDistance(p.useStaticPrefetchDistance),
-      staticPrefetchDistance(p.staticPrefetchDistance),
+    prefetchDistance(p.useStaticPrefetchDistance ? p.staticPrefetchDistance : p.ftq_size),
+      enableUdp(p.enableUdp),
+      udpInitConfidence(p.useUdpInitConfidence ? p.udpInitConfidence : p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
@@ -136,6 +137,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         }
         thread.commitHistory.resize(historyBits, 0);
         thread.squashing = true;
+        thread.udpConfidence = udpInitConfidence;
         prefetchID[tid] = 1;
         lastPrefetchAddr[tid] = 0;
         enablePrefetch[tid] = false;
@@ -283,8 +285,9 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    // 1. Request new prediction if FSQ not full and we are idle
-    if (!threads[curTid].validprediction && !ftqFull(curTid)) {
+    // 1. Request new prediction if FSQ not full, we are idle, and not off-path
+    if (!threads[curTid].validprediction && !ftqFull(curTid) &&
+        !bpOffPath(curTid)) {
         if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
@@ -310,20 +313,26 @@ DecoupledBPUWithBTB::tick()
 }
 
 bool
-DecoupledBPUWithBTB::prefetchLimited(ThreadID tid) const
+DecoupledBPUWithBTB::bpOffPath(ThreadID tid) const
 {
-    if (useStaticPrefetchDistance) {
-        return prefetchID[tid] >= ftq.fetchId(tid) + staticPrefetchDistance;
+    if (enableUdp) {
+        return threads[tid].udpConfidence < 0;
     } else {
-        return prefetchID[tid] >= ftq.fetchId(tid) + ftq.capacity(tid);
+        return false;
     }
+}
+
+bool
+DecoupledBPUWithBTB::prefetchTooFar(ThreadID tid) const
+{
+    return prefetchID[tid] >= ftq.fetchId(tid) + prefetchDistance;
 }
 
 bool
 DecoupledBPUWithBTB::prefetchAvailable(ThreadID tid) const
 {
 
-    return ftqHasFetching(tid) && !prefetchLimited(tid);
+    return ftqHasFetching(tid) && !prefetchTooFar(tid);
 }
 
 bool
@@ -352,7 +361,7 @@ DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush,
         enablePrefetch[tid] = true;
     }
 
-    if (prefetchLimited(tid) ||
+    if (prefetchTooFar(tid) ||
         !enablePrefetch[tid]) {
         fetchStallCycles[tid] += Cycles(1);
         return false;
@@ -495,8 +504,6 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         }
     }
 
-
-
     // 3. Calculate override bubbles needed for pipeline consistency
     // Override bubbles are needed when earlier stages predict differently from later stages
     unsigned first_hit_stage = 0;
@@ -609,6 +616,16 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 7. Increment statistics
     printTarget(entry);
     dbpBtbStats.fsqEntryEnqueued++;
+
+    // UDP: Decrease confidence
+    if (enableUdp) {
+        auto &finalPred = threads[tid].finalPred;
+        int decrement = finalPred.getUdpConfidenceDelta();
+        threads[tid].udpConfidence -= decrement;
+        DPRINTF(DecoupleBP,
+                "UDP confidence decreased by %d to %d for FSQ entry %#lx\n",
+                decrement, threads[tid].udpConfidence, entry.startPC);
+    }
 }
 
 /**
@@ -681,6 +698,14 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Clear predictions for next cycle
     clearPreds(tid);
+
+    // UDP: recover confidence on squash
+    if (enableUdp) {
+        threads[tid].udpConfidence = udpInitConfidence;
+        DPRINTF(DecoupleBP,
+                "UDP confidence reset to %d on squash for FSQ entry %#lx\n",
+                threads[tid].udpConfidence, target.startPC);
+    }
 
     // Update PC and target ID
     threads[tid].s0PC = redirect_pc;

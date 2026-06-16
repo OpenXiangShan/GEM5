@@ -473,8 +473,11 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         else:
             bp_db_switches = []
 
+        print("Bp support for udp: ", args.enable_udp)
+
         test_sys.cpu[i].branchPred = DecoupledBPUWithBTB(
             bpDBSwitches=bp_db_switches,
+            enableUdp=args.enable_udp
         )
         test_sys.cpu[i].branchPred.isDumpMisspredPC = True
 

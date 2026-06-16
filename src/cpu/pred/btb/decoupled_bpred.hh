@@ -128,8 +128,10 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     FetchTargetQueue ftq;
 
-    bool useStaticPrefetchDistance;
-    unsigned staticPrefetchDistance;
+    unsigned prefetchDistance;
+
+    bool enableUdp{false};
+    int udpInitConfidence{0};
 
     FetchTargetId prefetchID[MaxThreads] = {};
     Addr lastPrefetchAddr[MaxThreads] = {};
@@ -151,6 +153,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool validprediction{false};
         bool squashing{false};
         bool blockPredictionPending{false};
+        int udpConfidence{0};
     } threads[MaxThreads];
 
     std::vector<HistoryManager> historyManagers;
@@ -208,9 +211,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     void generateFinalPredAndCreateBubbles(ThreadID tid);
 
     void clearPreds(ThreadID tid) {
-        for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
-            threads[tid].predsOfEachStage[i] = FullBTBPrediction();
-            threads[tid].predsOfEachStage[i].predSource = i;
+        for (auto &stagePred : threads[tid].predsOfEachStage) {
+            stagePred.condTakens.clear();
+            stagePred.condConfidence.clear();
+            stagePred.indirectTargets.clear();
+            stagePred.btbEntries.clear();
         }
     }
 
@@ -425,7 +430,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
-    bool prefetchLimited(ThreadID tid) const;
+    bool bpOffPath(ThreadID tid) const;
+    bool prefetchTooFar(ThreadID tid) const;
     bool prefetchAvailable(ThreadID tid) const;
     bool prefetchAvailable() const;
     bool getPrefetchAddr(Addr &prefetchAddr, bool &flush, bool fetchIsStall,

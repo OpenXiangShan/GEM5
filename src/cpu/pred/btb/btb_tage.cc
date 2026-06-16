@@ -368,11 +368,13 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Generate final prediction
     bool main_taken = main_info.taken();
+    short main_confidence = main_info.entry.confidence();
     bool alt_taken = alt_info.taken();
     // Use base table instead of btb_entry.ctr
     bool base_taken = btb_entry.ctr >= 0;
     //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
+    short alt_confidence = alt_provided ? alt_info.entry.confidence() : btb_entry.confidence();
     Addr use_alt_idx = getUseAltIdx(btb_entry.pc);
     short use_alt_ctr = useAlt[use_alt_idx];
 
@@ -389,6 +391,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         }
     }
     bool taken = use_alt ? alt_pred : main_taken;
+    short confidence = use_alt ? alt_confidence : main_confidence;
     int final_provider_table = -1;
     bool final_provider_is_alt = false;
     if (!use_alt && provided) {
@@ -406,7 +409,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
         alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
-        use_alt_ctr, hit_table_mask);
+        use_alt_ctr, hit_table_mask, confidence);
 }
 
 /**
@@ -419,7 +422,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 void
 BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens& results, ThreadID tid, uint8_t asidHash)
+                      CondTakens& results, CondConfidence& confidences,
+                      ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -431,6 +435,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            confidences.push_back({btb_entry.pc, pred.confidence});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -498,8 +503,10 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
+        stage_pred.condConfidence.clear();
         lookupHelper(startPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs,
-                     stage_pred.condTakens, tid, asidHash);
+                     stage_pred.condTakens, stage_pred.condConfidence,
+                     tid, asidHash);
     }
 
 }

@@ -1221,3 +1221,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+
+    enableUdp = Param.Bool(False, "Enable UDP instruction prefetcher support")
+    useUdpInitConfidence = Param.Bool(False, "Use configured UDP initial confidence")
+    udpInitConfidence = Param.Unsigned(128, "UDP initial confidence when enabled")

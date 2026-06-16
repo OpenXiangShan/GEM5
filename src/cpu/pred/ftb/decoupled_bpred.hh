@@ -571,7 +571,7 @@ class DecoupledBPUWithFTB : public BPredUnit
 
     bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetchTargetInLoop);
 
-    bool prefetchLimited();
+    bool prefetchTooFar();
     bool prefetchAvailable();
 
     bool getPrefetchAddr(Addr &prefetchAddr, bool &flush, bool fetchIsStall);

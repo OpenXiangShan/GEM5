@@ -887,7 +887,7 @@ DecoupledBPUWithFTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_
 }
 
 bool
-DecoupledBPUWithFTB::prefetchLimited()
+DecoupledBPUWithFTB::prefetchTooFar()
 {
     if (useStaticPrefetchDistance) {
         return prefetchID > fetchTargetQueue.getSupplyingStreamId() + staticPrefetchDistance;
@@ -899,7 +899,7 @@ DecoupledBPUWithFTB::prefetchLimited()
 bool
 DecoupledBPUWithFTB::prefetchAvailable()
 {
-    return !prefetchLimited();
+    return !prefetchTooFar();
 }
 
 bool
@@ -922,7 +922,7 @@ DecoupledBPUWithFTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush,
         enablePrefetch = true;
     }
 
-    if (prefetchLimited() || !enablePrefetch) {
+    if (prefetchTooFar() || !enablePrefetch) {
         fetchStallCycles += Cycles(1);
         return false;
     }

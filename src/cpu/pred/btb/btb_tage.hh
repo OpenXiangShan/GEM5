@@ -76,6 +76,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool taken() const {
                 return counter >= 0;
             }
+            short confidence() const {
+                return std::abs(counter * 2 + 1) / 2; // -4...3 -> 3...0,0...3
+            }
+            bool isWeak() const {
+                return confidence() == 0;
+            }
+            bool isMid() const {
+                return confidence() >= 1 && confidence() <= 2;
+            }
+            bool isStrong() const {
+                return confidence() == 3;
+            }
     };
 
     // Contains information about a TAGE table lookup
@@ -112,21 +124,23 @@ class BTBTAGE : public TimedBaseBTBPredictor
             short useAltCtr;       // useAltOnNa counter value before update
             uint64_t hitTableMask; // Bitmask of all TAGE tables that matched during lookup
 
+            short confidence;
+
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
                                finalProviderTable(-1), finalProviderIsAlt(false),
-                               useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
+                               useAltIdx(0), useAltCtr(0), hitTableMask(0), confidence(0) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
                             int finalProviderTable, bool finalProviderIsAlt,
-                            Addr useAltIdx, short useAltCtr, uint64_t hitTableMask) :
+                            Addr useAltIdx, short useAltCtr, uint64_t hitTableMask, short confidence) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
                             useAlt(useAlt), taken(taken), altPred(altPred),
                             finalProviderTable(finalProviderTable),
                             finalProviderIsAlt(finalProviderIsAlt),
                             useAltIdx(useAltIdx), useAltCtr(useAltCtr),
-                            hitTableMask(hitTableMask) {}
+                            hitTableMask(hitTableMask), confidence(confidence) {}
     };
 
 
@@ -184,7 +198,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                    CondTakens& results, ThreadID tid, uint8_t asidHash);
+                    CondTakens& results, CondConfidence& confidences,
+                    ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
