@@ -108,9 +108,8 @@ class RiscvBoard(AbstractSystemBoard, KernelDiskWorkload):
         self.platform.attachPlic()
         self.platform.clint.num_threads = self.processor.get_num_cores()
 
-        # Add the RTC
-        # TODO: Why 100MHz? Does something else need to change when this does?
-        self.platform.rtc = RiscvRTC(frequency=Frequency("100MHz"))
+        # Add the RTC. This must match the timebase-frequency advertised below.
+        self.platform.rtc = RiscvRTC(frequency=Frequency("1MHz"))
         self.platform.clint.int_pin = self.platform.rtc.int_pin
 
         # Incoherent I/O bus
@@ -261,9 +260,8 @@ class RiscvBoard(AbstractSystemBoard, KernelDiskWorkload):
         cpus_state = FdtState(addr_cells=1, size_cells=0)
         cpus_node.append(cpus_state.addrCellsProperty())
         cpus_node.append(cpus_state.sizeCellsProperty())
-        # Used by the CLINT driver to set the timer frequency. Value taken from
-        # RISC-V kernel docs (Note: freedom-u540 is actually 1MHz)
-        cpus_node.append(FdtPropertyWords("timebase-frequency", [100000000]))
+        # Used by the CLINT driver to set the timer frequency.
+        cpus_node.append(FdtPropertyWords("timebase-frequency", [1000000]))
 
         for i, core in enumerate(self.get_processor().get_cores()):
             node = FdtNode(f"cpu@{i}")

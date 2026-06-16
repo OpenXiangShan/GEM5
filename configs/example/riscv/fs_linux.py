@@ -165,8 +165,8 @@ system.system_port = system.membus.cpu_side_ports
 # HiFive Platform
 system.platform = HiFive()
 
-# RTCCLK (Set to 100MHz for faster simulation)
-system.platform.rtc = RiscvRTC(frequency=Frequency("100MHz"))
+# RTCCLK matches the RISC-V timebase-frequency advertised in the DTB.
+system.platform.rtc = RiscvRTC(frequency=Frequency("1MHz"))
 system.platform.clint.int_pin = system.platform.rtc.int_pin
 
 # VirtIOMMIO
