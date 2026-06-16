@@ -819,6 +819,15 @@ TraceFetch::classifyWrongPathInstSquash(ThreadID tid, const PCStateBase &new_pc,
             DPRINTF(Fetch,
                     "[tid:%i] Squash target PC (0x%#lx) matches correct PC (0x%#lx)\n",
                     tid, new_pc.instAddr(), traceWrongPathCorrectPC);
+            if (!squashInst->isControl() && squashInst->readPredTaken()) {
+                squashInst->setPredTaken(false);
+                squashInst->setPredTarg(new_pc);
+                DPRINTF(Fetch,
+                        "[tid:%i] Trace wrong-path boundary non-control "
+                        "inst [sn:%llu] prediction corrected to %s\n",
+                        tid, (unsigned long long)squashInst->seqNum,
+                        new_pc);
+            }
             action.mode = TraceRecoveryMode::Hold;
             action.exitWrongPathReason =
                 "mispred boundary squash reaches correct PC";
