@@ -987,7 +987,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
                             const unsigned &currentLoopIter, const bool fromCommit,
-                            bool fromPredecode)
+                            bool fromPredecode, const bool trustTargetPc)
 {
     // Get branch type information
     bool is_conditional = static_inst->isCondCtrl();
@@ -1014,7 +1014,8 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     auto &target = ftq.get(target_id, tid);
     // Get target address
     Addr real_target = corr_target.instAddr();
-    if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
+    if (!fromCommit && static_inst->isReturn() &&
+        !static_inst->isNonSpeculative() && !trustTargetPc) {
         // get ret addr from ras meta
         real_target = ras->getTopAddrFromMetas(target);
         // TODO: set real target to dynamic inst
