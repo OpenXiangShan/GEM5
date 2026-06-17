@@ -113,7 +113,7 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
 
 } // namespace
 
-[[maybe_unused]] const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
+[[maybe_unused]] const std::array<const char *, NUM_MISC_AND_HELPER_REGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
     [MISCREG_VIRMODE]         = "VIRTUALIZATIONMODE",
     [MISCREG_ISA]           = "ISA",
@@ -311,6 +311,7 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
+    [MISCREG_FFLAGS_EXE]    = "FFLAGS_EXE",
 }};
 
 
@@ -569,7 +570,7 @@ ISA::readMiscRegNoEffect(int misc_reg) const
             return miscRegFile[misc_reg] & (mmu->getPMP()->pmpTorMask());
         }
         return 0;
-    } else if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
+    } else if (misc_reg >= NUM_MISCREGS || misc_reg < 0) {
         // Illegal CSR
         panic("Illegal CSR index %#x\n", misc_reg);
         return -1;
@@ -686,6 +687,11 @@ ISA::readMiscReg(int misc_reg)
                   (readMiscRegNoEffect(MISCREG_VXRM) << 1);
         }
         break;
+      case MISCREG_FFLAGS_EXE:
+        {
+            return readMiscRegNoEffect(MISCREG_FFLAGS) & FFLAGS_MASK;
+        }
+        break;
         case MISCREG_PMPADDR00 ... MISCREG_PMPADDR15:
         {
             return readMiscRegNoEffect(misc_reg);
@@ -711,7 +717,7 @@ ISA::readMiscReg(int misc_reg)
 void
 ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
 {
-    if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
+    if (misc_reg >= NUM_MISCREGS || misc_reg < 0) {
         // Illegal CSR
         panic("Illegal CSR index %#x\n", misc_reg);
     }
@@ -932,6 +938,19 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                     ((cur & ~(NEMU_MSTATUS_WMASK)) | (val & NEMU_MSTATUS_WMASK));
                 mstatus.sd = mstatus.fs == 0x3 || mstatus.vs == 0x3;
                 setMiscRegNoEffect(misc_reg, mstatus);
+            }
+            break;
+          case MISCREG_FFLAGS_EXE:
+            {
+                DPRINTF(RiscvMisc, "Will set fs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.fs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
+                RegVal fflags = readMiscRegNoEffect(MISCREG_FFLAGS);
+                fflags |= (val & FFLAGS_MASK);
+                setMiscRegNoEffect(MISCREG_FFLAGS, fflags);
             }
             break;
             case MISCREG_FFLAGS:
