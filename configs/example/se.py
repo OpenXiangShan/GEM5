@@ -142,7 +142,7 @@ def setDefaultArgs(args):
         'l2cache': True,
         'l2_size': '1MB',
         'l2_assoc': 8,
-        'l2_hwp_type': 'WorkerPrefetcher',
+        'l2_hwp_type': 'PrefetcherForwarder',
         'l3cache': True,
         'l3_size': '16MB',
         'l3_assoc': 16,
@@ -303,7 +303,6 @@ def setKmhV3IdealParams(args, system):
         cpu.renameWidth = 8
         cpu.commitWidth = 12
         cpu.squashWidth = 12
-        cpu.replayWidth = 12
         cpu.LQEntries = 128
         cpu.SQEntries = 64
         cpu.SbufferEntries = 24
@@ -340,8 +339,15 @@ def setKmhV3IdealParams(args, system):
 
     if args.l2cache:
         for i in range(args.num_cpus):
-            system.l2_caches[i].size = '2MB'
-            system.l2_caches[i].num_slices = 0   # 4 -> 0, no slice
+            if args.classic_l2:
+                system.l2_caches[i].size = '2MB'
+                system.l2_caches[i].slice_num = 0   # 4 -> 0, no slice
+            else:
+                l2_wrapper = system.l2_wrappers[i]
+                l2_wrapper.data_sram_banks = 2
+                l2_wrapper.dir_sram_banks = 2
+                l2_wrapper.pipe_dir_write_stage = 4
+                l2_wrapper.dir_read_bypass = True
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
