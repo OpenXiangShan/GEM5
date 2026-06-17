@@ -1399,27 +1399,27 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
         if (doTLBInsert) {  //write back L1
             if (!functional) {
                 if (((!entry.fromForwardPreReq) && (!entry.fromBackPreReq)) || (preHitInPtw)) {
-                    std::array<PTE, l2tlbLineSize> l1_compress_ptes;
-                    for (int compress_i = 0; compress_i < l2tlbLineSize; compress_i++) {
-                        l1_compress_ptes[compress_i] = read->getLE_l2tlb<uint64_t>(compress_i);
-                    }
-                    walker->tlb->recordL1CompressionPotential(entry.vaddr, entry.pte, l1_compress_ptes, direct,
-                                                                level);
-                    TlbEntry compressed_entry;
-                    if (walker->tlb->isL1DirectCompressionEnabled() &&
-                        walker->tlb->buildL1CompressedEntry(entry.vaddr, entry, l1_compress_ptes, direct, level,
-                                                             compressed_entry)) {
-                        walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, direct);
-                        TlbEntry *l1_entry = walker->tlb->lookup(entry.vaddr, entry.asid, BaseMMU::Read, true, false,
-                                                                 direct);
-                        if (l1_entry && l1_entry->isCompressed)
+                    if (walker->tlb->isL1DirectCompressionEnabled()) {
+                        std::array<PTE, l2tlbLineSize> l1_compress_ptes;
+                        for (int compress_i = 0; compress_i < l2tlbLineSize; compress_i++) {
+                            l1_compress_ptes[compress_i] = read->getLE_l2tlb<uint64_t>(compress_i);
+                        }
+                        walker->tlb->recordL1CompressionPotential(entry.vaddr, entry.pte, l1_compress_ptes, direct,
+                                                                    level);
+                        TlbEntry compressed_entry;
+                        if (walker->tlb->buildL1CompressedEntry(entry.vaddr, entry, l1_compress_ptes, direct, level,
+                                                                 compressed_entry)) {
+                            walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, direct);
+                            TlbEntry *l1_entry = walker->tlb->lookup(entry.vaddr, entry.asid, BaseMMU::Read, true,
+                                                                     false, direct);
+                            if (l1_entry && l1_entry->isCompressed)
+                                walker->tlb->recordL1CompressedEntry(compressed_entry);
+                        } else if (walker->tlb->buildSingleL1CompressedEntry(entry.vaddr, entry, direct,
+                                                                              compressed_entry)) {
+                            walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, direct);
                             walker->tlb->recordL1CompressedEntry(compressed_entry);
-                    } else if (walker->tlb->isL1DirectCompressionEnabled() &&
-                               walker->tlb->buildSingleL1CompressedEntry(entry.vaddr, entry, direct,
-                                                                          compressed_entry)) {
-                        walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, direct);
-                        walker->tlb->recordL1CompressedEntry(compressed_entry);
-                    } else if (!walker->tlb->isL1DirectCompressionEnabled()) {
+                        }
+                    } else {
                         walker->tlb->insert(entry.vaddr, entry, false, direct);
                     }
                 }

@@ -686,7 +686,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
                       translateMode);
     }
 
-    if (!squashed_update) {
+    if (!squashed_update && enableL1DirectCompression &&
+        translateMode == direct) {
         TlbEntry *merged_entry = prepareL1CompressedInsert(
             entry, translateMode);
         if (merged_entry)
