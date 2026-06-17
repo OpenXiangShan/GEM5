@@ -125,13 +125,11 @@ let {{
 
     def fflags_wrapper(code):
         return '''
-        RegVal FFLAGS = xc->readMiscReg(MISCREG_FFLAGS);
         feclearexcept(FE_ALL_EXCEPT);
         ''' + code + '''
-        FFLAGS |= softfloat_exceptionFlags;
         if (softfloat_exceptionFlags) {
+            xc->setMiscReg(MISCREG_FFLAGS_EXE, softfloat_exceptionFlags);
             softfloat_exceptionFlags = 0;
-            xc->setMiscReg(MISCREG_FFLAGS, FFLAGS);
         }
         '''
 }};
