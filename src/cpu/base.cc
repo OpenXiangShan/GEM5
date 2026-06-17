@@ -1216,8 +1216,10 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_IP, tid);
         diffAllStates->gem5RegFile.mip = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mip;
-        if (gem5_val != ref_val) {
-            warn("mip:\tGEM5: %#lx,\tREF: %#lx\n", gem5_val, ref_val);
+        const RegVal mip_diff_mask = RiscvISA::NEMU_MIP_MASK;
+        if ((gem5_val & mip_diff_mask) != (ref_val & mip_diff_mask)) {
+            warn("mip:\tGEM5: %#lx,\tREF: %#lx,\tMASK: %#lx\n",
+                 gem5_val, ref_val, mip_diff_mask);
             diffMsg <<
                 csprintf("%s at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
                     gem5_val == ref_val ? "match" : "diff", "mip", ref_val, gem5_val);

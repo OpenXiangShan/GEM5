@@ -147,7 +147,9 @@ def config_aligned_l2(options, system, l2_cache_class):
     for i in range(options.num_cpus):
         l2_wrapper = system.l2_wrappers[i]
         xbar = l2_wrapper.xbar
-        if not options.no_pf:
+        if options.no_pf:
+            l2_wrapper.prefetcher = NULL
+        else:
             l2_wrapper.prefetcher = create_prefetcher(system.cpu[i], 'l2_wrapper', options)
         for j in range(num_l2_slices):
             # Apply original per-L2-cache configurations to each slice's inner cache
