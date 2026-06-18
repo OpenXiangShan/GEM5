@@ -27,6 +27,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 
 #include <cassert>
 #include <cerrno>
@@ -68,7 +69,8 @@ class SerializationFixture : public ::testing::Test
     static std::string
     generateTempDirName()
     {
-        return "/tmp/temp_dir_test" + std::to_string(dirNumber++) + "/";
+        return "/tmp/temp_dir_test_" + std::to_string(getpid()) + "_" +
+            std::to_string(dirNumber++) + "/";
     }
 
     /** Get the name of the directory we have created on SetUp. */

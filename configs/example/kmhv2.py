@@ -30,8 +30,6 @@ if __name__ == '__m5_main__':
     # disable l1 berti, l2 cdp
     args.l2_wrapper_hwp_type = "L2CompositeWithWorkerPrefetcher"
     args.kmh_align = True
-    # Enable prefetch buffers for all hardware prefetchers in this config.
-    args.enable_pf_buffer = True
     assert not args.external_memory_system
 
     test_mem_mode = 'timing'

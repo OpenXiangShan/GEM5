@@ -200,7 +200,7 @@ class HiFive(Platform):
 
     def generateDeviceTree(self, state):
         cpus_node = FdtNode("cpus")
-        cpus_node.append(FdtPropertyWords("timebase-frequency", [10000000]))
+        cpus_node.append(FdtPropertyWords("timebase-frequency", [1000000]))
         yield cpus_node
 
         node = FdtNode("soc")

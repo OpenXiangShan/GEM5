@@ -958,8 +958,10 @@ IEW::dispatchInsts()
         iew_info.iqCount = scheduler->getIQInsts(i);
 
         bool ldst_block = !canInsertLDSTQue(i);
-        bool block = stallSig->blockIEW[i] || ldst_block;
-        bool active = !block && !fixedbuffer[i].empty();
+        bool rename_block = stallSig->blockIEW[i] || ldst_block;
+        // LDST queue reservation gates new rename input, but the already
+        // buffered tail must still drain through per-instruction LSQ checks.
+        bool active = !stallSig->blockIEW[i] && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockIEW[i]) {
             block_reason = stallSig->iewBlockReason[i];
@@ -969,10 +971,11 @@ IEW::dispatchInsts()
                 block_reason = StallReason::OtherStall;
             }
         }
-        iew_info.blockReason = block ? block_reason : StallReason::NoStall;
+        iew_info.blockReason = rename_block ? block_reason : StallReason::NoStall;
 
-        stallSig->blockRename[i] = block;
-        stallSig->renameBlockReason[i] = block ? block_reason : StallReason::NoStall;
+        stallSig->blockRename[i] = rename_block;
+        stallSig->renameBlockReason[i] =
+            rename_block ? block_reason : StallReason::NoStall;
         if (active) {
             const auto freeze =
                 active_arbiter.observe(i, smtBorrowPriority(iew_info));
@@ -1528,7 +1531,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             inst->pcState(*new_pc);
         }
 
-        if (inst->mispredicted() && !loadNotExecuted) {
+        if (inst->mispredicted() && !loadNotExecuted &&
+            !inst->isNonSpeculative()) {
             fetchRedirect[tid] = true;
 
             DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
@@ -1975,7 +1979,7 @@ IEW::checkMisprediction(const DynInstPtr& inst)
             inst->pcState(*new_pc);
         }
 
-        if (inst->mispredicted()) {
+        if (inst->mispredicted() && !inst->isNonSpeculative()) {
             fetchRedirect[tid] = true;
 
             DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "

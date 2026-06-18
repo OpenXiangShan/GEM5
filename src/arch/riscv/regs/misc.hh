@@ -265,7 +265,9 @@ enum MiscRegIndex
     // non-maskable-interrupt-pending: NMI version of xIP
     MISCREG_NMIP,
 
-    NUM_MISCREGS
+    NUM_MISCREGS,
+    MISCREG_FFLAGS_EXE = NUM_MISCREGS,
+    NUM_MISC_AND_HELPER_REGS
 };
 
 enum CSRIndex

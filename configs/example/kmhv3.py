@@ -115,6 +115,13 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
+            if getattr(args, 'standalone_sc', False):
+                cpu.branchPred.microtage.enabled = False
+                cpu.branchPred.tage.enabled = False
+
+                cpu.branchPred.mgsc.forceUseSC = True
+                cpu.branchPred.mgsc.allowMissingTageInfo = True
+
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'
@@ -175,9 +182,6 @@ if __name__ == '__m5_main__':
     args = xiangshan_system_init()
 
     assert not args.external_memory_system
-
-    # Enable prefetch buffers for all hardware prefetchers in this config.
-    args.enable_pf_buffer = True
 
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3

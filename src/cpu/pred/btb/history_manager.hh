@@ -4,6 +4,7 @@
 #include <list>
 
 #include "cpu/pred/btb/common.hh"
+#include "cpu/pred/btb/folded_hist.hh"
 
 #ifdef UNIT_TEST
 #include "cpu/pred/btb/test/test_dprintf.hh"
@@ -46,15 +47,30 @@ class HistoryManager
      */
     struct HistoryEntry
     {
-        HistoryEntry(Addr _pc, int _shamt, bool _cond_taken, bool _is_call, bool _is_return,
-            Addr _retAddr, uint64_t stream_id)
-            : pc(_pc), shamt(_shamt), cond_taken(_cond_taken), is_call(_is_call),
-                is_return(_is_return), retAddr(_retAddr), streamId(stream_id)
+        HistoryEntry(Addr _pc,
+            const boost::dynamic_bitset<> &ghist_base,
+            const boost::dynamic_bitset<> &phist_base,
+            DirectionHistoryUpdate ghist_update,
+            PathHistoryUpdate phist_update, bool _is_call,
+            bool _is_return, Addr _retAddr, uint64_t stream_id)
+            : pc(_pc),
+              ghistBase(ghist_base),
+              phistBase(phist_base),
+              shamt(ghist_update.shamt),
+              cond_taken(ghist_update.taken),
+              phistUpdate(phist_update),
+              is_call(_is_call),
+              is_return(_is_return),
+              retAddr(_retAddr),
+              streamId(stream_id)
         {
         }
       Addr pc;           ///< Program counter of the branch
-      Addr shamt;        ///< Shift amount for history update
+      boost::dynamic_bitset<> ghistBase; ///< GHR before this speculative update
+      boost::dynamic_bitset<> phistBase; ///< PHR before this speculative update
+      int shamt;         ///< Shift amount for direction history update
       bool cond_taken;   ///< Whether conditional branch was taken
+      PathHistoryUpdate phistUpdate; ///< Path history update
       bool is_call;      ///< Whether branch is a call instruction
       bool is_return;    ///< Whether branch is a return instruction
       Addr retAddr;      ///< Return address (for call instructions)
@@ -93,13 +109,17 @@ class HistoryManager
      * This is called when a new branch prediction is made.
      *
      * @param addr Address of the branch
-     * @param shamt Shift amount for history update
-     * @param cond_taken Whether the branch was predicted taken
+     * @param ghist_update Direction-history update
+     * @param phist_update Path-history update
      * @param bi Branch information structure
      * @param stream_id ID of the fetch stream containing this branch
      */
-    void addSpeculativeHist(const Addr addr, const int shamt,
-                            bool cond_taken, BranchInfo &bi,
+    void addSpeculativeHist(const Addr addr,
+                            const boost::dynamic_bitset<> &ghist_base,
+                            const boost::dynamic_bitset<> &phist_base,
+                            const DirectionHistoryUpdate &ghist_update,
+                            const PathHistoryUpdate &phist_update,
+                            BranchInfo &bi,
                             const uint64_t stream_id)
     {
         // Extract branch type information from BranchInfo
@@ -108,8 +128,9 @@ class HistoryManager
         Addr retAddr = bi.getEnd();
 
         // Add new entry to the end of speculative history list
-        speculativeHists.emplace_back(addr, shamt, cond_taken, is_call,
-            is_return, retAddr, stream_id);
+        speculativeHists.emplace_back(addr, ghist_base, phist_base,
+            ghist_update, phist_update,
+            is_call, is_return, retAddr, stream_id);
 
         // Debug print the newly added entry
         const auto &it = speculativeHists.back();
@@ -163,12 +184,14 @@ class HistoryManager
      * and removes all subsequent speculative history entries.
      *
      * @param stream_id ID of the stream being squashed
-     * @param shamt Actual shift amount
-     * @param cond_taken Actual branch outcome (taken/not-taken)
+     * @param ghist_update Actual direction-history update
+     * @param phist_update Path-history update
      * @param bi Branch information structure with actual results
      */
-    void squash(const uint64_t stream_id, const int shamt,
-                const bool cond_taken, BranchInfo bi)
+    void squash(const uint64_t stream_id,
+                const DirectionHistoryUpdate &ghist_update,
+                const PathHistoryUpdate &phist_update,
+                BranchInfo bi)
     {
         // Debug dump before squash operations
         dump("before squash");
@@ -178,8 +201,9 @@ class HistoryManager
         while (it != speculativeHists.end()) {
             if (it->streamId == stream_id) {
                 // Found the squashed stream - update with correct information
-                it->cond_taken = cond_taken;
-                it->shamt = shamt;
+                it->cond_taken = ghist_update.taken;
+                it->shamt = ghist_update.shamt;
+                it->phistUpdate = phist_update;
 
                 // Update branch type information
                 it->is_call = bi.isCall;
@@ -207,6 +231,74 @@ class HistoryManager
 
         // Verify history integrity after squash
         checkSanity();
+    }
+
+    boost::dynamic_bitset<> replayGHist(unsigned history_bits) const
+    {
+        if (speculativeHists.empty()) {
+            return boost::dynamic_bitset<>(history_bits, 0);
+        }
+
+        // The first surviving entry stores the GHR snapshot before its own
+        // speculative update. Replaying all recorded direction updates from
+        // that base should reproduce DecoupledBPUWithBTB's current GHR after
+        // commit/squash bookkeeping.
+        boost::dynamic_bitset<> ideal_hist = speculativeHists.front().ghistBase;
+        ideal_hist.resize(history_bits);
+        for (const auto &entry : speculativeHists) {
+            if (entry.shamt <= 0) {
+                continue;
+            }
+            ideal_hist <<= entry.shamt;
+            ideal_hist[0] = entry.cond_taken;
+        }
+        return ideal_hist;
+    }
+
+    boost::dynamic_bitset<> replayPHist(unsigned history_bits) const
+    {
+        if (speculativeHists.empty()) {
+            return boost::dynamic_bitset<>(history_bits, 0);
+        }
+
+        // PHR uses the same ledger invariant as GHR, but replays the recorded
+        // PathHistoryUpdate instead of re-deriving path-update semantics here.
+        // This keeps HistoryManager a consistency checker for raw PHR state,
+        // while FetchTarget tests cover whether each descriptor is correct.
+        boost::dynamic_bitset<> ideal_hist = speculativeHists.front().phistBase;
+        ideal_hist.resize(history_bits);
+        for (const auto &entry : speculativeHists) {
+            const auto &update = entry.phistUpdate;
+            if (update.shamt <= 0 || !update.taken) {
+                continue;
+            }
+            ideal_hist <<= update.shamt;
+            uint64_t hash = pathHash(update.pc, update.target);
+            for (std::size_t i = 0;
+                 i < pathHashLength && i < ideal_hist.size(); ++i) {
+                ideal_hist[i] = (hash & 1) ^ ideal_hist[i];
+                hash >>= 1;
+            }
+        }
+        return ideal_hist;
+    }
+
+    bool checkGHist(const boost::dynamic_bitset<> &history,
+                    unsigned history_bits) const
+    {
+        if (speculativeHists.empty()) {
+            return true;
+        }
+        return compareHistory(replayGHist(history_bits), history, history_bits);
+    }
+
+    bool checkPHist(const boost::dynamic_bitset<> &history,
+                    unsigned history_bits) const
+    {
+        if (speculativeHists.empty()) {
+            return true;
+        }
+        return compareHistory(replayPHist(history_bits), history, history_bits);
     }
 
     /**
@@ -265,9 +357,26 @@ class HistoryManager
     {
         DPRINTF(DecoupleBPVerbose,
                 "%s stream: %lu, pc %#lx, shamt %ld, cond_taken %d, "
-                "is_call %d, is_ret %d, retAddr %#lx\n",
+                "phist_shamt %d, phist_taken %d, phist_pc %#lx, "
+                "phist_target %#lx, is_call %d, is_ret %d, retAddr %#lx\n",
                 when, entry.streamId, entry.pc, entry.shamt, entry.cond_taken,
+                entry.phistUpdate.shamt,
+                entry.phistUpdate.taken,
+                entry.phistUpdate.pc,
+                entry.phistUpdate.target,
                 entry.is_call, entry.is_return, entry.retAddr);
+    }
+
+  private:
+    static bool compareHistory(const boost::dynamic_bitset<> &ideal,
+                               const boost::dynamic_bitset<> &actual,
+                               unsigned history_bits)
+    {
+        boost::dynamic_bitset<> sized_ideal(ideal);
+        boost::dynamic_bitset<> sized_actual(actual);
+        sized_ideal.resize(history_bits);
+        sized_actual.resize(history_bits);
+        return sized_ideal == sized_actual;
     }
 };
 

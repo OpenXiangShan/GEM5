@@ -308,6 +308,22 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
+struct DirectionHistoryUpdate
+{
+    int shamt = 0;
+    bool taken = false;
+};
+
+struct PathHistoryUpdate
+{
+    static constexpr int NumShift = 2;
+
+    int shamt = NumShift;
+    bool taken = false;
+    Addr pc = 0;
+    Addr target = 0;
+};
+
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
  *
@@ -419,42 +435,48 @@ struct FetchTarget
         return startPC;
     }
 
-    std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
+    DirectionHistoryUpdate getGHistUpdateDuringSquash(
+        Addr squash_pc, bool is_cond, bool actually_taken) const
     {
-        int shamt = 0;
-        bool cond_taken = false;
+        DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                shamt++;
+                update.shamt++;
             }
         }
         if (is_cond) {
-            shamt++;
-            cond_taken = actually_taken;
+            update.shamt++;
+            update.taken = actually_taken;
         }
-        return std::make_pair(shamt, cond_taken);
+        return update;
     }
 
-    std::pair<int, bool> getBwHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target)
+    DirectionHistoryUpdate getBwHistUpdateDuringSquash(
+        Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
-        int shamt = 0;
-        bool cond_taken = false;
+        DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                shamt++;
+                update.shamt++;
             }
         }
         if (is_cond) {
-            shamt++;
-            cond_taken = actually_taken && (squash_pc > target);
+            update.shamt++;
+            update.taken = actually_taken && (squash_pc > target);
         }
-        return std::make_pair(shamt, cond_taken);
+        return update;
     }
 
-    bool getPHistTakenDuringSquash(Addr squash_pc, bool actually_taken) const
+    PathHistoryUpdate getPHistUpdateDuringSquash(
+        Addr squash_pc, bool actually_taken, Addr target) const
     {
-        auto ctrl_pc = getControlPC();
-        return actually_taken && ctrl_pc == squash_pc;
+        PathHistoryUpdate update;
+        update.taken = actually_taken && getControlPC() == squash_pc;
+        if (update.taken) {
+            update.pc = squash_pc;
+            update.target = target;
+        }
+        return update;
     }
 
     // should be called before components update
@@ -639,19 +661,18 @@ struct FullBTBPrediction
         }
     }
 
-    std::pair<int, bool> getHistInfo()  //global or local
+    DirectionHistoryUpdate getGHistUpdate()  //global or local
     {
-        int shamt = 0; // shamt is the number of bits to shift in history update
-        bool taken = false;
+        DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) { // if found a cond branch, shamt++
-                    shamt++;
+                    update.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) { // if the cond branch is taken, taken = true
-                            taken = true;
+                            update.taken = true;
                             break;
                         }
                     }
@@ -663,22 +684,21 @@ struct FullBTBPrediction
         }
         // For example, return (3, true) means 3 bits to shift in history update,
         // and the third branch is taken, new hist = xxx001
-        return std::make_pair(shamt, taken);
+        return update;
     }
 
-    std::pair<int, bool> getBwHistInfo() //global backward or imli
+    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
     {
-        int shamt = 0;
-        bool taken = false;
+        DirectionHistoryUpdate update;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) {
-                    shamt++;
+                    update.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
-                            taken = (entry.target < entry.pc); // branch is backward if target < pc
+                            update.taken = (entry.target < entry.pc); // branch is backward if target < pc
                             break;
                         }
                     }
@@ -688,16 +708,19 @@ struct FullBTBPrediction
                 }
             }
         }
-        return std::make_pair(shamt, taken);
+        return update;
     }
 
-    std::tuple<Addr, Addr, bool> getPHistInfo() //path
+    PathHistoryUpdate getPHistUpdate() //path
     {
+        PathHistoryUpdate update;
         const auto &entry = getTakenEntry();
         if (entry.valid) {
-            return std::make_tuple(entry.pc, getEntryTarget(entry), true);
+            update.taken = true;
+            update.pc = entry.pc;
+            update.target = getEntryTarget(entry);
         }
-        return std::make_tuple(0, 0, false);
+        return update;
     }
 
 };
@@ -790,9 +813,13 @@ struct MgscTrace : public Record
         int64_t gPercsum, int64_t pPercsum, int64_t biasPercsum,
         // SC decision
         int64_t totalSum, int64_t totalThres, int64_t effectiveGate, int64_t margin,
-        uint64_t bwIndexSig, uint64_t lIndexSig, uint64_t iIndexSig,
-        uint64_t gIndexSig, uint64_t pIndexSig, uint64_t biasIndexSig,
-        uint64_t useSc, uint64_t scPred,
+        uint64_t bwIndex0, uint64_t bwIndex1,
+        uint64_t lIndex0, uint64_t lIndex1,
+        uint64_t iIndex0,
+        uint64_t gIndex0, uint64_t gIndex1,
+        uint64_t pIndex0, uint64_t pIndex1,
+        uint64_t biasIndex0,
+        uint64_t useSc, uint64_t scPred, uint64_t scWrong,
         // Result
         uint64_t actualTaken)
     {
@@ -817,14 +844,19 @@ struct MgscTrace : public Record
         _uint64_data["totalThres"] = static_cast<uint64_t>(totalThres);
         _uint64_data["effectiveGate"] = static_cast<uint64_t>(effectiveGate);
         _uint64_data["margin"] = static_cast<uint64_t>(margin);
-        _uint64_data["bwIndexSig"] = bwIndexSig;
-        _uint64_data["lIndexSig"] = lIndexSig;
-        _uint64_data["iIndexSig"] = iIndexSig;
-        _uint64_data["gIndexSig"] = gIndexSig;
-        _uint64_data["pIndexSig"] = pIndexSig;
-        _uint64_data["biasIndexSig"] = biasIndexSig;
+        _uint64_data["bwIndex0"] = bwIndex0;
+        _uint64_data["bwIndex1"] = bwIndex1;
+        _uint64_data["lIndex0"] = lIndex0;
+        _uint64_data["lIndex1"] = lIndex1;
+        _uint64_data["iIndex0"] = iIndex0;
+        _uint64_data["gIndex0"] = gIndex0;
+        _uint64_data["gIndex1"] = gIndex1;
+        _uint64_data["pIndex0"] = pIndex0;
+        _uint64_data["pIndex1"] = pIndex1;
+        _uint64_data["biasIndex0"] = biasIndex0;
         _uint64_data["useSc"] = useSc;
         _uint64_data["scPred"] = scPred;
+        _uint64_data["scWrong"] = scWrong;
         // Result
         _uint64_data["actualTaken"] = actualTaken;
     }

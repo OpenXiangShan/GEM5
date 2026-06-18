@@ -957,52 +957,13 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchTarget &entry)
 }
 
 void
-DecoupledBPUWithBTB::checkHistory(const boost::dynamic_bitset<> &history,
-                                  ThreadID tid)
+DecoupledBPUWithBTB::checkHistories(const boost::dynamic_bitset<> &history,
+                                    const boost::dynamic_bitset<> &phistory,
+                                    ThreadID tid)
 {
-    // This function performs a crucial validation of branch history consistency
-    // It rebuilds the "ideal" history from HistoryManager's records and compares
-    // it with the actual history being used by the branch predictor
-
-    // Initialize counter for total history bits and a bitset for rebuilt history
-    unsigned ideal_size = 0;
-    boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
-
-    // Iterate through all speculative history entries stored in HistoryManager
-    for (const auto entry: historyManagers[tid].getSpeculativeHist()) {
-        // Only process entries that have non-zero shift amount (actual branches)
-        if (entry.shamt != 0) {
-            // Accumulate total history bits
-            ideal_size += entry.shamt;
-            DPRINTF(DecoupleBPVerbose, "pc: %#lx, shamt: %lu, cond_taken: %d\n", entry.pc,
-                    entry.shamt, entry.cond_taken);
-
-            // Rebuild history by shifting and setting bits based on recorded outcomes
-            // This emulates how history would be built if all branches were predicted perfectly
-            ideal_hash_hist <<= entry.shamt;
-            ideal_hash_hist[0] = entry.cond_taken;
-        }
-    }
-
-    // Determine how many bits to compare (minimum of ideal size and actual history bits)
-    unsigned comparable_size = std::min(ideal_size, historyBits);
-
-    // Prepare actual history for comparison by creating a copy
-    boost::dynamic_bitset<> sized_real_hist(history);
-
-    // Resize both histories to the comparable size for accurate comparison
-    ideal_hash_hist.resize(comparable_size);
-    sized_real_hist.resize(comparable_size);
-
-    // boost::to_string(ideal_hash_hist, buf1);
-    // boost::to_string(sized_real_hist, buf2);
-    DPRINTF(DecoupleBP,
-            "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
-            ideal_size, historyBits, comparable_size);
-    // DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
-    //         buf1.c_str(), buf2.c_str());
-
-    assert(ideal_hash_hist == sized_real_hist);
+    DPRINTF(DecoupleBP, "Checking GHR/PHR speculative history replay\n");
+    assert(historyManagers[tid].checkGHist(history, historyBits));
+    assert(historyManagers[tid].checkPHist(phistory, historyBits));
 }
 
 void
@@ -1043,51 +1004,48 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     auto& s0LHistory = threads[tid].s0LHistory;
     auto& finalPred = threads[tid].finalPred;
 
+    const auto ghist_update = finalPred.getGHistUpdate();
+    const auto bwhist_update = finalPred.getBwHistUpdate();
+    const auto phist_update = finalPred.getPHistUpdate();
 
-    // Update component-specific history, for TAGE/ITTAGE/MGSC
-    for (int i = 0; i < numComponents; i++) {
-        // use old s0History to update folded history, then use finalPred to update folded history
-        components[i]->specUpdateHist(s0History, finalPred);
-        components[i]->specUpdatePHist(s0PHistory, finalPred);
-        if (components[i]->needMoreHistories) {
-            components[i]->specUpdateBwHist(s0BwHistory, finalPred);
-            components[i]->specUpdateIHist(finalPred);
-            components[i]->specUpdateLHist(s0LHistory, finalPred);
-        }
+    // RAS updates its speculative stack, not folded history.
+    if (ras->isEnabled()) {
+        ras->specUpdateState(finalPred);
     }
 
-    // Get prediction information for history updates
-    int shamt;
-    bool taken;
-    std::tie(shamt, taken) = finalPred.getHistInfo();
+    // Update component-local folded histories.
+    for (int i = 0; i < numComponents; i++) {
+        // use old histories to update predictor-local folded histories
+        components[i]->specUpdateGHist(s0History, finalPred, ghist_update);
+        components[i]->specUpdatePHist(s0PHistory, finalPred, phist_update);
+    }
+    if (mgsc->isEnabled()) {
+        mgsc->specUpdateBwHist(s0BwHistory, finalPred, bwhist_update);
+        mgsc->specUpdateIHist(finalPred, bwhist_update);
+        mgsc->specUpdateLHist(s0LHistory, finalPred, ghist_update);
+    }
 
     // Update global history
-    histShiftIn(shamt, taken, s0History);
+    histShiftIn(ghist_update.shamt, ghist_update.taken, s0History);
 
     // Update history manager and verify TAGE folded history
     historyManagers[tid].addSpeculativeHist(
-        entry.startPC, shamt, taken, entry.predBranchInfo, ftq.backId(tid) + 1);
-
-    // Get prediction information for global backward history updates
-    int bw_shamt;
-    bool bw_taken;
-    std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
-
-    // Get prediction information for path history updates
-    auto [p_pc, p_target, p_taken]= finalPred.getPHistInfo(); // p_taken = taken
+        entry.startPC, entry.history, entry.phistory, ghist_update,
+        phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
 
     // Update global backward history
-    histShiftIn(bw_shamt, bw_taken, s0BwHistory);
+    histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
 
     // Update path history
-    pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
+    pHistShiftIn(phist_update.shamt, phist_update.taken, s0PHistory,
+                 phist_update.pc, phist_update.target);
 
     // Update local history
     const Addr localHistoryIndex =
         mgsc->getPcIndex(finalPred.bbStart,
                          log2(mgsc->getNumEntriesFirstLocalHistories()),
                          finalPred.asidHash);
-    histShiftIn(shamt, taken,
+    histShiftIn(ghist_update.shamt, ghist_update.taken,
         s0LHistory[localHistoryIndex]);
 
 #ifndef NDEBUG
@@ -1142,60 +1100,68 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0BwHistory = target.bwhistory;
     s0LHistory = target.lhistory;
 
-    // Get actual history shift information
-    int real_shamt;
-    bool real_taken;
-    std::tie(real_shamt, real_taken) = target.getHistInfoDuringSquash(
+    // Get actual history update information.
+    const auto ghist_update = target.getGHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken);
+    const auto bwhist_update = target.getBwHistUpdateDuringSquash(
+        squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
+    const auto phist_update = target.getPHistUpdateDuringSquash(
+        squash_pc.instAddr(), actually_taken, redirect_pc);
 
-    // Get actual history shift information
-    int real_bw_shamt;
-    bool real_bw_taken;
-    std::tie(real_bw_shamt, real_bw_taken) = target.getBwHistInfoDuringSquash(
-    squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
-    bool real_p_taken = target.getPHistTakenDuringSquash(
-        squash_pc.instAddr(), actually_taken);
+    // RAS recovers its speculative stack, not folded history.
+    if (ras->isEnabled()) {
+        ras->recoverState(target);
+    }
+    if (abtb->isEnabled()) {
+        abtb->recoverState(target);
+    }
 
-    // Recover component-specific history
+    // Recover component-local folded histories.
     for (int i = 0; i < numComponents; ++i) {
-        components[i]->recoverHist(s0History, target, real_shamt, real_taken);
-        components[i]->recoverPHist(s0PHistory, target, 2, real_p_taken);
-        if (components[i]->needMoreHistories) {
-            components[i]->recoverBwHist(s0BwHistory, target, real_bw_shamt, real_bw_taken);
-            components[i]->recoverIHist(target, real_bw_shamt, real_bw_taken);
-            components[i]->recoverLHist(s0LHistory, target, real_shamt, real_taken);
-        }
+        components[i]->recoverHist(s0History, target, ghist_update.shamt,
+                                   ghist_update.taken);
+        components[i]->recoverPHist(s0PHistory, target, phist_update);
+    }
+    if (mgsc->isEnabled()) {
+        mgsc->recoverBwHist(s0BwHistory, target, bwhist_update.shamt,
+                            bwhist_update.taken);
+        mgsc->recoverIHist(target, bwhist_update.shamt,
+                           bwhist_update.taken);
+        mgsc->recoverLHist(s0LHistory, target, ghist_update.shamt,
+                           ghist_update.taken);
     }
 
     // Update global history with actual outcome
-    histShiftIn(real_shamt, real_taken, s0History);
+    histShiftIn(ghist_update.shamt, ghist_update.taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(2, real_p_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
+    pHistShiftIn(phist_update.shamt, phist_update.taken, s0PHistory,
+                 phist_update.pc, phist_update.target);
 
     // Update global backward history with actual outcome
-    histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);
+    histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
 
     // Update local history with actual outcome
     const Addr localHistoryIndex =
         mgsc->getPcIndex(target.startPC,
                          log2(mgsc->getNumEntriesFirstLocalHistories()),
                          target.asidHash);
-    histShiftIn(real_shamt, real_taken,
+    histShiftIn(ghist_update.shamt, ghist_update.taken,
                 s0LHistory[localHistoryIndex]);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
-        historyManagers[tid].squash(target_id, real_shamt, real_taken,
+        historyManagers[tid].squash(target_id, ghist_update,
+                                    phist_update,
                                     target.exeBranchInfo);
     } else {
-        historyManagers[tid].squash(target_id, real_shamt, real_taken,
-                                    BranchInfo());
+        historyManagers[tid].squash(target_id, ghist_update,
+                                    phist_update, BranchInfo());
     }
 
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
-    checkHistory(s0History, tid);
+    checkHistories(s0History, s0PHistory, tid);
     if (tage->isEnabled()) {
         tage->checkFoldedHist(
             tage->usesPathHistory() ? s0PHistory : s0History, tid,

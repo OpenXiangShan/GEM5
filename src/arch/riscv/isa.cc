@@ -61,6 +61,7 @@
 #include "mem/se_translating_port_proxy.hh"
 #include "mem/translating_port_proxy.hh"
 #include "params/RiscvISA.hh"
+#include "sim/core.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
 #include "sim/pseudo_inst.hh"
@@ -112,7 +113,7 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
 
 } // namespace
 
-[[maybe_unused]] const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
+[[maybe_unused]] const std::array<const char *, NUM_MISC_AND_HELPER_REGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
     [MISCREG_VIRMODE]         = "VIRTUALIZATIONMODE",
     [MISCREG_ISA]           = "ISA",
@@ -310,6 +311,7 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
+    [MISCREG_FFLAGS_EXE]    = "FFLAGS_EXE",
 }};
 
 
@@ -376,8 +378,14 @@ void ISA::clear()
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
                                     (1ULL << FS_OFFSET);
     }
-    miscRegFile[MISCREG_MCOUNTEREN] = 0;
-    miscRegFile[MISCREG_SCOUNTEREN] = 0;
+    if (FullSystem) {
+        miscRegFile[MISCREG_MCOUNTEREN] = 0;
+        miscRegFile[MISCREG_SCOUNTEREN] = 0;
+    } else {
+        // SE runs user-mode code without firmware or an OS to enable counters.
+        miscRegFile[MISCREG_MCOUNTEREN] = 0x7;
+        miscRegFile[MISCREG_SCOUNTEREN] = 0x7;
+    }
     // don't set it to zero; software may try to determine the supported
     // triggers, starting at zero. simply set a different value here.
     miscRegFile[MISCREG_TSELECT] = 1;
@@ -562,7 +570,7 @@ ISA::readMiscRegNoEffect(int misc_reg) const
             return miscRegFile[misc_reg] & (mmu->getPMP()->pmpTorMask());
         }
         return 0;
-    } else if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
+    } else if (misc_reg >= NUM_MISCREGS || misc_reg < 0) {
         // Illegal CSR
         panic("Illegal CSR index %#x\n", misc_reg);
         return -1;
@@ -622,9 +630,16 @@ ISA::readMiscReg(int misc_reg)
         }
       case MISCREG_TIME:
         if (hpmCounterEnabled(MISCREG_TIME)) {
-            DPRINTF(RiscvMisc, "Wall-clock counter at: %llu.\n",
-                    std::time(nullptr));
-            return readMiscRegNoEffect(MISCREG_TIME);
+            if (!FullSystem) {
+                const uint64_t seTimebaseHz = 1000000;
+                RegVal time = curTick() / (sim_clock::Frequency / seTimebaseHz);
+                DPRINTF(RiscvMisc, "SE time counter at: %llu.\n", time);
+                return time;
+            } else {
+                DPRINTF(RiscvMisc, "Wall-clock counter at: %llu.\n",
+                        std::time(nullptr));
+                return readMiscRegNoEffect(MISCREG_TIME);
+            }
         } else {
             return 0;
         }
@@ -672,6 +687,11 @@ ISA::readMiscReg(int misc_reg)
                   (readMiscRegNoEffect(MISCREG_VXRM) << 1);
         }
         break;
+      case MISCREG_FFLAGS_EXE:
+        {
+            return readMiscRegNoEffect(MISCREG_FFLAGS) & FFLAGS_MASK;
+        }
+        break;
         case MISCREG_PMPADDR00 ... MISCREG_PMPADDR15:
         {
             return readMiscRegNoEffect(misc_reg);
@@ -697,7 +717,7 @@ ISA::readMiscReg(int misc_reg)
 void
 ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
 {
-    if (misc_reg > NUM_MISCREGS || misc_reg < 0) {
+    if (misc_reg >= NUM_MISCREGS || misc_reg < 0) {
         // Illegal CSR
         panic("Illegal CSR index %#x\n", misc_reg);
     }
@@ -918,6 +938,19 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                     ((cur & ~(NEMU_MSTATUS_WMASK)) | (val & NEMU_MSTATUS_WMASK));
                 mstatus.sd = mstatus.fs == 0x3 || mstatus.vs == 0x3;
                 setMiscRegNoEffect(misc_reg, mstatus);
+            }
+            break;
+          case MISCREG_FFLAGS_EXE:
+            {
+                DPRINTF(RiscvMisc, "Will set fs\n");
+                STATUS mstatus = readMiscRegNoEffect(MISCREG_STATUS);
+                mstatus.fs = 3;
+                mstatus.sd = 1;
+                setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+
+                RegVal fflags = readMiscRegNoEffect(MISCREG_FFLAGS);
+                fflags |= (val & FFLAGS_MASK);
+                setMiscRegNoEffect(MISCREG_FFLAGS, fflags);
             }
             break;
             case MISCREG_FFLAGS:

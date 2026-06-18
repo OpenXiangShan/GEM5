@@ -153,11 +153,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    // not used
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-
-    void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchTarget &entry, int shamt, bool cond_taken) override;
+    void recoverState(const FetchTarget &entry);
 
 #ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per

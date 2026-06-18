@@ -45,11 +45,11 @@ class BTBuRAS : public TimedBaseBTBPredictor
         
         std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-        void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+        void specUpdateState(FullBTBPrediction &pred);
 
         unsigned getDelay() override {return 0;}
 
-        void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
+        void recoverState(const FetchTarget &entry);
 
         void update(const FetchTarget &entry) override;
 

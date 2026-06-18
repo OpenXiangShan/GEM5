@@ -258,30 +258,27 @@ struct MgscHarness
             }
         }
 
+        const auto ghist = stage_preds[1].getGHistUpdate();
+        const auto bwhist = stage_preds[1].getBwHistUpdate();
+        const auto phist = stage_preds[1].getPHistUpdate();
+
         // Speculative folded-history update (use pre-update histories, like DecoupledBPUWithBTB does).
-        mgsc.specUpdateHist(ghr_before, stage_preds[1]);
-        mgsc.specUpdatePHist(phr_before, stage_preds[1]);
-        mgsc.specUpdateBwHist(bwhr_before, stage_preds[1]);
-        mgsc.specUpdateIHist(stage_preds[1]);
-        mgsc.specUpdateLHist(lhr_before, stage_preds[1]);
+        mgsc.specUpdateGHist(ghr_before, stage_preds[1], ghist);
+        mgsc.specUpdatePHist(phr_before, stage_preds[1], phist);
+        mgsc.specUpdateBwHist(bwhr_before, stage_preds[1], bwhist);
+        mgsc.specUpdateIHist(stage_preds[1], bwhist);
+        mgsc.specUpdateLHist(lhr_before, stage_preds[1], ghist);
 
         // Speculative external history update using predicted outcome.
-        int shamt;
-        bool cond_taken;
-        std::tie(shamt, cond_taken) = stage_preds[1].getHistInfo();
-        histShiftIn(shamt, cond_taken, ghr);
+        histShiftIn(ghist.shamt, ghist.taken, ghr);
 
-        int bw_shamt;
-        bool bw_taken;
-        std::tie(bw_shamt, bw_taken) = stage_preds[1].getBwHistInfo();
-        histShiftIn(bw_shamt, bw_taken, bwhr);
+        histShiftIn(bwhist.shamt, bwhist.taken, bwhr);
 
-        auto [p_pc, p_target, p_taken] = stage_preds[1].getPHistInfo();
-        pHistShiftIn(2, p_taken, phr, p_pc, p_target);
+        pHistShiftIn(phist.shamt, phist.taken, phr, phist.pc, phist.target);
 
         unsigned lhr_idx =
             mgsc.getPcIndex(stage_preds[1].bbStart, log2(mgsc.getNumEntriesFirstLocalHistories()));
-        histShiftIn(shamt, cond_taken, lhr[lhr_idx]);
+        histShiftIn(ghist.shamt, ghist.taken, lhr[lhr_idx]);
 
         // std::string buf;
         // boost::to_string(lhr[lhr_idx], buf);
@@ -301,21 +298,25 @@ struct MgscHarness
             recover_stream.resolved = true;
             recover_stream.exeBranchInfo = entry;
             recover_stream.exeTaken = actual_taken;
+            recover_stream.squashPC = entry.pc;
 
-            mgsc.recoverHist(ghr, recover_stream, shamt, actual_taken);
-            bool actual_p_taken = actual_taken;
-            mgsc.recoverPHist(phr, recover_stream, 2, actual_p_taken);
+            mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
+            const auto actual_phist = recover_stream.getPHistUpdateDuringSquash(
+                entry.pc, actual_taken, entry.target);
+            mgsc.recoverPHist(phr, recover_stream, actual_phist);
 
             bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
-            mgsc.recoverBwHist(bwhr, recover_stream, bw_shamt, actual_bw_taken);
-            mgsc.recoverIHist(recover_stream, bw_shamt, actual_bw_taken);
-            mgsc.recoverLHist(lhr, recover_stream, shamt, actual_taken);
+            mgsc.recoverBwHist(bwhr, recover_stream,
+                               bwhist.shamt, actual_bw_taken);
+            mgsc.recoverIHist(recover_stream, bwhist.shamt, actual_bw_taken);
+            mgsc.recoverLHist(lhr, recover_stream, ghist.shamt, actual_taken);
 
             // Apply correct external history update.
-            histShiftIn(shamt, actual_taken, ghr);
-            histShiftIn(bw_shamt, actual_bw_taken, bwhr);
-            pHistShiftIn(2, actual_taken, phr, entry.pc, entry.target);
-            histShiftIn(shamt, actual_taken, lhr[lhr_idx]);
+            histShiftIn(ghist.shamt, actual_taken, ghr);
+            histShiftIn(bwhist.shamt, actual_bw_taken, bwhr);
+            pHistShiftIn(actual_phist.shamt, actual_phist.taken, phr,
+                         actual_phist.pc, actual_phist.target);
+            histShiftIn(ghist.shamt, actual_taken, lhr[lhr_idx]);
         }
 
         // Training update using prediction meta
@@ -729,6 +730,51 @@ TEST(BTBMGSCTest, BiasTableLearnsTwoTageContexts)
     EXPECT_GE(acc, 0.90) << "Accuracy too low for two-context bias learning: " << acc;
 }
 
+TEST(BTBMGSCTest, MissingTageInfoUsesDefaultFallbackContext)
+{
+    MgscHarness h;
+    h.setOnlyBiasTable();
+    BTBMGSC::TestAccess::allowMissingTageInfo(h.mgsc) = true;
+
+    const TageInfoForMGSC fallback_ctx;
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+
+    setAllTableCountersForPc(h.mgsc, start_pc, branch_pc, fallback_ctx,
+                             /*bw=*/0, /*l=*/0, /*i=*/0, /*g=*/0, /*p=*/0,
+                             /*bias=*/4);
+
+    boost::dynamic_bitset<> history(64, 0);
+    std::vector<FullBTBPrediction> stage_preds(2);
+    for (auto &pred : stage_preds) {
+        pred.bbStart = start_pc;
+        pred.btbEntries = {entry};
+        pred.tageInfoForMgscs.clear();
+    }
+
+    h.mgsc.putPCHistory(start_pc, history, stage_preds);
+
+    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    ASSERT_TRUE(found);
+    EXPECT_TRUE(taken);
+
+    const auto &preds = BTBMGSC::TestAccess::preds(h.mgsc);
+    auto it = preds.find(branch_pc);
+    ASSERT_NE(it, preds.end());
+    EXPECT_TRUE(it->second.use_mgsc);
+    EXPECT_FALSE(it->second.taken_before_sc);
+    EXPECT_FALSE(it->second.tage_conf_low);
+
+    const auto [expected_bias_idx, _] =
+        lineLaneForBiasIndex(h.mgsc, start_pc, branch_pc,
+                             BTBMGSC::TestAccess::biasTableIdxWidth(h.mgsc),
+                             fallback_ctx);
+    ASSERT_FALSE(it->second.biasIndex.empty());
+    EXPECT_EQ(it->second.biasIndex[0], expected_bias_idx);
+}
+
 TEST(BTBMGSCTest, LTableLearnsTwoIndependentLocalHistories)
 {
     MgscHarness h;
@@ -866,7 +912,7 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesIndirectTargetOverride)
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, indirectTarget);
 
-    h.mgsc.specUpdatePHist(h.phr, pred);
+    h.mgsc.specUpdatePHist(h.phr, pred, pred.getPHistUpdate());
     h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,
                            "indirect target override");
 }
@@ -891,7 +937,7 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, returnTarget);
 
-    h.mgsc.specUpdatePHist(h.phr, pred);
+    h.mgsc.specUpdatePHist(h.phr, pred, pred.getPHistUpdate());
     h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,
                            "return target override");
 }

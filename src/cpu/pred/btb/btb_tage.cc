@@ -111,6 +111,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
     maxHistLen = histLengths[numPredictors-1];
     numTablesToAlloc = 1;
     enableSC = false;
+    tageStats.init(numPredictors, numBanks);
 #else
 // Constructor: Initialize TAGE predictor with given parameters
 BTBTAGE::BTBTAGE(const Params& p):
@@ -476,10 +477,8 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     lastPredBankId = getBankId(startPC);
     predBankValid = true;
 
-#ifndef UNIT_TEST
     // Record prediction access per bank
     tageStats.predAccessPerBank[lastPredBankId]++;
-#endif
 
     DPRINTF(TAGE, "putPCHistory startAddr: %#lx, bank: %u\n",
             startPC, lastPredBankId);
@@ -579,7 +578,6 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     tageStats.resolveBranchHasAlt += alt_info.found;
     tageStats.resolveBranchUseAltTable += use_alt_table;
     tageStats.resolveBranchUseBaseTable += use_base_table;
-#ifndef UNIT_TEST
     if (main_info.found) {
         tageStats.resolveProviderTable[main_info.table]++;
     }
@@ -592,7 +590,6 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     if (use_alt_table) {
         tageStats.resolveUseAltTable[alt_info.table]++;
     }
-#endif
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -662,22 +659,18 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         tageStats.mispredictBranchHasAlt += alt_info.found;
         tageStats.mispredictBranchUseAltTable += use_alt_table;
         tageStats.mispredictBranchUseBaseTable += use_base_table;
-#ifndef UNIT_TEST
         if (use_provider) {
             tageStats.mispredictUseProviderTable[main_info.table]++;
         }
         if (use_alt_table) {
             tageStats.mispredictUseAltTable[alt_info.table]++;
         }
-#endif
     }
     if (getDelay() == 2){
         if (this_fb_mispred) {
             tageStats.updateMispred++;
             if (!used_alt && main_info.found) {
-#ifndef UNIT_TEST
                 tageStats.updateTableMispreds[main_info.table]++;
-#endif
             }
         }
     }
@@ -830,17 +823,13 @@ BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
-#ifndef UNIT_TEST
     // Record attempted update access per bank (even if it conflicts)
     tageStats.updateAccessPerBank[updateBank]++;
-#endif
 
     if (enableBankConflict && predBankValid && updateBank == lastPredBankId) {
         tageStats.updateBankConflict++;
         tageStats.updateDeferredDueToConflict++;
-#ifndef UNIT_TEST
         tageStats.updateBankConflictPerBank[updateBank]++;
-#endif
         DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with prediction bank %u, "
                       "deferring this update (will retry after blocking prediction)\n",
                       updateBank, lastPredBankId);
@@ -906,7 +895,6 @@ BTBTAGE::update(const FetchTarget &stream) {
                     btb_entry.pc);
         }
 
-#ifndef UNIT_TEST
         if (has_original_pred && original_pred.finalProviderTable >= 0) {
             if (original_pred.taken == actual_taken) {
                 tageStats.updateFinalSourceTableCorrect[original_pred.finalProviderTable]++;
@@ -918,7 +906,6 @@ BTBTAGE::update(const FetchTarget &stream) {
         } else if (has_original_pred) {
             tageStats.updateFinalSourceBaseWrong++;
         }
-#endif
 
         TagePrediction recomputed;
         if (updateOnRead || !has_original_pred) {
@@ -1203,38 +1190,31 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt,
 }
 
 /**
- * @brief Updates branch history for speculative execution
- * 
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- * 
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- * 
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates direction folded histories.
  */
 void
-BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history,
-                        FullBTBPrediction &pred)
+BTBTAGE::specUpdateGHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update)
 {
     if (usePathHistory) {
         return;
     }
 
-    auto [shamt, taken] = pred.getHistInfo();
-    doUpdateHist(history, shamt, taken, 0, 0, pred.tid);
+    doUpdateHist(history, update.shamt, update.taken, 0, 0, pred.tid);
 }
 
 void
-BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update)
 {
     if (!usePathHistory) {
         return;
     }
 
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, 2, taken, pc, target, pred.tid);
+    doUpdateHist(history, update.shamt, update.taken, update.pc,
+                 update.target, pred.tid);
 }
 
 void
@@ -1276,15 +1256,15 @@ BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
 
 void
 BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, int shamt, bool cond_taken)
+    const FetchTarget &entry, const PathHistoryUpdate &update)
 {
     if (!usePathHistory) {
         return;
     }
 
     recoverFoldedHist(entry);
-    doUpdateHist(history, 2, cond_taken, entry.getControlPC(),
-                 entry.getTakenTarget(), entry.tid);
+    doUpdateHist(history, update.shamt, update.taken, update.pc,
+                 update.target, entry.tid);
 }
 
 // Check folded history after speculative update and recovery
@@ -1394,8 +1374,19 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(predHit, statistics::units::Count::get(), "number of conditional branch predictions that hit"),
     ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss")
 {
-    predTableHits.init(0, numPredictors-1, 1);
-    updateTableHits.init(0, numPredictors-1, 1);
+    init(numPredictors, numBanks);
+}
+#endif
+
+void
+BTBTAGE::TageStats::init(int predictors, int banks)
+{
+    numPredictors = predictors;
+    numBanks = banks;
+    bankIdx = 0;
+
+    predTableHits.init(0, numPredictors - 1, 1);
+    updateTableHits.init(0, numPredictors - 1, 1);
     updateTableMispreds.init(numPredictors);
     predFinalSourceTable.init(numPredictors);
     updateFinalSourceTableCorrect.init(numPredictors);
@@ -1407,12 +1398,10 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     mispredictUseProviderTable.init(numPredictors);
     mispredictUseAltTable.init(numPredictors);
 
-    // Initialize per-bank statistics vectors
     updateBankConflictPerBank.init(numBanks);
     updateAccessPerBank.init(numBanks);
     predAccessPerBank.init(numBanks);
 }
-#endif
 
 // Update statistics based on TAGE prediction
 void
@@ -1423,27 +1412,21 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
     bool useAlt = pred.useAlt;
     if (when_pred) {
         if (hit) {
-#ifndef UNIT_TEST
             predTableHits.sample(hit_table, 1);
-#endif
         } else {
             predNoHitUseBim++;
         }
         if (!hit || useAlt) {
             predUseAlt++;
         }
-#ifndef UNIT_TEST
         if (pred.finalProviderTable >= 0) {
             predFinalSourceTable[pred.finalProviderTable]++;
         } else {
             predFinalSourceBase++;
         }
-#endif
     } else {
         if (hit) {
-#ifndef UNIT_TEST
             updateTableHits.sample(hit_table, 1);
-#endif
         } else {
             updateNoHitUseBim++;
         }

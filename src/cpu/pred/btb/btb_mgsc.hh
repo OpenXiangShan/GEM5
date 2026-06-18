@@ -161,25 +161,33 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    // speculative update all folded history, according history and pred.taken
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-    void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-    void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-    void specUpdateIHist(FullBTBPrediction &pred) override;
-    void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) override;
+    // Speculatively update all folded histories.
+    void specUpdateGHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update) override;
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
+    void specUpdateBwHist(const boost::dynamic_bitset<> &history,
+                          FullBTBPrediction &pred,
+                          const DirectionHistoryUpdate &update);
+    void specUpdateIHist(FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update);
+    void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history,
+                         FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update);
 
-    // Recover all folded history after a misprediction, then update all folded history according to history and
-    // pred.taken
+    // Recover all folded histories after a misprediction.
     void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
                      bool cond_taken) override;
-    void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken) override;
+    void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry,
+                      const PathHistoryUpdate &update) override;
     void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                       bool cond_taken) override;
+                       bool cond_taken);
     void recoverIHist(const FetchTarget &entry, int shamt,
-                      bool cond_taken) override;
+                      bool cond_taken);
     void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken) override;
+                      bool cond_taken);
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;
@@ -353,6 +361,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Test switches for SC tables
     bool forceUseSC;
+    bool allowMissingTageInfo;
     bool enableBwTable;
     bool enableLTable;
     bool enableITable;
@@ -529,6 +538,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static unsigned biasTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.biasTableIdxWidth; }
 
         static bool &forceUseSC(BTBMGSC &mgsc) { return mgsc.forceUseSC; }
+        static bool &allowMissingTageInfo(BTBMGSC &mgsc) { return mgsc.allowMissingTageInfo; }
         static bool &enableBwTable(BTBMGSC &mgsc) { return mgsc.enableBwTable; }
         static bool &enableLTable(BTBMGSC &mgsc) { return mgsc.enableLTable; }
         static bool &enableITable(BTBMGSC &mgsc) { return mgsc.enableITable; }

@@ -126,26 +126,15 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    // speculative update 3 folded history, according history and pred.taken
-    // the other specUpdateHist methods are left blank
-    void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    // Speculatively update path folded histories.
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
 
-    // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
-    // the other recoverHist methods are left blank
+    // Recover path folded histories after a misprediction.
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                        const FetchTarget &entry,int shamt, bool cond_taken) override;
-
-#ifdef UNIT_TEST
-    // API compatibility wrappers for testing
-    void specUpdateHist(const boost::dynamic_bitset<> &, FullBTBPrediction &) override
-    {
-    }
-
-    void recoverHist(const boost::dynamic_bitset<> &, const FetchTarget &, int,
-                     bool) override
-    {
-    }
-#endif
+                      const FetchTarget &entry,
+                      const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;

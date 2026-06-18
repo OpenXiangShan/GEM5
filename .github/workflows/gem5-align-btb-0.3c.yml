@@ -1,14 +1,12 @@
-name: gem5 Ideal BTB Performance Test
+name: gem5 Align BTB Performance Test(0.3c)
 
 on:
-  # Tier 2: Post-Merge testing
   push:
-    branches: [ xs-dev, '*-perf' ]  # xs-dev for post-merge CI, *-perf for auto performance testing
-  # Label-triggered PR performance testing
+    branches: [ xs-dev, '*-align' ]  # xs-dev for normal CI, *-align for BTB-only performance testing (align to RTL)
+  # Label-triggered PR align performance testing
   pull_request_target:
     types: [labeled]
 
-  # Support manual trigger
   workflow_dispatch:
 
 permissions:
@@ -19,11 +17,11 @@ jobs:
   perf_test:
     if: |
       github.event_name != 'pull_request_target' ||
-      (github.event.label.name == 'perf' &&
+      (github.event.label.name == 'perf-align' &&
        github.event.pull_request.base.ref == 'xs-dev' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      config_path: configs/example/idealkmhv3.py
-      benchmark_type: "gcc15-spec06-0.8c"
+      config_path: configs/example/kmhv3.py
+      benchmark_type: "gcc15-spec06-0.3c"
       pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}

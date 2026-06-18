@@ -93,7 +93,7 @@ BTBuRAS::getPredictionMeta(ThreadID tid)
 }
 
 void
-BTBuRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBuRAS::specUpdateState(FullBTBPrediction &pred)
 {
     auto &stack = specStack;
     auto &sp = specSp;
@@ -121,15 +121,15 @@ BTBuRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
         DPRINTF(URAS, "spec stack pop at pc 0x%llx target %llx\n", pred.bbStart, retAddr);
         pop(stack, sp);
     }
-    printStack("after specUpdateHist", stack, sp);
+    printStack("after specUpdateState", stack, sp);
 }
 
 void
-BTBuRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBuRAS::recoverState(const FetchTarget &entry)
 {
     auto &stack = specStack;
     auto &sp = specSp;
-    printStack("before recoverHist", stack, sp);
+    printStack("before recoverState", stack, sp);
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
     auto takenSlot = entry.exeBranchInfo;
@@ -160,7 +160,7 @@ BTBuRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
             push(retAddr, stack, sp);
         }
     }
-    printStack("after recoverHist", stack, sp);
+    printStack("after recoverState", stack, sp);
 }
 
 void

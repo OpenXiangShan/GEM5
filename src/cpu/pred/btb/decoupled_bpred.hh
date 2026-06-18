@@ -436,7 +436,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void overrideStats(OverrideReason overrideReason);
 
-    void checkHistory(const boost::dynamic_bitset<> &history, ThreadID tid);
+    void checkHistories(const boost::dynamic_bitset<> &history,
+                        const boost::dynamic_bitset<> &phistory,
+                        ThreadID tid);
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 

@@ -44,6 +44,7 @@
 
 #include "base/types.hh"
 #include "cpu/pred/btb/common.hh"
+#include "cpu/pred/btb/test_stats.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
@@ -148,12 +149,6 @@ class MBTB : public TimedBaseBTBPredictor
      *  @return Returns the prediction meta
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
-
-    // not used
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-
-    void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchTarget &entry, int shamt, bool cond_taken) override;
 
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
@@ -408,11 +403,8 @@ class MBTB : public TimedBaseBTBPredictor
         READ, WRITE, EVICT
     };
 
-#ifdef UNIT_TEST
-    typedef uint64_t Scalar;
-#else
-    typedef statistics::Scalar Scalar;
-#endif
+    using Scalar = test_stats::Scalar;
+    using Distribution = test_stats::Distribution;
 
 #ifdef UNIT_TEST
 public:
@@ -470,10 +462,11 @@ public:
         // Victim cache statistics
         Scalar victimCacheHit;
 
+        Distribution predHitCount;
 #ifndef UNIT_TEST
-        statistics::Distribution predHitCount;
         BTBStats(statistics::Group* parent, int numWays);
 #endif
+        void init(int numWays);
     } btbStats;
 
 };

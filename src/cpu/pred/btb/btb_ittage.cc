@@ -563,22 +563,14 @@ BTBITTAGE::tageHit()
 }
 
 /**
- * @brief Updates branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates path folded histories.
  */
 void
-BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                           FullBTBPrediction &pred,
+                           const PathHistoryUpdate &update)
 {
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, taken, pc, target, pred.tid);
+    doUpdateHist(history, update.taken, update.pc, update.target, pred.tid);
 }
 
 /**
@@ -595,7 +587,9 @@ BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
  * @param cond_taken The actual branch outcome
  */
 void
-BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
+                        const FetchTarget &entry,
+                        const PathHistoryUpdate &update)
 {
     auto &state = historyState(entry.tid);
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
@@ -604,8 +598,7 @@ BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarge
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(),
-                 entry.getTakenTarget(), entry.tid);
+    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
 }
 
 void

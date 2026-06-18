@@ -146,10 +146,6 @@ class UBTB : public TimedBaseBTBPredictor
         return meta;
     }
 
-    // the following methods are not used
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
-    void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchTarget &entry, int shamt, bool cond_taken) override{};
     void reset();
     void setTrace() override;
     TraceManager *ubtbTrace;
