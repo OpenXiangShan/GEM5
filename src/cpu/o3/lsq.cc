@@ -438,10 +438,13 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
                "Number of pending refill requests blocked by fake dcache mainpipe resources"),
       ADD_STAT(dcacheMainPipeBlockedByDataConflict,
                statistics::units::Count::get(),
-               "Number of fake dcache mainpipe S1 data reads blocked by S3 data writes"),
+               "Number of fake dcache mainpipe S1 data reads blocked by S4 data writes"),
       ADD_STAT(dcacheMainPipeStoreS2IssueBlocked,
                statistics::units::Count::get(),
-               "Number of store buffer requests blocked when issuing from fake dcache mainpipe S2")
+               "Number of store buffer requests blocked when issuing from fake dcache mainpipe S2"),
+      ADD_STAT(dcacheMainPipeStoreS2MissExit,
+               statistics::units::Count::get(),
+               "Number of store buffer requests that miss and exit fake dcache mainpipe at S2")
 {
 }
 
@@ -690,27 +693,35 @@ LSQ::advanceDcacheMainPipe()
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead);
     const auto &s2_data_resp =
         dcacheMainPipeStage(DcacheMainPipeStage::S2DataResp);
-    const auto &s3_write =
-        dcacheMainPipeStage(DcacheMainPipeStage::S3Write);
+    const auto &s3_tag_write =
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite);
+    const auto &s4_data_write =
+        dcacheMainPipeStage(DcacheMainPipeStage::S4DataWrite);
 
     auto &next_s1_data_read =
         next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S1DataRead));
     auto &next_s2_data_resp =
         next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S2DataResp));
-    auto &next_s3_write =
-        next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S3Write));
+    auto &next_s3_tag_write =
+        next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S3TagWrite));
+    auto &next_s4_data_write =
+        next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S4DataWrite));
 
-    // S3 resources are modeled as always ready for now. Keeping the local
+    // S4 resources are modeled as always ready for now. Keeping the local
     // variable makes later resource backpressure additions contained here.
-    const bool s3_can_go = true;
-    const bool s3_ready = !s3_write.valid || s3_can_go;
+    const bool s4_can_go = true;
+    const bool s4_ready = !s4_data_write.valid || s4_can_go;
+    const bool s3_can_go = s4_ready;
+    const bool s3_ready = !s3_tag_write.valid || s3_can_go;
     const bool s2_can_go = s3_ready;
 
-    bool s2_issue_done = false;
+    DcacheMainPipeS2Result s2_issue_result =
+        DcacheMainPipeS2Result::Blocked;
     if (s2_data_resp.valid && s2_can_go) {
-        // StoreBuffer S2 issue failure exits the fake pipe and is retried by
-        // the replay queue instead of holding S2.
-        s2_issue_done = !s2_data_resp.req.onS2Issue ||
+        // StoreBuffer S2 issue can either hit and proceed to S3, or miss and
+        // leave the fake pipe while the classic cache tracks the miss.
+        s2_issue_result = !s2_data_resp.req.onS2Issue ?
+            DcacheMainPipeS2Result::GoToS3 :
             s2_data_resp.req.onS2Issue(curTick());
     }
     const bool s2_ready = !s2_data_resp.valid || s2_can_go;
@@ -722,19 +733,26 @@ LSQ::advanceDcacheMainPipe()
         ++stats.dcacheMainPipeBlockedByDataConflict;
     }
 
-    if (s3_write.valid && s3_can_go && s3_write.req.onComplete) {
-        s3_write.req.onComplete(curTick());
+    if (s4_data_write.valid && s4_can_go &&
+        s4_data_write.req.onComplete) {
+        s4_data_write.req.onComplete(curTick());
     }
 
-    if (s3_write.valid && !s3_can_go) {
-        next_s3_write = s3_write;
+    if (s4_data_write.valid && !s4_can_go) {
+        next_s4_data_write = s4_data_write;
+    }
+
+    if (s3_tag_write.valid && !s3_can_go) {
+        next_s3_tag_write = s3_tag_write;
+    } else if (s3_tag_write.valid) {
+        next_s4_data_write = s3_tag_write;
     }
 
     if (s2_data_resp.valid) {
         if (!s2_can_go) {
             next_s2_data_resp = s2_data_resp;
-        } else if (s2_issue_done) {
-            next_s3_write = s2_data_resp;
+        } else if (s2_issue_result == DcacheMainPipeS2Result::GoToS3) {
+            next_s3_tag_write = s2_data_resp;
         }
     }
 
@@ -830,6 +848,7 @@ LSQ::makeStoreBufferMainPipeRequest(
     req.setKey = getDcacheSetKey(entry.blockVaddr);
     req.writeBanks = storeMaskToDcacheBanks(entry.validMask);
     req.needDataWrite = dcacheBankMaskAny(req.writeBanks);
+    req.needTagWrite = false;
 
     DcacheBankMask full_write = fullDcacheBankMask();
     for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
@@ -867,14 +886,14 @@ LSQ::markDcacheMainPipeBusyBanks()
 
     const auto &s1_data_read =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead);
-    const auto &s3_write =
-        dcacheMainPipeStage(DcacheMainPipeStage::S3Write);
+    const auto &s4_data_write =
+        dcacheMainPipeStage(DcacheMainPipeStage::S4DataWrite);
 
     if (s1_data_read.valid && s1_data_read.req.needDataRead) {
         mark_banks(s1_data_read.req, s1_data_read.req.readBanks);
     }
-    if (s3_write.valid && s3_write.req.needDataWrite) {
-        mark_banks(s3_write.req, s3_write.req.writeBanks);
+    if (s4_data_write.valid && s4_data_write.req.needDataWrite) {
+        mark_banks(s4_data_write.req, s4_data_write.req.writeBanks);
     }
 }
 
@@ -901,23 +920,25 @@ LSQ::hasDcacheMainPipeDataArrayConflict() const
 {
     const auto &s1_data_read =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead);
-    const auto &s3_write =
-        dcacheMainPipeStage(DcacheMainPipeStage::S3Write);
+    const auto &s4_data_write =
+        dcacheMainPipeStage(DcacheMainPipeStage::S4DataWrite);
 
     return s1_data_read.valid &&
         s1_data_read.req.needDataRead &&
-        s3_write.valid &&
-        s3_write.req.needDataWrite &&
-        s1_data_read.req.div == s3_write.req.div &&
+        s4_data_write.valid &&
+        s4_data_write.req.needDataWrite &&
+        s1_data_read.req.div == s4_data_write.req.div &&
         dcacheBankMaskOverlap(s1_data_read.req.readBanks,
-                              s3_write.req.writeBanks);
+                              s4_data_write.req.writeBanks);
 }
 
 bool
 LSQ::isDcacheMainPipeSetBlocked(uint64_t set_key) const
 {
+    // S4 only models data write resource usage; it does not block S0 tag/meta
+    // reads by same-set conflict.
     for (unsigned stage = static_cast<unsigned>(DcacheMainPipeStage::S1DataRead);
-         stage <= static_cast<unsigned>(DcacheMainPipeStage::S3Write);
+         stage <= static_cast<unsigned>(DcacheMainPipeStage::S3TagWrite);
          ++stage) {
         const auto &pipe_stage =
             dcacheMainPipeStage(static_cast<DcacheMainPipeStage>(stage));
@@ -934,8 +955,8 @@ LSQ::canEnterDcacheMainPipe(
     const DcacheMainPipeBufferedPipe &next_pipe)
 {
     const bool s0_tag_read_blocked =
-        dcacheMainPipeStage(DcacheMainPipeStage::S3Write).valid &&
-        dcacheMainPipeStage(DcacheMainPipeStage::S3Write).req.needTagWrite;
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).valid &&
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).req.needTagWrite;
     const bool s1_backpressured =
         next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S1DataRead)).valid;
 
@@ -962,13 +983,6 @@ LSQ::canEnterDcacheMainPipe(
 }
 
 bool
-LSQ::canEnterDcacheMainPipeNow(const DcacheMainPipeRequest &request)
-{
-    DcacheMainPipeBufferedPipe current_pipe = dcacheMainPipe;
-    return canEnterDcacheMainPipe(request, current_pipe);
-}
-
-bool
 LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
 {
     const auto req = makeStoreBufferMainPipeRequest(entry);
@@ -976,8 +990,8 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
     const bool s1_backpressured =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead).valid;
     const bool s0_tag_read_blocked =
-        dcacheMainPipeStage(DcacheMainPipeStage::S3Write).valid &&
-        dcacheMainPipeStage(DcacheMainPipeStage::S3Write).req.needTagWrite;
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).valid &&
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).req.needTagWrite;
 
     if (!dcacheMainPipeRefillQ.empty()) {
         if (s1_backpressured) {
@@ -1000,7 +1014,18 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
         ++stats.dcacheMainPipeStoreBlockedBySet;
         return false;
     }
-    if (!canEnterDcacheMainPipeNow(req)) {
+
+    bool blocked = false;
+    if (s1_backpressured) {
+        ++stats.dcacheMainPipeBlockedByS1Backpressure;
+        ++stats.dcacheMainPipeStoreBlockedByS1Backpressure;
+        blocked = true;
+    }
+    if (s0_tag_read_blocked) {
+        ++stats.dcacheMainPipeStoreBlockedByTagWrite;
+        blocked = true;
+    }
+    if (blocked) {
         return false;
     }
 
@@ -1478,10 +1503,6 @@ LSQ::sbufferEnterDcacheMainPipe(PacketPtr data_pkt)
     assert(!request->sbuffer_entry->sending);
     assert(!request->sbuffer_entry->inDcacheMainPipe);
 
-    if (cacheBlocked()) {
-        ++stats.sbufferDcacheReqBlocked;
-        return false;
-    }
     if (!canEnterStoreBufferDcacheMainPipe(*request->sbuffer_entry)) {
         lastSbufferSendBlockedByMainPipe = true;
         ++stats.sbufferDcacheReqBlocked;
@@ -1493,10 +1514,10 @@ LSQ::sbufferEnterDcacheMainPipe(PacketPtr data_pkt)
     return true;
 }
 
-bool
+LSQ::DcacheMainPipeS2Result
 LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
 {
-    bool ret = true;
+    DcacheMainPipeS2Result result = DcacheMainPipeS2Result::GoToS3;
     bool cache_got_blocked = false;
 
     auto request = dynamic_cast<SbufferRequest *>(data_pkt->senderState);
@@ -1507,26 +1528,34 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     assert(!request->sbuffer_entry->sending);
 
     data_pkt->sendTick = issue_tick;
+    data_pkt->clearDcacheMainPipeSbufferHit();
+    data_pkt->setDcacheMainPipeSbufferReq();
+    data_pkt->setLSQPtr(this);
 
     // Issue to the real classic cache only at fake S2 so StoreBuffer misses
     // cannot allocate or merge MSHRs at fake-pipe admission time.
     if (!cacheBlocked() && cachePortAvailable(false)) {
         if (!dcachePort.sendTimingReq(data_pkt)) {
-            ret = false;
+            result = DcacheMainPipeS2Result::Blocked;
             cache_got_blocked = true;
         }
     } else {
-        ret = false;
+        result = DcacheMainPipeS2Result::Blocked;
     }
 
-    if (ret) {
+    if (result == DcacheMainPipeS2Result::GoToS3) {
         stats.sbufferDcacheReqFire++;
         cachePortBusy(false);
-        data_pkt->setLSQPtr(this);
         request->_numOutstandingPackets = 1;
         request->sbuffer_entry->inDcacheMainPipe = false;
         request->sbuffer_entry->sending = true;
         resetStoreBufferInactiveCycles();
+        result = data_pkt->isDcacheMainPipeSbufferHit() ?
+            DcacheMainPipeS2Result::GoToS3 :
+            DcacheMainPipeS2Result::ExitPipe;
+        if (result == DcacheMainPipeS2Result::ExitPipe) {
+            ++stats.dcacheMainPipeStoreS2MissExit;
+        }
     } else {
         auto *entry = request->sbuffer_entry;
         stats.sbufferDcacheReqBlocked++;
@@ -1545,7 +1574,7 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
         }
     }
 
-    return ret;
+    return result;
 }
 
 void

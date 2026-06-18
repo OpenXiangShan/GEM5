@@ -110,6 +110,13 @@ class LSQ
         CachePort
     };
 
+    enum class DcacheMainPipeS2Result : unsigned
+    {
+        Blocked,
+        ExitPipe,
+        GoToS3
+    };
+
     /**
      * DcachePort class for the load/store queue.
      */
@@ -165,7 +172,7 @@ class LSQ
         std::vector<bool> validMask;
         bool sending;
         bool inDcacheMainPipe;
-        // Exited fake MainPipe at S2 and waits to re-enter from S0.
+        // Blocked at fake MainPipe S2 and waits to re-enter from S0.
         bool replayQueued;
         // the another same addr entry when sending
         // another cannot sending until self sending finished
@@ -1239,9 +1246,8 @@ class LSQ
     // issue the packet to the real classic cache.
     bool sbufferEnterDcacheMainPipe(PacketPtr data_pkt);
 
-    // Issue a StoreBuffer packet from fake S2 to the real classic cache.
-    bool issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt,
-                                              Tick issue_tick);
+    DcacheMainPipeS2Result issueSbufferPacketFromDcacheMainPipe(
+        PacketPtr data_pkt, Tick issue_tick);
     void completeSbufferEvict(PacketPtr pkt);
 
     unsigned getLQEntries() const { return LQEntries; }
@@ -1285,7 +1291,8 @@ class LSQ
 
     using DcacheBankMask = std::array<bool, DcacheBankCount>;
     using DcacheMainPipeCompleteCallback = std::function<void(Tick)>;
-    using DcacheMainPipeS2Callback = std::function<bool(Tick)>;
+    using DcacheMainPipeS2Callback =
+        std::function<DcacheMainPipeS2Result(Tick)>;
 
     enum class DcacheMainPipeSource : unsigned
     {
@@ -1298,8 +1305,8 @@ class LSQ
         S0TagReadEntry = 0,
         S1DataRead,
         S2DataResp,
-        S3Write,
-        S4Complete,
+        S3TagWrite,
+        S4DataWrite,
     };
 
     struct DcacheMainPipeRequest
@@ -1335,11 +1342,11 @@ class LSQ
     };
 
     // S0 happens at admission time. The stored array keeps the buffered
-    // pipeline slots from S1 to S3, while S4 is the pipe exit.
+    // pipeline slots from S1 to S4.
     static constexpr unsigned FirstBufferedDcacheMainPipeStage =
         static_cast<unsigned>(DcacheMainPipeStage::S1DataRead);
     static constexpr unsigned LastBufferedDcacheMainPipeStage =
-        static_cast<unsigned>(DcacheMainPipeStage::S3Write);
+        static_cast<unsigned>(DcacheMainPipeStage::S4DataWrite);
     static constexpr unsigned NumBufferedDcacheMainPipeStages =
         LastBufferedDcacheMainPipeStage -
         FirstBufferedDcacheMainPipeStage + 1;
@@ -1381,8 +1388,6 @@ class LSQ
     bool canEnterDcacheMainPipe(
         const DcacheMainPipeRequest &request,
         const DcacheMainPipeBufferedPipe &next_pipe);
-    bool canEnterDcacheMainPipeNow(
-        const DcacheMainPipeRequest &request);
     bool canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry);
 
     // Put a StoreBuffer request into fake S1 and attach its fake S2 issue hook.
@@ -1403,7 +1408,7 @@ class LSQ
     bool isDcacheRefillTagWrite() const
     {
         const auto &stage =
-            dcacheMainPipeStage(DcacheMainPipeStage::S3Write);
+            dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite);
         return stage.valid && stage.req.isRefill() && stage.req.needTagWrite;
     }
 
@@ -1499,6 +1504,7 @@ class LSQ
         statistics::Scalar dcacheMainPipeRefillBlockedByPipeResource;
         statistics::Scalar dcacheMainPipeBlockedByDataConflict;
         statistics::Scalar dcacheMainPipeStoreS2IssueBlocked;
+        statistics::Scalar dcacheMainPipeStoreS2MissExit;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);

@@ -739,6 +739,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         }
     }
 
+    if (level() == 1 && !isReadOnly && pkt->isDcacheMainPipeSbufferReq() &&
+        satisfied) {
+        pkt->setDcacheMainPipeSbufferHit();
+    }
 
     // Here we charge the headerDelay that takes into account the latencies
     // of the bus, if the packet comes from it.
@@ -928,7 +932,7 @@ BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick)
     Event *event = new EventFunctionWrapper(
         [this] { releaseDcacheMainPipeMSHRCredit(); },
         name() + ".dcache_mainpipe_mshr_credit_release", true);
-    schedule(event, std::max(tick, curTick()));
+    schedule(event, std::max(tick, clockEdge(Cycles(1))));
 }
 
 void
