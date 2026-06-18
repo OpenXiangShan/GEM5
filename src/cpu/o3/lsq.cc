@@ -986,7 +986,6 @@ bool
 LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
 {
     const auto req = makeStoreBufferMainPipeRequest(entry);
-    const bool set_blocked = isDcacheMainPipeSetBlocked(req.setKey);
     const bool s1_backpressured =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead).valid;
     const bool s0_tag_read_blocked =
@@ -1004,17 +1003,6 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
         return false;
     }
 
-    if (set_blocked) {
-        if (s1_backpressured) {
-            ++stats.dcacheMainPipeStoreBlockedByS1Backpressure;
-        }
-        if (s0_tag_read_blocked) {
-            ++stats.dcacheMainPipeStoreBlockedByTagWrite;
-        }
-        ++stats.dcacheMainPipeStoreBlockedBySet;
-        return false;
-    }
-
     bool blocked = false;
     if (s1_backpressured) {
         ++stats.dcacheMainPipeBlockedByS1Backpressure;
@@ -1023,6 +1011,10 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
     }
     if (s0_tag_read_blocked) {
         ++stats.dcacheMainPipeStoreBlockedByTagWrite;
+        blocked = true;
+    }
+    if (isDcacheMainPipeSetBlocked(req.setKey)) {
+        ++stats.dcacheMainPipeStoreBlockedBySet;
         blocked = true;
     }
     if (blocked) {

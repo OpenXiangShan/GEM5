@@ -932,7 +932,7 @@ BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick)
     Event *event = new EventFunctionWrapper(
         [this] { releaseDcacheMainPipeMSHRCredit(); },
         name() + ".dcache_mainpipe_mshr_credit_release", true);
-    schedule(event, std::max(tick, clockEdge(Cycles(1))));
+    schedule(event, std::max(tick, curTick()));
 }
 
 void
