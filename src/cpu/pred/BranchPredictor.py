@@ -981,7 +981,7 @@ class MBTB(TimedBaseBTBPredictor):
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(1, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set") # for 2 SRAMs, 4 ways per SRAM
-    numDelay = 2
+    numDelay = 0
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(0, "Number of entries in the victim cache")
@@ -1058,7 +1058,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
-    numDelay = 2
+    numDelay = 0
 
 class BTBTAGEUpperBound(BTBTAGE):
     type = 'BTBTAGEUpperBound'
