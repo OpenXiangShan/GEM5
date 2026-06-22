@@ -412,6 +412,36 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
                "Number of refill requests accepted by fake dcache mainpipe"),
       ADD_STAT(dcacheMainPipeStoreEnter, statistics::units::Count::get(),
                "Number of store buffer requests accepted by fake dcache mainpipe"),
+      ADD_STAT(dcacheMainPipeStoreValidCycles,
+               statistics::units::Cycle::get(),
+               "Number of cycles with a store buffer request ready to enter fake dcache mainpipe"),
+      ADD_STAT(dcacheMainPipeStoreBlockedCycles,
+               statistics::units::Cycle::get(),
+               "Number of cycles where a store buffer request is blocked by fake dcache mainpipe"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByRefillCycles,
+               statistics::units::Cycle::get(),
+               "Number of store buffer blocked cycles with pending or selected refill priority"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByRefillInputCycles,
+               statistics::units::Cycle::get(),
+               "Number of store buffer input candidate cycles with a pending fake dcache mainpipe refill"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByRefillInputCacheBlockedCycles,
+               statistics::units::Cycle::get(),
+               "Number of refill input-block cycles not sampled because the cache port is blocked"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByRefillInputWriteStallCycles,
+               statistics::units::Cycle::get(),
+               "Number of refill input-block cycles not sampled because dcache write stall delayed store issue"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByRefillUnsentNoEvictCycles,
+               statistics::units::Cycle::get(),
+               "Number of cycles with unsent store buffer data and pending refill but no selected evict candidate"),
+      ADD_STAT(dcacheMainPipeStoreBlockedBySetCycles,
+               statistics::units::Cycle::get(),
+               "Number of store buffer blocked cycles with fake dcache mainpipe set conflict"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByS1BackpressureCycles,
+               statistics::units::Cycle::get(),
+               "Number of store buffer blocked cycles with fake dcache mainpipe S1 backpressure"),
+      ADD_STAT(dcacheMainPipeStoreBlockedByTagWriteCycles,
+               statistics::units::Cycle::get(),
+               "Number of store buffer blocked cycles with fake dcache mainpipe tag write"),
       ADD_STAT(dcacheMainPipeStoreBlockedByRefill,
                statistics::units::Count::get(),
                "Number of store buffer requests blocked by pending refill priority"),
@@ -687,6 +717,10 @@ LSQ::clearAddresses()
 void
 LSQ::advanceDcacheMainPipe()
 {
+    dcacheMainPipeRefillPendingBeforeAdvance =
+        !dcacheMainPipeRefillQ.empty();
+    dcacheMainPipeRefillEnteredThisCycle = false;
+
     DcacheMainPipeBufferedPipe next_pipe = {};
 
     const auto &s1_data_read =
@@ -728,6 +762,7 @@ LSQ::advanceDcacheMainPipe()
 
     const bool s1_data_conflict = hasDcacheMainPipeDataArrayConflict();
     const bool s1_can_go = s2_ready && !s1_data_conflict;
+    const bool s1_ready_for_s0 = !s1_data_read.valid || s1_can_go;
 
     if (s1_data_conflict) {
         ++stats.dcacheMainPipeBlockedByDataConflict;
@@ -764,6 +799,15 @@ LSQ::advanceDcacheMainPipe()
         }
     }
 
+    // Snapshot the pipe after stage movement but before S0 arbitration. Store
+    // blocked-cycle stats sample this boundary, matching valid/ready style
+    // input observation without treating a newly admitted refill as old S1
+    // backpressure.
+    dcacheMainPipeBeforeS0Arb = next_pipe;
+    dcacheMainPipeS1BlockedBeforeS0Arb = !s1_ready_for_s0;
+    dcacheMainPipeTagReadBlockedBeforeS0Arb =
+        next_s3_tag_write.valid && next_s3_tag_write.req.needTagWrite;
+
     if (!dcacheMainPipeRefillQ.empty()) {
         const auto &queued_refill = dcacheMainPipeRefillQ.front();
         if (canEnterDcacheMainPipe(queued_refill, next_pipe)) {
@@ -771,6 +815,7 @@ LSQ::advanceDcacheMainPipe()
             next_s1_data_read.req = queued_refill;
             dcacheMainPipeRefillQ.pop();
             ++stats.dcacheMainPipeRefillEnter;
+            dcacheMainPipeRefillEnteredThisCycle = true;
         } else {
             ++stats.dcacheMainPipeRefillBlocked;
             ++stats.dcacheMainPipeRefillBlockedByPipeResource;
@@ -935,13 +980,20 @@ LSQ::hasDcacheMainPipeDataArrayConflict() const
 bool
 LSQ::isDcacheMainPipeSetBlocked(uint64_t set_key) const
 {
+    return isDcacheMainPipeSetBlocked(set_key, dcacheMainPipe);
+}
+
+bool
+LSQ::isDcacheMainPipeSetBlocked(
+    uint64_t set_key, const DcacheMainPipeBufferedPipe &pipe) const
+{
     // S4 only models data write resource usage; it does not block S0 tag/meta
     // reads by same-set conflict.
     for (unsigned stage = static_cast<unsigned>(DcacheMainPipeStage::S1DataRead);
          stage <= static_cast<unsigned>(DcacheMainPipeStage::S3TagWrite);
          ++stage) {
-        const auto &pipe_stage =
-            dcacheMainPipeStage(static_cast<DcacheMainPipeStage>(stage));
+        const auto &pipe_stage = pipe.at(
+            dcacheMainPipeIndex(static_cast<DcacheMainPipeStage>(stage)));
         if (pipe_stage.valid && pipe_stage.req.setKey == set_key) {
             return true;
         }
@@ -1022,6 +1074,75 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
     }
 
     return true;
+}
+
+bool
+LSQ::isDcacheMainPipeRefillInputValid() const
+{
+    return dcacheMainPipeRefillPendingBeforeAdvance ||
+        dcacheMainPipeRefillEnteredThisCycle ||
+        !dcacheMainPipeRefillQ.empty();
+}
+
+void
+LSQ::recordDcacheMainPipeStoreCandidateCycle(const StoreBufferEntry &entry)
+{
+    // Sample a StoreBuffer input candidate with valid/ready-style semantics.
+    // The older blocked counters still count failed admission attempts.
+    const auto req = makeStoreBufferMainPipeRequest(entry);
+    const bool refill_blocks = isDcacheMainPipeRefillInputValid();
+    const bool set_blocked =
+        isDcacheMainPipeSetBlocked(req.setKey, dcacheMainPipeBeforeS0Arb);
+    const bool s1_backpressured = dcacheMainPipeS1BlockedBeforeS0Arb;
+    const bool s0_tag_read_blocked =
+        dcacheMainPipeTagReadBlockedBeforeS0Arb;
+    const bool blocked =
+        refill_blocks || set_blocked || s1_backpressured ||
+        s0_tag_read_blocked;
+
+    ++stats.dcacheMainPipeStoreValidCycles;
+    if (!blocked) {
+        return;
+    }
+
+    ++stats.dcacheMainPipeStoreBlockedCycles;
+    if (refill_blocks) {
+        ++stats.dcacheMainPipeStoreBlockedByRefillCycles;
+    }
+    if (set_blocked) {
+        ++stats.dcacheMainPipeStoreBlockedBySetCycles;
+    }
+    if (s1_backpressured) {
+        ++stats.dcacheMainPipeStoreBlockedByS1BackpressureCycles;
+    }
+    if (s0_tag_read_blocked) {
+        ++stats.dcacheMainPipeStoreBlockedByTagWriteCycles;
+    }
+}
+
+void
+LSQ::recordDcacheMainPipeStoreRefillInputBlock(
+    bool blocked_by_cache, bool blocked_by_write_stall)
+{
+    if (!isDcacheMainPipeRefillInputValid()) {
+        return;
+    }
+
+    ++stats.dcacheMainPipeStoreBlockedByRefillInputCycles;
+    if (blocked_by_cache) {
+        ++stats.dcacheMainPipeStoreBlockedByRefillInputCacheBlockedCycles;
+    }
+    if (blocked_by_write_stall) {
+        ++stats.dcacheMainPipeStoreBlockedByRefillInputWriteStallCycles;
+    }
+}
+
+void
+LSQ::recordDcacheMainPipeStoreRefillUnsentNoEvict()
+{
+    if (isDcacheMainPipeRefillInputValid()) {
+        ++stats.dcacheMainPipeStoreBlockedByRefillUnsentNoEvictCycles;
+    }
 }
 
 void
@@ -1340,14 +1461,33 @@ LSQ::storeBufferWriteback()
     // write request will stall one cycle
     // so 2 cycle send one write request
     if (getDcacheWriteStall()) {
+        if (!sbufferMainPipeReplayQ.empty() || blockedSbufferEntry ||
+            storeBuffer.unsentSize() != 0) {
+            recordDcacheMainPipeStoreRefillInputBlock(false, true);
+        }
         setDcacheWriteStall(false);
         can_evict = false;
     }
 
     // Replayed S2 exits are retried before pre-admission blocks and new
     // evictions.
+    if (can_evict && !sbufferMainPipeReplayQ.empty()) {
+        const bool cache_blocked = cacheBlocked();
+        recordDcacheMainPipeStoreRefillInputBlock(cache_blocked, false);
+        if (!cache_blocked) {
+            recordDcacheMainPipeStoreCandidateCycle(
+                *sbufferMainPipeReplayQ.front());
+        }
+    }
     if (can_evict && retryReplayStoreBuffer()) {
         can_evict = false;
+    }
+    if (can_evict && blockedSbufferEntry) {
+        const bool cache_blocked = cacheBlocked();
+        recordDcacheMainPipeStoreRefillInputBlock(cache_blocked, false);
+        if (!cache_blocked) {
+            recordDcacheMainPipeStoreCandidateCycle(*blockedSbufferEntry);
+        }
     }
     if (can_evict && retryBlockedStoreBuffer()) {
         can_evict = false;
@@ -1394,6 +1534,11 @@ LSQ::storeBufferWriteback()
             }
             auto &owner_unit = thread[entry->tid];
             recordStoreBufferEviction(*cause);
+            const bool cache_blocked = cacheBlocked();
+            recordDcacheMainPipeStoreRefillInputBlock(cache_blocked, false);
+            if (!cache_blocked) {
+                recordDcacheMainPipeStoreCandidateCycle(*entry);
+            }
             DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x]\n",
                     entry->blockPaddr);
             if (debug::StoreBuffer) {
@@ -1426,6 +1571,8 @@ LSQ::storeBufferWriteback()
                 DPRINTF(StoreBuffer, "enter dcache mainpipe successed\n");
                 resetStoreBufferInactiveCycles();
             }
+        } else {
+            recordDcacheMainPipeStoreRefillUnsentNoEvict();
         }
     }
 }
