@@ -52,7 +52,7 @@ jobs:
           echo "::error::Refusing to checkout an external fork PR head under pull_request_target."
           exit 1
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.pr_sha || github.sha }}
           persist-credentials: false
