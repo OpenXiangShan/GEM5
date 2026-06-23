@@ -63,11 +63,8 @@ def _configure_xs_composite_kmh_align(prefetcher):
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
 
-    # Start from the selected XSComposite profile, then apply explicit overrides.
-    if options.kmh_align:
-        _configure_xs_composite_kmh_align(prefetcher)
-    else:
-        _configure_xs_composite_default(prefetcher, options)
+    # Keep this experiment scoped to the L1D XSComposite profile.
+    _configure_xs_composite_kmh_align(prefetcher)
 
     if options.l1d_enable_spp:
         prefetcher.enable_spp = True
