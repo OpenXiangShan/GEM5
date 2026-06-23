@@ -1029,8 +1029,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
+        // A/B check: keep demand refills on fake mainpipe, but let
+        // prefetch-only refills use the classic-cache path.
         const bool is_dcache_mainpipe_refill =
-            allocate && (mshr->hasFromCPU() || mshr->hasFromPref());
+            allocate && mshr->hasFromCPU();
         // Send allocated L1D fill/update traffic into the fake mainpipe.
         // Demand responses carry the LSQ pointer in the packet; prefetch-only
         // responses use the LSQ owner learned from earlier demand traffic.
