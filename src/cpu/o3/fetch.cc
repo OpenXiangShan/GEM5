@@ -2431,7 +2431,7 @@ Fetch::handleCommitSignals(ThreadID tid)
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
-                              corr_pc, mispred_inst->staticInst,
+                              corr_pc, mispred_inst, mispred_inst->staticInst,
                               mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
@@ -2477,6 +2477,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                 mispred_inst->getFtqId(),
                 mispred_inst->pcState(),
                 next_pc,
+                mispred_inst,
                 mispred_inst->staticInst, mispred_inst->getInstBytes(),
                 fromDecode->decodeInfo[tid].branchTaken,
                 mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),

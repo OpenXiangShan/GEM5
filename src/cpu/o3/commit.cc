@@ -1258,7 +1258,11 @@ Commit::commit()
             toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
 
             if (toIEW->commitInfo[tid].mispredictInst) {
-                if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
+                auto mispredictInst = toIEW->commitInfo[tid].mispredictInst;
+                if (cpu->isTraceMode() && mispredictInst->hasTraceBranchInfo()) {
+                    toIEW->commitInfo[tid].branchTaken =
+                        mispredictInst->traceBranchTaken();
+                } else if (mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
                 }
                 ++stats.branchMispredicts[tid];

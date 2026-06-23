@@ -420,6 +420,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void controlSquash(unsigned fsq_id,
                        const PCStateBase &control_pc,
                        const PCStateBase &target_pc,
+                       const DynInstPtr &inst,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
                        ThreadID tid, const unsigned &currentLoopIter,
@@ -766,7 +767,13 @@ class DecoupledBPUWithBTB : public BPredUnit
                       bool is_conditional = false,
                       bool actually_taken = false,
                       const StaticInstPtr &static_inst = nullptr,
-                      unsigned control_inst_size = 0);
+                      unsigned control_inst_size = 0,
+                      const DynInstPtr &inst = nullptr);
+
+    BranchInfo makeBranchInfo(Addr control_pc, Addr target_pc,
+                              const DynInstPtr &inst,
+                              const StaticInstPtr &static_inst,
+                              unsigned inst_size) const;
 
     void resetPC(Addr new_pc);
     void resetPC(ThreadID tid, Addr new_pc);

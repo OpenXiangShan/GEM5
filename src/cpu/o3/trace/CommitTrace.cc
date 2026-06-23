@@ -274,15 +274,22 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
         };
 
         auto commit_type = classifyInstType(head_inst->staticInst);
-        auto trace_type = ti_meta->getInstType();
-        // Allow trace hints to override static decode for call/return/indirect
-        if (head_inst->traceIsCall()) {
-            trace_type = head_inst->traceIsIndirect()
-                ? o3::TraceInstruction::InstType::CALL_INDIRECT
-                : o3::TraceInstruction::InstType::CALL_DIRECT;
-        } else if (head_inst->traceIsReturn()) {
-            trace_type = o3::TraceInstruction::InstType::RETURN;
+        if (head_inst->hasTraceBranchInfo()) {
+            if (head_inst->traceIsCond()) {
+                commit_type = o3::TraceInstruction::InstType::COND_BRANCH;
+            } else if (head_inst->traceIsCall()) {
+                commit_type = head_inst->traceIsIndirect()
+                    ? o3::TraceInstruction::InstType::CALL_INDIRECT
+                    : o3::TraceInstruction::InstType::CALL_DIRECT;
+            } else if (head_inst->traceIsReturn()) {
+                commit_type = o3::TraceInstruction::InstType::RETURN;
+            } else {
+                commit_type = head_inst->traceIsIndirect()
+                    ? o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH
+                    : o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH;
+            }
         }
+        auto trace_type = ti_meta->getInstType();
         const bool skip_type_check =
             (ti_meta->getInstSizeBytes() == 2 &&
              ti_meta->getInstType() == o3::TraceInstruction::InstType::FP);

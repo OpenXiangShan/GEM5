@@ -343,7 +343,11 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     toFetch->decodeInfo[tid].mispredictInst = inst;
     toFetch->decodeInfo[tid].squash = true;
     toFetch->decodeInfo[tid].doneSeqNum = inst->seqNum;
-    if (inst->isControl()) {
+    if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+        auto trace_next = std::make_unique<RiscvISA::PCState>(
+            inst->traceBranchNextPC());
+        set(toFetch->decodeInfo[tid].nextPC, *trace_next);
+    } else if (inst->isControl()) {
         if (!inst->isReturn()) {
             set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
         } else {
@@ -364,8 +368,12 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     // Using PCState::branching()  will send execution on the
     // fallthrough and this will not be caught at execution (since
     // branch was correctly predicted taken)
-    toFetch->decodeInfo[tid].branchTaken = inst->readPredTaken() ||
-                                           inst->isUncondCtrl();
+    if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+        toFetch->decodeInfo[tid].branchTaken = inst->traceBranchTaken();
+    } else {
+        toFetch->decodeInfo[tid].branchTaken = inst->readPredTaken() ||
+                                               inst->isUncondCtrl();
+    }
 
     toFetch->decodeInfo[tid].squashInst = inst;
 

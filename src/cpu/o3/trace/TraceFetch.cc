@@ -1348,6 +1348,8 @@ TraceFetch::bindTraceMetadata(const DynInstPtr &instruction,
         const Addr fallthrough = traceInstr.getFallThroughPC();
         instruction->setTraceBranchInfo(taken, hasTarget, target, fallthrough);
         // Trace hints for branch classification (used to override static decode in trace mode)
+        instruction->setTraceIsCond(
+            traceInstr.getInstType() == o3::TraceInstruction::InstType::COND_BRANCH);
         instruction->setTraceIsCall(
             traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT ||
             traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT);
