@@ -994,6 +994,20 @@ def xiangshan_system_init():
         help="ROB misprediction-recovery walk policy. NaiveCpt enables the "
               "RAT-checkpoint recovery-cost model.",
     )
+    parser.add_argument(
+        "--enable-llbpx",
+        "--enable-llbp",
+        action="store_true",
+        default=False,
+        help="Enable the experimental BTB-side LLBP-X direction override component",
+    )
+    parser.add_argument(
+        "--enable-llbpx-timing",
+        "--enable-llbp-timing",
+        action="store_true",
+        default=False,
+        help="Enable the LLBP-X Pattern Buffer timing gate",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

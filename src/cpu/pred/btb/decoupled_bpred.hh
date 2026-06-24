@@ -16,6 +16,7 @@
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/abtb.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
+#include "cpu/pred/btb/btb_llbpx.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
@@ -92,6 +93,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     PairTAGE *pairtage{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
+    BTBLLBPX *llbpx{};
     BTBMGSC *mgsc{};
     btb_pred::BTBRAS *ras{};
     // btb_pred::BTBuRAS *uras{};

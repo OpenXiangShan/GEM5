@@ -76,6 +76,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       pairtage(p.pairtage),
       tage(p.tage),
       ittage(p.ittage),
+      llbpx(p.llbpx),
       mgsc(p.mgsc),
       ras(p.ras),
       // uras(p.uras),
@@ -117,8 +118,12 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     if (tage->isEnabled()) components.push_back(tage);
     if (ras->isEnabled()) components.push_back(ras);
     if (ittage->isEnabled()) components.push_back(ittage);
+    if (llbpx->isEnabled()) components.push_back(llbpx);
     if (mgsc->isEnabled()) components.push_back(mgsc);
     numComponents = components.size();
+    panic_if(numComponents > MaxBTBPredComponents,
+             "BTB predictor component count %u exceeds predMetas capacity %u",
+             numComponents, MaxBTBPredComponents);
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
         if (components[i]->hasDB) {
@@ -1302,6 +1307,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {
+        assert(i < MaxBTBPredComponents);
         entry.predMetas[i] = components[i]->getPredictionMeta(tid);
     }
 

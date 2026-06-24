@@ -51,7 +51,7 @@ SimObject('BranchPredictor.py', sim_objects=[
     'AheadBTB', 'MBTB', 'UBTB', 'DecoupledBPUWithBTB',
     'TimedBaseBTBPredictor', 'BTBRAS', 'BTBTAGE', 'BTBTAGEUpperBound',
     'MicroTAGE', 'PairTAGE',
-    'BTBITTAGE', 'BTBMGSC'],
+    'BTBITTAGE', 'BTBLLBPX', 'BTBMGSC'],
     enums=["BpType", "SMTFTQMode", "SMTFTQPolicy"])
 
 DebugFlag('Indirect')
@@ -106,6 +106,7 @@ Source('btb/btb_tage.cc')
 Source('btb/btb_tage_ub.cc')
 Source('btb/microtage.cc')
 Source('btb/pairtage.cc')
+Source('btb/btb_llbpx.cc')
 Source('btb/btb_ittage.cc')
 Source('btb/btb_mgsc.cc')
 Source('btb/folded_hist.cc')
@@ -132,6 +133,7 @@ DebugFlag('TAGE')
 DebugFlag('TAGEUseful')
 DebugFlag('TAGEHistory')
 DebugFlag('UTAGE')
+DebugFlag('LLBPX')
 DebugFlag('ITTAGE')
 DebugFlag('ITTAGEHistory')
 DebugFlag('FoldedHist')

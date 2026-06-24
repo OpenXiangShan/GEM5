@@ -127,6 +127,9 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
+            cpu.branchPred.llbpx.enabled = bool(getattr(args, 'enable_llbpx', False))
+            cpu.branchPred.llbpx.enableTiming = bool(
+                getattr(args, 'enable_llbpx_timing', False))
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 

@@ -437,17 +437,22 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
-            tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
+            auto &tageInfo = tageInfoForMgscs[btb_entry.pc];
+            tageInfo.tage_pred_taken = pred.taken;
+            tageInfo.tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
+            tageInfo.tage_pred_conf_high = pred.mainInfo.found &&
                                          abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
+            tageInfo.tage_pred_conf_mid = pred.mainInfo.found &&
                                          (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
                                          abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
+            tageInfo.tage_pred_conf_low = !pred.mainInfo.found ||
                                          (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
             // main predict is different from alt predict/base predict
-            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+            tageInfo.tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+            tageInfo.tage_provider_table = pred.mainInfo.found ?
+                                           static_cast<int>(pred.mainInfo.table) : -1;
+            tageInfo.tage_final_provider_table = pred.finalProviderTable;
+            tageInfo.tage_final_provider_is_alt = pred.finalProviderIsAlt;
         }
     }
 }

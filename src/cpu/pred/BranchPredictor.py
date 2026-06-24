@@ -1147,6 +1147,28 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numDelay = 2
 
+class BTBLLBPX(TimedBaseBTBPredictor):
+    type = 'BTBLLBPX'
+    cxx_class = 'gem5::branch_prediction::btb_pred::BTBLLBPX'
+    cxx_header = "cpu/pred/btb/btb_llbpx.hh"
+
+    enabled = False
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
+    contextSets = Param.Unsigned(2048, "Number of LLBP-X context sets")
+    contextWays = Param.Unsigned(4, "Ways per LLBP-X context set")
+    patternSets = Param.Unsigned(2048, "Number of LLBP-X pattern sets")
+    patternWays = Param.Unsigned(4, "Ways per LLBP-X pattern set")
+    patternBufferSize = Param.Unsigned(64, "Entries in the LLBP-X pattern buffer")
+    tagBits = Param.Unsigned(16, "LLBP-X tag width")
+    keyBits = Param.Unsigned(32, "LLBP-X key width")
+    rcrEntries = Param.Unsigned(32, "Recent control-flow records kept by LLBP-X")
+    counterBits = Param.Unsigned(3, "Pattern counter width")
+    enableTiming = Param.Bool(False, "Enable LLBP-X PB timing gate")
+    patternBufferLatency = Param.Tick(6, "LLBP-X Pattern Buffer fill latency in ticks")
+    adaptCtxDepth = Param.Bool(False, "Enable adaptive context depth")
+    overrideOnlyOnDiff = Param.Bool(False, "Only write LLBP-X direction when it differs from base")
+    numDelay = 2
+
 class BTBMGSC(TimedBaseBTBPredictor):
     type = 'BTBMGSC'
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBMGSC'
@@ -1240,6 +1262,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     mbtb = Param.MBTB(MBTB(), "MBTB predictor")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
+    llbpx = Param.BTBLLBPX(BTBLLBPX(), "LLBP-X predictor")
     mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
     ras = Param.BTBRAS(BTBRAS(), "RAS")
     pairtage = Param.PairTAGE(PairTAGE(), "PairTAGE predictor")
