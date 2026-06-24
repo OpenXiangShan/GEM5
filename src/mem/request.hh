@@ -96,6 +96,7 @@ enum DcacheRespType
     Miss,
     Hint,
     Bus_Clear,
+    L1_Evict,
     NUM_Resp_Type
 };
 

@@ -44,6 +44,8 @@ from m5.objects.BaseCPU import BaseCPU
 from m5.objects.FuncScheduler import *
 #from m5.objects.O3Checker import O3Checker
 from m5.objects.BranchPredictor import *
+from m5.objects.IndexingPolicies import *
+from m5.objects.ReplacementPolicies import *
 from m5.objects.ValuePredictor import *
 from m5.SimObject import *
 
@@ -206,6 +208,22 @@ class BaseO3CPU(BaseCPU):
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
     DcacheSetBits = Param.Unsigned(8, "Dcache set bits for LSQ bank conflict model")
     DcacheSetDivNum = Param.Unsigned(1, "Dcache set div num for LSQ bank conflict model (power of two)")
+    EnableLSUDLB = Param.Bool(True, "Enable LSU DLB bank-conflict bypass optimization")
+    DLBEntries = Param.MemorySize(
+        "16",
+        "Number of entries in LSU DLB"
+    )
+    dlb_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.DLBEntries,
+            size=Parent.DLBEntries),
+        "Indexing policy of LSU DLB"
+    )
+    dlb_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.DLBEntries),
+        "Replacement policy of LSU DLB"
+    )
     EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQueue if True")
     EnablePipeNukeCheck = Param.Bool(True, "Replay load if Raw violation is detected in loadPipe if True")
     EnableReplayBasedMDP = Param.Bool(True,

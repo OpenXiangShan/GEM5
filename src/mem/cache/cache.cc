@@ -1059,6 +1059,18 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
 PacketPtr
 Cache::evictBlock(CacheBlk *blk)
 {
+    if (level() == 1 && !isReadOnly) {
+        const Addr evict_addr = regenerateBlkAddr(blk);
+        RequestPtr req = std::make_shared<Request>(
+            evict_addr, blkSize, 0, Request::wbRequestorId);
+        if (blk->isSecure()) {
+            req->setFlags(Request::SECURE);
+        }
+        PacketPtr evict_sig_pkt = new Packet(req, MemCmd::CleanEvict);
+        cpuSidePort.sendCustomSignal(evict_sig_pkt, DcacheRespType::L1_Evict);
+        delete evict_sig_pkt;
+    }
+
     PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean) ?
         writebackBlk(blk) : cleanEvictBlk(blk);
 
