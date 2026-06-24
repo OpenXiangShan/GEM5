@@ -2,8 +2,11 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <algorithm>
+#include <array>
+#include <memory>
 #include <queue>
 #include <string>
+#include <unordered_map>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -251,6 +254,9 @@ struct TageInfoForMGSC
     bool tage_pred_conf_mid;
     bool tage_pred_conf_low;
     bool tage_pred_alt_diff;
+    int tage_provider_table;
+    int tage_final_provider_table;
+    bool tage_final_provider_is_alt;
 
     // Addr offset; // retrived from lowest bits of pc
     TageInfoForMGSC()
@@ -259,7 +265,10 @@ struct TageInfoForMGSC
             tage_pred_conf_high(false),
             tage_pred_conf_mid(false),
             tage_pred_conf_low(false),
-            tage_pred_alt_diff(false)
+            tage_pred_alt_diff(false),
+            tage_provider_table(-1),
+            tage_final_provider_table(-1),
+            tage_final_provider_is_alt(false)
     {
     }
     TageInfoForMGSC(bool tage_pred_taken, bool tage_main_taken, bool tage_pred_conf_high, bool tage_pred_conf_mid,
@@ -269,7 +278,10 @@ struct TageInfoForMGSC
             tage_pred_conf_high(tage_pred_conf_high),
             tage_pred_conf_mid(tage_pred_conf_mid),
             tage_pred_conf_low(tage_pred_conf_low),
-            tage_pred_alt_diff(tage_pred_alt_diff)
+            tage_pred_alt_diff(tage_pred_alt_diff),
+            tage_provider_table(-1),
+            tage_final_provider_table(-1),
+            tage_final_provider_is_alt(false)
     {
     }
 };
@@ -324,6 +336,8 @@ struct PathHistoryUpdate
     Addr target = 0;
 };
 
+static constexpr size_t MaxBTBPredComponents = 16;
+
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
  *
@@ -367,8 +381,7 @@ struct FetchTarget
     OverrideReason overrideReason; // reason of the override(for profiling)
 
     // prediction metas
-    // FIXME: use vec
-    std::array<std::shared_ptr<void>, 8> predMetas; // each component has a meta, TODO
+    std::array<std::shared_ptr<void>, MaxBTBPredComponents> predMetas;
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History

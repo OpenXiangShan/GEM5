@@ -887,6 +887,20 @@ def xiangshan_system_init():
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
+    parser.add_argument(
+        "--enable-llbpx",
+        "--enable-llbp",
+        action="store_true",
+        default=False,
+        help="Enable the experimental BTB-side LLBP-X direction override component",
+    )
+    parser.add_argument(
+        "--enable-llbpx-timing",
+        "--enable-llbp-timing",
+        action="store_true",
+        default=False,
+        help="Enable the LLBP-X Pattern Buffer timing gate",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
