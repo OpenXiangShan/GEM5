@@ -168,6 +168,7 @@ def get_file_list(path: str):
     subpaths = path.split(';')
     sargs = []
     sublogs = []
+    missing_patterns = []
     # 获取所有的文件行
     lines: list[str] = []
     for subpath in subpaths:
@@ -199,7 +200,11 @@ def get_file_list(path: str):
         if idx > 0 and dual[idx+1:].isdigit():
             info = dual[0:idx]
             ser = int(dual[idx+1:])
-        for file in glob.glob(info):
+        matched_files = glob.glob(info)
+        if not matched_files:
+            warning("can't find any file matching:" + info)
+            missing_patterns.append(info)
+        for file in matched_files:
             if os.path.exists(file):
                 sargs.append(file)
             else:
@@ -208,7 +213,7 @@ def get_file_list(path: str):
             # 去掉后缀名
             name = os.path.splitext(name)[0]
             sublogs.append(name)
-    return sargs, sublogs
+    return sargs, sublogs, missing_patterns
 
 
 def free_numa_cores(n):

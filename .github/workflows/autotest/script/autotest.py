@@ -165,9 +165,24 @@ def Wrun_single(log_dir, etcArg):
     work_items = list(works.items())
     cnt = 0
     names = []
+    runErr_works = []
     for work in work_items:
-        files, sublog = utils.get_file_list(
+        files, sublog, missing_patterns = utils.get_file_list(
             cfgfile['work-'+work[0]]['binpath'])
+        if missing_patterns:
+            sample = '\n'.join(missing_patterns[:5])
+            if len(missing_patterns) > 5:
+                sample += '\n... {0} more'.format(len(missing_patterns) - 5)
+            msg = """error in:[work:{0}][{1} binpath entries matched no files]\n{2}""".format(
+                work[0], len(missing_patterns), sample)
+            SendMsg(msg)
+            runErr_works.append(work[0])
+            continue
+        if len(files) == 0:
+            msg = """error in:[work:{0}][binpath has no matched files]""".format(work[0])
+            SendMsg(msg)
+            runErr_works.append(work[0])
+            continue
         for i in range(len(files)):
             names.append(sublog[i])
             random_int = random.randint(0, 10000)
@@ -183,8 +198,9 @@ def Wrun_single(log_dir, etcArg):
             time.sleep(0.5)
     pool.close()
     pool.join()
-    finished = True
-    runErr_works = []
+    finished = len(results) > 0 and len(runErr_works) == 0
+    if len(results) == 0:
+        SendMsg("error: no single-mode work item was scheduled")
     for cnt in range(len(results)):
         if not results[cnt].get():
             runErr_works.append(names[cnt])
