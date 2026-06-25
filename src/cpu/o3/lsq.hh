@@ -1440,6 +1440,8 @@ class LSQ
         return stage.valid && stage.req.isRefill() && stage.req.needTagWrite;
     }
 
+    bool willDcacheRefillTagWriteNextCycle() const;
+
   protected:
     /** D-cache is blocked */
     bool _cacheBlocked;
