@@ -50,6 +50,7 @@
 
 #include "arch/riscv/pagetable_walker.hh"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <numeric>
@@ -354,7 +355,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
                  vsatp, vsatp >> 60, (vsatp >> 44) & 0xffff, vsatp & 0xfffffffffff);
         DPRINTFR(PageTableWalker, "\thgatp %#x(mode: %d, vmid: %#x, ppn:%#x)\n",
                  hgatp, hgatp >> 60, (hgatp >> 44) & 0xffff, hgatp & 0xfffffffffff);
-    } else {
+    } else {    // 1-stage state
         assert(state == Ready);
         started = false;
         assert(functional || requestors.back().tc == nullptr);
@@ -492,12 +493,21 @@ Walker::dol2TLBHit()
         pma->check(dol2TLBHitrequestors.req);
         l2tlbFault =
             pmp->pmpCheck(dol2TLBHitrequestors.req, dol2TLBHitrequestors.mode,
-                          pmodel2, dol2TLBHitrequestors.tc);
+                          pmodel2, dol2TLBHitrequestors.tc);//pmpcheck
         //assert(l2tlbFault == NoFault);
         if (l2tlbFault == NoFault) {
-            if (enableL1L2replace){
-                if (dol2TLBHitrequestors.entry != nullptr)
-                    tlb->insert(dol2TLBHitrequestors.entry->vaddr, *dol2TLBHitrequestors.entry, false, direct);
+            if (enableL1L2replace){ //write back entry from L2 to L1
+                if (dol2TLBHitrequestors.entry != nullptr) {
+                    TlbEntry l1_entry;
+                    if (tlb->isL1DirectCompressionEnabled() &&
+                        tlb->buildSingleL1CompressedEntry(dol2TLBHitrequestors.req->getVaddr(),
+                                                          *dol2TLBHitrequestors.entry, direct, l1_entry)) {
+                        tlb->insert(l1_entry.vaddr, l1_entry, false, direct);
+                        tlb->recordL1CompressedEntry(l1_entry);
+                    } else if (!tlb->isL1DirectCompressionEnabled()) {
+                        tlb->insert(dol2TLBHitrequestors.entry->vaddr, *dol2TLBHitrequestors.entry, false, direct);
+                    }
+                }
                 if (dol2TLBHitrequestors.entryVsstage != nullptr)
                     tlb->insert(dol2TLBHitrequestors.entryVsstage->vaddr, *dol2TLBHitrequestors.entryVsstage, false,
                             vsstage);
@@ -1207,9 +1217,9 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     if (fault != NoFault) {
         DPRINTF(PageTableWalker3, " may pmp fault vaddr %#x\n", entry.vaddr);
     }
-
+    //
     if ((fault == NoFault) && (!nextline)) {
-        // step 3:
+        // step 3
         if (!pte.v || (!pte.r && pte.w)) {
             doEndWalk = true;
             DPRINTF(PageTableWalker3, "PTE invalid, raising PF\n");
@@ -1386,10 +1396,32 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             write = NULL;
         }
 
-        if (doTLBInsert) {
+        if (doTLBInsert) {  //write back L1
             if (!functional) {
                 if (((!entry.fromForwardPreReq) && (!entry.fromBackPreReq)) || (preHitInPtw)) {
-                    walker->tlb->insert(entry.vaddr, entry, false, direct);
+                    if (walker->tlb->isL1DirectCompressionEnabled()) {
+                        std::array<PTE, l2tlbLineSize> l1_compress_ptes;
+                        for (int compress_i = 0; compress_i < l2tlbLineSize; compress_i++) {
+                            l1_compress_ptes[compress_i] = read->getLE_l2tlb<uint64_t>(compress_i);
+                        }
+                        walker->tlb->recordL1CompressionPotential(entry.vaddr, entry.pte, l1_compress_ptes, direct,
+                                                                    level);
+                        TlbEntry compressed_entry;
+                        if (walker->tlb->buildL1CompressedEntry(entry.vaddr, entry, l1_compress_ptes, direct, level,
+                                                                 compressed_entry)) {
+                            walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, direct);
+                            TlbEntry *l1_entry = walker->tlb->lookup(entry.vaddr, entry.asid, BaseMMU::Read, true,
+                                                                     false, direct);
+                            if (l1_entry && l1_entry->isCompressed)
+                                walker->tlb->recordL1CompressedEntry(compressed_entry);
+                        } else if (walker->tlb->buildSingleL1CompressedEntry(entry.vaddr, entry, direct,
+                                                                              compressed_entry)) {
+                            walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, direct);
+                            walker->tlb->recordL1CompressedEntry(compressed_entry);
+                        }
+                    } else {
+                        walker->tlb->insert(entry.vaddr, entry, false, direct);
+                    }
                 }
                 finishDefaultTranslate = true;
 

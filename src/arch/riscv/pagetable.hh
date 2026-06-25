@@ -31,6 +31,8 @@
 #ifndef __ARCH_RISCV_PAGETABLE_H__
 #define __ARCH_RISCV_PAGETABLE_H__
 
+#include <array>
+
 #include "base/bitunion.hh"
 #include "base/logging.hh"
 #include "base/trie.hh"
@@ -207,6 +209,12 @@ struct TlbEntry : public Serializable
     PTE pte;
     PTE pteVS;
 
+    bool isCompressed;
+    bool l1CompressedNarrow;
+    uint8_t validIdx;
+    uint8_t pteIdx;
+    std::array<uint8_t, 8> ppnLow;
+
     TlbEntryTrie::Handle trieHandle;
 
     // A sequence number to keep track of LRU.
@@ -235,6 +243,11 @@ struct TlbEntry : public Serializable
           vmid(0),
           pte(),
           pteVS(),
+          isCompressed(false),
+          l1CompressedNarrow(false),
+          validIdx(0),
+          pteIdx(0),
+          ppnLow{},
           lruSeq(0),
           level(0),
           VSlevel(0),

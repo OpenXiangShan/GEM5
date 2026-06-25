@@ -44,9 +44,16 @@ TlbEntry::serialize(CheckpointOut &cp) const
     SERIALIZE_SCALAR(paddr);
     SERIALIZE_SCALAR(vaddr);
     SERIALIZE_SCALAR(logBytes);
+    SERIALIZE_SCALAR(translateMode);
     SERIALIZE_SCALAR(asid);
     SERIALIZE_SCALAR(pte);
+    SERIALIZE_SCALAR(isCompressed);
+    SERIALIZE_SCALAR(l1CompressedNarrow);
+    SERIALIZE_SCALAR(validIdx);
+    SERIALIZE_SCALAR(pteIdx);
+    SERIALIZE_CONTAINER(ppnLow);
     SERIALIZE_SCALAR(lruSeq);
+    SERIALIZE_SCALAR(level);
 }
 
 void
@@ -55,9 +62,16 @@ TlbEntry::unserialize(CheckpointIn &cp)
     UNSERIALIZE_SCALAR(paddr);
     UNSERIALIZE_SCALAR(vaddr);
     UNSERIALIZE_SCALAR(logBytes);
+    UNSERIALIZE_SCALAR(translateMode);
     UNSERIALIZE_SCALAR(asid);
     UNSERIALIZE_SCALAR(pte);
+    UNSERIALIZE_SCALAR(isCompressed);
+    UNSERIALIZE_SCALAR(l1CompressedNarrow);
+    UNSERIALIZE_SCALAR(validIdx);
+    UNSERIALIZE_SCALAR(pteIdx);
+    arrayParamIn(cp, "ppnLow", ppnLow.data(), ppnLow.size());
     UNSERIALIZE_SCALAR(lruSeq);
+    UNSERIALIZE_SCALAR(level);
 }
 
 } // namespace RiscvISA

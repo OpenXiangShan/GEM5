@@ -25,6 +25,8 @@ def setKmhV3Params(args, system):
 
         # fetch (idealfetch not care)
         cpu.mmu.itb.size = 96
+        cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
+        cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2

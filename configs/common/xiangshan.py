@@ -882,6 +882,13 @@ def xiangshan_system_init():
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
     )
     parser.add_argument(
+        "--disable-l1-direct-compression",
+        action="store_false",
+        dest="enable_l1_direct_compression",
+        default=True,
+        help="Disable L1 direct one-stage TLB compression for A/B validation",
+    )
+    parser.add_argument(
         "--standalone-sc",
         action="store_true",
         default=False,
