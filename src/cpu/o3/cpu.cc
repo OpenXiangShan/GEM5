@@ -166,6 +166,10 @@ CPU::CPU(const BaseO3CPUParams &params)
     iew.setActiveThreads(&activeThreads);
     commit.setActiveThreads(&activeThreads);
 
+    // LSQ depends on CPU::archDBer, which is only valid after the CPU's
+    // member initialization phase finishes.
+    iew.ldstQueue.initArchDBTraces();
+
     // Give each of the stages the time buffer they will use.
     fetch.setTimeBuffer(&timeBuffer);
     decode.setTimeBuffer(&timeBuffer);

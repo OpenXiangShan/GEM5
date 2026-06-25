@@ -73,6 +73,7 @@
 #include "enums/SMTQueuePolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
+#include "sim/arch_db.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -1146,6 +1147,7 @@ class LSQ
     IEW *iewStage;
 
     void clearAddresses();
+    void initArchDBTraces();
 
     void advanceDcacheMainPipe();
 
@@ -1321,6 +1323,7 @@ class LSQ
         bool needWritebackPort = false;
         DcacheBankMask readBanks = {};
         DcacheBankMask writeBanks = {};
+        Tick enqueueTick = 0;
         DcacheMainPipeCompleteCallback onComplete;
         DcacheMainPipeS2Callback onS2Issue;
 
@@ -1378,6 +1381,14 @@ class LSQ
         DcacheMainPipeS2Callback on_s2_issue = {}) const;
 
     void markDcacheMainPipeBusyBanks();
+    void traceMainpipeBankOccupancy(
+        unsigned stage, const char *source,
+        const DcacheMainPipeRequest &req,
+        const DcacheBankMask &mask) const;
+    void traceLoadBankConflict(
+        Addr vaddr, unsigned div, unsigned bank,
+        bool conflict_with_mainpipe,
+        bool conflict_with_prior_load) const;
 
     bool dcacheBankMaskAny(const DcacheBankMask &mask) const;
     bool dcacheBankMaskOverlap(const DcacheBankMask &lhs,
@@ -1405,6 +1416,10 @@ class LSQ
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
     std::vector<std::vector<bool>> bankOccupied;
+    std::vector<std::vector<bool>> bankOccupiedByMainpipe;
+    std::vector<std::vector<bool>> bankOccupiedByLoad;
+    DBTraceManager *loadBankConflictTrace = nullptr;
+    DBTraceManager *mainpipeBankOccupancyTrace = nullptr;
 
     void notifyDcacheRefill(
         Addr addr, bool need_data_read = true,
@@ -1528,6 +1543,15 @@ class LSQ
         statistics::Scalar dcacheMainPipeStoreBlockedByTagWrite;
         statistics::Scalar dcacheMainPipeRefillBlocked;
         statistics::Scalar dcacheMainPipeRefillBlockedByPipeResource;
+        statistics::Scalar dcacheMainPipeRefillInputValidCycles;
+        statistics::Scalar dcacheMainPipeRefillInputReadyCycles;
+        statistics::Scalar dcacheMainPipeRefillInputBlockedCycles;
+        statistics::Scalar dcacheMainPipeRefillBlockedByS1BackpressureCycles;
+        statistics::Scalar dcacheMainPipeRefillBlockedBySetCycles;
+        statistics::Scalar dcacheMainPipeRefillBlockedByTagWriteCycles;
+        statistics::Scalar dcacheMainPipeRefillQueueLatencyCycles;
+        statistics::Scalar dcacheMainPipeRefillQueueLatencySamples;
+        statistics::Scalar dcacheMainPipeRefillQueueMaxDepth;
         statistics::Scalar dcacheMainPipeBlockedByDataConflict;
         statistics::Scalar dcacheMainPipeStoreS2IssueBlocked;
         statistics::Scalar dcacheMainPipeStoreS2MissExit;

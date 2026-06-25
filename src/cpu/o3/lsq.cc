@@ -462,10 +462,37 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
                "Number of store buffer requests blocked by fake dcache mainpipe tag write"),
       ADD_STAT(dcacheMainPipeRefillBlocked,
                statistics::units::Count::get(),
-               "Number of pending refill requests blocked before fake dcache mainpipe entry"),
+               "Number of cycles where fake dcache mainpipe refill input is valid but not accepted"),
       ADD_STAT(dcacheMainPipeRefillBlockedByPipeResource,
                statistics::units::Count::get(),
-               "Number of pending refill requests blocked by fake dcache mainpipe resources"),
+               "Number of refill input blocked cycles caused by fake dcache mainpipe resources"),
+      ADD_STAT(dcacheMainPipeRefillInputValidCycles,
+               statistics::units::Cycle::get(),
+               "Number of cycles where fake dcache mainpipe refill input is valid"),
+      ADD_STAT(dcacheMainPipeRefillInputReadyCycles,
+               statistics::units::Cycle::get(),
+               "Number of refill input valid cycles where fake dcache mainpipe accepts the request"),
+      ADD_STAT(dcacheMainPipeRefillInputBlockedCycles,
+               statistics::units::Cycle::get(),
+               "Number of refill input valid cycles where fake dcache mainpipe does not accept the request"),
+      ADD_STAT(dcacheMainPipeRefillBlockedByS1BackpressureCycles,
+               statistics::units::Cycle::get(),
+               "Number of refill input blocked cycles with fake dcache mainpipe S1 backpressure"),
+      ADD_STAT(dcacheMainPipeRefillBlockedBySetCycles,
+               statistics::units::Cycle::get(),
+               "Number of refill input blocked cycles with fake dcache mainpipe set conflict"),
+      ADD_STAT(dcacheMainPipeRefillBlockedByTagWriteCycles,
+               statistics::units::Cycle::get(),
+               "Number of refill input blocked cycles with fake dcache mainpipe tag write"),
+      ADD_STAT(dcacheMainPipeRefillQueueLatencyCycles,
+               statistics::units::Cycle::get(),
+               "Total cycles spent by refill requests waiting before fake dcache mainpipe accepts them"),
+      ADD_STAT(dcacheMainPipeRefillQueueLatencySamples,
+               statistics::units::Count::get(),
+               "Number of refill requests sampled for fake dcache mainpipe input wait time"),
+      ADD_STAT(dcacheMainPipeRefillQueueMaxDepth,
+               statistics::units::Count::get(),
+               "Maximum observed fake dcache mainpipe refill input queue depth"),
       ADD_STAT(dcacheMainPipeBlockedByDataConflict,
                statistics::units::Count::get(),
                "Number of fake dcache mainpipe S1 data reads blocked by S4 data writes"),
@@ -580,6 +607,56 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     storeBuffer.setData(store_buffer_entries);
     storeBuffer.setMaxThread(numThreads);
     bankOccupied.resize(dcacheSetDivNum, std::vector<bool>(numBank, false));
+    bankOccupiedByMainpipe.resize(
+        dcacheSetDivNum, std::vector<bool>(numBank, false));
+    bankOccupiedByLoad.resize(
+        dcacheSetDivNum, std::vector<bool>(numBank, false));
+}
+
+void
+LSQ::initArchDBTraces()
+{
+    if (cpu->archDBer && cpu->archDBer->dumpLoadBankConflictTrace) {
+        std::vector<std::pair<std::string, DataType>> fields = {
+            {"VAddr", UINT64},
+            {"Div", UINT64},
+            {"Bank", UINT64},
+            {"SetKey", UINT64},
+            {"BankSetKey", UINT64},
+            {"ConflictWithMainpipe", UINT64},
+            {"ConflictWithPriorLoad", UINT64},
+            {"OccupiedBeforeCheck", UINT64},
+            {"RecentlyLoadHit", UINT64},
+            {"MainpipeS1Valid", UINT64},
+            {"MainpipeS4Valid", UINT64},
+            {"MainpipeS1NeedDataRead", UINT64},
+            {"MainpipeS4NeedDataWrite", UINT64},
+            {"MainpipeS1Source", TEXT},
+            {"MainpipeS4Source", TEXT},
+            {"S1ReadBanksMask", UINT64},
+            {"S4WriteBanksMask", UINT64},
+        };
+        loadBankConflictTrace = cpu->archDBer->addAndGetTrace(
+            "LoadBankConflictTrace", fields);
+        loadBankConflictTrace->init_table();
+    }
+
+    if (cpu->archDBer && cpu->archDBer->dumpMainpipeBankOccupancyTrace) {
+        std::vector<std::pair<std::string, DataType>> fields = {
+            {"Stage", UINT64},
+            {"Source", TEXT},
+            {"Addr", UINT64},
+            {"Div", UINT64},
+            {"SetKey", UINT64},
+            {"BankMask", UINT64},
+            {"NeedDataRead", UINT64},
+            {"NeedDataWrite", UINT64},
+            {"NeedTagWrite", UINT64},
+        };
+        mainpipeBankOccupancyTrace = cpu->archDBer->addAndGetTrace(
+            "MainpipeBankOccupancyTrace", fields);
+        mainpipeBankOccupancyTrace->init_table();
+    }
 }
 
 
@@ -810,15 +887,42 @@ LSQ::advanceDcacheMainPipe()
 
     if (!dcacheMainPipeRefillQ.empty()) {
         const auto &queued_refill = dcacheMainPipeRefillQ.front();
-        if (canEnterDcacheMainPipe(queued_refill, next_pipe)) {
+        const bool s1_backpressured =
+            next_pipe.at(dcacheMainPipeIndex(
+                DcacheMainPipeStage::S1DataRead)).valid;
+        const bool s0_tag_read_blocked =
+            dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).valid &&
+            dcacheMainPipeStage(
+                DcacheMainPipeStage::S3TagWrite).req.needTagWrite;
+        const bool set_blocked =
+            isDcacheMainPipeSetBlocked(queued_refill.setKey);
+        const bool can_enter =
+            canEnterDcacheMainPipe(queued_refill, next_pipe);
+
+        ++stats.dcacheMainPipeRefillInputValidCycles;
+        if (can_enter) {
+            ++stats.dcacheMainPipeRefillInputReadyCycles;
             next_s1_data_read.valid = true;
             next_s1_data_read.req = queued_refill;
             dcacheMainPipeRefillQ.pop();
             ++stats.dcacheMainPipeRefillEnter;
+            ++stats.dcacheMainPipeRefillQueueLatencySamples;
+            stats.dcacheMainPipeRefillQueueLatencyCycles +=
+                cpu->ticksToCycles(curTick() - queued_refill.enqueueTick);
             dcacheMainPipeRefillEnteredThisCycle = true;
         } else {
+            ++stats.dcacheMainPipeRefillInputBlockedCycles;
             ++stats.dcacheMainPipeRefillBlocked;
             ++stats.dcacheMainPipeRefillBlockedByPipeResource;
+            if (s1_backpressured) {
+                ++stats.dcacheMainPipeRefillBlockedByS1BackpressureCycles;
+            }
+            if (set_blocked) {
+                ++stats.dcacheMainPipeRefillBlockedBySetCycles;
+            }
+            if (s0_tag_read_blocked) {
+                ++stats.dcacheMainPipeRefillBlockedByTagWriteCycles;
+            }
         }
     }
 
@@ -918,6 +1022,10 @@ LSQ::markDcacheMainPipeBusyBanks()
     for (unsigned div = 0; div < dcacheSetDivNum; ++div) {
         std::fill(bankOccupied.at(div).begin(), bankOccupied.at(div).end(),
                   false);
+        std::fill(bankOccupiedByMainpipe.at(div).begin(),
+                  bankOccupiedByMainpipe.at(div).end(), false);
+        std::fill(bankOccupiedByLoad.at(div).begin(),
+                  bankOccupiedByLoad.at(div).end(), false);
     }
 
     auto mark_banks = [this](const DcacheMainPipeRequest &req,
@@ -925,6 +1033,7 @@ LSQ::markDcacheMainPipeBusyBanks()
         for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
             if (mask.at(bank)) {
                 bankOccupied.at(req.div).at(bank) = true;
+                bankOccupiedByMainpipe.at(req.div).at(bank) = true;
             }
         }
     };
@@ -936,10 +1045,44 @@ LSQ::markDcacheMainPipeBusyBanks()
 
     if (s1_data_read.valid && s1_data_read.req.needDataRead) {
         mark_banks(s1_data_read.req, s1_data_read.req.readBanks);
+        traceMainpipeBankOccupancy(1, s1_data_read.req.isRefill() ? "refill" : "store",
+                                   s1_data_read.req, s1_data_read.req.readBanks);
     }
     if (s4_data_write.valid && s4_data_write.req.needDataWrite) {
         mark_banks(s4_data_write.req, s4_data_write.req.writeBanks);
+        traceMainpipeBankOccupancy(4, s4_data_write.req.isRefill() ? "refill" : "store",
+                                   s4_data_write.req, s4_data_write.req.writeBanks);
     }
+}
+
+void
+LSQ::traceMainpipeBankOccupancy(
+    unsigned stage, const char *source,
+    const DcacheMainPipeRequest &req, const DcacheBankMask &mask) const
+{
+    if (!mainpipeBankOccupancyTrace) {
+        return;
+    }
+
+    uint64_t bank_mask = 0;
+    for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
+        if (mask.at(bank)) {
+            bank_mask |= 1ULL << bank;
+        }
+    }
+
+    Record record;
+    record._tick = curTick();
+    record._uint64_data["Stage"] = stage;
+    record._text_data["Source"] = source;
+    record._uint64_data["Addr"] = req.addr;
+    record._uint64_data["Div"] = req.div;
+    record._uint64_data["SetKey"] = req.setKey;
+    record._uint64_data["BankMask"] = bank_mask;
+    record._uint64_data["NeedDataRead"] = req.needDataRead;
+    record._uint64_data["NeedDataWrite"] = req.needDataWrite;
+    record._uint64_data["NeedTagWrite"] = req.needTagWrite;
+    mainpipeBankOccupancyTrace->write_record(record);
 }
 
 bool
@@ -1198,15 +1341,25 @@ LSQ::loadBankConflictedCheck(Addr vaddr)
     const uint64_t key = getDcacheDivBankSetKey(vaddr);
 
     if (enableBankConflictCheck) {
-        if (recentlyloadAddr.contains(key)) {
+        const bool recently_load_hit = recentlyloadAddr.contains(key);
+        if (recently_load_hit) {
             recentlyloadAddr.get(key);
             return false;
         }
-        if (bankOccupied[div][bankIndex]) {
+        const bool occupied_before_check = bankOccupied[div][bankIndex];
+        const bool conflict_with_mainpipe =
+            bankOccupiedByMainpipe[div][bankIndex];
+        const bool conflict_with_prior_load =
+            bankOccupiedByLoad[div][bankIndex];
+        if (occupied_before_check) {
             now_bank_conflict = true;
+            traceLoadBankConflict(vaddr, div, bankIndex,
+                                  conflict_with_mainpipe,
+                                  conflict_with_prior_load);
 
         } else {
             bankOccupied[div][bankIndex] = true;
+            bankOccupiedByLoad[div][bankIndex] = true;
             recentlyloadAddr.insert(key, {});
         }
     }
@@ -1214,13 +1367,75 @@ LSQ::loadBankConflictedCheck(Addr vaddr)
 }
 
 void
+LSQ::traceLoadBankConflict(
+    Addr vaddr, unsigned div, unsigned bank,
+    bool conflict_with_mainpipe, bool conflict_with_prior_load) const
+{
+    if (!loadBankConflictTrace) {
+        return;
+    }
+
+    const auto &s1_data_read =
+        dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead);
+    const auto &s4_data_write =
+        dcacheMainPipeStage(DcacheMainPipeStage::S4DataWrite);
+
+    auto encode_mask = [](const DcacheBankMask &mask) {
+        uint64_t encoded = 0;
+        for (unsigned i = 0; i < DcacheBankCount; ++i) {
+            if (mask.at(i)) {
+                encoded |= 1ULL << i;
+            }
+        }
+        return encoded;
+    };
+
+    auto source_name = [](const DcacheMainPipeSlot &slot) {
+        if (!slot.valid) {
+            return std::string("none");
+        }
+        return std::string(slot.req.isRefill() ? "refill" : "store");
+    };
+
+    Record record;
+    record._tick = curTick();
+    record._uint64_data["VAddr"] = vaddr;
+    record._uint64_data["Div"] = div;
+    record._uint64_data["Bank"] = bank;
+    record._uint64_data["SetKey"] = getDcacheSetKey(vaddr);
+    record._uint64_data["BankSetKey"] = getDcacheBankSetKey(vaddr);
+    record._uint64_data["ConflictWithMainpipe"] = conflict_with_mainpipe;
+    record._uint64_data["ConflictWithPriorLoad"] = conflict_with_prior_load;
+    record._uint64_data["OccupiedBeforeCheck"] = bankOccupied[div][bank];
+    record._uint64_data["RecentlyLoadHit"] = 0;
+    record._uint64_data["MainpipeS1Valid"] = s1_data_read.valid;
+    record._uint64_data["MainpipeS4Valid"] = s4_data_write.valid;
+    record._uint64_data["MainpipeS1NeedDataRead"] =
+        s1_data_read.valid && s1_data_read.req.needDataRead;
+    record._uint64_data["MainpipeS4NeedDataWrite"] =
+        s4_data_write.valid && s4_data_write.req.needDataWrite;
+    record._text_data["MainpipeS1Source"] = source_name(s1_data_read);
+    record._text_data["MainpipeS4Source"] = source_name(s4_data_write);
+    record._uint64_data["S1ReadBanksMask"] =
+        s1_data_read.valid ? encode_mask(s1_data_read.req.readBanks) : 0;
+    record._uint64_data["S4WriteBanksMask"] =
+        s4_data_write.valid ? encode_mask(s4_data_write.req.writeBanks) : 0;
+    loadBankConflictTrace->write_record(record);
+}
+
+void
 LSQ::notifyDcacheRefill(
     Addr addr, bool need_data_read,
     DcacheMainPipeCompleteCallback on_complete)
 {
-    dcacheMainPipeRefillQ.push(
-        makeDcacheRefillMainPipeRequest(
-            addr, need_data_read, std::move(on_complete)));
+    auto req = makeDcacheRefillMainPipeRequest(
+        addr, need_data_read, std::move(on_complete));
+    req.enqueueTick = curTick();
+    dcacheMainPipeRefillQ.push(std::move(req));
+    stats.dcacheMainPipeRefillQueueMaxDepth =
+        std::max<uint64_t>(
+            stats.dcacheMainPipeRefillQueueMaxDepth.value(),
+            dcacheMainPipeRefillQ.size());
     cpu->wakeCPU();
     cpu->activityThisCycle();
 }

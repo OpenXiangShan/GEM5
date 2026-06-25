@@ -713,6 +713,10 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
         test_sys.arch_db.dump_lifetime = False
+        test_sys.arch_db.dump_load_bank_conflict_trace = \
+            args.dump_load_bank_conflict_trace
+        test_sys.arch_db.dump_mainpipe_bank_occupancy_trace = \
+            args.dump_mainpipe_bank_occupancy_trace
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

@@ -227,6 +227,14 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         default=False,
                         help="enable rolling perfcnt "
                         "(note that rolling is dependent on archdb)")
+    parser.add_argument("--dump-load-bank-conflict-trace",
+                        action="store_true",
+                        default=False,
+                        help="dump load bank conflict trace into arch db")
+    parser.add_argument("--dump-mainpipe-bank-occupancy-trace",
+                        action="store_true",
+                        default=False,
+                        help="dump fake dcache mainpipe bank occupancy trace into arch db")
 
     parser.add_argument("--memchecker", action="store_true")
 

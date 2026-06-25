@@ -64,6 +64,8 @@ class ArchDBer : public SimObject
     bool dumpDespacitoTrainTrace;
     bool dumpL1WayPreTrace;
     bool dumpVaddrTrace;
+    bool dumpLoadBankConflictTrace;
+    bool dumpMainpipeBankOccupancyTrace;
     bool dumpLifetime;
     bool dumpLifetimeMore;
 

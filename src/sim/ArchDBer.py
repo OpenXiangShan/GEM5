@@ -63,4 +63,8 @@ class ArchDBer(SimObject):
     dump_despacito_train_trace = Param.Bool(False, "Dump despacito train trace")
     dump_l1d_way_pre_trace = Param.Bool(False, "Dump l1d way predction trace")
     dump_vaddr_trace = Param.Bool(False, "Dump vaddr trace")
+    dump_load_bank_conflict_trace = Param.Bool(
+        False, "Dump load bank conflict trace")
+    dump_mainpipe_bank_occupancy_trace = Param.Bool(
+        False, "Dump fake dcache mainpipe bank occupancy trace")
     dump_lifetime = Param.Bool(False, "Dump inst lifetime")

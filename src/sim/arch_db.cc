@@ -31,6 +31,8 @@ ArchDBer::ArchDBer(const Params &p)
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     dumpVaddrTrace(p.dump_vaddr_trace),
+    dumpLoadBankConflictTrace(p.dump_load_bank_conflict_trace),
+    dumpMainpipeBankOccupancyTrace(p.dump_mainpipe_bank_occupancy_trace),
     dumpLifetime(p.dump_lifetime),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
