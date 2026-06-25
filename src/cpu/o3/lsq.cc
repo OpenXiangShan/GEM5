@@ -792,6 +792,35 @@ LSQ::dcacheMainPipeStage(DcacheMainPipeStage stage) const
     return dcacheMainPipe.at(dcacheMainPipeIndex(stage));
 }
 
+bool
+LSQ::willDcacheRefillTagWriteNextCycle() const
+{
+    const auto &s2_data_resp =
+        dcacheMainPipeStage(DcacheMainPipeStage::S2DataResp);
+    const auto &s3_tag_write =
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite);
+    const auto &s4_data_write =
+        dcacheMainPipeStage(DcacheMainPipeStage::S4DataWrite);
+
+    // Keep these readiness rules aligned with advanceDcacheMainPipe().
+    const bool s4_can_go = true;
+    const bool s4_ready = !s4_data_write.valid || s4_can_go;
+    const bool s3_can_go = s4_ready;
+    const bool s3_ready = !s3_tag_write.valid || s3_can_go;
+    const bool s2_can_go = s3_ready;
+
+    const DcacheMainPipeSlot *next_s3 = nullptr;
+    if (s3_tag_write.valid && !s3_can_go) {
+        next_s3 = &s3_tag_write;
+    } else if (s2_data_resp.valid && s2_can_go) {
+        next_s3 = &s2_data_resp;
+    }
+
+    return next_s3 &&
+        next_s3->req.isRefill() &&
+        next_s3->req.needTagWrite;
+}
+
 LSQ::DcacheBankMask
 LSQ::fullDcacheBankMask() const
 {
