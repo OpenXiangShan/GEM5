@@ -88,6 +88,9 @@ class StoreData : public RiscvStaticInst
         setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
                         reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::destRegIdxArr));
 
+        // RISC-V stores print as "store data, offset(base)": src0 is the
+        // address base and src1 is the store data value.  The split STD uop
+        // keeps only the data source.
         setSrcRegIdx(_numSrcRegs++, inst->srcRegIdx(1));
         flags[IsInteger] = true;
         assert(inst->operWid() > 7);

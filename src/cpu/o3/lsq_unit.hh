@@ -528,14 +528,30 @@ class LSQUnit
      */
     void tick();
 
-    /** Process instructions in each load pipeline stages. */
+    /**
+     * Process all load-pipeline stages for this cycle.
+     *
+     * The stage handlers below only update local DynInst/LSQRequest state.
+     * executeLoadPipeSx() is the pipe-exit arbiter: it removes squashed
+     * loads, hands replaying loads back to IEW/IQ, and sends completed
+     * last-stage loads to readyToFinish().
+     */
     void executeLoadPipeSx();
 
     /**
-     * - stage0: normal inst access TLB, atomic access TLB and try send to cache.
-     * - stage1: normal inst try send to cache.
-     * - stage2: Analyze the flag and try to send the inst to commit.
-     * - stage3: now just return fault and do nothing.
+     * Load pipeline stage contract:
+     *
+     * - S0 translate: start/finish address translation and record the
+     *   translated request.  A delayed translation marks TLBMissReplay; data
+     *   and cache replay decisions are left to later stages.
+     * - S1 send: run the same-cycle RAW/nuke guard, then let read() perform
+     *   SQ/SBuffer forwarding or send the cache request.  A sendable request
+     *   may spec-wakeup dependent instructions.
+     * - S2 recv/select: reconcile data availability, DCache/SQ forwarding
+     *   state, nuke checks, and RAW/RAR tracking capacity into either one
+     *   replay reason or a completion path.
+     * - S3 writeback: currently a timing placeholder.  The normal finish path
+     *   is handled by executeLoadPipeSx() after the last stage.
      */
     Fault loadDoTranslate(const DynInstPtr &inst);
     Fault loadDoSendRequest(const DynInstPtr &inst);
