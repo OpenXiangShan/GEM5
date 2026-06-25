@@ -959,7 +959,13 @@ class LSQUnit
     /** Load Forwards data from Data bus. */
     void forwardFromBus(DynInstPtr inst, LSQRequest *request);
 
-    /** Executes the load at the given index. */
+    /**
+     * Run the S1 LSQ access for a translated load.
+     *
+     * This is not just a cache-read helper: it owns replay-based MDP address
+     * waits, SQ/SBuffer forwarding checks, early data-bus forwarding, and the
+     * final cache send/block decision.
+     */
     Fault read(LSQRequest *request, ssize_t load_idx);
 
     /** Executes the store at the given index. */

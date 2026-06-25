@@ -3344,6 +3344,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     DPRINTF(LoadPipeline, "request: size: %u, Addr: %#lx\n",
             request->mainReq()->getSize(), request->mainReq()->getVaddr());
 
+    // Bookkeeping-only vector alignment stats.  The real access decisions
+    // below still use the LSQRequest range/split information.
     Addr addr = request->mainReq()->getVaddr();
     Addr size = request->mainReq()->getSize();
     bool cross16Byte = (addr % 16) + size > 16;
@@ -3407,6 +3409,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             request->mainReq()->getPaddr(), request->isSplit() ? " split" :
             "");
 
+    // Replay-based MDP gates a load before any forwarding/cache access when
+    // the predictor says it must wait for older store addresses.  A replay
+    // here means "try this load again after the named store address condition
+    // becomes true", not that a real address overlap has been found.
     if (lsq->enableReplayBasedMDP() && request->isNormalLd() &&
         (load_inst->mdpPredStrictWait || !load_inst->mdpProducingStores.empty()) &&
         !request->mainReq()->isLLSC()) {
@@ -3461,6 +3467,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         squashMark = false;
     }
 
+    // LLSC and local accesses are ISA/device special paths.  They do not use
+    // the normal SQ-forwarding -> SBuffer-forwarding -> DCache-send flow.
     if (request->mainReq()->isLLSC()) {
         // Disable recording the result temporarily.  Writing to misc
         // regs normally updates the result, but this is not the
@@ -3490,6 +3498,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         return NoFault;
     }
 
+    // A retry can revisit read() with an LSQRequest that already made cache
+    // progress.  Only clear forwarding/snapshot state for a fresh access, so
+    // partially sent split requests keep their in-flight packet accounting.
     if (request && !request->hasCachePacketProgress()) {
         request->SBforwardPackets.clear();
         request->SQforwardPackets.clear();
@@ -3499,7 +3510,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    // Check the SQ for any previous stores that might lead to forwarding
+    // Check older, not-yet-written stores for store-to-load forwarding.
+    //
+    // Outcomes:
+    // - full coverage: record forwarding bytes and mark the load fullForward;
+    //   S2 will complete/write back using those bytes.
+    // - partial coverage: the load cannot safely complete yet, so reschedule
+    //   it and remember the oldest stalled load.
+    // - data not ready on an overlapping store: request an STLF replay.
     auto store_it = load_inst->sqIt;
     if (storeWBIt.dereferenceable()) {
         panic_if(store_it < storeWBIt,
@@ -3537,6 +3555,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             // Check if store is split (has multiple sub-requests)
             bool store_is_split = store_it->request() && store_it->request()->isSplit();
 
+            // Split vector/scattered requests turn forwarding into a fragment
+            // matrix.  Each check below compares one load fragment against one
+            // store fragment; any overlap upgrades the whole SQ entry to at
+            // least partial coverage.
             if (request->isSplit()) {
                 // Case 1: Load is split + Store may be split
                 // Check each load sub-request against store (or store sub-requests)
@@ -3625,6 +3647,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             }
 
             if (coverage == AddrRangeCoverage::FullAddrRangeCoverage) {
+                // The older store fully covers the load bytes.  Keep the
+                // forwarded byte list on the request; loadDoRecvData() will
+                // turn this into the final writeback packet.
                 // Get shift amount for offset into the store's data.
                 int shift_amt = request->mainReq()->getPaddr() -
                     store_it->instruction()->physEffAddr;
@@ -3671,6 +3696,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 return NoFault;
             } else if (
                     coverage == AddrRangeCoverage::PartialAddrRangeCoverage) {
+                // Some bytes are covered by the older store and the rest must
+                // come from memory.  This model handles that by replaying the
+                // load later rather than mixing a partial store forward with a
+                // new cache request in the same attempt.
                 // If it's already been written back, then don't worry about
                 // stalling on it.
                 if (store_it->completed()) {
@@ -3710,7 +3739,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    // sbuffer forward
+    // If no live SQ entry can satisfy the load, try the SBuffer path.  This is
+    // a committed-store forwarding/bypass path, so it is only used for
+    // non-split, non-prefetch loads.
     if (!load_inst->isDataPrefetch() && !request->isSplit()) {
         Addr blk_addr = request->mainReq()->getPaddr() & cacheBlockMask;
         auto entry = lsq->findForwardingStoreBufferEntry(
@@ -3743,6 +3774,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
+    // Normal memory path after all local forwarding choices failed.  From this
+    // point the load either uses an already-returned data-bus response, waits
+    // for a pending cache response, or sends a new cache request.
     // Allocate memory if this is the first time a load is issued.
     if (!load_inst->memData) {
         load_inst->memData = new uint8_t[request->mainReq()->getSize()];
@@ -3766,6 +3800,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     auto& bus = getLsq()->bus;
     bool busFwdSuccess = bus.find(load_inst->seqNum) != bus.end();
     if (request->_inst->hasPendingCacheReq()) {
+        // A previous send has not produced a TimingResp yet.  Keep the load in
+        // pipe and let S2 decide whether the response arrived in time or
+        // whether this attempt should replay as a cache miss.
         // Load has been waken up too early, TimingResp is not present now
         // try waiting TimingResp and forward bus again at load s2
         assert(request->isLoad());
@@ -3781,6 +3818,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // this load can forward data from bus
         forwardFromBus(load_inst, request);
     } else {
+        // Last resort: build packets and arbitrate for the cache path.  Failure
+        // may already have installed a precise replay reason; otherwise the
+        // generic cache-blocked replay path owns the retry.
         DPRINTF(LoadPipeline, "Load [sn:%llu] sendPacketToCache\n", load_inst->seqNum);
         // if cannot forward from bus, do real cache access
         bool should_capture_golden =
