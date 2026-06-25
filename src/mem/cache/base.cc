@@ -1022,6 +1022,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
     o3::LSQ *dcache_refill_lsq = nullptr;
     Addr dcache_refill_addr = 0;
+    bool dcache_refill_need_data_read = false;
 
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
@@ -1054,7 +1055,9 @@ BaseCache::recvTimingResp(PacketPtr pkt)
                 stats.DcacheRefillNotifyWithoutLSQ++;
             }
         }
-        blk = handleFill(pkt, blk, writebacks, allocate);
+        blk = handleFill(
+            pkt, blk, writebacks, allocate,
+            &dcache_refill_need_data_read);
         assert(blk != nullptr);
         ppFill->notify(pkt);
     }
@@ -1095,12 +1098,13 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         if (hold_mshr_credit) {
             holdDcacheMainPipeMSHRCredit();
             dcache_refill_lsq->notifyDcacheRefill(
-                dcache_refill_addr, true,
+                dcache_refill_addr, dcache_refill_need_data_read,
                 [this](Tick tick) {
                     scheduleDcacheMainPipeMSHRCreditRelease(tick);
                 });
         } else {
-            dcache_refill_lsq->notifyDcacheRefill(dcache_refill_addr);
+            dcache_refill_lsq->notifyDcacheRefill(
+                dcache_refill_addr, dcache_refill_need_data_read);
         }
     };
 
@@ -1543,9 +1547,13 @@ BaseCache::getNextQueueEntry()
 
 bool
 BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
-    PacketList &writebacks)
+    PacketList &writebacks, bool *evicted_dirty)
 {
     bool replacement = false;
+    if (evicted_dirty) {
+        *evicted_dirty = false;
+    }
+
     for (const auto& blk : evict_blks) {
         if (blk->isValid()) {
             replacement = true;
@@ -1587,7 +1595,7 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                         }
                     }
                 }
-                evictBlock(blk, writebacks);
+                evictBlock(blk, writebacks, evicted_dirty);
             }
         }
     }
@@ -2203,13 +2211,17 @@ BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 
 CacheBlk*
 BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
-                      bool allocate)
+                      bool allocate, bool *refill_need_data_read)
 {
     assert(pkt->isResponse());
     Addr addr = pkt->getAddr();
     bool is_secure = pkt->isSecure();
     const bool has_old_data = blk && blk->isValid();
     const std::string old_state = (debug::Cache && blk) ? blk->print() : "";
+
+    if (refill_need_data_read) {
+        *refill_need_data_read = false;
+    }
 
     // When handling a fill, we should have no writes to this line.
     assert(addr == pkt->getBlockAddr(blkSize));
@@ -2221,7 +2233,9 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
 
         // need to do a replacement if allocating, otherwise we stick
         // with the temporary storage
-        blk = allocate ? allocateBlock(pkt, writebacks) : nullptr;
+        blk = allocate ?
+            allocateBlock(pkt, writebacks, refill_need_data_read) :
+            nullptr;
 
         if (!blk) {
             // No replaceable block or a mostly exclusive
@@ -2319,7 +2333,8 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
 }
 
 CacheBlk*
-BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
+BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks,
+                         bool *evicted_dirty)
 {
     // Get address
     const Addr addr = pkt->getAddr();
@@ -2358,7 +2373,7 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
     DPRINTF(CacheRepl, "Replacement victim: %s\n", victim->print());
 
     // Try to evict blocks; if it fails, give up on allocation
-    if (!handleEvictions(evict_blks, writebacks)) {
+    if (!handleEvictions(evict_blks, writebacks, evicted_dirty)) {
         return nullptr;
     }
 
@@ -2403,7 +2418,8 @@ BaseCache::invalidateBlock(CacheBlk *blk)
 }
 
 void
-BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks)
+BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks,
+                      bool *evicted_dirty)
 {
     if (archDBer) {
         Addr paddr = regenerateBlkAddr(blk);
@@ -2412,6 +2428,10 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks)
     }
 
     DPRINTF(CacheTrace, "Evicting block %#llx\n", regenerateBlkAddr(blk));
+
+    if (evicted_dirty && blk->isSet(CacheBlk::DirtyBit)) {
+        *evicted_dirty = true;
+    }
 
     PacketPtr pkt = evictBlock(blk);
 
