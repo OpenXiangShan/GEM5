@@ -147,14 +147,47 @@ L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
 bool 
 L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
 {
-    //here we decide which to send for this cycle
-    //L1 Streamstride>berti>SMS>CMC
-    //L2 Streamstride>SMS>vBOP>pbop>TP
-    if(pfq.size() == queueSize) {
+    if (pfq.size() == queueSize) {
         return false;
     }
     bool L2PFsent = false;
     L2PFsent = ticksToCycles(latestTransferTick) == ticksToCycles(curTick());
+
+    if (sourceAdmissionEnabled) {
+        struct SourceBuffer
+        {
+            Queued *pf;
+            PrefetchSourceType src;
+        };
+
+        SourceBuffer buffers[] = {
+            {largeBOP, PrefetchSourceType::HWP_BOP},
+            {smallBOP, PrefetchSourceType::HWP_BOP},
+            {despacitoStream, PrefetchSourceType::DespacitoStream},
+            {cdp, PrefetchSourceType::CDP},
+            {cmc, PrefetchSourceType::CMC},
+        };
+        constexpr unsigned num_buffers = sizeof(buffers) / sizeof(buffers[0]);
+
+        for (unsigned checked = 0; !L2PFsent && checked < num_buffers; ++checked) {
+            const unsigned idx = (sourceAdmissionRRIdx + checked) % num_buffers;
+            auto *pf = buffers[idx].pf;
+            const auto src = buffers[idx].src;
+            if (!sourceAdmissionCanIssue(src) || !pf->hasPFRequestsInBuffer()) {
+                continue;
+            }
+            L2PFsent = pf->GetPFRequestsFromBuffer(addresses);
+            if (L2PFsent) {
+                sourceAdmissionRRIdx = (idx + 1) % num_buffers;
+            }
+        }
+
+        return L2PFsent;
+    }
+
+    //here we decide which to send for this cycle
+    //L1 Streamstride>berti>SMS>CMC
+    //L2 Streamstride>SMS>vBOP>pbop>TP
     if (!L2PFsent && largeBOP->hasPFRequestsInBuffer()){
         L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
     }

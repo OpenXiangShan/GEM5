@@ -37,8 +37,10 @@
 
 #include "mem/cache/prefetch/queued.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <linux/limits.h>
+#include <limits>
 
 #include "arch/generic/tlb.hh"
 #include "base/logging.hh"
@@ -57,6 +59,34 @@ namespace gem5
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
+
+namespace
+{
+
+const char *
+prefetchSourceName(int src)
+{
+    static const char *names[NUM_PF_SOURCES] = {
+        "PF_NONE",
+        "SStream",
+        "SStride",
+        "SPht",
+        "HWP_BOP",
+        "SPP",
+        "CMC",
+        "IPCP",
+        "IPCP_CS",
+        "IPCP_CPLX",
+        "Berti",
+        "StoreStream",
+        "CDP",
+        "SOpt",
+        "DespacitoStream",
+    };
+    return src >= 0 && src < NUM_PF_SOURCES ? names[src] : "Unknown";
+}
+
+} // anonymous namespace
 
 void
 Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id, bool tag_prefetch, Tick t,
@@ -138,6 +168,38 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
       tagPrefetch(p.tag_prefetch),
       throttleControlPct(p.throttle_control_percentage),
+      sourceAdmissionEnabled(p.enable_source_admission),
+      sourceAdmissionEpoch(std::max<uint32_t>(1, p.source_admission_epoch)),
+      sourceAdmissionInitLevel(static_cast<uint8_t>(
+          std::min<uint32_t>(4, p.source_admission_init_level))),
+      sourceAdmissionMinProbeLevel(static_cast<uint8_t>(
+          std::min<uint32_t>(4, p.source_admission_min_probe_level))),
+      sourceAdmissionHighConfLevel(static_cast<uint8_t>(
+          std::min<uint32_t>(4, p.source_admission_high_conf_level))),
+      sourceAdmissionHysteresis(p.source_admission_hysteresis),
+      sourceAdmissionPressurePfqPct(std::min<uint32_t>(100, p.source_admission_pressure_pfq_pct)),
+      sourceAdmissionRescueInterval(p.source_admission_rescue_interval),
+      sourceAdmissionRescueLevel(static_cast<uint8_t>(
+          std::min<uint32_t>(4, p.source_admission_rescue_level))),
+      sourceAdmissionUnusedWeight(p.source_admission_unused_weight),
+      sourceAdmissionDropFullWeight(p.source_admission_drop_full_weight),
+      sourceAdmissionMinIssued(p.source_admission_min_issued),
+      sourceAdmissionMinUseful(p.source_admission_min_useful),
+      sourceAdmissionDownStreakThreshold(std::min<uint32_t>(
+          std::numeric_limits<uint8_t>::max(), std::max<uint32_t>(
+              1, p.source_admission_down_streak_threshold))),
+      sourceAdmissionWarmupEpochs(p.source_admission_warmup_epochs),
+      sourceAdmissionDelayedWindowEpochs(std::max<uint32_t>(
+          1, p.source_admission_delayed_window_epochs)),
+      sourceAdmissionApplyToCandidates(p.source_admission_apply_to_candidates),
+      sourceAdmissionApplyToHints(p.source_admission_apply_to_hints),
+      sourceAdmissionSkipPfaheadCandidates(
+          p.source_admission_skip_pfahead_candidates),
+      sourceAdmissionHintMinLevel(static_cast<uint8_t>(
+          std::min<uint32_t>(4, p.source_admission_hint_min_level))),
+      sourceAdmissionHintIgnorePressureGate(
+          p.source_admission_hint_ignore_pressure_gate),
+      sourceAdmissionApplyToPFQ(p.source_admission_apply_to_pfq),
       tlbReqEvent(
           [this]{ processMissingTranslations(queueSize); },
           name()),
@@ -150,6 +212,10 @@ Queued::Queued(const QueuedPrefetcherParams &p)
           name())
       
 {
+    for (int src = 0; src < NUM_PF_SOURCES; ++src) {
+        sourceAdmission.level[src] = sourceAdmissionInitLevel;
+        statsQueued.pfSourceAdmissionLevel[src] = sourceAdmissionInitLevel;
+    }
 }
 
 Queued::~Queued()
@@ -210,6 +276,427 @@ Queued::getMaxPermittedPrefetches(size_t total) const
             usefulPrefetches / issuedPrefetches;
     }
     return max_pfs;
+}
+
+bool
+Queued::sourceAdmissionHighPressure() const
+{
+    if (queueSize == 0) {
+        return false;
+    }
+    return (pfq.size() * 100) >=
+           (static_cast<size_t>(queueSize) * sourceAdmissionPressurePfqPct);
+}
+
+uint8_t
+Queued::sourceAdmissionGlobalCap() const
+{
+    return sourceAdmissionHighPressure() ? 2 : 4;
+}
+
+bool
+Queued::sourceAdmissionRescueActive(PrefetchSourceType src) const
+{
+    const int idx = static_cast<int>(src);
+    return idx > static_cast<int>(PrefetchSourceType::PF_NONE) &&
+           idx < NUM_PF_SOURCES && sourceAdmission.rescueActive[idx];
+}
+
+bool
+Queued::sourceAdmissionUsesDelayedWindow(PrefetchSourceType src) const
+{
+    return sourceAdmissionDelayedWindowEpochs > 1 &&
+           (src == PrefetchSourceType::CDP ||
+            src == PrefetchSourceType::DespacitoStream);
+}
+
+uint8_t
+Queued::sourceAdmissionEffectiveLevel(PrefetchSourceType src) const
+{
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return 4;
+    }
+
+    uint8_t level = sourceAdmission.level[idx];
+    if (level == 0 && sourceAdmission.rescueActive[idx]) {
+        level = sourceAdmissionRescueLevel;
+    }
+    return std::min<uint8_t>(level, sourceAdmissionGlobalCap());
+}
+
+void
+Queued::sourceAdmissionSetLevel(PrefetchSourceType src, uint8_t new_level)
+{
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    new_level = std::min<uint8_t>(4, new_level);
+    const uint8_t old_level = sourceAdmission.level[idx];
+    if (old_level == new_level) {
+        return;
+    }
+
+    sourceAdmission.level[idx] = new_level;
+    statsQueued.pfSourceAdmissionLevel[idx] = new_level;
+}
+
+bool
+Queued::sourceAdmissionSourceReady(PrefetchSourceType src) const
+{
+    if (!sourceAdmissionEnabled) {
+        return true;
+    }
+
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return true;
+    }
+
+    const uint8_t raw_level = sourceAdmission.level[idx];
+    if (!sourceAdmission.rescueActive[idx] &&
+        sourceAdmissionHighPressure() &&
+        raw_level < sourceAdmissionHighConfLevel) {
+        return false;
+    }
+
+    return sourceAdmissionEffectiveLevel(src) > 0;
+}
+
+bool
+Queued::sourceAdmissionCanIssue(PrefetchSourceType src) const
+{
+    if (!sourceAdmissionEnabled || !sourceAdmissionApplyToCandidates) {
+        return true;
+    }
+
+    return sourceAdmissionSourceReady(src);
+}
+
+bool
+Queued::sourceAdmissionAllow(PrefetchSourceType src)
+{
+    return sourceAdmissionAllowWithStats(src,
+        statsQueued.pfSourceAdmissionAccepted,
+        statsQueued.pfSourceAdmissionRejected);
+}
+
+bool
+Queued::sourceAdmissionAllowWithStats(PrefetchSourceType src,
+                                      statistics::Vector &accepted,
+                                      statistics::Vector &rejected)
+{
+    return sourceAdmissionAllowWithPolicy(src, accepted, rejected, 0, false);
+}
+
+bool
+Queued::sourceAdmissionAllowWithPolicy(PrefetchSourceType src,
+                                       statistics::Vector &accepted,
+                                       statistics::Vector &rejected,
+                                       uint8_t min_level,
+                                       bool ignore_pressure_gate)
+{
+    if (!sourceAdmissionEnabled) {
+        return true;
+    }
+
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return true;
+    }
+
+    const uint8_t raw_level = sourceAdmission.level[idx];
+    bool accept = true;
+    if (!ignore_pressure_gate && !sourceAdmission.rescueActive[idx] &&
+        sourceAdmissionHighPressure() &&
+        raw_level < sourceAdmissionHighConfLevel) {
+        accept = false;
+    }
+
+    const uint8_t effective_level = std::max<uint8_t>(
+        sourceAdmissionEffectiveLevel(src),
+        std::min<uint8_t>(4, min_level));
+    accept = accept && effective_level > 0;
+    if (accept) {
+        const uint8_t ctr = sourceAdmission.sampleCtr[idx]++;
+        switch (effective_level) {
+          case 0:
+            accept = false;
+            break;
+          case 1:
+            accept = (ctr & 0x3) == 0;
+            break;
+          case 2:
+            accept = (ctr & 0x1) == 0;
+            break;
+          case 3:
+            accept = (ctr & 0x3) != 3;
+            break;
+          default:
+            accept = true;
+            break;
+        }
+    }
+
+    if (accept) {
+        accepted[idx]++;
+    } else {
+        rejected[idx]++;
+    }
+    sourceAdmissionAccountEvent();
+    return accept;
+}
+
+bool
+Queued::sourceAdmissionAllowCandidate(const AddrPriority &addr_prio)
+{
+    const int idx = static_cast<int>(addr_prio.pfSource);
+    if (!sourceAdmissionEnabled || !sourceAdmissionApplyToCandidates) {
+        return true;
+    }
+
+    if (sourceAdmissionSkipPfaheadCandidates && addr_prio.pfahead &&
+        idx > static_cast<int>(PrefetchSourceType::PF_NONE) &&
+        idx < NUM_PF_SOURCES) {
+        statsQueued.pfSourceAdmissionPfaheadCandidateBypassed[idx]++;
+        return true;
+    }
+
+    return sourceAdmissionAllow(addr_prio.pfSource);
+}
+
+bool
+Queued::sourceAdmissionAllowHint(PrefetchSourceType src)
+{
+    if (!sourceAdmissionEnabled || !sourceAdmissionApplyToHints) {
+        return true;
+    }
+
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return true;
+    }
+
+    return sourceAdmissionAllowWithPolicy(src,
+        statsQueued.pfSourceAdmissionHintAccepted,
+        statsQueued.pfSourceAdmissionHintRejected,
+        sourceAdmissionHintMinLevel,
+        sourceAdmissionHintIgnorePressureGate);
+}
+
+bool
+Queued::sourceAdmissionAllowPFQ(const DeferredPacket &dpp)
+{
+    if (!sourceAdmissionEnabled || !sourceAdmissionApplyToPFQ) {
+        return true;
+    }
+
+    const auto src = dpp.pfInfo.getXsMetadata().prefetchSource;
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return true;
+    }
+
+    if (dpp.ingress == PFQIngress::UpstreamHint) {
+        return sourceAdmissionAllowWithPolicy(src,
+            statsQueued.pfSourceAdmissionPFQHintAccepted,
+            statsQueued.pfSourceAdmissionPFQHintRejected,
+            sourceAdmissionHintMinLevel,
+            sourceAdmissionHintIgnorePressureGate);
+    }
+
+    return sourceAdmissionAllowWithPolicy(src,
+        statsQueued.pfSourceAdmissionPFQLocalAccepted,
+        statsQueued.pfSourceAdmissionPFQLocalRejected,
+        0, false);
+}
+
+void
+Queued::sourceAdmissionAccountEvent()
+{
+    if (!sourceAdmissionEnabled) {
+        return;
+    }
+
+    sourceAdmission.epochEvents++;
+    if (sourceAdmission.epochEvents >= sourceAdmissionEpoch) {
+        sourceAdmissionUpdateEpoch();
+        sourceAdmission.epochEvents = 0;
+    }
+}
+
+void
+Queued::sourceAdmissionResetWindow(int src)
+{
+    sourceAdmission.windowEpochs[src] = 0;
+    sourceAdmission.windowIssued[src] = 0;
+    sourceAdmission.windowUseful[src] = 0;
+    sourceAdmission.windowUnused[src] = 0;
+    sourceAdmission.windowLate[src] = 0;
+    sourceAdmission.windowDropFull[src] = 0;
+}
+
+void
+Queued::sourceAdmissionAccountQueueFull(PrefetchSourceType src)
+{
+    if (!sourceAdmissionEnabled) {
+        return;
+    }
+
+    const int idx = static_cast<int>(src);
+    if (idx > static_cast<int>(PrefetchSourceType::PF_NONE) &&
+        idx < NUM_PF_SOURCES) {
+        sourceAdmissionAccountEvent();
+    }
+}
+
+void
+Queued::sourceAdmissionUpdateRescueState(PrefetchSourceType src,
+                                         uint8_t level,
+                                         bool decision_made)
+{
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    if (level > 0 || sourceAdmissionRescueInterval == 0 ||
+        sourceAdmissionRescueLevel == 0) {
+        sourceAdmission.zeroEpochs[idx] = 0;
+        sourceAdmission.rescueActive[idx] = false;
+        return;
+    }
+
+    if (sourceAdmission.rescueActive[idx]) {
+        if (decision_made) {
+            sourceAdmission.rescueActive[idx] = false;
+            sourceAdmission.zeroEpochs[idx] = 0;
+        }
+        return;
+    }
+
+    if (decision_made) {
+        return;
+    }
+
+    if (sourceAdmission.zeroEpochs[idx] <
+        std::numeric_limits<uint32_t>::max()) {
+        sourceAdmission.zeroEpochs[idx]++;
+    }
+    if (sourceAdmission.zeroEpochs[idx] >= sourceAdmissionRescueInterval) {
+        sourceAdmission.rescueActive[idx] = true;
+        sourceAdmission.zeroEpochs[idx] = 0;
+        statsQueued.pfSourceAdmissionRescueEpochs[idx]++;
+    }
+}
+
+void
+Queued::sourceAdmissionUpdateEpoch()
+{
+    const uint8_t min_level = sourceAdmissionMinProbeLevel;
+    sourceAdmission.epochCount++;
+
+    for (int src = static_cast<int>(PrefetchSourceType::PF_NONE) + 1;
+         src < NUM_PF_SOURCES; ++src) {
+        const auto pf_src = static_cast<PrefetchSourceType>(src);
+        const uint64_t issued =
+            static_cast<uint64_t>(prefetchStats.pfIssued_srcs[pf_src].value());
+        const uint64_t useful =
+            static_cast<uint64_t>(prefetchStats.pfUseful_srcs[pf_src].value());
+        const uint64_t unused =
+            static_cast<uint64_t>(prefetchStats.pfUnused_srcs[pf_src].value());
+        const uint64_t late =
+            static_cast<uint64_t>(prefetchStats.late_srcs[pf_src].value());
+        const uint64_t drop_full =
+            static_cast<uint64_t>(statsQueued.pfRemovedFull_srcs[pf_src].value());
+
+        const uint64_t issued_delta = issued - sourceAdmission.lastIssued[src];
+        const uint64_t useful_delta = useful - sourceAdmission.lastUseful[src];
+        const uint64_t unused_delta = unused - sourceAdmission.lastUnused[src];
+        const uint64_t late_delta = late - sourceAdmission.lastLate[src];
+        const uint64_t drop_full_delta =
+            drop_full - sourceAdmission.lastDropFull[src];
+
+        sourceAdmission.lastIssued[src] = issued;
+        sourceAdmission.lastUseful[src] = useful;
+        sourceAdmission.lastUnused[src] = unused;
+        sourceAdmission.lastLate[src] = late;
+        sourceAdmission.lastDropFull[src] = drop_full;
+
+        sourceAdmission.windowEpochs[src]++;
+        sourceAdmission.windowIssued[src] += issued_delta;
+        sourceAdmission.windowUseful[src] += useful_delta;
+        sourceAdmission.windowUnused[src] += unused_delta;
+        sourceAdmission.windowLate[src] += late_delta;
+        sourceAdmission.windowDropFull[src] += drop_full_delta;
+        sourceAdmissionUpdateRescueState(pf_src, sourceAdmission.level[src],
+                                         false);
+
+        const uint32_t window_epochs =
+            sourceAdmissionUsesDelayedWindow(pf_src) ?
+            sourceAdmissionDelayedWindowEpochs : 1;
+        if (sourceAdmission.windowEpochs[src] < window_epochs) {
+            statsQueued.pfSourceAdmissionEpochUpdates[src]++;
+            continue;
+        }
+
+        const uint64_t window_issued = sourceAdmission.windowIssued[src];
+        const uint64_t window_useful = sourceAdmission.windowUseful[src];
+        const uint64_t window_unused = sourceAdmission.windowUnused[src];
+        const uint64_t window_late = sourceAdmission.windowLate[src];
+        const uint64_t window_drop_full = sourceAdmission.windowDropFull[src];
+
+        const uint64_t pressure_penalty =
+            sourceAdmissionHighPressure() ? window_issued : 0;
+        const uint64_t good = window_useful * 8;
+        const uint64_t bad = window_issued +
+                             window_unused * sourceAdmissionUnusedWeight +
+                             window_late +
+                             window_drop_full * sourceAdmissionDropFullWeight +
+                             pressure_penalty;
+        const bool enough_samples =
+            window_issued >= sourceAdmissionMinIssued ||
+            window_useful >= sourceAdmissionMinUseful;
+        const bool warmup =
+            sourceAdmission.epochCount <= sourceAdmissionWarmupEpochs;
+
+        uint8_t level = sourceAdmission.level[src];
+        if (good > bad + sourceAdmissionHysteresis && level < 4) {
+            level++;
+            sourceAdmission.negativeStreak[src] = 0;
+        } else if (!warmup && enough_samples &&
+                   bad > good + sourceAdmissionHysteresis &&
+                   level > min_level) {
+            if (sourceAdmission.negativeStreak[src] <
+                std::numeric_limits<uint8_t>::max()) {
+                sourceAdmission.negativeStreak[src]++;
+            }
+            if (sourceAdmission.negativeStreak[src] >=
+                sourceAdmissionDownStreakThreshold) {
+                level--;
+                sourceAdmission.negativeStreak[src] = 0;
+            }
+        } else if (good >= bad || !enough_samples) {
+            sourceAdmission.negativeStreak[src] = 0;
+        }
+
+        level = std::max<uint8_t>(level, min_level);
+        sourceAdmissionSetLevel(pf_src, level);
+        sourceAdmissionUpdateRescueState(pf_src, level, true);
+        sourceAdmissionResetWindow(src);
+        statsQueued.pfSourceAdmissionEpochUpdates[src]++;
+        statsQueued.pfSourceAdmissionNegativeStreak[src] =
+            sourceAdmission.negativeStreak[src];
+    }
 }
 
 void
@@ -293,6 +780,9 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 
         bool can_cross_page = (tlb != nullptr);
         if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
+            if (!sourceAdmissionAllowCandidate(addr_prio)) {
+                continue;
+            }
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
             statsQueued.pfIdentified++;
@@ -341,6 +831,9 @@ Queued::PFSendEventWrapper()
 
         bool can_cross_page = (tlb != nullptr);
         if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
+            if (!sourceAdmissionAllowCandidate(addr_prio)) {
+                continue;
+            }
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
             statsQueued.pfIdentified++;
@@ -385,6 +878,7 @@ Queued::getPacket()
     prefetchStats.pfIssued++;
     prefetchStats.pfIssued_srcs[pkt->req->getXsMetadata().prefetchSource]++;
     issuedPrefetches += 1;
+    sourceAdmissionAccountEvent();
     assert(pkt != nullptr);
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
 
@@ -409,11 +903,93 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     ADD_STAT(pfUsefulSpanPage, statistics::units::Count::get(),
              "number of prefetches that is useful and crossed the page"),
     ADD_STAT(pfRemovedFull_srcs, statistics::units::Count::get(),
-        "src distribute of Removedfull prefetch")
+        "src distribute of Removedfull prefetch"),
+    ADD_STAT(pfSourceAdmissionRejected, statistics::units::Count::get(),
+        "prefetch candidates rejected by dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionAccepted, statistics::units::Count::get(),
+        "prefetch candidates accepted by dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionEpochUpdates, statistics::units::Count::get(),
+        "dynamic source admission epoch updates"),
+    ADD_STAT(pfSourceAdmissionLevel, statistics::units::Count::get(),
+        "current dynamic source admission level"),
+    ADD_STAT(pfSourceAdmissionRescueEpochs, statistics::units::Count::get(),
+        "dynamic source admission rescue probe activations"),
+    ADD_STAT(pfSourceAdmissionNegativeStreak, statistics::units::Count::get(),
+        "current consecutive negative source admission windows"),
+    ADD_STAT(pfSourceAdmissionHintRejected, statistics::units::Count::get(),
+        "upstream hints rejected by dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionHintAccepted, statistics::units::Count::get(),
+        "upstream hints accepted by dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionPfaheadCandidateBypassed, statistics::units::Count::get(),
+        "pfahead candidates bypassing local dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionPFQLocalRejected, statistics::units::Count::get(),
+        "local PFQ insertions rejected by unified dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionPFQLocalAccepted, statistics::units::Count::get(),
+        "local PFQ insertions accepted by unified dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionPFQHintRejected, statistics::units::Count::get(),
+        "upstream hint PFQ insertions rejected by unified dynamic source admission"),
+    ADD_STAT(pfSourceAdmissionPFQHintAccepted, statistics::units::Count::get(),
+        "upstream hint PFQ insertions accepted by unified dynamic source admission")
 {   using namespace statistics;
     pfRemovedFull_srcs
         .init(NUM_PF_SOURCES)
         .flags(total);
+    pfSourceAdmissionRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionEpochUpdates
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionLevel
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionRescueEpochs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionNegativeStreak
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionHintRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionHintAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionPfaheadCandidateBypassed
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionPFQLocalRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionPFQLocalAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionPFQHintRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourceAdmissionPFQHintAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+
+    for (int src = 0; src < NUM_PF_SOURCES; ++src) {
+        const char *name = prefetchSourceName(src);
+        pfSourceAdmissionRejected.subname(src, name);
+        pfSourceAdmissionAccepted.subname(src, name);
+        pfSourceAdmissionEpochUpdates.subname(src, name);
+        pfSourceAdmissionLevel.subname(src, name);
+        pfSourceAdmissionRescueEpochs.subname(src, name);
+        pfSourceAdmissionNegativeStreak.subname(src, name);
+        pfSourceAdmissionHintRejected.subname(src, name);
+        pfSourceAdmissionHintAccepted.subname(src, name);
+        pfSourceAdmissionPfaheadCandidateBypassed.subname(src, name);
+        pfSourceAdmissionPFQLocalRejected.subname(src, name);
+        pfSourceAdmissionPFQLocalAccepted.subname(src, name);
+        pfSourceAdmissionPFQHintRejected.subname(src, name);
+        pfSourceAdmissionPFQHintAccepted.subname(src, name);
+    }
 }
 
 
@@ -701,6 +1277,15 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
             //           dpp.pfInfo.getXsMetadata().prefetchSource, dpp.pfahead_host, cache->level());
             // }
         }
+        if (!sourceAdmissionAllowPFQ(dpp)) {
+            DPRINTF(HWPrefetch,
+                    "PFQ admission rejected addr:%#x source:%d ingress:%d\n",
+                    dpp.pfInfo.getAddr(),
+                    dpp.pfInfo.getXsMetadata().prefetchSource,
+                    static_cast<int>(dpp.ingress));
+            delete dpp.pkt;
+            return;
+        }
         queue_size = queueSize;
         queue_name = "PFQ";
     } else {
@@ -731,7 +1316,9 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         }
         DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
                 queue.size(), it->pfInfo.getAddr());
-        statsQueued.pfRemovedFull_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
+        const auto removed_src = it->pfInfo.getXsMetadata().prefetchSource;
+        statsQueued.pfRemovedFull_srcs[removed_src]++;
+        sourceAdmissionAccountQueueFull(removed_src);
 
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;

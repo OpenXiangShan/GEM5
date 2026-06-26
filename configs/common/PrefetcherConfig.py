@@ -28,6 +28,51 @@ def create_prefetcher(cpu, cache_level, options):
     if prefetcher == NULL:
         return NULL
 
+    source_admission_levels = ('l2', 'l2_wrapper')
+    enable_candidate_admission = (
+        getattr(options, 'enable_source_pf_admission', False) and
+        cache_level in source_admission_levels)
+    enable_hint_admission = (
+        getattr(options, 'enable_pfahead_source_pf_admission', False) and
+        cache_level in source_admission_levels)
+    enable_pfq_admission = (
+        getattr(options, 'enable_unified_pfq_source_pf_admission', False) and
+        cache_level in source_admission_levels + ('l3',))
+    enable_l1d_admission = (
+        getattr(options, 'enable_l1d_source_pf_admission', False) and
+        cache_level == 'l1d')
+    if (enable_candidate_admission or enable_hint_admission or
+            enable_pfq_admission or enable_l1d_admission):
+        if hasattr(prefetcher, 'enable_source_admission'):
+            prefetcher.enable_source_admission = True
+            prefetcher.source_admission_apply_to_candidates = \
+                enable_candidate_admission or enable_l1d_admission
+            prefetcher.source_admission_apply_to_hints = enable_hint_admission
+            prefetcher.source_admission_apply_to_pfq = enable_pfq_admission
+            prefetcher.source_admission_skip_pfahead_candidates = \
+                enable_l1d_admission
+            prefetcher.source_admission_epoch = options.source_pf_admission_epoch
+            prefetcher.source_admission_init_level = options.source_pf_admission_init_level
+            prefetcher.source_admission_min_probe_level = options.source_pf_admission_min_probe_level
+            prefetcher.source_admission_high_conf_level = options.source_pf_admission_high_conf_level
+            prefetcher.source_admission_hysteresis = options.source_pf_admission_hysteresis
+            prefetcher.source_admission_pressure_pfq_pct = options.source_pf_admission_pressure_pfq_pct
+            prefetcher.source_admission_rescue_interval = options.source_pf_admission_rescue_interval
+            prefetcher.source_admission_rescue_level = options.source_pf_admission_rescue_level
+            prefetcher.source_admission_unused_weight = options.source_pf_admission_unused_weight
+            prefetcher.source_admission_drop_full_weight = options.source_pf_admission_drop_full_weight
+            prefetcher.source_admission_min_issued = options.source_pf_admission_min_issued
+            prefetcher.source_admission_min_useful = options.source_pf_admission_min_useful
+            prefetcher.source_admission_down_streak_threshold = \
+                options.source_pf_admission_down_streak_threshold
+            prefetcher.source_admission_warmup_epochs = options.source_pf_admission_warmup_epochs
+            prefetcher.source_admission_delayed_window_epochs = \
+                options.source_pf_admission_delayed_window_epochs
+            prefetcher.source_admission_hint_min_level = \
+                options.source_pf_admission_hint_min_level
+            prefetcher.source_admission_hint_ignore_pressure_gate = \
+                options.source_pf_admission_hint_ignore_pressure_gate
+
     if cpu != NULL:
         prefetcher.registerTLB(cpu.mmu.dtb, cpu.mmu.functional)
 

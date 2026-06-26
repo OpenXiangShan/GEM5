@@ -34,6 +34,7 @@ void
 WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 {
     auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
+    ptr->ingress = PFQIngress::UpstreamHint;
 
     // ignore if pfahead_host > itself level
     if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true) &&
@@ -59,6 +60,16 @@ WorkerPrefetcher::transfer()
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
+        const auto src = dpp_it->pfInfo.getXsMetadata().prefetchSource;
+        if (!sourceAdmissionAllowHint(src)) {
+            DPRINTF(WorkerPref, "Worker: [%lx, %d] rejected by source admission\n",
+                    dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+            dpp_it = localBuffer.erase(dpp_it);
+            count++;
+            latestTransferTick = curTick();
+            continue;
+        }
+
         if (queueFilter) {
             if (alreadyInQueue(pfq, dpp_it->pfInfo, dpp_it->priority)) {
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),

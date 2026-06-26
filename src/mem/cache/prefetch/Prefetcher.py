@@ -191,6 +191,50 @@ class QueuedPrefetcher(BasePrefetcher):
     max_pfahead_recv = Param.Int(1,"Maximum number of pfahead received")
     use_pf_buffer = Param.Bool(False, "use prefetch buffer to filter prefetches")
     max_pf_buffer_size = Param.Int(16, "size of prefetch buffer")
+    enable_source_admission = Param.Bool(False,
+        "Enable per-source dynamic prefetch admission")
+    source_admission_epoch = Param.Unsigned(4096,
+        "Number of source-admission events per adaptation epoch")
+    source_admission_init_level = Param.Unsigned(2,
+        "Initial source admission level, where 2 means 50% admission")
+    source_admission_min_probe_level = Param.Unsigned(0,
+        "Minimum source admission level kept for phase-change probing")
+    source_admission_high_conf_level = Param.Unsigned(3,
+        "Minimum level admitted when the prefetch queue is under pressure")
+    source_admission_hysteresis = Param.Unsigned(8,
+        "Integer hysteresis used by source admission level updates")
+    source_admission_pressure_pfq_pct = Param.Percent(75,
+        "PFQ occupancy percentage treated as source admission pressure")
+    source_admission_rescue_interval = Param.Unsigned(8,
+        "Zero-level epochs before enabling one rescue probing window")
+    source_admission_rescue_level = Param.Unsigned(1,
+        "Temporary admission level used by rescue probing")
+    source_admission_unused_weight = Param.Unsigned(2,
+        "Bad-score weight for unused prefetches")
+    source_admission_drop_full_weight = Param.Unsigned(2,
+        "Bad-score weight for PFQ-full drops")
+    source_admission_min_issued = Param.Unsigned(64,
+        "Minimum issued samples needed before demoting a source")
+    source_admission_min_useful = Param.Unsigned(8,
+        "Minimum useful samples that make a small positive window actionable")
+    source_admission_down_streak_threshold = Param.Unsigned(2,
+        "Consecutive negative windows required before demoting a source")
+    source_admission_warmup_epochs = Param.Unsigned(4,
+        "Initial source-admission epochs where demotion is disabled")
+    source_admission_delayed_window_epochs = Param.Unsigned(4,
+        "Epochs accumulated for delayed-feedback sources before level updates")
+    source_admission_apply_to_candidates = Param.Bool(True,
+        "Apply dynamic source admission to locally generated candidates")
+    source_admission_apply_to_hints = Param.Bool(False,
+        "Apply dynamic source admission to upstream hints")
+    source_admission_skip_pfahead_candidates = Param.Bool(False,
+        "Bypass local candidate source admission for pfahead candidates")
+    source_admission_hint_min_level = Param.Unsigned(0,
+        "Minimum effective admission level used for upstream hints")
+    source_admission_hint_ignore_pressure_gate = Param.Bool(False,
+        "Allow upstream hints to bypass the high-pressure raw-level gate")
+    source_admission_apply_to_pfq = Param.Bool(False,
+        "Apply dynamic source admission when requests enter the local PFQ")
 
 
 class XSStridePrefetcher(QueuedPrefetcher):
