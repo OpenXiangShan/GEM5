@@ -498,9 +498,9 @@ IssueQue::issueToFu()
         auto& inst = replayQ.front();
 
         if (inst->isLoad()) {
-            // Check if tag write is happening in the next cycle
-            // if so, load cannot be issued to load pipeline
-            if (scheduler->lsq->isDcacheRefillTagWrite()) {
+            // Loads selected here enter loadpipe S0 next cycle, so block on
+            // the mainpipe tag-write state predicted for that admission point.
+            if (scheduler->lsq->willDcacheRefillTagWriteNextCycle()) {
                 incTagRefillBlockStats = true;
                 break;
             }
@@ -527,9 +527,10 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
-        // Check if tag write is happening in the next cycle
-        // if so, load cannot be issued to load pipeline
-        bool blockLoad = inst->isLoad() && scheduler->lsq->isDcacheRefillTagWrite();
+        // Loads selected here enter loadpipe S0 next cycle, so block on
+        // the mainpipe tag-write state predicted for that admission point.
+        bool blockLoad = inst->isLoad() &&
+            scheduler->lsq->willDcacheRefillTagWriteNextCycle();
         if (blockLoad) {
             incTagRefillBlockStats = true;
         }

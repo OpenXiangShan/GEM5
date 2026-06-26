@@ -664,6 +664,8 @@ BaseCache::calReqInterval(PacketPtr pkt)
 void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
+    registerDcacheMainPipeLSQ(pkt->getLSQPtr());
+
     calReqInterval(pkt);
 
     if (pkt->isStorePFTrain()) {
@@ -737,6 +739,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         }
     }
 
+    if (level() == 1 && !isReadOnly && pkt->isDcacheMainPipeSbufferReq() &&
+        satisfied) {
+        pkt->setDcacheMainPipeSbufferHit();
+    }
 
     // Here we charge the headerDelay that takes into account the latencies
     // of the bus, if the packet comes from it.
@@ -888,6 +894,66 @@ BaseCache::handleUncacheableWriteResp(PacketPtr pkt)
     cpuSidePort.schedTimingResp(pkt, completion_time);
 }
 
+bool
+BaseCache::dcacheMainPipeEffectiveMSHRFull() const
+{
+    return mshrQueue.isFullWithExtraAllocated(dcacheMainPipeHeldMSHRCredits);
+}
+
+bool
+BaseCache::dcacheMainPipeCanPrefetch() const
+{
+    return mshrQueue.canPrefetchWithExtraAllocated(
+        dcacheMainPipeHeldMSHRCredits);
+}
+
+void
+BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
+{
+    if (!lsq || !simulateDcacheRefill || cacheLevel != 1) {
+        return;
+    }
+
+    panic_if(dcacheMainPipeLSQ && dcacheMainPipeLSQ != lsq,
+             "%s: DCache fake mainpipe LSQ owner already set\n",
+             name().c_str());
+    dcacheMainPipeLSQ = lsq;
+}
+
+void
+BaseCache::holdDcacheMainPipeMSHRCredit()
+{
+    ++dcacheMainPipeHeldMSHRCredits;
+}
+
+void
+BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick)
+{
+    Event *event = new EventFunctionWrapper(
+        [this] { releaseDcacheMainPipeMSHRCredit(); },
+        name() + ".dcache_mainpipe_mshr_credit_release", true);
+    schedule(event, std::max(tick, curTick()));
+}
+
+void
+BaseCache::releaseDcacheMainPipeMSHRCredit()
+{
+    const bool was_full = dcacheMainPipeEffectiveMSHRFull();
+    assert(dcacheMainPipeHeldMSHRCredits > 0);
+    --dcacheMainPipeHeldMSHRCredits;
+
+    if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
+        clearBlocked(Blocked_NoMSHRs);
+    }
+
+    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+        Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
+        if (next_pf_time != MaxTick) {
+            schedMemSideSendEvent(next_pf_time);
+        }
+    }
+}
+
 void
 BaseCache::recvTimingResp(PacketPtr pkt)
 {
@@ -954,6 +1020,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     assert(doFastWriteline ? !mshr->wasWholeLineWrite || pkt->isInvalidate() : true);
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    o3::LSQ *dcache_refill_lsq = nullptr;
+    Addr dcache_refill_addr = 0;
 
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
@@ -961,14 +1029,30 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
-        // Optionally indicate that the Dcache received a refill request
-        // to drive LSQ-side modelling.
-        if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
-            const Addr refill_addr =
-                pkt->req && pkt->req->hasVaddr() ? pkt->req->getVaddr() :
-                pkt->getAddr();
-            pkt->getLSQPtr()->notifyDcacheRefill(refill_addr);
-            stats.DcacheRefillTimes++;
+        const bool is_dcache_mainpipe_refill =
+            allocate && (mshr->hasFromCPU() || mshr->hasFromPref());
+        // Send allocated L1D fill/update traffic into the fake mainpipe.
+        // Demand responses carry the LSQ pointer in the packet; prefetch-only
+        // responses use the LSQ owner learned from earlier demand traffic.
+        if (simulateDcacheRefill && cacheLevel == 1 &&
+            is_dcache_mainpipe_refill) {
+            o3::LSQ *packet_lsq = pkt->getLSQPtr();
+            registerDcacheMainPipeLSQ(packet_lsq);
+            dcache_refill_lsq = packet_lsq ? packet_lsq : dcacheMainPipeLSQ;
+
+            if (dcache_refill_lsq) {
+                dcache_refill_addr =
+                    pkt->req && pkt->req->hasVaddr() ? pkt->req->getVaddr() :
+                    pkt->getAddr();
+                stats.DcacheRefillTimes++;
+                if (packet_lsq) {
+                    stats.DcacheRefillNotifyFromPacketLSQ++;
+                } else {
+                    stats.DcacheRefillNotifyFromOwnerLSQ++;
+                }
+            } else {
+                stats.DcacheRefillNotifyWithoutLSQ++;
+            }
         }
         blk = handleFill(pkt, blk, writebacks, allocate);
         assert(blk != nullptr);
@@ -1000,6 +1084,26 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     }
 
     serviceMSHRTargets(mshr, pkt, blk);
+
+    bool dcache_refill_notified = false;
+    auto notify_dcache_refill = [&](bool hold_mshr_credit) {
+        if (!dcache_refill_lsq) {
+            return;
+        }
+
+        dcache_refill_notified = true;
+        if (hold_mshr_credit) {
+            holdDcacheMainPipeMSHRCredit();
+            dcache_refill_lsq->notifyDcacheRefill(
+                dcache_refill_addr, true,
+                [this](Tick tick) {
+                    scheduleDcacheMainPipeMSHRCreditRelease(tick);
+                });
+        } else {
+            dcache_refill_lsq->notifyDcacheRefill(dcache_refill_addr);
+        }
+    };
+
     // We are stopping servicing targets early for the Locked RMW Read until
     // the write comes.
     if (!mshr->hasLockedRMWReadTarget()) {
@@ -1011,19 +1115,23 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             }
             mshrQueue.markPending(mshr);
             schedMemSideSendEvent(clockEdge() + pkt->payloadDelay);
+            notify_dcache_refill(false);
         } else {
+            // Keep classic-cache release functional, but hold an extra MSHR
+            // credit until the refill leaves the fake mainpipe.
             // while we deallocate an mshr from the queue we still have to
             // check the isFull condition before and after as we might
             // have been using the reserved entries already
-            const bool was_full = mshrQueue.isFull();
+            const bool was_full = dcacheMainPipeEffectiveMSHRFull();
+            notify_dcache_refill(true);
             mshrQueue.deallocate(mshr);
-            if (was_full && !mshrQueue.isFull()) {
+            if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
                 clearBlocked(Blocked_NoMSHRs);
             }
 
             // Request the bus for a prefetch if this deallocation freed enough
             // MSHRs for a prefetch to take place
-            if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
+            if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
                 Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
                 if (next_pf_time != MaxTick)
                     schedMemSideSendEvent(next_pf_time);
@@ -1034,6 +1142,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         if (blk == tempBlock && tempBlock->isValid()) {
             evictBlock(blk, writebacks);
         }
+    }
+
+    if (!dcache_refill_notified) {
+        notify_dcache_refill(false);
     }
 
     const Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
@@ -1357,7 +1469,7 @@ BaseCache::getNextQueueEntry()
 
     // fall through... no pending requests.  Try a prefetch.
     assert(!miss_mshr && !wq_entry);
-    if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
+    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
         bool has_pending_pkt = prefetcher->hasPendingPacket();
         PacketPtr pkt = nullptr;
@@ -1420,7 +1532,7 @@ BaseCache::getNextQueueEntry()
         }
     }
 
-    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) &&
+    if (prefetcher && (!dcacheMainPipeCanPrefetch() || isBlocked()) &&
         prefetcher->hasHintDownStream() && Prefetch_CanOffload) {
         DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
@@ -2476,7 +2588,7 @@ BaseCache::nextQueueReadyTime() const
 
     // Don't signal prefetch ready time if no MSHRs available
     // Will signal once enoguh MSHRs are deallocated
-    if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
+    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
         nextReady = std::min(nextReady, nextPrefetchReadyTime());
     }
 
@@ -2947,6 +3059,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR arbitration fails (one miss per cycle)"),
     ADD_STAT(DcacheRefillTimes, statistics::units::Count::get(),
              "number of Dcache refill events"),
+    ADD_STAT(DcacheRefillNotifyFromPacketLSQ, statistics::units::Count::get(),
+             "number of L1D refill events notified with packet LSQ pointer"),
+    ADD_STAT(DcacheRefillNotifyFromOwnerLSQ, statistics::units::Count::get(),
+             "number of L1D refill events notified with cache owner LSQ"),
+    ADD_STAT(DcacheRefillNotifyWithoutLSQ, statistics::units::Count::get(),
+             "number of L1D refill events skipped without an LSQ target"),
     ADD_STAT(MSHRAliasFails, statistics::units::Count::get(),
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),
