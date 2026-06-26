@@ -1417,9 +1417,12 @@ void
 Scheduler::insert(const DynInstPtr& inst, int disp_seq)
 {
     if (inst->isSplitStoreAddr()) {
+        // Split a decoded store into STD + STA after rename/LSQ insertion.
+        // Create STD first so it can copy the original store's data source and
+        // SQ entry before buildStoreAddrUop() removes the data dependency from
+        // the original store.
         auto stduop = inst->createStoreDataUop();
         this->insert(stduop, disp_seq);
-        // transform self to storeAddruop
         inst->buildStoreAddrUop();
     }
 

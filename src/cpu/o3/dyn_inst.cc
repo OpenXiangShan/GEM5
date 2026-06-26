@@ -450,9 +450,10 @@ void DynInst::buildStoreAddrUop()
 {
     assert(staticInst->isSplitStoreAddr());
     assert(numSrcRegs() == 2);
-    // tramsform self to storeAddr uop
 
-    // mark addr ready
+    // The original store becomes the store-address uop.  It should depend only
+    // on src0, the address base.  src1 is the store data source and has already
+    // been copied into the store-data uop by createStoreDataUop().
     if (!this->readySrcIdx(1)) this->markSrcRegReady(1);
     this->renameSrcReg(1, VirtRegId(UnifiedRenameMap::getInvalid()));
 }
@@ -474,12 +475,16 @@ DynInstPtr DynInst::createStoreDataUop()
     stduop->setTid(this->threadNumber);
     stduop->setThreadState(this->thread);
 
+    // The store-data uop's only source is the original store's data source.
+    // For RISC-V stores, src0 is the address base and src1 is the data value.
     stduop->renameSrcReg(0, this->extRenamedSrcIdx(1));
 
     if (this->readySrcIdx(1)) {
         stduop->markSrcRegReady(0);
     }
 
+    // Both uops refer to the same store queue entry: STA fills address/request
+    // state, while STD fills data state.
     stduop->sqIdx = this->sqIdx;
     stduop->sqIt = this->sqIt;
 

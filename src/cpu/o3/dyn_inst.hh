@@ -134,11 +134,15 @@ class DynInst : public ExecContext, public RefCounted
     /** Completes the access.  Only valid for memory operations. */
     Fault completeAcc(PacketPtr pkt);
 
-    // create store data uop
+    // Turn a split store's original DynInst into the store-address uop.
+    // RISC-V stores use src0 as the address base and src1 as the store data.
+    // The address uop keeps src0 and drops the src1 dependency after the
+    // store-data uop has copied it.
     void buildStoreAddrUop();
 
-    // create store data uop
-    // call before buildStoreAddrUop
+    // Create the store-data uop for a split store.  This must run before
+    // buildStoreAddrUop(), while the original store still records src1's
+    // renamed physical register and ready bit.
     DynInstPtr createStoreDataUop();
 
     /** The sequence number of the instruction. */

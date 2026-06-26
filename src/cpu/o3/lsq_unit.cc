@@ -1303,7 +1303,9 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
 void
 LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
-    // push to loadPipeS0
+    // S0 is the single load-pipe entry point. First issues, slow replays, and
+    // fast replays all enter here; LoadPipeSource records which path fed the
+    // pipe for RTL-aligned stats.
     assert(loadPipeSx[0]->size < MaxPipeWidth);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
@@ -1380,6 +1382,9 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     LSQRequest* request = currentLoadRequest(inst);
 
     if (inst->effAddrValid()) {
+        // S1 can still catch a same-cycle RAW/nuke against a store already in
+        // the store pipe. Replaying here avoids letting the load observe data
+        // before the conflicting store has published its address/data state.
         for (int i = 0; i < storePipeSx[1]->size; i++) {
             auto& store_inst = storePipeSx[1]->insts[i];
             if (pipeLineNukeCheck(inst, store_inst)) {
@@ -1395,6 +1400,9 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     // normal inst cache access
     if (request && request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
+            // read() is the main LSQ access: it may satisfy the load from
+            // SQ/SBuffer forwarding, send a DCache request, or leave replay
+            // state on the instruction/request for later stages to consume.
             Fault fault;
             fault = read(request, inst->lqIdx);
             // inst->getFault() may have the first-fault of a
@@ -1472,6 +1480,10 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     LSQRequest* request = currentLoadRequest(inst);
     bool earlyWakeupCacheMissReplay = false;
 
+    // S2 is the load pipe's replay-selection point.  It first checks whether
+    // an early-woken load actually has data, then folds cache, forwarding,
+    // nuke, and RAW/RAR tracking outcomes into one replay reason or the
+    // normal completion path below.
     if (inst->wakeUpEarly()) {
         auto& bus = getLsq()->bus;
         bool busFwdSuccess = bus.find(inst->seqNum) != bus.end();
@@ -1534,6 +1546,9 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         inst->markReplayFlag(LdStReplayType::RAWReplay);
     }
 
+    // More than one condition can request replay in the same S2 pass.  Keep
+    // the priority centralized in DynInst::finalizeReplayTypeFromFlags() so
+    // the handoff code below only sees the selected replay owner.
     if (inst->finalizeReplayTypeFromFlags()) {
         switch (*inst->getReplayType()) {
           case LdStReplayType::CacheMissReplay:
@@ -1571,6 +1586,9 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
+    // A load that completed before older loads/stores became continuous must
+    // be tracked for later ordering/conflict checks.  If the tracking queues
+    // were full, the replay path above already removed this load from pipe.
     if (trackRAR) {
         auto existingIt = std::find(RARQueue.begin(), RARQueue.end(), inst);
         if (existingIt == RARQueue.end()) {
@@ -1588,6 +1606,9 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     // No nuke happens, prepare the inst data
     // assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
     request = currentLoadRequest(inst);
+    // Completion path after replay selection.  Full forwarding can write back
+    // immediately; otherwise a normal load assembles cache and forwarded data
+    // before completeDataAccess/writeback handling takes over.
     if (inst->fullForward()) {
         DPRINTF(LoadPipeline, "Load [sn:%llu] fullForward\n", inst->seqNum);
         assert(request);
@@ -1619,6 +1640,10 @@ LSQUnit::loadDoWriteback(const DynInstPtr &inst)
 void
 LSQUnit::executeLoadPipeSx()
 {
+    // This function is both the stage dispatcher and the pipe-exit arbiter.
+    // Stage handlers mark instruction/request state; the blocks after the
+    // switch decide whether the load leaves the pipe as squashed, replayed, or
+    // normally finished.
     Fault fault = NoFault;
     for (int i = 0; i < loadPipeSx.size(); i++) {
         auto& stage = loadPipeSx[i];
@@ -1631,6 +1656,8 @@ LSQUnit::executeLoadPipeSx()
                 inst->clearSkipRawCheck();
             }
             if (inst->isSquashed()) {
+                // Terminal path 1: squashed loads leave the pipe without
+                // running more stage work.
                 DPRINTF(LoadPipeline, "Instruction was squashed. PC: %s, [tid:%i]"
                     " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
                     inst->seqNum);
@@ -1640,6 +1667,9 @@ LSQUnit::executeLoadPipeSx()
                 continue;
             }
             if (!inst->replayOrSkipFollowingPipe()) {
+                // Normal path: run the current stage unless an earlier stage
+                // has already converted the load into a replay or a
+                // skip-rest-of-pipe completion.
                 switch (i) {
                     case 0:
                         fault = loadDoTranslate(inst);
@@ -1678,7 +1708,10 @@ LSQUnit::executeLoadPipeSx()
                 }
             }
 
-            // If inst was replyed, must clear inst in pipeline
+            // Terminal path 2: replay paths that are resolved before the
+            // common loadWhenToReplay point.  These either already inserted
+            // the load into a replay queue or must cancel the scheduler view
+            // immediately.
             if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay() ||
                 inst->needRAWReplay() || inst->needRARReplay()) {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
@@ -1712,6 +1745,9 @@ LSQUnit::executeLoadPipeSx()
             }
 
             if (i == loadWhenToReplay && inst->needReplay()) [[unlikely]] {
+                // Terminal path 3: common replay handoff.  Each replay type
+                // has a different owner: IQ retry, cache-miss replay, MDP
+                // address wait, TLB deferral, or nuke replay.
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
                 // record replay stats
                 assert(inst->getReplayType());
@@ -1764,6 +1800,8 @@ LSQUnit::executeLoadPipeSx()
             }
 
             if (i == loadPipeStages - 1 && !inst->needReplay()) {
+                // Terminal path 4: only a non-replayed load at the last pipe
+                // stage can finish the IEW side and become ready to commit.
                 if (inst->isExecuted() &&
                     (inst->isNormalLd() || !inst->readMemAccPredicate())) {
                     iewStage->readyToFinish(inst);
@@ -3306,6 +3344,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     DPRINTF(LoadPipeline, "request: size: %u, Addr: %#lx\n",
             request->mainReq()->getSize(), request->mainReq()->getVaddr());
 
+    // Bookkeeping-only vector alignment stats.  The real access decisions
+    // below still use the LSQRequest range/split information.
     Addr addr = request->mainReq()->getVaddr();
     Addr size = request->mainReq()->getSize();
     bool cross16Byte = (addr % 16) + size > 16;
@@ -3369,6 +3409,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             request->mainReq()->getPaddr(), request->isSplit() ? " split" :
             "");
 
+    // Replay-based MDP gates a load before any forwarding/cache access when
+    // the predictor says it must wait for older store addresses.  A replay
+    // here means "try this load again after the named store address condition
+    // becomes true", not that a real address overlap has been found.
     if (lsq->enableReplayBasedMDP() && request->isNormalLd() &&
         (load_inst->mdpPredStrictWait || !load_inst->mdpProducingStores.empty()) &&
         !request->mainReq()->isLLSC()) {
@@ -3423,6 +3467,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         squashMark = false;
     }
 
+    // LLSC and local accesses are ISA/device special paths.  They do not use
+    // the normal SQ-forwarding -> SBuffer-forwarding -> DCache-send flow.
     if (request->mainReq()->isLLSC()) {
         // Disable recording the result temporarily.  Writing to misc
         // regs normally updates the result, but this is not the
@@ -3452,6 +3498,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         return NoFault;
     }
 
+    // A retry can revisit read() with an LSQRequest that already made cache
+    // progress.  Only clear forwarding/snapshot state for a fresh access, so
+    // partially sent split requests keep their in-flight packet accounting.
     if (request && !request->hasCachePacketProgress()) {
         request->SBforwardPackets.clear();
         request->SQforwardPackets.clear();
@@ -3461,7 +3510,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    // Check the SQ for any previous stores that might lead to forwarding
+    // Check older, not-yet-written stores for store-to-load forwarding.
+    //
+    // Outcomes:
+    // - full coverage: record forwarding bytes and mark the load fullForward;
+    //   S2 will complete/write back using those bytes.
+    // - partial coverage: the load cannot safely complete yet, so reschedule
+    //   it and remember the oldest stalled load.
+    // - data not ready on an overlapping store: request an STLF replay.
     auto store_it = load_inst->sqIt;
     if (storeWBIt.dereferenceable()) {
         panic_if(store_it < storeWBIt,
@@ -3499,6 +3555,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             // Check if store is split (has multiple sub-requests)
             bool store_is_split = store_it->request() && store_it->request()->isSplit();
 
+            // Split vector/scattered requests turn forwarding into a fragment
+            // matrix.  Each check below compares one load fragment against one
+            // store fragment; any overlap upgrades the whole SQ entry to at
+            // least partial coverage.
             if (request->isSplit()) {
                 // Case 1: Load is split + Store may be split
                 // Check each load sub-request against store (or store sub-requests)
@@ -3587,6 +3647,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             }
 
             if (coverage == AddrRangeCoverage::FullAddrRangeCoverage) {
+                // The older store fully covers the load bytes.  Keep the
+                // forwarded byte list on the request; loadDoRecvData() will
+                // turn this into the final writeback packet.
                 // Get shift amount for offset into the store's data.
                 int shift_amt = request->mainReq()->getPaddr() -
                     store_it->instruction()->physEffAddr;
@@ -3633,6 +3696,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 return NoFault;
             } else if (
                     coverage == AddrRangeCoverage::PartialAddrRangeCoverage) {
+                // Some bytes are covered by the older store and the rest must
+                // come from memory.  This model handles that by replaying the
+                // load later rather than mixing a partial store forward with a
+                // new cache request in the same attempt.
                 // If it's already been written back, then don't worry about
                 // stalling on it.
                 if (store_it->completed()) {
@@ -3672,7 +3739,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    // sbuffer forward
+    // If no live SQ entry can satisfy the load, try the SBuffer path.  This is
+    // a committed-store forwarding/bypass path, so it is only used for
+    // non-split, non-prefetch loads.
     if (!load_inst->isDataPrefetch() && !request->isSplit()) {
         Addr blk_addr = request->mainReq()->getPaddr() & cacheBlockMask;
         auto entry = lsq->findForwardingStoreBufferEntry(
@@ -3705,6 +3774,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
+    // Normal memory path after all local forwarding choices failed.  From this
+    // point the load either uses an already-returned data-bus response, waits
+    // for a pending cache response, or sends a new cache request.
     // Allocate memory if this is the first time a load is issued.
     if (!load_inst->memData) {
         load_inst->memData = new uint8_t[request->mainReq()->getSize()];
@@ -3728,6 +3800,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     auto& bus = getLsq()->bus;
     bool busFwdSuccess = bus.find(load_inst->seqNum) != bus.end();
     if (request->_inst->hasPendingCacheReq()) {
+        // A previous send has not produced a TimingResp yet.  Keep the load in
+        // pipe and let S2 decide whether the response arrived in time or
+        // whether this attempt should replay as a cache miss.
         // Load has been waken up too early, TimingResp is not present now
         // try waiting TimingResp and forward bus again at load s2
         assert(request->isLoad());
@@ -3743,6 +3818,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // this load can forward data from bus
         forwardFromBus(load_inst, request);
     } else {
+        // Last resort: build packets and arbitrate for the cache path.  Failure
+        // may already have installed a precise replay reason; otherwise the
+        // generic cache-blocked replay path owns the retry.
         DPRINTF(LoadPipeline, "Load [sn:%llu] sendPacketToCache\n", load_inst->seqNum);
         // if cannot forward from bus, do real cache access
         bool should_capture_golden =

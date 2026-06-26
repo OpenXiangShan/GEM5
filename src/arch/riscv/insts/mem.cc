@@ -69,6 +69,9 @@ StoreData::execute(ExecContext *xc, Trace::InstRecord *) const
     auto data = inst->getRegOperand(inst->staticInst.get(), 0);
 
     if (inst->sqIt->instruction()->getFault() == NoFault) {
+        // STD does not compute the address or initiate memory access.  It only
+        // supplies the data half of the shared SQ entry; STA owns address,
+        // translation, and request state.
         // if instruction has already faulted, then skip executing std
         if (inst->sqIt->instruction()->memData)
             memcpy(inst->sqIt->instruction()->memData, &data, memsize);
