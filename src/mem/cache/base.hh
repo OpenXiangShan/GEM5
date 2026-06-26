@@ -891,7 +891,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @return False if any of the evicted blocks is in transient state.
      */
     bool handleEvictions(std::vector<CacheBlk*> &evict_blks,
-        PacketList &writebacks);
+        PacketList &writebacks, bool *evicted_dirty = nullptr);
 
     /**
      * Handle a fill operation caused by a received packet.
@@ -912,7 +912,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @return Pointer to the new cache block.
      */
     CacheBlk *handleFill(PacketPtr pkt, CacheBlk *blk,
-                         PacketList &writebacks, bool allocate);
+                         PacketList &writebacks, bool allocate,
+                         bool *refill_need_data_read = nullptr);
 
     /**
      * Allocate a new block and perform any necessary writebacks
@@ -926,7 +927,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param writebacks A list of writeback packets for the evicted blocks
      * @return the allocated block
      */
-    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks);
+    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks,
+                            bool *evicted_dirty = nullptr);
     /**
      * Evict a cache block.
      *
@@ -945,7 +947,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param blk Block to invalidate
      * @param writebacks Return a list of packets with writebacks
      */
-    void evictBlock(CacheBlk *blk, PacketList &writebacks);
+    void evictBlock(CacheBlk *blk, PacketList &writebacks,
+                    bool *evicted_dirty = nullptr);
 
     /**
      * Invalidate a cache block.
