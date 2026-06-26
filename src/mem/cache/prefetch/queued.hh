@@ -38,6 +38,7 @@
 #ifndef __MEM_CACHE_PREFETCH_QUEUED_HH__
 #define __MEM_CACHE_PREFETCH_QUEUED_HH__
 
+#include <array>
 #include <cstdint>
 #include <list>
 #include <utility>
@@ -62,6 +63,12 @@ using PFTriggerInfo = Base::PFtriggerInfo;
 class Queued : public Base
 {
   public:
+    enum class PFQIngress : uint8_t
+    {
+        LocalCandidate,
+        UpstreamHint,
+    };
+
     struct PrefetchCmd
     {
         Addr addr;
@@ -108,6 +115,7 @@ class Queued : public Base
         int32_t priority;
         bool pfahead;
         int pfahead_host;
+        PFQIngress ingress;
         /** Request used when a translation is needed */
         RequestPtr translationRequest;
         ThreadContext *tc;
@@ -123,7 +131,8 @@ class Queued : public Base
          */
         DeferredPacket(Queued *o, PrefetchInfo const &pfi, Tick t,
             int32_t prio) : owner(o), pfInfo(pfi), tick(t), pkt(nullptr),
-            priority(prio), translationRequest(), tc(nullptr),
+            priority(prio), pfahead(false), pfahead_host(0),
+            ingress(PFQIngress::LocalCandidate), translationRequest(), tc(nullptr),
             ongoingTranslation(false) {
         }
 
@@ -213,6 +222,94 @@ class Queued : public Base
     /** Percentage of requests that can be throttled */
     const unsigned int throttleControlPct;
 
+    /** Enable per-source dynamic prefetch admission. */
+    const bool sourceAdmissionEnabled;
+
+    /** Number of source-admission events per adaptation epoch. */
+    const uint32_t sourceAdmissionEpoch;
+
+    /** Initial admission level, in the range [0, 4]. */
+    const uint8_t sourceAdmissionInitLevel;
+
+    /** Lowest level retained for phase-change probing. */
+    const uint8_t sourceAdmissionMinProbeLevel;
+
+    /** Level required to admit requests under high PFQ pressure. */
+    const uint8_t sourceAdmissionHighConfLevel;
+
+    /** Integer hysteresis for level updates. */
+    const uint32_t sourceAdmissionHysteresis;
+
+    /** PFQ occupancy percentage that marks high pressure. */
+    const uint32_t sourceAdmissionPressurePfqPct;
+
+    /** Number of zero-level epochs before forcing rescue probing. */
+    const uint32_t sourceAdmissionRescueInterval;
+
+    /** Temporary level used while a zero-level source is under rescue probing. */
+    const uint8_t sourceAdmissionRescueLevel;
+
+    /** Weight applied to unused prefetches in the admission bad score. */
+    const uint32_t sourceAdmissionUnusedWeight;
+
+    /** Weight applied to PFQ-full drops in the admission bad score. */
+    const uint32_t sourceAdmissionDropFullWeight;
+
+    /** Minimum issued samples needed before a source can be demoted. */
+    const uint32_t sourceAdmissionMinIssued;
+
+    /** Minimum useful samples that can make a small positive window actionable. */
+    const uint32_t sourceAdmissionMinUseful;
+
+    /** Consecutive negative windows required before demoting a source. */
+    const uint32_t sourceAdmissionDownStreakThreshold;
+
+    /** Number of initial epochs where negative decisions are ignored. */
+    const uint32_t sourceAdmissionWarmupEpochs;
+
+    /** Window length for delayed-feedback sources such as CDP and DespacitoStream. */
+    const uint32_t sourceAdmissionDelayedWindowEpochs;
+
+    /** Whether locally generated candidates are controlled by source admission. */
+    const bool sourceAdmissionApplyToCandidates;
+
+    /** Whether upstream hints are controlled by source admission. */
+    const bool sourceAdmissionApplyToHints;
+
+    /** Whether pfahead candidates bypass local candidate admission. */
+    const bool sourceAdmissionSkipPfaheadCandidates;
+
+    /** Minimum effective level used for upstream hints. */
+    const uint8_t sourceAdmissionHintMinLevel;
+
+    /** Whether upstream hints bypass the high-pressure raw-level gate. */
+    const bool sourceAdmissionHintIgnorePressureGate;
+
+    /** Whether requests are controlled when entering the local PFQ. */
+    const bool sourceAdmissionApplyToPFQ;
+
+    struct SourceAdmissionState
+    {
+        std::array<uint8_t, NUM_PF_SOURCES> level{};
+        std::array<uint8_t, NUM_PF_SOURCES> sampleCtr{};
+        std::array<uint8_t, NUM_PF_SOURCES> negativeStreak{};
+        std::array<uint32_t, NUM_PF_SOURCES> zeroEpochs{};
+        std::array<uint32_t, NUM_PF_SOURCES> windowEpochs{};
+        std::array<bool, NUM_PF_SOURCES> rescueActive{};
+        std::array<uint64_t, NUM_PF_SOURCES> lastIssued{};
+        std::array<uint64_t, NUM_PF_SOURCES> lastUseful{};
+        std::array<uint64_t, NUM_PF_SOURCES> lastUnused{};
+        std::array<uint64_t, NUM_PF_SOURCES> lastLate{};
+        std::array<uint64_t, NUM_PF_SOURCES> lastDropFull{};
+        std::array<uint64_t, NUM_PF_SOURCES> windowIssued{};
+        std::array<uint64_t, NUM_PF_SOURCES> windowUseful{};
+        std::array<uint64_t, NUM_PF_SOURCES> windowUnused{};
+        std::array<uint64_t, NUM_PF_SOURCES> windowLate{};
+        std::array<uint64_t, NUM_PF_SOURCES> windowDropFull{};
+        uint32_t epochEvents = 0;
+        uint64_t epochCount = 0;
+    } sourceAdmission;
+
     EventFunctionWrapper tlbReqEvent;
 
     struct QueuedStats : public statistics::Group
@@ -227,6 +324,19 @@ class Queued : public Base
         statistics::Scalar pfSpanPage;
         statistics::Scalar pfUsefulSpanPage;
         statistics::Vector pfRemovedFull_srcs;
+        statistics::Vector pfSourceAdmissionRejected;
+        statistics::Vector pfSourceAdmissionAccepted;
+        statistics::Vector pfSourceAdmissionEpochUpdates;
+        statistics::Vector pfSourceAdmissionLevel;
+        statistics::Vector pfSourceAdmissionRescueEpochs;
+        statistics::Vector pfSourceAdmissionNegativeStreak;
+        statistics::Vector pfSourceAdmissionHintRejected;
+        statistics::Vector pfSourceAdmissionHintAccepted;
+        statistics::Vector pfSourceAdmissionPfaheadCandidateBypassed;
+        statistics::Vector pfSourceAdmissionPFQLocalRejected;
+        statistics::Vector pfSourceAdmissionPFQLocalAccepted;
+        statistics::Vector pfSourceAdmissionPFQHintRejected;
+        statistics::Vector pfSourceAdmissionPFQHintAccepted;
     } statsQueued;
 
   public:
@@ -307,6 +417,33 @@ class Queued : public Base
 
     unsigned offloadBandwidth{1};
 
+    bool sourceAdmissionAllow(PrefetchSourceType src);
+    bool sourceAdmissionAllowWithStats(PrefetchSourceType src,
+                                       statistics::Vector &accepted,
+                                       statistics::Vector &rejected);
+    bool sourceAdmissionAllowWithPolicy(PrefetchSourceType src,
+                                        statistics::Vector &accepted,
+                                        statistics::Vector &rejected,
+                                        uint8_t min_level,
+                                        bool ignore_pressure_gate);
+    bool sourceAdmissionAllowCandidate(const AddrPriority &addr_prio);
+    bool sourceAdmissionAllowHint(PrefetchSourceType src);
+    bool sourceAdmissionAllowPFQ(const DeferredPacket &dpp);
+    bool sourceAdmissionSourceReady(PrefetchSourceType src) const;
+    void sourceAdmissionAccountEvent();
+    void sourceAdmissionAccountQueueFull(PrefetchSourceType src);
+    void sourceAdmissionUpdateEpoch();
+    bool sourceAdmissionHighPressure() const;
+    uint8_t sourceAdmissionGlobalCap() const;
+    bool sourceAdmissionRescueActive(PrefetchSourceType src) const;
+    bool sourceAdmissionUsesDelayedWindow(PrefetchSourceType src) const;
+    uint8_t sourceAdmissionEffectiveLevel(PrefetchSourceType src) const;
+    void sourceAdmissionSetLevel(PrefetchSourceType src, uint8_t level);
+    void sourceAdmissionUpdateRescueState(PrefetchSourceType src,
+                                          uint8_t level,
+                                          bool decision_made);
+    void sourceAdmissionResetWindow(int src);
+
   public:
     void rxHint(BaseMMU::Translation *dpp) override {
         panic("QueuedPrefetcher: rxHint not implemented");
@@ -314,6 +451,8 @@ class Queued : public Base
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
     }
     void offloadToDownStream() override;
+
+    bool sourceAdmissionCanIssue(PrefetchSourceType src) const;
   protected:
     const bool usePFBuffer{false};
     std::list<AddrPriority> PFRequestBuffer;

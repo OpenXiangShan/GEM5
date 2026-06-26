@@ -311,6 +311,90 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="""
                         Force all hardware prefetchers to disable their
                         optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""")
+    parser.add_argument("--enable-source-pf-admission", action="store_true", default=False,
+                        help="""
+                        Enable dynamic per-source admission for queued hardware
+                        prefetchers.""")
+    parser.add_argument("--enable-pfahead-source-pf-admission", action="store_true", default=False,
+                        help="""
+                        Enable dynamic per-source admission for upstream
+                        pfahead/hint requests received by queued hardware
+                        prefetchers.""")
+    parser.add_argument("--enable-unified-pfq-source-pf-admission", action="store_true", default=False,
+                        help="""
+                        Enable dynamic per-source admission at the local PFQ
+                        insertion point for L2/L3 queued hardware prefetchers.
+                        This unifies local candidates and upstream pfahead/hints
+                        after they reach the downstream cache level.""")
+    parser.add_argument("--enable-l1d-source-pf-admission", action="store_true", default=False,
+                        help="""
+                        Enable dynamic per-source admission for L1D local
+                        prefetch candidates. Pfahead candidates bypass this
+                        local admission path by default.""")
+    parser.add_argument("--source-pf-admission-epoch", action="store", default=4096, type=int,
+                        help="""
+                        Number of source-admission events per dynamic prefetch
+                        admission update epoch.""")
+    parser.add_argument("--source-pf-admission-init-level", action="store", default=2, type=int,
+                        help="""
+                        Initial dynamic source admission level. Valid range is
+                        0..4, where 2 means 50%% admission.""")
+    parser.add_argument("--source-pf-admission-min-probe-level", action="store", default=0, type=int,
+                        help="""
+                        Minimum dynamic source admission level retained for
+                        phase-change probing.""")
+    parser.add_argument("--source-pf-admission-high-conf-level", action="store", default=3, type=int,
+                        help="""
+                        Minimum source admission level allowed under high PFQ
+                        pressure.""")
+    parser.add_argument("--source-pf-admission-hysteresis", action="store", default=8, type=int,
+                        help="Integer hysteresis for dynamic source admission.")
+    parser.add_argument("--source-pf-admission-pressure-pfq-pct", action="store", default=75, type=int,
+                        help="PFQ occupancy percentage treated as source admission pressure.")
+    parser.add_argument("--source-pf-admission-rescue-interval", action="store", default=8, type=int,
+                        help="""
+                        Number of zero-level source admission epochs before a
+                        source receives one rescue probing window. 0 disables
+                        rescue probing.""")
+    parser.add_argument("--source-pf-admission-rescue-level", action="store", default=1, type=int,
+                        help="""
+                        Temporary source admission level used during rescue
+                        probing. Valid range is 0..4.""")
+    parser.add_argument("--source-pf-admission-unused-weight", action="store", default=2, type=int,
+                        help="Bad-score weight for unused prefetches.")
+    parser.add_argument("--source-pf-admission-drop-full-weight", action="store", default=2, type=int,
+                        help="Bad-score weight for PFQ-full drops.")
+    parser.add_argument("--source-pf-admission-min-issued", action="store", default=64, type=int,
+                        help="""
+                        Minimum issued samples needed before a source can be
+                        demoted.""")
+    parser.add_argument("--source-pf-admission-min-useful", action="store", default=8, type=int,
+                        help="""
+                        Minimum useful samples that can make a small positive
+                        source-admission window actionable.""")
+    parser.add_argument("--source-pf-admission-down-streak-threshold", action="store", default=2, type=int,
+                        help="""
+                        Consecutive negative source-admission windows required
+                        before demoting a source.""")
+    parser.add_argument("--source-pf-admission-warmup-epochs", action="store", default=4, type=int,
+                        help="""
+                        Initial source-admission epochs where demotion is
+                        disabled.""")
+    parser.add_argument("--source-pf-admission-delayed-window-epochs", action="store", default=4, type=int,
+                        help="""
+                        Epochs accumulated for delayed-feedback sources such
+                        as CDP and DespacitoStream before level updates.""")
+    parser.add_argument("--source-pf-admission-hint-min-level", action="store", default=0, type=int,
+                        help="""
+                        Minimum effective admission level for upstream
+                        pfahead/hint requests. 0 preserves the shared source
+                        level exactly.""")
+    parser.add_argument("--source-pf-admission-hint-ignore-pressure-gate",
+                        action="store_true", default=False,
+                        help="""
+                        Let upstream pfahead/hint requests bypass the
+                        high-pressure raw-level source gate. Candidate
+                        admission is not affected.""")
 
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',
