@@ -1050,16 +1050,18 @@ class BTBTAGE(TimedBaseBTBPredictor):
     usePathHistory = Param.Bool(True, "Use PHR-based folded history; false selects GHR-based folded history")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(False, "Enable update on read, no need to save tage meta in FTQ")
-    numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([2048, 2048, 2048, 2048, 2048, 2048, 2048,2048],"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([13] * 8, "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 8, "when the T0~Tn entry's tag generating, PC right shift")
+    numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([2048] * 11, "the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([13] * 11, "the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 11, "when the T0~Tn entry's tag generating, PC right shift")
     blockSize = 32 # tage index function uses 32B aligned block address
 
-    histLengths = VectorParam.Unsigned([4, 9, 17, 29, 56, 109, 211,397],"the BTB TAGE T0~Tn history length")
-    maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
+    histLengths = VectorParam.Unsigned(
+        [4, 9, 17, 29, 56, 109, 211, 397, 695, 1444, 3000],
+        "the BTB TAGE T0~Tn history length")
+    maxHistLen = Param.Unsigned(3000, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
-    numWays = VectorParam.Unsigned([2] * 8,"the T0~Tn number of ways per set")
+    numWays = VectorParam.Unsigned([2] * 11, "the T0~Tn number of ways per set")
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
@@ -1200,7 +1202,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
                                       "SMT shared FTQ allocation policy")
     smtFTQThreshold = Param.Int(100, "SMT FTQ Threshold Sharing Parameter")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
-    maxHistLen = Param.Unsigned(970, "The length of history")
+    maxHistLen = Param.Unsigned(3000, "The length of history")
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")

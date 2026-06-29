@@ -31,8 +31,8 @@ class BTBTAGEUpperBound : public BTBTAGE
     using bitset = boost::dynamic_bitset<>;
 
   public:
-    static constexpr unsigned MaxSupportedHistBits = 512;
-    static constexpr unsigned MaxHistoryWords = MaxSupportedHistBits / 64;
+    static constexpr unsigned MaxSupportedHistBits = 3000;
+    static constexpr unsigned MaxHistoryWords = (MaxSupportedHistBits + 63) / 64;
     static constexpr unsigned PathHistoryShift = 2;
 
     enum class HistorySource
