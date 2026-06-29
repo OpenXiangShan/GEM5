@@ -170,11 +170,14 @@ class IssueQue : public SimObject
 
     std::queue<DynInstPtr> replayQ;  // only for mem
     std::queue<DynInstPtr> vectorReadyQ;
-    std::queue<Tick> vectorReadyQReleaseTicks;
     std::queue<bool> vectorReadyQReplay;
+    std::queue<DynInstPtr> vectorSplitQ;
+    std::queue<Tick> vectorSplitQReleaseTicks;
+    std::queue<bool> vectorSplitQReplay;
     std::queue<DynInstPtr> vectorDelayedReadyQ;
     std::queue<bool> vectorDelayedReadyQReplay;
     std::unordered_set<InstSeqNum> vectorReadyQSeqs;
+    std::unordered_set<InstSeqNum> vectorBlockingSplitSeqs;
     EventFunctionWrapper vectorReadyQEvent;
 
     CPU* cpu = nullptr;
@@ -205,7 +208,10 @@ class IssueQue : public SimObject
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
     bool isVectorMemInst(const DynInstPtr& inst) const;
+    bool isBlockingVectorSplitInst(const DynInstPtr& inst) const;
     void enqueueVectorMemDelay(const DynInstPtr& inst, bool replay);
+    void tryStartVectorMemSplit();
+    void scheduleVectorReadyQEvent();
     void releaseVectorDelayedReadyQ();
     void issueToFu();
     void wakeUpDependents(const DynInstPtr& inst, bool speculative);
