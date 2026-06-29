@@ -93,5 +93,6 @@ jobs:
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       vector_type: ${{ github.event.inputs.vector_type }}
       ddr_config: ${{ github.event.inputs.ddr_config }}
+      extra_args: ${{ github.event.inputs.extra_args }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
