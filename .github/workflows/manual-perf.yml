@@ -1,5 +1,5 @@
 name: Manual Performance Test
-run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5}', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name, github.event.inputs.vector_type) }}
+run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5} - {6}', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name, github.event.inputs.vector_type, github.event.inputs.ddr_config) }}
 
 on:
   workflow_dispatch:
@@ -49,6 +49,14 @@ on:
         options:
           - base
           - simple
+      ddr_config:
+        description: 'DRAMsim3 DDR config'
+        required: false
+        type: choice
+        default: '2ch'
+        options:
+          - 2ch
+          - 8ch
       branch:
         description: 'Branch, tag or SHA to test (leave empty for current branch)'
         required: false
@@ -59,7 +67,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       config_path: ${{ steps.resolve.outputs.config_path }}
-      extra_args: ${{ steps.resolve.outputs.extra_args }}
       pr_sha: ${{ steps.resolve.outputs.pr_sha }}
     steps:
       - name: Resolve parameters
@@ -67,10 +74,8 @@ jobs:
         run: |
           if [[ "${{ github.event.inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
             echo "config_path=configs/example/smt_idealkmhv3.py" >> $GITHUB_OUTPUT
-            echo "extra_args=" >> $GITHUB_OUTPUT
           else
             echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
-            echo "extra_args=" >> $GITHUB_OUTPUT
           fi
           
           if [ -n "${{ github.event.inputs.branch }}" ]; then
@@ -84,9 +89,9 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: ${{ needs.setup.outputs.config_path }}
-      extra_args: ${{ needs.setup.outputs.extra_args }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       vector_type: ${{ github.event.inputs.vector_type }}
+      ddr_config: ${{ github.event.inputs.ddr_config }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
