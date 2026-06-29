@@ -346,7 +346,7 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
             bool sign_used, uint8_t translateMode, bool is_prefetch)
 {
     TlbEntry *entry = trie.lookup(buildKey(vpn, asid, translateMode));
-    if (entry && entry->isCompressed) {
+    if (!hidden && entry && entry->isCompressed) {
         const uint8_t sub_idx = (vpn >> PageShift) & 0x7;
         if (!(entry->validIdx & (1 << sub_idx))) {
             TlbEntry *fallback_entry =
