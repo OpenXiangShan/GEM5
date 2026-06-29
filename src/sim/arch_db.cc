@@ -138,6 +138,27 @@ ArchDBer::l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf
 }
 
 void
+ArchDBer::cdpTraceWrite(Tick tick, int site, bool has_pc, Addr pc, Addr trigger_vaddr, Addr trigger_paddr,
+                        int scan_word_offset, Addr candidate, Addr pf_vaddr, int degree_idx, int pf_depth)
+{
+  bool dump_me = dumpGlobal && dumpLifetime;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO CDPTrace(Tick,Site,HasPC,PC,TriggerVAddr,TriggerPAddr,"
+          "ScanWordOffset,Candidate,PFVAddr,DegreeIdx,PFDepth) "
+          "VALUES(%lld,%d,%d,%lld,%lld,%lld,%d,%lld,%lld,%d,%d);",
+          sqliteSignedInt(tick), site, has_pc ? 1 : 0, sqliteSignedInt(pc),
+          sqliteSignedInt(trigger_vaddr), sqliteSignedInt(trigger_paddr),
+          scan_word_offset, sqliteSignedInt(candidate), sqliteSignedInt(pf_vaddr),
+          degree_idx, pf_depth);
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+void
 ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss)
 {
   bool dump_me = dumpGlobal && dumpBopTrainTrace;

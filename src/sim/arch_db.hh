@@ -100,6 +100,8 @@ class ArchDBer : public SimObject
                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src);
 
     void l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src);
+    void cdpTraceWrite(Tick tick, int site, bool has_pc, Addr pc, Addr trigger_vaddr, Addr trigger_paddr,
+                       int scan_word_offset, Addr candidate, Addr pf_vaddr, int degree_idx, int pf_depth);
 
     void bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);

@@ -200,7 +200,7 @@ CDP::notifyFill(const PacketPtr &pkt, std::vector<AddrPriority> &addresses)
 }
 
 void
-CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriority> &addresses)
+CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriority> &addresses, int trace_site)
 {
     cdpStats.dataNotifyCalled++;
     assert(pkt);
@@ -303,14 +303,14 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
                 }
                 vpnTable.update(vpn2, vpn1, enable_thro, isLowConfidence());
                 sendPFWithFilter(pkt, blockAddress(test_addr2), addresses, 29 + next_depth, PrefetchSourceType::CDP,
-                                 next_depth);
+                                 next_depth, trace_site, of, test_addr2, 0);
                 for (int i = 1; i < degree; i++) {
                     if (trueAccuracy > 0.05) {
                         Addr next_pf_addr = blockAddress(test_addr2) + (i * 0x40);
                         vpnTable.update(BITS(next_pf_addr, 38, 30), BITS(next_pf_addr, 29, 21),
                                         enable_thro, isLowConfidence());
                         sendPFWithFilter(pkt, next_pf_addr, addresses, 1, PrefetchSourceType::CDP,
-                                     next_depth);
+                                     next_depth, trace_site, of, test_addr2, i);
                     }
                 }
                 cdpStats.triggeredInRxNotify++;
@@ -337,7 +337,7 @@ CDP::pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &
     } else {
         enable_prf_filter[pf_source] = false;
     }
-    notifyWithData(pkt, true, addresses);
+    notifyWithData(pkt, true, addresses, 2);
     if (pkt->req->hasVaddr()) {
         addToVpnTable(pkt->req->getVaddr(), false);
     }
@@ -347,19 +347,36 @@ bool
 CDP::sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority> &addresses,
     int prio, PrefetchSourceType pfSource, int pf_depth)
 {
+    return sendPFWithFilter(pkt, addr, addresses, prio, pfSource, pf_depth, -1, -1, 0, -1);
+}
+
+bool
+CDP::sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority> &addresses,
+    int prio, PrefetchSourceType pfSource, int pf_depth, int trace_site, int scan_word_offset,
+    Addr candidate, int degree_idx)
+{
     //fake a PrefetchInfo, thus this reill pf will use Queued::PFSendEventWrapper to send out pf req
     PrefetchInfo pfi(pkt, pkt->req->getVaddr(), false);
     pfi.setTriggerInfo(pkt);
 
+    prefetchStats.pfGenerated++;
     InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
     if (pfLRUFilter->contains((addr))) {
         return false;
     } else {
         pfLRUFilter->insert((addr), 0);
-        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource);
+        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource, pfi.trigger_info);
         addr_prio.depth = pf_depth;
         addresses.push_back(addr_prio);
         cdpStats.passedFilter++;
+        cdpStats.inserted++;
+        if (archDBer && trace_site >= 0) {
+            bool has_pc = pkt->req->hasPC();
+            Addr trigger_paddr = pkt->req->hasPaddr() ? pkt->req->getPaddr() : pkt->getAddr();
+            archDBer->cdpTraceWrite(curTick(), trace_site, has_pc, has_pc ? pkt->req->getPC() : 0,
+                                    pkt->req->hasVaddr() ? pkt->req->getVaddr() : 0, trigger_paddr,
+                                    scan_word_offset, candidate, addr, degree_idx, pf_depth);
+        }
         return true;
     }
     return false;
@@ -369,15 +386,31 @@ bool
 CDP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
     int prio, PrefetchSourceType pfSource, int pf_depth)
 {
+    return sendPFWithFilter(pfi, addr, addresses, prio, pfSource, pf_depth, -1, -1, 0, -1);
+}
+
+bool
+CDP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
+    int prio, PrefetchSourceType pfSource, int pf_depth, int trace_site, int scan_word_offset,
+    Addr candidate, int degree_idx)
+{
+    prefetchStats.pfGenerated++;
     InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
     if (pfLRUFilter->contains((addr))) {
         return false;
     } else {
         pfLRUFilter->insert((addr), 0);
-        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource);
+        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource, pfi.trigger_info);
         addr_prio.depth = pf_depth;
         addresses.push_back(addr_prio);
         cdpStats.passedFilter++;
+        cdpStats.inserted++;
+        if (archDBer && trace_site >= 0) {
+            bool has_pc = pfi.hasPC();
+            archDBer->cdpTraceWrite(curTick(), trace_site, has_pc, has_pc ? pfi.getPC() : 0,
+                                    pfi.getAddr(), pfi.getPaddr(), scan_word_offset, candidate,
+                                    addr, degree_idx, pf_depth);
+        }
         return true;
     }
     return false;

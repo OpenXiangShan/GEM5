@@ -416,8 +416,14 @@ class CDP : public Queued
     }
     bool sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority> &addresses,
         int prio, PrefetchSourceType pfSource, int pf_depth);
+    bool sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority> &addresses,
+        int prio, PrefetchSourceType pfSource, int pf_depth, int trace_site, int scan_word_offset,
+        Addr candidate, int degree_idx);
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
         int prio, PrefetchSourceType pfSource, int pf_depth);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
+        int prio, PrefetchSourceType pfSource, int pf_depth, int trace_site, int scan_word_offset,
+        Addr candidate, int degree_idx);
 
     CDP(const CDPParams &p);
 
@@ -433,7 +439,8 @@ class CDP : public Queued
     using Queued::notifyFill;
     void notifyFill(const PacketPtr &pkt, std::vector<AddrPriority> &addresses);
 
-    void notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriority> &addresses);
+    void notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriority> &addresses,
+                        int trace_site = 1);
 
     using Queued::pfHitNotify;
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt,

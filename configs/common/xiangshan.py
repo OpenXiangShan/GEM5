@@ -796,6 +796,20 @@ CREATE TABLE LoadReplayTrace(
             "PFSrc INT NOT NULL," \
             "SITE TEXT);"
             ,
+            "CREATE TABLE CDPTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "Site INT NOT NULL," \
+            "HasPC BOOL NOT NULL," \
+            "PC INT NOT NULL," \
+            "TriggerVAddr INT NOT NULL," \
+            "TriggerPAddr INT NOT NULL," \
+            "ScanWordOffset INT NOT NULL," \
+            "Candidate INT NOT NULL," \
+            "PFVAddr INT NOT NULL," \
+            "DegreeIdx INT NOT NULL," \
+            "PFDepth INT NOT NULL);"
+            ,
             "CREATE TABLE BOPTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \
