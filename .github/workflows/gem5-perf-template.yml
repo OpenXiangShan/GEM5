@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         description: "Benchmark type: base, simple"
+      ddr_config:
+        required: false
+        type: string
+        description: "DRAMsim3 DDR config: 2ch or 8ch. Empty/default maps to 2ch."
+        default: "2ch"
       check_result:
         required: false
         type: boolean
@@ -223,6 +228,7 @@ jobs:
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
+          echo "ddr_config: ${{ inputs.ddr_config }}" >> "$TARGET_DIR/metadata.txt"
           echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
 
           {
@@ -257,12 +263,28 @@ jobs:
             export GCB_MULTI_CORE_RESTORER=""
           fi
 
+          extra_args="${{ inputs.extra_args }}"
+          case "${{ inputs.ddr_config }}" in
+            default|""|2ch)
+              extra_args="${extra_args} --dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+              ;;
+            8ch)
+              extra_args="${extra_args} --dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini"
+              ;;
+            *)
+              echo "Error: Invalid ddr_config '${{ inputs.ddr_config }}'. Must be one of: 2ch, 8ch"
+              exit 1
+              ;;
+          esac
+          extra_args="$(echo "$extra_args" | xargs)"
+          echo "Resolved extra gem5 args: $extra_args"
+
           bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
             ${{ steps.config.outputs.checkpoint_list }} \
             ${{ steps.config.outputs.checkpoint_root_node}} \
             spec_all \
             "${{ inputs.specific_benchmarks }}" \
-            "${{ inputs.extra_args }}"
+            "$extra_args"
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
