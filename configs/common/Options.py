@@ -223,6 +223,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         default=True,
                         help="start arch database from "
                         "the beginning of the simulation")
+    parser.add_argument("--arch-db-dump-lifetime",
+                        action="store_true",
+                        default=False,
+                        help="dump per-instruction lifetime trace for perfCCT")
     parser.add_argument("--enable-rolling",
                         default=False,
                         help="enable rolling perfcnt "
