@@ -34,6 +34,11 @@ on:
         required: false
         type: string
         description: "Specific commit SHA to checkout (takes precedence)"
+      timeout_minutes:
+        required: false
+        type: number
+        default: 360
+        description: "Job timeout in minutes"
 
 permissions:
   contents: read
@@ -41,6 +46,7 @@ permissions:
 jobs:
   run_performance_test:
     runs-on: [self-hosted, node]
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     continue-on-error: false
     name: XS-GEM5 - Run performance test (${{ inputs.benchmark_type }})
     steps:
