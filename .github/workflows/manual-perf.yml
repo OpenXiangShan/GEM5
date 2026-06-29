@@ -57,6 +57,12 @@ on:
         options:
           - 2ch
           - 8ch
+      extra_args:
+        description: 'Extra arguments for gem5'
+        required: false
+        type: string
+        default: ''
+        description: "Extra arguments for gem5 (e.g., --disable-mgsc). Only works with .py config files."
       branch:
         description: 'Branch, tag or SHA to test (leave empty for current branch)'
         required: false
