@@ -982,6 +982,7 @@ class MBTB(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::MBTB'
     cxx_header = 'cpu/pred/btb/mbtb.hh'
 
+    resolvedUpdate = True
     numEntries = Param.Unsigned(8192, "Number of entries in the MBTB")
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
@@ -1047,6 +1048,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGE'
     cxx_header = "cpu/pred/btb/btb_tage.hh"
 
+    resolvedUpdate = True
     usePathHistory = Param.Bool(True, "Use PHR-based folded history; false selects GHR-based folded history")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(False, "Enable update on read, no need to save tage meta in FTQ")
@@ -1108,6 +1110,7 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBITTAGE'
     cxx_header = "cpu/pred/btb/btb_ittage.hh"
 
+    resolvedUpdate = True
     numPredictors = Param.Unsigned(5, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")

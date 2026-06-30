@@ -102,19 +102,6 @@ def setKmhV3Params(args, system):
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=True)
 
-            cpu.branchPred.mbtb.resolvedUpdate = True
-            cpu.branchPred.tage.resolvedUpdate = True
-            cpu.branchPred.ittage.resolvedUpdate = True
-
-            cpu.branchPred.ubtb.enabled = True
-            cpu.branchPred.abtb.enabled = True
-            cpu.branchPred.microtage.enabled = True
-            cpu.branchPred.mbtb.enabled = True
-            cpu.branchPred.tage.enabled = True
-            cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.mgsc.enabled = True
-            cpu.branchPred.ras.enabled = True
-
             if getattr(args, 'standalone_sc', False):
                 cpu.branchPred.microtage.enabled = False
                 cpu.branchPred.tage.enabled = False
