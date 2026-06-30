@@ -92,3 +92,4 @@ jobs:
       extra_args: ${{ github.event.inputs.extra_args }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
+      timeout_minutes: 720
