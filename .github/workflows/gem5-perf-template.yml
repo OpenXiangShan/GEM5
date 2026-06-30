@@ -78,7 +78,7 @@ jobs:
             "gcc12-spec06-smt-0.3c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci-total-ipc" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc12-spec06-smt-0.3c" >> $GITHUB_OUTPUT
               echo "comment=run 30% coverage dual-context SMT spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
@@ -86,7 +86,7 @@ jobs:
             "gcc12-spec06-smt-1.0c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci-total-ipc" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc12-spec06-smt-1.0c" >> $GITHUB_OUTPUT
               echo "comment=run 100% coverage dual-context SMT spec06 checkpoints" >> $GITHUB_OUTPUT
@@ -285,30 +285,10 @@ jobs:
           export GEM5_HOME=$GITHUB_WORKSPACE
           cd $GITHUB_WORKSPACE/gem5_data_proc
           # 使用已有的数据spec_all生成测试报告
-          if [ "${{ steps.config.outputs.score_script }}" = "gem5-score-ci-total-ipc" ]; then
-            SCORE_CSV=results/gem5-score-total-ipc.csv
-            python3 "$GITHUB_WORKSPACE/util/xs_scripts/extract_total_ipc_score_csv.py" \
-              "$PERF_ARCHIVE_DIR/spec_all" \
-              "$SCORE_CSV"
-            DATA_ROWS=$(tail -n +2 "$SCORE_CSV" | wc -l)
-            if [ "$DATA_ROWS" -gt 0 ]; then
-              python3 simpoint_cpt/compute_weighted.py \
-                -r "$SCORE_CSV" \
-                -j ${{ steps.config.outputs.cluster_config }} \
-                --score results/gem5-score-total-ipc-score.csv \
-                > $GITHUB_WORKSPACE/score.txt
-            else
-              {
-                echo "No usable system.cpu.totalIpc rows were found."
-                echo "Check abort files and workload logs under $PERF_ARCHIVE_DIR/spec_all."
-              } > $GITHUB_WORKSPACE/score.txt
-            fi
-          else
-            bash example-scripts/${{ steps.config.outputs.score_script }} \
-              "$PERF_ARCHIVE_DIR/spec_all" \
-              ${{ steps.config.outputs.cluster_config }} \
-              > $GITHUB_WORKSPACE/score.txt
-          fi
+          bash example-scripts/${{ steps.config.outputs.score_script }} \
+            "$PERF_ARCHIVE_DIR/spec_all" \
+            ${{ steps.config.outputs.cluster_config }} \
+            > $GITHUB_WORKSPACE/score.txt
           cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
           # 提取最后42行score信息
           echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
