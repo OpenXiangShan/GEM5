@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_FETCH_HH__
 #define __CPU_O3_FETCH_HH__
 
+#include <array>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -546,6 +547,7 @@ class Fetch
      * @return true if frontend is ready for fetch, false otherwise
      */
     bool checkDecoupledFrontend(ThreadID tid);
+    ThreadID getEligibleFetchTargetTid();
 
     /** Prepare fetch address and handle status transitions.
      * @param tid Thread ID
@@ -643,6 +645,11 @@ class Fetch
 
     /** Can the fetch stage redirect from an interrupt on this instruction? */
     bool delayedCommit[MaxThreads];
+
+    /** Threads with a backend redirect detected before the formal squash arrives. */
+    bool redirectPending[MaxThreads];
+    unsigned redirectPendingCycles[MaxThreads];
+    unsigned redirectPendingHoldCycles;
 
     /** Variable that tracks if fetch has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
@@ -1126,6 +1133,10 @@ class Fetch
         statistics::Distribution resolveEnqueueCount;
         /** Stat for entry occupancy distribution of the resolve queue. */
         statistics::Distribution resolveQueueOccupancy;
+        /** Times fetch skipped an FTQ head because IEW reported a pending redirect. */
+        statistics::Scalar redirectPendingFetchSkips;
+        /** Cycles where only redirect-pending FTQ heads were available to fetch. */
+        statistics::Scalar redirectPendingOnlyFetchCycles;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

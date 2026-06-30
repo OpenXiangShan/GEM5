@@ -142,6 +142,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool validprediction{false};
         bool squashing{false};
         bool blockPredictionPending{false};
+        bool redirectPending{false};
     } threads[MaxThreads];
 
     std::vector<HistoryManager> historyManagers;
@@ -156,6 +157,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
     bool ftqFull(ThreadID tid) const;
 
+    bool isThreadActive(ThreadID tid) const;
+    bool canStartPrediction(ThreadID tid) const;
     ThreadID scheduleThread();
 
     void processNewPrediction(ThreadID tid);
@@ -307,6 +310,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
+        statistics::Scalar scheduleIneligibleThreadSkips;
+        statistics::Scalar scheduleNoEligibleThread;
+        statistics::Scalar redirectPendingPredictionSkips;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -415,6 +421,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    int getTargetTid(const std::array<bool, MaxThreads> &eligible,
+                     unsigned *ineligibleSkips)
+    {
+        return ftq.getTargetTid(eligible, ineligibleSkips);
+    }
 
     void dumpFsq(const char *when);
 
@@ -728,6 +739,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void notifyResolveSuccess(ThreadID tid);
     void notifyResolveFailure(ThreadID tid);
     void blockPredictionOnce(ThreadID tid);
+    void setRedirectPending(ThreadID tid, bool pending);
 
     /**
      * @brief Types of control flow instructions for misprediction tracking

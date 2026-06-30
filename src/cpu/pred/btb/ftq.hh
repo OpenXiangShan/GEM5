@@ -1,6 +1,8 @@
 #ifndef __CPU_PRED_BTB_FTQ_HH__
 #define __CPU_PRED_BTB_FTQ_HH__
 
+#include <array>
+
 #include "base/types.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
@@ -76,6 +78,8 @@ public:
     inline uint32_t size(ThreadID tid) const { return queue[tid].cap.size(); }
 
     int getTargetTid();
+    int getTargetTid(const std::array<bool, MaxThreads> &eligible,
+                     unsigned *ineligibleSkips);
     void insert(FetchTarget& target);
     void finishTarget(ThreadID tid);
     void commitTarget(ThreadID tid);

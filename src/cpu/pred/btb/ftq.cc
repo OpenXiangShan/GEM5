@@ -14,9 +14,24 @@ namespace btb_pred
 int
 FetchTargetQueue::getTargetTid()
 {
+    std::array<bool, MaxThreads> eligible{};
+    eligible.fill(true);
+    return getTargetTid(eligible, nullptr);
+}
+
+int
+FetchTargetQueue::getTargetTid(const std::array<bool, MaxThreads> &eligible,
+                               unsigned *ineligibleSkips)
+{
     for (int i = roundRobinPtr; i < numThreads + roundRobinPtr; ++i) {
         ThreadID tid = i % numThreads;
         if (!queue[tid].cap.empty() && hasTarget(fetchId(tid), tid)) {
+            if (!eligible[tid]) {
+                if (ineligibleSkips) {
+                    ++(*ineligibleSkips);
+                }
+                continue;
+            }
             roundRobinPtr = (tid + 1) % numThreads;
             FetchTarget& target = get(queue[tid].fetchptr, tid);
             return target.tid;
