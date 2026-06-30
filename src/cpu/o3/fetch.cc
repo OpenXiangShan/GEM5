@@ -95,6 +95,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
       commitToFetchDelay(params.commitToFetchDelay),
+      redirectToFetchDelay(params.redirectToFetchDelay),
       fetchWidth(params.fetchWidth),
       decodeWidth(params.decodeWidth),
       retryPkt(),
@@ -399,6 +400,7 @@ Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
     fromRename = timeBuffer->getWire(-renameToFetchDelay);
     fromIEW = timeBuffer->getWire(-iewToFetchDelay);
     fromCommit = timeBuffer->getWire(-commitToFetchDelay);
+    fromCommitRedirect = timeBuffer->getWire(-redirectToFetchDelay);
 }
 
 void
@@ -1576,7 +1578,8 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
     // For N-wide machine, if frontend supplies 0 instructions:
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
-    if (!stallSig->blockFetch[tid] && !fromCommit->commitInfo[tid].robSquashing) {
+    if (!stallSig->blockFetch[tid] &&
+        !fromCommitRedirect->commitInfo[tid].robSquashing) {
         // backend not stalled
         int unused_slots = decodeWidth - insts_to_decode;
         if (unused_slots > 0) {
@@ -1711,65 +1714,71 @@ Fetch::handleIEWSignals()
 bool
 Fetch::handleCommitSignals(ThreadID tid)
 {
-    // Check squash signals from commit.
-    if (!fromCommit->commitInfo[tid].squash) {
-        if (fromCommit->commitInfo[tid].doneFtqId) {
-            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n", fromCommit->commitInfo[tid].doneFtqId);
-            assert(dbpbtb);
-            dbpbtb->commit(fromCommit->commitInfo[tid].doneFtqId, tid);
-        }
+    const auto &commit_info = fromCommit->commitInfo[tid];
+
+    if (!commit_info.squash && commit_info.doneFtqId) {
+        DPRINTF(DecoupleBP, "Commit stream Id: %lu\n",
+                commit_info.doneFtqId);
+        assert(dbpbtb);
+        dbpbtb->commit(commit_info.doneFtqId, tid);
+    }
+
+    const auto &redirect_info = fromCommitRedirect->commitInfo[tid];
+
+    if (!redirect_info.squash) {
         return false;
     }
 
-    // Check squash signals from commit.
+    // Check backend redirect/squash signals.
     DPRINTF(Fetch,
             "[tid:%i] Squashing instructions due to squash "
-            "from commit.\n",
+            "from backend redirect.\n",
             tid);
 
-        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
-        DynInstPtr squash_inst = fromCommit->commitInfo[tid].squashInst;
-        if (fromCommit->commitInfo[tid].isTrapSquash &&
-            fromCommit->commitInfo[tid].traceTrapSkipInst) {
-            squash_seq = fromCommit->commitInfo[tid].traceTrapSeqNum;
-            squash_inst = nullptr;
-            DPRINTF(Fetch,
-                    "[tid:%i] Trap squash with trace ctrl-flow fault: rollback seq=%llu (skip head)\n",
-                    tid, static_cast<unsigned long long>(squash_seq));
-        }
+    InstSeqNum squash_seq = redirect_info.doneSeqNum;
+    DynInstPtr squash_inst = redirect_info.squashInst;
+    if (redirect_info.isTrapSquash &&
+        redirect_info.traceTrapSkipInst) {
+        squash_seq = redirect_info.traceTrapSeqNum;
+        squash_inst = nullptr;
+        DPRINTF(Fetch,
+                "[tid:%i] Trap squash with trace ctrl-flow fault: rollback seq=%llu (skip head)\n",
+                tid, static_cast<unsigned long long>(squash_seq));
+    }
 
     // In any case, squash.
-    squash(*fromCommit->commitInfo[tid].pc, squash_seq,
+    squash(*redirect_info.pc, squash_seq,
            squash_inst, tid);
 
     localSquashVer[tid].update(
-        fromCommit->commitInfo[tid].squashVersion.getVersion());
+        redirect_info.squashVersion.getVersion());
     DPRINTF(Fetch, "Updating squash version to %u\n",
             localSquashVer[tid].getVersion());
 
-    auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+    auto mispred_inst = redirect_info.mispredictInst;
 
     if (mispred_inst) {
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
-        const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
+        const auto corr_pc = redirect_info.pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
                               corr_pc, mispred_inst->staticInst,
-                              mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
+                              mispred_inst->getInstBytes(), redirect_info.branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
-    } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+    } else if (redirect_info.isTrapSquash) {
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
-        const auto trap_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
+        const auto trap_pc = redirect_info.pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
-        dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId, fromCommit->commitInfo[tid].committedPC,
-                           trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+        dbpbtb->trapSquash(redirect_info.squashedTargetId,
+                           redirect_info.committedPC, trap_pc, tid,
+                           redirect_info.squashedLoopIter);
     } else {
-        if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedTargetId != 0) {
+        if (redirect_info.pc && redirect_info.squashedTargetId != 0) {
             DPRINTF(Fetch, "Squash with stream id and target id from IEW\n");
-            const auto nc_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
+            const auto nc_pc = redirect_info.pc->as<RiscvISA::PCState>();
             assert(dbpbtb);
-            dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId, nc_pc,
-                                     0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+            dbpbtb->nonControlSquash(redirect_info.squashedTargetId, nc_pc,
+                                     0, tid, redirect_info.squashedLoopIter);
         } else {
             DPRINTF(Fetch, "Dont squash dbq because no meaningful stream\n");
         }
