@@ -836,7 +836,8 @@ BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
  */
 void
 BTBTAGE::update(const FetchTarget &stream) {
-    Addr startAddr = stream.getRealStartPC();
+    const auto update_ctx = stream.makeDirectionUpdateContext();
+    Addr startAddr = update_ctx.startPC;
     unsigned updateBank = getBankId(startAddr);
 
     DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
@@ -855,7 +856,6 @@ BTBTAGE::update(const FetchTarget &stream) {
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
-    const auto update_ctx = stream.makeDirectionUpdateContext();
     for (const auto &update_entry : entries_to_update) {
         const auto &btb_entry = update_entry.entry;
         const bool actual_taken = update_entry.actualTaken;
@@ -890,7 +890,8 @@ BTBTAGE::update(const FetchTarget &stream) {
         if (updateOnRead || !has_original_pred) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                 stream.tid, stream.asidHash);
+                                                 update_ctx.tid,
+                                                 update_ctx.asidHash);
             // Track differences for statistics
             auto it = predMeta->preds.find(btb_entry.pc);
             if (has_original_pred && it != predMeta->preds.end() && recomputed.taken != original_pred.taken) {
@@ -918,7 +919,8 @@ BTBTAGE::update(const FetchTarget &stream) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
             handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                     start_table, predMeta, stream.asidHash,
+                                     start_table, predMeta,
+                                     update_ctx.asidHash,
                                      allocInfo);
         }
 

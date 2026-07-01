@@ -943,7 +943,8 @@ BTBMGSC::update(const FetchTarget &stream)
     if (!isEnabled()) {
         return;  // No update if disabled
     }
-    Addr startAddr = stream.getRealStartPC();
+    const auto update_ctx = stream.makeDirectionUpdateContext();
+    Addr startAddr = update_ctx.startPC;
     DPRINTF(MGSC, "update startAddr: %#lx\n", startAddr);
 
     // Prepare BTB entries to update
@@ -954,7 +955,6 @@ BTBMGSC::update(const FetchTarget &stream)
     auto &preds = meta->preds;
 
     // Process each BTB entry
-    const auto update_ctx = stream.makeDirectionUpdateContext();
     for (const auto &update_entry : entries_to_update) {
         const auto &btb_entry = update_entry.entry;
         const bool actual_taken = update_entry.actualTaken;

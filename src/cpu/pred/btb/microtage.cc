@@ -639,7 +639,8 @@ MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
  */
 void
 MicroTAGE::update(const FetchTarget &stream) {
-    Addr startAddr = stream.getRealStartPC();
+    const auto update_ctx = stream.makeDirectionUpdateContext();
+    Addr startAddr = update_ctx.startPC;
     unsigned updateBank = getBankId(startAddr);
 
     DPRINTF(UTAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
@@ -656,7 +657,6 @@ MicroTAGE::update(const FetchTarget &stream) {
     }
 
     bool utage_hit = false;
-    const auto update_ctx = stream.makeDirectionUpdateContext();
     // Process each BTB entry
     for (const auto &update_entry : entries_to_update) {
         const auto &btb_entry = update_entry.entry;
@@ -665,7 +665,8 @@ MicroTAGE::update(const FetchTarget &stream) {
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                 stream.tid, stream.asidHash);
+                                                 update_ctx.tid,
+                                                 update_ctx.asidHash);
         } else { // otherwise, use the prediction from the prediction-time main/alt
             auto pred_it = predMeta->preds.find(btb_entry.pc);
             if (pred_it != predMeta->preds.end()) {
@@ -674,7 +675,8 @@ MicroTAGE::update(const FetchTarget &stream) {
                 DPRINTF(UTAGE, "update: missing predMeta entry for pc %#lx, recompute with snapshot\n",
                         btb_entry.pc);
                 recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                     stream.tid, stream.asidHash);
+                                                     update_ctx.tid,
+                                                     update_ctx.asidHash);
             }
         }
         if (recomputed.mainprovided) {
@@ -698,7 +700,7 @@ MicroTAGE::update(const FetchTarget &stream) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
             alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, stream.asidHash,
+                                   start_table, predMeta, update_ctx.asidHash,
                                    allocated_table, allocated_index, allocated_way);
         }
 

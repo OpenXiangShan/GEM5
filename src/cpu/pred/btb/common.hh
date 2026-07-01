@@ -256,6 +256,7 @@ struct DirectionUpdateEntry
 
 struct DirectionUpdateContext
 {
+    ThreadID tid = 0;
     Addr startPC = 0;
     uint8_t asidHash = 0;
     SquashType squashType = SquashType::SQUASH_NONE;
@@ -577,7 +578,7 @@ struct FetchTarget
 
     DirectionUpdateContext makeDirectionUpdateContext() const
     {
-        return {getRealStartPC(), asidHash,
+        return {tid, getRealStartPC(), asidHash,
                 static_cast<SquashType>(squashType), squashPC};
     }
 
