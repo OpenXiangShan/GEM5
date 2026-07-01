@@ -480,6 +480,9 @@ Decode::tick()
     toRenameIndex = 0;
     blockReason = StallReason::NoStall;
     setAllStalls(StallReason::NoStall);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        toFetch->decodeInfo[tid].decodedCFIs.clear();
+    }
 
     moveInstsToBuffer();
 
@@ -704,6 +707,21 @@ Decode::decodeInsts(ThreadID tid)
                     "instructions.\n",
                     tid, inst->seqNum);
             break;
+        }
+
+        if (inst->isControl()) {
+            TimeStruct::DecodeComm::DecodedCFIEntry entry;
+            entry.ftqId = inst->getFtqId();
+            entry.seqNum = inst->seqNum;
+            entry.pc = inst->getPC();
+            entry.isCond = inst->isCondCtrl();
+            entry.isIndirect = inst->isIndirectCtrl();
+            entry.isDirect = inst->isDirectCtrl();
+            entry.isCall = inst->isCall();
+            entry.isReturn = inst->isReturn() &&
+                !inst->isNonSpeculative() && !inst->isDirectCtrl();
+            entry.size = inst->getInstBytes();
+            toFetch->decodeInfo[tid].decodedCFIs.push_back(entry);
         }
 
         // Ensure that if it was predicted as a branch, it really is a

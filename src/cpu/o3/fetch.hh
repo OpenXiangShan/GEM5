@@ -642,12 +642,27 @@ class Fetch
         bool hasRedirect = false;
     };
 
+    struct DecodedCFIRecord
+    {
+        uint64_t ftqId = 0;
+        std::vector<Addr> pcs;
+    };
+
     static constexpr size_t MaxRecentResolveRecords = 32;
+    static constexpr size_t MaxRecentDecodedCFIRecords = 64;
 
     std::vector<std::deque<DequeuedResolveRecord>>
         recentlyDequeuedResolveRecords;
+    std::vector<std::deque<DecodedCFIRecord>> recentlyDecodedCFIRecords;
+
+    void observeDecodedCFIs(ThreadID tid);
 
     void observeResolveEnqueueAfterDequeue(
+        ThreadID tid,
+        uint64_t ftqId,
+        const branch_prediction::btb_pred::ResolvedBranch &branch);
+
+    void observeResolveWithDecodedCFIs(
         ThreadID tid,
         uint64_t ftqId,
         const branch_prediction::btb_pred::ResolvedBranch &branch);
@@ -1156,6 +1171,14 @@ class Fetch
         statistics::Scalar resolveLateSameFTQOlderThanTrained;
         /** Same FTQ late branch is after a trained redirecting CFI. */
         statistics::Scalar resolveLateSameFTQAfterRedirect;
+        /** Decoded CFIs observed from Decode sideband. */
+        statistics::Scalar decodedCFICount;
+        /** Resolved CFI arrived after its FTQ has decoded CFI metadata. */
+        statistics::Scalar resolveWithDecodedFTQ;
+        /** Resolved CFI arrived before decoded CFI metadata for that FTQ. */
+        statistics::Scalar resolveWithoutDecodedFTQ;
+        /** Resolved CFI has an older decoded CFI missing from pending set. */
+        statistics::Scalar resolveWithDecodedOlderMissing;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

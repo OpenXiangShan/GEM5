@@ -237,6 +237,19 @@ struct TimeStruct
 {
     struct DecodeComm
     {
+        struct DecodedCFIEntry
+        {
+            uint64_t ftqId;
+            InstSeqNum seqNum;
+            Addr pc;
+            bool isCond;
+            bool isIndirect;
+            bool isDirect;
+            bool isCall;
+            bool isReturn;
+            uint8_t size;
+        };
+
         std::unique_ptr<PCStateBase> nextPC;
         DynInstPtr mispredictInst;
         DynInstPtr squashInst;
@@ -248,6 +261,7 @@ struct TimeStruct
         bool predIncorrect;
         bool branchMispredict;
         bool branchTaken;
+        std::vector<DecodedCFIEntry> decodedCFIs;
 
         StallReason blockReason;
     };

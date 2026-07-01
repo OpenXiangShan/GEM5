@@ -118,6 +118,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              fetchWidth, static_cast<int>(MaxWidth));
 
     recentlyDequeuedResolveRecords.resize(numThreads);
+    recentlyDecodedCFIRecords.resize(numThreads);
 
     smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     for (int i = 0; i < MaxThreads; i++) {
@@ -298,6 +299,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Resolved branches older than a same-FTQ dequeued prefix PC"),
     ADD_STAT(resolveLateSameFTQAfterRedirect, statistics::units::Count::get(),
              "Resolved branches after a same-FTQ dequeued redirecting CFI"),
+    ADD_STAT(decodedCFICount, statistics::units::Count::get(),
+             "Decoded control-flow instructions observed from decode"),
+    ADD_STAT(resolveWithDecodedFTQ, statistics::units::Count::get(),
+             "Resolved CFIs whose FTQ has decoded CFI metadata"),
+    ADD_STAT(resolveWithoutDecodedFTQ, statistics::units::Count::get(),
+             "Resolved CFIs whose FTQ does not yet have decoded CFI metadata"),
+    ADD_STAT(resolveWithDecodedOlderMissing, statistics::units::Count::get(),
+             "Resolved CFIs with an older decoded CFI missing from the pending resolve set"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -1612,6 +1621,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     // Check squash signals from commit.
     bool commitSquashed = handleCommitSignals(tid);
 
+    observeDecodedCFIs(tid);
+
     handleIEWSignals();
 
     if (commitSquashed) {
@@ -1645,6 +1656,47 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     // If we've reached this point, we have not gotten any signals that
     // cause fetch to change its status.  Fetch remains the same as before.
     return false;
+}
+
+void
+Fetch::observeDecodedCFIs(ThreadID tid)
+{
+    if (tid >= recentlyDecodedCFIRecords.size()) {
+        return;
+    }
+
+    auto &decoded_cfis = fromDecode->decodeInfo[tid].decodedCFIs;
+    for (const auto &decoded : decoded_cfis) {
+        fetchStats.decodedCFICount++;
+
+        auto &records = recentlyDecodedCFIRecords[tid];
+        auto record_it = std::find_if(
+            records.begin(), records.end(),
+            [&](const auto &record) { return record.ftqId == decoded.ftqId; });
+
+        if (record_it == records.end()) {
+            DecodedCFIRecord record;
+            record.ftqId = decoded.ftqId;
+            records.push_back(std::move(record));
+            record_it = std::prev(records.end());
+        }
+
+        auto &pcs = record_it->pcs;
+        auto pc_it = std::lower_bound(pcs.begin(), pcs.end(), decoded.pc);
+        if (pc_it == pcs.end() || *pc_it != decoded.pc) {
+            pcs.insert(pc_it, decoded.pc);
+        }
+
+        while (records.size() > MaxRecentDecodedCFIRecords) {
+            records.pop_front();
+        }
+
+        DPRINTF(FetchResolve,
+                "[tid:%u] Decoded CFI ftq=%lu pc=%#lx seq=%llu "
+                "cond=%d indirect=%d direct=%d\n",
+                tid, decoded.ftqId, decoded.pc, decoded.seqNum,
+                decoded.isCond, decoded.isIndirect, decoded.isDirect);
+    }
 }
 
 void
@@ -1696,6 +1748,64 @@ Fetch::observeResolveEnqueueAfterDequeue(
             "olderThanTrained=%d afterRedirect=%d\n",
             tid, ftqId, branch.pc, branch.target, branch.taken,
             branch.mispred, duplicate, older_than_trained, after_redirect);
+}
+
+void
+Fetch::observeResolveWithDecodedCFIs(
+    ThreadID tid,
+    uint64_t ftqId,
+    const branch_prediction::btb_pred::ResolvedBranch &branch)
+{
+    if (tid >= recentlyDecodedCFIRecords.size()) {
+        return;
+    }
+
+    const auto &records = recentlyDecodedCFIRecords[tid];
+    auto record_it = std::find_if(
+        records.begin(), records.end(),
+        [&](const auto &record) { return record.ftqId == ftqId; });
+
+    if (record_it == records.end()) {
+        fetchStats.resolveWithoutDecodedFTQ++;
+        return;
+    }
+
+    fetchStats.resolveWithDecodedFTQ++;
+
+    auto queued_it = std::find_if(
+        resolveQueue.begin(), resolveQueue.end(),
+        [&](const auto &queued) {
+            return queued.resolvedTid == tid && queued.resolvedFTQId == ftqId;
+        });
+
+    const auto has_pending_resolved_pc = [&](Addr pc) {
+        if (pc == branch.pc) {
+            return true;
+        }
+        if (queued_it == resolveQueue.end()) {
+            return false;
+        }
+        const auto &branches = queued_it->resolvedBranches;
+        return std::any_of(
+            branches.begin(), branches.end(),
+            [&](const auto &queued_branch) { return queued_branch.pc == pc; });
+    };
+
+    for (Addr decoded_pc : record_it->pcs) {
+        if (decoded_pc >= branch.pc) {
+            break;
+        }
+        if (!has_pending_resolved_pc(decoded_pc)) {
+            fetchStats.resolveWithDecodedOlderMissing++;
+            DPRINTF(FetchResolve,
+                    "[tid:%u] Resolve CFI has older decoded CFI missing: "
+                    "ftq=%lu resolvedPC=%#lx missingOlderPC=%#lx "
+                    "target=%#lx taken=%d mispred=%d\n",
+                    tid, ftqId, branch.pc, decoded_pc, branch.target,
+                    branch.taken, branch.mispred);
+            break;
+        }
+    }
 }
 
 void
@@ -1755,6 +1865,8 @@ Fetch::handleIEWSignals()
             auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
             for (const auto &resolved : incoming) {
                 observeResolveEnqueueAfterDequeue(
+                    tid, resolved.ftqId, resolved.branch);
+                observeResolveWithDecodedCFIs(
                     tid, resolved.ftqId, resolved.branch);
 
                 bool merged = false;
