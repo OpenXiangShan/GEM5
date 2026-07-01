@@ -251,8 +251,6 @@ BTBITTAGE::update(const FetchTarget &stream)
     if (debugPC == stream.startPC || debugPC2 == stream.startPC) {
         debugFlag = true;
     }
-    Addr startAddr = stream.getRealStartPC();
-    DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
     const auto update_ctx = stream.makeTargetUpdateContext();
     auto entries_to_update = stream.makeTargetUpdateEntries(
         TargetUpdateEntryFilter::IndirectNonReturn, getResolvedUpdate(),
@@ -261,13 +259,23 @@ BTBITTAGE::update(const FetchTarget &stream)
     // get tage predictions from meta
     // TODO: use component idx
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto preds = meta->preds;
-    auto updateTagFoldedHist = meta->tagFoldedHist;
-    auto updateAltTagFoldedHist = meta->altTagFoldedHist;
-    auto updateIndexFoldedHist = meta->indexFoldedHist;
-    
+    updateWithEntries(entries_to_update, update_ctx, *meta);
+}
+
+void
+BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
+                             const TargetUpdateContext &ctx,
+                             const TageMeta &meta)
+{
+    Addr startAddr = ctx.startPC;
+    DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
+    auto preds = meta.preds;
+    auto updateTagFoldedHist = meta.tagFoldedHist;
+    auto updateAltTagFoldedHist = meta.altTagFoldedHist;
+    auto updateIndexFoldedHist = meta.indexFoldedHist;
+
     // update each branch
-    for (const auto &update_entry : entries_to_update) {
+    for (const auto &update_entry : entries) {
         const auto &btb_entry = update_entry.entry;
         bool this_indirect_actual_taken = update_entry.actualTaken;
         auto pred_it = preds.find(btb_entry.pc);
@@ -275,8 +283,8 @@ BTBITTAGE::update(const FetchTarget &stream)
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = update_ctx.isControlMispredPC(btb_entry.pc);
-        Addr exe_target = update_ctx.actualBranch.target;
+        bool mispred = ctx.isControlMispredPC(btb_entry.pc);
+        Addr exe_target = ctx.actualBranch.target;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics
@@ -330,7 +338,7 @@ BTBITTAGE::update(const FetchTarget &stream)
         DPRINTF(ITTAGE, "mispred %d, use_alt_on_main_found_correct %d, needToAllocate %d\n",
             mispred, use_alt_on_main_found_correct, needToAllocate);
 
-        auto useful_mask = meta->usefulMask;
+        auto useful_mask = meta.usefulMask;
         int alloc_table_num = numPredictors - (main_info.found ? main_info.table + 1 : 0);
         if (main_found) {
             useful_mask >>= main_info.table + 1;
@@ -393,10 +401,10 @@ BTBITTAGE::update(const FetchTarget &stream)
                 for (int ti = startTable; ti < numPredictors; ti++) {
                     Addr newIndex = getTageIndex(startAddr, ti,
                                                  updateIndexFoldedHist[ti].get(),
-                                                 update_ctx.asidHash);
+                                                 ctx.asidHash);
                     Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(),
                                              updateAltTagFoldedHist[ti].get(),
-                                             update_ctx.asidHash);
+                                             ctx.asidHash);
                     assert(newIndex < tageTable[ti].size());
                     auto &newEntry = tageTable[ti][newIndex];
 
