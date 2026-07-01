@@ -489,38 +489,12 @@ BTBTAGEUpperBound::allocateExactEntry(
     return false;
 }
 
-std::vector<BTBEntry>
+std::vector<DirectionUpdateEntry>
 BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
 {
-    auto allEntries = stream.updateBTBEntries;
-
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potentialNewEntry = stream.updateNewBTBEntry;
-        bool newEntryTaken =
-            stream.exeTaken && stream.getControlPC() == potentialNewEntry.pc;
-        if (!newEntryTaken) {
-            potentialNewEntry.alwaysTaken = false;
-        }
-        allEntries.push_back(potentialNewEntry);
-    }
-
-    if (getResolvedUpdate()) {
-        auto removeIt = std::remove_if(
-            allEntries.begin(), allEntries.end(),
-            [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken && e.resolved);
-            });
-        allEntries.erase(removeIt, allEntries.end());
-    } else {
-        auto removeIt = std::remove_if(
-            allEntries.begin(), allEntries.end(),
-            [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken);
-            });
-        allEntries.erase(removeIt, allEntries.end());
-    }
-
-    return allEntries;
+    return stream.makeDirectionUpdateEntries(
+        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        getResolvedUpdate());
 }
 
 void
@@ -541,11 +515,11 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
 
     bool hasStoredVsActualDiff = false;
     const auto updateCtx = stream.makeDirectionUpdateContext();
-    for (auto &btbEntry : entriesToUpdate) {
+    for (const auto &updateEntry : entriesToUpdate) {
+        const auto &btbEntry = updateEntry.entry;
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
-        const bool actualTaken =
-            stream.exeTaken && stream.exeBranchInfo == btbEntry;
+        const bool actualTaken = updateEntry.actualTaken;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
         if (predIt != predMeta->preds.end() &&
