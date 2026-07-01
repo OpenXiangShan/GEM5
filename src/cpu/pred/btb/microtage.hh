@@ -356,7 +356,7 @@ private:
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                 const DirectionUpdateContext &ctx);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,

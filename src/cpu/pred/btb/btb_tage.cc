@@ -538,14 +538,13 @@ bool
 BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             const DirectionUpdateContext &ctx) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
     auto &alt_info = pred.altInfo;
     bool used_alt = pred.useAlt;
     // Use base table instead of entry.ctr for fallback prediction
-    Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
     bool use_provider = main_info.found && !used_alt;
@@ -630,8 +629,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
+    bool this_fb_mispred = ctx.isControlMispredPC(entry.pc);
     if (this_fb_mispred) {
         tageStats.mispredictBranchHasProvider += main_info.found;
         tageStats.mispredictBranchUseProvider += use_provider;
@@ -857,6 +855,7 @@ BTBTAGE::update(const FetchTarget &stream) {
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
+    const auto update_ctx = stream.makeDirectionUpdateContext();
     for (const auto &update_entry : entries_to_update) {
         const auto &btb_entry = update_entry.entry;
         const bool actual_taken = update_entry.actualTaken;
@@ -905,7 +904,8 @@ BTBTAGE::update(const FetchTarget &stream) {
         }
 
         // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, actual_taken, recomputed, update_ctx);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;

@@ -410,7 +410,7 @@ bool
 MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             const DirectionUpdateContext &ctx) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -491,8 +491,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
+    bool this_fb_mispred = ctx.isControlMispredPC(entry.pc);
     // No allocation if no misprediction
     if (!this_fb_mispred) {
         return false;
@@ -657,6 +656,7 @@ MicroTAGE::update(const FetchTarget &stream) {
     }
 
     bool utage_hit = false;
+    const auto update_ctx = stream.makeDirectionUpdateContext();
     // Process each BTB entry
     for (const auto &update_entry : entries_to_update) {
         const auto &btb_entry = update_entry.entry;
@@ -681,7 +681,8 @@ MicroTAGE::update(const FetchTarget &stream) {
             utage_hit = true;
         }
         // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, actual_taken, recomputed, update_ctx);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;

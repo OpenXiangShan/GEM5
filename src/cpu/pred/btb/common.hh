@@ -254,6 +254,17 @@ struct DirectionUpdateEntry
     bool isNewEntry = false;
 };
 
+struct DirectionUpdateContext
+{
+    SquashType squashType = SquashType::SQUASH_NONE;
+    Addr squashPC = 0;
+
+    bool isControlMispredPC(Addr pc) const
+    {
+        return squashType == SquashType::SQUASH_CTRL && squashPC == pc;
+    }
+};
+
 enum class DirectionUpdateEntryFilter
 {
     ConditionalNonAlwaysTaken,
@@ -560,6 +571,11 @@ struct FetchTarget
     bool isActualTakenBranchPC(Addr pc) const
     {
         return exeTaken && exeBranchInfo.pc == pc;
+    }
+
+    DirectionUpdateContext makeDirectionUpdateContext() const
+    {
+        return {static_cast<SquashType>(squashType), squashPC};
     }
 
     bool shouldKeepDirectionUpdateEntry(const BTBEntry &entry,
