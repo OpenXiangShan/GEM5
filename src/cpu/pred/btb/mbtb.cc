@@ -459,17 +459,18 @@ MBTB::selectUpdateEntry(const FetchTarget &stream)
  * Also check BTB prediction status
  */
 void
-MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
+MBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e) {
+        if (ctx.actualBranch == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (!pred_branch_hit && ctx.actualTaken) {
+        DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n",
+                ctx.actualBranch.pc, ctx.predTick);
         btbStats.updateMiss++;
     } else {
         btbStats.updateHit++;
@@ -487,7 +488,7 @@ MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
  * 5. Update MRU information
  */
 void
-MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
+MBTB::updateBTBEntry(const BTBEntry& entry, const TargetUpdateContext &ctx)
 {
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
@@ -497,7 +498,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
     // Calculate index and tag for this entry
-    Addr btb_idx = getIndex(entry.pc, stream.asidHash);
+    Addr btb_idx = getIndex(entry.pc, ctx.asidHash);
 
     // Look for matching entry in the target SRAM
     bool found = false;
@@ -527,7 +528,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream);
+    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, ctx);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
@@ -546,19 +547,19 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
 BTBEntry
 MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const BTBEntry* existing_entry,
-                        const FetchTarget &stream)
+                        const TargetUpdateContext &ctx)
 {
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
     auto entry_to_write = (req_entry.isCond && existing_entry)
                               ? BTBEntry(*existing_entry)
                               : req_entry;
     // Always recalculate tag based on the actual PC being written
-    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
+    entry_to_write.tag = getTag(entry_to_write.pc, ctx.asidHash);
     entry_to_write.resolved = false; // reset resolved status
 
     // Update saturating counter and alwaysTaken
     if (entry_to_write.isCond) {
-        bool this_cond_taken = stream.exeTaken && stream.getControlPC() == entry_to_write.pc;
+        bool this_cond_taken = ctx.isTakenControlPC(entry_to_write.pc);
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
             DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
@@ -570,8 +571,8 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     }
 
     // Update indirect target if necessary
-    if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
-        entry_to_write.target = stream.exeBranchInfo.target;
+    if (entry_to_write.isIndirect && ctx.isTakenControlPC(entry_to_write.pc)) {
+        entry_to_write.target = ctx.actualBranch.target;
     }
     return entry_to_write;
 }
@@ -674,13 +675,14 @@ void
 MBTB::update(const FetchTarget &stream)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
+    const auto update_ctx = stream.makeTargetUpdateContext();
     // 1. Check prediction hit status, for stats recording
-    checkPredictionHit(stream,
+    checkPredictionHit(update_ctx,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     auto entries_need_update = prepareUpdateEntries(stream);
     for (auto &entry : entries_need_update) {
-        updateBTBEntry(entry, stream);
+        updateBTBEntry(entry, update_ctx);
     }
 }
 

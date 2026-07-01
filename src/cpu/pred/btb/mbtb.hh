@@ -267,22 +267,23 @@ class MBTB : public TimedBaseBTBPredictor
                                std::vector<FullBTBPrediction>& stagePreds);
 
     /** Check branch prediction hit status
-     *  @param stream Fetch stream containing execution results
+     *  @param ctx Target update context containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream,
+    void checkPredictionHit(const TargetUpdateContext &ctx,
                            const BTBMeta* meta);
 
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
-     *  @param stream Fetch stream with update info
+     *  @param ctx Target update context
      */
-    void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream);
+    void updateBTBEntry(const BTBEntry& entry,
+                        const TargetUpdateContext &ctx);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
                                const BTBEntry* existing_entry,
-                               const FetchTarget &stream);
+                               const TargetUpdateContext &ctx);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,

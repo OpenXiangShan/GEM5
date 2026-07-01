@@ -268,6 +268,22 @@ struct DirectionUpdateContext
     }
 };
 
+struct TargetUpdateContext
+{
+    ThreadID tid = 0;
+    Addr startPC = 0;
+    uint8_t asidHash = 0;
+    Addr controlPC = 0;
+    BranchInfo actualBranch;
+    bool actualTaken = false;
+    Tick predTick = 0;
+
+    bool isTakenControlPC(Addr pc) const
+    {
+        return actualTaken && controlPC == pc;
+    }
+};
+
 enum class DirectionUpdateEntryFilter
 {
     ConditionalNonAlwaysTaken,
@@ -580,6 +596,12 @@ struct FetchTarget
     {
         return {tid, getRealStartPC(), asidHash,
                 static_cast<SquashType>(squashType), squashPC};
+    }
+
+    TargetUpdateContext makeTargetUpdateContext() const
+    {
+        return {tid, getRealStartPC(), asidHash, getControlPC(),
+                exeBranchInfo, exeTaken, predTick};
     }
 
     bool shouldKeepDirectionUpdateEntry(const BTBEntry &entry,
