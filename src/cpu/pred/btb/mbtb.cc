@@ -488,8 +488,10 @@ MBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta)
  * 5. Update MRU information
  */
 void
-MBTB::updateBTBEntry(const BTBEntry& entry, const TargetUpdateContext &ctx)
+MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
+                     const TargetUpdateContext &ctx)
 {
+    const auto &entry = update_entry.entry;
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
     Addr alignedPC = entry.pc & ~(blockSize - 1);
@@ -681,33 +683,16 @@ MBTB::update(const FetchTarget &stream)
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     auto entries_need_update = prepareUpdateEntries(stream);
-    for (auto &entry : entries_need_update) {
+    for (const auto &entry : entries_need_update) {
         updateBTBEntry(entry, update_ctx);
     }
 }
 
-std::vector<BTBEntry>
-MBTB::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !e.resolved; });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
+std::vector<TargetUpdateEntry>
+MBTB::prepareUpdateEntries(const FetchTarget &stream)
+{
+    return stream.makeTargetUpdateEntries(TargetUpdateEntryFilter::Any,
+                                          getResolvedUpdate());
 }
 
 /**

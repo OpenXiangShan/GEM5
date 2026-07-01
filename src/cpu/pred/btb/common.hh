@@ -277,11 +277,31 @@ struct TargetUpdateContext
     BranchInfo actualBranch;
     bool actualTaken = false;
     Tick predTick = 0;
+    SquashType squashType = SquashType::SQUASH_NONE;
+    Addr squashPC = 0;
 
     bool isTakenControlPC(Addr pc) const
     {
         return actualTaken && controlPC == pc;
     }
+
+    bool isControlMispredPC(Addr pc) const
+    {
+        return squashType == SquashType::SQUASH_CTRL && squashPC == pc;
+    }
+};
+
+struct TargetUpdateEntry
+{
+    BTBEntry entry;
+    bool actualTaken = false;
+    bool isNewEntry = false;
+};
+
+enum class TargetUpdateEntryFilter
+{
+    Any,
+    IndirectNonReturn
 };
 
 enum class DirectionUpdateEntryFilter
@@ -601,7 +621,8 @@ struct FetchTarget
     TargetUpdateContext makeTargetUpdateContext() const
     {
         return {tid, getRealStartPC(), asidHash, getControlPC(),
-                exeBranchInfo, exeTaken, predTick};
+                exeBranchInfo, exeTaken, predTick,
+                static_cast<SquashType>(squashType), squashPC};
     }
 
     bool shouldKeepDirectionUpdateEntry(const BTBEntry &entry,
@@ -649,6 +670,53 @@ struct FetchTarget
                 return;
             }
             entries.push_back({entry, isActualTakenBranchPC(entry.pc), is_new_entry});
+        };
+
+        for (const auto &entry : updateBTBEntries) {
+            addEntry(entry, false);
+        }
+        if (!updateIsOldEntry) {
+            addEntry(updateNewBTBEntry, true);
+        }
+
+        return entries;
+    }
+
+    bool shouldKeepTargetUpdateEntry(const BTBEntry &entry,
+                                     TargetUpdateEntryFilter filter,
+                                     bool resolved_update) const
+    {
+        bool keep = false;
+        switch (filter) {
+          case TargetUpdateEntryFilter::Any:
+            keep = true;
+            break;
+          case TargetUpdateEntryFilter::IndirectNonReturn:
+            keep = entry.isIndirect && !entry.isReturn;
+            break;
+        }
+        if (!keep || !resolved_update) {
+            return keep;
+        }
+        return isResolvedUpdatePC(entry.pc, entry.resolved);
+    }
+
+    std::vector<TargetUpdateEntry>
+    makeTargetUpdateEntries(TargetUpdateEntryFilter filter,
+                            bool resolved_update) const
+    {
+        std::vector<TargetUpdateEntry> entries;
+        entries.reserve(updateBTBEntries.size() + (updateIsOldEntry ? 0 : 1));
+
+        auto addEntry = [&](BTBEntry entry, bool is_new_entry) {
+            if (is_new_entry && !isActualTakenBranchPC(entry.pc)) {
+                entry.alwaysTaken = false;
+            }
+            if (!shouldKeepTargetUpdateEntry(entry, filter, resolved_update)) {
+                return;
+            }
+            entries.push_back({entry, isActualTakenBranchPC(entry.pc),
+                               is_new_entry});
         };
 
         for (const auto &entry : updateBTBEntries) {

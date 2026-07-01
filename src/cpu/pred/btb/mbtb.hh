@@ -165,7 +165,8 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchTarget &stream) override;
 
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    std::vector<TargetUpdateEntry> prepareUpdateEntries(
+        const FetchTarget &stream);
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -277,7 +278,7 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param ctx Target update context
      */
-    void updateBTBEntry(const BTBEntry& entry,
+    void updateBTBEntry(const TargetUpdateEntry &entry,
                         const TargetUpdateContext &ctx);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
