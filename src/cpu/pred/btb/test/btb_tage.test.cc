@@ -1212,6 +1212,45 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
         << "New conditional entry should still allocate without prediction-time meta";
 }
 
+TEST_F(BTBTAGETest, ResolvedUpdateUsesExplicitPrefix) {
+    tage->setResolvedUpdate(true);
+
+    BTBEntry first = createBTBEntry(0x1000, true, true, false, 0);
+    BTBEntry second = createBTBEntry(0x1004, true, true, false, 0);
+    first.resolved = true;
+    second.resolved = true;
+
+    constexpr int table = 0;
+    const Addr index = tage->getTageIndex(0x1000, table);
+    createManualTageEntry(
+        tage, table, index, 0, tage->getTageTag(0x1000, table, 0),
+        0, false, first.pc);
+    createManualTageEntry(
+        tage, table, index, 1, tage->getTageTag(0x1000, table, 2),
+        0, false, second.pc);
+
+    predictTAGE(tage, 0x1000, {first, second}, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.exeBranchInfo = first;
+    stream.exeTaken = false;
+    stream.resolved = true;
+    stream.predBranchInfo = first;
+    stream.updateBTBEntries = {first, second};
+    stream.updateIsOldEntry = true;
+    stream.predMetas[0] = meta;
+    stream.setResolvedUpdatePrefixPCs({first.pc});
+
+    tage->update(stream);
+
+    EXPECT_EQ(tage->tageTable[table][index][0].counter, -1)
+        << "Resolved-update prefix branch should be trained";
+    EXPECT_EQ(tage->tageTable[table][index][1].counter, 0)
+        << "Branch outside the explicit resolved-update prefix should not train";
+}
+
 /**
  * @brief Test bank conflict detection
  *

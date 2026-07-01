@@ -87,6 +87,17 @@ getUpdateBranches(const std::vector<ResolvedBranch> &branches)
     return updateBranches;
 }
 
+std::vector<Addr>
+getBranchPCs(const std::vector<ResolvedBranch> &branches)
+{
+    std::vector<Addr> pcs;
+    pcs.reserve(branches.size());
+    for (const auto &branch : branches) {
+        pcs.push_back(branch.pc);
+    }
+    return pcs;
+}
+
 } // anonymous namespace
 
 uint8_t
@@ -839,6 +850,7 @@ DecoupledBPUWithBTB::resolveUpdate(
     const auto update_branches = getUpdateBranches(branches);
     FetchTarget target = ftq.get(target_id, tid);
     applyResolvedBranches(target, update_branches);
+    target.setResolvedUpdatePrefixPCs(getBranchPCs(update_branches));
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%zu updateBranches=%zu "
             "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "

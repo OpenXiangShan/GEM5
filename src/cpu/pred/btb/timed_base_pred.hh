@@ -81,6 +81,9 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void update(const FetchTarget &entry) {}
     virtual unsigned getDelay() {return numDelay;}
     virtual bool getResolvedUpdate() {return resolvedUpdate;}
+#ifdef UNIT_TEST
+    void setResolvedUpdate(bool value) { resolvedUpdate = value; }
+#endif
     // Two-phase resolved update: probe first, then apply
     virtual bool canResolveUpdate(const FetchTarget &entry) { return true; }
     virtual void doResolveUpdate(const FetchTarget &entry) { update(entry); }

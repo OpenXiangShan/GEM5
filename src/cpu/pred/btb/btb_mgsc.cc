@@ -635,12 +635,25 @@ BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
 
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-                                    [](const BTBEntry &e) { return !e.isCond && !e.alwaysTaken; });
+                                    [&stream, this](const BTBEntry &e) {
+                                        const bool keep_existing =
+                                            e.isCond || e.alwaysTaken;
+                                        if (!getResolvedUpdate() ||
+                                            !stream.hasResolvedUpdatePrefix()) {
+                                            return !keep_existing;
+                                        }
+                                        return !(keep_existing &&
+                                                 stream.isInResolvedUpdatePrefix(e.pc));
+                                    });
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
     auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond && !potential_new_entry.alwaysTaken) {
+    const bool new_entry_in_prefix = !getResolvedUpdate() ||
+        !stream.hasResolvedUpdatePrefix() ||
+        stream.isInResolvedUpdatePrefix(potential_new_entry.pc);
+    if (!stream.updateIsOldEntry && new_entry_in_prefix &&
+        potential_new_entry.isCond && !potential_new_entry.alwaysTaken) {
         all_entries.push_back(potential_new_entry);
     }
 

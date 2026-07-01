@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <queue>
 #include <string>
+#include <vector>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -367,6 +368,7 @@ struct FetchTarget
     Addr updateEndInstPC;   // end pc of the squash inst/taken inst
     // for components to decide which entries to update
     std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
+    std::vector<Addr> resolvedUpdatePrefixPCs; // actual resolved-update prefix PCs
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
@@ -422,6 +424,7 @@ struct FetchTarget
        predMetas.fill(nullptr);
        predBTBEntries.clear();
        updateBTBEntries.clear();
+       resolvedUpdatePrefixPCs.clear();
    }
 
     // the default exe result should be consistent with prediction
@@ -510,6 +513,35 @@ struct FetchTarget
                 updateBTBEntries.push_back(entry);
             }
         }
+    }
+
+    void setResolvedUpdatePrefixPCs(const std::vector<Addr> &pcs)
+    {
+        resolvedUpdatePrefixPCs = pcs;
+        std::sort(resolvedUpdatePrefixPCs.begin(), resolvedUpdatePrefixPCs.end());
+        resolvedUpdatePrefixPCs.erase(std::unique(resolvedUpdatePrefixPCs.begin(),
+                                                  resolvedUpdatePrefixPCs.end()),
+                                      resolvedUpdatePrefixPCs.end());
+    }
+
+    bool hasResolvedUpdatePrefix() const
+    {
+        return !resolvedUpdatePrefixPCs.empty();
+    }
+
+    bool isInResolvedUpdatePrefix(Addr pc) const
+    {
+        if (!hasResolvedUpdatePrefix()) {
+            return false;
+        }
+        return std::binary_search(resolvedUpdatePrefixPCs.begin(),
+                                  resolvedUpdatePrefixPCs.end(), pc);
+    }
+
+    bool isResolvedUpdatePC(Addr pc, bool fallback_resolved) const
+    {
+        return hasResolvedUpdatePrefix() ?
+            isInResolvedUpdatePrefix(pc) : fallback_resolved;
     }
 
     // Argument resolved pc could not match any BTB entry branch pc,

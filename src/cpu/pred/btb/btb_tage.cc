@@ -535,7 +535,10 @@ BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     // Filter: only keep conditional branches that are not always taken
     if (getResolvedUpdate()) {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
+            [&stream](const BTBEntry &e) {
+                const bool is_resolved = stream.isResolvedUpdatePC(e.pc, e.resolved);
+                return !(e.isCond && !e.alwaysTaken && is_resolved);
+            });
         all_entries.erase(remove_it, all_entries.end());
     } else {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
