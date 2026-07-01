@@ -271,6 +271,9 @@ jobs:
           echo "distributed_ssh_config: ${{ inputs.distributed_ssh_config }}" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_ssh_user: ${{ inputs.distributed_ssh_user }}" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_dispatch_host: ${{ inputs.distributed_dispatch_host }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_launch_retries: 3" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_launch_retry_delay: 30" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_launch_interval: 0.5" >> "$TARGET_DIR/metadata.txt"
           cat >> "$TARGET_DIR/metadata.txt" <<'EOF'
           extra_args: ${{ inputs.extra_args }}
           EOF
@@ -325,6 +328,9 @@ jobs:
               --ssh-config "${{ inputs.distributed_ssh_config }}" \
               --ssh-user "${{ inputs.distributed_ssh_user }}" \
               --dispatch-host "${{ inputs.distributed_dispatch_host }}" \
+              --launch-retries 3 \
+              --launch-retry-delay 30 \
+              --launch-interval 0.5 \
               --ssh-option StrictHostKeyChecking=accept-new \
               --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
               --ssh-option ConnectTimeout=10 \

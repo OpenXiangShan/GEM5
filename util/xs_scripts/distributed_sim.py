@@ -29,6 +29,9 @@ import time
 CHECKPOINT_SUFFIXES = ("gz", "zstd", "bin")
 DEFAULT_POLL_INTERVAL_SEC = 5.0
 DEFAULT_MARKER_TIMEOUT_SEC = 30.0
+DEFAULT_LAUNCH_RETRIES = 2
+DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
+DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,14 @@ class PendingJob:
     work_dir: Path
     proc: subprocess.Popen[bytes]
     started_at: float
+    attempt: int
+
+
+@dataclass(frozen=True)
+class ScheduledWorkload:
+    workload: Workload
+    ready_at: float = 0.0
+    attempt: int = 1
 
 
 def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
@@ -146,6 +157,30 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         ),
     )
     parser.add_argument(
+        "--launch-retries",
+        type=int,
+        default=DEFAULT_LAUNCH_RETRIES,
+        help=(
+            "Number of extra attempts for launcher-side SSH failures before "
+            "the remote job creates any status marker."
+        ),
+    )
+    parser.add_argument(
+        "--launch-retry-delay",
+        type=float,
+        default=DEFAULT_LAUNCH_RETRY_DELAY_SEC,
+        help="Base seconds to wait before retrying a launcher-side SSH failure.",
+    )
+    parser.add_argument(
+        "--launch-interval",
+        type=float,
+        default=DEFAULT_LAUNCH_INTERVAL_SEC,
+        help=(
+            "Seconds to wait between starting jobs. This avoids large SSH "
+            "connection bursts through a dispatch host."
+        ),
+    )
+    parser.add_argument(
         "--ssh-option",
         action="append",
         default=[],
@@ -205,6 +240,12 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         parser.error("--poll-interval must be > 0")
     if args.marker_timeout < 0:
         parser.error("--marker-timeout must be >= 0")
+    if args.launch_retries < 0:
+        parser.error("--launch-retries must be >= 0")
+    if args.launch_retry_delay < 0:
+        parser.error("--launch-retry-delay must be >= 0")
+    if args.launch_interval < 0:
+        parser.error("--launch-interval must be >= 0")
     return args, rest
 
 
@@ -459,6 +500,7 @@ def launch_job(
     ssh_options: list[str],
     ssh_user: str,
     dispatch_host: str,
+    attempt: int,
 ) -> PendingJob:
     if server.name == "local":
         proc = subprocess.Popen(
@@ -500,6 +542,7 @@ def launch_job(
         work_dir=work_dir,
         proc=proc,
         started_at=time.time(),
+        attempt=attempt,
     )
     server.pending.append(job)
     return job
@@ -751,9 +794,32 @@ def wait_for_visible_marker(job: PendingJob, timeout: float) -> str:
         time.sleep(min(0.5, max(deadline - time.time(), 0.0)))
 
 
-def poll_jobs(servers: list[ServerState], marker_timeout: float) -> tuple[int, int]:
+def has_any_marker(work_dir: Path) -> bool:
+    return any(
+        (work_dir / marker).exists()
+        for marker in ("running", "completed", "abort")
+    )
+
+
+def append_launcher_retry(job: PendingJob, result: int, delay: float) -> None:
+    job.work_dir.mkdir(parents=True, exist_ok=True)
+    with (job.work_dir / "log.txt").open("a", encoding="utf-8") as handle:
+        handle.write("\n===== distributed_sim launcher retry =====\n")
+        handle.write(
+            f"attempt {job.attempt} failed before remote status markers "
+            f"were created (exit={result}); retrying after {delay:.1f}s.\n"
+        )
+
+
+def poll_jobs(
+    servers: list[ServerState],
+    marker_timeout: float,
+    launch_retries: int,
+    launch_retry_delay: float,
+) -> tuple[int, int, list[ScheduledWorkload]]:
     completed = 0
     failed = 0
+    retry_workloads: list[ScheduledWorkload] = []
     for server in servers:
         still_pending: list[PendingJob] = []
         for job in server.pending:
@@ -764,7 +830,8 @@ def poll_jobs(servers: list[ServerState], marker_timeout: float) -> tuple[int, i
             stdout, stderr = job.proc.communicate()
             append_launcher_output(job, stdout, stderr)
             elapsed = time.time() - job.started_at
-            marker = wait_for_visible_marker(job, marker_timeout)
+            marker_wait = marker_timeout if result == 0 else min(marker_timeout, 2.0)
+            marker = wait_for_visible_marker(job, marker_wait)
             if result == 0 and marker != "completed":
                 result = 1
                 mark_launcher_failure(
@@ -784,14 +851,38 @@ def poll_jobs(servers: list[ServerState], marker_timeout: float) -> tuple[int, i
                     flush=True,
                 )
             else:
+                if (
+                    server.name != "local"
+                    and result == 255
+                    and job.attempt <= launch_retries
+                    and marker == ""
+                    and not has_any_marker(job.work_dir)
+                ):
+                    delay = launch_retry_delay * job.attempt
+                    append_launcher_retry(job, result, delay)
+                    retry_workloads.append(
+                        ScheduledWorkload(
+                            workload=job.workload,
+                            ready_at=time.time() + delay,
+                            attempt=job.attempt + 1,
+                        )
+                    )
+                    print(
+                        f"[retry] {job.workload.name} on {server.name} "
+                        f"exit={result} attempt={job.attempt}/{launch_retries + 1} "
+                        f"delay={delay:.1f}s elapsed={elapsed:.1f}s",
+                        flush=True,
+                    )
+                    continue
                 failed += 1
                 print(
                     f"[fail] {job.workload.name} on {server.name} "
-                    f"exit={result} elapsed={elapsed:.1f}s",
+                    f"exit={result} attempt={job.attempt}/{launch_retries + 1} "
+                    f"elapsed={elapsed:.1f}s",
                     flush=True,
                 )
         server.pending = still_pending
-    return completed, failed
+    return completed, failed, retry_workloads
 
 
 def stop_pending_jobs(servers: list[ServerState]) -> None:
@@ -827,20 +918,31 @@ def run_scheduler(
     ssh_options: list[str],
     ssh_user: str,
     dispatch_host: str,
+    launch_retries: int,
+    launch_retry_delay: float,
+    launch_interval: float,
     force: bool,
 ) -> int:
-    pending_workloads = list(workloads)
+    pending_workloads = [ScheduledWorkload(workload) for workload in workloads]
     total = len(pending_workloads)
     skipped = 0
-    launched = 0
+    first_launches = 0
+    launch_attempts = 0
     completed = 0
     failed = 0
+    last_launch_at = 0.0
 
     try:
         while pending_workloads or any(server.pending for server in servers):
-            new_completed, new_failed = poll_jobs(servers, marker_timeout)
+            new_completed, new_failed, retry_workloads = poll_jobs(
+                servers=servers,
+                marker_timeout=marker_timeout,
+                launch_retries=launch_retries,
+                launch_retry_delay=launch_retry_delay,
+            )
             completed += new_completed
             failed += new_failed
+            pending_workloads.extend(retry_workloads)
 
             launched_this_round = False
             while pending_workloads:
@@ -848,7 +950,22 @@ def run_scheduler(
                 if server is None:
                     break
 
-                workload = pending_workloads.pop(0)
+                now = time.time()
+                ready_index = next(
+                    (
+                        index
+                        for index, item in enumerate(pending_workloads)
+                        if item.ready_at <= now
+                    ),
+                    -1,
+                )
+                if ready_index < 0:
+                    break
+                if last_launch_at and now - last_launch_at < launch_interval:
+                    break
+
+                scheduled = pending_workloads.pop(ready_index)
+                workload = scheduled.workload
                 work_dir = full_work_dir / workload.name
                 completed_marker = work_dir / "completed"
                 if completed_marker.exists() and not force:
@@ -876,27 +993,52 @@ def run_scheduler(
                     ssh_options=ssh_options,
                     ssh_user=ssh_user,
                     dispatch_host=dispatch_host,
+                    attempt=scheduled.attempt,
                 )
-                launched += 1
+                launch_attempts += 1
+                if scheduled.attempt == 1:
+                    first_launches += 1
                 launched_this_round = True
-                print(
-                    f"[start] {workload.name} on {server.name} "
-                    f"({launched}/{total})",
-                    flush=True,
-                )
+                last_launch_at = time.time()
+                if scheduled.attempt == 1:
+                    print(
+                        f"[start] {workload.name} on {server.name} "
+                        f"({first_launches}/{total})",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[start] {workload.name} on {server.name} "
+                        f"retry={scheduled.attempt}/{launch_retries + 1} "
+                        f"launch_attempt={launch_attempts}",
+                        flush=True,
+                    )
 
             if pending_workloads or any(server.pending for server in servers):
                 if not launched_this_round:
-                    time.sleep(poll_interval)
+                    sleep_for = poll_interval
+                    if pending_workloads:
+                        next_ready = min(item.ready_at for item in pending_workloads)
+                        sleep_for = min(
+                            sleep_for,
+                            max(next_ready - time.time(), 0.0),
+                        )
+                    if last_launch_at:
+                        launch_delay = launch_interval - (time.time() - last_launch_at)
+                        if launch_delay > 0:
+                            sleep_for = min(sleep_for, launch_delay)
+                    time.sleep(max(sleep_for, 0.05))
 
     except KeyboardInterrupt:
         print("Interrupted; terminating launcher-side ssh/bash processes.", file=sys.stderr)
         stop_pending_jobs(servers)
         raise
 
+    retry_attempts = launch_attempts - first_launches
     print(
-        f"Summary: total={total} launched={launched} skipped={skipped} "
-        f"completed={completed} failed={failed}",
+        f"Summary: total={total} launch_attempts={launch_attempts} skipped={skipped} "
+        f"completed={completed} failed={failed} "
+        f"retry_attempts={max(retry_attempts, 0)}",
         flush=True,
     )
     return 1 if failed else 0
@@ -991,6 +1133,9 @@ def main(argv: list[str]) -> int:
         ssh_options=args.ssh_option,
         ssh_user=args.ssh_user,
         dispatch_host=args.dispatch_host,
+        launch_retries=args.launch_retries,
+        launch_retry_delay=args.launch_retry_delay,
+        launch_interval=args.launch_interval,
         force=args.force,
     )
 
