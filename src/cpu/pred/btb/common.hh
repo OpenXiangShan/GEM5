@@ -259,8 +259,15 @@ struct DirectionUpdateContext
     ThreadID tid = 0;
     Addr startPC = 0;
     uint8_t asidHash = 0;
+    Addr controlPC = 0;
+    bool actualTaken = false;
     SquashType squashType = SquashType::SQUASH_NONE;
     Addr squashPC = 0;
+
+    bool isTakenControlPC(Addr pc) const
+    {
+        return actualTaken && controlPC == pc;
+    }
 
     bool isControlMispredPC(Addr pc) const
     {
@@ -614,7 +621,7 @@ struct FetchTarget
 
     DirectionUpdateContext makeDirectionUpdateContext() const
     {
-        return {tid, getRealStartPC(), asidHash,
+        return {tid, getRealStartPC(), asidHash, getControlPC(), exeTaken,
                 static_cast<SquashType>(squashType), squashPC};
     }
 

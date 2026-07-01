@@ -556,7 +556,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
         tageStats.recomputedVsActualDiff++;
     }
     if (getDelay() < 2) {
-        checkUtageUpdateMisspred(stream);
+        checkUtageUpdateMisspred(predMeta->preds, updateCtx);
     }
 }
 

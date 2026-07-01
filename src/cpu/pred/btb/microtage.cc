@@ -727,23 +727,19 @@ MicroTAGE::update(const FetchTarget &stream) {
     if (utage_hit){
         tageStats.updateUtageHit++;//for RTL align pred Accuracy
     }
-    checkUtageUpdateMisspred(stream);
+    checkUtageUpdateMisspred(predMeta->preds, update_ctx);
     DPRINTF(UTAGE, "end update\n");
 }
 
 void
-MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
-    auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    if (!predMeta) {
-        DPRINTF(UTAGE, "checkUtageUpdateMisspred: no prediction meta, skip\n");
-        return;
-    }
-
+MicroTAGE::checkUtageUpdateMisspred(
+    const std::unordered_map<Addr, TagePrediction> &preds,
+    const DirectionUpdateContext &ctx) {
     // used for MicroTAGE update misprediction counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;
-    lastPreds.reserve(predMeta->preds.size());
-    for (auto &kv : predMeta->preds) {
+    lastPreds.reserve(preds.size());
+    for (auto &kv : preds) {
         lastPreds.emplace_back(kv.first, kv.second);
     }
     std::sort(lastPreds.begin(), lastPreds.end(),
@@ -760,10 +756,10 @@ MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (!has_taken_pred && stream.exeTaken) ||
-                                (has_taken_pred && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && has_taken_pred &&
-                          first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred = (!has_taken_pred && ctx.actualTaken) ||
+                                (has_taken_pred && !ctx.actualTaken);
+    bool branch_mispred = ctx.actualTaken && has_taken_pred &&
+                          first_taken_pc != ctx.controlPC;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }

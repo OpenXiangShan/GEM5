@@ -289,7 +289,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned instShiftAmt {1};
 
     // use for microtage updatemispred counting
-    void checkUtageUpdateMisspred(const FetchTarget &stream);
+    void checkUtageUpdateMisspred(const std::unordered_map<Addr, TagePrediction> &preds,
+                                  const DirectionUpdateContext &ctx);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);

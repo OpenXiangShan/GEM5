@@ -979,19 +979,20 @@ BTBTAGE::update(const FetchTarget &stream) {
         tageStats.recomputedVsOriginalDiff++;
     }
     if (getDelay() <2){
-        checkUtageUpdateMisspred(stream);
+        checkUtageUpdateMisspred(predMeta->preds, update_ctx);
     }
     DPRINTF(TAGE, "end update\n");
 }
 
 void
-BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
-    auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+BTBTAGE::checkUtageUpdateMisspred(
+    const std::unordered_map<Addr, TagePrediction> &preds,
+    const DirectionUpdateContext &ctx) {
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;
-    lastPreds.reserve(predMeta->preds.size());
-    for (auto &kv : predMeta->preds) {
+    lastPreds.reserve(preds.size());
+    for (auto &kv : preds) {
         lastPreds.emplace_back(kv.first, kv.second);
     }
     std::sort(lastPreds.begin(), lastPreds.end(),
@@ -1006,9 +1007,9 @@ BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                (first_taken_pc != 0 && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred = (first_taken_pc == 0 && ctx.actualTaken) ||
+                                (first_taken_pc != 0 && !ctx.actualTaken);
+    bool branch_mispred = ctx.actualTaken && first_taken_pc != ctx.controlPC;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
