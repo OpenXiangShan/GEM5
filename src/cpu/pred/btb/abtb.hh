@@ -333,17 +333,19 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream with update info
      *  @return Vector of entries to update
      */
-    std::vector<BTBEntry> collectEntriesToUpdate(
+    std::vector<TargetUpdateEntry> collectEntriesToUpdate(
         const std::vector<BTBEntry>& old_entries,
-        const FetchTarget &stream);
+        const FetchTarget &stream,
+        const TargetUpdateContext &ctx);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry
      *  @param btb_tag Tag of the BTB entry
-     *  @param entry Entry to update/replace
+     *  @param update_entry Entry to update/replace
      *  @param ctx Target update context with actual branch info
      */
-    void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
+    void updateBTBEntry(Addr btb_idx, Addr btb_tag,
+                        const TargetUpdateEntry &update_entry,
                         const TargetUpdateContext &ctx);
 
     /*

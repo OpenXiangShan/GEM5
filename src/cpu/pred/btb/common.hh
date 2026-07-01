@@ -710,6 +710,14 @@ struct FetchTarget
         return isResolvedUpdatePC(entry.pc, entry.resolved);
     }
 
+    TargetUpdateEntry
+    makeSelectedTargetUpdateEntry(const TargetUpdateContext &ctx) const
+    {
+        return {updateNewBTBEntry,
+                ctx.isTakenControlPC(updateNewBTBEntry.pc),
+                !updateIsOldEntry};
+    }
+
     std::vector<TargetUpdateEntry>
     makeTargetUpdateEntries(TargetUpdateEntryFilter filter,
                             bool resolved_update,
