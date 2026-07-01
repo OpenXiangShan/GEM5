@@ -370,6 +370,10 @@ private:
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
 
+    void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
+                           const DirectionUpdateContext &ctx,
+                           const std::shared_ptr<TageMeta> &predMeta);
+
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
