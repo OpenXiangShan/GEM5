@@ -140,7 +140,8 @@ struct BranchInfo
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false),
+          isDirect(false), isCall(false), isReturn(false), size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :

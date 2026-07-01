@@ -24,6 +24,71 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+namespace
+{
+
+BranchInfo
+makeBranchInfo(const ResolvedBranch &branch)
+{
+    BranchInfo info;
+    info.pc = branch.pc;
+    info.target = branch.target;
+    info.resolved = true;
+    info.isCond = branch.isCond;
+    info.isIndirect = branch.isIndirect;
+    info.isDirect = branch.isDirect;
+    info.isCall = branch.isCall;
+    info.isReturn = branch.isReturn;
+    info.size = branch.size;
+    return info;
+}
+
+void
+applyResolvedBranches(
+    FetchTarget &target,
+    const std::vector<ResolvedBranch> &branches)
+{
+    if (branches.empty()) {
+        return;
+    }
+
+    target.resolved = true;
+    target.exeTaken = false;
+    target.squashType = SquashType::SQUASH_NONE;
+    target.exeBranchInfo = makeBranchInfo(branches.back());
+
+    for (const auto &branch : branches) {
+        if (branch.mispred && target.squashType == SquashType::SQUASH_NONE) {
+            target.squashType = SquashType::SQUASH_CTRL;
+            target.squashPC = branch.pc;
+        }
+        if (branch.taken) {
+            target.exeTaken = true;
+            target.exeBranchInfo = makeBranchInfo(branch);
+            if (target.squashType == SquashType::SQUASH_NONE) {
+                target.squashPC = branch.pc;
+            }
+            break;
+        }
+    }
+}
+
+std::vector<ResolvedBranch>
+getUpdateBranches(const std::vector<ResolvedBranch> &branches)
+{
+    std::vector<ResolvedBranch> updateBranches;
+    for (const auto &branch : branches) {
+        updateBranches.push_back(branch);
+        // Branches after the first redirecting CFI are wrong-path in this FTQ.
+        if (branch.taken || branch.mispred) {
+            break;
+        }
+    }
+    return updateBranches;
+}
+
+} // anonymous namespace
+
 uint8_t
 DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
 {
@@ -756,6 +821,66 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
     return true;
 }
 
+bool
+DecoupledBPUWithBTB::resolveUpdate(
+    unsigned &target_id,
+    const std::vector<ResolvedBranch> &branches,
+    ThreadID tid)
+{
+    if (!ftq.hasTarget(target_id, tid)) {
+        DPRINTF(DecoupleBP, "Target id %u not found in fetchTargetQueue, cannot update predictors\n", target_id);
+        return true;
+    }
+
+    if (branches.empty()) {
+        return true;
+    }
+
+    const auto update_branches = getUpdateBranches(branches);
+    FetchTarget target = ftq.get(target_id, tid);
+    applyResolvedBranches(target, update_branches);
+    DPRINTF(DecoupleBP,
+            "Resolve update ftq=%u tid=%u branches=%zu updateBranches=%zu "
+            "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "
+            "squashPC=%#lx\n",
+            target_id, tid, branches.size(), update_branches.size(),
+            target.exeTaken,
+            target.exeBranchInfo.pc, target.exeBranchInfo.target,
+            target.squashType, target.squashPC);
+    for (const auto &branch : branches) {
+        DPRINTF(DecoupleBP,
+                "  resolved branch pc=%#lx target=%#lx taken=%d "
+                "mispred=%d cond=%d indirect=%d\n",
+                branch.pc, branch.target, branch.taken, branch.mispred,
+                branch.isCond, branch.isIndirect);
+    }
+
+    if (!(target.isHit || target.exeTaken)) {
+        return true;
+    }
+
+    prepareResolveUpdateEntries(target);
+    for (const auto &branch : update_branches) {
+        markCFIResolved(target, branch.pc);
+    }
+
+    for (int i = 0; i < numComponents; ++i) {
+        if (components[i]->getResolvedUpdate()) {
+            if (!components[i]->canResolveUpdate(target)) {
+                return false;
+            }
+        }
+    }
+
+    for (int i = 0; i < numComponents; ++i) {
+        if (components[i]->getResolvedUpdate()) {
+            components[i]->doResolveUpdate(target);
+        }
+    }
+
+    return true;
+}
+
 void
 DecoupledBPUWithBTB::notifyResolveSuccess(ThreadID tid)
 {
@@ -787,7 +912,12 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID t
         return;
     }
     auto &target = ftq.get(target_id, tid);
+    prepareResolveUpdateEntries(target);
+}
 
+void
+DecoupledBPUWithBTB::prepareResolveUpdateEntries(FetchTarget &target)
+{
     if (target.isHit || target.exeTaken) {
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
@@ -809,7 +939,12 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstP
         return;
     }
     auto &target = ftq.get(target_id, tid);
+    markCFIResolved(target, resolvedInstPC);
+}
 
+void
+DecoupledBPUWithBTB::markCFIResolved(FetchTarget &target, uint64_t resolvedInstPC)
+{
     if (target.updateNewBTBEntry.pc == resolvedInstPC) {
         target.updateNewBTBEntry.resolved = true;
     }

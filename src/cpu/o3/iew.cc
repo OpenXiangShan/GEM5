@@ -1509,12 +1509,35 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
+    if (inst->isControl() && cpu->isTraceMode() &&
+        inst->hasTraceBranchInfo()) {
+        std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
+        new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
+        inst->pcState(*new_pc);
+    }
+
     if (inst->isControl()) {
         auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
         TimeStruct::IewComm::ResolvedCFIEntry entry;
+        auto &branch = entry.branch;
         entry.ftqId = inst->getFtqId();
-        entry.pc = inst->getPC();
+        branch.pc = inst->getPC();
+        branch.target = inst->getNPC();
+        branch.taken = inst->branching() || inst->isUncondCtrl();
+        branch.mispred = inst->mispredicted();
+        branch.isCond = inst->isCondCtrl();
+        branch.isIndirect = inst->isIndirectCtrl();
+        branch.isDirect = inst->isDirectCtrl();
+        branch.isCall = inst->isCall();
+        branch.isReturn = inst->isReturn() &&
+            !inst->isNonSpeculative() && !inst->isDirectCtrl();
+        branch.size = inst->getInstBytes();
         resolved_cfis.push_back(entry);
+        DPRINTF(IEW, "[tid:%i] [sn:%llu] Resolved CFI ftq=%lu pc=%#lx "
+                "target=%#lx taken=%d mispred=%d cond=%d indirect=%d\n",
+                tid, inst->seqNum, entry.ftqId, branch.pc, branch.target,
+                branch.taken, branch.mispred, branch.isCond,
+                branch.isIndirect);
     }
 
     if (!fetchRedirect[tid] ||
@@ -1524,12 +1547,6 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         // Prevent testing for misprediction on load instructions,
         // that have not been executed.
         bool loadNotExecuted = !inst->isExecuted() && inst->isLoad();
-
-        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
-            std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
-            new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
-            inst->pcState(*new_pc);
-        }
 
         if (inst->mispredicted() && !loadNotExecuted &&
             !inst->isNonSpeculative()) {

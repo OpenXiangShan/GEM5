@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_COMM_HH__
 #define __CPU_O3_COMM_HH__
 
+#include <algorithm>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -50,6 +51,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/pred/btb/branch_record.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -216,7 +218,18 @@ struct ResolveQueueEntry
 {
     ThreadID resolvedTid;
     uint64_t resolvedFTQId;
-    std::vector<uint64_t> resolvedInstPC;
+    std::vector<branch_prediction::btb_pred::ResolvedBranch> resolvedBranches;
+
+    void
+    addBranch(const branch_prediction::btb_pred::ResolvedBranch &branch)
+    {
+        auto it = std::lower_bound(
+            resolvedBranches.begin(), resolvedBranches.end(), branch.pc,
+            [](const auto &queued, Addr pc) { return queued.pc < pc; });
+        if (it == resolvedBranches.end() || it->pc != branch.pc) {
+            resolvedBranches.insert(it, branch);
+        }
+    }
 };
 
 /** Struct that defines all backwards communication. */
@@ -258,9 +271,9 @@ struct TimeStruct
         struct ResolvedCFIEntry
         {
             uint64_t ftqId;
-            uint64_t pc;
+            branch_prediction::btb_pred::ResolvedBranch branch;
         };
-        /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
+        /** Resolved control-flow results produced this cycle. */
         std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
 
         unsigned iqCount;

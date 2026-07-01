@@ -15,6 +15,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/abtb.hh"
+#include "cpu/pred/btb/branch_record.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
@@ -721,8 +722,13 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Helper functions for update
     bool resolveUpdate(unsigned &target_id, ThreadID tid);
+    bool resolveUpdate(unsigned &target_id,
+                       const std::vector<ResolvedBranch> &branches,
+                       ThreadID tid);
     void prepareResolveUpdateEntries(unsigned &target_id, ThreadID tid);
     void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
+    void prepareResolveUpdateEntries(FetchTarget &target);
+    void markCFIResolved(FetchTarget &target, uint64_t resolvedInstPC);
     void updatePredictorComponents(FetchTarget &target);
     void updateStatistics(const FetchTarget &target);
     void notifyResolveSuccess(ThreadID tid);

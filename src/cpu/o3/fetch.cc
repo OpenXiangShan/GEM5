@@ -1663,7 +1663,7 @@ Fetch::handleIEWSignals()
                 for (auto &queued : resolveQueue) {
                     if (queued.resolvedTid == tid &&
                         queued.resolvedFTQId == resolved.ftqId) {
-                        queued.resolvedInstPC.push_back(resolved.pc);
+                        queued.addBranch(resolved.branch);
                         merged = true;
                         break;
                     }
@@ -1676,7 +1676,7 @@ Fetch::handleIEWSignals()
                 ResolveQueueEntry new_entry;
                 new_entry.resolvedTid = tid;
                 new_entry.resolvedFTQId = resolved.ftqId;
-                new_entry.resolvedInstPC.push_back(resolved.pc);
+                new_entry.addBranch(resolved.branch);
                 resolveQueue.push_back(std::move(new_entry));
                 enqueueCount++;
             }
@@ -1693,11 +1693,7 @@ Fetch::handleIEWSignals()
         auto &entry = resolveQueue.front();
         ThreadID tid = entry.resolvedTid;
         unsigned int stream_id = entry.resolvedFTQId;
-        dbpbtb->prepareResolveUpdateEntries(stream_id, tid);
-        for (const auto resolvedInstPC : entry.resolvedInstPC) {
-            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, tid);
-        }
-        bool success = dbpbtb->resolveUpdate(stream_id, tid);
+        bool success = dbpbtb->resolveUpdate(stream_id, entry.resolvedBranches, tid);
         if (success) {
             dbpbtb->notifyResolveSuccess(tid);
             resolveQueue.pop_front();
