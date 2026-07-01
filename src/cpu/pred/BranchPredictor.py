@@ -1215,3 +1215,18 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    selectiveOracleReplayDBFile = Param.String(
+        "", "Replay committed conditional branch outcomes from bp.db and override selected predictions")
+    selectiveOracleRecordCSVFile = Param.String(
+        "", "Record committed logical fetch-block outcomes into a CSV file")
+    selectiveOracleReplayCSVFile = Param.String(
+        "", "Replay committed logical fetch-block outcomes from a CSV file")
+    selectiveOracleBranchPCs = VectorParam.Addr(
+        [],
+        "Conditional branch PCs used to select replayed fetch-block start PCs; "
+        "empty means all traced fetch blocks are eligible")
+    selectiveOracleReplayLookahead = Param.Unsigned(
+        64,
+        "Number of replay trace blocks to scan for startPC re-synchronization")
+    selectiveOraclePanicOnMismatch = Param.Bool(
+        False, "Panic when selective oracle replay cannot find a matching outcome")

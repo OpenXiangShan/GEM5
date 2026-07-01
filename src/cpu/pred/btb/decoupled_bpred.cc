@@ -1,7 +1,6 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 
 #include <algorithm>
-#include <array>
 
 #include "arch/riscv/regs/misc.hh"
 #include "base/debug_helper.hh"
@@ -75,6 +74,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
              "SMT FTQ threshold (%u) exceeds total FTQ entries (%u)",
              smtFTQThreshold, ftqEntries);
 
+    initSelectiveOracle(p);
+
     if (bpDBSwitches.size() > 0) {
         initDB();
     }
@@ -142,6 +143,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     lastPhaseFsqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
 
     registerExitCallback([this]() {
+        flushSelectiveOracleRecordBuilders();
+        publishSelectiveOracleLoadedStat();
         this->dumpStats();
     });
 }
@@ -500,6 +503,8 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
 
+    applySelectiveOracle(tid, ftq.nextId(tid));
+
     // 1. Create a new fetch target entry with prediction information
     FetchTarget entry = createFetchTargetEntry(tid);
 
@@ -568,7 +573,10 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                 "Ignore squash for tid %u on missing FTQ target %u; "
                 "recovering predictor state from redirect PC %#lx\n",
                 tid, target_id, redirect_pc);
-        ftq.clear(tid);
+        ftq.clear(tid, [this, tid](FetchTargetId target_id,
+                                   const FetchTarget &) {
+            restoreSelectiveOracleBlock(tid, target_id);
+        });
         clearPreds(tid);
         threads[tid].validprediction = false;
         threads[tid].s0PC = redirect_pc;
@@ -592,7 +600,10 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     }
 
     // Remove targets after the squashed one
-    ftq.squashAfter(target_id, tid);
+    ftq.squashAfter(target_id, tid, [this, tid](FetchTargetId squashed_id,
+                                                 const FetchTarget &) {
+        restoreSelectiveOracleBlock(tid, squashed_id);
+    });
 
     // Recover history using the extracted function
     recoverHistoryForSquash(target, target_id, squash_pc, is_conditional, actually_taken, squash_type, redirect_pc);
@@ -710,6 +721,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         // Update predictor components
         updatePredictorComponents(target);
 
+        const FetchTargetId committed_id = ftq.frontId(tid);
+        writeSelectiveOracleRecordBlock(tid, committed_id, target);
+        commitSelectiveOracleBlock(tid, committed_id);
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
     }

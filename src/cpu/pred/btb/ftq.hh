@@ -1,6 +1,8 @@
 #ifndef __CPU_PRED_BTB_FTQ_HH__
 #define __CPU_PRED_BTB_FTQ_HH__
 
+#include <functional>
+
 #include "base/types.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
@@ -44,6 +46,7 @@ public:
     // targetid == 0 means no target
     inline FetchTargetId frontId(ThreadID tid) const { return queue[tid].baseTargetId; }
     inline FetchTargetId backId(ThreadID tid) const { return queue[tid].baseTargetId + queue[tid].cap.size() - 1; }
+    inline FetchTargetId nextId(ThreadID tid) const { return queue[tid].baseTargetId + queue[tid].cap.size(); }
     inline FetchTargetId fetchId(ThreadID tid) const { return queue[tid].fetchptr; }
     inline FetchTarget& front(ThreadID tid) { return queue[tid].cap.front(); }
     inline FetchTarget& back(ThreadID tid) { return queue[tid].cap.back(); }
@@ -80,7 +83,14 @@ public:
     void finishTarget(ThreadID tid);
     void commitTarget(ThreadID tid);
     void squashAfter(FetchTargetId targetId, ThreadID tid);
+    void squashAfter(
+        FetchTargetId targetId,
+        ThreadID tid,
+        const std::function<void(FetchTargetId, const FetchTarget&)> &onSquash);
     void clear(ThreadID tid);
+    void clear(
+        ThreadID tid,
+        const std::function<void(FetchTargetId, const FetchTarget&)> &onClear);
 };
 
 }
