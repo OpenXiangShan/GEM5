@@ -923,11 +923,20 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(FetchTarget &target)
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
 
-        // only mbtb can generate new entry
-        if (mbtb->isEnabled()) {
-            mbtb->getAndSetNewBTBEntry(target);
-        }
+        selectUpdateEntry(target);
     }
+}
+
+void
+DecoupledBPUWithBTB::selectUpdateEntry(FetchTarget &target)
+{
+    if (!mbtb->isEnabled()) {
+        return;
+    }
+
+    const auto selection = mbtb->selectUpdateEntry(target);
+    target.updateNewBTBEntry = selection.entry;
+    target.updateIsOldEntry = selection.isOldEntry;
 }
 
 void
@@ -961,10 +970,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
 
-        // only mbtb can generate new entry
-        if (mbtb->isEnabled()) {
-            mbtb->getAndSetNewBTBEntry(target);
-        }
+        selectUpdateEntry(target);
 
         // Update predictor components
         for (int i = 0; i < numComponents; ++i) {

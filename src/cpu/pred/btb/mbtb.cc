@@ -395,21 +395,21 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
 
 /*
  * Generate a new BTB entry or update an existing one based on execution results
- * 
+ *
  * This function is called during BTB update to:
  * 1. Check if the executed branch was predicted (hit in BTB)
  * 2. If hit, prepare to update the existing entry
  * 3. If miss and branch was taken:
  *    - Create a new entry
  *    - For conditional branches, initialize as always taken with counter = 1
- * 4. Set the tag and update stream metadata for later use in update()
- * 
+ * 4. Return the selected update entry for later use in update()
+ *
  * Note: This is only called in L1 BTB during update
  */
-void
-MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
+BTBUpdateEntrySelection
+MBTB::selectUpdateEntry(const FetchTarget &stream)
 {
-    DPRINTF(BTB, "getAndSetNewBTBEntry called for pc %#lx\n", stream.startPC);
+    DPRINTF(BTB, "selectUpdateEntry called for pc %#lx\n", stream.startPC);
     // Get prediction metadata from previous stages
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &predBTBEntries = meta->hit_entries;
@@ -451,8 +451,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
 
     // Set tag and update stream metadata for use in update()
     entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
-    stream.updateNewBTBEntry = entry_to_write;
-    stream.updateIsOldEntry = is_old_entry;
+    return {entry_to_write, is_old_entry};
 }
 
 /**

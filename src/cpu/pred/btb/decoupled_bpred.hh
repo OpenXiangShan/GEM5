@@ -728,6 +728,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void prepareResolveUpdateEntries(unsigned &target_id, ThreadID tid);
     void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
     void prepareResolveUpdateEntries(FetchTarget &target);
+    void selectUpdateEntry(FetchTarget &target);
     void markCFIResolved(FetchTarget &target, uint64_t resolvedInstPC);
     void updatePredictorComponents(FetchTarget &target);
     void updateStatistics(const FetchTarget &target);

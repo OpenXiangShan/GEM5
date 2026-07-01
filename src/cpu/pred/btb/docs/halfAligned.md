@@ -100,7 +100,7 @@ The testing strategy for the Half-Aligned BTB follows the standard prediction-up
 2. **Update Phase**
    - Set up update stream with branch information
    - Set prediction metadata from previous phase
-   - Call `getAndSetNewBTBEntry` to prepare new entry
+   - Call `selectUpdateEntry` to prepare the update entry selection
    - Call `update` to update the BTB
 
 3. **Verification**

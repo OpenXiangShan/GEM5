@@ -133,7 +133,9 @@ predictUpdateCycle(MBTB* btb,
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
     stream.setUpdateBTBEntries();
-    btb->getAndSetNewBTBEntry(stream);
+    auto selection = btb->selectUpdateEntry(stream);
+    stream.updateNewBTBEntry = selection.entry;
+    stream.updateIsOldEntry = selection.isOldEntry;
 
     for (auto &entry : stream.updateBTBEntries) {
         entry.resolved = true;
@@ -210,7 +212,7 @@ TEST_F(BTBTest, EmptyPrediction) {
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]
-// 3. getAndSetNewBTBEntry, only L1 BTB has this function
+// 3. selectUpdateEntry, only L1 BTB has this function
 // 4. update, update btb entries
 
 // Test basic prediction after update
@@ -367,7 +369,9 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     auto meta = mbtb->getPredictionMeta();
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
-    mbtb->getAndSetNewBTBEntry(stream);
+    auto selection = mbtb->selectUpdateEntry(stream);
+    stream.updateNewBTBEntry = selection.entry;
+    stream.updateIsOldEntry = selection.isOldEntry;
     mbtb->update(stream);
     
     // Check final predictions

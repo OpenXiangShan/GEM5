@@ -240,6 +240,12 @@ struct BTBEntry : BranchInfo
     }
 };
 
+struct BTBUpdateEntrySelection
+{
+    BTBEntry entry;
+    bool isOldEntry = false;
+};
+
 /**
  * @brief Tage prediction info for MGSC
  */
@@ -352,7 +358,7 @@ struct FetchTarget
     bool exeTaken;         // whether the branch is taken(resolved)
     BranchInfo exeBranchInfo; // executed branch info
 
-    BTBEntry updateNewBTBEntry; // the possible new entry, set by L1BTB.getAndSetNewBTBEntry, used by L1BTB/L0BTB.update
+    BTBEntry updateNewBTBEntry; // possible new entry selected by L1 BTB, used by L1/L0 BTB update
     bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
     bool resolved;  // whether the branch is resolved/executed
 

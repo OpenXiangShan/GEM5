@@ -62,7 +62,10 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 }
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb, MBTB *mbtb) {
-    mbtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
+    // Usually called by the top-level BPU; explicit here for testing.
+    auto selection = mbtb->selectUpdateEntry(stream);
+    stream.updateNewBTBEntry = selection.entry;
+    stream.updateIsOldEntry = selection.isOldEntry;
     abtb->update(stream);
 }
 

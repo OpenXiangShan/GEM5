@@ -225,9 +225,11 @@ FetchTarget stream;
 stream.startPC = pc;
 stream.predMetas[0] = meta;
 
-// Optional: Get and set new BTB entry (only for L1 BTB)
+// Optional: Select update entry (only for L1 BTB)
 if (isL1BTB) {
-    btb->getAndSetNewBTBEntry(stream);
+    auto selection = btb->selectUpdateEntry(stream);
+    stream.updateNewBTBEntry = selection.entry;
+    stream.updateIsOldEntry = selection.isOldEntry;
 }
 
 // Update BTB
