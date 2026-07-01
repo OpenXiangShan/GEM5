@@ -183,7 +183,7 @@ class AheadBTB : public TimedBaseBTBPredictor
             e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
     }
 
-    std::vector<BTBEntry> collectEntriesToUpdateFromS3Pred(
+    std::vector<TargetUpdateEntry> collectEntriesToUpdateFromS3Pred(
         const std::vector<BTBEntry>& old_entries,
         FullBTBPrediction &s3Pred);
 

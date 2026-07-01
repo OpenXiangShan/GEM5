@@ -671,23 +671,27 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         update_ctx.controlPC = s3Pred.getTakenEntry().pc;
         update_ctx.actualBranch = s3Pred.getTakenEntry();
         update_ctx.actualTaken = s3Pred.isTaken();
-        entry.source = getComponentIdx(); // mark the entry source as AheadBTB
+        entry.entry.source = getComponentIdx(); // mark the entry source as AheadBTB
 
-        updateBTBEntry(btb_idx, btb_tag, {entry, update_ctx.isTakenControlPC(entry.pc), false},
-                       update_ctx);
+        updateBTBEntry(btb_idx, btb_tag, entry, update_ctx);
     }
 }
-std::vector<BTBEntry>
+std::vector<TargetUpdateEntry>
 AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entries,
                                      FullBTBPrediction &s3Pred)
 {
-    auto all_entries = old_entries;
+    std::vector<TargetUpdateEntry> all_entries;
+    all_entries.reserve(old_entries.size() + 1);
+    const auto &taken_entry = s3Pred.getTakenEntry();
+    for (const auto &entry : old_entries) {
+        all_entries.push_back({entry, s3Pred.isTaken() && entry == taken_entry, false});
+    }
     BTBEntry new_entry = BTBEntry();
     // which causes its counter to update twice unintentionally
     // we need to check if the new entry already exists in uBTB
     bool pred_branch_hit = false;
     for (auto &e: old_entries) {
-        if (s3Pred.getTakenEntry() == e) {
+        if (taken_entry == e) {
             pred_branch_hit = true;
             break;
         }
@@ -700,7 +704,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
             new_entry.alwaysTaken = true;
             new_entry.ctr = 0;
         }
-        all_entries.push_back(new_entry);
+        all_entries.push_back({new_entry, true, true});
     }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
