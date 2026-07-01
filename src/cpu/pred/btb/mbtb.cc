@@ -407,9 +407,10 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
  * Note: This is only called in L1 BTB during update
  */
 BTBUpdateEntrySelection
-MBTB::selectUpdateEntry(const FetchTarget &stream)
+MBTB::selectUpdateEntry(const FetchTarget &stream,
+                        const TargetUpdateContext &ctx)
 {
-    DPRINTF(BTB, "selectUpdateEntry called for pc %#lx\n", stream.startPC);
+    DPRINTF(BTB, "selectUpdateEntry called for pc %#lx\n", ctx.startPC);
     // Get prediction metadata from previous stages
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &predBTBEntries = meta->hit_entries;
@@ -418,7 +419,7 @@ MBTB::selectUpdateEntry(const FetchTarget &stream)
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
     for (auto &e: predBTBEntries) {
-        if (stream.exeBranchInfo == e) {
+        if (ctx.actualBranch == e) {
             pred_branch_hit = true;
             entry_to_write = e;
             break;
@@ -427,9 +428,9 @@ MBTB::selectUpdateEntry(const FetchTarget &stream)
     bool is_old_entry = pred_branch_hit;
 
     // If branch was not predicted but was actually taken in execution, create new entry
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", stream.exeBranchInfo.pc);
-        BTBEntry new_entry = BTBEntry(stream.exeBranchInfo);
+    if (!pred_branch_hit && ctx.actualTaken) {
+        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", ctx.actualBranch.pc);
+        BTBEntry new_entry = BTBEntry(ctx.actualBranch);
         new_entry.valid = true;
         // For conditional branches, initialize as always taken
         if (new_entry.isCond) {
@@ -441,16 +442,16 @@ MBTB::selectUpdateEntry(const FetchTarget &stream)
         }
         btbStats.newEntry++;
         entry_to_write = new_entry;
-        entry_to_write.resolved = stream.exeBranchInfo.resolved;
+        entry_to_write.resolved = ctx.actualBranch.resolved;
         is_old_entry = false;
     } else {
-        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
-                pred_branch_hit, stream.exeTaken);
+        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, actualTaken=%d\n",
+                pred_branch_hit, ctx.actualTaken);
         // Existing entries will be updated in update()
     }
 
     // Set tag and update stream metadata for use in update()
-    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
+    entry_to_write.tag = getTag(entry_to_write.pc, ctx.asidHash);
     return {entry_to_write, is_old_entry};
 }
 

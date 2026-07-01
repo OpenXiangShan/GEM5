@@ -155,7 +155,8 @@ class MBTB : public TimedBaseBTBPredictor
      *
      * Only L1 BTB uses this before component update.
      */
-    BTBUpdateEntrySelection selectUpdateEntry(const FetchTarget &stream);
+    BTBUpdateEntrySelection selectUpdateEntry(
+        const FetchTarget &stream, const TargetUpdateContext &ctx);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:

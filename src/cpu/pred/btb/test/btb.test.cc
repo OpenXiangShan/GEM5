@@ -133,7 +133,8 @@ predictUpdateCycle(MBTB* btb,
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
     stream.setUpdateBTBEntries();
-    auto selection = btb->selectUpdateEntry(stream);
+    auto selection = btb->selectUpdateEntry(
+        stream, stream.makeTargetUpdateContext());
     stream.updateNewBTBEntry = selection.entry;
     stream.updateIsOldEntry = selection.isOldEntry;
 
@@ -369,7 +370,8 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     auto meta = mbtb->getPredictionMeta();
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
-    auto selection = mbtb->selectUpdateEntry(stream);
+    auto selection = mbtb->selectUpdateEntry(
+        stream, stream.makeTargetUpdateContext());
     stream.updateNewBTBEntry = selection.entry;
     stream.updateIsOldEntry = selection.isOldEntry;
     mbtb->update(stream);
