@@ -295,15 +295,15 @@ void
 UBTB::update(const FetchTarget &stream)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
-    // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = stream.updateEndInstPC;
+    const auto update_ctx = stream.makeTargetUpdateContext();
 
     auto pred_hit_entry = meta->hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
-     // Use BTBEntry instead of BranchInfo; make it invalid when not taken
-    BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
-    auto startAddr = stream.getRealStartPC();
-    Addr oldtag = getTag(startAddr, stream.asidHash);
+    // Use BTBEntry instead of BranchInfo; make it invalid when not taken.
+    BTBEntry takenEntry = update_ctx.actualTaken ?
+        BTBEntry(update_ctx.actualBranch) : BTBEntry();
+    auto startAddr = update_ctx.startPC;
+    Addr oldtag = getTag(startAddr, update_ctx.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
     UBTBIter oldEntryIter = ubtb.end();
@@ -314,9 +314,11 @@ UBTB::update(const FetchTarget &stream)
                                e.pc >= startAddr && e.pc < block_end;
                     }) : ubtb.end();
 
-    if (stream.exeTaken) {
-        if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
-            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (update_ctx.actualTaken) {
+        if (!pred_hit_entry.valid ||
+            pred_hit_entry != update_ctx.actualBranch) {
+            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n",
+                    update_ctx.actualBranch.pc, update_ctx.predTick);
             ubtbStats.updateMiss++;
         }else {
             ubtbStats.updateHit++;
@@ -326,7 +328,8 @@ UBTB::update(const FetchTarget &stream)
     // Verify uBTB state
     assert(ubtb.size() <= numEntries);
     if (!usingS3Pred) {
-        updateNewEntry(oldEntryIter, takenEntry, startAddr, stream.asidHash);
+        updateNewEntry(oldEntryIter, takenEntry, startAddr,
+                       update_ctx.asidHash);
     }
 }
 

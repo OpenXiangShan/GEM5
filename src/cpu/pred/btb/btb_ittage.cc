@@ -390,9 +390,12 @@ BTBITTAGE::update(const FetchTarget &stream)
                 unsigned startTable = main_found ? main_info.table + 1 : 0;
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
-                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get(), stream.asidHash);
+                    Addr newIndex = getTageIndex(startAddr, ti,
+                                                 updateIndexFoldedHist[ti].get(),
+                                                 update_ctx.asidHash);
                     Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(),
-                                             updateAltTagFoldedHist[ti].get(), stream.asidHash);
+                                             updateAltTagFoldedHist[ti].get(),
+                                             update_ctx.asidHash);
                     assert(newIndex < tageTable[ti].size());
                     auto &newEntry = tageTable[ti][newIndex];
 
