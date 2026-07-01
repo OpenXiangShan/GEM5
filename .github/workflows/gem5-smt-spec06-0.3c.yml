@@ -23,10 +23,6 @@ jobs:
     with:
       config_path: configs/example/smt_idealkmhv3.py
       benchmark_type: "gcc12-spec06-smt-0.3c"
-      distributed_servers: "node020-node034,node036-node039"
-      distributed_server_domain: ""
+      distributed_servers: "default"
       distributed_jobs_per_server: 32
-      distributed_require_idle_cpus: 32
-      distributed_ssh_config: ""
-      distributed_dispatch_host: "ci-runner@172.28.9.101"
       pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}

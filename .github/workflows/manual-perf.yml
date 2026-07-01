@@ -55,12 +55,7 @@ on:
         type: string
         default: ''
       distributed_servers:
-        description: 'Optional distributed server list, e.g. node020-node039. Leave empty to use old single-runner parallel path'
-        required: false
-        type: string
-        default: ''
-      distributed_server_domain:
-        description: 'DNS domain appended to distributed server names without dots; leave empty to use names as-is'
+        description: 'Optional distributed server list. Use default for node020-node034,node036-node039; leave empty for old single-runner parallel path'
         required: false
         type: string
         default: ''
@@ -69,26 +64,6 @@ on:
         required: false
         type: number
         default: 32
-      distributed_require_idle_cpus:
-        description: 'Required idle-ish CPUs per distributed server; 0 disables idle probing'
-        required: false
-        type: number
-        default: 32
-      distributed_ssh_user:
-        description: 'Optional ssh user for distributed worker servers'
-        required: false
-        type: string
-        default: ''
-      distributed_dispatch_host:
-        description: 'Optional ssh host used to dispatch worker ssh commands, e.g. ci-runner@open01'
-        required: false
-        type: string
-        default: ''
-      distributed_ssh_config:
-        description: 'Optional ssh config path for distributed runs'
-        required: false
-        type: string
-        default: ''
       branch:
         description: 'Branch, tag or SHA to test (leave empty for current branch)'
         required: false
@@ -126,12 +101,7 @@ jobs:
       vector_type: ${{ github.event.inputs.vector_type }}
       extra_args: ${{ github.event.inputs.extra_args }}
       distributed_servers: ${{ github.event.inputs.distributed_servers }}
-      distributed_server_domain: ${{ github.event.inputs.distributed_server_domain }}
       distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server) }}
-      distributed_require_idle_cpus: ${{ fromJSON(github.event.inputs.distributed_require_idle_cpus) }}
-      distributed_ssh_user: ${{ github.event.inputs.distributed_ssh_user }}
-      distributed_dispatch_host: ${{ github.event.inputs.distributed_dispatch_host }}
-      distributed_ssh_config: ${{ github.event.inputs.distributed_ssh_config }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
       timeout_minutes: 720
