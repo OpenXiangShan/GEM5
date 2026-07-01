@@ -45,6 +45,7 @@
 #include <deque>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
@@ -632,6 +633,27 @@ class Fetch
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
 
+    struct DequeuedResolveRecord
+    {
+        uint64_t ftqId = 0;
+        std::vector<Addr> trainedPCs;
+        Addr trainedMaxPC = 0;
+        Addr redirectPC = 0;
+        bool hasRedirect = false;
+    };
+
+    static constexpr size_t MaxRecentResolveRecords = 32;
+
+    std::vector<std::deque<DequeuedResolveRecord>>
+        recentlyDequeuedResolveRecords;
+
+    void observeResolveEnqueueAfterDequeue(
+        ThreadID tid,
+        uint64_t ftqId,
+        const branch_prediction::btb_pred::ResolvedBranch &branch);
+
+    void rememberDequeuedResolveEntry(const ResolveQueueEntry &entry);
+
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
 
@@ -1126,6 +1148,14 @@ class Fetch
         statistics::Distribution resolveEnqueueCount;
         /** Stat for entry occupancy distribution of the resolve queue. */
         statistics::Distribution resolveQueueOccupancy;
+        /** Same FTQ resolve branch arrived after an entry was dequeued. */
+        statistics::Scalar resolveLateSameFTQAfterDequeue;
+        /** Same FTQ late branch duplicates an already trained PC. */
+        statistics::Scalar resolveLateSameFTQDuplicate;
+        /** Same FTQ late branch is older than a trained PC. */
+        statistics::Scalar resolveLateSameFTQOlderThanTrained;
+        /** Same FTQ late branch is after a trained redirecting CFI. */
+        statistics::Scalar resolveLateSameFTQAfterRedirect;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

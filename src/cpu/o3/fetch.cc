@@ -66,6 +66,7 @@
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
 #include "debug/FetchFault.hh"
+#include "debug/FetchResolve.hh"
 #include "debug/FetchVerbose.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
@@ -115,6 +116,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("fetchWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
+
+    recentlyDequeuedResolveRecords.resize(numThreads);
 
     smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     for (int i = 0; i < MaxThreads; i++) {
@@ -287,6 +290,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of times an entry is enqueued to the resolve queue"),
     ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
              "Number of entries in the resolve queue"),
+    ADD_STAT(resolveLateSameFTQAfterDequeue, statistics::units::Count::get(),
+             "Resolved branches that arrive after same-FTQ resolve dequeue"),
+    ADD_STAT(resolveLateSameFTQDuplicate, statistics::units::Count::get(),
+             "Resolved branches that duplicate a same-FTQ dequeued prefix PC"),
+    ADD_STAT(resolveLateSameFTQOlderThanTrained, statistics::units::Count::get(),
+             "Resolved branches older than a same-FTQ dequeued prefix PC"),
+    ADD_STAT(resolveLateSameFTQAfterRedirect, statistics::units::Count::get(),
+             "Resolved branches after a same-FTQ dequeued redirecting CFI"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -1637,6 +1648,90 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 void
+Fetch::observeResolveEnqueueAfterDequeue(
+    ThreadID tid,
+    uint64_t ftqId,
+    const branch_prediction::btb_pred::ResolvedBranch &branch)
+{
+    if (tid >= recentlyDequeuedResolveRecords.size()) {
+        return;
+    }
+
+    bool found_same_ftq = false;
+    bool duplicate = false;
+    bool older_than_trained = false;
+    bool after_redirect = false;
+
+    for (auto it = recentlyDequeuedResolveRecords[tid].rbegin();
+         it != recentlyDequeuedResolveRecords[tid].rend(); ++it) {
+        if (it->ftqId != ftqId) {
+            continue;
+        }
+
+        found_same_ftq = true;
+        duplicate |= std::find(it->trainedPCs.begin(), it->trainedPCs.end(),
+                               branch.pc) != it->trainedPCs.end();
+        older_than_trained |= branch.pc < it->trainedMaxPC;
+        after_redirect |= it->hasRedirect && branch.pc > it->redirectPC;
+    }
+
+    if (!found_same_ftq) {
+        return;
+    }
+
+    fetchStats.resolveLateSameFTQAfterDequeue++;
+    if (duplicate) {
+        fetchStats.resolveLateSameFTQDuplicate++;
+    }
+    if (older_than_trained) {
+        fetchStats.resolveLateSameFTQOlderThanTrained++;
+    }
+    if (after_redirect) {
+        fetchStats.resolveLateSameFTQAfterRedirect++;
+    }
+
+    DPRINTF(FetchResolve,
+            "[tid:%u] Late same-FTQ resolve after dequeue: ftq=%lu pc=%#lx "
+            "target=%#lx taken=%d mispred=%d duplicate=%d "
+            "olderThanTrained=%d afterRedirect=%d\n",
+            tid, ftqId, branch.pc, branch.target, branch.taken,
+            branch.mispred, duplicate, older_than_trained, after_redirect);
+}
+
+void
+Fetch::rememberDequeuedResolveEntry(const ResolveQueueEntry &entry)
+{
+    if (entry.resolvedTid >= recentlyDequeuedResolveRecords.size() ||
+        entry.resolvedBranches.empty()) {
+        return;
+    }
+
+    DequeuedResolveRecord record;
+    record.ftqId = entry.resolvedFTQId;
+
+    for (const auto &branch : entry.resolvedBranches) {
+        record.trainedPCs.push_back(branch.pc);
+        record.trainedMaxPC = branch.pc;
+
+        if (branch.taken || branch.mispred) {
+            record.hasRedirect = true;
+            record.redirectPC = branch.pc;
+            break;
+        }
+    }
+
+    if (record.trainedPCs.empty()) {
+        return;
+    }
+
+    auto &records = recentlyDequeuedResolveRecords[entry.resolvedTid];
+    records.push_back(std::move(record));
+    while (records.size() > MaxRecentResolveRecords) {
+        records.pop_front();
+    }
+}
+
+void
 Fetch::handleIEWSignals()
 {
     // Currently resolve stage training is a btb-only feature
@@ -1659,6 +1754,9 @@ Fetch::handleIEWSignals()
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
             for (const auto &resolved : incoming) {
+                observeResolveEnqueueAfterDequeue(
+                    tid, resolved.ftqId, resolved.branch);
+
                 bool merged = false;
                 for (auto &queued : resolveQueue) {
                     if (queued.resolvedTid == tid &&
@@ -1696,6 +1794,7 @@ Fetch::handleIEWSignals()
         bool success = dbpbtb->resolveUpdate(stream_id, entry.resolvedBranches, tid);
         if (success) {
             dbpbtb->notifyResolveSuccess(tid);
+            rememberDequeuedResolveEntry(entry);
             resolveQueue.pop_front();
             fetchStats.resolveDequeueCount++;
         } else {
