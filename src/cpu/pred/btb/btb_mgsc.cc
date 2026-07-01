@@ -839,11 +839,11 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
- * @param stream The fetch stream containing update information
+ * @param ctx Stream-level context needed by direction update
  */
 void
 BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream)
+                               const DirectionUpdateContext &ctx)
 {
     // Extract prediction information
     auto total_sum = pred.total_sum;
@@ -865,7 +865,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         };
         MgscTrace t;
         t.set(entry.pc,
-            stream.startPC, getOffset(entry.pc),
+            ctx.startPC, getOffset(entry.pc),
             tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
             pred.bw_percsum, pred.l_percsum, pred.i_percsum,
             pred.g_percsum, pred.p_percsum, pred.bias_percsum,
@@ -885,8 +885,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         // Only update tables if prediction was wrong or confidence was low
     if (sc_pred_taken != actual_taken || abs(total_sum) < (total_thres / 2)) {
         // get weight table index from startPC
-        Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth,
-                                         stream.asidHash);
+        Addr weightTableIdx = getPcIndex(ctx.startPC, weightTableIdxWidth,
+                                         ctx.asidHash);
         bool threshold_inc = (sc_pred_taken != actual_taken);
         if (threshold_inc) {
             mgscStats.pcThresholdInc++;
@@ -928,7 +928,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
         // Update PC-indexed threshold table (only if enabled)
         if (enablePCThreshold) {
-            updatePCThresholdTable(entry.pc, stream.asidHash,
+            updatePCThresholdTable(entry.pc, ctx.asidHash,
                                    sc_pred_taken != actual_taken);
         }
 
@@ -954,6 +954,7 @@ BTBMGSC::update(const FetchTarget &stream)
     auto &preds = meta->preds;
 
     // Process each BTB entry
+    const auto update_ctx = stream.makeDirectionUpdateContext();
     for (const auto &update_entry : entries_to_update) {
         const auto &btb_entry = update_entry.entry;
         const bool actual_taken = update_entry.actualTaken;
@@ -964,7 +965,8 @@ BTBMGSC::update(const FetchTarget &stream)
         }
 
         // Update predictor state and check if need to allocate new entry
-        updateSinglePredictor(btb_entry, actual_taken, pred_it->second, stream);
+        updateSinglePredictor(btb_entry, actual_taken, pred_it->second,
+                              update_ctx);
     }
 
     DPRINTF(MGSC, "end update\n");

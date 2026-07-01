@@ -256,6 +256,8 @@ struct DirectionUpdateEntry
 
 struct DirectionUpdateContext
 {
+    Addr startPC = 0;
+    uint8_t asidHash = 0;
     SquashType squashType = SquashType::SQUASH_NONE;
     Addr squashPC = 0;
 
@@ -575,7 +577,8 @@ struct FetchTarget
 
     DirectionUpdateContext makeDirectionUpdateContext() const
     {
-        return {static_cast<SquashType>(squashType), squashPC};
+        return {getRealStartPC(), asidHash,
+                static_cast<SquashType>(squashType), squashPC};
     }
 
     bool shouldKeepDirectionUpdateEntry(const BTBEntry &entry,

@@ -301,7 +301,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         const FetchTarget &stream);
 
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream);
+                               const DirectionUpdateContext &ctx);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
                                bool tage_pred_taken);
 
