@@ -473,7 +473,8 @@ private:
                                            uint8_t asidHash = 0);
 
     // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    std::vector<DirectionUpdateEntry> prepareUpdateEntries(
+        const FetchTarget &stream);
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,

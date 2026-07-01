@@ -390,35 +390,11 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
  * @param stream The fetch stream containing update information
  * @return Vector of BTB entries that need to be updated
  */
-std::vector<BTBEntry>
+std::vector<DirectionUpdateEntry>
 MicroTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [&stream](const BTBEntry &e) {
-                const bool is_resolved = stream.isResolvedUpdatePC(e.pc, e.resolved);
-                return !(e.isCond && !e.alwaysTaken && is_resolved);
-            });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
+    return stream.makeDirectionUpdateEntries(
+        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        getResolvedUpdate());
 }
 
 /**
@@ -682,8 +658,9 @@ MicroTAGE::update(const FetchTarget &stream) {
 
     bool utage_hit = false;
     // Process each BTB entry
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+    for (const auto &update_entry : entries_to_update) {
+        const auto &btb_entry = update_entry.entry;
+        const bool actual_taken = update_entry.actualTaken;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)

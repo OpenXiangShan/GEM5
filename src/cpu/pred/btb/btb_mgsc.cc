@@ -628,36 +628,11 @@ BTBMGSC::getPredictionMeta(ThreadID tid)
  * @param stream The fetch stream containing update information
  * @return Vector of BTB entries that need to be updated
  */
-std::vector<BTBEntry>
+std::vector<DirectionUpdateEntry>
 BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
 {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Filter out non-conditional and always-taken branches
-    auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-                                    [&stream, this](const BTBEntry &e) {
-                                        const bool keep_existing =
-                                            e.isCond || e.alwaysTaken;
-                                        if (!getResolvedUpdate() ||
-                                            !stream.hasResolvedUpdatePrefix()) {
-                                            return !keep_existing;
-                                        }
-                                        return !(keep_existing &&
-                                                 stream.isInResolvedUpdatePrefix(e.pc));
-                                    });
-    all_entries.erase(remove_it, all_entries.end());
-
-    // Handle potential new BTB entry
-    auto &potential_new_entry = stream.updateNewBTBEntry;
-    const bool new_entry_in_prefix = !getResolvedUpdate() ||
-        !stream.hasResolvedUpdatePrefix() ||
-        stream.isInResolvedUpdatePrefix(potential_new_entry.pc);
-    if (!stream.updateIsOldEntry && new_entry_in_prefix &&
-        potential_new_entry.isCond && !potential_new_entry.alwaysTaken) {
-        all_entries.push_back(potential_new_entry);
-    }
-
-    return all_entries;
+    return stream.makeDirectionUpdateEntries(DirectionUpdateEntryFilter::Mgsc,
+                                             getResolvedUpdate());
 }
 
 /**
@@ -979,8 +954,9 @@ BTBMGSC::update(const FetchTarget &stream)
     auto &preds = meta->preds;
 
     // Process each BTB entry
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+    for (const auto &update_entry : entries_to_update) {
+        const auto &btb_entry = update_entry.entry;
+        const bool actual_taken = update_entry.actualTaken;
         auto pred_it = preds.find(btb_entry.pc);
 
         if (pred_it == preds.end()) {

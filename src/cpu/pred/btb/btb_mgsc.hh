@@ -297,7 +297,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             ThreadID tid, uint8_t asidHash);
 
     // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    std::vector<DirectionUpdateEntry> prepareUpdateEntries(
+        const FetchTarget &stream);
 
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
                                const FetchTarget &stream);

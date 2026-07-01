@@ -247,6 +247,19 @@ struct BTBUpdateEntrySelection
     bool isOldEntry = false;
 };
 
+struct DirectionUpdateEntry
+{
+    BTBEntry entry;
+    bool actualTaken = false;
+    bool isNewEntry = false;
+};
+
+enum class DirectionUpdateEntryFilter
+{
+    ConditionalNonAlwaysTaken,
+    Mgsc
+};
+
 /**
  * @brief Tage prediction info for MGSC
  */
@@ -542,6 +555,68 @@ struct FetchTarget
     {
         return hasResolvedUpdatePrefix() ?
             isInResolvedUpdatePrefix(pc) : fallback_resolved;
+    }
+
+    bool isActualTakenBranchPC(Addr pc) const
+    {
+        return exeTaken && exeBranchInfo.pc == pc;
+    }
+
+    bool shouldKeepDirectionUpdateEntry(const BTBEntry &entry,
+                                        bool is_new_entry,
+                                        DirectionUpdateEntryFilter filter,
+                                        bool resolved_update) const
+    {
+        bool keep = false;
+        switch (filter) {
+          case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
+            keep = entry.isCond && !entry.alwaysTaken;
+            break;
+          case DirectionUpdateEntryFilter::Mgsc:
+            keep = is_new_entry ? (entry.isCond && !entry.alwaysTaken) :
+                                  (entry.isCond || entry.alwaysTaken);
+            break;
+        }
+        if (!keep || !resolved_update) {
+            return keep;
+        }
+
+        switch (filter) {
+          case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
+            return isResolvedUpdatePC(entry.pc, entry.resolved);
+          case DirectionUpdateEntryFilter::Mgsc:
+            return !hasResolvedUpdatePrefix() || isInResolvedUpdatePrefix(entry.pc);
+        }
+        return false;
+    }
+
+    std::vector<DirectionUpdateEntry>
+    makeDirectionUpdateEntries(DirectionUpdateEntryFilter filter,
+                               bool resolved_update) const
+    {
+        std::vector<DirectionUpdateEntry> entries;
+        entries.reserve(updateBTBEntries.size() + (updateIsOldEntry ? 0 : 1));
+
+        auto addEntry = [&](BTBEntry entry, bool is_new_entry) {
+            if (filter == DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken &&
+                is_new_entry && !isActualTakenBranchPC(entry.pc)) {
+                entry.alwaysTaken = false;
+            }
+            if (!shouldKeepDirectionUpdateEntry(entry, is_new_entry, filter,
+                                                resolved_update)) {
+                return;
+            }
+            entries.push_back({entry, isActualTakenBranchPC(entry.pc), is_new_entry});
+        };
+
+        for (const auto &entry : updateBTBEntries) {
+            addEntry(entry, false);
+        }
+        if (!updateIsOldEntry) {
+            addEntry(updateNewBTBEntry, true);
+        }
+
+        return entries;
     }
 
     // Argument resolved pc could not match any BTB entry branch pc,

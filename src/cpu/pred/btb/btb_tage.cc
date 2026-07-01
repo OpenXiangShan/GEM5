@@ -518,35 +518,11 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
  * @param stream The fetch stream containing update information
  * @return Vector of BTB entries that need to be updated
  */
-std::vector<BTBEntry>
+std::vector<DirectionUpdateEntry>
 BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [&stream](const BTBEntry &e) {
-                const bool is_resolved = stream.isResolvedUpdatePC(e.pc, e.resolved);
-                return !(e.isCond && !e.alwaysTaken && is_resolved);
-            });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
+    return stream.makeDirectionUpdateEntries(
+        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        getResolvedUpdate());
 }
 
 /**
@@ -881,9 +857,10 @@ BTBTAGE::update(const FetchTarget &stream) {
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.pc == stream.updateNewBTBEntry.pc;
+    for (const auto &update_entry : entries_to_update) {
+        const auto &btb_entry = update_entry.entry;
+        const bool actual_taken = update_entry.actualTaken;
+        const bool is_new_entry = update_entry.isNewEntry;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;
