@@ -1140,7 +1140,7 @@ MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = stream.isActualTakenBranchPC(pc);
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

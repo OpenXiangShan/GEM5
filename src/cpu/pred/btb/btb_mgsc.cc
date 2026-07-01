@@ -1444,7 +1444,7 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         tage_taken = pred_it->second.taken_before_sc;
         pred_hit = true;
     }
-    auto actual_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    auto actual_taken = stream.isActualTakenBranchPC(pc);
     if (pred_hit) {
         mgscStats.predHit++;
         if (sc_taken == actual_taken) {

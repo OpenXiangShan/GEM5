@@ -793,7 +793,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     }
     // bool this_branch_miss = !this_branch_hit;
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc; // all uncond should be taken
+    bool this_branch_taken = stream.isActualTakenBranchPC(pc);
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;
