@@ -39,6 +39,36 @@ on:
         type: number
         default: 360
         description: "Job timeout in minutes"
+      distributed_servers:
+        required: false
+        type: string
+        default: ""
+        description: "Optional distributed runner server list, e.g. node020-node039. Empty keeps using parallel_sim.sh."
+      distributed_server_domain:
+        required: false
+        type: string
+        default: "bosccluster.com"
+        description: "DNS domain appended to distributed server names without dots."
+      distributed_jobs_per_server:
+        required: false
+        type: number
+        default: 32
+        description: "Maximum concurrent gem5 jobs per distributed server."
+      distributed_require_idle_cpus:
+        required: false
+        type: number
+        default: 32
+        description: "Require at least this many idle-ish logical CPUs before using a distributed server. 0 disables probing."
+      distributed_idle_cpu_threshold:
+        required: false
+        type: number
+        default: 30
+        description: "A CPU is idle-ish when sampled utilization is below this percentage."
+      distributed_ssh_config:
+        required: false
+        type: string
+        default: "/dev/null"
+        description: "Optional ssh config path for distributed runs."
 
 permissions:
   contents: read
@@ -223,6 +253,11 @@ jobs:
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_servers: ${{ inputs.distributed_servers }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_server_domain: ${{ inputs.distributed_server_domain }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_jobs_per_server: ${{ inputs.distributed_jobs_per_server }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_require_idle_cpus: ${{ inputs.distributed_require_idle_cpus }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_idle_cpu_threshold: ${{ inputs.distributed_idle_cpu_threshold }}" >> "$TARGET_DIR/metadata.txt"
           cat >> "$TARGET_DIR/metadata.txt" <<'EOF'
           extra_args: ${{ inputs.extra_args }}
           EOF
@@ -264,12 +299,36 @@ jobs:
           extra_args="$(echo "$extra_args" | xargs)"
           echo "Resolved extra gem5 args: $extra_args"
 
-          bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-            ${{ steps.config.outputs.checkpoint_list }} \
-            ${{ steps.config.outputs.checkpoint_root_node}} \
-            spec_all \
-            "${{ inputs.specific_benchmarks }}" \
-            "$extra_args"
+          distributed_servers="${{ inputs.distributed_servers }}"
+          distributed_servers="$(echo "$distributed_servers" | xargs)"
+          if [ -n "$distributed_servers" ]; then
+            echo "Using distributed gem5 runner on servers: $distributed_servers"
+            python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
+              --servers "$distributed_servers" \
+              --server-domain "${{ inputs.distributed_server_domain }}" \
+              --jobs-per-server "${{ inputs.distributed_jobs_per_server }}" \
+              --require-idle-cpus "${{ inputs.distributed_require_idle_cpus }}" \
+              --idle-cpu-threshold "${{ inputs.distributed_idle_cpu_threshold }}" \
+              --ssh-config "${{ inputs.distributed_ssh_config }}" \
+              --ssh-option StrictHostKeyChecking=accept-new \
+              --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
+              --ssh-option ConnectTimeout=10 \
+              --build-type "$GEM5_BUILD_TYPE" \
+              "$(realpath "$CONFIG_PATH")" \
+              ${{ steps.config.outputs.checkpoint_list }} \
+              ${{ steps.config.outputs.checkpoint_root_node}} \
+              spec_all \
+              "${{ inputs.specific_benchmarks }}" \
+              "$extra_args"
+          else
+            echo "Using local parallel_sim.sh runner"
+            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+              ${{ steps.config.outputs.checkpoint_list }} \
+              ${{ steps.config.outputs.checkpoint_root_node}} \
+              spec_all \
+              "${{ inputs.specific_benchmarks }}" \
+              "$extra_args"
+          fi
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
