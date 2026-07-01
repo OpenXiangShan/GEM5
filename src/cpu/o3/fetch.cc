@@ -307,6 +307,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Resolved CFIs whose FTQ does not yet have decoded CFI metadata"),
     ADD_STAT(resolveWithDecodedOlderMissing, statistics::units::Count::get(),
              "Resolved CFIs with an older decoded CFI missing from the pending resolve set"),
+    ADD_STAT(resolveDequeueWithDecodedFTQ, statistics::units::Count::get(),
+             "Resolve dequeue entries whose FTQ has decoded CFI metadata"),
+    ADD_STAT(resolveDequeueWithoutDecodedFTQ, statistics::units::Count::get(),
+             "Resolve dequeue entries whose FTQ has no decoded CFI metadata"),
+    ADD_STAT(resolveDequeueDecodedPrefixComplete, statistics::units::Count::get(),
+             "Resolve dequeue entries that cover the decoded CFI prefix"),
+    ADD_STAT(resolveDequeueDecodedPrefixIncomplete, statistics::units::Count::get(),
+             "Resolve dequeue entries that miss an older decoded CFI in prefix"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -1808,6 +1816,89 @@ Fetch::observeResolveWithDecodedCFIs(
     }
 }
 
+bool
+Fetch::resolveEntryHasDecodedPrefixGap(
+    const ResolveQueueEntry &entry,
+    Addr &missingPC,
+    Addr &boundaryPC) const
+{
+    if (entry.resolvedTid >= recentlyDecodedCFIRecords.size() ||
+        entry.resolvedBranches.empty()) {
+        return false;
+    }
+
+    const auto &records = recentlyDecodedCFIRecords[entry.resolvedTid];
+    auto record_it = std::find_if(
+        records.begin(), records.end(),
+        [&](const auto &record) {
+            return record.ftqId == entry.resolvedFTQId;
+        });
+    if (record_it == records.end()) {
+        return false;
+    }
+
+    boundaryPC = entry.resolvedBranches.back().pc;
+    for (const auto &branch : entry.resolvedBranches) {
+        boundaryPC = branch.pc;
+        if (branch.taken || branch.mispred) {
+            break;
+        }
+    }
+
+    const auto has_resolved_pc = [&](Addr pc) {
+        return std::any_of(
+            entry.resolvedBranches.begin(), entry.resolvedBranches.end(),
+            [&](const auto &branch) { return branch.pc == pc; });
+    };
+
+    for (Addr decoded_pc : record_it->pcs) {
+        if (decoded_pc > boundaryPC) {
+            break;
+        }
+        if (!has_resolved_pc(decoded_pc)) {
+            missingPC = decoded_pc;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void
+Fetch::observeResolveDequeueReadiness(const ResolveQueueEntry &entry)
+{
+    if (entry.resolvedTid >= recentlyDecodedCFIRecords.size()) {
+        return;
+    }
+
+    const auto &records = recentlyDecodedCFIRecords[entry.resolvedTid];
+    auto record_it = std::find_if(
+        records.begin(), records.end(),
+        [&](const auto &record) {
+            return record.ftqId == entry.resolvedFTQId;
+        });
+
+    if (record_it == records.end()) {
+        fetchStats.resolveDequeueWithoutDecodedFTQ++;
+        return;
+    }
+
+    fetchStats.resolveDequeueWithDecodedFTQ++;
+
+    Addr missing_pc = 0;
+    Addr boundary_pc = 0;
+    if (resolveEntryHasDecodedPrefixGap(entry, missing_pc, boundary_pc)) {
+        fetchStats.resolveDequeueDecodedPrefixIncomplete++;
+        DPRINTF(FetchResolve,
+                "[tid:%u] Resolve dequeue decoded prefix incomplete: "
+                "ftq=%lu boundaryPC=%#lx missingPC=%#lx branches=%zu\n",
+                entry.resolvedTid, entry.resolvedFTQId, boundary_pc,
+                missing_pc, entry.resolvedBranches.size());
+    } else {
+        fetchStats.resolveDequeueDecodedPrefixComplete++;
+    }
+}
+
 void
 Fetch::rememberDequeuedResolveEntry(const ResolveQueueEntry &entry)
 {
@@ -1903,6 +1994,7 @@ Fetch::handleIEWSignals()
         auto &entry = resolveQueue.front();
         ThreadID tid = entry.resolvedTid;
         unsigned int stream_id = entry.resolvedFTQId;
+        observeResolveDequeueReadiness(entry);
         bool success = dbpbtb->resolveUpdate(stream_id, entry.resolvedBranches, tid);
         if (success) {
             dbpbtb->notifyResolveSuccess(tid);

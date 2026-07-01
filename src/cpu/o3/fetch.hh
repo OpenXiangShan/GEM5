@@ -667,6 +667,13 @@ class Fetch
         uint64_t ftqId,
         const branch_prediction::btb_pred::ResolvedBranch &branch);
 
+    bool resolveEntryHasDecodedPrefixGap(
+        const ResolveQueueEntry &entry,
+        Addr &missingPC,
+        Addr &boundaryPC) const;
+
+    void observeResolveDequeueReadiness(const ResolveQueueEntry &entry);
+
     void rememberDequeuedResolveEntry(const ResolveQueueEntry &entry);
 
     /** Trace-mode implementation owner (optional, enabled by params). */
@@ -1179,6 +1186,14 @@ class Fetch
         statistics::Scalar resolveWithoutDecodedFTQ;
         /** Resolved CFI has an older decoded CFI missing from pending set. */
         statistics::Scalar resolveWithDecodedOlderMissing;
+        /** Resolve dequeue entry has decoded CFI metadata. */
+        statistics::Scalar resolveDequeueWithDecodedFTQ;
+        /** Resolve dequeue entry has no decoded CFI metadata. */
+        statistics::Scalar resolveDequeueWithoutDecodedFTQ;
+        /** Resolve dequeue entry covers decoded CFI prefix. */
+        statistics::Scalar resolveDequeueDecodedPrefixComplete;
+        /** Resolve dequeue entry misses an older decoded CFI in prefix. */
+        statistics::Scalar resolveDequeueDecodedPrefixIncomplete;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */
