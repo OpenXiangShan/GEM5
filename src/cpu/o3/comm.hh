@@ -219,8 +219,10 @@ struct ResolveQueueEntry
     ThreadID resolvedTid;
     uint64_t resolvedFTQId;
     std::vector<branch_prediction::btb_pred::ResolvedBranch> resolvedBranches;
+    unsigned decodedPrefixWaitCycles = 0;
+    bool decodedPrefixWaitTimedOut = false;
 
-    void
+    bool
     addBranch(const branch_prediction::btb_pred::ResolvedBranch &branch)
     {
         auto it = std::lower_bound(
@@ -228,7 +230,9 @@ struct ResolveQueueEntry
             [](const auto &queued, Addr pc) { return queued.pc < pc; });
         if (it == resolvedBranches.end() || it->pc != branch.pc) {
             resolvedBranches.insert(it, branch);
+            return true;
         }
+        return false;
     }
 };
 

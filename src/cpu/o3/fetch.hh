@@ -629,6 +629,8 @@ class Fetch
 
     /** Maximum number of resolve entries buffered in fetch before training. */
     const unsigned resolveQueueSize;
+    /** Cycles to wait for decoded-CFI prefix completeness before training. */
+    const unsigned resolveQueueDecodedPrefixWaitCycles;
 
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
@@ -673,6 +675,8 @@ class Fetch
         Addr &boundaryPC) const;
 
     void observeResolveDequeueReadiness(const ResolveQueueEntry &entry);
+
+    bool shouldWaitForDecodedPrefix(ResolveQueueEntry &entry);
 
     void rememberDequeuedResolveEntry(const ResolveQueueEntry &entry);
 
@@ -1194,6 +1198,14 @@ class Fetch
         statistics::Scalar resolveDequeueDecodedPrefixComplete;
         /** Resolve dequeue entry misses an older decoded CFI in prefix. */
         statistics::Scalar resolveDequeueDecodedPrefixIncomplete;
+        /** Resolve dequeue delayed because decoded CFI prefix was incomplete. */
+        statistics::Scalar resolveDequeueDecodedPrefixWait;
+        /** Resolve dequeue proceeded after decoded prefix wait timeout. */
+        statistics::Scalar resolveDequeueDecodedPrefixWaitTimeout;
+        /** Resolve entry received a new branch while waiting for prefix completion. */
+        statistics::Scalar resolveDequeueDecodedPrefixWaitMerged;
+        /** Resolve dequeue delayed because the head entry merged same-FTQ input. */
+        statistics::Scalar resolveDequeueSameFTQMergeWait;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

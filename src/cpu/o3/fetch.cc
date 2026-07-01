@@ -92,6 +92,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       cpu(_cpu),
       branchPred(nullptr),
       resolveQueueSize(params.resolveQueueSize),
+      resolveQueueDecodedPrefixWaitCycles(
+          params.resolveQueueDecodedPrefixWaitCycles),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -315,6 +317,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Resolve dequeue entries that cover the decoded CFI prefix"),
     ADD_STAT(resolveDequeueDecodedPrefixIncomplete, statistics::units::Count::get(),
              "Resolve dequeue entries that miss an older decoded CFI in prefix"),
+    ADD_STAT(resolveDequeueDecodedPrefixWait, statistics::units::Count::get(),
+             "Resolve dequeue entries delayed for decoded CFI prefix completion"),
+    ADD_STAT(resolveDequeueDecodedPrefixWaitTimeout, statistics::units::Count::get(),
+             "Resolve dequeue entries trained after decoded CFI prefix wait timeout"),
+    ADD_STAT(resolveDequeueDecodedPrefixWaitMerged, statistics::units::Count::get(),
+             "Resolve entries that merged a new branch while waiting for prefix completion"),
+    ADD_STAT(resolveDequeueSameFTQMergeWait, statistics::units::Count::get(),
+             "Resolve dequeue delayed because the head entry merged same-FTQ input"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -1899,6 +1909,46 @@ Fetch::observeResolveDequeueReadiness(const ResolveQueueEntry &entry)
     }
 }
 
+bool
+Fetch::shouldWaitForDecodedPrefix(ResolveQueueEntry &entry)
+{
+    if (!resolveQueueDecodedPrefixWaitCycles ||
+        entry.decodedPrefixWaitTimedOut) {
+        return false;
+    }
+
+    Addr missing_pc = 0;
+    Addr boundary_pc = 0;
+    if (!resolveEntryHasDecodedPrefixGap(entry, missing_pc, boundary_pc)) {
+        entry.decodedPrefixWaitCycles = 0;
+        return false;
+    }
+
+    if (entry.decodedPrefixWaitCycles >= resolveQueueDecodedPrefixWaitCycles) {
+        entry.decodedPrefixWaitTimedOut = true;
+        fetchStats.resolveDequeueDecodedPrefixWaitTimeout++;
+        DPRINTF(FetchResolve,
+                "[tid:%u] Resolve dequeue decoded prefix wait timeout: "
+                "ftq=%lu waitCycles=%u boundaryPC=%#lx missingPC=%#lx "
+                "branches=%zu\n",
+                entry.resolvedTid, entry.resolvedFTQId,
+                entry.decodedPrefixWaitCycles, boundary_pc, missing_pc,
+                entry.resolvedBranches.size());
+        return false;
+    }
+
+    entry.decodedPrefixWaitCycles++;
+    fetchStats.resolveDequeueDecodedPrefixWait++;
+    DPRINTF(FetchResolve,
+            "[tid:%u] Resolve dequeue waits for decoded prefix: "
+            "ftq=%lu waitCycles=%u/%u boundaryPC=%#lx missingPC=%#lx "
+            "branches=%zu\n",
+            entry.resolvedTid, entry.resolvedFTQId,
+            entry.decodedPrefixWaitCycles, resolveQueueDecodedPrefixWaitCycles,
+            boundary_pc, missing_pc, entry.resolvedBranches.size());
+    return true;
+}
+
 void
 Fetch::rememberDequeuedResolveEntry(const ResolveQueueEntry &entry)
 {
@@ -1941,6 +1991,7 @@ Fetch::handleIEWSignals()
     }
 
     const bool had_pending_resolve = !resolveQueue.empty();
+    bool head_entry_merged_same_ftq = false;
     uint8_t enqueueCount = 0;
     uint8_t enqueueSize = 0;
 
@@ -1964,7 +2015,17 @@ Fetch::handleIEWSignals()
                 for (auto &queued : resolveQueue) {
                     if (queued.resolvedTid == tid &&
                         queued.resolvedFTQId == resolved.ftqId) {
-                        queued.addBranch(resolved.branch);
+                        if (queued.addBranch(resolved.branch)) {
+                            if (&queued == &resolveQueue.front()) {
+                                head_entry_merged_same_ftq = true;
+                            }
+                            if (queued.decodedPrefixWaitCycles) {
+                                fetchStats
+                                    .resolveDequeueDecodedPrefixWaitMerged++;
+                            }
+                            queued.decodedPrefixWaitCycles = 0;
+                            queued.decodedPrefixWaitTimedOut = false;
+                        }
                         merged = true;
                         break;
                     }
@@ -1994,6 +2055,18 @@ Fetch::handleIEWSignals()
         auto &entry = resolveQueue.front();
         ThreadID tid = entry.resolvedTid;
         unsigned int stream_id = entry.resolvedFTQId;
+        if (head_entry_merged_same_ftq) {
+            fetchStats.resolveDequeueSameFTQMergeWait++;
+            DPRINTF(FetchResolve,
+                    "[tid:%u] Resolve dequeue waits after same-FTQ merge: "
+                    "ftq=%lu branches=%zu\n",
+                    entry.resolvedTid, entry.resolvedFTQId,
+                    entry.resolvedBranches.size());
+            return;
+        }
+        if (shouldWaitForDecodedPrefix(entry)) {
+            return;
+        }
         observeResolveDequeueReadiness(entry);
         bool success = dbpbtb->resolveUpdate(stream_id, entry.resolvedBranches, tid);
         if (success) {
