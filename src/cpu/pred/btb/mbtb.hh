@@ -166,7 +166,7 @@ class MBTB : public TimedBaseBTBPredictor
     void update(const FetchTarget &stream) override;
 
     std::vector<TargetUpdateEntry> prepareUpdateEntries(
-        const FetchTarget &stream);
+        const FetchTarget &stream, const TargetUpdateContext &ctx);
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -282,7 +282,7 @@ class MBTB : public TimedBaseBTBPredictor
                         const TargetUpdateContext &ctx);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
-    BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
+    BTBEntry buildUpdatedEntry(const TargetUpdateEntry &update_entry,
                                const BTBEntry* existing_entry,
                                const TargetUpdateContext &ctx);
 

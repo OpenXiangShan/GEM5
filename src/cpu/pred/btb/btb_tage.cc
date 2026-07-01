@@ -519,10 +519,11 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<DirectionUpdateEntry>
-BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
+BTBTAGE::prepareUpdateEntries(const FetchTarget &stream,
+                              const DirectionUpdateContext &ctx) {
     return stream.makeDirectionUpdateEntries(
         DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
-        getResolvedUpdate());
+        getResolvedUpdate(), ctx);
 }
 
 /**
@@ -844,8 +845,8 @@ BTBTAGE::update(const FetchTarget &stream) {
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
-    
+    auto entries_to_update = prepareUpdateEntries(stream, update_ctx);
+
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {

@@ -351,7 +351,7 @@ private:
 
     // Helper method to prepare BTB entries for update
     std::vector<DirectionUpdateEntry> prepareUpdateEntries(
-        const FetchTarget &stream);
+        const FetchTarget &stream, const DirectionUpdateContext &ctx);
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,

@@ -530,7 +530,7 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, ctx);
+    auto entry_to_write = buildUpdatedEntry(update_entry, existing_ptr, ctx);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
@@ -547,10 +547,11 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
 }
 
 BTBEntry
-MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
+MBTB::buildUpdatedEntry(const TargetUpdateEntry &update_entry,
                         const BTBEntry* existing_entry,
                         const TargetUpdateContext &ctx)
 {
+    const auto &req_entry = update_entry.entry;
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
     auto entry_to_write = (req_entry.isCond && existing_entry)
                               ? BTBEntry(*existing_entry)
@@ -561,7 +562,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
 
     // Update saturating counter and alwaysTaken
     if (entry_to_write.isCond) {
-        bool this_cond_taken = ctx.isTakenControlPC(entry_to_write.pc);
+        bool this_cond_taken = update_entry.actualTaken;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
             DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
@@ -573,7 +574,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     }
 
     // Update indirect target if necessary
-    if (entry_to_write.isIndirect && ctx.isTakenControlPC(entry_to_write.pc)) {
+    if (entry_to_write.isIndirect && update_entry.actualTaken) {
         entry_to_write.target = ctx.actualBranch.target;
     }
     return entry_to_write;
@@ -682,17 +683,18 @@ MBTB::update(const FetchTarget &stream)
     checkPredictionHit(update_ctx,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
-    auto entries_need_update = prepareUpdateEntries(stream);
+    auto entries_need_update = prepareUpdateEntries(stream, update_ctx);
     for (const auto &entry : entries_need_update) {
         updateBTBEntry(entry, update_ctx);
     }
 }
 
 std::vector<TargetUpdateEntry>
-MBTB::prepareUpdateEntries(const FetchTarget &stream)
+MBTB::prepareUpdateEntries(const FetchTarget &stream,
+                           const TargetUpdateContext &ctx)
 {
     return stream.makeTargetUpdateEntries(TargetUpdateEntryFilter::Any,
-                                          getResolvedUpdate());
+                                          getResolvedUpdate(), ctx);
 }
 
 /**

@@ -298,7 +298,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Helper method to prepare BTB entries for update
     std::vector<DirectionUpdateEntry> prepareUpdateEntries(
-        const FetchTarget &stream);
+        const FetchTarget &stream, const DirectionUpdateContext &ctx);
 
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
                                const DirectionUpdateContext &ctx);

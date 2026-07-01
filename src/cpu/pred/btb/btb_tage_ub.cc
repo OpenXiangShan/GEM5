@@ -490,11 +490,12 @@ BTBTAGEUpperBound::allocateExactEntry(
 }
 
 std::vector<DirectionUpdateEntry>
-BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
+BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(
+    const FetchTarget &stream, const DirectionUpdateContext &ctx)
 {
     return stream.makeDirectionUpdateEntries(
         DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
-        getResolvedUpdate());
+        getResolvedUpdate(), ctx);
 }
 
 void
@@ -506,7 +507,8 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
 void
 BTBTAGEUpperBound::update(const FetchTarget &stream)
 {
-    auto entriesToUpdate = prepareUpperBoundUpdateEntries(stream);
+    const auto updateCtx = stream.makeDirectionUpdateContext();
+    auto entriesToUpdate = prepareUpperBoundUpdateEntries(stream, updateCtx);
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -514,7 +516,6 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
     }
 
     bool hasStoredVsActualDiff = false;
-    const auto updateCtx = stream.makeDirectionUpdateContext();
     for (const auto &updateEntry : entriesToUpdate) {
         const auto &btbEntry = updateEntry.entry;
         auto predIt = predMeta->preds.find(btbEntry.pc);

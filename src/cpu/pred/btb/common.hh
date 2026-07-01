@@ -662,21 +662,23 @@ struct FetchTarget
 
     std::vector<DirectionUpdateEntry>
     makeDirectionUpdateEntries(DirectionUpdateEntryFilter filter,
-                               bool resolved_update) const
+                               bool resolved_update,
+                               const DirectionUpdateContext &ctx) const
     {
         std::vector<DirectionUpdateEntry> entries;
         entries.reserve(updateBTBEntries.size() + (updateIsOldEntry ? 0 : 1));
 
         auto addEntry = [&](BTBEntry entry, bool is_new_entry) {
             if (filter == DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken &&
-                is_new_entry && !isActualTakenBranchPC(entry.pc)) {
+                is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
                 entry.alwaysTaken = false;
             }
             if (!shouldKeepDirectionUpdateEntry(entry, is_new_entry, filter,
                                                 resolved_update)) {
                 return;
             }
-            entries.push_back({entry, isActualTakenBranchPC(entry.pc), is_new_entry});
+            entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
+                               is_new_entry});
         };
 
         for (const auto &entry : updateBTBEntries) {
@@ -710,19 +712,20 @@ struct FetchTarget
 
     std::vector<TargetUpdateEntry>
     makeTargetUpdateEntries(TargetUpdateEntryFilter filter,
-                            bool resolved_update) const
+                            bool resolved_update,
+                            const TargetUpdateContext &ctx) const
     {
         std::vector<TargetUpdateEntry> entries;
         entries.reserve(updateBTBEntries.size() + (updateIsOldEntry ? 0 : 1));
 
         auto addEntry = [&](BTBEntry entry, bool is_new_entry) {
-            if (is_new_entry && !isActualTakenBranchPC(entry.pc)) {
+            if (is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
                 entry.alwaysTaken = false;
             }
             if (!shouldKeepTargetUpdateEntry(entry, filter, resolved_update)) {
                 return;
             }
-            entries.push_back({entry, isActualTakenBranchPC(entry.pc),
+            entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
                                is_new_entry});
         };
 

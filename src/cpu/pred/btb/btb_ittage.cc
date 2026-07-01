@@ -255,7 +255,8 @@ BTBITTAGE::update(const FetchTarget &stream)
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
     const auto update_ctx = stream.makeTargetUpdateContext();
     auto entries_to_update = stream.makeTargetUpdateEntries(
-        TargetUpdateEntryFilter::IndirectNonReturn, getResolvedUpdate());
+        TargetUpdateEntryFilter::IndirectNonReturn, getResolvedUpdate(),
+        update_ctx);
 
     // get tage predictions from meta
     // TODO: use component idx
