@@ -157,6 +157,24 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         help="Optional ssh config file passed as -F <path>.",
     )
     parser.add_argument(
+        "--ssh-user",
+        default="",
+        help=(
+            "Optional SSH user for worker servers. If omitted, ssh uses its "
+            "normal user/config resolution."
+        ),
+    )
+    parser.add_argument(
+        "--dispatch-host",
+        default="",
+        help=(
+            "Optional SSH host used as a dispatch point. When set, worker "
+            "commands are launched by first ssh'ing to this host, then ssh'ing "
+            "from there to the worker server. This is useful when compute nodes "
+            "are only reachable from a login host."
+        ),
+    )
+    parser.add_argument(
         "--env",
         action="append",
         default=[],
@@ -439,6 +457,8 @@ def launch_job(
     script: str,
     ssh_config: str,
     ssh_options: list[str],
+    ssh_user: str,
+    dispatch_host: str,
 ) -> PendingJob:
     if server.name == "local":
         proc = subprocess.Popen(
@@ -448,26 +468,26 @@ def launch_job(
             start_new_session=True,
         )
     else:
-        ssh_cmd = ["ssh"]
-        if ssh_config:
-            ssh_cmd.extend(["-F", ssh_config])
-        ssh_cmd.extend(
-            [
-                "-o",
+        ssh_cmd = build_ssh_command(
+            target=make_ssh_target(server.name, ssh_user),
+            remote_command=["bash", "-lc", script],
+            ssh_config=ssh_config,
+            ssh_options=ssh_options,
+            fixed_options=[
                 "BatchMode=yes",
-                "-o",
                 "ConnectionAttempts=3",
-                "-o",
                 "TCPKeepAlive=yes",
-                "-o",
                 "ServerAliveInterval=300",
-                "-o",
                 "ServerAliveCountMax=576",
-            ]
+            ],
         )
-        for option in ssh_options:
-            ssh_cmd.extend(["-o", option])
-        ssh_cmd.extend([server.name, "bash", "-lc", shlex.quote(script)])
+        if dispatch_host:
+            ssh_cmd = wrap_with_dispatch_host(
+                ssh_cmd=ssh_cmd,
+                dispatch_host=dispatch_host,
+                ssh_config=ssh_config,
+                ssh_options=ssh_options,
+            )
         proc = subprocess.Popen(
             ssh_cmd,
             stdout=subprocess.PIPE,
@@ -490,6 +510,8 @@ def run_host_command(
     command: list[str],
     ssh_config: str,
     ssh_options: list[str],
+    ssh_user: str,
+    dispatch_host: str,
     timeout: float,
 ) -> subprocess.CompletedProcess[bytes]:
     if server_name == "local":
@@ -501,23 +523,24 @@ def run_host_command(
             check=False,
         )
 
-    ssh_cmd = ["ssh"]
-    if ssh_config:
-        ssh_cmd.extend(["-F", ssh_config])
-    ssh_cmd.extend(
-        [
-            "-o",
+    ssh_cmd = build_ssh_command(
+        target=make_ssh_target(server_name, ssh_user),
+        remote_command=command,
+        ssh_config=ssh_config,
+        ssh_options=ssh_options,
+        fixed_options=[
             "BatchMode=yes",
-            "-o",
             "ConnectionAttempts=1",
-            "-o",
             "TCPKeepAlive=yes",
-        ]
+        ],
     )
-    for option in ssh_options:
-        ssh_cmd.extend(["-o", option])
-    remote_command = " ".join(shlex.quote(part) for part in command)
-    ssh_cmd.extend([server_name, remote_command])
+    if dispatch_host:
+        ssh_cmd = wrap_with_dispatch_host(
+            ssh_cmd=ssh_cmd,
+            dispatch_host=dispatch_host,
+            ssh_config=ssh_config,
+            ssh_options=ssh_options,
+        )
     return subprocess.run(
         ssh_cmd,
         stdout=subprocess.PIPE,
@@ -527,11 +550,58 @@ def run_host_command(
     )
 
 
+def make_ssh_target(server_name: str, ssh_user: str) -> str:
+    if not ssh_user or server_name == "local" or "@" in server_name:
+        return server_name
+    return f"{ssh_user}@{server_name}"
+
+
+def build_ssh_command(
+    target: str,
+    remote_command: list[str],
+    ssh_config: str,
+    ssh_options: list[str],
+    fixed_options: list[str],
+) -> list[str]:
+    ssh_cmd = ["ssh"]
+    if ssh_config:
+        ssh_cmd.extend(["-F", ssh_config])
+    for option in fixed_options:
+        ssh_cmd.extend(["-o", option])
+    for option in ssh_options:
+        ssh_cmd.extend(["-o", option])
+    remote_command_text = " ".join(shlex.quote(part) for part in remote_command)
+    ssh_cmd.extend([target, remote_command_text])
+    return ssh_cmd
+
+
+def wrap_with_dispatch_host(
+    ssh_cmd: list[str],
+    dispatch_host: str,
+    ssh_config: str,
+    ssh_options: list[str],
+) -> list[str]:
+    dispatch_script = "exec " + " ".join(shlex.quote(part) for part in ssh_cmd)
+    return build_ssh_command(
+        target=dispatch_host,
+        remote_command=["bash", "-lc", dispatch_script],
+        ssh_config=ssh_config,
+        ssh_options=ssh_options,
+        fixed_options=[
+            "BatchMode=yes",
+            "ConnectionAttempts=1",
+            "TCPKeepAlive=yes",
+        ],
+    )
+
+
 def probe_idle_cpus(
     server_name: str,
     idle_cpu_threshold: float,
     ssh_config: str,
     ssh_options: list[str],
+    ssh_user: str,
+    dispatch_host: str,
     timeout: float = 10.0,
 ) -> tuple[int | None, str]:
     script = (
@@ -569,6 +639,8 @@ def probe_idle_cpus(
             command=["bash", "-lc", script],
             ssh_config=ssh_config,
             ssh_options=ssh_options,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
             timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -595,6 +667,8 @@ def filter_servers_by_idle(
     idle_cpu_threshold: float,
     ssh_config: str,
     ssh_options: list[str],
+    ssh_user: str,
+    dispatch_host: str,
 ) -> list[ServerState]:
     if require_idle_cpus <= 0:
         return servers
@@ -606,6 +680,8 @@ def filter_servers_by_idle(
             idle_cpu_threshold=idle_cpu_threshold,
             ssh_config=ssh_config,
             ssh_options=ssh_options,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
         )
         server.idle_cpus = idle_cpus
         if idle_cpus is None:
@@ -749,6 +825,8 @@ def run_scheduler(
     env: dict[str, str],
     ssh_config: str,
     ssh_options: list[str],
+    ssh_user: str,
+    dispatch_host: str,
     force: bool,
 ) -> int:
     pending_workloads = list(workloads)
@@ -796,6 +874,8 @@ def run_scheduler(
                     script=script,
                     ssh_config=ssh_config,
                     ssh_options=ssh_options,
+                    ssh_user=ssh_user,
+                    dispatch_host=dispatch_host,
                 )
                 launched += 1
                 launched_this_round = True
@@ -849,6 +929,8 @@ def main(argv: list[str]) -> int:
         idle_cpu_threshold=args.idle_cpu_threshold,
         ssh_config=args.ssh_config,
         ssh_options=args.ssh_option,
+        ssh_user=args.ssh_user,
+        dispatch_host=args.dispatch_host,
     )
 
     full_work_dir = Path.cwd().resolve() / tag
@@ -907,6 +989,8 @@ def main(argv: list[str]) -> int:
         env=env,
         ssh_config=args.ssh_config,
         ssh_options=args.ssh_option,
+        ssh_user=args.ssh_user,
+        dispatch_host=args.dispatch_host,
         force=args.force,
     )
 

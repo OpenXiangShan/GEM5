@@ -47,7 +47,7 @@ on:
       distributed_server_domain:
         required: false
         type: string
-        default: "bosccluster.com"
+        default: ""
         description: "DNS domain appended to distributed server names without dots."
       distributed_jobs_per_server:
         required: false
@@ -67,8 +67,18 @@ on:
       distributed_ssh_config:
         required: false
         type: string
-        default: "/dev/null"
+        default: ""
         description: "Optional ssh config path for distributed runs."
+      distributed_ssh_user:
+        required: false
+        type: string
+        default: ""
+        description: "Optional ssh user for distributed worker servers."
+      distributed_dispatch_host:
+        required: false
+        type: string
+        default: ""
+        description: "Optional ssh host used to dispatch worker ssh commands."
 
 permissions:
   contents: read
@@ -258,6 +268,9 @@ jobs:
           echo "distributed_jobs_per_server: ${{ inputs.distributed_jobs_per_server }}" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_require_idle_cpus: ${{ inputs.distributed_require_idle_cpus }}" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_idle_cpu_threshold: ${{ inputs.distributed_idle_cpu_threshold }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_ssh_config: ${{ inputs.distributed_ssh_config }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_ssh_user: ${{ inputs.distributed_ssh_user }}" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_dispatch_host: ${{ inputs.distributed_dispatch_host }}" >> "$TARGET_DIR/metadata.txt"
           cat >> "$TARGET_DIR/metadata.txt" <<'EOF'
           extra_args: ${{ inputs.extra_args }}
           EOF
@@ -310,6 +323,8 @@ jobs:
               --require-idle-cpus "${{ inputs.distributed_require_idle_cpus }}" \
               --idle-cpu-threshold "${{ inputs.distributed_idle_cpu_threshold }}" \
               --ssh-config "${{ inputs.distributed_ssh_config }}" \
+              --ssh-user "${{ inputs.distributed_ssh_user }}" \
+              --dispatch-host "${{ inputs.distributed_dispatch_host }}" \
               --ssh-option StrictHostKeyChecking=accept-new \
               --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
               --ssh-option ConnectTimeout=10 \
