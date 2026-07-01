@@ -322,10 +322,10 @@ class AheadBTB : public TimedBaseBTBPredictor
     Addr getPreviousPC(const FetchTarget &stream);
 
     /** Check branch prediction hit status
-     *  @param stream Fetch stream containing execution results
+     *  @param ctx Target update context containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream,
+    void checkPredictionHit(const TargetUpdateContext &ctx,
                            const BTBMeta* meta);
 
     /** Collect entries that need to be updated
@@ -341,10 +341,10 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param btb_idx Index of the BTB entry
      *  @param btb_tag Tag of the BTB entry
      *  @param entry Entry to update/replace
-     *  @param stream Fetch stream with update info
+     *  @param ctx Target update context with actual branch info
      */
     void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
-                                    const BranchInfo takenbranchinfo,const bool isTaken);
+                        const TargetUpdateContext &ctx);
 
     /*
      * Comparator for MRU heap

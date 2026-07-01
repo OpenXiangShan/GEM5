@@ -492,17 +492,18 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  * Check if the branch was predicted correctly
  */
 void
-AheadBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e) {
+        if (ctx.actualBranch == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (!pred_branch_hit && ctx.actualTaken) {
+        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n",
+                ctx.actualBranch.pc, ctx.predTick);
         btbStats.updateMiss++;
     }
 
@@ -549,7 +550,7 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
  */
 void
 AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
-                                        const BranchInfo takenbranchinfo,const bool isTaken)
+                         const TargetUpdateContext &ctx)
 {
 
     // Look for matching entry
@@ -568,7 +569,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {
-        bool this_cond_taken = isTaken && takenbranchinfo.pc == entry_to_write.pc;
+        bool this_cond_taken = ctx.isTakenControlPC(entry_to_write.pc);
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
         }
@@ -577,8 +578,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
         }
     }
     // update indirect target if necessary
-    if (entry_to_write.isIndirect && isTaken && takenbranchinfo.pc == entry_to_write.pc) {
-        entry_to_write.target = takenbranchinfo.target;
+    if (entry_to_write.isIndirect && ctx.isTakenControlPC(entry_to_write.pc)) {
+        entry_to_write.target = ctx.actualBranch.target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
@@ -656,12 +657,16 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
             return;
         }
         Addr btb_idx = getIndex(previousPC, s3Pred.asidHash);  // use last pc to get idx
-        BranchInfo takenbranchinfo;
-        takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
-        takenbranchinfo.target = s3Pred.getTakenEntry().target;
+        TargetUpdateContext update_ctx;
+        update_ctx.tid = s3Pred.tid;
+        update_ctx.startPC = s3Pred.bbStart;
+        update_ctx.asidHash = s3Pred.asidHash;
+        update_ctx.controlPC = s3Pred.getTakenEntry().pc;
+        update_ctx.actualBranch = s3Pred.getTakenEntry();
+        update_ctx.actualTaken = s3Pred.isTaken();
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
 
-        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
+        updateBTBEntry(btb_idx, btb_tag, entry, update_ctx);
     }
 }
 std::vector<BTBEntry>
@@ -711,13 +716,14 @@ AheadBTB::update(const FetchTarget &stream)
         return;
     }
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get();
+    const auto update_ctx = stream.makeTargetUpdateContext();
     Addr end_inst_pc = stream.updateEndInstPC;
 
     // 1. Process old entries
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
 
     // 2. Check prediction hit status, for stats recording
-    checkPredictionHit(stream,
+    checkPredictionHit(update_ctx,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     // 3. Collect entries to update
@@ -725,8 +731,8 @@ AheadBTB::update(const FetchTarget &stream)
     
     // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
     for (auto &entry : entries_to_update) {
-        Addr startPC = stream.getRealStartPC();
-        Addr btb_tag = getTag(startPC, stream.asidHash);  // use current pc to get tag
+        Addr startPC = update_ctx.startPC;
+        Addr btb_tag = getTag(startPC, update_ctx.asidHash);  // use current pc to get tag
 
         // AheadBTB always uses ahead-pipelined update logic
         Addr previousPC = getPreviousPC(stream);
@@ -734,9 +740,9 @@ AheadBTB::update(const FetchTarget &stream)
             DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
             return;
         }
-        Addr btb_idx = getIndex(previousPC, stream.asidHash);  // use last pc to get idx
+        Addr btb_idx = getIndex(previousPC, update_ctx.asidHash);  // use last pc to get idx
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
-        updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
+        updateBTBEntry(btb_idx, btb_tag, entry, update_ctx);
     }
 }
 
