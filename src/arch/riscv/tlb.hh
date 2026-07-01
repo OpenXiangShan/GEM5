@@ -270,9 +270,13 @@ class TLB : public BaseTLB
     void sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestPtr &req, Addr pre_block,
                                 uint16_t asid, bool forward, int check_level, STATUS status, PrivilegeMode pmode,
                                 BaseMMU::Mode mode, ThreadContext *tc, BaseMMU::Translation *translation);
-    std::pair<bool, Fault> L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req, ThreadContext *tc,
-                                            BaseMMU::Translation *translation, BaseMMU::Mode mode, Addr vaddr,
-                                            bool &delayed, int level);
+    std::pair<bool, Fault> L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
+                                            ThreadContext *tc, BaseMMU::Translation *translation,
+                                            BaseMMU::Mode mode, Addr vaddr, bool &delayed, int level,
+                                            bool from_miss_queue = false);
+    void retryTimingPtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
+                            const RequestPtr &req, BaseMMU::Mode mode,
+                            bool from_miss_queue = true);
 
     Fault translateAtomic(const RequestPtr &req,
                           ThreadContext *tc, BaseMMU::Mode mode) override;
@@ -373,7 +377,7 @@ class TLB : public BaseTLB
                                       BaseMMU::Mode mode, int l1tlbtype);
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
-                      bool &delayed);
+                      bool &delayed, bool from_miss_queue = false);
 
 };
 

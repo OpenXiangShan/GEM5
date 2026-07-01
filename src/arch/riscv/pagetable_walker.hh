@@ -39,6 +39,8 @@
 #ifndef __ARCH_RISCV_TABLE_WALKER_HH__
 #define __ARCH_RISCV_TABLE_WALKER_HH__
 
+#include <array>
+#include <deque>
 #include <vector>
 
 #include "arch/generic/mmu.hh"
@@ -188,6 +190,12 @@ namespace RiscvISA
             bool tlbHit;
             PTESv39 tlbHitPte;
             Request::Flags tlbflags;
+            bool waitingForPtwLevel;
+            int reservedPtwLevel;
+            int blockedPtwLevel;
+            Addr blockedPtwRead;
+            unsigned blockedPtwReadSize;
+            Request::Flags blockedPtwFlags;
 
 
           public:
@@ -204,7 +212,10 @@ namespace RiscvISA
                 finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
                 fromBackPre(false),virt(0),translateMode(0),inGstage(false),finishGVA(false),
                 gpaddrMode(0),finishGPA(false),GstageFault(false),
-                tlbHit(false),tlbHitPte(0),tlbflags(Request::PHYSICAL)
+                tlbHit(false),tlbHitPte(0),tlbflags(Request::PHYSICAL),
+                waitingForPtwLevel(false), reservedPtwLevel(-1),
+                blockedPtwLevel(-1), blockedPtwRead(0), blockedPtwReadSize(0),
+                blockedPtwFlags(Request::PHYSICAL)
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }
@@ -250,6 +261,10 @@ namespace RiscvISA
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
             void endWalk();
+            bool usePtwLevelLimit() const;
+            bool waitForPtwLevel(int target_level, Addr next_read,
+                                 unsigned read_size, Request::Flags flags);
+            bool retryBlockedPtwLevel();
             Fault endGstageWalk();
             Fault pageFault(bool present, bool G);
             Fault pageFaultOnRequestor(RequestorState &requestor, bool G);
@@ -272,6 +287,14 @@ namespace RiscvISA
         };
         std::list<L2TlbState> L2TLBrequestors;
 
+        struct MissQueueEntry
+        {
+            ThreadContext *tc;
+            BaseMMU::Translation *translation;
+            RequestPtr req;
+            BaseMMU::Mode mode;
+        };
+
         friend class WalkerState;
         // State for timing and atomic accesses (need multiple per walker in
         // the case of multiple outstanding requests in timing mode)
@@ -291,6 +314,19 @@ namespace RiscvISA
             statistics::Scalar ptwMemCount;
             statistics::Scalar ptwMemCycle;
             statistics::Formula ptwAvgMemLatency;
+            statistics::Scalar ptwLevel0ResourceBlocked;
+            statistics::Scalar ptwLevel1ResourceBlocked;
+            statistics::Scalar ptwLevel2ResourceBlocked;
+            statistics::Scalar ptwLevel3ResourceBlocked;
+            statistics::Scalar ptwMissQueueResourceBlocked;
+            statistics::Scalar ptwMissQueueFifoBlocked;
+            statistics::Scalar ptwMissQueueFullBlocked;
+            statistics::Scalar ptwMissQueueEnqueues;
+            statistics::Scalar ptwMissQueueDequeues;
+            statistics::Scalar ptwMissQueueRequeues;
+            statistics::Scalar ptwMissQueueAdmissionWaits;
+            statistics::Scalar ptwMissQueueAdmissionRetries;
+            statistics::Scalar ptwMissQueueFullEvents;
         } stats;
 
         struct WalkerSenderState : public Packet::SenderState
@@ -344,12 +380,25 @@ namespace RiscvISA
         bool ptwSquash;
         bool openNextLine;
         bool autoOpenNextLine;
+        bool enablePtwLevelLimit;
+        std::array<unsigned, 4> ptwLevelLimit;
+        std::array<unsigned, 4> ptwLevelActive;
+        unsigned ptwMissQueueSize;
+        std::deque<MissQueueEntry> ptwMissQueue;
+        std::deque<MissQueueEntry> ptwMissQueueWaiters;
+        bool retryingPtwMissQueue;
+        bool ptwMissQueueHeadRequeued;
         /** Last tick at which PTW in-flight time accounting was updated. */
         Tick lastPtwMemCycleTick;
         /** Number of PTW memory requests currently in flight. */
         unsigned outstandingPtwMemReqs;
 
         void updatePtwMemCycleStats();
+        bool ptwLevelAvailable(WalkerState *state, int level) const;
+        bool reservePtwLevel(WalkerState *state, int level);
+        void releasePtwLevel(WalkerState *state);
+        void retryPtwLevelBlockedStates();
+        void recordPtwLevelBlocked(int level);
       public:
         bool is_from_pre_req;
 
@@ -376,6 +425,19 @@ namespace RiscvISA
         bool recvTimingResp(PacketPtr pkt);
         void recvReqRetry();
         bool sendTiming(WalkerState * sendingState, PacketPtr pkt);
+        bool usePtwLevelLimitForStart(bool from_forward_pre_req,
+                                      bool from_back_pre_req) const;
+        bool canStartPtwLevel(int level, bool from_forward_pre_req,
+                              bool from_back_pre_req);
+        void recordPtwMissQueueResourceBlocked();
+        void recordPtwMissQueueFifoBlocked();
+        bool enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
+                            const RequestPtr &req, BaseMMU::Mode mode, bool front = false);
+        bool hasPendingPtwMiss() const
+        {
+            return !ptwMissQueue.empty() || !ptwMissQueueWaiters.empty();
+        }
+        void retryPtwMissQueue();
         //bool pre_ptw;
 
       public:
@@ -403,6 +465,17 @@ namespace RiscvISA
             ptwSquash(params.ptw_squash),
             openNextLine(params.open_nextline),
             autoOpenNextLine(true),
+            enablePtwLevelLimit(params.enable_ptw_level_limit),
+            ptwLevelLimit({{
+                params.ptw_level0_limit,
+                params.ptw_level1_limit,
+                params.ptw_level2_limit,
+                params.ptw_level3_limit
+            }}),
+            ptwLevelActive({{0, 0, 0, 0}}),
+            ptwMissQueueSize(params.ptw_miss_queue_size),
+            retryingPtwMissQueue(false),
+            ptwMissQueueHeadRequeued(false),
             lastPtwMemCycleTick(0),
             outstandingPtwMemReqs(0),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())

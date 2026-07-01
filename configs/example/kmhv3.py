@@ -20,6 +20,14 @@ from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
 
+def setPtwLevelLimitParams(args, tlb):
+    tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
+    tlb.walker.ptw_level0_limit = args.ptw_level0_limit
+    tlb.walker.ptw_level1_limit = args.ptw_level1_limit
+    tlb.walker.ptw_level2_limit = args.ptw_level2_limit
+    tlb.walker.ptw_level3_limit = args.ptw_level3_limit
+    tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
+
 def setKmhV3Params(args, system):
     for cpu in system.cpu:
 
@@ -27,6 +35,8 @@ def setKmhV3Params(args, system):
         cpu.mmu.itb.size = 96
         cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
+        setPtwLevelLimitParams(args, cpu.mmu.itb)
+        setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2

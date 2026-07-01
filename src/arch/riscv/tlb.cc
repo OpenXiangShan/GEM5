@@ -1761,8 +1761,10 @@ TLB::sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestP
     }
 }
 std::pair<bool, Fault>
-TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req, ThreadContext *tc,
-                      BaseMMU::Translation *translation, BaseMMU::Mode mode, Addr vaddr, bool &delayed, int level)
+TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
+                      ThreadContext *tc, BaseMMU::Translation *translation,
+                      BaseMMU::Mode mode, Addr vaddr, bool &delayed, int level,
+                      bool from_miss_queue)
 {
     Addr paddr;
     TlbEntry *e_l2tlbVsstage = nullptr;
@@ -1776,13 +1778,43 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req, Thr
             return std::make_pair(true, fault);
         }
     } else {    //hit l2l1/l2/l3,trigger PTW
-        fault = walker->start(e_l2tlb->pte.ppn, tc, translation, req, mode, false, false, level, true, e_l2tlb->asid);
+        if (translation != nullptr && !from_miss_queue &&
+            walker->hasPendingPtwMiss()) {
+            walker->recordPtwMissQueueFifoBlocked();
+            walker->enqueuePtwMiss(tc, translation, req, mode, false);
+            delayed = true;
+            return std::make_pair(true, fault);
+        }
+        if (translation != nullptr &&
+            !walker->canStartPtwLevel(level, false, false)) {
+            walker->recordPtwMissQueueResourceBlocked();
+            walker->enqueuePtwMiss(tc, translation, req, mode, from_miss_queue);
+            delayed = true;
+            return std::make_pair(true, fault);
+        }
+        fault = walker->start(e_l2tlb->pte.ppn, tc, translation, req, mode,
+                              false, false, level, true, e_l2tlb->asid);
         if (translation != nullptr || fault != NoFault) {
             delayed = true;
             return std::make_pair(true, fault);
         }
     }
     return std::make_pair(false, fault);
+}
+
+void
+TLB::retryTimingPtwMiss(ThreadContext *tc,
+                        BaseMMU::Translation *translation,
+                        const RequestPtr &req, BaseMMU::Mode mode,
+                        bool from_miss_queue)
+{
+    bool delayed = false;
+    Fault fault = doTranslate(req, tc, translation, mode, delayed, from_miss_queue);
+    if (!delayed) {
+        translation->finish(fault, req, tc, mode);
+    } else if (fault != NoFault) {
+        translation->finish(fault, req, tc, mode);
+    }
 }
 
 std::pair<int,Fault>
@@ -2274,7 +2306,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
 Fault
 TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                  BaseMMU::Translation *translation, BaseMMU::Mode mode,
-                 bool &delayed)
+                 bool &delayed, bool from_miss_queue)
 {
     delayed = false;
     SATP satp = tc->readMiscReg(MISCREG_SATP);
@@ -2429,7 +2461,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (hitInSp)
                 e[0] = e[L_L2sp1];
             auto [return_flag, fault_return] =
-                L2TLBSendRequest(fault, e[L_L2sp1], req, tc, translation, mode, vaddr, delayed, L2L1CheckLevel - 1);
+                L2TLBSendRequest(fault, e[L_L2sp1], req, tc, translation, mode, vaddr, delayed,
+                                  L2L1CheckLevel - 1, from_miss_queue);
             if (return_flag)
                 return fault_return;
         } else if (e[L_L2sp2] && e[L_L2sp2]->pte.v) {
@@ -2438,7 +2471,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (hitInSp)
                 e[0] = e[L_L2sp2];
             auto [return_flag, fault_return] =
-                L2TLBSendRequest(fault, e[L_L2sp2], req, tc, translation, mode, vaddr, delayed, L2L2CheckLevel - 1);
+                L2TLBSendRequest(fault, e[L_L2sp2], req, tc, translation, mode, vaddr, delayed,
+                                  L2L2CheckLevel - 1, from_miss_queue);
             if (return_flag)
                 return fault_return;
         } else if (satp.mode == AddrXlateMode::SV48 && e[L_L2sp3] && e[L_L2sp3]->pte.v) {
@@ -2447,7 +2481,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (hitInSp)
                 e[0] = e[L_L2sp3];
             auto [return_flag, fault_return] =
-                L2TLBSendRequest(fault, e[L_L2sp3], req, tc, translation, mode, vaddr, delayed, L2L3CheckLevel - 1);
+                L2TLBSendRequest(fault, e[L_L2sp3], req, tc, translation, mode, vaddr, delayed,
+                                  L2L3CheckLevel - 1, from_miss_queue);
             if (return_flag)
                 return fault_return;
         } else if (e[L_L2L1] && e[L_L2L1]->pte.v) {
@@ -2457,7 +2492,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (hitInSp)
                 e[0] = e[L_L2L1];
             auto [return_flag, fault_return] =
-                L2TLBSendRequest(fault, e[L_L2L1], req, tc, translation, mode, vaddr, delayed, L2L1CheckLevel - 1);
+                L2TLBSendRequest(fault, e[L_L2L1], req, tc, translation, mode, vaddr, delayed,
+                                  L2L1CheckLevel - 1, from_miss_queue);
             if (return_flag)
                 return fault_return;
         } else if (e[L_L2L2] && e[L_L2L2]->pte.v) {
@@ -2467,7 +2503,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (hitInSp)
                 e[0] = e[L_L2L2];
             auto [return_flag, fault_return] =
-                L2TLBSendRequest(fault, e[L_L2L2], req, tc, translation, mode, vaddr, delayed, L2L2CheckLevel - 1);
+                L2TLBSendRequest(fault, e[L_L2L2], req, tc, translation, mode, vaddr, delayed,
+                                  L2L2CheckLevel - 1, from_miss_queue);
             if (return_flag)
                 return fault_return;
         } else if (satp.mode == AddrXlateMode::SV48 && e[L_L2L3] && e[L_L2L3]->pte.v) {
@@ -2476,7 +2513,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (hitInSp)
                 e[0] = e[L_L2L3];
             auto [return_flag, fault_return] =
-                L2TLBSendRequest(fault, e[L_L2L3], req, tc, translation, mode, vaddr, delayed, L2L3CheckLevel - 1);
+                L2TLBSendRequest(fault, e[L_L2L3], req, tc, translation, mode, vaddr, delayed,
+                                  L2L3CheckLevel - 1, from_miss_queue);
             if (return_flag)
                 return fault_return;
         } else {
@@ -2487,6 +2525,20 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (traceFlag)
                 DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
             int walk_level = satp.mode == AddrXlateMode::SV48 ? 3 : 2;
+            if (translation != nullptr && !from_miss_queue &&
+                walker->hasPendingPtwMiss()) {
+                walker->recordPtwMissQueueFifoBlocked();
+                walker->enqueuePtwMiss(tc, translation, req, mode, false);
+                delayed = true;
+                return fault;
+            }
+            if (translation != nullptr &&
+                !walker->canStartPtwLevel(walk_level, false, false)) {
+                walker->recordPtwMissQueueResourceBlocked();
+                walker->enqueuePtwMiss(tc, translation, req, mode, from_miss_queue);
+                delayed = true;
+                return fault;
+            }
             fault = walker->start(0, tc, translation, req, mode, false, false, walk_level, false, 0);
             DPRINTF(TLB, "finish start\n");
             if (translation != nullptr || fault != NoFault) {
