@@ -120,8 +120,8 @@ class BaseO3CPU(BaseCPU):
 
     decodeToFetchDelay = Param.Cycles(1, "Decode to fetch delay")
     renameToFetchDelay = Param.Cycles(1 ,"Rename to fetch delay")
-    iewToFetchDelay = Param.Cycles(1, "Issue/Execute/Writeback to fetch "
-                                   "delay")
+    iewToFetchDelay = Param.Cycles(2, "Issue/Execute/Writeback to fetch "
+                                   "delay") # for resolved update, should train branch after squash
     commitToFetchDelay = Param.Cycles(3, "Commit to fetch delay")
     fetchWidth = Param.Unsigned(16, "Fetch width")
     fetchBufferSize = Param.Unsigned(66, "Fetch buffer size in bytes")

@@ -28,7 +28,6 @@ def setKmhV3Params(args, system):
         cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.fetchWidth = 32
-        cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
 
@@ -101,19 +100,6 @@ def setKmhV3Params(args, system):
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=True)
-
-            cpu.branchPred.mbtb.resolvedUpdate = True
-            cpu.branchPred.tage.resolvedUpdate = True
-            cpu.branchPred.ittage.resolvedUpdate = True
-
-            cpu.branchPred.ubtb.enabled = True
-            cpu.branchPred.abtb.enabled = True
-            cpu.branchPred.microtage.enabled = True
-            cpu.branchPred.mbtb.enabled = True
-            cpu.branchPred.tage.enabled = True
-            cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.mgsc.enabled = True
-            cpu.branchPred.ras.enabled = True
 
             if getattr(args, 'standalone_sc', False):
                 cpu.branchPred.microtage.enabled = False
