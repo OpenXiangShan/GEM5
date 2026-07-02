@@ -69,7 +69,13 @@ def setKmhV3IdealParams(args, system):
         cpu.DcacheSetDivNum = 2
 
         # value predictor
-        cpu.valuePred = IdealConstantLVP()
+        cpu.valuePred = CompositeValuePredictor(
+                            predictors=[
+                                EStride(logMaxConfidence=10),
+                                IdealConstantLVP()
+                            ],
+                            arb=CVPConfidenceArb(counterBits=6)
+                        )
 
         # lsq
         cpu.LQEntries = 128

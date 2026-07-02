@@ -1,6 +1,7 @@
 #ifndef __VALUEPRED_UNIT_HH__
 #define __VALUEPRED_UNIT_HH__
 
+#include <memory>
 #include <string>
 
 #include "base/statistics.hh"
@@ -35,13 +36,17 @@ class VPUnit : public SimObject
     std::string name() const { return "valuePredict.base"; }
 
     // Do the value predict.
-    virtual VPResult valuePredict(VPPredMetaData *predMetadata) = 0;
+    virtual VPPredictionCandidate predict(const VPPredictRequest &request) = 0;
+
+    VPResult valuePredict(const VPPredictRequest &request,
+            std::unique_ptr<VPPredictionRecord> &record);
 
     // In commit time, update value predictor
-    virtual void updateValuePredictor(VPUpdateMetaData *updateMetadata) = 0;
+    virtual void update(const VPUpdateInfo &updateInfo,
+            const VPPredictionRecord *record, const VPFeedback &feedback) = 0;
 
     // Some value predictor need speculative update to support back-to-back predict.
-    virtual void specUpdateValuePredictor(VPSpecUpdateMetaData *specupdateMetadata) = 0;
+    virtual void specUpdate(const VPSpecUpdateInfo &specUpdateInfo) = 0;
 
     // If predict error, squash the inflight instructions in value predictor.
     virtual void squash(ThreadID tid, const uint64_t seq_no) = 0;

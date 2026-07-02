@@ -19,11 +19,11 @@ IdealConstantLVP::IdealConstantLVP(const Params &params)
 }
 
 VPResult
-IdealConstantLVP::valuePredict(VPPredMetaData *predMetaData)
+IdealConstantLVP::doPredict(Addr pc, ThreadID tid) const
 {
-    assertValidTid(predMetaData->tid);
-    auto &idealConstTable = idealConstTables[predMetaData->tid];
-    auto it = idealConstTable.find(predMetaData->pc);
+    assertValidTid(tid);
+    const auto &idealConstTable = idealConstTables[tid];
+    auto it = idealConstTable.find(pc);
     if (it != idealConstTable.end()) {
         if (it->second.confidence.isSaturated()) {
             return {true, it->second.value};
@@ -32,23 +32,36 @@ IdealConstantLVP::valuePredict(VPPredMetaData *predMetaData)
     return {false, 0};
 }
 
-void
-IdealConstantLVP::updateValuePredictor(VPUpdateMetaData *updateMetaData)
+VPPredictionCandidate
+IdealConstantLVP::predict(const VPPredictRequest &request)
 {
-    assertValidTid(updateMetaData->tid);
-    auto &idealConstTable = idealConstTables[updateMetaData->tid];
-    auto it = idealConstTable.find(updateMetaData->pc);
+    VPPredictionCandidate candidate;
+    candidate.result = doPredict(request.pc, request.tid);
+    if (candidate.result.speculative) {
+        candidate.record = std::make_unique<VPPredictionRecord>();
+        candidate.record->offeredPrediction = true;
+        candidate.record->predictedValue = candidate.result.value;
+    }
+    return candidate;
+}
+
+void
+IdealConstantLVP::doUpdate(Addr pc, ThreadID tid, RegVal actualValue)
+{
+    assertValidTid(tid);
+    auto &idealConstTable = idealConstTables[tid];
+    auto it = idealConstTable.find(pc);
     if (it == idealConstTable.end()) {
         // Not found, allocate a new entry
         auto [it, success] = idealConstTable.emplace(std::piecewise_construct,
-            std::forward_as_tuple(updateMetaData->pc),
-            std::forward_as_tuple(satCounterBits, updateMetaData->actualValue));
+            std::forward_as_tuple(pc),
+            std::forward_as_tuple(satCounterBits, actualValue));
 
         assert(success);
     } else {
         // Found
-        bool validActualValue = updateMetaData->actualValue != 0xdeadbeefULL;
-        if (validActualValue && updateMetaData->actualValue == it->second.value) {
+        bool validActualValue = actualValue != 0xdeadbeefULL;
+        if (validActualValue && actualValue == it->second.value) {
             it->second.confidence++;
         } else {
             if (resetConfidence) {
@@ -56,15 +69,24 @@ IdealConstantLVP::updateValuePredictor(VPUpdateMetaData *updateMetaData)
             } else {
                 it->second.confidence--;
             }
-            it->second.value = updateMetaData->actualValue;
+            it->second.value = actualValue;
         }
     }
 }
 
 void
-IdealConstantLVP::specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData)
+IdealConstantLVP::update(const VPUpdateInfo &updateInfo,
+        const VPPredictionRecord *record, const VPFeedback &feedback)
 {
-    // Do nothing
+    (void)record;
+    (void)feedback;
+    doUpdate(updateInfo.pc, updateInfo.tid, updateInfo.actualValue);
+}
+
+void
+IdealConstantLVP::specUpdate(const VPSpecUpdateInfo &specUpdateInfo)
+{
+    (void)specUpdateInfo;
 }
 
 void

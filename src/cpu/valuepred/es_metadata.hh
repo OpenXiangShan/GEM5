@@ -1,6 +1,7 @@
 #ifndef __ES_METADATA_HH__
 #define __ES_METADATA_HH__
 
+#include <string>
 #include <string_view>
 
 #include "cpu/valuepred/valuepred_metadata.hh"
@@ -11,27 +12,19 @@ namespace gem5
 namespace valuepred
 {
 
-class ESPredMetaData : public VPPredMetaData
+class ESUpdateInfoExt : public VPUpdateInfoExtension
 {
   public:
-    virtual ~ESPredMetaData() {};
-};
+    ESUpdateInfoExt(bool is_load_inst, uint64_t inflight_time, std::string disassembly)
+        : isLoadInst(is_load_inst),
+          inflightTime(inflight_time),
+          disas(std::move(disassembly))
+    {
+    }
 
-class ESUpdateMetaData : public VPUpdateMetaData
-{
-  public:
     bool isLoadInst = false;
     uint64_t inflightTime = 0;
-    // for debug
-    std::string_view disas;
-
-    virtual ~ESUpdateMetaData() {};
-};
-
-class ESSpecUpdateMetaData : public VPSpecUpdateMetaData
-{
-  public:
-    virtual ~ESSpecUpdateMetaData() {};
+    std::string disas;
 };
 
 }

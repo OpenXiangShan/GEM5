@@ -2096,14 +2096,12 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Do the value prediction
     if (valuePred && instruction->canLVP()) {
-        valuepred::VPPredMetaData* vpPredMetaData = valuepred::VPDataStructFactory::
-                                                        buildPredMetaData(valuePred->getValuePredictorType());
-
-        vpPredMetaData->pc = instruction->getPC();
-        vpPredMetaData->seq_no = instruction->seqNum;
-        vpPredMetaData->tid = tid;
-        instruction->vpResult = valuePred->valuePredict(vpPredMetaData);
-        delete vpPredMetaData;
+        valuepred::VPPredictRequest predictRequest;
+        predictRequest.pc = instruction->getPC();
+        predictRequest.seqNo = instruction->seqNum;
+        predictRequest.tid = tid;
+        instruction->vpResult =
+            valuePred->valuePredict(predictRequest, instruction->vpRecord);
     }
 
     return predictedBranch;

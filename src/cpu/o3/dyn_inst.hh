@@ -47,6 +47,7 @@
 #include <cstdio>
 #include <deque>
 #include <list>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -1745,6 +1746,8 @@ class DynInst : public ExecContext, public RefCounted
 
     /** value prediction */
     valuepred::VPResult vpResult = {false, 0xdeadbeefULL};
+    std::unique_ptr<valuepred::VPPredictionRecord> vpRecord = nullptr;
+    bool vpApplied = false;
 
     RegVal actualValue = 0xdeadbeefULL;
     bool vpMisprediction = false;
