@@ -726,7 +726,8 @@ AheadBTB::update(const FetchTarget &stream)
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
         return;
     }
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get();
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        stream.predMetas[getComponentIdx()]);
     const auto update_ctx = stream.makeTargetUpdateContext();
     Addr end_inst_pc = stream.updateEndInstPC;
 
@@ -734,28 +735,33 @@ AheadBTB::update(const FetchTarget &stream)
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
 
     // 2. Check prediction hit status, for stats recording
-    checkPredictionHit(update_ctx,
-        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
+    checkPredictionHit(update_ctx, meta.get());
 
     // 3. Collect entries to update
     const auto selected_entry = stream.makeSelectedTargetUpdateEntry(update_ctx);
     auto entries_to_update = collectEntriesToUpdate(
         old_entries, selected_entry, update_ctx);
 
-    // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
-    for (auto &entry : entries_to_update) {
-        Addr startPC = update_ctx.startPC;
-        Addr btb_tag = getTag(startPC, update_ctx.asidHash);  // use current pc to get tag
+    if (!entries_to_update.empty()) {
+        updateWithEntries(entries_to_update, update_ctx, getPreviousPC(stream));
+    }
+}
 
-        // AheadBTB always uses ahead-pipelined update logic
-        Addr previousPC = getPreviousPC(stream);
-        if (previousPC == 0) {
-            DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
-            return;
-        }
-        Addr btb_idx = getIndex(previousPC, update_ctx.asidHash);  // use last pc to get idx
-        entry.entry.source = getComponentIdx(); // mark the entry source as AheadBTB
-        updateBTBEntry(btb_idx, btb_tag, entry, update_ctx);
+void
+AheadBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
+                            const TargetUpdateContext &ctx,
+                            Addr previousPC)
+{
+    if (previousPC == 0) {
+        DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
+        return;
+    }
+
+    Addr btb_tag = getTag(ctx.startPC, ctx.asidHash);
+    Addr btb_idx = getIndex(previousPC, ctx.asidHash);
+    for (auto entry : entries) {
+        entry.entry.source = getComponentIdx();
+        updateBTBEntry(btb_idx, btb_tag, entry, ctx);
     }
 }
 
@@ -767,8 +773,13 @@ AheadBTB::update(const FetchTarget &stream)
 Addr
 AheadBTB::getPreviousPC(const FetchTarget &stream)
 {
+    return getPreviousPC(stream.previousPCs);
+}
+
+Addr
+AheadBTB::getPreviousPC(std::queue<Addr> previous_pcs)
+{
     // get pc from the nth previous block, the value of n is aheadPipelinedStages
-    auto previous_pcs = stream.previousPCs;
     if (previous_pcs.size() < aheadPipelinedStages) {
         // if the stream is not filled, we cannot update btb
         DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %ld pcs read,"

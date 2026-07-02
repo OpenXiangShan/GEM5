@@ -320,6 +320,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Previous PC
      */
     Addr getPreviousPC(const FetchTarget &stream);
+    Addr getPreviousPC(std::queue<Addr> previous_pcs);
 
     /** Check branch prediction hit status
      *  @param ctx Target update context containing execution results
@@ -347,6 +348,10 @@ class AheadBTB : public TimedBaseBTBPredictor
     void updateBTBEntry(Addr btb_idx, Addr btb_tag,
                         const TargetUpdateEntry &update_entry,
                         const TargetUpdateContext &ctx);
+
+    void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
+                           const TargetUpdateContext &ctx,
+                           Addr previousPC);
 
     /*
      * Comparator for MRU heap
