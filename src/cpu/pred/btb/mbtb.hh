@@ -174,7 +174,6 @@ class MBTB : public TimedBaseBTBPredictor
         const std::vector<TargetUpdateEntry> &entries,
         const TargetUpdateContext &ctx,
         const FetchTarget &stream) override;
-    void update(const FetchTarget &stream) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \

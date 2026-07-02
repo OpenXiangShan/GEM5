@@ -67,6 +67,19 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     return stream;
 }
 
+void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
+                             const std::shared_ptr<void>& meta) {
+    const auto ctx = stream.makeTargetUpdateContext();
+    const auto updateBTBEntries = buildUpdateBTBEntries(
+        stream.predBTBEntries, stream.startPC,
+        stream.getUpdateEndInstPC(btb->predictWidth));
+    const auto selection = btb->selectUpdateEntry(meta, ctx);
+    const auto entries = buildTargetUpdateEntries(
+        updateBTBEntries, selection.entry, selection.isOldEntry, {},
+        btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
+    btb->updateWithTargetEntries(entries, ctx, stream);
+}
+
 /**
  * @brief Helper function to find conditional taken prediction for a given PC
  *
@@ -132,20 +145,7 @@ predictUpdateCycle(MBTB* btb,
     if (btb->getDelay() < stagePreds.size()) {
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
-    stream.updateBTBEntries = buildUpdateBTBEntries(
-        stream.predBTBEntries, stream.startPC,
-        stream.getUpdateEndInstPC(btb->predictWidth));
-    auto selection = btb->selectUpdateEntry(
-        meta, stream.makeTargetUpdateContext());
-    stream.updateNewBTBEntry = selection.entry;
-    stream.updateIsOldEntry = selection.isOldEntry;
-
-    for (auto &entry : stream.updateBTBEntries) {
-        entry.resolved = true;
-    }
-    stream.updateNewBTBEntry.resolved = true;
-
-    btb->update(stream);
+    updateWithTargetEntries(btb, stream, meta);
 
     // Return final predictions after update
     stagePreds.clear();
@@ -368,12 +368,8 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     auto meta = mbtb->getPredictionMeta();
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
-    auto selection = mbtb->selectUpdateEntry(
-        meta, stream.makeTargetUpdateContext());
-    stream.updateNewBTBEntry = selection.entry;
-    stream.updateIsOldEntry = selection.isOldEntry;
-    mbtb->update(stream);
-    
+    updateWithTargetEntries(mbtb, stream, meta);
+
     // Check final predictions
     stagePreds.clear();
     stagePreds.resize(4);

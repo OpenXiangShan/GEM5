@@ -673,12 +673,6 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
  * 5. Update MRU information
  */
 void
-MBTB::update(const FetchTarget &stream)
-{
-    updateWithLegacyTargetEntries(stream);
-}
-
-void
 MBTB::updateWithTargetEntries(const std::vector<TargetUpdateEntry> &entries,
                               const TargetUpdateContext &ctx,
                               const FetchTarget &stream)
