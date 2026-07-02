@@ -498,13 +498,7 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
 void
 BTBTAGEUpperBound::update(const FetchTarget &stream)
 {
-    const auto updateCtx = stream.makeDirectionUpdateContext();
-    auto entriesToUpdate = buildDirectionUpdateEntries(
-        stream.updateBTBEntries, stream.updateNewBTBEntry,
-        stream.updateIsOldEntry, stream.resolvedUpdatePrefixPCs,
-        DirectionUpdateEntryFilter::Conditional,
-        getResolvedUpdate(), updateCtx);
-    updateWithDirectionEntries(entriesToUpdate, updateCtx, stream);
+    updateWithLegacyDirectionEntries(stream);
 }
 
 void

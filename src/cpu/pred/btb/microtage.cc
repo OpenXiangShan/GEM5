@@ -631,16 +631,7 @@ MicroTAGE::noteResolveUpdateAccepted(const FetchTarget &stream) {
  */
 void
 MicroTAGE::update(const FetchTarget &stream) {
-    const auto update_ctx = stream.makeDirectionUpdateContext();
-
-    // ========== Normal Update Logic ==========
-    // Prepare BTB entries to update
-    auto entries_to_update = buildDirectionUpdateEntries(
-        stream.updateBTBEntries, stream.updateNewBTBEntry,
-        stream.updateIsOldEntry, stream.resolvedUpdatePrefixPCs,
-        DirectionUpdateEntryFilter::Conditional,
-        getResolvedUpdate(), update_ctx);
-    updateWithDirectionEntries(entries_to_update, update_ctx, stream);
+    updateWithLegacyDirectionEntries(stream);
 }
 
 void

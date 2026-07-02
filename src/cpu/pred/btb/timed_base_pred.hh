@@ -102,6 +102,29 @@ class TimedBaseBTBPredictor: public SimObject
     {
         update(entry);
     }
+
+  protected:
+    void updateWithLegacyDirectionEntries(const FetchTarget &entry)
+    {
+        const auto ctx = entry.makeDirectionUpdateContext();
+        const auto entries = buildDirectionUpdateEntries(
+            entry.updateBTBEntries, entry.updateNewBTBEntry,
+            entry.updateIsOldEntry, entry.resolvedUpdatePrefixPCs,
+            directionUpdateEntryFilter(), getResolvedUpdate(), ctx);
+        updateWithDirectionEntries(entries, ctx, entry);
+    }
+
+    void updateWithLegacyTargetEntries(const FetchTarget &entry)
+    {
+        const auto ctx = entry.makeTargetUpdateContext();
+        const auto entries = buildTargetUpdateEntries(
+            entry.updateBTBEntries, entry.updateNewBTBEntry,
+            entry.updateIsOldEntry, entry.resolvedUpdatePrefixPCs,
+            targetUpdateEntryFilter(), getResolvedUpdate(), ctx);
+        updateWithTargetEntries(entries, ctx, entry);
+    }
+
+  public:
     virtual void update(const FetchTarget &entry) {}
     virtual unsigned getDelay() {return numDelay;}
     virtual bool getResolvedUpdate() {return resolvedUpdate;}
