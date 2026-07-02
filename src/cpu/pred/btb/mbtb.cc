@@ -680,13 +680,22 @@ MBTB::update(const FetchTarget &stream)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     const auto update_ctx = stream.makeTargetUpdateContext();
-    // 1. Check prediction hit status, for stats recording
-    checkPredictionHit(update_ctx,
-        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
-
     auto entries_need_update = prepareUpdateEntries(stream, update_ctx);
-    for (const auto &entry : entries_need_update) {
-        updateBTBEntry(entry, update_ctx);
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        stream.predMetas[getComponentIdx()]);
+    updateWithEntries(entries_need_update, update_ctx, meta.get());
+}
+
+void
+MBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
+                        const TargetUpdateContext &ctx,
+                        const BTBMeta *meta)
+{
+    // 1. Check prediction hit status, for stats recording
+    checkPredictionHit(ctx, meta);
+
+    for (const auto &entry : entries) {
+        updateBTBEntry(entry, ctx);
     }
 }
 

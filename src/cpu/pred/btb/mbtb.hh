@@ -275,6 +275,10 @@ class MBTB : public TimedBaseBTBPredictor
     void checkPredictionHit(const TargetUpdateContext &ctx,
                            const BTBMeta* meta);
 
+    void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
+                           const TargetUpdateContext &ctx,
+                           const BTBMeta *meta);
+
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param ctx Target update context
