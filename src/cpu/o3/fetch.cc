@@ -1631,7 +1631,7 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
     if (!stallSig->blockFetch[tid] &&
-        !fromCommitRedirect->commitInfo[tid].robSquashing) {
+        !fromCommit->commitInfo[tid].robSquashing) {
         // backend not stalled
         int unused_slots = decodeWidth - insts_to_decode;
         if (unused_slots > 0) {
@@ -1823,7 +1823,7 @@ Fetch::handleCommitSignals(ThreadID tid)
                               mispred_inst->getInstBytes(), redirect_info.branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
     } else if (redirect_info.isTrapSquash) {
-        DPRINTF(Fetch, "Treating as trap squash\n", tid);
+        DPRINTF(Fetch, "Treating as trap squash\n");
         const auto trap_pc = redirect_info.pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->trapSquash(redirect_info.squashedTargetId,
