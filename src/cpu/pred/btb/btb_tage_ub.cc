@@ -489,15 +489,6 @@ BTBTAGEUpperBound::allocateExactEntry(
     return false;
 }
 
-std::vector<DirectionUpdateEntry>
-BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(
-    const FetchTarget &stream, const DirectionUpdateContext &ctx)
-{
-    return stream.makeDirectionUpdateEntries(
-        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
-        getResolvedUpdate(), ctx);
-}
-
 void
 BTBTAGEUpperBound::refreshContextStats(unsigned table)
 {
@@ -508,23 +499,34 @@ void
 BTBTAGEUpperBound::update(const FetchTarget &stream)
 {
     const auto updateCtx = stream.makeDirectionUpdateContext();
-    auto entriesToUpdate = prepareUpperBoundUpdateEntries(stream, updateCtx);
+    auto entriesToUpdate = stream.makeDirectionUpdateEntries(
+        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        getResolvedUpdate(), updateCtx);
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
         return;
     }
 
+    updateWithEntries(entriesToUpdate, updateCtx, *predMeta);
+}
+
+void
+BTBTAGEUpperBound::updateWithEntries(
+    const std::vector<DirectionUpdateEntry> &entries,
+    const DirectionUpdateContext &ctx,
+    const UpperBoundMeta &predMeta)
+{
     bool hasStoredVsActualDiff = false;
-    for (const auto &updateEntry : entriesToUpdate) {
+    for (const auto &updateEntry : entries) {
         const auto &btbEntry = updateEntry.entry;
-        auto predIt = predMeta->preds.find(btbEntry.pc);
-        auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
+        auto predIt = predMeta.preds.find(btbEntry.pc);
+        auto metaIt = predMeta.branchMeta.find(btbEntry.pc);
         const bool actualTaken = updateEntry.actualTaken;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
-        if (predIt != predMeta->preds.end() &&
-            metaIt != predMeta->branchMeta.end()) {
+        if (predIt != predMeta.preds.end() &&
+            metaIt != predMeta.branchMeta.end()) {
             storedPred = predIt->second;
             storedMeta = metaIt->second;
         } else {
@@ -532,7 +534,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
             // maps, but they still must be trained using the prediction-time
             // history snapshot carried in predMeta.
             storedPred = lookupExactPrediction(
-                btbEntry, predMeta->historyWords, &storedMeta);
+                btbEntry, predMeta.historyWords, &storedMeta);
         }
 
         if (storedPred.taken != actualTaken) {
@@ -540,7 +542,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
         }
 
         bool needAllocate = updatePredictorStateAndCheckAllocation(
-            btbEntry, actualTaken, storedPred, storedMeta, updateCtx);
+            btbEntry, actualTaken, storedPred, storedMeta, ctx);
 
         if (needAllocate) {
             uint64_t allocatedTable = 0;
@@ -549,7 +551,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
                 startTable = storedMeta.main.table + 1;
             }
             allocateExactEntry(btbEntry, actualTaken, startTable,
-                               predMeta->historyWords, allocatedTable);
+                               predMeta.historyWords, allocatedTable);
         }
     }
 
@@ -557,7 +559,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
         tageStats.recomputedVsActualDiff++;
     }
     if (getDelay() < 2) {
-        checkUtageUpdateMisspred(predMeta->preds, updateCtx);
+        checkUtageUpdateMisspred(predMeta.preds, ctx);
     }
 }
 
