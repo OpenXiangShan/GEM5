@@ -328,6 +328,15 @@ class AheadBTB : public TimedBaseBTBPredictor
     void checkPredictionHit(const TargetUpdateContext &ctx,
                            const BTBMeta* meta);
 
+    /** Build the actual branch entry selected for update
+     *  @param old_entries Processed old entries
+     *  @param ctx Target update context containing execution results
+     *  @return Selected old entry, or a new actual-taken entry when needed
+     */
+    TargetUpdateEntry makeSelectedTargetUpdateEntry(
+        const std::vector<BTBEntry> &old_entries,
+        const TargetUpdateContext &ctx);
+
     /** Collect entries that need to be updated
      *  @param old_entries Processed old entries
      *  @param selected_entry Selected new/old entry from update selection

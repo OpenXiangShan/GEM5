@@ -508,11 +508,34 @@ AheadBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta
 }
 
 
-/**
- * Collect all entries that need to be updated
- * 1. Process old entries
- * 2. Add new entry if necessary
- */
+/** Build the actual branch entry selected for update. */
+TargetUpdateEntry
+AheadBTB::makeSelectedTargetUpdateEntry(
+    const std::vector<BTBEntry> &old_entries,
+    const TargetUpdateContext &ctx)
+{
+    BTBUpdateEntrySelection selection;
+    for (const auto &entry : old_entries) {
+        if (ctx.actualBranch == entry) {
+            selection.entry = entry;
+            selection.isOldEntry = true;
+            break;
+        }
+    }
+
+    if (!selection.isOldEntry && ctx.actualTaken) {
+        BTBEntry new_entry(ctx.actualBranch);
+        new_entry.valid = true;
+        if (new_entry.isCond) {
+            new_entry.ctr = 0;
+        }
+        selection.entry = new_entry;
+    }
+
+    return buildSelectedTargetUpdateEntry(
+        selection.entry, selection.isOldEntry, ctx);
+}
+
 std::vector<TargetUpdateEntry>
 AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
                                  const TargetUpdateEntry &selected_entry,
@@ -537,7 +560,7 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
             break;
         }
     }
-    if (!pred_branch_hit) {
+    if (selected_entry.entry.valid && !pred_branch_hit) {
         all_entries.push_back(selected_entry);
     }
 
@@ -728,7 +751,8 @@ AheadBTB::update(const FetchTarget &stream)
     checkPredictionHit(update_ctx, meta.get());
 
     // 3. Collect entries to update
-    const auto selected_entry = stream.makeSelectedTargetUpdateEntry(update_ctx);
+    const auto selected_entry =
+        makeSelectedTargetUpdateEntry(old_entries, update_ctx);
     auto entries_to_update = collectEntriesToUpdate(
         old_entries, selected_entry, update_ctx);
 
