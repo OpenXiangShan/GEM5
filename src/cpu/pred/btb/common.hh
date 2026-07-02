@@ -308,6 +308,13 @@ struct TargetUpdateEntry
     BranchInfo actualBranch;
 };
 
+struct BPUPreparedUpdate
+{
+    std::vector<BTBEntry> btbEntries;
+    BTBUpdateEntrySelection selection;
+    std::vector<Addr> resolvedPrefixPCs;
+};
+
 enum class TargetUpdateEntryFilter
 {
     Any,
@@ -847,25 +854,6 @@ struct FetchTarget
                 static_cast<SquashType>(squashType), squashPC};
     }
 
-    // Argument resolved pc could not match any BTB entry branch pc,
-    // Just ignore it in that case.
-    void markBTBEntryResolved(Addr resolvedInstPC)
-    {
-        for (auto &entry : updateBTBEntries) {
-            if (entry.valid && entry.pc == resolvedInstPC) {
-                entry.resolved = true;
-            }
-        }
-    }
-
-    void markUpdateEntryResolved(Addr resolvedInstPC)
-    {
-        if (updateNewBTBEntry.pc == resolvedInstPC) {
-            updateNewBTBEntry.resolved = true;
-        }
-
-        markBTBEntryResolved(resolvedInstPC);
-    }
 };
 
 inline BranchInfo
@@ -950,69 +938,78 @@ class BPUUpdateEvent
         }
     }
 
-    void prepareLegacyTarget(FetchTarget &target, unsigned predictWidth) const
+    BPUPreparedUpdate
+    prepareLegacyTarget(FetchTarget &target, unsigned predictWidth) const
     {
         applyActualResult(target);
-        target.setResolvedUpdatePrefixPCs(resolvedBranchPCs());
-        target.prepareUpdateEntries(predictWidth);
-        markResolvedEntries(target);
+        auto prepared = makePreparedUpdate(
+            target, predictWidth,
+            {target.updateNewBTBEntry, target.updateIsOldEntry});
+        installLegacyUpdateFields(target, prepared);
+        return prepared;
     }
 
-    void prepareLegacyTarget(
+    BPUPreparedUpdate
+    prepareLegacyTarget(
         FetchTarget &target,
         unsigned predictWidth,
         const BTBUpdateEntrySelection &selection) const
     {
         applyActualResult(target);
-        target.setResolvedUpdatePrefixPCs(resolvedBranchPCs());
-        target.prepareUpdateEntries(predictWidth);
-        target.setUpdateEntrySelection(markResolvedSelection(selection));
-        markResolvedEntries(target);
+        auto prepared = makePreparedUpdate(target, predictWidth, selection);
+        installLegacyUpdateFields(target, prepared);
+        return prepared;
     }
 
     template <typename SelectUpdateEntry>
-    void prepareLegacyTarget(FetchTarget &target, unsigned predictWidth,
-                             SelectUpdateEntry selectUpdateEntry) const
+    BPUPreparedUpdate
+    prepareLegacyTarget(FetchTarget &target, unsigned predictWidth,
+                        SelectUpdateEntry selectUpdateEntry) const
     {
         applyActualResult(target);
-        target.setResolvedUpdatePrefixPCs(resolvedBranchPCs());
-        target.prepareUpdateEntries(predictWidth);
-        target.setUpdateEntrySelection(markResolvedSelection(
-            selectUpdateEntry(target.makeTargetUpdateContext())));
-        markResolvedEntries(target);
+        auto prepared = makePreparedUpdate(
+            target, predictWidth,
+            selectUpdateEntry(target.makeTargetUpdateContext()));
+        installLegacyUpdateFields(target, prepared);
+        return prepared;
+    }
+
+    BPUPreparedUpdate
+    makePreparedUpdate(const FetchTarget &target,
+                       unsigned predictWidth,
+                       const BTBUpdateEntrySelection &selection) const
+    {
+        return {makeUpdateBTBEntries(target, predictWidth),
+                markResolvedSelection(selection),
+                resolvedBranchPCs()};
     }
 
     std::vector<DirectionUpdateEntry>
     makeDirectionUpdateEntries(
-        const FetchTarget &target,
-        unsigned predictWidth,
-        const BTBUpdateEntrySelection &selection,
+        const BPUPreparedUpdate &prepared,
         DirectionUpdateEntryFilter filter,
         bool resolved_update,
         const DirectionUpdateContext &ctx) const
     {
         return buildDirectionUpdateEntries(
-            makeUpdateBTBEntries(target, predictWidth),
-            markResolvedSelection(selection).entry,
-            selection.isOldEntry,
-            resolvedBranchPCs(), filter, resolved_update, ctx);
+            prepared.btbEntries,
+            prepared.selection.entry,
+            prepared.selection.isOldEntry,
+            prepared.resolvedPrefixPCs, filter, resolved_update, ctx);
     }
 
     std::vector<TargetUpdateEntry>
     makeTargetUpdateEntries(
-        const FetchTarget &target,
-        unsigned predictWidth,
-        const BTBUpdateEntrySelection &selection,
+        const BPUPreparedUpdate &prepared,
         TargetUpdateEntryFilter filter,
         bool resolved_update,
         const TargetUpdateContext &ctx) const
     {
-        auto resolved_selection = markResolvedSelection(selection);
         return buildTargetUpdateEntries(
-            makeUpdateBTBEntries(target, predictWidth),
-            resolved_selection.entry,
-            resolved_selection.isOldEntry,
-            resolvedBranchPCs(), filter, resolved_update, ctx);
+            prepared.btbEntries,
+            prepared.selection.entry,
+            prepared.selection.isOldEntry,
+            prepared.resolvedPrefixPCs, filter, resolved_update, ctx);
     }
 
   private:
@@ -1067,11 +1064,13 @@ class BPUUpdateEvent
         return selection;
     }
 
-    void markResolvedEntries(FetchTarget &target) const
+    void installLegacyUpdateFields(
+        FetchTarget &target,
+        const BPUPreparedUpdate &prepared) const
     {
-        for (const auto &branch : resolvedBranches) {
-            target.markUpdateEntryResolved(branch.pc);
-        }
+        target.setResolvedUpdatePrefixPCs(prepared.resolvedPrefixPCs);
+        target.updateBTBEntries = prepared.btbEntries;
+        target.setUpdateEntrySelection(prepared.selection);
     }
 };
 

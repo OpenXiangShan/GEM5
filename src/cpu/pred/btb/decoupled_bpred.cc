@@ -784,12 +784,13 @@ DecoupledBPUWithBTB::resolveUpdate(
     }
 
     const auto selection = selectUpdateEntryForTarget(target);
-    prepareUpdateEntriesForTarget(target, update_event, selection);
+    const auto prepared_update =
+        prepareUpdateEntriesForTarget(target, update_event, selection);
 
     if (!canResolveUpdateComponents(target)) {
         return false;
     }
-    updateResolvedPredictorComponents(target, update_event, selection);
+    updateResolvedPredictorComponents(target, update_event, prepared_update);
     return true;
 }
 
@@ -828,13 +829,13 @@ DecoupledBPUWithBTB::selectUpdateEntryForTarget(const FetchTarget &target)
     return {};
 }
 
-void
+BPUPreparedUpdate
 DecoupledBPUWithBTB::prepareUpdateEntriesForTarget(
     FetchTarget &target,
     const BPUUpdateEvent &update_event,
     const BTBUpdateEntrySelection &selection)
 {
-    update_event.prepareLegacyTarget(target, predictWidth, selection);
+    return update_event.prepareLegacyTarget(target, predictWidth, selection);
 }
 
 bool
@@ -853,13 +854,13 @@ void
 DecoupledBPUWithBTB::updateResolvedPredictorComponents(
     const FetchTarget &target,
     const BPUUpdateEvent &update_event,
-    const BTBUpdateEntrySelection &selection)
+    const BPUPreparedUpdate &prepared_update)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
             components[i]->noteResolveUpdateAccepted(target);
             updatePredictorComponent(
-                components[i], target, update_event, selection);
+                components[i], target, update_event, prepared_update);
         }
     }
 }
@@ -869,12 +870,12 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     TimedBaseBTBPredictor *component,
     const FetchTarget &target,
     const BPUUpdateEvent &update_event,
-    const BTBUpdateEntrySelection &selection)
+    const BPUPreparedUpdate &prepared_update)
 {
     if (component->usesDirectionUpdateEntries()) {
         const auto update_ctx = target.makeDirectionUpdateContext();
         const auto entries = update_event.makeDirectionUpdateEntries(
-            target, predictWidth, selection,
+            prepared_update,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithDirectionEntries(entries, update_ctx, target);
@@ -884,7 +885,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     if (component->usesTargetUpdateEntries()) {
         const auto update_ctx = target.makeTargetUpdateContext();
         const auto entries = update_event.makeTargetUpdateEntries(
-            target, predictWidth, selection,
+            prepared_update,
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithTargetEntries(entries, update_ctx, target);
@@ -904,12 +905,13 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     }
 
     const auto selection = selectUpdateEntryForTarget(target);
-    prepareUpdateEntriesForTarget(target, update_event, selection);
+    const auto prepared_update =
+        prepareUpdateEntriesForTarget(target, update_event, selection);
 
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->getResolvedUpdate()) {
             updatePredictorComponent(
-                components[i], target, update_event, selection);
+                components[i], target, update_event, prepared_update);
         }
     }
 }

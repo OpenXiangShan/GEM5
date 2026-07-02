@@ -730,18 +730,19 @@ class DecoupledBPUWithBTB : public BPredUnit
                        ThreadID tid);
     BTBUpdateEntrySelection selectUpdateEntryForTarget(
         const FetchTarget &target);
-    void prepareUpdateEntriesForTarget(FetchTarget &target,
-                                       const BPUUpdateEvent &update_event,
-                                       const BTBUpdateEntrySelection &selection);
+    BPUPreparedUpdate prepareUpdateEntriesForTarget(
+        FetchTarget &target,
+        const BPUUpdateEvent &update_event,
+        const BTBUpdateEntrySelection &selection);
     bool canResolveUpdateComponents(const FetchTarget &target);
     void updateResolvedPredictorComponents(
         const FetchTarget &target,
         const BPUUpdateEvent &update_event,
-        const BTBUpdateEntrySelection &selection);
+        const BPUPreparedUpdate &prepared_update);
     void updatePredictorComponent(TimedBaseBTBPredictor *component,
                                   const FetchTarget &target,
                                   const BPUUpdateEvent &update_event,
-                                  const BTBUpdateEntrySelection &selection);
+                                  const BPUPreparedUpdate &prepared_update);
     void updatePredictorComponents(FetchTarget &target,
                                    const BPUUpdateEvent &update_event);
     void updateStatistics(const FetchTarget &target);

@@ -257,7 +257,7 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
         makeResolvedBranch(second.pc, true, true),
         makeResolvedBranch(after.pc, false, false),
     });
-    event.prepareLegacyTarget(
+    const BPUPreparedUpdate prepared = event.prepareLegacyTarget(
         stream,
         32,
         [](const TargetUpdateContext &ctx) {
@@ -278,6 +278,17 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
     EXPECT_EQ(stream.updateNewBTBEntry.pc, second.pc);
     EXPECT_TRUE(stream.updateNewBTBEntry.resolved);
     EXPECT_FALSE(stream.updateIsOldEntry);
+
+    ASSERT_EQ(prepared.btbEntries.size(), 2);
+    EXPECT_EQ(prepared.btbEntries[0].pc, first.pc);
+    EXPECT_EQ(prepared.btbEntries[1].pc, second.pc);
+    EXPECT_TRUE(prepared.btbEntries[0].resolved);
+    EXPECT_TRUE(prepared.btbEntries[1].resolved);
+    EXPECT_EQ(prepared.selection.entry.pc, second.pc);
+    EXPECT_TRUE(prepared.selection.entry.resolved);
+    ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
+    EXPECT_EQ(prepared.resolvedPrefixPCs[0], first.pc);
+    EXPECT_EQ(prepared.resolvedPrefixPCs[1], second.pc);
 }
 
 TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
@@ -317,7 +328,7 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
 
     const BPUUpdateEvent event = BPUUpdateEvent::fromFetchTarget(stream);
     EXPECT_EQ(event.resolvedBranchCount(), 2);
-    event.prepareLegacyTarget(
+    const BPUPreparedUpdate prepared = event.prepareLegacyTarget(
         stream,
         32,
         [](const TargetUpdateContext &ctx) {
@@ -332,6 +343,9 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
     EXPECT_EQ(stream.updateBTBEntries[0].pc, first.pc);
     EXPECT_EQ(stream.updateBTBEntries[1].pc, second.pc);
     EXPECT_EQ(stream.updateNewBTBEntry.pc, second.pc);
+    ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
+    EXPECT_EQ(prepared.resolvedPrefixPCs[0], first.pc);
+    EXPECT_EQ(prepared.resolvedPrefixPCs[1], second.pc);
 }
 
 } // namespace test
