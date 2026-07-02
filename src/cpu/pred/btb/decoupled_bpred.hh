@@ -410,6 +410,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     void trapSquash(unsigned fsq_id, Addr last_committed_pc,
                     const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
 
+    bool recordResolvedBranch(unsigned fsq_id, const ResolvedBranch &branch,
+                              ThreadID tid);
     void commit(unsigned fsqID, ThreadID tid);
 
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).

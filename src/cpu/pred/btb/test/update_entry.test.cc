@@ -254,6 +254,60 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
     EXPECT_FALSE(stream.updateIsOldEntry);
 }
 
+TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
+{
+    FetchTarget stream;
+    const ResolvedBranch first = makeResolvedBranch(0x1000, false, false);
+    const ResolvedBranch second = makeResolvedBranch(0x1008, false, false);
+    const ResolvedBranch duplicate = makeResolvedBranch(0x1008, true, true);
+    const ResolvedBranch third = makeResolvedBranch(0x1010, false, false);
+
+    EXPECT_TRUE(stream.addResolvedBranch(second));
+    EXPECT_TRUE(stream.addResolvedBranch(first));
+    EXPECT_FALSE(stream.addResolvedBranch(duplicate));
+    EXPECT_EQ(stream.addResolvedBranches({third, first}), 1);
+
+    ASSERT_EQ(stream.resolvedBranches.size(), 3);
+    EXPECT_EQ(stream.resolvedBranches[0].pc, first.pc);
+    EXPECT_EQ(stream.resolvedBranches[1].pc, second.pc);
+    EXPECT_FALSE(stream.resolvedBranches[1].taken);
+    EXPECT_EQ(stream.resolvedBranches[2].pc, third.pc);
+}
+
+TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
+{
+    const BTBEntry first = makeEntry(0x1000, true, false, false);
+    const BTBEntry second = makeEntry(0x1008, true, false, false);
+    const BTBEntry after = makeEntry(0x1010, true, false, false);
+
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.predBTBEntries = {first, second, after};
+    stream.addResolvedBranches({
+        makeResolvedBranch(after.pc, false, false),
+        makeResolvedBranch(second.pc, true, true),
+        makeResolvedBranch(first.pc, false, false),
+    });
+
+    const BPUUpdateEvent event = BPUUpdateEvent::fromFetchTarget(stream);
+    EXPECT_EQ(event.resolvedBranchCount(), 2);
+    event.prepareLegacyTarget(
+        stream,
+        32,
+        [](const TargetUpdateContext &ctx) {
+            return BTBUpdateEntrySelection{BTBEntry(ctx.actualBranch), false};
+        });
+
+    EXPECT_TRUE(stream.resolved);
+    EXPECT_TRUE(stream.exeTaken);
+    EXPECT_EQ(stream.exeBranchInfo.pc, second.pc);
+
+    ASSERT_EQ(stream.updateBTBEntries.size(), 2);
+    EXPECT_EQ(stream.updateBTBEntries[0].pc, first.pc);
+    EXPECT_EQ(stream.updateBTBEntries[1].pc, second.pc);
+    EXPECT_EQ(stream.updateNewBTBEntry.pc, second.pc);
+}
+
 } // namespace test
 
 } // namespace btb_pred

@@ -1998,16 +1998,28 @@ Fetch::handleIEWSignals()
     }
 
     if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
+            for (const auto &resolved : incoming) {
+                dbpbtb->recordResolvedBranch(
+                    resolved.ftqId, resolved.branch, tid);
+            }
+        }
         fetchStats.resolveQueueFullEvents++;
         fetchStats.resolveEnqueueFailEvent += enqueueSize;
     } else {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
             for (const auto &resolved : incoming) {
+                const bool new_branch = dbpbtb->recordResolvedBranch(
+                    resolved.ftqId, resolved.branch, tid);
                 observeResolveEnqueueAfterDequeue(
                     tid, resolved.ftqId, resolved.branch);
                 observeResolveWithDecodedCFIs(
                     tid, resolved.ftqId, resolved.branch);
+                if (!new_branch) {
+                    continue;
+                }
 
                 bool merged = false;
                 for (auto &queued : resolveQueue) {

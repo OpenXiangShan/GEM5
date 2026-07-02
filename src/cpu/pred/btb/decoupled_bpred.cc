@@ -685,6 +685,23 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id,
     handleSquash(tid, target_id, SQUASH_TRAP, inst_pc, inst_pc.instAddr());
 }
 
+bool
+DecoupledBPUWithBTB::recordResolvedBranch(
+    unsigned target_id,
+    const ResolvedBranch &branch,
+    ThreadID tid)
+{
+    if (!ftq.hasTarget(target_id, tid)) {
+        DPRINTF(DecoupleBP,
+                "Target id %u not found in fetchTargetQueue, cannot record "
+                "resolved branch pc=%#lx\n",
+                target_id, branch.pc);
+        return false;
+    }
+
+    return ftq.get(target_id, tid).addResolvedBranch(branch);
+}
+
 void
 DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 {
@@ -695,7 +712,11 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 
     // Process all targets that have been committed (target_id >= head target id).
     while (!ftq.empty(tid) && target_id >= ftq.frontId(tid)) {
-        auto &target = ftq.front(tid);
+        auto &ftq_target = ftq.front(tid);
+        FetchTarget target = ftq_target;
+        BPUUpdateEvent update_event =
+            BPUUpdateEvent::fromFetchTarget(ftq_target);
+        update_event.applyActualResult(target);
 
         DPRINTF(DecoupleBP,
                 "Commit target start %#lx, which is predicted, "
@@ -708,7 +729,6 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         updateStatistics(target);
 
         // Update predictor components
-        BPUUpdateEvent update_event;
         updatePredictorComponents(target, update_event);
 
         ftq.commitTarget(tid);

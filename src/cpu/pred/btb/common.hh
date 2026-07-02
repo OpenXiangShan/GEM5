@@ -630,6 +630,7 @@ struct FetchTarget
     // for components to decide which entries to update
     std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
     std::vector<Addr> resolvedUpdatePrefixPCs; // actual resolved-update prefix PCs
+    std::vector<ResolvedBranch> resolvedBranches; // actual resolved CFIs
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
@@ -686,6 +687,7 @@ struct FetchTarget
        predBTBEntries.clear();
        updateBTBEntries.clear();
        resolvedUpdatePrefixPCs.clear();
+       resolvedBranches.clear();
    }
 
     // the default exe result should be consistent with prediction
@@ -784,6 +786,34 @@ struct FetchTarget
         resolvedUpdatePrefixPCs.erase(std::unique(resolvedUpdatePrefixPCs.begin(),
                                                   resolvedUpdatePrefixPCs.end()),
                                       resolvedUpdatePrefixPCs.end());
+    }
+
+    bool addResolvedBranch(const ResolvedBranch &branch)
+    {
+        auto it = std::lower_bound(
+            resolvedBranches.begin(), resolvedBranches.end(), branch.pc,
+            [](const auto &queued, Addr pc) { return queued.pc < pc; });
+        if (it != resolvedBranches.end() && it->pc == branch.pc) {
+            return false;
+        }
+        resolvedBranches.insert(it, branch);
+        return true;
+    }
+
+    size_t addResolvedBranches(const std::vector<ResolvedBranch> &branches)
+    {
+        size_t inserted = 0;
+        for (const auto &branch : branches) {
+            if (addResolvedBranch(branch)) {
+                inserted++;
+            }
+        }
+        return inserted;
+    }
+
+    bool hasResolvedBranches() const
+    {
+        return !resolvedBranches.empty();
     }
 
     bool hasResolvedUpdatePrefix() const
@@ -903,6 +933,11 @@ class BPUUpdateEvent
             }
         }
         return event;
+    }
+
+    static BPUUpdateEvent fromFetchTarget(const FetchTarget &target)
+    {
+        return fromResolvedBranches(target.resolvedBranches);
     }
 
     bool hasResolvedBranches() const
