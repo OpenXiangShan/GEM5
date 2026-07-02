@@ -166,6 +166,31 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     EXPECT_EQ(entries[0].entry.pc, indirect.pc);
     EXPECT_TRUE(entries[0].actualTaken);
     EXPECT_FALSE(entries[0].isNewEntry);
+    EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
+    EXPECT_EQ(entries[0].actualBranch.target, ctx.actualBranch.target);
+}
+
+TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
+{
+    BTBEntry first = makeIndirectEntry(0x3000, false, true);
+    first.target = 0x4440;
+    BTBEntry second = makeIndirectEntry(0x3008, false, true);
+    second.target = 0x5550;
+
+    TargetUpdateContext ctx = makeTargetContext(second.pc, true);
+    ctx.actualBranch.target = 0xdead;
+
+    const auto entries = buildTargetUpdateEntries(
+        {first, second}, BTBEntry(), true, {},
+        TargetUpdateEntryFilter::IndirectNonReturn, false, ctx);
+
+    ASSERT_EQ(entries.size(), 2);
+    EXPECT_FALSE(entries[0].actualTaken);
+    EXPECT_EQ(entries[0].actualBranch.pc, first.pc);
+    EXPECT_EQ(entries[0].actualBranch.target, first.target);
+    EXPECT_TRUE(entries[1].actualTaken);
+    EXPECT_EQ(entries[1].actualBranch.pc, second.pc);
+    EXPECT_EQ(entries[1].actualBranch.target, ctx.actualBranch.target);
 }
 
 TEST(UpdateEntryBuilderTest, SelectedTargetEntryUsesContextAndOldEntryFlag)
@@ -178,12 +203,16 @@ TEST(UpdateEntryBuilderTest, SelectedTargetEntryUsesContextAndOldEntryFlag)
     EXPECT_EQ(new_entry.entry.pc, selected.pc);
     EXPECT_TRUE(new_entry.actualTaken);
     EXPECT_TRUE(new_entry.isNewEntry);
+    EXPECT_EQ(new_entry.actualBranch.pc, selected.pc);
+    EXPECT_EQ(new_entry.actualBranch.target, ctx.actualBranch.target);
 
     const auto old_entry =
         buildSelectedTargetUpdateEntry(selected, true, ctx);
     EXPECT_EQ(old_entry.entry.pc, selected.pc);
     EXPECT_TRUE(old_entry.actualTaken);
     EXPECT_FALSE(old_entry.isNewEntry);
+    EXPECT_EQ(old_entry.actualBranch.pc, selected.pc);
+    EXPECT_EQ(old_entry.actualBranch.target, ctx.actualBranch.target);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)

@@ -581,7 +581,7 @@ MBTB::buildUpdatedEntry(const TargetUpdateEntry &update_entry,
 
     // Update indirect target if necessary
     if (entry_to_write.isIndirect && update_entry.actualTaken) {
-        entry_to_write.target = ctx.actualBranch.target;
+        entry_to_write.target = update_entry.actualBranch.target;
     }
     return entry_to_write;
 }

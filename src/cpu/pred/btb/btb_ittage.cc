@@ -284,7 +284,7 @@ BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
             pred = pred_it->second;
         }
         bool mispred = ctx.isControlMispredPC(btb_entry.pc);
-        Addr exe_target = ctx.actualBranch.target;
+        Addr exe_target = update_entry.actualBranch.target;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics

@@ -523,7 +523,10 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
     std::vector<TargetUpdateEntry> all_entries;
     all_entries.reserve(old_entries.size() + 1);
     for (const auto &entry : old_entries) {
-        all_entries.push_back({entry, ctx.isTakenControlPC(entry.pc), false});
+        const BranchInfo actual_branch =
+            ctx.controlPC == entry.pc ? ctx.actualBranch : BranchInfo(entry);
+        all_entries.push_back(
+            {entry, ctx.isTakenControlPC(entry.pc), false, actual_branch});
     }
 
     // since we don't want duplications in uBTB's entriesToUpdate,
@@ -585,7 +588,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
     }
     // update indirect target if necessary
     if (entry_to_write.isIndirect && update_entry.actualTaken) {
-        entry_to_write.target = ctx.actualBranch.target;
+        entry_to_write.target = update_entry.actualBranch.target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
@@ -675,7 +678,10 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
     all_entries.reserve(old_entries.size() + 1);
     const auto &taken_entry = s3Pred.getTakenEntry();
     for (const auto &entry : old_entries) {
-        all_entries.push_back({entry, s3Pred.isTaken() && entry == taken_entry, false});
+        const bool actual_taken = s3Pred.isTaken() && entry == taken_entry;
+        const BranchInfo actual_branch =
+            actual_taken ? BranchInfo(taken_entry) : BranchInfo(entry);
+        all_entries.push_back({entry, actual_taken, false, actual_branch});
     }
     BTBEntry new_entry = BTBEntry();
     // which causes its counter to update twice unintentionally
@@ -695,7 +701,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
             new_entry.alwaysTaken = true;
             new_entry.ctr = 0;
         }
-        all_entries.push_back({new_entry, true, true});
+        all_entries.push_back({new_entry, true, true, BranchInfo(taken_entry)});
     }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());

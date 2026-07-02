@@ -304,6 +304,7 @@ struct TargetUpdateEntry
     BTBEntry entry;
     bool actualTaken = false;
     bool isNewEntry = false;
+    BranchInfo actualBranch;
 };
 
 enum class TargetUpdateEntryFilter
@@ -444,7 +445,10 @@ buildTargetUpdateEntries(
     entries.reserve(update_btb_entries.size() + (update_is_old_entry ? 0 : 1));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
-        if (is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
+        const bool actual_taken = ctx.isTakenControlPC(entry.pc);
+        const BranchInfo actual_branch =
+            ctx.controlPC == entry.pc ? ctx.actualBranch : BranchInfo(entry);
+        if (is_new_entry && !actual_taken) {
             entry.alwaysTaken = false;
         }
         if (!shouldKeepTargetUpdateEntry(
@@ -452,8 +456,7 @@ buildTargetUpdateEntries(
                 resolved_update_prefix_pcs)) {
             return;
         }
-        entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
-                           is_new_entry});
+        entries.push_back({entry, actual_taken, is_new_entry, actual_branch});
     };
 
     for (const auto &entry : update_btb_entries) {
@@ -471,9 +474,13 @@ buildSelectedTargetUpdateEntry(const BTBEntry &update_new_btb_entry,
                                bool update_is_old_entry,
                                const TargetUpdateContext &ctx)
 {
+    const BranchInfo actual_branch =
+        ctx.controlPC == update_new_btb_entry.pc ?
+            ctx.actualBranch : BranchInfo(update_new_btb_entry);
     return {update_new_btb_entry,
             ctx.isTakenControlPC(update_new_btb_entry.pc),
-            !update_is_old_entry};
+            !update_is_old_entry,
+            actual_branch};
 }
 
 inline Addr
