@@ -989,6 +989,18 @@ class BPUUpdateEvent
         markResolvedEntries(target);
     }
 
+    void prepareLegacyTarget(
+        FetchTarget &target,
+        unsigned predictWidth,
+        const BTBUpdateEntrySelection &selection) const
+    {
+        applyActualResult(target);
+        target.setResolvedUpdatePrefixPCs(resolvedBranchPCs());
+        target.prepareUpdateEntries(predictWidth);
+        target.setUpdateEntrySelection(markResolvedSelection(selection));
+        markResolvedEntries(target);
+    }
+
     template <typename SelectUpdateEntry>
     void prepareLegacyTarget(FetchTarget &target, unsigned predictWidth,
                              SelectUpdateEntry selectUpdateEntry) const
@@ -996,9 +1008,52 @@ class BPUUpdateEvent
         applyActualResult(target);
         target.setResolvedUpdatePrefixPCs(resolvedBranchPCs());
         target.prepareUpdateEntries(predictWidth);
-        target.setUpdateEntrySelection(
-            selectUpdateEntry(target.makeTargetUpdateContext()));
+        target.setUpdateEntrySelection(markResolvedSelection(
+            selectUpdateEntry(target.makeTargetUpdateContext())));
         markResolvedEntries(target);
+    }
+
+    std::vector<DirectionUpdateEntry>
+    makeDirectionUpdateEntries(
+        const FetchTarget &target,
+        unsigned predictWidth,
+        const BTBUpdateEntrySelection &selection,
+        DirectionUpdateEntryFilter filter,
+        bool resolved_update,
+        const DirectionUpdateContext &ctx) const
+    {
+        return buildDirectionUpdateEntries(
+            makeUpdateBTBEntries(target, predictWidth),
+            markResolvedSelection(selection).entry,
+            selection.isOldEntry,
+            resolvedBranchPCs(), filter, resolved_update, ctx);
+    }
+
+    TargetUpdateEntry
+    makeSelectedTargetUpdateEntry(
+        const BTBUpdateEntrySelection &selection,
+        const TargetUpdateContext &ctx) const
+    {
+        auto resolved_selection = markResolvedSelection(selection);
+        return buildSelectedTargetUpdateEntry(
+            resolved_selection.entry, resolved_selection.isOldEntry, ctx);
+    }
+
+    std::vector<TargetUpdateEntry>
+    makeTargetUpdateEntries(
+        const FetchTarget &target,
+        unsigned predictWidth,
+        const BTBUpdateEntrySelection &selection,
+        TargetUpdateEntryFilter filter,
+        bool resolved_update,
+        const TargetUpdateContext &ctx) const
+    {
+        auto resolved_selection = markResolvedSelection(selection);
+        return buildTargetUpdateEntries(
+            makeUpdateBTBEntries(target, predictWidth),
+            resolved_selection.entry,
+            resolved_selection.isOldEntry,
+            resolvedBranchPCs(), filter, resolved_update, ctx);
     }
 
   private:
@@ -1012,6 +1067,45 @@ class BPUUpdateEvent
             pcs.push_back(branch.pc);
         }
         return pcs;
+    }
+
+    std::vector<BTBEntry>
+    makeUpdateBTBEntries(const FetchTarget &target,
+                         unsigned predictWidth) const
+    {
+        auto entries = buildUpdateBTBEntries(
+            target.predBTBEntries, target.startPC,
+            buildUpdateEndInstPC(
+                target.startPC, predictWidth, target.exeTaken,
+                target.getControlPC(),
+                static_cast<SquashType>(target.squashType),
+                target.squashPC));
+        markResolvedEntries(entries);
+        return entries;
+    }
+
+    void markResolvedEntry(BTBEntry &entry) const
+    {
+        for (const auto &branch : resolvedBranches) {
+            if (entry.pc == branch.pc) {
+                entry.resolved = true;
+                return;
+            }
+        }
+    }
+
+    void markResolvedEntries(std::vector<BTBEntry> &entries) const
+    {
+        for (auto &entry : entries) {
+            markResolvedEntry(entry);
+        }
+    }
+
+    BTBUpdateEntrySelection
+    markResolvedSelection(BTBUpdateEntrySelection selection) const
+    {
+        markResolvedEntry(selection.entry);
+        return selection;
     }
 
     void markResolvedEntries(FetchTarget &target) const

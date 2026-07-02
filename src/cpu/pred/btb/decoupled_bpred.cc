@@ -783,12 +783,13 @@ DecoupledBPUWithBTB::resolveUpdate(
         return true;
     }
 
-    prepareUpdateEntriesForTarget(target, update_event);
+    const auto selection = selectUpdateEntryForTarget(target);
+    prepareUpdateEntriesForTarget(target, update_event, selection);
 
     if (!canResolveUpdateComponents(target)) {
         return false;
     }
-    updateResolvedPredictorComponents(target);
+    updateResolvedPredictorComponents(target, update_event, selection);
     return true;
 }
 
@@ -815,23 +816,25 @@ DecoupledBPUWithBTB::blockPredictionOnce(ThreadID tid)
     threads[tid].blockPredictionPending = true;
 }
 
+BTBUpdateEntrySelection
+DecoupledBPUWithBTB::selectUpdateEntryForTarget(const FetchTarget &target)
+{
+    if (mbtb->isEnabled()) {
+        return mbtb->selectUpdateEntry(
+            target.predMetas[mbtb->getComponentIdx()],
+            target.makeTargetUpdateContext());
+    }
+
+    return {target.updateNewBTBEntry, target.updateIsOldEntry};
+}
+
 void
 DecoupledBPUWithBTB::prepareUpdateEntriesForTarget(
     FetchTarget &target,
-    const BPUUpdateEvent &update_event)
+    const BPUUpdateEvent &update_event,
+    const BTBUpdateEntrySelection &selection)
 {
-    if (mbtb->isEnabled()) {
-        update_event.prepareLegacyTarget(
-            target,
-            predictWidth,
-            [this, &target](const TargetUpdateContext &ctx) {
-                return mbtb->selectUpdateEntry(
-                    target.predMetas[mbtb->getComponentIdx()], ctx);
-            });
-        return;
-    }
-
-    update_event.prepareLegacyTarget(target, predictWidth);
+    update_event.prepareLegacyTarget(target, predictWidth, selection);
 }
 
 bool
@@ -848,12 +851,15 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
 
 void
 DecoupledBPUWithBTB::updateResolvedPredictorComponents(
-    const FetchTarget &target)
+    const FetchTarget &target,
+    const BPUUpdateEvent &update_event,
+    const BTBUpdateEntrySelection &selection)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
             components[i]->noteResolveUpdateAccepted(target);
-            updatePredictorComponent(components[i], target);
+            updatePredictorComponent(
+                components[i], target, update_event, selection);
         }
     }
 }
@@ -861,11 +867,14 @@ DecoupledBPUWithBTB::updateResolvedPredictorComponents(
 void
 DecoupledBPUWithBTB::updatePredictorComponent(
     TimedBaseBTBPredictor *component,
-    const FetchTarget &target)
+    const FetchTarget &target,
+    const BPUUpdateEvent &update_event,
+    const BTBUpdateEntrySelection &selection)
 {
     if (component->usesDirectionUpdateEntries()) {
         const auto update_ctx = target.makeDirectionUpdateContext();
-        const auto entries = target.makeDirectionUpdateEntries(
+        const auto entries = update_event.makeDirectionUpdateEntries(
+            target, predictWidth, selection,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithDirectionEntries(entries, update_ctx, target);
@@ -874,7 +883,8 @@ DecoupledBPUWithBTB::updatePredictorComponent(
 
     if (component->usesTargetUpdateEntries()) {
         const auto update_ctx = target.makeTargetUpdateContext();
-        const auto entries = target.makeTargetUpdateEntries(
+        const auto entries = update_event.makeTargetUpdateEntries(
+            target, predictWidth, selection,
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithTargetEntries(entries, update_ctx, target);
@@ -893,11 +903,13 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         return;
     }
 
-    prepareUpdateEntriesForTarget(target, update_event);
+    const auto selection = selectUpdateEntryForTarget(target);
+    prepareUpdateEntriesForTarget(target, update_event, selection);
 
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->getResolvedUpdate()) {
-            updatePredictorComponent(components[i], target);
+            updatePredictorComponent(
+                components[i], target, update_event, selection);
         }
     }
 }
