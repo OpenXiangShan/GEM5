@@ -252,17 +252,17 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
     stream.startPC = 0x1000;
     stream.predBTBEntries = {first, second, after};
 
+    const ResolvedBranch resolved_second =
+        makeResolvedBranch(second.pc, true, true);
     const BPUUpdateEvent event = BPUUpdateEvent::fromResolvedBranches({
         makeResolvedBranch(first.pc, false, false),
-        makeResolvedBranch(second.pc, true, true),
+        resolved_second,
         makeResolvedBranch(after.pc, false, false),
     });
+    const BTBUpdateEntrySelection selection{
+        BTBEntry(makeBranchInfo(resolved_second)), false};
     const BPUPreparedUpdate prepared = event.prepareLegacyTarget(
-        stream,
-        32,
-        [](const TargetUpdateContext &ctx) {
-            return BTBUpdateEntrySelection{BTBEntry(ctx.actualBranch), false};
-        });
+        stream, 32, selection);
 
     EXPECT_TRUE(stream.resolved);
     EXPECT_TRUE(stream.exeTaken);
@@ -320,20 +320,20 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
     FetchTarget stream;
     stream.startPC = 0x1000;
     stream.predBTBEntries = {first, second, after};
+    const ResolvedBranch resolved_second =
+        makeResolvedBranch(second.pc, true, true);
     stream.addResolvedBranches({
         makeResolvedBranch(after.pc, false, false),
-        makeResolvedBranch(second.pc, true, true),
+        resolved_second,
         makeResolvedBranch(first.pc, false, false),
     });
 
     const BPUUpdateEvent event = BPUUpdateEvent::fromFetchTarget(stream);
     EXPECT_EQ(event.resolvedBranchCount(), 2);
+    const BTBUpdateEntrySelection selection{
+        BTBEntry(makeBranchInfo(resolved_second)), false};
     const BPUPreparedUpdate prepared = event.prepareLegacyTarget(
-        stream,
-        32,
-        [](const TargetUpdateContext &ctx) {
-            return BTBUpdateEntrySelection{BTBEntry(ctx.actualBranch), false};
-        });
+        stream, 32, selection);
 
     EXPECT_TRUE(stream.resolved);
     EXPECT_TRUE(stream.exeTaken);

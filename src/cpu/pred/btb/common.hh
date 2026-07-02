@@ -907,17 +907,6 @@ class BPUUpdateEvent
     }
 
     BPUPreparedUpdate
-    prepareLegacyTarget(FetchTarget &target, unsigned predictWidth) const
-    {
-        applyActualResult(target);
-        auto prepared = makePreparedUpdate(
-            target, predictWidth,
-            {target.updateNewBTBEntry, target.updateIsOldEntry});
-        installLegacyUpdateFields(target, prepared);
-        return prepared;
-    }
-
-    BPUPreparedUpdate
     prepareLegacyTarget(
         FetchTarget &target,
         unsigned predictWidth,
@@ -927,29 +916,6 @@ class BPUUpdateEvent
         auto prepared = makePreparedUpdate(target, predictWidth, selection);
         installLegacyUpdateFields(target, prepared);
         return prepared;
-    }
-
-    template <typename SelectUpdateEntry>
-    BPUPreparedUpdate
-    prepareLegacyTarget(FetchTarget &target, unsigned predictWidth,
-                        SelectUpdateEntry selectUpdateEntry) const
-    {
-        applyActualResult(target);
-        auto prepared = makePreparedUpdate(
-            target, predictWidth,
-            selectUpdateEntry(target.makeTargetUpdateContext()));
-        installLegacyUpdateFields(target, prepared);
-        return prepared;
-    }
-
-    BPUPreparedUpdate
-    makePreparedUpdate(const FetchTarget &target,
-                       unsigned predictWidth,
-                       const BTBUpdateEntrySelection &selection) const
-    {
-        return {makeUpdateBTBEntries(target, predictWidth),
-                markResolvedSelection(selection),
-                resolvedBranchPCs()};
     }
 
     std::vector<DirectionUpdateEntry>
@@ -982,6 +948,16 @@ class BPUUpdateEvent
 
   private:
     std::vector<ResolvedBranch> resolvedBranches;
+
+    BPUPreparedUpdate
+    makePreparedUpdate(const FetchTarget &target,
+                       unsigned predictWidth,
+                       const BTBUpdateEntrySelection &selection) const
+    {
+        return {makeUpdateBTBEntries(target, predictWidth),
+                markResolvedSelection(selection),
+                resolvedBranchPCs()};
+    }
 
     std::vector<Addr> resolvedBranchPCs() const
     {
