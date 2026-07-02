@@ -9,6 +9,7 @@ SimObject('ValuePredictor.py',
             'CVPRRArb',
             'CVPConfidenceArb',
             'EStride',
+            'ExampleValuePredictor',
             'CompositeValuePredictor',
             'MemoryRenaming',
             'IdealConstantLVP'
@@ -19,6 +20,7 @@ Source('valuepred_unit.cc')
 Source('composite_value_predictor_arb.cc')
 Source('composite_value_predictor.cc')
 Source('enhanced_stride.cc')
+Source('example_value_predictor.cc')
 Source('memory_renaming.cc')
 Source('ideal_constant_lvp.cc')
 

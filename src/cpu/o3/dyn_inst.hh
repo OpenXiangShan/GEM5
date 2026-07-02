@@ -1439,11 +1439,11 @@ class DynInst : public ExecContext, public RefCounted
     uint64_t htmDepth = 0;
 
   public:
+    Tick fetchTick = -1;      // instruction fetch is completed.
 #if TRACING_ON
     // Value -1 indicates that particular phase
     // hasn't happened (yet).
     /** Tick records used for the pipeline activity viewer. */
-    Tick fetchTick = -1;      // instruction fetch is completed.
     int32_t decodeTick = -1;  // instruction enters decode phase
     int32_t renameTick = -1;  // instruction enters rename phase
     int32_t dispatchTick = -1;

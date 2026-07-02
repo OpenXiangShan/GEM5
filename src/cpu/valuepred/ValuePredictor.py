@@ -5,7 +5,8 @@ from m5.SimObject import *
 
 class ValuePredType(ScopedEnum):
     # vals will contains value predictor type
-    vals = ["EStride", "MemoryRenaming", "IdealConstantLVP", "CompositeValuePredictor"]
+    vals = ["EStride", "MemoryRenaming", "IdealConstantLVP",
+            "ExampleValuePredictor", "CompositeValuePredictor"]
 
 class ValuePredictor(SimObject):
     type = "ValuePredictor"
@@ -38,6 +39,12 @@ class EStride(ValuePredictor):
     # still not use
     enableTimeMsgInUpdate = Param.Bool(True, "enable use instruction"
                                        "inflight time in update")
+
+class ExampleValuePredictor(ValuePredictor):
+    type = "ExampleValuePredictor"
+    cxx_class = "gem5::valuepred::ExampleValuePredictor"
+    cxx_header = "cpu/valuepred/example_value_predictor.hh"
+    abstract = False
 
 class CVPArb(SimObject):
     type = "CVPArb"

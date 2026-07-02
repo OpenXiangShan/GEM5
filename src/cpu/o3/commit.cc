@@ -67,6 +67,7 @@
 #include "cpu/thread_context.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/example_value_predictor_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -1945,6 +1946,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             updateInfo.emplaceExt<valuepred::ProducerInfoExt>(
                     head_inst->producerStorePC());
         }
+        // ExampleValuePredictor shows how a predictor can request extra
+        // commit-time inputs through VPUpdateInfo extensions.
+        updateInfo.emplaceExt<valuepred::ExampleUpdateInfoExt>(
+                head_inst->effAddrValid(),
+                head_inst->effAddr,
+                head_inst->physEffAddr);
 
         // additional auxiliary info for the value predictor
         valuepred::VPFeedback feedback;
