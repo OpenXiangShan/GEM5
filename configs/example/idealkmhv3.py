@@ -22,6 +22,12 @@ from common.xiangshan import *
 
 from m5.objects.ValuePredictor import *
 
+def consume_local_bool_option(option):
+    enabled = option in sys.argv
+    if enabled:
+        sys.argv[:] = [arg for arg in sys.argv if arg != option]
+    return enabled
+
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -130,7 +136,8 @@ def setKmhV3IdealParams(args, system):
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
-                system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                if hasattr(system.l2_caches[i], "slice_num"):
+                    system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
                 if system.l2_caches[i].prefetcher != NULL:
                     system.l2_caches[i].prefetcher.enable_cmc = True
                     system.l2_caches[i].prefetcher.enable_bop = True
@@ -166,9 +173,18 @@ def setKmhV3IdealParams(args, system):
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
 
-            # Enable dual-port for DCache → L2 communication
-            # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
-            # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
+            if args.tol2bus_layer_bw128:
+                system.tol2bus_list[i].layer_bandwidth_configs = [
+                    LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=128),
+                    LayerBandwidthConfig(direction="resp", port_index=0, max_per_cycle=128),
+                    LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=128),
+                    LayerBandwidthConfig(direction="resp", port_index=2, max_per_cycle=128),
+                    LayerBandwidthConfig(direction="resp", port_index=3, max_per_cycle=128),
+                ]
+
+            # Enable dual-port for DCache -> L2 communication
+            # ReqLayer[0]: ICache+DCache+ITB+DTB -> L2, allow 2 requests per cycle
+            # RespLayer[1]: L2 -> DCache, allow 2 responses per cycle
             # system.tol2bus_list[i].layer_bandwidth_configs = [
             #     LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
             #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
@@ -184,7 +200,9 @@ def setKmhV3IdealParams(args, system):
 if __name__ == '__m5_main__':
     FutureClass = None
 
+    tol2bus_layer_bw128 = consume_local_bool_option("--tol2bus-layer-bw128")
     args = xiangshan_system_init()
+    args.tol2bus_layer_bw128 = tol2bus_layer_bw128
 
     assert not args.external_memory_system
 

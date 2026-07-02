@@ -131,6 +131,14 @@ class BaseCache : public ClockedObject, public CacheAccessor
         NUM_BLOCKED_CAUSES
     };
 
+    static unsigned
+    safePfSourceIndex(PrefetchSourceType source)
+    {
+        const auto index = static_cast<unsigned>(source);
+        return index < PrefetchSourceType::NUM_PF_SOURCES ?
+            index : static_cast<unsigned>(PrefetchSourceType::PF_NONE);
+    }
+
     /**
      * A data contents update is composed of the updated block's address,
      * the old contents, and the new contents.
@@ -1325,10 +1333,21 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         /** Number of MSHR completions where prefetch was merged with demand */
         statistics::Scalar pfMergedWithDemand;
+        statistics::Vector pfMergedWithDemand_srcs;
         /** Number of MSHR completions with only prefetch (no demand merge) */
         statistics::Scalar pfOnlyFill;
+        statistics::Vector pfOnlyFill_srcs;
+        /** Total service latency of prefetch MSHRs by source. */
+        statistics::Vector pfMshrServiceLatency_srcs;
+        /** Average service latency of prefetch MSHRs by source. */
+        statistics::Formula pfMshrAvgServiceLatency_srcs;
         /** Number of demand requests that merged into prefetch MSHR */
         statistics::Scalar demandMergedIntoPfMSHR;
+        statistics::Vector demandMergedIntoPfMSHR_srcs;
+        /** Demand wait latency after merging into a prefetch MSHR. */
+        statistics::Vector demandMergedIntoPfMSHRLatency_srcs;
+        /** Average demand wait latency after merging into a prefetch MSHR. */
+        statistics::Formula demandMergedIntoPfMSHRAvgLatency_srcs;
 
         /** Number of demand hits that accessed squashed inst blocks. */
         statistics::Scalar squashedDemandHits;
@@ -1642,6 +1661,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     // std::set<Addr> forceHitPCs{0x11474, 0x11470, 0x11472, 0x119fa, 0x119fe, 0x119ea};
     std::set<Addr> forceHitPCs{};
+
+    PrefetchSourceType currentFillSourceForVictim{PrefetchSourceType::PF_NONE};
 
     const bool forceHit;
     const bool simulateDcacheRefill;

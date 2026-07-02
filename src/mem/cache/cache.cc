@@ -836,6 +836,8 @@ void
 Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
 {
     QueueEntry::Target *initial_tgt = mshr->getTarget();
+    const Tick mshr_start_time = initial_tgt->recvTime;
+    const unsigned mshr_pf_source = safePfSourceIndex(mshr->getPFSource());
     // First offset for critical word first calculations
     const int initial_offset = initial_tgt->pkt->getOffset(blkSize);
 
@@ -1031,6 +1033,12 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 // carried over to cache above
                 tgt_pkt->copyResponderFlags(pkt);
             }
+            if (tgt_pkt->isDemand() && tgt_pkt->missOnLatePf) {
+                const auto pf_source =
+                    safePfSourceIndex(tgt_pkt->getPFSource());
+                stats.demandMergedIntoPfMSHRLatency_srcs[pf_source] +=
+                    completion_time - target.recvTime;
+            }
             tgt_pkt->makeTimingResponse();
             // if this packet is an error copy that to the new packet
             if (is_error)
@@ -1104,11 +1112,17 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         blk->setXsMetadata(pkt->req->getXsMetadata());
         DPRINTF(Cache, "Marking block as prefetched from prefetcher %i\n", blk->getXsMetadata().prefetchSource);
         stats.pfOnlyFill++;  // Pure prefetch fill (no demand merge)
+        stats.pfOnlyFill_srcs[mshr_pf_source]++;
     } else if (blk && from_core && from_pref) {
         // Prefetch was merged with demand - won't be marked as prefetched
         stats.pfMergedWithDemand++;
+        stats.pfMergedWithDemand_srcs[mshr_pf_source]++;
         DPRINTF(Cache, "Prefetch merged with demand for %#lx - not marking as prefetched\n",
                 blk->getTag());
+    }
+    if (from_pref) {
+        stats.pfMshrServiceLatency_srcs[mshr_pf_source] +=
+            curTick() - mshr_start_time;
     }
 
     if (!mshr->hasLockedRMWReadTarget()) {

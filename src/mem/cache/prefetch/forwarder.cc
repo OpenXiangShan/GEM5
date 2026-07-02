@@ -178,6 +178,22 @@ PrefetcherForwarder::prefetchUnused(PrefetchSourceType pf_type)
 }
 
 void
+PrefetcherForwarder::prefetchUnused(Addr paddr, PrefetchSourceType pf_type)
+{
+    if (real_pf) {
+        real_pf->prefetchUnused(paddr, pf_type);
+    }
+}
+
+void
+PrefetcherForwarder::prefetchUnused(Addr paddr, PrefetchSourceType pf_type, PrefetchSourceType fill_source)
+{
+    if (real_pf) {
+        real_pf->prefetchUnused(paddr, pf_type, fill_source);
+    }
+}
+
+void
 PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type)
 {
     if (real_pf) {
@@ -190,6 +206,14 @@ PrefetcherForwarder::pfHitInCache(PrefetchSourceType pf_type)
 {
     if (real_pf) {
         real_pf->pfHitInCache(pf_type);
+    }
+}
+
+void
+PrefetcherForwarder::pfHitInCache(PrefetchSourceType pf_type, PrefetchSourceType existing_pf_type)
+{
+    if (real_pf) {
+        real_pf->pfHitInCache(pf_type, existing_pf_type);
     }
 }
 

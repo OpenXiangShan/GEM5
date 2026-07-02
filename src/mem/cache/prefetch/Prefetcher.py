@@ -376,6 +376,8 @@ class WorkerPrefetcher(QueuedPrefetcher):
     prefetch_on_access = True
     prefetch_on_pf_hit = True
     use_virtual_addresses = True
+    pf_lru_filter_entries = Param.Unsigned(256,
+        "Number of entries in the shared worker prefetch LRU filter")
 
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
@@ -571,6 +573,11 @@ class CDP(QueuedPrefetcher):
         "How many bytes a blk in a region can track")
     throttle_aggressiveness = Param.Float(2.0,
         "A parameter to control the aggressiveness of throttling")
+    max_pf_buffer_size = 32
+    cdp_degree = Param.Unsigned(3,
+        "Number of contiguous cache lines generated for each CDP target")
+    enable_lru_filter_before_pf_buffer = Param.Bool(False,
+        "Apply the CDP LRU duplicate filter before inserting into the PF buffer")
 
 class CompositeWithWorkerPrefetcher(WorkerPrefetcher):
     type = 'CompositeWithWorkerPrefetcher'

@@ -13,7 +13,7 @@ namespace prefetch
 WorkerPrefetcher::WorkerPrefetcher(const WorkerPrefetcherParams &p)
     : Queued(p),
       workerStats(this),
-      pfLRUFilter(256)
+      pfLRUFilter(p.pf_lru_filter_entries)
 {
     //Event *event = new EventFunctionWrapper([this]{ enableFunctionTrace(); }, name(), true);
     transferEvent = new EventFunctionWrapper([this](){
@@ -60,11 +60,13 @@ WorkerPrefetcher::transfer()
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
         if (queueFilter) {
-            if (alreadyInQueue(pfq, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
+            auto incoming_source = dpp_it->pfInfo.getXsMetadata().prefetchSource;
+            if (alreadyInQueue(pfq, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(),
+                               dpp_it->priority, incoming_source)) {
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
             } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(),
-                                      dpp_it->priority)) {
+                                      dpp_it->priority, incoming_source)) {
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
             } else {

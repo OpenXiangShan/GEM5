@@ -72,9 +72,33 @@ namespace prefetch
 class CDP : public Queued
 {
 
+    enum CdpTriggerPath
+    {
+        CDP_TRIGGER_CALCULATE = 0,
+        CDP_TRIGGER_REFILL,
+        CDP_TRIGGER_PF_HIT,
+        CDP_TRIGGER_PATHS
+    };
+
+    enum CdpTriggerReqType
+    {
+        CDP_TRIGGER_DEMAND = 0,
+        CDP_TRIGGER_PREFETCH,
+        CDP_TRIGGER_REQ_TYPES
+    };
+
+    struct CdpTriggerInfo
+    {
+        CdpTriggerPath path = CDP_TRIGGER_CALCULATE;
+        CdpTriggerReqType reqType = CDP_TRIGGER_DEMAND;
+        PrefetchSourceType blkSource = PrefetchSourceType::PF_NONE;
+    };
+
     std::vector<bool> enable_prf_filter;
     std::vector<bool> enable_prf_filter2;
     bool enableCoordinate;
+    bool enableLruFilterBeforePfBuffer;
+    bool useParentPFBuffer{false};
     int depth_threshold;
     int degree;
     float throttle_aggressiveness;
@@ -232,6 +256,26 @@ class CDP : public Queued
             uint64_t _subEntryBits;
 
         public:
+            struct SearchResult
+            {
+                bool entryHit = false;
+                bool subEntryHit = false;
+                bool hot = false;
+            };
+
+            struct AddResult
+            {
+                bool allocMain = false;
+                bool allocSub = false;
+                bool noAlloc = false;
+            };
+
+            struct ResetResult
+            {
+                bool refreshed = false;
+                uint64_t entries = 0;
+            };
+
             VpnTable(int assoc, int num_entries, BaseIndexingPolicy *idx_policy,
             replacement_policy::Base *rpl_policy, int sub_entries,
             uint64_t _rst_period, Entry const &init_val = Entry())
@@ -243,8 +287,9 @@ class CDP : public Queued
                 assert(_subEntryNum % 2 == 0 && _subEntryNum < 512);
                 _subEntryBits = ceil(log2(_subEntryNum));
             }
-            void add(int vpn2, int vpn1, bool pf_hit_cdp)
+            AddResult add(int vpn2, int vpn1, bool pf_hit_cdp)
             {
+                AddResult result;
                 _resetCounter++;
                 Addr cat_addr = (vpn2 << 9) | vpn1;
                 uint64_t sub_idx = cat_addr & ((1UL << _subEntryBits) - 1);
@@ -256,60 +301,72 @@ class CDP : public Queued
                     table.accessEntry(entry);
                     if (entry->getExist(sub_idx)) {
                         entry->access(sub_idx, pf_hit_cdp);
+                        result.noAlloc = true;
                     } else {
                         entry->init(vpn1, vpn2, pf_hit_cdp);
+                        result.allocSub = true;
                     }
                 } else {
                     entry = table.findVictim(cat_addr);
                     entry->discard();
                     entry->init(vpn1, vpn2, pf_hit_cdp);
                     table.insertEntry(cat_addr, true, entry);
+                    result.allocMain = true;
                 }
+                return result;
             }
-            void resetConfidence(float throttle_aggressiveness, bool enable_thro, bool low_conf)
+            ResetResult resetConfidence(float throttle_aggressiveness, bool enable_thro, bool low_conf)
             {
+                ResetResult result;
                 if (_resetCounter < _resetPeriod)
-                    return;
+                    return result;
                 auto it = table.begin();
                 while (it != table.end()) {
                     if (it->isValid()) {
                         it->periodReset(throttle_aggressiveness, enable_thro, low_conf);
+                        result.entries++;
                     }
                     it++;
                 }
                 _resetCounter = 0;
                 showHotVpns();
+                result.refreshed = true;
+                return result;
+            }
+            SearchResult lookup(int vpn2, int vpn1) const
+            {
+                SearchResult result;
+                Addr cat_addr = (vpn2 << 9) | vpn1;
+                uint64_t sub_idx = cat_addr & ((1UL << _subEntryBits) - 1);
+                assert(sub_idx < _subEntryNum);
+                cat_addr = cat_addr >> _subEntryBits;
+                Entry *entry = table.findEntry(cat_addr, true);
+                if (!entry) {
+                    return result;
+                }
+                result.entryHit = true;
+                result.subEntryHit = entry->getExist(sub_idx);
+                result.hot = result.subEntryHit && entry->getHot(sub_idx);
+                return result;
             }
             bool search(int vpn2, int vpn1) const
             {
-                Addr cat_addr = (vpn2 << 9) | vpn1;
-                uint64_t sub_idx = cat_addr & ((1UL << _subEntryBits) - 1);
-                assert(sub_idx < _subEntryNum);
-                cat_addr = cat_addr >> _subEntryBits;
-                Entry *entry = table.findEntry(cat_addr, true);
-                if (entry) {
-                    if (entry->getExist(sub_idx)) {
-                        return entry->getHot(sub_idx);
-                    } else {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-                return false;
+                return lookup(vpn2, vpn1).hot;
             }
-            void update(int vpn2, int vpn1, bool enable_thro, bool low_conf)
+            bool update(int vpn2, int vpn1, bool enable_thro, bool low_conf)
             {
                 Addr cat_addr = (vpn2 << 9) | vpn1;
                 uint64_t sub_idx = cat_addr & ((1UL << _subEntryBits) - 1);
                 assert(sub_idx < _subEntryNum);
                 cat_addr = cat_addr >> _subEntryBits;
                 Entry *entry = table.findEntry(cat_addr, true);
-                if (entry && enable_thro) {
-                    if (entry->getExist(sub_idx)) {
+                if (entry && entry->getExist(sub_idx)) {
+                    if (enable_thro) {
                         entry->decr(sub_idx, low_conf);
                     }
+                    return true;
                 }
+                return false;
             }
             void showHotVpns()
             {
@@ -404,6 +461,7 @@ class CDP : public Queued
     const float RivalTcoverage = 0.5;
 
     void setStatsPtr(StatGroup *ptr) { prefetchStatsPtr = ptr; }
+    void setUseParentPFBuffer(bool enable) { useParentPFBuffer = enable; }
     void notifyIns(int ins_num) override
     {
         if (l3_miss_info.second != 0) {
@@ -418,12 +476,19 @@ class CDP : public Queued
         int prio, PrefetchSourceType pfSource, int pf_depth);
     bool sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority> &addresses,
         int prio, PrefetchSourceType pfSource, int pf_depth, int trace_site, int scan_word_offset,
-        Addr candidate, int degree_idx);
+        Addr candidate, int degree_idx, const CdpTriggerInfo &trigger_info);
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
         int prio, PrefetchSourceType pfSource, int pf_depth);
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
         int prio, PrefetchSourceType pfSource, int pf_depth, int trace_site, int scan_word_offset,
-        Addr candidate, int degree_idx);
+        Addr candidate, int degree_idx, const CdpTriggerInfo &trigger_info);
+    bool dropByLruBeforePfBuffer(Addr addr);
+    bool dropPFRequestByBusyPFQ();
+    CdpTriggerInfo makeTriggerInfo(CdpTriggerPath path, PrefetchSourceType blk_source,
+                                   bool is_prefetch) const;
+    void recordCdpReqGeneratedTrigger(const CdpTriggerInfo &trigger_info);
+    void recordCdpReqDropLruTrigger(const CdpTriggerInfo &trigger_info);
+    void recordCdpReqPassedTrigger(const CdpTriggerInfo &trigger_info);
 
     CDP(const CDPParams &p);
 
@@ -449,6 +514,9 @@ class CDP : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
 
     void addToVpnTable(Addr vaddr, bool pf_hit_cdp);
+    void recordVpnLookupStats(const VpnTable<VpnEntry>::SearchResult &result);
+    bool vpnTableSearchWithStats(int vpn2, int vpn1);
+    void updateVpnTableWithStats(int vpn2, int vpn1);
 
     void insertFilterTable(Addr addr, bool useful);
     bool needFilter(Addr addr);
@@ -531,8 +599,23 @@ class CDP : public Queued
             vpn0 = BITS(test_addr, 20, 12);
             page_offset = BITS(test_addr, 11, 0);
             bool flag = true;
-            if ((check_bit != 0) || (!vpnTable.search(vpn2, vpn1)) || (vpn0 == 0) || (align_bit != 0)) {
+            cdpStats.vpnCandidateChecked++;
+            if (check_bit != 0) {
+                cdpStats.vpnCandidateInvalidHigh++;
+            }
+            if (vpn0 == 0) {
+                cdpStats.vpnCandidateInvalidVpn0++;
+            }
+            if (align_bit != 0) {
+                cdpStats.vpnCandidateInvalidAlign++;
+            }
+            if ((check_bit != 0) || (vpn0 == 0) || (align_bit != 0)) {
                 flag = false;
+            } else {
+                cdpStats.vpnCandidateValidAddr++;
+                if (!vpnTableSearchWithStats(vpn2, vpn1)) {
+                    flag = false;
+                }
             }
             Addr test_addr2 = Addr(test_addr);
             if (flag) {
@@ -568,6 +651,57 @@ class CDP : public Queued
         statistics::Scalar pfHitCDP;
         statistics::Scalar passedFilter;
         statistics::Scalar inserted;
+        statistics::Scalar vpnCandidateChecked;
+        statistics::Scalar vpnCandidateValidAddr;
+        statistics::Scalar vpnCandidateInvalidHigh;
+        statistics::Scalar vpnCandidateInvalidVpn0;
+        statistics::Scalar vpnCandidateInvalidAlign;
+        statistics::Scalar vpnSearchAccess;
+        statistics::Scalar vpnSearchHit;
+        statistics::Scalar vpnSearchMiss;
+        statistics::Scalar vpnLookupMainHit;
+        statistics::Scalar vpnLookupMainMiss;
+        statistics::Scalar vpnLookupSubHit;
+        statistics::Scalar vpnLookupSubMiss;
+        statistics::Scalar vpnLookupHot;
+        statistics::Scalar vpnLookupHitNotHot;
+        statistics::Scalar vpnTrainAccess;
+        statistics::Scalar vpnTrainPfHitCDP;
+        statistics::Scalar vpnTrainAllocMain;
+        statistics::Scalar vpnTrainAllocSub;
+        statistics::Scalar vpnTrainNoAlloc;
+        statistics::Scalar vpnTrainRefresh;
+        statistics::Scalar vpnTrainRefreshEntries;
+        statistics::Scalar vpnTrainUpdateAccess;
+        statistics::Scalar vpnTrainUpdateHit;
+        statistics::Scalar vpnTrainUpdateMiss;
+        statistics::Scalar filterLookupAccess;
+        statistics::Scalar filterLookupHit;
+        statistics::Scalar filterLookupMiss;
+        statistics::Scalar filterDropBySaturated;
+        statistics::Scalar filterPassByNotSaturated;
+        statistics::Scalar filterTrainAccess;
+        statistics::Scalar filterTrainUseful;
+        statistics::Scalar filterTrainUnused;
+        statistics::Scalar filterTrainAlloc;
+        statistics::Scalar filterTrainUpdate;
+        statistics::Scalar filterTrainUsefulHit;
+        statistics::Scalar filterTrainUnusedHit;
+        statistics::Scalar filterTrainUnusedAlloc;
+        statistics::Scalar cdpReqGenerated;
+        statistics::Scalar cdpReqDropByLRU;
+        statistics::Scalar cdpReqDropByBusyPFQ;
+        statistics::Scalar cdpReqPassedLRU;
+        statistics::Scalar cdpReqInsertedToAddresses;
+        statistics::Vector cdpReqGeneratedByPath;
+        statistics::Vector cdpReqDropLruByPath;
+        statistics::Vector cdpReqPassedByPath;
+        statistics::Vector cdpReqGeneratedByTriggerReqType;
+        statistics::Vector cdpReqDropLruByTriggerReqType;
+        statistics::Vector cdpReqPassedByTriggerReqType;
+        statistics::Vector cdpReqGeneratedByTriggerBlkSource;
+        statistics::Vector cdpReqDropLruByTriggerBlkSource;
+        statistics::Vector cdpReqPassedByTriggerBlkSource;
     } cdpStats;
 };
 

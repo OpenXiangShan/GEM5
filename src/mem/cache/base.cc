@@ -617,7 +617,10 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
 
                     // Demand request merging into prefetch-only MSHR
                     if (pkt->isDemand()) {
+                        const auto pf_source =
+                            safePfSourceIndex(mshr->getPFSource());
                         stats.demandMergedIntoPfMSHR++;
+                        stats.demandMergedIntoPfMSHR_srcs[pf_source]++;
                         DPRINTF(Cache, "Demand request %#lx merged into prefetch MSHR\n",
                                 pkt->getAddr());
                     }
@@ -1444,10 +1447,14 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            if (auto *hit_blk = tags->findBlock(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
-                prefetcher->pfHitInCache(pf_type);
+                auto existing_pf_type = PrefetchSourceType::PF_NONE;
+                if (hit_blk->wasEverPrefetched()) {
+                    existing_pf_type = hit_blk->getXsMetadata().prefetchSource;
+                }
+                prefetcher->pfHitInCache(pf_type, existing_pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
@@ -2179,7 +2186,14 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
 
         // need to do a replacement if allocating, otherwise we stick
         // with the temporary storage
-        blk = allocate ? allocateBlock(pkt, writebacks) : nullptr;
+        if (allocate) {
+            auto old_fill_source = currentFillSourceForVictim;
+            currentFillSourceForVictim = pkt->req->getPFSource();
+            blk = allocateBlock(pkt, writebacks);
+            currentFillSourceForVictim = old_fill_source;
+        } else {
+            blk = nullptr;
+        }
 
         if (!blk) {
             // No replaceable block or a mostly exclusive
@@ -2345,7 +2359,8 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     }
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
-        prefetcher->prefetchUnused(regenerateBlkAddr(blk), blk->getXsMetadata().prefetchSource);
+        prefetcher->prefetchUnused(regenerateBlkAddr(blk), blk->getXsMetadata().prefetchSource,
+                                   currentFillSourceForVictim);
     }
 
     // Notify that the data contents for this address are no longer present
@@ -3014,10 +3029,26 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
                 "number of squashed live block replacements"),
     ADD_STAT(pfMergedWithDemand, statistics::units::Count::get(),
              "number of MSHR completions where prefetch was merged with demand"),
+    ADD_STAT(pfMergedWithDemand_srcs, statistics::units::Count::get(),
+             "MSHR completions where prefetch was merged with demand by prefetch source"),
     ADD_STAT(pfOnlyFill, statistics::units::Count::get(),
              "number of MSHR completions with only prefetch (no demand merge)"),
+    ADD_STAT(pfOnlyFill_srcs, statistics::units::Count::get(),
+             "MSHR completions with only prefetch by prefetch source"),
+    ADD_STAT(pfMshrServiceLatency_srcs, statistics::units::Tick::get(),
+             "prefetch MSHR service latency by prefetch source"),
+    ADD_STAT(pfMshrAvgServiceLatency_srcs, statistics::units::Rate<
+                statistics::units::Tick, statistics::units::Count>::get(),
+             "average prefetch MSHR service latency by prefetch source"),
     ADD_STAT(demandMergedIntoPfMSHR, statistics::units::Count::get(),
              "number of demand requests that merged into prefetch MSHR"),
+    ADD_STAT(demandMergedIntoPfMSHR_srcs, statistics::units::Count::get(),
+             "demand requests that merged into prefetch MSHR by prefetch source"),
+    ADD_STAT(demandMergedIntoPfMSHRLatency_srcs, statistics::units::Tick::get(),
+             "demand wait latency after merging into prefetch MSHR by prefetch source"),
+    ADD_STAT(demandMergedIntoPfMSHRAvgLatency_srcs, statistics::units::Rate<
+                statistics::units::Tick, statistics::units::Count>::get(),
+             "average demand wait latency after merging into prefetch MSHR by prefetch source"),
     ADD_STAT(squashedDemandHits, statistics::units::Count::get(),
              "number of squashed inst block demand hits"),
     ADD_STAT(loadTagReadFails, statistics::units::Count::get(),
@@ -3276,6 +3307,31 @@ BaseCache::CacheStats::regStats()
         overallAvgMshrUncacheableLatency.subname(i,
             system->getRequestorName(i));
     }
+
+    pfMergedWithDemand_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero | nonan);
+    pfOnlyFill_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero | nonan);
+    pfMshrServiceLatency_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero | nonan);
+    pfMshrAvgServiceLatency_srcs
+        .flags(total | nozero | nonan);
+    pfMshrAvgServiceLatency_srcs =
+        pfMshrServiceLatency_srcs /
+        (pfMergedWithDemand_srcs + pfOnlyFill_srcs);
+    demandMergedIntoPfMSHR_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero | nonan);
+    demandMergedIntoPfMSHRLatency_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero | nonan);
+    demandMergedIntoPfMSHRAvgLatency_srcs
+        .flags(total | nozero | nonan);
+    demandMergedIntoPfMSHRAvgLatency_srcs =
+        demandMergedIntoPfMSHRLatency_srcs / demandMergedIntoPfMSHR_srcs;
 
     mshrAvgEntryNum
         .flags(nonan)

@@ -253,12 +253,16 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "number of useful prefetch"),
     ADD_STAT(pfHitInCache_srcs, statistics::units::Count::get(),
         "number of prefetches hitting in cache"),
+    ADD_STAT(pfHitInCacheBySrcPair, statistics::units::Count::get(),
+        "prefetches hitting in cache by existing source and incoming source"),
     ADD_STAT(pfHitInMSHR_srcs, statistics::units::Count::get(),
         "number of prefetches hitting in a MSHR"),
     ADD_STAT(pfHitInWB_srcs, statistics::units::Count::get(),
         "number of prefetches hit in the Write Buffer"),
     ADD_STAT(late_srcs, statistics::units::Count::get(),
         "number of prefetches late"),
+    ADD_STAT(pfUnusedByFillSrcPair, statistics::units::Count::get(),
+        "unused prefetched blocks by victim source and incoming fill source"),
     ADD_STAT(pfUsefulButMiss, statistics::units::Count::get(),
         "number of hit on prefetch but cache block is not in an usable "
         "state"),
@@ -296,6 +300,9 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     pfHitInCache_srcs
         .init(NUM_PF_SOURCES)
         .flags(total);
+    pfHitInCacheBySrcPair
+        .init(NUM_PF_SOURCES * NUM_PF_SOURCES)
+        .flags(total);
     pfHitInMSHR_srcs
         .init(NUM_PF_SOURCES)
         .flags(total);
@@ -304,6 +311,9 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         .flags(total);
     late_srcs
         .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfUnusedByFillSrcPair
+        .init(NUM_PF_SOURCES * NUM_PF_SOURCES)
         .flags(total);
 
 

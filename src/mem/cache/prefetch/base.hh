@@ -72,6 +72,13 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+static constexpr unsigned
+pfSourcePairIndex(PrefetchSourceType first, PrefetchSourceType second)
+{
+    return static_cast<unsigned>(first) * PrefetchSourceType::NUM_PF_SOURCES +
+           static_cast<unsigned>(second);
+}
+
 class PrefetcherForwarder;
 struct CustomPfInfo
 {
@@ -887,9 +894,11 @@ class Base : public ClockedObject
 
         statistics::Vector pfUseful_srcs;
         statistics::Vector pfHitInCache_srcs;
+        statistics::Vector pfHitInCacheBySrcPair;
         statistics::Vector pfHitInMSHR_srcs;
         statistics::Vector pfHitInWB_srcs;
         statistics::Vector late_srcs;
+        statistics::Vector pfUnusedByFillSrcPair;
         /** The number of times there is a hit on prefetch but cache block
          * is not in an usable state */
         statistics::Scalar pfUsefulButMiss;
@@ -961,6 +970,13 @@ class Base : public ClockedObject
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
 
     virtual void
+    prefetchUnused(Addr paddr, PrefetchSourceType pfSource, PrefetchSourceType fillSource)
+    {
+        prefetchUnused(paddr, pfSource);
+        prefetchStats.pfUnusedByFillSrcPair[pfSourcePairIndex(pfSource, fillSource)]++;
+    }
+
+    virtual void
     incrDemandMhsrMisses()
     {
         prefetchStats.demandMshrMisses++;
@@ -972,6 +988,13 @@ class Base : public ClockedObject
         prefetchStats.pfHitInCache++;
         prefetchStats.pfHitInCache_srcs[pf_type]++;
         prefetchStats.late_srcs[pf_type]++;
+    }
+
+    virtual void
+    pfHitInCache(PrefetchSourceType pf_type, PrefetchSourceType existing_pf_type)
+    {
+        pfHitInCache(pf_type);
+        prefetchStats.pfHitInCacheBySrcPair[pfSourcePairIndex(existing_pf_type, pf_type)]++;
     }
 
     virtual void

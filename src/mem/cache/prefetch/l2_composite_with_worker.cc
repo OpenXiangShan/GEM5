@@ -40,6 +40,16 @@ L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType p
 }
 
 void
+L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType pfSource,
+                                                PrefetchSourceType fillSource)
+{
+    Base::prefetchUnused(paddr, pfSource, fillSource);
+    if (pfSource == PrefetchSourceType::CDP) {
+        cdp->recordUnusedPrefetch(paddr);
+    }
+}
+
+void
 L2CompositeWithWorkerPrefetcher::addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp)
 {
     if (&queue == &pfq) {
@@ -113,8 +123,14 @@ L2CompositeWithWorkerPrefetcher::pfHitNotify(float accuracy, PrefetchSourceType 
     }
 
     if (addressGenBuffer.size()) {
-        assert(pkt->req->hasVaddr());
-        postNotifyInsert(pkt, addressGenBuffer);
+        if (usePFBuffer) {
+            if (!PFReqSendEvent.scheduled()) {
+                schedule(PFReqSendEvent, nextCycle());
+            }
+        } else {
+            assert(pkt->req->hasVaddr());
+            postNotifyInsert(pkt, addressGenBuffer);
+        }
     }
     addressGenBuffer.clear();
 }
@@ -124,6 +140,7 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
 {
     cdp->setParentInfo(sys, pm, _cache, blk_size);
     cdp->setStatsPtr(&prefetchStats);
+    cdp->setUseParentPFBuffer(usePFBuffer);
     largeBOP->setParentInfo(sys, pm, _cache, blk_size);
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
     cmc->setParentInfo(sys, pm, _cache, blk_size);
@@ -139,8 +156,14 @@ L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
     }
 
     if (addressGenBuffer.size()) {
-        assert(pkt->req->hasVaddr());
-        postNotifyInsert(pkt, addressGenBuffer);
+        if (usePFBuffer) {
+            if (!PFReqSendEvent.scheduled()) {
+                schedule(PFReqSendEvent, nextCycle());
+            }
+        } else {
+            assert(pkt->req->hasVaddr());
+            postNotifyInsert(pkt, addressGenBuffer);
+        }
     }
     addressGenBuffer.clear();
 }
@@ -164,11 +187,15 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
         L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && cdp->hasPFRequestsInBuffer()){
-        L2PFsent = cdp->GetPFRequestsFromBuffer(addresses);
-    }
     if (!L2PFsent && cmc->hasPFRequestsInBuffer()){
         L2PFsent = cmc->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L2PFsent && cdp->hasPFRequestsInBuffer()){
+        if (pfq.empty()) {
+            L2PFsent = cdp->GetPFRequestsFromBuffer(addresses);
+        } else {
+            cdp->dropPFRequestByBusyPFQ();
+        }
     }
     // For now we dont have L3PF
     // bool L3PFsent = false;

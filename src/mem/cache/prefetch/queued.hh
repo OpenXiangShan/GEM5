@@ -227,6 +227,10 @@ class Queued : public Base
         statistics::Scalar pfSpanPage;
         statistics::Scalar pfUsefulSpanPage;
         statistics::Vector pfRemovedFull_srcs;
+        statistics::Vector pfBufferHit_srcs;
+        statistics::Vector pfBufferHitBySrcPair;
+        statistics::Vector pfInCache_srcs;
+        statistics::Vector pfRemovedDemand_srcs;
     } statsQueued;
 
   public:
@@ -289,9 +293,11 @@ class Queued : public Base
      * @return True if the prefetch request was found in the queue
      */
     bool alreadyInQueue(std::list<DeferredPacket> &queue,
-                        const PrefetchInfo &pfi, int32_t priority);
+                        const PrefetchInfo &pfi, int32_t priority,
+                        PrefetchSourceType incoming_source);
     bool alreadyInQueue(std::list<DeferredPacket> &queue,
-                                    Addr addr, bool isSecure, int32_t priority);
+                        Addr addr, bool isSecure, int32_t priority,
+                        PrefetchSourceType incoming_source);
 
     /**
      * Returns the maxmimum number of prefetch requests that are allowed

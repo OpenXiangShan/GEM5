@@ -235,6 +235,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                 delete itr->pkt;
                 itr = pfq.erase(itr);
                 statsQueued.pfRemovedDemand++;
+                statsQueued.pfRemovedDemand_srcs[late_pfq_src]++;
             } else {
                 ++itr;
             }
@@ -400,9 +401,29 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     ADD_STAT(pfUsefulSpanPage, statistics::units::Count::get(),
              "number of prefetches that is useful and crossed the page"),
     ADD_STAT(pfRemovedFull_srcs, statistics::units::Count::get(),
-        "src distribute of Removedfull prefetch")
+        "src distribute of Removedfull prefetch"),
+    ADD_STAT(pfBufferHit_srcs, statistics::units::Count::get(),
+             "incoming source distribution of redundant prefetches already in queue"),
+    ADD_STAT(pfBufferHitBySrcPair, statistics::units::Count::get(),
+             "queue duplicate hits by existing source and incoming source"),
+    ADD_STAT(pfInCache_srcs, statistics::units::Count::get(),
+             "source distribution of prefetches filtered by cache/MSHR snoop"),
+    ADD_STAT(pfRemovedDemand_srcs, statistics::units::Count::get(),
+             "source distribution of prefetches dropped due to demand for same address")
 {   using namespace statistics;
     pfRemovedFull_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfBufferHit_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfBufferHitBySrcPair
+        .init(NUM_PF_SOURCES * NUM_PF_SOURCES)
+        .flags(total);
+    pfInCache_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfRemovedDemand_srcs
         .init(NUM_PF_SOURCES)
         .flags(total);
 }
@@ -458,6 +479,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
             if (cacheSnoop && queueFilter && (inCache(target_paddr, it->pfInfo.isSecure()) ||
                         inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
                 statsQueued.pfInCache++;
+                statsQueued.pfInCache_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
                 DPRINTF(HWPrefetch, "Dropping redundant in "
                         "cache/MSHR prefetch addr:%#x\n", target_paddr);
             } else if (!system->isMemAddr(target_paddr)) {
@@ -482,7 +504,8 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
 
 bool
 Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
-                                 const PrefetchInfo &pfi, int32_t priority)
+                       const PrefetchInfo &pfi, int32_t priority,
+                       PrefetchSourceType incoming_source)
 {
     bool found = false;
     iterator it;
@@ -493,6 +516,9 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
     /* If the address is already in the queue, update priority and leave */
     if (it != queue.end()) {
         statsQueued.pfBufferHit++;
+        auto existing_source = it->pfInfo.getXsMetadata().prefetchSource;
+        statsQueued.pfBufferHit_srcs[incoming_source]++;
+        statsQueued.pfBufferHitBySrcPair[pfSourcePairIndex(existing_source, incoming_source)]++;
         if (it->priority < priority) {
             /* Update priority value and position in the queue */
             it->priority = priority;
@@ -512,7 +538,8 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
 bool
 
 Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
-                                 Addr addr, bool isSecure, int32_t priority)
+                       Addr addr, bool isSecure, int32_t priority,
+                       PrefetchSourceType incoming_source)
 {
     bool found = false;
     iterator it;
@@ -523,6 +550,9 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
     /* If the address is already in the queue, update priority and leave */
     if (it != queue.end()) {
         statsQueued.pfBufferHit++;
+        auto existing_source = it->pfInfo.getXsMetadata().prefetchSource;
+        statsQueued.pfBufferHit_srcs[incoming_source]++;
+        statsQueued.pfBufferHitBySrcPair[pfSourcePairIndex(existing_source, incoming_source)]++;
         if (it->priority < priority) {
             /* Update priority value and position in the queue */
             it->priority = priority;
@@ -561,11 +591,12 @@ void
 Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio)
 {
     int32_t priority = addr_prio.priority;
+    PrefetchSourceType incoming_source = addr_prio.pfSource;
     if (queueFilter) {
-        if (alreadyInQueue(pfq, new_pfi, priority)) {
+        if (alreadyInQueue(pfq, new_pfi, priority, incoming_source)) {
             return;
         }
-        if (alreadyInQueue(pfqMissingTranslation, new_pfi, priority)) {
+        if (alreadyInQueue(pfqMissingTranslation, new_pfi, priority, incoming_source)) {
             return;
         }
     }
@@ -629,6 +660,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
             (inCache(target_paddr, new_pfi.isSecure()) ||
             inMissQueue(target_paddr, new_pfi.isSecure()))) {
         statsQueued.pfInCache++;
+        statsQueued.pfInCache_srcs[incoming_source]++;
         DPRINTF(HWPrefetch, "Dropping redundant in "
                 "cache/MSHR prefetch addr:%#x\n", target_paddr);
         return;
