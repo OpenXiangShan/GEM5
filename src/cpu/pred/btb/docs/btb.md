@@ -224,17 +224,19 @@ FetchTarget stream;
 stream.startPC = pc;
 stream.predMetas[0] = meta;
 
-// Optional: Select update entry (only for L1 BTB)
-if (isL1BTB) {
-    auto selection = btb->selectUpdateEntry(
-        stream.predMetas[btb->getComponentIdx()],
-        stream.makeTargetUpdateContext());
-    stream.updateNewBTBEntry = selection.entry;
-    stream.updateIsOldEntry = selection.isOldEntry;
-}
+// Build explicit target update entries
+const auto ctx = stream.makeTargetUpdateContext();
+const auto update_entries = buildUpdateBTBEntries(
+    stream.predBTBEntries, stream.startPC,
+    stream.getUpdateEndInstPC(btb->predictWidth));
+const auto selection = btb->selectUpdateEntry(
+    stream.predMetas[btb->getComponentIdx()], ctx);
+const auto entries = buildTargetUpdateEntries(
+    update_entries, selection.entry, selection.isOldEntry, {},
+    btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
 
 // Update BTB
-btb->update(stream);
+btb->updateWithTargetEntries(entries, ctx, stream);
 ```
 
 ## 6. Key Configuration Parameters

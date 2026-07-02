@@ -625,14 +625,8 @@ struct FetchTarget
     bool exeTaken;         // whether the branch is taken(resolved)
     BranchInfo exeBranchInfo; // executed branch info
 
-    BTBEntry updateNewBTBEntry; // possible new entry selected by L1 BTB, used by L1/L0 BTB update
-    bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
     bool resolved;  // whether the branch is resolved/executed
 
-    // Set before legacy component update; used to decide which predicted
-    // entries were actually executed.
-    std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
-    std::vector<Addr> resolvedUpdatePrefixPCs; // actual resolved-update prefix PCs
     std::vector<ResolvedBranch> resolvedBranches; // actual resolved CFIs
 
     int squashType;         // squash type
@@ -669,8 +663,6 @@ struct FetchTarget
          falseHit(false),
          exeTaken(false),
          exeBranchInfo(BranchInfo()),
-         updateNewBTBEntry(BTBEntry()),
-         updateIsOldEntry(false),
          resolved(false),
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),
@@ -687,8 +679,6 @@ struct FetchTarget
    {
        predMetas.fill(nullptr);
        predBTBEntries.clear();
-       updateBTBEntries.clear();
-       resolvedUpdatePrefixPCs.clear();
        resolvedBranches.clear();
    }
 

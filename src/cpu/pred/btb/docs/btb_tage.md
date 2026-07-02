@@ -136,23 +136,19 @@ The update process involves:
 4. Allocating new entries on mispredictions
 
 ```cpp
-void update(const FetchTarget &stream) {
+void updateWithDirectionEntries(
+    const std::vector<DirectionUpdateEntry> &entries,
+    const DirectionUpdateContext &update_ctx,
+    const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
-    const auto update_ctx = stream.makeDirectionUpdateContext();
-    
-    // Prepare entries to update
-    auto entries_to_update = buildDirectionUpdateEntries(
-        stream.updateBTBEntries, stream.updateNewBTBEntry,
-        stream.updateIsOldEntry, stream.resolvedUpdatePrefixPCs,
-        DirectionUpdateEntryFilter::Conditional, getResolvedUpdate(),
-        update_ctx);
     
     // Get prediction metadata
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     
     // Update each BTB entry
-    for (auto &entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == entry;
+    for (const auto &update_entry : entries) {
+        const auto &entry = update_entry.entry;
+        bool actual_taken = update_entry.actualTaken;
         auto pred_it = meta->preds.find(entry.pc);
         
         if (pred_it == meta->preds.end()) {

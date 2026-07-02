@@ -70,12 +70,12 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
 void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
                              const std::shared_ptr<void>& meta) {
     const auto ctx = stream.makeTargetUpdateContext();
-    const auto updateBTBEntries = buildUpdateBTBEntries(
+    const auto update_entries = buildUpdateBTBEntries(
         stream.predBTBEntries, stream.startPC,
         stream.getUpdateEndInstPC(btb->predictWidth));
     const auto selection = btb->selectUpdateEntry(meta, ctx);
     const auto entries = buildTargetUpdateEntries(
-        updateBTBEntries, selection.entry, selection.isOldEntry, {},
+        update_entries, selection.entry, selection.isOldEntry, {},
         btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
     btb->updateWithTargetEntries(entries, ctx, stream);
 }
