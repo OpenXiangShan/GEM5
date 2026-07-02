@@ -62,8 +62,8 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     stream.exeBranchInfo = branch;
     stream.exeTaken = taken;
     stream.predMetas[0] = meta;
-    stream.updateEndInstPC = endInstPC;
     stream.squashType = SQUASH_CTRL; // mispredict default
+    stream.squashPC = endInstPC;
     return stream;
 }
 
@@ -132,7 +132,7 @@ predictUpdateCycle(MBTB* btb,
     if (btb->getDelay() < stagePreds.size()) {
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
-    stream.setUpdateBTBEntries();
+    stream.setUpdateBTBEntries(btb->predictWidth);
     auto selection = btb->selectUpdateEntry(
         meta, stream.makeTargetUpdateContext());
     stream.updateNewBTBEntry = selection.entry;

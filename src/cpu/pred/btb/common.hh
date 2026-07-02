@@ -622,10 +622,8 @@ struct FetchTarget
     bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
     bool resolved;  // whether the branch is resolved/executed
 
-    // below two should be set before components update
-    // used to decide which branches to update (don't update if not actually executed)
-    Addr updateEndInstPC;   // end pc of the squash inst/taken inst
-    // for components to decide which entries to update
+    // Set before legacy component update; used to decide which predicted
+    // entries were actually executed.
     std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
     std::vector<Addr> resolvedUpdatePrefixPCs; // actual resolved-update prefix PCs
     std::vector<ResolvedBranch> resolvedBranches; // actual resolved CFIs
@@ -667,7 +665,6 @@ struct FetchTarget
          updateNewBTBEntry(BTBEntry()),
          updateIsOldEntry(false),
          resolved(false),
-         updateEndInstPC(0),
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),
          predSource(0),
@@ -750,25 +747,24 @@ struct FetchTarget
         return update;
     }
 
-    // should be called before components update
-    void setUpdateInstEndPC(unsigned predictWidth)
+    Addr getUpdateEndInstPC(unsigned predictWidth) const
     {
-        updateEndInstPC = buildUpdateEndInstPC(
+        return buildUpdateEndInstPC(
             startPC, predictWidth, exeTaken, getControlPC(),
             static_cast<SquashType>(squashType), squashPC);
     }
 
-    // should be called before components update, after setUpdateInstEndPC
-    void setUpdateBTBEntries()
+    // should be called before components update
+    void setUpdateBTBEntries(unsigned predictWidth)
     {
+        const Addr update_end_inst_pc = getUpdateEndInstPC(predictWidth);
         updateBTBEntries = buildUpdateBTBEntries(
-            predBTBEntries, startPC, updateEndInstPC);
+            predBTBEntries, startPC, update_end_inst_pc);
     }
 
     void prepareUpdateEntries(unsigned predictWidth)
     {
-        setUpdateInstEndPC(predictWidth);
-        setUpdateBTBEntries();
+        setUpdateBTBEntries(predictWidth);
     }
 
     void setUpdateEntrySelection(const BTBUpdateEntrySelection &selection)

@@ -470,9 +470,6 @@ std::vector<BTBEntry>
 AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
                             Addr end_inst_pc)
 {
-    // auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    // // hit entries whose corresponding insts are acutally executed
-    // Addr end_inst_pc = stream.updateEndInstPC;
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
     auto old_entries = hit_entries;
@@ -722,7 +719,7 @@ AheadBTB::update(const FetchTarget &stream)
     auto meta = std::static_pointer_cast<BTBMeta>(
         stream.predMetas[getComponentIdx()]);
     const auto update_ctx = stream.makeTargetUpdateContext();
-    Addr end_inst_pc = stream.updateEndInstPC;
+    Addr end_inst_pc = stream.getUpdateEndInstPC(predictWidth);
 
     // 1. Process old entries
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
