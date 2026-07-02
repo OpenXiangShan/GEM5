@@ -407,18 +407,30 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
  * Note: This is only called in L1 BTB during update
  */
 BTBUpdateEntrySelection
-MBTB::selectUpdateEntry(const FetchTarget &stream,
+MBTB::selectUpdateEntry(const std::shared_ptr<void> &prediction_meta,
                         const TargetUpdateContext &ctx)
 {
     DPRINTF(BTB, "selectUpdateEntry called for pc %#lx\n", ctx.startPC);
-    // Get prediction metadata from previous stages
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    auto &predBTBEntries = meta->hit_entries;
+    auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
+    return selectUpdateEntryFromHits(meta->hit_entries, ctx);
+}
 
+BTBUpdateEntrySelection
+MBTB::selectUpdateEntry(const FetchTarget &stream,
+                        const TargetUpdateContext &ctx)
+{
+    return selectUpdateEntry(stream.predMetas[getComponentIdx()], ctx);
+}
+
+BTBUpdateEntrySelection
+MBTB::selectUpdateEntryFromHits(
+    const std::vector<BTBEntry> &pred_hit_entries,
+    const TargetUpdateContext &ctx)
+{
     // Check if this branch was predicted (exists in BTB)
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
-    for (auto &e: predBTBEntries) {
+    for (const auto &e: pred_hit_entries) {
         if (ctx.actualBranch == e) {
             pred_branch_hit = true;
             entry_to_write = e;

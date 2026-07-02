@@ -40,6 +40,7 @@
 #ifndef __CPU_PRED_BTB_MBTB_HH__
 #define __CPU_PRED_BTB_MBTB_HH__
 
+#include <memory>
 #include <queue>
 
 #include "base/types.hh"
@@ -156,6 +157,10 @@ class MBTB : public TimedBaseBTBPredictor
      * Only L1 BTB uses this before component update.
      */
     BTBUpdateEntrySelection selectUpdateEntry(
+        const std::shared_ptr<void> &prediction_meta,
+        const TargetUpdateContext &ctx);
+
+    BTBUpdateEntrySelection selectUpdateEntry(
         const FetchTarget &stream, const TargetUpdateContext &ctx);
 
     /** Updates the BTB with the branch info of a block and execution result.
@@ -271,6 +276,10 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void checkPredictionHit(const TargetUpdateContext &ctx,
                            const BTBMeta* meta);
+
+    BTBUpdateEntrySelection selectUpdateEntryFromHits(
+        const std::vector<BTBEntry> &pred_hit_entries,
+        const TargetUpdateContext &ctx);
 
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                            const TargetUpdateContext &ctx,

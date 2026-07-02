@@ -947,7 +947,8 @@ DecoupledBPUWithBTB::selectUpdateEntry(FetchTarget &target)
     }
 
     const auto selection = mbtb->selectUpdateEntry(
-        target, target.makeTargetUpdateContext());
+        target.predMetas[mbtb->getComponentIdx()],
+        target.makeTargetUpdateContext());
     target.updateNewBTBEntry = selection.entry;
     target.updateIsOldEntry = selection.isOldEntry;
 }
