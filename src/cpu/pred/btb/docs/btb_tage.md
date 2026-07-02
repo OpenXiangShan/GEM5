@@ -138,9 +138,14 @@ The update process involves:
 ```cpp
 void update(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
+    const auto update_ctx = stream.makeDirectionUpdateContext();
     
     // Prepare entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
+    auto entries_to_update = buildDirectionUpdateEntries(
+        stream.updateBTBEntries, stream.updateNewBTBEntry,
+        stream.updateIsOldEntry, stream.resolvedUpdatePrefixPCs,
+        DirectionUpdateEntryFilter::Conditional, getResolvedUpdate(),
+        update_ctx);
     
     // Get prediction metadata
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);

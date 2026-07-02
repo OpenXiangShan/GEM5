@@ -132,7 +132,9 @@ predictUpdateCycle(MBTB* btb,
     if (btb->getDelay() < stagePreds.size()) {
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
-    stream.setUpdateBTBEntries(btb->predictWidth);
+    stream.updateBTBEntries = buildUpdateBTBEntries(
+        stream.predBTBEntries, stream.startPC,
+        stream.getUpdateEndInstPC(btb->predictWidth));
     auto selection = btb->selectUpdateEntry(
         meta, stream.makeTargetUpdateContext());
     stream.updateNewBTBEntry = selection.entry;

@@ -761,19 +761,6 @@ struct FetchTarget
             static_cast<SquashType>(squashType), squashPC);
     }
 
-    // should be called before components update
-    void setUpdateBTBEntries(unsigned predictWidth)
-    {
-        const Addr update_end_inst_pc = getUpdateEndInstPC(predictWidth);
-        updateBTBEntries = buildUpdateBTBEntries(
-            predBTBEntries, startPC, update_end_inst_pc);
-    }
-
-    void prepareUpdateEntries(unsigned predictWidth)
-    {
-        setUpdateBTBEntries(predictWidth);
-    }
-
     void setUpdateEntrySelection(const BTBUpdateEntrySelection &selection)
     {
         updateNewBTBEntry = selection.entry;
@@ -815,25 +802,6 @@ struct FetchTarget
     bool hasResolvedBranches() const
     {
         return !resolvedBranches.empty();
-    }
-
-    bool hasResolvedUpdatePrefix() const
-    {
-        return !resolvedUpdatePrefixPCs.empty();
-    }
-
-    bool isInResolvedUpdatePrefix(Addr pc) const
-    {
-        if (!hasResolvedUpdatePrefix()) {
-            return false;
-        }
-        return containsResolvedUpdatePC(resolvedUpdatePrefixPCs, pc);
-    }
-
-    bool isResolvedUpdatePC(Addr pc, bool fallback_resolved) const
-    {
-        return btb_pred::isResolvedUpdatePC(
-            resolvedUpdatePrefixPCs, pc, fallback_resolved);
     }
 
     bool isActualTakenBranchPC(Addr pc) const

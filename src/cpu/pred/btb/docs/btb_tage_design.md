@@ -69,7 +69,7 @@
 - 变更目标
   - 预测期：正常查表与产出方向，但不再依赖在更新期使用的 main/alt 元数据。
   - 更新期：基于预测当拍的折叠历史快照（PHR/GHR 折叠值）重读所有表，逐分支还原 main/alt 与 use_alt_on_na gating，执行更新与分配。
-  - 只更新到停止点：沿用 `getUpdateEndInstPC`/`setUpdateBTBEntries` 的行为，B0…StopPoint 分支被更新，StopPoint 之后不更新。
+  - 只更新到停止点：沿用 `buildUpdateBTBEntries` 的裁剪行为，B0…StopPoint 分支被更新，StopPoint 之后不更新。
 
 - 核心改造点
   1) 新增“基于快照重读 provider”的辅助函数（以单分支为粒度）：
@@ -84,7 +84,7 @@
 
   3) 改造 `update()`：
      - 以 `stream.predMetas[idx]` 的 `TageMeta` 作为更新期唯一快照，并赋给类成员 `meta`，保证辅助函数与重置逻辑使用同一份数据。
-     - 遍历 `prepareUpdateEntries(stream)` 返回的分支（已裁剪到停止点），对每个分支：
+     - 遍历 prepared update entries 中的分支（已裁剪到停止点），对每个分支：
        * 用“重读 provider”获得 `TagePrediction`；
        * 走原有 `updatePredictorStateAndCheckAllocation` 更新计数器与 `use_alt_on_na`；
        * 若需要分配：用“快照 usefulMask”→`handleUsefulBitReset`→从 `main.table+1` 起调用 `handleNewEntryAllocation`；
