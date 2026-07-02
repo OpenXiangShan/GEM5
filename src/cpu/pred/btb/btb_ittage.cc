@@ -109,7 +109,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
     std::vector<TagePrediction> preds;
     for (auto &btb_entry : btbEntries) {
         if (btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid) {
-            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx, always taken %d\n", btb_entry.pc, btb_entry.alwaysTaken);
+            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx\n", btb_entry.pc);
             bool provided = false;
             bool alt_provided = false;
 

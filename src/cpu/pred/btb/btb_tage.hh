@@ -207,6 +207,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     }
 
     // Get branch index within a prediction block
+    bool isBranchInPredictionBlock(Addr branchPC, Addr startPC) const;
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
 
     // Get bank ID from PC (after removing instruction alignment bits)

@@ -261,7 +261,8 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         if (e.isCond) {
             // TODO: a performance bug here, mbtb should not update condTakens!
 
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
+            FillStageLoop(s) stagePreds[s].condTakens.push_back(
+                {e.pc, e.ctr >= 0});
 
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
@@ -437,9 +438,7 @@ MBTB::selectUpdateEntryFromHits(
         DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", ctx.actualBranch.pc);
         BTBEntry new_entry = BTBEntry(ctx.actualBranch);
         new_entry.valid = true;
-        // For conditional branches, initialize as always taken
         if (new_entry.isCond) {
-            new_entry.alwaysTaken = true;
             new_entry.ctr = 0;  // Start with positive prediction
             btbStats.newEntryWithCond++;
         } else {
@@ -566,17 +565,10 @@ MBTB::buildUpdatedEntry(const TargetUpdateEntry &update_entry,
     entry_to_write.tag = getTag(entry_to_write.pc, ctx.asidHash);
     entry_to_write.resolved = false; // reset resolved status
 
-    // Update saturating counter and alwaysTaken
+    // Update saturating counter
     if (entry_to_write.isCond) {
         bool this_cond_taken = update_entry.actualTaken;
-        if (!this_cond_taken) {
-            entry_to_write.alwaysTaken = false;
-            DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
-                    entry_to_write.pc, entry_to_write.alwaysTaken);
-        }
-        if (!entry_to_write.alwaysTaken) {
-            updateCtr(entry_to_write.ctr, this_cond_taken);
-        }
+        updateCtr(entry_to_write.ctr, this_cond_taken);
     }
 
     // Update indirect target if necessary

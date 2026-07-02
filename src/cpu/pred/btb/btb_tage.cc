@@ -430,7 +430,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -834,7 +834,7 @@ BTBTAGE::update(const FetchTarget &stream) {
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
     auto entries_to_update = stream.makeDirectionUpdateEntries(
-        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        DirectionUpdateEntryFilter::Conditional,
         getResolvedUpdate(), update_ctx);
 
     // Get prediction metadata snapshot and bind to member for helpers
@@ -863,6 +863,12 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     bool hasRecomputedVsOriginalDiff = false;
     for (const auto &update_entry : entries) {
         const auto &btb_entry = update_entry.entry;
+        if (!isBranchInPredictionBlock(btb_entry.pc, startAddr)) {
+            DPRINTF(TAGE,
+                    "update: skip pc %#lx outside prediction block start %#lx\n",
+                    btb_entry.pc, startAddr);
+            continue;
+        }
         const bool actual_taken = update_entry.actualTaken;
         const bool is_new_entry = update_entry.isNewEntry;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
@@ -1110,6 +1116,22 @@ Addr
 BTBTAGE::getUseAltIdx(Addr pc) const {
     Addr shiftedPc = pc >> instShiftAmt;
     return shiftedPc & (useAltOnNaSize - 1);
+}
+
+bool
+BTBTAGE::isBranchInPredictionBlock(Addr branchPC, Addr startPC) const
+{
+    if (blockSize == 0) {
+        return false;
+    }
+
+    Addr alignedPC = startPC & ~(blockSize - 1);
+    if (branchPC < alignedPC) {
+        return false;
+    }
+
+    Addr offset = (branchPC - alignedPC) >> instShiftAmt;
+    return offset < maxBranchPositions;
 }
 
 unsigned

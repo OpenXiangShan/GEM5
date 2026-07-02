@@ -27,7 +27,6 @@ makeCondBTBEntry(Addr pc)
     entry.target = pc + 4;
     entry.isCond = true;
     entry.valid = true;
-    entry.alwaysTaken = false;
     entry.size = 4;
     return entry;
 }

@@ -302,7 +302,8 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     for (auto &e : mixed_entries) {
         assert(e.valid);
         if (e.isCond) {
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
+            FillStageLoop(s) stagePreds[s].condTakens.push_back(
+                {e.pc, e.ctr >= 0});
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
             DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
@@ -579,12 +580,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
     // update saturating counter if necessary
     if (entry_to_write.isCond) {
         bool this_cond_taken = update_entry.actualTaken;
-        if (!this_cond_taken) {
-            entry_to_write.alwaysTaken = false;
-        }
-        if (!entry_to_write.alwaysTaken) {
-            updateCtr(entry_to_write.ctr, this_cond_taken);
-        }
+        updateCtr(entry_to_write.ctr, this_cond_taken);
     }
     // update indirect target if necessary
     if (entry_to_write.isIndirect && update_entry.actualTaken) {
@@ -698,7 +694,6 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         new_entry.valid = true;
 
         if (new_entry.isCond) {
-            new_entry.alwaysTaken = true;
             new_entry.ctr = 0;
         }
         all_entries.push_back({new_entry, true, true, BranchInfo(taken_entry)});

@@ -103,7 +103,6 @@ class AheadBTB : public TimedBaseBTBPredictor
      * - target: branch target address
      * - size: branch instruction size
      * - isCond/isIndirect/isCall/isReturn: branch type flags
-     * - alwaysTaken: whether this conditional branch is always taken
      * - ctr: 2-bit counter for conditional branch prediction
      */
     typedef struct TickedBTBEntry : public BTBEntry
@@ -179,8 +178,8 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
-            cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
+            cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
+            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, tick);
     }
 
     std::vector<TargetUpdateEntry> collectEntriesToUpdateFromS3Pred(

@@ -303,7 +303,7 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
                                                  tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -637,7 +637,7 @@ MicroTAGE::update(const FetchTarget &stream) {
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
     auto entries_to_update = stream.makeDirectionUpdateEntries(
-        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        DirectionUpdateEntryFilter::Conditional,
         getResolvedUpdate(), update_ctx);
 
     // Get prediction metadata snapshot and bind to member for helpers
@@ -664,6 +664,12 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     // Process each BTB entry
     for (const auto &update_entry : entries) {
         const auto &btb_entry = update_entry.entry;
+        if (!isBranchInPredictionBlock(btb_entry.pc, startAddr)) {
+            DPRINTF(UTAGE,
+                    "update: skip pc %#lx outside prediction block start %#lx\n",
+                    btb_entry.pc, startAddr);
+            continue;
+        }
         const bool actual_taken = update_entry.actualTaken;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
@@ -838,6 +844,22 @@ MicroTAGE::satDecrement(int min, short &counter)
         --counter;
     }
     return counter == min;
+}
+
+bool
+MicroTAGE::isBranchInPredictionBlock(Addr branchPC, Addr startPC) const
+{
+    if (blockSize == 0) {
+        return false;
+    }
+
+    Addr alignedPC = startPC & ~(blockSize - 1);
+    if (branchPC < alignedPC) {
+        return false;
+    }
+
+    Addr offset = (branchPC - alignedPC) >> instShiftAmt;
+    return offset < maxBranchPositions;
 }
 
 unsigned

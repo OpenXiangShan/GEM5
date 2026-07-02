@@ -18,7 +18,7 @@ namespace
 {
 
 BTBEntry
-makeEntry(Addr pc, bool is_cond, bool always_taken, bool resolved)
+makeEntry(Addr pc, bool is_cond, bool resolved)
 {
     BTBEntry entry;
     entry.valid = true;
@@ -31,7 +31,6 @@ makeEntry(Addr pc, bool is_cond, bool always_taken, bool resolved)
     entry.isCall = false;
     entry.isReturn = false;
     entry.size = 4;
-    entry.alwaysTaken = always_taken;
     entry.ctr = 0;
     return entry;
 }
@@ -39,7 +38,7 @@ makeEntry(Addr pc, bool is_cond, bool always_taken, bool resolved)
 BTBEntry
 makeIndirectEntry(Addr pc, bool is_return, bool resolved)
 {
-    BTBEntry entry = makeEntry(pc, false, false, resolved);
+    BTBEntry entry = makeEntry(pc, false, resolved);
     entry.isIndirect = true;
     entry.isDirect = false;
     entry.isReturn = is_return;
@@ -86,14 +85,14 @@ makeResolvedBranch(Addr pc, bool taken, bool mispred)
 
 TEST(UpdateEntryBuilderTest, DirectionResolvedPrefixOverridesEntryResolvedBits)
 {
-    const BTBEntry prefix_entry = makeEntry(0x1000, true, false, false);
-    const BTBEntry legacy_resolved_entry = makeEntry(0x1004, true, false, true);
+    const BTBEntry prefix_entry = makeEntry(0x1000, true, false);
+    const BTBEntry legacy_resolved_entry = makeEntry(0x1004, true, true);
     const DirectionUpdateContext ctx =
         makeDirectionContext(prefix_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
         {prefix_entry, legacy_resolved_entry}, BTBEntry(), true,
-        {prefix_entry.pc}, DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        {prefix_entry.pc}, DirectionUpdateEntryFilter::Conditional,
         true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -102,44 +101,42 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedPrefixOverridesEntryResolvedBits)
     EXPECT_FALSE(entries[0].isNewEntry);
 }
 
-TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryClearsAlwaysTaken)
+TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
 {
-    const BTBEntry new_entry = makeEntry(0x1010, true, true, false);
+    const BTBEntry new_entry = makeEntry(0x1010, true, false);
     const DirectionUpdateContext ctx =
         makeDirectionContext(new_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
         {}, new_entry, false, {},
-        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken, false, ctx);
+        DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].entry.pc, new_entry.pc);
-    EXPECT_FALSE(entries[0].entry.alwaysTaken);
     EXPECT_FALSE(entries[0].actualTaken);
     EXPECT_TRUE(entries[0].isNewEntry);
 }
 
-TEST(UpdateEntryBuilderTest, MgscResolvedUpdateKeepsLegacyOldEntriesWithoutPrefix)
+TEST(UpdateEntryBuilderTest, MgscResolvedUpdateKeepsConditionalEntriesWithoutPrefix)
 {
-    const BTBEntry always_entry = makeEntry(0x1020, false, true, false);
+    const BTBEntry cond_entry = makeEntry(0x1020, true, false);
     const DirectionUpdateContext ctx =
-        makeDirectionContext(always_entry.pc, true);
+        makeDirectionContext(cond_entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {always_entry}, BTBEntry(), true, {},
+        {cond_entry}, BTBEntry(), true, {},
         DirectionUpdateEntryFilter::Mgsc, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].entry.pc, always_entry.pc);
-    EXPECT_TRUE(entries[0].entry.alwaysTaken);
+    EXPECT_EQ(entries[0].entry.pc, cond_entry.pc);
     EXPECT_TRUE(entries[0].actualTaken);
     EXPECT_FALSE(entries[0].isNewEntry);
 }
 
 TEST(UpdateEntryBuilderTest, TargetResolvedPrefixOverridesEntryResolvedBits)
 {
-    const BTBEntry prefix_entry = makeEntry(0x2000, false, false, false);
-    const BTBEntry legacy_resolved_entry = makeEntry(0x2004, false, false, true);
+    const BTBEntry prefix_entry = makeEntry(0x2000, false, false);
+    const BTBEntry legacy_resolved_entry = makeEntry(0x2004, false, true);
     const TargetUpdateContext ctx = makeTargetContext(prefix_entry.pc, false);
 
     const auto entries = buildTargetUpdateEntries(
@@ -195,7 +192,7 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
 
 TEST(UpdateEntryBuilderTest, SelectedTargetEntryUsesContextAndOldEntryFlag)
 {
-    const BTBEntry selected = makeEntry(0x4000, false, false, true);
+    const BTBEntry selected = makeEntry(0x4000, false, true);
     const TargetUpdateContext ctx = makeTargetContext(selected.pc, true);
 
     const auto new_entry =
@@ -230,11 +227,11 @@ TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
 
 TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
 {
-    const BTBEntry before = makeEntry(0x0ffc, true, false, true);
-    const BTBEntry first = makeEntry(0x1000, true, false, true);
-    const BTBEntry second = makeEntry(0x1008, true, false, true);
-    const BTBEntry after = makeEntry(0x1010, true, false, true);
-    BTBEntry invalid = makeEntry(0x1004, true, false, true);
+    const BTBEntry before = makeEntry(0x0ffc, true, true);
+    const BTBEntry first = makeEntry(0x1000, true, true);
+    const BTBEntry second = makeEntry(0x1008, true, true);
+    const BTBEntry after = makeEntry(0x1010, true, true);
+    BTBEntry invalid = makeEntry(0x1004, true, true);
     invalid.valid = false;
 
     const auto entries = buildUpdateBTBEntries(
@@ -247,9 +244,9 @@ TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
 
 TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
 {
-    const BTBEntry first = makeEntry(0x1000, true, false, false);
-    const BTBEntry second = makeEntry(0x1008, true, false, false);
-    const BTBEntry after = makeEntry(0x1010, true, false, false);
+    const BTBEntry first = makeEntry(0x1000, true, false);
+    const BTBEntry second = makeEntry(0x1008, true, false);
+    const BTBEntry after = makeEntry(0x1010, true, false);
 
     FetchTarget stream;
     stream.startPC = 0x1000;
@@ -305,9 +302,9 @@ TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
 
 TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
 {
-    const BTBEntry first = makeEntry(0x1000, true, false, false);
-    const BTBEntry second = makeEntry(0x1008, true, false, false);
-    const BTBEntry after = makeEntry(0x1010, true, false, false);
+    const BTBEntry first = makeEntry(0x1000, true, false);
+    const BTBEntry second = makeEntry(0x1008, true, false);
+    const BTBEntry after = makeEntry(0x1010, true, false);
 
     FetchTarget stream;
     stream.startPC = 0x1000;

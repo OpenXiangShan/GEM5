@@ -374,7 +374,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 ||entry.alwaysTaken){
+            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0) {
                 finalPred.s1Source = entry.source;
                 break;
             }
@@ -385,7 +385,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     bool na_s3_taken_but_have_cond = false;
 
     for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0 || entry.alwaysTaken) {
+        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0) {
             found_s3_taken = true;
         }else if (entry.isCond){
             //only use when there's no taken prediction in s3
@@ -785,11 +785,12 @@ DecoupledBPUWithBTB::resolveUpdate(
     FetchTarget target = ftq.get(target_id, tid);
     update_event.applyActualResult(target);
     DPRINTF(DecoupleBP,
-            "Resolve update ftq=%u tid=%u branches=%zu updateBranches=%zu "
+            "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
             "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "
             "squashPC=%#lx\n",
-            target_id, tid, branches.size(),
-            update_event.resolvedBranchCount(),
+            target_id, tid,
+            static_cast<unsigned long long>(branches.size()),
+            static_cast<unsigned long long>(update_event.resolvedBranchCount()),
             target.exeTaken,
             target.exeBranchInfo.pc, target.exeBranchInfo.target,
             target.squashType, target.squashPC);

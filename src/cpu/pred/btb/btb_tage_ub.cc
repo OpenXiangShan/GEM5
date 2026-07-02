@@ -266,7 +266,7 @@ BTBTAGEUpperBound::notePredictionResult(
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
     CondTakens &results) const
 {
-    results.push_back({btbEntry.pc, pred.taken || btbEntry.alwaysTaken});
+    results.push_back({btbEntry.pc, pred.taken});
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -500,7 +500,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
 {
     const auto updateCtx = stream.makeDirectionUpdateContext();
     auto entriesToUpdate = stream.makeDirectionUpdateEntries(
-        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        DirectionUpdateEntryFilter::Conditional,
         getResolvedUpdate(), updateCtx);
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);

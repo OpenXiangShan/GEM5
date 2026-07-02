@@ -224,13 +224,14 @@ struct BranchInfo
 struct BTBEntry : BranchInfo
 {
     bool valid;
-    bool alwaysTaken;
     int ctr;
     Addr tag;
     int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(-1){}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(-1){}
+    BTBEntry() : BranchInfo(), valid(false), ctr(0), tag(0), source(-1) {}
+    BTBEntry(const BranchInfo &bi) :
+        BranchInfo(bi), valid(true), ctr(0), tag(0), source(-1)
+    {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
     int getsource() const {
@@ -315,7 +316,7 @@ enum class TargetUpdateEntryFilter
 
 enum class DirectionUpdateEntryFilter
 {
-    ConditionalNonAlwaysTaken,
+    Conditional,
     Mgsc
 };
 
@@ -340,19 +341,17 @@ isResolvedUpdatePC(const std::vector<Addr> &resolved_update_prefix_pcs,
 inline bool
 shouldKeepDirectionUpdateEntry(
     const BTBEntry &entry,
-    bool is_new_entry,
     DirectionUpdateEntryFilter filter,
     bool resolved_update,
     const std::vector<Addr> &resolved_update_prefix_pcs)
 {
     bool keep = false;
     switch (filter) {
-      case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
-        keep = entry.isCond && !entry.alwaysTaken;
+      case DirectionUpdateEntryFilter::Conditional:
+        keep = entry.isCond;
         break;
       case DirectionUpdateEntryFilter::Mgsc:
-        keep = is_new_entry ? (entry.isCond && !entry.alwaysTaken) :
-                              (entry.isCond || entry.alwaysTaken);
+        keep = entry.isCond;
         break;
     }
     if (!keep || !resolved_update) {
@@ -360,7 +359,7 @@ shouldKeepDirectionUpdateEntry(
     }
 
     switch (filter) {
-      case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
+      case DirectionUpdateEntryFilter::Conditional:
         return isResolvedUpdatePC(
             resolved_update_prefix_pcs, entry.pc, entry.resolved);
       case DirectionUpdateEntryFilter::Mgsc:
@@ -385,12 +384,7 @@ buildDirectionUpdateEntries(
                     (update_is_old_entry ? 0 : 1));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
-        if (filter == DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken &&
-            is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
-            entry.alwaysTaken = false;
-        }
-        if (!shouldKeepDirectionUpdateEntry(entry, is_new_entry, filter,
-                                            resolved_update,
+        if (!shouldKeepDirectionUpdateEntry(entry, filter, resolved_update,
                                             resolved_update_prefix_pcs)) {
             return;
         }
@@ -448,9 +442,6 @@ buildTargetUpdateEntries(
         const bool actual_taken = ctx.isTakenControlPC(entry.pc);
         const BranchInfo actual_branch =
             ctx.controlPC == entry.pc ? ctx.actualBranch : BranchInfo(entry);
-        if (is_new_entry && !actual_taken) {
-            entry.alwaysTaken = false;
-        }
         if (!shouldKeepTargetUpdateEntry(
                 entry, filter, resolved_update,
                 resolved_update_prefix_pcs)) {

@@ -251,23 +251,21 @@ TEST_F(BTBTest, ConditionalCounter) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
-    // Counter should be initialized to 0 and stay at 0 after taken (since alwaysTaken=true)
+    // Counter should be initialized to 0 and increment after taken.
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 0);
-        EXPECT_TRUE(entries[0].alwaysTaken);
+        EXPECT_EQ(entries[0].ctr, 1);
     }
     
     // Then update with not taken
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
 
-    // Counter should be reduced after not taken (0 -> -1)
+    // Counter should be reduced after not taken (1 -> 0)
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, -1);
-        EXPECT_FALSE(entries[0].alwaysTaken);
+        EXPECT_EQ(entries[0].ctr, 0);
     }
 }
 
@@ -280,12 +278,11 @@ TEST_F(BTBTest, CounterSaturation) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
-    // Check counter is at 0 (alwaysTaken=true, so updateCtr not called)
+    // Check counter increments after the first taken update.
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 0);  // Counter should be at 0
-        EXPECT_TRUE(entries[0].alwaysTaken);
+        EXPECT_EQ(entries[0].ctr, 1);
     }
     
     // Update multiple times with not taken to test negative saturation
@@ -298,7 +295,6 @@ TEST_F(BTBTest, CounterSaturation) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, -2);  // Counter should saturate at -2
-        EXPECT_FALSE(entries[0].alwaysTaken);
     }
 }
 
@@ -395,15 +391,16 @@ TEST_F(BTBTest, MispredictionRecovery) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
-    // Update the same branch as not taken
+    // Update the same branch as not taken enough times to flip the counter.
     branch.target = 0x1004;  // Fall through target
+    stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
 
     // Verify prediction is updated
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_FALSE(entries[0].alwaysTaken);
+        EXPECT_LT(entries[0].ctr, 0);
     }
 }
 

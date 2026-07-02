@@ -412,8 +412,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                                   const TageInfoForMGSC &tage_info,
                                   ThreadID tid, uint8_t asidHash)
 {
-    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n", btb_entry.pc,
-            btb_entry.alwaysTaken);
+    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx\n",
+            btb_entry.pc);
     const auto &state = historyState(tid);
 
     // Calculate indices for all tables
@@ -561,7 +561,7 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
