@@ -125,7 +125,8 @@ enum FusionDiagnosticPair
 std::type_index
 normalizedFusionType(const StaticInstPtr &inst)
 {
-    auto type = std::type_index(typeid(*inst.get()));
+    const StaticInst *static_inst = inst.get();
+    auto type = std::type_index(typeid(*static_inst));
     auto it = RiscvISA::deCompressMap.find(type);
     return it == RiscvISA::deCompressMap.end() ? type : it->second;
 }
