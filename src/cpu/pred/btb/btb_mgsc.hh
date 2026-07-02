@@ -199,7 +199,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
         const std::vector<DirectionUpdateEntry> &entries,
         const DirectionUpdateContext &ctx,
         const FetchTarget &stream) override;
-    void update(const FetchTarget &entry) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;

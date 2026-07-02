@@ -96,6 +96,18 @@ findCondTaken(const CondTakens &condTakens, Addr pc)
 }
 
 void
+updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
+           const BTBEntry &entry, bool actual_taken)
+{
+    const auto ctx = stream.makeDirectionUpdateContext();
+    const auto entries = buildDirectionUpdateEntries(
+        {entry}, BTBEntry(), /*update_is_old_entry=*/true,
+        /*resolved_update_prefix_pcs=*/{}, mgsc.directionUpdateEntryFilter(),
+        mgsc.getResolvedUpdate(), ctx);
+    mgsc.updateWithDirectionEntries(entries, ctx, stream);
+}
+
+void
 histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history)
 {
     if (shamt == 0) {
@@ -321,13 +333,11 @@ struct MgscHarness
         // Training update using prediction meta
         FetchTarget update_stream;
         update_stream.startPC = start_pc;
-        update_stream.updateBTBEntries = {entry};
-        update_stream.updateIsOldEntry = true;
         update_stream.resolved = true;
         update_stream.exeBranchInfo = entry;
         update_stream.exeTaken = actual_taken;
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(update_stream);
+        updateMgsc(mgsc, update_stream, entry, actual_taken);
 
         return result;
     }
@@ -509,13 +519,11 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
         stream.resolved = true;
         stream.exeBranchInfo = entry;
         stream.exeTaken = true;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(stream);
+        updateMgsc(mgsc, stream, entry, true);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
     }
 
@@ -523,13 +531,11 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
         stream.resolved = true;
         stream.exeBranchInfo = entry;
         stream.exeTaken = false;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(stream);
+        updateMgsc(mgsc, stream, entry, false);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));
     }
 }

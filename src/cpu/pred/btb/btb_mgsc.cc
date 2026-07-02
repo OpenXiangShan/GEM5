@@ -931,15 +931,6 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 }
 
 void
-BTBMGSC::update(const FetchTarget &stream)
-{
-    if (!isEnabled()) {
-        return;  // No update if disabled
-    }
-    updateWithLegacyDirectionEntries(stream);
-}
-
-void
 BTBMGSC::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
     const DirectionUpdateContext &ctx,
