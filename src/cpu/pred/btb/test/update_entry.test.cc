@@ -68,6 +68,20 @@ makeTargetContext(Addr control_pc, bool actual_taken)
     return ctx;
 }
 
+ResolvedBranch
+makeResolvedBranch(Addr pc, bool taken, bool mispred)
+{
+    ResolvedBranch branch;
+    branch.pc = pc;
+    branch.target = pc + 0x200;
+    branch.taken = taken;
+    branch.mispred = mispred;
+    branch.isCond = true;
+    branch.isDirect = true;
+    branch.size = 4;
+    return branch;
+}
+
 } // namespace
 
 TEST(UpdateEntryBuilderTest, DirectionResolvedPrefixOverridesEntryResolvedBits)
@@ -200,6 +214,44 @@ TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
     ASSERT_EQ(entries.size(), 2);
     EXPECT_EQ(entries[0].pc, first.pc);
     EXPECT_EQ(entries[1].pc, second.pc);
+}
+
+TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
+{
+    const BTBEntry first = makeEntry(0x1000, true, false, false);
+    const BTBEntry second = makeEntry(0x1008, true, false, false);
+    const BTBEntry after = makeEntry(0x1010, true, false, false);
+
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.predBTBEntries = {first, second, after};
+
+    const BPUUpdateEvent event = BPUUpdateEvent::fromResolvedBranches({
+        makeResolvedBranch(first.pc, false, false),
+        makeResolvedBranch(second.pc, true, true),
+        makeResolvedBranch(after.pc, false, false),
+    });
+    event.prepareLegacyTarget(
+        stream,
+        32,
+        [](const TargetUpdateContext &ctx) {
+            return BTBUpdateEntrySelection{BTBEntry(ctx.actualBranch), false};
+        });
+
+    EXPECT_TRUE(stream.resolved);
+    EXPECT_TRUE(stream.exeTaken);
+    EXPECT_EQ(stream.exeBranchInfo.pc, second.pc);
+    EXPECT_EQ(stream.exeBranchInfo.target, second.pc + 0x200);
+
+    ASSERT_EQ(stream.updateBTBEntries.size(), 2);
+    EXPECT_EQ(stream.updateBTBEntries[0].pc, first.pc);
+    EXPECT_EQ(stream.updateBTBEntries[1].pc, second.pc);
+    EXPECT_TRUE(stream.updateBTBEntries[0].resolved);
+    EXPECT_TRUE(stream.updateBTBEntries[1].resolved);
+
+    EXPECT_EQ(stream.updateNewBTBEntry.pc, second.pc);
+    EXPECT_TRUE(stream.updateNewBTBEntry.resolved);
+    EXPECT_FALSE(stream.updateIsOldEntry);
 }
 
 } // namespace test

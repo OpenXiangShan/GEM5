@@ -1710,10 +1710,8 @@ Fetch::observeDecodedCFIs(ThreadID tid)
         }
 
         DPRINTF(FetchResolve,
-                "[tid:%u] Decoded CFI ftq=%lu pc=%#lx seq=%llu "
-                "cond=%d indirect=%d direct=%d\n",
-                tid, decoded.ftqId, decoded.pc, decoded.seqNum,
-                decoded.isCond, decoded.isIndirect, decoded.isDirect);
+                "[tid:%u] Decoded CFI ftq=%lu pc=%#lx seq=%llu\n",
+                tid, decoded.ftqId, decoded.pc, decoded.seqNum);
     }
 }
 

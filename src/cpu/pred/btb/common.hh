@@ -11,6 +11,7 @@
 // #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/branch_record.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/static_inst.hh"
 
@@ -764,6 +765,18 @@ struct FetchTarget
             predBTBEntries, startPC, updateEndInstPC);
     }
 
+    void prepareUpdateEntries(unsigned predictWidth)
+    {
+        setUpdateInstEndPC(predictWidth);
+        setUpdateBTBEntries();
+    }
+
+    void setUpdateEntrySelection(const BTBUpdateEntrySelection &selection)
+    {
+        updateNewBTBEntry = selection.entry;
+        updateIsOldEntry = selection.isOldEntry;
+    }
+
     void setResolvedUpdatePrefixPCs(const std::vector<Addr> &pcs)
     {
         resolvedUpdatePrefixPCs = pcs;
@@ -847,7 +860,135 @@ struct FetchTarget
             }
         }
     }
+
+    void markUpdateEntryResolved(Addr resolvedInstPC)
+    {
+        if (updateNewBTBEntry.pc == resolvedInstPC) {
+            updateNewBTBEntry.resolved = true;
+        }
+
+        markBTBEntryResolved(resolvedInstPC);
+    }
 };
+
+inline BranchInfo
+makeBranchInfo(const ResolvedBranch &branch)
+{
+    BranchInfo info;
+    info.pc = branch.pc;
+    info.target = branch.target;
+    info.resolved = true;
+    info.isCond = branch.isCond;
+    info.isIndirect = branch.isIndirect;
+    info.isDirect = branch.isDirect;
+    info.isCall = branch.isCall;
+    info.isReturn = branch.isReturn;
+    info.size = branch.size;
+    return info;
+}
+
+class BPUUpdateEvent
+{
+  public:
+    BPUUpdateEvent() = default;
+
+    static BPUUpdateEvent fromResolvedBranches(
+        const std::vector<ResolvedBranch> &branches)
+    {
+        BPUUpdateEvent event;
+        for (const auto &branch : branches) {
+            event.resolvedBranches.push_back(branch);
+            if (branch.taken || branch.mispred) {
+                break;
+            }
+        }
+        return event;
+    }
+
+    bool hasResolvedBranches() const
+    {
+        return !resolvedBranches.empty();
+    }
+
+    size_t resolvedBranchCount() const
+    {
+        return resolvedBranches.size();
+    }
+
+    bool shouldUpdatePredictors(const FetchTarget &target) const
+    {
+        return target.isHit || target.exeTaken;
+    }
+
+    void applyActualResult(FetchTarget &target) const
+    {
+        if (!hasResolvedBranches()) {
+            return;
+        }
+
+        target.resolved = true;
+        target.exeTaken = false;
+        target.squashType = SquashType::SQUASH_NONE;
+        target.exeBranchInfo = makeBranchInfo(resolvedBranches.back());
+
+        for (const auto &branch : resolvedBranches) {
+            if (branch.mispred &&
+                target.squashType == SquashType::SQUASH_NONE) {
+                target.squashType = SquashType::SQUASH_CTRL;
+                target.squashPC = branch.pc;
+            }
+            if (branch.taken) {
+                target.exeTaken = true;
+                target.exeBranchInfo = makeBranchInfo(branch);
+                if (target.squashType == SquashType::SQUASH_NONE) {
+                    target.squashPC = branch.pc;
+                }
+                break;
+            }
+        }
+    }
+
+    void prepareLegacyTarget(FetchTarget &target, unsigned predictWidth) const
+    {
+        applyActualResult(target);
+        target.setResolvedUpdatePrefixPCs(resolvedBranchPCs());
+        target.prepareUpdateEntries(predictWidth);
+        markResolvedEntries(target);
+    }
+
+    template <typename SelectUpdateEntry>
+    void prepareLegacyTarget(FetchTarget &target, unsigned predictWidth,
+                             SelectUpdateEntry selectUpdateEntry) const
+    {
+        applyActualResult(target);
+        target.setResolvedUpdatePrefixPCs(resolvedBranchPCs());
+        target.prepareUpdateEntries(predictWidth);
+        target.setUpdateEntrySelection(
+            selectUpdateEntry(target.makeTargetUpdateContext()));
+        markResolvedEntries(target);
+    }
+
+  private:
+    std::vector<ResolvedBranch> resolvedBranches;
+
+    std::vector<Addr> resolvedBranchPCs() const
+    {
+        std::vector<Addr> pcs;
+        pcs.reserve(resolvedBranches.size());
+        for (const auto &branch : resolvedBranches) {
+            pcs.push_back(branch.pc);
+        }
+        return pcs;
+    }
+
+    void markResolvedEntries(FetchTarget &target) const
+    {
+        for (const auto &branch : resolvedBranches) {
+            target.markUpdateEntryResolved(branch.pc);
+        }
+    }
+};
+
 /**
  * @brief Full branch prediction combining predictions from all predictors
  *

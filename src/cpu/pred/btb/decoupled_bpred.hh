@@ -725,12 +725,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool resolveUpdate(unsigned &target_id,
                        const std::vector<ResolvedBranch> &branches,
                        ThreadID tid);
-    void prepareResolveUpdateEntries(unsigned &target_id, ThreadID tid);
-    void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
-    void prepareResolveUpdateEntries(FetchTarget &target);
-    void selectUpdateEntry(FetchTarget &target);
-    void markCFIResolved(FetchTarget &target, uint64_t resolvedInstPC);
-    void updatePredictorComponents(FetchTarget &target);
+    void prepareUpdateEntriesForTarget(FetchTarget &target,
+                                       const BPUUpdateEvent &update_event);
+    bool canResolveUpdateComponents(const FetchTarget &target);
+    void doResolveUpdateComponents(const FetchTarget &target);
+    void updatePredictorComponents(FetchTarget &target,
+                                   const BPUUpdateEvent &update_event);
     void updateStatistics(const FetchTarget &target);
     void notifyResolveSuccess(ThreadID tid);
     void notifyResolveFailure(ThreadID tid);
