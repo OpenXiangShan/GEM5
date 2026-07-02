@@ -680,7 +680,8 @@ MBTB::update(const FetchTarget &stream)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     const auto update_ctx = stream.makeTargetUpdateContext();
-    auto entries_need_update = prepareUpdateEntries(stream, update_ctx);
+    auto entries_need_update = stream.makeTargetUpdateEntries(
+        TargetUpdateEntryFilter::Any, getResolvedUpdate(), update_ctx);
     auto meta = std::static_pointer_cast<BTBMeta>(
         stream.predMetas[getComponentIdx()]);
     updateWithEntries(entries_need_update, update_ctx, meta.get());
@@ -697,14 +698,6 @@ MBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
     for (const auto &entry : entries) {
         updateBTBEntry(entry, ctx);
     }
-}
-
-std::vector<TargetUpdateEntry>
-MBTB::prepareUpdateEntries(const FetchTarget &stream,
-                           const TargetUpdateContext &ctx)
-{
-    return stream.makeTargetUpdateEntries(TargetUpdateEntryFilter::Any,
-                                          getResolvedUpdate(), ctx);
 }
 
 /**

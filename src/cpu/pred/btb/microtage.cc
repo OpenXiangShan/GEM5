@@ -390,14 +390,6 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
  * @param stream The fetch stream containing update information
  * @return Vector of BTB entries that need to be updated
  */
-std::vector<DirectionUpdateEntry>
-MicroTAGE::prepareUpdateEntries(const FetchTarget &stream,
-                                const DirectionUpdateContext &ctx) {
-    return stream.makeDirectionUpdateEntries(
-        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
-        getResolvedUpdate(), ctx);
-}
-
 /**
  * @brief Update predictor state for a single entry
  *
@@ -644,7 +636,9 @@ MicroTAGE::update(const FetchTarget &stream) {
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream, update_ctx);
+    auto entries_to_update = stream.makeDirectionUpdateEntries(
+        DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken,
+        getResolvedUpdate(), update_ctx);
 
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);

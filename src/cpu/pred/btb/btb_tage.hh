@@ -473,10 +473,6 @@ private:
                                            ThreadID tid = 0,
                                            uint8_t asidHash = 0);
 
-    // Helper method to prepare BTB entries for update
-    std::vector<DirectionUpdateEntry> prepareUpdateEntries(
-        const FetchTarget &stream, const DirectionUpdateContext &ctx);
-
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,

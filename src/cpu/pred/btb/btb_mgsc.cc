@@ -628,14 +628,6 @@ BTBMGSC::getPredictionMeta(ThreadID tid)
  * @param stream The fetch stream containing update information
  * @return Vector of BTB entries that need to be updated
  */
-std::vector<DirectionUpdateEntry>
-BTBMGSC::prepareUpdateEntries(const FetchTarget &stream,
-                              const DirectionUpdateContext &ctx)
-{
-    return stream.makeDirectionUpdateEntries(DirectionUpdateEntryFilter::Mgsc,
-                                             getResolvedUpdate(), ctx);
-}
-
 /**
  * Update a prediction table and allocate new entry if needed
  *
@@ -949,7 +941,8 @@ BTBMGSC::update(const FetchTarget &stream)
     DPRINTF(MGSC, "update startAddr: %#lx\n", startAddr);
 
     // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream, update_ctx);
+    auto entries_to_update = stream.makeDirectionUpdateEntries(
+        DirectionUpdateEntryFilter::Mgsc, getResolvedUpdate(), update_ctx);
 
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
