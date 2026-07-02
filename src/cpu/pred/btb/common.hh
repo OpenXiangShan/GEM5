@@ -317,6 +317,164 @@ enum class DirectionUpdateEntryFilter
     Mgsc
 };
 
+inline bool
+containsResolvedUpdatePC(const std::vector<Addr> &resolved_update_prefix_pcs,
+                         Addr pc)
+{
+    return std::find(resolved_update_prefix_pcs.begin(),
+                     resolved_update_prefix_pcs.end(), pc) !=
+        resolved_update_prefix_pcs.end();
+}
+
+inline bool
+isResolvedUpdatePC(const std::vector<Addr> &resolved_update_prefix_pcs,
+                   Addr pc, bool fallback_resolved)
+{
+    return !resolved_update_prefix_pcs.empty() ?
+        containsResolvedUpdatePC(resolved_update_prefix_pcs, pc) :
+        fallback_resolved;
+}
+
+inline bool
+shouldKeepDirectionUpdateEntry(
+    const BTBEntry &entry,
+    bool is_new_entry,
+    DirectionUpdateEntryFilter filter,
+    bool resolved_update,
+    const std::vector<Addr> &resolved_update_prefix_pcs)
+{
+    bool keep = false;
+    switch (filter) {
+      case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
+        keep = entry.isCond && !entry.alwaysTaken;
+        break;
+      case DirectionUpdateEntryFilter::Mgsc:
+        keep = is_new_entry ? (entry.isCond && !entry.alwaysTaken) :
+                              (entry.isCond || entry.alwaysTaken);
+        break;
+    }
+    if (!keep || !resolved_update) {
+        return keep;
+    }
+
+    switch (filter) {
+      case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
+        return isResolvedUpdatePC(
+            resolved_update_prefix_pcs, entry.pc, entry.resolved);
+      case DirectionUpdateEntryFilter::Mgsc:
+        return resolved_update_prefix_pcs.empty() ||
+            containsResolvedUpdatePC(resolved_update_prefix_pcs, entry.pc);
+    }
+    return false;
+}
+
+inline std::vector<DirectionUpdateEntry>
+buildDirectionUpdateEntries(
+    const std::vector<BTBEntry> &update_btb_entries,
+    const BTBEntry &update_new_btb_entry,
+    bool update_is_old_entry,
+    const std::vector<Addr> &resolved_update_prefix_pcs,
+    DirectionUpdateEntryFilter filter,
+    bool resolved_update,
+    const DirectionUpdateContext &ctx)
+{
+    std::vector<DirectionUpdateEntry> entries;
+    entries.reserve(update_btb_entries.size() +
+                    (update_is_old_entry ? 0 : 1));
+
+    auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
+        if (filter == DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken &&
+            is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
+            entry.alwaysTaken = false;
+        }
+        if (!shouldKeepDirectionUpdateEntry(entry, is_new_entry, filter,
+                                            resolved_update,
+                                            resolved_update_prefix_pcs)) {
+            return;
+        }
+        entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
+                           is_new_entry});
+    };
+
+    for (const auto &entry : update_btb_entries) {
+        add_entry(entry, false);
+    }
+    if (!update_is_old_entry) {
+        add_entry(update_new_btb_entry, true);
+    }
+
+    return entries;
+}
+
+inline bool
+shouldKeepTargetUpdateEntry(
+    const BTBEntry &entry,
+    TargetUpdateEntryFilter filter,
+    bool resolved_update,
+    const std::vector<Addr> &resolved_update_prefix_pcs)
+{
+    bool keep = false;
+    switch (filter) {
+      case TargetUpdateEntryFilter::Any:
+        keep = true;
+        break;
+      case TargetUpdateEntryFilter::IndirectNonReturn:
+        keep = entry.isIndirect && !entry.isReturn;
+        break;
+    }
+    if (!keep || !resolved_update) {
+        return keep;
+    }
+    return isResolvedUpdatePC(
+        resolved_update_prefix_pcs, entry.pc, entry.resolved);
+}
+
+inline std::vector<TargetUpdateEntry>
+buildTargetUpdateEntries(
+    const std::vector<BTBEntry> &update_btb_entries,
+    const BTBEntry &update_new_btb_entry,
+    bool update_is_old_entry,
+    const std::vector<Addr> &resolved_update_prefix_pcs,
+    TargetUpdateEntryFilter filter,
+    bool resolved_update,
+    const TargetUpdateContext &ctx)
+{
+    std::vector<TargetUpdateEntry> entries;
+    entries.reserve(update_btb_entries.size() + (update_is_old_entry ? 0 : 1));
+
+    auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
+        if (is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
+            entry.alwaysTaken = false;
+        }
+        if (!shouldKeepTargetUpdateEntry(
+                entry, filter, resolved_update,
+                resolved_update_prefix_pcs)) {
+            return;
+        }
+        entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
+                           is_new_entry});
+    };
+
+    for (const auto &entry : update_btb_entries) {
+        add_entry(entry, false);
+    }
+    if (!update_is_old_entry) {
+        add_entry(update_new_btb_entry, true);
+    }
+
+    return entries;
+}
+
+inline TargetUpdateEntry
+buildSelectedTargetUpdateEntry(const BTBEntry &update_new_btb_entry,
+                               bool update_is_old_entry,
+                               const TargetUpdateContext &ctx)
+{
+    return {update_new_btb_entry,
+            ctx.isTakenControlPC(update_new_btb_entry.pc),
+            !update_is_old_entry};
+}
+
 /**
  * @brief Tage prediction info for MGSC
  */
@@ -604,14 +762,13 @@ struct FetchTarget
         if (!hasResolvedUpdatePrefix()) {
             return false;
         }
-        return std::binary_search(resolvedUpdatePrefixPCs.begin(),
-                                  resolvedUpdatePrefixPCs.end(), pc);
+        return containsResolvedUpdatePC(resolvedUpdatePrefixPCs, pc);
     }
 
     bool isResolvedUpdatePC(Addr pc, bool fallback_resolved) const
     {
-        return hasResolvedUpdatePrefix() ?
-            isInResolvedUpdatePrefix(pc) : fallback_resolved;
+        return btb_pred::isResolvedUpdatePC(
+            resolvedUpdatePrefixPCs, pc, fallback_resolved);
     }
 
     bool isActualTakenBranchPC(Addr pc) const
@@ -632,90 +789,21 @@ struct FetchTarget
                 static_cast<SquashType>(squashType), squashPC};
     }
 
-    bool shouldKeepDirectionUpdateEntry(const BTBEntry &entry,
-                                        bool is_new_entry,
-                                        DirectionUpdateEntryFilter filter,
-                                        bool resolved_update) const
-    {
-        bool keep = false;
-        switch (filter) {
-          case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
-            keep = entry.isCond && !entry.alwaysTaken;
-            break;
-          case DirectionUpdateEntryFilter::Mgsc:
-            keep = is_new_entry ? (entry.isCond && !entry.alwaysTaken) :
-                                  (entry.isCond || entry.alwaysTaken);
-            break;
-        }
-        if (!keep || !resolved_update) {
-            return keep;
-        }
-
-        switch (filter) {
-          case DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken:
-            return isResolvedUpdatePC(entry.pc, entry.resolved);
-          case DirectionUpdateEntryFilter::Mgsc:
-            return !hasResolvedUpdatePrefix() || isInResolvedUpdatePrefix(entry.pc);
-        }
-        return false;
-    }
-
     std::vector<DirectionUpdateEntry>
     makeDirectionUpdateEntries(DirectionUpdateEntryFilter filter,
                                bool resolved_update,
                                const DirectionUpdateContext &ctx) const
     {
-        std::vector<DirectionUpdateEntry> entries;
-        entries.reserve(updateBTBEntries.size() + (updateIsOldEntry ? 0 : 1));
-
-        auto addEntry = [&](BTBEntry entry, bool is_new_entry) {
-            if (filter == DirectionUpdateEntryFilter::ConditionalNonAlwaysTaken &&
-                is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
-                entry.alwaysTaken = false;
-            }
-            if (!shouldKeepDirectionUpdateEntry(entry, is_new_entry, filter,
-                                                resolved_update)) {
-                return;
-            }
-            entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
-                               is_new_entry});
-        };
-
-        for (const auto &entry : updateBTBEntries) {
-            addEntry(entry, false);
-        }
-        if (!updateIsOldEntry) {
-            addEntry(updateNewBTBEntry, true);
-        }
-
-        return entries;
-    }
-
-    bool shouldKeepTargetUpdateEntry(const BTBEntry &entry,
-                                     TargetUpdateEntryFilter filter,
-                                     bool resolved_update) const
-    {
-        bool keep = false;
-        switch (filter) {
-          case TargetUpdateEntryFilter::Any:
-            keep = true;
-            break;
-          case TargetUpdateEntryFilter::IndirectNonReturn:
-            keep = entry.isIndirect && !entry.isReturn;
-            break;
-        }
-        if (!keep || !resolved_update) {
-            return keep;
-        }
-        return isResolvedUpdatePC(entry.pc, entry.resolved);
+        return buildDirectionUpdateEntries(
+            updateBTBEntries, updateNewBTBEntry, updateIsOldEntry,
+            resolvedUpdatePrefixPCs, filter, resolved_update, ctx);
     }
 
     TargetUpdateEntry
     makeSelectedTargetUpdateEntry(const TargetUpdateContext &ctx) const
     {
-        return {updateNewBTBEntry,
-                ctx.isTakenControlPC(updateNewBTBEntry.pc),
-                !updateIsOldEntry};
+        return buildSelectedTargetUpdateEntry(
+            updateNewBTBEntry, updateIsOldEntry, ctx);
     }
 
     std::vector<TargetUpdateEntry>
@@ -723,28 +811,9 @@ struct FetchTarget
                             bool resolved_update,
                             const TargetUpdateContext &ctx) const
     {
-        std::vector<TargetUpdateEntry> entries;
-        entries.reserve(updateBTBEntries.size() + (updateIsOldEntry ? 0 : 1));
-
-        auto addEntry = [&](BTBEntry entry, bool is_new_entry) {
-            if (is_new_entry && !ctx.isTakenControlPC(entry.pc)) {
-                entry.alwaysTaken = false;
-            }
-            if (!shouldKeepTargetUpdateEntry(entry, filter, resolved_update)) {
-                return;
-            }
-            entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
-                               is_new_entry});
-        };
-
-        for (const auto &entry : updateBTBEntries) {
-            addEntry(entry, false);
-        }
-        if (!updateIsOldEntry) {
-            addEntry(updateNewBTBEntry, true);
-        }
-
-        return entries;
+        return buildTargetUpdateEntries(
+            updateBTBEntries, updateNewBTBEntry, updateIsOldEntry,
+            resolvedUpdatePrefixPCs, filter, resolved_update, ctx);
     }
 
     // Argument resolved pc could not match any BTB entry branch pc,

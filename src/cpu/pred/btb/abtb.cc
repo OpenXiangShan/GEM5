@@ -517,7 +517,7 @@ AheadBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta
  */
 std::vector<TargetUpdateEntry>
 AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
-                                 const FetchTarget &stream,
+                                 const TargetUpdateEntry &selected_entry,
                                  const TargetUpdateContext &ctx)
 {
     std::vector<TargetUpdateEntry> all_entries;
@@ -529,7 +529,6 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
     // since we don't want duplications in uBTB's entriesToUpdate,
     // which causes its counter to update twice unintentionally
     // we need to check if the new entry already exists in uBTB
-    const auto selected_entry = stream.makeSelectedTargetUpdateEntry(ctx);
     bool pred_branch_hit = false;
     for (auto &e: all_entries) {
         if (selected_entry.entry == e.entry) {
@@ -739,8 +738,9 @@ AheadBTB::update(const FetchTarget &stream)
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, stream,
-                                                    update_ctx);
+    const auto selected_entry = stream.makeSelectedTargetUpdateEntry(update_ctx);
+    auto entries_to_update = collectEntriesToUpdate(
+        old_entries, selected_entry, update_ctx);
 
     // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
     for (auto &entry : entries_to_update) {

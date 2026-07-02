@@ -330,12 +330,12 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     /** Collect entries that need to be updated
      *  @param old_entries Processed old entries
-     *  @param stream Fetch stream with update info
+     *  @param selected_entry Selected new/old entry from update selection
      *  @return Vector of entries to update
      */
     std::vector<TargetUpdateEntry> collectEntriesToUpdate(
         const std::vector<BTBEntry>& old_entries,
-        const FetchTarget &stream,
+        const TargetUpdateEntry &selected_entry,
         const TargetUpdateContext &ctx);
 
     /** Update or replace BTB entry
