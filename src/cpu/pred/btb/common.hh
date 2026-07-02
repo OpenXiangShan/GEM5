@@ -475,6 +475,38 @@ buildSelectedTargetUpdateEntry(const BTBEntry &update_new_btb_entry,
             !update_is_old_entry};
 }
 
+inline Addr
+buildUpdateEndInstPC(Addr start_pc,
+                     unsigned predict_width,
+                     bool actual_taken,
+                     Addr control_pc,
+                     SquashType squash_type,
+                     Addr squash_pc)
+{
+    if (squash_type != SquashType::SQUASH_NONE) {
+        return squash_pc;
+    }
+    if (actual_taken) {
+        return control_pc;
+    }
+    return (start_pc + predict_width) & ~mask(floorLog2(predict_width) - 1);
+}
+
+inline std::vector<BTBEntry>
+buildUpdateBTBEntries(const std::vector<BTBEntry> &pred_btb_entries,
+                      Addr start_pc,
+                      Addr update_end_inst_pc)
+{
+    std::vector<BTBEntry> entries;
+    for (const auto &entry : pred_btb_entries) {
+        if (entry.valid && entry.pc >= start_pc &&
+            entry.pc <= update_end_inst_pc) {
+            entries.push_back(entry);
+        }
+    }
+    return entries;
+}
+
 /**
  * @brief Tage prediction info for MGSC
  */
@@ -720,27 +752,16 @@ struct FetchTarget
     // should be called before components update
     void setUpdateInstEndPC(unsigned predictWidth)
     {
-        if (squashType == SQUASH_NONE) {
-            if (exeTaken) { // taken inst pc
-                updateEndInstPC = getControlPC();
-            } else { // natural fall through, align to the next block
-                // assert(halfAligned);
-                updateEndInstPC = (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-            }
-        } else {
-            updateEndInstPC = squashPC;
-        }
+        updateEndInstPC = buildUpdateEndInstPC(
+            startPC, predictWidth, exeTaken, getControlPC(),
+            static_cast<SquashType>(squashType), squashPC);
     }
 
     // should be called before components update, after setUpdateInstEndPC
     void setUpdateBTBEntries()
     {
-        updateBTBEntries.clear();
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
-                updateBTBEntries.push_back(entry);
-            }
-        }
+        updateBTBEntries = buildUpdateBTBEntries(
+            predBTBEntries, startPC, updateEndInstPC);
     }
 
     void setResolvedUpdatePrefixPCs(const std::vector<Addr> &pcs)

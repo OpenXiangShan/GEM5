@@ -172,6 +172,36 @@ TEST(UpdateEntryBuilderTest, SelectedTargetEntryUsesContextAndOldEntryFlag)
     EXPECT_FALSE(old_entry.isNewEntry);
 }
 
+TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
+{
+    EXPECT_EQ(buildUpdateEndInstPC(0x1000, 32, true, 0x1010,
+                                   SquashType::SQUASH_NONE, 0),
+              0x1010);
+    EXPECT_EQ(buildUpdateEndInstPC(0x1004, 32, false, 0x1010,
+                                   SquashType::SQUASH_NONE, 0),
+              0x1020);
+    EXPECT_EQ(buildUpdateEndInstPC(0x1000, 32, true, 0x1010,
+                                   SquashType::SQUASH_CTRL, 0x1008),
+              0x1008);
+}
+
+TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
+{
+    const BTBEntry before = makeEntry(0x0ffc, true, false, true);
+    const BTBEntry first = makeEntry(0x1000, true, false, true);
+    const BTBEntry second = makeEntry(0x1008, true, false, true);
+    const BTBEntry after = makeEntry(0x1010, true, false, true);
+    BTBEntry invalid = makeEntry(0x1004, true, false, true);
+    invalid.valid = false;
+
+    const auto entries = buildUpdateBTBEntries(
+        {before, first, invalid, second, after}, 0x1000, 0x1008);
+
+    ASSERT_EQ(entries.size(), 2);
+    EXPECT_EQ(entries[0].pc, first.pc);
+    EXPECT_EQ(entries[1].pc, second.pc);
+}
+
 } // namespace test
 
 } // namespace btb_pred
