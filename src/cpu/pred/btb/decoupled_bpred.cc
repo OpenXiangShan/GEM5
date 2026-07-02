@@ -831,7 +831,7 @@ DecoupledBPUWithBTB::selectUpdateEntryForTarget(const FetchTarget &target)
 
 BPUPreparedUpdate
 DecoupledBPUWithBTB::prepareUpdateEntriesForTarget(
-    FetchTarget &target,
+    const FetchTarget &target,
     const BPUUpdateEvent &update_event,
     const BTBUpdateEntrySelection &selection)
 {

@@ -261,6 +261,7 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesUpdatePayload)
     });
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
+    event.applyActualResult(stream);
     const BPUPreparedUpdate prepared = event.prepareUpdate(stream, 32, selection);
 
     EXPECT_TRUE(stream.resolved);
@@ -321,6 +322,7 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
     EXPECT_EQ(event.resolvedBranchCount(), 2);
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
+    event.applyActualResult(stream);
     const BPUPreparedUpdate prepared = event.prepareUpdate(stream, 32, selection);
 
     EXPECT_TRUE(stream.resolved);

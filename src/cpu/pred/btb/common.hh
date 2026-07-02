@@ -883,11 +883,10 @@ class BPUUpdateEvent
 
     BPUPreparedUpdate
     prepareUpdate(
-        FetchTarget &target,
+        const FetchTarget &target,
         unsigned predictWidth,
         const BTBUpdateEntrySelection &selection) const
     {
-        applyActualResult(target);
         return makePreparedUpdate(target, predictWidth, selection);
     }
 

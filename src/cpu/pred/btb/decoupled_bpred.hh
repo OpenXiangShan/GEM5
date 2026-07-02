@@ -731,7 +731,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     BTBUpdateEntrySelection selectUpdateEntryForTarget(
         const FetchTarget &target);
     BPUPreparedUpdate prepareUpdateEntriesForTarget(
-        FetchTarget &target,
+        const FetchTarget &target,
         const BPUUpdateEvent &update_event,
         const BTBUpdateEntrySelection &selection);
     bool canResolveUpdateComponents(const FetchTarget &target);
