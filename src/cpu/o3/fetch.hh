@@ -487,7 +487,7 @@ class Fetch
      */
     bool checkSignalsAndUpdate(ThreadID tid);
 
-    /** Handles commit signals including squash and update operations.
+    /** Handles commit feedback and backend redirect signals.
      *  @return: Returns true if squash occurred and immediate return needed.
      */
     bool handleCommitSignals(ThreadID tid);
@@ -620,6 +620,9 @@ class Fetch
     /** Wire to get commit's information from backwards time buffer. */
     TimeBuffer<TimeStruct>::wire fromCommit;
 
+    /** Wire to get redirect information from backwards time buffer. */
+    TimeBuffer<TimeStruct>::wire fromCommitRedirect;
+
     //Might be annoying how this name is different than the queue.
     /** Wire used to write any information heading to decode. */
     TimeBuffer<FetchStruct>::wire toDecode;
@@ -681,6 +684,9 @@ class Fetch
 
     /** Commit to fetch delay. */
     Cycles commitToFetchDelay;
+
+    /** Backend redirect to fetch/BPU delay. */
+    Cycles redirectToFetchDelay;
 
     /** The width of fetch in instructions. */
     unsigned fetchWidth;

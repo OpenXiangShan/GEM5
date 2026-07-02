@@ -40,7 +40,8 @@ def setKmhV3IdealParams(args, system):
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
-        cpu.commitToFetchDelay = 4  # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu
+        cpu.commitToFetchDelay = 2
+        cpu.redirectToFetchDelay = 4 # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu
         cpu.fetchQueueSize = 64
 
         # decode
