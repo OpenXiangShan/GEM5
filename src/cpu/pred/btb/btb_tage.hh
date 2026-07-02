@@ -492,6 +492,10 @@ private:
                                  uint8_t asidHash,
                                  AllocationTraceInfo &allocInfo);
 
+    void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
+                           const DirectionUpdateContext &ctx,
+                           const std::shared_ptr<TageMeta> &predMeta,
+                           const boost::dynamic_bitset<> &phistory);
 
     // Helper methods for LRU management
     void updateLRU(int table, Addr index, unsigned way);

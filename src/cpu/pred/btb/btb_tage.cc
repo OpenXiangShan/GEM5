@@ -838,10 +838,6 @@ BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
 void
 BTBTAGE::update(const FetchTarget &stream) {
     const auto update_ctx = stream.makeDirectionUpdateContext();
-    Addr startAddr = update_ctx.startPC;
-    unsigned updateBank = getBankId(startAddr);
-
-    DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
@@ -854,10 +850,24 @@ BTBTAGE::update(const FetchTarget &stream) {
         return;
     }
 
+    updateWithEntries(entries_to_update, update_ctx, predMeta, stream.phistory);
+}
+
+void
+BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
+                           const DirectionUpdateContext &ctx,
+                           const std::shared_ptr<TageMeta> &predMeta,
+                           const boost::dynamic_bitset<> &phistory)
+{
+    Addr startAddr = ctx.startPC;
+    unsigned updateBank = getBankId(startAddr);
+
+    DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
+
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
-    for (const auto &update_entry : entries_to_update) {
+    for (const auto &update_entry : entries) {
         const auto &btb_entry = update_entry.entry;
         const bool actual_taken = update_entry.actualTaken;
         const bool is_new_entry = update_entry.isNewEntry;
@@ -891,8 +901,8 @@ BTBTAGE::update(const FetchTarget &stream) {
         if (updateOnRead || !has_original_pred) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                 update_ctx.tid,
-                                                 update_ctx.asidHash);
+                                                 ctx.tid,
+                                                 ctx.asidHash);
             // Track differences for statistics
             auto it = predMeta->preds.find(btb_entry.pc);
             if (has_original_pred && it != predMeta->preds.end() && recomputed.taken != original_pred.taken) {
@@ -907,7 +917,7 @@ BTBTAGE::update(const FetchTarget &stream) {
 
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
-            btb_entry, actual_taken, recomputed, update_ctx);
+            btb_entry, actual_taken, recomputed, ctx);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;
@@ -921,7 +931,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             }
             handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
                                      start_table, predMeta,
-                                     update_ctx.asidHash,
+                                     ctx.asidHash,
                                      allocInfo);
         }
 
@@ -931,7 +941,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             std::string history_str;
             std::string phistory_str;
             boost::dynamic_bitset<> history_low50 = predMeta->history;
-            boost::dynamic_bitset<> phistory_low50 = stream.phistory;
+            boost::dynamic_bitset<> phistory_low50 = phistory;
             if (history_low50.size() > 50) {
                 history_low50.resize(50);  // get the lower 50 bits of history
             }
@@ -944,7 +954,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
             const uint64_t history_hash = hashBitset(predMeta->history);
-            const uint64_t phistory_hash = hashBitset(stream.phistory);
+            const uint64_t phistory_hash = hashBitset(phistory);
             const uint64_t index_folded_hist_hash =
                 hashFoldedHistVec(predMeta->indexFoldedHist);
             const uint64_t tag_folded_hist_hash =
@@ -980,7 +990,7 @@ BTBTAGE::update(const FetchTarget &stream) {
         tageStats.recomputedVsOriginalDiff++;
     }
     if (getDelay() <2){
-        checkUtageUpdateMisspred(predMeta->preds, update_ctx);
+        checkUtageUpdateMisspred(predMeta->preds, ctx);
     }
     DPRINTF(TAGE, "end update\n");
 }
