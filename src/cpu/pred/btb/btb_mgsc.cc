@@ -953,21 +953,27 @@ BTBMGSC::update(const FetchTarget &stream)
 
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
-    auto &preds = meta->preds;
+    updateWithEntries(entries_to_update, update_ctx, *meta);
+}
 
+void
+BTBMGSC::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
+                           const DirectionUpdateContext &ctx,
+                           const MgscMeta &meta)
+{
     // Process each BTB entry
-    for (const auto &update_entry : entries_to_update) {
+    for (const auto &update_entry : entries) {
         const auto &btb_entry = update_entry.entry;
         const bool actual_taken = update_entry.actualTaken;
-        auto pred_it = preds.find(btb_entry.pc);
+        auto pred_it = meta.preds.find(btb_entry.pc);
 
-        if (pred_it == preds.end()) {
+        if (pred_it == meta.preds.end()) {
             continue;
         }
 
         // Update predictor state and check if need to allocate new entry
         updateSinglePredictor(btb_entry, actual_taken, pred_it->second,
-                              update_ctx);
+                              ctx);
     }
 
     DPRINTF(MGSC, "end update\n");
