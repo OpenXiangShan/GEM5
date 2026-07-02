@@ -651,18 +651,11 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
 
     // AheadBTB use S3 prediction for update
     auto &state = threadState(s3Pred.tid);
-    auto old_entries= processOldEntries(state.lastPredEntries, end_inst_pc);
+    auto old_entries = processOldEntries(state.lastPredEntries, end_inst_pc);
 
-    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries,s3Pred);
+    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries, s3Pred);
 
-    for (auto &entry : entries_to_update) {
-        Addr startPC = s3Pred.bbStart;
-        Addr btb_tag = getTag(startPC, s3Pred.asidHash);  // use last pc to get tag
-        if (previousPC == 0) {
-            DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
-            return;
-        }
-        Addr btb_idx = getIndex(previousPC, s3Pred.asidHash);  // use last pc to get idx
+    if (!entries_to_update.empty()) {
         TargetUpdateContext update_ctx;
         update_ctx.tid = s3Pred.tid;
         update_ctx.startPC = s3Pred.bbStart;
@@ -670,9 +663,8 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         update_ctx.controlPC = s3Pred.getTakenEntry().pc;
         update_ctx.actualBranch = s3Pred.getTakenEntry();
         update_ctx.actualTaken = s3Pred.isTaken();
-        entry.entry.source = getComponentIdx(); // mark the entry source as AheadBTB
 
-        updateBTBEntry(btb_idx, btb_tag, entry, update_ctx);
+        updateWithEntries(entries_to_update, update_ctx, previousPC);
     }
 }
 std::vector<TargetUpdateEntry>
