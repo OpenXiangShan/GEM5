@@ -425,7 +425,7 @@ inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<BTBEntry> &update_new_direction_entries,
-    const BTBEntry &update_new_btb_entry,
+    const BTBEntry &selected_entry,
     bool update_is_old_entry,
     const std::vector<ResolvedBranch> &resolved_update_branches,
     DirectionUpdateEntryFilter filter,
@@ -455,7 +455,7 @@ buildDirectionUpdateEntries(
         add_entry(entry, true);
     }
     if (!update_is_old_entry) {
-        add_entry(update_new_btb_entry, true);
+        add_entry(selected_entry, true);
     }
 
     return entries;
@@ -487,7 +487,7 @@ shouldKeepTargetUpdateEntry(
 inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
-    const BTBEntry &update_new_btb_entry,
+    const BTBEntry &selected_entry,
     bool update_is_old_entry,
     const std::vector<ResolvedBranch> &resolved_update_branches,
     TargetUpdateEntryFilter filter,
@@ -514,22 +514,22 @@ buildTargetUpdateEntries(
         add_entry(entry, false);
     }
     if (!update_is_old_entry) {
-        add_entry(update_new_btb_entry, true);
+        add_entry(selected_entry, true);
     }
 
     return entries;
 }
 
 inline TargetUpdateEntry
-buildSelectedTargetUpdateEntry(const BTBEntry &update_new_btb_entry,
+buildSelectedTargetUpdateEntry(const BTBEntry &selected_entry,
                                bool update_is_old_entry,
                                const TargetUpdateContext &ctx)
 {
     const BranchInfo actual_branch =
-        ctx.controlPC == update_new_btb_entry.pc ?
-            ctx.actualBranch : BranchInfo(update_new_btb_entry);
-    return {update_new_btb_entry,
-            ctx.isTakenControlPC(update_new_btb_entry.pc),
+        ctx.controlPC == selected_entry.pc ?
+            ctx.actualBranch : BranchInfo(selected_entry);
+    return {selected_entry,
+            ctx.isTakenControlPC(selected_entry.pc),
             !update_is_old_entry,
             actual_branch};
 }
