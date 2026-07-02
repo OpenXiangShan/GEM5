@@ -101,7 +101,7 @@ jobs:
       vector_type: ${{ github.event.inputs.vector_type }}
       extra_args: ${{ github.event.inputs.extra_args }}
       distributed_servers: ${{ github.event.inputs.distributed_servers }}
-      distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server) }}
+      distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
       timeout_minutes: 720

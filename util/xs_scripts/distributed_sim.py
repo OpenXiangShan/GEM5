@@ -32,6 +32,7 @@ DEFAULT_MARKER_TIMEOUT_SEC = 30.0
 DEFAULT_LAUNCH_RETRIES = 2
 DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
 DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
+ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 @dataclass(frozen=True)
@@ -274,6 +275,11 @@ def resolve_config_or_script(first_param: str, gem5_home: Path) -> Path:
     return path.resolve()
 
 
+def validate_ssh_target_name(name: str, option_name: str) -> None:
+    if name != "local" and name.startswith("-"):
+        raise ValueError(f"{option_name} contains an invalid SSH target: {name!r}")
+
+
 def parse_server_list(spec: str) -> list[str]:
     spec = spec.strip()
     if spec == "" or spec == "local":
@@ -324,6 +330,8 @@ def parse_server_list(spec: str) -> list[str]:
 
     if not servers:
         raise ValueError(f"empty server list: {spec!r}")
+    for server in servers:
+        validate_ssh_target_name(server, "--servers")
     return servers
 
 
@@ -378,9 +386,9 @@ def find_checkpoint(cpt_dir: Path, checkpoint_key: str) -> Path:
     direct_dir = cpt_dir / checkpoint_key
     if direct_dir.is_dir():
         for suffix in CHECKPOINT_SUFFIXES:
-            matches = sorted(direct_dir.rglob(f"*.{suffix}"))
-            if matches:
-                return matches[0].resolve()
+            match = next(direct_dir.rglob(f"*.{suffix}"), None)
+            if match is not None:
+                return match.resolve()
 
     key = checkpoint_key.rstrip("/")
     for suffix in CHECKPOINT_SUFFIXES:
@@ -391,6 +399,8 @@ def find_checkpoint(cpt_dir: Path, checkpoint_key: str) -> Path:
                 str(cpt_dir),
                 "-wholename",
                 f"*{key}*.{suffix}",
+                "-print",
+                "-quit",
             ],
             check=False,
             stdout=subprocess.PIPE,
@@ -416,8 +426,10 @@ def parse_env_overrides(items: list[str]) -> dict[str, str]:
         if "=" not in item:
             raise ValueError(f"--env expects KEY=VALUE, got {item!r}")
         key, value = item.split("=", 1)
-        if not key:
-            raise ValueError(f"--env expects non-empty KEY, got {item!r}")
+        if not ENV_KEY_RE.fullmatch(key):
+            raise ValueError(
+                f"--env expects a valid shell variable KEY, got {item!r}"
+            )
         env[key] = value
     return env
 
@@ -447,6 +459,8 @@ def collect_job_env(gem5_home: Path, build_type: str, overrides: dict[str, str])
 def shell_exports(env: dict[str, str]) -> str:
     lines = []
     for key in sorted(env):
+        if not ENV_KEY_RE.fullmatch(key):
+            raise ValueError(f"invalid environment variable name: {key!r}")
         lines.append(f"export {key}={shlex.quote(env[key])}")
     return "\n".join(lines)
 
@@ -463,12 +477,15 @@ def build_gem5_command(
         raise ValueError(
             f"first argument must be a .py config or .sh wrapper: {config_or_script}"
         )
-    return [
+    command = [
         str(gem5),
         str(config_or_script),
         f"--generic-rv-cpt={checkpoint}",
         *shlex.split(extra_gem5_args),
     ]
+    if checkpoint.suffix == ".bin":
+        command.insert(2, "--raw-cpt")
+    return command
 
 
 def make_job_script(
@@ -479,15 +496,18 @@ def make_job_script(
     env: dict[str, str],
 ) -> str:
     command_text = " ".join(shlex.quote(part) for part in command)
+    workload_message = shlex.quote(f"distributed_sim workload: {workload.name}")
+    checkpoint_message = shlex.quote(f"checkpoint: {checkpoint}")
+    command_message = shlex.quote(f"command: {command_text}")
     return f"""set -u
 mkdir -p {shlex.quote(str(work_dir))}
 cd {shlex.quote(str(work_dir))}
 exec >{shlex.quote("log.txt")} 2>&1
-echo "distributed_sim workload: {shlex.quote(workload.name)}"
-echo "checkpoint: {shlex.quote(str(checkpoint))}"
+printf '%s\\n' {workload_message}
+printf '%s\\n' {checkpoint_message}
 echo "host: $(hostname)"
 echo "start: $(date -Is)"
-echo "command: {command_text}"
+printf '%s\\n' {command_message}
 {shell_exports(env)}
 rm -f abort completed
 touch running
@@ -609,8 +629,11 @@ def run_host_command(
 
 def make_ssh_target(server_name: str, ssh_user: str) -> str:
     if not ssh_user or server_name == "local" or "@" in server_name:
-        return server_name
-    return f"{ssh_user}@{server_name}"
+        target = server_name
+    else:
+        target = f"{ssh_user}@{server_name}"
+    validate_ssh_target_name(target, "--servers")
+    return target
 
 
 def build_ssh_command(
@@ -638,6 +661,7 @@ def wrap_with_dispatch_host(
     ssh_config: str,
     ssh_options: list[str],
 ) -> list[str]:
+    validate_ssh_target_name(dispatch_host, "--dispatch-host")
     dispatch_script = "exec " + " ".join(shlex.quote(part) for part in ssh_cmd)
     return build_ssh_command(
         target=dispatch_host,
@@ -866,6 +890,13 @@ def has_any_marker(work_dir: Path) -> bool:
     )
 
 
+def clear_stale_markers(work_dir: Path, force: bool) -> None:
+    if force:
+        (work_dir / "completed").unlink(missing_ok=True)
+    for marker in ("running", "abort"):
+        (work_dir / marker).unlink(missing_ok=True)
+
+
 def append_launcher_retry(job: PendingJob, result: int, delay: float) -> None:
     job.work_dir.mkdir(parents=True, exist_ok=True)
     with (job.work_dir / "log.txt").open("a", encoding="utf-8") as handle:
@@ -939,6 +970,15 @@ def poll_jobs(
                         flush=True,
                     )
                     continue
+                if marker == "" and not has_any_marker(job.work_dir):
+                    mark_launcher_failure(
+                        job,
+                        (
+                            "Launcher failed before the remote job created any "
+                            f"status marker (exit={result}) after attempt "
+                            f"{job.attempt}/{launch_retries + 1}."
+                        ),
+                    )
                 failed += 1
                 print(
                     f"[fail] {job.workload.name} on {server.name} "
@@ -958,6 +998,13 @@ def stop_pending_jobs(servers: list[ServerState]) -> None:
                     os.killpg(job.proc.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
+
+
+def abort_pending_jobs(servers: list[ServerState], message: str) -> None:
+    for server in servers:
+        for job in server.pending:
+            if not (job.work_dir / "completed").exists():
+                mark_launcher_failure(job, message)
 
 
 def select_server(servers: list[ServerState], jobs_per_server: int) -> ServerState | None:
@@ -996,6 +1043,14 @@ def run_scheduler(
     completed = 0
     failed = 0
     last_launch_at = 0.0
+    checkpoint_by_workload: dict[Workload, Path] = {}
+    for workload in workloads:
+        work_dir = full_work_dir / workload.name
+        if (work_dir / "completed").exists() and not force:
+            continue
+        checkpoint_by_workload[workload] = find_checkpoint(
+            cpt_dir, workload.checkpoint_key
+        )
 
     try:
         while pending_workloads or any(server.pending for server in servers):
@@ -1037,8 +1092,9 @@ def run_scheduler(
                     skipped += 1
                     print(f"[skip] {workload.name} already completed", flush=True)
                     continue
+                clear_stale_markers(work_dir, force=force)
 
-                checkpoint = find_checkpoint(cpt_dir, workload.checkpoint_key)
+                checkpoint = checkpoint_by_workload[workload]
                 command = build_gem5_command(
                     gem5, config_or_script, checkpoint, extra_gem5_args
                 )
@@ -1097,6 +1153,18 @@ def run_scheduler(
     except KeyboardInterrupt:
         print("Interrupted; terminating launcher-side ssh/bash processes.", file=sys.stderr)
         stop_pending_jobs(servers)
+        abort_pending_jobs(servers, "Scheduler interrupted; marking pending job aborted.")
+        raise
+    except Exception:
+        print(
+            "Scheduler exception; terminating launcher-side ssh/bash processes.",
+            file=sys.stderr,
+        )
+        stop_pending_jobs(servers)
+        abort_pending_jobs(
+            servers,
+            "Scheduler raised an exception; marking pending job aborted.",
+        )
         raise
 
     retry_attempts = launch_attempts - first_launches
@@ -1106,11 +1174,13 @@ def run_scheduler(
         f"retry_attempts={max(retry_attempts, 0)}",
         flush=True,
     )
-    return 1 if failed else 0
+    return 0
 
 
 def main(argv: list[str]) -> int:
     args, rest = parse_launcher_args(argv)
+    if args.dispatch_host:
+        validate_ssh_target_name(args.dispatch_host, "--dispatch-host")
 
     first_param = rest[0]
     workload_list = Path(rest[1]).resolve()
