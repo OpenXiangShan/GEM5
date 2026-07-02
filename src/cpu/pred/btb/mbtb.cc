@@ -416,13 +416,6 @@ MBTB::selectUpdateEntry(const std::shared_ptr<void> &prediction_meta,
 }
 
 BTBUpdateEntrySelection
-MBTB::selectUpdateEntry(const FetchTarget &stream,
-                        const TargetUpdateContext &ctx)
-{
-    return selectUpdateEntry(stream.predMetas[getComponentIdx()], ctx);
-}
-
-BTBUpdateEntrySelection
 MBTB::selectUpdateEntryFromHits(
     const std::vector<BTBEntry> &pred_hit_entries,
     const TargetUpdateContext &ctx)

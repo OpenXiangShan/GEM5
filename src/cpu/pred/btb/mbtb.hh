@@ -160,9 +160,6 @@ class MBTB : public TimedBaseBTBPredictor
         const std::shared_ptr<void> &prediction_meta,
         const TargetUpdateContext &ctx);
 
-    BTBUpdateEntrySelection selectUpdateEntry(
-        const FetchTarget &stream, const TargetUpdateContext &ctx);
-
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
      *  1. Updates existing entries with new information

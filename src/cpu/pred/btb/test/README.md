@@ -155,7 +155,9 @@ stream.predMetas[0] = meta;
 
 // Optional: Select update entry (only for L1 BTB)
 if (isL1BTB) {
-    auto selection = btb->selectUpdateEntry(stream);
+    auto selection = btb->selectUpdateEntry(
+        stream.predMetas[btb->getComponentIdx()],
+        stream.makeTargetUpdateContext());
     stream.updateNewBTBEntry = selection.entry;
     stream.updateIsOldEntry = selection.isOldEntry;
 }
