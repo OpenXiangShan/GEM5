@@ -325,6 +325,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Resolve entries that merged a new branch while waiting for prefix completion"),
     ADD_STAT(resolveDequeueSameFTQMergeWait, statistics::units::Count::get(),
              "Resolve dequeue delayed because the head entry merged same-FTQ input"),
+    ADD_STAT(resolveQueueSquashEntries, statistics::units::Count::get(),
+             "Resolve queue entries dropped because a squash removed younger FTQs"),
+    ADD_STAT(resolveQueueSquashBranches, statistics::units::Count::get(),
+             "Resolved branches dropped because a squash removed younger FTQs"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -1981,6 +1985,38 @@ Fetch::rememberDequeuedResolveEntry(const ResolveQueueEntry &entry)
 }
 
 void
+Fetch::squashResolveQueueAfter(ThreadID tid, uint64_t squashFtqId)
+{
+    if (!squashFtqId) {
+        return;
+    }
+
+    uint64_t dropped_entries = 0;
+    uint64_t dropped_branches = 0;
+
+    auto it = resolveQueue.begin();
+    while (it != resolveQueue.end()) {
+        if (it->resolvedTid == tid && it->resolvedFTQId > squashFtqId) {
+            dropped_entries++;
+            dropped_branches += it->resolvedBranches.size();
+            DPRINTF(FetchResolve,
+                    "[tid:%u] Drop younger resolve entry on squash: "
+                    "squashFTQ=%lu droppedFTQ=%lu branches=%zu\n",
+                    tid, squashFtqId, it->resolvedFTQId,
+                    it->resolvedBranches.size());
+            it = resolveQueue.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    if (dropped_entries) {
+        fetchStats.resolveQueueSquashEntries += dropped_entries;
+        fetchStats.resolveQueueSquashBranches += dropped_branches;
+    }
+}
+
+void
 Fetch::handleIEWSignals()
 {
     // Currently resolve stage training is a btb-only feature
@@ -2135,16 +2171,19 @@ Fetch::handleCommitSignals(ThreadID tid)
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
-        dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
+        const auto squash_ftq_id = mispred_inst->getFtqId();
+        dbpbtb->controlSquash(squash_ftq_id, mispred_inst->pcState(),
                               corr_pc, mispred_inst->staticInst,
                               mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
+        squashResolveQueueAfter(tid, squash_ftq_id);
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
         const auto trap_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId, fromCommit->commitInfo[tid].committedPC,
                            trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+        squashResolveQueueAfter(tid, fromCommit->commitInfo[tid].squashedTargetId);
     } else {
         if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedTargetId != 0) {
             DPRINTF(Fetch, "Squash with stream id and target id from IEW\n");
@@ -2152,6 +2191,7 @@ Fetch::handleCommitSignals(ThreadID tid)
             assert(dbpbtb);
             dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId, nc_pc,
                                      0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+            squashResolveQueueAfter(tid, fromCommit->commitInfo[tid].squashedTargetId);
         } else {
             DPRINTF(Fetch, "Dont squash dbq because no meaningful stream\n");
         }
@@ -2173,14 +2213,16 @@ Fetch::handleDecodeSquash(ThreadID tid)
             assert(dbpbtb);
             const auto next_pc =
                 fromDecode->decodeInfo[tid].nextPC->as<RiscvISA::PCState>();
+            const auto squash_ftq_id = mispred_inst->getFtqId();
             dbpbtb->controlSquash(
-                mispred_inst->getFtqId(),
+                squash_ftq_id,
                 mispred_inst->pcState(),
                 next_pc,
                 mispred_inst->staticInst, mispred_inst->getInstBytes(),
                 fromDecode->decodeInfo[tid].branchTaken,
                 mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
                 false);
+            squashResolveQueueAfter(tid, squash_ftq_id);
         } else {
             warn("Unexpected non-control squash from decode.\n");
         }

@@ -680,6 +680,8 @@ class Fetch
 
     void rememberDequeuedResolveEntry(const ResolveQueueEntry &entry);
 
+    void squashResolveQueueAfter(ThreadID tid, uint64_t squashFtqId);
+
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
 
@@ -1206,6 +1208,10 @@ class Fetch
         statistics::Scalar resolveDequeueDecodedPrefixWaitMerged;
         /** Resolve dequeue delayed because the head entry merged same-FTQ input. */
         statistics::Scalar resolveDequeueSameFTQMergeWait;
+        /** Resolve queue entries dropped because a squash removed younger FTQs. */
+        statistics::Scalar resolveQueueSquashEntries;
+        /** Resolved branches dropped because a squash removed younger FTQs. */
+        statistics::Scalar resolveQueueSquashBranches;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */
