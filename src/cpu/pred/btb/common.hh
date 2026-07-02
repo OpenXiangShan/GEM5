@@ -857,23 +857,6 @@ struct FetchTarget
             resolvedUpdatePrefixPCs, filter, resolved_update, ctx);
     }
 
-    TargetUpdateEntry
-    makeSelectedTargetUpdateEntry(const TargetUpdateContext &ctx) const
-    {
-        return buildSelectedTargetUpdateEntry(
-            updateNewBTBEntry, updateIsOldEntry, ctx);
-    }
-
-    std::vector<TargetUpdateEntry>
-    makeTargetUpdateEntries(TargetUpdateEntryFilter filter,
-                            bool resolved_update,
-                            const TargetUpdateContext &ctx) const
-    {
-        return buildTargetUpdateEntries(
-            updateBTBEntries, updateNewBTBEntry, updateIsOldEntry,
-            resolvedUpdatePrefixPCs, filter, resolved_update, ctx);
-    }
-
     // Argument resolved pc could not match any BTB entry branch pc,
     // Just ignore it in that case.
     void markBTBEntryResolved(Addr resolvedInstPC)
@@ -1023,16 +1006,6 @@ class BPUUpdateEvent
             markResolvedSelection(selection).entry,
             selection.isOldEntry,
             resolvedBranchPCs(), filter, resolved_update, ctx);
-    }
-
-    TargetUpdateEntry
-    makeSelectedTargetUpdateEntry(
-        const BTBUpdateEntrySelection &selection,
-        const TargetUpdateContext &ctx) const
-    {
-        auto resolved_selection = markResolvedSelection(selection);
-        return buildSelectedTargetUpdateEntry(
-            resolved_selection.entry, resolved_selection.isOldEntry, ctx);
     }
 
     std::vector<TargetUpdateEntry>

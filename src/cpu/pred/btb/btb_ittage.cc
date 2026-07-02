@@ -252,7 +252,9 @@ BTBITTAGE::update(const FetchTarget &stream)
         debugFlag = true;
     }
     const auto update_ctx = stream.makeTargetUpdateContext();
-    auto entries_to_update = stream.makeTargetUpdateEntries(
+    auto entries_to_update = buildTargetUpdateEntries(
+        stream.updateBTBEntries, stream.updateNewBTBEntry,
+        stream.updateIsOldEntry, stream.resolvedUpdatePrefixPCs,
         TargetUpdateEntryFilter::IndirectNonReturn, getResolvedUpdate(),
         update_ctx);
     updateWithTargetEntries(entries_to_update, update_ctx, stream);

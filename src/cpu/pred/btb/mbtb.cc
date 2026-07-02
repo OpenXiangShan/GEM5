@@ -676,7 +676,9 @@ void
 MBTB::update(const FetchTarget &stream)
 {
     const auto update_ctx = stream.makeTargetUpdateContext();
-    auto entries_need_update = stream.makeTargetUpdateEntries(
+    auto entries_need_update = buildTargetUpdateEntries(
+        stream.updateBTBEntries, stream.updateNewBTBEntry,
+        stream.updateIsOldEntry, stream.resolvedUpdatePrefixPCs,
         TargetUpdateEntryFilter::Any, getResolvedUpdate(), update_ctx);
     updateWithTargetEntries(entries_need_update, update_ctx, stream);
 }
