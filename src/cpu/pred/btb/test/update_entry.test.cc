@@ -91,7 +91,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedPrefixOverridesEntryResolvedBits)
         makeDirectionContext(prefix_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {prefix_entry, legacy_resolved_entry}, BTBEntry(), true,
+        {prefix_entry, legacy_resolved_entry}, {}, BTBEntry(), true,
         {prefix_entry.pc}, DirectionUpdateEntryFilter::Conditional,
         true, ctx);
 
@@ -108,7 +108,7 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
         makeDirectionContext(new_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {}, new_entry, false, {},
+        {}, {}, new_entry, false, {},
         DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -124,7 +124,7 @@ TEST(UpdateEntryBuilderTest, MgscResolvedUpdateKeepsConditionalEntriesWithoutPre
         makeDirectionContext(cond_entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {cond_entry}, BTBEntry(), true, {},
+        {cond_entry}, {}, BTBEntry(), true, {},
         DirectionUpdateEntryFilter::Mgsc, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -335,6 +335,57 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
     ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
     EXPECT_EQ(prepared.resolvedPrefixPCs[0], first.pc);
     EXPECT_EQ(prepared.resolvedPrefixPCs[1], second.pc);
+}
+
+TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
+{
+    const BTBEntry predicted = makeEntry(0x1000, true, false);
+    const BTBEntry selected = makeEntry(0x1010, true, false);
+    const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
+    const ResolvedBranch taken = makeResolvedBranch(selected.pc, true, true);
+
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.predBTBEntries = {predicted};
+
+    const auto update_branches =
+        makeResolvedUpdateBranches({missing, taken});
+    applyResolvedBranchResult(stream, update_branches);
+    const BTBUpdateEntrySelection selection{selected, false};
+    const BPUPreparedUpdate prepared =
+        prepareBPUUpdate(stream, 32, selection, update_branches);
+
+    ASSERT_EQ(prepared.btbEntries.size(), 1);
+    EXPECT_EQ(prepared.btbEntries[0].pc, predicted.pc);
+    EXPECT_FALSE(prepared.btbEntries[0].resolved);
+    ASSERT_EQ(prepared.newDirectionEntries.size(), 1);
+    EXPECT_EQ(prepared.newDirectionEntries[0].pc, missing.pc);
+    EXPECT_TRUE(prepared.newDirectionEntries[0].resolved);
+    ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
+    EXPECT_EQ(prepared.resolvedPrefixPCs[0], missing.pc);
+    EXPECT_EQ(prepared.resolvedPrefixPCs[1], selected.pc);
+
+    const auto direction_entries = buildDirectionUpdateEntries(
+        prepared.btbEntries, prepared.newDirectionEntries,
+        prepared.selection.entry, prepared.selection.isOldEntry,
+        prepared.resolvedPrefixPCs, DirectionUpdateEntryFilter::Conditional,
+        true, stream.makeDirectionUpdateContext());
+
+    ASSERT_EQ(direction_entries.size(), 2);
+    EXPECT_EQ(direction_entries[0].entry.pc, missing.pc);
+    EXPECT_TRUE(direction_entries[0].isNewEntry);
+    EXPECT_FALSE(direction_entries[0].actualTaken);
+    EXPECT_EQ(direction_entries[1].entry.pc, selected.pc);
+    EXPECT_TRUE(direction_entries[1].isNewEntry);
+    EXPECT_TRUE(direction_entries[1].actualTaken);
+
+    const auto target_entries = buildTargetUpdateEntries(
+        prepared.btbEntries, prepared.selection.entry,
+        prepared.selection.isOldEntry, prepared.resolvedPrefixPCs,
+        TargetUpdateEntryFilter::Any, true, stream.makeTargetUpdateContext());
+
+    ASSERT_EQ(target_entries.size(), 1);
+    EXPECT_EQ(target_entries[0].entry.pc, selected.pc);
 }
 
 } // namespace test

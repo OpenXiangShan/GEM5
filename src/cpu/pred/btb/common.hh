@@ -311,6 +311,7 @@ struct TargetUpdateEntry
 struct BPUPreparedUpdate
 {
     std::vector<BTBEntry> btbEntries;
+    std::vector<BTBEntry> newDirectionEntries;
     BTBUpdateEntrySelection selection;
     std::vector<Addr> resolvedPrefixPCs;
 };
@@ -379,6 +380,7 @@ shouldKeepDirectionUpdateEntry(
 inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
+    const std::vector<BTBEntry> &update_new_direction_entries,
     const BTBEntry &update_new_btb_entry,
     bool update_is_old_entry,
     const std::vector<Addr> &resolved_update_prefix_pcs,
@@ -388,6 +390,7 @@ buildDirectionUpdateEntries(
 {
     std::vector<DirectionUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
+                    update_new_direction_entries.size() +
                     (update_is_old_entry ? 0 : 1));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
@@ -401,6 +404,9 @@ buildDirectionUpdateEntries(
 
     for (const auto &entry : update_btb_entries) {
         add_entry(entry, false);
+    }
+    for (const auto &entry : update_new_direction_entries) {
+        add_entry(entry, true);
     }
     if (!update_is_old_entry) {
         add_entry(update_new_btb_entry, true);
@@ -903,6 +909,32 @@ makeUpdateBTBEntries(const FetchTarget &target, unsigned predictWidth,
     return entries;
 }
 
+inline bool
+containsBTBEntryPC(const std::vector<BTBEntry> &entries, Addr pc)
+{
+    return std::any_of(
+        entries.begin(), entries.end(),
+        [pc](const auto &entry) { return entry.pc == pc; });
+}
+
+inline std::vector<BTBEntry>
+makeNewDirectionEntries(const std::vector<BTBEntry> &update_btb_entries,
+                        const BTBUpdateEntrySelection &selection,
+                        const std::vector<ResolvedBranch> &branches)
+{
+    std::vector<BTBEntry> entries;
+    entries.reserve(branches.size());
+    for (const auto &branch : branches) {
+        if (!branch.isCond ||
+            containsBTBEntryPC(update_btb_entries, branch.pc) ||
+            (selection.entry.valid && selection.entry.pc == branch.pc)) {
+            continue;
+        }
+        entries.push_back(BTBEntry(makeBranchInfo(branch)));
+    }
+    return entries;
+}
+
 inline BTBUpdateEntrySelection
 markResolvedSelection(BTBUpdateEntrySelection selection,
                       const std::vector<ResolvedBranch> &branches)
@@ -916,7 +948,9 @@ prepareBPUUpdate(const FetchTarget &target, unsigned predictWidth,
                  const BTBUpdateEntrySelection &selection,
                  const std::vector<ResolvedBranch> &branches)
 {
-    return {makeUpdateBTBEntries(target, predictWidth, branches),
+    auto update_entries = makeUpdateBTBEntries(target, predictWidth, branches);
+    return {update_entries,
+            makeNewDirectionEntries(update_entries, selection, branches),
             markResolvedSelection(selection, branches),
             makeResolvedBranchPCs(branches)};
 }

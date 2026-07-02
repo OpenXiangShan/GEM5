@@ -865,6 +865,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         const auto update_ctx = target.makeDirectionUpdateContext();
         const auto entries = buildDirectionUpdateEntries(
             prepared_update.btbEntries,
+            prepared_update.newDirectionEntries,
             prepared_update.selection.entry,
             prepared_update.selection.isOldEntry,
             prepared_update.resolvedPrefixPCs,

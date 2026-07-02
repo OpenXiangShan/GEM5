@@ -101,7 +101,7 @@ updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
 {
     const auto ctx = stream.makeDirectionUpdateContext();
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, BTBEntry(), /*update_is_old_entry=*/true,
+        {entry}, {}, BTBEntry(), /*update_is_old_entry=*/true,
         /*resolved_update_prefix_pcs=*/{}, mgsc.directionUpdateEntryFilter(),
         mgsc.getResolvedUpdate(), ctx);
     mgsc.updateWithDirectionEntries(entries, ctx, stream);
