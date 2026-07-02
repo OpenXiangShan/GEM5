@@ -725,7 +725,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(ThreadID tid, Addr new_pc);
 
     // Helper functions for update
-    bool resolveUpdate(unsigned &target_id, ThreadID tid);
     bool resolveUpdate(unsigned &target_id,
                        const std::vector<ResolvedBranch> &branches,
                        ThreadID tid);

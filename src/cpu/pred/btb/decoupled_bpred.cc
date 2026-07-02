@@ -744,29 +744,6 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 }
 
 bool
-DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
-{
-    if (!ftq.hasTarget(target_id, tid)) {
-        DPRINTF(DecoupleBP, "Target id %u not found in fetchTargetQueue, cannot update predictors\n", target_id);
-        return true;
-    }
-
-    auto &target = ftq.get(target_id, tid);
-
-    BPUUpdateEvent update_event;
-    if (!update_event.shouldUpdatePredictors(target)) {
-        return true;
-    }
-
-    prepareUpdateEntriesForTarget(target, update_event);
-    if (!canResolveUpdateComponents(target)) {
-        return false;
-    }
-    doResolveUpdateComponents(target);
-    return true;
-}
-
-bool
 DecoupledBPUWithBTB::resolveUpdate(
     unsigned &target_id,
     const std::vector<ResolvedBranch> &branches,
