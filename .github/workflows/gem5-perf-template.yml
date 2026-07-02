@@ -220,6 +220,7 @@ jobs:
             DISTRIBUTED_SERVERS="$DEFAULT_DISTRIBUTED_SERVERS"
           fi
           DISTRIBUTED_REQUIRE_IDLE_CPUS="${{ inputs.distributed_jobs_per_server }}"
+          DISTRIBUTED_IDLE_PROBE_MODE="physical"
 
           mkdir -p "$TARGET_DIR"
 
@@ -232,6 +233,7 @@ jobs:
             echo "run_number=$RUN_NUMBER"
             echo "distributed_servers=$DISTRIBUTED_SERVERS"
             echo "distributed_require_idle_cpus=$DISTRIBUTED_REQUIRE_IDLE_CPUS"
+            echo "distributed_idle_probe_mode=$DISTRIBUTED_IDLE_PROBE_MODE"
             echo "distributed_dispatch_host=$DISTRIBUTED_DISPATCH_HOST"
           } >> "$GITHUB_OUTPUT"
 
@@ -249,6 +251,7 @@ jobs:
           echo "distributed_server_domain: " >> "$TARGET_DIR/metadata.txt"
           echo "distributed_jobs_per_server: ${{ inputs.distributed_jobs_per_server }}" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_require_idle_cpus: $DISTRIBUTED_REQUIRE_IDLE_CPUS" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_idle_probe_mode: $DISTRIBUTED_IDLE_PROBE_MODE" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_idle_cpu_threshold: 30" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_ssh_config: " >> "$TARGET_DIR/metadata.txt"
           echo "distributed_ssh_user: " >> "$TARGET_DIR/metadata.txt"
@@ -304,6 +307,7 @@ jobs:
               --servers "$distributed_servers" \
               --jobs-per-server "${{ inputs.distributed_jobs_per_server }}" \
               --require-idle-cpus "${{ steps.archive.outputs.distributed_require_idle_cpus }}" \
+              --idle-probe-mode "${{ steps.archive.outputs.distributed_idle_probe_mode }}" \
               --dispatch-host "${{ steps.archive.outputs.distributed_dispatch_host }}" \
               --launch-retries 3 \
               --launch-retry-delay 30 \

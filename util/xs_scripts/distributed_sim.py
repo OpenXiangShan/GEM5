@@ -100,15 +100,29 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         type=int,
         default=0,
         help=(
-            "Skip remote servers with fewer than this many idle-ish logical CPUs. "
-            "0 disables idle probing."
+            "Skip remote servers with fewer than this many idle-ish CPU units. "
+            "The default probe mode counts physical cores, so this avoids "
+            "depending on SMT sibling threads. 0 disables idle probing."
+        ),
+    )
+    parser.add_argument(
+        "--idle-probe-mode",
+        choices=("physical", "logical"),
+        default="physical",
+        help=(
+            "Idle CPU probe mode. 'physical' counts a core as idle only when "
+            "all of its SMT siblings are idle-ish; 'logical' counts individual "
+            "logical CPUs."
         ),
     )
     parser.add_argument(
         "--idle-cpu-threshold",
         type=float,
         default=30.0,
-        help="A CPU is treated as idle-ish when sampled utilization is below this percentage.",
+        help=(
+            "A logical CPU is treated as idle-ish when sampled utilization is "
+            "below this percentage."
+        ),
     )
     parser.add_argument(
         "--max-tasks",
@@ -640,6 +654,7 @@ def wrap_with_dispatch_host(
 
 def probe_idle_cpus(
     server_name: str,
+    idle_probe_mode: str,
     idle_cpu_threshold: float,
     ssh_config: str,
     ssh_options: list[str],
@@ -652,28 +667,65 @@ def probe_idle_cpus(
         + shlex.quote(
             "import os,time\n"
             "def read_stat():\n"
-            "    rows=[]\n"
+            "    rows={}\n"
             "    with open('/proc/stat') as f:\n"
             "        for line in f:\n"
             "            if not line.startswith('cpu') or line.startswith('cpu '):\n"
             "                continue\n"
             "            parts=line.split()\n"
+            "            cpu=int(parts[0][3:])\n"
             "            vals=list(map(int, parts[1:]))\n"
             "            idle=vals[3]+(vals[4] if len(vals)>4 else 0)\n"
             "            total=sum(vals)\n"
-            "            rows.append((idle,total))\n"
+            "            rows[cpu]=(idle,total)\n"
             "    return rows\n"
+            "def parse_cpu_list(text):\n"
+            "    cpus=[]\n"
+            "    for part in text.strip().split(','):\n"
+            "        if not part:\n"
+            "            continue\n"
+            "        if '-' in part:\n"
+            "            start,end=map(int, part.split('-', 1))\n"
+            "            cpus.extend(range(start, end + 1))\n"
+            "        else:\n"
+            "            cpus.append(int(part))\n"
+            "    return cpus\n"
+            "def read_core_groups(cpus):\n"
+            "    groups={}\n"
+            "    online=set(cpus)\n"
+            "    for cpu in cpus:\n"
+            "        path=f'/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list'\n"
+            "        try:\n"
+            "            with open(path) as f:\n"
+            "                siblings=parse_cpu_list(f.read())\n"
+            "        except OSError:\n"
+            "            siblings=[cpu]\n"
+            "        group=tuple(sorted(set(siblings) & online)) or (cpu,)\n"
+            "        groups[group]=group\n"
+            "    return list(groups)\n"
             "a=read_stat()\n"
             "time.sleep(1.0)\n"
             "b=read_stat()\n"
             f"threshold={idle_cpu_threshold!r}\n"
-            "idle_count=0\n"
-            "for (ai,at),(bi,bt) in zip(a,b):\n"
+            f"mode={idle_probe_mode!r}\n"
+            "busy_by_cpu={}\n"
+            "for cpu,(bi,bt) in b.items():\n"
+            "    if cpu not in a:\n"
+            "        continue\n"
+            "    ai,at=a[cpu]\n"
             "    dt=bt-at\n"
             "    busy=0.0 if dt<=0 else 100.0*(1.0-(bi-ai)/dt)\n"
-            "    if busy < threshold:\n"
-            "        idle_count += 1\n"
-            "print(idle_count, len(b), os.getloadavg()[0])\n"
+            "    busy_by_cpu[cpu]=busy\n"
+            "logical_idle=sum(1 for busy in busy_by_cpu.values() if busy < threshold)\n"
+            "logical_total=len(busy_by_cpu)\n"
+            "if mode == 'physical':\n"
+            "    groups=read_core_groups(sorted(busy_by_cpu))\n"
+            "    idle_count=sum(1 for group in groups if all(busy_by_cpu[cpu] < threshold for cpu in group))\n"
+            "    total_count=len(groups)\n"
+            "else:\n"
+            "    idle_count=logical_idle\n"
+            "    total_count=logical_total\n"
+            "print(idle_count, total_count, logical_idle, logical_total, os.getloadavg()[0])\n"
         )
     )
     try:
@@ -695,18 +747,30 @@ def probe_idle_cpus(
         return None, stderr or stdout or f"probe exited with {result.returncode}"
 
     text = result.stdout.decode(errors="replace").strip()
-    match = re.search(r"(\d+)\s+(\d+)\s+([0-9.]+)", text)
+    match = re.search(r"(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([0-9.]+)", text)
     if match is None:
         return None, f"unexpected probe output: {text!r}"
     idle = int(match.group(1))
     total = int(match.group(2))
-    load1 = match.group(3)
-    return idle, f"idle_cpus={idle}/{total}, load1={load1}"
+    logical_idle = int(match.group(3))
+    logical_total = int(match.group(4))
+    load1 = match.group(5)
+    if idle_probe_mode == "physical":
+        return (
+            idle,
+            f"idle_physical_cores={idle}/{total}, "
+            f"idle_logical_cpus={logical_idle}/{logical_total}, load1={load1}",
+        )
+    return (
+        idle,
+        f"idle_logical_cpus={idle}/{total}, load1={load1}",
+    )
 
 
 def filter_servers_by_idle(
     servers: list[ServerState],
     require_idle_cpus: int,
+    idle_probe_mode: str,
     idle_cpu_threshold: float,
     ssh_config: str,
     ssh_options: list[str],
@@ -720,6 +784,7 @@ def filter_servers_by_idle(
     for server in servers:
         idle_cpus, detail = probe_idle_cpus(
             server_name=server.name,
+            idle_probe_mode=idle_probe_mode,
             idle_cpu_threshold=idle_cpu_threshold,
             ssh_config=ssh_config,
             ssh_options=ssh_options,
@@ -1068,6 +1133,7 @@ def main(argv: list[str]) -> int:
     servers = filter_servers_by_idle(
         servers=servers,
         require_idle_cpus=args.require_idle_cpus,
+        idle_probe_mode=args.idle_probe_mode,
         idle_cpu_threshold=args.idle_cpu_threshold,
         ssh_config=args.ssh_config,
         ssh_options=args.ssh_option,
