@@ -868,7 +868,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
             prepared_update.newDirectionEntries,
             prepared_update.selection.entry,
             prepared_update.selection.isOldEntry,
-            prepared_update.resolvedPrefixPCs,
+            prepared_update.resolvedBranches,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithDirectionEntries(entries, update_ctx, target);
@@ -881,7 +881,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
             prepared_update.btbEntries,
             prepared_update.selection.entry,
             prepared_update.selection.isOldEntry,
-            prepared_update.resolvedPrefixPCs,
+            prepared_update.resolvedBranches,
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithTargetEntries(entries, update_ctx, target);

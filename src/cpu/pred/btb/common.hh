@@ -217,7 +217,6 @@ struct BranchInfo
  *
  * Contains branch information plus prediction state:
  * - Valid bit
- * - Always taken bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
@@ -313,8 +312,10 @@ struct BPUPreparedUpdate
     std::vector<BTBEntry> btbEntries;
     std::vector<BTBEntry> newDirectionEntries;
     BTBUpdateEntrySelection selection;
-    std::vector<Addr> resolvedPrefixPCs;
+    std::vector<ResolvedBranch> resolvedBranches;
 };
+
+inline BranchInfo makeBranchInfo(const ResolvedBranch &branch);
 
 enum class TargetUpdateEntryFilter
 {
@@ -329,20 +330,28 @@ enum class DirectionUpdateEntryFilter
 };
 
 inline bool
-containsResolvedUpdatePC(const std::vector<Addr> &resolved_update_prefix_pcs,
-                         Addr pc)
+hasResolvedUpdateBranches(
+    const std::vector<ResolvedBranch> &resolved_update_branches)
 {
-    return std::find(resolved_update_prefix_pcs.begin(),
-                     resolved_update_prefix_pcs.end(), pc) !=
-        resolved_update_prefix_pcs.end();
+    return !resolved_update_branches.empty();
+}
+
+inline const ResolvedBranch *
+findResolvedUpdateBranch(
+    const std::vector<ResolvedBranch> &resolved_update_branches, Addr pc)
+{
+    auto it = std::find_if(
+        resolved_update_branches.begin(), resolved_update_branches.end(),
+        [pc](const auto &branch) { return branch.pc == pc; });
+    return it == resolved_update_branches.end() ? nullptr : &*it;
 }
 
 inline bool
-isResolvedUpdatePC(const std::vector<Addr> &resolved_update_prefix_pcs,
+isResolvedUpdatePC(const std::vector<ResolvedBranch> &resolved_update_branches,
                    Addr pc, bool fallback_resolved)
 {
-    return !resolved_update_prefix_pcs.empty() ?
-        containsResolvedUpdatePC(resolved_update_prefix_pcs, pc) :
+    return hasResolvedUpdateBranches(resolved_update_branches) ?
+        findResolvedUpdateBranch(resolved_update_branches, pc) != nullptr :
         fallback_resolved;
 }
 
@@ -351,7 +360,7 @@ shouldKeepDirectionUpdateEntry(
     const BTBEntry &entry,
     DirectionUpdateEntryFilter filter,
     bool resolved_update,
-    const std::vector<Addr> &resolved_update_prefix_pcs)
+    const std::vector<ResolvedBranch> &resolved_update_branches)
 {
     bool keep = false;
     switch (filter) {
@@ -369,12 +378,47 @@ shouldKeepDirectionUpdateEntry(
     switch (filter) {
       case DirectionUpdateEntryFilter::Conditional:
         return isResolvedUpdatePC(
-            resolved_update_prefix_pcs, entry.pc, entry.resolved);
+            resolved_update_branches, entry.pc, entry.resolved);
       case DirectionUpdateEntryFilter::Mgsc:
-        return resolved_update_prefix_pcs.empty() ||
-            containsResolvedUpdatePC(resolved_update_prefix_pcs, entry.pc);
+        return !hasResolvedUpdateBranches(resolved_update_branches) ||
+            findResolvedUpdateBranch(resolved_update_branches, entry.pc) !=
+                nullptr;
     }
     return false;
+}
+
+inline bool
+getActualTakenForUpdatePC(
+    Addr pc,
+    const std::vector<ResolvedBranch> &resolved_update_branches,
+    const DirectionUpdateContext &ctx)
+{
+    const auto *branch = findResolvedUpdateBranch(resolved_update_branches, pc);
+    return branch ? branch->taken : ctx.isTakenControlPC(pc);
+}
+
+inline bool
+getActualTakenForUpdatePC(
+    Addr pc,
+    const std::vector<ResolvedBranch> &resolved_update_branches,
+    const TargetUpdateContext &ctx)
+{
+    const auto *branch = findResolvedUpdateBranch(resolved_update_branches, pc);
+    return branch ? branch->taken : ctx.isTakenControlPC(pc);
+}
+
+inline BranchInfo
+getActualBranchForUpdatePC(
+    const BTBEntry &entry,
+    const std::vector<ResolvedBranch> &resolved_update_branches,
+    const TargetUpdateContext &ctx)
+{
+    const auto *branch =
+        findResolvedUpdateBranch(resolved_update_branches, entry.pc);
+    if (branch) {
+        return makeBranchInfo(*branch);
+    }
+    return ctx.controlPC == entry.pc ? ctx.actualBranch : BranchInfo(entry);
 }
 
 inline std::vector<DirectionUpdateEntry>
@@ -383,7 +427,7 @@ buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_new_direction_entries,
     const BTBEntry &update_new_btb_entry,
     bool update_is_old_entry,
-    const std::vector<Addr> &resolved_update_prefix_pcs,
+    const std::vector<ResolvedBranch> &resolved_update_branches,
     DirectionUpdateEntryFilter filter,
     bool resolved_update,
     const DirectionUpdateContext &ctx)
@@ -395,10 +439,12 @@ buildDirectionUpdateEntries(
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         if (!shouldKeepDirectionUpdateEntry(entry, filter, resolved_update,
-                                            resolved_update_prefix_pcs)) {
+                                            resolved_update_branches)) {
             return;
         }
-        entries.push_back({entry, ctx.isTakenControlPC(entry.pc),
+        entries.push_back({entry,
+                           getActualTakenForUpdatePC(
+                               entry.pc, resolved_update_branches, ctx),
                            is_new_entry});
     };
 
@@ -420,7 +466,7 @@ shouldKeepTargetUpdateEntry(
     const BTBEntry &entry,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
-    const std::vector<Addr> &resolved_update_prefix_pcs)
+    const std::vector<ResolvedBranch> &resolved_update_branches)
 {
     bool keep = false;
     switch (filter) {
@@ -435,7 +481,7 @@ shouldKeepTargetUpdateEntry(
         return keep;
     }
     return isResolvedUpdatePC(
-        resolved_update_prefix_pcs, entry.pc, entry.resolved);
+        resolved_update_branches, entry.pc, entry.resolved);
 }
 
 inline std::vector<TargetUpdateEntry>
@@ -443,7 +489,7 @@ buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
     const BTBEntry &update_new_btb_entry,
     bool update_is_old_entry,
-    const std::vector<Addr> &resolved_update_prefix_pcs,
+    const std::vector<ResolvedBranch> &resolved_update_branches,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
     const TargetUpdateContext &ctx)
@@ -452,12 +498,13 @@ buildTargetUpdateEntries(
     entries.reserve(update_btb_entries.size() + (update_is_old_entry ? 0 : 1));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
-        const bool actual_taken = ctx.isTakenControlPC(entry.pc);
+        const bool actual_taken = getActualTakenForUpdatePC(
+            entry.pc, resolved_update_branches, ctx);
         const BranchInfo actual_branch =
-            ctx.controlPC == entry.pc ? ctx.actualBranch : BranchInfo(entry);
+            getActualBranchForUpdatePC(entry, resolved_update_branches, ctx);
         if (!shouldKeepTargetUpdateEntry(
                 entry, filter, resolved_update,
-                resolved_update_prefix_pcs)) {
+                resolved_update_branches)) {
             return;
         }
         entries.push_back({entry, actual_taken, is_new_entry, actual_branch});
@@ -870,17 +917,6 @@ applyResolvedBranchResult(FetchTarget &target,
     }
 }
 
-inline std::vector<Addr>
-makeResolvedBranchPCs(const std::vector<ResolvedBranch> &branches)
-{
-    std::vector<Addr> pcs;
-    pcs.reserve(branches.size());
-    for (const auto &branch : branches) {
-        pcs.push_back(branch.pc);
-    }
-    return pcs;
-}
-
 inline void
 markResolvedEntry(BTBEntry &entry, const std::vector<ResolvedBranch> &branches)
 {
@@ -952,7 +988,7 @@ prepareBPUUpdate(const FetchTarget &target, unsigned predictWidth,
     return {update_entries,
             makeNewDirectionEntries(update_entries, selection, branches),
             markResolvedSelection(selection, branches),
-            makeResolvedBranchPCs(branches)};
+            branches};
 }
 
 /**

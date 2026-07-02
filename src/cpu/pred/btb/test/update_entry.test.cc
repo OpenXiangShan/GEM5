@@ -92,8 +92,8 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedPrefixOverridesEntryResolvedBits)
 
     const auto entries = buildDirectionUpdateEntries(
         {prefix_entry, legacy_resolved_entry}, {}, BTBEntry(), true,
-        {prefix_entry.pc}, DirectionUpdateEntryFilter::Conditional,
-        true, ctx);
+        {makeResolvedBranch(prefix_entry.pc, false, false)},
+        DirectionUpdateEntryFilter::Conditional, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].entry.pc, prefix_entry.pc);
@@ -115,6 +115,21 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
     EXPECT_EQ(entries[0].entry.pc, new_entry.pc);
     EXPECT_FALSE(entries[0].actualTaken);
     EXPECT_TRUE(entries[0].isNewEntry);
+}
+
+TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
+{
+    const BTBEntry entry = makeEntry(0x1018, true, false);
+    const DirectionUpdateContext ctx = makeDirectionContext(entry.pc, false);
+
+    const auto entries = buildDirectionUpdateEntries(
+        {entry}, {}, BTBEntry(), true,
+        {makeResolvedBranch(entry.pc, true, true)},
+        DirectionUpdateEntryFilter::Conditional, true, ctx);
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].entry.pc, entry.pc);
+    EXPECT_TRUE(entries[0].actualTaken);
 }
 
 TEST(UpdateEntryBuilderTest, MgscResolvedUpdateKeepsConditionalEntriesWithoutPrefix)
@@ -141,7 +156,8 @@ TEST(UpdateEntryBuilderTest, TargetResolvedPrefixOverridesEntryResolvedBits)
 
     const auto entries = buildTargetUpdateEntries(
         {prefix_entry, legacy_resolved_entry}, BTBEntry(), true,
-        {prefix_entry.pc}, TargetUpdateEntryFilter::Any, true, ctx);
+        {makeResolvedBranch(prefix_entry.pc, false, false)},
+        TargetUpdateEntryFilter::Any, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].entry.pc, prefix_entry.pc);
@@ -188,6 +204,28 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
     EXPECT_TRUE(entries[1].actualTaken);
     EXPECT_EQ(entries[1].actualBranch.pc, second.pc);
     EXPECT_EQ(entries[1].actualBranch.target, ctx.actualBranch.target);
+}
+
+TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
+{
+    const BTBEntry indirect = makeIndirectEntry(0x3010, false, true);
+    TargetUpdateContext ctx = makeTargetContext(indirect.pc, false);
+    ctx.actualBranch.target = 0xdead;
+
+    ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, true);
+    resolved.isCond = false;
+    resolved.isDirect = false;
+    resolved.isIndirect = true;
+    resolved.target = 0xbeef;
+
+    const auto entries = buildTargetUpdateEntries(
+        {indirect}, BTBEntry(), true, {resolved},
+        TargetUpdateEntryFilter::IndirectNonReturn, true, ctx);
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
+    EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
 
 TEST(UpdateEntryBuilderTest, SelectedTargetEntryUsesContextAndOldEntryFlag)
@@ -277,9 +315,9 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesPrepareUpdatePayload)
     EXPECT_TRUE(prepared.btbEntries[1].resolved);
     EXPECT_EQ(prepared.selection.entry.pc, second.pc);
     EXPECT_TRUE(prepared.selection.entry.resolved);
-    ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
-    EXPECT_EQ(prepared.resolvedPrefixPCs[0], first.pc);
-    EXPECT_EQ(prepared.resolvedPrefixPCs[1], second.pc);
+    ASSERT_EQ(prepared.resolvedBranches.size(), 2);
+    EXPECT_EQ(prepared.resolvedBranches[0].pc, first.pc);
+    EXPECT_EQ(prepared.resolvedBranches[1].pc, second.pc);
 }
 
 TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
@@ -332,9 +370,9 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
     EXPECT_TRUE(stream.exeTaken);
     EXPECT_EQ(stream.exeBranchInfo.pc, second.pc);
 
-    ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
-    EXPECT_EQ(prepared.resolvedPrefixPCs[0], first.pc);
-    EXPECT_EQ(prepared.resolvedPrefixPCs[1], second.pc);
+    ASSERT_EQ(prepared.resolvedBranches.size(), 2);
+    EXPECT_EQ(prepared.resolvedBranches[0].pc, first.pc);
+    EXPECT_EQ(prepared.resolvedBranches[1].pc, second.pc);
 }
 
 TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
@@ -361,14 +399,14 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     ASSERT_EQ(prepared.newDirectionEntries.size(), 1);
     EXPECT_EQ(prepared.newDirectionEntries[0].pc, missing.pc);
     EXPECT_TRUE(prepared.newDirectionEntries[0].resolved);
-    ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
-    EXPECT_EQ(prepared.resolvedPrefixPCs[0], missing.pc);
-    EXPECT_EQ(prepared.resolvedPrefixPCs[1], selected.pc);
+    ASSERT_EQ(prepared.resolvedBranches.size(), 2);
+    EXPECT_EQ(prepared.resolvedBranches[0].pc, missing.pc);
+    EXPECT_EQ(prepared.resolvedBranches[1].pc, selected.pc);
 
     const auto direction_entries = buildDirectionUpdateEntries(
         prepared.btbEntries, prepared.newDirectionEntries,
         prepared.selection.entry, prepared.selection.isOldEntry,
-        prepared.resolvedPrefixPCs, DirectionUpdateEntryFilter::Conditional,
+        prepared.resolvedBranches, DirectionUpdateEntryFilter::Conditional,
         true, stream.makeDirectionUpdateContext());
 
     ASSERT_EQ(direction_entries.size(), 2);
@@ -381,7 +419,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
 
     const auto target_entries = buildTargetUpdateEntries(
         prepared.btbEntries, prepared.selection.entry,
-        prepared.selection.isOldEntry, prepared.resolvedPrefixPCs,
+        prepared.selection.isOldEntry, prepared.resolvedBranches,
         TargetUpdateEntryFilter::Any, true, stream.makeTargetUpdateContext());
 
     ASSERT_EQ(target_entries.size(), 1);
