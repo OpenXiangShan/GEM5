@@ -1,117 +1,108 @@
-## 📄 文档：TAGE 块预测的“重读-更新”方案
+# BTB/TAGE update path 说明
 
-### 1\. 目标
+这份文档记录当前 BTB frontend 的训练协议。核心边界是：预测器训练应该由
+actual resolved branch facts 加 prediction-time meta/history 驱动；当真实
+resolve 结果已经存在时，不应该再从预测期的 `BTBEntry` 里反推 actual
+outcome。
 
-在 TAGE 块预测器中，实现一种\*\*不依赖流水线元数据（Metadata）\*\*的更新机制。
+## Update Contract
 
-本方案（方案三）旨在通过“更新时重读”的方式，在硬件成本（避免 N 套并行更新逻辑）和学习效率（不丢失信息）之间达到最佳平衡。
+commit update 和 resolve update 应该收敛到同一种输入形态：
 
-**核心思想：** 预测器**只更新到第一个控制流变更点**（即第一个错误预测分支，或第一个正确预测的 Taken 分支）。
-模型中对应exeBranchInfo, 代表执行时候为taken 的那条分支
-
-### 2\. 方案逻辑
-
-1.  **为什么只更新到“停止点”？**
-
-      * 在一个 Fetch Block（例如 B0, B1, B2, B3）中，如果 B1 是第一个 Taken 分支，那么 B2 和 B3 根本不会被执行。更新它们是无效的，甚至是有害的（用错误的数据污染 TAGE 表）。
-      * 同理，如果 B1 是第一个*错误预测*的分支（例如，预测 NT，实际 T），那么流水线在 B1 处就会被冲刷（flush），B2 和 B3 也不会被执行。
-      * **结论：** 我们只需要（也必须）更新所有*实际被执行并提交*的分支。这个集合就是从 B0 到“停止点”的所有分支。
-
-2.  **为什么这个方案是高效的？**
-
-      * **信息最大化：** 它正确地强化了所有被正确预测的分支（包括 Not-Taken 的 B0, B1）并惩罚/纠正了“停止点”分支（B2）。
-      * **成本可控：** 相比于“更新所有 N 个分支”的方案（需要 N 套并行的更新逻辑），本方案的硬件复杂度更低。虽然在最坏情况下（B7 是停止点）仍需要 N 套逻辑，但在平均情况下（第一个 Taken 在 B1 或 B2），硬件可以被流水化（pipelined）或部分激活（partially activated）。
-
-### 3\. 实现：更新阶段算法
-
-在你的模型中，当一个 Fetch Block 到达 Commit 阶段并触发更新时，你需要以下输入：
-
-#### 必需的输入数据
-
-1.  `startAddr`：该 Fetch Block 的起始 PC。
-2.  `GHR`：**预测时**所使用的全局历史寄存器（GHR）, 当前模型使用PHR，等效的，
-    真正使用的是meta->indexFoldedHist[ti].get()， 也就是折叠后的PHR生成的Index, 对应预测时候index.
-(后两个模型中不存在，但可以暂时通过prepareUpdateEntries 来获取要更新的哪些分支和对应的跳转反向)
-3.  `ActualResults[N]`：一个数组或位掩码，包含 B0 到 B(N-1) 的**真实**执行结果（T/NT）。
-4.  `StopPoint`：一个整数，标记**停止点**的分支索引。
-      * **情况 A（预测错误）：** `StopPoint` = 第一个错误预测的分支索引。
-      * **情况 B（预测正确）：** `StopPoint` = 第一个 Taken 分支的索引。（如果全部 NT，`StopPoint` = 最后一个分支的索引）。
-
-#### 步骤 1：重读（Re-Read）所有命中表
-
-这是“重读”的核心。
-
-1.  使用 `startAddr` 和 `GHR`，为**所有** TAGE 表（$T_1 \dots T_N$）计算它们各自的 `index` 和 `tag`。
-2.  模拟SRAM并行读取：访问所有表，获取所有（`index` 命中）的表项。
-3.  **构建总命中集（`HitSet_Total`）**：
-      * 遍历所有读出的表项，只保留那些 `valid` 且 `tag` 匹配的表项。
-      * `HitSet_Total` 是一个包含所有 {表号, 表项数据, ...} 的列表。
-
-#### 步骤 2：循环更新（从 B0 到 StopPoint）
-
-这是本方案的关键逻辑。你将模拟“分组-再排序”的预测过程，并立即将其与真实结果比较。
-
-```plaintext
-// 伪代码
-function OnUpdate(startAddr, GHR, ActualResults, StopPoint):
-    
-    // 步骤 1: 拿到所有命中的表项
-    HitSet_Total = Re_Read_All_Tables(startAddr, GHR)
-
-    // 步骤 2: 循环更新到“停止点”
-    for i from 0 to StopPoint:
-        
-        // A. 为 B[i] 找出 main 和 alt
-        //    (这模拟了 "按 Position 分组")
-        HitSet_B_i = Filter_By_Position(HitSet_Total, position=i)
-        
-        (main_entry, alt_entry) = Find_Main_And_Alt(HitSet_B_i) 
-        // main_entry 是 HitSet_B_i 中表号最高的
-        // alt_entry  是 HitSet_B_i 中表号次高的
-
-        // B. 找出 B[i] 的原始预测
-        predicted_dir = Get_Prediction_From(main_entry) 
-        // 如果 main_entry 为空, 则 Get_Prediction_From(BasePredictor)
-
-        // C. 拿到 B[i] 的真实结果
-        actual_dir = ActualResults[i]
-
-        // D. 调用标准的 TAGE 更新函数
-        //    这个函数处理所有 ctr, u-bit, 和分配逻辑
-        TAGE_Update_Single_Branch(
-            main_entry,
-            alt_entry,
-            predicted_dir,
-            actual_dir,
-            branch_pc = startAddr + (i * branch_stride), // B[i]的PC
-            ghr = GHR,
-            new_entry_position = i  // 关键！
-        )
+```text
+ftqId/startPC + prediction meta/history snapshot + resolved branch set
 ```
 
-#### 步骤 3：`TAGE_Update_Single_Branch` 的实现细节
+二者差异只应该是“什么时候训练”，而不是“训练数据从哪里重建”。
 
-这个函数是 TAGE 算法的心脏。当它被调用时，它只关心*一个*分支。
+`resolved branch set` 是同一个 FTQ entry 内按 PC 排序的真实控制流结果。
+`makeResolvedUpdateBranches()` 只保留到第一个 taken 或 mispredicted branch
+为止的 prefix；这个点之后的 younger branch 不属于本次训练 prefix。
 
-1.  **ctr 更新**：
-      * 如果 `predicted_dir == actual_dir`：强化（增加）`main_entry` 的 `ctr`。
-      * 如果 `predicted_dir != actual_dir`：削弱（减少）`main_entry` 的 `ctr`。
-2.  **u-bit 更新**：
-      * *仅当* `main_entry` 预测错误而 `alt_entry` 预测**正确**时，才增加 `alt_entry` 的 `u` bit。
-      * （或根据你的 TAGE 变种）`main` 对而 `alt` 错时，增加 `main` 的 `u` bit。
-3.  **分配（Allocation）逻辑**：
-      * *仅当* `predicted_dir != actual_dir` **并且**（`main` 预测错了，`alt` 也预测错了，或者 `alt` 不存在）时触发。
-      * 尝试在高于 `main_entry` 的表（例如 $T_{main+1} \dots T_N$）中寻找一个 `u=0` 的槽位。
-      * **关键**：当你写入这个新分配的槽位时，你**必须**写入 `pos` 字段：
-          * `New_Entry.pos = new_entry_position` （即 `i`）
-          * `New_Entry.ctr = ...` (弱 Taken/NT)
-          * `New_Entry.tag = ...` (根据 `startAddr` 和 `GHR` 计算)
-          * `New_Entry.u = 0`
+同一个 FTQ 内的多个 branch 可能在不同周期 resolve。Fetch 会按 `tid + ftqId`
+把它们 combine 到同一个 pending resolve queue entry，FTQ/`FetchTarget` 里也
+会让每个 branch fact 只累积一次。这和 RTL resolve queue combine 的语义一致：
+一个真实 branch fact 不能被重复训练。
 
-### 4\. 关键实现考量
+## Actual Result Application
 
-1.  **GHR 的一致性**：`OnUpdate` 函数中用于“重读”和“分配”的 `GHR`，必须与 `OnPredict` 使用的 `GHR` 完全一致。
-2.  **分配冲突（Allocation Conflicts）**：
-      * **问题**：如果在同一个更新周期，B0 和 B1 都预测错误，并且都尝试分配到 $T_7$ 的同一个 `index`，会发生什么？
-      * **模型中的处理**：你的 `for` 循环（`i from 0 to StopPoint`）天然地给了**位置靠前**的分支（如 B0）以**优先权**。B0 会先调用 `TAGE_Update_Single_Branch`，并可能占据 `T7` 的一个槽位。当 B1 再调用时，它可能会发现槽位已被 B0 占用。
-      * **硬件现实**：这再次证明了**N路组相连**（Set-Associativity）的必要性。在 N-Way TAGE 中，B0 和 B1 可以和平共存，各自占据同一 `Set` (index) 中的不同 `Way`。在你的模型中，你可以暂时使用简单的“前者优先”规则。
+`applyResolvedBranchResult()` 会用 resolved prefix 更新 `FetchTarget` 的 summary
+字段：`exeTaken`、`exeBranchInfo` 和 squash 信息。这些字段仍然有价值，主要用于
+stats、RAS/uRAS recovery/update，以及没有 per-entry resolved fact 时的 fallback。
+
+但 direction/target entry builder 在存在 per-entry resolved fact 时不会依赖这个
+summary。它们会先按 entry PC 查 `resolved branch set`：
+
+- direction update 使用该 entry 自己的 actual taken；
+- target update 使用该 entry 自己的 actual target 和 branch attributes；
+- 单一的 `exeBranchInfo + exeTaken` 只作为 fallback。
+
+这正是当前协议区别于旧模型的关键：旧模型经常用 predicted BTB entries 加一个
+executed branch summary 去猜训练 entry；新模型优先消费真实 resolved facts。
+
+## Direction Entries
+
+`buildDirectionUpdateEntries()` 构造给 BTBTAGE、MicroTAGE、MGSC 等方向预测器消费
+的训练 entry。
+
+输入包括：
+
+- actual update prefix 内的 predicted BTB entries；
+- resolved prefix 中预测 BTB 没有命中的 conditional branch，对它们生成
+  direction-only entry；
+- selected target entry，如果它是新分配的 conditional entry；
+- resolved branch prefix 和 prediction-time meta/history snapshot。
+
+对 resolved update 来说，普通方向预测器只保留 resolved prefix 里的 entry。MGSC
+有自己的 filter，因为它对 conditional entry 集合的需求略有不同。
+
+TAGE update 仍然需要 prediction-time meta/history。missing conditional branch
+只有在它的位置能用预测时 block context 表达时才能训练；如果 branch 已经超出预测
+block 可表达范围，就跳过这次训练，而不是用错误历史硬造 provider。
+
+## Target Entries
+
+`buildTargetUpdateEntries()` 构造给 MBTB、ITTAGE 等 target predictor 消费的训练
+entry。
+
+输入包括：
+
+- actual update prefix 内的 predicted BTB entries；
+- MBTB update selection 选出的 selected target entry，如果它是 new entry；
+- resolved branch prefix。
+
+每个 `TargetUpdateEntry` 都携带自己的 `actualTaken` 和 `actualBranch`。因此
+indirect target 修正会用该 entry PC 对应的真实 target，而不是从整个
+`FetchTarget` 的单一 summary 里猜。
+
+target update 不会为了每个 missing not-taken conditional branch 分配 target
+entry。这类 branch 是 direction-training fact，不是 target-allocation fact。
+
+## Resolve Queue Squash Rule
+
+当更老的 FTQ entry redirect 时，fetch 会删除更年轻的 FTQ entries。resolveQueue
+里同线程、更年轻 FTQ 的 pending entry 也必须同步删除。否则 wrong-path branch 可能
+在 recovery 后继续训练，并且用到重建路径的 history。
+
+清理规则和 `FetchTargetQueue::squashAfter()` 保持一致：
+
+```text
+drop if resolvedTid == tid && resolvedFTQId > squashFtqId
+```
+
+same-FTQ entry 不删除。它内部仍由 resolved branch prefix 决定哪些 branch 能训练。
+
+## What This Is Not
+
+当前路径不是 metadata-free 的 TAGE reread 方案。模拟器仍然保存并使用 prediction-time
+meta/history snapshot，因为 provider lookup、allocation 和 folded-history context
+必须对应当时的预测。
+
+它也不是逐 RTL signal 复刻。这里保留的是影响性能的因果链：
+
+```text
+resolved branch set + prediction-time context
+    -> explicit direction/target update entries
+    -> predictor table update
+    -> prediction quality and resolve queue pressure
+```
