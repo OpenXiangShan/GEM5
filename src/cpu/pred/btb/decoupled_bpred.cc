@@ -851,9 +851,36 @@ DecoupledBPUWithBTB::doResolveUpdateComponents(const FetchTarget &target)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
-            components[i]->doResolveUpdate(target);
+            components[i]->noteResolveUpdateAccepted(target);
+            updatePredictorComponent(components[i], target);
         }
     }
+}
+
+void
+DecoupledBPUWithBTB::updatePredictorComponent(
+    TimedBaseBTBPredictor *component,
+    const FetchTarget &target)
+{
+    if (component->usesDirectionUpdateEntries()) {
+        const auto update_ctx = target.makeDirectionUpdateContext();
+        const auto entries = target.makeDirectionUpdateEntries(
+            component->directionUpdateEntryFilter(),
+            component->getResolvedUpdate(), update_ctx);
+        component->updateWithDirectionEntries(entries, update_ctx, target);
+        return;
+    }
+
+    if (component->usesTargetUpdateEntries()) {
+        const auto update_ctx = target.makeTargetUpdateContext();
+        const auto entries = target.makeTargetUpdateEntries(
+            component->targetUpdateEntryFilter(),
+            component->getResolvedUpdate(), update_ctx);
+        component->updateWithTargetEntries(entries, update_ctx, target);
+        return;
+    }
+
+    component->update(target);
 }
 
 void
@@ -869,7 +896,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
 
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->getResolvedUpdate()) {
-            components[i]->update(target);
+            updatePredictorComponent(components[i], target);
         }
     }
 }

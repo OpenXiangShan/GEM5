@@ -165,6 +165,15 @@ class MBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
+    bool usesTargetUpdateEntries() const override { return true; }
+    TargetUpdateEntryFilter targetUpdateEntryFilter() const override
+    {
+        return TargetUpdateEntryFilter::Any;
+    }
+    void updateWithTargetEntries(
+        const std::vector<TargetUpdateEntry> &entries,
+        const TargetUpdateContext &ctx,
+        const FetchTarget &stream) override;
     void update(const FetchTarget &stream) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {

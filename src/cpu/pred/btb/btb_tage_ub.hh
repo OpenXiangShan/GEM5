@@ -107,6 +107,15 @@ class BTBTAGEUpperBound : public BTBTAGE
     void recoverPHist(const boost::dynamic_bitset<> &history,
                       const FetchTarget &entry,
                       const PathHistoryUpdate &update) override;
+    bool usesDirectionUpdateEntries() const override { return true; }
+    DirectionUpdateEntryFilter directionUpdateEntryFilter() const override
+    {
+        return DirectionUpdateEntryFilter::Conditional;
+    }
+    void updateWithDirectionEntries(
+        const std::vector<DirectionUpdateEntry> &entries,
+        const DirectionUpdateContext &ctx,
+        const FetchTarget &stream) override;
     void update(const FetchTarget &entry) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 

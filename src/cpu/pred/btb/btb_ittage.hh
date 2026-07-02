@@ -114,6 +114,15 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                       const FetchTarget &entry,
                       const PathHistoryUpdate &update) override;
 
+    bool usesTargetUpdateEntries() const override { return true; }
+    TargetUpdateEntryFilter targetUpdateEntryFilter() const override
+    {
+        return TargetUpdateEntryFilter::IndirectNonReturn;
+    }
+    void updateWithTargetEntries(
+        const std::vector<TargetUpdateEntry> &entries,
+        const TargetUpdateContext &ctx,
+        const FetchTarget &stream) override;
     void update(const FetchTarget &entry) override;
 
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;

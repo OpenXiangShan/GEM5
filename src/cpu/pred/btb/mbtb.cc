@@ -675,13 +675,21 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
 void
 MBTB::update(const FetchTarget &stream)
 {
-    DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     const auto update_ctx = stream.makeTargetUpdateContext();
     auto entries_need_update = stream.makeTargetUpdateEntries(
         TargetUpdateEntryFilter::Any, getResolvedUpdate(), update_ctx);
+    updateWithTargetEntries(entries_need_update, update_ctx, stream);
+}
+
+void
+MBTB::updateWithTargetEntries(const std::vector<TargetUpdateEntry> &entries,
+                              const TargetUpdateContext &ctx,
+                              const FetchTarget &stream)
+{
+    DPRINTF(BTB, "BTB: update called for pc %#lx\n", ctx.startPC);
     auto meta = std::static_pointer_cast<BTBMeta>(
         stream.predMetas[getComponentIdx()]);
-    updateWithEntries(entries_need_update, update_ctx, meta.get());
+    updateWithEntries(entries, ctx, meta.get());
 }
 
 void

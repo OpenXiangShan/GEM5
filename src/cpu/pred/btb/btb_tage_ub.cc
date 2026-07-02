@@ -502,13 +502,22 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
     auto entriesToUpdate = stream.makeDirectionUpdateEntries(
         DirectionUpdateEntryFilter::Conditional,
         getResolvedUpdate(), updateCtx);
+    updateWithDirectionEntries(entriesToUpdate, updateCtx, stream);
+}
+
+void
+BTBTAGEUpperBound::updateWithDirectionEntries(
+    const std::vector<DirectionUpdateEntry> &entries,
+    const DirectionUpdateContext &ctx,
+    const FetchTarget &stream)
+{
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
         return;
     }
 
-    updateWithEntries(entriesToUpdate, updateCtx, *predMeta);
+    updateWithEntries(entries, ctx, *predMeta);
 }
 
 void

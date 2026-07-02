@@ -255,11 +255,19 @@ BTBITTAGE::update(const FetchTarget &stream)
     auto entries_to_update = stream.makeTargetUpdateEntries(
         TargetUpdateEntryFilter::IndirectNonReturn, getResolvedUpdate(),
         update_ctx);
+    updateWithTargetEntries(entries_to_update, update_ctx, stream);
+}
 
+void
+BTBITTAGE::updateWithTargetEntries(
+    const std::vector<TargetUpdateEntry> &entries,
+    const TargetUpdateContext &ctx,
+    const FetchTarget &stream)
+{
     // get tage predictions from meta
     // TODO: use component idx
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    updateWithEntries(entries_to_update, update_ctx, *meta);
+    updateWithEntries(entries, ctx, *meta);
 }
 
 void

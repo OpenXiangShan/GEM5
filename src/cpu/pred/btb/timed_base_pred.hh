@@ -78,6 +78,30 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void recoverPHist(const boost::dynamic_bitset<> &history,
                               const FetchTarget &entry,
                               const PathHistoryUpdate &update) {}
+    virtual bool usesDirectionUpdateEntries() const { return false; }
+    virtual DirectionUpdateEntryFilter directionUpdateEntryFilter() const
+    {
+        return DirectionUpdateEntryFilter::Conditional;
+    }
+    virtual void updateWithDirectionEntries(
+        const std::vector<DirectionUpdateEntry> &entries,
+        const DirectionUpdateContext &ctx,
+        const FetchTarget &entry)
+    {
+        update(entry);
+    }
+    virtual bool usesTargetUpdateEntries() const { return false; }
+    virtual TargetUpdateEntryFilter targetUpdateEntryFilter() const
+    {
+        return TargetUpdateEntryFilter::Any;
+    }
+    virtual void updateWithTargetEntries(
+        const std::vector<TargetUpdateEntry> &entries,
+        const TargetUpdateContext &ctx,
+        const FetchTarget &entry)
+    {
+        update(entry);
+    }
     virtual void update(const FetchTarget &entry) {}
     virtual unsigned getDelay() {return numDelay;}
     virtual bool getResolvedUpdate() {return resolvedUpdate;}
@@ -86,7 +110,12 @@ class TimedBaseBTBPredictor: public SimObject
 #endif
     // Two-phase resolved update: probe first, then apply
     virtual bool canResolveUpdate(const FetchTarget &entry) { return true; }
-    virtual void doResolveUpdate(const FetchTarget &entry) { update(entry); }
+    virtual void noteResolveUpdateAccepted(const FetchTarget &entry) {}
+    virtual void doResolveUpdate(const FetchTarget &entry)
+    {
+        noteResolveUpdateAccepted(entry);
+        update(entry);
+    }
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchTarget &entry, const DynInstPtr &inst) {}

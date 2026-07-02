@@ -614,15 +614,14 @@ MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
 }
 
 /**
- * @brief Perform resolved update after probe success.
+ * @brief Retire prediction bank state after a resolved update probe succeeds.
  */
 void
-MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
+MicroTAGE::noteResolveUpdateAccepted(const FetchTarget &stream) {
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
     }
-    update(stream);
 }
 
 /**
@@ -639,7 +638,15 @@ MicroTAGE::update(const FetchTarget &stream) {
     auto entries_to_update = stream.makeDirectionUpdateEntries(
         DirectionUpdateEntryFilter::Conditional,
         getResolvedUpdate(), update_ctx);
+    updateWithDirectionEntries(entries_to_update, update_ctx, stream);
+}
 
+void
+MicroTAGE::updateWithDirectionEntries(
+    const std::vector<DirectionUpdateEntry> &entries,
+    const DirectionUpdateContext &ctx,
+    const FetchTarget &stream)
+{
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -647,7 +654,7 @@ MicroTAGE::update(const FetchTarget &stream) {
         return;
     }
 
-    updateWithEntries(entries_to_update, update_ctx, predMeta);
+    updateWithEntries(entries, ctx, predMeta);
 }
 
 void

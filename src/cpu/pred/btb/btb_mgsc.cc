@@ -937,16 +937,26 @@ BTBMGSC::update(const FetchTarget &stream)
         return;  // No update if disabled
     }
     const auto update_ctx = stream.makeDirectionUpdateContext();
-    Addr startAddr = update_ctx.startPC;
-    DPRINTF(MGSC, "update startAddr: %#lx\n", startAddr);
 
     // Prepare BTB entries to update
     auto entries_to_update = stream.makeDirectionUpdateEntries(
         DirectionUpdateEntryFilter::Mgsc, getResolvedUpdate(), update_ctx);
+    updateWithDirectionEntries(entries_to_update, update_ctx, stream);
+}
 
+void
+BTBMGSC::updateWithDirectionEntries(
+    const std::vector<DirectionUpdateEntry> &entries,
+    const DirectionUpdateContext &ctx,
+    const FetchTarget &stream)
+{
+    if (!isEnabled()) {
+        return;  // No update if disabled
+    }
+    DPRINTF(MGSC, "update startAddr: %#lx\n", ctx.startPC);
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
-    updateWithEntries(entries_to_update, update_ctx, *meta);
+    updateWithEntries(entries, ctx, *meta);
 }
 
 void

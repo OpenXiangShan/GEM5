@@ -163,9 +163,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
+    bool usesDirectionUpdateEntries() const override { return true; }
+    DirectionUpdateEntryFilter directionUpdateEntryFilter() const override
+    {
+        return DirectionUpdateEntryFilter::Conditional;
+    }
+    void updateWithDirectionEntries(
+        const std::vector<DirectionUpdateEntry> &entries,
+        const DirectionUpdateContext &ctx,
+        const FetchTarget &stream) override;
     void update(const FetchTarget &entry) override;
     bool canResolveUpdate(const FetchTarget &entry) override;
-    void doResolveUpdate(const FetchTarget &entry) override;
+    void noteResolveUpdateAccepted(const FetchTarget &entry) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
