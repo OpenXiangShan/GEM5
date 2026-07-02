@@ -30,11 +30,11 @@ def setKmhV3IdealParams(args, system):
         #cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
-        cpu.commitToFetchDelay = 2
+        cpu.commitToFetchDelay = 4  # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu
         cpu.fetchQueueSize = 64
 
         # decode
-        cpu.fetchToDecodeDelay = 5
+        cpu.fetchToDecodeDelay = 3
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
