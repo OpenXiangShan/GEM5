@@ -785,7 +785,7 @@ DecoupledBPUWithBTB::resolveUpdate(
 
     const auto selection = selectUpdateEntryForTarget(target);
     const auto prepared_update =
-        prepareUpdateEntriesForTarget(target, update_branches, selection);
+        prepareBPUUpdate(target, predictWidth, selection, update_branches);
 
     if (!canResolveUpdateComponents(target)) {
         return false;
@@ -827,15 +827,6 @@ DecoupledBPUWithBTB::selectUpdateEntryForTarget(const FetchTarget &target)
     }
 
     return {};
-}
-
-BPUPreparedUpdate
-DecoupledBPUWithBTB::prepareUpdateEntriesForTarget(
-    const FetchTarget &target,
-    const std::vector<ResolvedBranch> &update_branches,
-    const BTBUpdateEntrySelection &selection)
-{
-    return prepareBPUUpdate(target, predictWidth, selection, update_branches);
 }
 
 bool
@@ -910,7 +901,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
 
     const auto selection = selectUpdateEntryForTarget(target);
     const auto prepared_update =
-        prepareUpdateEntriesForTarget(target, update_branches, selection);
+        prepareBPUUpdate(target, predictWidth, selection, update_branches);
 
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->getResolvedUpdate()) {
