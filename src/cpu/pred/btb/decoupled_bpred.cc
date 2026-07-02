@@ -788,7 +788,7 @@ DecoupledBPUWithBTB::resolveUpdate(
     if (!canResolveUpdateComponents(target)) {
         return false;
     }
-    doResolveUpdateComponents(target);
+    updateResolvedPredictorComponents(target);
     return true;
 }
 
@@ -847,7 +847,8 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
 }
 
 void
-DecoupledBPUWithBTB::doResolveUpdateComponents(const FetchTarget &target)
+DecoupledBPUWithBTB::updateResolvedPredictorComponents(
+    const FetchTarget &target)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {

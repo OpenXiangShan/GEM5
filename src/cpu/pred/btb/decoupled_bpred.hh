@@ -731,7 +731,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void prepareUpdateEntriesForTarget(FetchTarget &target,
                                        const BPUUpdateEvent &update_event);
     bool canResolveUpdateComponents(const FetchTarget &target);
-    void doResolveUpdateComponents(const FetchTarget &target);
+    void updateResolvedPredictorComponents(const FetchTarget &target);
     void updatePredictorComponent(TimedBaseBTBPredictor *component,
                                   const FetchTarget &target);
     void updatePredictorComponents(FetchTarget &target,
