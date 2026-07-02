@@ -5,6 +5,7 @@
 
 #include "base/types.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/replay_events.hh"
 #include "enums/PerfRecord.hh"
 #include "sim/arch_db.hh"
 
@@ -50,6 +51,23 @@ static char ReplayReasonStr[] = {
     'O'
 };
 
+
+static const char LdStReplayCharStr[] = {
+    'T',  // TLBMissReplay
+    'C',  // CacheMissReplay
+    'E',  // RescheduleReplay
+    'F',  // STLFReplay
+    'M',  // MdpAddrReplay
+    'N',  // NukeReplay
+    'K',  // CacheBlockedReplay
+    'B',  // BankConflictReplay
+    'R',  // RARReplay
+    'W',  // RAWReplay
+    'A',  // MshrAliasFailReplay
+    'H',  // HitInWriteBufferReplay
+    'G',  // MshrArbFailReplay
+};
+
 class InstMeta
 {
 
@@ -61,10 +79,17 @@ class InstMeta
     uint64_t value;
 
     bool isload;
+    // 'L' load / 'S' store / 'A' atomic / '\0' non-mem (for LQ/SQ occupancy)
+    char memType;
     Addr vaddr;
     Addr paddr;
     Tick lastReplay;
     std::stringstream replayStr;
+    // Absolute tick of every replay event
+    std::stringstream replayTicks;
+    // Absolute tick of every AtFU (execution start); one per pass for replayed
+    // loads. Lets tooling draw the per-pass IssueQ->Execute sawtooth.
+    std::stringstream executeTicks;
 
     // Per-instruction stall attribution (mirrors dyn_inst stallProfile).
     std::string stallReason;
@@ -84,6 +109,7 @@ class PerfCCT
     ArchDBer* archdb;
     std::string sql_insert_cmd;
     std::string ld_insert_cmd;
+    std::string squash_insert_cmd;
 
     uint64_t id = 0;
     std::vector<InstMeta> metas;
@@ -91,6 +117,8 @@ class PerfCCT
     std::stringstream ss;
 
     InstMeta* getMeta(InstSeqNum sn);
+
+    static void dumpMetaRow(std::stringstream& s, const InstMeta* meta);
 
   public:
     PerfCCT(bool enable, ArchDBer* db);
@@ -105,6 +133,8 @@ class PerfCCT
                            const std::string& val);
 
     void commitMeta(InstSeqNum sn);
+
+    void squashMeta(InstSeqNum sn);
 };
 
 

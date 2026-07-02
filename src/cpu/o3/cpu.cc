@@ -1510,6 +1510,9 @@ CPU::squashInstIt(ListIt &instIt, ThreadID tid)
         // Mark it as squashed.
         (*instIt)->setSquashed();
 
+        // Capture the wrong-path inst's partial lifecycle before it disappears
+        perfCCT->squashMeta((*instIt)->seqNum);
+
         // @todo: Formulate a consistent method for deleting
         // instructions from the instruction list
         // Remove the instruction from the list.

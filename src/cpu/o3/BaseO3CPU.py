@@ -78,7 +78,9 @@ class PerfRecord(ScopedEnum):
         #                     own real problem when StallReason==HoLBlocked)
         #   StallSpans = chronological "reason:cycles;..." breakdown of every
         #                stall span (full per-phase detail, includes HoLBlocked)
-        'StallReason', 'StallCycles', 'SecondaryReason', 'StallSpans'
+        'StallReason', 'StallCycles', 'SecondaryReason', 'StallSpans',
+        # MemType = 'L' load / 'S' store / 'A' atomic / '' non-mem.
+        'MemType'
     ]
 
 class BaseO3CPU(BaseCPU):

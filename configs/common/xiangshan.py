@@ -689,6 +689,19 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
         perfCCT_cmd += ");"
 
+        # Wrong-path (squashed) insts, same columns as LifeTimeCommitTrace.
+        # AtCommit holds the squash tick (when the inst left the machine).
+        perfCCT_cmd += "CREATE TABLE SquashedLifeTimeTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+        perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
+        for i in range(1, len(PerfRecord.vals)):
+            name = PerfRecord.vals[i]
+            type_str = ("bigint unsigned"
+                if name.lower().startswith(
+                    ('at', 'pc', 'result', 'stallcycles'))
+                else "char(20)")
+            perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
+        perfCCT_cmd += ");"
+
         perfCCT_cmd += """
 CREATE TABLE LoadLifeTimeCommitTrace(
     ID int unsigned PRIMARY KEY,
@@ -696,6 +709,8 @@ CREATE TABLE LoadLifeTimeCommitTrace(
     PAddress bigint unsigned not null,
     LastReplay bigint unsigned not null,
     ReplayStr char(10) not null,
+    ReplayTicks text not null,
+    ExecuteTicks text not null,
     constraint fk_id
         foreign key (ID) references LifeTimeCommitTrace(ID)
 );

@@ -1239,6 +1239,13 @@ Commit::commitInsts()
             if (!resident->readyToCommit()) {
                 continue;
             }
+            // A load can set CanCommit speculatively and then be replayed:
+            // While it still needs a replay, or is back in the load pipe, it is
+            // not finished: charging HoLBlocked would wrongly mark it
+            // "ready & waiting for head" across the whole replay window.
+            if (resident->needReplay() || resident->inPipe()) {
+                continue;
+            }
             resident->recordStall(StallReason::HoLBlocked);
         }
     }
@@ -1336,8 +1343,9 @@ Commit::commitInsts()
                             continue;
                         if (waiter == head_inst) {
                             waiter->recordStall(propagate);
-                        } else if (waiter->readyToCommit()) {
-                            // only insts done & waiting to retire are HoL-blocked
+                        } else if (waiter->readyToCommit() &&
+                                   !waiter->needReplay() && !waiter->inPipe()) {
+                            // only truly-finished insts are HoL-blocked
                             waiter->recordStall(StallReason::HoLBlocked);
                         }
                     }

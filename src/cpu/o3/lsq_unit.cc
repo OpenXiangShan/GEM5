@@ -1724,18 +1724,10 @@ LSQUnit::executeLoadPipeSx()
                     stats.loadReplayEventsFromIssueQueue[*inst->getReplayType()]++;
                 }
 
-                if (inst->needCacheBlockedReplay()) {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_DcacheStall);
-                }
-                else if (inst->needRARReplay()) {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_RARReplay);
-                }
-                else if (inst->needRAWReplay()) {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_RAWReplay);
-                }
-                else {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_OtherReplay);
-                }
+                // record the exact replay type (not a coarse bucket) so the
+                // trace can tell apart Reschedule/STLF/RAR/RAW/CacheBlocked/...
+                cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr,
+                                             (uint64_t)*inst->getReplayType());
                 cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::LastReplay, curTick());
 
                 iewStage->loadCancel(inst);
@@ -1777,20 +1769,10 @@ LSQUnit::executeLoadPipeSx()
                 else if (inst->needTLBMissReplay()) iewStage->deferMemInst(inst);
 
 
-                if (inst->needTLBMissReplay()) {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_TLBMiss);
-                }
-                else if (inst->needCacheMissReplay()) {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_CacheMiss);
-                }
-                else if (inst->needBankConflictReplay()) {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_BankConflict);
-                }
-                else if (inst->needNukeReplay()) {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_Nuke);
-                } else {
-                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_OtherReplay);
-                }
+                // record the exact replay type (covers TLBMiss/CacheMiss/Bank
+                // Conflict/Nuke/MshrArbFail/MshrAliasFail/HitInWriteBuffer/...)
+                cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr,
+                                             (uint64_t)*inst->getReplayType());
                 cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::LastReplay, curTick());
 
                 iewStage->loadCancel(inst);
