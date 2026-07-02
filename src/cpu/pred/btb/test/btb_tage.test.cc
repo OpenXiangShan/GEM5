@@ -1325,7 +1325,8 @@ TEST_F(BTBTAGETest, BankConflict) {
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
         bool can_update = bankTage->canResolveUpdate(stream);
         ASSERT_TRUE(can_update);
-        bankTage->doResolveUpdate(stream);
+        bankTage->noteResolveUpdateAccepted(stream);
+        bankTage->update(stream);
 
         // Should not detect conflict
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
@@ -1345,7 +1346,8 @@ TEST_F(BTBTAGETest, BankConflict) {
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
         bool can_update = bankTage->canResolveUpdate(stream);
         ASSERT_TRUE(can_update);
-        bankTage->doResolveUpdate(stream);
+        bankTage->noteResolveUpdateAccepted(stream);
+        bankTage->update(stream);
 
         // No conflict even with same bank
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
