@@ -907,13 +907,22 @@ class BPUUpdateEvent
     }
 
     BPUPreparedUpdate
-    prepareLegacyTarget(
+    prepareUpdate(
         FetchTarget &target,
         unsigned predictWidth,
         const BTBUpdateEntrySelection &selection) const
     {
         applyActualResult(target);
-        auto prepared = makePreparedUpdate(target, predictWidth, selection);
+        return makePreparedUpdate(target, predictWidth, selection);
+    }
+
+    BPUPreparedUpdate
+    prepareLegacyTarget(
+        FetchTarget &target,
+        unsigned predictWidth,
+        const BTBUpdateEntrySelection &selection) const
+    {
+        auto prepared = prepareUpdate(target, predictWidth, selection);
         installLegacyUpdateFields(target, prepared);
         return prepared;
     }

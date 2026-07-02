@@ -835,7 +835,7 @@ DecoupledBPUWithBTB::prepareUpdateEntriesForTarget(
     const BPUUpdateEvent &update_event,
     const BTBUpdateEntrySelection &selection)
 {
-    return update_event.prepareLegacyTarget(target, predictWidth, selection);
+    return update_event.prepareUpdate(target, predictWidth, selection);
 }
 
 bool
