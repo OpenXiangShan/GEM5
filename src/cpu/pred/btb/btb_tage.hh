@@ -172,7 +172,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
         const std::vector<DirectionUpdateEntry> &entries,
         const DirectionUpdateContext &ctx,
         const FetchTarget &stream) override;
-    void update(const FetchTarget &entry) override;
     bool canResolveUpdate(const FetchTarget &entry) override;
     void noteResolveUpdateAccepted(const FetchTarget &entry) override;
 

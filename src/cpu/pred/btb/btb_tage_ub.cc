@@ -496,12 +496,6 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
 }
 
 void
-BTBTAGEUpperBound::update(const FetchTarget &stream)
-{
-    updateWithLegacyDirectionEntries(stream);
-}
-
-void
 BTBTAGEUpperBound::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
     const DirectionUpdateContext &ctx,

@@ -821,16 +821,6 @@ BTBTAGE::noteResolveUpdateAccepted(const FetchTarget &stream) {
     }
 }
 
-/**
- * @brief Updates the TAGE predictor state based on actual branch execution results
- * 
- * @param stream The fetch stream containing branch execution information
- */
-void
-BTBTAGE::update(const FetchTarget &stream) {
-    updateWithLegacyDirectionEntries(stream);
-}
-
 void
 BTBTAGE::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
