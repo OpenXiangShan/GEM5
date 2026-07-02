@@ -246,15 +246,6 @@ BTBITTAGE::getPredictionMeta(ThreadID tid) {
 }
 
 void
-BTBITTAGE::update(const FetchTarget &stream)
-{
-    if (debugPC == stream.startPC || debugPC2 == stream.startPC) {
-        debugFlag = true;
-    }
-    updateWithLegacyTargetEntries(stream);
-}
-
-void
 BTBITTAGE::updateWithTargetEntries(
     const std::vector<TargetUpdateEntry> &entries,
     const TargetUpdateContext &ctx,

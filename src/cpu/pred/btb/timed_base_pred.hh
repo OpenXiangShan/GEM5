@@ -114,16 +114,6 @@ class TimedBaseBTBPredictor: public SimObject
         updateWithDirectionEntries(entries, ctx, entry);
     }
 
-    void updateWithLegacyTargetEntries(const FetchTarget &entry)
-    {
-        const auto ctx = entry.makeTargetUpdateContext();
-        const auto entries = buildTargetUpdateEntries(
-            entry.updateBTBEntries, entry.updateNewBTBEntry,
-            entry.updateIsOldEntry, entry.resolvedUpdatePrefixPCs,
-            targetUpdateEntryFilter(), getResolvedUpdate(), ctx);
-        updateWithTargetEntries(entries, ctx, entry);
-    }
-
   public:
     virtual void update(const FetchTarget &entry) {}
     virtual unsigned getDelay() {return numDelay;}
