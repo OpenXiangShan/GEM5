@@ -499,7 +499,9 @@ void
 BTBTAGEUpperBound::update(const FetchTarget &stream)
 {
     const auto updateCtx = stream.makeDirectionUpdateContext();
-    auto entriesToUpdate = stream.makeDirectionUpdateEntries(
+    auto entriesToUpdate = buildDirectionUpdateEntries(
+        stream.updateBTBEntries, stream.updateNewBTBEntry,
+        stream.updateIsOldEntry, stream.resolvedUpdatePrefixPCs,
         DirectionUpdateEntryFilter::Conditional,
         getResolvedUpdate(), updateCtx);
     updateWithDirectionEntries(entriesToUpdate, updateCtx, stream);

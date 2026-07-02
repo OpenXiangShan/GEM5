@@ -847,16 +847,6 @@ struct FetchTarget
                 static_cast<SquashType>(squashType), squashPC};
     }
 
-    std::vector<DirectionUpdateEntry>
-    makeDirectionUpdateEntries(DirectionUpdateEntryFilter filter,
-                               bool resolved_update,
-                               const DirectionUpdateContext &ctx) const
-    {
-        return buildDirectionUpdateEntries(
-            updateBTBEntries, updateNewBTBEntry, updateIsOldEntry,
-            resolvedUpdatePrefixPCs, filter, resolved_update, ctx);
-    }
-
     // Argument resolved pc could not match any BTB entry branch pc,
     // Just ignore it in that case.
     void markBTBEntryResolved(Addr resolvedInstPC)
