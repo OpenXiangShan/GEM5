@@ -825,7 +825,7 @@ DecoupledBPUWithBTB::selectUpdateEntryForTarget(const FetchTarget &target)
             target.makeTargetUpdateContext());
     }
 
-    return {target.updateNewBTBEntry, target.updateIsOldEntry};
+    return {};
 }
 
 void
