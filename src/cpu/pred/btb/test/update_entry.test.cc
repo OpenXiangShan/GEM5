@@ -242,7 +242,7 @@ TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
     EXPECT_EQ(entries[1].pc, second.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
+TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesUpdatePayload)
 {
     const BTBEntry first = makeEntry(0x1000, true, false);
     const BTBEntry second = makeEntry(0x1008, true, false);
@@ -261,23 +261,12 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesLegacyTarget)
     });
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
-    const BPUPreparedUpdate prepared = event.prepareLegacyTarget(
-        stream, 32, selection);
+    const BPUPreparedUpdate prepared = event.prepareUpdate(stream, 32, selection);
 
     EXPECT_TRUE(stream.resolved);
     EXPECT_TRUE(stream.exeTaken);
     EXPECT_EQ(stream.exeBranchInfo.pc, second.pc);
     EXPECT_EQ(stream.exeBranchInfo.target, second.pc + 0x200);
-
-    ASSERT_EQ(stream.updateBTBEntries.size(), 2);
-    EXPECT_EQ(stream.updateBTBEntries[0].pc, first.pc);
-    EXPECT_EQ(stream.updateBTBEntries[1].pc, second.pc);
-    EXPECT_TRUE(stream.updateBTBEntries[0].resolved);
-    EXPECT_TRUE(stream.updateBTBEntries[1].resolved);
-
-    EXPECT_EQ(stream.updateNewBTBEntry.pc, second.pc);
-    EXPECT_TRUE(stream.updateNewBTBEntry.resolved);
-    EXPECT_FALSE(stream.updateIsOldEntry);
 
     ASSERT_EQ(prepared.btbEntries.size(), 2);
     EXPECT_EQ(prepared.btbEntries[0].pc, first.pc);
@@ -303,7 +292,7 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventDirectPrepareDoesNotInstallLegacyFiel
     stream.updateBTBEntries = {stale};
     stream.updateNewBTBEntry = stale;
     stream.updateIsOldEntry = true;
-    stream.setResolvedUpdatePrefixPCs({stale.pc});
+    stream.resolvedUpdatePrefixPCs = {stale.pc};
 
     const ResolvedBranch resolved_second =
         makeResolvedBranch(second.pc, true, true);
@@ -375,17 +364,15 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
     EXPECT_EQ(event.resolvedBranchCount(), 2);
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
-    const BPUPreparedUpdate prepared = event.prepareLegacyTarget(
-        stream, 32, selection);
+    const BPUPreparedUpdate prepared = event.prepareUpdate(stream, 32, selection);
 
     EXPECT_TRUE(stream.resolved);
     EXPECT_TRUE(stream.exeTaken);
     EXPECT_EQ(stream.exeBranchInfo.pc, second.pc);
 
-    ASSERT_EQ(stream.updateBTBEntries.size(), 2);
-    EXPECT_EQ(stream.updateBTBEntries[0].pc, first.pc);
-    EXPECT_EQ(stream.updateBTBEntries[1].pc, second.pc);
-    EXPECT_EQ(stream.updateNewBTBEntry.pc, second.pc);
+    EXPECT_TRUE(stream.updateBTBEntries.empty());
+    EXPECT_FALSE(stream.updateNewBTBEntry.valid);
+    EXPECT_FALSE(stream.updateIsOldEntry);
     ASSERT_EQ(prepared.resolvedPrefixPCs.size(), 2);
     EXPECT_EQ(prepared.resolvedPrefixPCs[0], first.pc);
     EXPECT_EQ(prepared.resolvedPrefixPCs[1], second.pc);

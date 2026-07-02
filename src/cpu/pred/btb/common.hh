@@ -761,21 +761,6 @@ struct FetchTarget
             static_cast<SquashType>(squashType), squashPC);
     }
 
-    void setUpdateEntrySelection(const BTBUpdateEntrySelection &selection)
-    {
-        updateNewBTBEntry = selection.entry;
-        updateIsOldEntry = selection.isOldEntry;
-    }
-
-    void setResolvedUpdatePrefixPCs(const std::vector<Addr> &pcs)
-    {
-        resolvedUpdatePrefixPCs = pcs;
-        std::sort(resolvedUpdatePrefixPCs.begin(), resolvedUpdatePrefixPCs.end());
-        resolvedUpdatePrefixPCs.erase(std::unique(resolvedUpdatePrefixPCs.begin(),
-                                                  resolvedUpdatePrefixPCs.end()),
-                                      resolvedUpdatePrefixPCs.end());
-    }
-
     bool addResolvedBranch(const ResolvedBranch &branch)
     {
         auto it = std::lower_bound(
@@ -916,17 +901,6 @@ class BPUUpdateEvent
         return makePreparedUpdate(target, predictWidth, selection);
     }
 
-    BPUPreparedUpdate
-    prepareLegacyTarget(
-        FetchTarget &target,
-        unsigned predictWidth,
-        const BTBUpdateEntrySelection &selection) const
-    {
-        auto prepared = prepareUpdate(target, predictWidth, selection);
-        installLegacyUpdateFields(target, prepared);
-        return prepared;
-    }
-
     std::vector<DirectionUpdateEntry>
     makeDirectionUpdateEntries(
         const BPUPreparedUpdate &prepared,
@@ -1017,14 +991,6 @@ class BPUUpdateEvent
         return selection;
     }
 
-    void installLegacyUpdateFields(
-        FetchTarget &target,
-        const BPUPreparedUpdate &prepared) const
-    {
-        target.setResolvedUpdatePrefixPCs(prepared.resolvedPrefixPCs);
-        target.updateBTBEntries = prepared.btbEntries;
-        target.setUpdateEntrySelection(prepared.selection);
-    }
 };
 
 /**

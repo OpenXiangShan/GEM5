@@ -1264,7 +1264,7 @@ TEST_F(BTBTAGETest, ResolvedUpdateUsesExplicitPrefix) {
     stream.updateBTBEntries = {first, second};
     stream.updateIsOldEntry = true;
     stream.predMetas[0] = meta;
-    stream.setResolvedUpdatePrefixPCs({first.pc});
+    stream.resolvedUpdatePrefixPCs = {first.pc};
 
     tage->update(stream);
 
