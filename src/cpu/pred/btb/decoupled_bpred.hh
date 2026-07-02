@@ -403,7 +403,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
-    const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    const FetchTarget &ftqFetchingTarget(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
 
     void dumpFsq(const char *when);
 

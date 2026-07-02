@@ -70,6 +70,8 @@
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/TraceReader.hh"
+#include "debug/UC.hh"
+#include "debug/UCSquash.hh"
 #include "mem/packet.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
@@ -91,6 +93,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       cpu(_cpu),
       branchPred(nullptr),
       resolveQueueSize(params.resolveQueueSize),
+      uopCache(std::make_unique<UopCache>(_cpu, params)),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -270,6 +273,22 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of times an entry is enqueued to the resolve queue"),
     ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
              "Number of entries in the resolve queue"),
+    ADD_STAT(uopCacheHits, statistics::units::Count::get(),
+             "Number of FTQ entries supplied from the uop cache"),
+    ADD_STAT(uopCacheMisses, statistics::units::Count::get(),
+             "Number of FTQ entries missed in the uop cache"),
+    ADD_STAT(uopCacheHitInsts, statistics::units::Count::get(),
+             "Number of instructions supplied from the uop cache"),
+    ADD_STAT(uopCacheBypassQueueFullEvents, statistics::units::Count::get(),
+             "Number of uop-cache hit instructions using the normal fetch "
+             "queue because the bypass queue is full"),
+    ADD_STAT(uopCacheBypassOrderBlockedEvents, statistics::units::Count::get(),
+             "Number of times queued uop-cache bypass instructions wait for "
+             "older non-bypass instructions to decode"),
+    ADD_STAT(uopCacheBypassInsts, statistics::units::Count::get(),
+             "Number of uop-cache instructions bypassed to decode"),
+    ADD_STAT(uopCachePcMismatches, statistics::units::Count::get(),
+             "Number of uop-cache entry hits that could not supply current PC"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -351,6 +370,20 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .init(1, 8, 1);
         resolveQueueOccupancy
             .init(0, 32, 1);
+        uopCacheHits
+            .prereq(uopCacheHits);
+        uopCacheMisses
+            .prereq(uopCacheMisses);
+        uopCacheHitInsts
+            .prereq(uopCacheHitInsts);
+        uopCacheBypassQueueFullEvents
+            .prereq(uopCacheBypassQueueFullEvents);
+        uopCacheBypassOrderBlockedEvents
+            .prereq(uopCacheBypassOrderBlockedEvents);
+        uopCacheBypassInsts
+            .prereq(uopCacheBypassInsts);
+        uopCachePcMismatches
+            .prereq(uopCachePcMismatches);
         traceMetaStores
             .prereq(traceMetaStores);
         traceMetaCleanupSquashCalls
@@ -790,6 +823,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
     if (run_out) {
+        inst->setLastFtqEntryInst();
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
@@ -1105,6 +1139,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Force a new I-cache request for the next FTQ head after squash.
     threads[tid].valid = false;
     ftqEntryFetchedInsts[tid] = 0;
+    clearPendingUopCacheLookup(tid);
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1534,16 +1569,23 @@ Fetch::handleCommitSignals(ThreadID tid)
             "from commit.\n",
             tid);
 
-        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
-        DynInstPtr squash_inst = fromCommit->commitInfo[tid].squashInst;
-        if (fromCommit->commitInfo[tid].isTrapSquash &&
-            fromCommit->commitInfo[tid].traceTrapSkipInst) {
-            squash_seq = fromCommit->commitInfo[tid].traceTrapSeqNum;
-            squash_inst = nullptr;
-            DPRINTF(Fetch,
-                    "[tid:%i] Trap squash with trace ctrl-flow fault: rollback seq=%llu (skip head)\n",
-                    tid, static_cast<unsigned long long>(squash_seq));
-        }
+    InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+    DynInstPtr squash_inst = fromCommit->commitInfo[tid].squashInst;
+    if (fromCommit->commitInfo[tid].isTrapSquash &&
+        fromCommit->commitInfo[tid].traceTrapSkipInst) {
+        squash_seq = fromCommit->commitInfo[tid].traceTrapSeqNum;
+        squash_inst = nullptr;
+        DPRINTF(Fetch,
+                "[tid:%i] Trap squash with trace ctrl-flow fault: rollback seq=%llu (skip head)\n",
+                tid, static_cast<unsigned long long>(squash_seq));
+    }
+
+    if (uopCache && squash_inst && squash_inst->isFetchFromUopCache()) {
+        DPRINTF(UC, "commit squash inst from uop cache, fetchAddr=%#lx\n",
+                squash_inst->getUopCacheFetchAddr());
+        uopCache->invalidUopEntry(squash_inst->getUopCacheFetchAddr());
+        DPRINTF(UCSquash, "squashInst from commit invalidated UC entry\n");
+    }
 
     // In any case, squash.
     squash(*fromCommit->commitInfo[tid].pc, squash_seq,
@@ -1555,6 +1597,12 @@ Fetch::handleCommitSignals(ThreadID tid)
     auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
 
     if (mispred_inst) {
+        if (uopCache && mispred_inst->isFetchFromUopCache()) {
+            DPRINTF(UC, "commit mispredict inst from uop cache, fetchAddr=%#lx\n",
+                    mispred_inst->getUopCacheFetchAddr());
+            uopCache->invalidUopEntry(mispred_inst->getUopCacheFetchAddr());
+            DPRINTF(UCSquash, "mispredictInst from commit invalidated UC entry\n");
+        }
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
@@ -1593,6 +1641,12 @@ Fetch::handleDecodeSquash(ThreadID tid)
 
         auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
         if (fromDecode->decodeInfo[tid].branchMispredict) {
+            if (uopCache && mispred_inst && mispred_inst->isFetchFromUopCache()) {
+                DPRINTF(UC, "decode mispredict inst from uop cache, fetchAddr=%#lx\n",
+                        mispred_inst->getUopCacheFetchAddr());
+                uopCache->invalidUopEntry(mispred_inst->getUopCacheFetchAddr());
+                DPRINTF(UCSquash, "mispredictInst from decode invalidated UC entry\n");
+            }
             assert(dbpbtb);
             const auto next_pc =
                 fromDecode->decodeInfo[tid].nextPC->as<RiscvISA::PCState>();
@@ -1613,6 +1667,14 @@ Fetch::handleDecodeSquash(ThreadID tid)
             DPRINTF(Fetch, "Squashing from decode with PC = %s\n",
                 *fromDecode->decodeInfo[tid].nextPC);
             // Squash unless we're already squashing
+            if (uopCache && fromDecode->decodeInfo[tid].squashInst &&
+                fromDecode->decodeInfo[tid].squashInst->isFetchFromUopCache()) {
+                auto squash_inst = fromDecode->decodeInfo[tid].squashInst;
+                DPRINTF(UC, "decode squash inst from uop cache, fetchAddr=%#lx\n",
+                        squash_inst->getUopCacheFetchAddr());
+                uopCache->invalidUopEntry(squash_inst->getUopCacheFetchAddr());
+                DPRINTF(UCSquash, "squashInst from decode invalidated UC entry\n");
+            }
             squashFromDecode(*fromDecode->decodeInfo[tid].nextPC,
                              fromDecode->decodeInfo[tid].squashInst,
                              fromDecode->decodeInfo[tid].doneSeqNum,
@@ -1628,7 +1690,8 @@ Fetch::handleDecodeSquash(ThreadID tid)
 DynInstPtr
 Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
         StaticInstPtr curMacroop, const PCStateBase &this_pc,
-        const PCStateBase &next_pc, bool trace)
+        const PCStateBase &next_pc, bool trace, bool enqueueToFetchQueue,
+        bool uopCacheBypass)
 {
     // Get a sequence number.
     InstSeqNum seq = cpu->getAndIncrementInstSeq();
@@ -1645,6 +1708,7 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);
 
     instruction->setTid(tid);
+    instruction->setUopCacheBypass(uopCacheBypass);
 
     instruction->setThreadState(cpu->thread[tid]);
 
@@ -1677,10 +1741,16 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     // Write the instruction to the first slot in the queue
     // that heads to decode.
     assert(numInst < fetchWidth);
-    fetchQueue[tid].push_back(instruction);
-    assert(fetchQueue[tid].size() <= fetchQueueSize);
-    DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
-            tid, fetchQueue[tid].size(), fetchQueueSize);
+    if (enqueueToFetchQueue) {
+        fetchQueue[tid].push_back(instruction);
+        assert(fetchQueue[tid].size() <= fetchQueueSize);
+        DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
+                tid, fetchQueue[tid].size(), fetchQueueSize);
+    } else {
+        DPRINTF(UC, "[tid:%i] Uop-cache inst bypasses fetch queue [sn:%llu] "
+                "pc=%#lx\n",
+                tid, instruction->seqNum, instruction->getPC());
+    }
     //toDecode->insts[toDecode->size++] = instruction;
 
     // Keep track of if we can take an interrupt at this boundary
@@ -1702,6 +1772,130 @@ Fetch::checkDecoupledFrontend(ThreadID tid)
         return false;
     }
     return true;
+}
+
+bool
+Fetch::getUopCacheHit(ThreadID tid, Addr fetchAddr, int &hitWay,
+                      bool countStats)
+{
+    hitWay = -1;
+    if (!uopCache || !uopCache->enabled() || isTraceMode() || ftqEmpty(tid)) {
+        return false;
+    }
+
+    assert(dbpbtb);
+    const auto &target = dbpbtb->ftqFetchingTarget(tid);
+    if (target.predEndPC <= target.startPC) {
+        return false;
+    }
+
+    const Addr target_end = target.predTaken ?
+        target.predBranchInfo.pc + target.predBranchInfo.size :
+        target.predEndPC;
+    if (target_end <= target.startPC) {
+        return false;
+    }
+
+    const int fetch_target_bytes = target_end - target.startPC;
+    auto hit = uopCache->checkUopCacheHit(target.startPC,
+                                          fetch_target_bytes);
+    hitWay = hit.second;
+
+    if (countStats && fetchAddr == target.startPC) {
+        if (hit.first) {
+            fetchStats.uopCacheHits++;
+        } else {
+            fetchStats.uopCacheMisses++;
+        }
+    }
+
+    return hit.first;
+}
+
+bool
+Fetch::getUopCacheInst(ThreadID tid, Addr instAddr, int &hitWay,
+                       const UCInstDesc *&instDesc, int *instIdx,
+                       bool countStats)
+{
+    instDesc = nullptr;
+    hitWay = -1;
+
+    assert(dbpbtb);
+    const auto &target = dbpbtb->ftqFetchingTarget(tid);
+    auto &pending = pendingUopCacheLookup[tid];
+    if (pending.valid && pending.startPC == target.startPC &&
+        pending.instPC == instAddr) {
+        int matched_inst_idx = -1;
+        instDesc = uopCache->findInst(target.startPC, instAddr,
+                                      pending.hitWay, &matched_inst_idx);
+        if (!instDesc || matched_inst_idx != pending.instIdx) {
+            clearPendingUopCacheLookup(tid);
+            return false;
+        }
+        if (instDesc->inst->isMacroop() || instDesc->inst->isMicroop()) {
+            fetchStats.uopCachePcMismatches++;
+            warn("pending uop cache lookup contains unsupported "
+                 "macro/micro-op: tid=%d startPC=%#lx instPC=%#lx "
+                 "idx=%d way=%d; invalidating entry\n",
+                 tid, target.startPC, instAddr, pending.instIdx,
+                 pending.hitWay);
+            uopCache->invalidUopEntry(target.startPC);
+            clearPendingUopCacheLookup(tid);
+            return false;
+        }
+        hitWay = pending.hitWay;
+        if (instIdx) {
+            assert(pending.instIdx >= 0);
+            *instIdx = pending.instIdx;
+        }
+        return true;
+    }
+
+    if (!getUopCacheHit(tid, instAddr, hitWay, countStats)) {
+        clearPendingUopCacheLookup(tid);
+        return false;
+    }
+
+    int matched_inst_idx = -1;
+    instDesc = uopCache->findInst(target.startPC, instAddr, hitWay,
+                                  &matched_inst_idx);
+    if (instDesc) {
+        if (instDesc->inst->isMacroop() || instDesc->inst->isMicroop()) {
+            clearPendingUopCacheLookup(tid);
+            fetchStats.uopCachePcMismatches++;
+            warn("uop cache entry contains unsupported macro/micro-op: "
+                 "tid=%d startPC=%#lx instPC=%#lx idx=%d way=%d; "
+                 "invalidating entry\n",
+                 tid, target.startPC, instAddr, matched_inst_idx, hitWay);
+            uopCache->invalidUopEntry(target.startPC);
+            return false;
+        }
+        assert(matched_inst_idx >= 0);
+        if (instIdx) {
+            *instIdx = matched_inst_idx;
+        }
+        pending.valid = true;
+        pending.startPC = target.startPC;
+        pending.instPC = instAddr;
+        pending.hitWay = hitWay;
+        pending.instIdx = matched_inst_idx;
+        return true;
+    }
+
+    clearPendingUopCacheLookup(tid);
+    fetchStats.uopCachePcMismatches++;
+    warn("uop cache hit cannot supply current PC: tid=%d startPC=%#lx "
+         "instPC=%#lx predEndPC=%#lx idx=%d way=%d; invalidating entry\n",
+         tid, target.startPC, instAddr, target.predEndPC,
+         target.uopCacheInstIdx, hitWay);
+    uopCache->invalidUopEntry(target.startPC);
+    return false;
+}
+
+void
+Fetch::clearPendingUopCacheLookup(ThreadID tid)
+{
+    pendingUopCacheLookup[tid] = PendingUopCacheLookup();
 }
 
 bool
@@ -1783,6 +1977,13 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     }
 
     Addr fetch_pc = this_pc.instAddr();
+    int uop_cache_hit_way = -1;
+    const UCInstDesc *inst_desc = nullptr;
+    if (getUopCacheInst(tid, fetch_pc, uop_cache_hit_way, inst_desc)) {
+        DPRINTF(UC, "[tid:%i] Bypassing I-cache for uop cache hit at PC %#lx\n",
+                tid, fetch_pc);
+        return StallReason::NoStall;
+    }
 
     // Check if fetch buffer is valid and contains this PC
     if (!threads[tid].valid) {
@@ -1826,9 +2027,50 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Decode the instruction, handling macro-op transitions.
     StaticInstPtr staticInst = nullptr;
+    bool uop_cache_hit = false;
+    bool uop_cache_bypass = false;
+    Addr uop_cache_fetch_addr = 0;
     if (!curMacroop) {
-        // Decode a new instruction if not currently in a macro-op.
-        staticInst = dec_ptr->decode(pc);
+        assert(dbpbtb);
+        const auto &target = dbpbtb->ftqFetchingTarget(tid);
+        const auto &pending = pendingUopCacheLookup[tid];
+        const bool had_pending_uop_cache_lookup =
+            pending.valid && pending.startPC == target.startPC &&
+            pending.instPC == pc.instAddr();
+        int uop_cache_hit_way = -1;
+        const UCInstDesc *inst_desc = nullptr;
+        int uop_cache_inst_idx = -1;
+        uop_cache_hit = getUopCacheInst(tid, pc.instAddr(),
+                                        uop_cache_hit_way, inst_desc,
+                                        &uop_cache_inst_idx, false);
+        if (uop_cache_hit) {
+            auto &target = dbpbtb->ftqFetchingTarget(tid);
+            uop_cache_fetch_addr = target.startPC;
+            if (target.uopCacheInstIdx != uop_cache_inst_idx) {
+                DPRINTF(UC, "[tid:%i] Resync uop-cache inst idx for "
+                        "startPC=%#lx pc=%#lx old=%d matched=%d\n",
+                        tid, target.startPC, pc.instAddr(),
+                        target.uopCacheInstIdx, uop_cache_inst_idx);
+            }
+            staticInst = inst_desc->inst;
+            dec_ptr->setPCStateWithInstDesc(inst_desc->compressed, pc);
+            target.uopCacheInstIdx = uop_cache_inst_idx + 1;
+            clearPendingUopCacheLookup(tid);
+            DPRINTF(UC, "[tid:%i] Supplying uop-cache inst pc=%#lx idx=%d "
+                    "compressed=%d %s\n",
+                    tid, inst_desc->pc, uop_cache_inst_idx,
+                    inst_desc->compressed,
+                    staticInst->disassemble(inst_desc->pc));
+        } else {
+            if (had_pending_uop_cache_lookup) {
+                return false;
+            }
+            // Decode a new instruction if not currently in a macro-op.
+            staticInst = dec_ptr->decode(pc);
+            panic_if(!staticInst, "Decoder returned no instruction for "
+                     "tid=%d pc=%#lx after fetch supplied bytes\n",
+                     tid, pc.instAddr());
+        }
         ++fetchStats.insts;
 
         if (staticInst->isMacroop()) {
@@ -1844,9 +2086,33 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         newMacroop = staticInst->isLastMicroop();
     }
 
+    if (uop_cache_hit) {
+        fetchStats.uopCacheHitInsts++;
+        const bool bypass_queue_ready =
+            cpu->canEnqueueUopCacheBypassInst(tid);
+        uop_cache_bypass = bypass_queue_ready;
+        if (!bypass_queue_ready) {
+            fetchStats.uopCacheBypassQueueFullEvents++;
+        }
+    }
+
     // Build the dynamic instruction and add it to the fetch queue
     DynInstPtr instruction =
-        buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
+        buildInst(tid, staticInst, curMacroop, pc, *next_pc, true,
+                  !uop_cache_bypass, uop_cache_bypass);
+    instruction->setFetchFromUopCache(uop_cache_hit);
+    instruction->setUopCacheFetchAddr(uop_cache_fetch_addr);
+    instruction->setVersion(localSquashVer);
+
+    if (uop_cache_bypass) {
+        cpu->enqueueUopCacheBypassInst(instruction);
+        wroteToTimeBuffer = true;
+    } else if (uop_cache_hit) {
+        DPRINTF(UC, "[tid:%i] Uop-cache hit uses normal fetch queue "
+                "[sn:%llu] pc=%#lx queue=%d\n",
+                tid, instruction->seqNum, instruction->getPC(),
+                fetchQueue[tid].size());
+    }
 
     o3::TraceInstruction traceForThisInst;
     if (isTraceMode()) {
@@ -1861,7 +2127,6 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 tid, waitForVsetvl);
     }
 
-    instruction->setVersion(localSquashVer);
     ppFetch->notify(instruction);
     numInst++;
 
@@ -2002,6 +2267,16 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
 
     assert(dbpbtb);
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+    int uop_cache_hit_way = -1;
+    const UCInstDesc *inst_desc = nullptr;
+    if (getUopCacheInst(tid, stream.startPC, uop_cache_hit_way,
+                        inst_desc, nullptr, false)) {
+        DPRINTF(UC, "[tid:%i] Skip pipelined I-cache request for uop cache "
+                "hit at FSQ start %#lx\n", tid, stream.startPC);
+        threads[tid].startPC = stream.startPC;
+        return;
+    }
+
     const Addr start_pc = stream.startPC;
     threads[tid].startPC = start_pc;
 

@@ -39,6 +39,9 @@
  */
 #include "cpu/o3/decode.hh"
 
+#include <cstring>
+#include <initializer_list>
+#include <limits>
 #include <queue>
 
 #include "arch/generic/pcstate.hh"
@@ -53,6 +56,7 @@
 #include "debug/Decode.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/UC.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
 
@@ -66,6 +70,98 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+enum FusionPairSource
+{
+    FusionNormalNormal,
+    FusionUopUopSameEntry,
+    FusionUopUopDifferentEntry,
+    FusionNormalToUop,
+    FusionUopToNormal,
+    NumFusionPairSources
+};
+
+const char *fusionPairSourceNames[] = {
+    "normal_normal",
+    "uop_uop_same_entry",
+    "uop_uop_different_entry",
+    "normal_to_uop",
+    "uop_to_normal",
+};
+
+enum FusionRejectReason
+{
+    FusionRejectMixedSource,
+    FusionRejectDifferentUopEntry,
+    FusionRejectFaulted,
+    FusionRejectLoadFusionDisabled,
+    FusionRejectIgnoredPC,
+    FusionRejectFirstMapMiss,
+    FusionRejectSecondMapMiss,
+    FusionRejectCreatorRejected,
+    NumFusionRejectReasons
+};
+
+const char *fusionRejectReasonNames[] = {
+    "mixed_source",
+    "different_uop_entry",
+    "faulted",
+    "load_fusion_disabled",
+    "ignored_pc",
+    "first_map_miss",
+    "second_map_miss",
+    "creator_rejected",
+};
+
+enum FusionDiagnosticPair
+{
+    FusionDiagOther,
+    FusionDiagSll4Add,
+    FusionDiagAddwByte,
+};
+
+std::type_index
+normalizedFusionType(const StaticInstPtr &inst)
+{
+    auto type = std::type_index(typeid(*inst.get()));
+    auto it = RiscvISA::deCompressMap.find(type);
+    return it == RiscvISA::deCompressMap.end() ? type : it->second;
+}
+
+FusionDiagnosticPair
+classifyDiagnosticFusionPair(const DynInstPtr &first,
+                             const DynInstPtr &second)
+{
+    auto mnemonic_is = [](const StaticInstPtr &inst,
+                          std::initializer_list<const char *> names) {
+        const char *mnemonic = inst->getMnemonic();
+        for (const char *name : names) {
+            if (std::strcmp(mnemonic, name) == 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (first->staticInst->getImm() == 4 &&
+        mnemonic_is(first->staticInst, {"slli", "c_slli"}) &&
+        mnemonic_is(second->staticInst, {"add", "c_add"})) {
+        return FusionDiagSll4Add;
+    }
+
+    if (mnemonic_is(first->staticInst, {"addw", "c_addw"}) &&
+        mnemonic_is(second->staticInst, {"andi", "c_andi"}) &&
+        second->staticInst->getImm() == 255) {
+        return FusionDiagAddwByte;
+    }
+
+    return FusionDiagOther;
+}
+
+} // namespace
+
 Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     : cpu(_cpu),
       renameToDecodeDelay(params.renameToDecodeDelay),
@@ -73,6 +169,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       commitToDecodeDelay(params.commitToDecodeDelay),
       fetchToDecodeDelay(params.fetchToDecodeDelay),
       decodeWidth(params.decodeWidth),
+      uopCacheBypassQueueSize(params.fetchQueueSize * 4),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
       stats(_cpu)
@@ -86,8 +183,11 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     for (int i=0;i<numThreads;i++) {
         fixedbuffer[i] = boost::circular_buffer<DynInstPtr>(decodeWidth);
     }
-    stallBuffer = boost::circular_buffer<DynInstPtr>(decodeWidth * (fetchToDecodeDelay + 1));
-    eachstallSize = boost::circular_buffer<int>(fetchToDecodeDelay + 1);
+    const auto normal_fetch_buffer_groups =
+        params.fetchQueueSize + fetchToDecodeDelay + 1;
+    stallBuffer = boost::circular_buffer<DynInstPtr>(
+        decodeWidth * normal_fetch_buffer_groups);
+    eachstallSize = boost::circular_buffer<int>(normal_fetch_buffer_groups);
 
 
     decodeStalls.resize(decodeWidth, StallReason::NoStall);
@@ -111,13 +211,22 @@ Decode::startupStage()
 void
 Decode::clearStates(ThreadID tid)
 {
-
+    fixedbuffer[tid].clear();
+    uopCacheBypassQueue[tid].clear();
+    lastDecodeCycleTail[tid] = nullptr;
 }
 
 void
 Decode::resetStage()
 {
     _status = Inactive;
+    stallBuffer.clear();
+    eachstallSize.clear();
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        fixedbuffer[tid].clear();
+        uopCacheBypassQueue[tid].clear();
+        lastDecodeCycleTail[tid] = nullptr;
+    }
 }
 
 std::string
@@ -146,6 +255,24 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
                "Number of fused instructions handled by decode"),
       ADD_STAT(fusedInsts, statistics::units::Count::get(),
                "Number of times decode fused instructions by type"),
+      ADD_STAT(fusionPairsChecked, statistics::units::Count::get(),
+               "Number of adjacent instruction pairs checked for fusion"),
+      ADD_STAT(fusionPairSources, statistics::units::Count::get(),
+               "Source classes of adjacent instruction pairs checked for "
+               "fusion"),
+      ADD_STAT(fusionRejectReasons, statistics::units::Count::get(),
+               "Reasons adjacent instruction pairs did not fuse"),
+      ADD_STAT(fusionSourceBoundaryWouldFuse, statistics::units::Count::get(),
+               "Source-boundary rejects that would otherwise pass fusion"),
+      ADD_STAT(fusionCycleBoundaryPairsChecked, statistics::units::Count::get(),
+               "Pairs checked across adjacent decode cycles"),
+      ADD_STAT(fusionCycleBoundaryWouldFuse, statistics::units::Count::get(),
+               "Adjacent decode-cycle boundary pairs that would fuse if "
+               "decoded in the same cycle"),
+      ADD_STAT(fusionSll4AddRejectReasons, statistics::units::Count::get(),
+               "Reject reasons for opcode-level sll4add fusion candidates"),
+      ADD_STAT(fusionAddwByteRejectReasons, statistics::units::Count::get(),
+               "Reject reasons for opcode-level addwbyte fusion candidates"),
       ADD_STAT(controlMispred, statistics::units::Count::get(),
                "Number of times decode detected an instruction incorrectly "
                "predicted as a control"),
@@ -171,6 +298,27 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     mispredictedByPC.flags(statistics::total);
     mispredictedByNPC.flags(statistics::total);
     fusedInsts.init(128).flags(statistics::nozero);
+    fusionPairSources.init(NumFusionPairSources).flags(statistics::nozero);
+    for (int i = 0; i < NumFusionPairSources; ++i) {
+        fusionPairSources.subname(i, fusionPairSourceNames[i]);
+    }
+    fusionRejectReasons.init(NumFusionRejectReasons)
+        .flags(statistics::nozero);
+    fusionSourceBoundaryWouldFuse.init(NumFusionRejectReasons)
+        .flags(statistics::nozero);
+    fusionSll4AddRejectReasons.init(NumFusionRejectReasons)
+        .flags(statistics::nozero);
+    fusionAddwByteRejectReasons.init(NumFusionRejectReasons)
+        .flags(statistics::nozero);
+    for (int i = 0; i < NumFusionRejectReasons; ++i) {
+        fusionRejectReasons.subname(i, fusionRejectReasonNames[i]);
+        fusionSourceBoundaryWouldFuse.subname(i, fusionRejectReasonNames[i]);
+        fusionSll4AddRejectReasons.subname(i, fusionRejectReasonNames[i]);
+        fusionAddwByteRejectReasons.subname(i, fusionRejectReasonNames[i]);
+    }
+    fusionPairsChecked.prereq(fusionPairsChecked);
+    fusionCycleBoundaryPairsChecked.prereq(fusionCycleBoundaryPairsChecked);
+    fusionCycleBoundaryWouldFuse.prereq(fusionCycleBoundaryWouldFuse);
 }
 
 void
@@ -216,6 +364,7 @@ Decode::drainSanityCheck() const
 {
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         assert(fixedbuffer[tid].empty());
+        assert(uopCacheBypassQueue[tid].empty());
     }
 }
 
@@ -223,10 +372,37 @@ bool
 Decode::isDrained() const
 {
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (!fixedbuffer[tid].empty())
+        if (!fixedbuffer[tid].empty() || !uopCacheBypassQueue[tid].empty())
             return false;
     }
     return true;
+}
+
+void
+Decode::enqueueUopCacheBypassInst(const DynInstPtr &inst)
+{
+    ThreadID tid = inst->threadNumber;
+    assert(tid < numThreads);
+    assert(inst->isFetchFromUopCache());
+    assert(canEnqueueUopCacheBypassInst(tid));
+
+    uopCacheBypassQueue[tid].push_back(inst);
+    DPRINTF(UC, "[tid:%i] Enqueued uop-cache bypass inst [sn:%llu] pc=%#lx "
+            "queue=%d\n",
+            tid, inst->seqNum, inst->getPC(), uopCacheBypassQueue[tid].size());
+
+    if (_status == Inactive) {
+        _status = Active;
+        cpu->activateStage(CPU::DecodeIdx);
+    }
+    cpu->activityThisCycle();
+}
+
+bool
+Decode::canEnqueueUopCacheBypassInst(ThreadID tid) const
+{
+    assert(tid < numThreads);
+    return uopCacheBypassQueue[tid].size() < uopCacheBypassQueueSize;
 }
 
 bool
@@ -287,6 +463,8 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     stallSig->blockFetch[tid] = true; // tell fetch don't send new insts
 
     fixedbuffer[tid].clear();
+    uopCacheBypassQueue[tid].clear();
+    lastDecodeCycleTail[tid] = nullptr;
 
     auto delIt = stallBuffer.begin();
     for (auto it0 = eachstallSize.begin(); it0 != eachstallSize.end();) {
@@ -313,6 +491,8 @@ Decode::squash(ThreadID tid)
     DPRINTF(Decode, "[tid:%i] Squashing.\n",tid);
 
     fixedbuffer[tid].clear();
+    uopCacheBypassQueue[tid].clear();
+    lastDecodeCycleTail[tid] = nullptr;
 
     auto delIt = stallBuffer.begin();
     for (auto it0 = eachstallSize.begin(); it0 != eachstallSize.end();) {
@@ -370,6 +550,63 @@ Decode::updateActivate()
     }
 }
 
+unsigned
+Decode::moveUopCacheBypassInstsToBuffer(ThreadID tid,
+                                        InstSeqNum stopBeforeSeq)
+{
+    auto &bypass_queue = uopCacheBypassQueue[tid];
+    if (bypass_queue.empty() || !fixedbuffer[tid].empty()) {
+        return 0;
+    }
+    if (bypass_queue.front()->seqNum >= stopBeforeSeq) {
+        return 0;
+    }
+    if (cpu->hasOlderNonBypassUndecodedInst(bypass_queue.front())) {
+        if (fetch_ptr) {
+            fetch_ptr->recordUopCacheBypassOrderBlockedEvent();
+        }
+        return 0;
+    }
+
+    int moved = 0;
+    unsigned bypassed = 0;
+    while (!bypass_queue.empty() &&
+           bypass_queue.front()->seqNum < stopBeforeSeq &&
+           !fixedbuffer[tid].full() && moved < decodeWidth) {
+        if (cpu->hasOlderNonBypassUndecodedInst(bypass_queue.front())) {
+            if (fetch_ptr) {
+                fetch_ptr->recordUopCacheBypassOrderBlockedEvent();
+            }
+            break;
+        }
+        auto inst = bypass_queue.front();
+        bypass_queue.pop_front();
+        if (inst->isSquashed()) {
+            cpu->markInstDecoded(tid, inst->seqNum);
+            continue;
+        }
+        if (localSquashVer.largerThan(inst->getVersion())) {
+            inst->setSquashed();
+            cpu->markInstDecoded(tid, inst->seqNum);
+            continue;
+        } else {
+            bypassed++;
+        }
+        fixedbuffer[tid].push_back(inst);
+        moved++;
+    }
+
+    DPRINTF(UC, "[tid:%i] Moved %d uop-cache bypass insts to decode buffer, "
+            "remaining=%d\n",
+            tid, moved, bypass_queue.size());
+
+    if (bypassed && fetch_ptr) {
+        fetch_ptr->recordUopCacheBypassInsts(bypassed);
+    }
+
+    return bypassed;
+}
+
 void
 Decode::moveInstsToBuffer()
 {
@@ -379,7 +616,11 @@ Decode::moveInstsToBuffer()
         ThreadID tid = fromFetch->insts[0]->threadNumber;
 
         // move to stallbuffer
-        panic_if(eachstallSize.full(), "Decode stallbuffer overflow, has %d stalls\n", eachstallSize.size() + 1);
+        panic_if(eachstallSize.full() ||
+                 stallBuffer.size() + insts_from_fetch > stallBuffer.capacity(),
+                 "Decode stallbuffer overflow, has %d stalls and %d insts\n",
+                 eachstallSize.size() + 1,
+                 stallBuffer.size() + insts_from_fetch);
         eachstallSize.push_back(insts_from_fetch);
         for (int i = 0; i < insts_from_fetch; i++) {
             stallBuffer.push_back(fromFetch->insts[i]);
@@ -389,26 +630,72 @@ Decode::moveInstsToBuffer()
     DPRINTF(Decode, "Decode stall buffer has %d stalls\n",
             eachstallSize.size());
 
+    ThreadID bypass_tid = InvalidThreadID;
+    InstSeqNum bypass_seq = std::numeric_limits<InstSeqNum>::max();
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!uopCacheBypassQueue[tid].empty() &&
+            uopCacheBypassQueue[tid].front()->seqNum < bypass_seq) {
+            bypass_tid = tid;
+            bypass_seq = uopCacheBypassQueue[tid].front()->seqNum;
+        }
+    }
+
     if (stallBuffer.empty()) {
+        if (bypass_tid != InvalidThreadID) {
+            moveUopCacheBypassInstsToBuffer(bypass_tid);
+        }
         return;
     }
     // stallbuffer move to fixedbuffer
     ThreadID tid = stallBuffer.front()->threadNumber;
+    if (bypass_tid != InvalidThreadID &&
+        bypass_seq < stallBuffer.front()->seqNum) {
+        moveUopCacheBypassInstsToBuffer(bypass_tid,
+                                        stallBuffer.front()->seqNum);
+        return;
+    }
     if (!fixedbuffer[tid].empty())
         return;
     insts_from_fetch = eachstallSize.front();
-    eachstallSize.pop_front();
-    for (int i = 0; i < insts_from_fetch; ++i) {
+    int moved_from_fetch = 0;
+    while (moved_from_fetch < insts_from_fetch &&
+           !fixedbuffer[tid].full() && moved_from_fetch < decodeWidth) {
         const DynInstPtr &inst = stallBuffer.front();
         assert(tid == inst->threadNumber);
+        if (bypass_tid != InvalidThreadID && bypass_seq < inst->seqNum) {
+            break;
+        }
         if (localSquashVer.largerThan(inst->getVersion())) {
             inst->setSquashed();
         }
         assert(!fixedbuffer[inst->threadNumber].full());
         fixedbuffer[inst->threadNumber].push_back(inst);
         stallBuffer.pop_front();
+        moved_from_fetch++;
     }
 
+    if (moved_from_fetch == 0) {
+        return;
+    }
+    if (moved_from_fetch == insts_from_fetch) {
+        eachstallSize.pop_front();
+    } else {
+        eachstallSize.front() -= moved_from_fetch;
+    }
+
+}
+
+bool
+Decode::normalFetchInputBackpressure() const
+{
+    const auto in_flight_groups = fetchToDecodeDelay + 1;
+    const auto group_headroom =
+        eachstallSize.capacity() - eachstallSize.size();
+    const auto inst_headroom =
+        stallBuffer.capacity() - stallBuffer.size();
+
+    return group_headroom <= in_flight_groups ||
+           inst_headroom <= decodeWidth * in_flight_groups;
 }
 
 void
@@ -422,6 +709,9 @@ Decode::checkSquash()
             localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
             DPRINTF(Decode, "Updating squash version to %u\n",
                     localSquashVer.getVersion());
+            if (auto *uop_cache = fetch_ptr ? fetch_ptr->getUopCache() : nullptr) {
+                uop_cache->flushCurUopEntry();
+            }
         }
     }
 }
@@ -429,6 +719,10 @@ Decode::checkSquash()
 void
 Decode::tick()
 {
+    if (auto *uop_cache = fetch_ptr ? fetch_ptr->getUopCache() : nullptr) {
+        uop_cache->tick();
+    }
+
     toRename->fetchStallReason = fromFetch->fetchStallReason;
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
@@ -442,13 +736,16 @@ Decode::tick()
     // check threads stall & status
     ThreadID tid = InvalidThreadID;
     ThreadID blocked_tid = InvalidThreadID;
+    const bool input_backpressure = normalFetchInputBackpressure();
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
 
-        stallSig->blockFetch[i] = block;
+        stallSig->blockFetch[i] = block || input_backpressure;
         stallSig->fetchBlockReason[i] =
-            block ? stallSig->decodeBlockReason[i] : StallReason::NoStall;
+            block ? stallSig->decodeBlockReason[i] :
+            input_backpressure ? StallReason::OtherFragStall :
+            StallReason::NoStall;
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
             if (tid == InvalidThreadID)
@@ -489,8 +786,11 @@ Decode::tick()
             }
         }
     }
-    stallSig->fetchBlockReason[tid] =
-        stallSig->blockFetch[tid] ? blockReason : StallReason::NoStall;
+    if (stallSig->blockFetch[tid] && blockReason != StallReason::NoStall) {
+        stallSig->fetchBlockReason[tid] = blockReason;
+    } else if (!stallSig->blockFetch[tid]) {
+        stallSig->fetchBlockReason[tid] = StallReason::NoStall;
+    }
     toFetch->decodeInfo[tid].blockReason = stallSig->fetchBlockReason[tid];
     updateActivate();
 
@@ -552,6 +852,10 @@ Decode::decodeInsts(ThreadID tid)
     }
 
     auto& insts_to_decode = fixedbuffer[tid];
+    auto *uop_cache = fetch_ptr ? fetch_ptr->getUopCache() : nullptr;
+    if (cpu->isTraceMode()) {
+        uop_cache = nullptr;
+    }
 
     DPRINTF(Decode, "[tid:%i] Sending instruction to rename.\n",tid);
 
@@ -581,6 +885,7 @@ Decode::decodeInsts(ThreadID tid)
                     "squashed, skipping.\n",
                     tid, inst->seqNum, inst->pcState());
 
+            cpu->markInstDecoded(tid, inst->seqNum);
             ++stats.squashedInsts;
 
             --insts_available;
@@ -590,12 +895,38 @@ Decode::decodeInsts(ThreadID tid)
             continue;
         }
 
+        inst->setDecoded();
+        cpu->markInstDecoded(tid, inst->seqNum);
+
         // Also check if instructions have no source registers.  Mark
         // them as ready to issue at any time.  Not sure if this check
         // should exist here or at a later stage; however it doesn't matter
         // too much for function correctness.
         if (inst->numSrcRegs() == 0) {
             inst->setCanIssue();
+        }
+
+        if (uop_cache) {
+            if (inst->isFetchFromUopCache() && uop_cache->isBuildMode()) {
+                uop_cache->switchToStreamMode();
+            } else if (!inst->isFetchFromUopCache() &&
+                       uop_cache->isStreamMode()) {
+                uop_cache->switchToBuildMode();
+            }
+        }
+
+        DynInstPtr uop_cache_refill_inst = inst;
+
+        if (fusionInst.empty()) {
+            auto &prev_tail = lastDecodeCycleTail[tid];
+            if (prev_tail && !prev_tail->isSquashed() &&
+                prev_tail->seqNum + 1 == inst->seqNum) {
+                stats.fusionCycleBoundaryPairsChecked++;
+                if (wouldFuseInstPair(prev_tail, inst, true)) {
+                    stats.fusionCycleBoundaryWouldFuse++;
+                }
+            }
+            prev_tail = nullptr;
         }
 
         // This current instruction is valid, so add it into the decode
@@ -621,6 +952,10 @@ Decode::decodeInsts(ThreadID tid)
             inst->setSerializeAfter();
             decode_stalls.push(StallReason::SerializeStall);
             breakDecode = StallReason::SerializeStall;
+            if (uop_cache) {
+                uop_cache->addInst(uop_cache_refill_inst);
+                uop_cache->setCurrentUopEntryDone();
+            }
             DPRINTF(Decode,
                     "[tid:%i] [sn:%llu] Vector config decoded, set serialize barrier and stop decoding younger "
                     "instructions.\n",
@@ -641,6 +976,10 @@ Decode::decodeInsts(ThreadID tid)
 
             decode_stalls.push(StallReason::InstMisPred);
             breakDecode = StallReason::InstMisPred;
+            if (uop_cache) {
+                DPRINTF(UC, "Predicted-taken non-control inst, flush UC refill\n");
+                uop_cache->flushCurUopEntry();
+            }
 
             break;
         }
@@ -704,6 +1043,10 @@ Decode::decodeInsts(ThreadID tid)
 
                 decode_stalls.push(StallReason::InstMisPred);
                 breakDecode = StallReason::InstMisPred;
+                if (uop_cache) {
+                    DPRINTF(UC, "Direct branch target mismatch, flush UC refill\n");
+                    uop_cache->flushCurUopEntry();
+                }
 
                 DPRINTF(Decode,
                         "[tid:%i] [sn:%llu] Updating predictions:"
@@ -730,6 +1073,10 @@ Decode::decodeInsts(ThreadID tid)
             inst->setPredTarg(*target);
             // must squash after setting inst real target because it cannot be computed from static inst
             selfSquash(inst, inst->threadNumber);
+            if (uop_cache) {
+                DPRINTF(UC, "Unpredicted return, flush UC refill\n");
+                uop_cache->flushCurUopEntry();
+            }
             break;
         }
         if (inst->isNonSpeculative() && inst->readPredTaken()) {
@@ -739,9 +1086,21 @@ Decode::decodeInsts(ThreadID tid)
             inst->setPredTaken(false);
             inst->setPredTarg(*npc);
         }
+        if (uop_cache) {
+            uop_cache->addInst(uop_cache_refill_inst);
+            if (uop_cache_refill_inst->isQuiesce()) {
+                uop_cache->flushCurUopEntry();
+            }
+            if (uop_cache_refill_inst->readPredTaken()) {
+                uop_cache->setCurrentUopEntryDone();
+            }
+        }
     }
     for (auto &fused_inst : fusionInst) {
         toRename->insts[toRename->size++] = fused_inst;
+    }
+    if (!fusionInst.empty()) {
+        lastDecodeCycleTail[tid] = fusionInst.back();
     }
 
     if (insts_available) {
@@ -773,16 +1132,122 @@ Decode::decodeInsts(ThreadID tid)
     }
 }
 
+bool
+Decode::wouldFuseInstPair(const DynInstPtr &first_inst,
+                          const DynInstPtr &second_inst,
+                          bool enforceSourceBoundary) const
+{
+    const bool first_from_uop_cache = first_inst->isFetchFromUopCache();
+    const bool second_from_uop_cache = second_inst->isFetchFromUopCache();
+
+    if (enforceSourceBoundary) {
+        if (first_from_uop_cache != second_from_uop_cache) {
+            return false;
+        }
+        if (first_from_uop_cache &&
+            first_inst->getUopCacheFetchAddr() !=
+                second_inst->getUopCacheFetchAddr()) {
+            return false;
+        }
+    }
+
+    if (first_inst->faulted() || second_inst->faulted()) {
+        return false;
+    }
+    if (!enableLoadFusion && (first_inst->isLoad() || second_inst->isLoad())) {
+        return false;
+    }
+    if (first_inst->getPC() >= ignoreFusionPC &&
+        first_inst->getPC() < ignoreFusionPC + 8 &&
+        cpu->ticksToCycles(curTick() - lastSetIgnoreTick) <=
+            keepIgnoreFusionCycles) {
+        return false;
+    }
+
+    auto first = static_cast<StaticInst *>(first_inst->staticInst.get());
+    std::type_index first_type =
+        normalizedFusionType(first_inst->staticInst);
+    auto finder = RiscvISA::fusionMap.find(
+        RiscvISA::FusionKey(first_type, first->getImm()));
+    if (finder == RiscvISA::fusionMap.end()) {
+        return false;
+    }
+
+    assert(finder->second.index() == 1);
+    auto second = second_inst->staticInst.get();
+    std::type_index second_type = normalizedFusionType(second_inst->staticInst);
+    auto map = std::get<1>(finder->second);
+    finder = map->find(RiscvISA::FusionKey(second_type, second->getImm()));
+    if (finder == map->end()) {
+        return false;
+    }
+
+    assert(finder->second.index() == 0);
+    auto creator = std::get<0>(finder->second);
+    const std::vector<DynInstPtr> inst_pair = {first_inst, second_inst};
+    return static_cast<bool>(creator(inst_pair));
+}
+
 void
 Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
 {
     if (vec.empty()) {
         return;
     }
+    const bool first_from_uop_cache = vec.back()->isFetchFromUopCache();
+    const bool second_from_uop_cache = cur->isFetchFromUopCache();
+    const FusionDiagnosticPair diag_pair =
+        classifyDiagnosticFusionPair(vec.back(), cur);
+    auto record_reject = [&](FusionRejectReason reason) {
+        stats.fusionRejectReasons[reason]++;
+        if (diag_pair == FusionDiagSll4Add) {
+            stats.fusionSll4AddRejectReasons[reason]++;
+        } else if (diag_pair == FusionDiagAddwByte) {
+            stats.fusionAddwByteRejectReasons[reason]++;
+        }
+    };
+    auto would_fuse_without_source_boundary = [&]() {
+        return wouldFuseInstPair(vec.back(), cur, false);
+    };
+
+    stats.fusionPairsChecked++;
+    if (first_from_uop_cache && second_from_uop_cache) {
+        if (vec.back()->getUopCacheFetchAddr() ==
+            cur->getUopCacheFetchAddr()) {
+            stats.fusionPairSources[FusionUopUopSameEntry]++;
+        } else {
+            stats.fusionPairSources[FusionUopUopDifferentEntry]++;
+        }
+    } else if (first_from_uop_cache) {
+        stats.fusionPairSources[FusionUopToNormal]++;
+    } else if (second_from_uop_cache) {
+        stats.fusionPairSources[FusionNormalToUop]++;
+    } else {
+        stats.fusionPairSources[FusionNormalNormal]++;
+    }
+
+    if (first_from_uop_cache != second_from_uop_cache) {
+        if (would_fuse_without_source_boundary()) {
+            stats.fusionSourceBoundaryWouldFuse[FusionRejectMixedSource]++;
+        }
+        record_reject(FusionRejectMixedSource);
+        return;
+    }
+    if (first_from_uop_cache &&
+        vec.back()->getUopCacheFetchAddr() != cur->getUopCacheFetchAddr()) {
+        if (would_fuse_without_source_boundary()) {
+            stats.fusionSourceBoundaryWouldFuse[
+                FusionRejectDifferentUopEntry]++;
+        }
+        record_reject(FusionRejectDifferentUopEntry);
+        return;
+    }
     if (vec.back()->faulted() || cur->faulted()) {
+        record_reject(FusionRejectFaulted);
         return;
     }
     if (!enableLoadFusion && (vec.back()->isLoad() || cur->isLoad())) {
+        record_reject(FusionRejectLoadFusionDisabled);
         return;
     }
     if (vec.back()->getPC() >= ignoreFusionPC && vec.back()->getPC() < ignoreFusionPC + 8) {
@@ -790,42 +1255,41 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
         if (cpu->ticksToCycles(curTick() - lastSetIgnoreTick) > keepIgnoreFusionCycles) {
             ignoreFusionPC = 0;
         }
+        record_reject(FusionRejectIgnoredPC);
         return;
     }
 
     // first search
     auto first = (StaticInst*)vec.back()->staticInst.get();
-    std::type_index first_type = typeid(0);
-    auto it = RiscvISA::deCompressMap.find(typeid(*first));
-    if (it != RiscvISA::deCompressMap.end()) {
-        first_type = it->second;
-    } else {
-        first_type = typeid(*first);
-    }
+    std::type_index first_type =
+        normalizedFusionType(vec.back()->staticInst);
     auto finder = RiscvISA::fusionMap.find(RiscvISA::FusionKey(first_type, first->getImm()));
-    if (finder == RiscvISA::fusionMap.end()) return ; // no fusion
+    if (finder == RiscvISA::fusionMap.end()) {
+        record_reject(FusionRejectFirstMapMiss);
+        return; // no fusion
+    }
 
     // second search
     assert(finder->second.index() == 1);
 
     auto second = cur->staticInst.get();
-    std::type_index typeid_second = typeid(0);
-    auto it_second = RiscvISA::deCompressMap.find(typeid(*second));
-    if (it_second != RiscvISA::deCompressMap.end()) {
-        typeid_second = it_second->second;
-    } else {
-        typeid_second = typeid(*second);
-    }
+    std::type_index typeid_second = normalizedFusionType(cur->staticInst);
     auto map = std::get<1>(finder->second);
     finder = map->find(RiscvISA::FusionKey(typeid_second, second->getImm()));
-    if (finder == map->end()) return; // no fusion
+    if (finder == map->end()) {
+        record_reject(FusionRejectSecondMapMiss);
+        return; // no fusion
+    }
 
     assert(finder->second.index() == 0);
     auto creator = std::get<0>(finder->second);
 
     const std::vector<DynInstPtr> inst_pair = {vec.back(), cur};
     auto fused_inst = creator(inst_pair);
-    if (!fused_inst) return;
+    if (!fused_inst) {
+        record_reject(FusionRejectCreatorRejected);
+        return;
+    }
     vec.pop_back();
 
     DynInst::Arrays arrays;
@@ -845,13 +1309,25 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
 
 
     instruction->setVersion(inst_pair[1]->getVersion());
+    instruction->setDecoded();
     instruction->setTid(inst_pair[1]->threadNumber);
     instruction->thread = inst_pair[1]->thread;
     instruction->setFtqId(inst_pair[1]->ftqId);
+    if (first_from_uop_cache) {
+        instruction->setFetchFromUopCache(true);
+        instruction->setUopCacheBypass(
+            inst_pair[0]->isUopCacheBypass() &&
+            inst_pair[1]->isUopCacheBypass());
+        instruction->setUopCacheFetchAddr(inst_pair[0]->getUopCacheFetchAddr());
+    }
 
-    instruction->instListIt = cpu->instList.insert(inst_pair[0]->instListIt, instruction);
-    cpu->instList.erase(inst_pair[0]->instListIt);
-    cpu->instList.erase(inst_pair[1]->instListIt);
+    auto first_it = inst_pair[0]->getInstListIt();
+    auto second_it = inst_pair[1]->getInstListIt();
+    instruction->setInstListIt(cpu->instList.insert(first_it, instruction));
+    inst_pair[0]->clearInstListIt();
+    inst_pair[1]->clearInstListIt();
+    cpu->instList.erase(first_it);
+    cpu->instList.erase(second_it);
 
     dynamic_cast<RiscvISA::FusionInst*>(fused_inst.get())->setFusedInst(instruction);
 

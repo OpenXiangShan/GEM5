@@ -135,6 +135,10 @@ CPU::CPU(const BaseO3CPUParams &params)
       cpuStats(this),
       valuePred(params.valuePred)
 {
+    oldestUndecodedSeq.fill(std::numeric_limits<InstSeqNum>::max());
+    oldestNonBypassUndecodedSeq.fill(
+        std::numeric_limits<InstSeqNum>::max());
+
     fatal_if(FullSystem && params.numThreads > 1,
             "SMT is not supported in O3 in full system mode currently.");
 
@@ -1362,8 +1366,128 @@ CPU::ListIt
 CPU::addInst(const DynInstPtr &inst)
 {
     instList.push_back(inst);
+    auto inst_it = --instList.end();
+    auto &oldest = oldestUndecodedSeq[inst->threadNumber];
+    if (!inst->isDecoded() && inst->seqNum < oldest) {
+        oldest = inst->seqNum;
+    }
+    auto &oldest_non_bypass =
+        oldestNonBypassUndecodedSeq[inst->threadNumber];
+    if (!inst->isDecoded() && !inst->isUopCacheBypass() &&
+        inst->seqNum < oldest_non_bypass) {
+        oldest_non_bypass = inst->seqNum;
+    }
 
-    return --(instList.end());
+    return inst_it;
+}
+
+void
+CPU::enqueueUopCacheBypassInst(const DynInstPtr &inst)
+{
+    decode.enqueueUopCacheBypassInst(inst);
+}
+
+bool
+CPU::canEnqueueUopCacheBypassInst(ThreadID tid) const
+{
+    return decode.canEnqueueUopCacheBypassInst(tid);
+}
+
+bool
+CPU::hasOlderUndecodedInst(const DynInstPtr &inst)
+{
+    const ThreadID tid = inst->threadNumber;
+    auto &oldest = oldestUndecodedSeq[tid];
+    if (oldest < inst->seqNum && !hasLiveUndecodedSeq(tid, oldest)) {
+        refreshOldestUndecoded(tid);
+    }
+    return oldest < inst->seqNum;
+}
+
+bool
+CPU::hasOlderNonBypassUndecodedInst(const DynInstPtr &inst)
+{
+    const ThreadID tid = inst->threadNumber;
+    auto &oldest = oldestNonBypassUndecodedSeq[tid];
+    if (oldest < inst->seqNum &&
+        !hasLiveNonBypassUndecodedSeq(tid, oldest)) {
+        refreshOldestNonBypassUndecoded(tid);
+    }
+    return oldest < inst->seqNum;
+}
+
+bool
+CPU::hasNonBypassUndecodedInst(ThreadID tid)
+{
+    auto &oldest = oldestNonBypassUndecodedSeq[tid];
+    if (oldest != std::numeric_limits<InstSeqNum>::max() &&
+        !hasLiveNonBypassUndecodedSeq(tid, oldest)) {
+        refreshOldestNonBypassUndecoded(tid);
+    }
+    return oldest != std::numeric_limits<InstSeqNum>::max();
+}
+
+void
+CPU::markInstDecoded(ThreadID tid, InstSeqNum seq_num)
+{
+    auto &oldest = oldestUndecodedSeq[tid];
+    if (seq_num == oldest) {
+        oldest = seq_num + 1;
+    }
+    auto &oldest_non_bypass = oldestNonBypassUndecodedSeq[tid];
+    if (seq_num == oldest_non_bypass) {
+        oldest_non_bypass = seq_num + 1;
+    }
+}
+
+bool
+CPU::hasLiveUndecodedSeq(ThreadID tid, InstSeqNum seq_num) const
+{
+    for (const auto &inst : instList) {
+        if (inst->threadNumber == tid && inst->seqNum == seq_num) {
+            return !inst->isSquashed() && !inst->isDecoded();
+        }
+    }
+    return false;
+}
+
+void
+CPU::refreshOldestUndecoded(ThreadID tid)
+{
+    for (const auto &inst : instList) {
+        if (inst->threadNumber == tid && !inst->isSquashed() &&
+            !inst->isDecoded()) {
+            oldestUndecodedSeq[tid] = inst->seqNum;
+            return;
+        }
+    }
+    oldestUndecodedSeq[tid] = std::numeric_limits<InstSeqNum>::max();
+}
+
+bool
+CPU::hasLiveNonBypassUndecodedSeq(ThreadID tid, InstSeqNum seq_num) const
+{
+    for (const auto &inst : instList) {
+        if (inst->threadNumber == tid && inst->seqNum == seq_num) {
+            return !inst->isSquashed() && !inst->isDecoded() &&
+                   !inst->isUopCacheBypass();
+        }
+    }
+    return false;
+}
+
+void
+CPU::refreshOldestNonBypassUndecoded(ThreadID tid)
+{
+    for (const auto &inst : instList) {
+        if (inst->threadNumber == tid && !inst->isSquashed() &&
+            !inst->isDecoded() && !inst->isUopCacheBypass()) {
+            oldestNonBypassUndecodedSeq[tid] = inst->seqNum;
+            return;
+        }
+    }
+    oldestNonBypassUndecodedSeq[tid] =
+        std::numeric_limits<InstSeqNum>::max();
 }
 
 void
@@ -1425,6 +1549,14 @@ CPU::removeFrontInst(const DynInstPtr &inst)
 
     removeInstsThisCycle = true;
 
+    if (!inst->isInInstList()) {
+        DPRINTF(O3CPU, "Skipping already unlinked instruction [tid:%i] "
+                "PC %s [sn:%lli]\n",
+                inst->threadNumber, inst->pcState(), inst->seqNum);
+        return;
+    }
+
+    inst->clearInstListIt();
     instList.erase(inst->getInstListIt());
 }
 
@@ -1508,10 +1640,12 @@ CPU::squashInstIt(ListIt &instIt, ThreadID tid)
 
         // Mark it as squashed.
         (*instIt)->setSquashed();
+        markInstDecoded(tid, (*instIt)->seqNum);
 
         // @todo: Formulate a consistent method for deleting
         // instructions from the instruction list
         // Remove the instruction from the list.
+        (*instIt)->clearInstListIt();
         instIt = instList.erase(instIt);
     }
     return --instIt;
@@ -1534,6 +1668,7 @@ CPU::cleanUpRemovedInsts()
                 (*removeList.front())->seqNum,
                 (*removeList.front())->pcState());
 
+        (*removeList.front())->clearInstListIt();
         instList.erase(removeList.front());
 
         removeList.pop_front();

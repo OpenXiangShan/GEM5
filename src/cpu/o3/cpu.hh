@@ -43,7 +43,9 @@
 #ifndef __CPU_O3_CPU_HH__
 #define __CPU_O3_CPU_HH__
 
+#include <array>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <queue>
 #include <set>
@@ -398,6 +400,16 @@ class CPU : public BaseCPU
      */
     ListIt addInst(const DynInstPtr &inst);
 
+    void enqueueUopCacheBypassInst(const DynInstPtr &inst);
+
+    bool canEnqueueUopCacheBypassInst(ThreadID tid) const;
+
+    bool hasOlderUndecodedInst(const DynInstPtr &inst);
+    bool hasOlderNonBypassUndecodedInst(const DynInstPtr &inst);
+    bool hasNonBypassUndecodedInst(ThreadID tid);
+
+    void markInstDecoded(ThreadID tid, InstSeqNum seq_num);
+
     /** Function to tell the CPU that an instruction has completed. */
     void instDone(ThreadID tid, const DynInstPtr &inst);
 
@@ -465,6 +477,15 @@ class CPU : public BaseCPU
      *  being retired or squashed.
      */
     bool removeInstsThisCycle;
+
+    std::array<InstSeqNum, MaxThreads> oldestUndecodedSeq;
+    std::array<InstSeqNum, MaxThreads> oldestNonBypassUndecodedSeq;
+
+    bool hasLiveUndecodedSeq(ThreadID tid, InstSeqNum seq_num) const;
+    void refreshOldestUndecoded(ThreadID tid);
+    bool hasLiveNonBypassUndecodedSeq(
+        ThreadID tid, InstSeqNum seq_num) const;
+    void refreshOldestNonBypassUndecoded(ThreadID tid);
 
   protected:
     /** The fetch stage. */

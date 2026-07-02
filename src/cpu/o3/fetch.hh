@@ -54,6 +54,7 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/uop_cache.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -493,6 +494,18 @@ class Fetch
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
+    UopCache *getUopCache() { return uopCache.get(); }
+
+    void recordUopCacheBypassInsts(unsigned count)
+    {
+        fetchStats.uopCacheBypassInsts += count;
+    }
+
+    void recordUopCacheBypassOrderBlockedEvent()
+    {
+        fetchStats.uopCacheBypassOrderBlockedEvents++;
+    }
+
     /** Trace-driven simulation metadata accessors (used by CPU/Commit). */
     const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
     bool isTraceInstruction(InstSeqNum seqNum) const;
@@ -504,7 +517,9 @@ class Fetch
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
-            const PCStateBase &next_pc, bool trace);
+            const PCStateBase &next_pc, bool trace,
+            bool enqueueToFetchQueue = true,
+            bool uopCacheBypass = false);
 
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
@@ -572,6 +587,14 @@ class Fetch
     lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                          bool &predictedBranch, bool &newMacro);
 
+    bool getUopCacheHit(ThreadID tid, Addr fetchAddr, int &hitWay,
+                        bool countStats = true);
+    bool getUopCacheInst(ThreadID tid, Addr instAddr, int &hitWay,
+                         const UCInstDesc *&instDesc,
+                         int *instIdx = nullptr,
+                         bool countStats = true);
+    void clearPendingUopCacheLookup(ThreadID tid);
+
   private:
     /** Pointer to the O3CPU. */
     CPU *cpu;
@@ -608,6 +631,17 @@ class Fetch
 
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
+
+    std::unique_ptr<UopCache> uopCache;
+    struct PendingUopCacheLookup
+    {
+        bool valid = false;
+        Addr startPC = 0;
+        Addr instPC = 0;
+        int hitWay = -1;
+        int instIdx = -1;
+    };
+    PendingUopCacheLookup pendingUopCacheLookup[MaxThreads];
 
     /** PC of each thread. */
     // std::unique_ptr<PCStateBase> pc[MaxThreads];
@@ -1095,6 +1129,14 @@ class Fetch
         statistics::Distribution resolveEnqueueCount;
         /** Stat for entry occupancy distribution of the resolve queue. */
         statistics::Distribution resolveQueueOccupancy;
+
+        statistics::Scalar uopCacheHits;
+        statistics::Scalar uopCacheMisses;
+        statistics::Scalar uopCacheHitInsts;
+        statistics::Scalar uopCacheBypassQueueFullEvents;
+        statistics::Scalar uopCacheBypassOrderBlockedEvents;
+        statistics::Scalar uopCacheBypassInsts;
+        statistics::Scalar uopCachePcMismatches;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

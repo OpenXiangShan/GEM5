@@ -31,6 +31,7 @@ def setKmhV3IdealParams(args, system):
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
+        cpu.hasUopCache = not args.disable_uop_cache
 
         # decode
         cpu.fetchToDecodeDelay = 6

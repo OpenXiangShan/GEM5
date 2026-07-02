@@ -197,6 +197,7 @@ class DynInst : public ExecContext, public RefCounted
 
         // load/store pipe state end
 
+        Decoded,                 /// Instruction has reached decode
         Executed,                /// Instruction has executed
         CanCommit,               /// Instruction can commit
         AtCommit,                /// Instruction has reached commit
@@ -419,6 +420,7 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Iterator pointing to this BaseDynInst in the list of all insts. */
     ListIt instListIt;
+    bool linkedInInstList = false;
 
     ////////////////////// Branch Data ///////////////
     /** Predicted PC state after this instruction. */
@@ -431,6 +433,11 @@ class DynInst : public ExecContext, public RefCounted
     unsigned ftqId;
     /** The number of loop iteration within an fsq entry of the instruction. */
     unsigned loopIteration;
+
+    bool fetchFromUopCache = false;
+    bool uopCacheBypass = false;
+    Addr uopCacheFetchAddr = 0;
+    bool lastFtqEntryInst = false;
 
     /** The Macroop if one exists */
     const StaticInstPtr macroop;
@@ -1037,6 +1044,10 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Scheduler state end */
 
+    void setDecoded() { status.set(Decoded); }
+
+    bool isDecoded() const { return status[Decoded]; }
+
 
     /** load/store pipe state begin */
 
@@ -1386,7 +1397,16 @@ class DynInst : public ExecContext, public RefCounted
     ListIt &getInstListIt() { return instListIt; }
 
     /** Sets iterator for this instruction in the list of all insts. */
-    void setInstListIt(ListIt _instListIt) { instListIt = _instListIt; }
+    void
+    setInstListIt(ListIt _instListIt)
+    {
+        instListIt = _instListIt;
+        linkedInInstList = true;
+    }
+
+    bool isInInstList() const { return linkedInInstList; }
+
+    void clearInstListIt() { linkedInInstList = false; }
 
   public:
 
@@ -1696,6 +1716,17 @@ class DynInst : public ExecContext, public RefCounted
         RiscvISA::PCState rpc = pc->as<RiscvISA::PCState>();
         return rpc.compressed() ? 2 : 4;
     }
+
+    bool isFetchFromUopCache() const { return fetchFromUopCache; }
+    void setFetchFromUopCache(bool is) { fetchFromUopCache = is; }
+    bool isUopCacheBypass() const { return uopCacheBypass; }
+    void setUopCacheBypass(bool is) { uopCacheBypass = is; }
+
+    void setUopCacheFetchAddr(Addr pc) { uopCacheFetchAddr = pc; }
+    Addr getUopCacheFetchAddr() const { return uopCacheFetchAddr; }
+
+    void setLastFtqEntryInst() { lastFtqEntryInst = true; }
+    bool isLastFtqEntryInst() const { return lastFtqEntryInst; }
 
   protected:
     SquashVersion squashVer;
