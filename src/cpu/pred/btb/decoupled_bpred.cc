@@ -790,7 +790,7 @@ DecoupledBPUWithBTB::resolveUpdate(
     if (!canResolveUpdateComponents(target)) {
         return false;
     }
-    updateResolvedPredictorComponents(target, update_event, prepared_update);
+    updateResolvedPredictorComponents(target, prepared_update);
     return true;
 }
 
@@ -853,14 +853,13 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
 void
 DecoupledBPUWithBTB::updateResolvedPredictorComponents(
     const FetchTarget &target,
-    const BPUUpdateEvent &update_event,
     const BPUPreparedUpdate &prepared_update)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
             components[i]->noteResolveUpdateAccepted(target);
             updatePredictorComponent(
-                components[i], target, update_event, prepared_update);
+                components[i], target, prepared_update);
         }
     }
 }
@@ -869,13 +868,15 @@ void
 DecoupledBPUWithBTB::updatePredictorComponent(
     TimedBaseBTBPredictor *component,
     const FetchTarget &target,
-    const BPUUpdateEvent &update_event,
     const BPUPreparedUpdate &prepared_update)
 {
     if (component->usesDirectionUpdateEntries()) {
         const auto update_ctx = target.makeDirectionUpdateContext();
-        const auto entries = update_event.makeDirectionUpdateEntries(
-            prepared_update,
+        const auto entries = buildDirectionUpdateEntries(
+            prepared_update.btbEntries,
+            prepared_update.selection.entry,
+            prepared_update.selection.isOldEntry,
+            prepared_update.resolvedPrefixPCs,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithDirectionEntries(entries, update_ctx, target);
@@ -884,8 +885,11 @@ DecoupledBPUWithBTB::updatePredictorComponent(
 
     if (component->usesTargetUpdateEntries()) {
         const auto update_ctx = target.makeTargetUpdateContext();
-        const auto entries = update_event.makeTargetUpdateEntries(
-            prepared_update,
+        const auto entries = buildTargetUpdateEntries(
+            prepared_update.btbEntries,
+            prepared_update.selection.entry,
+            prepared_update.selection.isOldEntry,
+            prepared_update.resolvedPrefixPCs,
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithTargetEntries(entries, update_ctx, target);
@@ -911,7 +915,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->getResolvedUpdate()) {
             updatePredictorComponent(
-                components[i], target, update_event, prepared_update);
+                components[i], target, prepared_update);
         }
     }
 }

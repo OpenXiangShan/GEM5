@@ -890,34 +890,6 @@ class BPUUpdateEvent
         return makePreparedUpdate(target, predictWidth, selection);
     }
 
-    std::vector<DirectionUpdateEntry>
-    makeDirectionUpdateEntries(
-        const BPUPreparedUpdate &prepared,
-        DirectionUpdateEntryFilter filter,
-        bool resolved_update,
-        const DirectionUpdateContext &ctx) const
-    {
-        return buildDirectionUpdateEntries(
-            prepared.btbEntries,
-            prepared.selection.entry,
-            prepared.selection.isOldEntry,
-            prepared.resolvedPrefixPCs, filter, resolved_update, ctx);
-    }
-
-    std::vector<TargetUpdateEntry>
-    makeTargetUpdateEntries(
-        const BPUPreparedUpdate &prepared,
-        TargetUpdateEntryFilter filter,
-        bool resolved_update,
-        const TargetUpdateContext &ctx) const
-    {
-        return buildTargetUpdateEntries(
-            prepared.btbEntries,
-            prepared.selection.entry,
-            prepared.selection.isOldEntry,
-            prepared.resolvedPrefixPCs, filter, resolved_update, ctx);
-    }
-
   private:
     std::vector<ResolvedBranch> resolvedBranches;
 
