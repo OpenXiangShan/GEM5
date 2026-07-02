@@ -195,6 +195,9 @@ class UBTB : public TimedBaseBTBPredictor
     };
     std::shared_ptr<UBTBMeta> meta;
 
+    void updateWithContext(const TargetUpdateContext &ctx,
+                           const UBTBMeta &meta);
+
     // helper methods
     /*
      * Comparator for MRU heap

@@ -296,29 +296,35 @@ UBTB::update(const FetchTarget &stream)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     const auto update_ctx = stream.makeTargetUpdateContext();
+    updateWithContext(update_ctx, *meta);
+}
 
-    auto pred_hit_entry = meta->hit_entry;
+void
+UBTB::updateWithContext(const TargetUpdateContext &ctx,
+                        const UBTBMeta &meta)
+{
+    auto pred_hit_entry = meta.hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
     // Use BTBEntry instead of BranchInfo; make it invalid when not taken.
-    BTBEntry takenEntry = update_ctx.actualTaken ?
-        BTBEntry(update_ctx.actualBranch) : BTBEntry();
-    auto startAddr = update_ctx.startPC;
-    Addr oldtag = getTag(startAddr, update_ctx.asidHash);
+    BTBEntry takenEntry = ctx.actualTaken ?
+        BTBEntry(ctx.actualBranch) : BTBEntry();
+    auto startAddr = ctx.startPC;
+    Addr oldtag = getTag(startAddr, ctx.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
     UBTBIter oldEntryIter = ubtb.end();
 
-    oldEntryIter = meta->hit_entry.valid ?
+    oldEntryIter = meta.hit_entry.valid ?
                     std::find_if(ubtb.begin(), ubtb.end(), [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
                         return e.valid && e.tag == oldtag &&
                                e.pc >= startAddr && e.pc < block_end;
                     }) : ubtb.end();
 
-    if (update_ctx.actualTaken) {
+    if (ctx.actualTaken) {
         if (!pred_hit_entry.valid ||
-            pred_hit_entry != update_ctx.actualBranch) {
+            pred_hit_entry != ctx.actualBranch) {
             DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n",
-                    update_ctx.actualBranch.pc, update_ctx.predTick);
+                    ctx.actualBranch.pc, ctx.predTick);
             ubtbStats.updateMiss++;
         }else {
             ubtbStats.updateHit++;
@@ -329,7 +335,7 @@ UBTB::update(const FetchTarget &stream)
     assert(ubtb.size() <= numEntries);
     if (!usingS3Pred) {
         updateNewEntry(oldEntryIter, takenEntry, startAddr,
-                       update_ctx.asidHash);
+                       ctx.asidHash);
     }
 }
 
