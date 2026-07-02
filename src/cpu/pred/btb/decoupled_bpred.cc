@@ -714,9 +714,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
     while (!ftq.empty(tid) && target_id >= ftq.frontId(tid)) {
         auto &ftq_target = ftq.front(tid);
         FetchTarget target = ftq_target;
-        BPUUpdateEvent update_event =
-            BPUUpdateEvent::fromFetchTarget(ftq_target);
-        update_event.applyActualResult(target);
+        const auto update_branches =
+            makeResolvedUpdateBranches(ftq_target.resolvedBranches);
+        applyResolvedBranchResult(target, update_branches);
 
         DPRINTF(DecoupleBP,
                 "Commit target start %#lx, which is predicted, "
@@ -729,7 +729,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         updateStatistics(target);
 
         // Update predictor components
-        updatePredictorComponents(target, update_event);
+        updatePredictorComponents(target, update_branches);
 
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
@@ -758,16 +758,16 @@ DecoupledBPUWithBTB::resolveUpdate(
         return true;
     }
 
-    const auto update_event = BPUUpdateEvent::fromResolvedBranches(branches);
+    const auto update_branches = makeResolvedUpdateBranches(branches);
     FetchTarget target = ftq.get(target_id, tid);
-    update_event.applyActualResult(target);
+    applyResolvedBranchResult(target, update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
             "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "
             "squashPC=%#lx\n",
             target_id, tid,
             static_cast<unsigned long long>(branches.size()),
-            static_cast<unsigned long long>(update_event.resolvedBranchCount()),
+            static_cast<unsigned long long>(update_branches.size()),
             target.exeTaken,
             target.exeBranchInfo.pc, target.exeBranchInfo.target,
             target.squashType, target.squashPC);
@@ -779,13 +779,13 @@ DecoupledBPUWithBTB::resolveUpdate(
                 branch.isCond, branch.isIndirect);
     }
 
-    if (!update_event.shouldUpdatePredictors(target)) {
+    if (!shouldUpdateBpuPredictors(target)) {
         return true;
     }
 
     const auto selection = selectUpdateEntryForTarget(target);
     const auto prepared_update =
-        prepareUpdateEntriesForTarget(target, update_event, selection);
+        prepareUpdateEntriesForTarget(target, update_branches, selection);
 
     if (!canResolveUpdateComponents(target)) {
         return false;
@@ -832,10 +832,10 @@ DecoupledBPUWithBTB::selectUpdateEntryForTarget(const FetchTarget &target)
 BPUPreparedUpdate
 DecoupledBPUWithBTB::prepareUpdateEntriesForTarget(
     const FetchTarget &target,
-    const BPUUpdateEvent &update_event,
+    const std::vector<ResolvedBranch> &update_branches,
     const BTBUpdateEntrySelection &selection)
 {
-    return update_event.prepareUpdate(target, predictWidth, selection);
+    return prepareBPUUpdate(target, predictWidth, selection, update_branches);
 }
 
 bool
@@ -902,15 +902,15 @@ DecoupledBPUWithBTB::updatePredictorComponent(
 void
 DecoupledBPUWithBTB::updatePredictorComponents(
     FetchTarget &target,
-    const BPUUpdateEvent &update_event)
+    const std::vector<ResolvedBranch> &update_branches)
 {
-    if (!update_event.shouldUpdatePredictors(target)) {
+    if (!shouldUpdateBpuPredictors(target)) {
         return;
     }
 
     const auto selection = selectUpdateEntryForTarget(target);
     const auto prepared_update =
-        prepareUpdateEntriesForTarget(target, update_event, selection);
+        prepareUpdateEntriesForTarget(target, update_branches, selection);
 
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->getResolvedUpdate()) {

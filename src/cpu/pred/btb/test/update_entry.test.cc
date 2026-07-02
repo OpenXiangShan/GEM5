@@ -242,7 +242,7 @@ TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
     EXPECT_EQ(entries[1].pc, second.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesUpdatePayload)
+TEST(UpdateEntryBuilderTest, ResolvedBranchesPrepareUpdatePayload)
 {
     const BTBEntry first = makeEntry(0x1000, true, false);
     const BTBEntry second = makeEntry(0x1008, true, false);
@@ -254,15 +254,16 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventPreparesUpdatePayload)
 
     const ResolvedBranch resolved_second =
         makeResolvedBranch(second.pc, true, true);
-    const BPUUpdateEvent event = BPUUpdateEvent::fromResolvedBranches({
+    const auto update_branches = makeResolvedUpdateBranches({
         makeResolvedBranch(first.pc, false, false),
         resolved_second,
         makeResolvedBranch(after.pc, false, false),
     });
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
-    event.applyActualResult(stream);
-    const BPUPreparedUpdate prepared = event.prepareUpdate(stream, 32, selection);
+    applyResolvedBranchResult(stream, update_branches);
+    const BPUPreparedUpdate prepared =
+        prepareBPUUpdate(stream, 32, selection, update_branches);
 
     EXPECT_TRUE(stream.resolved);
     EXPECT_TRUE(stream.exeTaken);
@@ -301,7 +302,7 @@ TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
     EXPECT_EQ(stream.resolvedBranches[2].pc, third.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
+TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
 {
     const BTBEntry first = makeEntry(0x1000, true, false);
     const BTBEntry second = makeEntry(0x1008, true, false);
@@ -318,12 +319,14 @@ TEST(UpdateEntryBuilderTest, BPUUpdateEventFromFetchTargetUsesResolvedPrefix)
         makeResolvedBranch(first.pc, false, false),
     });
 
-    const BPUUpdateEvent event = BPUUpdateEvent::fromFetchTarget(stream);
-    EXPECT_EQ(event.resolvedBranchCount(), 2);
+    const auto update_branches =
+        makeResolvedUpdateBranches(stream.resolvedBranches);
+    EXPECT_EQ(update_branches.size(), 2);
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
-    event.applyActualResult(stream);
-    const BPUPreparedUpdate prepared = event.prepareUpdate(stream, 32, selection);
+    applyResolvedBranchResult(stream, update_branches);
+    const BPUPreparedUpdate prepared =
+        prepareBPUUpdate(stream, 32, selection, update_branches);
 
     EXPECT_TRUE(stream.resolved);
     EXPECT_TRUE(stream.exeTaken);

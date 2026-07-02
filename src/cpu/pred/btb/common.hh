@@ -815,144 +815,111 @@ makeBranchInfo(const ResolvedBranch &branch)
     return info;
 }
 
-class BPUUpdateEvent
+inline std::vector<ResolvedBranch>
+makeResolvedUpdateBranches(const std::vector<ResolvedBranch> &branches)
 {
-  public:
-    BPUUpdateEvent() = default;
-
-    static BPUUpdateEvent fromResolvedBranches(
-        const std::vector<ResolvedBranch> &branches)
-    {
-        BPUUpdateEvent event;
-        for (const auto &branch : branches) {
-            event.resolvedBranches.push_back(branch);
-            if (branch.taken || branch.mispred) {
-                break;
-            }
+    std::vector<ResolvedBranch> update_branches;
+    for (const auto &branch : branches) {
+        update_branches.push_back(branch);
+        if (branch.taken || branch.mispred) {
+            break;
         }
-        return event;
+    }
+    return update_branches;
+}
+
+inline bool
+shouldUpdateBpuPredictors(const FetchTarget &target)
+{
+    return target.isHit || target.exeTaken;
+}
+
+inline void
+applyResolvedBranchResult(FetchTarget &target,
+                          const std::vector<ResolvedBranch> &branches)
+{
+    if (branches.empty()) {
+        return;
     }
 
-    static BPUUpdateEvent fromFetchTarget(const FetchTarget &target)
-    {
-        return fromResolvedBranches(target.resolvedBranches);
-    }
+    target.resolved = true;
+    target.exeTaken = false;
+    target.squashType = SquashType::SQUASH_NONE;
+    target.exeBranchInfo = makeBranchInfo(branches.back());
 
-    bool hasResolvedBranches() const
-    {
-        return !resolvedBranches.empty();
-    }
-
-    size_t resolvedBranchCount() const
-    {
-        return resolvedBranches.size();
-    }
-
-    bool shouldUpdatePredictors(const FetchTarget &target) const
-    {
-        return target.isHit || target.exeTaken;
-    }
-
-    void applyActualResult(FetchTarget &target) const
-    {
-        if (!hasResolvedBranches()) {
-            return;
+    for (const auto &branch : branches) {
+        if (branch.mispred &&
+            target.squashType == SquashType::SQUASH_NONE) {
+            target.squashType = SquashType::SQUASH_CTRL;
+            target.squashPC = branch.pc;
         }
-
-        target.resolved = true;
-        target.exeTaken = false;
-        target.squashType = SquashType::SQUASH_NONE;
-        target.exeBranchInfo = makeBranchInfo(resolvedBranches.back());
-
-        for (const auto &branch : resolvedBranches) {
-            if (branch.mispred &&
-                target.squashType == SquashType::SQUASH_NONE) {
-                target.squashType = SquashType::SQUASH_CTRL;
+        if (branch.taken) {
+            target.exeTaken = true;
+            target.exeBranchInfo = makeBranchInfo(branch);
+            if (target.squashType == SquashType::SQUASH_NONE) {
                 target.squashPC = branch.pc;
             }
-            if (branch.taken) {
-                target.exeTaken = true;
-                target.exeBranchInfo = makeBranchInfo(branch);
-                if (target.squashType == SquashType::SQUASH_NONE) {
-                    target.squashPC = branch.pc;
-                }
-                break;
-            }
+            break;
         }
     }
+}
 
-    BPUPreparedUpdate
-    prepareUpdate(
-        const FetchTarget &target,
-        unsigned predictWidth,
-        const BTBUpdateEntrySelection &selection) const
-    {
-        return makePreparedUpdate(target, predictWidth, selection);
+inline std::vector<Addr>
+makeResolvedBranchPCs(const std::vector<ResolvedBranch> &branches)
+{
+    std::vector<Addr> pcs;
+    pcs.reserve(branches.size());
+    for (const auto &branch : branches) {
+        pcs.push_back(branch.pc);
     }
+    return pcs;
+}
 
-  private:
-    std::vector<ResolvedBranch> resolvedBranches;
-
-    BPUPreparedUpdate
-    makePreparedUpdate(const FetchTarget &target,
-                       unsigned predictWidth,
-                       const BTBUpdateEntrySelection &selection) const
-    {
-        return {makeUpdateBTBEntries(target, predictWidth),
-                markResolvedSelection(selection),
-                resolvedBranchPCs()};
-    }
-
-    std::vector<Addr> resolvedBranchPCs() const
-    {
-        std::vector<Addr> pcs;
-        pcs.reserve(resolvedBranches.size());
-        for (const auto &branch : resolvedBranches) {
-            pcs.push_back(branch.pc);
-        }
-        return pcs;
-    }
-
-    std::vector<BTBEntry>
-    makeUpdateBTBEntries(const FetchTarget &target,
-                         unsigned predictWidth) const
-    {
-        auto entries = buildUpdateBTBEntries(
-            target.predBTBEntries, target.startPC,
-            buildUpdateEndInstPC(
-                target.startPC, predictWidth, target.exeTaken,
-                target.getControlPC(),
-                static_cast<SquashType>(target.squashType),
-                target.squashPC));
-        markResolvedEntries(entries);
-        return entries;
-    }
-
-    void markResolvedEntry(BTBEntry &entry) const
-    {
-        for (const auto &branch : resolvedBranches) {
-            if (entry.pc == branch.pc) {
-                entry.resolved = true;
-                return;
-            }
+inline void
+markResolvedEntry(BTBEntry &entry, const std::vector<ResolvedBranch> &branches)
+{
+    for (const auto &branch : branches) {
+        if (entry.pc == branch.pc) {
+            entry.resolved = true;
+            return;
         }
     }
+}
 
-    void markResolvedEntries(std::vector<BTBEntry> &entries) const
-    {
-        for (auto &entry : entries) {
-            markResolvedEntry(entry);
-        }
+inline std::vector<BTBEntry>
+makeUpdateBTBEntries(const FetchTarget &target, unsigned predictWidth,
+                     const std::vector<ResolvedBranch> &branches)
+{
+    auto entries = buildUpdateBTBEntries(
+        target.predBTBEntries, target.startPC,
+        buildUpdateEndInstPC(
+            target.startPC, predictWidth, target.exeTaken,
+            target.getControlPC(),
+            static_cast<SquashType>(target.squashType),
+            target.squashPC));
+    for (auto &entry : entries) {
+        markResolvedEntry(entry, branches);
     }
+    return entries;
+}
 
-    BTBUpdateEntrySelection
-    markResolvedSelection(BTBUpdateEntrySelection selection) const
-    {
-        markResolvedEntry(selection.entry);
-        return selection;
-    }
+inline BTBUpdateEntrySelection
+markResolvedSelection(BTBUpdateEntrySelection selection,
+                      const std::vector<ResolvedBranch> &branches)
+{
+    markResolvedEntry(selection.entry, branches);
+    return selection;
+}
 
-};
+inline BPUPreparedUpdate
+prepareBPUUpdate(const FetchTarget &target, unsigned predictWidth,
+                 const BTBUpdateEntrySelection &selection,
+                 const std::vector<ResolvedBranch> &branches)
+{
+    return {makeUpdateBTBEntries(target, predictWidth, branches),
+            markResolvedSelection(selection, branches),
+            makeResolvedBranchPCs(branches)};
+}
 
 /**
  * @brief Full branch prediction combining predictions from all predictors
