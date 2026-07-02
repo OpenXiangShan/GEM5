@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>PerfCCT viewer (dynamic)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<style>
+ body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:18px;background:#0f1115;color:#e6e6e6}
+ h1{font-size:20px} h2{font-size:16px;margin-top:28px;border-bottom:1px solid #333;padding-bottom:4px}
+ .meta{color:#9aa;font-size:13px;margin-bottom:10px}
+ input,select,button{background:#1c2129;color:#e6e6e6;border:1px solid #39414f;border-radius:6px;padding:6px 8px;font-size:13px}
+ button{cursor:pointer}
+ table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}
+ th,td{border:1px solid #2a2f3a;padding:3px 6px;text-align:right;white-space:nowrap}
+ th{cursor:pointer;position:sticky;top:0;background:#1c2129}
+ td.l,th.l{text-align:left}
+ tr:nth-child(even){background:#13161c}
+ .wrap{max-height:560px;overflow:auto;border:1px solid #2a2f3a;border-radius:8px}
+ .hint{color:#9aa;font-size:12px}
+ .pinst{cursor:pointer;border-radius:3px}
+ .pinst:hover{background:#243049}
+ td.jump{cursor:pointer;color:#6cb6ff}
+ td.jump:hover{text-decoration:underline}
+</style></head><body>
+<h1>PerfCCT viewer &mdash; dynamic (sql.js)</h1>
+<div>
+ <label class="hint">lifetime.db <input type="file" id="dbfile" accept=".db,.sqlite,.sqlite3"></label>
+ <span class="hint" id="status">pick a lifetime.db file to begin (queried in-browser, nothing uploaded)</span>
+</div>
+<fieldset style="margin-top:10px;border:1px solid #2a2f3a;border-radius:8px;padding:8px 12px">
+ <legend class="hint">options (defaults baked in at generation time; edit then <b>Apply</b>)</legend>
+ <label class="hint">period <input id="period" type="number" style="width:74px"></label>
+ <label class="hint" style="margin-left:14px"><input id="excludeIO" type="checkbox"> exclude device/MMIO I/O loads</label>
+ <label class="hint" style="margin-left:6px">detect
+   <select id="ioMethod"><option value="addr">by address</option><option value="lat">by latency</option></select></label>
+ <label class="hint" style="margin-left:6px">DRAM base <input id="dramBase" type="text" style="width:96px"></label>
+ <label class="hint" style="margin-left:6px">or lat&ge; <input id="ioLat" type="number" style="width:56px"> cyc</label>
+ <label class="hint" style="margin-left:14px">panel window &plusmn;<input id="window" type="number" style="width:74px"> cyc</label>
+ <button id="apply" type="button" style="margin-left:14px">Apply</button>
+</fieldset>
+<div class="meta" id="meta"></div>
+
+<div id="app" style="display:none">
+<h2>Instructions in each module at a given cycle <span class="hint" id="detmeta"></span></h2>
+<div>
+ <label class="hint">cycle <input id="detcyc" type="number" style="width:130px"></label>
+ <input id="detrange" type="range" style="width:420px;vertical-align:middle">
+ <span class="hint" id="detcnt"></span>
+</div>
+<div id="detgrid" style="display:flex;gap:10px;overflow-x:auto;margin-top:8px"></div>
+
+<h2>Microarchitectural structures at that cycle (finer modules, incl. squashed) <span class="hint" id="det2meta"></span></h2>
+<div class="hint">Same cycle slider. <span style="color:#e74c3c">&#10007;</span> marks wrong-path (squashed) insts.</div>
+<div id="det2grid" style="display:flex;gap:6px;overflow-x:auto;margin-top:8px"></div>
+
+<h2>Per-instruction table <span class="hint">(paged from the full db; type to filter, click header to sort, click a row to expand)</span></h2>
+<div>
+ <input id="q" placeholder="filter: pc / disasm / reason ..." size="36">
+ <select id="ronly"><option value="">all insts</option><option value="real">only real stalls (reason&ne;NoStall)</option></select>
+ <label class="hint">sort <select id="sortsel"></select>
+   <select id="dirsel"><option value="asc">asc</option><option value="desc">desc</option></select></label>
+ <label class="hint">page size <input id="psize" type="number" style="width:70px"></label>
+ <button id="more" type="button">load more</button>
+ <button id="clear" type="button">clear</button>
+ <span class="hint" id="cnt"></span>
+</div>
+<div class="wrap"><table id="t"><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
+</div>
+
+<script>
+// ===== schema =====
+const STAGES=['AtFetch','AtDecode','AtRename','AtDispQue','AtIssueQue','AtIssueArb',
+  'AtIssueReadReg','AtFU','AtBypassVal','AtWriteVal','AtCommit'];
+const SI={}; STAGES.forEach((n,i)=>SI[n]=i);  // index within a STAGES SELECT
+const MEMT=11, DIS=12, PC=13, ID=14;          // trailing cols in stage SELECTs
+const DET_MODS=[['Fetch','AtFetch','AtDecode'],['Decode','AtDecode','AtRename'],
+  ['Rename','AtRename','AtIssueQue'],['IssueQ','AtIssueQue','AtFU'],
+  ['Execute','AtFU','AtWriteVal'],['CommitWait','AtWriteVal','AtCommit']];
+const DET2_MODS=[['FetchQ','AtFetch','AtDecode',null],['DecodeQ','AtDecode','AtRename',null],
+  ['Rename/Disp','AtRename','AtIssueQue',null],['IQ-wait','AtIssueQue','AtIssueArb',null],
+  ['IQ-arb','AtIssueArb','AtIssueReadReg',null],['IQ-rdReg','AtIssueReadReg','AtFU',null],
+  ['Execute','AtFU','AtWriteVal',null],['ROB','AtRename','AtCommit',null],
+  ['LQ','AtRename','AtCommit','L'],['SQ','AtRename','AtCommit','S']];
+const STAGE_SEL=STAGES.join(',');
+
+// ===== generation-time defaults (perfcct_report.py --viewer rewrites this) ====
+const DEFAULTS={period:333,excludeIO:true,ioMethod:'addr',dramBase:'0x80000000',
+  ioLat:200,window:2000,sort:'id',sortDir:1,realOnly:false,pageSize:100,
+  startCyc:null,endCyc:null};
+
+// ===== globals =====
+let db=null, P=333, hasMemType=false, hasSquash=false, hasAddr=false, repCols=[];
+let CMIN=0, CMAX=0, NINS=0;
+let excludeIO=true, ioMethod='addr', dramBase=0x80000000, ioLat=200, WIN=2000, dbName='';
+let sortKey='scyc', sortDir=-1, offset=0, trows=[], totalMatch=0, rendered=0;
+
+// ===== query helpers =====
+function qall(sql){ const r=db.exec(sql); return r.length?r[0].values:[]; }
+function q1(sql){ const v=qall(sql); return v.length?v[0]:null; }
+function fmtPc(pc){ return '0x'+Math.floor(Number(pc)).toString(16).padStart(12,'0'); }
+// Which device-I/O detection is active: 'addr' (physical address below the DRAM
+// base => MMIO, the robust method, needs LoadLifeTimeCommitTrace.PAddress) or
+// 'lat' (FU->WriteVal latency >= ioLat cyc, a heuristic fallback). The address
+// method is materialised once into a temp table io_ids(ID); both committed and
+// squashed queries then test membership by ID.
+function ioActive(){
+  if(!excludeIO)return '';
+  if(ioMethod==='addr' && hasAddr)return 'addr';
+  if(hasMemType)return 'lat';
+  return '';
+}
+function buildIoIds(){
+  if(!db)return;
+  db.run('DROP TABLE IF EXISTS io_ids');
+  if(ioActive()==='addr'){
+    db.run('CREATE TEMP TABLE io_ids(ID INTEGER PRIMARY KEY)');
+    db.run(`INSERT OR IGNORE INTO io_ids SELECT ID FROM LoadLifeTimeCommitTrace `+
+           `WHERE PAddress>0 AND PAddress < ${dramBase}`);
+  }
+}
+function ioPred(){
+  const m=ioActive();
+  if(m==='addr')return '(ID IN (SELECT ID FROM io_ids))';
+  if(m==='lat')return `(MemType='L' AND AtFU>0 AND AtWriteVal>AtFU AND (AtWriteVal-AtFU)>=${ioLat*P})`;
+  return '';
+}
+function notIO(){ const p=ioPred(); return p?` AND NOT ${p}`:''; }
+
+// read the options controls into globals
+function readOpts(){
+  const gv=(id,d)=>{const e=document.getElementById(id);const v=parseInt(e.value);return isFinite(v)?v:d;};
+  P=Math.max(1, gv('period',DEFAULTS.period));
+  excludeIO=document.getElementById('excludeIO').checked;
+  ioMethod=document.getElementById('ioMethod').value;
+  const db0=parseInt(document.getElementById('dramBase').value);   // hex or dec
+  dramBase=isFinite(db0)?db0:0x80000000;
+  ioLat=Math.max(1, gv('ioLat',DEFAULTS.ioLat));
+  WIN=Math.max(100, gv('window',DEFAULTS.window));
+}
+function initOpts(){
+  document.getElementById('period').value=DEFAULTS.period;
+  document.getElementById('excludeIO').checked=DEFAULTS.excludeIO;
+  document.getElementById('ioMethod').value=DEFAULTS.ioMethod;
+  document.getElementById('dramBase').value=DEFAULTS.dramBase;
+  document.getElementById('ioLat').value=DEFAULTS.ioLat;
+  document.getElementById('window').value=DEFAULTS.window;
+  document.getElementById('psize').value=DEFAULTS.pageSize;
+  document.getElementById('ronly').value=DEFAULTS.realOnly?'real':'';
+  sortKey=DEFAULTS.sort; sortDir=DEFAULTS.sortDir;
+  document.getElementById('apply').onclick=()=>{ if(db) applyOpts(); };
+  // I/O toggle / method take effect immediately (no need to hit Apply)
+  document.getElementById('excludeIO').onchange=()=>{ if(db) applyOpts(); };
+  document.getElementById('ioMethod').onchange=()=>{ if(db) applyOpts(); };
+}
+initOpts();
+
+// ===== db loading =====
+document.getElementById('dbfile').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  setStatus('loading sql.js + reading db ...');
+  const buf=await f.arrayBuffer();
+  const SQL=await initSqlJs({locateFile:fn=>`https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${fn}`});
+  db=new SQL.Database(new Uint8Array(buf));
+  dbName=f.name;
+  initSchema();
+});
+function setStatus(s){ document.getElementById('status').textContent=s; }
+
+function tableCols(t){ try{return qall(`PRAGMA table_info(${t})`).map(r=>r[1]);}catch(e){return [];} }
+function initSchema(){
+  readOpts();
+  const main=tableCols('LifeTimeCommitTrace');
+  if(!main.length){ setStatus('error: LifeTimeCommitTrace not found'); return; }
+  hasMemType=main.includes('MemType');
+  hasSquash=tableCols('SquashedLifeTimeTrace').length>0;
+  repCols=tableCols('LoadLifeTimeCommitTrace');
+  hasAddr=repCols.includes('PAddress');
+  const row=q1('SELECT min(AtFetch),max(AtCommit),count(*) FROM LifeTimeCommitTrace WHERE AtFetch>0');
+  CMIN=Math.floor(row[0]/P); CMAX=Math.floor(row[1]/P); NINS=row[2];
+  buildIoIds();
+  refreshMeta();
+  document.getElementById('app').style.display='';
+  setStatus('loaded. querying on demand.');
+  setupDetail();
+  setupTable();
+}
+// re-apply options on the already-loaded db (period/I/O/window changes)
+function applyOpts(){
+  readOpts();
+  buildIoIds();
+  CMIN=Math.floor(q1('SELECT min(AtFetch) FROM LifeTimeCommitTrace WHERE AtFetch>0')[0]/P);
+  CMAX=Math.floor(q1('SELECT max(AtCommit) FROM LifeTimeCommitTrace WHERE AtFetch>0')[0]/P);
+  refreshMeta();
+  win.de=-1;                       // invalidate window cache (P/IO may have changed)
+  setupDetail();
+  loadPage(true);
+}
+function memSel(){ return hasMemType?'MemType':"'' AS MemType"; }
+// cycles "owned" by device/MMIO loads at the in-order commit head: each inst
+// owns (prevCommit, ownCommit]; sum those owned by an I/O load (the ROB-blocked
+// spin time). Mirrors perfcct_report.build()'s io_mask/io_cyc.
+function ioCycCount(){
+  if(!ioActive())return 0;
+  const r=q1(`SELECT COALESCE(SUM(gap),0) FROM (SELECT `+
+    `(AtCommit/${P})-(LAG(AtCommit) OVER (ORDER BY AtCommit, ID))/${P} AS gap, `+
+    `CASE WHEN ${ioPred()} THEN 1 ELSE 0 END AS isio `+
+    `FROM LifeTimeCommitTrace WHERE AtFetch>0) WHERE isio=1`);
+  return r?r[0]:0;
+}
+function refreshMeta(){
+  const span=CMAX-CMIN; let extra='';
+  const m=ioActive();
+  if(m){const ic=ioCycCount();
+    const how=(m==='addr')?`PA<0x${dramBase.toString(16)}`:`lat\u2265${ioLat}cyc`;
+    extra=`  \u2014 device-I/O \u2248${ic.toLocaleString()} cyc (${(100*ic/span).toFixed(0)}%, by ${how}), `+
+          `CPU \u2248${(span-ic).toLocaleString()} cyc`;}
+  document.getElementById('meta').textContent=
+    `db=${dbName}  period=${P} ticks/cyc  committed insts=${NINS.toLocaleString()}  `+
+    `span=${span.toLocaleString()} cyc  [${CMIN.toLocaleString()}..${CMAX.toLocaleString()}]${extra}`;
+}
+
+// ===== record builders (mirror perfcct_report.build) =====
+function parseSpans(s, fetch){
+  const out=[]; if(!s)return out;
+  for(const part of s.split(';')){
+    const f=part.split(':'); if(!f[0])continue;
+    const cyc=parseInt(f[1])||0;
+    const ft=(f.length>2&&f[2]!=='')?parseInt(f[2]):null;
+    const lt=(f.length>3&&f[3]!=='')?parseInt(f[3]):null;
+    out.push([f[0], cyc,
+      (ft!=null&&fetch)?Math.floor((ft-fetch)/P):null,
+      (lt!=null&&fetch)?Math.floor((lt-fetch)/P)+1:null]);
+  }
+  return out;
+}
+// row = STAGES... , StallReason, StallCycles, SecondaryReason, StallSpans, MemType, DisAsm, PC, ID
+function buildRow(r, rep){
+  const fetch=r[SI.AtFetch], R=11;        // R = first non-stage col (StallReason)
+  const reason=r[R], scyc=r[R+1], sec=r[R+2], spans=r[R+3];
+  const mt=r[R+4], asm=r[R+5], pc=r[R+6], id=r[R+7];
+  const rel=k=>{const v=r[SI[k]]; return v?Math.floor((v-fetch)/P):null;};
+  const eff=(reason==='HoLBlocked')?sec:reason;
+  const o={id:id, pc:fmtPc(pc), asm:asm, absF:Math.floor(fetch/P), f:0,
+    dec:rel('AtDecode'), ren:rel('AtRename'), isq:rel('AtIssueQue'),
+    fu:rel('AtFU'), wb:rel('AtWriteVal'), cmt:rel('AtCommit'),
+    tot:Math.floor((r[SI.AtCommit]-fetch)/P),
+    reason:eff, raw:reason, scyc:scyc, spans:parseSpans(spans, fetch),
+    rep:0, reptypes:'', reptick:null, repcyc:[], execcyc:[]};
+  if(rep){
+    o.rep=rep.str.length; o.reptypes=rep.str;
+    o.reptick=rep.last?Math.floor((rep.last-fetch)/P):null;
+    o.repcyc=rep.ticks.map(t=>Math.floor((t-fetch)/P));
+    o.execcyc=rep.exec.map(t=>Math.floor((t-fetch)/P));
+  }
+  return o;
+}
+function fetchReplays(ids){
+  const map={}; if(!ids.length||!repCols.includes('ReplayStr'))return map;
+  const hasT=repCols.includes('ReplayTicks'), hasE=repCols.includes('ExecuteTicks');
+  const sel='ID,ReplayStr,LastReplay'+(hasT?',ReplayTicks':'')+(hasE?',ExecuteTicks':'');
+  const v=qall(`SELECT ${sel} FROM LoadLifeTimeCommitTrace WHERE ID IN (${ids.join(',')})`);
+  for(const r of v){
+    if(!r[1])continue;
+    const ti=hasT?3:-1, ei=hasE?(hasT?4:3):-1;
+    map[r[0]]={str:r[1], last:r[2],
+      ticks:(ti>=0&&r[ti])?String(r[ti]).split(/\s+/).filter(x=>x).map(Number):[],
+      exec:(ei>=0&&r[ei])?String(r[ei]).split(/\s+/).filter(x=>x).map(Number):[]};
+  }
+  return map;
+}
+// table1 record: [id, pc, asm, e0,x0, ...] over DET_MODS (committed only)
+function detRec(r){
+  const rec=[r[ID], fmtPc(r[PC]), r[DIS]];
+  for(const [lab,ec,xc] of DET_MODS){
+    let a=r[SI[ec]], b=r[SI[xc]];
+    if(a&&b&&b>=a){let ea=Math.floor(a/P),xb=Math.floor(b/P); if(xb<=ea)xb=ea+1; rec.push(ea,xb);}
+    else rec.push(0,0);
+  }
+  return rec;
+}
+// table2 record: [id, pc, asm, squashed, e0,x0, ...] over DET2_MODS
+function det2Rec(r, squashed){
+  const mt=r[MEMT], ctick=r[SI.AtCommit];
+  const rec=[r[ID], fmtPc(r[PC]), r[DIS], squashed?1:0];
+  for(const [lab,ec,xc,mf] of DET2_MODS){
+    let a=r[SI[ec]], b=r[SI[xc]], ok=!!(a&&a>0);
+    if(ok&&mf==='L'&&!(mt==='L'||mt==='A'))ok=false;
+    else if(ok&&mf==='S'&&!(mt==='S'||mt==='A'))ok=false;
+    if(ok){
+      if(!b||b<a) b=squashed?ctick:0;
+      if(b&&b>=a){let ea=Math.floor(a/P),xb=Math.floor(b/P); if(xb<=ea)xb=ea+1; rec.push(ea,xb);}
+      else rec.push(0,0);
+    } else rec.push(0,0);
+  }
+  return rec;
+}
+
+// ===== table1 & table2: per-cycle module contents (windowed, lazy) =====
+const MODCOL={Fetch:'#3498db',Decode:'#1abc9c',Rename:'#2ecc71',IssueQ:'#e74c3c',
+  ReplayQ:'#c0392b',Execute:'#e67e22',CommitWait:'#9b59b6'};
+const MOD2COL={FetchQ:'#3498db',DecodeQ:'#1abc9c','Rename/Disp':'#2ecc71',
+  'IQ-wait':'#e74c3c','IQ-arb':'#d35400','IQ-rdReg':'#e67e22',Execute:'#f39c12',
+  ROB:'#9b59b6',LQ:'#2980b9',SQ:'#8e44ad'};
+let win={ds:0,de:-1,det:[],det2:[]};   // WIN (window half-width) is a global option
+function loadWindow(c){
+  const ds=Math.max(CMIN, c-WIN), de=Math.min(CMAX, c+WIN);
+  const lo=ds*P, hi=de*P;
+  // committed insts overlapping [ds,de] (device-I/O loads dropped when excluded)
+  const cm=qall(`SELECT ${STAGE_SEL},${memSel()},DisAsm,PC,ID FROM LifeTimeCommitTrace `+
+    `WHERE AtFetch>0 AND AtFetch<=${hi} AND AtCommit>=${lo}${notIO()}`);
+  win.det=cm.map(detRec);
+  win.det2=cm.map(r=>det2Rec(r,false));
+  if(hasSquash){
+    const sq=qall(`SELECT ${STAGE_SEL},${memSel()},DisAsm,PC,ID FROM SquashedLifeTimeTrace `+
+      `WHERE AtFetch>0 AND AtFetch<=${hi} AND AtCommit>=${lo}${notIO()}`);
+    for(const r of sq) win.det2.push(det2Rec(r,true));
+  }
+  win.ds=ds; win.de=de;
+}
+function ensureWin(c){ if(c<win.ds+200||c>win.de-200) loadWindow(c); }
+
+function renderDet(c){
+  const cols=DET_MODS.map(()=>[]);
+  for(const it of win.det) for(let k=0;k<DET_MODS.length;k++){
+    const e=it[3+2*k],x=it[4+2*k]; if(x>e&&e<=c&&c<x)cols[k].push(it);}
+  const g=document.getElementById('detgrid');g.innerHTML='';let tot=0;
+  DET_MODS.forEach((m,k)=>{const list=cols[k];tot+=list.length;
+    const box=document.createElement('div');
+    box.style.cssText='flex:1;min-width:180px;background:#171a21;border:1px solid #2a2f3a;border-radius:8px;padding:6px';
+    let h=`<div style="font-weight:bold;color:${MODCOL[m[0]]||'#ccc'}">${m[0]} <span class="hint">(${list.length})</span></div>`;
+    h+='<div style="max-height:340px;overflow:auto;font-size:12px;margin-top:4px">';
+    list.sort((a,b)=>a[0]-b[0]);
+    for(const it of list)h+=`<div class="pinst" onclick="showInst(${it[0]},0)" title="load inst #${it[0]} in the table below" style="white-space:nowrap">#${it[0]} <span class="hint">${it[1]}</span> ${it[2]}</div>`;
+    if(!list.length)h+='<div class="hint">(empty)</div>';
+    h+='</div>';box.innerHTML=h;g.appendChild(box);});
+  document.getElementById('detcnt').textContent=`cycle ${c}: ${tot} insts in flight`;
+}
+function renderDet2(c){
+  const cols=DET2_MODS.map(()=>[]);
+  for(const it of win.det2) for(let k=0;k<DET2_MODS.length;k++){
+    const e=it[4+2*k],x=it[5+2*k]; if(x>e&&e<=c&&c<x)cols[k].push(it);}
+  const g=document.getElementById('det2grid');g.innerHTML='';
+  DET2_MODS.forEach((m,k)=>{const list=cols[k];
+    const box=document.createElement('div');
+    box.style.cssText='flex:1;min-width:120px;background:#171a21;border:1px solid #2a2f3a;border-radius:8px;padding:6px';
+    let h=`<div style="font-weight:bold;color:${MOD2COL[m[0]]||'#ccc'}">${m[0]} <span class="hint">(${list.length})</span></div>`;
+    h+='<div style="max-height:300px;overflow:auto;font-size:11px;margin-top:4px">';
+    list.sort((a,b)=>a[0]-b[0]);
+    for(const it of list){const x=it[3]?'<span style="color:#e74c3c">\u2717</span>':'';
+      h+=`<div class="pinst" onclick="showInst(${it[0]},${it[3]})" title="load inst #${it[0]} in the table below" style="white-space:nowrap">${x}#${it[0]} <span class="hint">${it[1]}</span> ${it[2]}</div>`;}
+    if(!list.length)h+='<div class="hint">(empty)</div>';
+    h+='</div>';box.innerHTML=h;g.appendChild(box);});
+}
+let dcyc,drng;
+function showCycle(c){ c=Math.max(CMIN,Math.min(CMAX,c|0)); ensureWin(c); renderDet(c); renderDet2(c); }
+// jump the cycle slider (and both panels) to an absolute cycle, then scroll up
+function jumpToCycle(c){
+  // if the target lands in a skipped device-I/O interval, snap forward to the
+  // first CPU cycle after it; otherwise keep the exact cycle.
+  c=snapCpu(Math.max(CMIN,Math.min(CMAX,Math.round(c))));
+  if(dcyc){dcyc.value=c;drng.value=idxFromReal(c);}
+  showCycle(c);
+  document.getElementById('detgrid').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function busyCycle(){
+  // explicit window from generation params wins; else busiest *non-I/O* commit
+  // bucket (a compute burst; UART-stall buckets commit sparsely & are skipped).
+  if(DEFAULTS.startCyc!=null && DEFAULTS.endCyc!=null)
+    return Math.floor((DEFAULTS.startCyc+DEFAULTS.endCyc)/2);
+  const W=2000;
+  const r=q1(`SELECT AtCommit/${P*W} AS b, count(*) c FROM LifeTimeCommitTrace `+
+    `WHERE AtFetch>0${notIO()} GROUP BY b ORDER BY c DESC LIMIT 1`);
+  return r? r[0]*W+Math.floor(W/2) : Math.floor((CMIN+CMAX)/2);
+}
+// ---- compacted cycle map: the slider walks only CPU cycles, skipping the
+// device-I/O intervals, while the displayed cycle number stays the REAL cycle
+// (so it jumps, e.g. 1735 -> 2986). When I/O is not excluded, it is 1:1. ----
+let CMAP={on:false};
+function buildCycleMap(){
+  if(!ioActive()){ CMAP={on:false}; return; }
+  const rows=qall(`SELECT a,b FROM (SELECT (LAG(AtCommit) OVER w)/${P} AS a, `+
+    `AtCommit/${P} AS b, CASE WHEN ${ioPred()} THEN 1 ELSE 0 END AS isio `+
+    `FROM LifeTimeCommitTrace WHERE AtFetch>0 WINDOW w AS (ORDER BY AtCommit, ID)) `+
+    `WHERE isio=1 AND a IS NOT NULL AND b>a ORDER BY a`);
+  const iv=[];                                  // merged excluded [a,b) in cycles
+  for(const [a,b] of rows){const s=Math.max(CMIN,a),e=Math.min(CMAX,b);
+    if(e<=s)continue;
+    if(iv.length&&s<=iv[iv.length-1][1])iv[iv.length-1][1]=Math.max(iv[iv.length-1][1],e);
+    else iv.push([s,e]);}
+  const segs=[]; let cur=CMIN;                  // CPU segments = complement of iv
+  for(const [s,e] of iv){ if(s>cur)segs.push([cur,s]); cur=Math.max(cur,e); }
+  if(cur<=CMAX)segs.push([cur,CMAX+1]);
+  if(!segs.length)segs.push([CMIN,CMAX+1]);
+  const cum=[]; let t=0; for(const [s,e] of segs){cum.push(t); t+=(e-s);}
+  CMAP={on:true,segs,cum,total:t};
+}
+function realFromIdx(idx){
+  if(!CMAP.on)return CMIN+idx;
+  idx=Math.max(0,Math.min(CMAP.total-1,idx));
+  const segs=CMAP.segs,cum=CMAP.cum; let lo=0,hi=segs.length-1,i=0;
+  while(lo<=hi){const m=(lo+hi)>>1,len=segs[m][1]-segs[m][0];
+    if(idx<cum[m])hi=m-1; else if(idx>=cum[m]+len)lo=m+1; else{i=m;break;}}
+  return segs[i][0]+(idx-cum[i]);
+}
+function idxFromReal(c){
+  if(!CMAP.on)return c-CMIN;
+  const segs=CMAP.segs,cum=CMAP.cum; let lo=0,hi=segs.length-1,i=-1;
+  while(lo<=hi){const m=(lo+hi)>>1; if(segs[m][0]<=c){i=m;lo=m+1;}else hi=m-1;}
+  if(i<0)return 0;
+  const [s,e]=segs[i];
+  // inside a CPU segment -> exact; in a skipped gap -> first CPU cyc AFTER it
+  // (cum[i]+(e-s) == next segment's start index; clamped if it was the last seg)
+  return (c<e)?(cum[i]+(c-s)):(cum[i]+(e-s));
+}
+function snapCpu(c){ return CMAP.on?realFromIdx(idxFromReal(c)):c; }
+function setupDetail(){
+  dcyc=document.getElementById('detcyc'); drng=document.getElementById('detrange');
+  buildCycleMap();
+  const total=CMAP.on?CMAP.total:(CMAX-CMIN+1);
+  drng.min=0; drng.max=Math.max(0,total-1); dcyc.min=CMIN; dcyc.max=CMAX;
+  const start=snapCpu(Math.max(CMIN,Math.min(CMAX,busyCycle())));
+  dcyc.value=start; drng.value=idxFromReal(start);
+  const iotxt=CMAP.on
+    ?`, slider compacted to ${total.toLocaleString()} CPU cyc (device-I/O skipped)`:'';
+  document.getElementById('detmeta').textContent=
+    `(\u00b1${WIN} cyc queried per move; opens on busiest commit region \u2248${start.toLocaleString()}${iotxt})`;
+  drng.oninput=()=>{const real=realFromIdx(+drng.value);dcyc.value=real;showCycle(real);};
+  dcyc.oninput=()=>{const real=snapCpu(parseInt(dcyc.value)||CMIN);
+    drng.value=idxFromReal(real);dcyc.value=real;showCycle(real);};
+  loadWindow(start); showCycle(start);
+}
+
+// ===== per-instruction expand rendering (ported from perfcct_report) =====
+const RWCOL={'Reschedule wait':'#b5651d','STLF wait':'#c98a3a','Nuke wait':'#a0522d',
+  'BankConflict wait':'#8c6d1f','CacheMiss wait':'#9c5a2a','TLBMiss wait':'#7a5230',
+  'CacheBlocked wait':'#b07d4a','RAR wait':'#8a6f3d','RAW wait':'#6e5a2e',
+  'MdpAddr wait':'#a36b3a','MshrAliasFail wait':'#7f5a35','HitInWriteBuffer wait':'#956b40',
+  'MshrArbFail wait':'#86643a','Replay wait':'#b5651d'};
+function colorFor(name){
+  if(name==='HoLBlocked')return '#555a66';
+  if(/\u2191BE$/.test(name))return '#5b6b8a';
+  if(RWCOL[name])return RWCOL[name];
+  if(name==='NoStall')return '#2e7d32';
+  let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))>>>0;
+  return `hsl(${h%360},58%,52%)`;
+}
+function feLabel(r,name,s1){
+  if(r.isq!=null && s1!=null && s1<=r.isq && name!=='NoStall' && !/ wait$/.test(name))
+    return name+' \u2191BE';
+  return name;
+}
+function chip(col,label,val){
+  return `<span style="margin-right:14px;white-space:nowrap"><span style="display:inline-block;`+
+    `width:11px;height:11px;background:${col};border-radius:2px;vertical-align:middle"></span> `+
+    `${label}: <b>${val}</b></span>`;
+}
+const RPMAP={T:'TLBMiss',C:'CacheMiss',E:'Reschedule',F:'STLF',M:'MdpAddr',N:'Nuke',
+  K:'CacheBlocked',B:'BankConflict',R:'RAR',W:'RAW',A:'MshrAliasFail',
+  H:'HitInWriteBuffer',G:'MshrArbFail',O:'Other'};
+function replayMarks(r,life){
+  if(!r.rep||!life)return '';
+  const cy=r.repcyc||[],ty=r.reptypes||'';let g='';
+  for(let i=0;i<cy.length;i++){const c=cy[i];if(c==null||c<0||c>life)continue;
+    const t=RPMAP[ty[i]]||ty[i]||'?';
+    g+=`<div title="replay #${i+1} @cyc ${c}: ${t}" style="position:absolute;`+
+       `left:${(100*c/life).toFixed(3)}%;top:-2px;bottom:-2px;width:0;border-left:2px dashed #ff3df0;z-index:3"></div>`;}
+  return g;
+}
+function stageLines(r,life){let g='';
+  for(const b of [r.dec,r.ren,r.isq,r.fu,r.wb]){
+    if(b!=null&&life>0&&b>0&&b<life)
+      g+=`<div style="position:absolute;left:${(100*b/life).toFixed(3)}%;top:0;bottom:0;width:0;border-left:1px solid #0d0f14"></div>`;}
+  return g;
+}
+function moduleBar(r){
+  const life=r.tot||0; if(!life)return '';
+  const ex=r.execcyc||[],rp=r.repcyc||[];
+  const saw=(r.rep && ex.length>1); let segs;
+  if(saw){
+    segs=[['Fetch',0,r.dec],['Decode',r.dec,r.ren],['Rename',r.ren,r.isq]];
+    for(let i=0;i<ex.length;i++){
+      const istart=(i===0)?r.isq:rp[i-1], estart=ex[i], eend=(i<rp.length)?rp[i]:r.wb;
+      const wname=(i===0)?'IssueQ':'ReplayQ';
+      if(istart!=null&&estart!=null&&estart>istart)segs.push([wname,istart,estart]);
+      if(estart!=null&&eend!=null&&eend>estart)segs.push(['Execute',estart,eend]);
+    }
+    segs.push(['CommitWait',r.wb,r.cmt]);
+  } else {
+    segs=[['Fetch',0,r.dec],['Decode',r.dec,r.ren],['Rename',r.ren,r.isq],
+          ['IssueQ',r.isq,r.fu],['Execute',r.fu,r.wb],['CommitWait',r.wb,r.cmt]];
+  }
+  let bar='<div style="position:relative;height:22px;border-radius:4px;overflow:hidden;max-width:760px;border:1px solid #2a2f3a;background:#181c24">';
+  for(const [nm,a,b] of segs){ if(a==null||b==null||b<=a)continue;
+    const col=MODCOL[nm]||'#888', left=100*a/life, w=100*(b-a)/life, lbl=(w>9)?nm:'';
+    bar+=`<div title="${nm}: cyc ${a}\u2013${b} (${b-a} cyc)" style="position:absolute;`+
+      `left:${left.toFixed(3)}%;width:${Math.max(0.3,w).toFixed(3)}%;top:0;bottom:0;`+
+      `background:${col};border-right:1px solid #0d0f14;display:flex;align-items:center;`+
+      `justify-content:center;font-size:10px;color:#0d0f14;overflow:hidden;white-space:nowrap">${lbl}</div>`;}
+  bar+=replayMarks(r,life)+'</div>';
+  let leg='';for(const [nm,a,b] of segs){if(a==null||b==null||b<=a)continue;leg+=chip(MODCOL[nm]||'#888',nm,b-a);}
+  const np=saw?` &mdash; <b>${ex.length}</b> passes (IssueQ\u2192Execute\u2192ReplayQ sawtooth)`:'';
+  return `<div class="hint" style="margin:6px 0 3px">module per cycle (in time order, lifetime ${life} cyc${np}):</div>`+
+    bar+`<div style="font-size:11px;margin-top:5px;line-height:1.8">${leg}</div>`;
+}
+function replayNote(r){
+  if(!r.rep)return '';
+  const cnt={};for(const ch of (r.reptypes||''))cnt[ch]=(cnt[ch]||0)+1;
+  const parts=Object.keys(cnt).map(k=>`${RPMAP[k]||k}\u00d7${cnt[k]}`).join(', ');
+  const cy=r.repcyc||[],ty=r.reptypes||'';let evs='';
+  if(cy.length){const items=cy.map((c,i)=>`#${i+1} @cyc <b>${c}</b> ${RPMAP[ty[i]]||ty[i]||'?'}`).join(' &nbsp; ');
+    evs=`<div style="margin-top:3px">\u2502 ${items}</div>`;}
+  return `<div style="margin:6px 0;padding:6px 9px;border-radius:4px;background:#3a2a12;`+
+    `border:1px solid #6b4a1a;color:#f0c987;font-size:12px">\u27f3 <b>replayed ${r.rep}\u00d7</b> (${parts})${evs}</div>`;
+}
+function splitReplayWaits(r,sp){
+  if(!r.rep||r.fu==null)return sp;
+  const rc=r.repcyc||[],rt=r.reptypes||'',out=[];
+  for(const s of sp){
+    if(s[0]!=='HoLBlocked'||s[2]==null||s[2]>=r.fu){out.push(s);continue;}
+    const a=s[2],b=s[3],bnds=rc.filter(c=>c>a&&c<b).sort((x,y)=>x-y),pts=[a,...bnds,b];
+    for(let k=0;k<pts.length-1;k++){const ss=pts[k],ee=pts[k+1];
+      let gi=-1;for(let j=0;j<rc.length;j++)if(rc[j]<=ss)gi=j;
+      const tn=(gi>=0)?(RPMAP[rt[gi]]||rt[gi]||'Replay'):'Replay';
+      out.push([tn+' wait',Math.max(1,ee-ss),ss,ee]);}
+  }
+  return out;
+}
+function fillReplayWaits(r,sp){
+  const ex=r.execcyc||[],rp=r.repcyc||[],rt=r.reptypes||'';
+  if(!r.rep||ex.length<2)return sp;
+  const real=sp.filter(s=>s[2]!=null&&s[3]!=null).map(s=>[s[2],s[3]]).sort((x,y)=>x[0]-y[0]);
+  const out=sp.slice();
+  for(let i=1;i<ex.length;i++){const a=rp[i-1],b=ex[i];if(a==null||b==null||b<=a)continue;
+    const tn=(RPMAP[rt[i-1]]||rt[i-1]||'Replay')+' wait';let cur=a;
+    for(const [ra,rb] of real){if(rb<=cur||ra>=b)continue;if(ra>cur)out.push([tn,ra-cur,cur,ra]);cur=Math.max(cur,rb);if(cur>=b)break;}
+    if(cur<b)out.push([tn,b-cur,cur,b]);}
+  return out;
+}
+function spanDetail(r){
+  let sp=fillReplayWaits(r, splitReplayWaits(r, r.spans||[]));
+  const life=r.tot||0;
+  if(!sp.length && !life)return '<span class="hint">(this inst never stalled)</span>';
+  const positioned=life>0&&sp.length&&sp.every(s=>s[2]!=null&&s[3]!=null);
+  let bar,leg='';
+  if(positioned){
+    bar='<div style="position:relative;height:20px;max-width:760px;border-radius:4px;border:1px solid #2a2f3a;background:#222732;overflow:hidden">';
+    const segs=sp.filter(s=>s[2]!=null&&s[3]!=null).slice().sort((x,y)=>x[2]-y[2]);
+    for(const [name,cyc,s0,s1] of segs){const dn=feLabel(r,name,s1),col=colorFor(dn);
+      const left=100*Math.max(0,s0)/life,w=Math.max(0.4,100*Math.max(1,s1-s0)/life);
+      const tip=(dn!==name)?`${dn}: ${cyc} cyc (cyc ${s0}\u2013${s1}) \u2014 backend reason inherited in front end`:`${name}: ${cyc} cyc (cyc ${s0}\u2013${s1} from fetch)`;
+      bar+=`<div title="${tip}" style="position:absolute;left:${left.toFixed(3)}%;width:${w.toFixed(3)}%;top:0;bottom:0;background:${col}"></div>`;}
+    bar+=stageLines(r,life)+replayMarks(r,life)+'</div>';
+    let cur=0;
+    for(const [name,cyc,s0,s1] of segs){if(s0>cur)leg+=chip('#222732','not attributed',s0-cur);
+      const dn=feLabel(r,name,s1);leg+=chip(colorFor(dn),dn,Math.max(1,s1-s0));cur=Math.max(cur,s1);}
+    if(life>cur)leg+=chip('#222732','not attributed',life-cur);
+  } else {
+    const W=Math.max(life,1);
+    bar='<div style="display:flex;height:20px;border-radius:4px;overflow:hidden;max-width:760px;border:1px solid #2a2f3a">';
+    for(const [name,cyc] of sp){const col=colorFor(name);
+      bar+=`<div title="${name}: ${cyc} cyc" style="width:${(100*cyc/W).toFixed(3)}%;background:${col}"></div>`;leg+=chip(col,name,cyc);}
+    bar+='</div>';
+  }
+  return replayNote(r)+moduleBar(r)+
+    `<div class="hint" style="margin:8px 0 3px">stall reason per cycle (in time order):</div>`+
+    bar+`<div style="font-size:11px;margin-top:5px;line-height:1.8">${leg}</div>`;
+}
+
+// ===== table3: paginated per-instruction table =====
+const COLS=[['id','ID'],['absF','absF'],['pc','PC'],['dec','dec'],['ren','ren'],['isq','isq'],
+  ['fu','fu'],['wb','wb'],['cmt','cmt'],['tot','tot'],['reason','Reason(real)'],['scyc','sCyc'],
+  ['raw','rawDominant'],['asm','disasm']];
+const SORTSQL={id:'ID',absF:'AtFetch',pc:'PC',dec:'AtDecode',ren:'AtRename',isq:'AtIssueQue',
+  fu:'AtFU',wb:'AtWriteVal',cmt:'AtCommit',tot:'(AtCommit-AtFetch)',scyc:'StallCycles',
+  raw:'StallReason',reason:'StallReason',asm:'DisAsm'};
+const expanded=new Set();
+function buildWhere(){
+  const w=['AtFetch>0'];
+  const p=ioPred(); if(p) w.push('NOT '+p);      // drop device/MMIO I/O loads
+  if(document.getElementById('ronly').value==='real')
+    w.push("NOT (StallReason='NoStall' OR (StallReason='HoLBlocked' AND SecondaryReason='NoStall'))");
+  const q=document.getElementById('q').value.toLowerCase().trim();
+  if(q){const e=q.replace(/'/g,"''");
+    w.push(`(lower(DisAsm) LIKE '%${e}%' OR lower(StallReason) LIKE '%${e}%' OR `+
+      `lower(SecondaryReason) LIKE '%${e}%' OR printf('0x%012x',PC) LIKE '%${e}%')`);}
+  return w.join(' AND ');
+}
+function loadPage(reset){
+  if(!db)return;
+  if(reset){offset=0;trows=[];expanded.clear();}
+  const ps=Math.max(1,parseInt(document.getElementById('psize').value)||500);
+  const where=buildWhere();
+  if(reset) totalMatch=q1(`SELECT count(*) FROM LifeTimeCommitTrace WHERE ${where}`)[0];
+  const ob=`${SORTSQL[sortKey]||'StallCycles'} ${sortDir>0?'ASC':'DESC'}, ID ASC`;
+  const v=qall(`SELECT ${STAGE_SEL},StallReason,StallCycles,SecondaryReason,StallSpans,`+
+    `${memSel()},DisAsm,PC,ID FROM LifeTimeCommitTrace WHERE ${where} ORDER BY ${ob} `+
+    `LIMIT ${ps} OFFSET ${offset}`);
+  // NB: this SELECT has 4 extra stall columns, so ID/PC sit AFTER the table1/2
+  // offsets -- ID is the last column, not the global ID=14 used by det queries.
+  const T3ID=STAGES.length+7;             // 11 stages + 4 stall + MemType,DisAsm,PC,ID
+  const ids=v.map(r=>r[T3ID]);
+  const reps=fetchReplays(ids);
+  for(const r of v) trows.push(buildRow(r, reps[r[T3ID]]));
+  offset+=v.length;
+  if(reset) rebuildTable(); else appendNewRows();   // append-only keeps scroll pos
+}
+const thr=document.getElementById('th'),THS=[];
+// keep the sort dropdown + direction in sync with sortKey/sortDir
+function syncSortControls(){
+  const s=document.getElementById('sortsel'),d=document.getElementById('dirsel');
+  if(s)s.value=sortKey; if(d)d.value=sortDir>0?'asc':'desc';
+}
+function setupTable(){
+  thr.innerHTML='';THS.length=0;
+  COLS.forEach(([k,lab])=>{const th=document.createElement('th');th.textContent=lab;
+    if(k==='pc'||k==='asm'||k==='reason'||k==='raw'||k==='id')th.className='l';
+    th.onclick=()=>{if(sortKey===k)sortDir=-sortDir;else{sortKey=k;sortDir=(k==='pc'||k==='id'||k==='absF')?1:-1;}syncSortControls();loadPage(true);};
+    thr.appendChild(th);THS.push([k,lab,th]);});
+  // sort dropdown next to load-more: same columns as the headers
+  const ssel=document.getElementById('sortsel');
+  ssel.innerHTML=COLS.map(([k,lab])=>`<option value="${k}">${lab}</option>`).join('');
+  syncSortControls();
+  const reSort=()=>{sortKey=ssel.value;sortDir=document.getElementById('dirsel').value==='desc'?-1:1;loadPage(true);};
+  ssel.onchange=reSort;
+  document.getElementById('dirsel').onchange=reSort;
+  let t=null;
+  document.getElementById('q').oninput=()=>{clearTimeout(t);t=setTimeout(()=>loadPage(true),250);};
+  document.getElementById('ronly').onchange=()=>loadPage(true);
+  document.getElementById('psize').onchange=()=>loadPage(true);
+  document.getElementById('more').onclick=()=>loadPage(false);
+  document.getElementById('clear').onclick=clearTable;
+  loadPage(true);
+}
+// drop every loaded inst (keep filter/sort & total count); "load more" then
+// reloads from the first page (offset 0).
+function clearTable(){
+  trows=[]; offset=0; rendered=0; expanded.clear();
+  document.getElementById('tb').innerHTML='';
+  updateCnt();
+}
+function idText(r,exp){const ns=(r.spans||[]).length;
+  return (exp?'\u25BC ':(ns?'\u25B6 ':'  '))+(r.rep?'\u27f3 ':'')+r.id;}
+function detailRow(r){const dtr=document.createElement('tr');dtr.className='detrow';
+  const td=document.createElement('td');td.colSpan=COLS.length;td.className='l';
+  td.style.background='#10131a';td.innerHTML=spanDetail(r);dtr.appendChild(td);return dtr;}
+// absolute cycle for a stage column (dec/ren/... are relative to fetch; absF is
+// already absolute). Returns null if the inst never reached that stage.
+const STAGECOL={absF:1,dec:1,ren:1,isq:1,fu:1,wb:1,cmt:1};
+function stageAbs(r,k){
+  if(r.absF==null)return null;
+  if(k==='absF')return r.absF;
+  return (r[k]==null)?null:(r.absF+r[k]);
+}
+function makeRow(r){
+  const tr=document.createElement('tr');tr.style.cursor='pointer';
+  COLS.forEach(([k])=>{const td=document.createElement('td');
+    td.textContent=(k==='id')?idText(r,expanded.has(r.id)):(r[k]==null?'':r[k]);
+    if(k==='pc'||k==='asm'||k==='reason'||k==='raw'||k==='id')td.className='l';
+    if(STAGECOL[k]){const ab=stageAbs(r,k);
+      if(ab!=null){td.className='jump';td.title=`jump panels to cycle ${ab}`;
+        td.onclick=e=>{e.stopPropagation();jumpToCycle(ab);};}}
+    tr.appendChild(td);});
+  tr.onclick=()=>{const tb=tr.parentNode,nx=tr.nextSibling;
+    if(expanded.has(r.id)){expanded.delete(r.id);
+      if(nx&&nx.classList&&nx.classList.contains('detrow'))tb.removeChild(nx);}
+    else{expanded.add(r.id);tb.insertBefore(detailRow(r),nx);}
+    tr.firstChild.textContent=idText(r,expanded.has(r.id));};
+  return tr;
+}
+// load a single inst (clicked from a cycle panel) into the table, expanded.
+function showInst(id, squashed){
+  if(squashed){ setStatus(`#${id} is wrong-path (squashed) \u2014 no committed per-inst record`); return; }
+  const v=qall(`SELECT ${STAGE_SEL},StallReason,StallCycles,SecondaryReason,StallSpans,`+
+    `${memSel()},DisAsm,PC,ID FROM LifeTimeCommitTrace WHERE ID=${id} LIMIT 1`);
+  if(!v.length){ setStatus(`#${id} not found in committed table`); return; }
+  const T3ID=STAGES.length+7;
+  const reps=fetchReplays([v[0][T3ID]]);
+  trows=[buildRow(v[0], reps[v[0][T3ID]])];
+  offset=0; rendered=0; totalMatch=1; expanded.clear(); expanded.add(id);
+  document.getElementById('tb').innerHTML='';
+  appendNewRows();
+  setStatus(`loaded inst #${id} (click "clear" or change sort to return to the list)`);
+  document.getElementById('t').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function appendNewRows(){            // append trows[rendered..] without clearing
+  const tb=document.getElementById('tb'),frag=document.createDocumentFragment();
+  for(let i=rendered;i<trows.length;i++){const r=trows[i];frag.appendChild(makeRow(r));
+    if(expanded.has(r.id))frag.appendChild(detailRow(r));}
+  tb.appendChild(frag);rendered=trows.length;updateCnt();
+}
+function rebuildTable(){
+  THS.forEach(([k,lab,th])=>{th.textContent=lab+(sortKey===k?(sortDir>0?' \u25B2':' \u25BC'):'');});
+  document.getElementById('tb').innerHTML='';rendered=0;appendNewRows();
+}
+function updateCnt(){document.getElementById('cnt').textContent=
+  `showing ${trows.length.toLocaleString()} of ${totalMatch.toLocaleString()} matching insts`+
+  (trows.length<totalMatch?' \u2014 click "load more"':'');}
+</script>
+</body></html>
