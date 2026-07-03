@@ -840,8 +840,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         const auto entries = buildDirectionUpdateEntries(
             update_btb_entries,
             update_new_direction_entries,
-            selection.entry,
-            selection.isOldEntry,
+            selection,
             update_branches,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
@@ -853,8 +852,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
       case PredictorUpdateProtocol::TargetEntries: {
         const auto entries = buildTargetUpdateEntries(
             update_btb_entries,
-            selection.entry,
-            selection.isOldEntry,
+            selection,
             update_branches,
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);

@@ -395,8 +395,7 @@ inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<BTBEntry> &update_new_direction_entries,
-    const BTBEntry &selected_entry,
-    bool update_is_old_entry,
+    const BTBUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &resolved_update_branches,
     DirectionUpdateEntryFilter filter,
     bool resolved_update,
@@ -405,7 +404,7 @@ buildDirectionUpdateEntries(
     std::vector<DirectionUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
                     update_new_direction_entries.size() +
-                    (update_is_old_entry ? 0 : 1));
+                    (selection.isOldEntry ? 0 : 1));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         if (!shouldKeepDirectionUpdateEntry(entry, filter, resolved_update,
@@ -424,8 +423,8 @@ buildDirectionUpdateEntries(
     for (const auto &entry : update_new_direction_entries) {
         add_entry(entry, true);
     }
-    if (!update_is_old_entry) {
-        add_entry(selected_entry, true);
+    if (!selection.isOldEntry) {
+        add_entry(selection.entry, true);
     }
 
     return entries;
@@ -461,15 +460,15 @@ shouldKeepTargetUpdateEntry(
 inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
-    const BTBEntry &selected_entry,
-    bool update_is_old_entry,
+    const BTBUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &resolved_update_branches,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
     const BranchUpdateContext &ctx)
 {
     std::vector<TargetUpdateEntry> entries;
-    entries.reserve(update_btb_entries.size() + (update_is_old_entry ? 0 : 1));
+    entries.reserve(update_btb_entries.size() +
+                    (selection.isOldEntry ? 0 : 1));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         if (!shouldKeepTargetUpdateEntry(
@@ -487,8 +486,8 @@ buildTargetUpdateEntries(
     for (const auto &entry : update_btb_entries) {
         add_entry(entry, false);
     }
-    if (!update_is_old_entry) {
-        add_entry(selected_entry, true);
+    if (!selection.isOldEntry) {
+        add_entry(selection.entry, true);
     }
 
     return entries;

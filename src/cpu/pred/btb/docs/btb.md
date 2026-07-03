@@ -217,7 +217,7 @@ const auto update_entries = buildUpdateBTBEntries(
 const auto selection = btb->selectUpdateEntry(
     stream.predMetas[btb->getComponentIdx()], ctx);
 const auto entries = buildTargetUpdateEntries(
-    update_entries, selection.entry, selection.isOldEntry, {},
+    update_entries, selection, {},
     btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
 
 // Update BTB

@@ -76,7 +76,7 @@ void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
     const auto selection = btb->selectUpdateEntry(meta, ctx);
     const auto entries = buildTargetUpdateEntries(
-        update_entries, selection.entry, selection.isOldEntry, {},
+        update_entries, selection, {},
         btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
     btb->updateWithTargetEntries(entries, ctx, meta);
 }
