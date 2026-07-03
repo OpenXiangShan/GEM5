@@ -164,21 +164,24 @@ BTBuRAS::recoverState(const FetchTarget &entry)
 }
 
 void
-BTBuRAS::updateWithFetchTarget(const FetchTarget &entry)
+BTBuRAS::updateWithBranchUpdateContext(
+    const BranchUpdateContext &ctx,
+    const std::shared_ptr<void> &prediction_meta)
 {
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;
     printStack("before update", stack, sp);
-    auto takenSlot = entry.exeBranchInfo;
-    if (entry.exeTaken && (takenSlot.isReturn || takenSlot.isCall)) {
-        auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
+    auto takenSlot = ctx.actualBranch;
+    if (ctx.actualTaken && (takenSlot.isReturn || takenSlot.isCall)) {
+        auto meta_ptr = std::static_pointer_cast<uRASMeta>(prediction_meta);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
-        auto miss = entry.squashType == SQUASH_CTRL && entry.squashPC == entry.exeBranchInfo.pc;
+        auto miss = ctx.squashType == SQUASH_CTRL &&
+                    ctx.squashPC == ctx.actualBranch.pc;
         if (takenSlot.isCall) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr,
+                NonSpecRASTrace rec(RAS_OP::PUSH, ctx.startPC, takenSlot.pc, retAddr,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }
@@ -186,7 +189,7 @@ BTBuRAS::updateWithFetchTarget(const FetchTarget &entry)
         }
         if (takenSlot.isReturn) {
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::POP, entry.startPC, takenSlot.pc, takenSlot.target,
+                NonSpecRASTrace rec(RAS_OP::POP, ctx.startPC, takenSlot.pc, takenSlot.target,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }

@@ -100,8 +100,10 @@ namespace btb_pred {
 
         void recoverState(const FetchTarget &entry);
 
-        bool usesFetchTargetUpdate() const override { return true; }
-        void updateWithFetchTarget(const FetchTarget &entry) override;
+        bool usesBranchUpdateContext() const override { return true; }
+        void updateWithBranchUpdateContext(
+            const BranchUpdateContext &ctx,
+            const std::shared_ptr<void> &prediction_meta) override;
 
         // commitBranch method - override only in production mode
 #ifdef UNIT_TEST

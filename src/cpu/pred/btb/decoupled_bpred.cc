@@ -733,7 +733,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         // Update predictor components
         updatePredictorComponents(
             target.isHit, target.predBTBEntries, target.predMetas,
-            target.phistory, target, update_ctx, update_branches,
+            target.phistory, target.previousPCs, update_ctx, update_branches,
             /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
@@ -787,7 +787,7 @@ DecoupledBPUWithBTB::resolveUpdate(
 
     return updatePredictorComponents(
         target.isHit, target.predBTBEntries, target.predMetas,
-        target.phistory, target, update_ctx, update_branches,
+        target.phistory, target.previousPCs, update_ctx, update_branches,
         /*resolved_update=*/true);
 }
 
@@ -881,7 +881,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const std::vector<BTBEntry> &pred_btb_entries,
     const std::array<std::shared_ptr<void>, 8> &pred_metas,
     const boost::dynamic_bitset<> &phistory,
-    const FetchTarget &stream_state,
+    const std::queue<Addr> &previous_pcs,
     const BranchUpdateContext &update_ctx,
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
@@ -932,11 +932,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         if (!updated_with_entries && component == abtb) {
             abtb->updateWithAheadPipelineState(
                 pred_metas[component->getComponentIdx()], update_ctx,
-                stream_state.previousPCs);
-            continue;
-        }
-        if (!updated_with_entries && component->usesFetchTargetUpdate()) {
-            component->updateWithFetchTarget(stream_state);
+                previous_pcs);
             continue;
         }
         panic_if(!updated_with_entries,

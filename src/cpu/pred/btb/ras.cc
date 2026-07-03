@@ -203,14 +203,16 @@ BTBRAS::recoverState(const FetchTarget &entry)
 }
 
 void
-BTBRAS::updateWithFetchTarget(const FetchTarget &entry)
+BTBRAS::updateWithBranchUpdateContext(
+    const BranchUpdateContext &ctx,
+    const std::shared_ptr<void> &prediction_meta)
 {
-    const ThreadID tid = entry.tid;
+    const ThreadID tid = ctx.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
-    auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenEntry = entry.exeBranchInfo;
-    if (entry.exeTaken) {
+    auto meta_ptr = std::static_pointer_cast<RASMeta>(prediction_meta);
+    auto takenEntry = ctx.actualBranch;
+    if (ctx.actualTaken) {
         if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
             DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
@@ -219,14 +221,14 @@ BTBRAS::updateWithFetchTarget(const FetchTarget &entry)
             DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
         if (takenEntry.isCall) {
-            DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
-                entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
+            DPRINTF(RAS, "real update call meta TOSR %d TOSW %d\n entry PC %lx",
+                meta_ptr->TOSR, meta_ptr->TOSW, ctx.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
             push_stack(tid, retAddr);
             state.BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
         if (takenEntry.isReturn) {
-            DPRINTF(RAS, "update ret entry PC %lx\n", entry.startPC);
+            DPRINTF(RAS, "update ret entry PC %lx\n", ctx.startPC);
             pop_stack(tid);
         }
     }

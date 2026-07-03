@@ -166,26 +166,10 @@ The update process:
    - For conditional branches, update counter
    - For indirect branches, update target
 
-```cpp
-void updateWithFetchTarget(const FetchTarget &stream) {
-    // 1. Process old entries
-    auto old_entries = processOldEntries(stream);
-    
-    // 2. Check prediction hit status, for stats recording
-    checkPredictionHit(stream,
-        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
-
-    // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-    
-    // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
-    for (auto &entry : entries_to_update) {
-        // Calculate 32-byte aligned address for this entry
-        Addr entryPC = entry.pc & ~(blockSize - 1);
-        updateBTBEntry(entryPC, entry, stream);
-    }
-}
-```
+Modern target predictors consume explicit `TargetUpdateEntry` data plus a
+`BranchUpdateContext`. This keeps prediction-time metadata and actual resolved
+branch facts visible at the update boundary instead of reconstructing them from
+a full `FetchTarget`.
 
 ### 4.4 MRU Replacement Policy
 
