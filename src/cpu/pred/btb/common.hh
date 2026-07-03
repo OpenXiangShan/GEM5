@@ -765,13 +765,6 @@ struct FetchTarget
         return exeTaken && exeBranchInfo.pc == pc;
     }
 
-    BranchUpdateContext makeUpdateContext() const
-    {
-        return {tid, startPC, asidHash, getControlPC(),
-                exeBranchInfo, exeTaken, predTick,
-                static_cast<SquashType>(squashType), squashPC};
-    }
-
 };
 
 inline BranchInfo
@@ -804,10 +797,19 @@ makeResolvedUpdateBranches(const std::vector<ResolvedBranch> &branches)
 }
 
 inline BranchUpdateContext
+makeBranchUpdateContext(const FetchTarget &target)
+{
+    return {target.tid, target.startPC, target.asidHash,
+            target.getControlPC(), target.exeBranchInfo, target.exeTaken,
+            target.predTick, static_cast<SquashType>(target.squashType),
+            target.squashPC};
+}
+
+inline BranchUpdateContext
 makeBranchUpdateContext(const FetchTarget &target,
                         const std::vector<ResolvedBranch> &branches)
 {
-    BranchUpdateContext ctx = target.makeUpdateContext();
+    BranchUpdateContext ctx = makeBranchUpdateContext(target);
     if (branches.empty()) {
         return ctx;
     }

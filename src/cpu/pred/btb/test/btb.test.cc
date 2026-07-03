@@ -69,7 +69,7 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
 
 void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
                              const std::shared_ptr<void>& meta) {
-    const auto ctx = stream.makeUpdateContext();
+    const auto ctx = makeBranchUpdateContext(stream);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
         ctx.startPC, btb->predictWidth, ctx.actualTaken, ctx.controlPC,
         ctx.squashType, ctx.squashPC);

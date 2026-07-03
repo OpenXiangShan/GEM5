@@ -325,7 +325,7 @@ stream.exeTaken = actual_taken;
 stream.predMetas[0] = meta;  // Must include metadata from prediction phase
 
 // Update predictor state through explicit DirectionUpdateEntry inputs.
-const auto update_ctx = stream.makeUpdateContext();
+const auto update_ctx = makeBranchUpdateContext(stream);
 const std::vector<DirectionUpdateEntry> entries = {
     {BTBEntry(branch_info), actual_taken, false}
 };

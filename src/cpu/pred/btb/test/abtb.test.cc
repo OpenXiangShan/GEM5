@@ -62,7 +62,7 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 void updateBTB(FetchTarget &stream, AheadBTB *abtb) {
     abtb->updateWithAheadPipelineState(
         stream.predMetas[abtb->getComponentIdx()],
-        stream.makeUpdateContext(), stream.previousPCs);
+        makeBranchUpdateContext(stream), stream.previousPCs);
 }
 
 

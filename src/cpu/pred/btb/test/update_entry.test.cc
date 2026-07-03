@@ -86,7 +86,7 @@ makeUpdateEntries(const FetchTarget &stream,
                   unsigned predict_width,
                   const std::vector<ResolvedBranch> &branches)
 {
-    const auto ctx = stream.makeUpdateContext();
+    const auto ctx = makeBranchUpdateContext(stream);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
         ctx.startPC, predict_width, ctx.actualTaken, ctx.controlPC,
         ctx.squashType, ctx.squashPC);
@@ -348,7 +348,7 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
 
     FetchTarget legacy_stream = stream;
     applyResolvedBranchResult(legacy_stream, update_branches);
-    const auto legacy_ctx = legacy_stream.makeUpdateContext();
+    const auto legacy_ctx = makeBranchUpdateContext(legacy_stream);
     EXPECT_EQ(ctx.controlPC, legacy_ctx.controlPC);
     EXPECT_EQ(ctx.actualBranch.pc, legacy_ctx.actualBranch.pc);
     EXPECT_EQ(ctx.actualBranch.target, legacy_ctx.actualBranch.target);
@@ -372,18 +372,17 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
     stream.squashPC = 0x2010;
 
     const auto ctx = makeBranchUpdateContext(stream, {});
-    const auto legacy_ctx = stream.makeUpdateContext();
 
-    EXPECT_EQ(ctx.tid, legacy_ctx.tid);
-    EXPECT_EQ(ctx.asidHash, legacy_ctx.asidHash);
-    EXPECT_EQ(ctx.startPC, legacy_ctx.startPC);
-    EXPECT_EQ(ctx.predTick, legacy_ctx.predTick);
-    EXPECT_EQ(ctx.controlPC, legacy_ctx.controlPC);
-    EXPECT_EQ(ctx.actualBranch.pc, legacy_ctx.actualBranch.pc);
-    EXPECT_EQ(ctx.actualBranch.target, legacy_ctx.actualBranch.target);
-    EXPECT_EQ(ctx.actualTaken, legacy_ctx.actualTaken);
-    EXPECT_EQ(ctx.squashType, legacy_ctx.squashType);
-    EXPECT_EQ(ctx.squashPC, legacy_ctx.squashPC);
+    EXPECT_EQ(ctx.tid, stream.tid);
+    EXPECT_EQ(ctx.asidHash, stream.asidHash);
+    EXPECT_EQ(ctx.startPC, stream.startPC);
+    EXPECT_EQ(ctx.predTick, stream.predTick);
+    EXPECT_EQ(ctx.controlPC, stream.exeBranchInfo.pc);
+    EXPECT_EQ(ctx.actualBranch.pc, stream.exeBranchInfo.pc);
+    EXPECT_EQ(ctx.actualBranch.target, stream.exeBranchInfo.target);
+    EXPECT_TRUE(ctx.actualTaken);
+    EXPECT_EQ(ctx.squashType, SquashType::SQUASH_TRAP);
+    EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }
 
 TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
@@ -485,7 +484,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
         update_btb_entries, update_new_direction_entries,
         update_selection.entry, update_selection.isOldEntry,
         update_branches, DirectionUpdateEntryFilter::Conditional,
-        true, stream.makeUpdateContext());
+        true, makeBranchUpdateContext(stream));
 
     ASSERT_EQ(direction_entries.size(), 2);
     EXPECT_EQ(direction_entries[0].entry.pc, missing.pc);
@@ -498,7 +497,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     const auto target_entries = buildTargetUpdateEntries(
         update_btb_entries, update_selection.entry,
         update_selection.isOldEntry, update_branches,
-        TargetUpdateEntryFilter::Any, true, stream.makeUpdateContext());
+        TargetUpdateEntryFilter::Any, true, makeBranchUpdateContext(stream));
 
     ASSERT_EQ(target_entries.size(), 1);
     EXPECT_EQ(target_entries[0].entry.pc, selected.pc);
@@ -551,7 +550,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
         update_btb_entries, update_new_direction_entries,
         update_selection.entry, update_selection.isOldEntry,
         update_branches, DirectionUpdateEntryFilter::Conditional,
-        true, stream.makeUpdateContext());
+        true, makeBranchUpdateContext(stream));
 
     ASSERT_EQ(direction_entries.size(), 1);
     EXPECT_EQ(direction_entries[0].entry.pc, missing.pc);
@@ -560,7 +559,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     const auto target_entries = buildTargetUpdateEntries(
         update_btb_entries, update_selection.entry,
         update_selection.isOldEntry, update_branches,
-        TargetUpdateEntryFilter::Any, true, stream.makeUpdateContext());
+        TargetUpdateEntryFilter::Any, true, makeBranchUpdateContext(stream));
 
     EXPECT_TRUE(target_entries.empty());
 }

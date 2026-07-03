@@ -209,7 +209,7 @@ stream.startPC = pc;
 stream.predMetas[0] = meta;
 
 // Build explicit target update entries
-const auto ctx = stream.makeUpdateContext();
+const auto ctx = makeBranchUpdateContext(stream);
 const auto update_end_inst_pc = buildUpdateEndInstPC(
     ctx.startPC, btb->predictWidth, ctx.actualTaken, ctx.controlPC,
     ctx.squashType, ctx.squashPC);
