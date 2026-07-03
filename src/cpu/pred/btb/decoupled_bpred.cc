@@ -870,12 +870,13 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {
-    if (!shouldUpdateBpuPredictors(target, update_branches)) {
+    const auto direction_update_ctx = target.makeDirectionUpdateContext();
+    const auto target_update_ctx = target.makeTargetUpdateContext();
+    if (!shouldUpdateBpuPredictors(
+            target.isHit, target_update_ctx.actualTaken, update_branches)) {
         return true;
     }
 
-    const auto direction_update_ctx = target.makeDirectionUpdateContext();
-    const auto target_update_ctx = target.makeTargetUpdateContext();
     BTBUpdateEntrySelection raw_selection;
     if (mbtb->isEnabled()) {
         raw_selection = mbtb->selectUpdateEntry(
