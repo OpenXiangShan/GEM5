@@ -307,14 +307,6 @@ struct TargetUpdateEntry
     BranchInfo actualBranch;
 };
 
-struct BPUPreparedUpdate
-{
-    std::vector<BTBEntry> btbEntries;
-    std::vector<BTBEntry> newDirectionEntries;
-    BTBUpdateEntrySelection selection;
-    std::vector<ResolvedBranch> resolvedBranches;
-};
-
 inline BranchInfo makeBranchInfo(const ResolvedBranch &branch);
 
 enum class TargetUpdateEntryFilter
@@ -970,18 +962,6 @@ markResolvedSelection(BTBUpdateEntrySelection selection,
 {
     markResolvedEntry(selection.entry, branches);
     return selection;
-}
-
-inline BPUPreparedUpdate
-prepareBPUUpdate(const FetchTarget &target, unsigned predictWidth,
-                 const BTBUpdateEntrySelection &selection,
-                 const std::vector<ResolvedBranch> &branches)
-{
-    auto update_entries = makeUpdateBTBEntries(target, predictWidth, branches);
-    return {update_entries,
-            makeNewDirectionEntries(update_entries, selection, branches),
-            markResolvedSelection(selection, branches),
-            branches};
 }
 
 /**

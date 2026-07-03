@@ -783,14 +783,21 @@ DecoupledBPUWithBTB::resolveUpdate(
         return true;
     }
 
-    const auto selection = selectUpdateEntryForTarget(target);
-    const auto prepared_update =
-        prepareBPUUpdate(target, predictWidth, selection, update_branches);
+    const auto raw_selection = selectUpdateEntryForTarget(target);
+    const auto update_btb_entries =
+        makeUpdateBTBEntries(target, predictWidth, update_branches);
+    const auto update_new_direction_entries =
+        makeNewDirectionEntries(
+            update_btb_entries, raw_selection, update_branches);
+    const auto selection =
+        markResolvedSelection(raw_selection, update_branches);
 
     if (!canResolveUpdateComponents(target)) {
         return false;
     }
-    updateResolvedPredictorComponents(target, prepared_update);
+    updateResolvedPredictorComponents(
+        target, update_btb_entries, update_new_direction_entries,
+        selection, update_branches);
     return true;
 }
 
@@ -844,13 +851,17 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
 void
 DecoupledBPUWithBTB::updateResolvedPredictorComponents(
     const FetchTarget &target,
-    const BPUPreparedUpdate &prepared_update)
+    const std::vector<BTBEntry> &update_btb_entries,
+    const std::vector<BTBEntry> &update_new_direction_entries,
+    const BTBUpdateEntrySelection &selection,
+    const std::vector<ResolvedBranch> &update_branches)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
             components[i]->noteResolveUpdateAccepted(target);
             updatePredictorComponent(
-                components[i], target, prepared_update);
+                components[i], target, update_btb_entries,
+                update_new_direction_entries, selection, update_branches);
         }
     }
 }
@@ -859,16 +870,19 @@ void
 DecoupledBPUWithBTB::updatePredictorComponent(
     TimedBaseBTBPredictor *component,
     const FetchTarget &target,
-    const BPUPreparedUpdate &prepared_update)
+    const std::vector<BTBEntry> &update_btb_entries,
+    const std::vector<BTBEntry> &update_new_direction_entries,
+    const BTBUpdateEntrySelection &selection,
+    const std::vector<ResolvedBranch> &update_branches)
 {
     if (component->usesDirectionUpdateEntries()) {
         const auto update_ctx = target.makeDirectionUpdateContext();
         const auto entries = buildDirectionUpdateEntries(
-            prepared_update.btbEntries,
-            prepared_update.newDirectionEntries,
-            prepared_update.selection.entry,
-            prepared_update.selection.isOldEntry,
-            prepared_update.resolvedBranches,
+            update_btb_entries,
+            update_new_direction_entries,
+            selection.entry,
+            selection.isOldEntry,
+            update_branches,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         component->updateWithDirectionEntries(
@@ -881,10 +895,10 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     if (component->usesTargetUpdateEntries()) {
         const auto update_ctx = target.makeTargetUpdateContext();
         const auto entries = buildTargetUpdateEntries(
-            prepared_update.btbEntries,
-            prepared_update.selection.entry,
-            prepared_update.selection.isOldEntry,
-            prepared_update.resolvedBranches,
+            update_btb_entries,
+            selection.entry,
+            selection.isOldEntry,
+            update_branches,
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         if (entries.empty()) {
@@ -908,14 +922,20 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         return;
     }
 
-    const auto selection = selectUpdateEntryForTarget(target);
-    const auto prepared_update =
-        prepareBPUUpdate(target, predictWidth, selection, update_branches);
+    const auto raw_selection = selectUpdateEntryForTarget(target);
+    const auto update_btb_entries =
+        makeUpdateBTBEntries(target, predictWidth, update_branches);
+    const auto update_new_direction_entries =
+        makeNewDirectionEntries(
+            update_btb_entries, raw_selection, update_branches);
+    const auto selection =
+        markResolvedSelection(raw_selection, update_branches);
 
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->getResolvedUpdate()) {
             updatePredictorComponent(
-                components[i], target, prepared_update);
+                components[i], target, update_btb_entries,
+                update_new_direction_entries, selection, update_branches);
         }
     }
 }
