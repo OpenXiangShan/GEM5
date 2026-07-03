@@ -63,6 +63,39 @@
  <span class="hint" id="cnt"></span>
 </div>
 <div class="wrap"><table id="t"><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
+
+<details class="gloss" style="margin-top:10px;font-size:12px;color:#c8cdd6">
+<summary style="cursor:pointer;color:#9aa;font-size:13px">column &amp; usage legend (what each column means, e.g. sCyc)</summary>
+<div style="margin:6px 0 4px">
+Every timing column except <b>absF</b> is <b>relative to this inst's own fetch</b>
+(value = that stage's absolute cycle &minus; fetch cycle); <b>absF</b> is the only
+absolute cycle. Blue cells are clickable and jump the two cycle panels above to the
+corresponding <i>absolute</i> cycle (fetch + offset).
+</div>
+<table style="width:auto">
+<tr><th class="l">column</th><th class="l">meaning</th></tr>
+<tr><td class="l"><b>ID</b></td><td class="l">commit-order sequence number of the instruction (monotonic). Row prefix: <b>&#9654;/&#9660;</b> = collapsed/expanded per-cycle stall timeline (click the row); <b>&#10227;</b> = this load was replayed.</td></tr>
+<tr><td class="l"><b>absF</b></td><td class="l">absolute cycle the inst was <b>fetched</b> (AtFetch). Click to jump the panels here.</td></tr>
+<tr><td class="l"><b>PC</b></td><td class="l">program counter (instruction address).</td></tr>
+<tr><td class="l"><b>dec</b></td><td class="l">cycles after fetch until it entered <b>Decode</b> (AtDecode &minus; AtFetch).</td></tr>
+<tr><td class="l"><b>ren</b></td><td class="l">cycles after fetch until <b>Rename</b> (AtRename &minus; AtFetch).</td></tr>
+<tr><td class="l"><b>isq</b></td><td class="l">cycles after fetch until it entered the <b>Issue Queue</b> (AtIssueQue &minus; AtFetch).</td></tr>
+<tr><td class="l"><b>fu</b></td><td class="l">cycles after fetch until it <b>started executing</b> on a functional unit (AtFU &minus; AtFetch). For a replayed load this is the <i>last</i> (successful) pass.</td></tr>
+<tr><td class="l"><b>wb</b></td><td class="l">cycles after fetch until <b>write-back</b> of the result (AtWriteVal &minus; AtFetch).</td></tr>
+<tr><td class="l"><b>cmt</b></td><td class="l">cycles after fetch until <b>commit</b> / retire (AtCommit &minus; AtFetch).</td></tr>
+<tr><td class="l"><b>tot</b></td><td class="l">total lifetime in cycles = cmt = AtCommit &minus; AtFetch.</td></tr>
+<tr><td class="l"><b>Reason(real)</b></td><td class="l">the <b>real</b> stall reason. If the raw reason is <code>HoLBlocked</code> (done, just queued behind the ROB head), it is resolved to the <b>SecondaryReason</b> &mdash; i.e. what the head was actually stuck on.</td></tr>
+<tr><td class="l"><b>sCyc</b></td><td class="l"><b>StallCycles</b>: number of cycles charged to <b>this</b> instruction as a stall (how much stall it is responsible for).</td></tr>
+<tr><td class="l"><b>rawDominant</b></td><td class="l">the raw dominant <code>StallReason</code> as recorded (may still be <code>HoLBlocked</code>, unresolved).</td></tr>
+<tr><td class="l"><b>disasm</b></td><td class="l">disassembled instruction text.</td></tr>
+</table>
+<div style="margin-top:6px">
+Interactions: type in the box to filter by PC / disasm / reason; click a header or the
+<i>sort</i> dropdown to sort; <b>load more</b> pages in more rows; <b>clear</b> empties the
+table. Click any row to expand its full per-cycle stall-reason timeline, module bar, and
+(for loads) replay passes.
+</div>
+</details>
 </div>
 
 <script>
