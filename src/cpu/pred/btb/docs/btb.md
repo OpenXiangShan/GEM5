@@ -226,9 +226,11 @@ stream.predMetas[0] = meta;
 
 // Build explicit target update entries
 const auto ctx = stream.makeTargetUpdateContext();
+const auto update_end_inst_pc = buildUpdateEndInstPC(
+    ctx.startPC, btb->predictWidth, ctx.actualTaken, ctx.controlPC,
+    ctx.squashType, ctx.squashPC);
 const auto update_entries = buildUpdateBTBEntries(
-    stream.predBTBEntries, stream.startPC,
-    stream.getUpdateEndInstPC(btb->predictWidth));
+    stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 const auto selection = btb->selectUpdateEntry(
     stream.predMetas[btb->getComponentIdx()], ctx);
 const auto entries = buildTargetUpdateEntries(
@@ -236,7 +238,8 @@ const auto entries = buildTargetUpdateEntries(
     btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
 
 // Update BTB
-btb->updateWithTargetEntries(entries, ctx, stream);
+btb->updateWithTargetEntries(
+    entries, ctx, stream.predMetas[btb->getComponentIdx()]);
 ```
 
 ## 6. Key Configuration Parameters

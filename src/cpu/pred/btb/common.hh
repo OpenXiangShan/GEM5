@@ -779,13 +779,6 @@ struct FetchTarget
         return update;
     }
 
-    Addr getUpdateEndInstPC(unsigned predictWidth) const
-    {
-        return buildUpdateEndInstPC(
-            startPC, predictWidth, exeTaken, getControlPC(),
-            static_cast<SquashType>(squashType), squashPC);
-    }
-
     bool addResolvedBranch(const ResolvedBranch &branch)
     {
         auto it = std::lower_bound(
@@ -807,11 +800,6 @@ struct FetchTarget
             }
         }
         return inserted;
-    }
-
-    bool hasResolvedBranches() const
-    {
-        return !resolvedBranches.empty();
     }
 
     bool isActualTakenBranchPC(Addr pc) const
