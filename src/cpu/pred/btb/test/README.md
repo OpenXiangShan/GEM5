@@ -94,8 +94,12 @@ stream.exeBranchInfo = entry;
 stream.exeTaken = taken;
 stream.predMetas[0] = meta;  // Must set meta from prediction phase
 
-// Update predictor
-tage->update(stream);
+// Update predictor through explicit DirectionUpdateEntry inputs.
+const auto ctx = stream.makeUpdateContext();
+const std::vector<DirectionUpdateEntry> entries = {
+    {BTBEntry(entry), taken, false}
+};
+tage->updateWithDirectionEntries(entries, ctx, meta, stream.phistory);
 ```
 
 3. control squash/Recovery Phase:

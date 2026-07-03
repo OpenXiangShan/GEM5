@@ -822,6 +822,7 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(Addr update_start_pc)
 bool
 DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
     TimedBaseBTBPredictor *component,
+    const FetchTarget &target,
     const BranchUpdateContext &update_ctx,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &phistory,
@@ -862,6 +863,11 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
 
     if (component->usesBranchUpdateContext()) {
         component->updateWithBranchUpdateContext(update_ctx, prediction_meta);
+        return true;
+    }
+
+    if (component->usesFetchTargetUpdate()) {
+        component->updateWithFetchTarget(target);
         return true;
     }
 
@@ -914,13 +920,12 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             component->noteResolveUpdateAccepted(update_ctx.startPC);
         }
         const auto updated_with_entries = updatePredictorComponentWithEntries(
-            component, update_ctx,
+            component, target, update_ctx,
             target.predMetas[component->getComponentIdx()], target.phistory,
             update_btb_entries, update_new_direction_entries,
             selection, update_branches);
-        if (!updated_with_entries) {
-            component->update(target);
-        }
+        panic_if(!updated_with_entries,
+                 "BTB component %d has no explicit update protocol", i);
     }
 
     return true;

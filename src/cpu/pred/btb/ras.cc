@@ -203,7 +203,7 @@ BTBRAS::recoverState(const FetchTarget &entry)
 }
 
 void
-BTBRAS::update(const FetchTarget &entry)
+BTBRAS::updateWithFetchTarget(const FetchTarget &entry)
 {
     const ThreadID tid = entry.tid;
     assert(tid < numThreads);

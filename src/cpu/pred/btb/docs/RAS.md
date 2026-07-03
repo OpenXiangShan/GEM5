@@ -118,10 +118,10 @@ void recoverState(const FetchTarget &entry)
 - Handles mispredictions by rolling back speculative changes
 - Re-applies operations if the branch was actually taken
 
-### 4. Commit Phase (`update`)
+### 4. Commit Phase (`updateWithFetchTarget`)
 
 ```cpp
-void update(const FetchTarget &entry)
+void updateWithFetchTarget(const FetchTarget &entry)
 ```
 
 - **For Call Instructions**: Executes `push_stack(retAddr)`

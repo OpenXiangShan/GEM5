@@ -61,7 +61,7 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 }
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb) {
-    abtb->update(stream);
+    abtb->updateWithFetchTarget(stream);
 }
 
 

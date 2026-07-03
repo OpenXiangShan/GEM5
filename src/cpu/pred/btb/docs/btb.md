@@ -167,7 +167,7 @@ The update process:
    - For indirect branches, update target
 
 ```cpp
-void update(const FetchTarget &stream) {
+void updateWithFetchTarget(const FetchTarget &stream) {
     // 1. Process old entries
     auto old_entries = processOldEntries(stream);
     

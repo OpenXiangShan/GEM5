@@ -738,7 +738,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
  * 5. Update MRU information
  */
 void
-AheadBTB::update(const FetchTarget &stream)
+AheadBTB::updateWithFetchTarget(const FetchTarget &stream)
 {
     if (usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");

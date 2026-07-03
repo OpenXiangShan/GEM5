@@ -172,7 +172,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream) override;
+    bool usesFetchTargetUpdate() const override { return true; }
+    void updateWithFetchTarget(const FetchTarget &stream) override;
 
 
 

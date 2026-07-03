@@ -100,7 +100,8 @@ namespace btb_pred {
 
         void recoverState(const FetchTarget &entry);
 
-        void update(const FetchTarget &entry) override;
+        bool usesFetchTargetUpdate() const override { return true; }
+        void updateWithFetchTarget(const FetchTarget &entry) override;
 
         // commitBranch method - override only in production mode
 #ifdef UNIT_TEST

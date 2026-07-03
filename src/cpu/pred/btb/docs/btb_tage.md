@@ -324,8 +324,12 @@ stream.exeBranchInfo = branch_info;
 stream.exeTaken = actual_taken;
 stream.predMetas[0] = meta;  // Must include metadata from prediction phase
 
-// Update predictor state
-tage->update(stream);
+// Update predictor state through explicit DirectionUpdateEntry inputs.
+const auto update_ctx = stream.makeUpdateContext();
+const std::vector<DirectionUpdateEntry> entries = {
+    {BTBEntry(branch_info), actual_taken, false}
+};
+tage->updateWithDirectionEntries(entries, update_ctx, meta, stream.phistory);
 ```
 
 #### Recovery Phase (Misprediction)
