@@ -622,13 +622,16 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
 }
 
 void
-BTBITTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBITTAGE::commitBranch(
+    const DynInstPtr &inst,
+    const std::shared_ptr<void> &prediction_meta,
+    bool)
 {
     if (!(inst->isIndirectCtrl() && !inst->isReturn())) {
         // ittage only cares about indirect non-return branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
     auto pc = inst->getPC();
     auto npc = inst->getNPC();
     auto pred_it = meta->preds.find(pc);

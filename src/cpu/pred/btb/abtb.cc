@@ -820,9 +820,12 @@ AheadBTB::getPreviousPC(std::queue<Addr> previous_pcs)
 #ifndef UNIT_TEST
 
 void
-AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+AheadBTB::commitBranch(
+    const DynInstPtr &inst,
+    const std::shared_ptr<void> &prediction_meta,
+    bool actual_taken)
 {
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
     auto &hit_entries = meta->hit_entries;
     auto pc = inst->getPC();
     auto npc = inst->getNPC();
@@ -838,7 +841,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     }
     // bool this_branch_miss = !this_branch_hit;
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.isActualTakenBranchPC(pc);
+    bool this_branch_taken = actual_taken;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;

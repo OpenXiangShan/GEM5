@@ -105,9 +105,15 @@ namespace btb_pred {
 
         // commitBranch method - override only in production mode
 #ifdef UNIT_TEST
-        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst);
+        void commitBranch(
+            const DynInstPtr &inst,
+            const std::shared_ptr<void> &prediction_meta,
+            bool actual_taken);
 #else
-        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+        void commitBranch(
+            const DynInstPtr &inst,
+            const std::shared_ptr<void> &prediction_meta,
+            bool actual_taken) override;
 #endif
 
         Addr getTopAddrFromMetas(const FetchTarget &stream);

@@ -466,13 +466,16 @@ BTBRAS::getTopAddrFromMetas(const FetchTarget &stream)
 }
 
 void
-BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBRAS::commitBranch(
+    const DynInstPtr &inst,
+    const std::shared_ptr<void> &prediction_meta,
+    bool)
 {
     if (!inst->isReturn() || inst->isNop()) {
         // ras only cares about return instructions
         return;
     }
-    auto meta = std::static_pointer_cast<RASMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<RASMeta>(prediction_meta);
     auto npc = inst->getNPC();
     if (npc != meta->target) {
         rasStats.PredWrong++;

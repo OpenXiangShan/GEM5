@@ -1423,13 +1423,16 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 
 #ifndef UNIT_TEST
 void
-BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBMGSC::commitBranch(
+    const DynInstPtr &inst,
+    const std::shared_ptr<void> &prediction_meta,
+    bool actual_taken)
 {
     if (!inst->isCondCtrl()) {
         // tage olnly deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<MgscMeta>(prediction_meta);
     auto pc = inst->getPC();
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;
@@ -1440,7 +1443,6 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         tage_taken = pred_it->second.taken_before_sc;
         pred_hit = true;
     }
-    auto actual_taken = stream.isActualTakenBranchPC(pc);
     if (pred_hit) {
         mgscStats.predHit++;
         if (sc_taken == actual_taken) {

@@ -202,7 +202,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
         const boost::dynamic_bitset<> &) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(
+        const DynInstPtr &inst,
+        const std::shared_ptr<void> &prediction_meta,
+        bool actual_taken) override;
 #endif
 
     void setTrace() override;

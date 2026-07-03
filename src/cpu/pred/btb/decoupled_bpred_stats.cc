@@ -819,8 +819,12 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Update predictor components ----------
+    const bool actual_taken = entry.isActualTakenBranchPC(branchAddr);
     for (auto component : components) {
-        component->commitBranch(entry, inst);
+        component->commitBranch(
+            inst,
+            entry.predMetas[component->getComponentIdx()],
+            actual_taken);
     }
     //here add final counter
 

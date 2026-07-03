@@ -344,16 +344,19 @@ UBTB::updateWithBranchUpdateContext(
 }
 
 void
-UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+UBTB::commitBranch(
+    const DynInstPtr &inst,
+    const std::shared_ptr<void> &prediction_meta,
+    bool actual_taken)
 {
-    auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);
     auto &hit_entry = meta->hit_entry;
     auto pc = inst->getPC();
     auto npc = inst->getNPC();
     bool this_branch_hit = hit_entry.pc == pc;
 
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.isActualTakenBranchPC(pc);
+    bool this_branch_taken = actual_taken;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         ubtbStats.allBranchHits++;
