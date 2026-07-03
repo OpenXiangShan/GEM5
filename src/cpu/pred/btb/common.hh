@@ -754,6 +754,14 @@ struct FetchTarget
 
     bool isActualTakenBranchPC(Addr pc) const
     {
+        auto branch = std::find_if(
+            resolvedBranches.begin(), resolvedBranches.end(),
+            [pc](const ResolvedBranch &branch) {
+                return branch.pc == pc;
+            });
+        if (branch != resolvedBranches.end()) {
+            return branch->taken;
+        }
         return exeTaken && exeBranchInfo.pc == pc;
     }
 
