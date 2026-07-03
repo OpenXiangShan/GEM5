@@ -779,7 +779,7 @@ DecoupledBPUWithBTB::resolveUpdate(
                 branch.isCond, branch.isIndirect);
     }
 
-    if (!shouldUpdateBpuPredictors(target)) {
+    if (!shouldUpdateBpuPredictors(target, update_branches)) {
         return true;
     }
 
@@ -896,7 +896,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     FetchTarget &target,
     const std::vector<ResolvedBranch> &update_branches)
 {
-    if (!shouldUpdateBpuPredictors(target)) {
+    if (!shouldUpdateBpuPredictors(target, update_branches)) {
         return;
     }
 

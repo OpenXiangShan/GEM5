@@ -426,6 +426,25 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     EXPECT_EQ(target_entries[0].entry.pc, selected.pc);
 }
 
+TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
+{
+    FetchTarget stream;
+    stream.isHit = false;
+    stream.exeTaken = false;
+
+    EXPECT_FALSE(shouldUpdateBpuPredictors(stream, {}));
+
+    const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
+    EXPECT_TRUE(shouldUpdateBpuPredictors(stream, {missing}));
+
+    stream.isHit = true;
+    EXPECT_TRUE(shouldUpdateBpuPredictors(stream, {}));
+
+    stream.isHit = false;
+    stream.exeTaken = true;
+    EXPECT_TRUE(shouldUpdateBpuPredictors(stream, {}));
+}
+
 TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
 {
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);

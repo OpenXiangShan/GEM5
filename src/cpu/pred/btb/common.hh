@@ -886,9 +886,12 @@ makeResolvedUpdateBranches(const std::vector<ResolvedBranch> &branches)
 }
 
 inline bool
-shouldUpdateBpuPredictors(const FetchTarget &target)
+shouldUpdateBpuPredictors(
+    const FetchTarget &target,
+    const std::vector<ResolvedBranch> &resolved_update_branches)
 {
-    return target.isHit || target.exeTaken;
+    return target.isHit || target.exeTaken ||
+        !resolved_update_branches.empty();
 }
 
 inline void

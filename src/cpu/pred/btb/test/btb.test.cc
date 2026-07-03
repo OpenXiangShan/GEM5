@@ -212,6 +212,20 @@ TEST_F(BTBTest, EmptyPrediction) {
     }
 }
 
+TEST_F(BTBTest, NullMetaUpdateSelectionIsEmpty) {
+    TargetUpdateContext ctx;
+    ctx.startPC = 0x1000;
+    ctx.actualBranch = createBranchInfo(0x1008, 0x2000, true);
+    ctx.actualTaken = false;
+
+    const auto selection = mbtb->selectUpdateEntry(nullptr, ctx);
+    EXPECT_FALSE(selection.entry.valid);
+    EXPECT_FALSE(selection.isOldEntry);
+
+    FetchTarget stream;
+    EXPECT_NO_THROW(mbtb->updateWithTargetEntries({}, ctx, stream));
+}
+
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]

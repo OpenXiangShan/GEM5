@@ -413,6 +413,9 @@ MBTB::selectUpdateEntry(const std::shared_ptr<void> &prediction_meta,
 {
     DPRINTF(BTB, "selectUpdateEntry called for pc %#lx\n", ctx.startPC);
     auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
+    if (!meta) {
+        return {};
+    }
     return selectUpdateEntryFromHits(meta->hit_entries, ctx);
 }
 
@@ -689,7 +692,9 @@ MBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                         const BTBMeta *meta)
 {
     // 1. Check prediction hit status, for stats recording
-    checkPredictionHit(ctx, meta);
+    if (meta) {
+        checkPredictionHit(ctx, meta);
+    }
 
     for (const auto &entry : entries) {
         updateBTBEntry(entry, ctx);
