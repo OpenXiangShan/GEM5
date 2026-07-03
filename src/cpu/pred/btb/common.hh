@@ -781,25 +781,12 @@ struct FetchTarget
 
     bool addResolvedBranch(const ResolvedBranch &branch)
     {
-        auto it = std::lower_bound(
-            resolvedBranches.begin(), resolvedBranches.end(), branch.pc,
-            [](const auto &queued, Addr pc) { return queued.pc < pc; });
-        if (it != resolvedBranches.end() && it->pc == branch.pc) {
-            return false;
-        }
-        resolvedBranches.insert(it, branch);
-        return true;
+        return insertResolvedBranchByPC(resolvedBranches, branch);
     }
 
     size_t addResolvedBranches(const std::vector<ResolvedBranch> &branches)
     {
-        size_t inserted = 0;
-        for (const auto &branch : branches) {
-            if (addResolvedBranch(branch)) {
-                inserted++;
-            }
-        }
-        return inserted;
+        return insertResolvedBranchesByPC(resolvedBranches, branches);
     }
 
     bool isActualTakenBranchPC(Addr pc) const

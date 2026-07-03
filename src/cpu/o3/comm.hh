@@ -225,14 +225,8 @@ struct ResolveQueueEntry
     bool
     addBranch(const branch_prediction::btb_pred::ResolvedBranch &branch)
     {
-        auto it = std::lower_bound(
-            resolvedBranches.begin(), resolvedBranches.end(), branch.pc,
-            [](const auto &queued, Addr pc) { return queued.pc < pc; });
-        if (it == resolvedBranches.end() || it->pc != branch.pc) {
-            resolvedBranches.insert(it, branch);
-            return true;
-        }
-        return false;
+        return branch_prediction::btb_pred::insertResolvedBranchByPC(
+            resolvedBranches, branch);
     }
 };
 
