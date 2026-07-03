@@ -739,7 +739,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         const std::vector<BTBEntry> &update_new_direction_entries,
         const BTBUpdateEntrySelection &selection,
         const std::vector<ResolvedBranch> &update_branches);
-    bool updatePredictorComponentsForTarget(
+    bool updatePredictorComponents(
         const FetchTarget &target,
         const BranchUpdateContext &update_ctx,
         const std::vector<ResolvedBranch> &update_branches,

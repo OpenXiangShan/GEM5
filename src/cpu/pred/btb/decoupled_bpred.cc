@@ -731,7 +731,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         updateStatistics(ftq_target, update_ctx, !update_branches.empty());
 
         // Update predictor components
-        updatePredictorComponentsForTarget(
+        updatePredictorComponents(
             ftq_target, update_ctx, update_branches,
             /*resolved_update=*/false);
 
@@ -783,7 +783,7 @@ DecoupledBPUWithBTB::resolveUpdate(
                 branch.isCond, branch.isIndirect);
     }
 
-    return updatePredictorComponentsForTarget(
+    return updatePredictorComponents(
         target, update_ctx, update_branches,
         /*resolved_update=*/true);
 }
@@ -885,7 +885,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
 }
 
 bool
-DecoupledBPUWithBTB::updatePredictorComponentsForTarget(
+DecoupledBPUWithBTB::updatePredictorComponents(
     const FetchTarget &target,
     const BranchUpdateContext &update_ctx,
     const std::vector<ResolvedBranch> &update_branches,
