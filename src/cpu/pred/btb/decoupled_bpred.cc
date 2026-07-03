@@ -731,10 +731,8 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         updateStatistics(ftq_target, update_ctx, !update_branches.empty());
 
         // Update predictor components
-        updatePredictorComponents(
-            ftq_target.isHit, ftq_target.predBTBEntries, ftq_target.predMetas,
-            ftq_target.phistory, ftq_target.previousPCs, update_ctx,
-            update_branches,
+        updatePredictorComponentsForTarget(
+            ftq_target, update_ctx, update_branches,
             /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
@@ -785,9 +783,8 @@ DecoupledBPUWithBTB::resolveUpdate(
                 branch.isCond, branch.isIndirect);
     }
 
-    return updatePredictorComponents(
-        target.isHit, target.predBTBEntries, target.predMetas,
-        target.phistory, target.previousPCs, update_ctx, update_branches,
+    return updatePredictorComponentsForTarget(
+        target, update_ctx, update_branches,
         /*resolved_update=*/true);
 }
 
@@ -885,6 +882,19 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     }
 
     panic("BTB component has no explicit update protocol");
+}
+
+bool
+DecoupledBPUWithBTB::updatePredictorComponentsForTarget(
+    const FetchTarget &target,
+    const BranchUpdateContext &update_ctx,
+    const std::vector<ResolvedBranch> &update_branches,
+    bool resolved_update)
+{
+    return updatePredictorComponents(
+        target.isHit, target.predBTBEntries, target.predMetas,
+        target.phistory, target.previousPCs, update_ctx, update_branches,
+        resolved_update);
 }
 
 bool
