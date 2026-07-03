@@ -248,7 +248,7 @@ BTBITTAGE::getPredictionMeta(ThreadID tid) {
 void
 BTBITTAGE::updateWithTargetEntries(
     const std::vector<TargetUpdateEntry> &entries,
-    const TargetUpdateContext &ctx,
+    const BranchUpdateContext &ctx,
     const std::shared_ptr<void> &prediction_meta)
 {
     // get tage predictions from meta
@@ -258,7 +258,7 @@ BTBITTAGE::updateWithTargetEntries(
 
 void
 BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                             const TargetUpdateContext &ctx,
+                             const BranchUpdateContext &ctx,
                              const TageMeta &meta)
 {
     Addr startAddr = ctx.startPC;

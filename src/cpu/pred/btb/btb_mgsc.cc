@@ -836,7 +836,7 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
  */
 void
 BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const DirectionUpdateContext &ctx)
+                               const BranchUpdateContext &ctx)
 {
     // Extract prediction information
     auto total_sum = pred.total_sum;
@@ -933,7 +933,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 void
 BTBMGSC::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
-    const DirectionUpdateContext &ctx,
+    const BranchUpdateContext &ctx,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &)
 {
@@ -948,7 +948,7 @@ BTBMGSC::updateWithDirectionEntries(
 
 void
 BTBMGSC::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const DirectionUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            const MgscMeta &meta)
 {
     // Process each BTB entry

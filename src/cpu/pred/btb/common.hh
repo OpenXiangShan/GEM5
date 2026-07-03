@@ -255,28 +255,7 @@ struct DirectionUpdateEntry
     bool isNewEntry = false;
 };
 
-struct DirectionUpdateContext
-{
-    ThreadID tid = 0;
-    Addr startPC = 0;
-    uint8_t asidHash = 0;
-    Addr controlPC = 0;
-    bool actualTaken = false;
-    SquashType squashType = SquashType::SQUASH_NONE;
-    Addr squashPC = 0;
-
-    bool isTakenControlPC(Addr pc) const
-    {
-        return actualTaken && controlPC == pc;
-    }
-
-    bool isControlMispredPC(Addr pc) const
-    {
-        return squashType == SquashType::SQUASH_CTRL && squashPC == pc;
-    }
-};
-
-struct TargetUpdateContext
+struct BranchUpdateContext
 {
     ThreadID tid = 0;
     Addr startPC = 0;
@@ -383,17 +362,7 @@ inline bool
 getActualTakenForUpdatePC(
     Addr pc,
     const std::vector<ResolvedBranch> &resolved_update_branches,
-    const DirectionUpdateContext &ctx)
-{
-    const auto *branch = findResolvedUpdateBranch(resolved_update_branches, pc);
-    return branch ? branch->taken : ctx.isTakenControlPC(pc);
-}
-
-inline bool
-getActualTakenForUpdatePC(
-    Addr pc,
-    const std::vector<ResolvedBranch> &resolved_update_branches,
-    const TargetUpdateContext &ctx)
+    const BranchUpdateContext &ctx)
 {
     const auto *branch = findResolvedUpdateBranch(resolved_update_branches, pc);
     return branch ? branch->taken : ctx.isTakenControlPC(pc);
@@ -403,7 +372,7 @@ inline BranchInfo
 getActualBranchForUpdatePC(
     const BTBEntry &entry,
     const std::vector<ResolvedBranch> &resolved_update_branches,
-    const TargetUpdateContext &ctx)
+    const BranchUpdateContext &ctx)
 {
     const auto *branch =
         findResolvedUpdateBranch(resolved_update_branches, entry.pc);
@@ -422,7 +391,7 @@ buildDirectionUpdateEntries(
     const std::vector<ResolvedBranch> &resolved_update_branches,
     DirectionUpdateEntryFilter filter,
     bool resolved_update,
-    const DirectionUpdateContext &ctx)
+    const BranchUpdateContext &ctx)
 {
     std::vector<DirectionUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
@@ -488,7 +457,7 @@ buildTargetUpdateEntries(
     const std::vector<ResolvedBranch> &resolved_update_branches,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
-    const TargetUpdateContext &ctx)
+    const BranchUpdateContext &ctx)
 {
     std::vector<TargetUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() + (update_is_old_entry ? 0 : 1));
@@ -794,13 +763,7 @@ struct FetchTarget
         return exeTaken && exeBranchInfo.pc == pc;
     }
 
-    DirectionUpdateContext makeDirectionUpdateContext() const
-    {
-        return {tid, getRealStartPC(), asidHash, getControlPC(), exeTaken,
-                static_cast<SquashType>(squashType), squashPC};
-    }
-
-    TargetUpdateContext makeTargetUpdateContext() const
+    BranchUpdateContext makeUpdateContext() const
     {
         return {tid, getRealStartPC(), asidHash, getControlPC(),
                 exeBranchInfo, exeTaken, predTick,

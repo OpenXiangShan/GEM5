@@ -114,7 +114,7 @@ class BTBTAGEUpperBound : public BTBTAGE
     }
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
-        const DirectionUpdateContext &ctx,
+        const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
@@ -175,13 +175,13 @@ class BTBTAGEUpperBound : public BTBTAGE
                                                 bool actualTaken,
                                                 const TagePrediction &pred,
                                                 const BranchPredictionMeta &meta,
-                                                const DirectionUpdateContext &ctx);
+                                                const BranchUpdateContext &ctx);
     bool allocateExactEntry(const BTBEntry &entry, bool actualTaken,
                             unsigned startTable,
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,
                             uint64_t &allocatedTable);
     void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const DirectionUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            const UpperBoundMeta &predMeta);
     void refreshContextStats(unsigned table);
     void notePredictionResult(const BTBEntry &btbEntry,

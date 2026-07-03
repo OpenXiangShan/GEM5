@@ -325,7 +325,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param ctx Target update context containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const TargetUpdateContext &ctx,
+    void checkPredictionHit(const BranchUpdateContext &ctx,
                            const BTBMeta* meta);
 
     /** Build the actual branch entry selected for update
@@ -335,7 +335,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     TargetUpdateEntry makeSelectedTargetUpdateEntry(
         const std::vector<BTBEntry> &old_entries,
-        const TargetUpdateContext &ctx);
+        const BranchUpdateContext &ctx);
 
     /** Collect entries that need to be updated
      *  @param old_entries Processed old entries
@@ -345,7 +345,7 @@ class AheadBTB : public TimedBaseBTBPredictor
     std::vector<TargetUpdateEntry> collectEntriesToUpdate(
         const std::vector<BTBEntry>& old_entries,
         const TargetUpdateEntry &selected_entry,
-        const TargetUpdateContext &ctx);
+        const BranchUpdateContext &ctx);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry
@@ -355,10 +355,10 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     void updateBTBEntry(Addr btb_idx, Addr btb_tag,
                         const TargetUpdateEntry &update_entry,
-                        const TargetUpdateContext &ctx);
+                        const BranchUpdateContext &ctx);
 
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                           const TargetUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            Addr previousPC);
 
     /*

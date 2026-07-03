@@ -138,7 +138,7 @@ The update process involves:
 ```cpp
 void updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
-    const DirectionUpdateContext &update_ctx,
+    const BranchUpdateContext &update_ctx,
     const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     

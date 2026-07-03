@@ -822,8 +822,7 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(Addr update_start_pc)
 bool
 DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
     TimedBaseBTBPredictor *component,
-    const DirectionUpdateContext &direction_update_ctx,
-    const TargetUpdateContext &target_update_ctx,
+    const BranchUpdateContext &update_ctx,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &phistory,
     const std::vector<BTBEntry> &update_btb_entries,
@@ -839,9 +838,9 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
             selection.isOldEntry,
             update_branches,
             component->directionUpdateEntryFilter(),
-            component->getResolvedUpdate(), direction_update_ctx);
+            component->getResolvedUpdate(), update_ctx);
         component->updateWithDirectionEntries(
-            entries, direction_update_ctx, prediction_meta, phistory);
+            entries, update_ctx, prediction_meta, phistory);
         return true;
     }
 
@@ -852,17 +851,17 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
             selection.isOldEntry,
             update_branches,
             component->targetUpdateEntryFilter(),
-            component->getResolvedUpdate(), target_update_ctx);
+            component->getResolvedUpdate(), update_ctx);
         if (entries.empty()) {
             return true;
         }
         component->updateWithTargetEntries(
-            entries, target_update_ctx, prediction_meta);
+            entries, update_ctx, prediction_meta);
         return true;
     }
 
-    if (component->usesTargetUpdateContext()) {
-        component->updateWithTargetContext(target_update_ctx, prediction_meta);
+    if (component->usesBranchUpdateContext()) {
+        component->updateWithBranchUpdateContext(update_ctx, prediction_meta);
         return true;
     }
 
@@ -875,10 +874,9 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {
-    const auto direction_update_ctx = target.makeDirectionUpdateContext();
-    const auto target_update_ctx = target.makeTargetUpdateContext();
+    const auto update_ctx = target.makeUpdateContext();
     if (!shouldUpdateBpuPredictors(
-            target.isHit, target_update_ctx.actualTaken, update_branches)) {
+            target.isHit, update_ctx.actualTaken, update_branches)) {
         return true;
     }
 
@@ -886,15 +884,15 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     if (mbtb->isEnabled()) {
         raw_selection = mbtb->selectUpdateEntry(
             target.predMetas[mbtb->getComponentIdx()],
-            target_update_ctx);
+            update_ctx);
     }
     const auto update_end_inst_pc = buildUpdateEndInstPC(
-        target_update_ctx.startPC, predictWidth,
-        target_update_ctx.actualTaken, target_update_ctx.controlPC,
-        target_update_ctx.squashType, target_update_ctx.squashPC);
+        update_ctx.startPC, predictWidth,
+        update_ctx.actualTaken, update_ctx.controlPC,
+        update_ctx.squashType, update_ctx.squashPC);
     const auto update_btb_entries =
         makeUpdateBTBEntries(
-            target.predBTBEntries, target_update_ctx.startPC,
+            target.predBTBEntries, update_ctx.startPC,
             update_end_inst_pc, update_branches);
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
@@ -903,7 +901,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         markResolvedSelection(raw_selection, update_branches);
 
     if (resolved_update &&
-        !canResolveUpdateComponents(target_update_ctx.startPC)) {
+        !canResolveUpdateComponents(update_ctx.startPC)) {
         return false;
     }
 
@@ -913,10 +911,10 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             continue;
         }
         if (resolved_update) {
-            component->noteResolveUpdateAccepted(target_update_ctx.startPC);
+            component->noteResolveUpdateAccepted(update_ctx.startPC);
         }
         const auto updated_with_entries = updatePredictorComponentWithEntries(
-            component, direction_update_ctx, target_update_ctx,
+            component, update_ctx,
             target.predMetas[component->getComponentIdx()], target.phistory,
             update_btb_entries, update_new_direction_entries,
             selection, update_branches);

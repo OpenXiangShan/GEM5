@@ -409,7 +409,7 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
  */
 BTBUpdateEntrySelection
 MBTB::selectUpdateEntry(const std::shared_ptr<void> &prediction_meta,
-                        const TargetUpdateContext &ctx)
+                        const BranchUpdateContext &ctx)
 {
     DPRINTF(BTB, "selectUpdateEntry called for pc %#lx\n", ctx.startPC);
     auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
@@ -422,7 +422,7 @@ MBTB::selectUpdateEntry(const std::shared_ptr<void> &prediction_meta,
 BTBUpdateEntrySelection
 MBTB::selectUpdateEntryFromHits(
     const std::vector<BTBEntry> &pred_hit_entries,
-    const TargetUpdateContext &ctx)
+    const BranchUpdateContext &ctx)
 {
     // Check if this branch was predicted (exists in BTB)
     bool pred_branch_hit = false;
@@ -467,7 +467,7 @@ MBTB::selectUpdateEntryFromHits(
  * Also check BTB prediction status
  */
 void
-MBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta)
+MBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
@@ -497,7 +497,7 @@ MBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta)
  */
 void
 MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
-                     const TargetUpdateContext &ctx)
+                     const BranchUpdateContext &ctx)
 {
     const auto &entry = update_entry.entry;
     btbStats.updateTotal++;
@@ -557,7 +557,7 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
 BTBEntry
 MBTB::buildUpdatedEntry(const TargetUpdateEntry &update_entry,
                         const BTBEntry* existing_entry,
-                        const TargetUpdateContext &ctx)
+                        const BranchUpdateContext &ctx)
 {
     const auto &req_entry = update_entry.entry;
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
@@ -677,7 +677,7 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
  */
 void
 MBTB::updateWithTargetEntries(const std::vector<TargetUpdateEntry> &entries,
-                              const TargetUpdateContext &ctx,
+                              const BranchUpdateContext &ctx,
                               const std::shared_ptr<void> &prediction_meta)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", ctx.startPC);
@@ -688,7 +688,7 @@ MBTB::updateWithTargetEntries(const std::vector<TargetUpdateEntry> &entries,
 
 void
 MBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                        const TargetUpdateContext &ctx,
+                        const BranchUpdateContext &ctx,
                         const BTBMeta *meta)
 {
     if (entries.empty()) {

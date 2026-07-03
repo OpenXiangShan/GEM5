@@ -99,7 +99,7 @@ void
 updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
            const BTBEntry &entry, bool actual_taken)
 {
-    const auto ctx = stream.makeDirectionUpdateContext();
+    const auto ctx = stream.makeUpdateContext();
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {}, BTBEntry(), /*update_is_old_entry=*/true,
         /*resolved_update_prefix_pcs=*/{}, mgsc.directionUpdateEntryFilter(),

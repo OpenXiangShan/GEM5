@@ -531,7 +531,7 @@ bool
 BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const DirectionUpdateContext &ctx) {
+                             const BranchUpdateContext &ctx) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -823,7 +823,7 @@ BTBTAGE::noteResolveUpdateAccepted(Addr) {
 void
 BTBTAGE::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
-    const DirectionUpdateContext &ctx,
+    const BranchUpdateContext &ctx,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &phistory)
 {
@@ -839,7 +839,7 @@ BTBTAGE::updateWithDirectionEntries(
 
 void
 BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const DirectionUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            const std::shared_ptr<TageMeta> &predMeta,
                            const boost::dynamic_bitset<> &phistory)
 {
@@ -988,7 +988,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 void
 BTBTAGE::checkUtageUpdateMisspred(
     const std::unordered_map<Addr, TagePrediction> &preds,
-    const DirectionUpdateContext &ctx) {
+    const BranchUpdateContext &ctx) {
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;

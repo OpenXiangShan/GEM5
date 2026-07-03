@@ -85,7 +85,7 @@ class TimedBaseBTBPredictor: public SimObject
     }
     virtual void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &,
-        const DirectionUpdateContext &,
+        const BranchUpdateContext &,
         const std::shared_ptr<void> &,
         const boost::dynamic_bitset<> &)
     {
@@ -97,13 +97,13 @@ class TimedBaseBTBPredictor: public SimObject
     }
     virtual void updateWithTargetEntries(
         const std::vector<TargetUpdateEntry> &,
-        const TargetUpdateContext &,
+        const BranchUpdateContext &,
         const std::shared_ptr<void> &)
     {
     }
-    virtual bool usesTargetUpdateContext() const { return false; }
-    virtual void updateWithTargetContext(
-        const TargetUpdateContext &,
+    virtual bool usesBranchUpdateContext() const { return false; }
+    virtual void updateWithBranchUpdateContext(
+        const BranchUpdateContext &,
         const std::shared_ptr<void> &)
     {
     }

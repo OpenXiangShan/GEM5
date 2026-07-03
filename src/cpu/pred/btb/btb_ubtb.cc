@@ -292,7 +292,7 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
 
 
 void
-UBTB::updateWithContext(const TargetUpdateContext &ctx,
+UBTB::updateWithContext(const BranchUpdateContext &ctx,
                         const UBTBMeta &meta)
 {
     auto pred_hit_entry = meta.hit_entry;
@@ -332,8 +332,8 @@ UBTB::updateWithContext(const TargetUpdateContext &ctx,
 }
 
 void
-UBTB::updateWithTargetContext(
-    const TargetUpdateContext &ctx,
+UBTB::updateWithBranchUpdateContext(
+    const BranchUpdateContext &ctx,
     const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);

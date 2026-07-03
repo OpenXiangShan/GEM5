@@ -121,7 +121,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     }
     void updateWithTargetEntries(
         const std::vector<TargetUpdateEntry> &entries,
-        const TargetUpdateContext &ctx,
+        const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta) override;
 
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
@@ -284,7 +284,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                           const TargetUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            const TageMeta &meta);
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);

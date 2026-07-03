@@ -197,7 +197,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     }
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
-        const DirectionUpdateContext &ctx,
+        const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &) override;
 
@@ -306,7 +306,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             ThreadID tid, uint8_t asidHash);
 
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const DirectionUpdateContext &ctx);
+                               const BranchUpdateContext &ctx);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
                                bool tage_pred_taken);
 
@@ -625,7 +625,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     } MgscMeta;
 
     void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const DirectionUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            const MgscMeta &meta);
 
     std::vector<std::shared_ptr<MgscMeta>> threadMeta;

@@ -127,9 +127,9 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
-    bool usesTargetUpdateContext() const override { return true; }
-    void updateWithTargetContext(
-        const TargetUpdateContext &ctx,
+    bool usesBranchUpdateContext() const override { return true; }
+    void updateWithBranchUpdateContext(
+        const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta) override;
 
     /** for statistics only
@@ -195,7 +195,7 @@ class UBTB : public TimedBaseBTBPredictor
     };
     std::shared_ptr<UBTBMeta> meta;
 
-    void updateWithContext(const TargetUpdateContext &ctx,
+    void updateWithContext(const BranchUpdateContext &ctx,
                            const UBTBMeta &meta);
 
     // helper methods

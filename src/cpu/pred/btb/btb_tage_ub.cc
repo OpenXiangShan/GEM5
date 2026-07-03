@@ -374,7 +374,7 @@ BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
 bool
 BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     const BTBEntry &entry, bool actualTaken, const TagePrediction &pred,
-    const BranchPredictionMeta &meta, const DirectionUpdateContext &ctx)
+    const BranchPredictionMeta &meta, const BranchUpdateContext &ctx)
 {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
@@ -498,7 +498,7 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
 void
 BTBTAGEUpperBound::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
-    const DirectionUpdateContext &ctx,
+    const BranchUpdateContext &ctx,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &)
 {
@@ -514,7 +514,7 @@ BTBTAGEUpperBound::updateWithDirectionEntries(
 void
 BTBTAGEUpperBound::updateWithEntries(
     const std::vector<DirectionUpdateEntry> &entries,
-    const DirectionUpdateContext &ctx,
+    const BranchUpdateContext &ctx,
     const UpperBoundMeta &predMeta)
 {
     bool hasStoredVsActualDiff = false;

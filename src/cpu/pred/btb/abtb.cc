@@ -490,7 +490,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  * Check if the branch was predicted correctly
  */
 void
-AheadBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
@@ -512,7 +512,7 @@ AheadBTB::checkPredictionHit(const TargetUpdateContext &ctx, const BTBMeta* meta
 TargetUpdateEntry
 AheadBTB::makeSelectedTargetUpdateEntry(
     const std::vector<BTBEntry> &old_entries,
-    const TargetUpdateContext &ctx)
+    const BranchUpdateContext &ctx)
 {
     BTBUpdateEntrySelection selection;
     for (const auto &entry : old_entries) {
@@ -544,7 +544,7 @@ AheadBTB::makeSelectedTargetUpdateEntry(
 std::vector<TargetUpdateEntry>
 AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
                                  const TargetUpdateEntry &selected_entry,
-                                 const TargetUpdateContext &ctx)
+                                 const BranchUpdateContext &ctx)
 {
     std::vector<TargetUpdateEntry> all_entries;
     all_entries.reserve(old_entries.size() + 1);
@@ -584,7 +584,7 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
 void
 AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
                          const TargetUpdateEntry &update_entry,
-                         const TargetUpdateContext &ctx)
+                         const BranchUpdateContext &ctx)
 {
     const auto &entry = update_entry.entry;
 
@@ -680,7 +680,7 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
     auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries, s3Pred);
 
     if (!entries_to_update.empty()) {
-        TargetUpdateContext update_ctx;
+        BranchUpdateContext update_ctx;
         update_ctx.tid = s3Pred.tid;
         update_ctx.startPC = s3Pred.bbStart;
         update_ctx.asidHash = s3Pred.asidHash;
@@ -746,7 +746,7 @@ AheadBTB::update(const FetchTarget &stream)
     }
     auto meta = std::static_pointer_cast<BTBMeta>(
         stream.predMetas[getComponentIdx()]);
-    const auto update_ctx = stream.makeTargetUpdateContext();
+    const auto update_ctx = stream.makeUpdateContext();
     const Addr end_inst_pc = buildUpdateEndInstPC(
         update_ctx.startPC, predictWidth, update_ctx.actualTaken,
         update_ctx.controlPC, update_ctx.squashType, update_ctx.squashPC);
@@ -770,7 +770,7 @@ AheadBTB::update(const FetchTarget &stream)
 
 void
 AheadBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                            const TargetUpdateContext &ctx,
+                            const BranchUpdateContext &ctx,
                             Addr previousPC)
 {
     if (previousPC == 0) {

@@ -144,7 +144,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     }
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
-        const DirectionUpdateContext &ctx,
+        const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &) override;
     bool canResolveUpdate(Addr update_start_pc) override;
@@ -238,7 +238,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // used for MicroTAGE update misprediction counting
     void checkUtageUpdateMisspred(const std::unordered_map<Addr, TagePrediction> &preds,
-                                  const DirectionUpdateContext &ctx);
+                                  const BranchUpdateContext &ctx);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -363,7 +363,7 @@ private:
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const DirectionUpdateContext &ctx);
+                                 const BranchUpdateContext &ctx);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
@@ -377,7 +377,7 @@ private:
                                  uint64_t &allocated_way);
 
     void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const DirectionUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            const std::shared_ptr<TageMeta> &predMeta);
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;

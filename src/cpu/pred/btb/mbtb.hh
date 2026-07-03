@@ -157,7 +157,7 @@ class MBTB : public TimedBaseBTBPredictor
      */
     BTBUpdateEntrySelection selectUpdateEntry(
         const std::shared_ptr<void> &prediction_meta,
-        const TargetUpdateContext &ctx);
+        const BranchUpdateContext &ctx);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
@@ -172,7 +172,7 @@ class MBTB : public TimedBaseBTBPredictor
     }
     void updateWithTargetEntries(
         const std::vector<TargetUpdateEntry> &entries,
-        const TargetUpdateContext &ctx,
+        const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
@@ -278,15 +278,15 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param ctx Target update context containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const TargetUpdateContext &ctx,
+    void checkPredictionHit(const BranchUpdateContext &ctx,
                            const BTBMeta* meta);
 
     BTBUpdateEntrySelection selectUpdateEntryFromHits(
         const std::vector<BTBEntry> &pred_hit_entries,
-        const TargetUpdateContext &ctx);
+        const BranchUpdateContext &ctx);
 
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                           const TargetUpdateContext &ctx,
+                           const BranchUpdateContext &ctx,
                            const BTBMeta *meta);
 
     /** Update or replace BTB entry
@@ -294,12 +294,12 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param ctx Target update context
      */
     void updateBTBEntry(const TargetUpdateEntry &entry,
-                        const TargetUpdateContext &ctx);
+                        const BranchUpdateContext &ctx);
 
     // Helper: build updated entry (ctr/indirect target/tag)
     BTBEntry buildUpdatedEntry(const TargetUpdateEntry &update_entry,
                                const BTBEntry* existing_entry,
-                               const TargetUpdateContext &ctx);
+                               const BranchUpdateContext &ctx);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,
