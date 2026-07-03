@@ -101,6 +101,12 @@ class TimedBaseBTBPredictor: public SimObject
         const std::shared_ptr<void> &)
     {
     }
+    virtual bool usesTargetUpdateContext() const { return false; }
+    virtual void updateWithTargetContext(
+        const TargetUpdateContext &,
+        const std::shared_ptr<void> &)
+    {
+    }
 
     virtual void update(const FetchTarget &entry) {}
     virtual unsigned getDelay() {return numDelay;}

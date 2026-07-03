@@ -861,6 +861,11 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
         return true;
     }
 
+    if (component->usesTargetUpdateContext()) {
+        component->updateWithTargetContext(target_update_ctx, prediction_meta);
+        return true;
+    }
+
     return false;
 }
 

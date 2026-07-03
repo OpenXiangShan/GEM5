@@ -292,14 +292,6 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
 
 
 void
-UBTB::update(const FetchTarget &stream)
-{
-    auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
-    const auto update_ctx = stream.makeTargetUpdateContext();
-    updateWithContext(update_ctx, *meta);
-}
-
-void
 UBTB::updateWithContext(const TargetUpdateContext &ctx,
                         const UBTBMeta &meta)
 {
@@ -337,6 +329,18 @@ UBTB::updateWithContext(const TargetUpdateContext &ctx,
         updateNewEntry(oldEntryIter, takenEntry, startAddr,
                        ctx.asidHash);
     }
+}
+
+void
+UBTB::updateWithTargetContext(
+    const TargetUpdateContext &ctx,
+    const std::shared_ptr<void> &prediction_meta)
+{
+    auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
+    updateWithContext(ctx, *meta);
 }
 
 void

@@ -127,10 +127,10 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
-    /** for statistics only
-     * @param stream The fetch stream containing execution results and prediction metadata
-     */
-    void update(const FetchTarget &stream) override;
+    bool usesTargetUpdateContext() const override { return true; }
+    void updateWithTargetContext(
+        const TargetUpdateContext &ctx,
+        const std::shared_ptr<void> &prediction_meta) override;
 
     /** for statistics only
      * @param stream The fetch stream containing execution results
