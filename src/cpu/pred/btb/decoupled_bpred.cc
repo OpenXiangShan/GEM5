@@ -746,7 +746,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 
 bool
 DecoupledBPUWithBTB::resolveUpdate(
-    unsigned &target_id,
+    unsigned target_id,
     const std::vector<ResolvedBranch> &branches,
     ThreadID tid)
 {
@@ -870,7 +870,7 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
 
 bool
 DecoupledBPUWithBTB::updatePredictorComponents(
-    FetchTarget &target,
+    const FetchTarget &target,
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {

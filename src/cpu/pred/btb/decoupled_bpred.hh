@@ -725,7 +725,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(ThreadID tid, Addr new_pc);
 
     // Helper functions for update
-    bool resolveUpdate(unsigned &target_id,
+    bool resolveUpdate(unsigned target_id,
                        const std::vector<ResolvedBranch> &branches,
                        ThreadID tid);
     bool canResolveUpdateComponents(Addr update_start_pc);
@@ -738,7 +738,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         const std::vector<BTBEntry> &update_new_direction_entries,
         const BTBUpdateEntrySelection &selection,
         const std::vector<ResolvedBranch> &update_branches);
-    bool updatePredictorComponents(FetchTarget &target,
+    bool updatePredictorComponents(const FetchTarget &target,
                                    const std::vector<ResolvedBranch>
                                        &update_branches,
                                    bool resolved_update);
