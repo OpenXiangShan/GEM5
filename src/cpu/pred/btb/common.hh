@@ -309,13 +309,6 @@ enum class PredictorUpdateProtocol
     AheadPipelineState
 };
 
-inline bool
-hasResolvedUpdateBranches(
-    const std::vector<ResolvedBranch> &resolved_update_branches)
-{
-    return !resolved_update_branches.empty();
-}
-
 inline const ResolvedBranch *
 findResolvedUpdateBranch(
     const std::vector<ResolvedBranch> &resolved_update_branches, Addr pc)
@@ -781,7 +774,7 @@ makeBranchInfo(const ResolvedBranch &branch)
 }
 
 inline BranchUpdateContext
-makeBranchUpdateContext(const FetchTarget &target)
+makeFallbackBranchUpdateContext(const FetchTarget &target)
 {
     return {target.tid, target.startPC, target.asidHash,
             target.getControlPC(), target.exeBranchInfo, target.exeTaken,
@@ -793,7 +786,7 @@ inline BranchUpdateContext
 makeBranchUpdateContext(const FetchTarget &target,
                         const std::vector<ResolvedBranch> &branches)
 {
-    BranchUpdateContext ctx = makeBranchUpdateContext(target);
+    BranchUpdateContext ctx = makeFallbackBranchUpdateContext(target);
     if (branches.empty()) {
         return ctx;
     }

@@ -131,7 +131,8 @@ protected:
     void commitCall(Addr startPC, Addr branchPC, std::shared_ptr<void> meta, unsigned size = 4) {
         auto commitStream = createCallCommitStream(startPC, branchPC, size, meta);
         ras->updateWithBranchUpdateContext(
-            makeBranchUpdateContext(commitStream), commitStream.predMetas[0]);
+            makeFallbackBranchUpdateContext(commitStream),
+            commitStream.predMetas[0]);
     }
 
     std::unique_ptr<BTBRAS> ras;

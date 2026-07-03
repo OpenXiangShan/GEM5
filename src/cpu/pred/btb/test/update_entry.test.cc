@@ -351,7 +351,7 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
     EXPECT_EQ(ctx.squashPC, second.pc);
 
-    const auto fallback_ctx = makeBranchUpdateContext(stream);
+    const auto fallback_ctx = makeFallbackBranchUpdateContext(stream);
     EXPECT_NE(ctx.controlPC, fallback_ctx.controlPC);
 }
 
@@ -503,7 +503,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
     FetchTarget stream;
     stream.isHit = false;
     stream.exeTaken = false;
-    auto update_ctx = makeBranchUpdateContext(stream);
+    auto update_ctx = makeFallbackBranchUpdateContext(stream);
 
     EXPECT_FALSE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
 
@@ -516,7 +516,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
 
     stream.isHit = false;
     stream.exeTaken = true;
-    update_ctx = makeBranchUpdateContext(stream);
+    update_ctx = makeFallbackBranchUpdateContext(stream);
     EXPECT_TRUE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
 }
 

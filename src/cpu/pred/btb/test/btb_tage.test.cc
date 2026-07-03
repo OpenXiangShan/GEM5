@@ -80,7 +80,7 @@ void updateDirectionPredictor(
     const std::vector<DirectionUpdateEntry> &entries)
 {
     predictor->updateWithDirectionEntries(
-        entries, makeBranchUpdateContext(stream),
+        entries, makeFallbackBranchUpdateContext(stream),
         stream.predMetas[predictor->getComponentIdx()],
         stream.phistory);
 }

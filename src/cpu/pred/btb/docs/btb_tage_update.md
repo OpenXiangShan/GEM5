@@ -26,9 +26,10 @@ ftqId/startPC + prediction meta/history snapshot + resolved branch set
 
 ## Actual Result Context
 
-`makeBranchUpdateContext()` 会从 `FetchTarget` 的 prediction-time snapshot 和
-resolved prefix 直接构造 `BranchUpdateContext`。这条路径是 predictor update 的
-普通入口；它不需要先把真实结果写回 `FetchTarget`，因此训练边界更接近：
+`makeBranchUpdateContext(target, resolved_branches)` 会从 `FetchTarget` 的
+prediction-time snapshot 和 resolved prefix 直接构造
+`BranchUpdateContext`。这条路径是 predictor update 的普通入口；它不需要先把
+真实结果写回 `FetchTarget`，因此训练边界更接近：
 
 ```text
 prediction snapshot + resolved branch set -> BranchUpdateContext/update entries
@@ -40,7 +41,8 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 
 - direction update 使用该 entry 自己的 actual taken；
 - target update 使用该 entry 自己的 actual target 和 branch attributes；
-- 单一的 `exeBranchInfo + exeTaken` 只作为没有 resolved prefix 时的 fallback。
+- 单一的 `exeBranchInfo + exeTaken` 只作为没有 resolved prefix 时的
+  `makeFallbackBranchUpdateContext()` fallback。
 
 这正是当前协议区别于旧模型的关键：旧模型经常用 predicted BTB entries 加一个
 executed branch summary 去猜训练 entry；新模型优先消费真实 resolved facts。

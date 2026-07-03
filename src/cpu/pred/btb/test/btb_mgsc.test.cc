@@ -99,7 +99,7 @@ void
 updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
            const BTBEntry &entry, bool actual_taken)
 {
-    const auto ctx = makeBranchUpdateContext(stream);
+    const auto ctx = makeFallbackBranchUpdateContext(stream);
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {}, BTBUpdateEntrySelection{BTBEntry(), true},
         /*resolved_update_prefix_pcs=*/{}, mgsc.directionUpdateEntryFilter(),
