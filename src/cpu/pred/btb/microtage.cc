@@ -588,9 +588,8 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
  * Returns false if the update cannot proceed due to a bank conflict.
  */
 bool
-MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
-    Addr startAddr = stream.getRealStartPC();
-    unsigned updateBank = getBankId(startAddr);
+MicroTAGE::canResolveUpdate(Addr update_start_pc) {
+    unsigned updateBank = getBankId(update_start_pc);
 
 #ifndef UNIT_TEST
     // Record attempted update access per bank (even if it conflicts)
@@ -617,7 +616,7 @@ MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
  * @brief Retire prediction bank state after a resolved update probe succeeds.
  */
 void
-MicroTAGE::noteResolveUpdateAccepted(const FetchTarget &stream) {
+MicroTAGE::noteResolveUpdateAccepted(Addr) {
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;

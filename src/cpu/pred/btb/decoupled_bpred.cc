@@ -808,11 +808,11 @@ DecoupledBPUWithBTB::blockPredictionOnce(ThreadID tid)
 }
 
 bool
-DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
+DecoupledBPUWithBTB::canResolveUpdateComponents(Addr update_start_pc)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate() &&
-            !components[i]->canResolveUpdate(target)) {
+            !components[i]->canResolveUpdate(update_start_pc)) {
             return false;
         }
     }
@@ -897,7 +897,8 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const auto selection =
         markResolvedSelection(raw_selection, update_branches);
 
-    if (resolved_update && !canResolveUpdateComponents(target)) {
+    if (resolved_update &&
+        !canResolveUpdateComponents(target_update_ctx.startPC)) {
         return false;
     }
 
@@ -907,7 +908,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             continue;
         }
         if (resolved_update) {
-            component->noteResolveUpdateAccepted(target);
+            component->noteResolveUpdateAccepted(target_update_ctx.startPC);
         }
         const auto updated_with_entries = updatePredictorComponentWithEntries(
             component, direction_update_ctx, target_update_ctx,

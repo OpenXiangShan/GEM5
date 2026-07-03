@@ -1313,7 +1313,7 @@ TEST_F(BTBTAGETest, BankConflict) {
         setupTageEntry(bankTage, 0xa0, 0, 1, false);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream);
+        bool can_update = bankTage->canResolveUpdate(stream.getRealStartPC());
 
         // Should detect conflict and defer update
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before + 1);
@@ -1332,9 +1332,9 @@ TEST_F(BTBTAGETest, BankConflict) {
         FetchTarget stream = createStream(0x104, entry, true, meta);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream);
+        bool can_update = bankTage->canResolveUpdate(stream.getRealStartPC());
         ASSERT_TRUE(can_update);
-        bankTage->noteResolveUpdateAccepted(stream);
+        bankTage->noteResolveUpdateAccepted(stream.getRealStartPC());
         updateDirectionPredictor(bankTage, stream, entry, true, false);
 
         // Should not detect conflict
@@ -1354,9 +1354,9 @@ TEST_F(BTBTAGETest, BankConflict) {
         setupTageEntry(bankTage, 0xa0, 0, 1, false);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream);
+        bool can_update = bankTage->canResolveUpdate(stream.getRealStartPC());
         ASSERT_TRUE(can_update);
-        bankTage->noteResolveUpdateAccepted(stream);
+        bankTage->noteResolveUpdateAccepted(stream.getRealStartPC());
         updateDirectionPredictor(bankTage, stream, entry, true, false);
 
         // No conflict even with same bank

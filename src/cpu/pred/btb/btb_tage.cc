@@ -789,9 +789,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
  * Returns false if the update cannot proceed due to a bank conflict.
  */
 bool
-BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
-    Addr startAddr = stream.getRealStartPC();
-    unsigned updateBank = getBankId(startAddr);
+BTBTAGE::canResolveUpdate(Addr update_start_pc) {
+    unsigned updateBank = getBankId(update_start_pc);
 
     // Record attempted update access per bank (even if it conflicts)
     tageStats.updateAccessPerBank[updateBank]++;
@@ -814,7 +813,7 @@ BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
  * @brief Retire prediction bank state after a resolved update probe succeeds.
  */
 void
-BTBTAGE::noteResolveUpdateAccepted(const FetchTarget &stream) {
+BTBTAGE::noteResolveUpdateAccepted(Addr) {
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;

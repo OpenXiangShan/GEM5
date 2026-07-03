@@ -109,8 +109,8 @@ class TimedBaseBTBPredictor: public SimObject
     void setResolvedUpdate(bool value) { resolvedUpdate = value; }
 #endif
     // Two-phase resolved update: probe first, then apply
-    virtual bool canResolveUpdate(const FetchTarget &entry) { return true; }
-    virtual void noteResolveUpdateAccepted(const FetchTarget &entry) {}
+    virtual bool canResolveUpdate(Addr) { return true; }
+    virtual void noteResolveUpdateAccepted(Addr) {}
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchTarget &entry, const DynInstPtr &inst) {}

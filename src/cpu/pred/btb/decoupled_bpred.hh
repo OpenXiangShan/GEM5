@@ -728,7 +728,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool resolveUpdate(unsigned &target_id,
                        const std::vector<ResolvedBranch> &branches,
                        ThreadID tid);
-    bool canResolveUpdateComponents(const FetchTarget &target);
+    bool canResolveUpdateComponents(Addr update_start_pc);
     bool updatePredictorComponentWithEntries(
         TimedBaseBTBPredictor *component,
         const DirectionUpdateContext &direction_update_ctx,

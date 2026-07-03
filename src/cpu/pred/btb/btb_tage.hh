@@ -173,8 +173,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         const DirectionUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &phistory) override;
-    bool canResolveUpdate(const FetchTarget &entry) override;
-    void noteResolveUpdateAccepted(const FetchTarget &entry) override;
+    bool canResolveUpdate(Addr update_start_pc) override;
+    void noteResolveUpdateAccepted(Addr update_start_pc) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
