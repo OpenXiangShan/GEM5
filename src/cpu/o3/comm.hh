@@ -245,14 +245,8 @@ struct ResolveQueueEntry
     Addr
     updatePrefixBoundaryPC() const
     {
-        Addr boundary = 0;
-        for (const auto &branch : resolvedBranches) {
-            boundary = branch.pc;
-            if (branch.taken || branch.mispred) {
-                break;
-            }
-        }
-        return boundary;
+        return branch_prediction::btb_pred::resolvedUpdatePrefixBoundaryPC(
+            resolvedBranches);
     }
 
     void

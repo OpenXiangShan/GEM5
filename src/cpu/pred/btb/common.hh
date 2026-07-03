@@ -792,19 +792,6 @@ makeBranchInfo(const ResolvedBranch &branch)
     return info;
 }
 
-inline std::vector<ResolvedBranch>
-makeResolvedUpdateBranches(const std::vector<ResolvedBranch> &branches)
-{
-    std::vector<ResolvedBranch> update_branches;
-    for (const auto &branch : branches) {
-        update_branches.push_back(branch);
-        if (branch.taken || branch.mispred) {
-            break;
-        }
-    }
-    return update_branches;
-}
-
 inline BranchUpdateContext
 makeBranchUpdateContext(const FetchTarget &target)
 {

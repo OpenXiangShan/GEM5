@@ -31,6 +31,12 @@ struct ResolvedBranch
 };
 
 inline bool
+endsResolvedUpdatePrefix(const ResolvedBranch &branch)
+{
+    return branch.taken || branch.mispred;
+}
+
+inline bool
 insertResolvedBranchByPC(
     std::vector<ResolvedBranch> &branches,
     const ResolvedBranch &branch)
@@ -57,6 +63,32 @@ insertResolvedBranchesByPC(
         }
     }
     return inserted;
+}
+
+inline std::vector<ResolvedBranch>
+makeResolvedUpdateBranches(const std::vector<ResolvedBranch> &branches)
+{
+    std::vector<ResolvedBranch> update_branches;
+    for (const auto &branch : branches) {
+        update_branches.push_back(branch);
+        if (endsResolvedUpdatePrefix(branch)) {
+            break;
+        }
+    }
+    return update_branches;
+}
+
+inline Addr
+resolvedUpdatePrefixBoundaryPC(const std::vector<ResolvedBranch> &branches)
+{
+    Addr boundary = 0;
+    for (const auto &branch : branches) {
+        boundary = branch.pc;
+        if (endsResolvedUpdatePrefix(branch)) {
+            break;
+        }
+    }
+    return boundary;
 }
 
 } // namespace btb_pred

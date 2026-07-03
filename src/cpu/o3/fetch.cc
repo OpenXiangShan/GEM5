@@ -1951,7 +1951,7 @@ Fetch::rememberDequeuedResolveEntry(const ResolveQueueEntry &entry)
         record.trainedPCs.push_back(branch.pc);
         record.trainedMaxPC = branch.pc;
 
-        if (branch.taken || branch.mispred) {
+        if (branch_prediction::btb_pred::endsResolvedUpdatePrefix(branch)) {
             record.hasRedirect = true;
             record.redirectPC = branch.pc;
             break;
