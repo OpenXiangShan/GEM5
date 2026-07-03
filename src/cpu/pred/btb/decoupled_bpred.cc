@@ -872,7 +872,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         panic_if(component != abtb,
                  "Only AheadBTB may use ahead-pipeline update state");
         abtb->updateWithAheadPipelineState(
-            prediction_meta, update_ctx, previous_pcs);
+            prediction_meta, update_ctx, previous_pcs, update_branches);
         return;
 
       case PredictorUpdateProtocol::None:

@@ -37,6 +37,13 @@ void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool
     stream.exeBranchInfo.isCond = isCond;
     stream.exeBranchInfo.size = size;
     stream.exeTaken = taken;
+    ResolvedBranch branch;
+    branch.pc = brPc;
+    branch.target = target;
+    branch.taken = taken;
+    branch.isCond = isCond;
+    branch.size = size;
+    stream.addResolvedBranch(branch);
 }
 
 FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
@@ -60,9 +67,12 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 }
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb) {
+    const auto update_branches =
+        makeResolvedUpdateBranches(stream.resolvedBranches);
     abtb->updateWithAheadPipelineState(
         stream.predMetas[abtb->getComponentIdx()],
-        makeBranchUpdateContext(stream), stream.previousPCs);
+        makeBranchUpdateContext(stream, update_branches),
+        stream.previousPCs, update_branches);
 }
 
 

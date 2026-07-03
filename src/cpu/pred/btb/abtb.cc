@@ -508,9 +508,9 @@ AheadBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta
 }
 
 
-/** Build the actual branch entry selected for update. */
-TargetUpdateEntry
-AheadBTB::makeSelectedTargetUpdateEntry(
+/** Select the actual branch entry for update. */
+BTBUpdateEntrySelection
+AheadBTB::selectUpdateEntry(
     const std::vector<BTBEntry> &old_entries,
     const BranchUpdateContext &ctx)
 {
@@ -532,45 +532,7 @@ AheadBTB::makeSelectedTargetUpdateEntry(
         selection.entry = new_entry;
     }
 
-    const BranchInfo actual_branch =
-        ctx.controlPC == selection.entry.pc ?
-            ctx.actualBranch : BranchInfo(selection.entry);
-    return {selection.entry,
-            ctx.isTakenControlPC(selection.entry.pc),
-            !selection.isOldEntry,
-            actual_branch};
-}
-
-std::vector<TargetUpdateEntry>
-AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
-                                 const TargetUpdateEntry &selected_entry,
-                                 const BranchUpdateContext &ctx)
-{
-    std::vector<TargetUpdateEntry> all_entries;
-    all_entries.reserve(old_entries.size() + 1);
-    for (const auto &entry : old_entries) {
-        const BranchInfo actual_branch =
-            ctx.controlPC == entry.pc ? ctx.actualBranch : BranchInfo(entry);
-        all_entries.push_back(
-            {entry, ctx.isTakenControlPC(entry.pc), false, actual_branch});
-    }
-
-    // since we don't want duplications in uBTB's entriesToUpdate,
-    // which causes its counter to update twice unintentionally
-    // we need to check if the new entry already exists in uBTB
-    bool pred_branch_hit = false;
-    for (auto &e: all_entries) {
-        if (selected_entry.entry == e.entry) {
-            pred_branch_hit = true;
-            break;
-        }
-    }
-    if (selected_entry.entry.valid && !pred_branch_hit) {
-        all_entries.push_back(selected_entry);
-    }
-
-    DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
-    return all_entries;
+    return selection;
 }
 
 /**
@@ -735,7 +697,8 @@ void
 AheadBTB::updateWithAheadPipelineState(
     const std::shared_ptr<void> &prediction_meta,
     const BranchUpdateContext &update_ctx,
-    std::queue<Addr> previous_pcs)
+    std::queue<Addr> previous_pcs,
+    const std::vector<ResolvedBranch> &update_branches)
 {
     if (usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
@@ -752,10 +715,10 @@ AheadBTB::updateWithAheadPipelineState(
     checkPredictionHit(update_ctx, meta.get());
 
     // 3. Collect entries to update
-    const auto selected_entry =
-        makeSelectedTargetUpdateEntry(old_entries, update_ctx);
-    auto entries_to_update = collectEntriesToUpdate(
-        old_entries, selected_entry, update_ctx);
+    const auto selection = selectUpdateEntry(old_entries, update_ctx);
+    const auto entries_to_update = buildTargetUpdateEntries(
+        old_entries, selection, update_branches,
+        TargetUpdateEntryFilter::Any, getResolvedUpdate(), update_ctx);
 
     if (!entries_to_update.empty()) {
         updateWithEntries(entries_to_update, update_ctx,

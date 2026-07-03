@@ -183,7 +183,8 @@ class AheadBTB : public TimedBaseBTBPredictor
     void updateWithAheadPipelineState(
         const std::shared_ptr<void> &prediction_meta,
         const BranchUpdateContext &ctx,
-        std::queue<Addr> previous_pcs);
+        std::queue<Addr> previous_pcs,
+        const std::vector<ResolvedBranch> &update_branches);
 
 
 
@@ -334,23 +335,13 @@ class AheadBTB : public TimedBaseBTBPredictor
     void checkPredictionHit(const BranchUpdateContext &ctx,
                            const BTBMeta* meta);
 
-    /** Build the actual branch entry selected for update
+    /** Select the actual branch entry for update
      *  @param old_entries Processed old entries
      *  @param ctx Target update context containing execution results
      *  @return Selected old entry, or a new actual-taken entry when needed
      */
-    TargetUpdateEntry makeSelectedTargetUpdateEntry(
+    BTBUpdateEntrySelection selectUpdateEntry(
         const std::vector<BTBEntry> &old_entries,
-        const BranchUpdateContext &ctx);
-
-    /** Collect entries that need to be updated
-     *  @param old_entries Processed old entries
-     *  @param selected_entry Selected new/old entry from update selection
-     *  @return Vector of entries to update
-     */
-    std::vector<TargetUpdateEntry> collectEntriesToUpdate(
-        const std::vector<BTBEntry>& old_entries,
-        const TargetUpdateEntry &selected_entry,
         const BranchUpdateContext &ctx);
 
     /** Update or replace BTB entry
