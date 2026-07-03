@@ -510,19 +510,21 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
     FetchTarget stream;
     stream.isHit = false;
     stream.exeTaken = false;
+    auto update_ctx = makeBranchUpdateContext(stream);
 
-    EXPECT_FALSE(shouldUpdateBpuPredictors(stream.isHit, stream.exeTaken, {}));
+    EXPECT_FALSE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
 
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
     EXPECT_TRUE(
-        shouldUpdateBpuPredictors(stream.isHit, stream.exeTaken, {missing}));
+        shouldUpdateBpuPredictors(stream.isHit, update_ctx, {missing}));
 
     stream.isHit = true;
-    EXPECT_TRUE(shouldUpdateBpuPredictors(stream.isHit, stream.exeTaken, {}));
+    EXPECT_TRUE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
 
     stream.isHit = false;
     stream.exeTaken = true;
-    EXPECT_TRUE(shouldUpdateBpuPredictors(stream.isHit, stream.exeTaken, {}));
+    update_ctx = makeBranchUpdateContext(stream);
+    EXPECT_TRUE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
 }
 
 TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)

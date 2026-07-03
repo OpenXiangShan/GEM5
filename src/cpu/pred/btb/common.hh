@@ -831,10 +831,10 @@ makeBranchUpdateContext(const FetchTarget &target,
 inline bool
 shouldUpdateBpuPredictors(
     bool prediction_hit,
-    bool actual_taken,
+    const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &resolved_update_branches)
 {
-    return prediction_hit || actual_taken || !resolved_update_branches.empty();
+    return prediction_hit || ctx.actualTaken || !resolved_update_branches.empty();
 }
 
 inline void

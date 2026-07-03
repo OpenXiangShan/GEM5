@@ -892,7 +892,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     bool resolved_update)
 {
     if (!shouldUpdateBpuPredictors(
-            target.isHit, update_ctx.actualTaken, update_branches)) {
+            target.isHit, update_ctx, update_branches)) {
         return true;
     }
 
