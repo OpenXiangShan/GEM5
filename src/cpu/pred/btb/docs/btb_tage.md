@@ -140,7 +140,7 @@ void updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
     const BranchUpdateContext &update_ctx,
     const FetchTarget &stream) {
-    Addr startAddr = stream.getRealStartPC();
+    Addr startAddr = stream.startPC;
     
     // Get prediction metadata
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);

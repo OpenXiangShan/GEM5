@@ -698,10 +698,6 @@ struct FetchTarget
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
     Addr getTakenTarget() const { return getBranchInfo().target; }
 
-    Addr getRealStartPC() const {
-        return startPC;
-    }
-
     DirectionHistoryUpdate getGHistUpdateDuringSquash(
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
@@ -763,7 +759,7 @@ struct FetchTarget
 
     BranchUpdateContext makeUpdateContext() const
     {
-        return {tid, getRealStartPC(), asidHash, getControlPC(),
+        return {tid, startPC, asidHash, getControlPC(),
                 exeBranchInfo, exeTaken, predTick,
                 static_cast<SquashType>(squashType), squashPC};
     }

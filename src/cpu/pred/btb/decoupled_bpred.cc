@@ -1040,7 +1040,7 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchTarget &entry)
             auto id = ftq.backId(tid) + 1 - max_ahead_pipeline_stages + i;
             if (ftq.hasTarget(id, tid)) {
                 // FIXME: it may not work well with jump ahead predictor
-                entry.previousPCs.push(ftq.get(id, tid).getRealStartPC());
+                entry.previousPCs.push(ftq.get(id, tid).startPC);
             }
         }
     }
