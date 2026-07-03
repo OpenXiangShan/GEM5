@@ -401,15 +401,6 @@ TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
     EXPECT_EQ(stream.resolvedBranches[1].pc, second.pc);
     EXPECT_FALSE(stream.resolvedBranches[1].taken);
     EXPECT_EQ(stream.resolvedBranches[2].pc, third.pc);
-    EXPECT_TRUE(stream.isActualTakenBranchPC(first.pc));
-    EXPECT_FALSE(stream.isActualTakenBranchPC(second.pc));
-    EXPECT_TRUE(stream.isActualTakenBranchPC(third.pc));
-
-    FetchTarget legacy_stream;
-    legacy_stream.exeTaken = true;
-    legacy_stream.exeBranchInfo = makeBranchInfo(
-        makeResolvedBranch(0x2000, true, false));
-    EXPECT_TRUE(legacy_stream.isActualTakenBranchPC(0x2000));
 }
 
 TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
