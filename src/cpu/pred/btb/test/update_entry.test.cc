@@ -50,7 +50,7 @@ makeDirectionContext(Addr control_pc, bool actual_taken)
 {
     BranchUpdateContext ctx;
     ctx.startPC = control_pc & ~0xf;
-    ctx.controlPC = control_pc;
+    ctx.actualBranch.pc = control_pc;
     ctx.actualTaken = actual_taken;
     return ctx;
 }
@@ -60,7 +60,6 @@ makeTargetContext(Addr control_pc, bool actual_taken)
 {
     BranchUpdateContext ctx;
     ctx.startPC = control_pc & ~0xf;
-    ctx.controlPC = control_pc;
     ctx.actualTaken = actual_taken;
     ctx.actualBranch.pc = control_pc;
     ctx.actualBranch.target = control_pc + 0x100;
@@ -244,19 +243,19 @@ TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
     BranchUpdateContext taken_ctx;
     taken_ctx.startPC = 0x1000;
     taken_ctx.actualTaken = true;
-    taken_ctx.controlPC = 0x1010;
+    taken_ctx.actualBranch.pc = 0x1010;
     EXPECT_EQ(buildUpdateEndInstPC(taken_ctx, 32), 0x1010);
 
     BranchUpdateContext fallthrough_ctx;
     fallthrough_ctx.startPC = 0x1004;
     fallthrough_ctx.actualTaken = false;
-    fallthrough_ctx.controlPC = 0x1010;
+    fallthrough_ctx.actualBranch.pc = 0x1010;
     EXPECT_EQ(buildUpdateEndInstPC(fallthrough_ctx, 32), 0x1020);
 
     BranchUpdateContext squash_ctx;
     squash_ctx.startPC = 0x1000;
     squash_ctx.actualTaken = true;
-    squash_ctx.controlPC = 0x1010;
+    squash_ctx.actualBranch.pc = 0x1010;
     squash_ctx.squashType = SquashType::SQUASH_CTRL;
     squash_ctx.squashPC = 0x1008;
     EXPECT_EQ(buildUpdateEndInstPC(squash_ctx, 32), 0x1008);
@@ -345,14 +344,13 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
     EXPECT_TRUE(ctx.actualTaken);
-    EXPECT_EQ(ctx.controlPC, second.pc);
     EXPECT_EQ(ctx.actualBranch.pc, second.pc);
     EXPECT_EQ(ctx.actualBranch.target, second.target);
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
     EXPECT_EQ(ctx.squashPC, second.pc);
 
     const auto fallback_ctx = makeFallbackBranchUpdateContext(stream);
-    EXPECT_NE(ctx.controlPC, fallback_ctx.controlPC);
+    EXPECT_NE(ctx.actualBranch.pc, fallback_ctx.actualBranch.pc);
 }
 
 TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
@@ -375,7 +373,6 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
-    EXPECT_EQ(ctx.controlPC, stream.exeBranchInfo.pc);
     EXPECT_EQ(ctx.actualBranch.pc, stream.exeBranchInfo.pc);
     EXPECT_EQ(ctx.actualBranch.target, stream.exeBranchInfo.target);
     EXPECT_TRUE(ctx.actualTaken);

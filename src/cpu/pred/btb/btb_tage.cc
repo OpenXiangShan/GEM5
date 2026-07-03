@@ -1010,7 +1010,8 @@ BTBTAGE::checkUtageUpdateMisspred(
     }
     bool fallthrough_mispred = (first_taken_pc == 0 && ctx.actualTaken) ||
                                 (first_taken_pc != 0 && !ctx.actualTaken);
-    bool branch_mispred = ctx.actualTaken && first_taken_pc != ctx.controlPC;
+    bool branch_mispred =
+        ctx.actualTaken && first_taken_pc != ctx.actualBranch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }

@@ -759,7 +759,7 @@ MicroTAGE::checkUtageUpdateMisspred(
     bool fallthrough_mispred = (!has_taken_pred && ctx.actualTaken) ||
                                 (has_taken_pred && !ctx.actualTaken);
     bool branch_mispred = ctx.actualTaken && has_taken_pred &&
-                          first_taken_pc != ctx.controlPC;
+                          first_taken_pc != ctx.actualBranch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }

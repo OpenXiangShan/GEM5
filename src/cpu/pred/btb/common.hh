@@ -260,7 +260,6 @@ struct BranchUpdateContext
     ThreadID tid = 0;
     Addr startPC = 0;
     uint8_t asidHash = 0;
-    Addr controlPC = 0;
     BranchInfo actualBranch;
     bool actualTaken = false;
     Tick predTick = 0;
@@ -269,7 +268,7 @@ struct BranchUpdateContext
 
     bool isTakenControlPC(Addr pc) const
     {
-        return actualTaken && controlPC == pc;
+        return actualTaken && actualBranch.pc == pc;
     }
 
     bool isControlMispredPC(Addr pc) const
@@ -376,7 +375,7 @@ getActualBranchForUpdatePC(
     if (branch) {
         return makeBranchInfo(*branch);
     }
-    return ctx.controlPC == entry.pc ? ctx.actualBranch : BranchInfo(entry);
+    return ctx.actualBranch.pc == entry.pc ? ctx.actualBranch : BranchInfo(entry);
 }
 
 inline std::vector<DirectionUpdateEntry>
@@ -487,7 +486,7 @@ buildUpdateEndInstPC(const BranchUpdateContext &ctx, unsigned predict_width)
         return ctx.squashPC;
     }
     if (ctx.actualTaken) {
-        return ctx.controlPC;
+        return ctx.actualBranch.pc;
     }
     return (ctx.startPC + predict_width) & ~mask(floorLog2(predict_width) - 1);
 }
@@ -764,7 +763,7 @@ inline BranchUpdateContext
 makeFallbackBranchUpdateContext(const FetchTarget &target)
 {
     return {target.tid, target.startPC, target.asidHash,
-            target.getControlPC(), target.exeBranchInfo, target.exeTaken,
+            target.exeBranchInfo, target.exeTaken,
             target.predTick, static_cast<SquashType>(target.squashType),
             target.squashPC};
 }
@@ -781,7 +780,6 @@ makeBranchUpdateContext(const FetchTarget &target,
     ctx.actualTaken = false;
     ctx.squashType = SquashType::SQUASH_NONE;
     ctx.actualBranch = makeBranchInfo(branches.back());
-    ctx.controlPC = ctx.actualBranch.pc;
 
     for (const auto &branch : branches) {
         if (branch.mispred && ctx.squashType == SquashType::SQUASH_NONE) {
@@ -791,7 +789,6 @@ makeBranchUpdateContext(const FetchTarget &target,
         if (branch.taken) {
             ctx.actualTaken = true;
             ctx.actualBranch = makeBranchInfo(branch);
-            ctx.controlPC = branch.pc;
             if (ctx.squashType == SquashType::SQUASH_NONE) {
                 ctx.squashPC = branch.pc;
             }
