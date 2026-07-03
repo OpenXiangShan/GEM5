@@ -729,7 +729,8 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         updateStatistics(target);
 
         // Update predictor components
-        updatePredictorComponents(target, update_branches);
+        updatePredictorComponents(
+            target, update_branches, /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
@@ -779,26 +780,8 @@ DecoupledBPUWithBTB::resolveUpdate(
                 branch.isCond, branch.isIndirect);
     }
 
-    if (!shouldUpdateBpuPredictors(target, update_branches)) {
-        return true;
-    }
-
-    const auto raw_selection = selectUpdateEntryForTarget(target);
-    const auto update_btb_entries =
-        makeUpdateBTBEntries(target, predictWidth, update_branches);
-    const auto update_new_direction_entries =
-        makeNewDirectionEntries(
-            update_btb_entries, raw_selection, update_branches);
-    const auto selection =
-        markResolvedSelection(raw_selection, update_branches);
-
-    if (!canResolveUpdateComponents(target)) {
-        return false;
-    }
-    updateResolvedPredictorComponents(
-        target, update_btb_entries, update_new_direction_entries,
-        selection, update_branches);
-    return true;
+    return updatePredictorComponents(
+        target, update_branches, /*resolved_update=*/true);
 }
 
 void
@@ -849,24 +832,6 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
 }
 
 void
-DecoupledBPUWithBTB::updateResolvedPredictorComponents(
-    const FetchTarget &target,
-    const std::vector<BTBEntry> &update_btb_entries,
-    const std::vector<BTBEntry> &update_new_direction_entries,
-    const BTBUpdateEntrySelection &selection,
-    const std::vector<ResolvedBranch> &update_branches)
-{
-    for (int i = 0; i < numComponents; ++i) {
-        if (components[i]->getResolvedUpdate()) {
-            components[i]->noteResolveUpdateAccepted(target);
-            updatePredictorComponent(
-                components[i], target, update_btb_entries,
-                update_new_direction_entries, selection, update_branches);
-        }
-    }
-}
-
-void
 DecoupledBPUWithBTB::updatePredictorComponent(
     TimedBaseBTBPredictor *component,
     const FetchTarget &target,
@@ -913,13 +878,14 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     component->update(target);
 }
 
-void
+bool
 DecoupledBPUWithBTB::updatePredictorComponents(
     FetchTarget &target,
-    const std::vector<ResolvedBranch> &update_branches)
+    const std::vector<ResolvedBranch> &update_branches,
+    bool resolved_update)
 {
     if (!shouldUpdateBpuPredictors(target, update_branches)) {
-        return;
+        return true;
     }
 
     const auto raw_selection = selectUpdateEntryForTarget(target);
@@ -931,13 +897,24 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const auto selection =
         markResolvedSelection(raw_selection, update_branches);
 
-    for (int i = 0; i < numComponents; ++i) {
-        if (!components[i]->getResolvedUpdate()) {
-            updatePredictorComponent(
-                components[i], target, update_btb_entries,
-                update_new_direction_entries, selection, update_branches);
-        }
+    if (resolved_update && !canResolveUpdateComponents(target)) {
+        return false;
     }
+
+    for (int i = 0; i < numComponents; ++i) {
+        auto *component = components[i];
+        if (component->getResolvedUpdate() != resolved_update) {
+            continue;
+        }
+        if (resolved_update) {
+            component->noteResolveUpdateAccepted(target);
+        }
+        updatePredictorComponent(
+            component, target, update_btb_entries,
+            update_new_direction_entries, selection, update_branches);
+    }
+
+    return true;
 }
 
 

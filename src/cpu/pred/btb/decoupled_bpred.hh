@@ -731,12 +731,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     BTBUpdateEntrySelection selectUpdateEntryForTarget(
         const FetchTarget &target);
     bool canResolveUpdateComponents(const FetchTarget &target);
-    void updateResolvedPredictorComponents(
-        const FetchTarget &target,
-        const std::vector<BTBEntry> &update_btb_entries,
-        const std::vector<BTBEntry> &update_new_direction_entries,
-        const BTBUpdateEntrySelection &selection,
-        const std::vector<ResolvedBranch> &update_branches);
     void updatePredictorComponent(TimedBaseBTBPredictor *component,
                                   const FetchTarget &target,
                                   const std::vector<BTBEntry>
@@ -746,9 +740,10 @@ class DecoupledBPUWithBTB : public BPredUnit
                                   const BTBUpdateEntrySelection &selection,
                                   const std::vector<ResolvedBranch>
                                       &update_branches);
-    void updatePredictorComponents(FetchTarget &target,
+    bool updatePredictorComponents(FetchTarget &target,
                                    const std::vector<ResolvedBranch>
-                                       &update_branches);
+                                       &update_branches,
+                                   bool resolved_update);
     void updateStatistics(const FetchTarget &target);
     void notifyResolveSuccess(ThreadID tid);
     void notifyResolveFailure(ThreadID tid);
