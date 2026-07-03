@@ -914,16 +914,13 @@ markResolvedEntry(BTBEntry &entry, const std::vector<ResolvedBranch> &branches)
 }
 
 inline std::vector<BTBEntry>
-makeUpdateBTBEntries(const FetchTarget &target, unsigned predictWidth,
+makeUpdateBTBEntries(const std::vector<BTBEntry> &pred_btb_entries,
+                     Addr start_pc,
+                     Addr update_end_inst_pc,
                      const std::vector<ResolvedBranch> &branches)
 {
     auto entries = buildUpdateBTBEntries(
-        target.predBTBEntries, target.startPC,
-        buildUpdateEndInstPC(
-            target.startPC, predictWidth, target.exeTaken,
-            target.getControlPC(),
-            static_cast<SquashType>(target.squashType),
-            target.squashPC));
+        pred_btb_entries, start_pc, update_end_inst_pc);
     for (auto &entry : entries) {
         markResolvedEntry(entry, branches);
     }

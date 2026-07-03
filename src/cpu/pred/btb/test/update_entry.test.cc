@@ -81,6 +81,19 @@ makeResolvedBranch(Addr pc, bool taken, bool mispred)
     return branch;
 }
 
+std::vector<BTBEntry>
+makeUpdateEntries(const FetchTarget &stream,
+                  unsigned predict_width,
+                  const std::vector<ResolvedBranch> &branches)
+{
+    const auto ctx = stream.makeTargetUpdateContext();
+    const auto update_end_inst_pc = buildUpdateEndInstPC(
+        ctx.startPC, predict_width, ctx.actualTaken, ctx.controlPC,
+        ctx.squashType, ctx.squashPC);
+    return makeUpdateBTBEntries(
+        stream.predBTBEntries, ctx.startPC, update_end_inst_pc, branches);
+}
+
 } // namespace
 
 TEST(UpdateEntryBuilderTest, DirectionResolvedPrefixOverridesEntryResolvedBits)
@@ -279,7 +292,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
         BTBEntry(makeBranchInfo(resolved_second)), false};
     applyResolvedBranchResult(stream, update_branches);
     const auto update_btb_entries =
-        makeUpdateBTBEntries(stream, 32, update_branches);
+        makeUpdateEntries(stream, 32, update_branches);
     const auto update_selection =
         markResolvedSelection(selection, update_branches);
 
@@ -369,7 +382,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     applyResolvedBranchResult(stream, update_branches);
     const BTBUpdateEntrySelection selection{selected, false};
     const auto update_btb_entries =
-        makeUpdateBTBEntries(stream, 32, update_branches);
+        makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
             update_btb_entries, selection, update_branches);
@@ -439,7 +452,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     applyResolvedBranchResult(stream, update_branches);
     const BTBUpdateEntrySelection selection;
     const auto update_btb_entries =
-        makeUpdateBTBEntries(stream, 32, update_branches);
+        makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
             update_btb_entries, selection, update_branches);

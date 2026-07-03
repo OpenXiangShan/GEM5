@@ -882,8 +882,14 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             target.predMetas[mbtb->getComponentIdx()],
             target_update_ctx);
     }
+    const auto update_end_inst_pc = buildUpdateEndInstPC(
+        target_update_ctx.startPC, predictWidth,
+        target_update_ctx.actualTaken, target_update_ctx.controlPC,
+        target_update_ctx.squashType, target_update_ctx.squashPC);
     const auto update_btb_entries =
-        makeUpdateBTBEntries(target, predictWidth, update_branches);
+        makeUpdateBTBEntries(
+            target.predBTBEntries, target_update_ctx.startPC,
+            update_end_inst_pc, update_branches);
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
             update_btb_entries, raw_selection, update_branches);
