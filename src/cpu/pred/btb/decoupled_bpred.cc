@@ -891,32 +891,15 @@ DecoupledBPUWithBTB::updatePredictorComponentsForTarget(
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {
-    return updatePredictorComponents(
-        target.isHit, target.predBTBEntries, target.predMetas,
-        target.phistory, target.previousPCs, update_ctx, update_branches,
-        resolved_update);
-}
-
-bool
-DecoupledBPUWithBTB::updatePredictorComponents(
-    bool prediction_hit,
-    const std::vector<BTBEntry> &pred_btb_entries,
-    const std::array<std::shared_ptr<void>, 8> &pred_metas,
-    const boost::dynamic_bitset<> &phistory,
-    const std::queue<Addr> &previous_pcs,
-    const BranchUpdateContext &update_ctx,
-    const std::vector<ResolvedBranch> &update_branches,
-    bool resolved_update)
-{
     if (!shouldUpdateBpuPredictors(
-            prediction_hit, update_ctx.actualTaken, update_branches)) {
+            target.isHit, update_ctx.actualTaken, update_branches)) {
         return true;
     }
 
     BTBUpdateEntrySelection raw_selection;
     if (mbtb->isEnabled()) {
         raw_selection = mbtb->selectUpdateEntry(
-            pred_metas[mbtb->getComponentIdx()],
+            target.predMetas[mbtb->getComponentIdx()],
             update_ctx);
     }
     const auto update_end_inst_pc = buildUpdateEndInstPC(
@@ -925,7 +908,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         update_ctx.squashType, update_ctx.squashPC);
     const auto update_btb_entries =
         makeUpdateBTBEntries(
-            pred_btb_entries, update_ctx.startPC,
+            target.predBTBEntries, update_ctx.startPC,
             update_end_inst_pc, update_branches);
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
@@ -948,9 +931,9 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         }
         updatePredictorComponent(
             component, update_ctx,
-            pred_metas[component->getComponentIdx()], phistory, previous_pcs,
-            update_btb_entries, update_new_direction_entries,
-            selection, update_branches);
+            target.predMetas[component->getComponentIdx()], target.phistory,
+            target.previousPCs, update_btb_entries,
+            update_new_direction_entries, selection, update_branches);
     }
 
     return true;
