@@ -502,15 +502,15 @@ buildTargetUpdateEntries(
     entries.reserve(update_btb_entries.size() + (update_is_old_entry ? 0 : 1));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
-        const bool actual_taken = getActualTakenForUpdatePC(
-            entry.pc, resolved_update_branches, ctx);
-        const BranchInfo actual_branch =
-            getActualBranchForUpdatePC(entry, resolved_update_branches, ctx);
         if (!shouldKeepTargetUpdateEntry(
                 entry, filter, resolved_update,
                 resolved_update_branches)) {
             return;
         }
+        const bool actual_taken = getActualTakenForUpdatePC(
+            entry.pc, resolved_update_branches, ctx);
+        const BranchInfo actual_branch =
+            getActualBranchForUpdatePC(entry, resolved_update_branches, ctx);
         entries.push_back({entry, actual_taken, is_new_entry, actual_branch});
     };
 

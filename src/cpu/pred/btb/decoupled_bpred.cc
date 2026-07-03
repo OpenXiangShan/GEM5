@@ -884,6 +884,9 @@ DecoupledBPUWithBTB::updatePredictorComponent(
             prepared_update.resolvedBranches,
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
+        if (entries.empty()) {
+            return;
+        }
         component->updateWithTargetEntries(entries, update_ctx, target);
         return;
     }
