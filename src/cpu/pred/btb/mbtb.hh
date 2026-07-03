@@ -168,7 +168,10 @@ class MBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    bool usesTargetUpdateEntries() const override { return true; }
+    PredictorUpdateProtocol updateProtocol() const override
+    {
+        return PredictorUpdateProtocol::TargetEntries;
+    }
     TargetUpdateEntryFilter targetUpdateEntryFilter() const override
     {
         return TargetUpdateEntryFilter::Any;

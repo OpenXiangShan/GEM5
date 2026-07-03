@@ -78,7 +78,10 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void recoverPHist(const boost::dynamic_bitset<> &history,
                               const FetchTarget &entry,
                               const PathHistoryUpdate &update) {}
-    virtual bool usesDirectionUpdateEntries() const { return false; }
+    virtual PredictorUpdateProtocol updateProtocol() const
+    {
+        return PredictorUpdateProtocol::None;
+    }
     virtual DirectionUpdateEntryFilter directionUpdateEntryFilter() const
     {
         return DirectionUpdateEntryFilter::Conditional;
@@ -90,7 +93,6 @@ class TimedBaseBTBPredictor: public SimObject
         const boost::dynamic_bitset<> &)
     {
     }
-    virtual bool usesTargetUpdateEntries() const { return false; }
     virtual TargetUpdateEntryFilter targetUpdateEntryFilter() const
     {
         return TargetUpdateEntryFilter::Any;
@@ -101,7 +103,6 @@ class TimedBaseBTBPredictor: public SimObject
         const std::shared_ptr<void> &)
     {
     }
-    virtual bool usesBranchUpdateContext() const { return false; }
     virtual void updateWithBranchUpdateContext(
         const BranchUpdateContext &,
         const std::shared_ptr<void> &)

@@ -190,7 +190,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       bool cond_taken);
 
     // Update predictor state based on actual branch outcomes
-    bool usesDirectionUpdateEntries() const override { return true; }
+    PredictorUpdateProtocol updateProtocol() const override
+    {
+        return PredictorUpdateProtocol::DirectionEntries;
+    }
     DirectionUpdateEntryFilter directionUpdateEntryFilter() const override
     {
         return DirectionUpdateEntryFilter::Mgsc;

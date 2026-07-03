@@ -826,18 +826,20 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(Addr update_start_pc)
     return true;
 }
 
-bool
-DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
+void
+DecoupledBPUWithBTB::updatePredictorComponent(
     TimedBaseBTBPredictor *component,
     const BranchUpdateContext &update_ctx,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &phistory,
+    const std::queue<Addr> &previous_pcs,
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<BTBEntry> &update_new_direction_entries,
     const BTBUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &update_branches)
 {
-    if (component->usesDirectionUpdateEntries()) {
+    switch (component->updateProtocol()) {
+      case PredictorUpdateProtocol::DirectionEntries: {
         const auto entries = buildDirectionUpdateEntries(
             update_btb_entries,
             update_new_direction_entries,
@@ -848,10 +850,10 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
             component->getResolvedUpdate(), update_ctx);
         component->updateWithDirectionEntries(
             entries, update_ctx, prediction_meta, phistory);
-        return true;
-    }
+        return;
+      }
 
-    if (component->usesTargetUpdateEntries()) {
+      case PredictorUpdateProtocol::TargetEntries: {
         const auto entries = buildTargetUpdateEntries(
             update_btb_entries,
             selection.entry,
@@ -860,19 +862,29 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
             component->targetUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
         if (entries.empty()) {
-            return true;
+            return;
         }
         component->updateWithTargetEntries(
             entries, update_ctx, prediction_meta);
-        return true;
-    }
+        return;
+      }
 
-    if (component->usesBranchUpdateContext()) {
+      case PredictorUpdateProtocol::BranchContext:
         component->updateWithBranchUpdateContext(update_ctx, prediction_meta);
-        return true;
+        return;
+
+      case PredictorUpdateProtocol::AheadPipelineState:
+        panic_if(component != abtb,
+                 "Only AheadBTB may use ahead-pipeline update state");
+        abtb->updateWithAheadPipelineState(
+            prediction_meta, update_ctx, previous_pcs);
+        return;
+
+      case PredictorUpdateProtocol::None:
+        break;
     }
 
-    return false;
+    panic("BTB component has no explicit update protocol");
 }
 
 bool
@@ -924,19 +936,11 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         if (resolved_update) {
             component->noteResolveUpdateAccepted(update_ctx.startPC);
         }
-        const auto updated_with_entries = updatePredictorComponentWithEntries(
+        updatePredictorComponent(
             component, update_ctx,
-            pred_metas[component->getComponentIdx()], phistory,
+            pred_metas[component->getComponentIdx()], phistory, previous_pcs,
             update_btb_entries, update_new_direction_entries,
             selection, update_branches);
-        if (!updated_with_entries && component == abtb) {
-            abtb->updateWithAheadPipelineState(
-                pred_metas[component->getComponentIdx()], update_ctx,
-                previous_pcs);
-            continue;
-        }
-        panic_if(!updated_with_entries,
-                 "BTB component %d has no explicit update protocol", i);
     }
 
     return true;

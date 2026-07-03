@@ -137,7 +137,10 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    bool usesDirectionUpdateEntries() const override { return true; }
+    PredictorUpdateProtocol updateProtocol() const override
+    {
+        return PredictorUpdateProtocol::DirectionEntries;
+    }
     DirectionUpdateEntryFilter directionUpdateEntryFilter() const override
     {
         return DirectionUpdateEntryFilter::Conditional;

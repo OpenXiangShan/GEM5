@@ -51,7 +51,10 @@ class BTBuRAS : public TimedBaseBTBPredictor
 
         void recoverState(const FetchTarget &entry);
 
-        bool usesBranchUpdateContext() const override { return true; }
+        PredictorUpdateProtocol updateProtocol() const override
+        {
+            return PredictorUpdateProtocol::BranchContext;
+        }
         void updateWithBranchUpdateContext(
             const BranchUpdateContext &ctx,
             const std::shared_ptr<void> &prediction_meta) override;

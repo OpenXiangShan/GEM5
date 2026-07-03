@@ -127,7 +127,10 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
-    bool usesBranchUpdateContext() const override { return true; }
+    PredictorUpdateProtocol updateProtocol() const override
+    {
+        return PredictorUpdateProtocol::BranchContext;
+    }
     void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta) override;

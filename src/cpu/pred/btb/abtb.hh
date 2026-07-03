@@ -157,6 +157,11 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     void recoverState(const FetchTarget &entry);
 
+    PredictorUpdateProtocol updateProtocol() const override
+    {
+        return PredictorUpdateProtocol::AheadPipelineState;
+    }
+
 #ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per
      *  tag, and instruction offset amount.

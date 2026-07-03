@@ -114,7 +114,10 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                       const FetchTarget &entry,
                       const PathHistoryUpdate &update) override;
 
-    bool usesTargetUpdateEntries() const override { return true; }
+    PredictorUpdateProtocol updateProtocol() const override
+    {
+        return PredictorUpdateProtocol::TargetEntries;
+    }
     TargetUpdateEntryFilter targetUpdateEntryFilter() const override
     {
         return TargetUpdateEntryFilter::IndirectNonReturn;

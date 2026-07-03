@@ -300,6 +300,15 @@ enum class DirectionUpdateEntryFilter
     Mgsc
 };
 
+enum class PredictorUpdateProtocol
+{
+    None,
+    DirectionEntries,
+    TargetEntries,
+    BranchContext,
+    AheadPipelineState
+};
+
 inline bool
 hasResolvedUpdateBranches(
     const std::vector<ResolvedBranch> &resolved_update_branches)
