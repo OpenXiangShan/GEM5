@@ -847,36 +847,6 @@ shouldUpdateBpuPredictors(
 }
 
 inline void
-applyResolvedBranchResult(FetchTarget &target,
-                          const std::vector<ResolvedBranch> &branches)
-{
-    if (branches.empty()) {
-        return;
-    }
-
-    target.resolved = true;
-    target.exeTaken = false;
-    target.squashType = SquashType::SQUASH_NONE;
-    target.exeBranchInfo = makeBranchInfo(branches.back());
-
-    for (const auto &branch : branches) {
-        if (branch.mispred &&
-            target.squashType == SquashType::SQUASH_NONE) {
-            target.squashType = SquashType::SQUASH_CTRL;
-            target.squashPC = branch.pc;
-        }
-        if (branch.taken) {
-            target.exeTaken = true;
-            target.exeBranchInfo = makeBranchInfo(branch);
-            if (target.squashType == SquashType::SQUASH_NONE) {
-                target.squashPC = branch.pc;
-            }
-            break;
-        }
-    }
-}
-
-inline void
 markResolvedEntry(BTBEntry &entry, const std::vector<ResolvedBranch> &branches)
 {
     for (const auto &branch : branches) {

@@ -34,17 +34,13 @@ resolved prefix 直接构造 `BranchUpdateContext`。这条路径是 predictor u
 prediction snapshot + resolved branch set -> BranchUpdateContext/update entries
 ```
 
-`applyResolvedBranchResult()` 仍会用 resolved prefix 更新 `FetchTarget` 的 summary
-字段：`exeTaken`、`exeBranchInfo` 和 squash 信息。这些字段仍然有价值，主要用于
-stats、recovery 相关 lifecycle path，以及没有 per-entry resolved fact 时的
-fallback。
-
-但 direction/target entry builder 在存在 per-entry resolved fact 时不会依赖这个
-summary。它们会先按 entry PC 查 `resolved branch set`：
+direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
+`FetchTarget` 中的单一 executed branch summary。它们会先按 entry PC 查
+`resolved branch set`：
 
 - direction update 使用该 entry 自己的 actual taken；
 - target update 使用该 entry 自己的 actual target 和 branch attributes；
-- 单一的 `exeBranchInfo + exeTaken` 只作为 fallback。
+- 单一的 `exeBranchInfo + exeTaken` 只作为没有 resolved prefix 时的 fallback。
 
 这正是当前协议区别于旧模型的关键：旧模型经常用 predicted BTB entries 加一个
 executed branch summary 去猜训练 entry；新模型优先消费真实 resolved facts。
