@@ -745,8 +745,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         const std::vector<ResolvedBranch> &update_branches,
         bool resolved_update);
     void updateStatistics(const FetchTarget &target,
-                          const BranchUpdateContext &update_ctx,
-                          bool has_resolved_prefix);
+                          const BranchUpdateContext &update_ctx);
     void notifyResolveSuccess(ThreadID tid);
     void notifyResolveFailure(ThreadID tid);
     void blockPredictionOnce(ThreadID tid);

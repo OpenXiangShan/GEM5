@@ -694,15 +694,12 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 void
 DecoupledBPUWithBTB::updateStatistics(
     const FetchTarget &target,
-    const BranchUpdateContext &update_ctx,
-    bool has_resolved_prefix)
+    const BranchUpdateContext &update_ctx)
 {
     // Check if this target was mispredicted
     const bool miss_predicted = update_ctx.squashType == SQUASH_CTRL;
     const bool actual_taken = update_ctx.actualTaken;
     const BranchInfo &actual_branch = update_ctx.actualBranch;
-    const BranchInfo &stats_branch =
-        has_resolved_prefix ? actual_branch : target.getBranchInfo();
     // Track indirect mispredictions
     if (miss_predicted && actual_branch.isIndirect) {
         topMispredIndirect[target.startPC]++;
@@ -727,7 +724,7 @@ DecoupledBPUWithBTB::updateStatistics(
 
     if (target.isHit || actual_taken) {
         // Update BTB entry statistics
-        const BTBEntry btb_entry(stats_branch);
+        const BTBEntry btb_entry(actual_branch);
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);

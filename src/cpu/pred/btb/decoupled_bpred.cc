@@ -728,7 +728,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                 ftq_target.predBranchInfo.target);
 
         // Update statistics
-        updateStatistics(ftq_target, update_ctx, !update_branches.empty());
+        updateStatistics(ftq_target, update_ctx);
 
         // Update predictor components
         updatePredictorComponents(
