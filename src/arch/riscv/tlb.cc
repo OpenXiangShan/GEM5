@@ -690,8 +690,11 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
         translateMode == direct) {
         TlbEntry *merged_entry = prepareL1CompressedInsert(
             entry, translateMode);
-        if (merged_entry)
+        if (merged_entry) {
+            if (translateMode == direct && walker)
+                walker->notifyTlbRefillHint(*merged_entry, translateMode);
             return merged_entry;
+        }
     }
 
     // If somebody beat us to it, just use that existing entry.
@@ -759,6 +762,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     // stats all insert number
     stats.ALLInsert++;
     allUsed++;
+    if (translateMode == direct && walker)
+        walker->notifyTlbRefillHint(*newEntry, translateMode);
     return newEntry;
 }
 
@@ -1305,6 +1310,35 @@ TLB::getEntryPaddr(const TlbEntry *entry, Addr vaddr) const
     return (ppn << PageShift) | (vaddr & mask(PageShift));
 }
 
+bool
+TLB::refillHintMaySatisfy(const RequestPtr &req, ThreadContext *tc,
+                          BaseMMU::Mode mode, const TlbEntry &entry,
+                          uint8_t translateMode) const
+{
+    (void)mode;
+
+    if (translateMode != direct || req->get_two_stage_state())
+        return false;
+
+    SATP satp = tc->readMiscReg(MISCREG_SATP);
+    if (satp.mode != AddrXlateMode::SV39 &&
+        satp.mode != AddrXlateMode::SV48)
+        return false;
+    if (entry.asid != satp.asid)
+        return false;
+
+    Addr vaddr = VADDR_SEXT(satp.mode, req->getVaddr());
+    if ((vaddr & ~mask(entry.logBytes)) != entry.vaddr)
+        return false;
+
+    if (entry.isCompressed) {
+        const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
+        return entry.validIdx & (1 << sub_idx);
+    }
+
+    return true;
+}
+
 TlbEntry *
 TLB::lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
                                 uint8_t translateMode,
@@ -1802,7 +1836,7 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
     return std::make_pair(false, fault);
 }
 
-void
+bool
 TLB::retryTimingPtwMiss(ThreadContext *tc,
                         BaseMMU::Translation *translation,
                         const RequestPtr &req, BaseMMU::Mode mode,
@@ -1812,9 +1846,12 @@ TLB::retryTimingPtwMiss(ThreadContext *tc,
     Fault fault = translate(req, tc, translation, mode, delayed, from_miss_queue);
     if (!delayed) {
         translation->finish(fault, req, tc, mode);
+        return true;
     } else if (fault != NoFault) {
         translation->finish(fault, req, tc, mode);
+        return true;
     }
+    return false;
 }
 
 std::pair<int,Fault>

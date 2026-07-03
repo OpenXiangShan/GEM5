@@ -243,6 +243,9 @@ class TLB : public BaseTLB
     Port *getTableWalkerPort() override;
 
     Addr getEntryPaddr(const TlbEntry *entry, Addr vaddr) const;
+    bool refillHintMaySatisfy(const RequestPtr &req, ThreadContext *tc,
+                              BaseMMU::Mode mode, const TlbEntry &entry,
+                              uint8_t translateMode) const;
     TlbEntry *lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
                                          uint8_t translateMode,
                                          const TlbEntry *missed_entry);
@@ -274,7 +277,7 @@ class TLB : public BaseTLB
                                             ThreadContext *tc, BaseMMU::Translation *translation,
                                             BaseMMU::Mode mode, Addr vaddr, bool &delayed, int level,
                                             bool from_miss_queue = false);
-    void retryTimingPtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
+    bool retryTimingPtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
                             const RequestPtr &req, BaseMMU::Mode mode,
                             bool from_miss_queue = true);
 

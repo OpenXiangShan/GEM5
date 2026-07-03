@@ -331,6 +331,11 @@ namespace RiscvISA
             statistics::Scalar ptwMissQueueAdmissionWaits;
             statistics::Scalar ptwMissQueueAdmissionRetries;
             statistics::Scalar ptwMissQueueFullEvents;
+            statistics::Scalar ptwMissQueueHintChecks;
+            statistics::Scalar ptwMissQueueHintMatches;
+            statistics::Scalar ptwMissQueueHintRetries;
+            statistics::Scalar ptwMissQueueHintResolved;
+            statistics::Scalar ptwMissQueueHintDelayed;
         } stats;
 
         struct WalkerSenderState : public Packet::SenderState
@@ -391,6 +396,7 @@ namespace RiscvISA
         std::deque<MissQueueEntry> ptwMissQueue;
         std::deque<MissQueueEntry> ptwMissQueueWaiters;
         bool retryingPtwMissQueue;
+        bool processingPtwMissQueueHint;
         bool ptwMissQueueHeadRequeued;
         /** Last tick at which PTW in-flight time accounting was updated. */
         Tick lastPtwMemCycleTick;
@@ -403,6 +409,9 @@ namespace RiscvISA
         void releasePtwLevel(WalkerState *state);
         void retryPtwLevelBlockedStates();
         void recordPtwLevelBlocked(int level);
+        bool ptwMissQueueHintMatch(const MissQueueEntry &entry,
+                                   const TlbEntry &refill_entry,
+                                   uint8_t translateMode) const;
       public:
         bool is_from_pre_req;
 
@@ -441,6 +450,7 @@ namespace RiscvISA
         {
             return !ptwMissQueue.empty() || !ptwMissQueueWaiters.empty();
         }
+        void notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode);
         void retryPtwMissQueue();
         //bool pre_ptw;
 
@@ -479,6 +489,7 @@ namespace RiscvISA
             ptwLevelActive({{0, 0, 0, 0}}),
             ptwMissQueueSize(params.ptw_miss_queue_size),
             retryingPtwMissQueue(false),
+            processingPtwMissQueueHint(false),
             ptwMissQueueHeadRequeued(false),
             lastPtwMemCycleTick(0),
             outstandingPtwMemReqs(0),
