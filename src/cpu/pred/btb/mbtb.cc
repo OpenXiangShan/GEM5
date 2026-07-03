@@ -678,11 +678,11 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
 void
 MBTB::updateWithTargetEntries(const std::vector<TargetUpdateEntry> &entries,
                               const TargetUpdateContext &ctx,
-                              const FetchTarget &stream)
+                              const std::shared_ptr<void> &prediction_meta)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", ctx.startPC);
     auto meta = std::static_pointer_cast<BTBMeta>(
-        stream.predMetas[getComponentIdx()]);
+        prediction_meta);
     updateWithEntries(entries, ctx, meta.get());
 }
 

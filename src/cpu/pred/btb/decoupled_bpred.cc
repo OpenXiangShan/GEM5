@@ -887,7 +887,9 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         if (entries.empty()) {
             return;
         }
-        component->updateWithTargetEntries(entries, update_ctx, target);
+        component->updateWithTargetEntries(
+            entries, update_ctx,
+            target.predMetas[component->getComponentIdx()]);
         return;
     }
 

@@ -249,11 +249,10 @@ void
 BTBITTAGE::updateWithTargetEntries(
     const std::vector<TargetUpdateEntry> &entries,
     const TargetUpdateContext &ctx,
-    const FetchTarget &stream)
+    const std::shared_ptr<void> &prediction_meta)
 {
     // get tage predictions from meta
-    // TODO: use component idx
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
     updateWithEntries(entries, ctx, *meta);
 }
 

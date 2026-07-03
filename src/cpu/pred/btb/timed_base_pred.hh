@@ -96,11 +96,10 @@ class TimedBaseBTBPredictor: public SimObject
         return TargetUpdateEntryFilter::Any;
     }
     virtual void updateWithTargetEntries(
-        const std::vector<TargetUpdateEntry> &entries,
-        const TargetUpdateContext &ctx,
-        const FetchTarget &entry)
+        const std::vector<TargetUpdateEntry> &,
+        const TargetUpdateContext &,
+        const std::shared_ptr<void> &)
     {
-        update(entry);
     }
 
     virtual void update(const FetchTarget &entry) {}

@@ -122,7 +122,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     void updateWithTargetEntries(
         const std::vector<TargetUpdateEntry> &entries,
         const TargetUpdateContext &ctx,
-        const FetchTarget &stream) override;
+        const std::shared_ptr<void> &prediction_meta) override;
 
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 
