@@ -688,6 +688,8 @@ class Fetch
         ThreadID tid,
         bool &headEntryMergedSameFTQ);
 
+    void dequeueResolvedUpdateIfReady(bool headEntryMergedSameFTQ);
+
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
 

@@ -2060,6 +2060,41 @@ Fetch::enqueueResolvedCFIsForUpdate(
 }
 
 void
+Fetch::dequeueResolvedUpdateIfReady(bool headEntryMergedSameFTQ)
+{
+    if (resolveQueue.empty()) {
+        return;
+    }
+
+    auto &entry = resolveQueue.front();
+    ThreadID tid = entry.resolvedTid;
+    unsigned int stream_id = entry.resolvedFTQId;
+    if (headEntryMergedSameFTQ) {
+        fetchStats.resolveDequeueSameFTQMergeWait++;
+        DPRINTF(FetchResolve,
+                "[tid:%u] Resolve dequeue waits after same-FTQ merge: "
+                "ftq=%lu branches=%zu\n",
+                entry.resolvedTid, entry.resolvedFTQId,
+                entry.resolvedBranches.size());
+        return;
+    }
+    if (shouldWaitForDecodedPrefix(entry)) {
+        return;
+    }
+    observeResolveDequeueReadiness(entry);
+    bool success = dbpbtb->resolveUpdate(
+        stream_id, entry.resolvedBranches, tid);
+    if (success) {
+        dbpbtb->notifyResolveSuccess(tid);
+        rememberDequeuedResolveEntry(entry);
+        resolveQueue.pop_front();
+        fetchStats.resolveDequeueCount++;
+    } else {
+        dbpbtb->notifyResolveFailure(tid);
+    }
+}
+
+void
 Fetch::handleIEWSignals()
 {
     // Currently resolve stage training is a btb-only feature
@@ -2095,32 +2130,8 @@ Fetch::handleIEWSignals()
     // Process only entries that were already pending before this cycle.
     // This preserves a cycle of separation between IEW producing resolved CFIs
     // and fetch consuming them as predictor resolved updates.
-    if (had_pending_resolve && !resolveQueue.empty()) {
-        auto &entry = resolveQueue.front();
-        ThreadID tid = entry.resolvedTid;
-        unsigned int stream_id = entry.resolvedFTQId;
-        if (head_entry_merged_same_ftq) {
-            fetchStats.resolveDequeueSameFTQMergeWait++;
-            DPRINTF(FetchResolve,
-                    "[tid:%u] Resolve dequeue waits after same-FTQ merge: "
-                    "ftq=%lu branches=%zu\n",
-                    entry.resolvedTid, entry.resolvedFTQId,
-                    entry.resolvedBranches.size());
-            return;
-        }
-        if (shouldWaitForDecodedPrefix(entry)) {
-            return;
-        }
-        observeResolveDequeueReadiness(entry);
-        bool success = dbpbtb->resolveUpdate(stream_id, entry.resolvedBranches, tid);
-        if (success) {
-            dbpbtb->notifyResolveSuccess(tid);
-            rememberDequeuedResolveEntry(entry);
-            resolveQueue.pop_front();
-            fetchStats.resolveDequeueCount++;
-        } else {
-            dbpbtb->notifyResolveFailure(tid);
-        }
+    if (had_pending_resolve) {
+        dequeueResolvedUpdateIfReady(head_entry_merged_same_ftq);
     }
 }
 
