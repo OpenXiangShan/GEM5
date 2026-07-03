@@ -386,6 +386,29 @@ IssueQue::isVectorMemInst(const DynInstPtr& inst) const
     return inst && inst->isVector() && inst->isMemRef() && !inst->isSquashed();
 }
 
+bool
+IssueQue::isBlockingVectorSplitInst(const DynInstPtr& inst) const
+{
+    return isVectorMemInst(inst) && inst->opClass() != enums::VectorUnitStrideLoad;
+}
+
+void
+IssueQue::scheduleVectorReadyQEvent()
+{
+    if (!cpu || vectorReadyQEvent.scheduled()) {
+        return;
+    }
+
+    if (!vectorSplitQ.empty() && !vectorSplitQReleaseTicks.empty()) {
+        cpu->schedule(vectorReadyQEvent, vectorSplitQReleaseTicks.front());
+        return;
+    }
+
+    if (!vectorReadyQ.empty()) {
+        cpu->schedule(vectorReadyQEvent, curTick());
+    }
+}
+
 void
 IssueQue::enqueueVectorMemDelay(const DynInstPtr& inst, bool replay)
 {
@@ -397,18 +420,55 @@ IssueQue::enqueueVectorMemDelay(const DynInstPtr& inst, bool replay)
         return;
     }
 
-    assert(cpu);
-    const Tick releaseTick = cpu->clockEdge(Cycles(3));
-    const bool needSchedule = vectorReadyQ.empty();
     vectorReadyQ.push(inst);
-    vectorReadyQReleaseTicks.push(releaseTick);
     vectorReadyQReplay.push(replay);
     DPRINTF(Schedule,
-            "[sn:%llu] add to vectorReadyQ, replay:%d, release at %llu\n",
-            inst->seqNum, replay, releaseTick);
+            "[sn:%llu] add to vectorReadyQ, replay:%d\n",
+            inst->seqNum, replay);
 
-    if (needSchedule && !vectorReadyQEvent.scheduled()) {
-        cpu->schedule(vectorReadyQEvent, releaseTick);
+    scheduleVectorReadyQEvent();
+}
+
+void
+IssueQue::tryStartVectorMemSplit()
+{
+    assert(vectorReadyQ.size() == vectorReadyQReplay.size());
+
+    while (!vectorReadyQ.empty() && !vectorReadyQReplay.empty()) {
+        auto inst = vectorReadyQ.front();
+        const bool replay = vectorReadyQReplay.front();
+
+        if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
+            vectorReadyQ.pop();
+            vectorReadyQReplay.pop();
+            if (inst) {
+                vectorReadyQSeqs.erase(inst->seqNum);
+                vectorBlockingSplitSeqs.erase(inst->seqNum);
+            }
+            continue;
+        }
+
+        if (!vectorBlockingSplitSeqs.empty()) {
+            return;
+        }
+
+        vectorReadyQ.pop();
+        vectorReadyQReplay.pop();
+
+        assert(cpu);
+        const Tick releaseTick = cpu->clockEdge(Cycles(3));
+        vectorSplitQ.push(inst);
+        vectorSplitQReleaseTicks.push(releaseTick);
+        vectorSplitQReplay.push(replay);
+        if (isBlockingVectorSplitInst(inst)) {
+            vectorBlockingSplitSeqs.insert(inst->seqNum);
+        }
+
+        DPRINTF(Schedule,
+                "[sn:%llu] enter vector split, replay:%d, release at %llu, "
+                "blocking:%d\n",
+                inst->seqNum, replay, releaseTick,
+                isBlockingVectorSplitInst(inst));
     }
 }
 
@@ -425,11 +485,13 @@ IssueQue::releaseVectorDelayedReadyQ()
         if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
             if (inst) {
                 vectorReadyQSeqs.erase(inst->seqNum);
+                vectorBlockingSplitSeqs.erase(inst->seqNum);
             }
             continue;
         }
 
         vectorReadyQSeqs.erase(inst->seqNum);
+        vectorBlockingSplitSeqs.erase(inst->seqNum);
         if (replay) {
             replayQ.push(inst);
             DPRINTF(Schedule, "[sn:%llu] released to replayQ after vector delay\n",
@@ -449,20 +511,23 @@ IssueQue::releaseVectorDelayedReadyQ()
 void
 IssueQue::processVectorReadyQ()
 {
-    assert(vectorReadyQ.size() == vectorReadyQReleaseTicks.size());
-    assert(vectorReadyQ.size() == vectorReadyQReplay.size());
-    while (!vectorReadyQ.empty() && !vectorReadyQReleaseTicks.empty() &&
-           !vectorReadyQReplay.empty() &&
-           vectorReadyQReleaseTicks.front() <= curTick()) {
-        auto inst = vectorReadyQ.front();
-        const bool replay = vectorReadyQReplay.front();
-        vectorReadyQ.pop();
-        vectorReadyQReleaseTicks.pop();
-        vectorReadyQReplay.pop();
+    tryStartVectorMemSplit();
+
+    assert(vectorSplitQ.size() == vectorSplitQReleaseTicks.size());
+    assert(vectorSplitQ.size() == vectorSplitQReplay.size());
+    while (!vectorSplitQ.empty() && !vectorSplitQReleaseTicks.empty() &&
+           !vectorSplitQReplay.empty() &&
+           vectorSplitQReleaseTicks.front() <= curTick()) {
+        auto inst = vectorSplitQ.front();
+        const bool replay = vectorSplitQReplay.front();
+        vectorSplitQ.pop();
+        vectorSplitQReleaseTicks.pop();
+        vectorSplitQReplay.pop();
 
         if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
             if (inst) {
                 vectorReadyQSeqs.erase(inst->seqNum);
+                vectorBlockingSplitSeqs.erase(inst->seqNum);
             }
             continue;
         }
@@ -473,12 +538,9 @@ IssueQue::processVectorReadyQ()
                 inst->seqNum, replay);
     }
 
-    if (!vectorReadyQ.empty() && !vectorReadyQReleaseTicks.empty() &&
-        !vectorReadyQEvent.scheduled()) {
-        cpu->schedule(vectorReadyQEvent, vectorReadyQReleaseTicks.front());
-    }
-
     releaseVectorDelayedReadyQ();
+    tryStartVectorMemSplit();
+    scheduleVectorReadyQEvent();
 }
 
 void
@@ -606,6 +668,7 @@ IssueQue::idle()
     }
     idle |= replayQ.size() > 0;
     idle |= vectorReadyQ.size() > 0;
+    idle |= vectorSplitQ.size() > 0;
     idle |= vectorDelayedReadyQ.size() > 0;
     return idle;
 }
@@ -929,9 +992,11 @@ IssueQue::popReadyVectorInst()
             continue;
         }
 
+        scheduleVectorReadyQEvent();
         return inst;
     }
 
+    scheduleVectorReadyQEvent();
     return nullptr;
 }
 
@@ -943,6 +1008,7 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
         if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
             assert(inst->isIssued());
             vectorReadyQSeqs.erase(inst->seqNum);
+            vectorBlockingSplitSeqs.erase(inst->seqNum);
             it = instList.erase(it);
         } else {
             ++it;
@@ -976,6 +1042,7 @@ IssueQue::doSquash(SquashInfo squashInfo)
             (*it)->clearScheduled();
             (*it)->setCancel();
             vectorReadyQSeqs.erase((*it)->seqNum);
+            vectorBlockingSplitSeqs.erase((*it)->seqNum);
             it = instList.erase(it);
             assert(instList.size() >= instNum);
         } else {
