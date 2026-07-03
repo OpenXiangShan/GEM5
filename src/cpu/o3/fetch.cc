@@ -1795,7 +1795,7 @@ Fetch::observeResolveWithDecodedCFIs(
     auto queued_it = std::find_if(
         resolveQueue.begin(), resolveQueue.end(),
         [&](const auto &queued) {
-            return queued.resolvedTid == tid && queued.resolvedFTQId == ftqId;
+            return queued.matches(tid, ftqId);
         });
 
     const auto has_pending_resolved_pc = [&](Addr pc) {
@@ -1805,10 +1805,7 @@ Fetch::observeResolveWithDecodedCFIs(
         if (queued_it == resolveQueue.end()) {
             return false;
         }
-        const auto &branches = queued_it->resolvedBranches;
-        return std::any_of(
-            branches.begin(), branches.end(),
-            [&](const auto &queued_branch) { return queued_branch.pc == pc; });
+        return queued_it->hasBranchPC(pc);
     };
 
     for (Addr decoded_pc : record_it->pcs) {
@@ -1849,25 +1846,13 @@ Fetch::resolveEntryHasDecodedPrefixGap(
         return false;
     }
 
-    boundaryPC = entry.resolvedBranches.back().pc;
-    for (const auto &branch : entry.resolvedBranches) {
-        boundaryPC = branch.pc;
-        if (branch.taken || branch.mispred) {
-            break;
-        }
-    }
-
-    const auto has_resolved_pc = [&](Addr pc) {
-        return std::any_of(
-            entry.resolvedBranches.begin(), entry.resolvedBranches.end(),
-            [&](const auto &branch) { return branch.pc == pc; });
-    };
+    boundaryPC = entry.updatePrefixBoundaryPC();
 
     for (Addr decoded_pc : record_it->pcs) {
         if (decoded_pc > boundaryPC) {
             break;
         }
-        if (!has_resolved_pc(decoded_pc)) {
+        if (!entry.hasBranchPC(decoded_pc)) {
             missingPC = decoded_pc;
             return true;
         }
@@ -1922,7 +1907,7 @@ Fetch::shouldWaitForDecodedPrefix(ResolveQueueEntry &entry)
     Addr missing_pc = 0;
     Addr boundary_pc = 0;
     if (!resolveEntryHasDecodedPrefixGap(entry, missing_pc, boundary_pc)) {
-        entry.decodedPrefixWaitCycles = 0;
+        entry.resetDecodedPrefixWait();
         return false;
     }
 
@@ -1996,7 +1981,7 @@ Fetch::squashResolveQueueAfter(ThreadID tid, uint64_t squashFtqId)
 
     auto it = resolveQueue.begin();
     while (it != resolveQueue.end()) {
-        if (it->resolvedTid == tid && it->resolvedFTQId > squashFtqId) {
+        if (it->isYoungerThan(tid, squashFtqId)) {
             dropped_entries++;
             dropped_branches += it->resolvedBranches.size();
             DPRINTF(FetchResolve,
@@ -2059,8 +2044,7 @@ Fetch::handleIEWSignals()
 
                 bool merged = false;
                 for (auto &queued : resolveQueue) {
-                    if (queued.resolvedTid == tid &&
-                        queued.resolvedFTQId == resolved.ftqId) {
+                    if (queued.matches(tid, resolved.ftqId)) {
                         if (queued.addBranch(resolved.branch)) {
                             if (&queued == &resolveQueue.front()) {
                                 head_entry_merged_same_ftq = true;
@@ -2069,8 +2053,7 @@ Fetch::handleIEWSignals()
                                 fetchStats
                                     .resolveDequeueDecodedPrefixWaitMerged++;
                             }
-                            queued.decodedPrefixWaitCycles = 0;
-                            queued.decodedPrefixWaitTimedOut = false;
+                            queued.resetDecodedPrefixWait();
                         }
                         merged = true;
                         break;

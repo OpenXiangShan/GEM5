@@ -223,6 +223,46 @@ struct ResolveQueueEntry
     bool decodedPrefixWaitTimedOut = false;
 
     bool
+    matches(ThreadID tid, uint64_t ftqId) const
+    {
+        return resolvedTid == tid && resolvedFTQId == ftqId;
+    }
+
+    bool
+    isYoungerThan(ThreadID tid, uint64_t ftqId) const
+    {
+        return resolvedTid == tid && resolvedFTQId > ftqId;
+    }
+
+    bool
+    hasBranchPC(Addr pc) const
+    {
+        return std::any_of(
+            resolvedBranches.begin(), resolvedBranches.end(),
+            [pc](const auto &branch) { return branch.pc == pc; });
+    }
+
+    Addr
+    updatePrefixBoundaryPC() const
+    {
+        Addr boundary = 0;
+        for (const auto &branch : resolvedBranches) {
+            boundary = branch.pc;
+            if (branch.taken || branch.mispred) {
+                break;
+            }
+        }
+        return boundary;
+    }
+
+    void
+    resetDecodedPrefixWait()
+    {
+        decodedPrefixWaitCycles = 0;
+        decodedPrefixWaitTimedOut = false;
+    }
+
+    bool
     addBranch(const branch_prediction::btb_pred::ResolvedBranch &branch)
     {
         return branch_prediction::btb_pred::insertResolvedBranchByPC(
