@@ -807,18 +807,6 @@ DecoupledBPUWithBTB::blockPredictionOnce(ThreadID tid)
     threads[tid].blockPredictionPending = true;
 }
 
-BTBUpdateEntrySelection
-DecoupledBPUWithBTB::selectUpdateEntryForTarget(const FetchTarget &target)
-{
-    if (mbtb->isEnabled()) {
-        return mbtb->selectUpdateEntry(
-            target.predMetas[mbtb->getComponentIdx()],
-            target.makeTargetUpdateContext());
-    }
-
-    return {};
-}
-
 bool
 DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
 {
@@ -831,17 +819,19 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(const FetchTarget &target)
     return true;
 }
 
-void
-DecoupledBPUWithBTB::updatePredictorComponent(
+bool
+DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
     TimedBaseBTBPredictor *component,
-    const FetchTarget &target,
+    const DirectionUpdateContext &direction_update_ctx,
+    const TargetUpdateContext &target_update_ctx,
+    const std::shared_ptr<void> &prediction_meta,
+    const boost::dynamic_bitset<> &phistory,
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<BTBEntry> &update_new_direction_entries,
     const BTBUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &update_branches)
 {
     if (component->usesDirectionUpdateEntries()) {
-        const auto update_ctx = target.makeDirectionUpdateContext();
         const auto entries = buildDirectionUpdateEntries(
             update_btb_entries,
             update_new_direction_entries,
@@ -849,33 +839,29 @@ DecoupledBPUWithBTB::updatePredictorComponent(
             selection.isOldEntry,
             update_branches,
             component->directionUpdateEntryFilter(),
-            component->getResolvedUpdate(), update_ctx);
+            component->getResolvedUpdate(), direction_update_ctx);
         component->updateWithDirectionEntries(
-            entries, update_ctx,
-            target.predMetas[component->getComponentIdx()],
-            target.phistory);
-        return;
+            entries, direction_update_ctx, prediction_meta, phistory);
+        return true;
     }
 
     if (component->usesTargetUpdateEntries()) {
-        const auto update_ctx = target.makeTargetUpdateContext();
         const auto entries = buildTargetUpdateEntries(
             update_btb_entries,
             selection.entry,
             selection.isOldEntry,
             update_branches,
             component->targetUpdateEntryFilter(),
-            component->getResolvedUpdate(), update_ctx);
+            component->getResolvedUpdate(), target_update_ctx);
         if (entries.empty()) {
-            return;
+            return true;
         }
         component->updateWithTargetEntries(
-            entries, update_ctx,
-            target.predMetas[component->getComponentIdx()]);
-        return;
+            entries, target_update_ctx, prediction_meta);
+        return true;
     }
 
-    component->update(target);
+    return false;
 }
 
 bool
@@ -888,7 +874,14 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         return true;
     }
 
-    const auto raw_selection = selectUpdateEntryForTarget(target);
+    const auto direction_update_ctx = target.makeDirectionUpdateContext();
+    const auto target_update_ctx = target.makeTargetUpdateContext();
+    BTBUpdateEntrySelection raw_selection;
+    if (mbtb->isEnabled()) {
+        raw_selection = mbtb->selectUpdateEntry(
+            target.predMetas[mbtb->getComponentIdx()],
+            target_update_ctx);
+    }
     const auto update_btb_entries =
         makeUpdateBTBEntries(target, predictWidth, update_branches);
     const auto update_new_direction_entries =
@@ -909,9 +902,14 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         if (resolved_update) {
             component->noteResolveUpdateAccepted(target);
         }
-        updatePredictorComponent(
-            component, target, update_btb_entries,
-            update_new_direction_entries, selection, update_branches);
+        const auto updated_with_entries = updatePredictorComponentWithEntries(
+            component, direction_update_ctx, target_update_ctx,
+            target.predMetas[component->getComponentIdx()], target.phistory,
+            update_btb_entries, update_new_direction_entries,
+            selection, update_branches);
+        if (!updated_with_entries) {
+            component->update(target);
+        }
     }
 
     return true;
