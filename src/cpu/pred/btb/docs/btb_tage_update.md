@@ -24,11 +24,20 @@ ftqId/startPC + prediction meta/history snapshot + resolved branch set
 会让每个 branch fact 只累积一次。这和 RTL resolve queue combine 的语义一致：
 一个真实 branch fact 不能被重复训练。
 
-## Actual Result Application
+## Actual Result Context
 
-`applyResolvedBranchResult()` 会用 resolved prefix 更新 `FetchTarget` 的 summary
+`makeBranchUpdateContext()` 会从 `FetchTarget` 的 prediction-time snapshot 和
+resolved prefix 直接构造 `BranchUpdateContext`。这条路径是 predictor update 的
+普通入口；它不需要先把真实结果写回 `FetchTarget`，因此训练边界更接近：
+
+```text
+prediction snapshot + resolved branch set -> BranchUpdateContext/update entries
+```
+
+`applyResolvedBranchResult()` 仍会用 resolved prefix 更新 `FetchTarget` 的 summary
 字段：`exeTaken`、`exeBranchInfo` 和 squash 信息。这些字段仍然有价值，主要用于
-stats、RAS/uRAS recovery/update，以及没有 per-entry resolved fact 时的 fallback。
+stats、recovery 相关 lifecycle path，以及没有 per-entry resolved fact 时的
+fallback。
 
 但 direction/target entry builder 在存在 per-entry resolved fact 时不会依赖这个
 summary。它们会先按 entry PC 查 `resolved branch set`：

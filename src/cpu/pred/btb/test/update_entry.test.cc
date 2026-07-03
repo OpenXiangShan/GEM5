@@ -313,6 +313,79 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     EXPECT_EQ(update_branches[1].pc, second.pc);
 }
 
+TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
+{
+    const ResolvedBranch first =
+        makeResolvedBranch(0x1000, false, false);
+    const ResolvedBranch second =
+        makeResolvedBranch(0x1008, true, true);
+
+    FetchTarget stream;
+    stream.tid = 1;
+    stream.asidHash = 3;
+    stream.startPC = 0x1000;
+    stream.predTick = 42;
+    stream.exeTaken = false;
+    stream.exeBranchInfo = makeBranchInfo(
+        makeResolvedBranch(0x1080, false, false));
+
+    const auto update_branches =
+        makeResolvedUpdateBranches({first, second});
+    const auto ctx = makeBranchUpdateContext(stream, update_branches);
+
+    EXPECT_FALSE(stream.resolved);
+    EXPECT_FALSE(stream.exeTaken);
+    EXPECT_EQ(ctx.tid, stream.tid);
+    EXPECT_EQ(ctx.asidHash, stream.asidHash);
+    EXPECT_EQ(ctx.startPC, stream.startPC);
+    EXPECT_EQ(ctx.predTick, stream.predTick);
+    EXPECT_TRUE(ctx.actualTaken);
+    EXPECT_EQ(ctx.controlPC, second.pc);
+    EXPECT_EQ(ctx.actualBranch.pc, second.pc);
+    EXPECT_EQ(ctx.actualBranch.target, second.target);
+    EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
+    EXPECT_EQ(ctx.squashPC, second.pc);
+
+    FetchTarget legacy_stream = stream;
+    applyResolvedBranchResult(legacy_stream, update_branches);
+    const auto legacy_ctx = legacy_stream.makeUpdateContext();
+    EXPECT_EQ(ctx.controlPC, legacy_ctx.controlPC);
+    EXPECT_EQ(ctx.actualBranch.pc, legacy_ctx.actualBranch.pc);
+    EXPECT_EQ(ctx.actualBranch.target, legacy_ctx.actualBranch.target);
+    EXPECT_EQ(ctx.actualTaken, legacy_ctx.actualTaken);
+    EXPECT_EQ(ctx.squashType, legacy_ctx.squashType);
+    EXPECT_EQ(ctx.squashPC, legacy_ctx.squashPC);
+}
+
+TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
+{
+    FetchTarget stream;
+    stream.tid = 2;
+    stream.asidHash = 4;
+    stream.startPC = 0x2000;
+    stream.predTick = 24;
+    stream.resolved = true;
+    stream.exeTaken = true;
+    stream.exeBranchInfo = makeBranchInfo(
+        makeResolvedBranch(0x2008, true, false));
+    stream.squashType = SquashType::SQUASH_TRAP;
+    stream.squashPC = 0x2010;
+
+    const auto ctx = makeBranchUpdateContext(stream, {});
+    const auto legacy_ctx = stream.makeUpdateContext();
+
+    EXPECT_EQ(ctx.tid, legacy_ctx.tid);
+    EXPECT_EQ(ctx.asidHash, legacy_ctx.asidHash);
+    EXPECT_EQ(ctx.startPC, legacy_ctx.startPC);
+    EXPECT_EQ(ctx.predTick, legacy_ctx.predTick);
+    EXPECT_EQ(ctx.controlPC, legacy_ctx.controlPC);
+    EXPECT_EQ(ctx.actualBranch.pc, legacy_ctx.actualBranch.pc);
+    EXPECT_EQ(ctx.actualBranch.target, legacy_ctx.actualBranch.target);
+    EXPECT_EQ(ctx.actualTaken, legacy_ctx.actualTaken);
+    EXPECT_EQ(ctx.squashType, legacy_ctx.squashType);
+    EXPECT_EQ(ctx.squashPC, legacy_ctx.squashPC);
+}
+
 TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
 {
     FetchTarget stream;

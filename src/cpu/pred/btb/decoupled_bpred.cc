@@ -714,11 +714,12 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
     // Process all targets that have been committed (target_id >= head target id).
     while (!ftq.empty(tid) && target_id >= ftq.frontId(tid)) {
         auto &ftq_target = ftq.front(tid);
-        FetchTarget target = ftq_target;
         const auto update_branches =
             makeResolvedUpdateBranches(ftq_target.resolvedBranches);
+        const auto update_ctx =
+            makeBranchUpdateContext(ftq_target, update_branches);
+        FetchTarget target = ftq_target;
         applyResolvedBranchResult(target, update_branches);
-        const auto update_ctx = target.makeUpdateContext();
 
         DPRINTF(DecoupleBP,
                 "Commit target start %#lx, which is predicted, "
@@ -732,8 +733,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 
         // Update predictor components
         updatePredictorComponents(
-            target.isHit, target.predBTBEntries, target.predMetas,
-            target.phistory, target.previousPCs, update_ctx, update_branches,
+            ftq_target.isHit, ftq_target.predBTBEntries, ftq_target.predMetas,
+            ftq_target.phistory, ftq_target.previousPCs, update_ctx,
+            update_branches,
             /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
@@ -764,9 +766,8 @@ DecoupledBPUWithBTB::resolveUpdate(
     }
 
     const auto update_branches = makeResolvedUpdateBranches(branches);
-    FetchTarget target = ftq.get(target_id, tid);
-    applyResolvedBranchResult(target, update_branches);
-    const auto update_ctx = target.makeUpdateContext();
+    const auto &target = ftq.get(target_id, tid);
+    const auto update_ctx = makeBranchUpdateContext(target, update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
             "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "
@@ -774,9 +775,9 @@ DecoupledBPUWithBTB::resolveUpdate(
             target_id, tid,
             static_cast<unsigned long long>(branches.size()),
             static_cast<unsigned long long>(update_branches.size()),
-            target.exeTaken,
-            target.exeBranchInfo.pc, target.exeBranchInfo.target,
-            target.squashType, target.squashPC);
+            update_ctx.actualTaken,
+            update_ctx.actualBranch.pc, update_ctx.actualBranch.target,
+            update_ctx.squashType, update_ctx.squashPC);
     for (const auto &branch : branches) {
         DPRINTF(DecoupleBP,
                 "  resolved branch pc=%#lx target=%#lx taken=%d "

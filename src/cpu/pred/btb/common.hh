@@ -803,6 +803,38 @@ makeResolvedUpdateBranches(const std::vector<ResolvedBranch> &branches)
     return update_branches;
 }
 
+inline BranchUpdateContext
+makeBranchUpdateContext(const FetchTarget &target,
+                        const std::vector<ResolvedBranch> &branches)
+{
+    BranchUpdateContext ctx = target.makeUpdateContext();
+    if (branches.empty()) {
+        return ctx;
+    }
+
+    ctx.actualTaken = false;
+    ctx.squashType = SquashType::SQUASH_NONE;
+    ctx.actualBranch = makeBranchInfo(branches.back());
+    ctx.controlPC = ctx.actualBranch.pc;
+
+    for (const auto &branch : branches) {
+        if (branch.mispred && ctx.squashType == SquashType::SQUASH_NONE) {
+            ctx.squashType = SquashType::SQUASH_CTRL;
+            ctx.squashPC = branch.pc;
+        }
+        if (branch.taken) {
+            ctx.actualTaken = true;
+            ctx.actualBranch = makeBranchInfo(branch);
+            ctx.controlPC = branch.pc;
+            if (ctx.squashType == SquashType::SQUASH_NONE) {
+                ctx.squashPC = branch.pc;
+            }
+            break;
+        }
+    }
+    return ctx;
+}
+
 inline bool
 shouldUpdateBpuPredictors(
     bool prediction_hit,
