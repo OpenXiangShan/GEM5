@@ -827,7 +827,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void commitBranch(const DynInstPtr &inst, bool miss);
 
 
-    void commitPredWrongSource(const FetchTarget &entry);
+    void commitPredWrongSource(const FetchTarget &entry,
+                               const BranchInfo &actualBranch,
+                               bool actualTaken);
 
     /**
      * @brief Process branch misprediction, determine type and update statistics
