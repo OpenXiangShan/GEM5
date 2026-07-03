@@ -902,10 +902,8 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             target.predMetas[mbtb->getComponentIdx()],
             update_ctx);
     }
-    const auto update_end_inst_pc = buildUpdateEndInstPC(
-        update_ctx.startPC, predictWidth,
-        update_ctx.actualTaken, update_ctx.controlPC,
-        update_ctx.squashType, update_ctx.squashPC);
+    const auto update_end_inst_pc =
+        buildUpdateEndInstPC(update_ctx, predictWidth);
     const auto update_btb_entries =
         makeUpdateBTBEntries(
             target.predBTBEntries, update_ctx.startPC,

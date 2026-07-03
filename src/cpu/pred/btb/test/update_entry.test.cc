@@ -87,9 +87,8 @@ makeUpdateEntries(const FetchTarget &stream,
                   const std::vector<ResolvedBranch> &branches)
 {
     const auto ctx = makeBranchUpdateContext(stream, branches);
-    const auto update_end_inst_pc = buildUpdateEndInstPC(
-        ctx.startPC, predict_width, ctx.actualTaken, ctx.controlPC,
-        ctx.squashType, ctx.squashPC);
+    const auto update_end_inst_pc =
+        buildUpdateEndInstPC(ctx, predict_width);
     return makeUpdateBTBEntries(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc, branches);
 }
@@ -243,15 +242,25 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
 
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
 {
-    EXPECT_EQ(buildUpdateEndInstPC(0x1000, 32, true, 0x1010,
-                                   SquashType::SQUASH_NONE, 0),
-              0x1010);
-    EXPECT_EQ(buildUpdateEndInstPC(0x1004, 32, false, 0x1010,
-                                   SquashType::SQUASH_NONE, 0),
-              0x1020);
-    EXPECT_EQ(buildUpdateEndInstPC(0x1000, 32, true, 0x1010,
-                                   SquashType::SQUASH_CTRL, 0x1008),
-              0x1008);
+    BranchUpdateContext taken_ctx;
+    taken_ctx.startPC = 0x1000;
+    taken_ctx.actualTaken = true;
+    taken_ctx.controlPC = 0x1010;
+    EXPECT_EQ(buildUpdateEndInstPC(taken_ctx, 32), 0x1010);
+
+    BranchUpdateContext fallthrough_ctx;
+    fallthrough_ctx.startPC = 0x1004;
+    fallthrough_ctx.actualTaken = false;
+    fallthrough_ctx.controlPC = 0x1010;
+    EXPECT_EQ(buildUpdateEndInstPC(fallthrough_ctx, 32), 0x1020);
+
+    BranchUpdateContext squash_ctx;
+    squash_ctx.startPC = 0x1000;
+    squash_ctx.actualTaken = true;
+    squash_ctx.controlPC = 0x1010;
+    squash_ctx.squashType = SquashType::SQUASH_CTRL;
+    squash_ctx.squashPC = 0x1008;
+    EXPECT_EQ(buildUpdateEndInstPC(squash_ctx, 32), 0x1008);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)

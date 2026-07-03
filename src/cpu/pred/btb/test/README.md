@@ -159,9 +159,8 @@ stream.predMetas[0] = meta;
 
 // Build explicit target update entries
 const auto ctx = makeBranchUpdateContext(stream);
-const auto update_end_inst_pc = buildUpdateEndInstPC(
-    ctx.startPC, btb->predictWidth, ctx.actualTaken, ctx.controlPC,
-    ctx.squashType, ctx.squashPC);
+const auto update_end_inst_pc =
+    buildUpdateEndInstPC(ctx, btb->predictWidth);
 const auto update_entries = buildUpdateBTBEntries(
     stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 const auto selection = btb->selectUpdateEntry(

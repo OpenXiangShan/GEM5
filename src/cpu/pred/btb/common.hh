@@ -495,20 +495,15 @@ buildTargetUpdateEntries(
 }
 
 inline Addr
-buildUpdateEndInstPC(Addr start_pc,
-                     unsigned predict_width,
-                     bool actual_taken,
-                     Addr control_pc,
-                     SquashType squash_type,
-                     Addr squash_pc)
+buildUpdateEndInstPC(const BranchUpdateContext &ctx, unsigned predict_width)
 {
-    if (squash_type != SquashType::SQUASH_NONE) {
-        return squash_pc;
+    if (ctx.squashType != SquashType::SQUASH_NONE) {
+        return ctx.squashPC;
     }
-    if (actual_taken) {
-        return control_pc;
+    if (ctx.actualTaken) {
+        return ctx.controlPC;
     }
-    return (start_pc + predict_width) & ~mask(floorLog2(predict_width) - 1);
+    return (ctx.startPC + predict_width) & ~mask(floorLog2(predict_width) - 1);
 }
 
 inline std::vector<BTBEntry>

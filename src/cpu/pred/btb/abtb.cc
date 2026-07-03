@@ -742,9 +742,8 @@ AheadBTB::updateWithAheadPipelineState(
         return;
     }
     auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
-    const Addr end_inst_pc = buildUpdateEndInstPC(
-        update_ctx.startPC, predictWidth, update_ctx.actualTaken,
-        update_ctx.controlPC, update_ctx.squashType, update_ctx.squashPC);
+    const Addr end_inst_pc =
+        buildUpdateEndInstPC(update_ctx, predictWidth);
 
     // 1. Process old entries
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
