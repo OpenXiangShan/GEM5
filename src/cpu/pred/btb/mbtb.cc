@@ -691,6 +691,10 @@ MBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                         const TargetUpdateContext &ctx,
                         const BTBMeta *meta)
 {
+    if (entries.empty()) {
+        return;
+    }
+
     // 1. Check prediction hit status, for stats recording
     if (meta) {
         checkPredictionHit(ctx, meta);

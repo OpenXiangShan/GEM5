@@ -222,8 +222,14 @@ TEST_F(BTBTest, NullMetaUpdateSelectionIsEmpty) {
     EXPECT_FALSE(selection.entry.valid);
     EXPECT_FALSE(selection.isOldEntry);
 
+    const uint64_t update_hit = mbtb->btbStats.updateHit;
+    const uint64_t update_miss = mbtb->btbStats.updateMiss;
+    const uint64_t update_total = mbtb->btbStats.updateTotal;
     FetchTarget stream;
     EXPECT_NO_THROW(mbtb->updateWithTargetEntries({}, ctx, stream));
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit), update_hit);
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss), update_miss);
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateTotal), update_total);
 }
 
 // BTB actual update process:
