@@ -90,7 +90,7 @@ makeUpdateEntries(const FetchTarget &stream,
     const auto update_end_inst_pc =
         buildUpdateEndInstPC(ctx, predict_width);
     return makeUpdateBTBEntries(
-        stream.predBTBEntries, ctx.startPC, update_end_inst_pc, branches);
+        stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 }
 
 } // namespace
@@ -145,7 +145,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
     EXPECT_TRUE(entries[0].actualTaken);
 }
 
-TEST(UpdateEntryBuilderTest, MgscResolvedUpdateKeepsConditionalEntriesWithoutPrefix)
+TEST(UpdateEntryBuilderTest, MgscResolvedUpdateRequiresResolvedBranchSet)
 {
     const BTBEntry cond_entry = makeEntry(0x1020, true, false);
     const BranchUpdateContext ctx =
@@ -155,10 +155,7 @@ TEST(UpdateEntryBuilderTest, MgscResolvedUpdateKeepsConditionalEntriesWithoutPre
         {cond_entry}, {}, BTBUpdateEntrySelection{BTBEntry(), true}, {},
         DirectionUpdateEntryFilter::Mgsc, true, ctx);
 
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].entry.pc, cond_entry.pc);
-    EXPECT_TRUE(entries[0].actualTaken);
-    EXPECT_FALSE(entries[0].isNewEntry);
+    EXPECT_TRUE(entries.empty());
 }
 
 TEST(UpdateEntryBuilderTest, TargetResolvedPrefixOverridesEntryResolvedBits)
@@ -303,8 +300,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
         BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
-    const auto update_selection =
-        markResolvedSelection(selection, update_branches);
     const auto update_ctx = makeBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
@@ -315,10 +310,9 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     ASSERT_EQ(update_btb_entries.size(), 2);
     EXPECT_EQ(update_btb_entries[0].pc, first.pc);
     EXPECT_EQ(update_btb_entries[1].pc, second.pc);
-    EXPECT_TRUE(update_btb_entries[0].resolved);
-    EXPECT_TRUE(update_btb_entries[1].resolved);
-    EXPECT_EQ(update_selection.entry.pc, second.pc);
-    EXPECT_TRUE(update_selection.entry.resolved);
+    EXPECT_FALSE(update_btb_entries[0].resolved);
+    EXPECT_FALSE(update_btb_entries[1].resolved);
+    EXPECT_EQ(selection.entry.pc, second.pc);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, first.pc);
     EXPECT_EQ(update_branches[1].pc, second.pc);
@@ -471,8 +465,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
             update_btb_entries, selection, update_branches);
-    const auto update_selection =
-        markResolvedSelection(selection, update_branches);
 
     ASSERT_EQ(update_btb_entries.size(), 1);
     EXPECT_EQ(update_btb_entries[0].pc, predicted.pc);
@@ -486,7 +478,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
 
     const auto direction_entries = buildDirectionUpdateEntries(
         update_btb_entries, update_new_direction_entries,
-        update_selection,
+        selection,
         update_branches, DirectionUpdateEntryFilter::Conditional,
         true, update_ctx);
 
@@ -499,7 +491,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     EXPECT_TRUE(direction_entries[1].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(
-        update_btb_entries, update_selection, update_branches,
+        update_btb_entries, selection, update_branches,
         TargetUpdateEntryFilter::Any, true, update_ctx);
 
     ASSERT_EQ(target_entries.size(), 1);
@@ -543,8 +535,6 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
             update_btb_entries, selection, update_branches);
-    const auto update_selection =
-        markResolvedSelection(selection, update_branches);
 
     ASSERT_TRUE(update_btb_entries.empty());
     ASSERT_EQ(update_new_direction_entries.size(), 1);
@@ -553,7 +543,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
 
     const auto direction_entries = buildDirectionUpdateEntries(
         update_btb_entries, update_new_direction_entries,
-        update_selection,
+        selection,
         update_branches, DirectionUpdateEntryFilter::Conditional,
         true, update_ctx);
 
@@ -562,7 +552,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     EXPECT_FALSE(direction_entries[0].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(
-        update_btb_entries, update_selection, update_branches,
+        update_btb_entries, selection, update_branches,
         TargetUpdateEntryFilter::Any, true, update_ctx);
 
     EXPECT_TRUE(target_entries.empty());

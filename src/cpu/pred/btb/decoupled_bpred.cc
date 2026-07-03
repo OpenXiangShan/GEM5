@@ -905,12 +905,10 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const auto update_btb_entries =
         makeUpdateBTBEntries(
             target.predBTBEntries, update_ctx.startPC,
-            update_end_inst_pc, update_branches);
+            update_end_inst_pc);
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
             update_btb_entries, raw_selection, update_branches);
-    const auto selection =
-        markResolvedSelection(raw_selection, update_branches);
 
     if (resolved_update &&
         !canResolveUpdateComponents(update_ctx.startPC)) {
@@ -929,7 +927,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             component, update_ctx,
             target.predMetas[component->getComponentIdx()], target.phistory,
             target.previousPCs, update_btb_entries,
-            update_new_direction_entries, selection, update_branches);
+            update_new_direction_entries, raw_selection, update_branches);
     }
 
     return true;

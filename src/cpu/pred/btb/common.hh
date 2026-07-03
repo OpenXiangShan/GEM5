@@ -328,11 +328,9 @@ findResolvedUpdateBranch(
 
 inline bool
 isResolvedUpdatePC(const std::vector<ResolvedBranch> &resolved_update_branches,
-                   Addr pc, bool fallback_resolved)
+                   Addr pc)
 {
-    return hasResolvedUpdateBranches(resolved_update_branches) ?
-        findResolvedUpdateBranch(resolved_update_branches, pc) != nullptr :
-        fallback_resolved;
+    return findResolvedUpdateBranch(resolved_update_branches, pc) != nullptr;
 }
 
 inline bool
@@ -357,12 +355,9 @@ shouldKeepDirectionUpdateEntry(
 
     switch (filter) {
       case DirectionUpdateEntryFilter::Conditional:
-        return isResolvedUpdatePC(
-            resolved_update_branches, entry.pc, entry.resolved);
+        return isResolvedUpdatePC(resolved_update_branches, entry.pc);
       case DirectionUpdateEntryFilter::Mgsc:
-        return !hasResolvedUpdateBranches(resolved_update_branches) ||
-            findResolvedUpdateBranch(resolved_update_branches, entry.pc) !=
-                nullptr;
+        return isResolvedUpdatePC(resolved_update_branches, entry.pc);
     }
     return false;
 }
@@ -453,8 +448,7 @@ shouldKeepTargetUpdateEntry(
     if (!keep || !resolved_update) {
         return keep;
     }
-    return isResolvedUpdatePC(
-        resolved_update_branches, entry.pc, entry.resolved);
+    return isResolvedUpdatePC(resolved_update_branches, entry.pc);
 }
 
 inline std::vector<TargetUpdateEntry>
@@ -836,29 +830,13 @@ shouldUpdateBpuPredictors(
     return prediction_hit || ctx.actualTaken || !resolved_update_branches.empty();
 }
 
-inline void
-markResolvedEntry(BTBEntry &entry, const std::vector<ResolvedBranch> &branches)
-{
-    for (const auto &branch : branches) {
-        if (entry.pc == branch.pc) {
-            entry.resolved = true;
-            return;
-        }
-    }
-}
-
 inline std::vector<BTBEntry>
 makeUpdateBTBEntries(const std::vector<BTBEntry> &pred_btb_entries,
                      Addr start_pc,
-                     Addr update_end_inst_pc,
-                     const std::vector<ResolvedBranch> &branches)
+                     Addr update_end_inst_pc)
 {
-    auto entries = buildUpdateBTBEntries(
+    return buildUpdateBTBEntries(
         pred_btb_entries, start_pc, update_end_inst_pc);
-    for (auto &entry : entries) {
-        markResolvedEntry(entry, branches);
-    }
-    return entries;
 }
 
 inline bool
@@ -885,14 +863,6 @@ makeNewDirectionEntries(const std::vector<BTBEntry> &update_btb_entries,
         entries.push_back(BTBEntry(makeBranchInfo(branch)));
     }
     return entries;
-}
-
-inline BTBUpdateEntrySelection
-markResolvedSelection(BTBUpdateEntrySelection selection,
-                      const std::vector<ResolvedBranch> &branches)
-{
-    markResolvedEntry(selection.entry, branches);
-    return selection;
 }
 
 /**
