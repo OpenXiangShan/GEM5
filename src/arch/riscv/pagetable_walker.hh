@@ -262,8 +262,12 @@ namespace RiscvISA
             void sendPackets();
             void endWalk();
             bool usePtwLevelLimit() const;
+            int currentPtwResourceLevel() const;
             bool waitForPtwLevel(int target_level, Addr next_read,
                                  unsigned read_size, Request::Flags flags);
+            bool deferPtwLevelRead(int target_level, Addr next_read,
+                                   unsigned read_size, Request::Flags flags,
+                                   PacketPtr old_read);
             bool retryBlockedPtwLevel();
             Fault endGstageWalk();
             Fault pageFault(bool present, bool G);

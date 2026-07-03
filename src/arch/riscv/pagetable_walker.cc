@@ -819,12 +819,13 @@ Walker::WalkerState::startWalk(Addr ppn, int f_level, bool from_l2tlb,
         nextState = state;
         state = Waiting;
         mainFault = NoFault;
-        if (!walker->reservePtwLevel(this, level)) {
+        const int resource_level = currentPtwResourceLevel();
+        if (!walker->reservePtwLevel(this, resource_level)) {
             waitingForPtwLevel = true;
-            blockedPtwLevel = level;
+            blockedPtwLevel = resource_level;
             DPRINTF(PageTableWalker,
                     "PTW level%d busy, defer initial read for %#lx\n",
-                    level, mainReq->getVaddr());
+                    resource_level, mainReq->getVaddr());
             return fault;
         }
         sendPackets();
@@ -1129,6 +1130,11 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             if (walker->l2tlb == nullptr)
                 panic("walker->l2tlb is none\n");
             
+            if (deferPtwLevelRead(twoStageLevel, nextRead, oldSize, flags, oldRead)) {
+                read = nullptr;
+                walker->retryPtwLevelBlockedStates();
+                return fault;
+            }
             delete oldRead;
             oldRead = nullptr;
             RequestPtr request = std::make_shared<Request>(nextRead, oldSize, flags, walker->requestorId);
@@ -1297,6 +1303,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         if (!tlbHit) {
                             delete oldRead;
                             oldRead = nullptr;
+                            read = nullptr;
                             fault = startTwoStageWalk(gPaddr, entry.vaddr);
                             if (fault != NoFault) {
                                 endWalk();
@@ -1384,6 +1391,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                     if (!tlbHit) {
                         delete oldRead;
                         oldRead = nullptr;
+                        read = nullptr;
                         fault = startTwoStageWalk(gPaddr, entry.vaddr);
                         if (fault != NoFault) {
                             endWalk();
@@ -1835,7 +1843,17 @@ Walker::WalkerState::endWalk()
 bool
 Walker::WalkerState::usePtwLevelLimit() const
 {
-    return timing && translateMode == defaultmode && !fromPre && !fromBackPre;
+    return timing && (translateMode == defaultmode ||
+                      translateMode == twoStageMode) &&
+           !fromPre && !fromBackPre;
+}
+
+int
+Walker::WalkerState::currentPtwResourceLevel() const
+{
+    if (translateMode == twoStageMode && inGstage)
+        return twoStageLevel;
+    return level;
 }
 
 bool
@@ -1856,6 +1874,29 @@ Walker::WalkerState::waitForPtwLevel(int target_level, Addr next_read,
     DPRINTF(PageTableWalker,
             "PTW level%d busy, defer read %#lx for vaddr %#lx\n",
             target_level, next_read, mainReq->getVaddr());
+    return true;
+}
+
+bool
+Walker::WalkerState::deferPtwLevelRead(int target_level, Addr next_read,
+                                       unsigned read_size,
+                                       Request::Flags flags,
+                                       PacketPtr old_read)
+{
+    if (walker->reservePtwLevel(this, target_level))
+        return false;
+
+    if (!waitForPtwLevel(target_level, next_read, read_size, flags))
+        return false;
+
+    PacketPtr pending_read = old_read;
+    if (!pending_read && read && read->isResponse())
+        pending_read = read;
+    if (pending_read) {
+        if (read == pending_read)
+            read = nullptr;
+        delete pending_read;
+    }
     return true;
 }
 
@@ -1937,6 +1978,9 @@ Walker::WalkerState::startTwoStageWalkFromTLBNotInG(Addr ppn, Addr vaddr)
     if (nextRead == 0)
         panic("nextread can't be 0\n");
     Request::Flags flags = Request::PHYSICAL;
+    if (deferPtwLevelRead(level, nextRead, 64, flags, nullptr))
+        return NoFault;
+
     RequestPtr request = std::make_shared<Request>(nextRead, 64, flags, walker->requestorId);
     DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk nextRead %lx vaddr %lx gpaddr %lx level %d twolevel %d\n",
             nextRead, entry.vaddr, gPaddr, level, twoStageLevel);
@@ -1954,6 +1998,9 @@ Walker::WalkerState::startTwoStageWalkFromTLBInG(Addr ppn, Addr vaddr)
     nextRead = (nextRead >> 6) << 6;
     if (nextRead == 0)
         panic("nextread can't be 0\n");
+    if (deferPtwLevelRead(twoStageLevel, nextRead, 64, flags, nullptr))
+        return NoFault;
+
     RequestPtr request = std::make_shared<Request>(nextRead, 64, flags, walker->requestorId);
     read = new Packet(request, MemCmd::ReadReq);
     read->allocate();
@@ -1985,6 +2032,9 @@ Walker::WalkerState::startTwoStageWalk(Addr ppn, Addr vaddr)
         if (TwoLevelTopAddr == 0)
             panic("topAddr can't be 0\n");
         // DPRINTF(PageTableWalker, " sv39 size is %d\n", sizeof(PTE));
+
+        if (deferPtwLevelRead(twoStageLevel, TwoLevelTopAddr, 64, flags, nullptr))
+            return NoFault;
 
         read = new Packet(request, MemCmd::ReadReq);
         read->allocate();

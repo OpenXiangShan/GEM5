@@ -367,10 +367,10 @@ class TLB : public BaseTLB
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,
                     BaseMMU::Translation *translation, BaseMMU::Mode mode,
-                    bool &delayed);
+                    bool &delayed, bool from_miss_queue = false);
     Fault doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
-                      bool &delayed);
+                      bool &delayed, bool from_miss_queue = false);
     std::pair<int, Fault> checkHL1Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
                                       BaseMMU::Mode mode);
     std::pair<int, Fault> checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,

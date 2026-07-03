@@ -1809,7 +1809,7 @@ TLB::retryTimingPtwMiss(ThreadContext *tc,
                         bool from_miss_queue)
 {
     bool delayed = false;
-    Fault fault = doTranslate(req, tc, translation, mode, delayed, from_miss_queue);
+    Fault fault = translate(req, tc, translation, mode, delayed, from_miss_queue);
     if (!delayed) {
         translation->finish(fault, req, tc, mode);
     } else if (fault != NoFault) {
@@ -2199,7 +2199,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
 Fault
 TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                  BaseMMU::Translation *translation, BaseMMU::Mode mode,
-                 bool &delayed)
+                 bool &delayed, bool from_miss_queue)
 {
     SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
     HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
@@ -2280,6 +2280,23 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                         code = ExceptionCode::INST_ACCESS;
                     }
                     return std::make_shared<AddressFault>(req->getVaddr(), 0, code);
+                }
+                if (translation != nullptr && !from_miss_queue &&
+                    walker->hasPendingPtwMiss()) {
+                    walker->recordPtwMissQueueFifoBlocked();
+                    walker->enqueuePtwMiss(tc, translation, req, mode, false);
+                    delayed = true;
+                    return fault;
+                }
+                int walk_level = req->get_h_gstage() ?
+                    req->get_two_stage_level() : req->get_level();
+                if (translation != nullptr &&
+                    !walker->canStartPtwLevel(walk_level, false, false)) {
+                    walker->recordPtwMissQueueResourceBlocked();
+                    walker->enqueuePtwMiss(tc, translation, req, mode,
+                                           from_miss_queue);
+                    delayed = true;
+                    return fault;
                 }
                 DPRINTFR(TLB, "doTwoStageTranslate: walker start\n");
                 fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
@@ -2674,7 +2691,7 @@ TLB::isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode)
 Fault
 TLB::translate(const RequestPtr &req, ThreadContext *tc,
                BaseMMU::Translation *translation, BaseMMU::Mode mode,
-               bool &delayed)
+               bool &delayed, bool from_miss_queue)
 {
     delayed = false;
 
@@ -2701,7 +2718,8 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             if ((hgatp.mode == NEMU_SATP_SV39 || vsatp.mode == NEMU_SATP_SV39
                 || hgatp.mode == NEMU_SATP_SV48 || vsatp.mode == NEMU_SATP_SV48)
                 && (pmode < PrivilegeMode::PRV_M)) {
-                fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
+                fault = doTwoStageTranslate(req, tc, translation, mode, delayed,
+                                             from_miss_queue);
             } else {
                 req->setPaddr(req->getVaddr());
                 fault = NoFault;
@@ -2712,11 +2730,13 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             if (two_stage_translation) {
                 assert((vsatp.mode == NEMU_SATP_SV39) || (hgatp.mode == NEMU_SATP_SV39)
                        || (vsatp.mode == NEMU_SATP_SV48) || (hgatp.mode == NEMU_SATP_SV48));
-                fault = doTwoStageTranslate(req, tc, translation, mode, delayed);
+                fault = doTwoStageTranslate(req, tc, translation, mode, delayed,
+                                             from_miss_queue);
             } else {
                 req->setTwoStageState(false, 0, 0);
                 controlNum++;
-                fault = doTranslate(req, tc, translation, mode, delayed);
+                fault = doTranslate(req, tc, translation, mode, delayed,
+                                    from_miss_queue);
             }
         }
 
