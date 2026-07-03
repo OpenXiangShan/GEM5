@@ -682,6 +682,12 @@ class Fetch
 
     void squashResolveQueueAfter(ThreadID tid, uint64_t squashFtqId);
 
+    void recordResolvedCFIsToFTQ(ThreadID tid);
+
+    uint8_t enqueueResolvedCFIsForUpdate(
+        ThreadID tid,
+        bool &headEntryMergedSameFTQ);
+
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
 

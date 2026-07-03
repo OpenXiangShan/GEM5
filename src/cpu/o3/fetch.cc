@@ -2002,6 +2002,64 @@ Fetch::squashResolveQueueAfter(ThreadID tid, uint64_t squashFtqId)
 }
 
 void
+Fetch::recordResolvedCFIsToFTQ(ThreadID tid)
+{
+    auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
+    for (const auto &resolved : incoming) {
+        dbpbtb->recordResolvedBranch(
+            resolved.ftqId, resolved.branch, tid);
+    }
+}
+
+uint8_t
+Fetch::enqueueResolvedCFIsForUpdate(
+    ThreadID tid,
+    bool &headEntryMergedSameFTQ)
+{
+    uint8_t enqueue_count = 0;
+    auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
+
+    for (const auto &resolved : incoming) {
+        const bool new_branch = dbpbtb->recordResolvedBranch(
+            resolved.ftqId, resolved.branch, tid);
+        observeResolveEnqueueAfterDequeue(
+            tid, resolved.ftqId, resolved.branch);
+        observeResolveWithDecodedCFIs(
+            tid, resolved.ftqId, resolved.branch);
+        if (!new_branch) {
+            continue;
+        }
+
+        auto queued_it = std::find_if(
+            resolveQueue.begin(), resolveQueue.end(),
+            [&](const auto &queued) {
+                return queued.matches(tid, resolved.ftqId);
+            });
+        if (queued_it != resolveQueue.end()) {
+            if (queued_it->addBranch(resolved.branch)) {
+                if (queued_it == resolveQueue.begin()) {
+                    headEntryMergedSameFTQ = true;
+                }
+                if (queued_it->decodedPrefixWaitCycles) {
+                    fetchStats.resolveDequeueDecodedPrefixWaitMerged++;
+                }
+                queued_it->resetDecodedPrefixWait();
+            }
+            continue;
+        }
+
+        ResolveQueueEntry new_entry;
+        new_entry.resolvedTid = tid;
+        new_entry.resolvedFTQId = resolved.ftqId;
+        new_entry.addBranch(resolved.branch);
+        resolveQueue.push_back(std::move(new_entry));
+        enqueue_count++;
+    }
+
+    return enqueue_count;
+}
+
+void
 Fetch::handleIEWSignals()
 {
     // Currently resolve stage training is a btb-only feature
@@ -2020,57 +2078,14 @@ Fetch::handleIEWSignals()
 
     if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
-            for (const auto &resolved : incoming) {
-                dbpbtb->recordResolvedBranch(
-                    resolved.ftqId, resolved.branch, tid);
-            }
+            recordResolvedCFIsToFTQ(tid);
         }
         fetchStats.resolveQueueFullEvents++;
         fetchStats.resolveEnqueueFailEvent += enqueueSize;
     } else {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
-            for (const auto &resolved : incoming) {
-                const bool new_branch = dbpbtb->recordResolvedBranch(
-                    resolved.ftqId, resolved.branch, tid);
-                observeResolveEnqueueAfterDequeue(
-                    tid, resolved.ftqId, resolved.branch);
-                observeResolveWithDecodedCFIs(
-                    tid, resolved.ftqId, resolved.branch);
-                if (!new_branch) {
-                    continue;
-                }
-
-                bool merged = false;
-                for (auto &queued : resolveQueue) {
-                    if (queued.matches(tid, resolved.ftqId)) {
-                        if (queued.addBranch(resolved.branch)) {
-                            if (&queued == &resolveQueue.front()) {
-                                head_entry_merged_same_ftq = true;
-                            }
-                            if (queued.decodedPrefixWaitCycles) {
-                                fetchStats
-                                    .resolveDequeueDecodedPrefixWaitMerged++;
-                            }
-                            queued.resetDecodedPrefixWait();
-                        }
-                        merged = true;
-                        break;
-                    }
-                }
-
-                if (merged) {
-                    continue;
-                }
-
-                ResolveQueueEntry new_entry;
-                new_entry.resolvedTid = tid;
-                new_entry.resolvedFTQId = resolved.ftqId;
-                new_entry.addBranch(resolved.branch);
-                resolveQueue.push_back(std::move(new_entry));
-                enqueueCount++;
-            }
+            enqueueCount += enqueueResolvedCFIsForUpdate(
+                tid, head_entry_merged_same_ftq);
         }
         fetchStats.resolveEnqueueCount.sample(enqueueCount);
     }
