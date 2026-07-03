@@ -426,6 +426,42 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     EXPECT_EQ(target_entries[0].entry.pc, selected.pc);
 }
 
+TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
+{
+    const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
+
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+
+    const auto update_branches = makeResolvedUpdateBranches({missing});
+    applyResolvedBranchResult(stream, update_branches);
+    const BTBUpdateEntrySelection selection;
+    const BPUPreparedUpdate prepared =
+        prepareBPUUpdate(stream, 32, selection, update_branches);
+
+    ASSERT_TRUE(prepared.btbEntries.empty());
+    ASSERT_EQ(prepared.newDirectionEntries.size(), 1);
+    EXPECT_EQ(prepared.newDirectionEntries[0].pc, missing.pc);
+    EXPECT_TRUE(prepared.newDirectionEntries[0].valid);
+
+    const auto direction_entries = buildDirectionUpdateEntries(
+        prepared.btbEntries, prepared.newDirectionEntries,
+        prepared.selection.entry, prepared.selection.isOldEntry,
+        prepared.resolvedBranches, DirectionUpdateEntryFilter::Conditional,
+        true, stream.makeDirectionUpdateContext());
+
+    ASSERT_EQ(direction_entries.size(), 1);
+    EXPECT_EQ(direction_entries[0].entry.pc, missing.pc);
+    EXPECT_FALSE(direction_entries[0].actualTaken);
+
+    const auto target_entries = buildTargetUpdateEntries(
+        prepared.btbEntries, prepared.selection.entry,
+        prepared.selection.isOldEntry, prepared.resolvedBranches,
+        TargetUpdateEntryFilter::Any, true, stream.makeTargetUpdateContext());
+
+    EXPECT_TRUE(target_entries.empty());
+}
+
 } // namespace test
 
 } // namespace btb_pred

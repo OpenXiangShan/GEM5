@@ -468,6 +468,10 @@ shouldKeepTargetUpdateEntry(
     bool resolved_update,
     const std::vector<ResolvedBranch> &resolved_update_branches)
 {
+    if (!entry.valid) {
+        return false;
+    }
+
     bool keep = false;
     switch (filter) {
       case TargetUpdateEntryFilter::Any:
