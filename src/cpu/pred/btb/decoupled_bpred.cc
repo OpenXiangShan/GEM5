@@ -731,7 +731,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 
         // Update predictor components
         updatePredictorComponents(
-            target, update_ctx, update_branches, /*resolved_update=*/false);
+            target.isHit, target.predBTBEntries, target.predMetas,
+            target.phistory, target, update_ctx, update_branches,
+            /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
@@ -783,7 +785,9 @@ DecoupledBPUWithBTB::resolveUpdate(
     }
 
     return updatePredictorComponents(
-        target, update_ctx, update_branches, /*resolved_update=*/true);
+        target.isHit, target.predBTBEntries, target.predMetas,
+        target.phistory, target, update_ctx, update_branches,
+        /*resolved_update=*/true);
 }
 
 void
@@ -872,20 +876,24 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
 
 bool
 DecoupledBPUWithBTB::updatePredictorComponents(
-    const FetchTarget &target,
+    bool prediction_hit,
+    const std::vector<BTBEntry> &pred_btb_entries,
+    const std::array<std::shared_ptr<void>, 8> &pred_metas,
+    const boost::dynamic_bitset<> &phistory,
+    const FetchTarget &stream_state,
     const BranchUpdateContext &update_ctx,
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {
     if (!shouldUpdateBpuPredictors(
-            target.isHit, update_ctx.actualTaken, update_branches)) {
+            prediction_hit, update_ctx.actualTaken, update_branches)) {
         return true;
     }
 
     BTBUpdateEntrySelection raw_selection;
     if (mbtb->isEnabled()) {
         raw_selection = mbtb->selectUpdateEntry(
-            target.predMetas[mbtb->getComponentIdx()],
+            pred_metas[mbtb->getComponentIdx()],
             update_ctx);
     }
     const auto update_end_inst_pc = buildUpdateEndInstPC(
@@ -894,7 +902,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         update_ctx.squashType, update_ctx.squashPC);
     const auto update_btb_entries =
         makeUpdateBTBEntries(
-            target.predBTBEntries, update_ctx.startPC,
+            pred_btb_entries, update_ctx.startPC,
             update_end_inst_pc, update_branches);
     const auto update_new_direction_entries =
         makeNewDirectionEntries(
@@ -917,11 +925,11 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         }
         const auto updated_with_entries = updatePredictorComponentWithEntries(
             component, update_ctx,
-            target.predMetas[component->getComponentIdx()], target.phistory,
+            pred_metas[component->getComponentIdx()], phistory,
             update_btb_entries, update_new_direction_entries,
             selection, update_branches);
         if (!updated_with_entries && component->usesFetchTargetUpdate()) {
-            component->updateWithFetchTarget(target);
+            component->updateWithFetchTarget(stream_state);
             continue;
         }
         panic_if(!updated_with_entries,
