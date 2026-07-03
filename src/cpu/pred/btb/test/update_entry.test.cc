@@ -228,28 +228,6 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
 
-TEST(UpdateEntryBuilderTest, SelectedTargetEntryUsesContextAndOldEntryFlag)
-{
-    const BTBEntry selected = makeEntry(0x4000, false, true);
-    const TargetUpdateContext ctx = makeTargetContext(selected.pc, true);
-
-    const auto new_entry =
-        buildSelectedTargetUpdateEntry(selected, false, ctx);
-    EXPECT_EQ(new_entry.entry.pc, selected.pc);
-    EXPECT_TRUE(new_entry.actualTaken);
-    EXPECT_TRUE(new_entry.isNewEntry);
-    EXPECT_EQ(new_entry.actualBranch.pc, selected.pc);
-    EXPECT_EQ(new_entry.actualBranch.target, ctx.actualBranch.target);
-
-    const auto old_entry =
-        buildSelectedTargetUpdateEntry(selected, true, ctx);
-    EXPECT_EQ(old_entry.entry.pc, selected.pc);
-    EXPECT_TRUE(old_entry.actualTaken);
-    EXPECT_FALSE(old_entry.isNewEntry);
-    EXPECT_EQ(old_entry.actualBranch.pc, selected.pc);
-    EXPECT_EQ(old_entry.actualBranch.target, ctx.actualBranch.target);
-}
-
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
 {
     EXPECT_EQ(buildUpdateEndInstPC(0x1000, 32, true, 0x1010,

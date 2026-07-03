@@ -524,20 +524,6 @@ buildTargetUpdateEntries(
     return entries;
 }
 
-inline TargetUpdateEntry
-buildSelectedTargetUpdateEntry(const BTBEntry &selected_entry,
-                               bool update_is_old_entry,
-                               const TargetUpdateContext &ctx)
-{
-    const BranchInfo actual_branch =
-        ctx.controlPC == selected_entry.pc ?
-            ctx.actualBranch : BranchInfo(selected_entry);
-    return {selected_entry,
-            ctx.isTakenControlPC(selected_entry.pc),
-            !update_is_old_entry,
-            actual_branch};
-}
-
 inline Addr
 buildUpdateEndInstPC(Addr start_pc,
                      unsigned predict_width,

@@ -532,8 +532,13 @@ AheadBTB::makeSelectedTargetUpdateEntry(
         selection.entry = new_entry;
     }
 
-    return buildSelectedTargetUpdateEntry(
-        selection.entry, selection.isOldEntry, ctx);
+    const BranchInfo actual_branch =
+        ctx.controlPC == selection.entry.pc ?
+            ctx.actualBranch : BranchInfo(selection.entry);
+    return {selection.entry,
+            ctx.isTakenControlPC(selection.entry.pc),
+            !selection.isOldEntry,
+            actual_branch};
 }
 
 std::vector<TargetUpdateEntry>
