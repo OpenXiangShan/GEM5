@@ -718,18 +718,17 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
             makeResolvedUpdateBranches(ftq_target.resolvedBranches);
         const auto update_ctx =
             makeBranchUpdateContext(ftq_target, update_branches);
-        FetchTarget target = ftq_target;
-        applyResolvedBranchResult(target, update_branches);
 
         DPRINTF(DecoupleBP,
                 "Commit target start %#lx, which is predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
-                target.startPC, target.exeBranchInfo.pc, target.exeBranchInfo.target, target.predBranchInfo.pc,
-                target.predBranchInfo.target);
+                ftq_target.startPC, update_ctx.actualBranch.pc,
+                update_ctx.actualBranch.target, ftq_target.predBranchInfo.pc,
+                ftq_target.predBranchInfo.target);
 
         // Update statistics
-        updateStatistics(target);
+        updateStatistics(ftq_target, update_ctx, !update_branches.empty());
 
         // Update predictor components
         updatePredictorComponents(

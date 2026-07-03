@@ -692,12 +692,19 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 }
 
 void
-DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
+DecoupledBPUWithBTB::updateStatistics(
+    const FetchTarget &target,
+    const BranchUpdateContext &update_ctx,
+    bool has_resolved_prefix)
 {
     // Check if this target was mispredicted
-    bool miss_predicted = target.squashType == SQUASH_CTRL;
+    const bool miss_predicted = update_ctx.squashType == SQUASH_CTRL;
+    const bool actual_taken = update_ctx.actualTaken;
+    const BranchInfo &actual_branch = update_ctx.actualBranch;
+    const BranchInfo &stats_branch =
+        has_resolved_prefix ? actual_branch : target.getBranchInfo();
     // Track indirect mispredictions
-    if (miss_predicted && target.exeBranchInfo.isIndirect) {
+    if (miss_predicted && actual_branch.isIndirect) {
         topMispredIndirect[target.startPC]++;
     }
 
@@ -707,20 +714,20 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
         dbpBtbStats.btbHit++;
     } else {
         // Count BTB misses for taken branches
-        if (target.exeTaken) {
+        if (actual_taken) {
             dbpBtbStats.btbMiss++;
             DPRINTF(BTB, "BTB miss detected when update, target start %#lx, predTick %lu, printing branch info:\n",
                     target.startPC, target.predTick);
-            auto &slot = target.exeBranchInfo;
+            const auto &slot = actual_branch;
             DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
         }
 
     }
 
-    if (target.isHit || target.exeTaken) {
+    if (target.isHit || actual_taken) {
         // Update BTB entry statistics
-        const BTBEntry btb_entry(target.getBranchInfo());
+        const BTBEntry btb_entry(stats_branch);
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
@@ -740,7 +747,7 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
     if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
         commitFsqEntryHasInstsVector[target.commitInstNum]++;
-        if (target.commitInstNum == 1 && target.exeBranchInfo.isUncond()) {
+        if (target.commitInstNum == 1 && actual_branch.isUncond()) {
             dbpBtbStats.commitFsqEntryOnlyHasOneJump++;
         }
     }
@@ -753,11 +760,13 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
 
     // --- Misprediction Statistics ---
     // Track control squashes (mispredictions)
-    if (target.squashType == SQUASH_CTRL) {
+    if (miss_predicted) {
         // Record mispredict pair (start PC, branch PC)
-        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.exeBranchInfo.pc));
+        auto find_it = topMispredicts.find(std::make_pair(
+            target.startPC, actual_branch.pc));
         if (find_it == topMispredicts.end()) {
-            topMispredicts[std::make_pair(target.startPC, target.exeBranchInfo.pc)] = 1;
+            topMispredicts[std::make_pair(
+                target.startPC, actual_branch.pc)] = 1;
         } else {
             find_it->second++;
         }
