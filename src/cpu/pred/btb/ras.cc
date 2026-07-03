@@ -459,9 +459,9 @@ BTBRAS::getTop_meta(ThreadID tid) {
 }
 
 Addr
-BTBRAS::getTopAddrFromMetas(const FetchTarget &stream)
+BTBRAS::getTopAddrFromMeta(const std::shared_ptr<void> &prediction_meta)
 {
-    auto meta_ptr = std::static_pointer_cast<RASMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta_ptr = std::static_pointer_cast<RASMeta>(prediction_meta);
     return meta_ptr->target;
 }
 

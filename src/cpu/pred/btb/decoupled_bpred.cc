@@ -638,7 +638,8 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     Addr real_target = corr_target.instAddr();
     if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
         // get ret addr from ras meta
-        real_target = ras->getTopAddrFromMetas(target);
+        real_target = ras->getTopAddrFromMeta(
+            target.predMetas[ras->getComponentIdx()]);
         // TODO: set real target to dynamic inst
     }
 
@@ -1082,7 +1083,9 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
 {
     DPRINTF(DecoupleBP, "acquiring reutrn address for inst pc %#lx from decode\n", dynInst->pcState().instAddr());
     auto ftqid = dynInst->getFtqId();
-    auto retAddr = ras->getTopAddrFromMetas(ftq.get(ftqid, dynInst->threadNumber));
+    const auto &target = ftq.get(ftqid, dynInst->threadNumber);
+    auto retAddr = ras->getTopAddrFromMeta(
+        target.predMetas[ras->getComponentIdx()]);
     DPRINTF(DecoupleBP, "get ret addr %#lx\n", retAddr);
     return retAddr;
 }

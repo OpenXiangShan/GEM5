@@ -116,7 +116,7 @@ namespace btb_pred {
             bool actual_taken) override;
 #endif
 
-        Addr getTopAddrFromMetas(const FetchTarget &stream);
+        Addr getTopAddrFromMeta(const std::shared_ptr<void> &prediction_meta);
 
     private:
         struct ThreadRASState
