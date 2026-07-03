@@ -729,24 +729,19 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
 }
 
 /*
- * Update BTB with execution results
- * Steps:
- * 1. Get old entries that were hit during prediction
- * 2. Remove entries that were not actually executed
- * 3. Update statistics
- * 4. Update existing entries or create new ones
- * 5. Update MRU information
+ * Update BTB with execution results.
  */
 void
-AheadBTB::updateWithFetchTarget(const FetchTarget &stream)
+AheadBTB::updateWithAheadPipelineState(
+    const std::shared_ptr<void> &prediction_meta,
+    const BranchUpdateContext &update_ctx,
+    std::queue<Addr> previous_pcs)
 {
     if (usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
         return;
     }
-    auto meta = std::static_pointer_cast<BTBMeta>(
-        stream.predMetas[getComponentIdx()]);
-    const auto update_ctx = stream.makeUpdateContext();
+    auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
     const Addr end_inst_pc = buildUpdateEndInstPC(
         update_ctx.startPC, predictWidth, update_ctx.actualTaken,
         update_ctx.controlPC, update_ctx.squashType, update_ctx.squashPC);
@@ -764,7 +759,8 @@ AheadBTB::updateWithFetchTarget(const FetchTarget &stream)
         old_entries, selected_entry, update_ctx);
 
     if (!entries_to_update.empty()) {
-        updateWithEntries(entries_to_update, update_ctx, getPreviousPC(stream));
+        updateWithEntries(entries_to_update, update_ctx,
+                          getPreviousPC(previous_pcs));
     }
 }
 
@@ -784,17 +780,6 @@ AheadBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
         entry.entry.source = getComponentIdx();
         updateBTBEntry(btb_idx, btb_tag, entry, ctx);
     }
-}
-
-/**
- * Get the previous PC from the fetch stream, useful in the update of ahead-pipelined BTB
- * @param stream Fetch stream containing prediction info
- * @return Previous PC, 0 if the stream is not filled
- */
-Addr
-AheadBTB::getPreviousPC(const FetchTarget &stream)
-{
-    return getPreviousPC(stream.previousPCs);
 }
 
 Addr

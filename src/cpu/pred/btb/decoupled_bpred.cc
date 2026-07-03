@@ -929,6 +929,12 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             pred_metas[component->getComponentIdx()], phistory,
             update_btb_entries, update_new_direction_entries,
             selection, update_branches);
+        if (!updated_with_entries && component == abtb) {
+            abtb->updateWithAheadPipelineState(
+                pred_metas[component->getComponentIdx()], update_ctx,
+                stream_state.previousPCs);
+            continue;
+        }
         if (!updated_with_entries && component->usesFetchTargetUpdate()) {
             component->updateWithFetchTarget(stream_state);
             continue;

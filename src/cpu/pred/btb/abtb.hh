@@ -175,8 +175,10 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    bool usesFetchTargetUpdate() const override { return true; }
-    void updateWithFetchTarget(const FetchTarget &stream) override;
+    void updateWithAheadPipelineState(
+        const std::shared_ptr<void> &prediction_meta,
+        const BranchUpdateContext &ctx,
+        std::queue<Addr> previous_pcs);
 
 
 
@@ -318,11 +320,6 @@ class AheadBTB : public TimedBaseBTBPredictor
     std::vector<BTBEntry> processOldEntries(const std::vector<BTBEntry>& hit_entries,
                                             Addr end_inst_pc);
 
-    /** Get the previous PC from the fetch stream
-     *  @param stream Fetch stream containing prediction info
-     *  @return Previous PC
-     */
-    Addr getPreviousPC(const FetchTarget &stream);
     Addr getPreviousPC(std::queue<Addr> previous_pcs);
 
     /** Check branch prediction hit status
