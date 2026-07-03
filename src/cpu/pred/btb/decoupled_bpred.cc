@@ -717,6 +717,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         const auto update_branches =
             makeResolvedUpdateBranches(ftq_target.resolvedBranches);
         applyResolvedBranchResult(target, update_branches);
+        const auto update_ctx = target.makeUpdateContext();
 
         DPRINTF(DecoupleBP,
                 "Commit target start %#lx, which is predicted, "
@@ -730,7 +731,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 
         // Update predictor components
         updatePredictorComponents(
-            target, update_branches, /*resolved_update=*/false);
+            target, update_ctx, update_branches, /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
@@ -762,6 +763,7 @@ DecoupledBPUWithBTB::resolveUpdate(
     const auto update_branches = makeResolvedUpdateBranches(branches);
     FetchTarget target = ftq.get(target_id, tid);
     applyResolvedBranchResult(target, update_branches);
+    const auto update_ctx = target.makeUpdateContext();
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
             "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "
@@ -781,7 +783,7 @@ DecoupledBPUWithBTB::resolveUpdate(
     }
 
     return updatePredictorComponents(
-        target, update_branches, /*resolved_update=*/true);
+        target, update_ctx, update_branches, /*resolved_update=*/true);
 }
 
 void
@@ -871,10 +873,10 @@ DecoupledBPUWithBTB::updatePredictorComponentWithEntries(
 bool
 DecoupledBPUWithBTB::updatePredictorComponents(
     const FetchTarget &target,
+    const BranchUpdateContext &update_ctx,
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {
-    const auto update_ctx = target.makeUpdateContext();
     if (!shouldUpdateBpuPredictors(
             target.isHit, update_ctx.actualTaken, update_branches)) {
         return true;
