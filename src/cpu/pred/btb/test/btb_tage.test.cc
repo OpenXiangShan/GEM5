@@ -80,7 +80,9 @@ void updateDirectionPredictor(
     const std::vector<DirectionUpdateEntry> &entries)
 {
     predictor->updateWithDirectionEntries(
-        entries, stream.makeDirectionUpdateContext(), stream);
+        entries, stream.makeDirectionUpdateContext(),
+        stream.predMetas[predictor->getComponentIdx()],
+        stream.phistory);
 }
 
 void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,

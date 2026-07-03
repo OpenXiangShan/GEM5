@@ -198,7 +198,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
         const DirectionUpdateContext &ctx,
-        const FetchTarget &stream) override;
+        const std::shared_ptr<void> &prediction_meta,
+        const boost::dynamic_bitset<> &) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;

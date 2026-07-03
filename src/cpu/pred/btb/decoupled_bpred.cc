@@ -871,7 +871,10 @@ DecoupledBPUWithBTB::updatePredictorComponent(
             prepared_update.resolvedBranches,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
-        component->updateWithDirectionEntries(entries, update_ctx, target);
+        component->updateWithDirectionEntries(
+            entries, update_ctx,
+            target.predMetas[component->getComponentIdx()],
+            target.phistory);
         return;
     }
 

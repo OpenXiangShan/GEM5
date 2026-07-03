@@ -171,7 +171,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
         const DirectionUpdateContext &ctx,
-        const FetchTarget &stream) override;
+        const std::shared_ptr<void> &prediction_meta,
+        const boost::dynamic_bitset<> &phistory) override;
     bool canResolveUpdate(const FetchTarget &entry) override;
     void noteResolveUpdateAccepted(const FetchTarget &entry) override;
 

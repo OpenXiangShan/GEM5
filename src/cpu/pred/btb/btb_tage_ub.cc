@@ -499,10 +499,11 @@ void
 BTBTAGEUpperBound::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
     const DirectionUpdateContext &ctx,
-    const FetchTarget &stream)
+    const std::shared_ptr<void> &prediction_meta,
+    const boost::dynamic_bitset<> &)
 {
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
-        stream.predMetas[getComponentIdx()]);
+        prediction_meta);
     if (!predMeta) {
         return;
     }

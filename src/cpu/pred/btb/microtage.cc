@@ -628,10 +628,11 @@ void
 MicroTAGE::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
     const DirectionUpdateContext &ctx,
-    const FetchTarget &stream)
+    const std::shared_ptr<void> &prediction_meta,
+    const boost::dynamic_bitset<> &)
 {
     // Get prediction metadata snapshot and bind to member for helpers
-    auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto predMeta = std::static_pointer_cast<TageMeta>(prediction_meta);
     if (!predMeta) {
         DPRINTF(UTAGE, "update: no prediction meta, skip\n");
         return;

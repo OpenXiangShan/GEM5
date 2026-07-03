@@ -934,14 +934,15 @@ void
 BTBMGSC::updateWithDirectionEntries(
     const std::vector<DirectionUpdateEntry> &entries,
     const DirectionUpdateContext &ctx,
-    const FetchTarget &stream)
+    const std::shared_ptr<void> &prediction_meta,
+    const boost::dynamic_bitset<> &)
 {
     if (!isEnabled()) {
         return;  // No update if disabled
     }
     DPRINTF(MGSC, "update startAddr: %#lx\n", ctx.startPC);
     // Get prediction metadata
-    auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<MgscMeta>(prediction_meta);
     updateWithEntries(entries, ctx, *meta);
 }
 

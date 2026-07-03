@@ -104,7 +104,9 @@ updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
         {entry}, {}, BTBEntry(), /*update_is_old_entry=*/true,
         /*resolved_update_prefix_pcs=*/{}, mgsc.directionUpdateEntryFilter(),
         mgsc.getResolvedUpdate(), ctx);
-    mgsc.updateWithDirectionEntries(entries, ctx, stream);
+    mgsc.updateWithDirectionEntries(
+        entries, ctx, stream.predMetas[mgsc.getComponentIdx()],
+        stream.phistory);
 }
 
 void

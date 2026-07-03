@@ -84,11 +84,11 @@ class TimedBaseBTBPredictor: public SimObject
         return DirectionUpdateEntryFilter::Conditional;
     }
     virtual void updateWithDirectionEntries(
-        const std::vector<DirectionUpdateEntry> &entries,
-        const DirectionUpdateContext &ctx,
-        const FetchTarget &entry)
+        const std::vector<DirectionUpdateEntry> &,
+        const DirectionUpdateContext &,
+        const std::shared_ptr<void> &,
+        const boost::dynamic_bitset<> &)
     {
-        update(entry);
     }
     virtual bool usesTargetUpdateEntries() const { return false; }
     virtual TargetUpdateEntryFilter targetUpdateEntryFilter() const

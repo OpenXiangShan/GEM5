@@ -115,7 +115,8 @@ class BTBTAGEUpperBound : public BTBTAGE
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
         const DirectionUpdateContext &ctx,
-        const FetchTarget &stream) override;
+        const std::shared_ptr<void> &prediction_meta,
+        const boost::dynamic_bitset<> &) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 
 #ifdef UNIT_TEST
