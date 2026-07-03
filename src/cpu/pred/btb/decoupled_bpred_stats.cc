@@ -716,10 +716,6 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
         }
 
-        // Count false hits
-        if (target.falseHit) {
-            dbpBtbStats.commitFalseHit++;
-        }
     }
 
     if (target.isHit || target.exeTaken) {

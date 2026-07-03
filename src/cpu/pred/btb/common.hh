@@ -622,7 +622,6 @@ struct FetchTarget
     BranchInfo predBranchInfo; // predicted branch info
 
     bool isHit;          // whether the predicted btb entry is hit
-    bool falseHit;       // not used
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
 
     // for commit, write at redirect or fetch
@@ -664,7 +663,6 @@ struct FetchTarget
          predEndPC(0),
          predBranchInfo(BranchInfo()),
          isHit(false),
-         falseHit(false),
          exeTaken(false),
          exeBranchInfo(BranchInfo()),
          resolved(false),

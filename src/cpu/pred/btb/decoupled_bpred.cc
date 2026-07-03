@@ -986,7 +986,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
 
     // Configure target entry with prediction details
     entry.isHit = !finalPred.btbEntries.empty();
-    entry.falseHit = false;
     entry.predBTBEntries = finalPred.btbEntries;
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
