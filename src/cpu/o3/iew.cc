@@ -1638,11 +1638,12 @@ IEW::executeInsts()
     // @todo This doesn't actually work anymore, we should fix it.
 //    printAvailableInsts();
 
-    // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
-    ThreadID tid = *activeThreads->begin();
-    toFetch->iewInfo[tid].resolvedCFIs.clear();
+    // Clear the per-cycle resolved CFI channel before appending this cycle's
+    // executed control instructions.
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        toFetch->iewInfo[tid].resolvedCFIs.clear();
+    }
 
-    
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;
     fromIssue->size = 0;
