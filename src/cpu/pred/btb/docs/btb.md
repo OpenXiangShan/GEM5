@@ -206,10 +206,14 @@ auto meta = btb->getPredictionMeta();
 // Setup update stream
 FetchTarget stream;
 stream.startPC = pc;
+stream.exeBranchInfo = branch_info;
+stream.exeTaken = taken;
 stream.predMetas[0] = meta;
 
 // Build explicit target update entries
-const auto ctx = makeFallbackBranchUpdateContext(stream);
+auto ctx = makeBaseBranchUpdateContext(stream);
+ctx.actualBranch = branch_info;
+ctx.actualTaken = taken;
 const auto update_end_inst_pc =
     buildUpdateEndInstPC(ctx, btb->predictWidth);
 const auto update_entries = buildUpdateBTBEntries(

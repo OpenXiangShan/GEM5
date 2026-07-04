@@ -781,15 +781,6 @@ makeBaseBranchUpdateContext(const FetchTarget &target)
 }
 
 inline BranchUpdateContext
-makeFallbackBranchUpdateContext(const FetchTarget &target)
-{
-    BranchUpdateContext ctx = makeBaseBranchUpdateContext(target);
-    ctx.actualBranch = target.exeBranchInfo;
-    ctx.actualTaken = target.exeTaken;
-    return ctx;
-}
-
-inline BranchUpdateContext
 makeResolvedBranchUpdateContext(const FetchTarget &target,
                                 const std::vector<ResolvedBranch> &branches)
 {

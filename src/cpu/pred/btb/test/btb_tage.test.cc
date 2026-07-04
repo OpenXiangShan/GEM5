@@ -75,12 +75,20 @@ FetchTarget setMispredStream(FetchTarget stream) {
     return stream;
 }
 
+BranchUpdateContext makeActualContext(const FetchTarget &stream)
+{
+    auto ctx = makeBaseBranchUpdateContext(stream);
+    ctx.actualBranch = stream.exeBranchInfo;
+    ctx.actualTaken = stream.exeTaken;
+    return ctx;
+}
+
 void updateDirectionPredictor(
     TimedBaseBTBPredictor *predictor, const FetchTarget &stream,
     const std::vector<DirectionUpdateEntry> &entries)
 {
     predictor->updateWithDirectionEntries(
-        entries, makeFallbackBranchUpdateContext(stream),
+        entries, makeActualContext(stream),
         stream.predMetas[predictor->getComponentIdx()],
         stream.phistory);
 }

@@ -350,11 +350,10 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
     EXPECT_EQ(ctx.squashPC, second.pc);
 
-    const auto fallback_ctx = makeFallbackBranchUpdateContext(stream);
-    EXPECT_NE(ctx.actualBranch.pc, fallback_ctx.actualBranch.pc);
+    EXPECT_NE(ctx.actualBranch.pc, stream.exeBranchInfo.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
+TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsActualResultEmpty)
 {
     FetchTarget stream;
     stream.tid = 2;
@@ -368,15 +367,14 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
     stream.squashType = SquashType::SQUASH_TRAP;
     stream.squashPC = 0x2010;
 
-    const auto ctx = makeFallbackBranchUpdateContext(stream);
+    const auto ctx = makeBaseBranchUpdateContext(stream);
 
     EXPECT_EQ(ctx.tid, stream.tid);
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
-    EXPECT_EQ(ctx.actualBranch.pc, stream.exeBranchInfo.pc);
-    EXPECT_EQ(ctx.actualBranch.target, stream.exeBranchInfo.target);
-    EXPECT_TRUE(ctx.actualTaken);
+    EXPECT_EQ(ctx.actualBranch.pc, 0);
+    EXPECT_FALSE(ctx.actualTaken);
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_TRAP);
     EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }

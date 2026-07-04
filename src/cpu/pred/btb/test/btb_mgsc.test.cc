@@ -95,11 +95,20 @@ findCondTaken(const CondTakens &condTakens, Addr pc)
     return {true, it->second};
 }
 
+BranchUpdateContext
+makeActualContext(const FetchTarget &stream)
+{
+    auto ctx = makeBaseBranchUpdateContext(stream);
+    ctx.actualBranch = stream.exeBranchInfo;
+    ctx.actualTaken = stream.exeTaken;
+    return ctx;
+}
+
 void
 updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
            const BTBEntry &entry, bool actual_taken)
 {
-    const auto ctx = makeFallbackBranchUpdateContext(stream);
+    const auto ctx = makeActualContext(stream);
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {}, BTBUpdateEntrySelection{BTBEntry(), true},
         /*resolved_update_prefix_pcs=*/{}, mgsc.directionUpdateEntryFilter(),

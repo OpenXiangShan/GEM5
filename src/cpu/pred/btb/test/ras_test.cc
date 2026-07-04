@@ -76,6 +76,15 @@ protected:
         EXPECT_EQ(stagePreds[0].returnTarget, expectedTarget);
     }
 
+    BranchUpdateContext
+    makeActualContext(const FetchTarget &stream)
+    {
+        auto ctx = makeBaseBranchUpdateContext(stream);
+        ctx.actualBranch = stream.exeBranchInfo;
+        ctx.actualTaken = stream.exeTaken;
+        return ctx;
+    }
+
     // Helper function to create a commit stream for call instructions
     FetchTarget createCallCommitStream(Addr startPC, Addr branchPC, unsigned size,
                                        std::shared_ptr<void> meta, bool taken = true) {
@@ -131,7 +140,7 @@ protected:
     void commitCall(Addr startPC, Addr branchPC, std::shared_ptr<void> meta, unsigned size = 4) {
         auto commitStream = createCallCommitStream(startPC, branchPC, size, meta);
         ras->updateWithBranchUpdateContext(
-            makeFallbackBranchUpdateContext(commitStream),
+            makeActualContext(commitStream),
             commitStream.predMetas[0]);
     }
 

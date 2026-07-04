@@ -67,9 +67,18 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     return stream;
 }
 
+BranchUpdateContext
+makeActualContext(const FetchTarget& stream)
+{
+    auto ctx = makeBaseBranchUpdateContext(stream);
+    ctx.actualBranch = stream.exeBranchInfo;
+    ctx.actualTaken = stream.exeTaken;
+    return ctx;
+}
+
 void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
                              const std::shared_ptr<void>& meta) {
-    const auto ctx = makeFallbackBranchUpdateContext(stream);
+    const auto ctx = makeActualContext(stream);
     const auto update_end_inst_pc =
         buildUpdateEndInstPC(ctx, btb->predictWidth);
     const auto update_entries = buildUpdateBTBEntries(

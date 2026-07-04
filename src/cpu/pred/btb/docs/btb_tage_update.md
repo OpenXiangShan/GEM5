@@ -41,8 +41,8 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 
 - direction update 使用该 entry 自己的 actual taken；
 - target update 使用该 entry 自己的 actual target 和 branch attributes；
-- 单一的 `exeBranchInfo + exeTaken` 只作为没有 resolved prefix 时的
-  `makeFallbackBranchUpdateContext()` fallback。
+- 没有 resolved/committed branch set 时，commit update 只保留 base context，
+  不再从单一的 `exeBranchInfo + exeTaken` 伪造 actual result。
 
 这正是当前协议区别于旧模型的关键：旧模型经常用 predicted BTB entries 加一个
 executed branch summary 去猜训练 entry；新模型优先消费真实 resolved facts。
