@@ -508,33 +508,6 @@ AheadBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta
 }
 
 
-/** Select the actual branch entry for update. */
-TargetUpdateEntrySelection
-AheadBTB::selectUpdateEntry(
-    const std::vector<BTBEntry> &old_entries,
-    const BranchUpdateContext &ctx)
-{
-    TargetUpdateEntrySelection selection;
-    for (const auto &entry : old_entries) {
-        if (ctx.controlBranch == entry) {
-            selection.entry = entry;
-            selection.isOldEntry = true;
-            break;
-        }
-    }
-
-    if (!selection.isOldEntry && ctx.controlTaken) {
-        BTBEntry new_entry(ctx.controlBranch);
-        new_entry.valid = true;
-        if (new_entry.isCond) {
-            new_entry.ctr = 0;
-        }
-        selection.entry = new_entry;
-    }
-
-    return selection;
-}
-
 /**
  * Update or replace BTB entry
  * 1. Look for matching entry
@@ -703,9 +676,8 @@ AheadBTB::updateWithAheadPipelineState(
     checkPredictionHit(update_ctx, meta.get());
 
     // 3. Collect entries to update
-    const auto selection = selectUpdateEntry(old_entries, update_ctx);
     const auto entries_to_update = buildTargetUpdateEntries(
-        old_entries, selection, update_branches,
+        old_entries, update_branches,
         TargetUpdateEntryFilter::Any, getResolvedUpdate(), update_ctx);
 
     if (!entries_to_update.empty()) {

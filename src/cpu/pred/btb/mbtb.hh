@@ -152,15 +152,6 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    /**
-     * @brief derive update entry selection from prediction and actual result
-     *
-     * Only L1 BTB uses this before component update.
-     */
-    TargetUpdateEntrySelection selectUpdateEntry(
-        const std::shared_ptr<void> &prediction_meta,
-        const BranchUpdateContext &ctx);
-
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
      *  1. Updates existing entries with new information
@@ -277,10 +268,6 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void checkPredictionHit(const BranchUpdateContext &ctx,
                            const BTBMeta* meta);
-
-    TargetUpdateEntrySelection selectUpdateEntryFromHits(
-        const std::vector<BTBEntry> &pred_hit_entries,
-        const BranchUpdateContext &ctx);
 
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,

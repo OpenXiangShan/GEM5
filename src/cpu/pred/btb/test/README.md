@@ -167,10 +167,8 @@ const auto update_end_inst_pc =
     buildUpdateEndInstPC(ctx, btb->predictWidth);
 const auto update_entries = buildUpdateBTBEntries(
     stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
-const auto selection = btb->selectUpdateEntry(
-    stream.predMetas[btb->getComponentIdx()], ctx);
 const auto entries = buildTargetUpdateEntries(
-    update_entries, selection, {},
+    update_entries, {},
     btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
 
 // Update BTB

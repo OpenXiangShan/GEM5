@@ -243,12 +243,6 @@ struct BTBEntry : BranchInfo
     }
 };
 
-struct TargetUpdateEntrySelection
-{
-    BTBEntry entry;
-    bool isOldEntry = false;
-};
-
 struct DirectionUpdateEntry
 {
     // Direction predictors need branch identity/attrs, the base direction,
@@ -491,7 +485,6 @@ shouldKeepTargetUpdateEntry(
 inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
-    const TargetUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &actual_update_branches,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
@@ -499,7 +492,8 @@ buildTargetUpdateEntries(
 {
     std::vector<TargetUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
-                    (selection.isOldEntry ? 0 : 1));
+                    actual_update_branches.size() +
+                    (ctx.controlTaken ? 1 : 0));
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         if (!shouldKeepTargetUpdateEntry(
@@ -513,16 +507,33 @@ buildTargetUpdateEntries(
             getActualBranchForUpdatePC(entry, actual_update_branches, ctx);
         entries.push_back({entry, actual_taken, is_new_entry, actual_branch});
     };
+    auto has_entry_pc = [&](Addr pc) {
+        return std::any_of(
+            entries.begin(), entries.end(),
+            [pc](const auto &entry) { return entry.entry.pc == pc; });
+    };
+    auto add_new_target_branch = [&](const BranchInfo &branch) {
+        if (has_entry_pc(branch.pc)) {
+            return;
+        }
+        BTBEntry entry(branch);
+        entry.valid = true;
+        if (entry.isCond) {
+            entry.ctr = 0;
+        }
+        add_entry(entry, true);
+    };
 
     for (const auto &entry : update_btb_entries) {
         add_entry(entry, false);
     }
-    if (!selection.isOldEntry) {
-        add_entry(selection.entry, true);
+    for (const auto &branch : actual_update_branches) {
+        if (branch.taken) {
+            add_new_target_branch(makeBranchInfo(branch));
+        }
     }
-    if (filter == TargetUpdateEntryFilter::TakenControl &&
-        entries.empty() && ctx.controlTaken) {
-        add_entry(BTBEntry(ctx.controlBranch), true);
+    if (actual_update_branches.empty() && ctx.controlTaken) {
+        add_new_target_branch(ctx.controlBranch);
     }
 
     return entries;

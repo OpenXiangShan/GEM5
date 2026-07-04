@@ -83,9 +83,8 @@ void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
         buildUpdateEndInstPC(ctx, btb->predictWidth);
     const auto update_entries = buildUpdateBTBEntries(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
-    const auto selection = btb->selectUpdateEntry(meta, ctx);
     const auto entries = buildTargetUpdateEntries(
-        update_entries, selection, {},
+        update_entries, {},
         btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
     btb->updateWithTargetEntries(entries, ctx, meta);
 }
@@ -222,26 +221,27 @@ TEST_F(BTBTest, EmptyPrediction) {
     }
 }
 
-TEST_F(BTBTest, NullMetaUpdateSelectionIsEmpty) {
+TEST_F(BTBTest, EmptyTargetEntriesDoNotUpdateStats) {
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
     ctx.controlBranch = createBranchInfo(0x1008, 0x2000, true);
     ctx.controlTaken = false;
 
-    const auto selection = mbtb->selectUpdateEntry(nullptr, ctx);
-    EXPECT_FALSE(selection.entry.valid);
-    EXPECT_FALSE(selection.isOldEntry);
+    const auto entries = buildTargetUpdateEntries(
+        {}, {}, mbtb->targetUpdateEntryFilter(),
+        mbtb->getResolvedUpdate(), ctx);
+    EXPECT_TRUE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
     const uint64_t update_total = mbtb->btbStats.updateTotal;
-    EXPECT_NO_THROW(mbtb->updateWithTargetEntries({}, ctx, nullptr));
+    EXPECT_NO_THROW(mbtb->updateWithTargetEntries(entries, ctx, nullptr));
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit), update_hit);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss), update_miss);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateTotal), update_total);
 }
 
-TEST_F(BTBTest, UpdateSelectionDoesNotCountNewEntry) {
+TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
     std::vector<FullBTBPrediction> stagePreds(4);
     mbtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), stagePreds);
     auto meta = mbtb->getPredictionMeta();
@@ -255,18 +255,18 @@ TEST_F(BTBTest, UpdateSelectionDoesNotCountNewEntry) {
     const uint64_t new_cond_entries = mbtb->btbStats.newEntryWithCond;
     const uint64_t new_uncond_entries = mbtb->btbStats.newEntryWithUncond;
 
-    const auto selection = mbtb->selectUpdateEntry(meta, ctx);
-    ASSERT_TRUE(selection.entry.valid);
-    EXPECT_FALSE(selection.isOldEntry);
+    const auto entries = buildTargetUpdateEntries(
+        {}, {}, mbtb->targetUpdateEntryFilter(),
+        mbtb->getResolvedUpdate(), ctx);
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_TRUE(entries[0].entry.valid);
+    EXPECT_TRUE(entries[0].isNewEntry);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry), new_entries);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntryWithCond),
               new_cond_entries);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntryWithUncond),
               new_uncond_entries);
 
-    const auto entries = buildTargetUpdateEntries(
-        {}, selection, {}, mbtb->targetUpdateEntryFilter(),
-        mbtb->getResolvedUpdate(), ctx);
     mbtb->updateWithTargetEntries(entries, ctx, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry),
@@ -280,7 +280,7 @@ TEST_F(BTBTest, UpdateSelectionDoesNotCountNewEntry) {
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]
-// 3. selectUpdateEntry, only L1 BTB has this function
+// 3. build explicit target update entries from prediction and actual result
 // 4. update, update btb entries
 
 // Test basic prediction after update

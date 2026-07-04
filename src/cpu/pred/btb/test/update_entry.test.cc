@@ -182,7 +182,6 @@ TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
 
     const auto entries = buildTargetUpdateEntries(
         {prefix_entry, legacy_resolved_entry},
-        TargetUpdateEntrySelection{BTBEntry(), true},
         {makeResolvedBranch(prefix_entry.pc, false, false)},
         TargetUpdateEntryFilter::Any, true, ctx);
 
@@ -199,7 +198,7 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     const BranchUpdateContext ctx = makeTargetContext(indirect.pc, true);
 
     const auto entries = buildTargetUpdateEntries(
-        {indirect, ret}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        {indirect, ret}, {},
         TargetUpdateEntryFilter::IndirectNonReturn, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -221,7 +220,7 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
     ctx.controlBranch.target = 0xdead;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, second}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        {first, second}, {},
         TargetUpdateEntryFilter::IndirectNonReturn, false, ctx);
 
     ASSERT_EQ(entries.size(), 2);
@@ -246,7 +245,7 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     resolved.target = 0xbeef;
 
     const auto entries = buildTargetUpdateEntries(
-        {indirect}, TargetUpdateEntrySelection{BTBEntry(), true}, {resolved},
+        {indirect}, {resolved},
         TargetUpdateEntryFilter::IndirectNonReturn, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -263,7 +262,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
     ctx.controlBranch.target = 0xdead;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, control}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        {first, control}, {},
         TargetUpdateEntryFilter::TakenControl, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -279,7 +278,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
     ctx.controlBranch.target = 0xbeef;
 
     const auto entries = buildTargetUpdateEntries(
-        {}, TargetUpdateEntrySelection{}, {},
+        {}, {},
         TargetUpdateEntryFilter::TakenControl, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -295,7 +294,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlFallsThroughWithoutEntry)
     BranchUpdateContext ctx = makeTargetContext(predicted.pc, false);
 
     const auto entries = buildTargetUpdateEntries(
-        {predicted}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        {predicted}, {},
         TargetUpdateEntryFilter::TakenControl, false, ctx);
 
     EXPECT_TRUE(entries.empty());
@@ -394,8 +393,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
         resolved_second,
         makeResolvedBranch(after.pc, false, false),
     });
-    const TargetUpdateEntrySelection selection{
-        BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_ctx =
@@ -412,7 +409,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     EXPECT_EQ(update_btb_entries[1].pc, second.pc);
     EXPECT_FALSE(update_btb_entries[0].resolved);
     EXPECT_FALSE(update_btb_entries[1].resolved);
-    EXPECT_EQ(selection.entry.pc, second.pc);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, first.pc);
     EXPECT_EQ(update_branches[1].pc, second.pc);
@@ -545,8 +541,6 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
     const auto update_branches =
         makeUpdateBranchPrefix(stream.resolvedBranches);
     EXPECT_EQ(update_branches.size(), 2);
-    const TargetUpdateEntrySelection selection{
-        BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_ctx =
         makeActualBranchUpdateContext(
             makeBaseBranchUpdateContext(stream), update_branches);
@@ -560,12 +554,11 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
     EXPECT_EQ(update_branches[1].pc, second.pc);
 }
 
-TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
+TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionAndTarget)
 {
     const BTBEntry predicted = makeEntry(0x1000, true, false);
-    const BTBEntry selected = makeEntry(0x1010, true, false);
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
-    const ResolvedBranch taken = makeResolvedBranch(selected.pc, true, true);
+    const ResolvedBranch taken = makeResolvedBranch(0x1010, true, true);
 
     FetchTarget stream;
     stream.startPC = 0x1000;
@@ -576,7 +569,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     const auto update_ctx =
         makeActualBranchUpdateContext(
             makeBaseBranchUpdateContext(stream), update_branches);
-    const TargetUpdateEntrySelection selection{selected, false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_branches =
@@ -589,11 +581,11 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     ASSERT_EQ(update_new_direction_branches.size(), 2);
     EXPECT_EQ(update_new_direction_branches[0].pc, missing.pc);
     EXPECT_TRUE(update_new_direction_branches[0].resolved);
-    EXPECT_EQ(update_new_direction_branches[1].pc, selected.pc);
+    EXPECT_EQ(update_new_direction_branches[1].pc, taken.pc);
     EXPECT_TRUE(update_new_direction_branches[1].resolved);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, missing.pc);
-    EXPECT_EQ(update_branches[1].pc, selected.pc);
+    EXPECT_EQ(update_branches[1].pc, taken.pc);
 
     const auto direction_entries = buildDirectionUpdateEntries(
         update_btb_entries, update_new_direction_branches,
@@ -605,16 +597,18 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     EXPECT_TRUE(direction_entries[0].isNewEntry);
     EXPECT_TRUE(direction_entries[0].baseTaken);
     EXPECT_FALSE(direction_entries[0].actualTaken);
-    EXPECT_EQ(direction_entries[1].branch.pc, selected.pc);
+    EXPECT_EQ(direction_entries[1].branch.pc, taken.pc);
     EXPECT_TRUE(direction_entries[1].isNewEntry);
     EXPECT_TRUE(direction_entries[1].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(
-        update_btb_entries, selection, update_branches,
+        update_btb_entries, update_branches,
         TargetUpdateEntryFilter::Any, true, update_ctx);
 
     ASSERT_EQ(target_entries.size(), 1);
-    EXPECT_EQ(target_entries[0].entry.pc, selected.pc);
+    EXPECT_EQ(target_entries[0].entry.pc, taken.pc);
+    EXPECT_TRUE(target_entries[0].isNewEntry);
+    EXPECT_EQ(target_entries[0].actualBranch.target, taken.target);
 }
 
 TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
@@ -645,7 +639,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
         stream.isHit, stream.predTaken, update_ctx, {}));
 }
 
-TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
+TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
 {
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
 
@@ -656,7 +650,6 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     const auto update_ctx =
         makeActualBranchUpdateContext(
             makeBaseBranchUpdateContext(stream), update_branches);
-    const TargetUpdateEntrySelection selection;
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_branches =
@@ -679,7 +672,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     EXPECT_FALSE(direction_entries[0].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(
-        update_btb_entries, selection, update_branches,
+        update_btb_entries, update_branches,
         TargetUpdateEntryFilter::Any, true, update_ctx);
 
     EXPECT_TRUE(target_entries.empty());

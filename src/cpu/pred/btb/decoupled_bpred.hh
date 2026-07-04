@@ -740,7 +740,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         const std::queue<Addr> &previous_pcs,
         const std::vector<BTBEntry> &update_btb_entries,
         const std::vector<BranchInfo> &update_new_direction_branches,
-        const TargetUpdateEntrySelection &selection,
         const std::vector<ResolvedBranch> &update_branches);
     bool updatePredictorComponents(
         bool prediction_hit,

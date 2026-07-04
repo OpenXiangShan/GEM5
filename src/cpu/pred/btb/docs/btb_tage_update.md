@@ -79,8 +79,8 @@ entry。
 输入包括：
 
 - actual update prefix 内的 predicted BTB entries；
-- MBTB update selection 选出的 selected target entry，如果它是 new entry；
-- actual branch prefix。
+- actual branch prefix；其中实际 taken、但预测 entry 未覆盖的 branch 会直接构造
+  new target entry。
 
 每个 `TargetUpdateEntry` 都携带自己的 `actualTaken` 和 `actualBranch`。因此
 indirect target 修正会用该 entry PC 对应的真实 target，而不是从整个

@@ -866,7 +866,6 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     const std::queue<Addr> &previous_pcs,
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<BranchInfo> &update_new_direction_branches,
-    const TargetUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &update_branches)
 {
     switch (component->updateProtocol()) {
@@ -886,7 +885,6 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         const auto filter = component->targetUpdateEntryFilter();
         const auto entries = buildTargetUpdateEntries(
             update_btb_entries,
-            selection,
             update_branches,
             filter,
             component->getResolvedUpdate(), update_ctx);
@@ -934,12 +932,6 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         return true;
     }
 
-    TargetUpdateEntrySelection target_selection;
-    if (mbtb->isEnabled()) {
-        target_selection = mbtb->selectUpdateEntry(
-            prediction_metas[mbtb->getComponentIdx()],
-            update_ctx);
-    }
     const auto update_end_inst_pc =
         buildUpdateEndInstPC(update_ctx, predictWidth);
     const auto update_btb_entries =
@@ -966,7 +958,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             component, update_ctx,
             prediction_metas[component->getComponentIdx()], phistory,
             previous_pcs, update_btb_entries,
-            update_new_direction_branches, target_selection, update_branches);
+            update_new_direction_branches, update_branches);
     }
 
     return true;
