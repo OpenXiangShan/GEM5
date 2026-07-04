@@ -451,7 +451,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(commitUpdateFallbackExeTaken, statistics::units::Count::get(),
     "commit update fallbacks on actually-taken exe summaries"),
     ADD_STAT(commitUpdateFallbackSquash, statistics::units::Count::get(),
-    "commit update fallbacks on squash summaries"),
+    "commit update fallbacks on control-squash summaries"),
     ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(),
     "the number of control squashes in bpu from decode"),
     ADD_STAT(controlSquashFromCommit, statistics::units::Count::get(),

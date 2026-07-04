@@ -398,6 +398,12 @@ TEST(UpdateEntryBuilderTest, FallbackContextNeededOnlyForLegacyPayload)
     EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
     stream.exeTaken = false;
 
+    stream.squashType = SquashType::SQUASH_OTHER;
+    EXPECT_FALSE(needsFallbackBranchUpdateContext(stream));
+
+    stream.squashType = SquashType::SQUASH_TRAP;
+    EXPECT_FALSE(needsFallbackBranchUpdateContext(stream));
+
     stream.squashType = SquashType::SQUASH_CTRL;
     EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
 }

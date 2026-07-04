@@ -786,7 +786,7 @@ inline bool
 needsFallbackBranchUpdateContext(const FetchTarget &target)
 {
     return target.isHit || target.predTaken || target.exeTaken ||
-        target.squashType != SquashType::SQUASH_NONE;
+        target.squashType == SquashType::SQUASH_CTRL;
 }
 
 inline BranchUpdateContext
