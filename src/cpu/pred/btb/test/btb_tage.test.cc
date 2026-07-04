@@ -128,9 +128,13 @@ void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,
                               const BTBEntry &entry, bool actual_taken,
                               bool is_new_entry)
 {
+    const bool actual_mispred =
+        stream.squashType == SquashType::SQUASH_CTRL &&
+        stream.squashPC == entry.pc;
     updateDirectionPredictor(
         predictor, stream,
-        {{BranchInfo(entry), entry.ctr >= 0, actual_taken, is_new_entry}});
+        {{BranchInfo(entry), entry.ctr >= 0, actual_taken, is_new_entry,
+          actual_mispred}});
 }
 
 void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,

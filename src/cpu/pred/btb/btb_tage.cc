@@ -533,7 +533,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(Addr branchPC,
                              bool baseTaken,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const BranchUpdateContext &ctx) {
+                             bool actual_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -622,7 +622,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(Addr branchPC,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = ctx.isControlMispredPC(branchPC);
+    bool this_fb_mispred = actual_mispred;
     if (this_fb_mispred) {
         tageStats.mispredictBranchHasProvider += main_info.found;
         tageStats.mispredictBranchUseProvider += use_provider;
@@ -909,7 +909,8 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
-            branch_pc, base_taken, actual_taken, recomputed, ctx);
+            branch_pc, base_taken, actual_taken, recomputed,
+            update_entry.actualMispred);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;
@@ -982,7 +983,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         tageStats.recomputedVsOriginalDiff++;
     }
     if (getDelay() <2){
-        checkUtageUpdateMisspred(predMeta->preds, ctx);
+        checkUtageUpdateMisspred(predMeta->preds, entries);
     }
     DPRINTF(TAGE, "end update\n");
 }
@@ -990,7 +991,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 void
 BTBTAGE::checkUtageUpdateMisspred(
     const std::unordered_map<Addr, TagePrediction> &preds,
-    const BranchUpdateContext &ctx) {
+    const std::vector<DirectionUpdateEntry> &entries) {
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;
@@ -1010,10 +1011,15 @@ BTBTAGE::checkUtageUpdateMisspred(
             break;
         }
     }
-    bool fallthrough_mispred = (first_taken_pc == 0 && ctx.controlTaken) ||
-                                (first_taken_pc != 0 && !ctx.controlTaken);
+    const auto *first_actual_taken =
+        findFirstTakenDirectionUpdateEntry(entries);
+    const bool actual_taken = first_actual_taken != nullptr;
+    const Addr first_actual_taken_pc =
+        actual_taken ? first_actual_taken->branch.pc : 0;
+    bool fallthrough_mispred = (first_taken_pc == 0 && actual_taken) ||
+                                (first_taken_pc != 0 && !actual_taken);
     bool branch_mispred =
-        ctx.controlTaken && first_taken_pc != ctx.controlBranch.pc;
+        actual_taken && first_taken_pc != first_actual_taken_pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }

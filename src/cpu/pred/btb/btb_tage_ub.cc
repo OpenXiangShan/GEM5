@@ -375,7 +375,7 @@ bool
 BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     Addr branchPC, bool baseTaken, bool actualTaken,
     const TagePrediction &pred, const BranchPredictionMeta &meta,
-    const BranchUpdateContext &ctx)
+    bool actualMispred)
 {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
@@ -442,7 +442,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
         }
     }
 
-    const bool thisFbMispred = ctx.isControlMispredPC(branchPC);
+    const bool thisFbMispred = actualMispred;
     if (getDelay() == 2 && thisFbMispred) {
         tageStats.updateMispred++;
         if (!usedAlt && mainInfo.found) {
@@ -543,7 +543,8 @@ BTBTAGEUpperBound::updateWithEntries(
         }
 
         bool needAllocate = updatePredictorStateAndCheckAllocation(
-            branchPC, baseTaken, actualTaken, storedPred, storedMeta, ctx);
+            branchPC, baseTaken, actualTaken, storedPred, storedMeta,
+            updateEntry.actualMispred);
 
         if (needAllocate) {
             uint64_t allocatedTable = 0;
@@ -560,7 +561,7 @@ BTBTAGEUpperBound::updateWithEntries(
         tageStats.recomputedVsActualDiff++;
     }
     if (getDelay() < 2) {
-        checkUtageUpdateMisspred(predMeta.preds, ctx);
+        checkUtageUpdateMisspred(predMeta.preds, entries);
     }
 }
 

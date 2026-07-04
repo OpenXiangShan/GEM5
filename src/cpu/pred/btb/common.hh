@@ -251,6 +251,7 @@ struct DirectionUpdateEntry
     bool baseTaken = false;
     bool actualTaken = false;
     bool isNewEntry = false;
+    bool actualMispred = false;
 };
 
 struct BranchUpdateContext
@@ -264,11 +265,6 @@ struct BranchUpdateContext
     Tick predTick = 0;
     SquashType squashType = SquashType::SQUASH_NONE;
     Addr squashPC = 0;
-
-    bool isControlMispredPC(Addr pc) const
-    {
-        return squashType == SquashType::SQUASH_CTRL && squashPC == pc;
-    }
 };
 
 struct TargetUpdateEntry
@@ -277,7 +273,25 @@ struct TargetUpdateEntry
     bool actualTaken = false;
     bool isNewEntry = false;
     BranchInfo actualBranch;
+    bool actualMispred = false;
 };
+
+inline const DirectionUpdateEntry *
+findFirstTakenDirectionUpdateEntry(
+    const std::vector<DirectionUpdateEntry> &entries)
+{
+    const DirectionUpdateEntry *first_taken = nullptr;
+    for (const auto &entry : entries) {
+        if (!entry.actualTaken) {
+            continue;
+        }
+        // Branches in one fetch block are ordered by PC.
+        if (!first_taken || entry.branch.pc < first_taken->branch.pc) {
+            first_taken = &entry;
+        }
+    }
+    return first_taken;
+}
 
 inline const TargetUpdateEntry *
 findTakenTargetUpdateEntry(const std::vector<TargetUpdateEntry> &entries)
@@ -415,6 +429,15 @@ getActualTakenForUpdatePC(
     return branch ? branch->taken : false;
 }
 
+inline bool
+getActualMispredForUpdatePC(
+    Addr pc,
+    const std::vector<ResolvedBranch> &actual_update_branches)
+{
+    const auto *branch = findActualUpdateBranch(actual_update_branches, pc);
+    return branch ? branch->mispred : false;
+}
+
 inline BranchInfo
 getActualBranchForUpdatePC(
     const BTBEntry &entry,
@@ -450,7 +473,9 @@ buildDirectionUpdateEntries(
                            base_taken,
                            getActualTakenForUpdatePC(
                                branch.pc, actual_update_branches),
-                           is_new_entry});
+                           is_new_entry,
+                           getActualMispredForUpdatePC(
+                               branch.pc, actual_update_branches)});
     };
 
     for (const auto &entry : update_btb_entries) {
@@ -516,7 +541,11 @@ buildTargetUpdateEntries(
             entry.pc, actual_update_branches);
         const BranchInfo actual_branch =
             getActualBranchForUpdatePC(entry, actual_update_branches);
-        entries.push_back({entry, actual_taken, is_new_entry, actual_branch});
+        const bool actual_mispred = getActualMispredForUpdatePC(
+            entry.pc, actual_update_branches);
+        entries.push_back(
+            {entry, actual_taken, is_new_entry, actual_branch,
+             actual_mispred});
     };
     auto has_entry_pc = [&](Addr pc) {
         return std::any_of(

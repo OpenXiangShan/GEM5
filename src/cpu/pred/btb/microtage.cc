@@ -408,7 +408,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(Addr branchPC,
                              bool baseTaken,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const BranchUpdateContext &ctx) {
+                             bool actual_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -486,7 +486,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(Addr branchPC,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = ctx.isControlMispredPC(branchPC);
+    bool this_fb_mispred = actual_mispred;
     // No allocation if no misprediction
     if (!this_fb_mispred) {
         return false;
@@ -689,7 +689,8 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         }
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
-            branch_pc, base_taken, actual_taken, recomputed, ctx);
+            branch_pc, base_taken, actual_taken, recomputed,
+            update_entry.actualMispred);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
@@ -732,14 +733,14 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     if (utage_hit){
         tageStats.updateUtageHit++;//for RTL align pred Accuracy
     }
-    checkUtageUpdateMisspred(predMeta->preds, ctx);
+    checkUtageUpdateMisspred(predMeta->preds, entries);
     DPRINTF(UTAGE, "end update\n");
 }
 
 void
 MicroTAGE::checkUtageUpdateMisspred(
     const std::unordered_map<Addr, TagePrediction> &preds,
-    const BranchUpdateContext &ctx) {
+    const std::vector<DirectionUpdateEntry> &entries) {
     // used for MicroTAGE update misprediction counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;
@@ -761,10 +762,15 @@ MicroTAGE::checkUtageUpdateMisspred(
             break;
         }
     }
-    bool fallthrough_mispred = (!has_taken_pred && ctx.controlTaken) ||
-                                (has_taken_pred && !ctx.controlTaken);
-    bool branch_mispred = ctx.controlTaken && has_taken_pred &&
-                          first_taken_pc != ctx.controlBranch.pc;
+    const auto *first_actual_taken =
+        findFirstTakenDirectionUpdateEntry(entries);
+    const bool actual_taken = first_actual_taken != nullptr;
+    const Addr first_actual_taken_pc =
+        actual_taken ? first_actual_taken->branch.pc : 0;
+    bool fallthrough_mispred = (!has_taken_pred && actual_taken) ||
+                                (has_taken_pred && !actual_taken);
+    bool branch_mispred = actual_taken && has_taken_pred &&
+                          first_taken_pc != first_actual_taken_pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }

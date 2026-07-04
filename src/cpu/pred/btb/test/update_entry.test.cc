@@ -159,6 +159,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, entry.pc);
     EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_TRUE(entries[0].actualMispred);
 }
 
 TEST(UpdateEntryBuilderTest, MgscResolvedUpdateRequiresResolvedBranchSet)
@@ -208,6 +209,7 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].entry.pc, indirect.pc);
     EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_FALSE(entries[0].actualMispred);
     EXPECT_FALSE(entries[0].isNewEntry);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
@@ -259,6 +261,7 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_TRUE(entries[0].actualMispred);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
@@ -280,6 +283,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].entry.pc, control.pc);
     EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_FALSE(entries[0].actualMispred);
     EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
     EXPECT_EQ(entries[0].actualBranch.target, ctx.controlBranch.target);
 }
@@ -591,6 +595,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     EXPECT_EQ(direction_entries[1].branch.pc, taken.pc);
     EXPECT_TRUE(direction_entries[1].isNewEntry);
     EXPECT_TRUE(direction_entries[1].actualTaken);
+    EXPECT_TRUE(direction_entries[1].actualMispred);
 
     const auto target_entries = buildTargetUpdateEntries(
         update_btb_entries, update_branches,
@@ -599,7 +604,29 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     ASSERT_EQ(target_entries.size(), 1);
     EXPECT_EQ(target_entries[0].entry.pc, taken.pc);
     EXPECT_TRUE(target_entries[0].isNewEntry);
+    EXPECT_TRUE(target_entries[0].actualMispred);
     EXPECT_EQ(target_entries[0].actualBranch.target, taken.target);
+}
+
+TEST(UpdateEntryBuilderTest, FirstTakenDirectionEntryUsesLowestPC)
+{
+    DirectionUpdateEntry later;
+    later.branch.pc = 0x1100;
+    later.actualTaken = true;
+
+    DirectionUpdateEntry not_taken;
+    not_taken.branch.pc = 0x1000;
+
+    DirectionUpdateEntry first;
+    first.branch.pc = 0x1080;
+    first.actualTaken = true;
+
+    const auto entries = std::vector<DirectionUpdateEntry>{
+        later, not_taken, first};
+    const auto *first_taken = findFirstTakenDirectionUpdateEntry(entries);
+
+    ASSERT_NE(first_taken, nullptr);
+    EXPECT_EQ(first_taken->branch.pc, first.branch.pc);
 }
 
 TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)

@@ -243,7 +243,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // used for MicroTAGE update misprediction counting
     void checkUtageUpdateMisspred(const std::unordered_map<Addr, TagePrediction> &preds,
-                                  const BranchUpdateContext &ctx);
+                                  const std::vector<DirectionUpdateEntry> &entries);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -370,7 +370,7 @@ private:
                                  bool baseTaken,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const BranchUpdateContext &ctx);
+                                 bool actual_mispred);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,

@@ -277,7 +277,7 @@ BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = ctx.isControlMispredPC(btb_entry.pc);
+        bool mispred = update_entry.actualMispred;
         Addr exe_target = update_entry.actualBranch.target;
         auto &main_info = pred.mainInfo;
 
