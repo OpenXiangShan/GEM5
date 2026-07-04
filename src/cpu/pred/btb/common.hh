@@ -265,11 +265,6 @@ struct BranchUpdateContext
     SquashType squashType = SquashType::SQUASH_NONE;
     Addr squashPC = 0;
 
-    bool isTakenControlPC(Addr pc) const
-    {
-        return controlTaken && controlBranch.pc == pc;
-    }
-
     bool isControlMispredPC(Addr pc) const
     {
         return squashType == SquashType::SQUASH_CTRL && squashPC == pc;
@@ -418,8 +413,7 @@ buildDirectionUpdateEntries(
     const std::vector<BranchInfo> &update_new_direction_branches,
     const std::vector<ResolvedBranch> &actual_update_branches,
     DirectionUpdateEntryFilter filter,
-    bool resolved_update,
-    const BranchUpdateContext &ctx)
+    bool resolved_update)
 {
     std::vector<DirectionUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
@@ -485,13 +479,11 @@ buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<ResolvedBranch> &actual_update_branches,
     TargetUpdateEntryFilter filter,
-    bool resolved_update,
-    const BranchUpdateContext &ctx)
+    bool resolved_update)
 {
     std::vector<TargetUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
-                    actual_update_branches.size() +
-                    (ctx.controlTaken ? 1 : 0));
+                    actual_update_branches.size());
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         if (!shouldKeepTargetUpdateEntry(

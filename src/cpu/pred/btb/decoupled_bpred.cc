@@ -875,7 +875,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
             update_new_direction_branches,
             update_branches,
             component->directionUpdateEntryFilter(),
-            component->getResolvedUpdate(), update_ctx);
+            component->getResolvedUpdate());
         component->updateWithDirectionEntries(
             entries, update_ctx, prediction_meta, phistory);
         return;
@@ -887,7 +887,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
             update_btb_entries,
             update_branches,
             filter,
-            component->getResolvedUpdate(), update_ctx);
+            component->getResolvedUpdate());
         if (entries.empty() &&
             filter != TargetUpdateEntryFilter::TakenControl) {
             return;

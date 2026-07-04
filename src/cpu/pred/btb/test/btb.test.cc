@@ -101,7 +101,7 @@ void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
     const auto entries = buildTargetUpdateEntries(
         update_entries, actual_branches,
-        btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
+        btb->targetUpdateEntryFilter(), btb->getResolvedUpdate());
     btb->updateWithTargetEntries(entries, ctx, meta);
 }
 
@@ -245,7 +245,7 @@ TEST_F(BTBTest, EmptyTargetEntriesDoNotUpdateStats) {
 
     const auto entries = buildTargetUpdateEntries(
         {}, {}, mbtb->targetUpdateEntryFilter(),
-        mbtb->getResolvedUpdate(), ctx);
+        mbtb->getResolvedUpdate());
     EXPECT_TRUE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
@@ -276,7 +276,7 @@ TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
 
     const auto entries = buildTargetUpdateEntries(
         {}, actual_branches, mbtb->targetUpdateEntryFilter(),
-        mbtb->getResolvedUpdate(), ctx);
+        mbtb->getResolvedUpdate());
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].entry.valid);
     EXPECT_TRUE(entries[0].isNewEntry);

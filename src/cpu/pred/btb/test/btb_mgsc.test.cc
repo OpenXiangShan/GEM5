@@ -129,7 +129,7 @@ updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
         {entry}, {},
         {makeResolvedBranch(entry, actual_taken)},
         mgsc.directionUpdateEntryFilter(),
-        mgsc.getResolvedUpdate(), ctx);
+        mgsc.getResolvedUpdate());
     mgsc.updateWithDirectionEntries(
         entries, ctx, stream.predMetas[mgsc.getComponentIdx()],
         stream.phistory);

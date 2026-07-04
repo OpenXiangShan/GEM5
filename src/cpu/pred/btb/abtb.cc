@@ -678,7 +678,7 @@ AheadBTB::updateWithAheadPipelineState(
     // 3. Collect entries to update
     const auto entries_to_update = buildTargetUpdateEntries(
         old_entries, update_branches,
-        TargetUpdateEntryFilter::Any, getResolvedUpdate(), update_ctx);
+        TargetUpdateEntryFilter::Any, getResolvedUpdate());
 
     if (!entries_to_update.empty()) {
         updateWithEntries(entries_to_update, update_ctx,
