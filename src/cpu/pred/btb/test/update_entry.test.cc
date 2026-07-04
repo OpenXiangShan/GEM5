@@ -85,7 +85,8 @@ makeUpdateEntries(const FetchTarget &stream,
                   unsigned predict_width,
                   const std::vector<ResolvedBranch> &branches)
 {
-    const auto ctx = makeActualBranchUpdateContext(stream, branches);
+    const auto ctx = makeActualBranchUpdateContext(
+        makeBaseBranchUpdateContext(stream), branches);
     const auto update_end_inst_pc =
         buildUpdateEndInstPC(ctx, predict_width);
     return makeUpdateBTBEntries(
@@ -316,7 +317,8 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_ctx =
-        makeActualBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(
+            makeBaseBranchUpdateContext(stream), update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_TRUE(update_ctx.controlTaken);
@@ -352,7 +354,8 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefix)
 
     const auto update_branches =
         makeUpdateBranchPrefix({first, second});
-    const auto ctx = makeActualBranchUpdateContext(stream, update_branches);
+    const auto ctx = makeActualBranchUpdateContext(
+        makeBaseBranchUpdateContext(stream), update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_FALSE(stream.exeTaken);
@@ -463,7 +466,8 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
     const TargetUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_ctx =
-        makeActualBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(
+            makeBaseBranchUpdateContext(stream), update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_TRUE(update_ctx.controlTaken);
@@ -488,7 +492,8 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     const auto update_branches =
         makeUpdateBranchPrefix({missing, taken});
     const auto update_ctx =
-        makeActualBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(
+            makeBaseBranchUpdateContext(stream), update_branches);
     const TargetUpdateEntrySelection selection{selected, false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
@@ -567,7 +572,8 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
 
     const auto update_branches = makeUpdateBranchPrefix({missing});
     const auto update_ctx =
-        makeActualBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(
+            makeBaseBranchUpdateContext(stream), update_branches);
     const TargetUpdateEntrySelection selection;
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);

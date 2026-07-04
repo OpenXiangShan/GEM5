@@ -71,7 +71,8 @@ void updateBTB(FetchTarget &stream, AheadBTB *abtb) {
         makeUpdateBranchPrefix(stream.resolvedBranches);
     abtb->updateWithAheadPipelineState(
         stream.predMetas[abtb->getComponentIdx()],
-        makeActualBranchUpdateContext(stream, update_branches),
+        makeActualBranchUpdateContext(
+            makeBaseBranchUpdateContext(stream), update_branches),
         stream.previousPCs, update_branches);
 }
 

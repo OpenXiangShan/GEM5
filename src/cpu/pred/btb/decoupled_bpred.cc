@@ -741,7 +741,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                 dbpBtbStats.commitUpdateResolvedBranches++;
             }
             update_ctx =
-                makeActualBranchUpdateContext(ftq_target, update_branches);
+                makeActualBranchUpdateContext(
+                    makeBaseBranchUpdateContext(ftq_target),
+                    update_branches);
         }
 
         DPRINTF(DecoupleBP,
@@ -790,7 +792,9 @@ DecoupledBPUWithBTB::resolveUpdate(
     const auto update_branches = makeUpdateBranchPrefix(branches);
     const auto &target = ftq.get(target_id, tid);
     const auto update_ctx =
-        makeActualBranchUpdateContext(target, update_branches);
+        makeActualBranchUpdateContext(
+            makeBaseBranchUpdateContext(target),
+            update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
             "controlTaken=%d controlPC=%#lx controlTarget=%#lx squashType=%d "

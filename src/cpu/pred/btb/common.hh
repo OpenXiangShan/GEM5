@@ -784,12 +784,11 @@ makeBaseBranchUpdateContext(const FetchTarget &target)
 }
 
 inline BranchUpdateContext
-makeActualBranchUpdateContext(const FetchTarget &target,
+makeActualBranchUpdateContext(BranchUpdateContext ctx,
                                 const std::vector<ResolvedBranch> &branches)
 {
     assert(!branches.empty());
 
-    BranchUpdateContext ctx = makeBaseBranchUpdateContext(target);
     ctx.controlBranch = makeBranchInfo(branches.back());
     ctx.controlTaken = false;
     ctx.squashType = SquashType::SQUASH_NONE;

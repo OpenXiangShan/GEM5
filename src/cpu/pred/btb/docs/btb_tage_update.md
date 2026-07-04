@@ -27,10 +27,10 @@ update 从 `resolvedBranches` 得到它；commit update 从 `committedBranches` 
 
 ## Update Context
 
-`makeActualBranchUpdateContext(target, actual_branches)` 会从 `FetchTarget` 的
-prediction-time snapshot 和 actual branch prefix 直接构造
-`BranchUpdateContext`。这条路径是 predictor update 的普通入口；它不需要先把
-真实结果写回 `FetchTarget`，因此训练边界更接近：
+`makeBaseBranchUpdateContext(target)` 先从 prediction-time `FetchTarget`
+snapshot 构造 base context；`makeActualBranchUpdateContext(base_ctx,
+actual_branches)` 再应用 actual branch prefix。这条路径是 predictor update
+的普通入口；它不需要先把真实结果写回 `FetchTarget`，因此训练边界更接近：
 
 ```text
 prediction snapshot + actual branch set -> BranchUpdateContext/update entries
