@@ -789,13 +789,6 @@ makeFallbackBranchUpdateContext(const FetchTarget &target)
     return ctx;
 }
 
-inline bool
-needsFallbackBranchUpdateContext(const FetchTarget &target)
-{
-    return target.isHit || target.predTaken || target.exeTaken ||
-        target.squashType == SquashType::SQUASH_CTRL;
-}
-
 inline BranchUpdateContext
 makeResolvedBranchUpdateContext(const FetchTarget &target,
                                 const std::vector<ResolvedBranch> &branches)
@@ -827,10 +820,12 @@ makeResolvedBranchUpdateContext(const FetchTarget &target,
 inline bool
 shouldUpdateBpuPredictors(
     bool prediction_hit,
+    bool prediction_taken,
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &resolved_update_branches)
 {
-    return prediction_hit || ctx.actualTaken || !resolved_update_branches.empty();
+    return prediction_hit || prediction_taken || ctx.actualTaken ||
+        !resolved_update_branches.empty();
 }
 
 inline std::vector<BTBEntry>

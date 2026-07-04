@@ -381,33 +381,6 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
     EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }
 
-TEST(UpdateEntryBuilderTest, FallbackContextNeededOnlyForLegacyPayload)
-{
-    FetchTarget stream;
-    EXPECT_FALSE(needsFallbackBranchUpdateContext(stream));
-
-    stream.isHit = true;
-    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
-    stream.isHit = false;
-
-    stream.predTaken = true;
-    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
-    stream.predTaken = false;
-
-    stream.exeTaken = true;
-    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
-    stream.exeTaken = false;
-
-    stream.squashType = SquashType::SQUASH_OTHER;
-    EXPECT_FALSE(needsFallbackBranchUpdateContext(stream));
-
-    stream.squashType = SquashType::SQUASH_TRAP;
-    EXPECT_FALSE(needsFallbackBranchUpdateContext(stream));
-
-    stream.squashType = SquashType::SQUASH_CTRL;
-    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
-}
-
 TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
 {
     FetchTarget stream;
@@ -544,23 +517,29 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
 TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
 {
     FetchTarget stream;
-    stream.isHit = false;
-    stream.exeTaken = false;
-    auto update_ctx = makeFallbackBranchUpdateContext(stream);
+    auto update_ctx = makeBaseBranchUpdateContext(stream);
 
-    EXPECT_FALSE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
+    EXPECT_FALSE(shouldUpdateBpuPredictors(
+        stream.isHit, stream.predTaken, update_ctx, {}));
 
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
     EXPECT_TRUE(
-        shouldUpdateBpuPredictors(stream.isHit, update_ctx, {missing}));
+        shouldUpdateBpuPredictors(
+            stream.isHit, stream.predTaken, update_ctx, {missing}));
 
     stream.isHit = true;
-    EXPECT_TRUE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
+    EXPECT_TRUE(shouldUpdateBpuPredictors(
+        stream.isHit, stream.predTaken, update_ctx, {}));
 
     stream.isHit = false;
-    stream.exeTaken = true;
-    update_ctx = makeFallbackBranchUpdateContext(stream);
-    EXPECT_TRUE(shouldUpdateBpuPredictors(stream.isHit, update_ctx, {}));
+    stream.predTaken = true;
+    EXPECT_TRUE(shouldUpdateBpuPredictors(
+        stream.isHit, stream.predTaken, update_ctx, {}));
+
+    stream.predTaken = false;
+    update_ctx.actualTaken = true;
+    EXPECT_TRUE(shouldUpdateBpuPredictors(
+        stream.isHit, stream.predTaken, update_ctx, {}));
 }
 
 TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)

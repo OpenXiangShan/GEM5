@@ -442,18 +442,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "commit updates using the FTQ committed branch set"),
     ADD_STAT(commitUpdateResolvedBranches, statistics::units::Count::get(),
     "commit updates falling back to the FTQ resolved branch set"),
-    ADD_STAT(commitUpdateFallback, statistics::units::Count::get(),
-    "commit updates falling back to exeBranchInfo and exeTaken"),
-    ADD_STAT(commitUpdateNoResolvedNoop, statistics::units::Count::get(),
-    "commit updates with no resolved branch set and no predictor payload"),
-    ADD_STAT(commitUpdateFallbackHit, statistics::units::Count::get(),
-    "commit update fallbacks on BTB-hit fetch targets"),
-    ADD_STAT(commitUpdateFallbackPredTaken, statistics::units::Count::get(),
-    "commit update fallbacks on predicted-taken fetch targets"),
-    ADD_STAT(commitUpdateFallbackExeTaken, statistics::units::Count::get(),
-    "commit update fallbacks on actually-taken exe summaries"),
-    ADD_STAT(commitUpdateFallbackSquash, statistics::units::Count::get(),
-    "commit update fallbacks on control-squash summaries"),
+    ADD_STAT(commitUpdateNoBranchSet, statistics::units::Count::get(),
+    "commit updates with no actual branch set"),
     ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(),
     "the number of control squashes in bpu from decode"),
     ADD_STAT(controlSquashFromCommit, statistics::units::Count::get(),
@@ -720,6 +710,7 @@ DecoupledBPUWithBTB::updateStatistics(
     const bool miss_predicted = update_ctx.squashType == SQUASH_CTRL;
     const bool actual_taken = update_ctx.actualTaken;
     const BranchInfo &actual_branch = update_ctx.actualBranch;
+    const bool has_actual_branch = actual_branch.pc != 0;
     // Track indirect mispredictions
     if (miss_predicted && actual_branch.isIndirect) {
         topMispredIndirect[target.startPC]++;
@@ -742,7 +733,7 @@ DecoupledBPUWithBTB::updateStatistics(
 
     }
 
-    if (target.isHit || actual_taken) {
+    if (has_actual_branch && (target.isHit || actual_taken)) {
         // Update BTB entry statistics
         const BTBEntry btb_entry(actual_branch);
         auto it = totalBTBEntries.find(target.startPC);

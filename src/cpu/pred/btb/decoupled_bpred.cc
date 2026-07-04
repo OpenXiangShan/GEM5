@@ -723,40 +723,15 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         const auto update_branches =
             makeResolvedUpdateBranches(branch_source);
         BranchUpdateContext update_ctx;
-        if (update_branches.empty() &&
-            needsFallbackBranchUpdateContext(ftq_target)) {
-            dbpBtbStats.commitUpdateFallback++;
-            if (ftq_target.isHit) {
-                dbpBtbStats.commitUpdateFallbackHit++;
-            }
-            if (ftq_target.predTaken) {
-                dbpBtbStats.commitUpdateFallbackPredTaken++;
-            }
-            if (ftq_target.exeTaken) {
-                dbpBtbStats.commitUpdateFallbackExeTaken++;
-            }
-            if (ftq_target.squashType != SquashType::SQUASH_NONE) {
-                dbpBtbStats.commitUpdateFallbackSquash++;
-            }
+        if (update_branches.empty()) {
+            dbpBtbStats.commitUpdateNoBranchSet++;
             DPRINTF(DecoupleBP,
-                    "Commit update falls back to exe summary: "
-                    "tid=%u ftq=%llu start=%#lx hit=%d predTaken=%d "
-                    "exeTaken=%d squashType=%d squashPC=%#lx exePC=%#lx\n",
+                    "Commit update has no actual branch set: "
+                    "tid=%u ftq=%llu start=%#lx hit=%d predTaken=%d\n",
                     tid,
                     static_cast<unsigned long long>(ftq.frontId(tid)),
-                    ftq_target.startPC,
-                    ftq_target.isHit, ftq_target.predTaken,
-                    ftq_target.exeTaken, ftq_target.squashType,
-                    ftq_target.squashPC, ftq_target.exeBranchInfo.pc);
-            update_ctx = makeFallbackBranchUpdateContext(ftq_target);
-        } else if (update_branches.empty()) {
-            dbpBtbStats.commitUpdateNoResolvedNoop++;
-            DPRINTF(DecoupleBP,
-                    "Commit update has no resolved branch payload: "
-                    "tid=%u ftq=%llu start=%#lx\n",
-                    tid,
-                    static_cast<unsigned long long>(ftq.frontId(tid)),
-                    ftq_target.startPC);
+                    ftq_target.startPC, ftq_target.isHit,
+                    ftq_target.predTaken);
             update_ctx = makeBaseBranchUpdateContext(ftq_target);
         } else {
             if (has_committed_branches) {
@@ -941,7 +916,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     bool resolved_update)
 {
     if (!shouldUpdateBpuPredictors(
-            target.isHit, update_ctx, update_branches)) {
+            target.isHit, target.predTaken, update_ctx, update_branches)) {
         return true;
     }
 
