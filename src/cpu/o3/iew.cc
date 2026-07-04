@@ -1519,19 +1519,10 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
     if (inst->isControl()) {
         auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
         TimeStruct::IewComm::ResolvedCFIEntry entry;
-        auto &branch = entry.branch;
         entry.ftqId = inst->getFtqId();
-        branch.pc = inst->getPC();
-        branch.target = inst->getNPC();
-        branch.taken = inst->branching() || inst->isUncondCtrl();
-        branch.mispred = inst->mispredicted();
-        branch.isCond = inst->isCondCtrl();
-        branch.isIndirect = inst->isIndirectCtrl();
-        branch.isDirect = inst->isDirectCtrl();
-        branch.isCall = inst->isCall();
-        branch.isReturn = inst->isReturn() &&
-            !inst->isNonSpeculative() && !inst->isDirectCtrl();
-        branch.size = inst->getInstBytes();
+        entry.branch =
+            branch_prediction::btb_pred::makeResolvedBranchFromInst(inst);
+        auto &branch = entry.branch;
         resolved_cfis.push_back(entry);
         DPRINTF(IEW, "[tid:%i] [sn:%llu] Resolved CFI ftq=%lu pc=%#lx "
                 "target=%#lx taken=%d mispred=%d cond=%d indirect=%d\n",

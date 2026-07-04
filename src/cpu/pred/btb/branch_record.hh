@@ -30,6 +30,25 @@ struct ResolvedBranch
     uint8_t size = 0;
 };
 
+template <typename InstPtr>
+ResolvedBranch
+makeResolvedBranchFromInst(const InstPtr &inst)
+{
+    ResolvedBranch branch;
+    branch.pc = inst->getPC();
+    branch.target = inst->getNPC();
+    branch.taken = inst->branching() || inst->isUncondCtrl();
+    branch.mispred = inst->mispredicted();
+    branch.isCond = inst->isCondCtrl();
+    branch.isIndirect = inst->isIndirectCtrl();
+    branch.isDirect = inst->isDirectCtrl();
+    branch.isCall = inst->isCall();
+    branch.isReturn = inst->isReturn() &&
+        !inst->isNonSpeculative() && !inst->isDirectCtrl();
+    branch.size = inst->getInstBytes();
+    return branch;
+}
+
 inline bool
 endsResolvedUpdatePrefix(const ResolvedBranch &branch)
 {

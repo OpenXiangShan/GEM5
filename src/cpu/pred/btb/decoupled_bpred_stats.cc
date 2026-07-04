@@ -827,12 +827,10 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Extract branch information ----------
-    Addr branchAddr = inst->pcState().instAddr();
-    const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
-    Addr targetAddr = rv_pc.npc();
-    Addr fallThruPC = rv_pc.getFallThruPC();
-    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
-    bool taken = rv_pc.branching() || inst->isUncondCtrl();
+    const auto resolved_branch = makeResolvedBranchFromInst(inst);
+    const Addr branchAddr = resolved_branch.pc;
+    const BranchInfo info = makeBranchInfo(resolved_branch);
+    const bool taken = resolved_branch.taken;
 
     // ---------- Process misprediction and update statistics ----------
     processMisprediction(entry, branchAddr, info, taken, mispred);
