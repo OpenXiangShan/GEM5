@@ -62,7 +62,6 @@ executed branch summary 去猜训练 entry；新模型优先消费真实 resolve
 - actual update prefix 内的 predicted BTB entries；
 - actual branch prefix 中预测 BTB 没有命中的 conditional branch，对它们生成
   direction-only entry；
-- selected target entry，如果它是新分配的 conditional entry；
 - actual branch prefix 和 prediction-time meta/history snapshot。
 
 对 resolved update 来说，普通方向预测器只保留 actual branch prefix 里的 entry。MGSC

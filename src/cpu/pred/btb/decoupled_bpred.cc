@@ -866,7 +866,6 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         const auto entries = buildDirectionUpdateEntries(
             update_btb_entries,
             update_new_direction_branches,
-            selection,
             update_branches,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate(), update_ctx);
@@ -934,7 +933,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
             update_end_inst_pc);
     const auto update_new_direction_branches =
         makeNewDirectionBranches(
-            update_btb_entries, target_selection, update_branches);
+            update_btb_entries, update_branches);
 
     if (resolved_update &&
         !canResolveUpdateComponents(update_ctx.startPC)) {

@@ -103,7 +103,6 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
 
     const auto entries = buildDirectionUpdateEntries(
         {prefix_entry, legacy_resolved_entry}, {},
-        TargetUpdateEntrySelection{BTBEntry(), true},
         {makeResolvedBranch(prefix_entry.pc, false, false)},
         DirectionUpdateEntryFilter::Conditional, true, ctx);
 
@@ -120,7 +119,7 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
         makeDirectionContext(new_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {}, {}, TargetUpdateEntrySelection{new_entry, false}, {},
+        {}, {BranchInfo(new_entry)}, {},
         DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -137,7 +136,7 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
     const BranchUpdateContext ctx = makeDirectionContext(entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        {entry}, {}, {},
         DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -152,7 +151,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
     const BranchUpdateContext ctx = makeDirectionContext(entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {}, TargetUpdateEntrySelection{BTBEntry(), true},
+        {entry}, {},
         {makeResolvedBranch(entry.pc, true, true)},
         DirectionUpdateEntryFilter::Conditional, true, ctx);
 
@@ -168,7 +167,7 @@ TEST(UpdateEntryBuilderTest, MgscResolvedUpdateRequiresResolvedBranchSet)
         makeDirectionContext(cond_entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {cond_entry}, {}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        {cond_entry}, {}, {},
         DirectionUpdateEntryFilter::Mgsc, true, ctx);
 
     EXPECT_TRUE(entries.empty());
@@ -495,21 +494,22 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_branches =
         makeNewDirectionBranches(
-            update_btb_entries, selection, update_branches);
+            update_btb_entries, update_branches);
 
     ASSERT_EQ(update_btb_entries.size(), 1);
     EXPECT_EQ(update_btb_entries[0].pc, predicted.pc);
     EXPECT_FALSE(update_btb_entries[0].resolved);
-    ASSERT_EQ(update_new_direction_branches.size(), 1);
+    ASSERT_EQ(update_new_direction_branches.size(), 2);
     EXPECT_EQ(update_new_direction_branches[0].pc, missing.pc);
     EXPECT_TRUE(update_new_direction_branches[0].resolved);
+    EXPECT_EQ(update_new_direction_branches[1].pc, selected.pc);
+    EXPECT_TRUE(update_new_direction_branches[1].resolved);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, missing.pc);
     EXPECT_EQ(update_branches[1].pc, selected.pc);
 
     const auto direction_entries = buildDirectionUpdateEntries(
         update_btb_entries, update_new_direction_branches,
-        selection,
         update_branches, DirectionUpdateEntryFilter::Conditional,
         true, update_ctx);
 
@@ -573,7 +573,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_branches =
         makeNewDirectionBranches(
-            update_btb_entries, selection, update_branches);
+            update_btb_entries, update_branches);
 
     ASSERT_TRUE(update_btb_entries.empty());
     ASSERT_EQ(update_new_direction_branches.size(), 1);
@@ -582,7 +582,6 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
 
     const auto direction_entries = buildDirectionUpdateEntries(
         update_btb_entries, update_new_direction_branches,
-        selection,
         update_branches, DirectionUpdateEntryFilter::Conditional,
         true, update_ctx);
 
