@@ -2,6 +2,7 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <algorithm>
+#include <cassert>
 #include <queue>
 #include <string>
 #include <vector>
@@ -760,26 +761,37 @@ makeBranchInfo(const ResolvedBranch &branch)
 }
 
 inline BranchUpdateContext
-makeFallbackBranchUpdateContext(const FetchTarget &target)
+makeBaseBranchUpdateContext(const FetchTarget &target)
 {
-    return {target.tid, target.startPC, target.asidHash,
-            target.exeBranchInfo, target.exeTaken,
-            target.predTick, static_cast<SquashType>(target.squashType),
-            target.squashPC};
+    BranchUpdateContext ctx;
+    ctx.tid = target.tid;
+    ctx.startPC = target.startPC;
+    ctx.asidHash = target.asidHash;
+    ctx.predTick = target.predTick;
+    ctx.squashType = static_cast<SquashType>(target.squashType);
+    ctx.squashPC = target.squashPC;
+    return ctx;
 }
 
 inline BranchUpdateContext
-makeBranchUpdateContext(const FetchTarget &target,
-                        const std::vector<ResolvedBranch> &branches)
+makeFallbackBranchUpdateContext(const FetchTarget &target)
 {
-    BranchUpdateContext ctx = makeFallbackBranchUpdateContext(target);
-    if (branches.empty()) {
-        return ctx;
-    }
+    BranchUpdateContext ctx = makeBaseBranchUpdateContext(target);
+    ctx.actualBranch = target.exeBranchInfo;
+    ctx.actualTaken = target.exeTaken;
+    return ctx;
+}
 
+inline BranchUpdateContext
+makeResolvedBranchUpdateContext(const FetchTarget &target,
+                                const std::vector<ResolvedBranch> &branches)
+{
+    assert(!branches.empty());
+
+    BranchUpdateContext ctx = makeBaseBranchUpdateContext(target);
+    ctx.actualBranch = makeBranchInfo(branches.back());
     ctx.actualTaken = false;
     ctx.squashType = SquashType::SQUASH_NONE;
-    ctx.actualBranch = makeBranchInfo(branches.back());
 
     for (const auto &branch : branches) {
         if (branch.mispred && ctx.squashType == SquashType::SQUASH_NONE) {

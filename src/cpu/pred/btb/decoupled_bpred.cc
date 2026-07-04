@@ -716,8 +716,13 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         auto &ftq_target = ftq.front(tid);
         const auto update_branches =
             makeResolvedUpdateBranches(ftq_target.resolvedBranches);
-        const auto update_ctx =
-            makeBranchUpdateContext(ftq_target, update_branches);
+        BranchUpdateContext update_ctx;
+        if (update_branches.empty()) {
+            update_ctx = makeFallbackBranchUpdateContext(ftq_target);
+        } else {
+            update_ctx =
+                makeResolvedBranchUpdateContext(ftq_target, update_branches);
+        }
 
         DPRINTF(DecoupleBP,
                 "Commit target start %#lx, which is predicted, "
@@ -764,7 +769,8 @@ DecoupledBPUWithBTB::resolveUpdate(
 
     const auto update_branches = makeResolvedUpdateBranches(branches);
     const auto &target = ftq.get(target_id, tid);
-    const auto update_ctx = makeBranchUpdateContext(target, update_branches);
+    const auto update_ctx =
+        makeResolvedBranchUpdateContext(target, update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
             "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "

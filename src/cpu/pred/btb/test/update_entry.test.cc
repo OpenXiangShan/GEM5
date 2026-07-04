@@ -85,7 +85,7 @@ makeUpdateEntries(const FetchTarget &stream,
                   unsigned predict_width,
                   const std::vector<ResolvedBranch> &branches)
 {
-    const auto ctx = makeBranchUpdateContext(stream, branches);
+    const auto ctx = makeResolvedBranchUpdateContext(stream, branches);
     const auto update_end_inst_pc =
         buildUpdateEndInstPC(ctx, predict_width);
     return makeUpdateBTBEntries(
@@ -299,7 +299,8 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
         BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
-    const auto update_ctx = makeBranchUpdateContext(stream, update_branches);
+    const auto update_ctx =
+        makeResolvedBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_TRUE(update_ctx.actualTaken);
@@ -335,7 +336,7 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
 
     const auto update_branches =
         makeResolvedUpdateBranches({first, second});
-    const auto ctx = makeBranchUpdateContext(stream, update_branches);
+    const auto ctx = makeResolvedBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_FALSE(stream.exeTaken);
@@ -367,7 +368,7 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
     stream.squashType = SquashType::SQUASH_TRAP;
     stream.squashPC = 0x2010;
 
-    const auto ctx = makeBranchUpdateContext(stream, {});
+    const auto ctx = makeFallbackBranchUpdateContext(stream);
 
     EXPECT_EQ(ctx.tid, stream.tid);
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
@@ -422,7 +423,8 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
     EXPECT_EQ(update_branches.size(), 2);
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
-    const auto update_ctx = makeBranchUpdateContext(stream, update_branches);
+    const auto update_ctx =
+        makeResolvedBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_TRUE(update_ctx.actualTaken);
@@ -446,7 +448,8 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
 
     const auto update_branches =
         makeResolvedUpdateBranches({missing, taken});
-    const auto update_ctx = makeBranchUpdateContext(stream, update_branches);
+    const auto update_ctx =
+        makeResolvedBranchUpdateContext(stream, update_branches);
     const BTBUpdateEntrySelection selection{selected, false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
@@ -516,7 +519,8 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     stream.startPC = 0x1000;
 
     const auto update_branches = makeResolvedUpdateBranches({missing});
-    const auto update_ctx = makeBranchUpdateContext(stream, update_branches);
+    const auto update_ctx =
+        makeResolvedBranchUpdateContext(stream, update_branches);
     const BTBUpdateEntrySelection selection;
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
