@@ -443,11 +443,7 @@ MBTB::selectUpdateEntryFromHits(
         new_entry.valid = true;
         if (new_entry.isCond) {
             new_entry.ctr = 0;  // Start with positive prediction
-            btbStats.newEntryWithCond++;
-        } else {
-            btbStats.newEntryWithUncond++;
         }
-        btbStats.newEntry++;
         entry_to_write = new_entry;
         entry_to_write.resolved = ctx.controlBranch.resolved;
         is_old_entry = false;
@@ -501,6 +497,15 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
 {
     const auto &entry = update_entry.entry;
     btbStats.updateTotal++;
+    if (update_entry.isNewEntry) {
+        btbStats.newEntry++;
+        if (entry.isCond) {
+            btbStats.newEntryWithCond++;
+        } else {
+            btbStats.newEntryWithUncond++;
+        }
+    }
+
     // Select SRAM based on entry PC's 32B-aligned address
     Addr alignedPC = entry.pc & ~(blockSize - 1);
     int sram_id = getSRAMId(alignedPC);
