@@ -812,14 +812,14 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     addBranchClassStat(branchClass, mispred);
 
     // ---------- Extract branch information ----------
-    const auto resolved_branch = makeResolvedBranchFromInst(inst);
-    const Addr branchAddr = resolved_branch.pc;
-    const BranchInfo info = makeBranchInfo(resolved_branch);
-    const bool taken = resolved_branch.taken;
+    const auto actual_branch = makeActualBranchFromInst(inst);
+    const Addr branchAddr = actual_branch.pc;
+    const BranchInfo info = makeBranchInfo(actual_branch);
+    const bool taken = actual_branch.taken;
 
     // ---------- Find corresponding fetch target entry ----------
     auto &entry = ftq.get(inst->ftqId, inst->threadNumber);
-    entry.addCommittedBranch(resolved_branch);
+    entry.addCommittedBranch(actual_branch);
 
     // Record branch trace if enabled
     if (enableBranchTrace) {
@@ -837,7 +837,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     // ---------- Record per-component committed branch statistics ----------
     for (auto component : components) {
         component->recordCommittedBranchStats(
-            resolved_branch,
+            actual_branch,
             entry.predMetas[component->getComponentIdx()]);
     }
     //here add final counter

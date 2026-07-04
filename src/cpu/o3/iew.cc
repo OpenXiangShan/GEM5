@@ -1521,7 +1521,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         TimeStruct::IewComm::ResolvedCFIEntry entry;
         entry.ftqId = inst->getFtqId();
         entry.branch =
-            branch_prediction::btb_pred::makeResolvedBranchFromInst(inst);
+            branch_prediction::btb_pred::makeActualBranchFromInst(inst);
         auto &branch = entry.branch;
         resolved_cfis.push_back(entry);
         DPRINTF(IEW, "[tid:%i] [sn:%llu] Resolved CFI ftq=%lu pc=%#lx "

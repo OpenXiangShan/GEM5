@@ -16,6 +16,8 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+// Actual CFI result captured when a branch resolves. Resolve update consumes it
+// immediately; commit update may consume the same fact later.
 struct ResolvedBranch
 {
     Addr pc = 0;
@@ -34,7 +36,7 @@ struct ResolvedBranch
 
 template <typename InstPtr>
 ResolvedBranch
-makeResolvedBranchFromInst(const InstPtr &inst)
+makeActualBranchFromInst(const InstPtr &inst)
 {
     ResolvedBranch branch;
     branch.pc = inst->getPC();
