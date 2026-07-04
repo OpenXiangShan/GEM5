@@ -290,6 +290,42 @@ struct TargetUpdateEntry
     BranchInfo actualBranch;
 };
 
+inline void
+updateTargetEntryCounter(int &ctr, bool taken)
+{
+    if (taken && ctr < 1) {
+        ctr++;
+    }
+    if (!taken && ctr > -2) {
+        ctr--;
+    }
+}
+
+inline BTBEntry
+buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
+                        const BTBEntry *existing_entry,
+                        Addr tag)
+{
+    const auto &requested_entry = update_entry.entry;
+    BTBEntry entry_to_write =
+        (requested_entry.isCond && existing_entry) ?
+            BTBEntry(*existing_entry) : requested_entry;
+
+    entry_to_write.resolved = false;
+    entry_to_write.tag = tag;
+
+    if (entry_to_write.isCond) {
+        updateTargetEntryCounter(
+            entry_to_write.ctr, update_entry.actualTaken);
+    }
+
+    if (entry_to_write.isIndirect && update_entry.actualTaken) {
+        entry_to_write.target = update_entry.actualBranch.target;
+    }
+
+    return entry_to_write;
+}
+
 inline BranchInfo makeBranchInfo(const ResolvedBranch &branch);
 
 enum class TargetUpdateEntryFilter

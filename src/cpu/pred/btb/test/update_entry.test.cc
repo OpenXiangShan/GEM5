@@ -255,6 +255,42 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
 
+TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
+{
+    BTBEntry requested = makeEntry(0x3020, true, true);
+    requested.ctr = -2;
+    requested.tag = 0x10;
+    BTBEntry existing = requested;
+    existing.ctr = 0;
+    existing.tag = 0x20;
+
+    const TargetUpdateEntry update{
+        requested, true, false, BranchInfo(requested)};
+    const auto written = buildUpdatedTargetEntry(update, &existing, 0x30);
+
+    EXPECT_EQ(written.pc, requested.pc);
+    EXPECT_EQ(written.ctr, 1);
+    EXPECT_EQ(written.tag, 0x30);
+    EXPECT_FALSE(written.resolved);
+}
+
+TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
+{
+    BTBEntry indirect = makeIndirectEntry(0x3030, false, true);
+    indirect.target = 0x4000;
+    BranchInfo actual_branch(indirect);
+    actual_branch.target = 0x5000;
+
+    const TargetUpdateEntry update{
+        indirect, true, false, actual_branch};
+    const auto written = buildUpdatedTargetEntry(update, nullptr, 0x40);
+
+    EXPECT_EQ(written.pc, indirect.pc);
+    EXPECT_EQ(written.target, actual_branch.target);
+    EXPECT_EQ(written.tag, 0x40);
+    EXPECT_FALSE(written.resolved);
+}
+
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
 {
     BranchUpdateContext taken_ctx;

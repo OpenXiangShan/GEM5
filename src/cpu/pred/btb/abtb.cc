@@ -559,20 +559,9 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
             break;
         }
     }
-    // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
-    // else use the recorded entry
-    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
-    entry_to_write.resolved = false; // reset resolved bit on update
-    entry_to_write.tag = btb_tag;   // update tag after found it!
-    // update saturating counter if necessary
-    if (entry_to_write.isCond) {
-        bool this_cond_taken = update_entry.actualTaken;
-        updateCtr(entry_to_write.ctr, this_cond_taken);
-    }
-    // update indirect target if necessary
-    if (entry_to_write.isIndirect && update_entry.actualTaken) {
-        entry_to_write.target = update_entry.actualBranch.target;
-    }
+    const BTBEntry *existing_entry = found ? &(*it) : nullptr;
+    const auto entry_to_write =
+        buildUpdatedTargetEntry(update_entry, existing_entry, btb_tag);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
         // Update existing entry

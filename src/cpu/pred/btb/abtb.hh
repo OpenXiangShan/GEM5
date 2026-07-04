@@ -250,25 +250,15 @@ class AheadBTB : public TimedBaseBTBPredictor
         return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
 
-
-    /** Update the 2-bit saturating counter for conditional branches
-     *  Counter range: [-2, 1]
-     *  - Increment on taken (max 1)
-     *  - Decrement on not taken (min -2)
-     */
-    void updateCtr(int &ctr, bool taken) {
-        if (taken && ctr < 1) {ctr++;}
-        if (!taken && ctr > -2) {ctr--;}
-    }
-
-        typedef struct BTBMeta
+    struct BTBMeta
     {
         std::vector<BTBEntry> hit_entries;
-        BTBMeta() {
+        BTBMeta()
+        {
             std::vector<BTBEntry> es;
             hit_entries = es;
         }
-    }BTBMeta;
+    };
 
     /**
     * Per-thread ABTB prediction-time state. The BTB storage itself remains

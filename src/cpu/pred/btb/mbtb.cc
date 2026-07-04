@@ -538,7 +538,9 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = buildUpdatedEntry(update_entry, existing_ptr, ctx);
+    const auto entry_to_write =
+        buildUpdatedTargetEntry(
+            update_entry, existing_ptr, getTag(entry.pc, ctx.asidHash));
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
@@ -552,33 +554,6 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
         // Not found anywhere, replace oldest in SRAM set
         replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
     }
-}
-
-BTBEntry
-MBTB::buildUpdatedEntry(const TargetUpdateEntry &update_entry,
-                        const BTBEntry* existing_entry,
-                        const BranchUpdateContext &ctx)
-{
-    const auto &req_entry = update_entry.entry;
-    // For conditional branches, prefer the existing entry to preserve up-to-date ctr
-    auto entry_to_write = (req_entry.isCond && existing_entry)
-                              ? BTBEntry(*existing_entry)
-                              : req_entry;
-    // Always recalculate tag based on the actual PC being written
-    entry_to_write.tag = getTag(entry_to_write.pc, ctx.asidHash);
-    entry_to_write.resolved = false; // reset resolved status
-
-    // Update saturating counter
-    if (entry_to_write.isCond) {
-        bool this_cond_taken = update_entry.actualTaken;
-        updateCtr(entry_to_write.ctr, this_cond_taken);
-    }
-
-    // Update indirect target if necessary
-    if (entry_to_write.isIndirect && update_entry.actualTaken) {
-        entry_to_write.target = update_entry.actualBranch.target;
-    }
-    return entry_to_write;
 }
 
 void
