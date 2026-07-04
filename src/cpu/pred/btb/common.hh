@@ -782,6 +782,13 @@ makeFallbackBranchUpdateContext(const FetchTarget &target)
     return ctx;
 }
 
+inline bool
+needsFallbackBranchUpdateContext(const FetchTarget &target)
+{
+    return target.isHit || target.predTaken || target.exeTaken ||
+        target.squashType != SquashType::SQUASH_NONE;
+}
+
 inline BranchUpdateContext
 makeResolvedBranchUpdateContext(const FetchTarget &target,
                                 const std::vector<ResolvedBranch> &branches)

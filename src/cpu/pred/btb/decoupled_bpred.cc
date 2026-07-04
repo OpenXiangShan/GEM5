@@ -717,7 +717,8 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         const auto update_branches =
             makeResolvedUpdateBranches(ftq_target.resolvedBranches);
         BranchUpdateContext update_ctx;
-        if (update_branches.empty()) {
+        if (update_branches.empty() &&
+            needsFallbackBranchUpdateContext(ftq_target)) {
             dbpBtbStats.commitUpdateFallback++;
             if (ftq_target.isHit) {
                 dbpBtbStats.commitUpdateFallbackHit++;
@@ -735,6 +736,15 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                     ftq_target.isHit, ftq_target.predTaken,
                     ftq_target.exeTaken, ftq_target.exeBranchInfo.pc);
             update_ctx = makeFallbackBranchUpdateContext(ftq_target);
+        } else if (update_branches.empty()) {
+            dbpBtbStats.commitUpdateNoResolvedNoop++;
+            DPRINTF(DecoupleBP,
+                    "Commit update has no resolved branch payload: "
+                    "tid=%u ftq=%llu start=%#lx\n",
+                    tid,
+                    static_cast<unsigned long long>(ftq.frontId(tid)),
+                    ftq_target.startPC);
+            update_ctx = makeBaseBranchUpdateContext(ftq_target);
         } else {
             dbpBtbStats.commitUpdateResolvedBranches++;
             update_ctx =

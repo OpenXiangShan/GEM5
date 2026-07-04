@@ -442,6 +442,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "commit updates using the FTQ resolved branch set"),
     ADD_STAT(commitUpdateFallback, statistics::units::Count::get(),
     "commit updates falling back to exeBranchInfo and exeTaken"),
+    ADD_STAT(commitUpdateNoResolvedNoop, statistics::units::Count::get(),
+    "commit updates with no resolved branch set and no predictor payload"),
     ADD_STAT(commitUpdateFallbackHit, statistics::units::Count::get(),
     "commit update fallbacks on BTB-hit fetch targets"),
     ADD_STAT(commitUpdateFallbackPredTaken, statistics::units::Count::get(),

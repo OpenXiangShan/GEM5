@@ -381,6 +381,27 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextFallsBackWithoutResolvedPrefix)
     EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }
 
+TEST(UpdateEntryBuilderTest, FallbackContextNeededOnlyForLegacyPayload)
+{
+    FetchTarget stream;
+    EXPECT_FALSE(needsFallbackBranchUpdateContext(stream));
+
+    stream.isHit = true;
+    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
+    stream.isHit = false;
+
+    stream.predTaken = true;
+    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
+    stream.predTaken = false;
+
+    stream.exeTaken = true;
+    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
+    stream.exeTaken = false;
+
+    stream.squashType = SquashType::SQUASH_CTRL;
+    EXPECT_TRUE(needsFallbackBranchUpdateContext(stream));
+}
+
 TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
 {
     FetchTarget stream;
