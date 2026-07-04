@@ -243,7 +243,7 @@ struct BTBEntry : BranchInfo
     }
 };
 
-struct BTBUpdateEntrySelection
+struct TargetUpdateEntrySelection
 {
     BTBEntry entry;
     bool isOldEntry = false;
@@ -387,7 +387,7 @@ inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<BranchInfo> &update_new_direction_branches,
-    const BTBUpdateEntrySelection &selection,
+    const TargetUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &actual_update_branches,
     DirectionUpdateEntryFilter filter,
     bool resolved_update,
@@ -455,7 +455,7 @@ shouldKeepTargetUpdateEntry(
 inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
-    const BTBUpdateEntrySelection &selection,
+    const TargetUpdateEntrySelection &selection,
     const std::vector<ResolvedBranch> &actual_update_branches,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
@@ -846,7 +846,7 @@ containsBTBEntryPC(const std::vector<BTBEntry> &entries, Addr pc)
 
 inline std::vector<BranchInfo>
 makeNewDirectionBranches(const std::vector<BTBEntry> &update_btb_entries,
-                         const BTBUpdateEntrySelection &selection,
+                         const TargetUpdateEntrySelection &selection,
                          const std::vector<ResolvedBranch> &branches)
 {
     std::vector<BranchInfo> branch_infos;

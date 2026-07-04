@@ -103,7 +103,7 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
 
     const auto entries = buildDirectionUpdateEntries(
         {prefix_entry, legacy_resolved_entry}, {},
-        BTBUpdateEntrySelection{BTBEntry(), true},
+        TargetUpdateEntrySelection{BTBEntry(), true},
         {makeResolvedBranch(prefix_entry.pc, false, false)},
         DirectionUpdateEntryFilter::Conditional, true, ctx);
 
@@ -120,7 +120,7 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
         makeDirectionContext(new_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {}, {}, BTBUpdateEntrySelection{new_entry, false}, {},
+        {}, {}, TargetUpdateEntrySelection{new_entry, false}, {},
         DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -137,7 +137,7 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
     const BranchUpdateContext ctx = makeDirectionContext(entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {}, BTBUpdateEntrySelection{BTBEntry(), true}, {},
+        {entry}, {}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
         DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -152,7 +152,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
     const BranchUpdateContext ctx = makeDirectionContext(entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {}, BTBUpdateEntrySelection{BTBEntry(), true},
+        {entry}, {}, TargetUpdateEntrySelection{BTBEntry(), true},
         {makeResolvedBranch(entry.pc, true, true)},
         DirectionUpdateEntryFilter::Conditional, true, ctx);
 
@@ -168,7 +168,7 @@ TEST(UpdateEntryBuilderTest, MgscResolvedUpdateRequiresResolvedBranchSet)
         makeDirectionContext(cond_entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {cond_entry}, {}, BTBUpdateEntrySelection{BTBEntry(), true}, {},
+        {cond_entry}, {}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
         DirectionUpdateEntryFilter::Mgsc, true, ctx);
 
     EXPECT_TRUE(entries.empty());
@@ -182,7 +182,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
 
     const auto entries = buildTargetUpdateEntries(
         {prefix_entry, legacy_resolved_entry},
-        BTBUpdateEntrySelection{BTBEntry(), true},
+        TargetUpdateEntrySelection{BTBEntry(), true},
         {makeResolvedBranch(prefix_entry.pc, false, false)},
         TargetUpdateEntryFilter::Any, true, ctx);
 
@@ -199,7 +199,7 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     const BranchUpdateContext ctx = makeTargetContext(indirect.pc, true);
 
     const auto entries = buildTargetUpdateEntries(
-        {indirect, ret}, BTBUpdateEntrySelection{BTBEntry(), true}, {},
+        {indirect, ret}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
         TargetUpdateEntryFilter::IndirectNonReturn, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -221,7 +221,7 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
     ctx.controlBranch.target = 0xdead;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, second}, BTBUpdateEntrySelection{BTBEntry(), true}, {},
+        {first, second}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
         TargetUpdateEntryFilter::IndirectNonReturn, false, ctx);
 
     ASSERT_EQ(entries.size(), 2);
@@ -246,7 +246,7 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     resolved.target = 0xbeef;
 
     const auto entries = buildTargetUpdateEntries(
-        {indirect}, BTBUpdateEntrySelection{BTBEntry(), true}, {resolved},
+        {indirect}, TargetUpdateEntrySelection{BTBEntry(), true}, {resolved},
         TargetUpdateEntryFilter::IndirectNonReturn, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -312,7 +312,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
         resolved_second,
         makeResolvedBranch(after.pc, false, false),
     });
-    const BTBUpdateEntrySelection selection{
+    const TargetUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
@@ -461,7 +461,7 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
     const auto update_branches =
         makeUpdateBranchPrefix(stream.resolvedBranches);
     EXPECT_EQ(update_branches.size(), 2);
-    const BTBUpdateEntrySelection selection{
+    const TargetUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_ctx =
         makeActualBranchUpdateContext(stream, update_branches);
@@ -490,7 +490,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
         makeUpdateBranchPrefix({missing, taken});
     const auto update_ctx =
         makeActualBranchUpdateContext(stream, update_branches);
-    const BTBUpdateEntrySelection selection{selected, false};
+    const TargetUpdateEntrySelection selection{selected, false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_branches =
@@ -568,7 +568,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     const auto update_branches = makeUpdateBranchPrefix({missing});
     const auto update_ctx =
         makeActualBranchUpdateContext(stream, update_branches);
-    const BTBUpdateEntrySelection selection;
+    const TargetUpdateEntrySelection selection;
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_new_direction_branches =

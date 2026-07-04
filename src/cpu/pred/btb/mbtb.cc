@@ -407,7 +407,7 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
  *
  * Note: This is only called in L1 BTB during update
  */
-BTBUpdateEntrySelection
+TargetUpdateEntrySelection
 MBTB::selectUpdateEntry(const std::shared_ptr<void> &prediction_meta,
                         const BranchUpdateContext &ctx)
 {
@@ -419,7 +419,7 @@ MBTB::selectUpdateEntry(const std::shared_ptr<void> &prediction_meta,
     return selectUpdateEntryFromHits(meta->hit_entries, ctx);
 }
 
-BTBUpdateEntrySelection
+TargetUpdateEntrySelection
 MBTB::selectUpdateEntryFromHits(
     const std::vector<BTBEntry> &pred_hit_entries,
     const BranchUpdateContext &ctx)

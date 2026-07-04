@@ -157,7 +157,7 @@ class MBTB : public TimedBaseBTBPredictor
      *
      * Only L1 BTB uses this before component update.
      */
-    BTBUpdateEntrySelection selectUpdateEntry(
+    TargetUpdateEntrySelection selectUpdateEntry(
         const std::shared_ptr<void> &prediction_meta,
         const BranchUpdateContext &ctx);
 
@@ -286,7 +286,7 @@ class MBTB : public TimedBaseBTBPredictor
     void checkPredictionHit(const BranchUpdateContext &ctx,
                            const BTBMeta* meta);
 
-    BTBUpdateEntrySelection selectUpdateEntryFromHits(
+    TargetUpdateEntrySelection selectUpdateEntryFromHits(
         const std::vector<BTBEntry> &pred_hit_entries,
         const BranchUpdateContext &ctx);
 

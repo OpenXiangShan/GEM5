@@ -339,7 +339,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param ctx Target update context containing execution results
      *  @return Selected old entry, or a new actual-taken entry when needed
      */
-    BTBUpdateEntrySelection selectUpdateEntry(
+    TargetUpdateEntrySelection selectUpdateEntry(
         const std::vector<BTBEntry> &old_entries,
         const BranchUpdateContext &ctx);
 

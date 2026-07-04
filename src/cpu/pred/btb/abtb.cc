@@ -509,12 +509,12 @@ AheadBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta
 
 
 /** Select the actual branch entry for update. */
-BTBUpdateEntrySelection
+TargetUpdateEntrySelection
 AheadBTB::selectUpdateEntry(
     const std::vector<BTBEntry> &old_entries,
     const BranchUpdateContext &ctx)
 {
-    BTBUpdateEntrySelection selection;
+    TargetUpdateEntrySelection selection;
     for (const auto &entry : old_entries) {
         if (ctx.controlBranch == entry) {
             selection.entry = entry;
