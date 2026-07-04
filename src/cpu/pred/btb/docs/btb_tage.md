@@ -145,11 +145,11 @@ void updateWithDirectionEntries(
     // Get prediction metadata
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     
-    // Update each BTB entry
+    // Update each branch entry
     for (const auto &update_entry : entries) {
-        const auto &entry = update_entry.entry;
+        const auto &branch = update_entry.branch;
         bool actual_taken = update_entry.actualTaken;
-        auto pred_it = meta->preds.find(entry.pc);
+        auto pred_it = meta->preds.find(branch.pc);
         
         if (pred_it == meta->preds.end()) {
             continue;
@@ -329,7 +329,7 @@ auto update_ctx = makeBaseBranchUpdateContext(stream);
 update_ctx.controlBranch = branch_info;
 update_ctx.controlTaken = actual_taken;
 const std::vector<DirectionUpdateEntry> entries = {
-    {BTBEntry(branch_info), actual_taken, false}
+    {branch_info, actual_taken, actual_taken, false}
 };
 tage->updateWithDirectionEntries(entries, update_ctx, meta, stream.phistory);
 ```

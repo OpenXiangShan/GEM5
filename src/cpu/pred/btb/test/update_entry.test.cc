@@ -108,7 +108,7 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
         DirectionUpdateEntryFilter::Conditional, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].entry.pc, prefix_entry.pc);
+    EXPECT_EQ(entries[0].branch.pc, prefix_entry.pc);
     EXPECT_FALSE(entries[0].actualTaken);
     EXPECT_FALSE(entries[0].isNewEntry);
 }
@@ -124,9 +124,26 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
         DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].entry.pc, new_entry.pc);
+    EXPECT_EQ(entries[0].branch.pc, new_entry.pc);
+    EXPECT_TRUE(entries[0].baseTaken);
     EXPECT_FALSE(entries[0].actualTaken);
     EXPECT_TRUE(entries[0].isNewEntry);
+}
+
+TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
+{
+    BTBEntry entry = makeEntry(0x1014, true, false);
+    entry.ctr = -1;
+    const BranchUpdateContext ctx = makeDirectionContext(entry.pc, true);
+
+    const auto entries = buildDirectionUpdateEntries(
+        {entry}, {}, BTBUpdateEntrySelection{BTBEntry(), true}, {},
+        DirectionUpdateEntryFilter::Conditional, false, ctx);
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].branch.pc, entry.pc);
+    EXPECT_FALSE(entries[0].baseTaken);
+    EXPECT_TRUE(entries[0].actualTaken);
 }
 
 TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
@@ -140,7 +157,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
         DirectionUpdateEntryFilter::Conditional, true, ctx);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].entry.pc, entry.pc);
+    EXPECT_EQ(entries[0].branch.pc, entry.pc);
     EXPECT_TRUE(entries[0].actualTaken);
 }
 
@@ -497,10 +514,10 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
         true, update_ctx);
 
     ASSERT_EQ(direction_entries.size(), 2);
-    EXPECT_EQ(direction_entries[0].entry.pc, missing.pc);
+    EXPECT_EQ(direction_entries[0].branch.pc, missing.pc);
     EXPECT_TRUE(direction_entries[0].isNewEntry);
     EXPECT_FALSE(direction_entries[0].actualTaken);
-    EXPECT_EQ(direction_entries[1].entry.pc, selected.pc);
+    EXPECT_EQ(direction_entries[1].branch.pc, selected.pc);
     EXPECT_TRUE(direction_entries[1].isNewEntry);
     EXPECT_TRUE(direction_entries[1].actualTaken);
 
@@ -569,7 +586,7 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
         true, update_ctx);
 
     ASSERT_EQ(direction_entries.size(), 1);
-    EXPECT_EQ(direction_entries[0].entry.pc, missing.pc);
+    EXPECT_EQ(direction_entries[0].branch.pc, missing.pc);
     EXPECT_FALSE(direction_entries[0].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(

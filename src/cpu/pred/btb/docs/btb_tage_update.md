@@ -40,7 +40,8 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 `FetchTarget` 中的单一 executed branch summary。它们会先按 entry PC 查
 `actual branch set`：
 
-- direction update 使用该 entry 自己的 actual taken；
+- direction update 使用该 entry 自己的 branch identity/attrs、base direction 和
+  actual taken，不再把完整 predicted BTB entry 作为方向训练输入；
 - target update 使用该 entry 自己的 actual target 和 branch attributes；
 - `BranchUpdateContext::controlBranch/controlTaken` 只是 stream-level control
   summary，给 BTB/RAS/uBTB 这类仍需要“本 fetch block 是否有 taken control”

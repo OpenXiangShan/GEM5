@@ -99,7 +99,8 @@ void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,
                               bool is_new_entry)
 {
     updateDirectionPredictor(
-        predictor, stream, {{entry, actual_taken, is_new_entry}});
+        predictor, stream,
+        {{BranchInfo(entry), entry.ctr >= 0, actual_taken, is_new_entry}});
 }
 
 void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,

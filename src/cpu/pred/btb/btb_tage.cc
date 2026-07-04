@@ -852,7 +852,9 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (const auto &update_entry : entries) {
-        const auto &btb_entry = update_entry.entry;
+        const auto &branch = update_entry.branch;
+        BTBEntry btb_entry(branch);
+        btb_entry.ctr = update_entry.baseTaken ? 0 : -1;
         if (!isBranchInPredictionBlock(btb_entry.pc, startAddr)) {
             DPRINTF(TAGE,
                     "update: skip pc %#lx outside prediction block start %#lx\n",

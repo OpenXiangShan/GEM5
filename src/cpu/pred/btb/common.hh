@@ -251,7 +251,10 @@ struct BTBUpdateEntrySelection
 
 struct DirectionUpdateEntry
 {
-    BTBEntry entry;
+    // Direction predictors need branch identity/attrs, the base direction,
+    // and the actual outcome; target-table state stays in TargetUpdateEntry.
+    BranchInfo branch;
+    bool baseTaken = false;
     bool actualTaken = false;
     bool isNewEntry = false;
 };
@@ -400,7 +403,8 @@ buildDirectionUpdateEntries(
                                             actual_update_branches)) {
             return;
         }
-        entries.push_back({entry,
+        entries.push_back({BranchInfo(entry),
+                           entry.ctr >= 0,
                            getActualTakenForUpdatePC(
                                entry.pc, actual_update_branches, ctx),
                            is_new_entry});

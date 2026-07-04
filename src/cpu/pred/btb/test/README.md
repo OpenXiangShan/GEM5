@@ -99,7 +99,7 @@ auto ctx = makeBaseBranchUpdateContext(stream);
 ctx.controlBranch = entry;
 ctx.controlTaken = taken;
 const std::vector<DirectionUpdateEntry> entries = {
-    {BTBEntry(entry), taken, false}
+    {entry, taken, taken, false}
 };
 tage->updateWithDirectionEntries(entries, ctx, meta, stream.phistory);
 ```
