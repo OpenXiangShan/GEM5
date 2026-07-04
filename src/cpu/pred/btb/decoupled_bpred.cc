@@ -718,8 +718,25 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
             makeResolvedUpdateBranches(ftq_target.resolvedBranches);
         BranchUpdateContext update_ctx;
         if (update_branches.empty()) {
+            dbpBtbStats.commitUpdateFallback++;
+            if (ftq_target.isHit) {
+                dbpBtbStats.commitUpdateFallbackHit++;
+            }
+            if (ftq_target.predTaken) {
+                dbpBtbStats.commitUpdateFallbackPredTaken++;
+            }
+            DPRINTF(DecoupleBP,
+                    "Commit update falls back to exe summary: "
+                    "tid=%u ftq=%llu start=%#lx hit=%d predTaken=%d "
+                    "exeTaken=%d exePC=%#lx\n",
+                    tid,
+                    static_cast<unsigned long long>(ftq.frontId(tid)),
+                    ftq_target.startPC,
+                    ftq_target.isHit, ftq_target.predTaken,
+                    ftq_target.exeTaken, ftq_target.exeBranchInfo.pc);
             update_ctx = makeFallbackBranchUpdateContext(ftq_target);
         } else {
+            dbpBtbStats.commitUpdateResolvedBranches++;
             update_ctx =
                 makeResolvedBranchUpdateContext(ftq_target, update_branches);
         }
