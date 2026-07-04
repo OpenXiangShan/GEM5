@@ -288,19 +288,21 @@ BTBTAGE::tickStart() {}
 /**
  * @brief Generate prediction for a single BTB entry by searching TAGE tables
  *
- * @param btb_entry The BTB entry to generate prediction for
+ * @param branchPC The branch PC to generate prediction for
+ * @param baseTaken The base-table direction for this branch
  * @param startPC The starting PC address for calculating indices and tags
  * @param predMeta Optional prediction metadata; if provided, use snapshot for index/tag
  *             calculation (update path); if nullptr, use current folded history (prediction path)
  * @return TagePrediction containing main and alternative predictions
  */
 BTBTAGE::TagePrediction
-BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
+BTBTAGE::generateSinglePrediction(Addr branchPC,
+                                 bool baseTaken,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
                                  uint8_t asidHash) {
-    DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+    DPRINTF(TAGE, "generateSinglePrediction for pc: %#lx\n", branchPC);
     const auto &state = historyState(tid);
 
     // Find main and alternative predictions
@@ -311,7 +313,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(branchPC, startPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
@@ -340,8 +342,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, pc %#lx, pos %u\n",
+                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, branchPC, position);
                 break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
             }
         }
@@ -361,19 +363,16 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 break;
             }
         } else {
-            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
+            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), pc %#lx\n",
+                i, index, tag, position, branchPC);
         }
     }
 
     // Generate final prediction
     bool main_taken = main_info.taken();
     bool alt_taken = alt_info.taken();
-    // Use base table instead of btb_entry.ctr
-    bool base_taken = btb_entry.ctr >= 0;
-    //bool base_taken = btb_entry.ctr >= 0;
-    bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
-    Addr use_alt_idx = getUseAltIdx(btb_entry.pc);
+    bool alt_pred = alt_provided ? alt_taken : baseTaken; // if alt provided, use alt prediction, otherwise use base
+    Addr use_alt_idx = getUseAltIdx(branchPC);
     short use_alt_ctr = useAlt[use_alt_idx];
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
@@ -398,13 +397,13 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         final_provider_is_alt = true;
     }
 
-    DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
+    DPRINTF(TAGE, "tage predict %#lx taken %d\n", branchPC, taken);
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
-        use_alt, alt_provided, alt_taken, base_taken, main_taken);
+        use_alt, alt_provided, alt_taken, baseTaken, main_taken);
     DPRINTF(TAGE, "tage final source %#lx table %d alt %d\n",
-        btb_entry.pc, final_provider_table, final_provider_is_alt);
+        branchPC, final_provider_table, final_provider_is_alt);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
+    return TagePrediction(branchPC, main_info, alt_info, use_alt, taken,
         alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
         use_alt_ctr, hit_table_mask);
 }
@@ -427,7 +426,8 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
+            auto pred = generateSinglePrediction(btb_entry.pc, btb_entry.ctr >= 0,
+                                                 startPC, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken});
@@ -521,14 +521,16 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
 /**
  * @brief Update predictor state for a single entry
  * 
- * @param entry The BTB entry being updated
+ * @param branchPC The branch PC being updated
+ * @param baseTaken The base-table direction for this branch
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
  * @param stream The fetch stream containing update information
  * @return true if need to allocate new entry
  */
 bool
-BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+BTBTAGE::updatePredictorStateAndCheckAllocation(Addr branchPC,
+                             bool baseTaken,
                              bool actual_taken,
                              const TagePrediction &pred,
                              const BranchUpdateContext &ctx) {
@@ -537,9 +539,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     auto &main_info = pred.mainInfo;
     auto &alt_info = pred.altInfo;
     bool used_alt = pred.useAlt;
-    // Use base table instead of entry.ctr for fallback prediction
-    bool base_taken = entry.ctr >= 0;
-    bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
+    bool alt_taken = alt_info.found ? alt_info.taken() : baseTaken;
     bool use_provider = main_info.found && !used_alt;
     bool use_alt_table = used_alt && alt_info.found;
     bool use_base_table = !use_provider && !use_alt_table;
@@ -567,7 +567,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
         if (main_weak) {
             tageStats.updateProviderNa++;
-            Addr uidx = getUseAltIdx(entry.pc);
+            Addr uidx = getUseAltIdx(branchPC);
             bool alt_correct = (alt_taken == actual_taken);
             updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
@@ -622,7 +622,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = ctx.isControlMispredPC(entry.pc);
+    bool this_fb_mispred = ctx.isControlMispredPC(branchPC);
     if (this_fb_mispred) {
         tageStats.mispredictBranchHasProvider += main_info.found;
         tageStats.mispredictBranchUseProvider += use_provider;
@@ -682,7 +682,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
  * @brief Handle allocation of new entries
  * 
  * @param startPC The starting PC address
- * @param entry The BTB entry being updated
+ * @param branchPC The branch PC being updated
  * @param actual_taken The actual outcome of the branch
  * @param start_table The starting table for allocation
  * @param meta The metadata of the predictor
@@ -691,7 +691,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
  */
 bool
 BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
+                                 Addr branchPC,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
@@ -703,7 +703,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     // 3) any not-useful way
 
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(branchPC, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get(), asidHash);
@@ -746,7 +746,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             short newCounter = actual_taken ? 0 : -1;
             auto &victim = set[selected_way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                    ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
+                    ti, newIndex, selected_way, newTag, position, newCounter, branchPC);
             allocInfo.success = true;
             allocInfo.table = ti;
             allocInfo.index = newIndex;
@@ -757,7 +757,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocInfo.victimCounter = victim.counter;
             allocInfo.victimUseful = victim.useful;
             allocInfo.victimPC = victim.pc;
-            set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            set[selected_way] = TageEntry(newTag, newCounter, branchPC); // u = 0 default
             tageStats.updateAllocSuccess++;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
@@ -848,33 +848,32 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 
     DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
-    // Process each BTB entry
+    // Process each branch entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (const auto &update_entry : entries) {
-        const auto &branch = update_entry.branch;
-        BTBEntry btb_entry(branch);
-        btb_entry.ctr = update_entry.baseTaken ? 0 : -1;
-        if (!isBranchInPredictionBlock(btb_entry.pc, startAddr)) {
+        const Addr branch_pc = update_entry.branch.pc;
+        const bool base_taken = update_entry.baseTaken;
+        if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(TAGE,
                     "update: skip pc %#lx outside prediction block start %#lx\n",
-                    btb_entry.pc, startAddr);
+                    branch_pc, startAddr);
             continue;
         }
         const bool actual_taken = update_entry.actualTaken;
         const bool is_new_entry = update_entry.isNewEntry;
-        auto orig_it = predMeta->preds.find(btb_entry.pc);
+        auto orig_it = predMeta->preds.find(branch_pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;
         if (has_original_pred) {
             original_pred = orig_it->second;
         } else if (!is_new_entry) {
             DPRINTF(TAGE, "update: missing original prediction for old entry pc %#lx, skip\n",
-                    btb_entry.pc);
+                    branch_pc);
             continue;
         } else {
             DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
-                    btb_entry.pc);
+                    branch_pc);
         }
 
         if (has_original_pred && original_pred.finalProviderTable >= 0) {
@@ -892,11 +891,12 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         TagePrediction recomputed;
         if (updateOnRead || !has_original_pred) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
-            recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
+            recomputed = generateSinglePrediction(branch_pc, base_taken,
+                                                 startAddr, predMeta,
                                                  ctx.tid,
                                                  ctx.asidHash);
             // Track differences for statistics
-            auto it = predMeta->preds.find(btb_entry.pc);
+            auto it = predMeta->preds.find(branch_pc);
             if (has_original_pred && it != predMeta->preds.end() && recomputed.taken != original_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
@@ -909,7 +909,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
-            btb_entry, actual_taken, recomputed, ctx);
+            branch_pc, base_taken, actual_taken, recomputed, ctx);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;
@@ -921,7 +921,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
             if (main_info.found) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
-            handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
+            handleNewEntryAllocation(startAddr, branch_pc, actual_taken,
                                      start_table, predMeta,
                                      ctx.asidHash,
                                      allocInfo);
@@ -942,7 +942,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
             }
             boost::to_string(history_low50, history_str);
             boost::to_string(phistory_low50, phistory_str);
-            TagePrediction trace_pred = predMeta->preds[btb_entry.pc];
+            TagePrediction trace_pred = predMeta->preds[branch_pc];
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
             const uint64_t history_hash = hashBitset(predMeta->history);
@@ -953,7 +953,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                 hashFoldedHistVec(predMeta->tagFoldedHist);
             const uint64_t alt_tag_folded_hist_hash =
                 hashFoldedHistVec(predMeta->altTagFoldedHist);
-            t.set(startAddr, btb_entry.pc, main_info.way,
+            t.set(startAddr, branch_pc, main_info.way,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
                 main_info.table, main_info.index, main_info.entry.tag,
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
