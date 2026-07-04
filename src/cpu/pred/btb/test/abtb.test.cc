@@ -68,10 +68,10 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb) {
     const auto update_branches =
-        makeResolvedUpdateBranches(stream.resolvedBranches);
+        makeUpdateBranchPrefix(stream.resolvedBranches);
     abtb->updateWithAheadPipelineState(
         stream.predMetas[abtb->getComponentIdx()],
-        makeResolvedBranchUpdateContext(stream, update_branches),
+        makeActualBranchUpdateContext(stream, update_branches),
         stream.previousPCs, update_branches);
 }
 

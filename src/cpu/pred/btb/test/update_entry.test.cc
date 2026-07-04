@@ -85,7 +85,7 @@ makeUpdateEntries(const FetchTarget &stream,
                   unsigned predict_width,
                   const std::vector<ResolvedBranch> &branches)
 {
-    const auto ctx = makeResolvedBranchUpdateContext(stream, branches);
+    const auto ctx = makeActualBranchUpdateContext(stream, branches);
     const auto update_end_inst_pc =
         buildUpdateEndInstPC(ctx, predict_width);
     return makeUpdateBTBEntries(
@@ -94,7 +94,7 @@ makeUpdateEntries(const FetchTarget &stream,
 
 } // namespace
 
-TEST(UpdateEntryBuilderTest, DirectionResolvedPrefixOverridesEntryResolvedBits)
+TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBits)
 {
     const BTBEntry prefix_entry = makeEntry(0x1000, true, false);
     const BTBEntry legacy_resolved_entry = makeEntry(0x1004, true, true);
@@ -157,7 +157,7 @@ TEST(UpdateEntryBuilderTest, MgscResolvedUpdateRequiresResolvedBranchSet)
     EXPECT_TRUE(entries.empty());
 }
 
-TEST(UpdateEntryBuilderTest, TargetResolvedPrefixOverridesEntryResolvedBits)
+TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
 {
     const BTBEntry prefix_entry = makeEntry(0x2000, false, false);
     const BTBEntry legacy_resolved_entry = makeEntry(0x2004, false, true);
@@ -290,7 +290,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
 
     const ResolvedBranch resolved_second =
         makeResolvedBranch(second.pc, true, true);
-    const auto update_branches = makeResolvedUpdateBranches({
+    const auto update_branches = makeUpdateBranchPrefix({
         makeResolvedBranch(first.pc, false, false),
         resolved_second,
         makeResolvedBranch(after.pc, false, false),
@@ -300,7 +300,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto update_ctx =
-        makeResolvedBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_TRUE(update_ctx.actualTaken);
@@ -318,7 +318,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     EXPECT_EQ(update_branches[1].pc, second.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
+TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefix)
 {
     const ResolvedBranch first =
         makeResolvedBranch(0x1000, false, false);
@@ -335,8 +335,8 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesResolvedPrefix)
         makeResolvedBranch(0x1080, false, false));
 
     const auto update_branches =
-        makeResolvedUpdateBranches({first, second});
-    const auto ctx = makeResolvedBranchUpdateContext(stream, update_branches);
+        makeUpdateBranchPrefix({first, second});
+    const auto ctx = makeActualBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_FALSE(stream.exeTaken);
@@ -424,7 +424,7 @@ TEST(UpdateEntryBuilderTest, FetchTargetKeepsCommittedBranchesSeparate)
     EXPECT_TRUE(stream.committedBranches[1].taken);
 }
 
-TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
+TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
 {
     const BTBEntry first = makeEntry(0x1000, true, false);
     const BTBEntry second = makeEntry(0x1008, true, false);
@@ -442,12 +442,12 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
     });
 
     const auto update_branches =
-        makeResolvedUpdateBranches(stream.resolvedBranches);
+        makeUpdateBranchPrefix(stream.resolvedBranches);
     EXPECT_EQ(update_branches.size(), 2);
     const BTBUpdateEntrySelection selection{
         BTBEntry(makeBranchInfo(resolved_second)), false};
     const auto update_ctx =
-        makeResolvedBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_TRUE(update_ctx.actualTaken);
@@ -470,9 +470,9 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirection)
     stream.predBTBEntries = {predicted};
 
     const auto update_branches =
-        makeResolvedUpdateBranches({missing, taken});
+        makeUpdateBranchPrefix({missing, taken});
     const auto update_ctx =
-        makeResolvedBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(stream, update_branches);
     const BTBUpdateEntrySelection selection{selected, false};
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
@@ -547,9 +547,9 @@ TEST(UpdateEntryBuilderTest, InvalidSelectedEntryDoesNotTrainTarget)
     FetchTarget stream;
     stream.startPC = 0x1000;
 
-    const auto update_branches = makeResolvedUpdateBranches({missing});
+    const auto update_branches = makeUpdateBranchPrefix({missing});
     const auto update_ctx =
-        makeResolvedBranchUpdateContext(stream, update_branches);
+        makeActualBranchUpdateContext(stream, update_branches);
     const BTBUpdateEntrySelection selection;
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);

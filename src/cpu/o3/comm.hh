@@ -245,7 +245,7 @@ struct ResolveQueueEntry
     Addr
     updatePrefixBoundaryPC() const
     {
-        return branch_prediction::btb_pred::resolvedUpdatePrefixBoundaryPC(
+        return branch_prediction::btb_pred::updateBranchPrefixBoundaryPC(
             resolvedBranches);
     }
 

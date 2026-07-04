@@ -1,22 +1,23 @@
 # BTB/TAGE update path 说明
 
 这份文档记录当前 BTB frontend 的训练协议。核心边界是：预测器训练应该由
-actual resolved branch facts 加 prediction-time meta/history 驱动；当真实
-resolve 结果已经存在时，不应该再从预测期的 `BTBEntry` 里反推 actual
-outcome。
+actual branch facts 加 prediction-time meta/history 驱动；当真实控制流结果已经
+存在时，不应该再从预测期的 `BTBEntry` 里反推 actual outcome。
 
 ## Update Contract
 
 commit update 和 resolve update 应该收敛到同一种输入形态：
 
 ```text
-ftqId/startPC + prediction meta/history snapshot + resolved branch set
+ftqId/startPC + prediction meta/history snapshot + actual branch set
 ```
 
 二者差异只应该是“什么时候训练”，而不是“训练数据从哪里重建”。
 
-`resolved branch set` 是同一个 FTQ entry 内按 PC 排序的真实控制流结果。
-`makeResolvedUpdateBranches()` 只保留到第一个 taken 或 mispredicted branch
+`actual branch set` 是同一个 FTQ entry 内按 PC 排序的真实控制流结果。resolve
+update 从 `resolvedBranches` 得到它；commit update 从 `committedBranches` 得到
+它，并且只有在 committed set 缺失时才退回 resolve-time set。
+`makeUpdateBranchPrefix()` 只保留到第一个 taken 或 mispredicted branch
 为止的 prefix；这个点之后的 younger branch 不属于本次训练 prefix。
 
 同一个 FTQ 内的多个 branch 可能在不同周期 resolve。Fetch 会按 `tid + ftqId`
@@ -26,18 +27,18 @@ ftqId/startPC + prediction meta/history snapshot + resolved branch set
 
 ## Actual Result Context
 
-`makeResolvedBranchUpdateContext(target, resolved_branches)` 会从 `FetchTarget` 的
-prediction-time snapshot 和 resolved prefix 直接构造
+`makeActualBranchUpdateContext(target, actual_branches)` 会从 `FetchTarget` 的
+prediction-time snapshot 和 actual branch prefix 直接构造
 `BranchUpdateContext`。这条路径是 predictor update 的普通入口；它不需要先把
 真实结果写回 `FetchTarget`，因此训练边界更接近：
 
 ```text
-prediction snapshot + resolved branch set -> BranchUpdateContext/update entries
+prediction snapshot + actual branch set -> BranchUpdateContext/update entries
 ```
 
 direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 `FetchTarget` 中的单一 executed branch summary。它们会先按 entry PC 查
-`resolved branch set`：
+`actual branch set`：
 
 - direction update 使用该 entry 自己的 actual taken；
 - target update 使用该 entry 自己的 actual target 和 branch attributes；
@@ -55,12 +56,12 @@ executed branch summary 去猜训练 entry；新模型优先消费真实 resolve
 输入包括：
 
 - actual update prefix 内的 predicted BTB entries；
-- resolved prefix 中预测 BTB 没有命中的 conditional branch，对它们生成
+- actual branch prefix 中预测 BTB 没有命中的 conditional branch，对它们生成
   direction-only entry；
 - selected target entry，如果它是新分配的 conditional entry；
-- resolved branch prefix 和 prediction-time meta/history snapshot。
+- actual branch prefix 和 prediction-time meta/history snapshot。
 
-对 resolved update 来说，普通方向预测器只保留 resolved prefix 里的 entry。MGSC
+对 resolved update 来说，普通方向预测器只保留 actual branch prefix 里的 entry。MGSC
 有自己的 filter，因为它对 conditional entry 集合的需求略有不同。
 
 TAGE update 仍然需要 prediction-time meta/history。missing conditional branch
@@ -76,7 +77,7 @@ entry。
 
 - actual update prefix 内的 predicted BTB entries；
 - MBTB update selection 选出的 selected target entry，如果它是 new entry；
-- resolved branch prefix。
+- actual branch prefix。
 
 每个 `TargetUpdateEntry` 都携带自己的 `actualTaken` 和 `actualBranch`。因此
 indirect target 修正会用该 entry PC 对应的真实 target，而不是从整个
@@ -97,7 +98,7 @@ entry。这类 branch 是 direction-training fact，不是 target-allocation fac
 drop if resolvedTid == tid && resolvedFTQId > squashFtqId
 ```
 
-same-FTQ entry 不删除。它内部仍由 resolved branch prefix 决定哪些 branch 能训练。
+same-FTQ entry 不删除。它内部仍由 actual branch prefix 决定哪些 branch 能训练。
 
 ## What This Is Not
 
@@ -108,7 +109,7 @@ meta/history snapshot，因为 provider lookup、allocation 和 folded-history c
 它也不是逐 RTL signal 复刻。这里保留的是影响性能的因果链：
 
 ```text
-resolved branch set + prediction-time context
+actual branch set + prediction-time context
     -> explicit direction/target update entries
     -> predictor table update
     -> prediction quality and resolve queue pressure
