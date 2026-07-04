@@ -287,6 +287,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar commitUpdateNoResolvedNoop;
         statistics::Scalar commitUpdateFallbackHit;
         statistics::Scalar commitUpdateFallbackPredTaken;
+        statistics::Scalar commitUpdateFallbackExeTaken;
+        statistics::Scalar commitUpdateFallbackSquash;
         // statistics::Distribution ftqEntryDist;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;

@@ -726,15 +726,22 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
             if (ftq_target.predTaken) {
                 dbpBtbStats.commitUpdateFallbackPredTaken++;
             }
+            if (ftq_target.exeTaken) {
+                dbpBtbStats.commitUpdateFallbackExeTaken++;
+            }
+            if (ftq_target.squashType != SquashType::SQUASH_NONE) {
+                dbpBtbStats.commitUpdateFallbackSquash++;
+            }
             DPRINTF(DecoupleBP,
                     "Commit update falls back to exe summary: "
                     "tid=%u ftq=%llu start=%#lx hit=%d predTaken=%d "
-                    "exeTaken=%d exePC=%#lx\n",
+                    "exeTaken=%d squashType=%d squashPC=%#lx exePC=%#lx\n",
                     tid,
                     static_cast<unsigned long long>(ftq.frontId(tid)),
                     ftq_target.startPC,
                     ftq_target.isHit, ftq_target.predTaken,
-                    ftq_target.exeTaken, ftq_target.exeBranchInfo.pc);
+                    ftq_target.exeTaken, ftq_target.squashType,
+                    ftq_target.squashPC, ftq_target.exeBranchInfo.pc);
             update_ctx = makeFallbackBranchUpdateContext(ftq_target);
         } else if (update_branches.empty()) {
             dbpBtbStats.commitUpdateNoResolvedNoop++;
