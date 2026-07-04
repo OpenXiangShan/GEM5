@@ -263,11 +263,13 @@ class MBTB : public TimedBaseBTBPredictor
                                std::vector<FullBTBPrediction>& stagePreds);
 
     /** Check branch prediction hit status
-     *  @param ctx Target update context containing execution results
+     *  @param entries Target update entries carrying actual results
      *  @param meta BTB metadata from prediction
+     *  @param pred_tick Tick of the prediction being updated
      */
-    void checkPredictionHit(const BranchUpdateContext &ctx,
-                           const BTBMeta* meta);
+    void checkPredictionHit(const std::vector<TargetUpdateEntry> &entries,
+                            const BTBMeta *meta,
+                            Tick pred_tick);
 
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,

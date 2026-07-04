@@ -296,6 +296,62 @@ TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
               new_uncond_entries);
 }
 
+TEST_F(BTBTest, TargetUpdateStatsUseEntryActualBranchForHit) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
+    predictUpdateCycle(mbtb, 0x1000, branch, true);
+
+    std::vector<FullBTBPrediction> stagePreds(4);
+    mbtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), stagePreds);
+    auto meta = mbtb->getPredictionMeta();
+
+    BranchUpdateContext ctx;
+    ctx.startPC = 0x1000;
+    ctx.controlBranch = createBranchInfo(0x1ff0, 0x3000, true);
+    ctx.controlTaken = true;
+
+    const auto actual_branches =
+        std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
+    const auto entries = buildTargetUpdateEntries(
+        stagePreds[mbtb->getDelay()].btbEntries, actual_branches,
+        mbtb->targetUpdateEntryFilter(), mbtb->getResolvedUpdate());
+    ASSERT_FALSE(entries.empty());
+
+    const uint64_t update_hit = mbtb->btbStats.updateHit;
+    const uint64_t update_miss = mbtb->btbStats.updateMiss;
+    mbtb->updateWithTargetEntries(entries, ctx, meta);
+
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit),
+              update_hit + 1);
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss), update_miss);
+}
+
+TEST_F(BTBTest, TargetUpdateStatsUseEntryActualTakenForMiss) {
+    std::vector<FullBTBPrediction> stagePreds(4);
+    mbtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), stagePreds);
+    auto meta = mbtb->getPredictionMeta();
+
+    BranchInfo branch = createBranchInfo(0x1008, 0x2000, true);
+    BranchUpdateContext ctx;
+    ctx.startPC = 0x1000;
+    ctx.controlBranch = branch;
+    ctx.controlTaken = false;
+
+    const auto actual_branches =
+        std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
+    const auto entries = buildTargetUpdateEntries(
+        {}, actual_branches, mbtb->targetUpdateEntryFilter(),
+        mbtb->getResolvedUpdate());
+    ASSERT_FALSE(entries.empty());
+
+    const uint64_t update_hit = mbtb->btbStats.updateHit;
+    const uint64_t update_miss = mbtb->btbStats.updateMiss;
+    mbtb->updateWithTargetEntries(entries, ctx, meta);
+
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit), update_hit);
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss),
+              update_miss + 1);
+}
+
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]

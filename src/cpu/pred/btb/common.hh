@@ -279,6 +279,27 @@ struct TargetUpdateEntry
     BranchInfo actualBranch;
 };
 
+inline const TargetUpdateEntry *
+findTakenTargetUpdateEntry(const std::vector<TargetUpdateEntry> &entries)
+{
+    auto it = std::find_if(
+        entries.begin(), entries.end(),
+        [](const auto &entry) { return entry.actualTaken; });
+    return it == entries.end() ? nullptr : &*it;
+}
+
+inline bool
+targetUpdateHitPrediction(
+    const TargetUpdateEntry &taken_entry,
+    const std::vector<BTBEntry> &predicted_entries)
+{
+    return std::any_of(
+        predicted_entries.begin(), predicted_entries.end(),
+        [&taken_entry](const auto &predicted_entry) {
+            return taken_entry.actualBranch == predicted_entry;
+        });
+}
+
 inline void
 updateTargetEntryCounter(int &ctr, bool taken)
 {

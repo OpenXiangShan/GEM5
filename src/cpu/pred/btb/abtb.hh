@@ -318,21 +318,21 @@ class AheadBTB : public TimedBaseBTBPredictor
     Addr getPreviousPC(std::queue<Addr> previous_pcs);
 
     /** Check branch prediction hit status
-     *  @param ctx Target update context containing execution results
+     *  @param entries Target update entries carrying actual results
      *  @param meta BTB metadata from prediction
+     *  @param pred_tick Tick of the prediction being updated
      */
-    void checkPredictionHit(const BranchUpdateContext &ctx,
-                           const BTBMeta* meta);
+    void checkPredictionHit(const std::vector<TargetUpdateEntry> &entries,
+                            const BTBMeta *meta,
+                            Tick pred_tick);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry
      *  @param btb_tag Tag of the BTB entry
      *  @param update_entry Entry to update/replace
-     *  @param ctx Target update context with actual branch info
      */
     void updateBTBEntry(Addr btb_idx, Addr btb_tag,
-                        const TargetUpdateEntry &update_entry,
-                        const BranchUpdateContext &ctx);
+                        const TargetUpdateEntry &update_entry);
 
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,

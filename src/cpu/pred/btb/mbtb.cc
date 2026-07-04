@@ -399,18 +399,19 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
  * Also check BTB prediction status
  */
 void
-MBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta)
+MBTB::checkPredictionHit(const std::vector<TargetUpdateEntry> &entries,
+                         const BTBMeta *meta,
+                         Tick pred_tick)
 {
-    bool pred_branch_hit = false;
-    for (auto &e : meta->hit_entries) {
-        if (ctx.controlBranch == e) {
-            pred_branch_hit = true;
-            break;
-        }
+    const auto *taken_entry = findTakenTargetUpdateEntry(entries);
+    if (!taken_entry) {
+        btbStats.updateHit++;
+        return;
     }
-    if (!pred_branch_hit && ctx.controlTaken) {
+
+    if (!targetUpdateHitPrediction(*taken_entry, meta->hit_entries)) {
         DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n",
-                ctx.controlBranch.pc, ctx.predTick);
+                taken_entry->actualBranch.pc, pred_tick);
         btbStats.updateMiss++;
     } else {
         btbStats.updateHit++;
@@ -613,7 +614,7 @@ MBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
 
     // 1. Check prediction hit status, for stats recording
     if (meta) {
-        checkPredictionHit(ctx, meta);
+        checkPredictionHit(entries, meta, ctx.predTick);
     }
 
     for (const auto &entry : entries) {

@@ -490,18 +490,18 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  * Check if the branch was predicted correctly
  */
 void
-AheadBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(const std::vector<TargetUpdateEntry> &entries,
+                             const BTBMeta *meta,
+                             Tick pred_tick)
 {
-    bool pred_branch_hit = false;
-    for (auto &e : meta->hit_entries) {
-        if (ctx.controlBranch == e) {
-            pred_branch_hit = true;
-            break;
-        }
+    const auto *taken_entry = findTakenTargetUpdateEntry(entries);
+    if (!taken_entry) {
+        return;
     }
-    if (!pred_branch_hit && ctx.controlTaken) {
+
+    if (!targetUpdateHitPrediction(*taken_entry, meta->hit_entries)) {
         DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n",
-                ctx.controlBranch.pc, ctx.predTick);
+                taken_entry->actualBranch.pc, pred_tick);
         btbStats.updateMiss++;
     }
 
@@ -518,8 +518,7 @@ AheadBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta
  */
 void
 AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
-                         const TargetUpdateEntry &update_entry,
-                         const BranchUpdateContext &ctx)
+                         const TargetUpdateEntry &update_entry)
 {
     const auto &entry = update_entry.entry;
 
@@ -672,13 +671,13 @@ AheadBTB::updateWithAheadPipelineState(
     // 1. Process old entries
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
 
-    // 2. Check prediction hit status, for stats recording
-    checkPredictionHit(update_ctx, meta.get());
-
-    // 3. Collect entries to update
+    // 2. Collect entries to update
     const auto entries_to_update = buildTargetUpdateEntries(
         old_entries, update_branches,
         TargetUpdateEntryFilter::Any, getResolvedUpdate());
+
+    // 3. Check prediction hit status, for stats recording
+    checkPredictionHit(entries_to_update, meta.get(), update_ctx.predTick);
 
     if (!entries_to_update.empty()) {
         updateWithEntries(entries_to_update, update_ctx,
@@ -700,7 +699,7 @@ AheadBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
     Addr btb_idx = getIndex(previousPC, ctx.asidHash);
     for (auto entry : entries) {
         entry.entry.source = getComponentIdx();
-        updateBTBEntry(btb_idx, btb_tag, entry, ctx);
+        updateBTBEntry(btb_idx, btb_tag, entry);
     }
 }
 
