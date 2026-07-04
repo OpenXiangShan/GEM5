@@ -206,8 +206,6 @@ auto meta = btb->getPredictionMeta();
 // Setup update stream
 FetchTarget stream;
 stream.startPC = pc;
-stream.exeBranchInfo = branch_info;
-stream.exeTaken = taken;
 stream.predMetas[0] = meta;
 
 // Build explicit target update entries

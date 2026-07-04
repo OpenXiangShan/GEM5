@@ -90,14 +90,21 @@ tage->checkFoldedHist(s0History, "speculative update");
 // Setup update stream
 FetchTarget stream;
 stream.startPC = pc;
-stream.exeBranchInfo = entry;
-stream.exeTaken = taken;
 stream.predMetas[0] = meta;  // Must set meta from prediction phase
 
 // Update predictor through explicit DirectionUpdateEntry inputs.
-auto ctx = makeBaseBranchUpdateContext(stream);
-ctx.controlBranch = entry;
-ctx.controlTaken = taken;
+ResolvedBranch actual_branch;
+actual_branch.pc = entry.pc;
+actual_branch.target = entry.target;
+actual_branch.taken = taken;
+actual_branch.isCond = entry.isCond;
+actual_branch.isIndirect = entry.isIndirect;
+actual_branch.isDirect = entry.isDirect;
+actual_branch.isCall = entry.isCall;
+actual_branch.isReturn = entry.isReturn;
+actual_branch.size = entry.size;
+auto ctx = makeActualBranchUpdateContext(
+    makeBaseBranchUpdateContext(stream), {actual_branch});
 const std::vector<DirectionUpdateEntry> entries = {
     {entry, taken, taken, false}
 };

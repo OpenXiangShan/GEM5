@@ -46,6 +46,23 @@ BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
     return entry;
 }
 
+ResolvedBranch
+createResolvedBranch(const BranchInfo &branch, bool taken, bool mispred)
+{
+    ResolvedBranch resolved;
+    resolved.pc = branch.pc;
+    resolved.target = branch.target;
+    resolved.taken = taken;
+    resolved.mispred = mispred;
+    resolved.isCond = branch.isCond;
+    resolved.isIndirect = branch.isIndirect;
+    resolved.isDirect = branch.isDirect;
+    resolved.isCall = branch.isCall;
+    resolved.isReturn = branch.isReturn;
+    resolved.size = branch.size;
+    return resolved;
+}
+
 /**
  * @brief Create a stream for update or recovery
  *
@@ -75,12 +92,25 @@ FetchTarget setMispredStream(FetchTarget stream) {
     return stream;
 }
 
-BranchUpdateContext makeActualContext(const FetchTarget &stream)
+BranchUpdateContext
+makeActualContext(const FetchTarget &stream,
+                  const std::vector<DirectionUpdateEntry> &entries)
 {
-    auto ctx = makeBaseBranchUpdateContext(stream);
-    ctx.controlBranch = stream.exeBranchInfo;
-    ctx.controlTaken = stream.exeTaken;
-    return ctx;
+    auto base_ctx = makeBaseBranchUpdateContext(stream);
+    if (entries.empty()) {
+        return base_ctx;
+    }
+
+    std::vector<ResolvedBranch> branches;
+    branches.reserve(entries.size());
+    for (const auto &entry : entries) {
+        const bool mispred =
+            stream.squashType == SquashType::SQUASH_CTRL &&
+            stream.squashPC == entry.branch.pc;
+        branches.push_back(
+            createResolvedBranch(entry.branch, entry.actualTaken, mispred));
+    }
+    return makeActualBranchUpdateContext(base_ctx, branches);
 }
 
 void updateDirectionPredictor(
@@ -88,7 +118,7 @@ void updateDirectionPredictor(
     const std::vector<DirectionUpdateEntry> &entries)
 {
     predictor->updateWithDirectionEntries(
-        entries, makeActualContext(stream),
+        entries, makeActualContext(stream, entries),
         stream.predMetas[predictor->getComponentIdx()],
         stream.phistory);
 }

@@ -95,15 +95,6 @@ findCondTaken(const CondTakens &condTakens, Addr pc)
     return {true, it->second};
 }
 
-BranchUpdateContext
-makeActualContext(const FetchTarget &stream)
-{
-    auto ctx = makeBaseBranchUpdateContext(stream);
-    ctx.controlBranch = stream.exeBranchInfo;
-    ctx.controlTaken = stream.exeTaken;
-    return ctx;
-}
-
 ResolvedBranch
 makeResolvedBranch(const BTBEntry &entry, bool taken)
 {
@@ -124,10 +115,12 @@ void
 updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
            const BTBEntry &entry, bool actual_taken)
 {
-    const auto ctx = makeActualContext(stream);
+    const auto actual_branches =
+        std::vector<ResolvedBranch>{makeResolvedBranch(entry, actual_taken)};
+    const auto ctx = makeActualBranchUpdateContext(
+        makeBaseBranchUpdateContext(stream), actual_branches);
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {},
-        {makeResolvedBranch(entry, actual_taken)},
+        {entry}, {}, actual_branches,
         mgsc.directionUpdateEntryFilter(),
         mgsc.getResolvedUpdate());
     mgsc.updateWithDirectionEntries(
@@ -362,8 +355,6 @@ struct MgscHarness
         FetchTarget update_stream;
         update_stream.startPC = start_pc;
         update_stream.resolved = true;
-        update_stream.exeBranchInfo = entry;
-        update_stream.exeTaken = actual_taken;
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
         updateMgsc(mgsc, update_stream, entry, actual_taken);
 

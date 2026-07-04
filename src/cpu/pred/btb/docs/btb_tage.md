@@ -320,14 +320,21 @@ When the branch is resolved and found to be correctly predicted:
 // Setup update stream with actual outcome
 FetchTarget stream;
 stream.startPC = pc;
-stream.exeBranchInfo = branch_info;
-stream.exeTaken = actual_taken;
 stream.predMetas[0] = meta;  // Must include metadata from prediction phase
 
 // Update predictor state through explicit DirectionUpdateEntry inputs.
-auto update_ctx = makeBaseBranchUpdateContext(stream);
-update_ctx.controlBranch = branch_info;
-update_ctx.controlTaken = actual_taken;
+ResolvedBranch actual_branch;
+actual_branch.pc = branch_info.pc;
+actual_branch.target = branch_info.target;
+actual_branch.taken = actual_taken;
+actual_branch.isCond = branch_info.isCond;
+actual_branch.isIndirect = branch_info.isIndirect;
+actual_branch.isDirect = branch_info.isDirect;
+actual_branch.isCall = branch_info.isCall;
+actual_branch.isReturn = branch_info.isReturn;
+actual_branch.size = branch_info.size;
+auto update_ctx = makeActualBranchUpdateContext(
+    makeBaseBranchUpdateContext(stream), {actual_branch});
 const std::vector<DirectionUpdateEntry> entries = {
     {branch_info, actual_taken, actual_taken, false}
 };
