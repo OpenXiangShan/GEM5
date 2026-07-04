@@ -154,7 +154,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void noteResolveUpdateAccepted(Addr update_start_pc) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(
+    void recordCommittedBranchStats(
         const ResolvedBranch &branch,
         const std::shared_ptr<void> &prediction_meta) override;
 #endif

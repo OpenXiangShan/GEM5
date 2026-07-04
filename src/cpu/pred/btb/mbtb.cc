@@ -764,7 +764,7 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 #ifndef UNIT_TEST
 
 void
-MBTB::commitBranch(
+MBTB::recordCommittedBranchStats(
     const ResolvedBranch &branch,
     const std::shared_ptr<void> &prediction_meta)
 {

@@ -622,7 +622,7 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
 }
 
 void
-BTBITTAGE::commitBranch(
+BTBITTAGE::recordCommittedBranchStats(
     const ResolvedBranch &branch,
     const std::shared_ptr<void> &prediction_meta)
 {

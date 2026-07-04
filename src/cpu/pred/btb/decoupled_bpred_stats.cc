@@ -834,9 +834,9 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
         trackTakenBranch(branchAddr);
     }
 
-    // ---------- Update predictor components ----------
+    // ---------- Record per-component committed branch statistics ----------
     for (auto component : components) {
-        component->commitBranch(
+        component->recordCommittedBranchStats(
             resolved_branch,
             entry.predMetas[component->getComponentIdx()]);
     }

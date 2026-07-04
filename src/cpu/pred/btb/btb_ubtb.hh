@@ -139,7 +139,7 @@ class UBTB : public TimedBaseBTBPredictor
      * @param stream The fetch stream containing execution results
      * @param branch The committed branch result
      */
-    void commitBranch(
+    void recordCommittedBranchStats(
         const ResolvedBranch &branch,
         const std::shared_ptr<void> &prediction_meta) override;
 

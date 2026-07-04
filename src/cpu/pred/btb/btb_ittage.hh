@@ -127,7 +127,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta) override;
 
-    void commitBranch(
+    void recordCommittedBranchStats(
         const ResolvedBranch &branch,
         const std::shared_ptr<void> &prediction_meta) override;
 

@@ -468,7 +468,7 @@ BTBRAS::getTopAddrFromMeta(const std::shared_ptr<void> &prediction_meta)
 }
 
 void
-BTBRAS::commitBranch(
+BTBRAS::recordCommittedBranchStats(
     const ResolvedBranch &branch,
     const std::shared_ptr<void> &prediction_meta)
 {

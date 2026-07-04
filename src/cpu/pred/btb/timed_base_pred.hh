@@ -113,7 +113,7 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void noteResolveUpdateAccepted(Addr) {}
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
-    virtual void commitBranch(
+    virtual void recordCommittedBranchStats(
         const ResolvedBranch &branch,
         const std::shared_ptr<void> &prediction_meta) {}
 #endif

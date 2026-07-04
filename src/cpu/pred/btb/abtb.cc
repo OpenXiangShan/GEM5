@@ -755,7 +755,7 @@ AheadBTB::getPreviousPC(std::queue<Addr> previous_pcs)
 #ifndef UNIT_TEST
 
 void
-AheadBTB::commitBranch(
+AheadBTB::recordCommittedBranchStats(
     const ResolvedBranch &branch,
     const std::shared_ptr<void> &prediction_meta)
 {

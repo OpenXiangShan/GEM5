@@ -1485,7 +1485,7 @@ BTBTAGE::getNumWays(unsigned table) const
 #ifndef UNIT_TEST
 
 void
-BTBTAGE::commitBranch(
+BTBTAGE::recordCommittedBranchStats(
     const ResolvedBranch &branch,
     const std::shared_ptr<void> &prediction_meta)
 {

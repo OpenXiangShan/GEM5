@@ -1141,7 +1141,7 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
 
 #ifndef UNIT_TEST
 void
-MicroTAGE::commitBranch(
+MicroTAGE::recordCommittedBranchStats(
     const ResolvedBranch &branch,
     const std::shared_ptr<void> &prediction_meta)
 {

@@ -100,13 +100,13 @@ namespace btb_pred {
             const BranchUpdateContext &ctx,
             const std::shared_ptr<void> &prediction_meta) override;
 
-        // commitBranch method - override only in production mode
+        // Commit-time stats hook - override only in production mode
 #ifdef UNIT_TEST
-        void commitBranch(
+        void recordCommittedBranchStats(
             const ResolvedBranch &branch,
             const std::shared_ptr<void> &prediction_meta);
 #else
-        void commitBranch(
+        void recordCommittedBranchStats(
             const ResolvedBranch &branch,
             const std::shared_ptr<void> &prediction_meta) override;
 #endif

@@ -1422,7 +1422,7 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 
 #ifndef UNIT_TEST
 void
-BTBMGSC::commitBranch(
+BTBMGSC::recordCommittedBranchStats(
     const ResolvedBranch &branch,
     const std::shared_ptr<void> &prediction_meta)
 {
