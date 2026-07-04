@@ -24,6 +24,25 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+namespace
+{
+
+BranchInfo
+makeSquashActualBranch(SquashType squash_type,
+                       const PCStateBase &squash_pc,
+                       Addr redirect_pc,
+                       const StaticInstPtr &static_inst,
+                       unsigned control_inst_size)
+{
+    if (squash_type != SQUASH_CTRL || !static_inst) {
+        return BranchInfo();
+    }
+    return BranchInfo(
+        squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
+}
+
+} // namespace
+
 uint8_t
 DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
 {
@@ -577,6 +596,8 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Get reference to the target
     auto &target = ftq.get(target_id, tid);
+    const BranchInfo actual_branch = makeSquashActualBranch(
+        squash_type, squash_pc, redirect_pc, static_inst, control_inst_size);
 
     // Update target state
     target.resolved = true;
@@ -587,7 +608,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     // Special handling for control squash - create branch info
     if (squash_type == SQUASH_CTRL && static_inst) {
         // Use full branch info with static_inst if available
-        target.exeBranchInfo = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
+        target.exeBranchInfo = actual_branch;
         dumpFsq("Before control squash");
     }
 
@@ -595,7 +616,9 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     ftq.squashAfter(target_id, tid);
 
     // Recover history using the extracted function
-    recoverHistoryForSquash(target, target_id, squash_pc, is_conditional, actually_taken, squash_type, redirect_pc);
+    recoverHistoryForSquash(target, target_id, squash_pc, actual_branch,
+                            is_conditional, actually_taken, squash_type,
+                            redirect_pc);
 
     // Clear predictions for next cycle
     clearPreds(tid);
@@ -1198,6 +1221,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
  * @param target The target being squashed
  * @param target_id ID of the target being squashed
  * @param squash_pc PC where the squash occurred
+ * @param actual_branch Actual branch fact for control squashes
  * @param is_conditional Whether the branch is conditional
  * @param actually_taken Whether the branch was actually taken
  * @param squash_type Type of squash (CTRL/OTHER/TRAP)
@@ -1207,6 +1231,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     FetchTarget &target,
     unsigned target_id,
     const PCStateBase &squash_pc,
+    const BranchInfo &actual_branch,
     bool is_conditional,
     bool actually_taken,
     SquashType squash_type,
@@ -1232,12 +1257,10 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
         squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
     const auto phist_update = target.getPHistUpdateDuringSquash(
         squash_pc.instAddr(), actually_taken, redirect_pc);
-    const BranchInfo actual_branch = target.exeBranchInfo;
-    const bool actual_taken = target.exeTaken;
 
     // RAS recovers its speculative stack, not folded history.
     if (ras->isEnabled()) {
-        ras->recoverState(target, actual_branch, actual_taken);
+        ras->recoverState(target, actual_branch, actually_taken);
     }
     if (abtb->isEnabled()) {
         abtb->recoverState(target);
