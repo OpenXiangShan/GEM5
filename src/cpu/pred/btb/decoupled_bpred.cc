@@ -738,16 +738,20 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                     update_branches);
         }
 
+        const auto *summary_branch =
+            findActualUpdateSummaryBranch(update_branches);
         DPRINTF(DecoupleBP,
                 "Commit target start %#lx, which is predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
-                ftq_target.startPC, update_ctx.controlBranch.pc,
-                update_ctx.controlBranch.target, ftq_target.predBranchInfo.pc,
+                ftq_target.startPC,
+                summary_branch ? summary_branch->pc : 0,
+                summary_branch ? summary_branch->target : 0,
+                ftq_target.predBranchInfo.pc,
                 ftq_target.predBranchInfo.target);
 
         // Update statistics
-        updateStatistics(ftq_target, update_ctx);
+        updateStatistics(ftq_target, update_ctx.squashType, update_branches);
 
         // Update predictor components
         updatePredictorComponents(
@@ -789,6 +793,8 @@ DecoupledBPUWithBTB::resolveUpdate(
         makeActualBranchUpdateContext(
             makeBaseBranchUpdateContext(target),
             update_branches);
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
             "controlTaken=%d controlPC=%#lx controlTarget=%#lx squashType=%d "
@@ -796,8 +802,9 @@ DecoupledBPUWithBTB::resolveUpdate(
             target_id, tid,
             static_cast<unsigned long long>(branches.size()),
             static_cast<unsigned long long>(update_branches.size()),
-            update_ctx.controlTaken,
-            update_ctx.controlBranch.pc, update_ctx.controlBranch.target,
+            summary_branch ? summary_branch->taken : false,
+            summary_branch ? summary_branch->pc : 0,
+            summary_branch ? summary_branch->target : 0,
             update_ctx.squashType, update_ctx.squashPC);
     for (const auto &branch : branches) {
         DPRINTF(DecoupleBP,

@@ -309,6 +309,30 @@ findFirstTakenActualUpdateBranch(
     return first_taken;
 }
 
+inline const ResolvedBranch *
+findActualUpdateSummaryBranch(
+    const std::vector<ResolvedBranch> &branches)
+{
+    if (branches.empty()) {
+        return nullptr;
+    }
+    if (const auto *taken_branch =
+            findFirstTakenActualUpdateBranch(branches)) {
+        return taken_branch;
+    }
+    return &branches.back();
+}
+
+inline const ResolvedBranch *
+findMispredictedActualUpdateBranch(
+    const std::vector<ResolvedBranch> &branches)
+{
+    auto it = std::find_if(
+        branches.begin(), branches.end(),
+        [](const auto &branch) { return branch.mispred; });
+    return it == branches.end() ? nullptr : &*it;
+}
+
 inline const TargetUpdateEntry *
 findTakenTargetUpdateEntry(const std::vector<TargetUpdateEntry> &entries)
 {
@@ -897,8 +921,10 @@ makeActualBranchUpdateContext(BranchUpdateContext ctx,
 {
     assert(!branches.empty());
 
-    ctx.controlBranch = makeBranchInfo(branches.back());
-    ctx.controlTaken = false;
+    const auto *summary_branch = findActualUpdateSummaryBranch(branches);
+    assert(summary_branch);
+    ctx.controlBranch = makeBranchInfo(*summary_branch);
+    ctx.controlTaken = summary_branch->taken;
     ctx.squashType = SquashType::SQUASH_NONE;
 
     for (const auto &branch : branches) {
@@ -907,13 +933,11 @@ makeActualBranchUpdateContext(BranchUpdateContext ctx,
             ctx.squashPC = branch.pc;
         }
         if (branch.taken) {
-            ctx.controlTaken = true;
-            ctx.controlBranch = makeBranchInfo(branch);
-            if (ctx.squashType == SquashType::SQUASH_NONE) {
-                ctx.squashPC = branch.pc;
-            }
             break;
         }
+    }
+    if (ctx.controlTaken && ctx.squashType == SquashType::SQUASH_NONE) {
+        ctx.squashPC = ctx.controlBranch.pc;
     }
     return ctx;
 }

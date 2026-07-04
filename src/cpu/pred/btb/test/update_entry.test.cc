@@ -634,6 +634,39 @@ TEST(UpdateEntryBuilderTest, FirstTakenDirectionEntryUsesLowestPC)
     EXPECT_EQ(first_taken->branch.pc, first.branch.pc);
 }
 
+TEST(UpdateEntryBuilderTest, ActualUpdateSummaryUsesTakenElseLastBranch)
+{
+    const auto first = makeResolvedBranch(0x1000, false, false);
+    const auto taken = makeResolvedBranch(0x1080, true, false);
+    const auto later = makeResolvedBranch(0x1100, false, false);
+
+    const auto *taken_summary =
+        findActualUpdateSummaryBranch({later, first, taken});
+    ASSERT_NE(taken_summary, nullptr);
+    EXPECT_EQ(taken_summary->pc, taken.pc);
+
+    const auto *not_taken_summary =
+        findActualUpdateSummaryBranch({first, later});
+    ASSERT_NE(not_taken_summary, nullptr);
+    EXPECT_EQ(not_taken_summary->pc, later.pc);
+
+    EXPECT_EQ(findActualUpdateSummaryBranch({}), nullptr);
+}
+
+TEST(UpdateEntryBuilderTest, MispredictedActualUpdateBranchIsExplicit)
+{
+    const auto first = makeResolvedBranch(0x1000, false, false);
+    const auto mispred = makeResolvedBranch(0x1080, false, true);
+    const auto taken = makeResolvedBranch(0x1100, true, false);
+
+    const auto *branch =
+        findMispredictedActualUpdateBranch({first, mispred, taken});
+    ASSERT_NE(branch, nullptr);
+    EXPECT_EQ(branch->pc, mispred.pc);
+
+    EXPECT_EQ(findMispredictedActualUpdateBranch({first, taken}), nullptr);
+}
+
 TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
 {
     FetchTarget stream;
