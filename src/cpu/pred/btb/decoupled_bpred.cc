@@ -1256,7 +1256,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     const auto bwhist_update = target.getBwHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
     const auto phist_update = target.getPHistUpdateDuringSquash(
-        squash_pc.instAddr(), actually_taken, redirect_pc);
+        squash_pc.instAddr(), actual_branch, actually_taken);
 
     // RAS recovers its speculative stack, not folded history.
     if (ras->isEnabled()) {

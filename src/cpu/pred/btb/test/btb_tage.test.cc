@@ -211,7 +211,7 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
 PathHistoryUpdate getActualPathUpdate(const FetchTarget& stream)
 {
     return stream.getPHistUpdateDuringSquash(
-        stream.squashPC, stream.exeTaken, stream.exeBranchInfo.target);
+        stream.squashPC, stream.exeBranchInfo, stream.exeTaken);
 }
 
 TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
@@ -352,7 +352,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         const auto bwhist = stream.getBwHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken, c.redirectPC);
         const auto phist = stream.getPHistUpdateDuringSquash(
-            c.squashPC, c.actualTaken, c.redirectPC);
+            c.squashPC, c.resolvedEntry, c.actualTaken);
 
         EXPECT_EQ(ghist.shamt, c.expectedGHistShamt);
         EXPECT_EQ(ghist.taken, c.expectedGHistTaken);
@@ -1598,7 +1598,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
 
     const auto ghist = stream.getGHistUpdateDuringSquash(entry.pc, false, true);
     const auto phist = stream.getPHistUpdateDuringSquash(
-        entry.pc, true, entry.target);
+        entry.pc, entry, true);
     EXPECT_EQ(ghist.shamt, 0);
     EXPECT_FALSE(ghist.taken);
     EXPECT_TRUE(phist.taken);

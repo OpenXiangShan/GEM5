@@ -863,13 +863,14 @@ struct FetchTarget
     }
 
     PathHistoryUpdate getPHistUpdateDuringSquash(
-        Addr squash_pc, bool actually_taken, Addr target) const
+        Addr squash_pc, const BranchInfo &actual_branch,
+        bool actually_taken) const
     {
         PathHistoryUpdate update;
-        update.taken = actually_taken && getControlPC() == squash_pc;
+        update.taken = actually_taken && actual_branch.pc == squash_pc;
         if (update.taken) {
             update.pc = squash_pc;
-            update.target = target;
+            update.target = actual_branch.target;
         }
         return update;
     }
