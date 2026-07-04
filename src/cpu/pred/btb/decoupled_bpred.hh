@@ -282,6 +282,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Distribution fsqEntryDist;
         statistics::Scalar fsqEntryEnqueued;
         statistics::Scalar fsqEntryCommitted;
+        statistics::Scalar commitUpdateCommittedBranches;
         statistics::Scalar commitUpdateResolvedBranches;
         statistics::Scalar commitUpdateFallback;
         statistics::Scalar commitUpdateNoResolvedNoop;

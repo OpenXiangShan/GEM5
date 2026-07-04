@@ -438,8 +438,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
     ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
     ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
+    ADD_STAT(commitUpdateCommittedBranches, statistics::units::Count::get(),
+    "commit updates using the FTQ committed branch set"),
     ADD_STAT(commitUpdateResolvedBranches, statistics::units::Count::get(),
-    "commit updates using the FTQ resolved branch set"),
+    "commit updates falling back to the FTQ resolved branch set"),
     ADD_STAT(commitUpdateFallback, statistics::units::Count::get(),
     "commit updates falling back to exeBranchInfo and exeTaken"),
     ADD_STAT(commitUpdateNoResolvedNoop, statistics::units::Count::get(),
@@ -818,19 +820,20 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     auto branchClass = classifyBranch(inst);
     addBranchClassStat(branchClass, mispred);
 
-    // ---------- Find corresponding fetch target entry ----------
-    auto entry = ftq.get(inst->ftqId, inst->threadNumber);
-
-    // Record branch trace if enabled
-    if (enableBranchTrace) {
-        bptrace->write_record(BpTrace(inst->ftqId, entry, inst, mispred));
-    }
-
     // ---------- Extract branch information ----------
     const auto resolved_branch = makeResolvedBranchFromInst(inst);
     const Addr branchAddr = resolved_branch.pc;
     const BranchInfo info = makeBranchInfo(resolved_branch);
     const bool taken = resolved_branch.taken;
+
+    // ---------- Find corresponding fetch target entry ----------
+    auto &entry = ftq.get(inst->ftqId, inst->threadNumber);
+    entry.addCommittedBranch(resolved_branch);
+
+    // Record branch trace if enabled
+    if (enableBranchTrace) {
+        bptrace->write_record(BpTrace(inst->ftqId, entry, inst, mispred));
+    }
 
     // ---------- Process misprediction and update statistics ----------
     processMisprediction(entry, branchAddr, info, taken, mispred);

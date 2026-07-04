@@ -428,6 +428,31 @@ TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
     EXPECT_EQ(stream.resolvedBranches[2].pc, third.pc);
 }
 
+TEST(UpdateEntryBuilderTest, FetchTargetKeepsCommittedBranchesSeparate)
+{
+    FetchTarget stream;
+    const ResolvedBranch resolved = makeResolvedBranch(0x1008, true, true);
+    const ResolvedBranch committed_first =
+        makeResolvedBranch(0x1000, false, false);
+    const ResolvedBranch committed_second =
+        makeResolvedBranch(0x1008, true, true);
+    const ResolvedBranch duplicate =
+        makeResolvedBranch(0x1008, false, false);
+
+    EXPECT_TRUE(stream.addResolvedBranch(resolved));
+    EXPECT_TRUE(stream.addCommittedBranch(committed_second));
+    EXPECT_TRUE(stream.addCommittedBranch(committed_first));
+    EXPECT_FALSE(stream.addCommittedBranch(duplicate));
+
+    ASSERT_EQ(stream.resolvedBranches.size(), 1);
+    EXPECT_EQ(stream.resolvedBranches[0].pc, resolved.pc);
+
+    ASSERT_EQ(stream.committedBranches.size(), 2);
+    EXPECT_EQ(stream.committedBranches[0].pc, committed_first.pc);
+    EXPECT_EQ(stream.committedBranches[1].pc, committed_second.pc);
+    EXPECT_TRUE(stream.committedBranches[1].taken);
+}
+
 TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseResolvedPrefix)
 {
     const BTBEntry first = makeEntry(0x1000, true, false);
