@@ -190,7 +190,7 @@ BTBTAGEUpperBound::makeTableInfo(bool found, const TageEntry *entry,
 
 BTBTAGE::TagePrediction
 BTBTAGEUpperBound::lookupExactPrediction(
-    const BTBEntry &btbEntry,
+    Addr branchPC, bool baseTaken,
     const std::array<uint64_t, MaxHistoryWords> &historyWords,
     BranchPredictionMeta *metaOut) const
 {
@@ -201,7 +201,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
     uint64_t hitTableMask = 0;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        auto key = buildKey(btbEntry.pc, historyWords, histLengths[i]);
+        auto key = buildKey(branchPC, historyWords, histLengths[i]);
         auto it = exactTables[i].find(key);
         if (it == exactTables[i].end()) {
             continue;
@@ -228,9 +228,8 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
     const bool mainTaken = mainInfo.taken();
     const bool altTaken = altInfo.taken();
-    const bool baseTaken = btbEntry.ctr >= 0;
     const bool altPred = altProvided ? altTaken : baseTaken;
-    Addr useAltIdx = getUseAltIdx(btbEntry.pc);
+    Addr useAltIdx = getUseAltIdx(branchPC);
     short useAltCtr = useAlt[useAltIdx];
 
     bool useAltPred = false;
@@ -254,32 +253,32 @@ BTBTAGEUpperBound::lookupExactPrediction(
         finalProviderIsAlt = true;
     }
 
-    return TagePrediction(btbEntry.pc, mainInfo, altInfo, useAltPred, taken,
+    return TagePrediction(branchPC, mainInfo, altInfo, useAltPred, taken,
                           altPred, finalProviderTable, finalProviderIsAlt,
                           useAltIdx, useAltCtr, hitTableMask);
 }
 
 void
 BTBTAGEUpperBound::notePredictionResult(
-    const BTBEntry &btbEntry,
+    Addr branchPC,
     const TagePrediction &pred,
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
     CondTakens &results) const
 {
-    results.push_back({btbEntry.pc, pred.taken});
-    tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
-    tageInfoForMgscs[btbEntry.pc].tage_main_taken =
+    results.push_back({branchPC, pred.taken});
+    tageInfoForMgscs[branchPC].tage_pred_taken = pred.taken;
+    tageInfoForMgscs[branchPC].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_high =
+    tageInfoForMgscs[branchPC].tage_pred_conf_high =
         pred.mainInfo.found && abs(pred.mainInfo.entry.counter * 2 + 1) == 7;
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_mid =
+    tageInfoForMgscs[branchPC].tage_pred_conf_mid =
         pred.mainInfo.found &&
         (abs(pred.mainInfo.entry.counter * 2 + 1) < 7 &&
          abs(pred.mainInfo.entry.counter * 2 + 1) > 1);
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_low =
+    tageInfoForMgscs[branchPC].tage_pred_conf_low =
         !pred.mainInfo.found ||
         (abs(pred.mainInfo.entry.counter * 2 + 1) <= 1);
-    tageInfoForMgscs[btbEntry.pc].tage_pred_alt_diff =
+    tageInfoForMgscs[branchPC].tage_pred_alt_diff =
         pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
 }
 
@@ -311,11 +310,12 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 
             BranchPredictionMeta branchMeta;
             auto pred = lookupExactPrediction(
-                btbEntry, ubMeta->historyWords, &branchMeta);
+                btbEntry.pc, btbEntry.ctr >= 0, ubMeta->historyWords,
+                &branchMeta);
             ubMeta->preds[btbEntry.pc] = pred;
             ubMeta->branchMeta[btbEntry.pc] = branchMeta;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs,
+            notePredictionResult(btbEntry.pc, pred, stagePred.tageInfoForMgscs,
                                  stagePred.condTakens);
         }
     }
@@ -373,15 +373,15 @@ BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
 
 bool
 BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
-    const BTBEntry &entry, bool actualTaken, const TagePrediction &pred,
-    const BranchPredictionMeta &meta, const BranchUpdateContext &ctx)
+    Addr branchPC, bool baseTaken, bool actualTaken,
+    const TagePrediction &pred, const BranchPredictionMeta &meta,
+    const BranchUpdateContext &ctx)
 {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     const auto &mainInfo = pred.mainInfo;
     const auto &altInfo = pred.altInfo;
     const bool usedAlt = pred.useAlt;
-    const bool baseTaken = entry.ctr >= 0;
     const bool altTaken = altInfo.found ? altInfo.taken() : baseTaken;
 
     if (mainInfo.found) {
@@ -389,7 +389,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
             (mainInfo.entry.counter == 0 || mainInfo.entry.counter == -1);
         if (mainWeak) {
             tageStats.updateProviderNa++;
-            Addr uidx = getUseAltIdx(entry.pc);
+            Addr uidx = getUseAltIdx(branchPC);
             bool altCorrect = (altTaken == actualTaken);
             updateCounter(altCorrect, useAltOnNaWidth, useAlt[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
@@ -442,7 +442,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
         }
     }
 
-    const bool thisFbMispred = ctx.isControlMispredPC(entry.pc);
+    const bool thisFbMispred = ctx.isControlMispredPC(branchPC);
     if (getDelay() == 2 && thisFbMispred) {
         tageStats.updateMispred++;
         if (!usedAlt && mainInfo.found) {
@@ -465,14 +465,14 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
 
 bool
 BTBTAGEUpperBound::allocateExactEntry(
-    const BTBEntry &entry, bool actualTaken, unsigned startTable,
+    Addr branchPC, bool actualTaken, unsigned startTable,
     const std::array<uint64_t, MaxHistoryWords> &historyWords,
     uint64_t &allocatedTable)
 {
     for (unsigned ti = startTable; ti < numPredictors; ++ti) {
-        auto key = buildKey(entry.pc, historyWords, histLengths[ti]);
+        auto key = buildKey(branchPC, historyWords, histLengths[ti]);
         auto [it, inserted] = exactTables[ti].emplace(
-            key, TageEntry(0, actualTaken ? 0 : -1, entry.pc));
+            key, TageEntry(0, actualTaken ? 0 : -1, branchPC));
         if (!inserted) {
             continue;
         }
@@ -519,11 +519,10 @@ BTBTAGEUpperBound::updateWithEntries(
 {
     bool hasStoredVsActualDiff = false;
     for (const auto &updateEntry : entries) {
-        const auto &branch = updateEntry.branch;
-        BTBEntry btbEntry(branch);
-        btbEntry.ctr = updateEntry.baseTaken ? 0 : -1;
-        auto predIt = predMeta.preds.find(btbEntry.pc);
-        auto metaIt = predMeta.branchMeta.find(btbEntry.pc);
+        const Addr branchPC = updateEntry.branch.pc;
+        const bool baseTaken = updateEntry.baseTaken;
+        auto predIt = predMeta.preds.find(branchPC);
+        auto metaIt = predMeta.branchMeta.find(branchPC);
         const bool actualTaken = updateEntry.actualTaken;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
@@ -536,7 +535,7 @@ BTBTAGEUpperBound::updateWithEntries(
             // maps, but they still must be trained using the prediction-time
             // history snapshot carried in predMeta.
             storedPred = lookupExactPrediction(
-                btbEntry, predMeta.historyWords, &storedMeta);
+                branchPC, baseTaken, predMeta.historyWords, &storedMeta);
         }
 
         if (storedPred.taken != actualTaken) {
@@ -544,7 +543,7 @@ BTBTAGEUpperBound::updateWithEntries(
         }
 
         bool needAllocate = updatePredictorStateAndCheckAllocation(
-            btbEntry, actualTaken, storedPred, storedMeta, ctx);
+            branchPC, baseTaken, actualTaken, storedPred, storedMeta, ctx);
 
         if (needAllocate) {
             uint64_t allocatedTable = 0;
@@ -552,7 +551,7 @@ BTBTAGEUpperBound::updateWithEntries(
             if (storedMeta.main.found) {
                 startTable = storedMeta.main.table + 1;
             }
-            allocateExactEntry(btbEntry, actualTaken, startTable,
+            allocateExactEntry(branchPC, actualTaken, startTable,
                                predMeta.historyWords, allocatedTable);
         }
     }
