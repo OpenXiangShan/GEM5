@@ -50,8 +50,8 @@ makeDirectionContext(Addr control_pc, bool actual_taken)
 {
     BranchUpdateContext ctx;
     ctx.startPC = control_pc & ~0xf;
-    ctx.actualBranch.pc = control_pc;
-    ctx.actualTaken = actual_taken;
+    ctx.controlBranch.pc = control_pc;
+    ctx.controlTaken = actual_taken;
     return ctx;
 }
 
@@ -60,9 +60,9 @@ makeTargetContext(Addr control_pc, bool actual_taken)
 {
     BranchUpdateContext ctx;
     ctx.startPC = control_pc & ~0xf;
-    ctx.actualTaken = actual_taken;
-    ctx.actualBranch.pc = control_pc;
-    ctx.actualBranch.target = control_pc + 0x100;
+    ctx.controlTaken = actual_taken;
+    ctx.controlBranch.pc = control_pc;
+    ctx.controlBranch.target = control_pc + 0x100;
     return ctx;
 }
 
@@ -190,7 +190,7 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     EXPECT_TRUE(entries[0].actualTaken);
     EXPECT_FALSE(entries[0].isNewEntry);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
-    EXPECT_EQ(entries[0].actualBranch.target, ctx.actualBranch.target);
+    EXPECT_EQ(entries[0].actualBranch.target, ctx.controlBranch.target);
 }
 
 TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
@@ -201,7 +201,7 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
     second.target = 0x5550;
 
     BranchUpdateContext ctx = makeTargetContext(second.pc, true);
-    ctx.actualBranch.target = 0xdead;
+    ctx.controlBranch.target = 0xdead;
 
     const auto entries = buildTargetUpdateEntries(
         {first, second}, BTBUpdateEntrySelection{BTBEntry(), true}, {},
@@ -213,14 +213,14 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
     EXPECT_EQ(entries[0].actualBranch.target, first.target);
     EXPECT_TRUE(entries[1].actualTaken);
     EXPECT_EQ(entries[1].actualBranch.pc, second.pc);
-    EXPECT_EQ(entries[1].actualBranch.target, ctx.actualBranch.target);
+    EXPECT_EQ(entries[1].actualBranch.target, ctx.controlBranch.target);
 }
 
 TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
 {
     const BTBEntry indirect = makeIndirectEntry(0x3010, false, true);
     BranchUpdateContext ctx = makeTargetContext(indirect.pc, false);
-    ctx.actualBranch.target = 0xdead;
+    ctx.controlBranch.target = 0xdead;
 
     ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, true);
     resolved.isCond = false;
@@ -242,20 +242,20 @@ TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
 {
     BranchUpdateContext taken_ctx;
     taken_ctx.startPC = 0x1000;
-    taken_ctx.actualTaken = true;
-    taken_ctx.actualBranch.pc = 0x1010;
+    taken_ctx.controlTaken = true;
+    taken_ctx.controlBranch.pc = 0x1010;
     EXPECT_EQ(buildUpdateEndInstPC(taken_ctx, 32), 0x1010);
 
     BranchUpdateContext fallthrough_ctx;
     fallthrough_ctx.startPC = 0x1004;
-    fallthrough_ctx.actualTaken = false;
-    fallthrough_ctx.actualBranch.pc = 0x1010;
+    fallthrough_ctx.controlTaken = false;
+    fallthrough_ctx.controlBranch.pc = 0x1010;
     EXPECT_EQ(buildUpdateEndInstPC(fallthrough_ctx, 32), 0x1020);
 
     BranchUpdateContext squash_ctx;
     squash_ctx.startPC = 0x1000;
-    squash_ctx.actualTaken = true;
-    squash_ctx.actualBranch.pc = 0x1010;
+    squash_ctx.controlTaken = true;
+    squash_ctx.controlBranch.pc = 0x1010;
     squash_ctx.squashType = SquashType::SQUASH_CTRL;
     squash_ctx.squashPC = 0x1008;
     EXPECT_EQ(buildUpdateEndInstPC(squash_ctx, 32), 0x1008);
@@ -303,9 +303,9 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
         makeActualBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
-    EXPECT_TRUE(update_ctx.actualTaken);
-    EXPECT_EQ(update_ctx.actualBranch.pc, second.pc);
-    EXPECT_EQ(update_ctx.actualBranch.target, second.pc + 0x200);
+    EXPECT_TRUE(update_ctx.controlTaken);
+    EXPECT_EQ(update_ctx.controlBranch.pc, second.pc);
+    EXPECT_EQ(update_ctx.controlBranch.target, second.pc + 0x200);
 
     ASSERT_EQ(update_btb_entries.size(), 2);
     EXPECT_EQ(update_btb_entries[0].pc, first.pc);
@@ -344,16 +344,16 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefix)
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
-    EXPECT_TRUE(ctx.actualTaken);
-    EXPECT_EQ(ctx.actualBranch.pc, second.pc);
-    EXPECT_EQ(ctx.actualBranch.target, second.target);
+    EXPECT_TRUE(ctx.controlTaken);
+    EXPECT_EQ(ctx.controlBranch.pc, second.pc);
+    EXPECT_EQ(ctx.controlBranch.target, second.target);
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
     EXPECT_EQ(ctx.squashPC, second.pc);
 
-    EXPECT_NE(ctx.actualBranch.pc, stream.exeBranchInfo.pc);
+    EXPECT_NE(ctx.controlBranch.pc, stream.exeBranchInfo.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsActualResultEmpty)
+TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsControlSummaryEmpty)
 {
     FetchTarget stream;
     stream.tid = 2;
@@ -373,8 +373,8 @@ TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsActualResultEmpty)
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
-    EXPECT_EQ(ctx.actualBranch.pc, 0);
-    EXPECT_FALSE(ctx.actualTaken);
+    EXPECT_EQ(ctx.controlBranch.pc, 0);
+    EXPECT_FALSE(ctx.controlTaken);
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_TRAP);
     EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }
@@ -450,8 +450,8 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
         makeActualBranchUpdateContext(stream, update_branches);
 
     EXPECT_FALSE(stream.resolved);
-    EXPECT_TRUE(update_ctx.actualTaken);
-    EXPECT_EQ(update_ctx.actualBranch.pc, second.pc);
+    EXPECT_TRUE(update_ctx.controlTaken);
+    EXPECT_EQ(update_ctx.controlBranch.pc, second.pc);
 
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, first.pc);
@@ -535,7 +535,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
         stream.isHit, stream.predTaken, update_ctx, {}));
 
     stream.predTaken = false;
-    update_ctx.actualTaken = true;
+    update_ctx.controlTaken = true;
     EXPECT_TRUE(shouldUpdateBpuPredictors(
         stream.isHit, stream.predTaken, update_ctx, {}));
 }

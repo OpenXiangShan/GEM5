@@ -708,8 +708,8 @@ DecoupledBPUWithBTB::updateStatistics(
 {
     // Check if this target was mispredicted
     const bool miss_predicted = update_ctx.squashType == SQUASH_CTRL;
-    const bool actual_taken = update_ctx.actualTaken;
-    const BranchInfo &actual_branch = update_ctx.actualBranch;
+    const bool actual_taken = update_ctx.controlTaken;
+    const BranchInfo &actual_branch = update_ctx.controlBranch;
     const bool has_actual_branch = actual_branch.pc != 0;
     // Track indirect mispredictions
     if (miss_predicted && actual_branch.isIndirect) {

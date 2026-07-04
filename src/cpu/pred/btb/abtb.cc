@@ -494,14 +494,14 @@ AheadBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (ctx.actualBranch == e) {
+        if (ctx.controlBranch == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && ctx.actualTaken) {
+    if (!pred_branch_hit && ctx.controlTaken) {
         DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n",
-                ctx.actualBranch.pc, ctx.predTick);
+                ctx.controlBranch.pc, ctx.predTick);
         btbStats.updateMiss++;
     }
 
@@ -516,15 +516,15 @@ AheadBTB::selectUpdateEntry(
 {
     BTBUpdateEntrySelection selection;
     for (const auto &entry : old_entries) {
-        if (ctx.actualBranch == entry) {
+        if (ctx.controlBranch == entry) {
             selection.entry = entry;
             selection.isOldEntry = true;
             break;
         }
     }
 
-    if (!selection.isOldEntry && ctx.actualTaken) {
-        BTBEntry new_entry(ctx.actualBranch);
+    if (!selection.isOldEntry && ctx.controlTaken) {
+        BTBEntry new_entry(ctx.controlBranch);
         new_entry.valid = true;
         if (new_entry.isCond) {
             new_entry.ctr = 0;
@@ -646,8 +646,8 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         update_ctx.tid = s3Pred.tid;
         update_ctx.startPC = s3Pred.bbStart;
         update_ctx.asidHash = s3Pred.asidHash;
-        update_ctx.actualBranch = s3Pred.getTakenEntry();
-        update_ctx.actualTaken = s3Pred.isTaken();
+        update_ctx.controlBranch = s3Pred.getTakenEntry();
+        update_ctx.controlTaken = s3Pred.isTaken();
 
         updateWithEntries(entries_to_update, update_ctx, previousPC);
     }

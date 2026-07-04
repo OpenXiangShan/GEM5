@@ -428,7 +428,7 @@ MBTB::selectUpdateEntryFromHits(
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
     for (const auto &e: pred_hit_entries) {
-        if (ctx.actualBranch == e) {
+        if (ctx.controlBranch == e) {
             pred_branch_hit = true;
             entry_to_write = e;
             break;
@@ -437,9 +437,9 @@ MBTB::selectUpdateEntryFromHits(
     bool is_old_entry = pred_branch_hit;
 
     // If branch was not predicted but was actually taken in execution, create new entry
-    if (!pred_branch_hit && ctx.actualTaken) {
-        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", ctx.actualBranch.pc);
-        BTBEntry new_entry = BTBEntry(ctx.actualBranch);
+    if (!pred_branch_hit && ctx.controlTaken) {
+        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", ctx.controlBranch.pc);
+        BTBEntry new_entry = BTBEntry(ctx.controlBranch);
         new_entry.valid = true;
         if (new_entry.isCond) {
             new_entry.ctr = 0;  // Start with positive prediction
@@ -449,11 +449,11 @@ MBTB::selectUpdateEntryFromHits(
         }
         btbStats.newEntry++;
         entry_to_write = new_entry;
-        entry_to_write.resolved = ctx.actualBranch.resolved;
+        entry_to_write.resolved = ctx.controlBranch.resolved;
         is_old_entry = false;
     } else {
-        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, actualTaken=%d\n",
-                pred_branch_hit, ctx.actualTaken);
+        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, controlTaken=%d\n",
+                pred_branch_hit, ctx.controlTaken);
         // Existing entries will be updated in update()
     }
 
@@ -471,14 +471,14 @@ MBTB::checkPredictionHit(const BranchUpdateContext &ctx, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (ctx.actualBranch == e) {
+        if (ctx.controlBranch == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && ctx.actualTaken) {
+    if (!pred_branch_hit && ctx.controlTaken) {
         DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n",
-                ctx.actualBranch.pc, ctx.predTick);
+                ctx.controlBranch.pc, ctx.predTick);
         btbStats.updateMiss++;
     } else {
         btbStats.updateHit++;

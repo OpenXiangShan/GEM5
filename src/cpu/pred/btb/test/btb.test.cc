@@ -71,8 +71,8 @@ BranchUpdateContext
 makeActualContext(const FetchTarget& stream)
 {
     auto ctx = makeBaseBranchUpdateContext(stream);
-    ctx.actualBranch = stream.exeBranchInfo;
-    ctx.actualTaken = stream.exeTaken;
+    ctx.controlBranch = stream.exeBranchInfo;
+    ctx.controlTaken = stream.exeTaken;
     return ctx;
 }
 
@@ -225,8 +225,8 @@ TEST_F(BTBTest, EmptyPrediction) {
 TEST_F(BTBTest, NullMetaUpdateSelectionIsEmpty) {
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
-    ctx.actualBranch = createBranchInfo(0x1008, 0x2000, true);
-    ctx.actualTaken = false;
+    ctx.controlBranch = createBranchInfo(0x1008, 0x2000, true);
+    ctx.controlTaken = false;
 
     const auto selection = mbtb->selectUpdateEntry(nullptr, ctx);
     EXPECT_FALSE(selection.entry.valid);

@@ -96,8 +96,8 @@ stream.predMetas[0] = meta;  // Must set meta from prediction phase
 
 // Update predictor through explicit DirectionUpdateEntry inputs.
 auto ctx = makeBaseBranchUpdateContext(stream);
-ctx.actualBranch = entry;
-ctx.actualTaken = taken;
+ctx.controlBranch = entry;
+ctx.controlTaken = taken;
 const std::vector<DirectionUpdateEntry> entries = {
     {BTBEntry(entry), taken, false}
 };
@@ -161,8 +161,8 @@ stream.predMetas[0] = meta;
 
 // Build explicit target update entries
 auto ctx = makeBaseBranchUpdateContext(stream);
-ctx.actualBranch = entry;
-ctx.actualTaken = taken;
+ctx.controlBranch = entry;
+ctx.controlTaken = taken;
 const auto update_end_inst_pc =
     buildUpdateEndInstPC(ctx, btb->predictWidth);
 const auto update_entries = buildUpdateBTBEntries(

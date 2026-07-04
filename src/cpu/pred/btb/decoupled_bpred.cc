@@ -748,8 +748,8 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                 "Commit target start %#lx, which is predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
-                ftq_target.startPC, update_ctx.actualBranch.pc,
-                update_ctx.actualBranch.target, ftq_target.predBranchInfo.pc,
+                ftq_target.startPC, update_ctx.controlBranch.pc,
+                update_ctx.controlBranch.target, ftq_target.predBranchInfo.pc,
                 ftq_target.predBranchInfo.target);
 
         // Update statistics
@@ -793,13 +793,13 @@ DecoupledBPUWithBTB::resolveUpdate(
         makeActualBranchUpdateContext(target, update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
-            "exeTaken=%d exePC=%#lx exeTarget=%#lx squashType=%d "
+            "controlTaken=%d controlPC=%#lx controlTarget=%#lx squashType=%d "
             "squashPC=%#lx\n",
             target_id, tid,
             static_cast<unsigned long long>(branches.size()),
             static_cast<unsigned long long>(update_branches.size()),
-            update_ctx.actualTaken,
-            update_ctx.actualBranch.pc, update_ctx.actualBranch.target,
+            update_ctx.controlTaken,
+            update_ctx.controlBranch.pc, update_ctx.controlBranch.target,
             update_ctx.squashType, update_ctx.squashPC);
     for (const auto &branch : branches) {
         DPRINTF(DecoupleBP,

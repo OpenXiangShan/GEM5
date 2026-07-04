@@ -211,8 +211,8 @@ BTBRAS::updateWithBranchUpdateContext(
     assert(tid < numThreads);
     auto &state = threadStates[tid];
     auto meta_ptr = std::static_pointer_cast<RASMeta>(prediction_meta);
-    auto takenEntry = ctx.actualBranch;
-    if (ctx.actualTaken) {
+    auto takenEntry = ctx.controlBranch;
+    if (ctx.controlTaken) {
         if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
             DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);

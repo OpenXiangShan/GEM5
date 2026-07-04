@@ -756,10 +756,10 @@ MicroTAGE::checkUtageUpdateMisspred(
             break;
         }
     }
-    bool fallthrough_mispred = (!has_taken_pred && ctx.actualTaken) ||
-                                (has_taken_pred && !ctx.actualTaken);
-    bool branch_mispred = ctx.actualTaken && has_taken_pred &&
-                          first_taken_pc != ctx.actualBranch.pc;
+    bool fallthrough_mispred = (!has_taken_pred && ctx.controlTaken) ||
+                                (has_taken_pred && !ctx.controlTaken);
+    bool branch_mispred = ctx.controlTaken && has_taken_pred &&
+                          first_taken_pc != ctx.controlBranch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }

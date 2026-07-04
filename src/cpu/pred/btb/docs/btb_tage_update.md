@@ -25,7 +25,7 @@ update 从 `resolvedBranches` 得到它；commit update 从 `committedBranches` 
 会让每个 branch fact 只累积一次。这和 RTL resolve queue combine 的语义一致：
 一个真实 branch fact 不能被重复训练。
 
-## Actual Result Context
+## Update Context
 
 `makeActualBranchUpdateContext(target, actual_branches)` 会从 `FetchTarget` 的
 prediction-time snapshot 和 actual branch prefix 直接构造
@@ -42,6 +42,9 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 
 - direction update 使用该 entry 自己的 actual taken；
 - target update 使用该 entry 自己的 actual target 和 branch attributes；
+- `BranchUpdateContext::controlBranch/controlTaken` 只是 stream-level control
+  summary，给 BTB/RAS/uBTB 这类仍需要“本 fetch block 是否有 taken control”
+  的路径使用；
 - 没有 resolved/committed branch set 时，commit update 只保留 base context，
   不再从单一的 `exeBranchInfo + exeTaken` 伪造 actual result。
 

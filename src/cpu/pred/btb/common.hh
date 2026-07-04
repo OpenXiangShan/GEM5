@@ -261,15 +261,16 @@ struct BranchUpdateContext
     ThreadID tid = 0;
     Addr startPC = 0;
     uint8_t asidHash = 0;
-    BranchInfo actualBranch;
-    bool actualTaken = false;
+    // Stream-level control summary. Per-entry outcomes live in update entries.
+    BranchInfo controlBranch;
+    bool controlTaken = false;
     Tick predTick = 0;
     SquashType squashType = SquashType::SQUASH_NONE;
     Addr squashPC = 0;
 
     bool isTakenControlPC(Addr pc) const
     {
-        return actualTaken && actualBranch.pc == pc;
+        return controlTaken && controlBranch.pc == pc;
     }
 
     bool isControlMispredPC(Addr pc) const
@@ -376,7 +377,7 @@ getActualBranchForUpdatePC(
     if (branch) {
         return makeBranchInfo(*branch);
     }
-    return ctx.actualBranch.pc == entry.pc ? ctx.actualBranch : BranchInfo(entry);
+    return ctx.controlBranch.pc == entry.pc ? ctx.controlBranch : BranchInfo(entry);
 }
 
 inline std::vector<DirectionUpdateEntry>
@@ -486,8 +487,8 @@ buildUpdateEndInstPC(const BranchUpdateContext &ctx, unsigned predict_width)
     if (ctx.squashType != SquashType::SQUASH_NONE) {
         return ctx.squashPC;
     }
-    if (ctx.actualTaken) {
-        return ctx.actualBranch.pc;
+    if (ctx.controlTaken) {
+        return ctx.controlBranch.pc;
     }
     return (ctx.startPC + predict_width) & ~mask(floorLog2(predict_width) - 1);
 }
@@ -787,8 +788,8 @@ makeActualBranchUpdateContext(const FetchTarget &target,
     assert(!branches.empty());
 
     BranchUpdateContext ctx = makeBaseBranchUpdateContext(target);
-    ctx.actualBranch = makeBranchInfo(branches.back());
-    ctx.actualTaken = false;
+    ctx.controlBranch = makeBranchInfo(branches.back());
+    ctx.controlTaken = false;
     ctx.squashType = SquashType::SQUASH_NONE;
 
     for (const auto &branch : branches) {
@@ -797,8 +798,8 @@ makeActualBranchUpdateContext(const FetchTarget &target,
             ctx.squashPC = branch.pc;
         }
         if (branch.taken) {
-            ctx.actualTaken = true;
-            ctx.actualBranch = makeBranchInfo(branch);
+            ctx.controlTaken = true;
+            ctx.controlBranch = makeBranchInfo(branch);
             if (ctx.squashType == SquashType::SQUASH_NONE) {
                 ctx.squashPC = branch.pc;
             }
@@ -815,7 +816,7 @@ shouldUpdateBpuPredictors(
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &actual_update_branches)
 {
-    return prediction_hit || prediction_taken || ctx.actualTaken ||
+    return prediction_hit || prediction_taken || ctx.controlTaken ||
         !actual_update_branches.empty();
 }
 

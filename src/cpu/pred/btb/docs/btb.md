@@ -167,9 +167,9 @@ The update process:
    - For indirect branches, update target
 
 Modern target predictors consume explicit `TargetUpdateEntry` data plus a
-`BranchUpdateContext`. This keeps prediction-time metadata and actual resolved
-branch facts visible at the update boundary instead of reconstructing them from
-a full `FetchTarget`.
+`BranchUpdateContext`. Per-entry actual outcomes live in the update entries;
+the context only carries prediction-time metadata and the stream-level control
+summary needed by BTB/RAS/uBTB-style paths.
 
 ### 4.4 MRU Replacement Policy
 
@@ -212,8 +212,8 @@ stream.predMetas[0] = meta;
 
 // Build explicit target update entries
 auto ctx = makeBaseBranchUpdateContext(stream);
-ctx.actualBranch = branch_info;
-ctx.actualTaken = taken;
+ctx.controlBranch = branch_info;
+ctx.controlTaken = taken;
 const auto update_end_inst_pc =
     buildUpdateEndInstPC(ctx, btb->predictWidth);
 const auto update_entries = buildUpdateBTBEntries(

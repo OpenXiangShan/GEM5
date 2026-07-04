@@ -298,8 +298,8 @@ UBTB::updateWithContext(const BranchUpdateContext &ctx,
     auto pred_hit_entry = meta.hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
     // Use BTBEntry instead of BranchInfo; make it invalid when not taken.
-    BTBEntry takenEntry = ctx.actualTaken ?
-        BTBEntry(ctx.actualBranch) : BTBEntry();
+    BTBEntry takenEntry = ctx.controlTaken ?
+        BTBEntry(ctx.controlBranch) : BTBEntry();
     auto startAddr = ctx.startPC;
     Addr oldtag = getTag(startAddr, ctx.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
@@ -312,11 +312,11 @@ UBTB::updateWithContext(const BranchUpdateContext &ctx,
                                e.pc >= startAddr && e.pc < block_end;
                     }) : ubtb.end();
 
-    if (ctx.actualTaken) {
+    if (ctx.controlTaken) {
         if (!pred_hit_entry.valid ||
-            pred_hit_entry != ctx.actualBranch) {
+            pred_hit_entry != ctx.controlBranch) {
             DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n",
-                    ctx.actualBranch.pc, ctx.predTick);
+                    ctx.controlBranch.pc, ctx.predTick);
             ubtbStats.updateMiss++;
         }else {
             ubtbStats.updateHit++;

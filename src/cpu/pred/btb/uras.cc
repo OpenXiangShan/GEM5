@@ -171,13 +171,13 @@ BTBuRAS::updateWithBranchUpdateContext(
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;
     printStack("before update", stack, sp);
-    auto takenSlot = ctx.actualBranch;
-    if (ctx.actualTaken && (takenSlot.isReturn || takenSlot.isCall)) {
+    auto takenSlot = ctx.controlBranch;
+    if (ctx.controlTaken && (takenSlot.isReturn || takenSlot.isCall)) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(prediction_meta);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
         auto miss = ctx.squashType == SQUASH_CTRL &&
-                    ctx.squashPC == ctx.actualBranch.pc;
+                    ctx.squashPC == ctx.controlBranch.pc;
         if (takenSlot.isCall) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
             if (enableDB) {

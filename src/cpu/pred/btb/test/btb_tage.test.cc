@@ -78,8 +78,8 @@ FetchTarget setMispredStream(FetchTarget stream) {
 BranchUpdateContext makeActualContext(const FetchTarget &stream)
 {
     auto ctx = makeBaseBranchUpdateContext(stream);
-    ctx.actualBranch = stream.exeBranchInfo;
-    ctx.actualTaken = stream.exeTaken;
+    ctx.controlBranch = stream.exeBranchInfo;
+    ctx.controlTaken = stream.exeTaken;
     return ctx;
 }
 
