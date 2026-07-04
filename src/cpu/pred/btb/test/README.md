@@ -160,15 +160,25 @@ stream.startPC = pc;
 stream.predMetas[0] = meta;
 
 // Build explicit target update entries
-auto ctx = makeBaseBranchUpdateContext(stream);
-ctx.controlBranch = entry;
-ctx.controlTaken = taken;
+ResolvedBranch actual_branch;
+actual_branch.pc = entry.pc;
+actual_branch.target = entry.target;
+actual_branch.taken = taken;
+actual_branch.isCond = entry.isCond;
+actual_branch.isIndirect = entry.isIndirect;
+actual_branch.isDirect = entry.isDirect;
+actual_branch.isCall = entry.isCall;
+actual_branch.isReturn = entry.isReturn;
+actual_branch.size = entry.size;
+std::vector<ResolvedBranch> actual_branches = {actual_branch};
+auto ctx = makeActualBranchUpdateContext(
+    makeBaseBranchUpdateContext(stream), actual_branches);
 const auto update_end_inst_pc =
     buildUpdateEndInstPC(ctx, btb->predictWidth);
 const auto update_entries = buildUpdateBTBEntries(
     stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 const auto entries = buildTargetUpdateEntries(
-    update_entries, {},
+    update_entries, actual_branches,
     btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
 
 // Update BTB

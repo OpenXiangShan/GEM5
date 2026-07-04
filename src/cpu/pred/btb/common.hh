@@ -393,25 +393,23 @@ shouldKeepDirectionUpdateEntry(
 inline bool
 getActualTakenForUpdatePC(
     Addr pc,
-    const std::vector<ResolvedBranch> &actual_update_branches,
-    const BranchUpdateContext &ctx)
+    const std::vector<ResolvedBranch> &actual_update_branches)
 {
     const auto *branch = findActualUpdateBranch(actual_update_branches, pc);
-    return branch ? branch->taken : ctx.isTakenControlPC(pc);
+    return branch ? branch->taken : false;
 }
 
 inline BranchInfo
 getActualBranchForUpdatePC(
     const BTBEntry &entry,
-    const std::vector<ResolvedBranch> &actual_update_branches,
-    const BranchUpdateContext &ctx)
+    const std::vector<ResolvedBranch> &actual_update_branches)
 {
     const auto *branch =
         findActualUpdateBranch(actual_update_branches, entry.pc);
     if (branch) {
         return makeBranchInfo(*branch);
     }
-    return ctx.controlBranch.pc == entry.pc ? ctx.controlBranch : BranchInfo(entry);
+    return BranchInfo(entry);
 }
 
 inline std::vector<DirectionUpdateEntry>
@@ -436,7 +434,7 @@ buildDirectionUpdateEntries(
         entries.push_back({branch,
                            base_taken,
                            getActualTakenForUpdatePC(
-                               branch.pc, actual_update_branches, ctx),
+                               branch.pc, actual_update_branches),
                            is_new_entry});
     };
 
@@ -457,8 +455,7 @@ shouldKeepTargetUpdateEntry(
     const BTBEntry &entry,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
-    const std::vector<ResolvedBranch> &actual_update_branches,
-    const BranchUpdateContext &ctx)
+    const std::vector<ResolvedBranch> &actual_update_branches)
 {
     if (!entry.valid) {
         return false;
@@ -473,7 +470,8 @@ shouldKeepTargetUpdateEntry(
         keep = entry.isIndirect && !entry.isReturn;
         break;
       case TargetUpdateEntryFilter::TakenControl:
-        keep = ctx.controlTaken && entry.pc == ctx.controlBranch.pc;
+        keep = getActualTakenForUpdatePC(
+            entry.pc, actual_update_branches);
         break;
     }
     if (!keep || !resolved_update) {
@@ -498,13 +496,13 @@ buildTargetUpdateEntries(
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         if (!shouldKeepTargetUpdateEntry(
                 entry, filter, resolved_update,
-                actual_update_branches, ctx)) {
+                actual_update_branches)) {
             return;
         }
         const bool actual_taken = getActualTakenForUpdatePC(
-            entry.pc, actual_update_branches, ctx);
+            entry.pc, actual_update_branches);
         const BranchInfo actual_branch =
-            getActualBranchForUpdatePC(entry, actual_update_branches, ctx);
+            getActualBranchForUpdatePC(entry, actual_update_branches);
         entries.push_back({entry, actual_taken, is_new_entry, actual_branch});
     };
     auto has_entry_pc = [&](Addr pc) {
@@ -531,9 +529,6 @@ buildTargetUpdateEntries(
         if (branch.taken) {
             add_new_target_branch(makeBranchInfo(branch));
         }
-    }
-    if (actual_update_branches.empty() && ctx.controlTaken) {
-        add_new_target_branch(ctx.controlBranch);
     }
 
     return entries;

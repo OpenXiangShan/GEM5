@@ -137,7 +137,7 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
     const BranchUpdateContext ctx = makeDirectionContext(entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {}, {},
+        {entry}, {}, {makeResolvedBranch(entry.pc, true, false)},
         DirectionUpdateEntryFilter::Conditional, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -196,9 +196,13 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     const BTBEntry indirect = makeIndirectEntry(0x3000, false, true);
     const BTBEntry ret = makeIndirectEntry(0x3004, true, true);
     const BranchUpdateContext ctx = makeTargetContext(indirect.pc, true);
+    ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, false);
+    resolved.isCond = false;
+    resolved.isDirect = false;
+    resolved.isIndirect = true;
 
     const auto entries = buildTargetUpdateEntries(
-        {indirect, ret}, {},
+        {indirect, ret}, {resolved},
         TargetUpdateEntryFilter::IndirectNonReturn, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -206,7 +210,7 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     EXPECT_TRUE(entries[0].actualTaken);
     EXPECT_FALSE(entries[0].isNewEntry);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
-    EXPECT_EQ(entries[0].actualBranch.target, ctx.controlBranch.target);
+    EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
 
 TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
@@ -218,9 +222,14 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
 
     BranchUpdateContext ctx = makeTargetContext(second.pc, true);
     ctx.controlBranch.target = 0xdead;
+    ResolvedBranch resolved = makeResolvedBranch(second.pc, true, false);
+    resolved.isCond = false;
+    resolved.isDirect = false;
+    resolved.isIndirect = true;
+    resolved.target = ctx.controlBranch.target;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, second}, {},
+        {first, second}, {resolved},
         TargetUpdateEntryFilter::IndirectNonReturn, false, ctx);
 
     ASSERT_EQ(entries.size(), 2);
@@ -260,9 +269,12 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
     const BTBEntry control = makeEntry(0x3020, false, true);
     BranchUpdateContext ctx = makeTargetContext(control.pc, true);
     ctx.controlBranch.target = 0xdead;
+    ResolvedBranch resolved = makeResolvedBranch(control.pc, true, false);
+    resolved.isCond = false;
+    resolved.target = ctx.controlBranch.target;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, control}, {},
+        {first, control}, {resolved},
         TargetUpdateEntryFilter::TakenControl, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);
@@ -276,9 +288,13 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
 {
     BranchUpdateContext ctx = makeTargetContext(0x3028, true);
     ctx.controlBranch.target = 0xbeef;
+    ResolvedBranch resolved = makeResolvedBranch(
+        ctx.controlBranch.pc, true, false);
+    resolved.isCond = false;
+    resolved.target = ctx.controlBranch.target;
 
     const auto entries = buildTargetUpdateEntries(
-        {}, {},
+        {}, {resolved},
         TargetUpdateEntryFilter::TakenControl, false, ctx);
 
     ASSERT_EQ(entries.size(), 1);

@@ -44,6 +44,20 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
     return info;
 }
 
+ResolvedBranch createResolvedBranch(const BranchInfo& branch, bool taken) {
+    ResolvedBranch resolved;
+    resolved.pc = branch.pc;
+    resolved.target = branch.target;
+    resolved.taken = taken;
+    resolved.isCond = branch.isCond;
+    resolved.isIndirect = branch.isIndirect;
+    resolved.isDirect = branch.isDirect;
+    resolved.isCall = branch.isCall;
+    resolved.isReturn = branch.isReturn;
+    resolved.size = branch.size;
+    return resolved;
+}
+
 /**
  * @brief Setup a FetchTarget with common parameters for BTB update
  *
@@ -67,24 +81,26 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     return stream;
 }
 
-BranchUpdateContext
-makeActualContext(const FetchTarget& stream)
+std::vector<ResolvedBranch>
+makeActualBranches(const FetchTarget& stream)
 {
-    auto ctx = makeBaseBranchUpdateContext(stream);
-    ctx.controlBranch = stream.exeBranchInfo;
-    ctx.controlTaken = stream.exeTaken;
-    return ctx;
+    if (stream.exeBranchInfo.pc == 0) {
+        return {};
+    }
+    return {createResolvedBranch(stream.exeBranchInfo, stream.exeTaken)};
 }
 
 void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
                              const std::shared_ptr<void>& meta) {
-    const auto ctx = makeActualContext(stream);
+    const auto actual_branches = makeActualBranches(stream);
+    const auto ctx = makeActualBranchUpdateContext(
+        makeBaseBranchUpdateContext(stream), actual_branches);
     const auto update_end_inst_pc =
         buildUpdateEndInstPC(ctx, btb->predictWidth);
     const auto update_entries = buildUpdateBTBEntries(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
     const auto entries = buildTargetUpdateEntries(
-        update_entries, {},
+        update_entries, actual_branches,
         btb->targetUpdateEntryFilter(), btb->getResolvedUpdate(), ctx);
     btb->updateWithTargetEntries(entries, ctx, meta);
 }
@@ -250,13 +266,16 @@ TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
     ctx.startPC = 0x1000;
     ctx.controlBranch = createBranchInfo(0x1008, 0x2000, true);
     ctx.controlTaken = true;
+    const auto actual_branches =
+        std::vector<ResolvedBranch>{createResolvedBranch(
+            ctx.controlBranch, ctx.controlTaken)};
 
     const uint64_t new_entries = mbtb->btbStats.newEntry;
     const uint64_t new_cond_entries = mbtb->btbStats.newEntryWithCond;
     const uint64_t new_uncond_entries = mbtb->btbStats.newEntryWithUncond;
 
     const auto entries = buildTargetUpdateEntries(
-        {}, {}, mbtb->targetUpdateEntryFilter(),
+        {}, actual_branches, mbtb->targetUpdateEntryFilter(),
         mbtb->getResolvedUpdate(), ctx);
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].entry.valid);

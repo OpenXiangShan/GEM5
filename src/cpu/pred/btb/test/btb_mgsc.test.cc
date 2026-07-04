@@ -104,6 +104,22 @@ makeActualContext(const FetchTarget &stream)
     return ctx;
 }
 
+ResolvedBranch
+makeResolvedBranch(const BTBEntry &entry, bool taken)
+{
+    ResolvedBranch branch;
+    branch.pc = entry.pc;
+    branch.target = entry.target;
+    branch.taken = taken;
+    branch.isCond = entry.isCond;
+    branch.isIndirect = entry.isIndirect;
+    branch.isDirect = entry.isDirect;
+    branch.isCall = entry.isCall;
+    branch.isReturn = entry.isReturn;
+    branch.size = entry.size;
+    return branch;
+}
+
 void
 updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
            const BTBEntry &entry, bool actual_taken)
@@ -111,7 +127,8 @@ updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
     const auto ctx = makeActualContext(stream);
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {},
-        /*actual_update_branches=*/{}, mgsc.directionUpdateEntryFilter(),
+        {makeResolvedBranch(entry, actual_taken)},
+        mgsc.directionUpdateEntryFilter(),
         mgsc.getResolvedUpdate(), ctx);
     mgsc.updateWithDirectionEntries(
         entries, ctx, stream.predMetas[mgsc.getComponentIdx()],
