@@ -820,7 +820,7 @@ DecoupledBPUWithBTB::resolveUpdate(
         findActualUpdateSummaryBranch(update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
-            "controlTaken=%d controlPC=%#lx controlTarget=%#lx squashType=%d "
+            "summaryTaken=%d summaryPC=%#lx summaryTarget=%#lx squashType=%d "
             "squashPC=%#lx\n",
             target_id, tid,
             static_cast<unsigned long long>(branches.size()),

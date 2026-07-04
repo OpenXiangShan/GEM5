@@ -45,27 +45,6 @@ makeIndirectEntry(Addr pc, bool is_return, bool resolved)
     return entry;
 }
 
-BranchUpdateContext
-makeDirectionContext(Addr control_pc, bool actual_taken)
-{
-    BranchUpdateContext ctx;
-    ctx.startPC = control_pc & ~0xf;
-    ctx.controlBranch.pc = control_pc;
-    ctx.controlTaken = actual_taken;
-    return ctx;
-}
-
-BranchUpdateContext
-makeTargetContext(Addr control_pc, bool actual_taken)
-{
-    BranchUpdateContext ctx;
-    ctx.startPC = control_pc & ~0xf;
-    ctx.controlTaken = actual_taken;
-    ctx.controlBranch.pc = control_pc;
-    ctx.controlBranch.target = control_pc + 0x100;
-    return ctx;
-}
-
 ResolvedBranch
 makeResolvedBranch(Addr pc, bool taken, bool mispred)
 {
@@ -100,8 +79,6 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
 {
     const BTBEntry prefix_entry = makeEntry(0x1000, true, false);
     const BTBEntry legacy_resolved_entry = makeEntry(0x1004, true, true);
-    const BranchUpdateContext ctx =
-        makeDirectionContext(prefix_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
         {prefix_entry, legacy_resolved_entry}, {},
@@ -117,8 +94,6 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
 TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
 {
     const BTBEntry new_entry = makeEntry(0x1010, true, false);
-    const BranchUpdateContext ctx =
-        makeDirectionContext(new_entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
         {}, {BranchInfo(new_entry)}, {},
@@ -135,7 +110,6 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
 {
     BTBEntry entry = makeEntry(0x1014, true, false);
     entry.ctr = -1;
-    const BranchUpdateContext ctx = makeDirectionContext(entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {}, {makeResolvedBranch(entry.pc, true, false)},
@@ -150,7 +124,6 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
 TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
 {
     const BTBEntry entry = makeEntry(0x1018, true, false);
-    const BranchUpdateContext ctx = makeDirectionContext(entry.pc, false);
 
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {},
@@ -166,8 +139,6 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
 TEST(UpdateEntryBuilderTest, MgscResolvedUpdateRequiresResolvedBranchSet)
 {
     const BTBEntry cond_entry = makeEntry(0x1020, true, false);
-    const BranchUpdateContext ctx =
-        makeDirectionContext(cond_entry.pc, true);
 
     const auto entries = buildDirectionUpdateEntries(
         {cond_entry}, {}, {},
@@ -180,7 +151,6 @@ TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
 {
     const BTBEntry prefix_entry = makeEntry(0x2000, false, false);
     const BTBEntry legacy_resolved_entry = makeEntry(0x2004, false, true);
-    const BranchUpdateContext ctx = makeTargetContext(prefix_entry.pc, false);
 
     const auto entries = buildTargetUpdateEntries(
         {prefix_entry, legacy_resolved_entry},
@@ -197,7 +167,6 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
 {
     const BTBEntry indirect = makeIndirectEntry(0x3000, false, true);
     const BTBEntry ret = makeIndirectEntry(0x3004, true, true);
-    const BranchUpdateContext ctx = makeTargetContext(indirect.pc, true);
     ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, false);
     resolved.isCond = false;
     resolved.isDirect = false;
@@ -223,13 +192,12 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
     BTBEntry second = makeIndirectEntry(0x3008, false, true);
     second.target = 0x5550;
 
-    BranchUpdateContext ctx = makeTargetContext(second.pc, true);
-    ctx.controlBranch.target = 0xdead;
+    const Addr actual_target = 0xdead;
     ResolvedBranch resolved = makeResolvedBranch(second.pc, true, false);
     resolved.isCond = false;
     resolved.isDirect = false;
     resolved.isIndirect = true;
-    resolved.target = ctx.controlBranch.target;
+    resolved.target = actual_target;
 
     const auto entries = buildTargetUpdateEntries(
         {first, second}, {resolved},
@@ -241,14 +209,12 @@ TEST(UpdateEntryBuilderTest, TargetEntriesCarryPerEntryActualBranch)
     EXPECT_EQ(entries[0].actualBranch.target, first.target);
     EXPECT_TRUE(entries[1].actualTaken);
     EXPECT_EQ(entries[1].actualBranch.pc, second.pc);
-    EXPECT_EQ(entries[1].actualBranch.target, ctx.controlBranch.target);
+    EXPECT_EQ(entries[1].actualBranch.target, actual_target);
 }
 
 TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
 {
     const BTBEntry indirect = makeIndirectEntry(0x3010, false, true);
-    BranchUpdateContext ctx = makeTargetContext(indirect.pc, false);
-    ctx.controlBranch.target = 0xdead;
 
     ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, true);
     resolved.isCond = false;
@@ -271,11 +237,10 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
 {
     const BTBEntry first = makeEntry(0x3018, false, true);
     const BTBEntry control = makeEntry(0x3020, false, true);
-    BranchUpdateContext ctx = makeTargetContext(control.pc, true);
-    ctx.controlBranch.target = 0xdead;
+    const Addr actual_target = 0xdead;
     ResolvedBranch resolved = makeResolvedBranch(control.pc, true, false);
     resolved.isCond = false;
-    resolved.target = ctx.controlBranch.target;
+    resolved.target = actual_target;
 
     const auto entries = buildTargetUpdateEntries(
         {first, control}, {resolved},
@@ -286,33 +251,31 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
     EXPECT_TRUE(entries[0].actualTaken);
     EXPECT_FALSE(entries[0].actualMispred);
     EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
-    EXPECT_EQ(entries[0].actualBranch.target, ctx.controlBranch.target);
+    EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
 
 TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
 {
-    BranchUpdateContext ctx = makeTargetContext(0x3028, true);
-    ctx.controlBranch.target = 0xbeef;
-    ResolvedBranch resolved = makeResolvedBranch(
-        ctx.controlBranch.pc, true, false);
+    const Addr branch_pc = 0x3028;
+    const Addr actual_target = 0xbeef;
+    ResolvedBranch resolved = makeResolvedBranch(branch_pc, true, false);
     resolved.isCond = false;
-    resolved.target = ctx.controlBranch.target;
+    resolved.target = actual_target;
 
     const auto entries = buildTargetUpdateEntries(
         {}, {resolved},
         TargetUpdateEntryFilter::TakenControl, false);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].entry.pc, ctx.controlBranch.pc);
+    EXPECT_EQ(entries[0].entry.pc, branch_pc);
     EXPECT_TRUE(entries[0].actualTaken);
     EXPECT_TRUE(entries[0].isNewEntry);
-    EXPECT_EQ(entries[0].actualBranch.target, ctx.controlBranch.target);
+    EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
 
 TEST(UpdateEntryBuilderTest, TargetTakenControlFallsThroughWithoutEntry)
 {
     const BTBEntry predicted = makeEntry(0x3030, false, true);
-    BranchUpdateContext ctx = makeTargetContext(predicted.pc, false);
 
     const auto entries = buildTargetUpdateEntries(
         {predicted}, {},
@@ -423,11 +386,16 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     const auto update_ctx =
         makeActualBranchUpdateContext(
             makeBaseBranchUpdateContext(stream), update_branches);
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
 
     EXPECT_FALSE(stream.resolved);
-    EXPECT_TRUE(update_ctx.controlTaken);
-    EXPECT_EQ(update_ctx.controlBranch.pc, second.pc);
-    EXPECT_EQ(update_ctx.controlBranch.target, second.pc + 0x200);
+    ASSERT_NE(summary_branch, nullptr);
+    EXPECT_TRUE(summary_branch->taken);
+    EXPECT_EQ(summary_branch->pc, second.pc);
+    EXPECT_EQ(summary_branch->target, second.pc + 0x200);
+    EXPECT_EQ(update_ctx.squashType, SquashType::SQUASH_CTRL);
+    EXPECT_EQ(update_ctx.squashPC, second.pc);
 
     ASSERT_EQ(update_btb_entries.size(), 2);
     EXPECT_EQ(update_btb_entries[0].pc, first.pc);
@@ -439,7 +407,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     EXPECT_EQ(update_branches[1].pc, second.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefix)
+TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefixForSquash)
 {
     const ResolvedBranch first =
         makeResolvedBranch(0x1000, false, false);
@@ -459,6 +427,8 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefix)
         makeUpdateBranchPrefix({first, second});
     const auto ctx = makeActualBranchUpdateContext(
         makeBaseBranchUpdateContext(stream), update_branches);
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_FALSE(stream.exeTaken);
@@ -466,16 +436,17 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefix)
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
-    EXPECT_TRUE(ctx.controlTaken);
-    EXPECT_EQ(ctx.controlBranch.pc, second.pc);
-    EXPECT_EQ(ctx.controlBranch.target, second.target);
+    ASSERT_NE(summary_branch, nullptr);
+    EXPECT_TRUE(summary_branch->taken);
+    EXPECT_EQ(summary_branch->pc, second.pc);
+    EXPECT_EQ(summary_branch->target, second.target);
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
     EXPECT_EQ(ctx.squashPC, second.pc);
 
-    EXPECT_NE(ctx.controlBranch.pc, stream.exeBranchInfo.pc);
+    EXPECT_NE(summary_branch->pc, stream.exeBranchInfo.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsControlSummaryEmpty)
+TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsPredictionContextOnly)
 {
     FetchTarget stream;
     stream.tid = 2;
@@ -495,8 +466,6 @@ TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsControlSummaryEmpty)
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
-    EXPECT_EQ(ctx.controlBranch.pc, 0);
-    EXPECT_FALSE(ctx.controlTaken);
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_TRAP);
     EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }
@@ -544,10 +513,15 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
     const auto update_ctx =
         makeActualBranchUpdateContext(
             makeBaseBranchUpdateContext(stream), update_branches);
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
 
     EXPECT_FALSE(stream.resolved);
-    EXPECT_TRUE(update_ctx.controlTaken);
-    EXPECT_EQ(update_ctx.controlBranch.pc, second.pc);
+    ASSERT_NE(summary_branch, nullptr);
+    EXPECT_TRUE(summary_branch->taken);
+    EXPECT_EQ(summary_branch->pc, second.pc);
+    EXPECT_EQ(update_ctx.squashType, SquashType::SQUASH_CTRL);
+    EXPECT_EQ(update_ctx.squashPC, second.pc);
 
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, first.pc);

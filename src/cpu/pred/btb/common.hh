@@ -259,9 +259,6 @@ struct BranchUpdateContext
     ThreadID tid = 0;
     Addr startPC = 0;
     uint8_t asidHash = 0;
-    // Stream-level control summary. Per-entry outcomes live in update entries.
-    BranchInfo controlBranch;
-    bool controlTaken = false;
     Tick predTick = 0;
     SquashType squashType = SquashType::SQUASH_NONE;
     Addr squashPC = 0;
@@ -924,8 +921,6 @@ makeActualBranchUpdateContext(BranchUpdateContext ctx,
 
     const auto *summary_branch = findActualUpdateSummaryBranch(branches);
     assert(summary_branch);
-    ctx.controlBranch = makeBranchInfo(*summary_branch);
-    ctx.controlTaken = summary_branch->taken;
     ctx.squashType = SquashType::SQUASH_NONE;
 
     for (const auto &branch : branches) {
@@ -937,8 +932,8 @@ makeActualBranchUpdateContext(BranchUpdateContext ctx,
             break;
         }
     }
-    if (ctx.controlTaken && ctx.squashType == SquashType::SQUASH_NONE) {
-        ctx.squashPC = ctx.controlBranch.pc;
+    if (summary_branch->taken && ctx.squashType == SquashType::SQUASH_NONE) {
+        ctx.squashPC = summary_branch->pc;
     }
     return ctx;
 }

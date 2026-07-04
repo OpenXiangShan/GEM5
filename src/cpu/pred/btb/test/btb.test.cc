@@ -241,8 +241,6 @@ TEST_F(BTBTest, EmptyPrediction) {
 TEST_F(BTBTest, EmptyTargetEntriesDoNotUpdateStats) {
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
-    ctx.controlBranch = createBranchInfo(0x1008, 0x2000, true);
-    ctx.controlTaken = false;
 
     const auto entries = buildTargetUpdateEntries(
         {}, {}, mbtb->targetUpdateEntryFilter(),
@@ -265,11 +263,9 @@ TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
 
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
-    ctx.controlBranch = createBranchInfo(0x1008, 0x2000, true);
-    ctx.controlTaken = true;
+    const BranchInfo branch = createBranchInfo(0x1008, 0x2000, true);
     const auto actual_branches =
-        std::vector<ResolvedBranch>{createResolvedBranch(
-            ctx.controlBranch, ctx.controlTaken)};
+        std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
 
     const uint64_t new_entries = mbtb->btbStats.newEntry;
     const uint64_t new_cond_entries = mbtb->btbStats.newEntryWithCond;
@@ -307,8 +303,6 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualBranchForHit) {
 
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
-    ctx.controlBranch = createBranchInfo(0x1ff0, 0x3000, true);
-    ctx.controlTaken = true;
 
     const auto actual_branches =
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
@@ -334,8 +328,6 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualTakenForMiss) {
     BranchInfo branch = createBranchInfo(0x1008, 0x2000, true);
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
-    ctx.controlBranch = branch;
-    ctx.controlTaken = false;
 
     const auto actual_branches =
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};

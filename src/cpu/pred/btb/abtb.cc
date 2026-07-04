@@ -607,8 +607,6 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         update_ctx.tid = s3Pred.tid;
         update_ctx.startPC = s3Pred.bbStart;
         update_ctx.asidHash = s3Pred.asidHash;
-        update_ctx.controlBranch = s3Pred.getTakenEntry();
-        update_ctx.controlTaken = s3Pred.isTaken();
 
         updateWithEntries(entries_to_update, update_ctx, previousPC);
     }
