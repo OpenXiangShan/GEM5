@@ -255,6 +255,52 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
 
+TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
+{
+    const BTBEntry first = makeEntry(0x3018, false, true);
+    const BTBEntry control = makeEntry(0x3020, false, true);
+    BranchUpdateContext ctx = makeTargetContext(control.pc, true);
+    ctx.controlBranch.target = 0xdead;
+
+    const auto entries = buildTargetUpdateEntries(
+        {first, control}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        TargetUpdateEntryFilter::TakenControl, false, ctx);
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].entry.pc, control.pc);
+    EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
+    EXPECT_EQ(entries[0].actualBranch.target, ctx.controlBranch.target);
+}
+
+TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
+{
+    BranchUpdateContext ctx = makeTargetContext(0x3028, true);
+    ctx.controlBranch.target = 0xbeef;
+
+    const auto entries = buildTargetUpdateEntries(
+        {}, TargetUpdateEntrySelection{}, {},
+        TargetUpdateEntryFilter::TakenControl, false, ctx);
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].entry.pc, ctx.controlBranch.pc);
+    EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_TRUE(entries[0].isNewEntry);
+    EXPECT_EQ(entries[0].actualBranch.target, ctx.controlBranch.target);
+}
+
+TEST(UpdateEntryBuilderTest, TargetTakenControlFallsThroughWithoutEntry)
+{
+    const BTBEntry predicted = makeEntry(0x3030, false, true);
+    BranchUpdateContext ctx = makeTargetContext(predicted.pc, false);
+
+    const auto entries = buildTargetUpdateEntries(
+        {predicted}, TargetUpdateEntrySelection{BTBEntry(), true}, {},
+        TargetUpdateEntryFilter::TakenControl, false, ctx);
+
+    EXPECT_TRUE(entries.empty());
+}
+
 TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
 {
     BTBEntry requested = makeEntry(0x3020, true, true);

@@ -883,13 +883,15 @@ DecoupledBPUWithBTB::updatePredictorComponent(
       }
 
       case PredictorUpdateProtocol::TargetEntries: {
+        const auto filter = component->targetUpdateEntryFilter();
         const auto entries = buildTargetUpdateEntries(
             update_btb_entries,
             selection,
             update_branches,
-            component->targetUpdateEntryFilter(),
+            filter,
             component->getResolvedUpdate(), update_ctx);
-        if (entries.empty()) {
+        if (entries.empty() &&
+            filter != TargetUpdateEntryFilter::TakenControl) {
             return;
         }
         component->updateWithTargetEntries(

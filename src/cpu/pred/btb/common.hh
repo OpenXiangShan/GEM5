@@ -331,7 +331,8 @@ inline BranchInfo makeBranchInfo(const ResolvedBranch &branch);
 enum class TargetUpdateEntryFilter
 {
     Any,
-    IndirectNonReturn
+    IndirectNonReturn,
+    TakenControl
 };
 
 enum class DirectionUpdateEntryFilter
@@ -462,7 +463,8 @@ shouldKeepTargetUpdateEntry(
     const BTBEntry &entry,
     TargetUpdateEntryFilter filter,
     bool resolved_update,
-    const std::vector<ResolvedBranch> &actual_update_branches)
+    const std::vector<ResolvedBranch> &actual_update_branches,
+    const BranchUpdateContext &ctx)
 {
     if (!entry.valid) {
         return false;
@@ -475,6 +477,9 @@ shouldKeepTargetUpdateEntry(
         break;
       case TargetUpdateEntryFilter::IndirectNonReturn:
         keep = entry.isIndirect && !entry.isReturn;
+        break;
+      case TargetUpdateEntryFilter::TakenControl:
+        keep = ctx.controlTaken && entry.pc == ctx.controlBranch.pc;
         break;
     }
     if (!keep || !resolved_update) {
@@ -499,7 +504,7 @@ buildTargetUpdateEntries(
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         if (!shouldKeepTargetUpdateEntry(
                 entry, filter, resolved_update,
-                actual_update_branches)) {
+                actual_update_branches, ctx)) {
             return;
         }
         const bool actual_taken = getActualTakenForUpdatePC(
@@ -514,6 +519,10 @@ buildTargetUpdateEntries(
     }
     if (!selection.isOldEntry) {
         add_entry(selection.entry, true);
+    }
+    if (filter == TargetUpdateEntryFilter::TakenControl &&
+        entries.empty() && ctx.controlTaken) {
+        add_entry(BTBEntry(ctx.controlBranch), true);
     }
 
     return entries;

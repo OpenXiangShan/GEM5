@@ -292,14 +292,16 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
 
 
 void
-UBTB::updateWithContext(const BranchUpdateContext &ctx,
+UBTB::updateWithContext(const std::vector<TargetUpdateEntry> &entries,
+                        const BranchUpdateContext &ctx,
                         const UBTBMeta &meta)
 {
     auto pred_hit_entry = meta.hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
-    // Use BTBEntry instead of BranchInfo; make it invalid when not taken.
-    BTBEntry takenEntry = ctx.controlTaken ?
-        BTBEntry(ctx.controlBranch) : BTBEntry();
+    BTBEntry takenEntry;
+    if (!entries.empty() && entries.front().actualTaken) {
+        takenEntry = BTBEntry(entries.front().actualBranch);
+    }
     auto startAddr = ctx.startPC;
     Addr oldtag = getTag(startAddr, ctx.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
@@ -312,11 +314,11 @@ UBTB::updateWithContext(const BranchUpdateContext &ctx,
                                e.pc >= startAddr && e.pc < block_end;
                     }) : ubtb.end();
 
-    if (ctx.controlTaken) {
+    if (takenEntry.valid) {
         if (!pred_hit_entry.valid ||
-            pred_hit_entry != ctx.controlBranch) {
+            pred_hit_entry != takenEntry) {
             DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n",
-                    ctx.controlBranch.pc, ctx.predTick);
+                    takenEntry.pc, ctx.predTick);
             ubtbStats.updateMiss++;
         }else {
             ubtbStats.updateHit++;
@@ -332,7 +334,8 @@ UBTB::updateWithContext(const BranchUpdateContext &ctx,
 }
 
 void
-UBTB::updateWithBranchUpdateContext(
+UBTB::updateWithTargetEntries(
+    const std::vector<TargetUpdateEntry> &entries,
     const BranchUpdateContext &ctx,
     const std::shared_ptr<void> &prediction_meta)
 {
@@ -340,7 +343,7 @@ UBTB::updateWithBranchUpdateContext(
     if (!meta) {
         return;
     }
-    updateWithContext(ctx, *meta);
+    updateWithContext(entries, ctx, *meta);
 }
 
 void

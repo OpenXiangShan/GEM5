@@ -129,9 +129,14 @@ class UBTB : public TimedBaseBTBPredictor
 
     PredictorUpdateProtocol updateProtocol() const override
     {
-        return PredictorUpdateProtocol::BranchContext;
+        return PredictorUpdateProtocol::TargetEntries;
     }
-    void updateWithBranchUpdateContext(
+    TargetUpdateEntryFilter targetUpdateEntryFilter() const override
+    {
+        return TargetUpdateEntryFilter::TakenControl;
+    }
+    void updateWithTargetEntries(
+        const std::vector<TargetUpdateEntry> &entries,
         const BranchUpdateContext &ctx,
         const std::shared_ptr<void> &prediction_meta) override;
 
@@ -200,7 +205,8 @@ class UBTB : public TimedBaseBTBPredictor
     };
     std::shared_ptr<UBTBMeta> meta;
 
-    void updateWithContext(const BranchUpdateContext &ctx,
+    void updateWithContext(const std::vector<TargetUpdateEntry> &entries,
+                           const BranchUpdateContext &ctx,
                            const UBTBMeta &meta);
 
     // helper methods
