@@ -305,12 +305,12 @@ class BTBMGSC : public TimedBaseBTBPredictor
         return {tableIdx, (pc >> (instShiftAmt + 1)) & (numCtrsPerLine - 1)};
     }
 
-    // Helper method to generate prediction for a single BTB entry
-    MgscPrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+    // Helper method to generate prediction for a single branch
+    MgscPrediction generateSinglePrediction(Addr branchPC, const Addr &startPC,
                                             const TageInfoForMGSC &tage_info,
                                             ThreadID tid, uint8_t asidHash);
 
-    void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
+    void updateSinglePredictor(Addr branchPC, bool actual_taken, const MgscPrediction &pred,
                                const BranchUpdateContext &ctx);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
                                bool tage_pred_taken);
