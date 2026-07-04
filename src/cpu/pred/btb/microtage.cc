@@ -200,21 +200,23 @@ void
 MicroTAGE::tickStart() {}
 
 /**
- * @brief Generate prediction for a single BTB entry by searching TAGE tables
+ * @brief Generate prediction for a single branch by searching TAGE tables
  *
- * @param btb_entry The BTB entry to generate prediction for
+ * @param branchPC The branch PC to generate prediction for
+ * @param baseTaken The base-table direction for this branch
  * @param startPC The starting PC address for calculating indices and tags
  * @param predMeta Optional prediction metadata; if provided, use snapshot for index/tag
  *             calculation (update path); if nullptr, use current folded history (prediction path)
  * @return TagePrediction containing main and alternative predictions
  */
 MicroTAGE::TagePrediction
-MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
+MicroTAGE::generateSinglePrediction(Addr branchPC,
+                                 bool baseTaken,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
                                  uint8_t asidHash) {
-    DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+    DPRINTF(UTAGE, "generateSinglePrediction for pc: %#lx\n", branchPC);
     const auto &state = historyState(tid);
 
     bool provided = false;
@@ -222,7 +224,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(branchPC, startPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
@@ -251,8 +253,8 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(UTAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                DPRINTF(UTAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, pc %#lx, pos %u\n",
+                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, branchPC, position);
                 break;  // only one way can be matched, avoid multi-hit, TODO: RTL behavior?
             }
         }
@@ -264,22 +266,22 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 provided = true;
             }
         } else {
-            DPRINTF(UTAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
+            DPRINTF(UTAGE, "miss table %d[%lu] for tag %lu (with pos %u), pc %#lx\n",
+                i, index, tag, position, branchPC);
         }
     }
 
     // Generate final prediction
     bool main_taken = main_info.taken();
-    bool base_pred = btb_entry.ctr >= 0;
+    bool base_pred = baseTaken;
 
     bool taken = provided ? main_taken : base_pred;
 
-    DPRINTF(UTAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
+    DPRINTF(UTAGE, "tage predict %#lx taken %d\n", branchPC, taken);
     DPRINTF(UTAGE, "tage main provided %d ? main_taken %d : base_taken %d\n",
             provided, main_taken, base_pred);
 
-    return TagePrediction(btb_entry.pc, main_info, provided, taken, base_pred);
+    return TagePrediction(branchPC, main_info, provided, taken, base_pred);
 }
 
 /**
@@ -299,8 +301,9 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC, nullptr,
-                                                 tid, asidHash);
+            auto pred = generateSinglePrediction(btb_entry.pc, btb_entry.ctr >= 0,
+                                                 startPC, nullptr, tid,
+                                                 asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken});
@@ -393,14 +396,16 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
 /**
  * @brief Update predictor state for a single entry
  *
- * @param entry The BTB entry being updated
+ * @param branchPC The branch PC being updated
+ * @param baseTaken The base-table direction for this branch
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
  * @param stream The fetch stream containing update information
  * @return true if need to allocate new entry
  */
 bool
-MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+MicroTAGE::updatePredictorStateAndCheckAllocation(Addr branchPC,
+                             bool baseTaken,
                              bool actual_taken,
                              const TagePrediction &pred,
                              const BranchUpdateContext &ctx) {
@@ -408,8 +413,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     auto &main_info = pred.mainInfo;
     bool used_base = !pred.mainprovided;
-    // Use base table instead of entry.ctr for fallback prediction
-    bool base_taken = entry.ctr >= 0;
+    const bool base_taken = baseTaken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -439,9 +443,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool base_is_correct_and_strong =
-                                     (base_taken == actual_taken) &&
-                                     (abs(2 * entry.ctr + 1) == 5);
+        const bool base_is_correct_and_strong = false;
 
         // a. Special reset (humility mechanism)
         if (base_is_correct_and_strong && main_is_correct) {
@@ -484,7 +486,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = ctx.isControlMispredPC(entry.pc);
+    bool this_fb_mispred = ctx.isControlMispredPC(branchPC);
     // No allocation if no misprediction
     if (!this_fb_mispred) {
         return false;
@@ -498,7 +500,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
  * @brief Handle allocation of new entries
  *
  * @param startPC The starting PC address
- * @param entry The BTB entry being updated
+ * @param branchPC The branch PC being updated
  * @param actual_taken The actual outcome of the branch
  * @param start_table The starting table for allocation
  * @param meta The metadata of the predictor
@@ -506,7 +508,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
  */
 bool
 MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
+                                 Addr branchPC,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
@@ -520,7 +522,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
 
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(branchPC, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti,
@@ -538,8 +540,8 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
             if (!cand.valid || (!cand.useful && weakish)) {
                 short newCounter = actual_taken ? 0 : -1;
                 DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
-                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+                        ti, newIndex, way, newTag, position, newCounter, branchPC);
+                cand = TageEntry(newTag, newCounter, branchPC); // u = 0 default
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
@@ -651,32 +653,33 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     DPRINTF(UTAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
     bool utage_hit = false;
-    // Process each BTB entry
+    // Process each branch entry
     for (const auto &update_entry : entries) {
-        const auto &branch = update_entry.branch;
-        BTBEntry btb_entry(branch);
-        btb_entry.ctr = update_entry.baseTaken ? 0 : -1;
-        if (!isBranchInPredictionBlock(btb_entry.pc, startAddr)) {
+        const Addr branch_pc = update_entry.branch.pc;
+        const bool base_taken = update_entry.baseTaken;
+        if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(UTAGE,
                     "update: skip pc %#lx outside prediction block start %#lx\n",
-                    btb_entry.pc, startAddr);
+                    branch_pc, startAddr);
             continue;
         }
         const bool actual_taken = update_entry.actualTaken;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
-            recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
+            recomputed = generateSinglePrediction(branch_pc, base_taken,
+                                                 startAddr, predMeta,
                                                  ctx.tid,
                                                  ctx.asidHash);
         } else { // otherwise, use the prediction from the prediction-time main/alt
-            auto pred_it = predMeta->preds.find(btb_entry.pc);
+            auto pred_it = predMeta->preds.find(branch_pc);
             if (pred_it != predMeta->preds.end()) {
                 recomputed = pred_it->second;
             } else {
                 DPRINTF(UTAGE, "update: missing predMeta entry for pc %#lx, recompute with snapshot\n",
-                        btb_entry.pc);
-                recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
+                        branch_pc);
+                recomputed = generateSinglePrediction(branch_pc, base_taken,
+                                                     startAddr, predMeta,
                                                      ctx.tid,
                                                      ctx.asidHash);
             }
@@ -686,7 +689,7 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         }
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
-            btb_entry, actual_taken, recomputed, ctx);
+            branch_pc, base_taken, actual_taken, recomputed, ctx);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
@@ -701,7 +704,7 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
             if (main_info.found) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
-            alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
+            alloc_success = handleNewEntryAllocation(startAddr, branch_pc, actual_taken,
                                    start_table, predMeta, ctx.asidHash,
                                    allocated_table, allocated_index, allocated_way);
         }
