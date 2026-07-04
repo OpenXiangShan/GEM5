@@ -920,12 +920,13 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     bool resolved_update)
 {
     if (!shouldUpdateBpuPredictors(
-            prediction_hit, prediction_taken, update_ctx, update_branches)) {
+            prediction_hit, prediction_taken, update_branches)) {
         return true;
     }
 
-    const auto update_end_inst_pc =
-        buildUpdateEndInstPC(update_ctx, predictWidth);
+    const auto update_end_inst_pc = buildUpdateEndInstPC(
+        update_ctx.startPC, update_ctx.squashType, update_ctx.squashPC,
+        update_branches, predictWidth);
     const auto update_btb_entries =
         makeUpdateBTBEntries(
             pred_btb_entries, update_ctx.startPC, update_end_inst_pc);

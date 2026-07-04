@@ -293,6 +293,22 @@ findFirstTakenDirectionUpdateEntry(
     return first_taken;
 }
 
+inline const ResolvedBranch *
+findFirstTakenActualUpdateBranch(
+    const std::vector<ResolvedBranch> &branches)
+{
+    const ResolvedBranch *first_taken = nullptr;
+    for (const auto &branch : branches) {
+        if (!branch.taken) {
+            continue;
+        }
+        if (!first_taken || branch.pc < first_taken->pc) {
+            first_taken = &branch;
+        }
+    }
+    return first_taken;
+}
+
 inline const TargetUpdateEntry *
 findTakenTargetUpdateEntry(const std::vector<TargetUpdateEntry> &entries)
 {
@@ -577,15 +593,21 @@ buildTargetUpdateEntries(
 }
 
 inline Addr
-buildUpdateEndInstPC(const BranchUpdateContext &ctx, unsigned predict_width)
+buildUpdateEndInstPC(
+    Addr start_pc,
+    SquashType squash_type,
+    Addr squash_pc,
+    const std::vector<ResolvedBranch> &actual_update_branches,
+    unsigned predict_width)
 {
-    if (ctx.squashType != SquashType::SQUASH_NONE) {
-        return ctx.squashPC;
+    if (squash_type != SquashType::SQUASH_NONE) {
+        return squash_pc;
     }
-    if (ctx.controlTaken) {
-        return ctx.controlBranch.pc;
+    if (const auto *taken_branch =
+            findFirstTakenActualUpdateBranch(actual_update_branches)) {
+        return taken_branch->pc;
     }
-    return (ctx.startPC + predict_width) & ~mask(floorLog2(predict_width) - 1);
+    return (start_pc + predict_width) & ~mask(floorLog2(predict_width) - 1);
 }
 
 inline std::vector<BTBEntry>
@@ -900,10 +922,9 @@ inline bool
 shouldUpdateBpuPredictors(
     bool prediction_hit,
     bool prediction_taken,
-    const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &actual_update_branches)
 {
-    return prediction_hit || prediction_taken || ctx.controlTaken ||
+    return prediction_hit || prediction_taken ||
         !actual_update_branches.empty();
 }
 

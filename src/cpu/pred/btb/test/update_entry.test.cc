@@ -87,8 +87,9 @@ makeUpdateEntries(const FetchTarget &stream,
 {
     const auto ctx = makeActualBranchUpdateContext(
         makeBaseBranchUpdateContext(stream), branches);
-    const auto update_end_inst_pc =
-        buildUpdateEndInstPC(ctx, predict_width);
+    const auto update_end_inst_pc = buildUpdateEndInstPC(
+        ctx.startPC, ctx.squashType, ctx.squashPC, branches,
+        predict_width);
     return makeUpdateBTBEntries(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 }
@@ -358,25 +359,29 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
 
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
 {
-    BranchUpdateContext taken_ctx;
-    taken_ctx.startPC = 0x1000;
-    taken_ctx.controlTaken = true;
-    taken_ctx.controlBranch.pc = 0x1010;
-    EXPECT_EQ(buildUpdateEndInstPC(taken_ctx, 32), 0x1010);
+    const auto taken = makeResolvedBranch(0x1010, true, false);
+    EXPECT_EQ(buildUpdateEndInstPC(
+        0x1000, SquashType::SQUASH_NONE, 0, {taken}, 32), 0x1010);
 
-    BranchUpdateContext fallthrough_ctx;
-    fallthrough_ctx.startPC = 0x1004;
-    fallthrough_ctx.controlTaken = false;
-    fallthrough_ctx.controlBranch.pc = 0x1010;
-    EXPECT_EQ(buildUpdateEndInstPC(fallthrough_ctx, 32), 0x1020);
+    const auto not_taken = makeResolvedBranch(0x1010, false, false);
+    EXPECT_EQ(buildUpdateEndInstPC(
+        0x1004, SquashType::SQUASH_NONE, 0, {not_taken}, 32), 0x1020);
 
-    BranchUpdateContext squash_ctx;
-    squash_ctx.startPC = 0x1000;
-    squash_ctx.controlTaken = true;
-    squash_ctx.controlBranch.pc = 0x1010;
-    squash_ctx.squashType = SquashType::SQUASH_CTRL;
-    squash_ctx.squashPC = 0x1008;
-    EXPECT_EQ(buildUpdateEndInstPC(squash_ctx, 32), 0x1008);
+    const auto mispred = makeResolvedBranch(0x1008, false, true);
+    EXPECT_EQ(buildUpdateEndInstPC(
+        0x1000, SquashType::SQUASH_CTRL, 0x1008, {mispred}, 32),
+        0x1008);
+}
+
+TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesFirstTakenActualBranch)
+{
+    const auto later_taken = makeResolvedBranch(0x1100, true, false);
+    const auto not_taken = makeResolvedBranch(0x1000, false, false);
+    const auto first_taken = makeResolvedBranch(0x1080, true, false);
+
+    EXPECT_EQ(buildUpdateEndInstPC(
+        0x1000, SquashType::SQUASH_NONE, 0,
+        {later_taken, not_taken, first_taken}, 32), first_taken.pc);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
@@ -632,29 +637,23 @@ TEST(UpdateEntryBuilderTest, FirstTakenDirectionEntryUsesLowestPC)
 TEST(UpdateEntryBuilderTest, ResolvedBranchSetEnablesBpuUpdate)
 {
     FetchTarget stream;
-    auto update_ctx = makeBaseBranchUpdateContext(stream);
 
     EXPECT_FALSE(shouldUpdateBpuPredictors(
-        stream.isHit, stream.predTaken, update_ctx, {}));
+        stream.isHit, stream.predTaken, {}));
 
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
     EXPECT_TRUE(
         shouldUpdateBpuPredictors(
-            stream.isHit, stream.predTaken, update_ctx, {missing}));
+            stream.isHit, stream.predTaken, {missing}));
 
     stream.isHit = true;
     EXPECT_TRUE(shouldUpdateBpuPredictors(
-        stream.isHit, stream.predTaken, update_ctx, {}));
+        stream.isHit, stream.predTaken, {}));
 
     stream.isHit = false;
     stream.predTaken = true;
     EXPECT_TRUE(shouldUpdateBpuPredictors(
-        stream.isHit, stream.predTaken, update_ctx, {}));
-
-    stream.predTaken = false;
-    update_ctx.controlTaken = true;
-    EXPECT_TRUE(shouldUpdateBpuPredictors(
-        stream.isHit, stream.predTaken, update_ctx, {}));
+        stream.isHit, stream.predTaken, {}));
 }
 
 TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
