@@ -623,17 +623,16 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
 
 void
 BTBITTAGE::commitBranch(
-    const DynInstPtr &inst,
-    const std::shared_ptr<void> &prediction_meta,
-    bool)
+    const ResolvedBranch &branch,
+    const std::shared_ptr<void> &prediction_meta)
 {
-    if (!(inst->isIndirectCtrl() && !inst->isReturn())) {
+    if (!(branch.isIndirect && !branch.isReturn)) {
         // ittage only cares about indirect non-return branches
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
+    auto pc = branch.pc;
+    auto npc = branch.target;
     auto pred_it = meta->preds.find(pc);
     bool this_branch_hit = false;
     Addr pred_npc;
@@ -641,7 +640,7 @@ BTBITTAGE::commitBranch(
         this_branch_hit = true;
         pred_npc = (pred_it->second).target;
     }
-    bool iscalled = inst->isCall();
+    bool iscalled = branch.isCall;
 
      // Update commit statistics
     if (this_branch_hit) {

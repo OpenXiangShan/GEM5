@@ -1424,16 +1424,15 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 #ifndef UNIT_TEST
 void
 BTBMGSC::commitBranch(
-    const DynInstPtr &inst,
-    const std::shared_ptr<void> &prediction_meta,
-    bool actual_taken)
+    const ResolvedBranch &branch,
+    const std::shared_ptr<void> &prediction_meta)
 {
-    if (!inst->isCondCtrl()) {
+    if (!branch.isCond) {
         // tage olnly deals with conditional branches
         return;
     }
     auto meta = std::static_pointer_cast<MgscMeta>(prediction_meta);
-    auto pc = inst->getPC();
+    auto pc = branch.pc;
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;
     bool sc_taken = false;
@@ -1445,23 +1444,23 @@ BTBMGSC::commitBranch(
     }
     if (pred_hit) {
         mgscStats.predHit++;
-        if (sc_taken == actual_taken) {
+        if (sc_taken == branch.taken) {
             mgscStats.scPredCorrect++;
             if (sc_taken != tage_taken) {
                 mgscStats.scPredCorrectTageWrong++;
             }
         } else {
             mgscStats.scPredWrong++;
-            if (tage_taken == actual_taken) {
+            if (tage_taken == branch.taken) {
                 mgscStats.scPredWrongTageCorrect++;
             }
         }
     }else {
         mgscStats.predMiss++;
-        if (actual_taken) {
+        if (branch.taken) {
             mgscStats.scPredMissTaken++;
             mgscStats.scPredWrong++;
-            if (actual_taken == tage_taken) {
+            if (branch.taken == tage_taken) {
                 mgscStats.scWrongTageCorrect++;
             }
         } else {

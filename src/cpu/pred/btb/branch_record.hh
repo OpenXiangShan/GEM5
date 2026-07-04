@@ -27,6 +27,8 @@ struct ResolvedBranch
     bool isDirect = false;
     bool isCall = false;
     bool isReturn = false;
+    bool isNonSpeculative = false;
+    bool isNop = false;
     uint8_t size = 0;
 };
 
@@ -45,6 +47,8 @@ makeResolvedBranchFromInst(const InstPtr &inst)
     branch.isCall = inst->isCall();
     branch.isReturn = inst->isReturn() &&
         !inst->isNonSpeculative() && !inst->isDirectCtrl();
+    branch.isNonSpeculative = inst->isNonSpeculative();
+    branch.isNop = inst->isNop();
     branch.size = inst->getInstBytes();
     return branch;
 }

@@ -345,19 +345,17 @@ UBTB::updateWithBranchUpdateContext(
 
 void
 UBTB::commitBranch(
-    const DynInstPtr &inst,
-    const std::shared_ptr<void> &prediction_meta,
-    bool actual_taken)
+    const ResolvedBranch &branch,
+    const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);
     auto &hit_entry = meta->hit_entry;
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
+    const auto pc = branch.pc;
     bool this_branch_hit = hit_entry.pc == pc;
 
-    bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = actual_taken;
-    Addr this_branch_target = npc;
+    const bool this_branch_taken = branch.taken;
+    const Addr this_branch_target = branch.target;
+    const bool is_uncond = !branch.isCond;
     if (this_branch_hit) {
         ubtbStats.allBranchHits++;
         if (this_branch_taken) {
@@ -365,7 +363,7 @@ UBTB::commitBranch(
         } else {
             ubtbStats.allBranchHitNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (branch.isCond) {
             ubtbStats.condHits++;
             if (this_branch_taken) {
                 ubtbStats.condHitTakens++;
@@ -380,12 +378,12 @@ UBTB::commitBranch(
                 ubtbStats.condPredWrong++;
             }
         }
-        if (inst->isUncondCtrl()) {
+        if (is_uncond) {
             ubtbStats.uncondHits++;
         }
         // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
+        if (!branch.isNonSpeculative) {
+            if (branch.isIndirect) {
                 ubtbStats.indirectHits++;
                 Addr pred_target = hit_entry.target;
                 if (pred_target == this_branch_target) {
@@ -394,10 +392,10 @@ UBTB::commitBranch(
                     ubtbStats.indirectPredWrong++;
                 }
             }
-            if (inst->isCall()) {
+            if (branch.isCall) {
                 ubtbStats.callHits++;
             }
-            if (inst->isReturn()) {
+            if (branch.isReturn) {
                 ubtbStats.returnHits++;
             }
         }
@@ -408,7 +406,7 @@ UBTB::commitBranch(
         } else {
             ubtbStats.allBranchMissNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (branch.isCond) {
             ubtbStats.condMisses++;
             if (this_branch_taken) {
                 ubtbStats.condMissTakens++;
@@ -418,19 +416,19 @@ UBTB::commitBranch(
                 ubtbStats.condPredCorrect++;
             }
         }
-        if (inst->isUncondCtrl()) {
+        if (is_uncond) {
             ubtbStats.uncondMisses++;
         }
         // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
+        if (!branch.isNonSpeculative) {
+            if (branch.isIndirect) {
                 ubtbStats.indirectMisses++;
                 ubtbStats.indirectPredWrong++;
             }
-            if (inst->isCall()) {
+            if (branch.isCall) {
                 ubtbStats.callMisses++;
             }
-            if (inst->isReturn()) {
+            if (branch.isReturn) {
                 ubtbStats.returnMisses++;
             }
         }

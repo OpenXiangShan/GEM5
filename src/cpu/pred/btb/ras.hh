@@ -10,14 +10,6 @@
     // Test mode includes
     #include "cpu/pred/btb/test/test_dprintf.hh"
     #include "cpu/pred/btb/timed_base_pred.hh"
-
-    // Test mode type definitions
-    namespace gem5 {
-        namespace o3 {
-            class DynInst;
-        }
-    }
-    using DynInstPtr = std::shared_ptr<gem5::o3::DynInst>;
 #else
     // Production mode includes
     #include "cpu/pred/btb/timed_base_pred.hh"
@@ -111,14 +103,12 @@ namespace btb_pred {
         // commitBranch method - override only in production mode
 #ifdef UNIT_TEST
         void commitBranch(
-            const DynInstPtr &inst,
-            const std::shared_ptr<void> &prediction_meta,
-            bool actual_taken);
+            const ResolvedBranch &branch,
+            const std::shared_ptr<void> &prediction_meta);
 #else
         void commitBranch(
-            const DynInstPtr &inst,
-            const std::shared_ptr<void> &prediction_meta,
-            bool actual_taken) override;
+            const ResolvedBranch &branch,
+            const std::shared_ptr<void> &prediction_meta) override;
 #endif
 
         Addr getTopAddrFromMeta(const std::shared_ptr<void> &prediction_meta);

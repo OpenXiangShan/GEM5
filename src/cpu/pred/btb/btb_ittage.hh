@@ -128,9 +128,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         const std::shared_ptr<void> &prediction_meta) override;
 
     void commitBranch(
-        const DynInstPtr &inst,
-        const std::shared_ptr<void> &prediction_meta,
-        bool actual_taken) override;
+        const ResolvedBranch &branch,
+        const std::shared_ptr<void> &prediction_meta) override;
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);

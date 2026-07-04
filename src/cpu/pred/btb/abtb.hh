@@ -129,9 +129,8 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     void tick() override;
     void commitBranch(
-        const DynInstPtr &inst,
-        const std::shared_ptr<void> &prediction_meta,
-        bool actual_taken) override;
+        const ResolvedBranch &branch,
+        const std::shared_ptr<void> &prediction_meta) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif

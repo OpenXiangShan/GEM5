@@ -1137,11 +1137,10 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
 #ifndef UNIT_TEST
 void
 MicroTAGE::commitBranch(
-    const DynInstPtr &inst,
-    const std::shared_ptr<void> &prediction_meta,
-    bool actual_taken)
+    const ResolvedBranch &branch,
+    const std::shared_ptr<void> &prediction_meta)
 {
-    if (!inst->isCondCtrl()) {
+    if (!branch.isCond) {
         // tage only deals with conditional branches
         return;
     }
@@ -1150,7 +1149,7 @@ MicroTAGE::commitBranch(
         DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
         return;
     }
-    auto pc = inst->pcState().instAddr();
+    auto pc = branch.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;
@@ -1158,7 +1157,7 @@ MicroTAGE::commitBranch(
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = actual_taken;
+    bool this_cond_taken = branch.taken;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

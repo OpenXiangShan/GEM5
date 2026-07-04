@@ -137,12 +137,11 @@ class UBTB : public TimedBaseBTBPredictor
 
     /** for statistics only
      * @param stream The fetch stream containing execution results
-     * @param inst The dynamic instruction being committed
+     * @param branch The committed branch result
      */
     void commitBranch(
-        const DynInstPtr &inst,
-        const std::shared_ptr<void> &prediction_meta,
-        bool actual_taken) override;
+        const ResolvedBranch &branch,
+        const std::shared_ptr<void> &prediction_meta) override;
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta

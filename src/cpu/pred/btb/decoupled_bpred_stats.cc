@@ -837,9 +837,8 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     // ---------- Update predictor components ----------
     for (auto component : components) {
         component->commitBranch(
-            inst,
-            entry.predMetas[component->getComponentIdx()],
-            taken);
+            resolved_branch,
+            entry.predMetas[component->getComponentIdx()]);
     }
     //here add final counter
 

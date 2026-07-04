@@ -469,16 +469,15 @@ BTBRAS::getTopAddrFromMeta(const std::shared_ptr<void> &prediction_meta)
 
 void
 BTBRAS::commitBranch(
-    const DynInstPtr &inst,
-    const std::shared_ptr<void> &prediction_meta,
-    bool)
+    const ResolvedBranch &branch,
+    const std::shared_ptr<void> &prediction_meta)
 {
-    if (!inst->isReturn() || inst->isNop()) {
+    if (!branch.isReturn || branch.isNop) {
         // ras only cares about return instructions
         return;
     }
     auto meta = std::static_pointer_cast<RASMeta>(prediction_meta);
-    auto npc = inst->getNPC();
+    auto npc = branch.target;
     if (npc != meta->target) {
         rasStats.PredWrong++;
         if (meta->sctr) {

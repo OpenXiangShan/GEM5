@@ -1484,16 +1484,15 @@ BTBTAGE::getNumWays(unsigned table) const
 
 void
 BTBTAGE::commitBranch(
-    const DynInstPtr &inst,
-    const std::shared_ptr<void> &prediction_meta,
-    bool actual_taken)
+    const ResolvedBranch &branch,
+    const std::shared_ptr<void> &prediction_meta)
 {
-    if (!inst->isCondCtrl()) {
+    if (!branch.isCond) {
         // tage olnly deals with conditional branches
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
-    auto pc = inst->pcState().instAddr();
+    auto pc = branch.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;
@@ -1501,7 +1500,7 @@ BTBTAGE::commitBranch(
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = actual_taken;
+    bool this_cond_taken = branch.taken;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

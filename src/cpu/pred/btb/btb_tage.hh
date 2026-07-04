@@ -181,9 +181,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
 #ifndef UNIT_TEST
     void commitBranch(
-        const DynInstPtr &inst,
-        const std::shared_ptr<void> &prediction_meta,
-        bool actual_taken) override;
+        const ResolvedBranch &branch,
+        const std::shared_ptr<void> &prediction_meta) override;
 #endif
 
     void setTrace() override;

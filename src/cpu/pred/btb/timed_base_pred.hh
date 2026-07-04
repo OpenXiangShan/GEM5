@@ -12,7 +12,6 @@
     #include "base/statistics.hh"
     #include "base/types.hh"
     #include "cpu/inst_seq.hh"
-    #include "cpu/o3/dyn_inst_ptr.hh"
     #include "cpu/pred/btb/common.hh"
     #include "sim/sim_object.hh"
     #include "params/TimedBaseBTBPredictor.hh"
@@ -30,10 +29,6 @@ namespace btb_pred
 // Conditional namespace wrapper for testing
 #ifdef UNIT_TEST
 namespace test {
-#endif
-
-#ifndef UNIT_TEST
-using DynInstPtr = o3::DynInstPtr;
 #endif
 
 #ifdef UNIT_TEST
@@ -119,9 +114,8 @@ class TimedBaseBTBPredictor: public SimObject
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(
-        const DynInstPtr &inst,
-        const std::shared_ptr<void> &prediction_meta,
-        bool actual_taken) {}
+        const ResolvedBranch &branch,
+        const std::shared_ptr<void> &prediction_meta) {}
 #endif
 
     int componentIdx{0};

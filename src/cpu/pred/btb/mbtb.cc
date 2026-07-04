@@ -790,15 +790,12 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 
 void
 MBTB::commitBranch(
-    const DynInstPtr &inst,
-    const std::shared_ptr<void> &prediction_meta,
-    bool actual_taken)
+    const ResolvedBranch &branch,
+    const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
     auto &hit_entries = meta->hit_entries;
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
-    // auto &static_inst = inst->staticInst();
+    const auto pc = branch.pc;
     bool this_branch_hit = false;
     auto entry = BTBEntry();
     for (auto e : hit_entries) {
@@ -808,10 +805,9 @@ MBTB::commitBranch(
             break;
         }
     }
-    // bool this_branch_miss = !this_branch_hit;
-    bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = actual_taken;
-    Addr this_branch_target = npc;
+    const bool this_branch_taken = branch.taken;
+    const Addr this_branch_target = branch.target;
+    const bool is_uncond = !branch.isCond;
     if (this_branch_hit) {
         btbStats.allBranchHits++;
         if (this_branch_taken) {
@@ -819,7 +815,7 @@ MBTB::commitBranch(
         } else {
             btbStats.allBranchHitNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (branch.isCond) {
             btbStats.condHits++;
             if (this_branch_taken) {
                 btbStats.condHitTakens++;
@@ -835,12 +831,12 @@ MBTB::commitBranch(
             }
 
         }
-        if (inst->isUncondCtrl()) {
+        if (is_uncond) {
             btbStats.uncondHits++;
         }
         // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
+        if (!branch.isNonSpeculative) {
+            if (branch.isIndirect) {
                 btbStats.indirectHits++;
                 Addr pred_target = entry.target;
                 if (pred_target == this_branch_target) {
@@ -849,10 +845,10 @@ MBTB::commitBranch(
                     btbStats.indirectPredWrong++;
                 }
             }
-            if (inst->isCall()) {
+            if (branch.isCall) {
                 btbStats.callHits++;
             }
-            if (inst->isReturn()) {
+            if (branch.isReturn) {
                 btbStats.returnHits++;
             }
         }
@@ -863,7 +859,7 @@ MBTB::commitBranch(
         } else {
             btbStats.allBranchMissNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (branch.isCond) {
             btbStats.condMisses++;
             if (this_branch_taken) {
                 btbStats.condMissTakens++;
@@ -874,19 +870,19 @@ MBTB::commitBranch(
                 btbStats.condPredCorrect++;
             }
         }
-        if (inst->isUncondCtrl()) {
+        if (is_uncond) {
             btbStats.uncondMisses++;
         }
         // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
+        if (!branch.isNonSpeculative) {
+            if (branch.isIndirect) {
                 btbStats.indirectMisses++;
                 btbStats.indirectPredWrong++;
             }
-            if (inst->isCall()) {
+            if (branch.isCall) {
                 btbStats.callMisses++;
             }
-            if (inst->isReturn()) {
+            if (branch.isReturn) {
                 btbStats.returnMisses++;
             }
         }
