@@ -667,7 +667,6 @@ struct FetchTarget
     bool resolved;  // whether the branch is resolved/executed
 
     std::vector<ResolvedBranch> resolvedBranches; // actual CFIs from resolve
-    std::vector<ResolvedBranch> committedBranches; // actual CFIs from commit
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
@@ -719,7 +718,6 @@ struct FetchTarget
        predMetas.fill(nullptr);
        predBTBEntries.clear();
        resolvedBranches.clear();
-       committedBranches.clear();
    }
 
     // the default exe result should be consistent with prediction
@@ -788,11 +786,6 @@ struct FetchTarget
     size_t addResolvedBranches(const std::vector<ResolvedBranch> &branches)
     {
         return insertResolvedBranchesByPC(resolvedBranches, branches);
-    }
-
-    bool addCommittedBranch(const ResolvedBranch &branch)
-    {
-        return insertResolvedBranchByPC(committedBranches, branch);
     }
 
 };

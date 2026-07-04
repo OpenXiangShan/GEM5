@@ -714,14 +714,10 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
     // Process all targets that have been committed (target_id >= head target id).
     while (!ftq.empty(tid) && target_id >= ftq.frontId(tid)) {
         auto &ftq_target = ftq.front(tid);
-        const bool has_committed_branches =
-            !ftq_target.committedBranches.empty();
         const bool has_resolved_branches =
             !ftq_target.resolvedBranches.empty();
-        const auto &branch_source = has_committed_branches ?
-            ftq_target.committedBranches : ftq_target.resolvedBranches;
         const auto update_branches =
-            makeUpdateBranchPrefix(branch_source);
+            makeUpdateBranchPrefix(ftq_target.resolvedBranches);
         BranchUpdateContext update_ctx;
         if (update_branches.empty()) {
             dbpBtbStats.commitUpdateNoBranchSet++;
@@ -734,12 +730,8 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                     ftq_target.predTaken);
             update_ctx = makeBaseBranchUpdateContext(ftq_target);
         } else {
-            if (has_committed_branches) {
-                dbpBtbStats.commitUpdateCommittedBranches++;
-            } else {
-                assert(has_resolved_branches);
-                dbpBtbStats.commitUpdateResolvedBranches++;
-            }
+            assert(has_resolved_branches);
+            dbpBtbStats.commitUpdateResolvedBranches++;
             update_ctx =
                 makeActualBranchUpdateContext(
                     makeBaseBranchUpdateContext(ftq_target),

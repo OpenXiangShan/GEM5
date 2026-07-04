@@ -438,10 +438,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
     ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
     ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
-    ADD_STAT(commitUpdateCommittedBranches, statistics::units::Count::get(),
-    "commit updates using the FTQ committed branch set"),
     ADD_STAT(commitUpdateResolvedBranches, statistics::units::Count::get(),
-    "commit updates falling back to the FTQ resolved branch set"),
+    "commit updates using the FTQ resolved branch set"),
     ADD_STAT(commitUpdateNoBranchSet, statistics::units::Count::get(),
     "commit updates with no actual branch set"),
     ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(),
@@ -819,7 +817,6 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 
     // ---------- Find corresponding fetch target entry ----------
     auto &entry = ftq.get(inst->ftqId, inst->threadNumber);
-    entry.addCommittedBranch(actual_branch);
 
     // Record branch trace if enabled
     if (enableBranchTrace) {

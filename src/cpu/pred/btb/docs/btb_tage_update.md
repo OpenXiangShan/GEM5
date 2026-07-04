@@ -15,8 +15,7 @@ ftqId/startPC + prediction meta/history snapshot + actual branch set
 二者差异只应该是“什么时候训练”，而不是“训练数据从哪里重建”。
 
 `actual branch set` 是同一个 FTQ entry 内按 PC 排序的真实控制流结果。resolve
-update 从 `resolvedBranches` 得到它；commit update 从 `committedBranches` 得到
-它，并且只有在 committed set 缺失时才退回 resolve-time set。
+update 和 commit update 都从 FTQ 的 `resolvedBranches` 得到它。
 `makeUpdateBranchPrefix()` 只保留到第一个 taken 或 mispredicted branch
 为止的 prefix；这个点之后的 younger branch 不属于本次训练 prefix。
 
@@ -46,7 +45,7 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 - `BranchUpdateContext::controlBranch/controlTaken` 只是 stream-level control
   summary，给 BTB/RAS/uBTB 这类仍需要“本 fetch block 是否有 taken control”
   的路径使用；
-- 没有 resolved/committed branch set 时，commit update 只保留 base context，
+- 没有 resolved branch set 时，commit update 只保留 base context，
   不再从单一的 `exeBranchInfo + exeTaken` 伪造 actual result。
 
 这正是当前协议区别于旧模型的关键：旧模型经常用 predicted BTB entries 加一个
