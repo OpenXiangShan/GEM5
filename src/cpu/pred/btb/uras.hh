@@ -49,7 +49,10 @@ class BTBuRAS : public TimedBaseBTBPredictor
 
         unsigned getDelay() override {return 0;}
 
-        void recoverState(const FetchTarget &entry);
+        void recoverState(
+            const FetchTarget &entry,
+            const BranchInfo &actual_branch,
+            bool actual_taken);
 
         PredictorUpdateProtocol updateProtocol() const override
         {

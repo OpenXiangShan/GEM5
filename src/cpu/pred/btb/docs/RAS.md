@@ -111,12 +111,15 @@ void specUpdateState(FullBTBPrediction &pred)
 ### 3. Recovery Phase (`recoverState`)
 
 ```cpp
-void recoverState(const FetchTarget &entry)
+void recoverState(
+    const FetchTarget &entry,
+    const BranchInfo &actual_branch,
+    bool actual_taken)
 ```
 
 - Restores RAS state to a previous checkpoint using stored metadata
 - Handles mispredictions by rolling back speculative changes
-- Re-applies operations if the branch was actually taken
+- Re-applies operations if `actual_taken` is true, using `actual_branch`
 
 ### 4. Commit Phase (`updateWithBranchUpdateContext`)
 

@@ -94,23 +94,25 @@ public:
     }
 
     // recover state, from entry.predMetas[0] to recover sp and tos
-    // then if exeTaken, do push & pops on control squash
-    // input: only entry is used.
+    // then if actual_taken, do push & pops on control squash
     // used when branch prediction error
     // two steps:
     // 1. recover sp and tos from entry.predMetas[0]
     // 2. do push & pops on control squash based on the actual branch type (call/return)
-    void recoverState(const FetchTarget &entry)
+    void recoverState(
+        const FetchTarget &entry,
+        const BranchInfo &actual_branch,
+        bool actual_taken)
     {
         auto &stack = specStack;
         auto &sp = specSp;
         // recover sp and tos first
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[0]);
-        auto takenSlot = entry.exeBranchInfo;
+        auto takenSlot = actual_branch;
         sp = meta_ptr->sp;
         stack[sp] = meta_ptr->tos;
 
-        if (entry.exeTaken) {
+        if (actual_taken) {
             // do push & pops on control squash
             if (takenSlot.isReturn) {
                 pop(stack, sp);
@@ -395,7 +397,7 @@ TEST_F(URASTest, RecoverStateBasic) {
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
     
     // recover
-    uras->recoverState(entry);
+    uras->recoverState(entry, entry.exeBranchInfo, entry.exeTaken);
 
     // verify recovery result
     EXPECT_EQ(sp, 0);  // sp should be restored
@@ -424,7 +426,7 @@ TEST_F(URASTest, RecoverStateReturn) {
     entry.exeBranchInfo.pc = 0x2000;
     
     // 执行恢复
-    uras->recoverState(entry);
+    uras->recoverState(entry, entry.exeBranchInfo, entry.exeTaken);
 
     // 验证：应该先恢复sp和tos，然后执行pop
     EXPECT_EQ(sp, 0);  // 1(恢复) -> 0(pop)
@@ -453,7 +455,7 @@ TEST_F(URASTest, RecoverStateCall) {
     entry.exeBranchInfo.size = 4;
     
     // 执行恢复
-    uras->recoverState(entry);
+    uras->recoverState(entry, entry.exeBranchInfo, entry.exeTaken);
 
     // 验证：应该先恢复sp和tos，然后执行push
     EXPECT_EQ(sp, 1);  // 0(恢复) -> 1(push)
@@ -479,7 +481,7 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     entry1.exeBranchInfo.pc = 0x1000;
     entry1.exeBranchInfo.size = 4;
     
-    uras->recoverState(entry1);
+    uras->recoverState(entry1, entry1.exeBranchInfo, entry1.exeTaken);
 
     // 验证call的结果
     EXPECT_EQ(sp, 1);
@@ -495,7 +497,7 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     entry2.exeBranchInfo.isReturn = true;
     entry2.exeBranchInfo.pc = 0x2000;
     
-    uras->recoverState(entry2);
+    uras->recoverState(entry2, entry2.exeBranchInfo, entry2.exeTaken);
 
     // 验证return的结果
     EXPECT_EQ(sp, 0);

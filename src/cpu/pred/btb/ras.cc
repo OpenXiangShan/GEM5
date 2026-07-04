@@ -158,12 +158,15 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
 }
 
 void
-BTBRAS::recoverState(const FetchTarget &entry)
+BTBRAS::recoverState(
+    const FetchTarget &entry,
+    const BranchInfo &actual_branch,
+    bool actual_taken)
 {
     const ThreadID tid = entry.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
-    auto takenEntry = entry.exeBranchInfo;
+    auto takenEntry = actual_branch;
     /*
     if (takenEntry.isCall || takenEntry.isReturn) {
         printStack("before recoverState", tid);
@@ -180,7 +183,7 @@ BTBRAS::recoverState(const FetchTarget &entry)
     Addr retAddr = takenEntry.pc + takenEntry.size;
 
     // do push & pops on control squash
-    if (entry.exeTaken) {
+    if (actual_taken) {
         if (takenEntry.isCall) {
             push(tid, retAddr);
         }
@@ -191,7 +194,7 @@ BTBRAS::recoverState(const FetchTarget &entry)
     }
 
     
-    if (entry.exeTaken) {
+    if (actual_taken) {
         DPRINTF(RAS, "isCall %d, isRet %d\n", takenEntry.isCall, takenEntry.isReturn);
         if (takenEntry.isReturn) {
             DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",

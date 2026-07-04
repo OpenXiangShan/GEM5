@@ -90,7 +90,10 @@ namespace btb_pred {
 
         void specUpdateState(FullBTBPrediction &pred);
 
-        void recoverState(const FetchTarget &entry);
+        void recoverState(
+            const FetchTarget &entry,
+            const BranchInfo &actual_branch,
+            bool actual_taken);
 
         PredictorUpdateProtocol updateProtocol() const override
         {
