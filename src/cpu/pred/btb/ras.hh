@@ -101,6 +101,7 @@ namespace btb_pred {
         }
         void updateWithBranchUpdateContext(
             const BranchUpdateContext &ctx,
+            const std::vector<ResolvedBranch> &update_branches,
             const std::shared_ptr<void> &prediction_meta) override;
 
         // Commit-time stats hook - override only in production mode

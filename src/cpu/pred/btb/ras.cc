@@ -208,14 +208,19 @@ BTBRAS::recoverState(
 void
 BTBRAS::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
     const std::shared_ptr<void> &prediction_meta)
 {
     const ThreadID tid = ctx.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
     auto meta_ptr = std::static_pointer_cast<RASMeta>(prediction_meta);
-    auto takenEntry = ctx.controlBranch;
-    if (ctx.controlTaken) {
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
+    const BranchInfo takenEntry =
+        summary_branch ? makeBranchInfo(*summary_branch) : BranchInfo();
+    const bool actual_taken = summary_branch && summary_branch->taken;
+    if (actual_taken) {
         if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
             DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);

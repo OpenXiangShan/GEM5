@@ -100,6 +100,7 @@ class TimedBaseBTBPredictor: public SimObject
     }
     virtual void updateWithBranchUpdateContext(
         const BranchUpdateContext &,
+        const std::vector<ResolvedBranch> &,
         const std::shared_ptr<void> &)
     {
     }

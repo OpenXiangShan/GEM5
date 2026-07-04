@@ -169,18 +169,23 @@ BTBuRAS::recoverState(
 void
 BTBuRAS::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
     const std::shared_ptr<void> &prediction_meta)
 {
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;
     printStack("before update", stack, sp);
-    auto takenSlot = ctx.controlBranch;
-    if (ctx.controlTaken && (takenSlot.isReturn || takenSlot.isCall)) {
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
+    const BranchInfo takenSlot =
+        summary_branch ? makeBranchInfo(*summary_branch) : BranchInfo();
+    const bool actual_taken = summary_branch && summary_branch->taken;
+    if (actual_taken && (takenSlot.isReturn || takenSlot.isCall)) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(prediction_meta);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
         auto miss = ctx.squashType == SQUASH_CTRL &&
-                    ctx.squashPC == ctx.controlBranch.pc;
+                    ctx.squashPC == takenSlot.pc;
         if (takenSlot.isCall) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
             if (enableDB) {

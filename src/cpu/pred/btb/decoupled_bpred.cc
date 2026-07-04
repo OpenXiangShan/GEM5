@@ -920,7 +920,8 @@ DecoupledBPUWithBTB::updatePredictorComponent(
       }
 
       case PredictorUpdateProtocol::BranchContext:
-        component->updateWithBranchUpdateContext(update_ctx, prediction_meta);
+        component->updateWithBranchUpdateContext(
+            update_ctx, update_branches, prediction_meta);
         return;
 
       case PredictorUpdateProtocol::AheadPipelineState:

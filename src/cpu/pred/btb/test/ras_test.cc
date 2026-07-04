@@ -79,10 +79,20 @@ protected:
     BranchUpdateContext
     makeActualContext(const FetchTarget &stream)
     {
-        auto ctx = makeBaseBranchUpdateContext(stream);
-        ctx.controlBranch = stream.exeBranchInfo;
-        ctx.controlTaken = stream.exeTaken;
-        return ctx;
+        return makeBaseBranchUpdateContext(stream);
+    }
+
+    std::vector<ResolvedBranch>
+    makeActualBranches(const FetchTarget &stream)
+    {
+        ResolvedBranch branch;
+        branch.pc = stream.exeBranchInfo.pc;
+        branch.target = stream.exeBranchInfo.target;
+        branch.taken = stream.exeTaken;
+        branch.isCall = stream.exeBranchInfo.isCall;
+        branch.isReturn = stream.exeBranchInfo.isReturn;
+        branch.size = stream.exeBranchInfo.size;
+        return {branch};
     }
 
     // Helper function to create a commit stream for call instructions
@@ -141,6 +151,7 @@ protected:
         auto commitStream = createCallCommitStream(startPC, branchPC, size, meta);
         ras->updateWithBranchUpdateContext(
             makeActualContext(commitStream),
+            makeActualBranches(commitStream),
             commitStream.predMetas[0]);
     }
 
