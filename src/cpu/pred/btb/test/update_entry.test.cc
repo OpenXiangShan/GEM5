@@ -418,9 +418,8 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefixForSquash)
     stream.asidHash = 3;
     stream.startPC = 0x1000;
     stream.predTick = 42;
-    stream.exeTaken = false;
-    stream.exeBranchInfo = makeBranchInfo(
-        makeResolvedBranch(0x1080, false, false));
+    const BranchInfo ignored_legacy_summary =
+        makeBranchInfo(makeResolvedBranch(0x1080, false, false));
 
     const auto update_branches =
         makeUpdateBranchPrefix({first, second});
@@ -430,7 +429,6 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefixForSquash)
         findActualUpdateSummaryBranch(update_branches);
 
     EXPECT_FALSE(stream.resolved);
-    EXPECT_FALSE(stream.exeTaken);
     EXPECT_EQ(ctx.tid, stream.tid);
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
@@ -442,7 +440,7 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefixForSquash)
     EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
     EXPECT_EQ(ctx.squashPC, second.pc);
 
-    EXPECT_NE(summary_branch->pc, stream.exeBranchInfo.pc);
+    EXPECT_NE(summary_branch->pc, ignored_legacy_summary.pc);
 }
 
 TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsPredictionContextOnly)
@@ -453,9 +451,6 @@ TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsPredictionContextOnly)
     stream.startPC = 0x2000;
     stream.predTick = 24;
     stream.resolved = true;
-    stream.exeTaken = true;
-    stream.exeBranchInfo = makeBranchInfo(
-        makeResolvedBranch(0x2008, true, false));
     stream.squashType = SquashType::SQUASH_TRAP;
     stream.squashPC = 0x2010;
 
@@ -477,8 +472,6 @@ TEST(UpdateEntryBuilderTest, FetchTargetPredictionDoesNotCreateActualBranch)
         makeBranchInfo(makeResolvedBranch(0x2008, true, false));
 
     EXPECT_FALSE(stream.resolved);
-    EXPECT_FALSE(stream.exeTaken);
-    EXPECT_EQ(stream.exeBranchInfo.pc, 0);
     EXPECT_TRUE(stream.resolvedBranches.empty());
 }
 

@@ -32,11 +32,6 @@ FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) 
 
 void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool isCond, int size=4) {
     stream.resolved = true;
-    stream.exeBranchInfo.pc = brPc;
-    stream.exeBranchInfo.target = target;
-    stream.exeBranchInfo.isCond = isCond;
-    stream.exeBranchInfo.size = size;
-    stream.exeTaken = taken;
     ResolvedBranch branch;
     branch.pc = brPc;
     branch.target = target;

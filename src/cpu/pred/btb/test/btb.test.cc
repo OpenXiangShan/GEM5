@@ -73,8 +73,7 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     FetchTarget stream;
     stream.startPC = startPC;
     stream.resolved = true;
-    stream.exeBranchInfo = branch;
-    stream.exeTaken = taken;
+    stream.addResolvedBranch(createResolvedBranch(branch, taken));
     stream.predMetas[0] = meta;
     stream.squashType = SQUASH_CTRL; // mispredict default
     stream.squashPC = endInstPC;
@@ -84,10 +83,7 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
 std::vector<ResolvedBranch>
 makeActualBranches(const FetchTarget& stream)
 {
-    if (stream.exeBranchInfo.pc == 0) {
-        return {};
-    }
-    return {createResolvedBranch(stream.exeBranchInfo, stream.exeTaken)};
+    return makeUpdateBranchPrefix(stream.resolvedBranches);
 }
 
 void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
