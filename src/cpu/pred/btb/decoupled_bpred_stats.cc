@@ -712,8 +712,6 @@ DecoupledBPUWithBTB::updateStatistics(
     const bool miss_predicted = mispred_branch != nullptr;
     const bool actual_taken = actual_branch && actual_branch->taken;
     const bool has_actual_branch = actual_branch != nullptr;
-    const BranchInfo actual_branch_info =
-        actual_branch ? makeBranchInfo(*actual_branch) : BranchInfo();
     // Track indirect mispredictions
     if (miss_predicted && mispred_branch && mispred_branch->isIndirect) {
         topMispredIndirect[target.startPC]++;
@@ -730,17 +728,17 @@ DecoupledBPUWithBTB::updateStatistics(
             DPRINTF(BTB, "BTB miss detected when update, target start %#lx, predTick %lu, printing branch info:\n",
                     target.startPC, target.predTick);
             DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-                actual_branch_info.pc, actual_branch_info.size,
-                actual_branch_info.target, actual_branch_info.isCond,
-                actual_branch_info.isIndirect, actual_branch_info.isCall,
-                actual_branch_info.isReturn);
+                actual_branch->pc, actual_branch->size,
+                actual_branch->target, actual_branch->isCond,
+                actual_branch->isIndirect, actual_branch->isCall,
+                actual_branch->isReturn);
         }
 
     }
 
     if (has_actual_branch && (target.isHit || actual_taken)) {
         // Update BTB entry statistics
-        const BTBEntry btb_entry(actual_branch_info);
+        const BTBEntry btb_entry = makeBTBEntry(*actual_branch);
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
@@ -760,7 +758,8 @@ DecoupledBPUWithBTB::updateStatistics(
     dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
     if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
         commitFsqEntryHasInstsVector[target.commitInstNum]++;
-        if (target.commitInstNum == 1 && actual_branch_info.isUncond()) {
+        if (target.commitInstNum == 1 &&
+            (!actual_branch || !actual_branch->isCond)) {
             dbpBtbStats.commitFsqEntryOnlyHasOneJump++;
         }
     }
