@@ -43,15 +43,8 @@ makeSquashActualBranch(SquashType squash_type,
     branch.target = redirect_pc;
     branch.taken = actually_taken;
     branch.mispred = true;
-    branch.isCond = static_inst->isCondCtrl();
-    branch.isIndirect = static_inst->isIndirectCtrl();
-    branch.isDirect = static_inst->isDirectCtrl();
-    branch.isCall = static_inst->isCall();
-    branch.isReturn = static_inst->isReturn() &&
-        !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl();
-    branch.isNonSpeculative = static_inst->isNonSpeculative();
-    branch.isNop = static_inst->isNop();
-    branch.size = control_inst_size;
+    fillResolvedBranchInstAttrs(
+        branch, static_inst, static_cast<uint8_t>(control_inst_size));
     return branch;
 }
 

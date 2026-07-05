@@ -35,14 +35,10 @@ struct ResolvedBranch
 };
 
 template <typename InstPtr>
-ResolvedBranch
-makeActualBranchFromInst(const InstPtr &inst)
+void
+fillResolvedBranchInstAttrs(ResolvedBranch &branch, const InstPtr &inst,
+                            uint8_t size)
 {
-    ResolvedBranch branch;
-    branch.pc = inst->getPC();
-    branch.target = inst->getNPC();
-    branch.taken = inst->branching() || inst->isUncondCtrl();
-    branch.mispred = inst->mispredicted();
     branch.isCond = inst->isCondCtrl();
     branch.isIndirect = inst->isIndirectCtrl();
     branch.isDirect = inst->isDirectCtrl();
@@ -51,7 +47,20 @@ makeActualBranchFromInst(const InstPtr &inst)
         !inst->isNonSpeculative() && !inst->isDirectCtrl();
     branch.isNonSpeculative = inst->isNonSpeculative();
     branch.isNop = inst->isNop();
-    branch.size = inst->getInstBytes();
+    branch.size = size;
+}
+
+template <typename InstPtr>
+ResolvedBranch
+makeActualBranchFromInst(const InstPtr &inst)
+{
+    ResolvedBranch branch;
+    branch.pc = inst->getPC();
+    branch.target = inst->getNPC();
+    branch.taken = inst->branching() || inst->isUncondCtrl();
+    branch.mispred = inst->mispredicted();
+    fillResolvedBranchInstAttrs(
+        branch, inst, static_cast<uint8_t>(inst->getInstBytes()));
     return branch;
 }
 
