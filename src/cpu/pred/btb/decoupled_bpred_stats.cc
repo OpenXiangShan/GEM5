@@ -822,7 +822,6 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     // ---------- Extract branch information ----------
     const auto actual_branch = makeActualBranchFromInst(inst);
     const Addr branchAddr = actual_branch.pc;
-    const BranchInfo info = makeBranchInfo(actual_branch);
     const bool taken = actual_branch.taken;
 
     // ---------- Find corresponding fetch target entry ----------
@@ -834,7 +833,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Process misprediction and update statistics ----------
-    processMisprediction(entry, branchAddr, info, taken, mispred);
+    processMisprediction(entry, actual_branch, mispred);
 
     // ---------- Track taken branches for statistics ----------
     if (taken) {
@@ -850,7 +849,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     //here add final counter
 
     if (mispred) {
-        commitPredWrongSource(entry, info, taken);
+        commitPredWrongSource(entry, actual_branch);
     }
 
 }
@@ -858,8 +857,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 void
 DecoupledBPUWithBTB::commitPredWrongSource(
     const FetchTarget &entry,
-    const BranchInfo &actualBranch,
-    bool actualTaken)
+    const ResolvedBranch &actual_branch)
 {
     int ubtbid = ubtb->getComponentIdx();
     int abtbid = abtb->getComponentIdx();
@@ -871,7 +869,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(
     int s1PredSource = entry.s1Source;
     int s3PredSource = entry.s3Source;
 
-    bool onlyDirectionWrong = actualTaken != entry.predTaken;
+    bool onlyDirectionWrong = actual_branch.taken != entry.predTaken;
 
     assert(s1PredSource < mbtbid);
     if (s1PredSource == ubtbid) {
@@ -883,23 +881,23 @@ DecoupledBPUWithBTB::commitPredWrongSource(
     }
 
     if (s3PredSource == rasid) {
-        if (actualBranch.isCond) {
+        if (actual_branch.isCond) {
             dbpBtbStats.s3PredWrongTage++;
-        } else if (actualBranch.isReturn) {
+        } else if (actual_branch.isReturn) {
             dbpBtbStats.s3PredWrongRas++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == ittageid) {
-        if (actualBranch.isIndirect) {
+        if (actual_branch.isIndirect) {
             dbpBtbStats.s3PredWrongIttage++;
-        } else if (actualBranch.isCond) {
+        } else if (actual_branch.isCond) {
             dbpBtbStats.s3PredWrongTage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == tageid) {
-        if (actualBranch.isCond) {
+        if (actual_branch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
@@ -909,13 +907,13 @@ DecoupledBPUWithBTB::commitPredWrongSource(
             dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == mbtbid) {
-        if (actualBranch.isCond) {
+        if (actual_branch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
                 dbpBtbStats.s3PredWrongMbtb++;
             }
-        } else if (actualBranch.isIndirect) {
+        } else if (actual_branch.isIndirect) {
             dbpBtbStats.s3PredWrongIttage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
@@ -994,18 +992,19 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 void
 DecoupledBPUWithBTB::processMisprediction(
     const FetchTarget &entry,
-    Addr branchAddr,
-    const BranchInfo &info,
-    bool taken,
+    const ResolvedBranch &actual_branch,
     bool mispred)
 {
+    const Addr branchAddr = actual_branch.pc;
+    const bool taken = actual_branch.taken;
+    const int branch_type = getBranchType(actual_branch);
     MispredType mispredType = FAKE_LAST;
 
     // Determine misprediction type only if there was a misprediction
     if (mispred) {
         if (!taken) {
             // Only conditional branches can be not-taken
-            assert(info.isCond);
+            assert(actual_branch.isCond);
             mispredType = DIR_WRONG; // Direction was wrong
         } else {
             // Check if this branch was in the predicted BTB entries
@@ -1028,16 +1027,16 @@ DecoupledBPUWithBTB::processMisprediction(
         }
 
         DPRINTF(Profiling, "branchAddr %#lx is mispredicted, taken %d, type %d, missType %d\n",
-                branchAddr, taken, info.getType(), mispredType);
+                branchAddr, taken, branch_type, mispredType);
         assert(mispredType != FAKE_LAST);
     }
 
     // Create branch key for the statistics map
-    auto branchKey = std::make_pair(branchAddr, info.getType());
+    auto branchKey = std::make_pair(branchAddr, branch_type);
 
     // Update branch statistics
     DPRINTF(Profiling, "lookup topMispredictsByBranch for branchAddr %#lx, type %d\n",
-            branchAddr, info.getType());
+            branchAddr, branch_type);
 
     auto statsIt = topMispredictsByBranch.find(branchKey);
 
@@ -1046,7 +1045,7 @@ DecoupledBPUWithBTB::processMisprediction(
         DPRINTF(Profiling, "not found, insert with mispred=%d\n", mispred);
 
         // Initialize new branch stats
-        BranchStats stats(branchAddr, info.getType());
+        BranchStats stats(branchAddr, branch_type);
         stats.incrementTotal();  // Always increment total count
 
         // Only increment misprediction count if actually mispredicted

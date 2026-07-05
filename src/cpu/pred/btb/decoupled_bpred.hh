@@ -845,23 +845,18 @@ class DecoupledBPUWithBTB : public BPredUnit
 
 
     void commitPredWrongSource(const FetchTarget &entry,
-                               const BranchInfo &actualBranch,
-                               bool actualTaken);
+                               const ResolvedBranch &actual_branch);
 
     /**
      * @brief Process branch misprediction, determine type and update statistics
      *
      * @param entry The fetch target entry
-     * @param branchAddr Branch instruction address
-     * @param info Branch information
-     * @param taken Whether the branch was taken
+     * @param actual_branch Actual resolved branch result
      * @param mispred Whether the branch was mispredicted
      */
     void processMisprediction(
         const FetchTarget &entry,
-        Addr branchAddr,
-        const BranchInfo &info,
-        bool taken,
+        const ResolvedBranch &actual_branch,
         bool mispred);
 
     /**

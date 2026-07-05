@@ -96,6 +96,45 @@ enum BranchType
     BR_DIRECT_RET=7
 };
 
+inline int
+getBranchType(bool is_cond, bool is_indirect, bool is_call, bool is_return)
+{
+    if (is_cond) {
+        return BR_COND;
+    } else if (!is_indirect) { // uncond direct
+        if (is_return) {
+            fatal("jal return detected!\n");
+            return BR_DIRECT_RET;
+        }
+        if (!is_call) {
+            return BR_DIRECT_NORMAL;
+        } else {
+            return BR_DIRECT_CALL;
+        }
+    } else {  // uncond indirect
+        if (!is_call) {
+            if (!is_return) {
+                return BR_INDIRECT_NORMAL; // normal indirect
+            } else {
+                return BR_INDIRECT_RET; // indirect return
+            }
+        } else {
+            if (!is_return) { // indirect call
+                return BR_INDIRECT_CALL;
+            } else { // call & return
+                return BR_INDIRECT_CALL_RET;
+            }
+        }
+    }
+}
+
+inline int
+getBranchType(const ResolvedBranch &branch)
+{
+    return getBranchType(
+        branch.isCond, branch.isIndirect, branch.isCall, branch.isReturn);
+}
+
 enum class OverrideReason
 {
     NO_OVERRIDE,
@@ -162,33 +201,7 @@ struct BranchInfo
     {
     }
     int getType() const {
-        if (isCond) {
-            return BR_COND;
-        } else if (!isIndirect) { // uncond direct
-            if (isReturn) {
-                fatal("jal return detected!\n");
-                return BR_DIRECT_RET;
-            }
-            if (!isCall) {
-                return BR_DIRECT_NORMAL;
-            } else {
-                return BR_DIRECT_CALL;
-            }
-        } else {  // uncond indirect
-            if (!isCall) {
-                if (!isReturn) {
-                    return BR_INDIRECT_NORMAL; // normal indirect
-                } else {
-                    return BR_INDIRECT_RET; // indirect return
-                }
-            } else {
-                if (!isReturn) { // indirect call
-                    return BR_INDIRECT_CALL;
-                } else { // call & return
-                    return BR_INDIRECT_CALL_RET;
-                }
-            }
-        }
+        return getBranchType(isCond, isIndirect, isCall, isReturn);
     }
 
     bool operator < (const BranchInfo &other) const
