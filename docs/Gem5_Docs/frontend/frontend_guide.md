@@ -95,8 +95,8 @@ FTBEntry predFTBEntry;  // 预测的 FTB 条目
 // for update/recovery, actual CFIs accumulated by resolve/commit paths
 std::vector<ResolvedBranch> resolvedBranches;  // 实际控制流结果集合
 
-FTBEntry updateFTBEntry;   // 新的，要写入 FTB 的 FTB 条目，ftb->update() 写入
-bool updateIsOldEntry;  // 是否更新为旧的 FTB 条目
+// update entries are built transiently from prediction meta/history and
+// resolvedBranches, not stored as persistent stream fields
 
 bool resolved;  // squash 后变为 true，并保存 squash 信息
 
@@ -117,7 +117,7 @@ boost::dynamic_bitset<> history; // 全局分支历史，970 位，推测更新�
 1. startPC，预测起始 PC, = s0PC, 各子预测器预测 PC
 2. predTaken 到 predFTBEntry, 当各预测器生成完 finalPred 之后，填入预测内容
 3. resolvedBranches 由 resolve/commit 路径累积实际 CFI，不再从预测字段伪造 actual result
-4. updateFTBEntry：调用 getAndSetNewFTBEntry 之后暂存下，然后 ftb->update() 用它来更新 ftb entry
+4. update entry 在训练入口临时构造，输入是 prediction-time meta/history snapshot 加 actual branch set
 5. resolved: 出现三种 squash(control/noncontrol/trap) resolved 为 true，并保存 squash 信息
 
 这里旧版本曾有两组很类似的数据结构，分别保存 prediction summary 和 execution summary。当前更新协议应直接消费 prediction-time meta/history snapshot 加 `resolvedBranches` actual branch set，而不是在 `FetchTarget` 里二选一推导 actual 结果。
@@ -131,7 +131,7 @@ boost::dynamic_bitset<> history; // 全局分支历史，970 位，推测更新�
 本质上对应两个阶段：
 
 1. 预测阶段，resolved=0, ftb 内容生成 fsq 的 pred 信息，再传递给 ftq 对应内容（ftb->fsq->ftq)
-2. 重定向阶段，resolved=1, fsq exe 的准确内容，传递给 ftq 对应内容，用于重新生成新的 ftb 项信息 (fsq->ftq->new ftb) （其实在 getAndSetNewFTBEntry 生成新的 ftb 时候，直接用的 fsq 内容，没用过 ftq 内容，因为重定向时候，对应的 ftq 内容可能已经不存在了，只有 fsq 还一直存着）
+2. resolve/commit 阶段，后端把真实 CFI 写入 `resolvedBranches`。训练时再由 `resolvedBranches` 和预测期 meta/history 构造 direction/target update entries；不要从预测字段反推 actual 结果
 
 相当于 ftq 内容是 fsq 内容的压缩版，动态切换到对应版本上。
 
@@ -178,9 +178,9 @@ FetchStreamId fsqID;  // fsq 的 id, 用于 ftq 索引到对应的 Fsq!
 DecoupledBPUWithFTB::setTakenEntryWithStream(const FetchStream &stream_entry, FtqEntry &ftq_entry)
 {
     ftq_entry.taken = true;
-    ftq_entry.takenPC = stream_entry.getControlPC();
+    ftq_entry.takenPC = stream_entry.predBranchInfo.pc;
     ftq_entry.endPC = stream_entry.predEndPC;
-    ftq_entry.target = stream_entry.getTakenTarget();
+    ftq_entry.target = stream_entry.predBranchInfo.target;
     ftq_entry.inLoop = stream_entry.fromLoopBuffer;
     ftq_entry.iter = stream_entry.isDouble ? 2 : stream_entry.fromLoopBuffer ? 1 : 0;
     ftq_entry.isExit = stream_entry.isExit;
@@ -232,7 +232,6 @@ bool valid = false; }
 typedef struct FTBSlot : BranchInfo
 {
 bool valid;     // 分支有效
-bool alwaysTaken;  // 总是跳转，如果分支一直 taken, = 1
 int ctr;  // 2 位饱和计数器，只有 uFTB 使用！
 }FTBSlot;
 
@@ -352,19 +351,20 @@ virtual void commitBranch(const FetchStream &entry, const DynInstPtr &inst) {}  
 1. putPCHistory: 每拍做预测
 2. update: 指令提交后更新预测器内容
 
-例如 FTB: 会在 putPCHIstory 时候查找 FTB 项，并填入到每一级的 FullFTBPrediction stagePreds 中，并写入 meta 信息；在 update 时候决定是否要插入新的 FTB entry 还是更新已有的 entry
-
-> FTB 还有个特殊函数 getAndSetNewFTBEntry，会在整个预测器 update 时候调用生成一个新的 FTB 项，之后再调用各子预测器的 update 函数
->
+例如 FTB/BTB 类 target predictor: 会在 putPCHistory 时候查表，并填入每一级的
+FullFTBPrediction/stage prediction 和 meta 信息；update 时应直接消费真实
+branch target/taken 信息，局部构造需要写表的 target entry。这样 update 的数据
+来源是 actual branch set，而不是复用预测 entry 去“猜”训练 entry。
 
 ```cpp
-// 当 commit stream 时候 更新预测器
+// 当 commit/resolve stream 时候更新预测器
 void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid) {
-    ftb->getAndSetNewFTBEntry(stream);  // 生成新的 ftb 项或更新原本已有的 ftb
-    // 接下来 ftb->update() 写入新项
+    auto update_branches = makeUpdateBranchPrefix(stream.resolvedBranches);
+    auto ctx = makeBaseBranchUpdateContext(stream);
+    auto update_entries = buildTargetUpdateEntries(..., update_branches, ...);
     DPRINTF(DecoupleBP, "update each component\n");
     for (int i = 0; i < numComponents; ++i) {
-        components[i]->update(stream);  // 每个组件更新自己内容!!!!
+        components[i]->update(..., ctx, update_entries, update_branches);
     }
 }
 ```
