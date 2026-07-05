@@ -263,12 +263,28 @@ makeBTBEntryFromResolvedBranch(const ResolvedBranch &branch)
 
 struct DirectionUpdateEntry
 {
-    // Actual branch facts come from the resolved branch record. baseTaken and
-    // isNewEntry describe the prediction-time update base.
-    ResolvedBranch actualBranch;
+    // Actual direction facts come from the resolved branch record. baseTaken
+    // and isNewEntry describe the prediction-time update base.
+    Addr pc = 0;
+    bool actualTaken = false;
+    bool mispred = false;
     bool baseTaken = false;
     bool isNewEntry = false;
 };
+
+inline DirectionUpdateEntry
+makeDirectionUpdateEntry(const ResolvedBranch &actual_branch,
+                         bool base_taken,
+                         bool is_new_entry)
+{
+    DirectionUpdateEntry entry;
+    entry.pc = actual_branch.pc;
+    entry.actualTaken = actual_branch.taken;
+    entry.mispred = actual_branch.mispred;
+    entry.baseTaken = base_taken;
+    entry.isNewEntry = is_new_entry;
+    return entry;
+}
 
 struct BranchUpdateContext
 {
@@ -297,12 +313,11 @@ findFirstTakenDirectionUpdateEntry(
 {
     const DirectionUpdateEntry *first_taken = nullptr;
     for (const auto &entry : entries) {
-        if (!entry.actualBranch.taken) {
+        if (!entry.actualTaken) {
             continue;
         }
         // Branches in one fetch block are ordered by PC.
-        if (!first_taken ||
-            entry.actualBranch.pc < first_taken->actualBranch.pc) {
+        if (!first_taken || entry.pc < first_taken->pc) {
             first_taken = &entry;
         }
     }
@@ -515,7 +530,8 @@ buildDirectionUpdateEntries(
 
     auto add_entry = [&](const ResolvedBranch &branch, bool base_taken,
                          bool is_new_entry) {
-        entries.push_back({branch, base_taken, is_new_entry});
+        entries.push_back(makeDirectionUpdateEntry(
+            branch, base_taken, is_new_entry));
     };
 
     for (const auto &entry : pred_update_entries) {

@@ -952,9 +952,8 @@ BTBMGSC::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 {
     // Process each branch entry
     for (const auto &update_entry : entries) {
-        const auto &actual_branch = update_entry.actualBranch;
-        const Addr branch_pc = actual_branch.pc;
-        const bool actual_taken = actual_branch.taken;
+        const Addr branch_pc = update_entry.pc;
+        const bool actual_taken = update_entry.actualTaken;
         auto pred_it = meta.preds.find(branch_pc);
 
         if (pred_it == meta.preds.end()) {

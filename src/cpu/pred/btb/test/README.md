@@ -100,7 +100,7 @@ actual_branch.taken = taken;
 actual_branch.mispred = mispred;
 actual_branch.isCond = true;
 const std::vector<DirectionUpdateEntry> entries = {
-    {actual_branch, entry.ctr >= 0, false}
+    makeDirectionUpdateEntry(actual_branch, entry.ctr >= 0, false)
 };
 tage->updateWithDirectionEntries(entries, ctx, meta, stream.phistory);
 ```

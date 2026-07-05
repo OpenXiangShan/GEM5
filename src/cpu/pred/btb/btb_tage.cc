@@ -852,8 +852,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (const auto &update_entry : entries) {
-        const auto &actual_branch = update_entry.actualBranch;
-        const Addr branch_pc = actual_branch.pc;
+        const Addr branch_pc = update_entry.pc;
         const bool base_taken = update_entry.baseTaken;
         if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(TAGE,
@@ -861,7 +860,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                     branch_pc, startAddr);
             continue;
         }
-        const bool actual_taken = actual_branch.taken;
+        const bool actual_taken = update_entry.actualTaken;
         const bool is_new_entry = update_entry.isNewEntry;
         auto orig_it = predMeta->preds.find(branch_pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
@@ -911,7 +910,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
             branch_pc, base_taken, actual_taken, recomputed,
-            actual_branch.mispred);
+            update_entry.mispred);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;
@@ -1016,7 +1015,7 @@ BTBTAGE::checkUtageUpdateMisspred(
         findFirstTakenDirectionUpdateEntry(entries);
     const bool actual_taken = first_actual_taken != nullptr;
     const Addr first_actual_taken_pc =
-        actual_taken ? first_actual_taken->actualBranch.pc : 0;
+        actual_taken ? first_actual_taken->pc : 0;
     bool fallthrough_mispred = (first_taken_pc == 0 && actual_taken) ||
                                 (first_taken_pc != 0 && !actual_taken);
     bool branch_mispred =

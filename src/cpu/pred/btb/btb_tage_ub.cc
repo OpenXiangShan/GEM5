@@ -519,12 +519,11 @@ BTBTAGEUpperBound::updateWithEntries(
 {
     bool hasStoredVsActualDiff = false;
     for (const auto &updateEntry : entries) {
-        const auto &actualBranch = updateEntry.actualBranch;
-        const Addr branchPC = actualBranch.pc;
+        const Addr branchPC = updateEntry.pc;
         const bool baseTaken = updateEntry.baseTaken;
         auto predIt = predMeta.preds.find(branchPC);
         auto metaIt = predMeta.branchMeta.find(branchPC);
-        const bool actualTaken = actualBranch.taken;
+        const bool actualTaken = updateEntry.actualTaken;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
         if (predIt != predMeta.preds.end() &&
@@ -545,7 +544,7 @@ BTBTAGEUpperBound::updateWithEntries(
 
         bool needAllocate = updatePredictorStateAndCheckAllocation(
             branchPC, baseTaken, actualTaken, storedPred, storedMeta,
-            actualBranch.mispred);
+            updateEntry.mispred);
 
         if (needAllocate) {
             uint64_t allocatedTable = 0;

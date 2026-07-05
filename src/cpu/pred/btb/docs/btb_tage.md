@@ -147,9 +147,8 @@ void updateWithDirectionEntries(
     
     // Update each branch entry
     for (const auto &update_entry : entries) {
-        const auto &actual_branch = update_entry.actualBranch;
-        Addr branch_pc = actual_branch.pc;
-        bool actual_taken = actual_branch.taken;
+        Addr branch_pc = update_entry.pc;
+        bool actual_taken = update_entry.actualTaken;
         auto pred_it = meta->preds.find(branch_pc);
         
         if (pred_it == meta->preds.end()) {
