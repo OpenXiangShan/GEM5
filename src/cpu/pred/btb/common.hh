@@ -232,7 +232,6 @@ struct BTBEntry : BranchInfo
     BTBEntry(const BranchInfo &bi) :
         BranchInfo(bi), valid(true), ctr(0), tag(0), source(-1)
     {}
-    BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
     int getsource() const {
         return source;
