@@ -738,7 +738,8 @@ DecoupledBPUWithBTB::updateStatistics(
 
     if (has_actual_branch && (target.isHit || actual_taken)) {
         // Update BTB entry statistics
-        const BTBEntry btb_entry = makeBTBEntry(*actual_branch);
+        const BTBEntry btb_entry =
+            makeBTBEntryFromResolvedBranch(*actual_branch);
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);

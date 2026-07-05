@@ -256,7 +256,7 @@ struct BTBEntry : BranchInfo
 };
 
 inline BTBEntry
-makeBTBEntry(const ResolvedBranch &branch)
+makeBTBEntryFromResolvedBranch(const ResolvedBranch &branch)
 {
     BTBEntry entry;
     entry.pc = branch.pc;
@@ -545,7 +545,7 @@ buildTargetUpdateEntries(
         if (has_entry_pc(branch.pc)) {
             return;
         }
-        BTBEntry entry = makeBTBEntry(branch);
+        BTBEntry entry = makeBTBEntryFromResolvedBranch(branch);
         if (entry.isCond) {
             entry.ctr = 0;
         }
