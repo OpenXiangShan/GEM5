@@ -472,23 +472,23 @@ buildDirectionUpdateEntries(
             [pc](const auto &entry) { return entry.pc == pc; });
     };
 
-    auto add_entry = [&](Addr pc, bool is_cond, bool base_taken,
+    auto add_entry = [&](const ResolvedBranch &branch, bool base_taken,
                          bool is_new_entry) {
-        const auto *actual_branch =
-            findActualUpdateBranch(actual_update_branches, pc);
-        if (!is_cond || !actual_branch) {
-            return;
-        }
         entries.push_back({
-            actual_branch->pc,
-            actual_branch->taken,
-            actual_branch->mispred,
+            branch.pc,
+            branch.taken,
+            branch.mispred,
             base_taken,
             is_new_entry});
     };
 
     for (const auto &entry : update_btb_entries) {
-        add_entry(entry.pc, entry.isCond, entry.ctr >= 0, false);
+        const auto *actual_branch =
+            findActualUpdateBranch(actual_update_branches, entry.pc);
+        if (!entry.isCond || !actual_branch) {
+            continue;
+        }
+        add_entry(*actual_branch, entry.ctr >= 0, false);
     }
     for (const auto &branch : actual_update_branches) {
         if (!branch.isCond || has_update_entry_pc(branch.pc)) {
@@ -496,7 +496,7 @@ buildDirectionUpdateEntries(
         }
         // Preserve the old BTBEntry(BranchInfo) adapter behavior: missing
         // branches used the default ctr=0 base direction.
-        add_entry(branch.pc, branch.isCond, true, true);
+        add_entry(branch, true, true);
     }
 
     return entries;
@@ -512,10 +512,9 @@ buildTargetUpdateEntries(
     entries.reserve(update_btb_entries.size() +
                     actual_update_branches.size());
 
-    auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
-        const auto *actual_branch =
-            findActualUpdateBranch(actual_update_branches, entry.pc);
-        if (!entry.valid || !actual_branch) {
+    auto add_entry = [&](BTBEntry entry, const ResolvedBranch &actual_branch,
+                         bool is_new_entry) {
+        if (!entry.valid) {
             return;
         }
 
@@ -528,14 +527,14 @@ buildTargetUpdateEntries(
             keep = entry.isIndirect && !entry.isReturn;
             break;
           case TargetUpdateEntryFilter::TakenControl:
-            keep = actual_branch && actual_branch->taken;
+            keep = actual_branch.taken;
             break;
         }
         if (!keep) {
             return;
         }
 
-        entries.push_back({entry, is_new_entry, *actual_branch});
+        entries.push_back({entry, is_new_entry, actual_branch});
     };
     auto has_entry_pc = [&](Addr pc) {
         return std::any_of(
@@ -550,11 +549,16 @@ buildTargetUpdateEntries(
         if (entry.isCond) {
             entry.ctr = 0;
         }
-        add_entry(entry, true);
+        add_entry(entry, branch, true);
     };
 
     for (const auto &entry : update_btb_entries) {
-        add_entry(entry, false);
+        const auto *actual_branch =
+            findActualUpdateBranch(actual_update_branches, entry.pc);
+        if (!actual_branch) {
+            continue;
+        }
+        add_entry(entry, *actual_branch, false);
     }
     for (const auto &branch : actual_update_branches) {
         if (branch.taken) {
