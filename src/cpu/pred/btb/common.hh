@@ -583,9 +583,10 @@ buildUpdateEndInstPC(
 }
 
 inline std::vector<BTBEntry>
-buildUpdateBTBEntries(const std::vector<BTBEntry> &pred_btb_entries,
-                      Addr start_pc,
-                      Addr update_end_inst_pc)
+selectPredictedBTBEntriesForUpdate(
+    const std::vector<BTBEntry> &pred_btb_entries,
+    Addr start_pc,
+    Addr update_end_inst_pc)
 {
     std::vector<BTBEntry> entries;
     for (const auto &entry : pred_btb_entries) {

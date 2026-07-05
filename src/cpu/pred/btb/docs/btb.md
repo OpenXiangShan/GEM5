@@ -223,7 +223,7 @@ std::vector<ResolvedBranch> actual_branches = {actual_branch};
 auto ctx = makeBaseBranchUpdateContext(stream);
 const auto update_end_inst_pc = buildUpdateEndInstPC(
     ctx.startPC, actual_branches, btb->predictWidth);
-const auto update_entries = buildUpdateBTBEntries(
+const auto update_entries = selectPredictedBTBEntriesForUpdate(
     stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 const auto entries = buildTargetUpdateEntries(
     update_entries, actual_branches,

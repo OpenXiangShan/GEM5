@@ -69,7 +69,7 @@
 - 变更目标
   - 预测期：正常查表与产出方向，但不再依赖在更新期使用的 main/alt 元数据。
   - 更新期：基于预测当拍的折叠历史快照（PHR/GHR 折叠值）重读所有表，逐分支还原 main/alt 与 use_alt_on_na gating，执行更新与分配。
-  - 只更新到停止点：沿用 `buildUpdateBTBEntries` 的裁剪行为，B0…StopPoint 分支被更新，StopPoint 之后不更新。
+  - 只更新到停止点：沿用 `selectPredictedBTBEntriesForUpdate` 的裁剪行为，B0…StopPoint 分支被更新，StopPoint 之后不更新。
 
 - 核心改造点
   1) 新增“基于快照重读 provider”的辅助函数（以单分支为粒度）：

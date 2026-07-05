@@ -101,7 +101,7 @@ makeUpdateEntries(const FetchTarget &stream,
     const auto ctx = makeBaseBranchUpdateContext(stream);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
         ctx.startPC, branches, predict_width);
-    return buildUpdateBTBEntries(
+    return selectPredictedBTBEntriesForUpdate(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 }
 
@@ -405,7 +405,7 @@ TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesFirstTakenActualBranch)
         first_taken.pc);
 }
 
-TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
+TEST(UpdateEntryBuilderTest, SelectPredictedBTBEntriesKeepsValidPrefix)
 {
     const BTBEntry before = makeEntry(0x0ffc, true, true);
     const BTBEntry first = makeEntry(0x1000, true, true);
@@ -414,7 +414,7 @@ TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
     BTBEntry invalid = makeEntry(0x1004, true, true);
     invalid.valid = false;
 
-    const auto entries = buildUpdateBTBEntries(
+    const auto entries = selectPredictedBTBEntriesForUpdate(
         {before, first, invalid, second, after}, 0x1000, 0x1008);
 
     ASSERT_EQ(entries.size(), 2);
