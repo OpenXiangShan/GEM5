@@ -81,7 +81,7 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
     const auto entries = buildDirectionUpdateEntries(
         {prefix_entry, legacy_resolved_entry},
         {makeResolvedBranch(prefix_entry.pc, false, false)},
-        DirectionUpdateEntryFilter::Conditional, true);
+        true);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, prefix_entry.pc);
@@ -95,7 +95,7 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
 
     const auto entries = buildDirectionUpdateEntries(
         {}, {makeResolvedBranch(new_entry.pc, false, false)},
-        DirectionUpdateEntryFilter::Conditional, false);
+        false);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, new_entry.pc);
@@ -111,7 +111,7 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
 
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {makeResolvedBranch(entry.pc, true, false)},
-        DirectionUpdateEntryFilter::Conditional, false);
+        false);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, entry.pc);
@@ -125,7 +125,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
 
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {makeResolvedBranch(entry.pc, true, true)},
-        DirectionUpdateEntryFilter::Conditional, true);
+        true);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, entry.pc);
@@ -133,13 +133,12 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
     EXPECT_TRUE(entries[0].actualMispred);
 }
 
-TEST(UpdateEntryBuilderTest, MgscResolvedUpdateRequiresResolvedBranchSet)
+TEST(UpdateEntryBuilderTest, DirectionResolvedUpdateRequiresResolvedBranchSet)
 {
     const BTBEntry cond_entry = makeEntry(0x1020, true, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {cond_entry}, {},
-        DirectionUpdateEntryFilter::Mgsc, true);
+        {cond_entry}, {}, true);
 
     EXPECT_TRUE(entries.empty());
 }
@@ -553,8 +552,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     EXPECT_EQ(update_branches[1].pc, taken.pc);
 
     const auto direction_entries = buildDirectionUpdateEntries(
-        update_btb_entries, update_branches,
-        DirectionUpdateEntryFilter::Conditional, true);
+        update_btb_entries, update_branches, true);
 
     ASSERT_EQ(direction_entries.size(), 2);
     EXPECT_EQ(direction_entries[0].branch.pc, missing.pc);
@@ -662,8 +660,7 @@ TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
     ASSERT_TRUE(update_btb_entries.empty());
 
     const auto direction_entries = buildDirectionUpdateEntries(
-        update_btb_entries, update_branches,
-        DirectionUpdateEntryFilter::Conditional, true);
+        update_btb_entries, update_branches, true);
 
     ASSERT_EQ(direction_entries.size(), 1);
     EXPECT_EQ(direction_entries[0].branch.pc, missing.pc);

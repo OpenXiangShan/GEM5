@@ -194,10 +194,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     {
         return PredictorUpdateProtocol::DirectionEntries;
     }
-    DirectionUpdateEntryFilter directionUpdateEntryFilter() const override
-    {
-        return DirectionUpdateEntryFilter::Mgsc;
-    }
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
         const BranchUpdateContext &ctx,

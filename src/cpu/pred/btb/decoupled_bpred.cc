@@ -883,7 +883,6 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         const auto entries = buildDirectionUpdateEntries(
             update_btb_entries,
             update_branches,
-            component->directionUpdateEntryFilter(),
             component->getResolvedUpdate());
         component->updateWithDirectionEntries(
             entries, update_ctx, prediction_meta, phistory);

@@ -77,10 +77,6 @@ class TimedBaseBTBPredictor: public SimObject
     {
         return PredictorUpdateProtocol::None;
     }
-    virtual DirectionUpdateEntryFilter directionUpdateEntryFilter() const
-    {
-        return DirectionUpdateEntryFilter::Conditional;
-    }
     virtual void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &,
         const BranchUpdateContext &,

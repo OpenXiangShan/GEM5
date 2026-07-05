@@ -120,7 +120,6 @@ updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
     const auto ctx = makeBaseBranchUpdateContext(stream);
     const auto entries = buildDirectionUpdateEntries(
         {entry}, actual_branches,
-        mgsc.directionUpdateEntryFilter(),
         mgsc.getResolvedUpdate());
     mgsc.updateWithDirectionEntries(
         entries, ctx, stream.predMetas[mgsc.getComponentIdx()],

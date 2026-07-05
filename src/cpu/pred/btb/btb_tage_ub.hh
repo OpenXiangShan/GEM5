@@ -111,10 +111,6 @@ class BTBTAGEUpperBound : public BTBTAGE
     {
         return PredictorUpdateProtocol::DirectionEntries;
     }
-    DirectionUpdateEntryFilter directionUpdateEntryFilter() const override
-    {
-        return DirectionUpdateEntryFilter::Conditional;
-    }
     void updateWithDirectionEntries(
         const std::vector<DirectionUpdateEntry> &entries,
         const BranchUpdateContext &ctx,

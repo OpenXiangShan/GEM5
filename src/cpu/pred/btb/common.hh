@@ -410,12 +410,6 @@ enum class TargetUpdateEntryFilter
     TakenControl
 };
 
-enum class DirectionUpdateEntryFilter
-{
-    Conditional,
-    Mgsc
-};
-
 enum class PredictorUpdateProtocol
 {
     None,
@@ -445,30 +439,16 @@ isActualUpdatePC(const std::vector<ResolvedBranch> &actual_update_branches,
 inline bool
 shouldKeepDirectionUpdateEntry(
     const BranchInfo &branch,
-    DirectionUpdateEntryFilter filter,
     bool resolved_update,
     const std::vector<ResolvedBranch> &actual_update_branches)
 {
-    bool keep = false;
-    switch (filter) {
-      case DirectionUpdateEntryFilter::Conditional:
-        keep = branch.isCond;
-        break;
-      case DirectionUpdateEntryFilter::Mgsc:
-        keep = branch.isCond;
-        break;
+    if (!branch.isCond) {
+        return false;
     }
-    if (!keep || !resolved_update) {
-        return keep;
+    if (!resolved_update) {
+        return true;
     }
-
-    switch (filter) {
-      case DirectionUpdateEntryFilter::Conditional:
-        return isActualUpdatePC(actual_update_branches, branch.pc);
-      case DirectionUpdateEntryFilter::Mgsc:
-        return isActualUpdatePC(actual_update_branches, branch.pc);
-    }
-    return false;
+    return isActualUpdatePC(actual_update_branches, branch.pc);
 }
 
 inline bool
@@ -506,7 +486,6 @@ inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<ResolvedBranch> &actual_update_branches,
-    DirectionUpdateEntryFilter filter,
     bool resolved_update)
 {
     std::vector<DirectionUpdateEntry> entries;
@@ -521,7 +500,7 @@ buildDirectionUpdateEntries(
 
     auto add_entry = [&](const BranchInfo &branch, bool base_taken,
                          bool is_new_entry) {
-        if (!shouldKeepDirectionUpdateEntry(branch, filter, resolved_update,
+        if (!shouldKeepDirectionUpdateEntry(branch, resolved_update,
                                             actual_update_branches)) {
             return;
         }
