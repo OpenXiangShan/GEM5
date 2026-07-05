@@ -147,9 +147,8 @@ void updateWithDirectionEntries(
     
     // Update each branch entry
     for (const auto &update_entry : entries) {
-        const auto &actual_branch = update_entry.actualBranch;
-        Addr branch_pc = actual_branch.pc;
-        bool actual_taken = actual_branch.taken;
+        Addr branch_pc = update_entry.pc;
+        bool actual_taken = update_entry.actualTaken;
         auto pred_it = meta->preds.find(branch_pc);
         
         if (pred_it == meta->preds.end()) {
@@ -323,7 +322,9 @@ FetchTarget stream;
 stream.startPC = pc;
 stream.predMetas[0] = meta;  // Must include metadata from prediction phase
 
-// Update predictor state through explicit DirectionUpdateEntry inputs.
+// Update predictor state through explicit DirectionUpdateEntry inputs. The
+// adapter consumes the resolved branch record, but the direction payload only
+// keeps pc/taken/mispred plus prediction-time base state.
 auto update_ctx = makeBaseBranchUpdateContext(stream);
 ResolvedBranch actual_branch;
 actual_branch.pc = branch_info.pc;
