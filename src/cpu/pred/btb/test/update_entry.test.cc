@@ -115,8 +115,8 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateUsesActualBranchPrefix)
         {makeResolvedBranch(prefix_entry.pc, false, false)});
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, prefix_entry.pc);
-    EXPECT_FALSE(entries[0].actualTaken);
+    EXPECT_EQ(entries[0].actualBranch.pc, prefix_entry.pc);
+    EXPECT_FALSE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].isNewEntry);
 }
 
@@ -128,9 +128,9 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
         {}, {makeResolvedBranch(new_entry.pc, false, false)});
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, new_entry.pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, new_entry.pc);
     EXPECT_TRUE(entries[0].baseTaken);
-    EXPECT_FALSE(entries[0].actualTaken);
+    EXPECT_FALSE(entries[0].actualBranch.taken);
     EXPECT_TRUE(entries[0].isNewEntry);
 }
 
@@ -143,9 +143,9 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
         {entry}, {makeResolvedBranch(entry.pc, true, false)});
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, entry.pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, entry.pc);
     EXPECT_FALSE(entries[0].baseTaken);
-    EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_TRUE(entries[0].actualBranch.taken);
 }
 
 TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
@@ -156,9 +156,9 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
         {entry}, {makeResolvedBranch(entry.pc, true, true)});
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, entry.pc);
-    EXPECT_TRUE(entries[0].actualTaken);
-    EXPECT_TRUE(entries[0].mispred);
+    EXPECT_EQ(entries[0].actualBranch.pc, entry.pc);
+    EXPECT_TRUE(entries[0].actualBranch.taken);
+    EXPECT_TRUE(entries[0].actualBranch.mispred);
 }
 
 TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresActualBranchSet)
@@ -180,7 +180,7 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresMatchingActualBranch)
         buildDirectionUpdateEntries({predicted_cond}, {other_branch});
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, other_branch.pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, other_branch.pc);
     EXPECT_TRUE(entries[0].isNewEntry);
 }
 
@@ -650,14 +650,14 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
         pred_update_entries, update_branches);
 
     ASSERT_EQ(direction_entries.size(), 2);
-    EXPECT_EQ(direction_entries[0].pc, missing.pc);
+    EXPECT_EQ(direction_entries[0].actualBranch.pc, missing.pc);
     EXPECT_TRUE(direction_entries[0].isNewEntry);
     EXPECT_TRUE(direction_entries[0].baseTaken);
-    EXPECT_FALSE(direction_entries[0].actualTaken);
-    EXPECT_EQ(direction_entries[1].pc, taken.pc);
+    EXPECT_FALSE(direction_entries[0].actualBranch.taken);
+    EXPECT_EQ(direction_entries[1].actualBranch.pc, taken.pc);
     EXPECT_TRUE(direction_entries[1].isNewEntry);
-    EXPECT_TRUE(direction_entries[1].actualTaken);
-    EXPECT_TRUE(direction_entries[1].mispred);
+    EXPECT_TRUE(direction_entries[1].actualBranch.taken);
+    EXPECT_TRUE(direction_entries[1].actualBranch.mispred);
 
     const auto target_entries = buildTargetUpdateEntries(
         pred_update_entries, update_branches,
@@ -672,16 +672,19 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
 
 TEST(UpdateEntryBuilderTest, FirstTakenDirectionEntryUsesLowestPC)
 {
-    DirectionUpdateEntry later{0x1100, true, false, true, false};
-    DirectionUpdateEntry not_taken{0x1000, false, false, true, false};
-    DirectionUpdateEntry first{0x1080, true, false, true, false};
+    DirectionUpdateEntry later{
+        makeResolvedBranch(0x1100, true, false), true, false};
+    DirectionUpdateEntry not_taken{
+        makeResolvedBranch(0x1000, false, false), true, false};
+    DirectionUpdateEntry first{
+        makeResolvedBranch(0x1080, true, false), true, false};
 
     const auto entries = std::vector<DirectionUpdateEntry>{
         later, not_taken, first};
     const auto *first_taken = findFirstTakenDirectionUpdateEntry(entries);
 
     ASSERT_NE(first_taken, nullptr);
-    EXPECT_EQ(first_taken->pc, first.pc);
+    EXPECT_EQ(first_taken->actualBranch.pc, first.actualBranch.pc);
 }
 
 TEST(UpdateEntryBuilderTest, ActualUpdateSummaryUsesTakenElseLastBranch)
@@ -734,9 +737,9 @@ TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
         pred_update_entries, update_branches);
 
     ASSERT_EQ(direction_entries.size(), 1);
-    EXPECT_EQ(direction_entries[0].pc, missing.pc);
+    EXPECT_EQ(direction_entries[0].actualBranch.pc, missing.pc);
     EXPECT_TRUE(direction_entries[0].baseTaken);
-    EXPECT_FALSE(direction_entries[0].actualTaken);
+    EXPECT_FALSE(direction_entries[0].actualBranch.taken);
 
     const auto target_entries = buildTargetUpdateEntries(
         pred_update_entries, update_branches,

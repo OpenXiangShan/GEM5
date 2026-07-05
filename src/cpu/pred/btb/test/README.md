@@ -94,8 +94,13 @@ stream.predMetas[0] = meta;  // Must set meta from prediction phase
 
 // Update predictor through explicit DirectionUpdateEntry inputs.
 auto ctx = makeBaseBranchUpdateContext(stream);
+ResolvedBranch actual_branch;
+actual_branch.pc = entry.pc;
+actual_branch.taken = taken;
+actual_branch.mispred = mispred;
+actual_branch.isCond = true;
 const std::vector<DirectionUpdateEntry> entries = {
-    {entry.pc, taken, mispred, entry.ctr >= 0, false}
+    {actual_branch, entry.ctr >= 0, false}
 };
 tage->updateWithDirectionEntries(entries, ctx, meta, stream.phistory);
 ```
