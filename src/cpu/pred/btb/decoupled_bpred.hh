@@ -177,14 +177,24 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printTarget(const FetchTarget &e)
     {
-        const bool has_actual_control =
-            e.resolved && e.squashType == SquashType::SQUASH_CTRL;
-        const BranchInfo &branch_info =
-            has_actual_control ? e.exeBranchInfo : e.predBranchInfo;
-        const bool taken = has_actual_control ? e.exeTaken : e.predTaken;
+        BranchInfo branch_info = e.predBranchInfo;
+        bool taken = e.predTaken;
+        bool has_actual_summary = false;
 
-        if (has_actual_control) {
-            DPRINTFR(DecoupleBPProbe, "FSQ Actual control target: ");
+        if (e.resolved && !e.resolvedBranches.empty()) {
+            const auto update_branches =
+                makeUpdateBranchPrefix(e.resolvedBranches);
+            const auto *summary_branch =
+                findActualUpdateSummaryBranch(update_branches);
+            if (summary_branch) {
+                branch_info = makeBranchInfo(*summary_branch);
+                taken = summary_branch->taken;
+                has_actual_summary = true;
+            }
+        }
+
+        if (has_actual_summary) {
+            DPRINTFR(DecoupleBPProbe, "FSQ Actual branch-set target: ");
         } else if (!e.resolved) {
             DPRINTFR(DecoupleBPProbe, "FSQ Predicted target: ");
         } else {

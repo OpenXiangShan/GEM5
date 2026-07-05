@@ -761,8 +761,8 @@ struct FetchTarget
     bool isHit;          // whether the predicted btb entry is hit
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
 
-    // Legacy debug/recovery fields for the control-squashed branch. Predictor
-    // updates consume resolvedBranches instead of these summary fields.
+    // Legacy compatibility summary. Production update/recovery paths consume
+    // resolvedBranches or explicit branch facts instead of these fields.
     bool exeTaken;
     BranchInfo exeBranchInfo;
 
