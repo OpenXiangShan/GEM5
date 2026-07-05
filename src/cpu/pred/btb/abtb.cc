@@ -618,22 +618,9 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
     std::vector<TargetUpdateEntry> all_entries;
     all_entries.reserve(old_entries.size() + 1);
     const auto &taken_entry = s3Pred.getTakenEntry();
-    const auto make_s3_branch = [](const BTBEntry &entry, bool taken) {
-        ResolvedBranch branch;
-        branch.pc = entry.pc;
-        branch.target = entry.target;
-        branch.taken = taken;
-        branch.isCond = entry.isCond;
-        branch.isIndirect = entry.isIndirect;
-        branch.isDirect = entry.isDirect;
-        branch.isCall = entry.isCall;
-        branch.isReturn = entry.isReturn;
-        branch.size = entry.size;
-        return branch;
-    };
     for (const auto &entry : old_entries) {
         const bool actual_taken = s3Pred.isTaken() && entry == taken_entry;
-        const auto actual_branch = make_s3_branch(
+        const auto actual_branch = makeResolvedBranchFromPredictedEntryForS3Update(
             actual_taken ? taken_entry : entry, actual_taken);
         all_entries.push_back({entry, false, actual_branch});
     }
@@ -655,11 +642,31 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
             new_entry.ctr = 0;
         }
         all_entries.push_back(
-            {new_entry, true, make_s3_branch(taken_entry, true)});
+            {new_entry, true,
+             makeResolvedBranchFromPredictedEntryForS3Update(
+                 taken_entry, true)});
     }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
     return all_entries;
+}
+
+ResolvedBranch
+AheadBTB::makeResolvedBranchFromPredictedEntryForS3Update(
+    const BTBEntry &entry,
+    bool taken) const
+{
+    ResolvedBranch branch;
+    branch.pc = entry.pc;
+    branch.target = entry.target;
+    branch.taken = taken;
+    branch.isCond = entry.isCond;
+    branch.isIndirect = entry.isIndirect;
+    branch.isDirect = entry.isDirect;
+    branch.isCall = entry.isCall;
+    branch.isReturn = entry.isReturn;
+    branch.size = entry.size;
+    return branch;
 }
 
 /*
