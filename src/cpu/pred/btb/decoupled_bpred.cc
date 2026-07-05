@@ -886,14 +886,12 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     const boost::dynamic_bitset<> &phistory,
     const std::queue<Addr> &previous_pcs,
     const std::vector<BTBEntry> &update_btb_entries,
-    const std::vector<BranchInfo> &update_new_direction_branches,
     const std::vector<ResolvedBranch> &update_branches)
 {
     switch (component->updateProtocol()) {
       case PredictorUpdateProtocol::DirectionEntries: {
         const auto entries = buildDirectionUpdateEntries(
             update_btb_entries,
-            update_new_direction_branches,
             update_branches,
             component->directionUpdateEntryFilter(),
             component->getResolvedUpdate());
@@ -957,9 +955,6 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const auto update_btb_entries =
         makeUpdateBTBEntries(
             pred_btb_entries, update_ctx.startPC, update_end_inst_pc);
-    const auto update_new_direction_branches =
-        makeNewDirectionBranches(
-            update_btb_entries, update_branches);
 
     if (resolved_update &&
         !canResolveUpdateComponents(update_ctx.startPC)) {
@@ -977,8 +972,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         updatePredictorComponent(
             component, update_ctx,
             prediction_metas[component->getComponentIdx()], phistory,
-            previous_pcs, update_btb_entries,
-            update_new_direction_branches, update_branches);
+            previous_pcs, update_btb_entries, update_branches);
     }
 
     return true;

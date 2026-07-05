@@ -491,14 +491,19 @@ getActualBranchForUpdatePC(
 inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
-    const std::vector<BranchInfo> &update_new_direction_branches,
     const std::vector<ResolvedBranch> &actual_update_branches,
     DirectionUpdateEntryFilter filter,
     bool resolved_update)
 {
     std::vector<DirectionUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
-                    update_new_direction_branches.size());
+                    actual_update_branches.size());
+
+    const auto has_update_entry_pc = [&](Addr pc) {
+        return std::any_of(
+            update_btb_entries.begin(), update_btb_entries.end(),
+            [pc](const auto &entry) { return entry.pc == pc; });
+    };
 
     auto add_entry = [&](const BranchInfo &branch, bool base_taken,
                          bool is_new_entry) {
@@ -518,10 +523,13 @@ buildDirectionUpdateEntries(
     for (const auto &entry : update_btb_entries) {
         add_entry(entry, entry.ctr >= 0, false);
     }
-    for (const auto &branch : update_new_direction_branches) {
+    for (const auto &branch : actual_update_branches) {
+        if (!branch.isCond || has_update_entry_pc(branch.pc)) {
+            continue;
+        }
         // Preserve the old BTBEntry(BranchInfo) adapter behavior: missing
         // branches used the default ctr=0 base direction.
-        add_entry(branch, true, true);
+        add_entry(makeBranchInfo(branch), true, true);
     }
 
     return entries;
@@ -939,30 +947,6 @@ makeUpdateBTBEntries(const std::vector<BTBEntry> &pred_btb_entries,
 {
     return buildUpdateBTBEntries(
         pred_btb_entries, start_pc, update_end_inst_pc);
-}
-
-inline bool
-containsBTBEntryPC(const std::vector<BTBEntry> &entries, Addr pc)
-{
-    return std::any_of(
-        entries.begin(), entries.end(),
-        [pc](const auto &entry) { return entry.pc == pc; });
-}
-
-inline std::vector<BranchInfo>
-makeNewDirectionBranches(const std::vector<BTBEntry> &update_btb_entries,
-                         const std::vector<ResolvedBranch> &branches)
-{
-    std::vector<BranchInfo> branch_infos;
-    branch_infos.reserve(branches.size());
-    for (const auto &branch : branches) {
-        if (!branch.isCond ||
-            containsBTBEntryPC(update_btb_entries, branch.pc)) {
-            continue;
-        }
-        branch_infos.push_back(makeBranchInfo(branch));
-    }
-    return branch_infos;
 }
 
 /**
