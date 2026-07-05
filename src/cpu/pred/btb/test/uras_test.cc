@@ -13,11 +13,12 @@ namespace btb_pred {
 namespace
 {
 
-BranchInfo
+ResolvedBranch
 makeActualBranch(Addr pc, bool is_call, bool is_return, unsigned size = 4)
 {
-    BranchInfo branch;
+    ResolvedBranch branch;
     branch.pc = pc;
+    branch.taken = true;
     branch.isCall = is_call;
     branch.isReturn = is_return;
     branch.size = size;
@@ -117,24 +118,22 @@ public:
     // 2. do push & pops on control squash based on the actual branch type (call/return)
     void recoverState(
         const FetchTarget &entry,
-        const BranchInfo &actual_branch,
-        bool actual_taken)
+        const ResolvedBranch &actual_branch)
     {
         auto &stack = specStack;
         auto &sp = specSp;
         // recover sp and tos first
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[0]);
-        auto takenSlot = actual_branch;
         sp = meta_ptr->sp;
         stack[sp] = meta_ptr->tos;
 
-        if (actual_taken) {
+        if (actual_branch.taken) {
             // do push & pops on control squash
-            if (takenSlot.isReturn) {
+            if (actual_branch.isReturn) {
                 pop(stack, sp);
             }
-            if (takenSlot.isCall) {
-                Addr retAddr = takenSlot.pc + takenSlot.size;
+            if (actual_branch.isCall) {
+                Addr retAddr = actual_branch.pc + actual_branch.size;
                 push(retAddr, stack, sp);
             }
         }
@@ -412,8 +411,8 @@ TEST_F(URASTest, RecoverStateBasic) {
     meta.tos = uRASEntry(0x2000);  // set different tos
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
 
-    BranchInfo no_actual_branch;
-    uras->recoverState(entry, no_actual_branch, false);
+    ResolvedBranch no_actual_branch;
+    uras->recoverState(entry, no_actual_branch);
 
     // verify recovery result
     EXPECT_EQ(sp, 0);  // sp should be restored
@@ -436,11 +435,11 @@ TEST_F(URASTest, RecoverStateReturn) {
     meta.tos = uRASEntry(0x1000);
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
 
-    const BranchInfo actual_branch =
+    const ResolvedBranch actual_branch =
         makeActualBranch(0x2000, false, true);
 
     // 执行恢复
-    uras->recoverState(entry, actual_branch, true);
+    uras->recoverState(entry, actual_branch);
 
     // 验证：应该先恢复sp和tos，然后执行pop
     EXPECT_EQ(sp, 0);  // 1(恢复) -> 0(pop)
@@ -462,11 +461,11 @@ TEST_F(URASTest, RecoverStateCall) {
     meta.tos = uRASEntry(0x80000000L);
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
 
-    const BranchInfo actual_branch =
+    const ResolvedBranch actual_branch =
         makeActualBranch(0x1000, true, false, 4);
 
     // 执行恢复
-    uras->recoverState(entry, actual_branch, true);
+    uras->recoverState(entry, actual_branch);
 
     // 验证：应该先恢复sp和tos，然后执行push
     EXPECT_EQ(sp, 1);  // 0(恢复) -> 1(push)
@@ -487,10 +486,10 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     meta1.tos = uRASEntry(0x80000000L);
     entry1.predMetas[0] = std::make_shared<uRASMeta>(meta1);
 
-    const BranchInfo actual_call =
+    const ResolvedBranch actual_call =
         makeActualBranch(0x1000, true, false, 4);
 
-    uras->recoverState(entry1, actual_call, true);
+    uras->recoverState(entry1, actual_call);
 
     // 验证call的结果
     EXPECT_EQ(sp, 1);
@@ -502,10 +501,10 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     meta2.tos = uRASEntry(0x1004);
     entry2.predMetas[0] = std::make_shared<uRASMeta>(meta2);
 
-    const BranchInfo actual_return =
+    const ResolvedBranch actual_return =
         makeActualBranch(0x2000, false, true);
 
-    uras->recoverState(entry2, actual_return, true);
+    uras->recoverState(entry2, actual_return);
 
     // 验证return的结果
     EXPECT_EQ(sp, 0);

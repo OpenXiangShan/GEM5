@@ -127,15 +127,14 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
 void
 BTBuRAS::recoverState(
     const FetchTarget &entry,
-    const BranchInfo &actual_branch,
-    bool actual_taken)
+    const ResolvedBranch &actual_branch)
 {
     auto &stack = specStack;
     auto &sp = specSp;
     printStack("before recoverState", stack, sp);
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenSlot = actual_branch;
+    const BranchInfo takenSlot = makeBranchInfo(actual_branch);
     if (enableDB) {
         SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
         specRasTrace->write_record(rec);
@@ -143,7 +142,7 @@ BTBuRAS::recoverState(
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
-    if (actual_taken) {
+    if (actual_branch.taken) {
         // do push & pops on control squash
         if (takenSlot.isReturn) {
             if (enableDB) {

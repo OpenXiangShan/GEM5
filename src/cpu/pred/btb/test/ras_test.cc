@@ -245,8 +245,8 @@ TEST_F(RASTest, BasicRecovery) {
     recoverStream.predMetas[0] = initialMeta;
 
     // Recover to initial state
-    BranchInfo no_actual_branch;
-    ras->recoverState(recoverStream, no_actual_branch, false);
+    ResolvedBranch no_actual_branch;
+    ras->recoverState(recoverStream, no_actual_branch);
 
     // Check that we're back to initial state
     checkReturnTarget(0x1000, 0x80000000L);
@@ -426,10 +426,10 @@ TEST_F(RASTest, ComplexRecovery) {
     FetchTarget recoverStream;
     recoverStream.startPC = 0x2000;
     recoverStream.predMetas[0] = meta1;
-    const BranchInfo actual_branch =
-        makeBranchInfo(makeActualBranch(0x1000, true, true, 4));
+    const ResolvedBranch actual_branch =
+        makeActualBranch(0x1000, true, true, 4);
 
-    ras->recoverState(recoverStream, actual_branch, true);
+    ras->recoverState(recoverStream, actual_branch);
 
     // Should be back to state with just one call
     checkReturnTarget(0x2000, 0x1004);
@@ -463,10 +463,9 @@ TEST_F(RASTest, CommitFlow) {
     // Test recovery - should now use committed stack
     boost::dynamic_bitset<> history(8, 0);
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, initialMeta, false);
-    const BranchInfo actual_branch =
-        makeBranchInfo(makeActualBranch(0x1000, true, false, 4));
-    ras->recoverState(
-        recoverStream, actual_branch, false);
+    const ResolvedBranch actual_branch =
+        makeActualBranch(0x1000, true, false, 4);
+    ras->recoverState(recoverStream, actual_branch);
 
     // After recovery, committed stack should be available
     checkReturnTarget(0x2000, 0x1004);
@@ -492,9 +491,9 @@ TEST_F(RASTest, MixedOperations) {
 
     // Step 3: Simulate misprediction and recovery
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, meta0, true);
-    const BranchInfo actual_branch =
-        makeBranchInfo(makeActualBranch(0x1000, true, true, 4));
-    ras->recoverState(recoverStream, actual_branch, true);
+    const ResolvedBranch actual_branch =
+        makeActualBranch(0x1000, true, true, 4);
+    ras->recoverState(recoverStream, actual_branch);
 
     // Should have committed call1, but lose speculative call2 and call3
     checkReturnTarget(0x2000, 0x1004);

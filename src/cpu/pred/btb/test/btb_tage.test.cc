@@ -207,8 +207,7 @@ PathHistoryUpdate getActualPathUpdate(const FetchTarget& stream)
         return {};
     }
     return stream.getPHistUpdateDuringSquash(
-        stream.squashPC, makeBranchInfo(*summary_branch),
-        summary_branch->taken);
+        stream.squashPC, *summary_branch);
 }
 
 TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
@@ -343,13 +342,17 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
             createResolvedBranch(c.resolvedEntry, c.actualTaken, true));
         stream.resolved = true;
         stream.squashPC = c.squashPC;
+        auto actual_branch =
+            createResolvedBranch(c.resolvedEntry, c.actualTaken, true);
+        actual_branch.isCond = c.isCond;
+        actual_branch.target = c.redirectPC;
 
         const auto ghist = stream.getGHistUpdateDuringSquash(
-            c.squashPC, c.isCond, c.actualTaken);
+            c.squashPC, actual_branch);
         const auto bwhist = stream.getBwHistUpdateDuringSquash(
-            c.squashPC, c.isCond, c.actualTaken, c.redirectPC);
+            c.squashPC, actual_branch);
         const auto phist = stream.getPHistUpdateDuringSquash(
-            c.squashPC, c.resolvedEntry, c.actualTaken);
+            c.squashPC, actual_branch);
 
         EXPECT_EQ(ghist.shamt, c.expectedGHistShamt);
         EXPECT_EQ(ghist.taken, c.expectedGHistTaken);
@@ -1569,9 +1572,12 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     FetchTarget stream = createStream(0x1000, entry, true, meta);
     stream = setMispredStream(stream);
 
-    const auto ghist = stream.getGHistUpdateDuringSquash(entry.pc, false, true);
+    auto actual_branch = createResolvedBranch(entry, true, true);
+    actual_branch.isCond = false;
+    const auto ghist = stream.getGHistUpdateDuringSquash(
+        entry.pc, actual_branch);
     const auto phist = stream.getPHistUpdateDuringSquash(
-        entry.pc, entry, true);
+        entry.pc, actual_branch);
     EXPECT_EQ(ghist.shamt, 0);
     EXPECT_FALSE(ghist.taken);
     EXPECT_TRUE(phist.taken);

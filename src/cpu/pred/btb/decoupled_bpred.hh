@@ -725,18 +725,14 @@ class DecoupledBPUWithBTB : public BPredUnit
         FetchTarget &target,
         unsigned target_id,
         const PCStateBase &squash_pc,
-        const BranchInfo &actual_branch,
-        bool is_conditional,
-        bool actually_taken,
-        SquashType squash_type,
-        Addr redirect_pc);
+        const ResolvedBranch &actual_branch,
+        SquashType squash_type);
 
     // Common logic for squash handling
     void handleSquash(ThreadID tid, unsigned target_id,
                       SquashType squash_type,
                       const PCStateBase &squash_pc,
                       Addr redirect_pc,
-                      bool is_conditional = false,
                       bool actually_taken = false,
                       const StaticInstPtr &static_inst = nullptr,
                       unsigned control_inst_size = 0);

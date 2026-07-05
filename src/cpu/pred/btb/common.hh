@@ -731,7 +731,7 @@ struct FetchTarget
    }
 
     DirectionHistoryUpdate getGHistUpdateDuringSquash(
-        Addr squash_pc, bool is_cond, bool actually_taken) const
+        Addr squash_pc, const ResolvedBranch &actual_branch) const
     {
         DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
@@ -739,15 +739,15 @@ struct FetchTarget
                 update.shamt++;
             }
         }
-        if (is_cond) {
+        if (actual_branch.isCond) {
             update.shamt++;
-            update.taken = actually_taken;
+            update.taken = actual_branch.taken;
         }
         return update;
     }
 
     DirectionHistoryUpdate getBwHistUpdateDuringSquash(
-        Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
+        Addr squash_pc, const ResolvedBranch &actual_branch) const
     {
         DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
@@ -755,19 +755,19 @@ struct FetchTarget
                 update.shamt++;
             }
         }
-        if (is_cond) {
+        if (actual_branch.isCond) {
             update.shamt++;
-            update.taken = actually_taken && (squash_pc > target);
+            update.taken =
+                actual_branch.taken && (squash_pc > actual_branch.target);
         }
         return update;
     }
 
     PathHistoryUpdate getPHistUpdateDuringSquash(
-        Addr squash_pc, const BranchInfo &actual_branch,
-        bool actually_taken) const
+        Addr squash_pc, const ResolvedBranch &actual_branch) const
     {
         PathHistoryUpdate update;
-        update.taken = actually_taken && actual_branch.pc == squash_pc;
+        update.taken = actual_branch.taken && actual_branch.pc == squash_pc;
         if (update.taken) {
             update.pc = squash_pc;
             update.target = actual_branch.target;

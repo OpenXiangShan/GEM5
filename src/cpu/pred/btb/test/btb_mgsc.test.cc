@@ -325,13 +325,14 @@ struct MgscHarness
             recover_stream.startPC = start_pc;
             recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
             recover_stream.resolved = true;
-            recover_stream.addResolvedBranch(
-                makeResolvedBranch(entry, actual_taken));
+            const auto actual_branch =
+                makeResolvedBranch(entry, actual_taken);
+            recover_stream.addResolvedBranch(actual_branch);
             recover_stream.squashPC = entry.pc;
 
             mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
             const auto actual_phist = recover_stream.getPHistUpdateDuringSquash(
-                entry.pc, entry, actual_taken);
+                entry.pc, actual_branch);
             mgsc.recoverPHist(phr, recover_stream, actual_phist);
 
             bool actual_bw_taken = actual_taken && (entry.target < entry.pc);

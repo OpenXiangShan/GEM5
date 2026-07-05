@@ -113,19 +113,19 @@ void specUpdateState(FullBTBPrediction &pred)
 ```cpp
 void recoverState(
     const FetchTarget &entry,
-    const BranchInfo &actual_branch,
-    bool actual_taken)
+    const ResolvedBranch &actual_branch)
 ```
 
 - Restores RAS state to a previous checkpoint using stored metadata
 - Handles mispredictions by rolling back speculative changes
-- Re-applies operations if `actual_taken` is true, using `actual_branch`
+- Re-applies operations if `actual_branch.taken` is true
 
 ### 4. Commit Phase (`updateWithBranchUpdateContext`)
 
 ```cpp
 void updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
     const std::shared_ptr<void> &prediction_meta)
 ```
 
