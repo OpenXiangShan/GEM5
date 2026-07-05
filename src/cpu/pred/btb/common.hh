@@ -375,13 +375,13 @@ findTakenTargetUpdateEntry(const std::vector<TargetUpdateEntry> &entries)
 
 inline bool
 targetUpdateHitPrediction(
-    const TargetUpdateEntry &taken_entry,
+    const ResolvedBranch &taken_branch,
     const std::vector<BTBEntry> &predicted_entries)
 {
     return std::any_of(
         predicted_entries.begin(), predicted_entries.end(),
-        [&taken_entry](const auto &predicted_entry) {
-            return taken_entry.actualBranch.pc == predicted_entry.pc;
+        [&taken_branch](const auto &predicted_entry) {
+            return taken_branch.pc == predicted_entry.pc;
         });
 }
 

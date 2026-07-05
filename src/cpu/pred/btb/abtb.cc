@@ -490,18 +490,17 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  * Check if the branch was predicted correctly
  */
 void
-AheadBTB::checkPredictionHit(const std::vector<TargetUpdateEntry> &entries,
+AheadBTB::checkPredictionHit(const ResolvedBranch *taken_branch,
                              const BTBMeta *meta,
                              Tick pred_tick)
 {
-    const auto *taken_entry = findTakenTargetUpdateEntry(entries);
-    if (!taken_entry) {
+    if (!taken_branch) {
         return;
     }
 
-    if (!targetUpdateHitPrediction(*taken_entry, meta->hit_entries)) {
+    if (!targetUpdateHitPrediction(*taken_branch, meta->hit_entries)) {
         DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n",
-                taken_entry->actualBranch.pc, pred_tick);
+                taken_branch->pc, pred_tick);
         btbStats.updateMiss++;
     }
 
@@ -698,7 +697,10 @@ AheadBTB::updateWithAheadPipelineState(
         TargetUpdateEntryFilter::Any);
 
     // 3. Check prediction hit status, for stats recording
-    checkPredictionHit(entries_to_update, meta.get(), update_ctx.predTick);
+    const auto *taken_entry = findTakenTargetUpdateEntry(entries_to_update);
+    checkPredictionHit(
+        taken_entry ? &taken_entry->actualBranch : nullptr,
+        meta.get(), update_ctx.predTick);
 
     if (!entries_to_update.empty()) {
         updateWithEntries(entries_to_update, update_ctx,
