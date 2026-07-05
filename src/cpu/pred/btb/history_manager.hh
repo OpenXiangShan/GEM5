@@ -186,12 +186,13 @@ class HistoryManager
      * @param stream_id ID of the stream being squashed
      * @param ghist_update Actual direction-history update
      * @param phist_update Path-history update
-     * @param bi Branch information structure with actual results
+     * @param branch Actual resolved branch result, or nullptr for non-control
+     *               squashes
      */
     void squash(const uint64_t stream_id,
                 const DirectionHistoryUpdate &ghist_update,
                 const PathHistoryUpdate &phist_update,
-                BranchInfo bi)
+                const ResolvedBranch *branch)
     {
         // Debug dump before squash operations
         dump("before squash");
@@ -206,9 +207,9 @@ class HistoryManager
                 it->phistUpdate = phist_update;
 
                 // Update branch type information
-                it->is_call = bi.isCall;
-                it->is_return = bi.isReturn;
-                it->retAddr = bi.getEnd();
+                it->is_call = branch && branch->isCall;
+                it->is_return = branch && branch->isReturn;
+                it->retAddr = branch ? branch->pc + branch->size : 0;
 
                 // Move to next entry
                 ++it;

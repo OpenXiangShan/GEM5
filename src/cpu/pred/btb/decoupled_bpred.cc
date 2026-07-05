@@ -1275,11 +1275,10 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
         historyManagers[tid].squash(target_id, ghist_update,
-                                    phist_update,
-                                    makeBranchInfo(actual_branch));
+                                    phist_update, &actual_branch);
     } else {
         historyManagers[tid].squash(target_id, ghist_update,
-                                    phist_update, BranchInfo());
+                                    phist_update, nullptr);
     }
 
     // Perform history consistency checks when not a fast build variant

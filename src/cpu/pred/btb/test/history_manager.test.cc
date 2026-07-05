@@ -58,6 +58,22 @@ makeBranchInfo(Addr pc, Addr target, bool is_cond)
     return info;
 }
 
+ResolvedBranch
+makeResolvedBranch(const BranchInfo &info, bool taken)
+{
+    ResolvedBranch branch;
+    branch.pc = info.pc;
+    branch.target = info.target;
+    branch.taken = taken;
+    branch.isCond = info.isCond;
+    branch.isIndirect = info.isIndirect;
+    branch.isDirect = info.isDirect;
+    branch.isCall = info.isCall;
+    branch.isReturn = info.isReturn;
+    branch.size = info.size;
+    return branch;
+}
+
 } // namespace
 
 TEST(HistoryManagerTest, PathReplayChecksRecordedSquashPathUpdate)
@@ -90,7 +106,8 @@ TEST(HistoryManagerTest, PathReplayChecksRecordedSquashPathUpdate)
     EXPECT_EQ(actual_phr.pc, branch.pc);
     EXPECT_EQ(actual_phr.target, branch.target);
 
-    manager.squash(1, actual_ghr, actual_phr, branch);
+    const auto actual_branch = makeResolvedBranch(branch, true);
+    manager.squash(1, actual_ghr, actual_phr, &actual_branch);
 
     auto correct_ghr = base_ghr;
     auto correct_phr = base_phr;
@@ -148,7 +165,8 @@ TEST(HistoryManagerTest, SquashDropsYoungerPathUpdates)
     actual_phr.pc = first.pc;
     actual_phr.target = first.target;
 
-    manager.squash(1, actual_ghr, actual_phr, first);
+    const auto actual_branch = makeResolvedBranch(first, true);
+    manager.squash(1, actual_ghr, actual_phr, &actual_branch);
 
     auto expected_phr = base_phr;
     applyPathHistoryUpdate(expected_phr, actual_phr);
