@@ -702,15 +702,14 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 void
 DecoupledBPUWithBTB::updateStatistics(
     const FetchTarget &target,
-    SquashType squash_type,
     const std::vector<ResolvedBranch> &update_branches)
 {
     // Check if this target was mispredicted
-    const bool miss_predicted = squash_type == SQUASH_CTRL;
     const auto *actual_branch =
         findActualUpdateSummaryBranch(update_branches);
     const auto *mispred_branch =
         findMispredictedActualUpdateBranch(update_branches);
+    const bool miss_predicted = mispred_branch != nullptr;
     const bool actual_taken = actual_branch && actual_branch->taken;
     const bool has_actual_branch = actual_branch != nullptr;
     const BranchInfo actual_branch_info =
