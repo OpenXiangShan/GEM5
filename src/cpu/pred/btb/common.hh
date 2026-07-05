@@ -280,10 +280,12 @@ struct BranchUpdateContext
 
 struct TargetUpdateEntry
 {
-    // Prediction/table state used as the writeback base; actual facts come
-    // from actualBranch.
-    BTBEntry baseEntry;
-    bool isNewEntry = false;
+    // Target-table write template. It is either a prediction-time update
+    // entry, or a minimal entry synthesized from actualBranch when prediction
+    // did not cover this taken branch.
+    BTBEntry writeBaseEntry;
+    // This is not a target-table miss bit.
+    bool synthesizedFromActual = false;
     ResolvedBranch actualBranch;
 };
 
@@ -398,7 +400,7 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
                         const BTBEntry *existing_entry,
                         Addr tag)
 {
-    const auto &requested_entry = update_entry.baseEntry;
+    const auto &requested_entry = update_entry.writeBaseEntry;
     BTBEntry entry_to_write =
         (requested_entry.isCond && existing_entry) ?
             BTBEntry(*existing_entry) : requested_entry;
@@ -493,7 +495,7 @@ buildTargetUpdateEntries(
                     actual_update_branches.size());
 
     auto add_entry = [&](BTBEntry entry, const ResolvedBranch &actual_branch,
-                         bool is_new_entry) {
+                         bool synthesized_from_actual) {
         if (!entry.valid) {
             return;
         }
@@ -514,12 +516,14 @@ buildTargetUpdateEntries(
             return;
         }
 
-        entries.push_back({entry, is_new_entry, actual_branch});
+        entries.push_back({entry, synthesized_from_actual, actual_branch});
     };
     auto has_entry_pc = [&](Addr pc) {
         return std::any_of(
             entries.begin(), entries.end(),
-            [pc](const auto &entry) { return entry.baseEntry.pc == pc; });
+            [pc](const auto &entry) {
+                return entry.writeBaseEntry.pc == pc;
+            });
     };
     auto add_new_target_branch = [&](const ResolvedBranch &branch) {
         if (has_entry_pc(branch.pc)) {

@@ -432,9 +432,9 @@ void
 MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
                      const BranchUpdateContext &ctx)
 {
-    const auto &entry = update_entry.baseEntry;
+    const auto &entry = update_entry.writeBaseEntry;
     btbStats.updateTotal++;
-    if (update_entry.isNewEntry) {
+    if (update_entry.synthesizedFromActual) {
         btbStats.newEntry++;
         if (entry.isCond) {
             btbStats.newEntryWithCond++;

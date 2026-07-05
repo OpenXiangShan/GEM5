@@ -195,9 +195,9 @@ TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchPrefix)
         TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].baseEntry.pc, prefix_entry.pc);
+    EXPECT_EQ(entries[0].writeBaseEntry.pc, prefix_entry.pc);
     EXPECT_FALSE(entries[0].actualBranch.taken);
-    EXPECT_FALSE(entries[0].isNewEntry);
+    EXPECT_FALSE(entries[0].synthesizedFromActual);
 }
 
 TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
@@ -214,10 +214,10 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
         TargetUpdateEntryFilter::IndirectNonReturn);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].baseEntry.pc, indirect.pc);
+    EXPECT_EQ(entries[0].writeBaseEntry.pc, indirect.pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].actualBranch.mispred);
-    EXPECT_FALSE(entries[0].isNewEntry);
+    EXPECT_FALSE(entries[0].synthesizedFromActual);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
@@ -241,7 +241,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
         TargetUpdateEntryFilter::IndirectNonReturn);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].baseEntry.pc, second.pc);
+    EXPECT_EQ(entries[0].writeBaseEntry.pc, second.pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_EQ(entries[0].actualBranch.pc, second.pc);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
@@ -282,7 +282,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
         TargetUpdateEntryFilter::TakenControl);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].baseEntry.pc, control.pc);
+    EXPECT_EQ(entries[0].writeBaseEntry.pc, control.pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].actualBranch.mispred);
     EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
@@ -302,9 +302,9 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
         TargetUpdateEntryFilter::TakenControl);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].baseEntry.pc, branch_pc);
+    EXPECT_EQ(entries[0].writeBaseEntry.pc, branch_pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
-    EXPECT_TRUE(entries[0].isNewEntry);
+    EXPECT_TRUE(entries[0].synthesizedFromActual);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
 
@@ -664,8 +664,8 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
         TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(target_entries.size(), 1);
-    EXPECT_EQ(target_entries[0].baseEntry.pc, taken.pc);
-    EXPECT_TRUE(target_entries[0].isNewEntry);
+    EXPECT_EQ(target_entries[0].writeBaseEntry.pc, taken.pc);
+    EXPECT_TRUE(target_entries[0].synthesizedFromActual);
     EXPECT_TRUE(target_entries[0].actualBranch.mispred);
     EXPECT_EQ(target_entries[0].actualBranch.target, taken.target);
 }
