@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 
 #include "arch/riscv/regs/misc.hh"
 #include "base/debug_helper.hh"
@@ -27,7 +28,7 @@ namespace btb_pred
 namespace
 {
 
-ResolvedBranch
+std::optional<ResolvedBranch>
 makeSquashActualBranch(SquashType squash_type,
                        const PCStateBase &squash_pc,
                        Addr redirect_pc,
@@ -36,7 +37,7 @@ makeSquashActualBranch(SquashType squash_type,
                        unsigned control_inst_size)
 {
     if (squash_type != SQUASH_CTRL || !static_inst) {
-        return ResolvedBranch();
+        return std::nullopt;
     }
     ResolvedBranch branch;
     branch.pc = squash_pc.instAddr();
@@ -601,7 +602,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Get reference to the target
     auto &target = ftq.get(target_id, tid);
-    const ResolvedBranch actual_branch = makeSquashActualBranch(
+    const auto actual_branch = makeSquashActualBranch(
         squash_type, squash_pc, redirect_pc, actually_taken, static_inst,
         control_inst_size);
 
@@ -619,7 +620,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Recover history using the extracted function
     const auto *actual_control_branch =
-        (squash_type == SQUASH_CTRL && static_inst) ? &actual_branch : nullptr;
+        actual_branch ? &*actual_branch : nullptr;
     recoverHistoryForSquash(target, target_id, squash_pc,
                             actual_control_branch, squash_type);
 
