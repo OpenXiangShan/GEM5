@@ -940,12 +940,9 @@ makeActualBranchUpdateContext(BranchUpdateContext ctx,
 
 inline bool
 shouldUpdateBpuPredictors(
-    bool prediction_hit,
-    bool prediction_taken,
     const std::vector<ResolvedBranch> &actual_update_branches)
 {
-    return prediction_hit || prediction_taken ||
-        !actual_update_branches.empty();
+    return !actual_update_branches.empty();
 }
 
 inline std::vector<BTBEntry>

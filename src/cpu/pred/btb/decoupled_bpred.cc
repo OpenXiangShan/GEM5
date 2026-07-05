@@ -778,8 +778,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 
         // Update predictor components
         updatePredictorComponents(
-            ftq_target.isHit, ftq_target.predTaken, ftq_target.predMetas,
-            ftq_target.phistory, ftq_target.previousPCs,
+            ftq_target.predMetas, ftq_target.phistory, ftq_target.previousPCs,
             ftq_target.predBTBEntries, update_ctx, update_branches,
             /*resolved_update=*/false);
 
@@ -838,8 +837,8 @@ DecoupledBPUWithBTB::resolveUpdate(
     }
 
     return updatePredictorComponents(
-        target.isHit, target.predTaken, target.predMetas,
-        target.phistory, target.previousPCs, target.predBTBEntries,
+        target.predMetas, target.phistory, target.previousPCs,
+        target.predBTBEntries,
         update_ctx, update_branches,
         /*resolved_update=*/true);
 }
@@ -940,8 +939,6 @@ DecoupledBPUWithBTB::updatePredictorComponent(
 
 bool
 DecoupledBPUWithBTB::updatePredictorComponents(
-    bool prediction_hit,
-    bool prediction_taken,
     const std::array<std::shared_ptr<void>, 8> &prediction_metas,
     const boost::dynamic_bitset<> &phistory,
     const std::queue<Addr> &previous_pcs,
@@ -950,8 +947,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {
-    if (!shouldUpdateBpuPredictors(
-            prediction_hit, prediction_taken, update_branches)) {
+    if (!shouldUpdateBpuPredictors(update_branches)) {
         return true;
     }
 
