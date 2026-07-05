@@ -1831,16 +1831,16 @@ Fetch::resolveEntryHasDecodedPrefixGap(
     Addr &missingPC,
     Addr &boundaryPC) const
 {
-    if (entry.resolvedTid >= recentlyDecodedCFIRecords.size() ||
-        entry.resolvedBranches.empty()) {
+    if (entry.tid >= recentlyDecodedCFIRecords.size() ||
+        entry.branches.empty()) {
         return false;
     }
 
-    const auto &records = recentlyDecodedCFIRecords[entry.resolvedTid];
+    const auto &records = recentlyDecodedCFIRecords[entry.tid];
     auto record_it = std::find_if(
         records.begin(), records.end(),
         [&](const auto &record) {
-            return record.ftqId == entry.resolvedFTQId;
+            return record.ftqId == entry.ftqId;
         });
     if (record_it == records.end()) {
         return false;
@@ -1864,15 +1864,15 @@ Fetch::resolveEntryHasDecodedPrefixGap(
 void
 Fetch::observeResolveDequeueReadiness(const ResolveQueueEntry &entry)
 {
-    if (entry.resolvedTid >= recentlyDecodedCFIRecords.size()) {
+    if (entry.tid >= recentlyDecodedCFIRecords.size()) {
         return;
     }
 
-    const auto &records = recentlyDecodedCFIRecords[entry.resolvedTid];
+    const auto &records = recentlyDecodedCFIRecords[entry.tid];
     auto record_it = std::find_if(
         records.begin(), records.end(),
         [&](const auto &record) {
-            return record.ftqId == entry.resolvedFTQId;
+            return record.ftqId == entry.ftqId;
         });
 
     if (record_it == records.end()) {
@@ -1889,8 +1889,8 @@ Fetch::observeResolveDequeueReadiness(const ResolveQueueEntry &entry)
         DPRINTF(FetchResolve,
                 "[tid:%u] Resolve dequeue decoded prefix incomplete: "
                 "ftq=%lu boundaryPC=%#lx missingPC=%#lx branches=%zu\n",
-                entry.resolvedTid, entry.resolvedFTQId, boundary_pc,
-                missing_pc, entry.resolvedBranches.size());
+                entry.tid, entry.ftqId, boundary_pc,
+                missing_pc, entry.branches.size());
     } else {
         fetchStats.resolveDequeueDecodedPrefixComplete++;
     }
@@ -1918,9 +1918,9 @@ Fetch::shouldWaitForDecodedPrefix(ResolveQueueEntry &entry)
                 "[tid:%u] Resolve dequeue decoded prefix wait timeout: "
                 "ftq=%lu waitCycles=%u boundaryPC=%#lx missingPC=%#lx "
                 "branches=%zu\n",
-                entry.resolvedTid, entry.resolvedFTQId,
+                entry.tid, entry.ftqId,
                 entry.decodedPrefixWaitCycles, boundary_pc, missing_pc,
-                entry.resolvedBranches.size());
+                entry.branches.size());
         return false;
     }
 
@@ -1930,24 +1930,24 @@ Fetch::shouldWaitForDecodedPrefix(ResolveQueueEntry &entry)
             "[tid:%u] Resolve dequeue waits for decoded prefix: "
             "ftq=%lu waitCycles=%u/%u boundaryPC=%#lx missingPC=%#lx "
             "branches=%zu\n",
-            entry.resolvedTid, entry.resolvedFTQId,
+            entry.tid, entry.ftqId,
             entry.decodedPrefixWaitCycles, resolveQueueDecodedPrefixWaitCycles,
-            boundary_pc, missing_pc, entry.resolvedBranches.size());
+            boundary_pc, missing_pc, entry.branches.size());
     return true;
 }
 
 void
 Fetch::rememberDequeuedResolveEntry(const ResolveQueueEntry &entry)
 {
-    if (entry.resolvedTid >= recentlyDequeuedResolveRecords.size() ||
-        entry.resolvedBranches.empty()) {
+    if (entry.tid >= recentlyDequeuedResolveRecords.size() ||
+        entry.branches.empty()) {
         return;
     }
 
     DequeuedResolveRecord record;
-    record.ftqId = entry.resolvedFTQId;
+    record.ftqId = entry.ftqId;
 
-    for (const auto &branch : entry.resolvedBranches) {
+    for (const auto &branch : entry.branches) {
         record.trainedPCs.push_back(branch.pc);
         record.trainedMaxPC = branch.pc;
 
@@ -1962,7 +1962,7 @@ Fetch::rememberDequeuedResolveEntry(const ResolveQueueEntry &entry)
         return;
     }
 
-    auto &records = recentlyDequeuedResolveRecords[entry.resolvedTid];
+    auto &records = recentlyDequeuedResolveRecords[entry.tid];
     records.push_back(std::move(record));
     while (records.size() > MaxRecentResolveRecords) {
         records.pop_front();
@@ -1983,12 +1983,12 @@ Fetch::squashResolveQueueAfter(ThreadID tid, uint64_t squashFtqId)
     while (it != resolveQueue.end()) {
         if (it->isYoungerThan(tid, squashFtqId)) {
             dropped_entries++;
-            dropped_branches += it->resolvedBranches.size();
+            dropped_branches += it->branches.size();
             DPRINTF(FetchResolve,
                     "[tid:%u] Drop younger resolve entry on squash: "
                     "squashFTQ=%lu droppedFTQ=%lu branches=%zu\n",
-                    tid, squashFtqId, it->resolvedFTQId,
-                    it->resolvedBranches.size());
+                    tid, squashFtqId, it->ftqId,
+                    it->branches.size());
             it = resolveQueue.erase(it);
         } else {
             ++it;
@@ -2049,8 +2049,8 @@ Fetch::enqueueResolvedCFIsForUpdate(
         }
 
         ResolveQueueEntry new_entry;
-        new_entry.resolvedTid = tid;
-        new_entry.resolvedFTQId = resolved.ftqId;
+        new_entry.tid = tid;
+        new_entry.ftqId = resolved.ftqId;
         new_entry.addBranch(resolved.branch);
         resolveQueue.push_back(std::move(new_entry));
         enqueue_count++;
@@ -2067,15 +2067,15 @@ Fetch::dequeueResolvedUpdateIfReady(bool headEntryMergedSameFTQ)
     }
 
     auto &entry = resolveQueue.front();
-    ThreadID tid = entry.resolvedTid;
-    unsigned int stream_id = entry.resolvedFTQId;
+    ThreadID tid = entry.tid;
+    unsigned int stream_id = entry.ftqId;
     if (headEntryMergedSameFTQ) {
         fetchStats.resolveDequeueSameFTQMergeWait++;
         DPRINTF(FetchResolve,
                 "[tid:%u] Resolve dequeue waits after same-FTQ merge: "
                 "ftq=%lu branches=%zu\n",
-                entry.resolvedTid, entry.resolvedFTQId,
-                entry.resolvedBranches.size());
+                entry.tid, entry.ftqId,
+                entry.branches.size());
         return;
     }
     if (shouldWaitForDecodedPrefix(entry)) {
@@ -2083,7 +2083,7 @@ Fetch::dequeueResolvedUpdateIfReady(bool headEntryMergedSameFTQ)
     }
     observeResolveDequeueReadiness(entry);
     bool success = dbpbtb->resolveUpdate(
-        stream_id, entry.resolvedBranches, tid);
+        stream_id, entry.branches, tid);
     if (success) {
         dbpbtb->notifyResolveSuccess(tid);
         rememberDequeuedResolveEntry(entry);

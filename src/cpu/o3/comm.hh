@@ -216,29 +216,29 @@ struct SquashVersion
 
 struct ResolveQueueEntry
 {
-    ThreadID resolvedTid;
-    uint64_t resolvedFTQId;
-    std::vector<branch_prediction::btb_pred::ResolvedBranch> resolvedBranches;
+    ThreadID tid;
+    uint64_t ftqId;
+    std::vector<branch_prediction::btb_pred::ResolvedBranch> branches;
     unsigned decodedPrefixWaitCycles = 0;
     bool decodedPrefixWaitTimedOut = false;
 
     bool
-    matches(ThreadID tid, uint64_t ftqId) const
+    matches(ThreadID query_tid, uint64_t query_ftq_id) const
     {
-        return resolvedTid == tid && resolvedFTQId == ftqId;
+        return tid == query_tid && ftqId == query_ftq_id;
     }
 
     bool
-    isYoungerThan(ThreadID tid, uint64_t ftqId) const
+    isYoungerThan(ThreadID query_tid, uint64_t query_ftq_id) const
     {
-        return resolvedTid == tid && resolvedFTQId > ftqId;
+        return tid == query_tid && ftqId > query_ftq_id;
     }
 
     bool
     hasBranchPC(Addr pc) const
     {
         return std::any_of(
-            resolvedBranches.begin(), resolvedBranches.end(),
+            branches.begin(), branches.end(),
             [pc](const auto &branch) { return branch.pc == pc; });
     }
 
@@ -246,7 +246,7 @@ struct ResolveQueueEntry
     updatePrefixBoundaryPC() const
     {
         return branch_prediction::btb_pred::updateBranchPrefixBoundaryPC(
-            resolvedBranches);
+            branches);
     }
 
     void
@@ -260,7 +260,7 @@ struct ResolveQueueEntry
     addBranch(const branch_prediction::btb_pred::ResolvedBranch &branch)
     {
         return branch_prediction::btb_pred::insertResolvedBranchByPC(
-            resolvedBranches, branch);
+            branches, branch);
     }
 };
 
