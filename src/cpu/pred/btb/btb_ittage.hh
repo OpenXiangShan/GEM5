@@ -288,9 +288,10 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     } TageMeta;
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
-    void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                           const BranchUpdateContext &ctx,
-                           const TageMeta &meta);
+    void updateWithResolvedBranches(
+        const std::vector<ResolvedBranch> &branches,
+        const BranchUpdateContext &ctx,
+        const TageMeta &meta);
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;

@@ -253,13 +253,19 @@ BTBITTAGE::updateWithTargetEntries(
 {
     // get tage predictions from meta
     auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
-    updateWithEntries(entries, ctx, *meta);
+    std::vector<ResolvedBranch> branches;
+    branches.reserve(entries.size());
+    for (const auto &entry : entries) {
+        branches.push_back(entry.actualBranch);
+    }
+    updateWithResolvedBranches(branches, ctx, *meta);
 }
 
 void
-BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                             const BranchUpdateContext &ctx,
-                             const TageMeta &meta)
+BTBITTAGE::updateWithResolvedBranches(
+    const std::vector<ResolvedBranch> &branches,
+    const BranchUpdateContext &ctx,
+    const TageMeta &meta)
 {
     Addr startAddr = ctx.startPC;
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
@@ -269,15 +275,14 @@ BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
     auto updateIndexFoldedHist = meta.indexFoldedHist;
 
     // update each branch
-    for (const auto &update_entry : entries) {
-        bool this_indirect_actual_taken = update_entry.actualBranch.taken;
-        auto pred_it = preds.find(update_entry.actualBranch.pc);
+    for (const auto &branch : branches) {
+        auto pred_it = preds.find(branch.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = update_entry.actualBranch.mispred;
-        Addr exe_target = update_entry.actualBranch.target;
+        bool mispred = branch.mispred;
+        Addr exe_target = branch.target;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics
@@ -405,8 +410,7 @@ BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                         DPRINTF(ITTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
                             ti, newIndex, newTag, 2);
                         newEntry = TageEntry(
-                            newTag, exe_target, 2,
-                            update_entry.actualBranch.pc);
+                            newTag, exe_target, 2, branch.pc);
                         ittageStats.updateAllocSuccess++;
                         break; // allocate only 1 entry
                     }
