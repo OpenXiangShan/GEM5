@@ -255,6 +255,23 @@ struct BTBEntry : BranchInfo
     }
 };
 
+inline BTBEntry
+makeBTBEntry(const ResolvedBranch &branch)
+{
+    BTBEntry entry;
+    entry.pc = branch.pc;
+    entry.target = branch.target;
+    entry.resolved = true;
+    entry.isCond = branch.isCond;
+    entry.isIndirect = branch.isIndirect;
+    entry.isDirect = branch.isDirect;
+    entry.isCall = branch.isCall;
+    entry.isReturn = branch.isReturn;
+    entry.size = branch.size;
+    entry.valid = true;
+    return entry;
+}
+
 struct DirectionUpdateEntry
 {
     // Direction predictors use the resolved branch as the actual fact source;
@@ -520,12 +537,11 @@ buildTargetUpdateEntries(
             entries.begin(), entries.end(),
             [pc](const auto &entry) { return entry.baseEntry.pc == pc; });
     };
-    auto add_new_target_branch = [&](const BranchInfo &branch) {
+    auto add_new_target_branch = [&](const ResolvedBranch &branch) {
         if (has_entry_pc(branch.pc)) {
             return;
         }
-        BTBEntry entry(branch);
-        entry.valid = true;
+        BTBEntry entry = makeBTBEntry(branch);
         if (entry.isCond) {
             entry.ctr = 0;
         }
@@ -537,7 +553,7 @@ buildTargetUpdateEntries(
     }
     for (const auto &branch : actual_update_branches) {
         if (branch.taken) {
-            add_new_target_branch(makeBranchInfo(branch));
+            add_new_target_branch(branch);
         }
     }
 

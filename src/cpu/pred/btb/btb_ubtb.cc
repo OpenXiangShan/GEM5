@@ -300,7 +300,7 @@ UBTB::updateWithContext(const std::vector<TargetUpdateEntry> &entries,
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
     BTBEntry takenEntry;
     if (!entries.empty() && entries.front().actualBranch.taken) {
-        takenEntry = BTBEntry(makeBranchInfo(entries.front().actualBranch));
+        takenEntry = makeBTBEntry(entries.front().actualBranch);
     }
     auto startAddr = ctx.startPC;
     Addr oldtag = getTag(startAddr, ctx.asidHash);
