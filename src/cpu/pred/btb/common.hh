@@ -471,7 +471,6 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
 enum class TargetUpdateEntryFilter
 {
     Any,
-    IndirectNonReturn,
     TakenControl
 };
 
@@ -550,9 +549,6 @@ buildTargetUpdateEntries(
         switch (filter) {
           case TargetUpdateEntryFilter::Any:
             keep = true;
-            break;
-          case TargetUpdateEntryFilter::IndirectNonReturn:
-            keep = actual_branch.isIndirect && !actual_branch.isReturn;
             break;
           case TargetUpdateEntryFilter::TakenControl:
             keep = actual_branch.taken;

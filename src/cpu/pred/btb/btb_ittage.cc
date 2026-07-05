@@ -246,17 +246,22 @@ BTBITTAGE::getPredictionMeta(ThreadID tid) {
 }
 
 void
-BTBITTAGE::updateWithTargetEntries(
-    const std::vector<TargetUpdateEntry> &entries,
+BTBITTAGE::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
     const std::shared_ptr<void> &prediction_meta)
 {
     // get tage predictions from meta
     auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
     std::vector<ResolvedBranch> branches;
-    branches.reserve(entries.size());
-    for (const auto &entry : entries) {
-        branches.push_back(entry.actualBranch);
+    branches.reserve(update_branches.size());
+    for (const auto &branch : update_branches) {
+        if (branch.taken && branch.isIndirect && !branch.isReturn) {
+            branches.push_back(branch);
+        }
+    }
+    if (branches.empty()) {
+        return;
     }
     updateWithResolvedBranches(branches, ctx, *meta);
 }

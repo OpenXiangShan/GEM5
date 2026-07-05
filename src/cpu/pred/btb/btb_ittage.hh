@@ -116,15 +116,11 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     PredictorUpdateProtocol updateProtocol() const override
     {
-        return PredictorUpdateProtocol::TargetEntries;
+        return PredictorUpdateProtocol::BranchContext;
     }
-    TargetUpdateEntryFilter targetUpdateEntryFilter() const override
-    {
-        return TargetUpdateEntryFilter::IndirectNonReturn;
-    }
-    void updateWithTargetEntries(
-        const std::vector<TargetUpdateEntry> &entries,
+    void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
+        const std::vector<ResolvedBranch> &update_branches,
         const std::shared_ptr<void> &prediction_meta) override;
 
     void recordCommittedBranchStats(

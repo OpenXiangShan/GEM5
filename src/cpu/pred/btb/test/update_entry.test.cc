@@ -197,27 +197,6 @@ TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchPrefix)
     EXPECT_FALSE(entries[0].actualBranch.taken);
 }
 
-TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
-{
-    const BTBEntry indirect = makeIndirectEntry(0x3000, false);
-    const BTBEntry ret = makeIndirectEntry(0x3004, true);
-    ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, false);
-    resolved.isCond = false;
-    resolved.isDirect = false;
-    resolved.isIndirect = true;
-
-    const auto entries = buildTargetUpdateEntries(
-        {indirect, ret}, {resolved},
-        TargetUpdateEntryFilter::IndirectNonReturn);
-
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
-    EXPECT_TRUE(entries[0].actualBranch.taken);
-    EXPECT_FALSE(entries[0].actualBranch.mispred);
-    EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
-    EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
-}
-
 TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
 {
     BTBEntry first = makeIndirectEntry(0x3000, false);
@@ -233,8 +212,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
     resolved.target = actual_target;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, second}, {resolved},
-        TargetUpdateEntryFilter::IndirectNonReturn);
+        {first, second}, {resolved}, TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, second.pc);
@@ -254,8 +232,7 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     resolved.target = 0xbeef;
 
     const auto entries = buildTargetUpdateEntries(
-        {indirect}, {resolved},
-        TargetUpdateEntryFilter::IndirectNonReturn);
+        {indirect}, {resolved}, TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].actualBranch.taken);
@@ -264,7 +241,7 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
 
-TEST(UpdateEntryBuilderTest, TargetFilterUsesActualBranchType)
+TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchType)
 {
     BTBEntry stale_direct = makeEntry(0x3014, false);
     stale_direct.isIndirect = false;
@@ -278,8 +255,7 @@ TEST(UpdateEntryBuilderTest, TargetFilterUsesActualBranchType)
     resolved.isReturn = false;
 
     const auto entries = buildTargetUpdateEntries(
-        {stale_direct}, {resolved},
-        TargetUpdateEntryFilter::IndirectNonReturn);
+        {stale_direct}, {resolved}, TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, stale_direct.pc);
