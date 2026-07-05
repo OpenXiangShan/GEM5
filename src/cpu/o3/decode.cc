@@ -712,7 +712,6 @@ Decode::decodeInsts(ThreadID tid)
         if (inst->isControl()) {
             TimeStruct::DecodeComm::DecodedCFIEntry entry;
             entry.ftqId = inst->getFtqId();
-            entry.seqNum = inst->seqNum;
             entry.pc = inst->getPC();
             toFetch->decodeInfo[tid].decodedCFIs.push_back(entry);
         }

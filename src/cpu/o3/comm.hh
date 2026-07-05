@@ -272,7 +272,6 @@ struct TimeStruct
         struct DecodedCFIEntry
         {
             uint64_t ftqId;
-            InstSeqNum seqNum;
             Addr pc;
         };
 
