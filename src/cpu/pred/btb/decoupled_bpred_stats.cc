@@ -338,7 +338,7 @@ DecoupledBPUWithBTB::dumpStats()
 
 DecoupledBPUWithBTB::BpTrace::BpTrace(
     uint64_t fsqId,
-    FetchTarget &target,
+    const FetchTarget &target,
     const ResolvedBranch &actual_branch)
 {
     _tick = curTick();
@@ -851,14 +851,17 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     //here add final counter
 
     if (mispred) {
-        commitPredWrongSource(entry, actual_branch);
+        commitPredWrongSource(
+            entry.s1Source, entry.s3Source, entry.predTaken, actual_branch);
     }
 
 }
 
 void
 DecoupledBPUWithBTB::commitPredWrongSource(
-    const FetchTarget &entry,
+    int s1_pred_source,
+    int s3_pred_source,
+    bool pred_taken,
     const ResolvedBranch &actual_branch)
 {
     int ubtbid = ubtb->getComponentIdx();
@@ -868,21 +871,18 @@ DecoupledBPUWithBTB::commitPredWrongSource(
     int ittageid = ittage->getComponentIdx();
     int rasid = ras->getComponentIdx();
 
-    int s1PredSource = entry.s1Source;
-    int s3PredSource = entry.s3Source;
+    bool onlyDirectionWrong = actual_branch.taken != pred_taken;
 
-    bool onlyDirectionWrong = actual_branch.taken != entry.predTaken;
-
-    assert(s1PredSource < mbtbid);
-    if (s1PredSource == ubtbid) {
+    assert(s1_pred_source < mbtbid);
+    if (s1_pred_source == ubtbid) {
         dbpBtbStats.s1PredWrongUbtb++;
-    } else if (s1PredSource == abtbid) {
+    } else if (s1_pred_source == abtbid) {
         dbpBtbStats.s1PredWrongAbtb++;
     }else {
         dbpBtbStats.s1PredWrongFallthrough++;
     }
 
-    if (s3PredSource == rasid) {
+    if (s3_pred_source == rasid) {
         if (actual_branch.isCond) {
             dbpBtbStats.s3PredWrongTage++;
         } else if (actual_branch.isReturn) {
@@ -890,7 +890,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
-    } else if (s3PredSource == ittageid) {
+    } else if (s3_pred_source == ittageid) {
         if (actual_branch.isIndirect) {
             dbpBtbStats.s3PredWrongIttage++;
         } else if (actual_branch.isCond) {
@@ -898,7 +898,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
-    } else if (s3PredSource == tageid) {
+    } else if (s3_pred_source == tageid) {
         if (actual_branch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
@@ -908,7 +908,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
-    }else if (s3PredSource == mbtbid) {
+    }else if (s3_pred_source == mbtbid) {
         if (actual_branch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
@@ -920,7 +920,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
-    }else if (s3PredSource == -1) {
+    }else if (s3_pred_source == -1) {
         dbpBtbStats.s3PredWrongMbtb++;
     }
 }

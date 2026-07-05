@@ -388,7 +388,7 @@ class DecoupledBPUWithBTB : public BPredUnit
             _uint64_data["source"] = source;
             _uint64_data["target"] = target;
         }
-        BpTrace(uint64_t fsqId, FetchTarget &target,
+        BpTrace(uint64_t fsqId, const FetchTarget &target,
                 const ResolvedBranch &actual_branch);
     };
 
@@ -846,7 +846,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void commitBranch(const DynInstPtr &inst, bool miss);
 
 
-    void commitPredWrongSource(const FetchTarget &entry,
+    void commitPredWrongSource(int s1_pred_source,
+                               int s3_pred_source,
+                               bool pred_taken,
                                const ResolvedBranch &actual_branch);
 
     /**
