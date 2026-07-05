@@ -892,8 +892,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         const auto entries = buildTargetUpdateEntries(
             update_btb_entries,
             update_branches,
-            filter,
-            component->getResolvedUpdate());
+            filter);
         if (entries.empty() &&
             filter != TargetUpdateEntryFilter::TakenControl) {
             return;

@@ -183,7 +183,7 @@ const auto update_entries = buildUpdateBTBEntries(
     stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 const auto entries = buildTargetUpdateEntries(
     update_entries, actual_branches,
-    btb->targetUpdateEntryFilter(), btb->getResolvedUpdate());
+    btb->targetUpdateEntryFilter());
 
 // Update BTB
 btb->updateWithTargetEntries(

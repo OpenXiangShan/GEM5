@@ -96,7 +96,7 @@ void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
     const auto entries = buildTargetUpdateEntries(
         update_entries, actual_branches,
-        btb->targetUpdateEntryFilter(), btb->getResolvedUpdate());
+        btb->targetUpdateEntryFilter());
     btb->updateWithTargetEntries(entries, ctx, meta);
 }
 
@@ -237,8 +237,7 @@ TEST_F(BTBTest, EmptyTargetEntriesDoNotUpdateStats) {
     ctx.startPC = 0x1000;
 
     const auto entries = buildTargetUpdateEntries(
-        {}, {}, mbtb->targetUpdateEntryFilter(),
-        mbtb->getResolvedUpdate());
+        {}, {}, mbtb->targetUpdateEntryFilter());
     EXPECT_TRUE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
@@ -266,8 +265,7 @@ TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
     const uint64_t new_uncond_entries = mbtb->btbStats.newEntryWithUncond;
 
     const auto entries = buildTargetUpdateEntries(
-        {}, actual_branches, mbtb->targetUpdateEntryFilter(),
-        mbtb->getResolvedUpdate());
+        {}, actual_branches, mbtb->targetUpdateEntryFilter());
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].entry.valid);
     EXPECT_TRUE(entries[0].isNewEntry);
@@ -302,7 +300,7 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualBranchForHit) {
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
     const auto entries = buildTargetUpdateEntries(
         stagePreds[mbtb->getDelay()].btbEntries, actual_branches,
-        mbtb->targetUpdateEntryFilter(), mbtb->getResolvedUpdate());
+        mbtb->targetUpdateEntryFilter());
     ASSERT_FALSE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
@@ -326,8 +324,7 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualTakenForMiss) {
     const auto actual_branches =
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
     const auto entries = buildTargetUpdateEntries(
-        {}, actual_branches, mbtb->targetUpdateEntryFilter(),
-        mbtb->getResolvedUpdate());
+        {}, actual_branches, mbtb->targetUpdateEntryFilter());
     ASSERT_FALSE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;

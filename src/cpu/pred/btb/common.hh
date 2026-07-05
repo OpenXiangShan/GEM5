@@ -452,9 +452,9 @@ buildDirectionUpdateEntries(
         }
         entries.push_back({branch,
                            base_taken,
-                           actual_branch ? actual_branch->taken : false,
+                           actual_branch->taken,
                            is_new_entry,
-                           actual_branch ? actual_branch->mispred : false});
+                           actual_branch->mispred});
     };
 
     for (const auto &entry : update_btb_entries) {
@@ -476,8 +476,7 @@ inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
     const std::vector<ResolvedBranch> &actual_update_branches,
-    TargetUpdateEntryFilter filter,
-    bool resolved_update)
+    TargetUpdateEntryFilter filter)
 {
     std::vector<TargetUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
@@ -486,7 +485,7 @@ buildTargetUpdateEntries(
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
         const auto *actual_branch =
             findActualUpdateBranch(actual_update_branches, entry.pc);
-        if (!entry.valid || (resolved_update && !actual_branch)) {
+        if (!entry.valid || !actual_branch) {
             return;
         }
 
@@ -506,10 +505,9 @@ buildTargetUpdateEntries(
             return;
         }
 
-        const bool actual_taken = actual_branch && actual_branch->taken;
-        const BranchInfo actual_branch_info =
-            actual_branch ? makeBranchInfo(*actual_branch) : BranchInfo(entry);
-        const bool actual_mispred = actual_branch && actual_branch->mispred;
+        const bool actual_taken = actual_branch->taken;
+        const BranchInfo actual_branch_info = makeBranchInfo(*actual_branch);
+        const bool actual_mispred = actual_branch->mispred;
         entries.push_back(
             {entry, actual_taken, is_new_entry, actual_branch_info,
              actual_mispred});
