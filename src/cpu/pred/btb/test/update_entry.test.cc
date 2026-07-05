@@ -59,6 +59,23 @@ makeResolvedBranch(Addr pc, bool taken, bool mispred)
     return branch;
 }
 
+ResolvedBranch
+makeResolvedBranch(const BTBEntry &entry, bool taken, bool mispred)
+{
+    ResolvedBranch branch;
+    branch.pc = entry.pc;
+    branch.target = entry.target;
+    branch.taken = taken;
+    branch.mispred = mispred;
+    branch.isCond = entry.isCond;
+    branch.isIndirect = entry.isIndirect;
+    branch.isDirect = entry.isDirect;
+    branch.isCall = entry.isCall;
+    branch.isReturn = entry.isReturn;
+    branch.size = entry.size;
+    return branch;
+}
+
 std::vector<BTBEntry>
 makeUpdateEntries(const FetchTarget &stream,
                   unsigned predict_width,
@@ -297,7 +314,8 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
     existing.ctr = 0;
     existing.tag = 0x20;
     existing.target = 0x5000;
-    BranchInfo actual_branch(requested);
+    ResolvedBranch actual_branch =
+        makeResolvedBranch(requested, true, false);
     actual_branch.target = 0x6000;
 
     const TargetUpdateEntry update{
@@ -315,7 +333,8 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualDirectTarget)
 {
     BTBEntry direct = makeEntry(0x3028, false, true);
     direct.target = 0x4000;
-    BranchInfo actual_branch(direct);
+    ResolvedBranch actual_branch =
+        makeResolvedBranch(direct, true, false);
     actual_branch.target = 0x5000;
 
     const TargetUpdateEntry update{
@@ -332,7 +351,8 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
 {
     BTBEntry indirect = makeIndirectEntry(0x3030, false, true);
     indirect.target = 0x4000;
-    BranchInfo actual_branch(indirect);
+    ResolvedBranch actual_branch =
+        makeResolvedBranch(indirect, true, false);
     actual_branch.target = 0x5000;
 
     const TargetUpdateEntry update{

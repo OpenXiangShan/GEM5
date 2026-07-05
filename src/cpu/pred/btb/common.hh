@@ -267,7 +267,7 @@ struct TargetUpdateEntry
     BTBEntry baseEntry;
     bool actualTaken = false;
     bool isNewEntry = false;
-    BranchInfo actualBranch;
+    ResolvedBranch actualBranch;
     bool actualMispred = false;
 };
 
@@ -361,7 +361,7 @@ targetUpdateHitPrediction(
     return std::any_of(
         predicted_entries.begin(), predicted_entries.end(),
         [&taken_entry](const auto &predicted_entry) {
-            return taken_entry.actualBranch == predicted_entry;
+            return taken_entry.actualBranch.pc == predicted_entry.pc;
         });
 }
 
@@ -507,10 +507,9 @@ buildTargetUpdateEntries(
         }
 
         const bool actual_taken = actual_branch->taken;
-        const BranchInfo actual_branch_info = makeBranchInfo(*actual_branch);
         const bool actual_mispred = actual_branch->mispred;
         entries.push_back(
-            {entry, actual_taken, is_new_entry, actual_branch_info,
+            {entry, actual_taken, is_new_entry, *actual_branch,
              actual_mispred});
     };
     auto has_entry_pc = [&](Addr pc) {
