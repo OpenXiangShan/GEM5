@@ -655,8 +655,7 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     bool utage_hit = false;
     // Process each branch entry
     for (const auto &update_entry : entries) {
-        const auto &actual_branch = update_entry.actualBranch;
-        const Addr branch_pc = actual_branch.pc;
+        const Addr branch_pc = update_entry.pc;
         const bool base_taken = update_entry.baseTaken;
         if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(UTAGE,
@@ -664,7 +663,7 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                     branch_pc, startAddr);
             continue;
         }
-        const bool actual_taken = actual_branch.taken;
+        const bool actual_taken = update_entry.actualTaken;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
@@ -691,7 +690,7 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
             branch_pc, base_taken, actual_taken, recomputed,
-            actual_branch.mispred);
+            update_entry.mispred);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
@@ -767,7 +766,7 @@ MicroTAGE::checkUtageUpdateMisspred(
         findFirstTakenDirectionUpdateEntry(entries);
     const bool actual_taken = first_actual_taken != nullptr;
     const Addr first_actual_taken_pc =
-        actual_taken ? first_actual_taken->actualBranch.pc : 0;
+        actual_taken ? first_actual_taken->pc : 0;
     bool fallthrough_mispred = (!has_taken_pred && actual_taken) ||
                                 (has_taken_pred && !actual_taken);
     bool branch_mispred = actual_taken && has_taken_pred &&

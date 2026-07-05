@@ -117,7 +117,9 @@ makeDirectionEntry(const BTBEntry &entry, bool actual_taken,
                    bool is_new_entry, bool actual_mispred = false)
 {
     return {
-        createResolvedBranch(BranchInfo(entry), actual_taken, actual_mispred),
+        entry.pc,
+        actual_taken,
+        actual_mispred,
         entry.ctr >= 0,
         is_new_entry};
 }
