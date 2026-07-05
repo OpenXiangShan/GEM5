@@ -177,16 +177,23 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printTarget(const FetchTarget &e)
     {
-        if (!e.resolved) {
+        const bool has_actual_control =
+            e.resolved && e.squashType == SquashType::SQUASH_CTRL;
+        const BranchInfo &branch_info =
+            has_actual_control ? e.exeBranchInfo : e.predBranchInfo;
+        const bool taken = has_actual_control ? e.exeTaken : e.predTaken;
+
+        if (has_actual_control) {
+            DPRINTFR(DecoupleBPProbe, "FSQ Actual control target: ");
+        } else if (!e.resolved) {
             DPRINTFR(DecoupleBPProbe, "FSQ Predicted target: ");
         } else {
-            DPRINTFR(DecoupleBPProbe, "FSQ Resolved target: ");
+            DPRINTFR(DecoupleBPProbe, "FSQ Resolved non-control target: ");
         }
-        // TODO:fix this
         DPRINTFR(DecoupleBPProbe,
                  "%#lx-[%#lx, %#lx) --> %#lx, taken: %lu\n",
-                 e.startPC, e.getBranchInfo().pc, e.getEndPC(),
-                 e.getTakenTarget(), e.getTaken());
+                 e.startPC, branch_info.pc, branch_info.getEnd(),
+                 branch_info.target, taken);
     }
 
     /**
@@ -390,7 +397,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         PredictionTrace(uint64_t id, const FetchTarget &entry) {
             _tick = curTick();
             set(id, entry.startPC, entry.predTaken, entry.predEndPC,
-                entry.getControlPC(), entry.getTakenTarget(),
+                entry.predBranchInfo.pc, entry.predBranchInfo.target,
                 entry.predSource, entry.isHit ? 1 : 0);
         }
     };

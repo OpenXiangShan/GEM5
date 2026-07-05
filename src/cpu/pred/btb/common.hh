@@ -141,7 +141,7 @@ struct BranchInfo
     bool isReturn;
     uint8_t size;
     bool isUncond() const { return !this->isCond; }
-    Addr getEnd() { return this->pc + this->size; }
+    Addr getEnd() const { return this->pc + this->size; }
     BranchInfo()
         : pc(0), target(0), resolved(false), isCond(false), isIndirect(false),
           isDirect(false), isCall(false), isReturn(false), size(0)
@@ -753,9 +753,10 @@ struct FetchTarget
     bool isHit;          // whether the predicted btb entry is hit
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
 
-    // for commit, write at redirect or fetch
-    bool exeTaken;         // whether the branch is taken(resolved)
-    BranchInfo exeBranchInfo; // executed branch info
+    // Legacy debug/recovery fields for the control-squashed branch. Predictor
+    // updates consume resolvedBranches instead of these summary fields.
+    bool exeTaken;
+    BranchInfo exeBranchInfo;
 
     bool resolved;  // whether the branch is resolved/executed
 
@@ -812,20 +813,6 @@ struct FetchTarget
        predBTBEntries.clear();
        resolvedBranches.clear();
    }
-
-    // the default exe result should be consistent with prediction
-    void setDefaultResolve() {
-        resolved = false;
-        exeBranchInfo = predBranchInfo;
-        exeTaken = predTaken;
-    }
-
-    // bool getEnded() const { return resolved ? exeEnded : predEnded; }
-    BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
-    Addr getTaken() const { return resolved ? exeTaken : predTaken; }
-    Addr getTakenTarget() const { return getBranchInfo().target; }
 
     DirectionHistoryUpdate getGHistUpdateDuringSquash(
         Addr squash_pc, bool is_cond, bool actually_taken) const

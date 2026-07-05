@@ -1068,9 +1068,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
         entry.predMetas[i] = components[i]->getPredictionMeta(tid);
     }
 
-    // Initialize default resolution state
-    entry.setDefaultResolve();
-
     return entry;
 }
 

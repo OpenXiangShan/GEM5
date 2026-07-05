@@ -470,6 +470,19 @@ TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsPredictionContextOnly)
     EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }
 
+TEST(UpdateEntryBuilderTest, FetchTargetPredictionDoesNotCreateActualBranch)
+{
+    FetchTarget stream;
+    stream.predTaken = true;
+    stream.predBranchInfo =
+        makeBranchInfo(makeResolvedBranch(0x2008, true, false));
+
+    EXPECT_FALSE(stream.resolved);
+    EXPECT_FALSE(stream.exeTaken);
+    EXPECT_EQ(stream.exeBranchInfo.pc, 0);
+    EXPECT_TRUE(stream.resolvedBranches.empty());
+}
+
 TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
 {
     FetchTarget stream;
