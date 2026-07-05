@@ -468,12 +468,6 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
     return entry_to_write;
 }
 
-enum class TargetUpdateEntryFilter
-{
-    Any,
-    TakenControl
-};
-
 enum class PredictorUpdateProtocol
 {
     None,
@@ -536,8 +530,7 @@ buildDirectionUpdateEntries(
 inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
     const std::vector<BTBEntry> &pred_update_entries,
-    const std::vector<ResolvedBranch> &actual_update_branches,
-    TargetUpdateEntryFilter filter)
+    const std::vector<ResolvedBranch> &actual_update_branches)
 {
     std::vector<TargetUpdateEntry> entries;
     entries.reserve(pred_update_entries.size() +
@@ -545,19 +538,6 @@ buildTargetUpdateEntries(
 
     auto add_entry = [&](const ResolvedBranch &actual_branch,
                          Addr base_target, int base_ctr, int base_source) {
-        bool keep = false;
-        switch (filter) {
-          case TargetUpdateEntryFilter::Any:
-            keep = true;
-            break;
-          case TargetUpdateEntryFilter::TakenControl:
-            keep = actual_branch.taken;
-            break;
-        }
-        if (!keep) {
-            return;
-        }
-
         entries.push_back(makeTargetUpdateEntry(
             actual_branch, base_target, base_ctr, base_source));
     };

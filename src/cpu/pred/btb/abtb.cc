@@ -693,8 +693,7 @@ AheadBTB::updateWithAheadPipelineState(
 
     // 2. Collect entries to update
     const auto entries_to_update = buildTargetUpdateEntries(
-        old_entries, update_branches,
-        TargetUpdateEntryFilter::Any);
+        old_entries, update_branches);
 
     // 3. Check prediction hit status, for stats recording
     const auto *taken_entry = findTakenTargetUpdateEntry(entries_to_update);

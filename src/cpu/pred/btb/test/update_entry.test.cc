@@ -189,8 +189,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchPrefix)
 
     const auto entries = buildTargetUpdateEntries(
         {prefix_entry, later_entry},
-        {makeResolvedBranch(prefix_entry.pc, false, false)},
-        TargetUpdateEntryFilter::Any);
+        {makeResolvedBranch(prefix_entry.pc, false, false)});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, prefix_entry.pc);
@@ -212,7 +211,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
     resolved.target = actual_target;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, second}, {resolved}, TargetUpdateEntryFilter::Any);
+        {first, second}, {resolved});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, second.pc);
@@ -232,7 +231,7 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     resolved.target = 0xbeef;
 
     const auto entries = buildTargetUpdateEntries(
-        {indirect}, {resolved}, TargetUpdateEntryFilter::Any);
+        {indirect}, {resolved});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].actualBranch.taken);
@@ -255,7 +254,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchType)
     resolved.isReturn = false;
 
     const auto entries = buildTargetUpdateEntries(
-        {stale_direct}, {resolved}, TargetUpdateEntryFilter::Any);
+        {stale_direct}, {resolved});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, stale_direct.pc);
@@ -263,7 +262,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchType)
     EXPECT_FALSE(entries[0].actualBranch.isReturn);
 }
 
-TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
+TEST(UpdateEntryBuilderTest, TargetUpdateUsesMatchingTakenActualBranch)
 {
     const BTBEntry first = makeEntry(0x3018, false);
     const BTBEntry control = makeEntry(0x3020, false);
@@ -273,8 +272,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
     resolved.target = actual_target;
 
     const auto entries = buildTargetUpdateEntries(
-        {first, control}, {resolved},
-        TargetUpdateEntryFilter::TakenControl);
+        {first, control}, {resolved});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
@@ -284,7 +282,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
 
-TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
+TEST(UpdateEntryBuilderTest, TargetUpdateCanBuildMissingTakenActualBranch)
 {
     const Addr branch_pc = 0x3028;
     const Addr actual_target = 0xbeef;
@@ -292,9 +290,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
     resolved.isCond = false;
     resolved.target = actual_target;
 
-    const auto entries = buildTargetUpdateEntries(
-        {}, {resolved},
-        TargetUpdateEntryFilter::TakenControl);
+    const auto entries = buildTargetUpdateEntries({}, {resolved});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, branch_pc);
@@ -302,13 +298,11 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
 
-TEST(UpdateEntryBuilderTest, TargetTakenControlFallsThroughWithoutEntry)
+TEST(UpdateEntryBuilderTest, TargetUpdateWithoutActualBranchesIsEmpty)
 {
     const BTBEntry predicted = makeEntry(0x3030, false);
 
-    const auto entries = buildTargetUpdateEntries(
-        {predicted}, {},
-        TargetUpdateEntryFilter::TakenControl);
+    const auto entries = buildTargetUpdateEntries({predicted}, {});
 
     EXPECT_TRUE(entries.empty());
 }
@@ -414,8 +408,7 @@ TEST(UpdateEntryBuilderTest, TargetEntryKeepsOnlySmallBaseState)
     actual_branch.target = 0x9000;
 
     const auto entries = buildTargetUpdateEntries(
-        {stale_entry}, {actual_branch},
-        TargetUpdateEntryFilter::Any);
+        {stale_entry}, {actual_branch});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, actual_branch.pc);
@@ -739,8 +732,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     EXPECT_TRUE(direction_entries[1].mispred);
 
     const auto target_entries = buildTargetUpdateEntries(
-        pred_update_entries, update_branches,
-        TargetUpdateEntryFilter::Any);
+        pred_update_entries, update_branches);
 
     ASSERT_EQ(target_entries.size(), 1);
     EXPECT_EQ(target_entries[0].actualBranch.pc, taken.pc);
@@ -868,8 +860,7 @@ TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
     EXPECT_FALSE(direction_entries[0].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(
-        pred_update_entries, update_branches,
-        TargetUpdateEntryFilter::Any);
+        pred_update_entries, update_branches);
 
     EXPECT_TRUE(target_entries.empty());
 }

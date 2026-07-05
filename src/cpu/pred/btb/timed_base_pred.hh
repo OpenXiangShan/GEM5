@@ -84,10 +84,6 @@ class TimedBaseBTBPredictor: public SimObject
         const boost::dynamic_bitset<> &)
     {
     }
-    virtual TargetUpdateEntryFilter targetUpdateEntryFilter() const
-    {
-        return TargetUpdateEntryFilter::Any;
-    }
     virtual void updateWithTargetEntries(
         const std::vector<TargetUpdateEntry> &,
         const BranchUpdateContext &,

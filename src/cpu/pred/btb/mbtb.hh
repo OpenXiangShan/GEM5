@@ -162,10 +162,6 @@ class MBTB : public TimedBaseBTBPredictor
     {
         return PredictorUpdateProtocol::TargetEntries;
     }
-    TargetUpdateEntryFilter targetUpdateEntryFilter() const override
-    {
-        return TargetUpdateEntryFilter::Any;
-    }
     void updateWithTargetEntries(
         const std::vector<TargetUpdateEntry> &entries,
         const BranchUpdateContext &ctx,

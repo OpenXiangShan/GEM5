@@ -93,8 +93,7 @@ void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
     const auto update_entries = selectPredictedBTBEntriesForUpdate(
         stream.predBTBEntries, ctx, actual_branches, btb->predictWidth);
     const auto entries = buildTargetUpdateEntries(
-        update_entries, actual_branches,
-        btb->targetUpdateEntryFilter());
+        update_entries, actual_branches);
     btb->updateWithTargetEntries(entries, ctx, meta);
 }
 
@@ -234,8 +233,7 @@ TEST_F(BTBTest, EmptyTargetEntriesDoNotUpdateStats) {
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
 
-    const auto entries = buildTargetUpdateEntries(
-        {}, {}, mbtb->targetUpdateEntryFilter());
+    const auto entries = buildTargetUpdateEntries({}, {});
     EXPECT_TRUE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
@@ -262,8 +260,7 @@ TEST_F(BTBTest, NewEntryStatsCountActualTableMiss) {
     const uint64_t new_cond_entries = mbtb->btbStats.newEntryWithCond;
     const uint64_t new_uncond_entries = mbtb->btbStats.newEntryWithUncond;
 
-    const auto entries = buildTargetUpdateEntries(
-        {}, actual_branches, mbtb->targetUpdateEntryFilter());
+    const auto entries = buildTargetUpdateEntries({}, actual_branches);
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry), new_entries);
@@ -296,8 +293,7 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualBranchForHit) {
     const auto actual_branches =
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
     const auto entries = buildTargetUpdateEntries(
-        stagePreds[mbtb->getDelay()].btbEntries, actual_branches,
-        mbtb->targetUpdateEntryFilter());
+        stagePreds[mbtb->getDelay()].btbEntries, actual_branches);
     ASSERT_FALSE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
@@ -320,8 +316,7 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualTakenForMiss) {
 
     const auto actual_branches =
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
-    const auto entries = buildTargetUpdateEntries(
-        {}, actual_branches, mbtb->targetUpdateEntryFilter());
+    const auto entries = buildTargetUpdateEntries({}, actual_branches);
     ASSERT_FALSE(entries.empty());
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;

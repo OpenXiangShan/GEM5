@@ -224,8 +224,7 @@ auto ctx = makeBaseBranchUpdateContext(stream);
 const auto update_entries = selectPredictedBTBEntriesForUpdate(
     stream.predBTBEntries, ctx, actual_branches, btb->predictWidth);
 const auto entries = buildTargetUpdateEntries(
-    update_entries, actual_branches,
-    btb->targetUpdateEntryFilter());
+    update_entries, actual_branches);
 
 // Update BTB
 btb->updateWithTargetEntries(

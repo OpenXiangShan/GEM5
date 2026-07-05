@@ -379,18 +379,17 @@ UBTB::updateWithContext(const ResolvedBranch *taken_branch,
 }
 
 void
-UBTB::updateWithTargetEntries(
-    const std::vector<TargetUpdateEntry> &entries,
+UBTB::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
     const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);
     if (!meta) {
         return;
     }
-    const auto *taken_entry = findTakenTargetUpdateEntry(entries);
     updateWithContext(
-        taken_entry ? &taken_entry->actualBranch : nullptr, ctx, *meta);
+        findFirstTakenActualUpdateBranch(update_branches), ctx, *meta);
 }
 
 void

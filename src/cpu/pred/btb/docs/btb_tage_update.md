@@ -73,7 +73,7 @@ block 可表达范围，就跳过这次训练，而不是用错误历史硬造 p
 
 ## Target Entries
 
-`buildTargetUpdateEntries()` 构造给 MBTB、ITTAGE 等 target predictor 消费的训练
+`buildTargetUpdateEntries()` 构造给 MBTB、ABTB 等 target predictor 消费的训练
 entry。
 
 输入包括：
