@@ -432,11 +432,11 @@ void
 MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
                      const BranchUpdateContext &ctx)
 {
-    const auto &entry = update_entry.writeBaseEntry;
+    const auto &actual_branch = update_entry.actualBranch;
     btbStats.updateTotal++;
     if (update_entry.synthesizedFromActual) {
         btbStats.newEntry++;
-        if (entry.isCond) {
+        if (actual_branch.isCond) {
             btbStats.newEntryWithCond++;
         } else {
             btbStats.newEntryWithUncond++;
@@ -444,19 +444,19 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
     }
 
     // Select SRAM based on entry PC's 32B-aligned address
-    Addr alignedPC = entry.pc & ~(blockSize - 1);
+    Addr alignedPC = actual_branch.pc & ~(blockSize - 1);
     int sram_id = getSRAMId(alignedPC);
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
     // Calculate index and tag for this entry
-    Addr btb_idx = getIndex(entry.pc, ctx.asidHash);
+    Addr btb_idx = getIndex(actual_branch.pc, ctx.asidHash);
 
     // Look for matching entry in the target SRAM
     bool found = false;
     auto it = target_sram[btb_idx].begin();
     for (; it != target_sram[btb_idx].end(); it++) {
-        if (*it == entry) {
+        if (it->pc == actual_branch.pc) {
             found = true;
             break;
         }
@@ -466,7 +466,7 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
     int vc_idx = -1;
     for (int i = 0; i < (int)victimCache.size(); i++) {
         auto &vc_entry = victimCache[i];
-        if (vc_entry.valid && vc_entry.pc == entry.pc) {    // pc is tag compared
+        if (vc_entry.valid && vc_entry.pc == actual_branch.pc) {
             found_in_vc = true;
             vc_idx = i;
             break;
@@ -482,7 +482,8 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
 
     const auto entry_to_write =
         buildUpdatedTargetEntry(
-            update_entry, existing_ptr, getTag(entry.pc, ctx.asidHash));
+            update_entry, existing_ptr,
+            getTag(actual_branch.pc, ctx.asidHash));
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {

@@ -268,6 +268,29 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
 
+TEST(UpdateEntryBuilderTest, TargetFilterUsesActualBranchType)
+{
+    BTBEntry stale_direct = makeEntry(0x3014, false);
+    stale_direct.isIndirect = false;
+    stale_direct.isDirect = true;
+
+    ResolvedBranch resolved =
+        makeResolvedBranch(stale_direct.pc, true, false);
+    resolved.isCond = false;
+    resolved.isDirect = false;
+    resolved.isIndirect = true;
+    resolved.isReturn = false;
+
+    const auto entries = buildTargetUpdateEntries(
+        {stale_direct}, {resolved},
+        TargetUpdateEntryFilter::IndirectNonReturn);
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].actualBranch.pc, stale_direct.pc);
+    EXPECT_TRUE(entries[0].actualBranch.isIndirect);
+    EXPECT_FALSE(entries[0].actualBranch.isReturn);
+}
+
 TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
 {
     const BTBEntry first = makeEntry(0x3018, false);
@@ -372,6 +395,36 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
     EXPECT_EQ(written.pc, indirect.pc);
     EXPECT_EQ(written.target, actual_branch.target);
     EXPECT_EQ(written.tag, 0x40);
+}
+
+TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualBranchIdentity)
+{
+    BTBEntry stale_direct = makeEntry(0x3038, false);
+    stale_direct.isCond = false;
+    stale_direct.isDirect = true;
+    stale_direct.isIndirect = false;
+    stale_direct.size = 2;
+
+    ResolvedBranch actual_branch =
+        makeResolvedBranch(stale_direct.pc, true, false);
+    actual_branch.isCond = true;
+    actual_branch.isDirect = false;
+    actual_branch.isIndirect = false;
+    actual_branch.isCall = true;
+    actual_branch.size = 4;
+    actual_branch.target = 0x7000;
+
+    const TargetUpdateEntry update{
+        stale_direct, false, actual_branch};
+    const auto written = buildUpdatedTargetEntry(update, nullptr, 0x48);
+
+    EXPECT_EQ(written.pc, actual_branch.pc);
+    EXPECT_TRUE(written.isCond);
+    EXPECT_FALSE(written.isDirect);
+    EXPECT_TRUE(written.isCall);
+    EXPECT_EQ(written.size, actual_branch.size);
+    EXPECT_EQ(written.target, actual_branch.target);
+    EXPECT_EQ(written.tag, 0x48);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)

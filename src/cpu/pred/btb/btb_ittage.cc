@@ -270,9 +270,8 @@ BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
 
     // update each branch
     for (const auto &update_entry : entries) {
-        const auto &btb_entry = update_entry.writeBaseEntry;
         bool this_indirect_actual_taken = update_entry.actualBranch.taken;
-        auto pred_it = preds.find(btb_entry.pc);
+        auto pred_it = preds.find(update_entry.actualBranch.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
@@ -405,7 +404,9 @@ BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                     if (allocate[ti - startTable]) {
                         DPRINTF(ITTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
                             ti, newIndex, newTag, 2);
-                        newEntry = TageEntry(newTag, exe_target, 2, btb_entry.pc);
+                        newEntry = TageEntry(
+                            newTag, exe_target, 2,
+                            update_entry.actualBranch.pc);
                         ittageStats.updateAllocSuccess++;
                         break; // allocate only 1 entry
                     }

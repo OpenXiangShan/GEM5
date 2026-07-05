@@ -520,13 +520,13 @@ void
 AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
                          const TargetUpdateEntry &update_entry)
 {
-    const auto &entry = update_entry.writeBaseEntry;
+    const auto &actual_branch = update_entry.actualBranch;
 
     // Look for matching entry
     bool found = false;
     auto it = btb[btb_idx].begin();
     for (; it != btb[btb_idx].end(); it++) {
-        if (*it == entry) {
+        if (it->pc == actual_branch.pc) {
             found = true;
             break;
         }

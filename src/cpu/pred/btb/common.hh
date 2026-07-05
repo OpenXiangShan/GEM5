@@ -395,25 +395,40 @@ updateTargetEntryCounter(int &ctr, bool taken)
     }
 }
 
+inline void
+applyActualBranchIdentity(BTBEntry &entry, const ResolvedBranch &branch)
+{
+    entry.pc = branch.pc;
+    entry.isCond = branch.isCond;
+    entry.isIndirect = branch.isIndirect;
+    entry.isDirect = branch.isDirect;
+    entry.isCall = branch.isCall;
+    entry.isReturn = branch.isReturn;
+    entry.size = branch.size;
+    entry.valid = true;
+}
+
 inline BTBEntry
 buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
                         const BTBEntry *existing_entry,
                         Addr tag)
 {
     const auto &requested_entry = update_entry.writeBaseEntry;
+    const auto &actual_branch = update_entry.actualBranch;
     BTBEntry entry_to_write =
-        (requested_entry.isCond && existing_entry) ?
+        (actual_branch.isCond && existing_entry) ?
             BTBEntry(*existing_entry) : requested_entry;
 
+    applyActualBranchIdentity(entry_to_write, actual_branch);
     entry_to_write.tag = tag;
 
-    if (entry_to_write.isCond) {
+    if (actual_branch.isCond) {
         updateTargetEntryCounter(
-            entry_to_write.ctr, update_entry.actualBranch.taken);
+            entry_to_write.ctr, actual_branch.taken);
     }
 
-    if (update_entry.actualBranch.taken) {
-        entry_to_write.target = update_entry.actualBranch.target;
+    if (actual_branch.taken) {
+        entry_to_write.target = actual_branch.target;
     }
 
     return entry_to_write;
@@ -506,7 +521,7 @@ buildTargetUpdateEntries(
             keep = true;
             break;
           case TargetUpdateEntryFilter::IndirectNonReturn:
-            keep = entry.isIndirect && !entry.isReturn;
+            keep = actual_branch.isIndirect && !actual_branch.isReturn;
             break;
           case TargetUpdateEntryFilter::TakenControl:
             keep = actual_branch.taken;
@@ -522,7 +537,7 @@ buildTargetUpdateEntries(
         return std::any_of(
             entries.begin(), entries.end(),
             [pc](const auto &entry) {
-                return entry.writeBaseEntry.pc == pc;
+                return entry.actualBranch.pc == pc;
             });
     };
     auto add_new_target_branch = [&](const ResolvedBranch &branch) {
