@@ -47,19 +47,19 @@ BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
 }
 
 ResolvedBranch
-createResolvedBranch(const BranchInfo &branch, bool taken, bool mispred)
+createResolvedBranch(const BTBEntry &entry, bool taken, bool mispred)
 {
     ResolvedBranch resolved;
-    resolved.pc = branch.pc;
-    resolved.target = branch.target;
+    resolved.pc = entry.pc;
+    resolved.target = entry.target;
     resolved.taken = taken;
     resolved.mispred = mispred;
-    resolved.isCond = branch.isCond;
-    resolved.isIndirect = branch.isIndirect;
-    resolved.isDirect = branch.isDirect;
-    resolved.isCall = branch.isCall;
-    resolved.isReturn = branch.isReturn;
-    resolved.size = branch.size;
+    resolved.isCond = entry.isCond;
+    resolved.isIndirect = entry.isIndirect;
+    resolved.isDirect = entry.isDirect;
+    resolved.isCall = entry.isCall;
+    resolved.isReturn = entry.isReturn;
+    resolved.size = entry.size;
     return resolved;
 }
 
@@ -78,7 +78,7 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
     FetchTarget stream;
     stream.startPC = startPC;
     stream.addResolvedBranch(
-        createResolvedBranch(BranchInfo(entry), taken, false));
+        createResolvedBranch(entry, taken, false));
     stream.resolved = true;
     stream.predBranchInfo = entry; // keep fields consistent
     stream.predMetas[0] = meta;
