@@ -262,12 +262,21 @@ class UBTB : public TimedBaseBTBPredictor
      * @param oldEntry Iterator to the entry to replace
      * @param newPrediction The new prediction to store
      */
+    UBTBIter selectReplacementEntry();
     void replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry,
                          Addr startAddr, uint8_t asidHash);
+    void replaceOldEntryFromActualBranch(
+        UBTBIter oldEntryIter, const ResolvedBranch &actualBranch,
+        Addr startAddr, uint8_t asidHash);
 
-    //using the FB final taken branch to update uBTB
-    void updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
-                        const Addr startAddr, uint8_t asidHash);
+    // Reconcile the S1 uBTB prediction with the final S3 prediction.
+    void updateNewEntryFromS3Pred(
+        UBTBIter oldEntryIter, const BTBEntry &takenEntry,
+        const Addr startAddr, uint8_t asidHash);
+    // Reconcile the S1 uBTB prediction with actual resolve/commit facts.
+    void updateNewEntryFromActualBranch(
+        UBTBIter oldEntryIter, const ResolvedBranch *takenBranch,
+        const Addr startAddr, uint8_t asidHash);
 
 
     /** The uBTB structure:
