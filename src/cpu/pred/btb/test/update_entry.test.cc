@@ -479,7 +479,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
         resolved_second,
         makeResolvedBranch(after.pc, false, false),
     });
-    const auto update_btb_entries =
+    const auto pred_update_entries =
         makeUpdateEntries(stream, 32, update_branches);
     const auto *summary_branch =
         findActualUpdateSummaryBranch(update_branches);
@@ -495,11 +495,11 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     EXPECT_EQ(boundary_branch->pc, second.pc);
     EXPECT_TRUE(boundary_branch->mispred);
 
-    ASSERT_EQ(update_btb_entries.size(), 2);
-    EXPECT_EQ(update_btb_entries[0].pc, first.pc);
-    EXPECT_EQ(update_btb_entries[1].pc, second.pc);
-    EXPECT_FALSE(update_btb_entries[0].resolved);
-    EXPECT_FALSE(update_btb_entries[1].resolved);
+    ASSERT_EQ(pred_update_entries.size(), 2);
+    EXPECT_EQ(pred_update_entries[0].pc, first.pc);
+    EXPECT_EQ(pred_update_entries[1].pc, second.pc);
+    EXPECT_FALSE(pred_update_entries[0].resolved);
+    EXPECT_FALSE(pred_update_entries[1].resolved);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, first.pc);
     EXPECT_EQ(update_branches[1].pc, second.pc);
@@ -644,18 +644,18 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
 
     const auto update_branches =
         makeUpdateBranchPrefix({missing, taken});
-    const auto update_btb_entries =
+    const auto pred_update_entries =
         makeUpdateEntries(stream, 32, update_branches);
 
-    ASSERT_EQ(update_btb_entries.size(), 1);
-    EXPECT_EQ(update_btb_entries[0].pc, predicted.pc);
-    EXPECT_FALSE(update_btb_entries[0].resolved);
+    ASSERT_EQ(pred_update_entries.size(), 1);
+    EXPECT_EQ(pred_update_entries[0].pc, predicted.pc);
+    EXPECT_FALSE(pred_update_entries[0].resolved);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, missing.pc);
     EXPECT_EQ(update_branches[1].pc, taken.pc);
 
     const auto direction_entries = buildDirectionUpdateEntries(
-        update_btb_entries, update_branches);
+        pred_update_entries, update_branches);
 
     ASSERT_EQ(direction_entries.size(), 2);
     EXPECT_EQ(direction_entries[0].pc, missing.pc);
@@ -668,7 +668,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     EXPECT_TRUE(direction_entries[1].mispred);
 
     const auto target_entries = buildTargetUpdateEntries(
-        update_btb_entries, update_branches,
+        pred_update_entries, update_branches,
         TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(target_entries.size(), 1);
@@ -733,13 +733,13 @@ TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
     stream.startPC = 0x1000;
 
     const auto update_branches = makeUpdateBranchPrefix({missing});
-    const auto update_btb_entries =
+    const auto pred_update_entries =
         makeUpdateEntries(stream, 32, update_branches);
 
-    ASSERT_TRUE(update_btb_entries.empty());
+    ASSERT_TRUE(pred_update_entries.empty());
 
     const auto direction_entries = buildDirectionUpdateEntries(
-        update_btb_entries, update_branches);
+        pred_update_entries, update_branches);
 
     ASSERT_EQ(direction_entries.size(), 1);
     EXPECT_EQ(direction_entries[0].pc, missing.pc);
@@ -747,7 +747,7 @@ TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
     EXPECT_FALSE(direction_entries[0].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(
-        update_btb_entries, update_branches,
+        pred_update_entries, update_branches,
         TargetUpdateEntryFilter::Any);
 
     EXPECT_TRUE(target_entries.empty());

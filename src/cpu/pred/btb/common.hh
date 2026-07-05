@@ -459,16 +459,16 @@ findActualUpdateBranch(
 
 inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
-    const std::vector<BTBEntry> &update_btb_entries,
+    const std::vector<BTBEntry> &pred_update_entries,
     const std::vector<ResolvedBranch> &actual_update_branches)
 {
     std::vector<DirectionUpdateEntry> entries;
-    entries.reserve(update_btb_entries.size() +
+    entries.reserve(pred_update_entries.size() +
                     actual_update_branches.size());
 
-    const auto has_update_entry_pc = [&](Addr pc) {
+    const auto has_pred_entry_pc = [&](Addr pc) {
         return std::any_of(
-            update_btb_entries.begin(), update_btb_entries.end(),
+            pred_update_entries.begin(), pred_update_entries.end(),
             [pc](const auto &entry) { return entry.pc == pc; });
     };
 
@@ -482,7 +482,7 @@ buildDirectionUpdateEntries(
             is_new_entry});
     };
 
-    for (const auto &entry : update_btb_entries) {
+    for (const auto &entry : pred_update_entries) {
         const auto *actual_branch =
             findActualUpdateBranch(actual_update_branches, entry.pc);
         if (!entry.isCond || !actual_branch) {
@@ -491,7 +491,7 @@ buildDirectionUpdateEntries(
         add_entry(*actual_branch, entry.ctr >= 0, false);
     }
     for (const auto &branch : actual_update_branches) {
-        if (!branch.isCond || has_update_entry_pc(branch.pc)) {
+        if (!branch.isCond || has_pred_entry_pc(branch.pc)) {
             continue;
         }
         // Preserve the old BTBEntry(BranchInfo) adapter behavior: missing
@@ -504,12 +504,12 @@ buildDirectionUpdateEntries(
 
 inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
-    const std::vector<BTBEntry> &update_btb_entries,
+    const std::vector<BTBEntry> &pred_update_entries,
     const std::vector<ResolvedBranch> &actual_update_branches,
     TargetUpdateEntryFilter filter)
 {
     std::vector<TargetUpdateEntry> entries;
-    entries.reserve(update_btb_entries.size() +
+    entries.reserve(pred_update_entries.size() +
                     actual_update_branches.size());
 
     auto add_entry = [&](BTBEntry entry, const ResolvedBranch &actual_branch,
@@ -552,7 +552,7 @@ buildTargetUpdateEntries(
         add_entry(entry, branch, true);
     };
 
-    for (const auto &entry : update_btb_entries) {
+    for (const auto &entry : pred_update_entries) {
         const auto *actual_branch =
             findActualUpdateBranch(actual_update_branches, entry.pc);
         if (!actual_branch) {
