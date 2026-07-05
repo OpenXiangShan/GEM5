@@ -136,6 +136,10 @@ void updateWithBranchUpdateContext(
 - **For Return Instructions**: Executes `pop_stack()`
   - Commits the pop operation to the committed stack
 
+The commit/update path consumes the resolved branch prefix directly. RAS update
+first selects the actual taken branch from that prefix, then only call and return
+branches push or pop the stack.
+
 ## Stack Operations
 
 ### Speculative Operations

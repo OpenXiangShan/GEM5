@@ -355,6 +355,20 @@ findActualUpdateSummaryBranch(
 }
 
 inline const ResolvedBranch *
+findTakenReturnStackUpdateBranch(
+    const std::vector<ResolvedBranch> &branches)
+{
+    const auto *branch = findActualUpdateSummaryBranch(branches);
+    return branch && branch->taken ? branch : nullptr;
+}
+
+inline bool
+isReturnStackActionBranch(const ResolvedBranch &branch)
+{
+    return branch.isCall || branch.isReturn;
+}
+
+inline const ResolvedBranch *
 findMispredictedActualUpdateBranch(
     const std::vector<ResolvedBranch> &branches)
 {

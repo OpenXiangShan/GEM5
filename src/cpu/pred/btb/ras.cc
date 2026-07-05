@@ -216,10 +216,9 @@ BTBRAS::updateWithBranchUpdateContext(
     assert(tid < numThreads);
     auto &state = threadStates[tid];
     auto meta_ptr = std::static_pointer_cast<RASMeta>(prediction_meta);
-    const auto *summary_branch =
-        findActualUpdateSummaryBranch(update_branches);
-    const bool actual_taken = summary_branch && summary_branch->taken;
-    if (actual_taken) {
+    const auto *actual_ras_branch =
+        findTakenReturnStackUpdateBranch(update_branches);
+    if (actual_ras_branch) {
         if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
             DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
@@ -227,19 +226,19 @@ BTBRAS::updateWithBranchUpdateContext(
         } else
             DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
-        if (summary_branch->isCall) {
+        if (actual_ras_branch->isCall) {
             DPRINTF(RAS, "real update call meta TOSR %d TOSW %d\n entry PC %lx",
                 meta_ptr->TOSR, meta_ptr->TOSW, ctx.startPC);
-            Addr retAddr = summary_branch->pc + summary_branch->size;
+            Addr retAddr = actual_ras_branch->pc + actual_ras_branch->size;
             push_stack(tid, retAddr);
             state.BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
-        if (summary_branch->isReturn) {
+        if (actual_ras_branch->isReturn) {
             DPRINTF(RAS, "update ret entry PC %lx\n", ctx.startPC);
             pop_stack(tid);
         }
     }
-    if (summary_branch && (summary_branch->isCall || summary_branch->isReturn)) {
+    if (actual_ras_branch && isReturnStackActionBranch(*actual_ras_branch)) {
         printStack("after update(commit)", tid);
     }
 }
