@@ -265,9 +265,7 @@ struct DirectionUpdateEntry
 {
     // Actual direction facts come from the resolved branch record. baseTaken
     // and isNewEntry describe the prediction-time update base.
-    Addr pc = 0;
-    bool actualTaken = false;
-    bool mispred = false;
+    ResolvedBranch actualBranch;
     bool baseTaken = false;
     bool isNewEntry = false;
 };
@@ -278,9 +276,7 @@ makeDirectionUpdateEntry(const ResolvedBranch &actual_branch,
                          bool is_new_entry)
 {
     DirectionUpdateEntry entry;
-    entry.pc = actual_branch.pc;
-    entry.actualTaken = actual_branch.taken;
-    entry.mispred = actual_branch.mispred;
+    entry.actualBranch = actual_branch;
     entry.baseTaken = base_taken;
     entry.isNewEntry = is_new_entry;
     return entry;
@@ -313,11 +309,12 @@ findFirstTakenDirectionUpdateEntry(
 {
     const DirectionUpdateEntry *first_taken = nullptr;
     for (const auto &entry : entries) {
-        if (!entry.actualTaken) {
+        if (!entry.actualBranch.taken) {
             continue;
         }
         // Branches in one fetch block are ordered by PC.
-        if (!first_taken || entry.pc < first_taken->pc) {
+        if (!first_taken ||
+            entry.actualBranch.pc < first_taken->actualBranch.pc) {
             first_taken = &entry;
         }
     }

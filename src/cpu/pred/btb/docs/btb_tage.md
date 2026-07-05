@@ -147,8 +147,9 @@ void updateWithDirectionEntries(
     
     // Update each branch entry
     for (const auto &update_entry : entries) {
-        Addr branch_pc = update_entry.pc;
-        bool actual_taken = update_entry.actualTaken;
+        const auto &actual_branch = update_entry.actualBranch;
+        Addr branch_pc = actual_branch.pc;
+        bool actual_taken = actual_branch.taken;
         auto pred_it = meta->preds.find(branch_pc);
         
         if (pred_it == meta->preds.end()) {
@@ -324,8 +325,13 @@ stream.predMetas[0] = meta;  // Must include metadata from prediction phase
 
 // Update predictor state through explicit DirectionUpdateEntry inputs.
 auto update_ctx = makeBaseBranchUpdateContext(stream);
+ResolvedBranch actual_branch;
+actual_branch.pc = branch_info.pc;
+actual_branch.taken = actual_taken;
+actual_branch.mispred = mispred;
+actual_branch.isCond = true;
 const std::vector<DirectionUpdateEntry> entries = {
-    {branch_info.pc, actual_taken, mispred, base_taken, is_new_entry}
+    makeDirectionUpdateEntry(actual_branch, base_taken, is_new_entry)
 };
 tage->updateWithDirectionEntries(entries, update_ctx, meta, stream.phistory);
 ```
