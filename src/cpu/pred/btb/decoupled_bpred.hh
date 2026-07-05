@@ -752,7 +752,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &phistory,
         const std::queue<Addr> &previous_pcs,
-        const std::vector<BTBEntry> &update_btb_entries,
+        const std::vector<BTBEntry> &pred_update_entries,
         const std::vector<ResolvedBranch> &update_branches);
     bool updatePredictorComponents(
         const std::array<std::shared_ptr<void>, 8> &prediction_metas,
