@@ -67,7 +67,7 @@ makeUpdateEntries(const FetchTarget &stream,
     const auto ctx = makeBaseBranchUpdateContext(stream);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
         ctx.startPC, branches, predict_width);
-    return makeUpdateBTBEntries(
+    return buildUpdateBTBEntries(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 }
 

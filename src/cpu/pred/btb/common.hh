@@ -915,15 +915,6 @@ shouldUpdateBpuPredictors(
     return !actual_update_branches.empty();
 }
 
-inline std::vector<BTBEntry>
-makeUpdateBTBEntries(const std::vector<BTBEntry> &pred_btb_entries,
-                     Addr start_pc,
-                     Addr update_end_inst_pc)
-{
-    return buildUpdateBTBEntries(
-        pred_btb_entries, start_pc, update_end_inst_pc);
-}
-
 /**
  * @brief Full branch prediction combining predictions from all predictors
  *
