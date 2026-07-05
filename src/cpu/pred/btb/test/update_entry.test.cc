@@ -97,10 +97,8 @@ makeUpdateEntries(const FetchTarget &stream,
                   const std::vector<ResolvedBranch> &branches)
 {
     const auto ctx = makeBaseBranchUpdateContext(stream);
-    const auto update_end_inst_pc = buildUpdateEndInstPC(
-        ctx.startPC, branches, predict_width);
     return selectPredictedBTBEntriesForUpdate(
-        stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
+        stream.predBTBEntries, ctx, branches, predict_width);
 }
 
 } // namespace
@@ -497,6 +495,28 @@ TEST(UpdateEntryBuilderTest, SelectPredictedBTBEntriesKeepsValidPrefix)
 
     const auto entries = selectPredictedBTBEntriesForUpdate(
         {before, first, invalid, second, after}, 0x1000, 0x1008);
+
+    ASSERT_EQ(entries.size(), 2);
+    EXPECT_EQ(entries[0].pc, first.pc);
+    EXPECT_EQ(entries[1].pc, second.pc);
+}
+
+TEST(UpdateEntryBuilderTest, SelectPredictedBTBEntriesUsesUpdateContext)
+{
+    const BTBEntry first = makeEntry(0x1000, true);
+    const BTBEntry second = makeEntry(0x1008, true);
+    const BTBEntry after = makeEntry(0x1010, true);
+
+    BranchUpdateContext ctx;
+    ctx.startPC = 0x1000;
+    const auto update_branches = makeUpdateBranchPrefix({
+        makeResolvedBranch(first.pc, false, false),
+        makeResolvedBranch(second.pc, true, true),
+        makeResolvedBranch(after.pc, false, false),
+    });
+
+    const auto entries = selectPredictedBTBEntriesForUpdate(
+        {first, second, after}, ctx, update_branches, 32);
 
     ASSERT_EQ(entries.size(), 2);
     EXPECT_EQ(entries[0].pc, first.pc);

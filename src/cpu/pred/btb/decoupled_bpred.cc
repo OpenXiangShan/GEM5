@@ -943,11 +943,9 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         return true;
     }
 
-    const auto update_end_inst_pc = buildUpdateEndInstPC(
-        update_ctx.startPC, update_branches, predictWidth);
     const auto pred_update_entries =
         selectPredictedBTBEntriesForUpdate(
-            pred_btb_entries, update_ctx.startPC, update_end_inst_pc);
+            pred_btb_entries, update_ctx, update_branches, predictWidth);
 
     if (resolved_update &&
         !canResolveUpdateComponents(update_ctx.startPC)) {

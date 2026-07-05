@@ -650,6 +650,19 @@ selectPredictedBTBEntriesForUpdate(
     return entries;
 }
 
+inline std::vector<BTBEntry>
+selectPredictedBTBEntriesForUpdate(
+    const std::vector<BTBEntry> &pred_btb_entries,
+    const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &actual_update_branches,
+    unsigned predict_width)
+{
+    const auto update_end_inst_pc = buildUpdateEndInstPC(
+        ctx.startPC, actual_update_branches, predict_width);
+    return selectPredictedBTBEntriesForUpdate(
+        pred_btb_entries, ctx.startPC, update_end_inst_pc);
+}
+
 /**
  * @brief Tage prediction info for MGSC
  */
