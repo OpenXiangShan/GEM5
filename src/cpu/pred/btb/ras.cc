@@ -160,7 +160,7 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
 void
 BTBRAS::recoverState(
     const FetchTarget &entry,
-    const ResolvedBranch &actual_branch)
+    const ResolvedBranch *actual_branch)
 {
     const ThreadID tid = entry.tid;
     assert(tid < numThreads);
@@ -178,25 +178,28 @@ BTBRAS::recoverState(
     state.TOSW = meta_ptr->TOSW;
     state.ssp = meta_ptr->ssp;
     state.sctr = meta_ptr->sctr;
-    Addr retAddr = actual_branch.pc + actual_branch.size;
+    const Addr retAddr =
+        actual_branch ? actual_branch->pc + actual_branch->size : 0;
 
     // do push & pops on control squash
-    if (actual_branch.taken) {
-        if (actual_branch.isCall) {
+    if (actual_branch && actual_branch->taken) {
+        if (actual_branch->isCall) {
             push(tid, retAddr);
         }
-        if (actual_branch.isReturn) {
+        if (actual_branch->isReturn) {
             pop(tid);
             //TOSW = (TOSR + 1) % numInflightEntries;
         }
     }
 
     
-    if (actual_branch.taken) {
-        DPRINTF(RAS, "isCall %d, isRet %d\n", actual_branch.isCall, actual_branch.isReturn);
-        if (actual_branch.isReturn) {
+    if (actual_branch && actual_branch->taken) {
+        DPRINTF(RAS, "isCall %d, isRet %d\n",
+                actual_branch->isCall, actual_branch->isReturn);
+        if (actual_branch->isReturn) {
             DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
-                actual_branch.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
+                actual_branch->target, meta_ptr->target, entry.predTaken,
+                entry.predBranchInfo.target);
         }
         printStack("after recoverState", tid);
     }

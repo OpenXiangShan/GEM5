@@ -127,7 +127,7 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
 void
 BTBuRAS::recoverState(
     const FetchTarget &entry,
-    const ResolvedBranch &actual_branch)
+    const ResolvedBranch *actual_branch)
 {
     auto &stack = specStack;
     auto &sp = specSp;
@@ -136,19 +136,20 @@ BTBuRAS::recoverState(
     auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
     if (enableDB) {
         SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER,
-                         entry.startPC, actual_branch.pc, 0,
+                         entry.startPC,
+                         actual_branch ? actual_branch->pc : 0, 0,
                          sp, stack[sp].retAddr, stack[sp].ctr);
         specRasTrace->write_record(rec);
     }
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
-    if (actual_branch.taken) {
+    if (actual_branch && actual_branch->taken) {
         // do push & pops on control squash
-        if (actual_branch.isReturn) {
+        if (actual_branch->isReturn) {
             if (enableDB) {
                 SpecRASTrace rec(When::REDIRECT, RAS_OP::POP,
-                                 entry.startPC, actual_branch.pc,
+                                 entry.startPC, actual_branch->pc,
                                  stack[sp].retAddr, sp,
                                  stack[sp].retAddr, stack[sp].ctr);
                 specRasTrace->write_record(rec);
@@ -156,11 +157,11 @@ BTBuRAS::recoverState(
             DPRINTF(URAS, "recover stack pop at pc 0x%llx target %llx\n", entry.startPC, stack[sp].retAddr);
             pop(stack, sp);
         }
-        if (actual_branch.isCall) {
-            Addr retAddr = actual_branch.pc + actual_branch.size;
+        if (actual_branch->isCall) {
+            Addr retAddr = actual_branch->pc + actual_branch->size;
             if (enableDB) {
                 SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH,
-                                 entry.startPC, actual_branch.pc, retAddr,
+                                 entry.startPC, actual_branch->pc, retAddr,
                                  sp, stack[sp].retAddr, stack[sp].ctr);
                 specRasTrace->write_record(rec);
             }

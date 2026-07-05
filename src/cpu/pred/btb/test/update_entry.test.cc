@@ -422,6 +422,46 @@ TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)
     EXPECT_EQ(entries[1].pc, second.pc);
 }
 
+TEST(UpdateEntryBuilderTest, SquashHistoryUpdateAcceptsNoActualBranch)
+{
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.predBTBEntries = {
+        makeEntry(0x1000, true, true),
+        makeEntry(0x1008, true, true),
+    };
+
+    const auto ghist_without_actual =
+        stream.getGHistUpdateDuringSquash(0x1010, nullptr);
+    const auto bwhist_without_actual =
+        stream.getBwHistUpdateDuringSquash(0x1010, nullptr);
+    const auto phist_without_actual =
+        stream.getPHistUpdateDuringSquash(0x1010, nullptr);
+
+    EXPECT_EQ(ghist_without_actual.shamt, 2);
+    EXPECT_FALSE(ghist_without_actual.taken);
+    EXPECT_EQ(bwhist_without_actual.shamt, 2);
+    EXPECT_FALSE(bwhist_without_actual.taken);
+    EXPECT_FALSE(phist_without_actual.taken);
+
+    auto actual_branch = makeResolvedBranch(0x1010, true, true);
+    actual_branch.target = 0x0ff0;
+    const auto ghist_with_actual =
+        stream.getGHistUpdateDuringSquash(0x1010, &actual_branch);
+    const auto bwhist_with_actual =
+        stream.getBwHistUpdateDuringSquash(0x1010, &actual_branch);
+    const auto phist_with_actual =
+        stream.getPHistUpdateDuringSquash(0x1010, &actual_branch);
+
+    EXPECT_EQ(ghist_with_actual.shamt, 3);
+    EXPECT_TRUE(ghist_with_actual.taken);
+    EXPECT_EQ(bwhist_with_actual.shamt, 3);
+    EXPECT_TRUE(bwhist_with_actual.taken);
+    EXPECT_TRUE(phist_with_actual.taken);
+    EXPECT_EQ(phist_with_actual.pc, actual_branch.pc);
+    EXPECT_EQ(phist_with_actual.target, actual_branch.target);
+}
+
 TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
 {
     const BTBEntry first = makeEntry(0x1000, true, false);

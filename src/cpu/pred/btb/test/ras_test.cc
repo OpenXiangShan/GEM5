@@ -245,8 +245,7 @@ TEST_F(RASTest, BasicRecovery) {
     recoverStream.predMetas[0] = initialMeta;
 
     // Recover to initial state
-    ResolvedBranch no_actual_branch;
-    ras->recoverState(recoverStream, no_actual_branch);
+    ras->recoverState(recoverStream, nullptr);
 
     // Check that we're back to initial state
     checkReturnTarget(0x1000, 0x80000000L);
@@ -429,7 +428,7 @@ TEST_F(RASTest, ComplexRecovery) {
     const ResolvedBranch actual_branch =
         makeActualBranch(0x1000, true, true, 4);
 
-    ras->recoverState(recoverStream, actual_branch);
+    ras->recoverState(recoverStream, &actual_branch);
 
     // Should be back to state with just one call
     checkReturnTarget(0x2000, 0x1004);
@@ -465,7 +464,7 @@ TEST_F(RASTest, CommitFlow) {
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, initialMeta, false);
     const ResolvedBranch actual_branch =
         makeActualBranch(0x1000, true, false, 4);
-    ras->recoverState(recoverStream, actual_branch);
+    ras->recoverState(recoverStream, &actual_branch);
 
     // After recovery, committed stack should be available
     checkReturnTarget(0x2000, 0x1004);
@@ -493,7 +492,7 @@ TEST_F(RASTest, MixedOperations) {
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, meta0, true);
     const ResolvedBranch actual_branch =
         makeActualBranch(0x1000, true, true, 4);
-    ras->recoverState(recoverStream, actual_branch);
+    ras->recoverState(recoverStream, &actual_branch);
 
     // Should have committed call1, but lose speculative call2 and call3
     checkReturnTarget(0x2000, 0x1004);

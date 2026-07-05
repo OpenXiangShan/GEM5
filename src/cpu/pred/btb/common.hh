@@ -759,7 +759,7 @@ struct FetchTarget
    }
 
     DirectionHistoryUpdate getGHistUpdateDuringSquash(
-        Addr squash_pc, const ResolvedBranch &actual_branch) const
+        Addr squash_pc, const ResolvedBranch *actual_branch) const
     {
         DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
@@ -767,15 +767,15 @@ struct FetchTarget
                 update.shamt++;
             }
         }
-        if (actual_branch.isCond) {
+        if (actual_branch && actual_branch->isCond) {
             update.shamt++;
-            update.taken = actual_branch.taken;
+            update.taken = actual_branch->taken;
         }
         return update;
     }
 
     DirectionHistoryUpdate getBwHistUpdateDuringSquash(
-        Addr squash_pc, const ResolvedBranch &actual_branch) const
+        Addr squash_pc, const ResolvedBranch *actual_branch) const
     {
         DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
@@ -783,22 +783,23 @@ struct FetchTarget
                 update.shamt++;
             }
         }
-        if (actual_branch.isCond) {
+        if (actual_branch && actual_branch->isCond) {
             update.shamt++;
             update.taken =
-                actual_branch.taken && (squash_pc > actual_branch.target);
+                actual_branch->taken && (squash_pc > actual_branch->target);
         }
         return update;
     }
 
     PathHistoryUpdate getPHistUpdateDuringSquash(
-        Addr squash_pc, const ResolvedBranch &actual_branch) const
+        Addr squash_pc, const ResolvedBranch *actual_branch) const
     {
         PathHistoryUpdate update;
-        update.taken = actual_branch.taken && actual_branch.pc == squash_pc;
+        update.taken = actual_branch &&
+            actual_branch->taken && actual_branch->pc == squash_pc;
         if (update.taken) {
             update.pc = squash_pc;
-            update.target = actual_branch.target;
+            update.target = actual_branch->target;
         }
         return update;
     }

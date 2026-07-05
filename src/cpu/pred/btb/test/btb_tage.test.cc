@@ -219,7 +219,7 @@ PathHistoryUpdate getActualPathUpdate(const FetchTarget& stream)
         return {};
     }
     return stream.getPHistUpdateDuringSquash(
-        stream.squashPC, *summary_branch);
+        stream.squashPC, summary_branch);
 }
 
 TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
@@ -360,11 +360,11 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         actual_branch.target = c.redirectPC;
 
         const auto ghist = stream.getGHistUpdateDuringSquash(
-            c.squashPC, actual_branch);
+            c.squashPC, &actual_branch);
         const auto bwhist = stream.getBwHistUpdateDuringSquash(
-            c.squashPC, actual_branch);
+            c.squashPC, &actual_branch);
         const auto phist = stream.getPHistUpdateDuringSquash(
-            c.squashPC, actual_branch);
+            c.squashPC, &actual_branch);
 
         EXPECT_EQ(ghist.shamt, c.expectedGHistShamt);
         EXPECT_EQ(ghist.taken, c.expectedGHistTaken);
@@ -1588,9 +1588,9 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     auto actual_branch = createResolvedBranch(entry, true, true);
     actual_branch.isCond = false;
     const auto ghist = stream.getGHistUpdateDuringSquash(
-        entry.pc, actual_branch);
+        entry.pc, &actual_branch);
     const auto phist = stream.getPHistUpdateDuringSquash(
-        entry.pc, actual_branch);
+        entry.pc, &actual_branch);
     EXPECT_EQ(ghist.shamt, 0);
     EXPECT_FALSE(ghist.taken);
     EXPECT_TRUE(phist.taken);

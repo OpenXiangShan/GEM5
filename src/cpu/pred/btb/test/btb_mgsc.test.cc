@@ -332,7 +332,7 @@ struct MgscHarness
 
             mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
             const auto actual_phist = recover_stream.getPHistUpdateDuringSquash(
-                entry.pc, actual_branch);
+                entry.pc, &actual_branch);
             mgsc.recoverPHist(phr, recover_stream, actual_phist);
 
             bool actual_bw_taken = actual_taken && (entry.target < entry.pc);

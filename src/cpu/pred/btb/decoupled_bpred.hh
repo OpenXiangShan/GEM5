@@ -726,7 +726,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         FetchTarget &target,
         unsigned target_id,
         const PCStateBase &squash_pc,
-        const ResolvedBranch &actual_branch,
+        const ResolvedBranch *actual_branch,
         SquashType squash_type);
 
     // Common logic for squash handling

@@ -618,8 +618,10 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     ftq.squashAfter(target_id, tid);
 
     // Recover history using the extracted function
-    recoverHistoryForSquash(target, target_id, squash_pc, actual_branch,
-                            squash_type);
+    const auto *actual_control_branch =
+        (squash_type == SQUASH_CTRL && static_inst) ? &actual_branch : nullptr;
+    recoverHistoryForSquash(target, target_id, squash_pc,
+                            actual_control_branch, squash_type);
 
     // Clear predictions for next cycle
     clearPreds(tid);
@@ -1207,7 +1209,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     FetchTarget &target,
     unsigned target_id,
     const PCStateBase &squash_pc,
-    const ResolvedBranch &actual_branch,
+    const ResolvedBranch *actual_branch,
     SquashType squash_type)
 {
     ThreadID tid = target.tid;
@@ -1273,13 +1275,8 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
                 s0LHistory[localHistoryIndex]);
 
     // Update history manager with appropriate branch info
-    if (squash_type == SQUASH_CTRL) {
-        historyManagers[tid].squash(target_id, ghist_update,
-                                    phist_update, &actual_branch);
-    } else {
-        historyManagers[tid].squash(target_id, ghist_update,
-                                    phist_update, nullptr);
-    }
+    historyManagers[tid].squash(target_id, ghist_update, phist_update,
+                                actual_branch);
 
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG

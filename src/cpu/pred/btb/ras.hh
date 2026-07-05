@@ -92,7 +92,7 @@ namespace btb_pred {
 
         void recoverState(
             const FetchTarget &entry,
-            const ResolvedBranch &actual_branch);
+            const ResolvedBranch *actual_branch);
 
         PredictorUpdateProtocol updateProtocol() const override
         {

@@ -118,7 +118,7 @@ public:
     // 2. do push & pops on control squash based on the actual branch type (call/return)
     void recoverState(
         const FetchTarget &entry,
-        const ResolvedBranch &actual_branch)
+        const ResolvedBranch *actual_branch)
     {
         auto &stack = specStack;
         auto &sp = specSp;
@@ -127,13 +127,13 @@ public:
         sp = meta_ptr->sp;
         stack[sp] = meta_ptr->tos;
 
-        if (actual_branch.taken) {
+        if (actual_branch && actual_branch->taken) {
             // do push & pops on control squash
-            if (actual_branch.isReturn) {
+            if (actual_branch->isReturn) {
                 pop(stack, sp);
             }
-            if (actual_branch.isCall) {
-                Addr retAddr = actual_branch.pc + actual_branch.size;
+            if (actual_branch->isCall) {
+                Addr retAddr = actual_branch->pc + actual_branch->size;
                 push(retAddr, stack, sp);
             }
         }
@@ -411,8 +411,7 @@ TEST_F(URASTest, RecoverStateBasic) {
     meta.tos = uRASEntry(0x2000);  // set different tos
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
 
-    ResolvedBranch no_actual_branch;
-    uras->recoverState(entry, no_actual_branch);
+    uras->recoverState(entry, nullptr);
 
     // verify recovery result
     EXPECT_EQ(sp, 0);  // sp should be restored
@@ -439,7 +438,7 @@ TEST_F(URASTest, RecoverStateReturn) {
         makeActualBranch(0x2000, false, true);
 
     // 执行恢复
-    uras->recoverState(entry, actual_branch);
+    uras->recoverState(entry, &actual_branch);
 
     // 验证：应该先恢复sp和tos，然后执行pop
     EXPECT_EQ(sp, 0);  // 1(恢复) -> 0(pop)
@@ -465,7 +464,7 @@ TEST_F(URASTest, RecoverStateCall) {
         makeActualBranch(0x1000, true, false, 4);
 
     // 执行恢复
-    uras->recoverState(entry, actual_branch);
+    uras->recoverState(entry, &actual_branch);
 
     // 验证：应该先恢复sp和tos，然后执行push
     EXPECT_EQ(sp, 1);  // 0(恢复) -> 1(push)
@@ -489,7 +488,7 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     const ResolvedBranch actual_call =
         makeActualBranch(0x1000, true, false, 4);
 
-    uras->recoverState(entry1, actual_call);
+    uras->recoverState(entry1, &actual_call);
 
     // 验证call的结果
     EXPECT_EQ(sp, 1);
@@ -504,7 +503,7 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     const ResolvedBranch actual_return =
         makeActualBranch(0x2000, false, true);
 
-    uras->recoverState(entry2, actual_return);
+    uras->recoverState(entry2, &actual_return);
 
     // 验证return的结果
     EXPECT_EQ(sp, 0);
