@@ -639,7 +639,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter, const bool fromCommit)
+                            const bool fromCommit)
 {
     if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
@@ -684,7 +684,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
 void
 DecoupledBPUWithBTB::nonControlSquash(unsigned target_id,
                                const PCStateBase &inst_pc,
-                               const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
+                               const InstSeqNum seq, ThreadID tid)
 {
     dbpBtbStats.nonControlSquash++;
     DPRINTF(DecoupleBP,
@@ -698,8 +698,8 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id,
 
 void
 DecoupledBPUWithBTB::trapSquash(unsigned target_id,
-                         Addr last_committed_pc, const PCStateBase &inst_pc,
-                         ThreadID tid, const unsigned &currentLoopIter)
+                         const PCStateBase &inst_pc,
+                         ThreadID tid)
 {
     dbpBtbStats.trapSquash++;
     DPRINTF(DecoupleBP,

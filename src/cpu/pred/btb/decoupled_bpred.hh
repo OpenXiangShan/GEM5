@@ -421,18 +421,16 @@ class DecoupledBPUWithBTB : public BPredUnit
                        const PCStateBase &target_pc,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid, const unsigned &currentLoopIter,
-                       const bool fromCommit);
+                       ThreadID tid, const bool fromCommit);
 
     // keep the target: original prediction might be right
     // For memory violation, target continues after squashing
     void nonControlSquash(unsigned fsq_id,
                           const PCStateBase &inst_pc, const InstSeqNum seq,
-                          ThreadID tid, const unsigned &currentLoopIter);
+                          ThreadID tid);
 
     // Not a control. But target is actually disturbed
-    void trapSquash(unsigned fsq_id, Addr last_committed_pc,
-                    const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
+    void trapSquash(unsigned fsq_id, const PCStateBase &inst_pc, ThreadID tid);
 
     bool recordResolvedBranch(unsigned fsq_id, const ResolvedBranch &branch,
                               ThreadID tid);

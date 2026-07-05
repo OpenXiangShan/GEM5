@@ -2184,14 +2184,14 @@ Fetch::handleCommitSignals(ThreadID tid)
         dbpbtb->controlSquash(squash_ftq_id, mispred_inst->pcState(),
                               corr_pc, mispred_inst->staticInst,
                               mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
-                              mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
+                              mispred_inst->seqNum, tid, true);
         squashResolveQueueAfter(tid, squash_ftq_id);
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
         const auto trap_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
-        dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId, fromCommit->commitInfo[tid].committedPC,
-                           trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+        dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
+                           trap_pc, tid);
         squashResolveQueueAfter(tid, fromCommit->commitInfo[tid].squashedTargetId);
     } else {
         if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedTargetId != 0) {
@@ -2199,7 +2199,7 @@ Fetch::handleCommitSignals(ThreadID tid)
             const auto nc_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
             assert(dbpbtb);
             dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId, nc_pc,
-                                     0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+                                     0, tid);
             squashResolveQueueAfter(tid, fromCommit->commitInfo[tid].squashedTargetId);
         } else {
             DPRINTF(Fetch, "Dont squash dbq because no meaningful stream\n");
@@ -2229,8 +2229,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                 next_pc,
                 mispred_inst->staticInst, mispred_inst->getInstBytes(),
                 fromDecode->decodeInfo[tid].branchTaken,
-                mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
-                false);
+                mispred_inst->seqNum, tid, false);
             squashResolveQueueAfter(tid, squash_ftq_id);
         } else {
             warn("Unexpected non-control squash from decode.\n");
