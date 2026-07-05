@@ -393,7 +393,7 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
             entry_to_write.ctr, update_entry.actualTaken);
     }
 
-    if (entry_to_write.isIndirect && update_entry.actualTaken) {
+    if (update_entry.actualTaken) {
         entry_to_write.target = update_entry.actualBranch.target;
     }
 

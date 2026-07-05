@@ -292,17 +292,39 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
     BTBEntry requested = makeEntry(0x3020, true, true);
     requested.ctr = -2;
     requested.tag = 0x10;
+    requested.target = 0x4000;
     BTBEntry existing = requested;
     existing.ctr = 0;
     existing.tag = 0x20;
+    existing.target = 0x5000;
+    BranchInfo actual_branch(requested);
+    actual_branch.target = 0x6000;
 
     const TargetUpdateEntry update{
-        requested, true, false, BranchInfo(requested)};
+        requested, true, false, actual_branch};
     const auto written = buildUpdatedTargetEntry(update, &existing, 0x30);
 
     EXPECT_EQ(written.pc, requested.pc);
     EXPECT_EQ(written.ctr, 1);
+    EXPECT_EQ(written.target, actual_branch.target);
     EXPECT_EQ(written.tag, 0x30);
+    EXPECT_FALSE(written.resolved);
+}
+
+TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualDirectTarget)
+{
+    BTBEntry direct = makeEntry(0x3028, false, true);
+    direct.target = 0x4000;
+    BranchInfo actual_branch(direct);
+    actual_branch.target = 0x5000;
+
+    const TargetUpdateEntry update{
+        direct, true, false, actual_branch};
+    const auto written = buildUpdatedTargetEntry(update, nullptr, 0x38);
+
+    EXPECT_EQ(written.pc, direct.pc);
+    EXPECT_EQ(written.target, actual_branch.target);
+    EXPECT_EQ(written.tag, 0x38);
     EXPECT_FALSE(written.resolved);
 }
 

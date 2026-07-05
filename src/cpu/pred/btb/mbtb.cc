@@ -424,7 +424,7 @@ MBTB::checkPredictionHit(const std::vector<TargetUpdateEntry> &entries,
  * Update or replace BTB entry
  * 1. Look for matching entry
  * 2. for cond entry, if found, use the one in btb, since we need the up-to-date counter
- * 3. for indirect entry, update target if necessary
+ * 3. for taken control entry, update target from the actual result
  * 4. Update existing entry or replace oldest entry
  * 5. Update MRU information
  */
