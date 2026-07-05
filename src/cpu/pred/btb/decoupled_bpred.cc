@@ -895,18 +895,6 @@ DecoupledBPUWithBTB::updatePredictorComponent(
         return;
       }
 
-      case PredictorUpdateProtocol::TargetEntries: {
-        const auto entries = buildTargetUpdateEntries(
-            pred_update_entries,
-            update_branches);
-        if (entries.empty()) {
-            return;
-        }
-        component->updateWithTargetEntries(
-            entries, update_ctx, prediction_meta);
-        return;
-      }
-
       case PredictorUpdateProtocol::BranchContext:
         component->updateWithBranchUpdateContext(
             update_ctx, update_branches, prediction_meta);

@@ -84,12 +84,6 @@ class TimedBaseBTBPredictor: public SimObject
         const boost::dynamic_bitset<> &)
     {
     }
-    virtual void updateWithTargetEntries(
-        const std::vector<TargetUpdateEntry> &,
-        const BranchUpdateContext &,
-        const std::shared_ptr<void> &)
-    {
-    }
     virtual void updateWithBranchUpdateContext(
         const BranchUpdateContext &,
         const std::vector<ResolvedBranch> &,

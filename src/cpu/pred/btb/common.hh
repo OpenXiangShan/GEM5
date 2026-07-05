@@ -472,7 +472,6 @@ enum class PredictorUpdateProtocol
 {
     None,
     DirectionEntries,
-    TargetEntries,
     BranchContext,
     AheadPipelineState
 };

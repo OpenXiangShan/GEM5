@@ -86,15 +86,11 @@ makeActualBranches(const FetchTarget& stream)
     return makeUpdateBranchPrefix(stream.resolvedBranches);
 }
 
-void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
+void updateWithBranchContext(MBTB* btb, FetchTarget& stream,
                              const std::shared_ptr<void>& meta) {
     const auto actual_branches = makeActualBranches(stream);
     const auto ctx = makeBaseBranchUpdateContext(stream);
-    const auto update_entries = selectPredictedBTBEntriesForUpdate(
-        stream.predBTBEntries, ctx, actual_branches, btb->predictWidth);
-    const auto entries = buildTargetUpdateEntries(
-        update_entries, actual_branches);
-    btb->updateWithTargetEntries(entries, ctx, meta);
+    btb->updateWithBranchUpdateContext(ctx, actual_branches, meta);
 }
 
 /**
@@ -162,7 +158,7 @@ predictUpdateCycle(MBTB* btb,
     if (btb->getDelay() < stagePreds.size()) {
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
-    updateWithTargetEntries(btb, stream, meta);
+    updateWithBranchContext(btb, stream, meta);
 
     // Return final predictions after update
     stagePreds.clear();
@@ -229,17 +225,17 @@ TEST_F(BTBTest, EmptyPrediction) {
     }
 }
 
-TEST_F(BTBTest, EmptyTargetEntriesDoNotUpdateStats) {
+TEST_F(BTBTest, EmptyBranchContextDoesNotUpdateStats) {
     BranchUpdateContext ctx;
     ctx.startPC = 0x1000;
 
-    const auto entries = buildTargetUpdateEntries({}, {});
-    EXPECT_TRUE(entries.empty());
+    const std::vector<ResolvedBranch> actual_branches;
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
     const uint64_t update_total = mbtb->btbStats.updateTotal;
-    EXPECT_NO_THROW(mbtb->updateWithTargetEntries(entries, ctx, nullptr));
+    EXPECT_NO_THROW(mbtb->updateWithBranchUpdateContext(
+        ctx, actual_branches, nullptr));
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit), update_hit);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss), update_miss);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateTotal), update_total);
@@ -260,16 +256,13 @@ TEST_F(BTBTest, NewEntryStatsCountActualTableMiss) {
     const uint64_t new_cond_entries = mbtb->btbStats.newEntryWithCond;
     const uint64_t new_uncond_entries = mbtb->btbStats.newEntryWithUncond;
 
-    const auto entries = buildTargetUpdateEntries({}, actual_branches);
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry), new_entries);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntryWithCond),
               new_cond_entries);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntryWithUncond),
               new_uncond_entries);
 
-    mbtb->updateWithTargetEntries(entries, ctx, meta);
+    mbtb->updateWithBranchUpdateContext(ctx, actual_branches, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry),
               new_entries + 1);
@@ -292,13 +285,31 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualBranchForHit) {
 
     const auto actual_branches =
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
-    const auto entries = buildTargetUpdateEntries(
-        stagePreds[mbtb->getDelay()].btbEntries, actual_branches);
-    ASSERT_FALSE(entries.empty());
+    const uint64_t update_hit = mbtb->btbStats.updateHit;
+    const uint64_t update_miss = mbtb->btbStats.updateMiss;
+    mbtb->updateWithBranchUpdateContext(ctx, actual_branches, meta);
+
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit),
+              update_hit + 1);
+    EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss), update_miss);
+}
+
+TEST_F(BTBTest, TargetUpdateUsesMetaEntriesInsteadOfStreamEntries) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
+    predictUpdateCycle(mbtb, 0x1000, branch, true);
+
+    std::vector<FullBTBPrediction> stagePreds(4);
+    mbtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), stagePreds);
+    auto meta = mbtb->getPredictionMeta();
+
+    FetchTarget stream = setupStream(0x1000, branch, true, meta, 0x1004);
+    stream.predBTBEntries.clear();
+    const auto actual_branches = makeActualBranches(stream);
+    const auto ctx = makeBaseBranchUpdateContext(stream);
 
     const uint64_t update_hit = mbtb->btbStats.updateHit;
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
-    mbtb->updateWithTargetEntries(entries, ctx, meta);
+    mbtb->updateWithBranchUpdateContext(ctx, actual_branches, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit),
               update_hit + 1);
@@ -316,12 +327,9 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualTakenForMiss) {
 
     const auto actual_branches =
         std::vector<ResolvedBranch>{createResolvedBranch(branch, true)};
-    const auto entries = buildTargetUpdateEntries({}, actual_branches);
-    ASSERT_FALSE(entries.empty());
-
     const uint64_t update_hit = mbtb->btbStats.updateHit;
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
-    mbtb->updateWithTargetEntries(entries, ctx, meta);
+    mbtb->updateWithBranchUpdateContext(ctx, actual_branches, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit), update_hit);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss),
@@ -331,8 +339,8 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualTakenForMiss) {
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]
-// 3. build explicit target update entries from prediction and actual result
-// 4. update, update btb entries
+// 3. pass actual branch facts through updateWithBranchUpdateContext
+// 4. MBTB builds table-write entries from its prediction meta and actual facts
 
 // Test basic prediction after update
 TEST_F(BTBTest, PredictionAfterUpdate) {
@@ -484,7 +492,7 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     auto meta = mbtb->getPredictionMeta();
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
-    updateWithTargetEntries(mbtb, stream, meta);
+    updateWithBranchContext(mbtb, stream, meta);
 
     // Check final predictions
     stagePreds.clear();

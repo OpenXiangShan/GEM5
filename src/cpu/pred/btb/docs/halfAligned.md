@@ -100,8 +100,7 @@ The testing strategy for the Half-Aligned BTB follows the standard prediction-up
 2. **Update Phase**
    - Set up update stream with branch information
    - Set prediction metadata from previous phase
-   - Build target update entries from predicted entries and actual branch facts
-   - Call `updateWithTargetEntries` to update the BTB
+   - Call `updateWithBranchUpdateContext` to update the BTB
 
 3. **Verification**
    - Make a final prediction to verify results

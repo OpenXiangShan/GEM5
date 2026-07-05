@@ -160,11 +160,11 @@ class MBTB : public TimedBaseBTBPredictor
      */
     PredictorUpdateProtocol updateProtocol() const override
     {
-        return PredictorUpdateProtocol::TargetEntries;
+        return PredictorUpdateProtocol::BranchContext;
     }
-    void updateWithTargetEntries(
-        const std::vector<TargetUpdateEntry> &entries,
+    void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
+        const std::vector<ResolvedBranch> &update_branches,
         const std::shared_ptr<void> &prediction_meta) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
@@ -266,6 +266,11 @@ class MBTB : public TimedBaseBTBPredictor
     void checkPredictionHit(const ResolvedBranch *taken_branch,
                             const BTBMeta *meta,
                             Tick pred_tick);
+
+    std::vector<BTBEntry> selectMetaEntriesForUpdate(
+        const BTBMeta *meta,
+        const BranchUpdateContext &ctx,
+        const std::vector<ResolvedBranch> &update_branches) const;
 
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,

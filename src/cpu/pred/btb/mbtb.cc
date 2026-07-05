@@ -590,14 +590,31 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
  * 4. Update existing entries or create new ones
  * 5. Update MRU information
  */
+std::vector<BTBEntry>
+MBTB::selectMetaEntriesForUpdate(
+    const BTBMeta *meta,
+    const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches) const
+{
+    if (!meta) {
+        return {};
+    }
+    return selectPredictedBTBEntriesForUpdate(
+        meta->hit_entries, ctx, update_branches, predictWidth);
+}
+
 void
-MBTB::updateWithTargetEntries(const std::vector<TargetUpdateEntry> &entries,
-                              const BranchUpdateContext &ctx,
-                              const std::shared_ptr<void> &prediction_meta)
+MBTB::updateWithBranchUpdateContext(
+    const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
+    const std::shared_ptr<void> &prediction_meta)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", ctx.startPC);
     auto meta = std::static_pointer_cast<BTBMeta>(
         prediction_meta);
+    const auto entries = buildTargetUpdateEntries(
+        selectMetaEntriesForUpdate(meta.get(), ctx, update_branches),
+        update_branches);
     updateWithEntries(entries, ctx, meta.get());
 }
 

@@ -208,7 +208,6 @@ FetchTarget stream;
 stream.startPC = pc;
 stream.predMetas[0] = meta;
 
-// Build explicit target update entries
 ResolvedBranch actual_branch;
 actual_branch.pc = branch_info.pc;
 actual_branch.target = branch_info.target;
@@ -221,14 +220,10 @@ actual_branch.isReturn = branch_info.isReturn;
 actual_branch.size = branch_info.size;
 std::vector<ResolvedBranch> actual_branches = {actual_branch};
 auto ctx = makeBaseBranchUpdateContext(stream);
-const auto update_entries = selectPredictedBTBEntriesForUpdate(
-    stream.predBTBEntries, ctx, actual_branches, btb->predictWidth);
-const auto entries = buildTargetUpdateEntries(
-    update_entries, actual_branches);
 
 // Update BTB
-btb->updateWithTargetEntries(
-    entries, ctx, stream.predMetas[btb->getComponentIdx()]);
+btb->updateWithBranchUpdateContext(
+    ctx, actual_branches, stream.predMetas[btb->getComponentIdx()]);
 ```
 
 ## 6. Key Configuration Parameters
