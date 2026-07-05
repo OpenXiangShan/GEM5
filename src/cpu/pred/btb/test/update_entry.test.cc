@@ -67,8 +67,7 @@ makeUpdateEntries(const FetchTarget &stream,
     const auto ctx = makeActualBranchUpdateContext(
         makeBaseBranchUpdateContext(stream), branches);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
-        ctx.startPC, ctx.squashType, ctx.squashPC, branches,
-        predict_width);
+        ctx.startPC, branches, predict_width);
     return makeUpdateBTBEntries(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
 }
@@ -323,16 +322,15 @@ TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
 {
     const auto taken = makeResolvedBranch(0x1010, true, false);
     EXPECT_EQ(buildUpdateEndInstPC(
-        0x1000, SquashType::SQUASH_NONE, 0, {taken}, 32), 0x1010);
+        0x1000, {taken}, 32), 0x1010);
 
     const auto not_taken = makeResolvedBranch(0x1010, false, false);
     EXPECT_EQ(buildUpdateEndInstPC(
-        0x1004, SquashType::SQUASH_NONE, 0, {not_taken}, 32), 0x1020);
+        0x1004, {not_taken}, 32), 0x1020);
 
     const auto mispred = makeResolvedBranch(0x1008, false, true);
     EXPECT_EQ(buildUpdateEndInstPC(
-        0x1000, SquashType::SQUASH_CTRL, 0x1008, {mispred}, 32),
-        0x1008);
+        0x1000, {mispred}, 32), 0x1008);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesFirstTakenActualBranch)
@@ -342,8 +340,8 @@ TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesFirstTakenActualBranch)
     const auto first_taken = makeResolvedBranch(0x1080, true, false);
 
     EXPECT_EQ(buildUpdateEndInstPC(
-        0x1000, SquashType::SQUASH_NONE, 0,
-        {later_taken, not_taken, first_taken}, 32), first_taken.pc);
+        0x1000, {later_taken, not_taken, first_taken}, 32),
+        first_taken.pc);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateBTBEntriesKeepsValidPrefix)

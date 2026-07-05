@@ -330,6 +330,22 @@ findMispredictedActualUpdateBranch(
     return it == branches.end() ? nullptr : &*it;
 }
 
+inline const ResolvedBranch *
+findUpdateBoundaryActualBranch(
+    const std::vector<ResolvedBranch> &branches)
+{
+    const ResolvedBranch *boundary = nullptr;
+    for (const auto &branch : branches) {
+        if (!endsUpdateBranchPrefix(branch)) {
+            continue;
+        }
+        if (!boundary || branch.pc < boundary->pc) {
+            boundary = &branch;
+        }
+    }
+    return boundary;
+}
+
 inline const TargetUpdateEntry *
 findTakenTargetUpdateEntry(const std::vector<TargetUpdateEntry> &entries)
 {
@@ -624,17 +640,12 @@ buildTargetUpdateEntries(
 inline Addr
 buildUpdateEndInstPC(
     Addr start_pc,
-    SquashType squash_type,
-    Addr squash_pc,
     const std::vector<ResolvedBranch> &actual_update_branches,
     unsigned predict_width)
 {
-    if (squash_type != SquashType::SQUASH_NONE) {
-        return squash_pc;
-    }
-    if (const auto *taken_branch =
-            findFirstTakenActualUpdateBranch(actual_update_branches)) {
-        return taken_branch->pc;
+    if (const auto *boundary_branch =
+            findUpdateBoundaryActualBranch(actual_update_branches)) {
+        return boundary_branch->pc;
     }
     return (start_pc + predict_width) & ~mask(floorLog2(predict_width) - 1);
 }

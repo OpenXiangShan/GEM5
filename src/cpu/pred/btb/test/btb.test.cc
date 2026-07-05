@@ -92,8 +92,7 @@ void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
     const auto ctx = makeActualBranchUpdateContext(
         makeBaseBranchUpdateContext(stream), actual_branches);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
-        ctx.startPC, ctx.squashType, ctx.squashPC, actual_branches,
-        btb->predictWidth);
+        ctx.startPC, actual_branches, btb->predictWidth);
     const auto update_entries = buildUpdateBTBEntries(
         stream.predBTBEntries, ctx.startPC, update_end_inst_pc);
     const auto entries = buildTargetUpdateEntries(

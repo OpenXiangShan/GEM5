@@ -184,8 +184,7 @@ BTBuRAS::updateWithBranchUpdateContext(
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(prediction_meta);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
-        auto miss = ctx.squashType == SQUASH_CTRL &&
-                    ctx.squashPC == takenSlot.pc;
+        auto miss = summary_branch->mispred;
         if (takenSlot.isCall) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
             if (enableDB) {
