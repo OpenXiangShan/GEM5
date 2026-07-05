@@ -12,6 +12,7 @@
     #include "cpu/pred/btb/timed_base_pred.hh"
 #else
     // Production mode includes
+    #include "base/trace.hh"
     #include "cpu/pred/btb/timed_base_pred.hh"
     #include "debug/RAS.hh"
     #include "params/BTBRAS.hh"

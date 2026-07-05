@@ -388,7 +388,8 @@ class DecoupledBPUWithBTB : public BPredUnit
             _uint64_data["source"] = source;
             _uint64_data["target"] = target;
         }
-        BpTrace(uint64_t fsqId, FetchTarget &target, const DynInstPtr &inst, bool mispred);
+        BpTrace(uint64_t fsqId, FetchTarget &target,
+                const ResolvedBranch &actual_branch);
     };
 
     // Prediction trace record for tracking prediction-time information

@@ -10,11 +10,12 @@
 #include <boost/dynamic_bitset.hpp>
 
 // #include "arch/generic/pcstate.hh"
+#include "base/intmath.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/btb/branch_record.hh"
 #include "cpu/pred/general_arch_db.hh"
-#include "cpu/static_inst.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5 {
 
@@ -178,19 +179,6 @@ struct BranchInfo
     BranchInfo()
         : pc(0), target(0), isCond(false), isIndirect(false),
           isDirect(false), isCall(false), isReturn(false), size(0)
-    {
-    }
-    // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
-    // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
-        : pc(control_pc),
-          target(target_pc),
-          isCond(static_inst->isCondCtrl()),
-          isIndirect(static_inst->isIndirectCtrl()),
-          isDirect(static_inst->isDirectCtrl()),
-          isCall(static_inst->isCall()),
-          isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
-          size(size)
     {
     }
     int getType() const {

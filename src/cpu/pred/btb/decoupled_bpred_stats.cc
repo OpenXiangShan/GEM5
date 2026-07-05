@@ -336,15 +336,17 @@ DecoupledBPUWithBTB::dumpStats()
     }
 }
 
-DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const DynInstPtr &inst, bool mispred)
+DecoupledBPUWithBTB::BpTrace::BpTrace(
+    uint64_t fsqId,
+    FetchTarget &target,
+    const ResolvedBranch &actual_branch)
 {
     _tick = curTick();
-    Addr pc = inst->pcState().instAddr();
-    const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
-    Addr targetpc = rv_pc.npc();
-    Addr fallThru = rv_pc.getFallThruPC();
-    BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
-    set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
+    const Addr fall_through = actual_branch.pc + actual_branch.size;
+    set(fsqId, target.startPC, actual_branch.pc,
+        getBranchType(actual_branch), actual_branch.taken,
+        actual_branch.mispred, fall_through, target.predSource,
+        actual_branch.target);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
     // }
@@ -829,7 +831,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 
     // Record branch trace if enabled
     if (enableBranchTrace) {
-        bptrace->write_record(BpTrace(inst->ftqId, entry, inst, mispred));
+        bptrace->write_record(BpTrace(inst->ftqId, entry, actual_branch));
     }
 
     // ---------- Process misprediction and update statistics ----------
