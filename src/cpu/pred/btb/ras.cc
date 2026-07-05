@@ -165,9 +165,8 @@ BTBRAS::recoverState(
     const ThreadID tid = entry.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
-    const BranchInfo takenEntry = makeBranchInfo(actual_branch);
     /*
-    if (takenEntry.isCall || takenEntry.isReturn) {
+    if (actual_branch.isCall || actual_branch.isReturn) {
         printStack("before recoverState", tid);
     }*/
     // recover sp and tos first
@@ -179,14 +178,14 @@ BTBRAS::recoverState(
     state.TOSW = meta_ptr->TOSW;
     state.ssp = meta_ptr->ssp;
     state.sctr = meta_ptr->sctr;
-    Addr retAddr = takenEntry.pc + takenEntry.size;
+    Addr retAddr = actual_branch.pc + actual_branch.size;
 
     // do push & pops on control squash
     if (actual_branch.taken) {
-        if (takenEntry.isCall) {
+        if (actual_branch.isCall) {
             push(tid, retAddr);
         }
-        if (takenEntry.isReturn) {
+        if (actual_branch.isReturn) {
             pop(tid);
             //TOSW = (TOSR + 1) % numInflightEntries;
         }
@@ -194,10 +193,10 @@ BTBRAS::recoverState(
 
     
     if (actual_branch.taken) {
-        DPRINTF(RAS, "isCall %d, isRet %d\n", takenEntry.isCall, takenEntry.isReturn);
-        if (takenEntry.isReturn) {
+        DPRINTF(RAS, "isCall %d, isRet %d\n", actual_branch.isCall, actual_branch.isReturn);
+        if (actual_branch.isReturn) {
             DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
-                takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
+                actual_branch.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
         }
         printStack("after recoverState", tid);
     }
@@ -216,8 +215,6 @@ BTBRAS::updateWithBranchUpdateContext(
     auto meta_ptr = std::static_pointer_cast<RASMeta>(prediction_meta);
     const auto *summary_branch =
         findActualUpdateSummaryBranch(update_branches);
-    const BranchInfo takenEntry =
-        summary_branch ? makeBranchInfo(*summary_branch) : BranchInfo();
     const bool actual_taken = summary_branch && summary_branch->taken;
     if (actual_taken) {
         if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
@@ -227,19 +224,19 @@ BTBRAS::updateWithBranchUpdateContext(
         } else
             DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
-        if (takenEntry.isCall) {
+        if (summary_branch->isCall) {
             DPRINTF(RAS, "real update call meta TOSR %d TOSW %d\n entry PC %lx",
                 meta_ptr->TOSR, meta_ptr->TOSW, ctx.startPC);
-            Addr retAddr = takenEntry.pc + takenEntry.size;
+            Addr retAddr = summary_branch->pc + summary_branch->size;
             push_stack(tid, retAddr);
             state.BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
-        if (takenEntry.isReturn) {
+        if (summary_branch->isReturn) {
             DPRINTF(RAS, "update ret entry PC %lx\n", ctx.startPC);
             pop_stack(tid);
         }
     }
-    if (takenEntry.isCall || takenEntry.isReturn) {
+    if (summary_branch && (summary_branch->isCall || summary_branch->isReturn)) {
         printStack("after update(commit)", tid);
     }
 }

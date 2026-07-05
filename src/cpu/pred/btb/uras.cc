@@ -134,9 +134,10 @@ BTBuRAS::recoverState(
     printStack("before recoverState", stack, sp);
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
-    const BranchInfo takenSlot = makeBranchInfo(actual_branch);
     if (enableDB) {
-        SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
+        SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER,
+                         entry.startPC, actual_branch.pc, 0,
+                         sp, stack[sp].retAddr, stack[sp].ctr);
         specRasTrace->write_record(rec);
     }
     sp = meta_ptr->sp;
@@ -144,18 +145,23 @@ BTBuRAS::recoverState(
 
     if (actual_branch.taken) {
         // do push & pops on control squash
-        if (takenSlot.isReturn) {
+        if (actual_branch.isReturn) {
             if (enableDB) {
-                SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+                SpecRASTrace rec(When::REDIRECT, RAS_OP::POP,
+                                 entry.startPC, actual_branch.pc,
+                                 stack[sp].retAddr, sp,
+                                 stack[sp].retAddr, stack[sp].ctr);
                 specRasTrace->write_record(rec);
             }
             DPRINTF(URAS, "recover stack pop at pc 0x%llx target %llx\n", entry.startPC, stack[sp].retAddr);
             pop(stack, sp);
         }
-        if (takenSlot.isCall) {
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+        if (actual_branch.isCall) {
+            Addr retAddr = actual_branch.pc + actual_branch.size;
             if (enableDB) {
-                SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+                SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH,
+                                 entry.startPC, actual_branch.pc, retAddr,
+                                 sp, stack[sp].retAddr, stack[sp].ctr);
                 specRasTrace->write_record(rec);
             }
             DPRINTF(URAS, "recover stack push addr 0x%llx\n", retAddr);
@@ -176,26 +182,24 @@ BTBuRAS::updateWithBranchUpdateContext(
     printStack("before update", stack, sp);
     const auto *summary_branch =
         findActualUpdateSummaryBranch(update_branches);
-    const BranchInfo takenSlot =
-        summary_branch ? makeBranchInfo(*summary_branch) : BranchInfo();
     const bool actual_taken = summary_branch && summary_branch->taken;
-    if (actual_taken && (takenSlot.isReturn || takenSlot.isCall)) {
+    if (actual_taken && (summary_branch->isReturn || summary_branch->isCall)) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(prediction_meta);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
         auto miss = summary_branch->mispred;
-        if (takenSlot.isCall) {
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+        if (summary_branch->isCall) {
+            Addr retAddr = summary_branch->pc + summary_branch->size;
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::PUSH, ctx.startPC, takenSlot.pc, retAddr,
+                NonSpecRASTrace rec(RAS_OP::PUSH, ctx.startPC, summary_branch->pc, retAddr,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }
             push(retAddr, stack, sp);
         }
-        if (takenSlot.isReturn) {
+        if (summary_branch->isReturn) {
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::POP, ctx.startPC, takenSlot.pc, takenSlot.target,
+                NonSpecRASTrace rec(RAS_OP::POP, ctx.startPC, summary_branch->pc, summary_branch->target,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }
