@@ -520,7 +520,7 @@ void
 AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
                          const TargetUpdateEntry &update_entry)
 {
-    const auto &entry = update_entry.entry;
+    const auto &entry = update_entry.baseEntry;
 
     // Look for matching entry
     bool found = false;
@@ -698,7 +698,7 @@ AheadBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
     Addr btb_tag = getTag(ctx.startPC, ctx.asidHash);
     Addr btb_idx = getIndex(previousPC, ctx.asidHash);
     for (auto entry : entries) {
-        entry.entry.source = getComponentIdx();
+        entry.baseEntry.source = getComponentIdx();
         updateBTBEntry(btb_idx, btb_tag, entry);
     }
 }

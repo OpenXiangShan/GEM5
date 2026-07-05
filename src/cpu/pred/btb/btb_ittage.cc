@@ -270,7 +270,7 @@ BTBITTAGE::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
 
     // update each branch
     for (const auto &update_entry : entries) {
-        const auto &btb_entry = update_entry.entry;
+        const auto &btb_entry = update_entry.baseEntry;
         bool this_indirect_actual_taken = update_entry.actualTaken;
         auto pred_it = preds.find(btb_entry.pc);
         TagePrediction pred;

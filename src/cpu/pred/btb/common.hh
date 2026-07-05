@@ -263,7 +263,8 @@ struct BranchUpdateContext
 
 struct TargetUpdateEntry
 {
-    BTBEntry entry;
+    // Prediction/table state used as the writeback base; actual facts are below.
+    BTBEntry baseEntry;
     bool actualTaken = false;
     bool isNewEntry = false;
     BranchInfo actualBranch;
@@ -380,7 +381,7 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
                         const BTBEntry *existing_entry,
                         Addr tag)
 {
-    const auto &requested_entry = update_entry.entry;
+    const auto &requested_entry = update_entry.baseEntry;
     BTBEntry entry_to_write =
         (requested_entry.isCond && existing_entry) ?
             BTBEntry(*existing_entry) : requested_entry;
@@ -515,7 +516,7 @@ buildTargetUpdateEntries(
     auto has_entry_pc = [&](Addr pc) {
         return std::any_of(
             entries.begin(), entries.end(),
-            [pc](const auto &entry) { return entry.entry.pc == pc; });
+            [pc](const auto &entry) { return entry.baseEntry.pc == pc; });
     };
     auto add_new_target_branch = [&](const BranchInfo &branch) {
         if (has_entry_pc(branch.pc)) {

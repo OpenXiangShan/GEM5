@@ -267,7 +267,7 @@ TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
     const auto entries = buildTargetUpdateEntries(
         {}, actual_branches, mbtb->targetUpdateEntryFilter());
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_TRUE(entries[0].entry.valid);
+    EXPECT_TRUE(entries[0].baseEntry.valid);
     EXPECT_TRUE(entries[0].isNewEntry);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry), new_entries);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntryWithCond),
