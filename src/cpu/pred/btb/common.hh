@@ -428,59 +428,6 @@ findActualUpdateBranch(
     return it == actual_update_branches.end() ? nullptr : &*it;
 }
 
-inline bool
-isActualUpdatePC(const std::vector<ResolvedBranch> &actual_update_branches,
-                   Addr pc)
-{
-    return findActualUpdateBranch(actual_update_branches, pc) != nullptr;
-}
-
-inline bool
-shouldKeepDirectionUpdateEntry(
-    const BranchInfo &branch,
-    bool resolved_update,
-    const std::vector<ResolvedBranch> &actual_update_branches)
-{
-    if (!branch.isCond) {
-        return false;
-    }
-    if (!resolved_update) {
-        return true;
-    }
-    return isActualUpdatePC(actual_update_branches, branch.pc);
-}
-
-inline bool
-getActualTakenForUpdatePC(
-    Addr pc,
-    const std::vector<ResolvedBranch> &actual_update_branches)
-{
-    const auto *branch = findActualUpdateBranch(actual_update_branches, pc);
-    return branch ? branch->taken : false;
-}
-
-inline bool
-getActualMispredForUpdatePC(
-    Addr pc,
-    const std::vector<ResolvedBranch> &actual_update_branches)
-{
-    const auto *branch = findActualUpdateBranch(actual_update_branches, pc);
-    return branch ? branch->mispred : false;
-}
-
-inline BranchInfo
-getActualBranchForUpdatePC(
-    const BTBEntry &entry,
-    const std::vector<ResolvedBranch> &actual_update_branches)
-{
-    const auto *branch =
-        findActualUpdateBranch(actual_update_branches, entry.pc);
-    if (branch) {
-        return makeBranchInfo(*branch);
-    }
-    return BranchInfo(entry);
-}
-
 inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
@@ -499,17 +446,16 @@ buildDirectionUpdateEntries(
 
     auto add_entry = [&](const BranchInfo &branch, bool base_taken,
                          bool is_new_entry) {
-        if (!shouldKeepDirectionUpdateEntry(branch, resolved_update,
-                                            actual_update_branches)) {
+        const auto *actual_branch =
+            findActualUpdateBranch(actual_update_branches, branch.pc);
+        if (!branch.isCond || (resolved_update && !actual_branch)) {
             return;
         }
         entries.push_back({branch,
                            base_taken,
-                           getActualTakenForUpdatePC(
-                               branch.pc, actual_update_branches),
+                           actual_branch ? actual_branch->taken : false,
                            is_new_entry,
-                           getActualMispredForUpdatePC(
-                               branch.pc, actual_update_branches)});
+                           actual_branch ? actual_branch->mispred : false});
     };
 
     for (const auto &entry : update_btb_entries) {
@@ -527,36 +473,6 @@ buildDirectionUpdateEntries(
     return entries;
 }
 
-inline bool
-shouldKeepTargetUpdateEntry(
-    const BTBEntry &entry,
-    TargetUpdateEntryFilter filter,
-    bool resolved_update,
-    const std::vector<ResolvedBranch> &actual_update_branches)
-{
-    if (!entry.valid) {
-        return false;
-    }
-
-    bool keep = false;
-    switch (filter) {
-      case TargetUpdateEntryFilter::Any:
-        keep = true;
-        break;
-      case TargetUpdateEntryFilter::IndirectNonReturn:
-        keep = entry.isIndirect && !entry.isReturn;
-        break;
-      case TargetUpdateEntryFilter::TakenControl:
-        keep = getActualTakenForUpdatePC(
-            entry.pc, actual_update_branches);
-        break;
-    }
-    if (!keep || !resolved_update) {
-        return keep;
-    }
-    return isActualUpdatePC(actual_update_branches, entry.pc);
-}
-
 inline std::vector<TargetUpdateEntry>
 buildTargetUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
@@ -569,19 +485,34 @@ buildTargetUpdateEntries(
                     actual_update_branches.size());
 
     auto add_entry = [&](BTBEntry entry, bool is_new_entry) {
-        if (!shouldKeepTargetUpdateEntry(
-                entry, filter, resolved_update,
-                actual_update_branches)) {
+        const auto *actual_branch =
+            findActualUpdateBranch(actual_update_branches, entry.pc);
+        if (!entry.valid || (resolved_update && !actual_branch)) {
             return;
         }
-        const bool actual_taken = getActualTakenForUpdatePC(
-            entry.pc, actual_update_branches);
-        const BranchInfo actual_branch =
-            getActualBranchForUpdatePC(entry, actual_update_branches);
-        const bool actual_mispred = getActualMispredForUpdatePC(
-            entry.pc, actual_update_branches);
+
+        bool keep = false;
+        switch (filter) {
+          case TargetUpdateEntryFilter::Any:
+            keep = true;
+            break;
+          case TargetUpdateEntryFilter::IndirectNonReturn:
+            keep = entry.isIndirect && !entry.isReturn;
+            break;
+          case TargetUpdateEntryFilter::TakenControl:
+            keep = actual_branch && actual_branch->taken;
+            break;
+        }
+        if (!keep) {
+            return;
+        }
+
+        const bool actual_taken = actual_branch && actual_branch->taken;
+        const BranchInfo actual_branch_info =
+            actual_branch ? makeBranchInfo(*actual_branch) : BranchInfo(entry);
+        const bool actual_mispred = actual_branch && actual_branch->mispred;
         entries.push_back(
-            {entry, actual_taken, is_new_entry, actual_branch,
+            {entry, actual_taken, is_new_entry, actual_branch_info,
              actual_mispred});
     };
     auto has_entry_pc = [&](Addr pc) {
