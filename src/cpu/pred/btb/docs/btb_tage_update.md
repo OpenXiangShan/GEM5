@@ -81,10 +81,10 @@ entry。
 - actual branch prefix；其中实际 taken、但预测 entry 未覆盖的 branch 会直接构造
   new target entry。
 
-每个 `TargetUpdateEntry` 都携带自己的 `actualTaken` 和 `actualBranch`。这些
-entry 级 actual outcome 只来自 actual branch prefix；如果某个 predicted entry
-没有对应 actual branch，就按 not-taken 处理，并保留 entry 自身的 branch/target
-作为非 taken 的上下文。因此 indirect target 修正会用该 entry PC 对应的真实
+每个 `TargetUpdateEntry` 都携带自己的 `actualBranch`，`taken`、`mispred` 和
+target 都直接从这条 resolved branch 读取。entry 级 actual outcome 只来自
+actual branch prefix；如果某个 predicted entry 没有对应 actual branch，就不会
+构造 target update entry。因此 indirect target 修正会用该 entry PC 对应的真实
 target，而不是从整个 `FetchTarget` 的单一 summary 里猜。
 
 target update 不会为了每个 missing not-taken conditional branch 分配 target

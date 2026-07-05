@@ -181,7 +181,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].baseEntry.pc, prefix_entry.pc);
-    EXPECT_FALSE(entries[0].actualTaken);
+    EXPECT_FALSE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].isNewEntry);
 }
 
@@ -200,8 +200,8 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].baseEntry.pc, indirect.pc);
-    EXPECT_TRUE(entries[0].actualTaken);
-    EXPECT_FALSE(entries[0].actualMispred);
+    EXPECT_TRUE(entries[0].actualBranch.taken);
+    EXPECT_FALSE(entries[0].actualBranch.mispred);
     EXPECT_FALSE(entries[0].isNewEntry);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
@@ -227,7 +227,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].baseEntry.pc, second.pc);
-    EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_EQ(entries[0].actualBranch.pc, second.pc);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
@@ -247,8 +247,8 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
         TargetUpdateEntryFilter::IndirectNonReturn);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_TRUE(entries[0].actualTaken);
-    EXPECT_TRUE(entries[0].actualMispred);
+    EXPECT_TRUE(entries[0].actualBranch.taken);
+    EXPECT_TRUE(entries[0].actualBranch.mispred);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
@@ -268,8 +268,8 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].baseEntry.pc, control.pc);
-    EXPECT_TRUE(entries[0].actualTaken);
-    EXPECT_FALSE(entries[0].actualMispred);
+    EXPECT_TRUE(entries[0].actualBranch.taken);
+    EXPECT_FALSE(entries[0].actualBranch.mispred);
     EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
@@ -288,7 +288,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].baseEntry.pc, branch_pc);
-    EXPECT_TRUE(entries[0].actualTaken);
+    EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_TRUE(entries[0].isNewEntry);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
@@ -318,8 +318,7 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
         makeResolvedBranch(requested, true, false);
     actual_branch.target = 0x6000;
 
-    const TargetUpdateEntry update{
-        requested, true, false, actual_branch};
+    const TargetUpdateEntry update{requested, false, actual_branch};
     const auto written = buildUpdatedTargetEntry(update, &existing, 0x30);
 
     EXPECT_EQ(written.pc, requested.pc);
@@ -337,8 +336,7 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualDirectTarget)
         makeResolvedBranch(direct, true, false);
     actual_branch.target = 0x5000;
 
-    const TargetUpdateEntry update{
-        direct, true, false, actual_branch};
+    const TargetUpdateEntry update{direct, false, actual_branch};
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x38);
 
     EXPECT_EQ(written.pc, direct.pc);
@@ -355,8 +353,7 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
         makeResolvedBranch(indirect, true, false);
     actual_branch.target = 0x5000;
 
-    const TargetUpdateEntry update{
-        indirect, true, false, actual_branch};
+    const TargetUpdateEntry update{indirect, false, actual_branch};
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x40);
 
     EXPECT_EQ(written.pc, indirect.pc);
@@ -620,7 +617,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     ASSERT_EQ(target_entries.size(), 1);
     EXPECT_EQ(target_entries[0].baseEntry.pc, taken.pc);
     EXPECT_TRUE(target_entries[0].isNewEntry);
-    EXPECT_TRUE(target_entries[0].actualMispred);
+    EXPECT_TRUE(target_entries[0].actualBranch.mispred);
     EXPECT_EQ(target_entries[0].actualBranch.target, taken.target);
 }
 

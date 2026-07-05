@@ -263,12 +263,11 @@ struct BranchUpdateContext
 
 struct TargetUpdateEntry
 {
-    // Prediction/table state used as the writeback base; actual facts are below.
+    // Prediction/table state used as the writeback base; actual facts come
+    // from actualBranch.
     BTBEntry baseEntry;
-    bool actualTaken = false;
     bool isNewEntry = false;
     ResolvedBranch actualBranch;
-    bool actualMispred = false;
 };
 
 inline const DirectionUpdateEntry *
@@ -349,7 +348,7 @@ findTakenTargetUpdateEntry(const std::vector<TargetUpdateEntry> &entries)
 {
     auto it = std::find_if(
         entries.begin(), entries.end(),
-        [](const auto &entry) { return entry.actualTaken; });
+        [](const auto &entry) { return entry.actualBranch.taken; });
     return it == entries.end() ? nullptr : &*it;
 }
 
@@ -391,10 +390,10 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
 
     if (entry_to_write.isCond) {
         updateTargetEntryCounter(
-            entry_to_write.ctr, update_entry.actualTaken);
+            entry_to_write.ctr, update_entry.actualBranch.taken);
     }
 
-    if (update_entry.actualTaken) {
+    if (update_entry.actualBranch.taken) {
         entry_to_write.target = update_entry.actualBranch.target;
     }
 
@@ -506,11 +505,7 @@ buildTargetUpdateEntries(
             return;
         }
 
-        const bool actual_taken = actual_branch->taken;
-        const bool actual_mispred = actual_branch->mispred;
-        entries.push_back(
-            {entry, actual_taken, is_new_entry, *actual_branch,
-             actual_mispred});
+        entries.push_back({entry, is_new_entry, *actual_branch});
     };
     auto has_entry_pc = [&](Addr pc) {
         return std::any_of(
