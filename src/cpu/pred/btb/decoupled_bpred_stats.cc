@@ -305,8 +305,8 @@ DecoupledBPUWithBTB::dumpStats()
         auto& out = *outFile->stream();
         out << std::dec << phaseID << "," << phase.size();
 
-        // Vector of (PC, BTBEntry, count) tuples
-        std::vector<std::tuple<Addr, BTBEntry, int>> btbEntries;
+        // Vector of (start PC, actual branch, count) tuples.
+        std::vector<std::tuple<Addr, ResolvedBranch, int>> btbEntries;
         for (auto& entry : phase) {
             btbEntries.push_back(std::make_tuple(
                 entry.first, entry.second.first, entry.second.second));
@@ -320,9 +320,7 @@ DecoupledBPUWithBTB::dumpStats()
         for (int i = 0; i <= outputTopNEntries && i < btbEntries.size(); i++) {
             const auto &entry = btbEntries[i];
             out << "," << std::hex << std::get<0>(entry);
-            // BTBEntry.getType() is not a const method, need to create a copy
-            BTBEntry btbEntry = std::get<1>(entry);
-            out << "," << std::dec << btbEntry.getType();
+            out << "," << std::dec << getBranchType(std::get<1>(entry));
         }
 
         out << std::endl;
@@ -539,10 +537,10 @@ DecoupledBPUWithBTB::processFetchDistributions(std::vector<int> &currentPhaseCom
     }
 }
 
-std::unordered_map<Addr, std::pair<BTBEntry, int>>
+std::unordered_map<Addr, std::pair<ResolvedBranch, int>>
 DecoupledBPUWithBTB::processBTBEntries()
 {
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> currentPhaseBTBEntries;
+    std::unordered_map<Addr, std::pair<ResolvedBranch, int>> currentPhaseBTBEntries;
 
     // Process each BTB entry
     for (auto &it : totalBTBEntries) {
@@ -740,15 +738,14 @@ DecoupledBPUWithBTB::updateStatistics(
 
     if (has_actual_branch && (target.isHit || actual_taken)) {
         // Update BTB entry statistics
-        const BTBEntry btb_entry =
-            makeBTBEntryFromResolvedBranch(*actual_branch);
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
+            totalBTBEntries[target.startPC] =
+                std::make_pair(*actual_branch, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = btb_entry;
+            it->second.first = *actual_branch;
         }
     }
 

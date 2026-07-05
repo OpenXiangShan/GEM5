@@ -210,7 +210,9 @@ UBTB::replaceOldEntryFromActualBranch(
     UBTBIter oldEntryIter, const ResolvedBranch &actualBranch,
     Addr startAddr, uint8_t asidHash)
 {
-    BTBEntry newEntry = makeBTBEntryFromResolvedBranch(actualBranch);
+    BTBEntry newEntry;
+    applyActualBranchIdentity(newEntry, actualBranch);
+    newEntry.target = actualBranch.target;
     newEntry.source = getComponentIdx();
     replaceOldEntry(oldEntryIter, newEntry, startAddr, asidHash);
 }

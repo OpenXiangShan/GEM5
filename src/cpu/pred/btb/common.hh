@@ -233,22 +233,6 @@ struct BTBEntry : BranchInfo
     }
 };
 
-inline BTBEntry
-makeBTBEntryFromResolvedBranch(const ResolvedBranch &branch)
-{
-    BTBEntry entry;
-    entry.pc = branch.pc;
-    entry.target = branch.target;
-    entry.isCond = branch.isCond;
-    entry.isIndirect = branch.isIndirect;
-    entry.isDirect = branch.isDirect;
-    entry.isCall = branch.isCall;
-    entry.isReturn = branch.isReturn;
-    entry.size = branch.size;
-    entry.valid = true;
-    return entry;
-}
-
 struct DirectionUpdateEntry
 {
     // Actual direction facts come from the resolved branch record. baseTaken
