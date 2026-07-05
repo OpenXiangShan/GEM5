@@ -623,7 +623,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         const auto actual_branch = makeResolvedBranchFromPredictedEntryForS3Update(
             actual_taken ? taken_entry : entry, actual_taken);
         all_entries.push_back(
-            makeTargetUpdateEntryFromBase(entry, actual_branch, false));
+            makeTargetUpdateEntryFromBase(entry, actual_branch));
     }
     BTBEntry new_entry = BTBEntry();
     // which causes its counter to update twice unintentionally
@@ -646,8 +646,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
             makeTargetUpdateEntryFromBase(
                 new_entry,
                 makeResolvedBranchFromPredictedEntryForS3Update(
-                    taken_entry, true),
-                true));
+                    taken_entry, true)));
     }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());

@@ -247,7 +247,7 @@ TEST_F(BTBTest, EmptyTargetEntriesDoNotUpdateStats) {
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateTotal), update_total);
 }
 
-TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
+TEST_F(BTBTest, NewEntryStatsCountActualTableMiss) {
     std::vector<FullBTBPrediction> stagePreds(4);
     mbtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), stagePreds);
     auto meta = mbtb->getPredictionMeta();
@@ -266,7 +266,6 @@ TEST_F(BTBTest, TargetEntryBuildDoesNotCountNewEntry) {
         {}, actual_branches, mbtb->targetUpdateEntryFilter());
     ASSERT_EQ(entries.size(), 1);
     EXPECT_TRUE(entries[0].actualBranch.taken);
-    EXPECT_TRUE(entries[0].synthesizedFromActual);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry), new_entries);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntryWithCond),
               new_cond_entries);

@@ -299,8 +299,6 @@ struct TargetUpdateEntry
     Addr baseTarget = 0;
     int baseCtr = 0;
     int baseSource = -1;
-    // This is not a target-table miss bit.
-    bool synthesizedFromActual = false;
 };
 
 inline const DirectionUpdateEntry *
@@ -450,26 +448,23 @@ inline TargetUpdateEntry
 makeTargetUpdateEntry(const ResolvedBranch &actual_branch,
                       Addr base_target,
                       int base_ctr,
-                      int base_source,
-                      bool synthesized_from_actual)
+                      int base_source)
 {
     TargetUpdateEntry entry;
     entry.actualBranch = actual_branch;
     entry.baseTarget = base_target;
     entry.baseCtr = base_ctr;
     entry.baseSource = base_source;
-    entry.synthesizedFromActual = synthesized_from_actual;
     return entry;
 }
 
 inline TargetUpdateEntry
 makeTargetUpdateEntryFromBase(const BTBEntry &base_entry,
-                              const ResolvedBranch &actual_branch,
-                              bool synthesized_from_actual)
+                              const ResolvedBranch &actual_branch)
 {
     return makeTargetUpdateEntry(
         actual_branch, base_entry.target, base_entry.ctr,
-        base_entry.source, synthesized_from_actual);
+        base_entry.source);
 }
 
 inline BTBEntry
@@ -575,8 +570,7 @@ buildTargetUpdateEntries(
                     actual_update_branches.size());
 
     auto add_entry = [&](const ResolvedBranch &actual_branch,
-                         Addr base_target, int base_ctr, int base_source,
-                         bool synthesized_from_actual) {
+                         Addr base_target, int base_ctr, int base_source) {
         bool keep = false;
         switch (filter) {
           case TargetUpdateEntryFilter::Any:
@@ -594,8 +588,7 @@ buildTargetUpdateEntries(
         }
 
         entries.push_back(makeTargetUpdateEntry(
-            actual_branch, base_target, base_ctr, base_source,
-            synthesized_from_actual));
+            actual_branch, base_target, base_ctr, base_source));
     };
     auto has_entry_pc = [&](Addr pc) {
         return std::any_of(
@@ -608,7 +601,7 @@ buildTargetUpdateEntries(
         if (has_entry_pc(branch.pc)) {
             return;
         }
-        add_entry(branch, branch.target, 0, -1, true);
+        add_entry(branch, branch.target, 0, -1);
     };
 
     for (const auto &entry : pred_update_entries) {
@@ -620,8 +613,7 @@ buildTargetUpdateEntries(
         if (!actual_branch) {
             continue;
         }
-        add_entry(
-            *actual_branch, entry.target, entry.ctr, entry.source, false);
+        add_entry(*actual_branch, entry.target, entry.ctr, entry.source);
     }
     for (const auto &branch : actual_update_branches) {
         if (branch.taken) {

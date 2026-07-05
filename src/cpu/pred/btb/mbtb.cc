@@ -434,14 +434,6 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
 {
     const auto &actual_branch = update_entry.actualBranch;
     btbStats.updateTotal++;
-    if (update_entry.synthesizedFromActual) {
-        btbStats.newEntry++;
-        if (actual_branch.isCond) {
-            btbStats.newEntryWithCond++;
-        } else {
-            btbStats.newEntryWithUncond++;
-        }
-    }
 
     // Select SRAM based on entry PC's 32B-aligned address
     Addr alignedPC = actual_branch.pc & ~(blockSize - 1);
@@ -494,6 +486,12 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
         commitToVictimCache(vc_idx, ticked_entry);
         return;
     } else {
+        btbStats.newEntry++;
+        if (actual_branch.isCond) {
+            btbStats.newEntryWithCond++;
+        } else {
+            btbStats.newEntryWithUncond++;
+        }
         // Not found anywhere, replace oldest in SRAM set
         replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
     }

@@ -195,7 +195,6 @@ TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchPrefix)
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, prefix_entry.pc);
     EXPECT_FALSE(entries[0].actualBranch.taken);
-    EXPECT_FALSE(entries[0].synthesizedFromActual);
 }
 
 TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
@@ -215,7 +214,6 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].actualBranch.mispred);
-    EXPECT_FALSE(entries[0].synthesizedFromActual);
     EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_EQ(entries[0].actualBranch.target, resolved.target);
 }
@@ -325,7 +323,6 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].actualBranch.pc, branch_pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
-    EXPECT_TRUE(entries[0].synthesizedFromActual);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
 }
 
@@ -355,7 +352,7 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
     actual_branch.target = 0x6000;
 
     const auto update =
-        makeTargetUpdateEntryFromBase(requested, actual_branch, false);
+        makeTargetUpdateEntryFromBase(requested, actual_branch);
     const auto written = buildUpdatedTargetEntry(update, &existing, 0x30);
 
     EXPECT_EQ(written.pc, requested.pc);
@@ -373,7 +370,7 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualDirectTarget)
     actual_branch.target = 0x5000;
 
     const auto update =
-        makeTargetUpdateEntryFromBase(direct, actual_branch, false);
+        makeTargetUpdateEntryFromBase(direct, actual_branch);
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x38);
 
     EXPECT_EQ(written.pc, direct.pc);
@@ -390,7 +387,7 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
     actual_branch.target = 0x5000;
 
     const auto update =
-        makeTargetUpdateEntryFromBase(indirect, actual_branch, false);
+        makeTargetUpdateEntryFromBase(indirect, actual_branch);
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x40);
 
     EXPECT_EQ(written.pc, indirect.pc);
@@ -416,7 +413,7 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualBranchIdentity)
     actual_branch.target = 0x7000;
 
     const auto update =
-        makeTargetUpdateEntryFromBase(stale_direct, actual_branch, false);
+        makeTargetUpdateEntryFromBase(stale_direct, actual_branch);
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x48);
 
     EXPECT_EQ(written.pc, actual_branch.pc);
@@ -771,7 +768,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
 
     ASSERT_EQ(target_entries.size(), 1);
     EXPECT_EQ(target_entries[0].actualBranch.pc, taken.pc);
-    EXPECT_TRUE(target_entries[0].synthesizedFromActual);
     EXPECT_TRUE(target_entries[0].actualBranch.mispred);
     EXPECT_EQ(target_entries[0].actualBranch.target, taken.target);
 }
