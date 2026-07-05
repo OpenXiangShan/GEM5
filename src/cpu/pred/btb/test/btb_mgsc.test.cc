@@ -117,8 +117,7 @@ updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
 {
     const auto actual_branches =
         std::vector<ResolvedBranch>{makeResolvedBranch(entry, actual_taken)};
-    const auto ctx = makeActualBranchUpdateContext(
-        makeBaseBranchUpdateContext(stream), actual_branches);
+    const auto ctx = makeBaseBranchUpdateContext(stream);
     const auto entries = buildDirectionUpdateEntries(
         {entry}, actual_branches,
         mgsc.directionUpdateEntryFilter(),

@@ -97,24 +97,9 @@ FetchTarget setMispredStream(FetchTarget stream) {
 }
 
 BranchUpdateContext
-makeActualContext(const FetchTarget &stream,
-                  const std::vector<DirectionUpdateEntry> &entries)
+makeActualContext(const FetchTarget &stream)
 {
-    auto base_ctx = makeBaseBranchUpdateContext(stream);
-    if (entries.empty()) {
-        return base_ctx;
-    }
-
-    std::vector<ResolvedBranch> branches;
-    branches.reserve(entries.size());
-    for (const auto &entry : entries) {
-        const bool mispred =
-            stream.squashType == SquashType::SQUASH_CTRL &&
-            stream.squashPC == entry.branch.pc;
-        branches.push_back(
-            createResolvedBranch(entry.branch, entry.actualTaken, mispred));
-    }
-    return makeActualBranchUpdateContext(base_ctx, branches);
+    return makeBaseBranchUpdateContext(stream);
 }
 
 void updateDirectionPredictor(
@@ -122,7 +107,7 @@ void updateDirectionPredictor(
     const std::vector<DirectionUpdateEntry> &entries)
 {
     predictor->updateWithDirectionEntries(
-        entries, makeActualContext(stream, entries),
+        entries, makeActualContext(stream),
         stream.predMetas[predictor->getComponentIdx()],
         stream.phistory);
 }

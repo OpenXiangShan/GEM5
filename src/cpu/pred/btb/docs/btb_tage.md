@@ -333,8 +333,7 @@ actual_branch.isDirect = branch_info.isDirect;
 actual_branch.isCall = branch_info.isCall;
 actual_branch.isReturn = branch_info.isReturn;
 actual_branch.size = branch_info.size;
-auto update_ctx = makeActualBranchUpdateContext(
-    makeBaseBranchUpdateContext(stream), {actual_branch});
+auto update_ctx = makeBaseBranchUpdateContext(stream);
 const std::vector<DirectionUpdateEntry> entries = {
     {branch_info, actual_taken, actual_taken, false}
 };

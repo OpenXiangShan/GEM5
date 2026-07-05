@@ -260,8 +260,6 @@ struct BranchUpdateContext
     Addr startPC = 0;
     uint8_t asidHash = 0;
     Tick predTick = 0;
-    SquashType squashType = SquashType::SQUASH_NONE;
-    Addr squashPC = 0;
 };
 
 struct TargetUpdateEntry
@@ -907,33 +905,6 @@ makeBaseBranchUpdateContext(const FetchTarget &target)
     ctx.startPC = target.startPC;
     ctx.asidHash = target.asidHash;
     ctx.predTick = target.predTick;
-    ctx.squashType = static_cast<SquashType>(target.squashType);
-    ctx.squashPC = target.squashPC;
-    return ctx;
-}
-
-inline BranchUpdateContext
-makeActualBranchUpdateContext(BranchUpdateContext ctx,
-                                const std::vector<ResolvedBranch> &branches)
-{
-    assert(!branches.empty());
-
-    const auto *summary_branch = findActualUpdateSummaryBranch(branches);
-    assert(summary_branch);
-    ctx.squashType = SquashType::SQUASH_NONE;
-
-    for (const auto &branch : branches) {
-        if (branch.mispred && ctx.squashType == SquashType::SQUASH_NONE) {
-            ctx.squashType = SquashType::SQUASH_CTRL;
-            ctx.squashPC = branch.pc;
-        }
-        if (branch.taken) {
-            break;
-        }
-    }
-    if (summary_branch->taken && ctx.squashType == SquashType::SQUASH_NONE) {
-        ctx.squashPC = summary_branch->pc;
-    }
     return ctx;
 }
 

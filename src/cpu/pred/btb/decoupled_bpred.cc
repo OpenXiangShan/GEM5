@@ -737,7 +737,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
             !ftq_target.resolvedBranches.empty();
         const auto update_branches =
             makeUpdateBranchPrefix(ftq_target.resolvedBranches);
-        BranchUpdateContext update_ctx;
+        const auto update_ctx = makeBaseBranchUpdateContext(ftq_target);
         if (update_branches.empty()) {
             dbpBtbStats.commitUpdateNoBranchSet++;
             DPRINTF(DecoupleBP,
@@ -747,14 +747,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                     static_cast<unsigned long long>(ftq.frontId(tid)),
                     ftq_target.startPC, ftq_target.isHit,
                     ftq_target.predTaken);
-            update_ctx = makeBaseBranchUpdateContext(ftq_target);
         } else {
             assert(has_resolved_branches);
             dbpBtbStats.commitUpdateResolvedBranches++;
-            update_ctx =
-                makeActualBranchUpdateContext(
-                    makeBaseBranchUpdateContext(ftq_target),
-                    update_branches);
         }
 
         const auto *summary_branch =
@@ -807,23 +802,22 @@ DecoupledBPUWithBTB::resolveUpdate(
 
     const auto update_branches = makeUpdateBranchPrefix(branches);
     const auto &target = ftq.get(target_id, tid);
-    const auto update_ctx =
-        makeActualBranchUpdateContext(
-            makeBaseBranchUpdateContext(target),
-            update_branches);
+    const auto update_ctx = makeBaseBranchUpdateContext(target);
     const auto *summary_branch =
         findActualUpdateSummaryBranch(update_branches);
+    const auto *mispred_branch =
+        findMispredictedActualUpdateBranch(update_branches);
     DPRINTF(DecoupleBP,
             "Resolve update ftq=%u tid=%u branches=%llu updateBranches=%llu "
-            "summaryTaken=%d summaryPC=%#lx summaryTarget=%#lx squashType=%d "
-            "squashPC=%#lx\n",
+            "summaryTaken=%d summaryPC=%#lx summaryTarget=%#lx "
+            "mispredPC=%#lx\n",
             target_id, tid,
             static_cast<unsigned long long>(branches.size()),
             static_cast<unsigned long long>(update_branches.size()),
             summary_branch ? summary_branch->taken : false,
             summary_branch ? summary_branch->pc : 0,
             summary_branch ? summary_branch->target : 0,
-            update_ctx.squashType, update_ctx.squashPC);
+            mispred_branch ? mispred_branch->pc : 0);
     for (const auto &branch : branches) {
         DPRINTF(DecoupleBP,
                 "  resolved branch pc=%#lx target=%#lx taken=%d "

@@ -220,8 +220,7 @@ actual_branch.isCall = branch_info.isCall;
 actual_branch.isReturn = branch_info.isReturn;
 actual_branch.size = branch_info.size;
 std::vector<ResolvedBranch> actual_branches = {actual_branch};
-auto ctx = makeActualBranchUpdateContext(
-    makeBaseBranchUpdateContext(stream), actual_branches);
+auto ctx = makeBaseBranchUpdateContext(stream);
 const auto update_end_inst_pc = buildUpdateEndInstPC(
     ctx.startPC, actual_branches, btb->predictWidth);
 const auto update_entries = buildUpdateBTBEntries(

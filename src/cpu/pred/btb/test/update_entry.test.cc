@@ -64,8 +64,7 @@ makeUpdateEntries(const FetchTarget &stream,
                   unsigned predict_width,
                   const std::vector<ResolvedBranch> &branches)
 {
-    const auto ctx = makeActualBranchUpdateContext(
-        makeBaseBranchUpdateContext(stream), branches);
+    const auto ctx = makeBaseBranchUpdateContext(stream);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
         ctx.startPC, branches, predict_width);
     return makeUpdateBTBEntries(
@@ -380,19 +379,19 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     });
     const auto update_btb_entries =
         makeUpdateEntries(stream, 32, update_branches);
-    const auto update_ctx =
-        makeActualBranchUpdateContext(
-            makeBaseBranchUpdateContext(stream), update_branches);
     const auto *summary_branch =
         findActualUpdateSummaryBranch(update_branches);
+    const auto *boundary_branch =
+        findUpdateBoundaryActualBranch(update_branches);
 
     EXPECT_FALSE(stream.resolved);
     ASSERT_NE(summary_branch, nullptr);
     EXPECT_TRUE(summary_branch->taken);
     EXPECT_EQ(summary_branch->pc, second.pc);
     EXPECT_EQ(summary_branch->target, second.pc + 0x200);
-    EXPECT_EQ(update_ctx.squashType, SquashType::SQUASH_CTRL);
-    EXPECT_EQ(update_ctx.squashPC, second.pc);
+    ASSERT_NE(boundary_branch, nullptr);
+    EXPECT_EQ(boundary_branch->pc, second.pc);
+    EXPECT_TRUE(boundary_branch->mispred);
 
     ASSERT_EQ(update_btb_entries.size(), 2);
     EXPECT_EQ(update_btb_entries[0].pc, first.pc);
@@ -404,7 +403,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     EXPECT_EQ(update_branches[1].pc, second.pc);
 }
 
-TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefixForSquash)
+TEST(UpdateEntryBuilderTest, ActualBranchPrefixProvidesSummaryAndBoundary)
 {
     const ResolvedBranch first =
         makeResolvedBranch(0x1000, false, false);
@@ -421,10 +420,11 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefixForSquash)
 
     const auto update_branches =
         makeUpdateBranchPrefix({first, second});
-    const auto ctx = makeActualBranchUpdateContext(
-        makeBaseBranchUpdateContext(stream), update_branches);
+    const auto ctx = makeBaseBranchUpdateContext(stream);
     const auto *summary_branch =
         findActualUpdateSummaryBranch(update_branches);
+    const auto *boundary_branch =
+        findUpdateBoundaryActualBranch(update_branches);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_EQ(ctx.tid, stream.tid);
@@ -435,8 +435,9 @@ TEST(UpdateEntryBuilderTest, BranchUpdateContextUsesUpdateBranchPrefixForSquash)
     EXPECT_TRUE(summary_branch->taken);
     EXPECT_EQ(summary_branch->pc, second.pc);
     EXPECT_EQ(summary_branch->target, second.target);
-    EXPECT_EQ(ctx.squashType, SquashType::SQUASH_CTRL);
-    EXPECT_EQ(ctx.squashPC, second.pc);
+    ASSERT_NE(boundary_branch, nullptr);
+    EXPECT_EQ(boundary_branch->pc, second.pc);
+    EXPECT_TRUE(boundary_branch->mispred);
 
     EXPECT_NE(summary_branch->pc, ignored_legacy_summary.pc);
 }
@@ -458,8 +459,6 @@ TEST(UpdateEntryBuilderTest, BaseBranchUpdateContextKeepsPredictionContextOnly)
     EXPECT_EQ(ctx.asidHash, stream.asidHash);
     EXPECT_EQ(ctx.startPC, stream.startPC);
     EXPECT_EQ(ctx.predTick, stream.predTick);
-    EXPECT_EQ(ctx.squashType, SquashType::SQUASH_TRAP);
-    EXPECT_EQ(ctx.squashPC, stream.squashPC);
 }
 
 TEST(UpdateEntryBuilderTest, FetchTargetPredictionDoesNotCreateActualBranch)
@@ -513,18 +512,18 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
     const auto update_branches =
         makeUpdateBranchPrefix(stream.resolvedBranches);
     EXPECT_EQ(update_branches.size(), 2);
-    const auto update_ctx =
-        makeActualBranchUpdateContext(
-            makeBaseBranchUpdateContext(stream), update_branches);
     const auto *summary_branch =
         findActualUpdateSummaryBranch(update_branches);
+    const auto *boundary_branch =
+        findUpdateBoundaryActualBranch(update_branches);
 
     EXPECT_FALSE(stream.resolved);
     ASSERT_NE(summary_branch, nullptr);
     EXPECT_TRUE(summary_branch->taken);
     EXPECT_EQ(summary_branch->pc, second.pc);
-    EXPECT_EQ(update_ctx.squashType, SquashType::SQUASH_CTRL);
-    EXPECT_EQ(update_ctx.squashPC, second.pc);
+    ASSERT_NE(boundary_branch, nullptr);
+    EXPECT_EQ(boundary_branch->pc, second.pc);
+    EXPECT_TRUE(boundary_branch->mispred);
 
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, first.pc);

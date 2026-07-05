@@ -125,7 +125,7 @@ boost::dynamic_bitset<> history; // 全局分支历史，970 位，推测更新�
 ```cpp
     std::vector<ResolvedBranch> resolvedBranches;
     BranchUpdateContext ctx =
-        makeActualBranchUpdateContext(base_ctx, makeUpdateBranchPrefix(resolvedBranches));
+        makeBaseBranchUpdateContext(stream);
 ```
 
 本质上对应两个阶段：

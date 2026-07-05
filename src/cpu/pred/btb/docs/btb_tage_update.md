@@ -26,13 +26,13 @@ update 和 commit update 都从 FTQ 的 `resolvedBranches` 得到它。
 
 ## Update Context
 
-`makeBaseBranchUpdateContext(target)` 先从 prediction-time `FetchTarget`
-snapshot 构造 base context；`makeActualBranchUpdateContext(base_ctx,
-actual_branches)` 再应用 actual branch prefix。这条路径是 predictor update
+`makeBaseBranchUpdateContext(target)` 从 prediction-time `FetchTarget`
+snapshot 构造 update context；actual branch prefix 只进入 direction/target
+entry builders 和 update-boundary helper。这条路径是 predictor update
 的普通入口；它不需要先把真实结果写回 `FetchTarget`，因此训练边界更接近：
 
 ```text
-prediction snapshot + actual branch set -> BranchUpdateContext/update entries
+prediction snapshot + actual branch set -> BranchUpdateContext + update entries
 ```
 
 direction/target entry builder 在存在 per-entry resolved fact 时不会依赖

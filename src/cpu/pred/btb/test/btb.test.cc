@@ -89,8 +89,7 @@ makeActualBranches(const FetchTarget& stream)
 void updateWithTargetEntries(MBTB* btb, FetchTarget& stream,
                              const std::shared_ptr<void>& meta) {
     const auto actual_branches = makeActualBranches(stream);
-    const auto ctx = makeActualBranchUpdateContext(
-        makeBaseBranchUpdateContext(stream), actual_branches);
+    const auto ctx = makeBaseBranchUpdateContext(stream);
     const auto update_end_inst_pc = buildUpdateEndInstPC(
         ctx.startPC, actual_branches, btb->predictWidth);
     const auto update_entries = buildUpdateBTBEntries(
