@@ -122,7 +122,7 @@ void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,
         stream.squashPC == entry.pc;
     updateDirectionPredictor(
         predictor, stream,
-        {{BranchInfo(entry), entry.ctr >= 0, actual_taken, is_new_entry,
+        {{entry.pc, entry.ctr >= 0, actual_taken, is_new_entry,
           actual_mispred}});
 }
 
@@ -1296,7 +1296,7 @@ TEST_F(BTBTAGETest, ResolvedUpdateUsesExplicitPrefix) {
 
     FetchTarget stream = createStream(0x1000, first, false, meta);
 
-    updateDirectionPredictor(tage, stream, {{first, false, false}});
+    updateDirectionPredictor(tage, stream, {{first.pc, false, false}});
 
     EXPECT_EQ(tage->tageTable[table][index][0].counter, -1)
         << "Resolved-update prefix branch should be trained";

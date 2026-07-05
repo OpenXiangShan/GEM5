@@ -105,7 +105,7 @@ actual_branch.isReturn = entry.isReturn;
 actual_branch.size = entry.size;
 auto ctx = makeBaseBranchUpdateContext(stream);
 const std::vector<DirectionUpdateEntry> entries = {
-    {entry, taken, taken, false}
+    {entry.pc, taken, taken, false}
 };
 tage->updateWithDirectionEntries(entries, ctx, meta, stream.phistory);
 ```

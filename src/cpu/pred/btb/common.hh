@@ -244,9 +244,9 @@ struct BTBEntry : BranchInfo
 
 struct DirectionUpdateEntry
 {
-    // Direction predictors need branch identity/attrs, the base direction,
-    // and the actual outcome; target-table state stays in TargetUpdateEntry.
-    BranchInfo branch;
+    // Direction predictors need only the branch PC, base direction,
+    // and actual outcome; target-table state stays in TargetUpdateEntry.
+    Addr pc = 0;
     bool baseTaken = false;
     bool actualTaken = false;
     bool isNewEntry = false;
@@ -281,7 +281,7 @@ findFirstTakenDirectionUpdateEntry(
             continue;
         }
         // Branches in one fetch block are ordered by PC.
-        if (!first_taken || entry.branch.pc < first_taken->branch.pc) {
+        if (!first_taken || entry.pc < first_taken->pc) {
             first_taken = &entry;
         }
     }
@@ -444,14 +444,14 @@ buildDirectionUpdateEntries(
             [pc](const auto &entry) { return entry.pc == pc; });
     };
 
-    auto add_entry = [&](const BranchInfo &branch, bool base_taken,
+    auto add_entry = [&](Addr pc, bool is_cond, bool base_taken,
                          bool is_new_entry) {
         const auto *actual_branch =
-            findActualUpdateBranch(actual_update_branches, branch.pc);
-        if (!branch.isCond || !actual_branch) {
+            findActualUpdateBranch(actual_update_branches, pc);
+        if (!is_cond || !actual_branch) {
             return;
         }
-        entries.push_back({branch,
+        entries.push_back({pc,
                            base_taken,
                            actual_branch->taken,
                            is_new_entry,
@@ -459,7 +459,7 @@ buildDirectionUpdateEntries(
     };
 
     for (const auto &entry : update_btb_entries) {
-        add_entry(entry, entry.ctr >= 0, false);
+        add_entry(entry.pc, entry.isCond, entry.ctr >= 0, false);
     }
     for (const auto &branch : actual_update_branches) {
         if (!branch.isCond || has_update_entry_pc(branch.pc)) {
@@ -467,7 +467,7 @@ buildDirectionUpdateEntries(
         }
         // Preserve the old BTBEntry(BranchInfo) adapter behavior: missing
         // branches used the default ctr=0 base direction.
-        add_entry(makeBranchInfo(branch), true, true);
+        add_entry(branch.pc, branch.isCond, true, true);
     }
 
     return entries;

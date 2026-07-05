@@ -519,7 +519,7 @@ BTBTAGEUpperBound::updateWithEntries(
 {
     bool hasStoredVsActualDiff = false;
     for (const auto &updateEntry : entries) {
-        const Addr branchPC = updateEntry.branch.pc;
+        const Addr branchPC = updateEntry.pc;
         const bool baseTaken = updateEntry.baseTaken;
         auto predIt = predMeta.preds.find(branchPC);
         auto metaIt = predMeta.branchMeta.find(branchPC);

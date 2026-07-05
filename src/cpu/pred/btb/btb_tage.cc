@@ -852,7 +852,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (const auto &update_entry : entries) {
-        const Addr branch_pc = update_entry.branch.pc;
+        const Addr branch_pc = update_entry.pc;
         const bool base_taken = update_entry.baseTaken;
         if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(TAGE,
@@ -1015,7 +1015,7 @@ BTBTAGE::checkUtageUpdateMisspred(
         findFirstTakenDirectionUpdateEntry(entries);
     const bool actual_taken = first_actual_taken != nullptr;
     const Addr first_actual_taken_pc =
-        actual_taken ? first_actual_taken->branch.pc : 0;
+        actual_taken ? first_actual_taken->pc : 0;
     bool fallthrough_mispred = (first_taken_pc == 0 && actual_taken) ||
                                 (first_taken_pc != 0 && !actual_taken);
     bool branch_mispred =
