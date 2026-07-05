@@ -111,7 +111,9 @@ class HistoryManager
      * @param addr Address of the branch
      * @param ghist_update Direction-history update
      * @param phist_update Path-history update
-     * @param bi Branch information structure
+     * @param is_call Whether the predicted branch is a call
+     * @param is_return Whether the predicted branch is a return
+     * @param ret_addr Predicted return address for calls
      * @param stream_id ID of the fetch stream containing this branch
      */
     void addSpeculativeHist(const Addr addr,
@@ -119,18 +121,15 @@ class HistoryManager
                             const boost::dynamic_bitset<> &phist_base,
                             const DirectionHistoryUpdate &ghist_update,
                             const PathHistoryUpdate &phist_update,
-                            BranchInfo &bi,
+                            bool is_call,
+                            bool is_return,
+                            Addr ret_addr,
                             const uint64_t stream_id)
     {
-        // Extract branch type information from BranchInfo
-        bool is_call = bi.isCall;
-        bool is_return = bi.isReturn;
-        Addr retAddr = bi.getEnd();
-
         // Add new entry to the end of speculative history list
         speculativeHists.emplace_back(addr, ghist_base, phist_base,
             ghist_update, phist_update,
-            is_call, is_return, retAddr, stream_id);
+            is_call, is_return, ret_addr, stream_id);
 
         // Debug print the newly added entry
         const auto &it = speculativeHists.back();

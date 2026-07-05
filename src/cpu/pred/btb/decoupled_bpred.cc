@@ -1158,7 +1158,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     // Update history manager and verify TAGE folded history
     historyManagers[tid].addSpeculativeHist(
         entry.startPC, entry.history, entry.phistory, ghist_update,
-        phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
+        phist_update, entry.predBranchInfo.isCall,
+        entry.predBranchInfo.isReturn, entry.predBranchInfo.getEnd(),
+        ftq.backId(tid) + 1);
 
     // Update global backward history
     histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
