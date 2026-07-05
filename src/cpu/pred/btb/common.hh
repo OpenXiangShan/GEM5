@@ -160,7 +160,6 @@ enum class HistoryType
  *
  * Stores essential information about a branch instruction including:
  * - PC and target address
- * - Resolved bit
  * - Branch type (conditional, indirect, call, return)
  * - Instruction size
  */
@@ -168,11 +167,6 @@ struct BranchInfo
 {
     Addr pc;
     Addr target;
-    // An independent resolved bit to indicate whether CFI is resolved
-    // or not for training, which is trained in resolve stage so
-    // it's necessary to know whether the branch is resolved and skip
-    // the BTB entry or not.
-    bool resolved;
     bool isCond;
     bool isIndirect;
     bool isDirect;
@@ -182,7 +176,7 @@ struct BranchInfo
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() const { return this->pc + this->size; }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false),
+        : pc(0), target(0), isCond(false), isIndirect(false),
           isDirect(false), isCall(false), isReturn(false), size(0)
     {
     }
@@ -191,7 +185,6 @@ struct BranchInfo
     BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
         : pc(control_pc),
           target(target_pc),
-          resolved(false),
           isCond(static_inst->isCondCtrl()),
           isIndirect(static_inst->isIndirectCtrl()),
           isDirect(static_inst->isDirectCtrl()),
@@ -258,7 +251,6 @@ makeBTBEntryFromResolvedBranch(const ResolvedBranch &branch)
     BTBEntry entry;
     entry.pc = branch.pc;
     entry.target = branch.target;
-    entry.resolved = true;
     entry.isCond = branch.isCond;
     entry.isIndirect = branch.isIndirect;
     entry.isDirect = branch.isDirect;
@@ -413,7 +405,6 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
         (requested_entry.isCond && existing_entry) ?
             BTBEntry(*existing_entry) : requested_entry;
 
-    entry_to_write.resolved = false;
     entry_to_write.tag = tag;
 
     if (entry_to_write.isCond) {

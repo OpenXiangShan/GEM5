@@ -1294,8 +1294,6 @@ TEST_F(BTBTAGETest, ResolvedUpdateUsesExplicitPrefix) {
 
     BTBEntry first = createBTBEntry(0x1000, true, true, 0);
     BTBEntry second = createBTBEntry(0x1004, true, true, 0);
-    first.resolved = true;
-    second.resolved = true;
 
     constexpr int table = 0;
     const Addr index = tage->getTageIndex(0x1000, table);

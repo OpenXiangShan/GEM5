@@ -18,13 +18,12 @@ namespace
 {
 
 BTBEntry
-makeEntry(Addr pc, bool is_cond, bool resolved)
+makeEntry(Addr pc, bool is_cond)
 {
     BTBEntry entry;
     entry.valid = true;
     entry.pc = pc;
     entry.target = pc + 0x100;
-    entry.resolved = resolved;
     entry.isCond = is_cond;
     entry.isIndirect = false;
     entry.isDirect = !is_cond;
@@ -36,9 +35,9 @@ makeEntry(Addr pc, bool is_cond, bool resolved)
 }
 
 BTBEntry
-makeIndirectEntry(Addr pc, bool is_return, bool resolved)
+makeIndirectEntry(Addr pc, bool is_return)
 {
-    BTBEntry entry = makeEntry(pc, false, resolved);
+    BTBEntry entry = makeEntry(pc, false);
     entry.isIndirect = true;
     entry.isDirect = false;
     entry.isReturn = is_return;
@@ -83,7 +82,6 @@ makeLegacyBranchInfoForTest(Addr pc, bool taken, bool mispred)
     BranchInfo info;
     info.pc = branch.pc;
     info.target = branch.target;
-    info.resolved = true;
     info.isCond = branch.isCond;
     info.isIndirect = branch.isIndirect;
     info.isDirect = branch.isDirect;
@@ -107,13 +105,13 @@ makeUpdateEntries(const FetchTarget &stream,
 
 } // namespace
 
-TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBits)
+TEST(UpdateEntryBuilderTest, DirectionUpdateUsesActualBranchPrefix)
 {
-    const BTBEntry prefix_entry = makeEntry(0x1000, true, false);
-    const BTBEntry legacy_resolved_entry = makeEntry(0x1004, true, true);
+    const BTBEntry prefix_entry = makeEntry(0x1000, true);
+    const BTBEntry later_entry = makeEntry(0x1004, true);
 
     const auto entries = buildDirectionUpdateEntries(
-        {prefix_entry, legacy_resolved_entry},
+        {prefix_entry, later_entry},
         {makeResolvedBranch(prefix_entry.pc, false, false)});
 
     ASSERT_EQ(entries.size(), 1);
@@ -124,7 +122,7 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
 
 TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
 {
-    const BTBEntry new_entry = makeEntry(0x1010, true, false);
+    const BTBEntry new_entry = makeEntry(0x1010, true);
 
     const auto entries = buildDirectionUpdateEntries(
         {}, {makeResolvedBranch(new_entry.pc, false, false)});
@@ -138,7 +136,7 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
 
 TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
 {
-    BTBEntry entry = makeEntry(0x1014, true, false);
+    BTBEntry entry = makeEntry(0x1014, true);
     entry.ctr = -1;
 
     const auto entries = buildDirectionUpdateEntries(
@@ -152,7 +150,7 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
 
 TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
 {
-    const BTBEntry entry = makeEntry(0x1018, true, false);
+    const BTBEntry entry = makeEntry(0x1018, true);
 
     const auto entries = buildDirectionUpdateEntries(
         {entry}, {makeResolvedBranch(entry.pc, true, true)});
@@ -165,7 +163,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
 
 TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresActualBranchSet)
 {
-    const BTBEntry cond_entry = makeEntry(0x1020, true, false);
+    const BTBEntry cond_entry = makeEntry(0x1020, true);
 
     const auto entries = buildDirectionUpdateEntries({cond_entry}, {});
 
@@ -174,7 +172,7 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresActualBranchSet)
 
 TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresMatchingActualBranch)
 {
-    const BTBEntry predicted_cond = makeEntry(0x1024, true, false);
+    const BTBEntry predicted_cond = makeEntry(0x1024, true);
     const ResolvedBranch other_branch =
         makeResolvedBranch(0x1028, false, false);
 
@@ -186,13 +184,13 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresMatchingActualBranch)
     EXPECT_TRUE(entries[0].isNewEntry);
 }
 
-TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
+TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchPrefix)
 {
-    const BTBEntry prefix_entry = makeEntry(0x2000, false, false);
-    const BTBEntry legacy_resolved_entry = makeEntry(0x2004, false, true);
+    const BTBEntry prefix_entry = makeEntry(0x2000, false);
+    const BTBEntry later_entry = makeEntry(0x2004, false);
 
     const auto entries = buildTargetUpdateEntries(
-        {prefix_entry, legacy_resolved_entry},
+        {prefix_entry, later_entry},
         {makeResolvedBranch(prefix_entry.pc, false, false)},
         TargetUpdateEntryFilter::Any);
 
@@ -204,8 +202,8 @@ TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
 
 TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
 {
-    const BTBEntry indirect = makeIndirectEntry(0x3000, false, true);
-    const BTBEntry ret = makeIndirectEntry(0x3004, true, true);
+    const BTBEntry indirect = makeIndirectEntry(0x3000, false);
+    const BTBEntry ret = makeIndirectEntry(0x3004, true);
     ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, false);
     resolved.isCond = false;
     resolved.isDirect = false;
@@ -226,9 +224,9 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
 
 TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
 {
-    BTBEntry first = makeIndirectEntry(0x3000, false, true);
+    BTBEntry first = makeIndirectEntry(0x3000, false);
     first.target = 0x4440;
-    BTBEntry second = makeIndirectEntry(0x3008, false, true);
+    BTBEntry second = makeIndirectEntry(0x3008, false);
     second.target = 0x5550;
 
     const Addr actual_target = 0xdead;
@@ -251,7 +249,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
 
 TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
 {
-    const BTBEntry indirect = makeIndirectEntry(0x3010, false, true);
+    const BTBEntry indirect = makeIndirectEntry(0x3010, false);
 
     ResolvedBranch resolved = makeResolvedBranch(indirect.pc, true, true);
     resolved.isCond = false;
@@ -272,8 +270,8 @@ TEST(UpdateEntryBuilderTest, TargetResolvedBranchCarriesPerEntryActualTarget)
 
 TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
 {
-    const BTBEntry first = makeEntry(0x3018, false, true);
-    const BTBEntry control = makeEntry(0x3020, false, true);
+    const BTBEntry first = makeEntry(0x3018, false);
+    const BTBEntry control = makeEntry(0x3020, false);
     const Addr actual_target = 0xdead;
     ResolvedBranch resolved = makeResolvedBranch(control.pc, true, false);
     resolved.isCond = false;
@@ -312,7 +310,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
 
 TEST(UpdateEntryBuilderTest, TargetTakenControlFallsThroughWithoutEntry)
 {
-    const BTBEntry predicted = makeEntry(0x3030, false, true);
+    const BTBEntry predicted = makeEntry(0x3030, false);
 
     const auto entries = buildTargetUpdateEntries(
         {predicted}, {},
@@ -323,7 +321,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlFallsThroughWithoutEntry)
 
 TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
 {
-    BTBEntry requested = makeEntry(0x3020, true, true);
+    BTBEntry requested = makeEntry(0x3020, true);
     requested.ctr = -2;
     requested.tag = 0x10;
     requested.target = 0x4000;
@@ -342,12 +340,11 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
     EXPECT_EQ(written.ctr, 1);
     EXPECT_EQ(written.target, actual_branch.target);
     EXPECT_EQ(written.tag, 0x30);
-    EXPECT_FALSE(written.resolved);
 }
 
 TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualDirectTarget)
 {
-    BTBEntry direct = makeEntry(0x3028, false, true);
+    BTBEntry direct = makeEntry(0x3028, false);
     direct.target = 0x4000;
     ResolvedBranch actual_branch =
         makeResolvedBranch(direct, true, false);
@@ -359,12 +356,11 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualDirectTarget)
     EXPECT_EQ(written.pc, direct.pc);
     EXPECT_EQ(written.target, actual_branch.target);
     EXPECT_EQ(written.tag, 0x38);
-    EXPECT_FALSE(written.resolved);
 }
 
 TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
 {
-    BTBEntry indirect = makeIndirectEntry(0x3030, false, true);
+    BTBEntry indirect = makeIndirectEntry(0x3030, false);
     indirect.target = 0x4000;
     ResolvedBranch actual_branch =
         makeResolvedBranch(indirect, true, false);
@@ -376,7 +372,6 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
     EXPECT_EQ(written.pc, indirect.pc);
     EXPECT_EQ(written.target, actual_branch.target);
     EXPECT_EQ(written.tag, 0x40);
-    EXPECT_FALSE(written.resolved);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
@@ -407,11 +402,11 @@ TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesFirstTakenActualBranch)
 
 TEST(UpdateEntryBuilderTest, SelectPredictedBTBEntriesKeepsValidPrefix)
 {
-    const BTBEntry before = makeEntry(0x0ffc, true, true);
-    const BTBEntry first = makeEntry(0x1000, true, true);
-    const BTBEntry second = makeEntry(0x1008, true, true);
-    const BTBEntry after = makeEntry(0x1010, true, true);
-    BTBEntry invalid = makeEntry(0x1004, true, true);
+    const BTBEntry before = makeEntry(0x0ffc, true);
+    const BTBEntry first = makeEntry(0x1000, true);
+    const BTBEntry second = makeEntry(0x1008, true);
+    const BTBEntry after = makeEntry(0x1010, true);
+    BTBEntry invalid = makeEntry(0x1004, true);
     invalid.valid = false;
 
     const auto entries = selectPredictedBTBEntriesForUpdate(
@@ -427,8 +422,8 @@ TEST(UpdateEntryBuilderTest, SquashHistoryUpdateAcceptsNoActualBranch)
     FetchTarget stream;
     stream.startPC = 0x1000;
     stream.predBTBEntries = {
-        makeEntry(0x1000, true, true),
-        makeEntry(0x1008, true, true),
+        makeEntry(0x1000, true),
+        makeEntry(0x1008, true),
     };
 
     const auto ghist_without_actual =
@@ -464,9 +459,9 @@ TEST(UpdateEntryBuilderTest, SquashHistoryUpdateAcceptsNoActualBranch)
 
 TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
 {
-    const BTBEntry first = makeEntry(0x1000, true, false);
-    const BTBEntry second = makeEntry(0x1008, true, false);
-    const BTBEntry after = makeEntry(0x1010, true, false);
+    const BTBEntry first = makeEntry(0x1000, true);
+    const BTBEntry second = makeEntry(0x1008, true);
+    const BTBEntry after = makeEntry(0x1010, true);
 
     FetchTarget stream;
     stream.startPC = 0x1000;
@@ -498,8 +493,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchesBuildUpdateInputs)
     ASSERT_EQ(pred_update_entries.size(), 2);
     EXPECT_EQ(pred_update_entries[0].pc, first.pc);
     EXPECT_EQ(pred_update_entries[1].pc, second.pc);
-    EXPECT_FALSE(pred_update_entries[0].resolved);
-    EXPECT_FALSE(pred_update_entries[1].resolved);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, first.pc);
     EXPECT_EQ(update_branches[1].pc, second.pc);
@@ -596,9 +589,9 @@ TEST(UpdateEntryBuilderTest, FetchTargetAccumulatesResolvedBranchesByPC)
 
 TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
 {
-    const BTBEntry first = makeEntry(0x1000, true, false);
-    const BTBEntry second = makeEntry(0x1008, true, false);
-    const BTBEntry after = makeEntry(0x1010, true, false);
+    const BTBEntry first = makeEntry(0x1000, true);
+    const BTBEntry second = makeEntry(0x1008, true);
+    const BTBEntry after = makeEntry(0x1010, true);
 
     FetchTarget stream;
     stream.startPC = 0x1000;
@@ -634,7 +627,7 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
 
 TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionAndTarget)
 {
-    const BTBEntry predicted = makeEntry(0x1000, true, false);
+    const BTBEntry predicted = makeEntry(0x1000, true);
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
     const ResolvedBranch taken = makeResolvedBranch(0x1010, true, true);
 
@@ -649,7 +642,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
 
     ASSERT_EQ(pred_update_entries.size(), 1);
     EXPECT_EQ(pred_update_entries[0].pc, predicted.pc);
-    EXPECT_FALSE(pred_update_entries[0].resolved);
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, missing.pc);
     EXPECT_EQ(update_branches[1].pc, taken.pc);
