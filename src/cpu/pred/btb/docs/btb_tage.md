@@ -147,8 +147,8 @@ void updateWithDirectionEntries(
     
     // Update each branch entry
     for (const auto &update_entry : entries) {
-        Addr branch_pc = update_entry.pc;
-        bool actual_taken = update_entry.actualTaken;
+        Addr branch_pc = update_entry.actualBranch.pc;
+        bool actual_taken = update_entry.actualBranch.taken;
         auto pred_it = meta->preds.find(branch_pc);
         
         if (pred_it == meta->preds.end()) {
@@ -335,7 +335,7 @@ actual_branch.isReturn = branch_info.isReturn;
 actual_branch.size = branch_info.size;
 auto update_ctx = makeBaseBranchUpdateContext(stream);
 const std::vector<DirectionUpdateEntry> entries = {
-    {branch_info.pc, actual_taken, actual_taken, false}
+    {actual_branch, actual_taken, false}
 };
 tage->updateWithDirectionEntries(entries, update_ctx, meta, stream.phistory);
 ```

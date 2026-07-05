@@ -112,6 +112,16 @@ void updateDirectionPredictor(
         stream.phistory);
 }
 
+DirectionUpdateEntry
+makeDirectionEntry(const BTBEntry &entry, bool actual_taken,
+                   bool is_new_entry, bool actual_mispred = false)
+{
+    return {
+        createResolvedBranch(BranchInfo(entry), actual_taken, actual_mispred),
+        entry.ctr >= 0,
+        is_new_entry};
+}
+
 void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,
                               const FetchTarget &stream,
                               const BTBEntry &entry, bool actual_taken,
@@ -122,8 +132,8 @@ void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,
         stream.squashPC == entry.pc;
     updateDirectionPredictor(
         predictor, stream,
-        {{entry.pc, entry.ctr >= 0, actual_taken, is_new_entry,
-          actual_mispred}});
+        {makeDirectionEntry(entry, actual_taken, is_new_entry,
+                            actual_mispred)});
 }
 
 void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,
@@ -1299,7 +1309,8 @@ TEST_F(BTBTAGETest, ResolvedUpdateUsesExplicitPrefix) {
 
     FetchTarget stream = createStream(0x1000, first, false, meta);
 
-    updateDirectionPredictor(tage, stream, {{first.pc, false, false}});
+    updateDirectionPredictor(
+        tage, stream, {makeDirectionEntry(first, false, false)});
 
     EXPECT_EQ(tage->tageTable[table][index][0].counter, -1)
         << "Resolved-update prefix branch should be trained";

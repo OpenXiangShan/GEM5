@@ -244,13 +244,11 @@ struct BTBEntry : BranchInfo
 
 struct DirectionUpdateEntry
 {
-    // Direction predictors need only the branch PC, base direction,
-    // and actual outcome; target-table state stays in TargetUpdateEntry.
-    Addr pc = 0;
+    // Direction predictors use the resolved branch as the actual fact source;
+    // target-table state stays in TargetUpdateEntry.
+    ResolvedBranch actualBranch;
     bool baseTaken = false;
-    bool actualTaken = false;
     bool isNewEntry = false;
-    bool actualMispred = false;
 };
 
 struct BranchUpdateContext
@@ -276,11 +274,12 @@ findFirstTakenDirectionUpdateEntry(
 {
     const DirectionUpdateEntry *first_taken = nullptr;
     for (const auto &entry : entries) {
-        if (!entry.actualTaken) {
+        if (!entry.actualBranch.taken) {
             continue;
         }
         // Branches in one fetch block are ordered by PC.
-        if (!first_taken || entry.pc < first_taken->pc) {
+        if (!first_taken ||
+            entry.actualBranch.pc < first_taken->actualBranch.pc) {
             first_taken = &entry;
         }
     }
@@ -450,11 +449,7 @@ buildDirectionUpdateEntries(
         if (!is_cond || !actual_branch) {
             return;
         }
-        entries.push_back({pc,
-                           base_taken,
-                           actual_branch->taken,
-                           is_new_entry,
-                           actual_branch->mispred});
+        entries.push_back({*actual_branch, base_taken, is_new_entry});
     };
 
     for (const auto &entry : update_btb_entries) {
