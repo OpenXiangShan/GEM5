@@ -59,18 +59,15 @@ makeBranchInfo(Addr pc, Addr target, bool is_cond)
 }
 
 ResolvedBranch
-makeResolvedBranch(const BranchInfo &info, bool taken)
+makeResolvedBranch(Addr pc, Addr target, bool taken, bool is_cond)
 {
     ResolvedBranch branch;
-    branch.pc = info.pc;
-    branch.target = info.target;
+    branch.pc = pc;
+    branch.target = target;
     branch.taken = taken;
-    branch.isCond = info.isCond;
-    branch.isIndirect = info.isIndirect;
-    branch.isDirect = info.isDirect;
-    branch.isCall = info.isCall;
-    branch.isReturn = info.isReturn;
-    branch.size = info.size;
+    branch.isCond = is_cond;
+    branch.isDirect = is_cond;
+    branch.size = 4;
     return branch;
 }
 
@@ -106,7 +103,8 @@ TEST(HistoryManagerTest, PathReplayChecksRecordedSquashPathUpdate)
     EXPECT_EQ(actual_phr.pc, branch.pc);
     EXPECT_EQ(actual_phr.target, branch.target);
 
-    const auto actual_branch = makeResolvedBranch(branch, true);
+    const auto actual_branch =
+        makeResolvedBranch(branch.pc, branch.target, true, branch.isCond);
     manager.squash(1, actual_ghr, actual_phr, &actual_branch);
 
     auto correct_ghr = base_ghr;
@@ -165,7 +163,8 @@ TEST(HistoryManagerTest, SquashDropsYoungerPathUpdates)
     actual_phr.pc = first.pc;
     actual_phr.target = first.target;
 
-    const auto actual_branch = makeResolvedBranch(first, true);
+    const auto actual_branch =
+        makeResolvedBranch(first.pc, first.target, true, first.isCond);
     manager.squash(1, actual_ghr, actual_phr, &actual_branch);
 
     auto expected_phr = base_phr;

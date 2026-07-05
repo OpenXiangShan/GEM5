@@ -494,8 +494,7 @@ buildDirectionUpdateEntries(
         if (!branch.isCond || has_pred_entry_pc(branch.pc)) {
             continue;
         }
-        // Preserve the old BTBEntry(BranchInfo) adapter behavior: missing
-        // branches used the default ctr=0 base direction.
+        // Missing predicted entries use the neutral ctr=0 base direction.
         add_entry(branch, true, true);
     }
 
