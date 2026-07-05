@@ -27,9 +27,11 @@ update 和 commit update 都从 FTQ 的 `resolvedBranches` 得到它。
 ## Update Context
 
 `makeBaseBranchUpdateContext(target)` 从 prediction-time `FetchTarget`
-snapshot 构造 update context；actual branch prefix 只进入 direction/target
-entry builders 和 update-boundary helper。这条路径是 predictor update
-的普通入口；它不需要先把真实结果写回 `FetchTarget`，因此训练边界更接近：
+snapshot 构造 update context，只保留 `tid/startPC/asidHash/predTick` 这类
+预测期上下文。actual branch prefix 不写回 context，而是直接进入
+direction/target entry builders、branch-context consumers 和 update-boundary
+helper。这条路径是 predictor update 的普通入口；它不需要先把真实结果写回
+`FetchTarget`，因此训练边界更接近：
 
 ```text
 prediction snapshot + actual branch set -> BranchUpdateContext + update entries
@@ -42,9 +44,8 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 - direction update 使用该 entry 自己的 branch identity/attrs、base direction 和
   actual taken，不再把完整 predicted BTB entry 作为方向训练输入；
 - target update 使用该 entry 自己的 actual target 和 branch attributes；
-- `BranchUpdateContext::controlBranch/controlTaken` 只是 stream-level control
-  summary，给 BTB/RAS/uBTB 这类仍需要“本 fetch block 是否有 taken control”
-  的路径使用；
+- RAS/uRAS 这类 branch-context consumer 直接消费 actual branch prefix，不再从
+  `BranchUpdateContext` 里读取 stream-level actual summary；
 - 没有 resolved branch set 时，commit update 只保留 base context，
   不再从单一的 stream-level legacy summary 伪造 actual result。
 
