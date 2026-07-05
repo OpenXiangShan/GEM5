@@ -622,7 +622,8 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         const bool actual_taken = s3Pred.isTaken() && entry == taken_entry;
         const auto actual_branch = makeResolvedBranchFromPredictedEntryForS3Update(
             actual_taken ? taken_entry : entry, actual_taken);
-        all_entries.push_back({entry, false, actual_branch});
+        all_entries.push_back(
+            makeTargetUpdateEntryFromBase(entry, actual_branch, false));
     }
     BTBEntry new_entry = BTBEntry();
     // which causes its counter to update twice unintentionally
@@ -642,9 +643,11 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
             new_entry.ctr = 0;
         }
         all_entries.push_back(
-            {new_entry, true,
-             makeResolvedBranchFromPredictedEntryForS3Update(
-                 taken_entry, true)});
+            makeTargetUpdateEntryFromBase(
+                new_entry,
+                makeResolvedBranchFromPredictedEntryForS3Update(
+                    taken_entry, true),
+                true));
     }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
@@ -717,7 +720,7 @@ AheadBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
     Addr btb_tag = getTag(ctx.startPC, ctx.asidHash);
     Addr btb_idx = getIndex(previousPC, ctx.asidHash);
     for (auto entry : entries) {
-        entry.writeBaseEntry.source = getComponentIdx();
+        entry.baseSource = getComponentIdx();
         updateBTBEntry(btb_idx, btb_tag, entry);
     }
 }

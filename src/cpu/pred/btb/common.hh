@@ -280,13 +280,15 @@ struct BranchUpdateContext
 
 struct TargetUpdateEntry
 {
-    // Target-table write template. It is either a prediction-time update
-    // entry, or a minimal entry synthesized from actualBranch when prediction
-    // did not cover this taken branch.
-    BTBEntry writeBaseEntry;
+    // Actual branch facts come from the resolved branch record. The base
+    // fields are only the prediction-time/table-write state needed when no
+    // newer matching table entry exists during update.
+    ResolvedBranch actualBranch;
+    Addr baseTarget = 0;
+    int baseCtr = 0;
+    int baseSource = -1;
     // This is not a target-table miss bit.
     bool synthesizedFromActual = false;
-    ResolvedBranch actualBranch;
 };
 
 inline const DirectionUpdateEntry *
@@ -409,15 +411,51 @@ applyActualBranchIdentity(BTBEntry &entry, const ResolvedBranch &branch)
 }
 
 inline BTBEntry
+makeTargetEntryWriteBase(const TargetUpdateEntry &update_entry)
+{
+    BTBEntry entry;
+    entry.target = update_entry.baseTarget;
+    entry.ctr = update_entry.baseCtr;
+    entry.source = update_entry.baseSource;
+    return entry;
+}
+
+inline TargetUpdateEntry
+makeTargetUpdateEntry(const ResolvedBranch &actual_branch,
+                      Addr base_target,
+                      int base_ctr,
+                      int base_source,
+                      bool synthesized_from_actual)
+{
+    TargetUpdateEntry entry;
+    entry.actualBranch = actual_branch;
+    entry.baseTarget = base_target;
+    entry.baseCtr = base_ctr;
+    entry.baseSource = base_source;
+    entry.synthesizedFromActual = synthesized_from_actual;
+    return entry;
+}
+
+inline TargetUpdateEntry
+makeTargetUpdateEntryFromBase(const BTBEntry &base_entry,
+                              const ResolvedBranch &actual_branch,
+                              bool synthesized_from_actual)
+{
+    return makeTargetUpdateEntry(
+        actual_branch, base_entry.target, base_entry.ctr,
+        base_entry.source, synthesized_from_actual);
+}
+
+inline BTBEntry
 buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
                         const BTBEntry *existing_entry,
                         Addr tag)
 {
-    const auto &requested_entry = update_entry.writeBaseEntry;
     const auto &actual_branch = update_entry.actualBranch;
     BTBEntry entry_to_write =
         (actual_branch.isCond && existing_entry) ?
-            BTBEntry(*existing_entry) : requested_entry;
+            BTBEntry(*existing_entry) :
+            makeTargetEntryWriteBase(update_entry);
 
     applyActualBranchIdentity(entry_to_write, actual_branch);
     entry_to_write.tag = tag;
@@ -509,12 +547,9 @@ buildTargetUpdateEntries(
     entries.reserve(pred_update_entries.size() +
                     actual_update_branches.size());
 
-    auto add_entry = [&](BTBEntry entry, const ResolvedBranch &actual_branch,
+    auto add_entry = [&](const ResolvedBranch &actual_branch,
+                         Addr base_target, int base_ctr, int base_source,
                          bool synthesized_from_actual) {
-        if (!entry.valid) {
-            return;
-        }
-
         bool keep = false;
         switch (filter) {
           case TargetUpdateEntryFilter::Any:
@@ -531,7 +566,9 @@ buildTargetUpdateEntries(
             return;
         }
 
-        entries.push_back({entry, synthesized_from_actual, actual_branch});
+        entries.push_back(makeTargetUpdateEntry(
+            actual_branch, base_target, base_ctr, base_source,
+            synthesized_from_actual));
     };
     auto has_entry_pc = [&](Addr pc) {
         return std::any_of(
@@ -544,20 +581,20 @@ buildTargetUpdateEntries(
         if (has_entry_pc(branch.pc)) {
             return;
         }
-        BTBEntry entry = makeBTBEntryFromResolvedBranch(branch);
-        if (entry.isCond) {
-            entry.ctr = 0;
-        }
-        add_entry(entry, branch, true);
+        add_entry(branch, branch.target, 0, -1, true);
     };
 
     for (const auto &entry : pred_update_entries) {
+        if (!entry.valid) {
+            continue;
+        }
         const auto *actual_branch =
             findActualUpdateBranch(actual_update_branches, entry.pc);
         if (!actual_branch) {
             continue;
         }
-        add_entry(entry, *actual_branch, false);
+        add_entry(
+            *actual_branch, entry.target, entry.ctr, entry.source, false);
     }
     for (const auto &branch : actual_update_branches) {
         if (branch.taken) {

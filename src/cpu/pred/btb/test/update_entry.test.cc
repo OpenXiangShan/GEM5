@@ -195,7 +195,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchPrefix)
         TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].writeBaseEntry.pc, prefix_entry.pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, prefix_entry.pc);
     EXPECT_FALSE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].synthesizedFromActual);
 }
@@ -214,7 +214,7 @@ TEST(UpdateEntryBuilderTest, TargetFilterKeepsIndirectNonReturnOnly)
         TargetUpdateEntryFilter::IndirectNonReturn);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].writeBaseEntry.pc, indirect.pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, indirect.pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].actualBranch.mispred);
     EXPECT_FALSE(entries[0].synthesizedFromActual);
@@ -241,7 +241,7 @@ TEST(UpdateEntryBuilderTest, TargetUpdateRequiresMatchingActualBranch)
         TargetUpdateEntryFilter::IndirectNonReturn);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].writeBaseEntry.pc, second.pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, second.pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_EQ(entries[0].actualBranch.pc, second.pc);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
@@ -305,7 +305,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlKeepsOnlyActualControl)
         TargetUpdateEntryFilter::TakenControl);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].writeBaseEntry.pc, control.pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_FALSE(entries[0].actualBranch.mispred);
     EXPECT_EQ(entries[0].actualBranch.pc, control.pc);
@@ -325,7 +325,7 @@ TEST(UpdateEntryBuilderTest, TargetTakenControlCanBuildActualEntry)
         TargetUpdateEntryFilter::TakenControl);
 
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].writeBaseEntry.pc, branch_pc);
+    EXPECT_EQ(entries[0].actualBranch.pc, branch_pc);
     EXPECT_TRUE(entries[0].actualBranch.taken);
     EXPECT_TRUE(entries[0].synthesizedFromActual);
     EXPECT_EQ(entries[0].actualBranch.target, actual_target);
@@ -356,7 +356,8 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesExistingCondCounter)
         makeResolvedBranch(requested, true, false);
     actual_branch.target = 0x6000;
 
-    const TargetUpdateEntry update{requested, false, actual_branch};
+    const auto update =
+        makeTargetUpdateEntryFromBase(requested, actual_branch, false);
     const auto written = buildUpdatedTargetEntry(update, &existing, 0x30);
 
     EXPECT_EQ(written.pc, requested.pc);
@@ -373,7 +374,8 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualDirectTarget)
         makeResolvedBranch(direct, true, false);
     actual_branch.target = 0x5000;
 
-    const TargetUpdateEntry update{direct, false, actual_branch};
+    const auto update =
+        makeTargetUpdateEntryFromBase(direct, actual_branch, false);
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x38);
 
     EXPECT_EQ(written.pc, direct.pc);
@@ -389,7 +391,8 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualIndirectTarget)
         makeResolvedBranch(indirect, true, false);
     actual_branch.target = 0x5000;
 
-    const TargetUpdateEntry update{indirect, false, actual_branch};
+    const auto update =
+        makeTargetUpdateEntryFromBase(indirect, actual_branch, false);
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x40);
 
     EXPECT_EQ(written.pc, indirect.pc);
@@ -414,8 +417,8 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualBranchIdentity)
     actual_branch.size = 4;
     actual_branch.target = 0x7000;
 
-    const TargetUpdateEntry update{
-        stale_direct, false, actual_branch};
+    const auto update =
+        makeTargetUpdateEntryFromBase(stale_direct, actual_branch, false);
     const auto written = buildUpdatedTargetEntry(update, nullptr, 0x48);
 
     EXPECT_EQ(written.pc, actual_branch.pc);
@@ -425,6 +428,36 @@ TEST(UpdateEntryBuilderTest, UpdatedTargetEntryUsesActualBranchIdentity)
     EXPECT_EQ(written.size, actual_branch.size);
     EXPECT_EQ(written.target, actual_branch.target);
     EXPECT_EQ(written.tag, 0x48);
+}
+
+TEST(UpdateEntryBuilderTest, TargetEntryKeepsOnlySmallBaseState)
+{
+    BTBEntry stale_entry = makeEntry(0x3040, true);
+    stale_entry.target = 0x4100;
+    stale_entry.ctr = -2;
+    stale_entry.source = 3;
+
+    ResolvedBranch actual_branch =
+        makeResolvedBranch(stale_entry.pc, false, false);
+    actual_branch.isCond = true;
+    actual_branch.target = 0x9000;
+
+    const auto entries = buildTargetUpdateEntries(
+        {stale_entry}, {actual_branch},
+        TargetUpdateEntryFilter::Any);
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].actualBranch.pc, actual_branch.pc);
+    EXPECT_EQ(entries[0].baseTarget, stale_entry.target);
+    EXPECT_EQ(entries[0].baseCtr, stale_entry.ctr);
+    EXPECT_EQ(entries[0].baseSource, stale_entry.source);
+
+    const auto written = buildUpdatedTargetEntry(entries[0], nullptr, 0x50);
+    EXPECT_EQ(written.pc, actual_branch.pc);
+    EXPECT_EQ(written.target, stale_entry.target);
+    EXPECT_EQ(written.ctr, -2);
+    EXPECT_EQ(written.source, stale_entry.source);
+    EXPECT_EQ(written.tag, 0x50);
 }
 
 TEST(UpdateEntryBuilderTest, UpdateEndInstPCUsesActualTakenOrSquashBoundary)
@@ -717,7 +750,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
         TargetUpdateEntryFilter::Any);
 
     ASSERT_EQ(target_entries.size(), 1);
-    EXPECT_EQ(target_entries[0].writeBaseEntry.pc, taken.pc);
+    EXPECT_EQ(target_entries[0].actualBranch.pc, taken.pc);
     EXPECT_TRUE(target_entries[0].synthesizedFromActual);
     EXPECT_TRUE(target_entries[0].actualBranch.mispred);
     EXPECT_EQ(target_entries[0].actualBranch.target, taken.target);
