@@ -341,16 +341,12 @@ UBTB::updateNewEntryFromActualBranch(
 
 
 void
-UBTB::updateWithContext(const std::vector<TargetUpdateEntry> &entries,
+UBTB::updateWithContext(const ResolvedBranch *taken_branch,
                         const BranchUpdateContext &ctx,
                         const UBTBMeta &meta)
 {
     auto pred_hit_entry = meta.hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
-    const ResolvedBranch *taken_branch = nullptr;
-    if (!entries.empty() && entries.front().actualBranch.taken) {
-        taken_branch = &entries.front().actualBranch;
-    }
     auto startAddr = ctx.startPC;
     Addr oldtag = getTag(startAddr, ctx.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
@@ -392,7 +388,9 @@ UBTB::updateWithTargetEntries(
     if (!meta) {
         return;
     }
-    updateWithContext(entries, ctx, *meta);
+    const auto *taken_entry = findTakenTargetUpdateEntry(entries);
+    updateWithContext(
+        taken_entry ? &taken_entry->actualBranch : nullptr, ctx, *meta);
 }
 
 void

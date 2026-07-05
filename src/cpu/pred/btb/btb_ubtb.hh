@@ -205,7 +205,7 @@ class UBTB : public TimedBaseBTBPredictor
     };
     std::shared_ptr<UBTBMeta> meta;
 
-    void updateWithContext(const std::vector<TargetUpdateEntry> &entries,
+    void updateWithContext(const ResolvedBranch *taken_branch,
                            const BranchUpdateContext &ctx,
                            const UBTBMeta &meta);
 
