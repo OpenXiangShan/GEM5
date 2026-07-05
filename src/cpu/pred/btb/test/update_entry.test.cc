@@ -76,6 +76,23 @@ makeResolvedBranch(const BTBEntry &entry, bool taken, bool mispred)
     return branch;
 }
 
+BranchInfo
+makeLegacyBranchInfoForTest(Addr pc, bool taken, bool mispred)
+{
+    const auto branch = makeResolvedBranch(pc, taken, mispred);
+    BranchInfo info;
+    info.pc = branch.pc;
+    info.target = branch.target;
+    info.resolved = true;
+    info.isCond = branch.isCond;
+    info.isIndirect = branch.isIndirect;
+    info.isDirect = branch.isDirect;
+    info.isCall = branch.isCall;
+    info.isReturn = branch.isReturn;
+    info.size = branch.size;
+    return info;
+}
+
 std::vector<BTBEntry>
 makeUpdateEntries(const FetchTarget &stream,
                   unsigned predict_width,
@@ -461,7 +478,7 @@ TEST(UpdateEntryBuilderTest, ActualBranchPrefixProvidesSummaryAndBoundary)
     stream.startPC = 0x1000;
     stream.predTick = 42;
     const BranchInfo ignored_legacy_summary =
-        makeBranchInfo(makeResolvedBranch(0x1080, false, false));
+        makeLegacyBranchInfoForTest(0x1080, false, false);
 
     const auto update_branches =
         makeUpdateBranchPrefix({first, second});
@@ -511,7 +528,7 @@ TEST(UpdateEntryBuilderTest, FetchTargetPredictionDoesNotCreateActualBranch)
     FetchTarget stream;
     stream.predTaken = true;
     stream.predBranchInfo =
-        makeBranchInfo(makeResolvedBranch(0x2008, true, false));
+        makeLegacyBranchInfoForTest(0x2008, true, false);
 
     EXPECT_FALSE(stream.resolved);
     EXPECT_TRUE(stream.resolvedBranches.empty());

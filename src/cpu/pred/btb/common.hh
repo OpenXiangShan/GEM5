@@ -429,8 +429,6 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
     return entry_to_write;
 }
 
-inline BranchInfo makeBranchInfo(const ResolvedBranch &branch);
-
 enum class TargetUpdateEntryFilter
 {
     Any,
@@ -805,22 +803,6 @@ struct FetchTarget
     }
 
 };
-
-inline BranchInfo
-makeBranchInfo(const ResolvedBranch &branch)
-{
-    BranchInfo info;
-    info.pc = branch.pc;
-    info.target = branch.target;
-    info.resolved = true;
-    info.isCond = branch.isCond;
-    info.isIndirect = branch.isIndirect;
-    info.isDirect = branch.isDirect;
-    info.isCall = branch.isCall;
-    info.isReturn = branch.isReturn;
-    info.size = branch.size;
-    return info;
-}
 
 inline BranchUpdateContext
 makeBaseBranchUpdateContext(const FetchTarget &target)
