@@ -80,8 +80,7 @@ TEST(UpdateEntryBuilderTest, DirectionUpdateBranchPrefixOverridesEntryResolvedBi
 
     const auto entries = buildDirectionUpdateEntries(
         {prefix_entry, legacy_resolved_entry},
-        {makeResolvedBranch(prefix_entry.pc, false, false)},
-        true);
+        {makeResolvedBranch(prefix_entry.pc, false, false)});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, prefix_entry.pc);
@@ -94,8 +93,7 @@ TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
     const BTBEntry new_entry = makeEntry(0x1010, true, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {}, {makeResolvedBranch(new_entry.pc, false, false)},
-        false);
+        {}, {makeResolvedBranch(new_entry.pc, false, false)});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, new_entry.pc);
@@ -110,8 +108,7 @@ TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
     entry.ctr = -1;
 
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {makeResolvedBranch(entry.pc, true, false)},
-        false);
+        {entry}, {makeResolvedBranch(entry.pc, true, false)});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, entry.pc);
@@ -124,8 +121,7 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
     const BTBEntry entry = makeEntry(0x1018, true, false);
 
     const auto entries = buildDirectionUpdateEntries(
-        {entry}, {makeResolvedBranch(entry.pc, true, true)},
-        true);
+        {entry}, {makeResolvedBranch(entry.pc, true, true)});
 
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].branch.pc, entry.pc);
@@ -133,14 +129,27 @@ TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
     EXPECT_TRUE(entries[0].actualMispred);
 }
 
-TEST(UpdateEntryBuilderTest, DirectionResolvedUpdateRequiresResolvedBranchSet)
+TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresActualBranchSet)
 {
     const BTBEntry cond_entry = makeEntry(0x1020, true, false);
 
-    const auto entries = buildDirectionUpdateEntries(
-        {cond_entry}, {}, true);
+    const auto entries = buildDirectionUpdateEntries({cond_entry}, {});
 
     EXPECT_TRUE(entries.empty());
+}
+
+TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresMatchingActualBranch)
+{
+    const BTBEntry predicted_cond = makeEntry(0x1024, true, false);
+    const ResolvedBranch other_branch =
+        makeResolvedBranch(0x1028, false, false);
+
+    const auto entries =
+        buildDirectionUpdateEntries({predicted_cond}, {other_branch});
+
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].branch.pc, other_branch.pc);
+    EXPECT_TRUE(entries[0].isNewEntry);
 }
 
 TEST(UpdateEntryBuilderTest, TargetUpdateBranchPrefixOverridesEntryResolvedBits)
@@ -552,7 +561,7 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     EXPECT_EQ(update_branches[1].pc, taken.pc);
 
     const auto direction_entries = buildDirectionUpdateEntries(
-        update_btb_entries, update_branches, true);
+        update_btb_entries, update_branches);
 
     ASSERT_EQ(direction_entries.size(), 2);
     EXPECT_EQ(direction_entries[0].branch.pc, missing.pc);
@@ -643,7 +652,7 @@ TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
     ASSERT_TRUE(update_btb_entries.empty());
 
     const auto direction_entries = buildDirectionUpdateEntries(
-        update_btb_entries, update_branches, true);
+        update_btb_entries, update_branches);
 
     ASSERT_EQ(direction_entries.size(), 1);
     EXPECT_EQ(direction_entries[0].branch.pc, missing.pc);

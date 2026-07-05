@@ -431,8 +431,7 @@ findActualUpdateBranch(
 inline std::vector<DirectionUpdateEntry>
 buildDirectionUpdateEntries(
     const std::vector<BTBEntry> &update_btb_entries,
-    const std::vector<ResolvedBranch> &actual_update_branches,
-    bool resolved_update)
+    const std::vector<ResolvedBranch> &actual_update_branches)
 {
     std::vector<DirectionUpdateEntry> entries;
     entries.reserve(update_btb_entries.size() +
@@ -448,7 +447,7 @@ buildDirectionUpdateEntries(
                          bool is_new_entry) {
         const auto *actual_branch =
             findActualUpdateBranch(actual_update_branches, branch.pc);
-        if (!branch.isCond || (resolved_update && !actual_branch)) {
+        if (!branch.isCond || !actual_branch) {
             return;
         }
         entries.push_back({branch,

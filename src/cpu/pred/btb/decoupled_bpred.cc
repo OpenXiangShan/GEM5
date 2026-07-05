@@ -881,9 +881,7 @@ DecoupledBPUWithBTB::updatePredictorComponent(
     switch (component->updateProtocol()) {
       case PredictorUpdateProtocol::DirectionEntries: {
         const auto entries = buildDirectionUpdateEntries(
-            update_btb_entries,
-            update_branches,
-            component->getResolvedUpdate());
+            update_btb_entries, update_branches);
         component->updateWithDirectionEntries(
             entries, update_ctx, prediction_meta, phistory);
         return;
