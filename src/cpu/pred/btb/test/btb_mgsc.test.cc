@@ -328,8 +328,8 @@ struct MgscHarness
             recover_stream.startPC = start_pc;
             recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
             recover_stream.resolved = true;
-            recover_stream.exeBranchInfo = entry;
-            recover_stream.exeTaken = actual_taken;
+            recover_stream.addResolvedBranch(
+                makeResolvedBranch(entry, actual_taken));
             recover_stream.squashPC = entry.pc;
 
             mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
@@ -539,8 +539,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         FetchTarget stream;
         stream.startPC = start_pc;
         stream.resolved = true;
-        stream.exeBranchInfo = entry;
-        stream.exeTaken = true;
+        stream.addResolvedBranch(makeResolvedBranch(entry, true));
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         updateMgsc(mgsc, stream, entry, true);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
@@ -551,8 +550,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         FetchTarget stream;
         stream.startPC = start_pc;
         stream.resolved = true;
-        stream.exeBranchInfo = entry;
-        stream.exeTaken = false;
+        stream.addResolvedBranch(makeResolvedBranch(entry, false));
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         updateMgsc(mgsc, stream, entry, false);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));

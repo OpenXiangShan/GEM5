@@ -77,9 +77,8 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
                          std::shared_ptr<void> meta) {
     FetchTarget stream;
     stream.startPC = startPC;
-    stream.exeBranchInfo = entry;
-    stream.exeTaken = taken;
-    // Mark as resolved so recover paths use exe* info
+    stream.addResolvedBranch(
+        createResolvedBranch(BranchInfo(entry), taken, false));
     stream.resolved = true;
     stream.predBranchInfo = entry; // keep fields consistent
     stream.predMetas[0] = meta;
@@ -88,7 +87,12 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
 
 FetchTarget setMispredStream(FetchTarget stream) {
     stream.squashType = SquashType::SQUASH_CTRL;
-    stream.squashPC = stream.exeBranchInfo.pc;
+    const auto update_branches =
+        makeUpdateBranchPrefix(stream.resolvedBranches);
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
+    stream.squashPC =
+        summary_branch ? summary_branch->pc : stream.predBranchInfo.pc;
     return stream;
 }
 
@@ -210,8 +214,16 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
 
 PathHistoryUpdate getActualPathUpdate(const FetchTarget& stream)
 {
+    const auto update_branches =
+        makeUpdateBranchPrefix(stream.resolvedBranches);
+    const auto *summary_branch =
+        findActualUpdateSummaryBranch(update_branches);
+    if (!summary_branch) {
+        return {};
+    }
     return stream.getPHistUpdateDuringSquash(
-        stream.squashPC, stream.exeBranchInfo, stream.exeTaken);
+        stream.squashPC, makeBranchInfo(*summary_branch),
+        summary_branch->taken);
 }
 
 TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
@@ -342,8 +354,8 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         FetchTarget stream;
         stream.startPC = 0x1000;
         stream.predBTBEntries = c.predictedBeforeSquash;
-        stream.exeBranchInfo = c.resolvedEntry;
-        stream.exeTaken = c.actualTaken;
+        stream.addResolvedBranch(
+            createResolvedBranch(c.resolvedEntry, c.actualTaken, true));
         stream.resolved = true;
         stream.squashPC = c.squashPC;
 
@@ -472,7 +484,7 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
         const auto path_update = getActualPathUpdate(stream);
         recoverSelectedHistory(tage, history, stream, 1, actual_taken,
                                path_update);
-        applyActualHistory(tage, history, stream.exeBranchInfo, 1, actual_taken);
+        applyActualHistory(tage, history, entry, 1, actual_taken);
         tage->checkFoldedHist(history, "recover");
     }
 
@@ -1251,13 +1263,7 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
     auto meta = tage->getPredictionMeta();
 
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, -1);
-    FetchTarget stream;
-    stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry;
-    stream.exeTaken = true;
-    stream.resolved = true;
-    stream.predBranchInfo = newEntry;
-    stream.predMetas[0] = meta;
+    FetchTarget stream = createStream(0x1000, newEntry, true, meta);
     stream = setMispredStream(stream);
 
     updateDirectionPredictor(tage, stream, newEntry, true, true);
@@ -1273,13 +1279,7 @@ TEST_F(BTBTAGETest, NewConditionalEntryOutsidePredictionBlockDoesNotTrain) {
     auto meta = tage->getPredictionMeta();
 
     BTBEntry newEntry = createBTBEntry(0x1042, true, true, -1);
-    FetchTarget stream;
-    stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry;
-    stream.exeTaken = true;
-    stream.resolved = true;
-    stream.predBranchInfo = newEntry;
-    stream.predMetas[0] = meta;
+    FetchTarget stream = createStream(0x1000, newEntry, true, meta);
     stream = setMispredStream(stream);
 
     updateDirectionPredictor(tage, stream, newEntry, true, true);
@@ -1309,13 +1309,7 @@ TEST_F(BTBTAGETest, ResolvedUpdateUsesExplicitPrefix) {
     predictTAGE(tage, 0x1000, {first, second}, history, stagePreds);
     auto meta = tage->getPredictionMeta();
 
-    FetchTarget stream;
-    stream.startPC = 0x1000;
-    stream.exeBranchInfo = first;
-    stream.exeTaken = false;
-    stream.resolved = true;
-    stream.predBranchInfo = first;
-    stream.predMetas[0] = meta;
+    FetchTarget stream = createStream(0x1000, first, false, meta);
 
     updateDirectionPredictor(tage, stream, {{first, false, false}});
 
@@ -1497,13 +1491,7 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     auto meta = tage->getPredictionMeta();
 
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, -1);
-    FetchTarget stream;
-    stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry;
-    stream.exeTaken = true;
-    stream.resolved = true;
-    stream.predBranchInfo = newEntry;
-    stream.predMetas[0] = meta;
+    FetchTarget stream = createStream(0x1000, newEntry, true, meta);
     stream = setMispredStream(stream);
 
     updateDirectionPredictor(tage, stream, newEntry, true, true);
