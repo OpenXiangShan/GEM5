@@ -92,14 +92,13 @@ bool isHit;  // 是有效预测，finalPred.valid 有效
 bool falseHit;  // 是否假命中？
 FTBEntry predFTBEntry;  // 预测的 FTB 条目
 
-// for commit, write at redirect or fetch 重定向信息！很多在 squash 之后写入
-bool exeTaken;  // exe 阶段分支确实跳转
-BranchInfo exeBranchInfo;  // 实际跳转的分支信息，区别 predBranchInfo
+// for update/recovery, actual CFIs accumulated by resolve/commit paths
+std::vector<ResolvedBranch> resolvedBranches;  // 实际控制流结果集合
 
 FTBEntry updateFTBEntry;   // 新的，要写入 FTB 的 FTB 条目，ftb->update() 写入
 bool updateIsOldEntry;  // 是否更新为旧的 FTB 条目
 
-bool resolved;  // squash 后变为 true, if resolved, 使用 exeBranchInfo+exeTaken
+bool resolved;  // squash 后变为 true，并保存 squash 信息
 
 // 重定向相关元信息，commit 设置并传给 BPU
 int squashType;  // squash 类型，ctrl(分支 redirect) or trap or other
@@ -117,18 +116,16 @@ boost::dynamic_bitset<> history; // 全局分支历史，970 位，推测更新�
 
 1. startPC，预测起始 PC, = s0PC, 各子预测器预测 PC
 2. predTaken 到 predFTBEntry, 当各预测器生成完 finalPred 之后，填入预测内容
-3. exeTaken/exeBranchInfo, 默认为 predTaken, 如果出现重定向 controlSquash，设为真正 taken 方向
+3. resolvedBranches 由 resolve/commit 路径累积实际 CFI，不再从预测字段伪造 actual result
 4. updateFTBEntry：调用 getAndSetNewFTBEntry 之后暂存下，然后 ftb->update() 用它来更新 ftb entry
-5. resolved: 出现三种 squash(control/noncontrol/trap) resolved 为 true, 使用 exeTaken 信息，并保存 squash 信息
+5. resolved: 出现三种 squash(control/noncontrol/trap) resolved 为 true，并保存 squash 信息
 
-这里有两组很类似的数据结构，分别是 pred 开头和 exe 开头，内容包括（predEndPC, predTarget, predTaken，exe 同理）然后当把这些内容传递给 FTQ 时候，根据 resolved 来二选一传递过去（选 pred 信息 or exe 信息）
+这里旧版本曾有两组很类似的数据结构，分别保存 prediction summary 和 execution summary。当前更新协议应直接消费 prediction-time meta/history snapshot 加 `resolvedBranches` actual branch set，而不是在 `FetchTarget` 里二选一推导 actual 结果。
 
 ```cpp
-    BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
-    Addr getTaken() const { return resolved ? exeTaken : predTaken; }
-    Addr getTakenTarget() const { return getBranchInfo().target; }
+    std::vector<ResolvedBranch> resolvedBranches;
+    BranchUpdateContext ctx =
+        makeActualBranchUpdateContext(base_ctx, makeUpdateBranchPrefix(resolvedBranches));
 ```
 
 本质上对应两个阶段：
@@ -487,7 +484,8 @@ void controlSquash();
 void nonControlSquash();
 void trapSquash();
 
-// commit stream 后更新 BPU, 删除 fsqId 对应的 fsq entry，统计数据，当 ftbHit or exeTaken 时候，调用每个组件 update()
+// commit stream 后更新 BPU, 删除 fsqId 对应的 fsq entry，统计数据；
+// 组件训练由 explicit actual branch set 控制。
 void update(unsigned fsqID, ThreadID tid);
 
 // 提交分支指令，统计计数！先统计整体的，再统计各个预测器的
@@ -602,7 +600,7 @@ DecoupledBPUWithFTB::controlSquash(){
         components[i]->recoverHist(s0History, stream, real_shamt, real_taken);
     }
     histShiftIn(real_shamt, real_taken, s0History);
-    historyManager.squash(stream_id, real_shamt, real_taken, stream.exeBranchInfo);
+    historyManager.squash(stream_id, real_shamt, real_taken, actual_branch);
     // 清空 FTQ
     fetchTargetQueue.squash(target_id + 1, ftq_demand_stream_id,real_target);
 }

@@ -761,11 +761,6 @@ struct FetchTarget
     bool isHit;          // whether the predicted btb entry is hit
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
 
-    // Legacy compatibility summary. Production update/recovery paths consume
-    // resolvedBranches or explicit branch facts instead of these fields.
-    bool exeTaken;
-    BranchInfo exeBranchInfo;
-
     bool resolved;  // whether the branch is resolved/executed
 
     std::vector<ResolvedBranch> resolvedBranches; // actual CFIs from resolve
@@ -801,8 +796,6 @@ struct FetchTarget
          predEndPC(0),
          predBranchInfo(BranchInfo()),
          isHit(false),
-         exeTaken(false),
-         exeBranchInfo(BranchInfo()),
          resolved(false),
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),

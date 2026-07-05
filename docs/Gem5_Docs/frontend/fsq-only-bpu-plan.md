@@ -132,7 +132,7 @@
 等 Phase 1–3 稳定后，再逐步做语义级清理：
 - 可能的拆分方式：
   - `PredInfo`：start/end、taken、branch info、btb entries、metas、history snapshots
-  - `ResolveInfo/UpdateInfo`：exeTaken/exeBranchInfo/resolvedBranches/prepared update entries/squash info
+  - `ResolveInfo/UpdateInfo`：resolved branch set / prepared update entries / squash info
   - `Stats/Trace`：可选，必要时用开关控制
 - 删除不再被 update/trace/统计路径使用的字段。
 

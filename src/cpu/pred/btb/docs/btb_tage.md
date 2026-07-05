@@ -348,8 +348,7 @@ When a misprediction is detected, history must be recovered:
 // Setup recovery stream
 FetchTarget recoverStream;
 recoverStream.startPC = pc;
-recoverStream.exeBranchInfo = branch_info;
-recoverStream.exeTaken = actual_taken;
+recoverStream.addResolvedBranch(actual_branch);
 recoverStream.predMetas[0] = meta;  // Must include metadata from prediction
 
 

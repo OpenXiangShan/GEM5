@@ -75,9 +75,8 @@ struct FetchTarget {
     BranchInfo predBranchInfo;  // Predicted branch info
     std::vector<BTBEntry> predBTBEntries;  // BTB predictions
     
-    // Execution results (updated after resolution)
-    bool exeTaken;         // Actual taken
-    BranchInfo exeBranchInfo;  // Actual branch info
+    // Execution results accumulated after resolution
+    std::vector<ResolvedBranch> resolvedBranches;  // Actual CFI facts
     
     // Statistics
     int fetchInstNum;     // Number of fetched instructions

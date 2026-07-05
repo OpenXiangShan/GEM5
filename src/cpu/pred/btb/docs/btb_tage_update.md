@@ -46,7 +46,7 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
   summary，给 BTB/RAS/uBTB 这类仍需要“本 fetch block 是否有 taken control”
   的路径使用；
 - 没有 resolved branch set 时，commit update 只保留 base context，
-  不再从单一的 `exeBranchInfo + exeTaken` 伪造 actual result。
+  不再从单一的 stream-level legacy summary 伪造 actual result。
 
 这正是当前协议区别于旧模型的关键：旧模型经常用 predicted BTB entries 加一个
 executed branch summary 去猜训练 entry；新模型优先消费真实 resolved facts。

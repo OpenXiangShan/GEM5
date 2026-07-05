@@ -116,8 +116,7 @@ tage->updateWithDirectionEntries(entries, ctx, meta, stream.phistory);
 // set up recover stream
 FetchTarget recoverStream;
 recoverStream.startPC = pc;
-recoverStream.exeBranchInfo = entry;
-recoverStream.exeTaken = taken;
+recoverStream.addResolvedBranch(actual_branch);
 recoverStream.predMetas[0] = meta;
 
 tage.recoverHist(s0History, recoverStream, shamt, taken);

@@ -96,8 +96,7 @@ tage->checkFoldedHist(s0History, "speculative update");
 // Setup update stream
 FetchStream stream;
 stream.startPC = pc;
-stream.exeBranchInfo = entry;
-stream.exeTaken = taken;
+stream.addResolvedBranch(actual_branch);
 stream.predMetas[0] = meta;  // Must set meta from prediction phase
 
 // Update predictor
