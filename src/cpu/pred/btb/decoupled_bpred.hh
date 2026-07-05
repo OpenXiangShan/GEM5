@@ -177,7 +177,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printTarget(const FetchTarget &e)
     {
-        BranchInfo branch_info = e.predBranchInfo;
+        Addr branch_pc = e.predBranchInfo.pc;
+        Addr branch_end = e.predBranchInfo.getEnd();
+        Addr branch_target = e.predBranchInfo.target;
         bool taken = e.predTaken;
         bool has_actual_summary = false;
 
@@ -187,7 +189,9 @@ class DecoupledBPUWithBTB : public BPredUnit
             const auto *summary_branch =
                 findActualUpdateSummaryBranch(update_branches);
             if (summary_branch) {
-                branch_info = makeBranchInfo(*summary_branch);
+                branch_pc = summary_branch->pc;
+                branch_end = summary_branch->pc + summary_branch->size;
+                branch_target = summary_branch->target;
                 taken = summary_branch->taken;
                 has_actual_summary = true;
             }
@@ -202,8 +206,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         }
         DPRINTFR(DecoupleBPProbe,
                  "%#lx-[%#lx, %#lx) --> %#lx, taken: %lu\n",
-                 e.startPC, branch_info.pc, branch_info.getEnd(),
-                 branch_info.target, taken);
+                 e.startPC, branch_pc, branch_end, branch_target, taken);
     }
 
     /**
