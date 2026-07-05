@@ -85,14 +85,19 @@ protected:
     std::vector<ResolvedBranch>
     makeActualBranches(const FetchTarget &stream)
     {
+        return makeUpdateBranchPrefix(stream.resolvedBranches);
+    }
+
+    ResolvedBranch
+    makeActualBranch(Addr branchPC, bool isCall, bool taken, unsigned size)
+    {
         ResolvedBranch branch;
-        branch.pc = stream.exeBranchInfo.pc;
-        branch.target = stream.exeBranchInfo.target;
-        branch.taken = stream.exeTaken;
-        branch.isCall = stream.exeBranchInfo.isCall;
-        branch.isReturn = stream.exeBranchInfo.isReturn;
-        branch.size = stream.exeBranchInfo.size;
-        return {branch};
+        branch.pc = branchPC;
+        branch.taken = taken;
+        branch.isCall = isCall;
+        branch.isReturn = !isCall;
+        branch.size = size;
+        return branch;
     }
 
     // Helper function to create a commit stream for call instructions
@@ -100,11 +105,8 @@ protected:
                                        std::shared_ptr<void> meta, bool taken = true) {
         FetchTarget stream;
         stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = true;
-        stream.exeBranchInfo.isReturn = false;
-        stream.exeBranchInfo.size = size;
+        stream.addResolvedBranch(
+            makeActualBranch(branchPC, true, taken, size));
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -114,11 +116,8 @@ protected:
                                          std::shared_ptr<void> meta, bool taken = true) {
         FetchTarget stream;
         stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = false;
-        stream.exeBranchInfo.isReturn = true;
-        stream.exeBranchInfo.size = size;
+        stream.addResolvedBranch(
+            makeActualBranch(branchPC, false, taken, size));
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -128,11 +127,8 @@ protected:
                                      std::shared_ptr<void> meta, bool taken = false) {
         FetchTarget stream;
         stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = isCall;
-        stream.exeBranchInfo.isReturn = !isCall;
-        stream.exeBranchInfo.size = size;
+        stream.addResolvedBranch(
+            makeActualBranch(branchPC, isCall, taken, size));
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -246,12 +242,11 @@ TEST_F(RASTest, BasicRecovery) {
     // Create recovery stream
     FetchTarget recoverStream;
     recoverStream.startPC = 0x1000;
-    recoverStream.exeTaken = false;  // Not taken, so no actual call
     recoverStream.predMetas[0] = initialMeta;
 
     // Recover to initial state
-    ras->recoverState(
-        recoverStream, recoverStream.exeBranchInfo, recoverStream.exeTaken);
+    BranchInfo no_actual_branch;
+    ras->recoverState(recoverStream, no_actual_branch, false);
 
     // Check that we're back to initial state
     checkReturnTarget(0x1000, 0x80000000L);
@@ -430,14 +425,11 @@ TEST_F(RASTest, ComplexRecovery) {
     // Recover to the state after first call (simulate misprediction)
     FetchTarget recoverStream;
     recoverStream.startPC = 0x2000;
-    recoverStream.exeTaken = true;  // The first call was actually taken
-    recoverStream.exeBranchInfo.pc = 0x1000;
-    recoverStream.exeBranchInfo.isCall = true;
-    recoverStream.exeBranchInfo.size = 4;
     recoverStream.predMetas[0] = meta1;
+    const BranchInfo actual_branch =
+        makeBranchInfo(makeActualBranch(0x1000, true, true, 4));
 
-    ras->recoverState(
-        recoverStream, recoverStream.exeBranchInfo, recoverStream.exeTaken);
+    ras->recoverState(recoverStream, actual_branch, true);
 
     // Should be back to state with just one call
     checkReturnTarget(0x2000, 0x1004);
@@ -471,8 +463,10 @@ TEST_F(RASTest, CommitFlow) {
     // Test recovery - should now use committed stack
     boost::dynamic_bitset<> history(8, 0);
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, initialMeta, false);
+    const BranchInfo actual_branch =
+        makeBranchInfo(makeActualBranch(0x1000, true, false, 4));
     ras->recoverState(
-        recoverStream, recoverStream.exeBranchInfo, recoverStream.exeTaken);
+        recoverStream, actual_branch, false);
 
     // After recovery, committed stack should be available
     checkReturnTarget(0x2000, 0x1004);
@@ -498,8 +492,9 @@ TEST_F(RASTest, MixedOperations) {
 
     // Step 3: Simulate misprediction and recovery
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, meta0, true);
-    ras->recoverState(
-        recoverStream, recoverStream.exeBranchInfo, recoverStream.exeTaken);
+    const BranchInfo actual_branch =
+        makeBranchInfo(makeActualBranch(0x1000, true, true, 4));
+    ras->recoverState(recoverStream, actual_branch, true);
 
     // Should have committed call1, but lose speculative call2 and call3
     checkReturnTarget(0x2000, 0x1004);

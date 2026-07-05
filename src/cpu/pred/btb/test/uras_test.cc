@@ -10,6 +10,22 @@ namespace gem5 {
 namespace branch_prediction {
 namespace btb_pred {
 
+namespace
+{
+
+BranchInfo
+makeActualBranch(Addr pc, bool is_call, bool is_return, unsigned size = 4)
+{
+    BranchInfo branch;
+    branch.pc = pc;
+    branch.isCall = is_call;
+    branch.isReturn = is_return;
+    branch.size = size;
+    return branch;
+}
+
+} // namespace
+
 // Mock class for uRAS entry
 struct uRASEntry {
     Addr retAddr;   // return address
@@ -27,7 +43,7 @@ struct uRASMeta {
 // Mock class for uRAS
 class MockuRAS {
 public:
-    MockuRAS(unsigned numEntries = 16, unsigned ctrWidth = 2) 
+    MockuRAS(unsigned numEntries = 16, unsigned ctrWidth = 2)
         : numEntries(numEntries), maxCtr((1 << ctrWidth) - 1) {
         // Initialize stack
         specSp = 0;
@@ -159,11 +175,11 @@ protected:
         // Create mock uRAS instance
         uras = new MockuRAS(16, 2);  // 16 entries, 2-bit counter
     }
-    
+
     void TearDown() override {
         delete uras;
     }
-    
+
     MockuRAS* uras;
 };
 
@@ -172,15 +188,15 @@ TEST_F(URASTest, BasicPush) {
     Addr retAddr = 0x1000;
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // Check initial state
     EXPECT_EQ(sp, 0);
     EXPECT_EQ(stack[sp].retAddr, 0x80000000L);
     EXPECT_EQ(stack[sp].ctr, 0);
-    
+
     // Perform push operation
     uras->push(retAddr, stack, sp); // push retAddr = 0x1000
-    
+
     // Verify state after push
     EXPECT_EQ(sp, 1);
     EXPECT_EQ(stack[sp].retAddr, retAddr);
@@ -192,14 +208,14 @@ TEST_F(URASTest, BasicPop) {
     Addr retAddr = 0x1000;
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // First push an address
     uras->push(retAddr, stack, sp); // push retAddr = 0x1000
     EXPECT_EQ(sp, 1);
-    
+
     // Perform pop operation
     uras->pop(stack, sp); // pop retAddr = 0x1000
-    
+
     // Verify state after pop
     EXPECT_EQ(sp, 0);
     EXPECT_EQ(stack[sp].retAddr, 0x80000000L);
@@ -211,20 +227,20 @@ TEST_F(URASTest, CounterBehavior) {
     Addr retAddr = 0x1000;
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // Push same address twice
     uras->push(retAddr, stack, sp); // ctr: 0 -> 0 (new entry)
     uras->push(retAddr, stack, sp); // ctr: 0 -> 1 (same entry)
     uras->push(retAddr, stack, sp); // ctr: 1 -> 2 (same entry)
-    
+
     // Verify counter incremented
     EXPECT_EQ(stack[sp].ctr, 2);
     EXPECT_EQ(stack[sp].retAddr, retAddr);
-    
+
     // Pop twice
     uras->pop(stack, sp); // ctr: 2 -> 1 (same entry)
     uras->pop(stack, sp); // ctr: 1 -> 0 (same entry)
-    
+
     // Verify counter decremented
     EXPECT_EQ(stack[sp].ctr, 0);
     EXPECT_EQ(stack[sp].retAddr, retAddr);
@@ -239,12 +255,12 @@ TEST_F(URASTest, CounterBehavior) {
 TEST_F(URASTest, StackFull) {
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // Fill up stack
     for (int i = 0; i < 16; i++) {
         uras->push(0x1000 + i, stack, sp); // push retAddr = 0x1000 + i
     }
-    
+
     // Verify stack full behavior
     EXPECT_EQ(sp, 0);  // Stack size is 16, 16 % 16 = 0
     uras->push(0x2000, stack, sp); // push retAddr = 0x2000
@@ -256,15 +272,15 @@ TEST_F(URASTest, PutPCHistoryBasic) {
     Addr startAddr = 0x1000;
     boost::dynamic_bitset<> history(8, 0);  // 8-bit history, all 0s
     std::vector<FullBTBPrediction> stagePreds(4);  // 4 stages
-    
+
     // set initial state
     Addr retAddr = 0x2000;
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // push an address to the stack
     uras->push(retAddr, stack, sp);
-    
+
     // call putPCHistory
     uras->putPCHistory(startAddr, history, stagePreds);
 
@@ -272,7 +288,7 @@ TEST_F(URASTest, PutPCHistoryBasic) {
     for (int i = 0; i < stagePreds.size(); i++) {
         EXPECT_EQ(stagePreds[i].returnTarget, retAddr);
     }
-    
+
     // verify meta is correctly saved
     auto meta = std::static_pointer_cast<uRASMeta>(uras->getPredictionMeta());
     EXPECT_EQ(meta->sp, sp);
@@ -285,7 +301,7 @@ TEST_F(URASTest, SpecUpdateStateCall) {
     boost::dynamic_bitset<> history(8, 0);
     FullBTBPrediction pred;
     pred.bbStart = 0x1000;
-    
+
     // Setup a call instruction in BTBEntry
     BTBEntry callEntry;
     callEntry.valid = true;
@@ -294,13 +310,13 @@ TEST_F(URASTest, SpecUpdateStateCall) {
     callEntry.size = 4;
     callEntry.target = 0x2000;  // 目标地址
     pred.btbEntries.push_back(callEntry);
-    
+
     // 初始状态检查
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
     EXPECT_EQ(sp, 0);
     EXPECT_EQ(stack[sp].retAddr, 0x80000000L);
-    
+
     // 执行 specUpdateState
     uras->specUpdateState(pred);
 
@@ -315,12 +331,12 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
     boost::dynamic_bitset<> history(8, 0);
     FullBTBPrediction pred;
     pred.bbStart = 0x1000;
-    
+
     // 先push一个返回地址
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
     uras->push(0x2000, stack, sp);
-    
+
     // Setup a return instruction in BTBEntry
     BTBEntry retEntry;
     retEntry.valid = true;
@@ -328,7 +344,7 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
     retEntry.isReturn = true;
     retEntry.target = 0x2000;
     pred.btbEntries.push_back(retEntry);
-    
+
     // 执行 specUpdateState
     uras->specUpdateState(pred);
 
@@ -341,11 +357,11 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
 
 TEST_F(URASTest, SpecUpdateStateCallReturn) {
     boost::dynamic_bitset<> history(8, 0);
-    
+
     // First prediction with call
     FullBTBPrediction pred1;
     pred1.bbStart = 0x1000;
-    
+
     BTBEntry callEntry;
     callEntry.valid = true;
     callEntry.pc = 0x1000;
@@ -353,21 +369,21 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     callEntry.size = 4;
     callEntry.target = 0x2000;
     pred1.btbEntries.push_back(callEntry);
-    
+
     // 执行 call 的 specUpdateState
     uras->specUpdateState(pred1);
 
     // Second prediction with return
     FullBTBPrediction pred2;
     pred2.bbStart = 0x2000;
-    
+
     BTBEntry retEntry;
     retEntry.valid = true;
     retEntry.pc = 0x2000;
     retEntry.isReturn = true;
     retEntry.target = 0x1004;  // 返回到call的下一条指令
     pred2.btbEntries.push_back(retEntry);
-    
+
     // 执行 return 的 specUpdateState
     uras->specUpdateState(pred2);
 
@@ -389,15 +405,15 @@ TEST_F(URASTest, RecoverStateBasic) {
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
     uras->push(0x1000, stack, sp);  // initial state, push an address
-    
+
     // create meta data
     uRASMeta meta;
     meta.sp = 0;  // restore to initial sp
     meta.tos = uRASEntry(0x2000);  // set different tos
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
-    
-    // recover
-    uras->recoverState(entry, entry.exeBranchInfo, entry.exeTaken);
+
+    BranchInfo no_actual_branch;
+    uras->recoverState(entry, no_actual_branch, false);
 
     // verify recovery result
     EXPECT_EQ(sp, 0);  // sp should be restored
@@ -413,20 +429,18 @@ TEST_F(URASTest, RecoverStateReturn) {
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
     uras->push(0x1000, stack, sp);
-    
+
     // 设置meta数据
     uRASMeta meta;
     meta.sp = 1;
     meta.tos = uRASEntry(0x1000);
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
-    
-    // 设置return指令信息
-    entry.exeTaken = true;
-    entry.exeBranchInfo.isReturn = true;
-    entry.exeBranchInfo.pc = 0x2000;
-    
+
+    const BranchInfo actual_branch =
+        makeActualBranch(0x2000, false, true);
+
     // 执行恢复
-    uras->recoverState(entry, entry.exeBranchInfo, entry.exeTaken);
+    uras->recoverState(entry, actual_branch, true);
 
     // 验证：应该先恢复sp和tos，然后执行pop
     EXPECT_EQ(sp, 0);  // 1(恢复) -> 0(pop)
@@ -441,21 +455,18 @@ TEST_F(URASTest, RecoverStateCall) {
     // 设置初始状态
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // 设置meta数据
     uRASMeta meta;
     meta.sp = 0;
     meta.tos = uRASEntry(0x80000000L);
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
-    
-    // 设置call指令信息
-    entry.exeTaken = true;
-    entry.exeBranchInfo.isCall = true;
-    entry.exeBranchInfo.pc = 0x1000;
-    entry.exeBranchInfo.size = 4;
-    
+
+    const BranchInfo actual_branch =
+        makeActualBranch(0x1000, true, false, 4);
+
     // 执行恢复
-    uras->recoverState(entry, entry.exeBranchInfo, entry.exeTaken);
+    uras->recoverState(entry, actual_branch, true);
 
     // 验证：应该先恢复sp和tos，然后执行push
     EXPECT_EQ(sp, 1);  // 0(恢复) -> 1(push)
@@ -469,35 +480,32 @@ TEST_F(URASTest, RecoverStateCallReturn) {
 
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // 第一步：call指令恢复
     uRASMeta meta1;
     meta1.sp = 0;
     meta1.tos = uRASEntry(0x80000000L);
     entry1.predMetas[0] = std::make_shared<uRASMeta>(meta1);
-    
-    entry1.exeTaken = true;
-    entry1.exeBranchInfo.isCall = true;
-    entry1.exeBranchInfo.pc = 0x1000;
-    entry1.exeBranchInfo.size = 4;
-    
-    uras->recoverState(entry1, entry1.exeBranchInfo, entry1.exeTaken);
+
+    const BranchInfo actual_call =
+        makeActualBranch(0x1000, true, false, 4);
+
+    uras->recoverState(entry1, actual_call, true);
 
     // 验证call的结果
     EXPECT_EQ(sp, 1);
     EXPECT_EQ(stack[sp].retAddr, 0x1004);
-    
+
     // 第二步：return指令恢复
     uRASMeta meta2;
     meta2.sp = 1;
     meta2.tos = uRASEntry(0x1004);
     entry2.predMetas[0] = std::make_shared<uRASMeta>(meta2);
-    
-    entry2.exeTaken = true;
-    entry2.exeBranchInfo.isReturn = true;
-    entry2.exeBranchInfo.pc = 0x2000;
-    
-    uras->recoverState(entry2, entry2.exeBranchInfo, entry2.exeTaken);
+
+    const BranchInfo actual_return =
+        makeActualBranch(0x2000, false, true);
+
+    uras->recoverState(entry2, actual_return, true);
 
     // 验证return的结果
     EXPECT_EQ(sp, 0);
