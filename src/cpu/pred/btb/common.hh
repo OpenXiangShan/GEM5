@@ -887,13 +887,6 @@ makeBaseBranchUpdateContext(const FetchTarget &target)
     return ctx;
 }
 
-inline bool
-shouldUpdateBpuPredictors(
-    const std::vector<ResolvedBranch> &actual_update_branches)
-{
-    return !actual_update_branches.empty();
-}
-
 /**
  * @brief Full branch prediction combining predictions from all predictors
  *

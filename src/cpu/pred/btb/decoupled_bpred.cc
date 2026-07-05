@@ -934,7 +934,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
 {
-    if (!shouldUpdateBpuPredictors(update_branches)) {
+    if (update_branches.empty()) {
         return true;
     }
 

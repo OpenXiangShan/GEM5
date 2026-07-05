@@ -629,23 +629,6 @@ TEST(UpdateEntryBuilderTest, MispredictedActualUpdateBranchIsExplicit)
     EXPECT_EQ(findMispredictedActualUpdateBranch({first, taken}), nullptr);
 }
 
-TEST(UpdateEntryBuilderTest, OnlyResolvedBranchSetEnablesBpuUpdate)
-{
-    FetchTarget stream;
-
-    EXPECT_FALSE(shouldUpdateBpuPredictors({}));
-
-    const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
-    EXPECT_TRUE(shouldUpdateBpuPredictors({missing}));
-
-    stream.isHit = true;
-    EXPECT_FALSE(shouldUpdateBpuPredictors({}));
-
-    stream.isHit = false;
-    stream.predTaken = true;
-    EXPECT_FALSE(shouldUpdateBpuPredictors({}));
-}
-
 TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
 {
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
