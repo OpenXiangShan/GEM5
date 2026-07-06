@@ -1,10 +1,12 @@
 from m5.params import *
+from m5.params import isNullPointer
 from m5.proxy import *
 from m5.SimObject import *
 
 class ValuePredType(ScopedEnum):
     # vals will contains value predictor type
-    vals = ["EStride", "MemoryRenaming", "IdealConstantLVP"]
+    vals = ["EStride", "MemoryRenaming", "IdealConstantLVP",
+            "ExampleValuePredictor", "CompositeValuePredictor"]
 
 class ValuePredictor(SimObject):
     type = "ValuePredictor"
@@ -37,6 +39,89 @@ class EStride(ValuePredictor):
     # still not use
     enableTimeMsgInUpdate = Param.Bool(True, "enable use instruction"
                                        "inflight time in update")
+
+class ExampleValuePredictor(ValuePredictor):
+    type = "ExampleValuePredictor"
+    cxx_class = "gem5::valuepred::ExampleValuePredictor"
+    cxx_header = "cpu/valuepred/example_value_predictor.hh"
+    abstract = False
+
+class CVPArb(SimObject):
+    type = "CVPArb"
+    cxx_class = "gem5::valuepred::CompositeValuePredictorArb"
+    cxx_header = "cpu/valuepred/composite_value_predictor_arb.hh"
+    abstract = True
+
+class CVPFixedPriorityArb(CVPArb):
+    type = "CVPFixedPriorityArb"
+    cxx_class = "gem5::valuepred::CompositeValuePredictorFixedPriorityArb"
+    cxx_header = "cpu/valuepred/composite_value_predictor_arb.hh"
+
+class CVPRandomArb(CVPArb):
+    type = "CVPRandomArb"
+    cxx_class = "gem5::valuepred::CompositeValuePredictorRandomArb"
+    cxx_header = "cpu/valuepred/composite_value_predictor_arb.hh"
+
+class CVPRRArb(CVPArb):
+    type = "CVPRRArb"
+    cxx_class = "gem5::valuepred::CompositeValuePredictorRRArb"
+    cxx_header = "cpu/valuepred/composite_value_predictor_arb.hh"
+
+class CVPConfidenceArb(CVPArb):
+    type = "CVPConfidenceArb"
+    cxx_class = "gem5::valuepred::CompositeValuePredictorConfidenceArb"
+    cxx_header = "cpu/valuepred/composite_value_predictor_arb.hh"
+
+    counterBits = Param.Unsigned(2,
+        "Bits of per-child learned confidence counter used by the arbiter")
+
+class CompositeValuePredictor(ValuePredictor):
+    type = "CompositeValuePredictor"
+    cxx_class = "gem5::valuepred::CompositeValuePredictor"
+    cxx_header = "cpu/valuepred/composite_value_predictor.hh"
+    abstract = False
+
+    predictors = VectorParam.ValuePredictor([], "Ordered child value predictors")
+    arb = Param.CVPArb(
+        CVPFixedPriorityArb(),
+        "Arbitration policy for selecting among speculative child candidates")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._rename_predictor_children()
+
+    def __setattr__(self, attr, value):
+        super().__setattr__(attr, value)
+        if attr == "predictors":
+            self._rename_predictor_children()
+
+    def _rename_predictor_children(self):
+        # rename the child predictors so that they have a meaningful name in stats.txt
+        predictors = self._values.get("predictors")
+        if not predictors:
+            return
+
+        type_counts = {}
+        for predictor in predictors:
+            if isNullPointer(predictor):
+                continue
+            type_name = predictor.__class__.__name__
+            type_counts[type_name] = type_counts.get(type_name, 0) + 1
+
+        type_seen = {}
+        for predictor in predictors:
+            if isNullPointer(predictor):
+                continue
+
+            type_name = predictor.__class__.__name__
+            if type_counts[type_name] == 1:
+                child_name = type_name
+            else:
+                child_idx = type_seen.get(type_name, 0)
+                child_name = f"{type_name}_{child_idx}"
+                type_seen[type_name] = child_idx + 1
+
+            predictor.set_parent(self, child_name)
 
 class MemoryRenaming(ValuePredictor):
     type = "MemoryRenaming"

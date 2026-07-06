@@ -62,6 +62,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/trace/TraceFetch.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
+#include "cpu/valuepred/example_value_predictor_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
@@ -2096,14 +2097,16 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Do the value prediction
     if (valuePred && instruction->canLVP()) {
-        valuepred::VPPredMetaData* vpPredMetaData = valuepred::VPDataStructFactory::
-                                                        buildPredMetaData(valuePred->getValuePredictorType());
-
-        vpPredMetaData->pc = instruction->getPC();
-        vpPredMetaData->seq_no = instruction->seqNum;
-        vpPredMetaData->tid = tid;
-        instruction->vpResult = valuePred->valuePredict(vpPredMetaData);
-        delete vpPredMetaData;
+        valuepred::VPPredictRequest predictRequest;
+        predictRequest.pc = instruction->getPC();
+        predictRequest.seqNo = instruction->seqNum;
+        predictRequest.tid = tid;
+        // ExampleValuePredictor shows how a predictor can extend the public
+        // request with extra fetch-time inputs without changing core fields.
+        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
+                curTick(), instruction->opClass());
+        instruction->vpResult =
+            valuePred->valuePredict(predictRequest, instruction->vpRecord);
     }
 
     return predictedBranch;

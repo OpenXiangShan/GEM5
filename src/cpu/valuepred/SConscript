@@ -3,19 +3,30 @@ Import('*')
 SimObject('ValuePredictor.py',
           sim_objects=[
             'ValuePredictor',
+            'CVPArb',
+            'CVPFixedPriorityArb',
+            'CVPRandomArb',
+            'CVPRRArb',
+            'CVPConfidenceArb',
             'EStride',
+            'ExampleValuePredictor',
+            'CompositeValuePredictor',
+            'MemoryRenaming',
             'IdealConstantLVP'
           ],
           enums=['ValuePredType'])
 
 Source('valuepred_unit.cc')
+Source('composite_value_predictor_arb.cc')
+Source('composite_value_predictor.cc')
 Source('enhanced_stride.cc')
-Source('valuepred_metadata.cc')
+Source('example_value_predictor.cc')
+Source('memory_renaming.cc')
 Source('ideal_constant_lvp.cc')
 
 DebugFlag('VPCOMMON')
 DebugFlag('EStride')
+DebugFlag('MemoryRenaming')
 
 
-CompoundFlag('VP', ['VPCOMMON', 'EStride'])
-
+CompoundFlag('VP', ['VPCOMMON', 'EStride', 'MemoryRenaming'])

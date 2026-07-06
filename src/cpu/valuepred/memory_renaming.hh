@@ -71,26 +71,37 @@ class MemoryRenaming : public VPUnit
     InflightWindow inflightWindow;
     std::vector<std::vector<StoreLoadCacheEntry>> storeLoadCacheTables;
 
+    struct UpdateContext
+    {
+        Addr pc = 0;
+        uint64_t seqNo = 0;
+        ThreadID tid = 0;
+        RegVal actualValue = 0;
+        bool hasProducerStorePC = false;
+        Addr producerStorePC = 0;
+    };
+
   private:
     uint32_t pcHashToWayIndex(Addr pc, int way);
     uint32_t pcHashToTag(Addr pc, int way);
     uint32_t compareTags(uint32_t tag1, uint32_t tag2);
 
-    VPResult doStoreLoadCacheLookup(VPPredMetaData *predMetaData);
-    void updateStoreLoadCache(VPUpdateMetaData *updateMetaData);
+    VPResult doPredict(Addr pc, uint64_t seqNo, ThreadID tid);
+    void doUpdate(const UpdateContext &updateContext);
 
   public:
     MemoryRenaming(const Params &params);
 
     std::string name() const override { return "MemoryRenaming"; }
 
-    VPResult valuePredict(VPPredMetaData *predMetaData) override;
+    VPPredictionCandidate predict(const VPPredictRequest &request) override;
 
-    void updateValuePredictor(VPUpdateMetaData *updateMetaData) override;
+    void update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record,
+            const VPFeedback &feedback) override;
 
-    void specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData) override;
+    void specUpdate(const VPSpecUpdateInfo &specUpdateInfo) override;
 
-    void squash(const uint64_t seq_no) override;
+    void squash(ThreadID tid, const uint64_t seq_no) override;
 
     ValuePredType getValuePredictorType() override
     {
