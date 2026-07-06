@@ -120,7 +120,20 @@ class EStride : public VPUnit
 
   private:
     // This function really implements the prediction function.
-    VPResult doPredict(ESPredMetaData *esPredMetaData, int inflights);
+    VPResult doPredict(Addr pc, uint64_t seqNo, ThreadID tid, int inflights);
+
+    struct UpdateContext
+    {
+        Addr pc = 0;
+        uint64_t seqNo = 0;
+        ThreadID tid = 0;
+        RegVal actualValue = 0;
+        bool isLoadInst = false;
+        uint64_t inflightTime = 0;
+        std::string_view disas;
+    };
+
+    void doUpdate(const UpdateContext &updateContext);
 
     // extend strideWidth-bits stride to 32-bits stride for calculate
     int64_t extendStride(int64_t entryStride);
@@ -134,7 +147,8 @@ class EStride : public VPUnit
     uint32_t compareTags(uint32_t tag1, uint32_t tag2);
 
     // Returns a decision about whether to update the entry.
-    UpdateConfDecision decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int64_t stride);
+    UpdateConfDecision decideToUpdate(bool isLoadInst, uint64_t inflightTime,
+            int64_t stride);
 
     // in update time, when we can't allocate new entry, try dec useful count
     uint32_t tryDecUseful(const ESEntry &entry);
@@ -144,17 +158,12 @@ class EStride : public VPUnit
 
     std::string name() const override { return "EStride"; }
 
-    virtual VPResult valuePredict(VPPredMetaData *predMetaData) override;
+    VPPredictionCandidate predict(const VPPredictRequest &request) override;
 
-    virtual void updateValuePredictor(VPUpdateMetaData *updateMetaData) override;
+    void update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record,
+            const VPFeedback &feedback) override;
 
-    // In reality, the value prediction at the beginning of the fetch phase
-    // needs to be updated speculatively to ensure that the number of inflight
-    // instructions is updated in time for the back-to-back execution. However,
-    // the simulator's value prediction works in the rename phase, where all
-    // instructions are about to enter or have already entered the ROB, and
-    // speculative updates may no longer be needed.
-    virtual void specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData) override;
+    void specUpdate(const VPSpecUpdateInfo &specUpdateInfo) override;
 
     virtual void squash(ThreadID tid, const uint64_t seq_no) override;
 

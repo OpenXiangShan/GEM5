@@ -36,16 +36,20 @@ class IdealConstantLVP : public VPUnit
     const unsigned satCounterBits;
     const bool resetConfidence;
 
+    VPResult doPredict(Addr pc, ThreadID tid) const;
+    void doUpdate(Addr pc, ThreadID tid, RegVal actualValue);
+
   public:
     IdealConstantLVP(const Params &params);
 
     std::string name() const override { return "IdealConstantLVP"; }
 
-    VPResult valuePredict(VPPredMetaData *predMetaData) override;
+    VPPredictionCandidate predict(const VPPredictRequest &request) override;
 
-    void updateValuePredictor(VPUpdateMetaData *updateMetaData) override;
+    void update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record,
+            const VPFeedback &feedback) override;
 
-    void specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData) override;
+    void specUpdate(const VPSpecUpdateInfo &specUpdateInfo) override;
 
     void squash(ThreadID tid, const uint64_t seq_no) override;
 

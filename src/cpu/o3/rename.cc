@@ -999,11 +999,13 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                 inst->vpSupported = false;
                 inst->vpResult.speculative = false;
                 inst->vpResult.value = 0xdeadbeefULL;
+                inst->vpApplied = false;
                 continue;
             }
 
             inst->vpSupported = true;
             if (inst->vpResult.speculative) {
+                inst->vpApplied = true;
                 if (!enableSelectiveVPFlush) {
                     // old behavior: let back-to-back rename consumers see ready
                     scoreboard->setReg(rename_result.first.PhyReg());
@@ -1018,6 +1020,8 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                         "prediction value: %lu \n",
                         inst->staticInst->disassemble(inst->getPC()),
                         inst->seqNum, inst->getPC(), inst->vpResult.value);
+            } else {
+                inst->vpApplied = false;
             }
         }
     }

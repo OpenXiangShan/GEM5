@@ -155,16 +155,18 @@ MemoryRenaming::compareTags(uint32_t tag1, uint32_t tag2)
 }
 
 VPResult
-MemoryRenaming::doStoreLoadCacheLookup(VPPredMetaData *predMetaData)
+MemoryRenaming::doPredict(Addr pc, uint64_t seqNo, ThreadID tid)
 {
+    assertValidTid(tid);
+
     std::vector<uint32_t> indexEachWays(ways);
     for (size_t i = 0; i < indexEachWays.size(); i++) {
-        indexEachWays[i] = pcHashToWayIndex(predMetaData->pc, i);
+        indexEachWays[i] = pcHashToWayIndex(pc, i);
     }
 
     std::vector<uint32_t> tagEachWays(ways);
     for (size_t i = 0; i < tagEachWays.size(); i++) {
-        tagEachWays[i] = pcHashToTag(predMetaData->pc, i);
+        tagEachWays[i] = pcHashToTag(pc, i);
     }
 
     bool found = false;
@@ -186,13 +188,13 @@ MemoryRenaming::doStoreLoadCacheLookup(VPPredMetaData *predMetaData)
     if (!found) {
         DPRINTF(MemoryRenaming,
                 "[SLC-Predict]=> seq_no:%lu load_pc:%lX miss\n",
-                predMetaData->seq_no, predMetaData->pc);
+                seqNo, pc);
         return {false, 0};
     }
 
     DPRINTF(MemoryRenaming,
             "seq_no:%lu load_pc:%lX hit [way:%d index:%u vfi:%llu conf:%d useful:%d hasProducer:%s producerPC:%lX]\n",
-            predMetaData->seq_no, predMetaData->pc, way, index,
+            seqNo, pc, way, index,
             static_cast<unsigned long long>(entryCopy.valueFileIndex), entryCopy.confidence, entryCopy.useful,
             entryCopy.hasProducerStorePC ? "yes" : "no",
             entryCopy.producerStorePC);
@@ -202,26 +204,33 @@ MemoryRenaming::doStoreLoadCacheLookup(VPPredMetaData *predMetaData)
     return {false, static_cast<RegVal>(entryCopy.valueFileIndex)};
 }
 
-VPResult
-MemoryRenaming::valuePredict(VPPredMetaData *predMetaData)
+VPPredictionCandidate
+MemoryRenaming::predict(const VPPredictRequest &request)
 {
-    gem5_assert(predMetaData, "can't pass nullptr to vpunit\n");
-
-    inflightWindow.addToInflightWindow(predMetaData->pc);
-    return doStoreLoadCacheLookup(predMetaData);
+    assertValidTid(request.tid);
+    inflightWindow.addToInflightWindow(request.pc);
+    VPPredictionCandidate candidate;
+    candidate.result = doPredict(request.pc, request.seqNo, request.tid);
+    if (candidate.result.speculative) {
+        candidate.record = std::make_unique<VPPredictionRecord>();
+        candidate.record->offeredPrediction = true;
+        candidate.record->predictedValue = candidate.result.value;
+    }
+    return candidate;
 }
 
 void
-MemoryRenaming::updateStoreLoadCache(VPUpdateMetaData *updateMetaData)
+MemoryRenaming::doUpdate(const UpdateContext &updateContext)
 {
+    assertValidTid(updateContext.tid);
     std::vector<uint32_t> indexEachWays(ways);
     for (size_t i = 0; i < indexEachWays.size(); i++) {
-        indexEachWays[i] = pcHashToWayIndex(updateMetaData->pc, i);
+        indexEachWays[i] = pcHashToWayIndex(updateContext.pc, i);
     }
 
     std::vector<uint32_t> tagEachWays(ways);
     for (size_t i = 0; i < tagEachWays.size(); i++) {
-        tagEachWays[i] = pcHashToTag(updateMetaData->pc, i);
+        tagEachWays[i] = pcHashToTag(updateContext.pc, i);
     }
 
     bool found = false;
@@ -240,9 +249,9 @@ MemoryRenaming::updateStoreLoadCache(VPUpdateMetaData *updateMetaData)
 
     if (found) {
         StoreLoadCacheEntry &entry = storeLoadCacheTables[way][index];
-        if (updateMetaData->hasProducerStorePC) {
+        if (updateContext.hasProducerStorePC) {
             if (entry.hasProducerStorePC &&
-                entry.producerStorePC == updateMetaData->producerStorePC) {
+                entry.producerStorePC == updateContext.producerStorePC) {
                 entry.confidence = std::min(MAXCONFIDENCE, entry.confidence + 1);
                 if (entry.useful < 3) {
                     entry.useful++;
@@ -256,7 +265,7 @@ MemoryRenaming::updateStoreLoadCache(VPUpdateMetaData *updateMetaData)
                     entry.useful = 0;
                 }
                 entry.hasProducerStorePC = true;
-                entry.producerStorePC = updateMetaData->producerStorePC;
+                entry.producerStorePC = updateContext.producerStorePC;
                 if (entry.confidence == 0) {
                     entry.confidence = 1;
                 }
@@ -269,7 +278,7 @@ MemoryRenaming::updateStoreLoadCache(VPUpdateMetaData *updateMetaData)
 
         DPRINTF(MemoryRenaming,
                 "load_pc:%lX hit [way:%d index:%u vfi:%llu conf:%d useful:%d hasProducer:%s producerPC:%lX]\n",
-                updateMetaData->pc, way, index,
+                updateContext.pc, way, index,
                 static_cast<unsigned long long>(entry.valueFileIndex),
                 entry.confidence, entry.useful,
                 entry.hasProducerStorePC ? "yes" : "no",
@@ -310,7 +319,7 @@ MemoryRenaming::updateStoreLoadCache(VPUpdateMetaData *updateMetaData)
         }
         DPRINTF(MemoryRenaming,
                 "[SLC-Update] load_pc:%lX no replacement candidate [way:%u index:%u], try decay useful\n",
-                updateMetaData->pc, wayBegin, indexEachWays[wayBegin]);
+                updateContext.pc, wayBegin, indexEachWays[wayBegin]);
         return;
     }
 
@@ -322,38 +331,48 @@ MemoryRenaming::updateStoreLoadCache(VPUpdateMetaData *updateMetaData)
     if (nextValueFileIndex != std::numeric_limits<uint64_t>::max()) {
         ++nextValueFileIndex;
     }
-    entry.confidence = updateMetaData->hasProducerStorePC ? 1 : 0;
+    entry.confidence = updateContext.hasProducerStorePC ? 1 : 0;
     entry.useful = 0;
-    entry.hasProducerStorePC = updateMetaData->hasProducerStorePC;
-    entry.producerStorePC = updateMetaData->hasProducerStorePC ?
-                            updateMetaData->producerStorePC : 0;
+    entry.hasProducerStorePC = updateContext.hasProducerStorePC;
+    entry.producerStorePC = updateContext.hasProducerStorePC ?
+                            updateContext.producerStorePC : 0;
 
     DPRINTF(MemoryRenaming,
             "[SLC-Update] load_pc:%lX allocate [way:%d index:%u vfi:%llu hasProducer:%s producerPC:%lX]\n",
-            updateMetaData->pc, allocWay, indexEachWays[allocWay],
+            updateContext.pc, allocWay, indexEachWays[allocWay],
             static_cast<unsigned long long>(entry.valueFileIndex),
             entry.hasProducerStorePC ? "yes" : "no",
             entry.producerStorePC);
 }
 
 void
-MemoryRenaming::updateValuePredictor(VPUpdateMetaData *updateMetaData)
+MemoryRenaming::update(const VPUpdateInfo &updateInfo,
+        const VPPredictionRecord *record, const VPFeedback &feedback)
 {
-    gem5_assert(updateMetaData, "can't pass nullptr to vpunit\n");
-
-    inflightWindow.removeFromWindow(updateMetaData->pc, updateMetaData->seq_no);
-    updateStoreLoadCache(updateMetaData);
+    (void)record;
+    (void)feedback;
+    UpdateContext updateContext;
+    updateContext.pc = updateInfo.pc;
+    updateContext.seqNo = updateInfo.seqNo;
+    updateContext.tid = updateInfo.tid;
+    updateContext.actualValue = updateInfo.actualValue;
+    if (auto *producerInfo = updateInfo.getExt<ProducerInfoExt>()) {
+        updateContext.hasProducerStorePC = true;
+        updateContext.producerStorePC = producerInfo->producerStorePC;
+    }
+    doUpdate(updateContext);
 }
 
 void
-MemoryRenaming::specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData)
+MemoryRenaming::specUpdate(const VPSpecUpdateInfo &specUpdateInfo)
 {
-    gem5_assert(specUpdateMetaData, "can't pass nullptr to vpunit\n");
+    (void)specUpdateInfo;
 }
 
 void
-MemoryRenaming::squash(const uint64_t seq_no)
+MemoryRenaming::squash(ThreadID tid, const uint64_t seq_no)
 {
+    (void)tid;
     inflightWindow.squash(seq_no);
 }
 

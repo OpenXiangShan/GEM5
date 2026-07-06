@@ -66,6 +66,8 @@
 #include "cpu/o3/thread_state.hh"
 #include "cpu/thread_context.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/es_metadata.hh"
+#include "cpu/valuepred/example_value_predictor_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -1928,27 +1930,48 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
 
     if (valuePred && head_inst->canLVP() && (inst_fault == NoFault)) {
-        valuepred::VPUpdateMetaData *updateMetaData = valuepred::
-                    VPDataStructFactory::buildUpdateMetaData(valuePred->getValuePredictorType());
-        updateMetaData->pc = head_inst->getPC();
-        updateMetaData->seq_no = head_inst->seqNum;
-        updateMetaData->tid = tid;
-        updateMetaData->actualValue = head_inst->actualValue;
-        updateMetaData->isMisprediction = head_inst->vpMisprediction;
-        updateMetaData->hasProducerStorePC = head_inst->hasProducerStorePC();
-        if (updateMetaData->hasProducerStorePC) {
-            updateMetaData->producerStorePC = head_inst->producerStorePC();
+        // essential trainning info for all value predictors
+        valuepred::VPUpdateInfo updateInfo;
+        updateInfo.pc = head_inst->getPC();
+        updateInfo.seqNo = head_inst->seqNum;
+        updateInfo.tid = tid;
+        updateInfo.actualValue = head_inst->actualValue;
+        updateInfo.isMisprediction = head_inst->vpMisprediction;
+        // extra trainning info for specific value predictors
+        updateInfo.emplaceExt<valuepred::ESUpdateInfoExt>(
+                head_inst->isLoad(),
+                curTick() - head_inst->fetchTick,
+                head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
+        if (head_inst->hasProducerStorePC()) {
+            updateInfo.emplaceExt<valuepred::ProducerInfoExt>(
+                    head_inst->producerStorePC());
         }
-        valuePred->updateValuePredictor(updateMetaData);
+        // ExampleValuePredictor shows how a predictor can request extra
+        // commit-time inputs through VPUpdateInfo extensions.
+        updateInfo.emplaceExt<valuepred::ExampleUpdateInfoExt>(
+                head_inst->effAddrValid(),
+                head_inst->effAddr,
+                head_inst->physEffAddr);
+
+        // additional auxiliary info for the value predictor
+        valuepred::VPFeedback feedback;
+        feedback.selected = head_inst->vpApplied;
+        feedback.applied = head_inst->vpApplied;
+        feedback.offeredPrediction = head_inst->vpRecord &&
+            head_inst->vpRecord->offeredPrediction;
+        feedback.predictedValue = head_inst->vpRecord ?
+            head_inst->vpRecord->predictedValue : 0;
+        feedback.wouldHaveBeenCorrect = feedback.applied &&
+            !head_inst->vpMisprediction;
+
+        valuePred->update(updateInfo, head_inst->vpRecord.get(), feedback);
         valuePred->stats.VPsupported++;
-        if (head_inst->vpResult.speculative) {
+        if (head_inst->vpApplied) {
             valuePred->stats.VPpredicted++;
             if (!head_inst->vpMisprediction) {
                 valuePred->stats.VPcorrected++;
             }
         }
-
-        delete updateMetaData;
     }
 
     if (head_inst->isLoad()) {

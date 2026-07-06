@@ -213,18 +213,18 @@ EStride::compareTags(uint32_t tag1, uint32_t tag2)
 
 
 EStride::UpdateConfDecision
-EStride::decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int64_t stride)
+EStride::decideToUpdate(bool isLoadInst, uint64_t inflightTime, int64_t stride)
 {
     // todo: different update strategy
     // todo: The current update strategy is close to 100% probability and will
     // have to be changed subsequently.
     auto tryUpdateOnce = [&]() -> bool {
-        // uint64_t inflightTime = esUpdateMetaData->inflightTime;
+        // uint64_t inflightTimeLocal = inflightTime;
         // int quick = inflightTime <= FASTINSTTIME;
         // int notl1miss = inflightTime <= L1HITMAXTIME;
         // int notl2miss = inflightTime <= L2HITMAXTIME;
         // int notl3miss = inflightTime <= L3HITMAXTIME;
-        // int isLoad = esUpdateMetaData->isLoadInst;
+        // int isLoad = isLoadInst;
 
         // int denominator = (1 << (notl1miss + notl2miss + notl3miss + 2 * quick + 2 * !isLoad)) - 1;
 
@@ -245,7 +245,7 @@ EStride::decideToUpdate(const ESUpdateMetaData *esUpdateMetaData, int64_t stride
         shouldUpdate |= tryUpdateOnce();
     }
 
-    bool finalUpdate = shouldUpdate & ((std::abs(stride) > 1) || !esUpdateMetaData->isLoadInst ||
+    bool finalUpdate = shouldUpdate & ((std::abs(stride) > 1) || !isLoadInst ||
                                        ((stride == -1) & ((random_mt.random<int32_t>() & 1) == 0)) ||
                                        ((stride == 1) & ((random_mt.random<int32_t>() & 3) == 0)));
 
@@ -263,16 +263,16 @@ EStride::tryDecUseful(const ESEntry &entry)
 //****************************************************************
 
 VPResult
-EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
+EStride::doPredict(Addr pc, uint64_t seqNo, ThreadID tid, int inflights)
 {
     std::vector<uint32_t> indexEachWays(ways);
     for (size_t i = 0; i < indexEachWays.size(); i++) {
-        indexEachWays[i] = pcHashToWayIndex(esPredMetaData->pc, i);
+        indexEachWays[i] = pcHashToWayIndex(pc, i);
     }
 
     std::vector<uint32_t> tagEachWays(ways);
     for (size_t i = 0; i < tagEachWays.size(); i++) {
-        tagEachWays[i] = pcHashToTag(esPredMetaData->pc, i);
+        tagEachWays[i] = pcHashToTag(pc, i);
     }
 
     if (debug::EStride) {
@@ -287,17 +287,16 @@ EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
             tagMarker += " ";
         }
 
-        DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX index each way: %s\n", esPredMetaData->seq_no,
-                esPredMetaData->pc, indexMarker.c_str());
-        DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX tag each way: %s\n", esPredMetaData->seq_no,
-                esPredMetaData->pc, tagMarker.c_str());
+        DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX index each way: %s\n", seqNo,
+                pc, indexMarker.c_str());
+        DPRINTF(EStride, "[ESPredict] seq_no:%lu pc: %lX tag each way: %s\n", seqNo,
+                pc, tagMarker.c_str());
     }
 
     bool found = false;
     int way;
     uint32_t index;
     ESEntry entryCopy;
-    const ThreadID tid = esPredMetaData->tid;
     for (int i = 0; i < ways; ++i) {
         const ESEntry &entry = ESTables[tid][i][indexEachWays[i]];
         if (!compareTags(entry.tag, tagEachWays[i])) {
@@ -311,8 +310,8 @@ EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
 
 
     if (!found) {
-        DPRINTF(EStride, "[ESPredict]=> seq_no:%lu pc:%lX not found in ES\n", esPredMetaData->seq_no,
-                esPredMetaData->pc);
+        DPRINTF(EStride, "[ESPredict]=> seq_no:%lu pc:%lX not found in ES\n", seqNo,
+                pc);
         return {false, 0};
     }
 
@@ -324,53 +323,53 @@ EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
     if (entryCopy.confidence < confidenceThreshold) {
         DPRINTF(EStride,
                 "[ESPredict]=> seq_no:%lu pc:%lX confidence not enough in ES[way: %d index: %u inflights: %d]\n",
-                esPredMetaData->seq_no, esPredMetaData->pc, way, index, inflights);
+                seqNo, pc, way, index, inflights);
         return {false, predValue};
     }
 
     DPRINTF(EStride, "[ESPredict]=> seq_no:%lu pc:%lX get prediction in [way: %d index: %u inflights: %d]\n",
-            esPredMetaData->seq_no, esPredMetaData->pc, way, index, inflights);
+            seqNo, pc, way, index, inflights);
     return {true, predValue};
 }
 
-VPResult
-EStride::valuePredict(VPPredMetaData *predMetaData)
+VPPredictionCandidate
+EStride::predict(const VPPredictRequest &request)
 {
-    gem5_assert(predMetaData, "can't pass nullptr to vpunit\n");
-    ESPredMetaData *esPredMetaData = dynamic_cast<ESPredMetaData *>(predMetaData);
-    assertValidTid(esPredMetaData->tid);
-
-
-    // value prediction
-    int inflights = inflightWindows[esPredMetaData->tid].addToInflightWindow(esPredMetaData->pc);
+    assertValidTid(request.tid);
+    int inflights = inflightWindows[request.tid].addToInflightWindow(request.pc);
     esstats.inflightSH.sample(inflights, 1);
-
-    return doPredict(esPredMetaData, inflights);
+    VPPredictionCandidate candidate;
+    candidate.result = doPredict(request.pc, request.seqNo, request.tid,
+                                 inflights);
+    if (candidate.result.speculative) {
+        candidate.record = std::make_unique<VPPredictionRecord>();
+        candidate.record->offeredPrediction = true;
+        candidate.record->predictedValue = candidate.result.value;
+    }
+    return candidate;
 }
 
 void
-EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
+EStride::doUpdate(const UpdateContext &updateContext)
 {
-    gem5_assert(updateMetaData, "can't pass nullptr to vpunit\n");
-    ESUpdateMetaData *esUpdateMetaData = dynamic_cast<ESUpdateMetaData *>(updateMetaData);
-    assertValidTid(esUpdateMetaData->tid);
-    const ThreadID tid = esUpdateMetaData->tid;
+    assertValidTid(updateContext.tid);
+    const ThreadID tid = updateContext.tid;
 
 
     // the first step update inflights window
-    inflightWindows[tid].removeFromWindow(esUpdateMetaData->pc, esUpdateMetaData->seq_no);
+    inflightWindows[tid].removeFromWindow(updateContext.pc, updateContext.seqNo);
 
     // Given the nature of the current hash method, the same PC gets the
     // same hash value every time it is computed. So instead of storing
     // the hash value in dyninst, we now compute it each time it is used.
     std::vector<unsigned> indexEachWays(ways);
     for (size_t i = 0; i < indexEachWays.size(); i++) {
-        indexEachWays[i] = pcHashToWayIndex(esUpdateMetaData->pc, i);
+        indexEachWays[i] = pcHashToWayIndex(updateContext.pc, i);
     }
 
     std::vector<unsigned> tagEachWays(ways);
     for (size_t i = 0; i < tagEachWays.size(); i++) {
-        tagEachWays[i] = pcHashToTag(esUpdateMetaData->pc, i);
+        tagEachWays[i] = pcHashToTag(updateContext.pc, i);
     }
 
 
@@ -387,10 +386,10 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
             tagMarker += " ";
         }
 
-        DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX index each way: %s\n", updateMetaData->seq_no,
-                updateMetaData->pc, indexMarker.c_str());
-        DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX tag each way: %s\n", updateMetaData->seq_no,
-                updateMetaData->pc, tagMarker.c_str());
+        DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX index each way: %s\n", updateContext.seqNo,
+                updateContext.pc, indexMarker.c_str());
+        DPRINTF(EStride, "[ESUpdate] seq_no:%lu pc: %lX tag each way: %s\n", updateContext.seqNo,
+                updateContext.pc, tagMarker.c_str());
     }
 
 
@@ -417,12 +416,12 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
                 entry.confidence, entry.useful, entry.lastValue);
 
         // update stride and judge is mispredict, and update lastValue
-        DPRINTF(EStride, "activate value - last value: %lu-%lu, appear before: %s \n", esUpdateMetaData->actualValue,
+        DPRINTF(EStride, "activate value - last value: %lu-%lu, appear before: %s \n", updateContext.actualValue,
                 entry.lastValue, entry.NotFirstAppear ? "not" : "yes");
         bool misprediction =
-            !(esUpdateMetaData->actualValue == (uint64_t)((int64_t)entry.lastValue + extendStride(entry.stride)));
-        int64_t actualStride = esUpdateMetaData->actualValue - entry.lastValue;
-        entry.lastValue = esUpdateMetaData->actualValue;
+            !(updateContext.actualValue == (uint64_t)((int64_t)entry.lastValue + extendStride(entry.stride)));
+        int64_t actualStride = updateContext.actualValue - entry.lastValue;
+        entry.lastValue = updateContext.actualValue;
 
         if (entry.NotFirstAppear) {
             DPRINTF(EStride, "activate stride - entry stride = %d - %d \n", actualStride, entry.stride);
@@ -431,13 +430,16 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
                 esstats.strideEquals[way][index]++;
 
                 // mark down some instruction message
-                if (!fluentInstructions.count(esUpdateMetaData->pc)) {
-                    fluentInstructions[esUpdateMetaData->pc] = {1, std::string(esUpdateMetaData->disas)};
+                if (!fluentInstructions.count(updateContext.pc)) {
+                    fluentInstructions[updateContext.pc] = {1, std::string(updateContext.disas)};
                 } else {
-                    fluentInstructions[esUpdateMetaData->pc].first += 1;
+                    fluentInstructions[updateContext.pc].first += 1;
                 }
 
-                UpdateConfDecision decision = decideToUpdate(esUpdateMetaData, actualStride);
+                UpdateConfDecision decision =
+                    decideToUpdate(updateContext.isLoadInst,
+                                   updateContext.inflightTime,
+                                   actualStride);
                 if (decision.first) {
                     entry.confidence = std::min(MAXCONFIDENCE, entry.confidence + decision.second);
                 }
@@ -487,7 +489,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
                 entry.tag = tagEachWays[wayBegin];
                 entry.confidence = 1;
                 entry.stride = 0;
-                entry.lastValue = esUpdateMetaData->actualValue;
+                entry.lastValue = updateContext.actualValue;
                 entry.useful = 0;
                 entry.NotFirstAppear = 0;
                 return;
@@ -504,7 +506,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
                 entry.tag = tagEachWays[wayBegin];
                 entry.confidence = 1;
                 entry.stride = 0;
-                entry.lastValue = esUpdateMetaData->actualValue;
+                entry.lastValue = updateContext.actualValue;
                 entry.useful = 0;
                 entry.NotFirstAppear = 0;
                 return;
@@ -523,10 +525,28 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
 }
 
 void
-EStride::specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData)
+EStride::update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record,
+        const VPFeedback &feedback)
 {
-    gem5_assert(specUpdateMetaData, "can't pass nullptr to vpunit\n");
-    return;
+    (void)record;
+    (void)feedback;
+    UpdateContext updateContext;
+    updateContext.pc = updateInfo.pc;
+    updateContext.seqNo = updateInfo.seqNo;
+    updateContext.tid = updateInfo.tid;
+    updateContext.actualValue = updateInfo.actualValue;
+    if (auto *esExt = updateInfo.getExt<ESUpdateInfoExt>()) {
+        updateContext.isLoadInst = esExt->isLoadInst;
+        updateContext.inflightTime = esExt->inflightTime;
+        updateContext.disas = esExt->disas;
+    }
+    doUpdate(updateContext);
+}
+
+void
+EStride::specUpdate(const VPSpecUpdateInfo &specUpdateInfo)
+{
+    (void)specUpdateInfo;
 }
 
 void

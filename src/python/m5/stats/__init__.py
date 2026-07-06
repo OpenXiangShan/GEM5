@@ -260,6 +260,12 @@ def _visit_stats(visitor, root=None):
     _visit_groups(for_each_stat, root=root)
 
 def _bindStatHierarchy(root):
+    def _vector_child_stat_name(vector_name, obj, idx):
+        child_name = obj.get_name()
+        if child_name and child_name != vector_name:
+            return child_name
+        return "{}{}".format(vector_name, idx)
+
     def _bind_obj(name, obj):
         if isNullPointer(obj):
             return
@@ -268,7 +274,7 @@ def _bindStatHierarchy(root):
                 _bind_obj(name, obj[0])
             else:
                 for idx, obj in enumerate(obj):
-                    _bind_obj("{}{}".format(name, idx), obj)
+                    _bind_obj(_vector_child_stat_name(name, obj, idx), obj)
         else:
             # We need this check because not all obj.getCCObject() is an
             # instance of Stat::Group. For example, sc_core::sc_module, the C++
