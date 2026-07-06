@@ -1084,6 +1084,7 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
 
     auto &secondPred = thread.secondBlockTrainPred;
     secondPred.tid = tid;
+    secondPred.asidHash = thread.finalPred.asidHash;
     secondPred.bbStart = thread.s0PC;
     secondPred.predSource = thread.finalPred.predSource;
     secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
@@ -1091,7 +1092,8 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
     secondPred.s1Source = mbtb->getComponentIdx();
     secondPred.s3Source = mbtb->getComponentIdx();
 
-    secondPred.btbEntries = mbtb->getPredictedEntriesNoSideEffect(thread.s0PC);
+    secondPred.btbEntries = mbtb->getPredictedEntriesNoSideEffect(
+        thread.s0PC, secondPred.asidHash);
     secondPred.condTakens.clear();
     secondPred.indirectTargets.clear();
     secondPred.tageInfoForMgscs.clear();
@@ -1099,7 +1101,8 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
 
     if (tage && tage->isEnabled()) {
         tage->lookupNoSideEffect(thread.s0PC, secondPred.btbEntries,
-                                 secondPred.condTakens);
+                                 secondPred.condTakens, tid,
+                                 secondPred.asidHash);
         secondPred.s3Source = tage->getComponentIdx();
     } else {
         for (const auto &entry : secondPred.btbEntries) {

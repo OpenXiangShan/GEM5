@@ -340,9 +340,9 @@ MBTB::putPCHistory(Addr startAddr,
 }
 
 std::vector<BTBEntry>
-MBTB::getPredictedEntriesNoSideEffect(Addr startAddr) const
+MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, uint8_t asidHash) const
 {
-    auto found_entries = lookupNoSideEffect(startAddr);
+    auto found_entries = lookupNoSideEffect(startAddr, asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
 
     std::vector<BTBEntry> entries;
@@ -412,7 +412,7 @@ MBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupSingleBlockNoSideEffect(Addr block_pc) const
+MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -422,11 +422,11 @@ MBTB::lookupSingleBlockNoSideEffect(Addr block_pc) const
     int sram_id = getSRAMId(block_pc);
     const auto& target_sram = (sram_id == 0) ? sram0 : sram1;
 
-    Addr btb_idx = getIndex(block_pc, 0);
+    Addr btb_idx = getIndex(block_pc, asidHash);
     const auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
 
-    Addr current_tag = getTag(block_pc, 0);
+    Addr current_tag = getTag(block_pc, asidHash);
     DPRINTF(BTB, "BTB no-side-effect lookup for SRAM%d index 0x%lx tag %#lx\n",
         sram_id, btb_idx, current_tag);
 
@@ -478,7 +478,7 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupNoSideEffect(Addr block_pc) const
+MBTB::lookupNoSideEffect(Addr block_pc, uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -486,12 +486,13 @@ MBTB::lookupNoSideEffect(Addr block_pc) const
     }
 
     Addr alignedPC = block_pc & ~(blockSize - 1);
-    res = lookupSingleBlockNoSideEffect(alignedPC);
-    auto nextBlockRes = lookupSingleBlockNoSideEffect(alignedPC + blockSize);
+    res = lookupSingleBlockNoSideEffect(alignedPC, asidHash);
+    auto nextBlockRes =
+        lookupSingleBlockNoSideEffect(alignedPC + blockSize, asidHash);
     res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
     if (victimCacheSize > 0) {
-        auto victimResults = lookupVictimCacheNoSideEffect(block_pc);
+        auto victimResults = lookupVictimCacheNoSideEffect(block_pc, asidHash);
         res.insert(res.end(), victimResults.begin(), victimResults.end());
     }
 
@@ -849,7 +850,7 @@ MBTB::lookupVictimCache(Addr block_pc, uint8_t asidHash)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupVictimCacheNoSideEffect(Addr block_pc) const
+MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> results;
     Addr alignedPC = block_pc & ~(blockSize - 1);
@@ -861,7 +862,7 @@ MBTB::lookupVictimCacheNoSideEffect(Addr block_pc) const
 
         Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
         if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
-            Addr current_tag = getTag(entry.pc, 0);
+            Addr current_tag = getTag(entry.pc, asidHash);
             if (entry.tag == current_tag) {
                 results.push_back(entry);
             }

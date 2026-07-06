@@ -145,7 +145,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
     void lookupNoSideEffect(const Addr &startPC,
                             const std::vector<BTBEntry> &btbEntries,
-                            CondTakens &results) const;
+                            CondTakens &results,
+                            ThreadID tid = 0,
+                            uint8_t asidHash = 0) const;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,

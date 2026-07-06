@@ -450,11 +450,14 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
 void
 BTBTAGE::lookupNoSideEffect(const Addr &startPC,
                             const std::vector<BTBEntry> &btbEntries,
-                            CondTakens &results) const
+                            CondTakens &results,
+                            ThreadID tid,
+                            uint8_t asidHash) const
 {
     for (const auto &btb_entry : btbEntries) {
         if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC);
+            auto pred = generateSinglePrediction(
+                btb_entry, startPC, nullptr, tid, asidHash);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
         }
     }

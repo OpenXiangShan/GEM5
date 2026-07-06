@@ -145,7 +145,8 @@ class MBTB : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
-    std::vector<BTBEntry> getPredictedEntriesNoSideEffect(Addr startAddr) const;
+    std::vector<BTBEntry> getPredictedEntriesNoSideEffect(
+        Addr startAddr, uint8_t asidHash = 0) const;
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
@@ -345,7 +346,8 @@ class MBTB : public TimedBaseBTBPredictor
      *  @return Returns all hit BTB entries.
      */
     std::vector<TickedBTBEntry> lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta);
-    std::vector<TickedBTBEntry> lookupNoSideEffect(Addr block_pc) const;
+    std::vector<TickedBTBEntry> lookupNoSideEffect(
+        Addr block_pc, uint8_t asidHash = 0) const;
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
@@ -355,8 +357,10 @@ class MBTB : public TimedBaseBTBPredictor
 
     /** Victim cache operations */
     std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc, uint8_t asidHash);
-    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(Addr block_pc) const;
-    std::vector<TickedBTBEntry> lookupVictimCacheNoSideEffect(Addr block_pc) const;
+    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(
+        Addr block_pc, uint8_t asidHash) const;
+    std::vector<TickedBTBEntry> lookupVictimCacheNoSideEffect(
+        Addr block_pc, uint8_t asidHash) const;
     void insertVictimCache(const TickedBTBEntry& evicted_entry);
     bool eraseFromVictimCacheByPC(Addr pc);
 
