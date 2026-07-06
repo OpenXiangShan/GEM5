@@ -267,11 +267,6 @@ class MBTB : public TimedBaseBTBPredictor
                             const BTBMeta *meta,
                             Tick pred_tick);
 
-    std::vector<BTBEntry> selectMetaEntriesForUpdate(
-        const BTBMeta *meta,
-        const BranchUpdateContext &ctx,
-        const std::vector<ResolvedBranch> &update_branches) const;
-
     void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,
                            const BTBMeta *meta);
