@@ -33,7 +33,7 @@ def setKmhV3IdealParams(args, system):
         cpu.fetchQueueSize = 64
 
         # decode
-        cpu.fetchToDecodeDelay = 6
+        cpu.fetchToDecodeDelay = 3
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
