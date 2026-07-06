@@ -672,6 +672,23 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior) {
     EXPECT_FALSE(pred.taken) << "Alt prediction should be not taken";
 }
 
+TEST_F(BTBTAGETest, PredictionMetaKeepsBaseDirection) {
+    BTBEntry notTakenBase = createBTBEntry(0x1000, true, true, -1);
+    BTBEntry takenBase = createBTBEntry(0x1004, true, true, 1);
+
+    predictTAGE(tage, 0x1000, {notTakenBase, takenBase}, history,
+                stagePreds);
+
+    auto meta =
+        std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
+    ASSERT_NE(meta, nullptr);
+    ASSERT_TRUE(meta->preds.count(notTakenBase.pc));
+    ASSERT_TRUE(meta->preds.count(takenBase.pc));
+
+    EXPECT_FALSE(meta->preds[notTakenBase.pc].basePred);
+    EXPECT_TRUE(meta->preds[takenBase.pc].basePred);
+}
+
 // Test useful bit update mechanism
 TEST_F(BTBTAGETest, UsefulBitMechanism) {
     // Setup a test branch

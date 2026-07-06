@@ -404,8 +404,8 @@ BTBTAGE::generateSinglePrediction(Addr branchPC,
         branchPC, final_provider_table, final_provider_is_alt);
 
     return TagePrediction(branchPC, main_info, alt_info, use_alt, taken,
-        alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
-        use_alt_ctr, hit_table_mask);
+        baseTaken, alt_pred, final_provider_table, final_provider_is_alt,
+        use_alt_idx, use_alt_ctr, hit_table_mask);
 }
 
 /**
@@ -853,7 +853,6 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     bool hasRecomputedVsOriginalDiff = false;
     for (const auto &update_entry : entries) {
         const Addr branch_pc = update_entry.pc;
-        const bool base_taken = update_entry.baseTaken;
         if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(TAGE,
                     "update: skip pc %#lx outside prediction block start %#lx\n",
@@ -875,6 +874,8 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
             DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
                     branch_pc);
         }
+        const bool base_taken =
+            has_original_pred ? original_pred.basePred : update_entry.baseTaken;
 
         if (has_original_pred && original_pred.finalProviderTable >= 0) {
             if (original_pred.taken == actual_taken) {

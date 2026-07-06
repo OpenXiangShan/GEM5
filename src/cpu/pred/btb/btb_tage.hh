@@ -105,6 +105,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
             TageTableInfo altInfo;  // Alternative prediction info
             bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
+            bool basePred;         // Base-table direction used at prediction time
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
             int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
@@ -113,16 +114,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
             uint64_t hitTableMask; // Bitmask of all TAGE tables that matched during lookup
 
 
-            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
+            TagePrediction() : btb_pc(0), useAlt(false), taken(false), basePred(false),
+                               altPred(false),
                                finalProviderTable(-1), finalProviderIsAlt(false),
                                useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
-                            bool useAlt, bool taken, bool altPred,
+                            bool useAlt, bool taken, bool basePred, bool altPred,
                             int finalProviderTable, bool finalProviderIsAlt,
                             Addr useAltIdx, short useAltCtr, uint64_t hitTableMask) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken), altPred(altPred),
+                            useAlt(useAlt), taken(taken), basePred(basePred),
+                            altPred(altPred),
                             finalProviderTable(finalProviderTable),
                             finalProviderIsAlt(finalProviderIsAlt),
                             useAltIdx(useAltIdx), useAltCtr(useAltCtr),

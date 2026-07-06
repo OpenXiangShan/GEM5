@@ -254,8 +254,9 @@ BTBTAGEUpperBound::lookupExactPrediction(
     }
 
     return TagePrediction(branchPC, mainInfo, altInfo, useAltPred, taken,
-                          altPred, finalProviderTable, finalProviderIsAlt,
-                          useAltIdx, useAltCtr, hitTableMask);
+                          baseTaken, altPred, finalProviderTable,
+                          finalProviderIsAlt, useAltIdx, useAltCtr,
+                          hitTableMask);
 }
 
 void
