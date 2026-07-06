@@ -195,7 +195,7 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     std::vector<TargetUpdateEntry> collectEntriesToUpdateFromS3Pred(
         const std::vector<BTBEntry>& old_entries,
-        const FullBTBPrediction &s3Pred);
+        const BTBEntry &taken_entry);
     ResolvedBranch makeS3PredictedBranchForTargetUpdate(
         const BTBEntry &entry,
         bool taken) const;

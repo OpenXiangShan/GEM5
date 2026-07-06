@@ -593,33 +593,36 @@ AheadBTB::updateUsingS3Pred(
         return;
     }
 
-    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
-                            (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
+    const auto taken_entry = s3Pred.getTakenEntry();
+    const bool predicted_taken = taken_entry.valid;
+    const Addr end_inst_pc = predicted_taken ? taken_entry.pc :
+        (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
     // AheadBTB use S3 prediction for update
     auto &state = threadState(s3Pred.tid);
     auto old_entries = processOldEntries(state.lastPredEntries, end_inst_pc);
 
-    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries, s3Pred);
+    auto entries_to_update =
+        collectEntriesToUpdateFromS3Pred(old_entries, taken_entry);
 
     if (!entries_to_update.empty()) {
         BranchUpdateContext update_ctx;
         update_ctx.tid = s3Pred.tid;
         update_ctx.startPC = s3Pred.bbStart;
         update_ctx.asidHash = s3Pred.asidHash;
+        update_ctx.predTick = s3Pred.predTick;
 
         updateWithEntries(entries_to_update, update_ctx, previousPC);
     }
 }
 std::vector<TargetUpdateEntry>
 AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entries,
-                                     const FullBTBPrediction &s3Pred)
+                                     const BTBEntry &taken_entry)
 {
     std::vector<TargetUpdateEntry> all_entries;
     all_entries.reserve(old_entries.size() + 1);
-    const auto &taken_entry = s3Pred.getTakenEntry();
     for (const auto &entry : old_entries) {
-        const bool predicted_taken = s3Pred.isTaken() && entry == taken_entry;
+        const bool predicted_taken = taken_entry.valid && entry == taken_entry;
         const auto update_branch = makeS3PredictedBranchForTargetUpdate(
             predicted_taken ? taken_entry : entry, predicted_taken);
         all_entries.push_back(
@@ -635,8 +638,8 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
             break;
         }
     }
-    if (!pred_branch_hit&& s3Pred.isTaken()) {
-        new_entry = s3Pred.getTakenEntry();
+    if (!pred_branch_hit && taken_entry.valid) {
+        new_entry = taken_entry;
         new_entry.valid = true;
 
         if (new_entry.isCond) {
