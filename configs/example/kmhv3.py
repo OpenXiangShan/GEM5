@@ -81,16 +81,16 @@ def setKmhV3Params(args, system):
         cpu.sbufferBankWriteAccurately = False
 
         # lsq
-        cpu.LQEntries = 72
-        cpu.SQEntries = 56
-        cpu.RARQEntries = 72
-        cpu.RAWQEntries = 32
+        cpu.LQEntries = 120
+        cpu.SQEntries = 64
+        cpu.RARQEntries = 96
+        cpu.RAWQEntries = 56
         cpu.LoadCompletionWidth = 8
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 16
-        cpu.SbufferEvictThreshold = 7
+        cpu.SbufferEvictThreshold = 8
         cpu.store_prefetch_train = False
 
         # branch predictor
@@ -186,7 +186,7 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '1MB'
+    args.l2_size = '2MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
 
     # Match the memories with the CPUs, based on the options for the test system
