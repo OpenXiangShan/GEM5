@@ -399,6 +399,9 @@ UBTB::recordCommittedBranchStats(
     const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
     auto &hit_entry = meta->hit_entry;
     const auto pc = branch.pc;
     bool this_branch_hit = hit_entry.pc == pc;

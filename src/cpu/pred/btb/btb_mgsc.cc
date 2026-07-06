@@ -1436,6 +1436,9 @@ BTBMGSC::recordCommittedBranchStats(
         return;
     }
     auto meta = std::static_pointer_cast<MgscMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
     auto pc = branch.pc;
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;

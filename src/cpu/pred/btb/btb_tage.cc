@@ -1499,6 +1499,9 @@ BTBTAGE::recordCommittedBranchStats(
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
     auto pc = branch.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;

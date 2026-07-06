@@ -483,6 +483,9 @@ BTBRAS::recordCommittedBranchStats(
         return;
     }
     auto meta = std::static_pointer_cast<RASMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
     auto npc = branch.target;
     if (npc != meta->target) {
         rasStats.PredWrong++;

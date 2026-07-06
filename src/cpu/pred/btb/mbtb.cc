@@ -718,6 +718,9 @@ MBTB::recordCommittedBranchStats(
     const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
     auto &hit_entries = meta->hit_entries;
     const auto pc = branch.pc;
     bool this_branch_hit = false;
