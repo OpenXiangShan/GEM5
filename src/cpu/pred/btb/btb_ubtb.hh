@@ -266,12 +266,12 @@ class UBTB : public TimedBaseBTBPredictor
         Addr startAddr, uint8_t asidHash);
 
     // Reconcile the S1 uBTB prediction with the final S3 prediction.
-    void updateNewEntryFromS3Pred(
-        UBTBIter oldEntryIter, const BTBEntry &takenEntry,
+    void reconcileWithS3Prediction(
+        UBTBIter oldEntryIter, const BTBEntry &predicted_taken_entry,
         const Addr startAddr, uint8_t asidHash);
     // Reconcile the S1 uBTB prediction with actual resolve/commit facts.
-    void updateNewEntryFromActualBranch(
-        UBTBIter oldEntryIter, const ResolvedBranch *takenBranch,
+    void reconcileWithActualBranch(
+        UBTBIter oldEntryIter, const ResolvedBranch *taken_branch,
         const Addr startAddr, uint8_t asidHash);
 
 

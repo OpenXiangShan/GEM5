@@ -239,32 +239,32 @@ UBTB::updateUsingS3Pred(const FullBTBPrediction &s3Pred)
         return;
     }
 
-    auto takenEntry = s3Pred.getTakenEntry();
-    if (takenEntry.valid) {
+    auto predicted_taken_entry = s3Pred.getTakenEntry();
+    if (predicted_taken_entry.valid) {
         ubtbStats.s3UpdateHits++;
     }else {
         ubtbStats.s3UpdateMisses++;
     }
-    auto startAddr = s3Pred.bbStart;
+    const auto startAddr = s3Pred.bbStart;
     UBTBIter oldEntryIter = lastPred.hit_entry;
-    takenEntry.source = getComponentIdx();
-    updateNewEntryFromS3Pred(
-        oldEntryIter, takenEntry, startAddr, s3Pred.asidHash);
+    predicted_taken_entry.source = getComponentIdx();
+    reconcileWithS3Prediction(
+        oldEntryIter, predicted_taken_entry, startAddr, s3Pred.asidHash);
 
 }
 
 
 
 void
-UBTB::updateNewEntryFromS3Pred(
-    UBTBIter oldEntryIter, const BTBEntry &takenEntry,
+UBTB::reconcileWithS3Prediction(
+    UBTBIter oldEntryIter, const BTBEntry &predicted_taken_entry,
     const Addr startAddr, uint8_t asidHash)
 {
-    // Use the FB final taken branch to update uBTB.
+    // Use the final S3 predicted taken branch to update uBTB.
     if (oldEntryIter != ubtb.end()) {
         assert(oldEntryIter->valid); // lookup() should only return valid entry
     }
-    if (oldEntryIter != ubtb.end() && !takenEntry.valid) {
+    if (oldEntryIter != ubtb.end() && !predicted_taken_entry.valid) {
         // S0 has a hit entry, but S3 predicts fall through.
         ubtbStats.s1Hits3FallThrough++;
         updateUCtr(oldEntryIter->uctr, false);
@@ -272,21 +272,22 @@ UBTB::updateNewEntryFromS3Pred(
             ubtbStats.s1InvalidatedEntries++;
             oldEntryIter->valid = false;
         }
-    } else if (oldEntryIter == ubtb.end() && takenEntry.valid) {
+    } else if (oldEntryIter == ubtb.end() && predicted_taken_entry.valid) {
         ubtbStats.s1Misses3Taken++;
         // S0 misses, but S3 predicts taken.
         replaceOldEntry(
-            selectReplacementEntry(), takenEntry, startAddr, asidHash);
-    } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
+            selectReplacementEntry(), predicted_taken_entry, startAddr,
+            asidHash);
+    } else if (oldEntryIter != ubtb.end() && predicted_taken_entry.valid) {
         ubtbStats.s1Hits3Taken++;
         // Both S0 and S3 predict taken.
-        if (oldEntryIter->pc != takenEntry.pc ||
-            oldEntryIter->target != takenEntry.target) {
+        if (oldEntryIter->pc != predicted_taken_entry.pc ||
+            oldEntryIter->target != predicted_taken_entry.target) {
             // S0 and S3 predict different branch instructions/targets.
             updateUCtr(oldEntryIter->uctr, false);
             if (oldEntryIter->uctr == 0) {
                 replaceOldEntry(
-                    oldEntryIter, takenEntry, startAddr, asidHash);
+                    oldEntryIter, predicted_taken_entry, startAddr, asidHash);
             }
         } else {
             // S0 and S3 predict the same branch and target.
@@ -299,8 +300,8 @@ UBTB::updateNewEntryFromS3Pred(
 }
 
 void
-UBTB::updateNewEntryFromActualBranch(
-    UBTBIter oldEntryIter, const ResolvedBranch *takenBranch,
+UBTB::reconcileWithActualBranch(
+    UBTBIter oldEntryIter, const ResolvedBranch *taken_branch,
     const Addr startAddr, uint8_t asidHash)
 {
     // Use actual resolved branch facts for resolve/commit update. The BTBEntry
@@ -308,7 +309,7 @@ UBTB::updateNewEntryFromActualBranch(
     if (oldEntryIter != ubtb.end()) {
         assert(oldEntryIter->valid); // lookup() should only return valid entry
     }
-    if (oldEntryIter != ubtb.end() && !takenBranch) {
+    if (oldEntryIter != ubtb.end() && !taken_branch) {
         // S0 has a hit entry, but actual execution fell through.
         ubtbStats.s1Hits3FallThrough++;
         updateUCtr(oldEntryIter->uctr, false);
@@ -316,19 +317,19 @@ UBTB::updateNewEntryFromActualBranch(
             ubtbStats.s1InvalidatedEntries++;
             oldEntryIter->valid = false;
         }
-    } else if (oldEntryIter == ubtb.end() && takenBranch) {
+    } else if (oldEntryIter == ubtb.end() && taken_branch) {
         ubtbStats.s1Misses3Taken++;
         replaceOldEntryFromActualBranch(
-            selectReplacementEntry(), *takenBranch, startAddr, asidHash);
-    } else if (oldEntryIter != ubtb.end() && takenBranch) {
+            selectReplacementEntry(), *taken_branch, startAddr, asidHash);
+    } else if (oldEntryIter != ubtb.end() && taken_branch) {
         ubtbStats.s1Hits3Taken++;
         // both uBTB prediction and actual execution are taken
-        if (oldEntryIter->pc != takenBranch->pc ||
-            oldEntryIter->target != takenBranch->target) {
+        if (oldEntryIter->pc != taken_branch->pc ||
+            oldEntryIter->target != taken_branch->target) {
             updateUCtr(oldEntryIter->uctr, false);
             if (oldEntryIter->uctr == 0) {
                 replaceOldEntryFromActualBranch(
-                    oldEntryIter, *takenBranch, startAddr, asidHash);
+                    oldEntryIter, *taken_branch, startAddr, asidHash);
             }
         } else {
             updateUCtr(oldEntryIter->uctr, true);
@@ -373,7 +374,7 @@ UBTB::updateWithContext(const ResolvedBranch *taken_branch,
     // Verify uBTB state
     assert(ubtb.size() <= numEntries);
     if (!usingS3Pred) {
-        updateNewEntryFromActualBranch(
+        reconcileWithActualBranch(
             oldEntryIter, taken_branch, startAddr, ctx.asidHash);
     }
 }
