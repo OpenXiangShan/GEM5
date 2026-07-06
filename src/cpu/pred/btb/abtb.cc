@@ -618,11 +618,11 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
     all_entries.reserve(old_entries.size() + 1);
     const auto &taken_entry = s3Pred.getTakenEntry();
     for (const auto &entry : old_entries) {
-        const bool actual_taken = s3Pred.isTaken() && entry == taken_entry;
-        const auto actual_branch = makeResolvedBranchFromPredictedEntryForS3Update(
-            actual_taken ? taken_entry : entry, actual_taken);
+        const bool predicted_taken = s3Pred.isTaken() && entry == taken_entry;
+        const auto update_branch = makeS3PredictedBranchForTargetUpdate(
+            predicted_taken ? taken_entry : entry, predicted_taken);
         all_entries.push_back(
-            makeTargetUpdateEntryFromBase(entry, actual_branch));
+            makeTargetUpdateEntryFromBase(entry, update_branch));
     }
     BTBEntry new_entry = BTBEntry();
     // which causes its counter to update twice unintentionally
@@ -644,7 +644,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         all_entries.push_back(
             makeTargetUpdateEntryFromBase(
                 new_entry,
-                makeResolvedBranchFromPredictedEntryForS3Update(
+                makeS3PredictedBranchForTargetUpdate(
                     taken_entry, true)));
     }
 
@@ -653,7 +653,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
 }
 
 ResolvedBranch
-AheadBTB::makeResolvedBranchFromPredictedEntryForS3Update(
+AheadBTB::makeS3PredictedBranchForTargetUpdate(
     const BTBEntry &entry,
     bool taken) const
 {
