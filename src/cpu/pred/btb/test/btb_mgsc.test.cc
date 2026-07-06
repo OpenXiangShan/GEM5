@@ -122,8 +122,7 @@ updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
     }
     const auto ctx = makeBaseBranchUpdateContext(stream);
     mgsc.updateWithBranchUpdateContext(
-        ctx, actual_branches, stream.predMetas[mgsc.getComponentIdx()],
-        stream.phistory);
+        ctx, actual_branches, stream.predMetas[mgsc.getComponentIdx()]);
 }
 
 void

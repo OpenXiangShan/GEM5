@@ -176,8 +176,7 @@ void
 BTBuRAS::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &update_branches,
-    const std::shared_ptr<void> &prediction_meta,
-    const boost::dynamic_bitset<> &)
+    const std::shared_ptr<void> &prediction_meta)
 {
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;

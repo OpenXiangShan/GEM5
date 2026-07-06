@@ -91,7 +91,7 @@ void updateWithBranchContext(MBTB* btb, FetchTarget& stream,
     const auto actual_branches = makeActualBranches(stream);
     const auto ctx = makeBaseBranchUpdateContext(stream);
     btb->updateWithBranchUpdateContext(
-        ctx, actual_branches, meta, stream.phistory);
+        ctx, actual_branches, meta);
 }
 
 /**
@@ -236,7 +236,7 @@ TEST_F(BTBTest, EmptyBranchContextDoesNotUpdateStats) {
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
     const uint64_t update_total = mbtb->btbStats.updateTotal;
     EXPECT_NO_THROW(mbtb->updateWithBranchUpdateContext(
-        ctx, actual_branches, nullptr, boost::dynamic_bitset<>()));
+        ctx, actual_branches, nullptr));
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit), update_hit);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss), update_miss);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateTotal), update_total);
@@ -264,7 +264,7 @@ TEST_F(BTBTest, NewEntryStatsCountActualTableMiss) {
               new_uncond_entries);
 
     mbtb->updateWithBranchUpdateContext(
-        ctx, actual_branches, meta, boost::dynamic_bitset<>());
+        ctx, actual_branches, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.newEntry),
               new_entries + 1);
@@ -290,7 +290,7 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualBranchForHit) {
     const uint64_t update_hit = mbtb->btbStats.updateHit;
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
     mbtb->updateWithBranchUpdateContext(
-        ctx, actual_branches, meta, boost::dynamic_bitset<>());
+        ctx, actual_branches, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit),
               update_hit + 1);
@@ -313,7 +313,7 @@ TEST_F(BTBTest, TargetUpdateUsesMetaEntriesInsteadOfStreamEntries) {
     const uint64_t update_hit = mbtb->btbStats.updateHit;
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
     mbtb->updateWithBranchUpdateContext(
-        ctx, actual_branches, meta, stream.phistory);
+        ctx, actual_branches, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit),
               update_hit + 1);
@@ -334,7 +334,7 @@ TEST_F(BTBTest, TargetUpdateStatsUseEntryActualTakenForMiss) {
     const uint64_t update_hit = mbtb->btbStats.updateHit;
     const uint64_t update_miss = mbtb->btbStats.updateMiss;
     mbtb->updateWithBranchUpdateContext(
-        ctx, actual_branches, meta, boost::dynamic_bitset<>());
+        ctx, actual_branches, meta);
 
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateHit), update_hit);
     EXPECT_EQ(static_cast<uint64_t>(mbtb->btbStats.updateMiss),

@@ -144,8 +144,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
         const std::vector<ResolvedBranch> &update_branches,
-        const std::shared_ptr<void> &prediction_meta,
-        const boost::dynamic_bitset<> &) override;
+        const std::shared_ptr<void> &prediction_meta) override;
     bool canResolveUpdate(Addr update_start_pc) override;
     void noteResolveUpdateAccepted(Addr update_start_pc) override;
 

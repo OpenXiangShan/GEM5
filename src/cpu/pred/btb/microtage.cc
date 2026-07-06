@@ -649,8 +649,7 @@ void
 MicroTAGE::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &update_branches,
-    const std::shared_ptr<void> &prediction_meta,
-    const boost::dynamic_bitset<> &)
+    const std::shared_ptr<void> &prediction_meta)
 {
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(prediction_meta);

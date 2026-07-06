@@ -197,8 +197,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
         const std::vector<ResolvedBranch> &update_branches,
-        const std::shared_ptr<void> &prediction_meta,
-        const boost::dynamic_bitset<> &) override;
+        const std::shared_ptr<void> &prediction_meta) override;
 
 #ifndef UNIT_TEST
     void recordCommittedBranchStats(

@@ -950,8 +950,7 @@ void
 BTBMGSC::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &update_branches,
-    const std::shared_ptr<void> &prediction_meta,
-    const boost::dynamic_bitset<> &)
+    const std::shared_ptr<void> &prediction_meta)
 {
     if (!isEnabled()) {
         return;  // No update if disabled

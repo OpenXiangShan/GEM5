@@ -102,7 +102,7 @@ actual_branch.mispred = mispred;
 actual_branch.isCond = true;
 const std::vector<ResolvedBranch> actual_branches = {actual_branch};
 tage->updateWithBranchUpdateContext(
-    ctx, actual_branches, meta, stream.phistory);
+    ctx, actual_branches, meta);
 ```
 
 3. control squash/Recovery Phase:
@@ -174,8 +174,7 @@ auto ctx = makeBaseBranchUpdateContext(stream);
 
 // Update BTB
 btb->updateWithBranchUpdateContext(
-    ctx, actual_branches, stream.predMetas[btb->getComponentIdx()],
-    stream.phistory);
+    ctx, actual_branches, stream.predMetas[btb->getComponentIdx()]);
 ```
 
 #### Important Notes

@@ -114,8 +114,7 @@ class BTBTAGEUpperBound : public BTBTAGE
     void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
         const std::vector<ResolvedBranch> &update_branches,
-        const std::shared_ptr<void> &prediction_meta,
-        const boost::dynamic_bitset<> &) override;
+        const std::shared_ptr<void> &prediction_meta) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 
 #ifdef UNIT_TEST

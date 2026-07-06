@@ -777,7 +777,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
 
         // Update predictor components
         updatePredictorComponents(
-            ftq_target.predMetas, ftq_target.phistory, ftq_target.previousPCs,
+            ftq_target.predMetas, ftq_target.previousPCs,
             update_ctx, update_branches, /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
@@ -834,7 +834,7 @@ DecoupledBPUWithBTB::resolveUpdate(
     }
 
     return updatePredictorComponents(
-        target.predMetas, target.phistory, target.previousPCs,
+        target.predMetas, target.previousPCs,
         update_ctx, update_branches, /*resolved_update=*/true);
 }
 
@@ -876,7 +876,6 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(Addr update_start_pc)
 bool
 DecoupledBPUWithBTB::updatePredictorComponents(
     const std::array<std::shared_ptr<void>, 8> &prediction_metas,
-    const boost::dynamic_bitset<> &phistory,
     const std::queue<Addr> &previous_pcs,
     const BranchUpdateContext &update_ctx,
     const std::vector<ResolvedBranch> &update_branches,
@@ -904,7 +903,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         switch (component->updateProtocol()) {
           case PredictorUpdateProtocol::BranchContext:
             component->updateWithBranchUpdateContext(
-                update_ctx, update_branches, prediction_meta, phistory);
+                update_ctx, update_branches, prediction_meta);
             break;
 
           case PredictorUpdateProtocol::AheadPipelineState:

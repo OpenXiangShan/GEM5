@@ -750,7 +750,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool canResolveUpdateComponents(Addr update_start_pc);
     bool updatePredictorComponents(
         const std::array<std::shared_ptr<void>, 8> &prediction_metas,
-        const boost::dynamic_bitset<> &phistory,
         const std::queue<Addr> &previous_pcs,
         const BranchUpdateContext &update_ctx,
         const std::vector<ResolvedBranch> &update_branches,

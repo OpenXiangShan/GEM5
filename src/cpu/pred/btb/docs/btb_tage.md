@@ -139,8 +139,7 @@ The update process involves:
 void updateWithBranchUpdateContext(
     const BranchUpdateContext &update_ctx,
     const std::vector<ResolvedBranch> &update_branches,
-    const std::shared_ptr<void> &prediction_meta,
-    const boost::dynamic_bitset<> &phistory) {
+    const std::shared_ptr<void> &prediction_meta) {
     Addr startAddr = update_ctx.startPC;
     
     // Get prediction metadata
@@ -334,7 +333,7 @@ actual_branch.mispred = mispred;
 actual_branch.isCond = true;
 const std::vector<ResolvedBranch> update_branches = {actual_branch};
 tage->updateWithBranchUpdateContext(
-    update_ctx, update_branches, meta, stream.phistory);
+    update_ctx, update_branches, meta);
 ```
 
 #### Recovery Phase (Misprediction)

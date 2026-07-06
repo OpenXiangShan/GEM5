@@ -382,8 +382,7 @@ void
 UBTB::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &update_branches,
-    const std::shared_ptr<void> &prediction_meta,
-    const boost::dynamic_bitset<> &)
+    const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);
     if (!meta) {

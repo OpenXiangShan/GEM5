@@ -123,8 +123,7 @@ void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,
     const auto update_branches = makeDirectionUpdateBranches(stream);
     predictor->updateWithBranchUpdateContext(
         makeActualContext(stream), update_branches,
-        stream.predMetas[predictor->getComponentIdx()],
-        stream.phistory);
+        stream.predMetas[predictor->getComponentIdx()]);
 }
 
 void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,

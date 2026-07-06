@@ -493,6 +493,7 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
     threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
     threadMeta[tid]->history = history;
+    threadMeta[tid]->phistory = history;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -844,8 +845,7 @@ void
 BTBTAGE::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &update_branches,
-    const std::shared_ptr<void> &prediction_meta,
-    const boost::dynamic_bitset<> &phistory)
+    const std::shared_ptr<void> &prediction_meta)
 {
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(prediction_meta);
@@ -855,14 +855,13 @@ BTBTAGE::updateWithBranchUpdateContext(
     }
 
     const auto entries = buildUpdateEntriesFromMeta(*predMeta, update_branches);
-    updateWithEntries(entries, ctx, predMeta, phistory);
+    updateWithEntries(entries, ctx, predMeta);
 }
 
 void
 BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,
-                           const std::shared_ptr<TageMeta> &predMeta,
-                           const boost::dynamic_bitset<> &phistory)
+                           const std::shared_ptr<TageMeta> &predMeta)
 {
     Addr startAddr = ctx.startPC;
     unsigned updateBank = getBankId(startAddr);
@@ -956,7 +955,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
             std::string history_str;
             std::string phistory_str;
             boost::dynamic_bitset<> history_low50 = predMeta->history;
-            boost::dynamic_bitset<> phistory_low50 = phistory;
+            boost::dynamic_bitset<> phistory_low50 = predMeta->phistory;
             if (history_low50.size() > 50) {
                 history_low50.resize(50);  // get the lower 50 bits of history
             }
@@ -969,7 +968,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
             const uint64_t history_hash = hashBitset(predMeta->history);
-            const uint64_t phistory_hash = hashBitset(phistory);
+            const uint64_t phistory_hash = hashBitset(predMeta->phistory);
             const uint64_t index_folded_hist_hash =
                 hashFoldedHistVec(predMeta->indexFoldedHist);
             const uint64_t tag_folded_hist_hash =

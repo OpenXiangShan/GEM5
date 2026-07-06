@@ -173,8 +173,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
         const std::vector<ResolvedBranch> &update_branches,
-        const std::shared_ptr<void> &prediction_meta,
-        const boost::dynamic_bitset<> &phistory) override;
+        const std::shared_ptr<void> &prediction_meta) override;
     bool canResolveUpdate(Addr update_start_pc) override;
     void noteResolveUpdateAccepted(Addr update_start_pc) override;
 
@@ -459,6 +458,7 @@ public:
         std::vector<TageFoldedHist> altTagFoldedHist;
         std::vector<TageFoldedHist> indexFoldedHist;
         bitset history;     // for viewing
+        bitset phistory;    // path-history snapshot for trace only
         TageMeta() {}
     } TageMeta;
 
@@ -506,8 +506,7 @@ private:
 
     void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,
-                           const std::shared_ptr<TageMeta> &predMeta,
-                           const boost::dynamic_bitset<> &phistory);
+                           const std::shared_ptr<TageMeta> &predMeta);
     std::vector<DirectionUpdateEntry> buildUpdateEntriesFromMeta(
         const TageMeta &predMeta,
         const std::vector<ResolvedBranch> &update_branches) const;

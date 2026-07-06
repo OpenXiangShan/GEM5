@@ -148,8 +148,7 @@ protected:
         ras->updateWithBranchUpdateContext(
             makeActualContext(commitStream),
             makeActualBranches(commitStream),
-            commitStream.predMetas[0],
-            commitStream.phistory);
+            commitStream.predMetas[0]);
     }
 
     std::unique_ptr<BTBRAS> ras;
