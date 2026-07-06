@@ -63,6 +63,7 @@
 #include "cpu/o3/trace/TraceFetch.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "cpu/valuepred/example_value_predictor_metadata.hh"
+#include "cpu/valuepred/vtage_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
@@ -2180,6 +2181,10 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         // request with extra fetch-time inputs without changing core fields.
         predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
                 curTick(), instruction->opClass());
+        if (dbpbtb && dbpbtb->ftqHasFetching(tid)) {
+            predictRequest.emplaceExt<valuepred::VPHistoryRequestExt>(
+                    &dbpbtb->ftqFetchingTarget(tid));
+        }
         instruction->vpResult =
             valuePred->valuePredict(predictRequest, instruction->vpRecord);
     }

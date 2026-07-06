@@ -68,6 +68,7 @@
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/es_metadata.hh"
 #include "cpu/valuepred/example_value_predictor_metadata.hh"
+#include "cpu/valuepred/vtage_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -2030,6 +2031,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 head_inst->effAddrValid(),
                 head_inst->effAddr,
                 head_inst->physEffAddr);
+        updateInfo.emplaceExt<valuepred::LoadTrainInfoExt>(
+                head_inst->vpObservedCacheHit,
+                head_inst->vpObservedLoadLatencyCycles,
+                head_inst->vpTrainInfoValid,
+                static_cast<uint8_t>(head_inst->numSrcRegs()),
+                head_inst->opClass(),
+                head_inst->vpCriticalLoad);
 
         // additional auxiliary info for the value predictor
         valuepred::VPFeedback feedback;
@@ -2040,6 +2048,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         feedback.predictedValue = head_inst->vpRecord ?
             head_inst->vpRecord->predictedValue : 0;
         feedback.wouldHaveBeenCorrect = feedback.applied &&
+            !head_inst->vpMisprediction;
+        feedback.overallPredictionMade = head_inst->vpApplied;
+        feedback.overallPredictionCorrect = head_inst->vpApplied &&
             !head_inst->vpMisprediction;
 
         valuePred->update(updateInfo, head_inst->vpRecord.get(), feedback);
