@@ -821,26 +821,6 @@ BTBTAGE::noteResolveUpdateAccepted(Addr) {
     }
 }
 
-std::vector<DirectionUpdateEntry>
-BTBTAGE::buildUpdateEntriesFromMeta(
-    const TageMeta &predMeta,
-    const std::vector<ResolvedBranch> &update_branches) const
-{
-    std::vector<DirectionUpdateEntry> entries;
-    entries.reserve(update_branches.size());
-    for (const auto &branch : update_branches) {
-        if (!branch.isCond) {
-            continue;
-        }
-        const auto pred_it = predMeta.preds.find(branch.pc);
-        const bool has_pred = pred_it != predMeta.preds.end();
-        const bool base_taken = has_pred ? pred_it->second.basePred : true;
-        entries.push_back(makeDirectionUpdateEntry(
-            branch, base_taken, !has_pred));
-    }
-    return entries;
-}
-
 void
 BTBTAGE::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
@@ -854,14 +834,14 @@ BTBTAGE::updateWithBranchUpdateContext(
         return;
     }
 
-    const auto entries = buildUpdateEntriesFromMeta(*predMeta, update_branches);
-    updateWithEntries(entries, ctx, predMeta);
+    updateWithBranches(update_branches, ctx, predMeta);
 }
 
 void
-BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const BranchUpdateContext &ctx,
-                           const std::shared_ptr<TageMeta> &predMeta)
+BTBTAGE::updateWithBranches(
+    const std::vector<ResolvedBranch> &update_branches,
+    const BranchUpdateContext &ctx,
+    const std::shared_ptr<TageMeta> &predMeta)
 {
     Addr startAddr = ctx.startPC;
     unsigned updateBank = getBankId(startAddr);
@@ -871,31 +851,29 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     // Process each branch entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
-    for (const auto &update_entry : entries) {
-        const Addr branch_pc = update_entry.pc;
+    for (const auto &branch : update_branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        const Addr branch_pc = branch.pc;
         if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(TAGE,
                     "update: skip pc %#lx outside prediction block start %#lx\n",
                     branch_pc, startAddr);
             continue;
         }
-        const bool actual_taken = update_entry.actualTaken;
-        const bool is_new_entry = update_entry.isNewEntry;
+        const bool actual_taken = branch.taken;
         auto orig_it = predMeta->preds.find(branch_pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;
         if (has_original_pred) {
             original_pred = orig_it->second;
-        } else if (!is_new_entry) {
-            DPRINTF(TAGE, "update: missing original prediction for old entry pc %#lx, skip\n",
-                    branch_pc);
-            continue;
         } else {
             DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
                     branch_pc);
         }
         const bool base_taken =
-            has_original_pred ? original_pred.basePred : update_entry.baseTaken;
+            has_original_pred ? original_pred.basePred : true;
 
         if (has_original_pred && original_pred.finalProviderTable >= 0) {
             if (original_pred.taken == actual_taken) {
@@ -931,7 +909,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
             branch_pc, base_taken, actual_taken, recomputed,
-            update_entry.mispred);
+            branch.mispred);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;
@@ -1004,7 +982,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         tageStats.recomputedVsOriginalDiff++;
     }
     if (getDelay() <2){
-        checkUtageUpdateMisspred(predMeta->preds, entries);
+        checkUtageUpdateMisspred(predMeta->preds, update_branches);
     }
     DPRINTF(TAGE, "end update\n");
 }
@@ -1012,7 +990,7 @@ BTBTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 void
 BTBTAGE::checkUtageUpdateMisspred(
     const std::unordered_map<Addr, TagePrediction> &preds,
-    const std::vector<DirectionUpdateEntry> &entries) {
+    const std::vector<ResolvedBranch> &branches) {
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;
@@ -1033,7 +1011,7 @@ BTBTAGE::checkUtageUpdateMisspred(
         }
     }
     const auto *first_actual_taken =
-        findFirstTakenDirectionUpdateEntry(entries);
+        findFirstTakenConditionalActualUpdateBranch(branches);
     const bool actual_taken = first_actual_taken != nullptr;
     const Addr first_actual_taken_pc =
         actual_taken ? first_actual_taken->pc : 0;

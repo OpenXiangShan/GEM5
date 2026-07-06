@@ -625,26 +625,6 @@ MicroTAGE::noteResolveUpdateAccepted(Addr) {
     }
 }
 
-std::vector<DirectionUpdateEntry>
-MicroTAGE::buildUpdateEntriesFromMeta(
-    const TageMeta &predMeta,
-    const std::vector<ResolvedBranch> &update_branches) const
-{
-    std::vector<DirectionUpdateEntry> entries;
-    entries.reserve(update_branches.size());
-    for (const auto &branch : update_branches) {
-        if (!branch.isCond) {
-            continue;
-        }
-        const auto pred_it = predMeta.preds.find(branch.pc);
-        const bool has_pred = pred_it != predMeta.preds.end();
-        const bool base_taken = has_pred ? pred_it->second.basePred : true;
-        entries.push_back(makeDirectionUpdateEntry(
-            branch, base_taken, !has_pred));
-    }
-    return entries;
-}
-
 void
 MicroTAGE::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
@@ -658,14 +638,14 @@ MicroTAGE::updateWithBranchUpdateContext(
         return;
     }
 
-    const auto entries = buildUpdateEntriesFromMeta(*predMeta, update_branches);
-    updateWithEntries(entries, ctx, predMeta);
+    updateWithBranches(update_branches, ctx, predMeta);
 }
 
 void
-MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                             const BranchUpdateContext &ctx,
-                             const std::shared_ptr<TageMeta> &predMeta)
+MicroTAGE::updateWithBranches(
+    const std::vector<ResolvedBranch> &update_branches,
+    const BranchUpdateContext &ctx,
+    const std::shared_ptr<TageMeta> &predMeta)
 {
     Addr startAddr = ctx.startPC;
     unsigned updateBank = getBankId(startAddr);
@@ -674,16 +654,21 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
 
     bool utage_hit = false;
     // Process each branch entry
-    for (const auto &update_entry : entries) {
-        const Addr branch_pc = update_entry.pc;
-        const bool base_taken = update_entry.baseTaken;
+    for (const auto &branch : update_branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        const Addr branch_pc = branch.pc;
+        auto pred_it = predMeta->preds.find(branch_pc);
+        const bool base_taken = pred_it != predMeta->preds.end() ?
+            pred_it->second.basePred : true;
         if (!isBranchInPredictionBlock(branch_pc, startAddr)) {
             DPRINTF(UTAGE,
                     "update: skip pc %#lx outside prediction block start %#lx\n",
                     branch_pc, startAddr);
             continue;
         }
-        const bool actual_taken = update_entry.actualTaken;
+        const bool actual_taken = branch.taken;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
@@ -692,7 +677,6 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                                                  ctx.tid,
                                                  ctx.asidHash);
         } else { // otherwise, use the prediction from the prediction-time main/alt
-            auto pred_it = predMeta->preds.find(branch_pc);
             if (pred_it != predMeta->preds.end()) {
                 recomputed = pred_it->second;
             } else {
@@ -710,7 +694,7 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
             branch_pc, base_taken, actual_taken, recomputed,
-            update_entry.mispred);
+            branch.mispred);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
@@ -753,14 +737,14 @@ MicroTAGE::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
     if (utage_hit){
         tageStats.updateUtageHit++;//for RTL align pred Accuracy
     }
-    checkUtageUpdateMisspred(predMeta->preds, entries);
+    checkUtageUpdateMisspred(predMeta->preds, update_branches);
     DPRINTF(UTAGE, "end update\n");
 }
 
 void
 MicroTAGE::checkUtageUpdateMisspred(
     const std::unordered_map<Addr, TagePrediction> &preds,
-    const std::vector<DirectionUpdateEntry> &entries) {
+    const std::vector<ResolvedBranch> &branches) {
     // used for MicroTAGE update misprediction counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;
@@ -783,7 +767,7 @@ MicroTAGE::checkUtageUpdateMisspred(
         }
     }
     const auto *first_actual_taken =
-        findFirstTakenDirectionUpdateEntry(entries);
+        findFirstTakenConditionalActualUpdateBranch(branches);
     const bool actual_taken = first_actual_taken != nullptr;
     const Addr first_actual_taken_pc =
         actual_taken ? first_actual_taken->pc : 0;

@@ -56,8 +56,9 @@ executed branch summary 去猜训练 entry；新模型优先消费真实 resolve
 
 BTBTAGE、MicroTAGE、MGSC 等方向预测器的 public update 输入是
 `BranchUpdateContext + resolved branch set + prediction-time meta/history`。
-组件内部可以继续构造自己的 direction table-update payload，但 top-level 不再从
-predicted BTB entries 生成公共 `DirectionUpdateEntry`。
+组件内部直接遍历 resolved branch set 中的 conditional branch，并从
+prediction-time meta/history 读取 provider/base direction；top-level 不再从
+predicted BTB entries 生成方向训练 payload。
 
 输入包括：
 

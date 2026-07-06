@@ -648,21 +648,18 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsTarget)
     EXPECT_EQ(target_entries[0].actualBranch.target, taken.target);
 }
 
-TEST(UpdateEntryBuilderTest, FirstTakenDirectionEntryUsesLowestPC)
+TEST(UpdateEntryBuilderTest, FirstTakenConditionalActualBranchUsesLowestPC)
 {
-    DirectionUpdateEntry later =
-        makeDirectionUpdateEntry(
-            makeResolvedBranch(0x1100, true, false), true, false);
-    DirectionUpdateEntry not_taken =
-        makeDirectionUpdateEntry(
-            makeResolvedBranch(0x1000, false, false), true, false);
-    DirectionUpdateEntry first =
-        makeDirectionUpdateEntry(
-            makeResolvedBranch(0x1080, true, false), true, false);
+    auto later = makeResolvedBranch(0x1100, true, false);
+    auto not_taken = makeResolvedBranch(0x1000, false, false);
+    auto first = makeResolvedBranch(0x1080, true, false);
+    auto uncond = makeResolvedBranch(0x1040, true, false);
+    uncond.isCond = false;
 
-    const auto entries = std::vector<DirectionUpdateEntry>{
-        later, not_taken, first};
-    const auto *first_taken = findFirstTakenDirectionUpdateEntry(entries);
+    const auto branches = std::vector<ResolvedBranch>{
+        later, not_taken, first, uncond};
+    const auto *first_taken =
+        findFirstTakenConditionalActualUpdateBranch(branches);
 
     ASSERT_NE(first_taken, nullptr);
     EXPECT_EQ(first_taken->pc, first.pc);

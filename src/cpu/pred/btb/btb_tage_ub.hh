@@ -179,12 +179,9 @@ class BTBTAGEUpperBound : public BTBTAGE
                             unsigned startTable,
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,
                             uint64_t &allocatedTable);
-    void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const BranchUpdateContext &ctx,
-                           const UpperBoundMeta &predMeta);
-    std::vector<DirectionUpdateEntry> buildUpdateEntriesFromMeta(
-        const UpperBoundMeta &predMeta,
-        const std::vector<ResolvedBranch> &update_branches) const;
+    void updateWithBranches(const std::vector<ResolvedBranch> &update_branches,
+                            const BranchUpdateContext &ctx,
+                            const UpperBoundMeta &predMeta);
     void refreshContextStats(unsigned table);
     void notePredictionResult(Addr branchPC,
                               const TagePrediction &pred,

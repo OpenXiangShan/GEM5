@@ -929,23 +929,6 @@ BTBMGSC::updateSinglePredictor(Addr branchPC, bool actual_taken, const MgscPredi
     }
 }
 
-std::vector<DirectionUpdateEntry>
-BTBMGSC::buildUpdateEntriesFromMeta(
-    const MgscMeta &meta,
-    const std::vector<ResolvedBranch> &update_branches) const
-{
-    std::vector<DirectionUpdateEntry> entries;
-    entries.reserve(update_branches.size());
-    for (const auto &branch : update_branches) {
-        if (!branch.isCond || !meta.preds.count(branch.pc)) {
-            continue;
-        }
-        entries.push_back(makeDirectionUpdateEntry(
-            branch, /*base_taken=*/true, /*is_new_entry=*/false));
-    }
-    return entries;
-}
-
 void
 BTBMGSC::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
@@ -961,19 +944,21 @@ BTBMGSC::updateWithBranchUpdateContext(
     if (!meta) {
         return;
     }
-    const auto entries = buildUpdateEntriesFromMeta(*meta, update_branches);
-    updateWithEntries(entries, ctx, *meta);
+    updateWithBranches(update_branches, ctx, *meta);
 }
 
 void
-BTBMGSC::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const BranchUpdateContext &ctx,
-                           const MgscMeta &meta)
+BTBMGSC::updateWithBranches(
+    const std::vector<ResolvedBranch> &update_branches,
+    const BranchUpdateContext &ctx,
+    const MgscMeta &meta)
 {
     // Process each branch entry
-    for (const auto &update_entry : entries) {
-        const Addr branch_pc = update_entry.pc;
-        const bool actual_taken = update_entry.actualTaken;
+    for (const auto &branch : update_branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        const Addr branch_pc = branch.pc;
         auto pred_it = meta.preds.find(branch_pc);
 
         if (pred_it == meta.preds.end()) {
@@ -981,7 +966,7 @@ BTBMGSC::updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
         }
 
         // Update predictor state and check if need to allocate new entry
-        updateSinglePredictor(branch_pc, actual_taken, pred_it->second,
+        updateSinglePredictor(branch_pc, branch.taken, pred_it->second,
                               ctx);
     }
 

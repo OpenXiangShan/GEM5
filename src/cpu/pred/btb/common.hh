@@ -233,31 +233,6 @@ struct BTBEntry : BranchInfo
     }
 };
 
-struct DirectionUpdateEntry
-{
-    // Actual direction facts come from the resolved branch record. baseTaken
-    // and isNewEntry describe the prediction-time update base.
-    Addr pc = 0;
-    bool actualTaken = false;
-    bool mispred = false;
-    bool baseTaken = false;
-    bool isNewEntry = false;
-};
-
-inline DirectionUpdateEntry
-makeDirectionUpdateEntry(const ResolvedBranch &actual_branch,
-                         bool base_taken,
-                         bool is_new_entry)
-{
-    DirectionUpdateEntry entry;
-    entry.pc = actual_branch.pc;
-    entry.actualTaken = actual_branch.taken;
-    entry.mispred = actual_branch.mispred;
-    entry.baseTaken = base_taken;
-    entry.isNewEntry = is_new_entry;
-    return entry;
-}
-
 struct BranchUpdateContext
 {
     ThreadID tid = 0;
@@ -277,23 +252,6 @@ struct TargetUpdateEntry
     int baseSource = -1;
 };
 
-inline const DirectionUpdateEntry *
-findFirstTakenDirectionUpdateEntry(
-    const std::vector<DirectionUpdateEntry> &entries)
-{
-    const DirectionUpdateEntry *first_taken = nullptr;
-    for (const auto &entry : entries) {
-        if (!entry.actualTaken) {
-            continue;
-        }
-        // Branches in one fetch block are ordered by PC.
-        if (!first_taken || entry.pc < first_taken->pc) {
-            first_taken = &entry;
-        }
-    }
-    return first_taken;
-}
-
 inline const ResolvedBranch *
 findFirstTakenActualUpdateBranch(
     const std::vector<ResolvedBranch> &branches)
@@ -301,6 +259,22 @@ findFirstTakenActualUpdateBranch(
     const ResolvedBranch *first_taken = nullptr;
     for (const auto &branch : branches) {
         if (!branch.taken) {
+            continue;
+        }
+        if (!first_taken || branch.pc < first_taken->pc) {
+            first_taken = &branch;
+        }
+    }
+    return first_taken;
+}
+
+inline const ResolvedBranch *
+findFirstTakenConditionalActualUpdateBranch(
+    const std::vector<ResolvedBranch> &branches)
+{
+    const ResolvedBranch *first_taken = nullptr;
+    for (const auto &branch : branches) {
+        if (!branch.isCond || !branch.taken) {
             continue;
         }
         if (!first_taken || branch.pc < first_taken->pc) {

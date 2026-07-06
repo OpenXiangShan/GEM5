@@ -622,13 +622,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
         }
     } MgscMeta;
 
-    std::vector<DirectionUpdateEntry> buildUpdateEntriesFromMeta(
-        const MgscMeta &meta,
-        const std::vector<ResolvedBranch> &update_branches) const;
-
-    void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
-                           const BranchUpdateContext &ctx,
-                           const MgscMeta &meta);
+    void updateWithBranches(const std::vector<ResolvedBranch> &update_branches,
+                            const BranchUpdateContext &ctx,
+                            const MgscMeta &meta);
 
     std::vector<std::shared_ptr<MgscMeta>> threadMeta;
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;

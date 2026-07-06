@@ -496,26 +496,6 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
     ubStats.liveContextsPerTable[table] = exactTables[table].size();
 }
 
-std::vector<DirectionUpdateEntry>
-BTBTAGEUpperBound::buildUpdateEntriesFromMeta(
-    const UpperBoundMeta &predMeta,
-    const std::vector<ResolvedBranch> &update_branches) const
-{
-    std::vector<DirectionUpdateEntry> entries;
-    entries.reserve(update_branches.size());
-    for (const auto &branch : update_branches) {
-        if (!branch.isCond) {
-            continue;
-        }
-        const auto pred_it = predMeta.preds.find(branch.pc);
-        const bool has_pred = pred_it != predMeta.preds.end();
-        const bool base_taken = has_pred ? pred_it->second.basePred : true;
-        entries.push_back(makeDirectionUpdateEntry(
-            branch, base_taken, !has_pred));
-    }
-    return entries;
-}
-
 void
 BTBTAGEUpperBound::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
@@ -528,23 +508,26 @@ BTBTAGEUpperBound::updateWithBranchUpdateContext(
         return;
     }
 
-    const auto entries = buildUpdateEntriesFromMeta(*predMeta, update_branches);
-    updateWithEntries(entries, ctx, *predMeta);
+    updateWithBranches(update_branches, ctx, *predMeta);
 }
 
 void
-BTBTAGEUpperBound::updateWithEntries(
-    const std::vector<DirectionUpdateEntry> &entries,
+BTBTAGEUpperBound::updateWithBranches(
+    const std::vector<ResolvedBranch> &update_branches,
     const BranchUpdateContext &ctx,
     const UpperBoundMeta &predMeta)
 {
     bool hasStoredVsActualDiff = false;
-    for (const auto &updateEntry : entries) {
-        const Addr branchPC = updateEntry.pc;
-        const bool baseTaken = updateEntry.baseTaken;
+    for (const auto &branch : update_branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        const Addr branchPC = branch.pc;
         auto predIt = predMeta.preds.find(branchPC);
         auto metaIt = predMeta.branchMeta.find(branchPC);
-        const bool actualTaken = updateEntry.actualTaken;
+        const bool baseTaken =
+            predIt != predMeta.preds.end() ? predIt->second.basePred : true;
+        const bool actualTaken = branch.taken;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
         if (predIt != predMeta.preds.end() &&
@@ -565,7 +548,7 @@ BTBTAGEUpperBound::updateWithEntries(
 
         bool needAllocate = updatePredictorStateAndCheckAllocation(
             branchPC, baseTaken, actualTaken, storedPred, storedMeta,
-            updateEntry.mispred);
+            branch.mispred);
 
         if (needAllocate) {
             uint64_t allocatedTable = 0;
@@ -582,7 +565,7 @@ BTBTAGEUpperBound::updateWithEntries(
         tageStats.recomputedVsActualDiff++;
     }
     if (getDelay() < 2) {
-        checkUtageUpdateMisspred(predMeta.preds, entries);
+        checkUtageUpdateMisspred(predMeta.preds, update_branches);
     }
 }
 
