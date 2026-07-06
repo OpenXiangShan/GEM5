@@ -127,6 +127,12 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
+    bool
+    lastPredHit() const
+    {
+        return lastPred.hit;
+    }
+
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
@@ -174,6 +180,7 @@ class UBTB : public TimedBaseBTBPredictor
     struct LastPred
     {
         UBTBIter hit_entry; // this might point to ubtb.end()
+        bool hit = false;
 
         LastPred() {
             // Default constructor - will be assigned proper value later

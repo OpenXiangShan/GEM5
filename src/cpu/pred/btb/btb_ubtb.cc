@@ -149,6 +149,7 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
 
     // Update metadata for later stages
     lastPred.hit_entry = it;
+    lastPred.hit = (it != ubtb.end());
 }
 
 UBTB::UBTBIter

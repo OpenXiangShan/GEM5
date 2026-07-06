@@ -215,6 +215,15 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     void updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC);
 
+    bool
+    lastPredHasHit(ThreadID tid) const
+    {
+        if (tid >= threadStates.size()) {
+            return false;
+        }
+        return !threadStates[tid].lastPredEntries.empty();
+    }
+
   private:
     /** Returns the index into the BTB, based on the branch's PC.
      *  The index is calculated as: (pc >> idxShiftAmt) & idxMask

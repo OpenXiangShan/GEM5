@@ -467,8 +467,20 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     // update ubtb/abtb using final S3 prediction
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        if (ubtb->isEnabled()) {
+        const bool ubtb_hit = ubtb->isEnabled() && ubtb->lastPredHit();
+        const bool abtb_hit = abtb->isEnabled() && abtb->lastPredHasHit(tid);
+        const bool allow_ubtb_s3_update =
+            ubtb->isEnabled() && !abtb_hit;
+
+        if (allow_ubtb_s3_update) {
+            DPRINTF(Override,
+                    "uBTB S3 update allowed: ubtb_hit=%d abtb_hit=%d\n",
+                    ubtb_hit, abtb_hit);
             ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+        } else if (ubtb->isEnabled()) {
+            DPRINTF(Override,
+                    "uBTB S3 update skipped: ubtb_hit=%d abtb_hit=%d\n",
+                    ubtb_hit, abtb_hit);
         }
         if (abtb->isEnabled() && !ftq.empty(tid)) {
             auto previous_block_startpc = ftq.back(tid).startPC;
