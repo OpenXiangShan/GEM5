@@ -77,17 +77,11 @@ class TimedBaseBTBPredictor: public SimObject
     {
         return PredictorUpdateProtocol::None;
     }
-    virtual void updateWithDirectionEntries(
-        const std::vector<DirectionUpdateEntry> &,
-        const BranchUpdateContext &,
-        const std::shared_ptr<void> &,
-        const boost::dynamic_bitset<> &)
-    {
-    }
     virtual void updateWithBranchUpdateContext(
         const BranchUpdateContext &,
         const std::vector<ResolvedBranch> &,
-        const std::shared_ptr<void> &)
+        const std::shared_ptr<void> &,
+        const boost::dynamic_bitset<> &)
     {
     }
     virtual unsigned getDelay() {return numDelay;}

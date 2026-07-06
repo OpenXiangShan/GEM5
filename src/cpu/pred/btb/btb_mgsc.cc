@@ -929,10 +929,27 @@ BTBMGSC::updateSinglePredictor(Addr branchPC, bool actual_taken, const MgscPredi
     }
 }
 
+std::vector<DirectionUpdateEntry>
+BTBMGSC::buildUpdateEntriesFromMeta(
+    const MgscMeta &meta,
+    const std::vector<ResolvedBranch> &update_branches) const
+{
+    std::vector<DirectionUpdateEntry> entries;
+    entries.reserve(update_branches.size());
+    for (const auto &branch : update_branches) {
+        if (!branch.isCond || !meta.preds.count(branch.pc)) {
+            continue;
+        }
+        entries.push_back(makeDirectionUpdateEntry(
+            branch, /*base_taken=*/true, /*is_new_entry=*/false));
+    }
+    return entries;
+}
+
 void
-BTBMGSC::updateWithDirectionEntries(
-    const std::vector<DirectionUpdateEntry> &entries,
+BTBMGSC::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &)
 {
@@ -942,6 +959,10 @@ BTBMGSC::updateWithDirectionEntries(
     DPRINTF(MGSC, "update startAddr: %#lx\n", ctx.startPC);
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
+    const auto entries = buildUpdateEntriesFromMeta(*meta, update_branches);
     updateWithEntries(entries, ctx, *meta);
 }
 

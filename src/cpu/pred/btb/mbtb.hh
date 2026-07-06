@@ -165,7 +165,8 @@ class MBTB : public TimedBaseBTBPredictor
     void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
         const std::vector<ResolvedBranch> &update_branches,
-        const std::shared_ptr<void> &prediction_meta) override;
+        const std::shared_ptr<void> &prediction_meta,
+        const boost::dynamic_bitset<> &phistory) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \

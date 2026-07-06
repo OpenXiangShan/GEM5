@@ -102,37 +102,29 @@ makeActualContext(const FetchTarget &stream)
     return makeBaseBranchUpdateContext(stream);
 }
 
-void updateDirectionPredictor(
-    TimedBaseBTBPredictor *predictor, const FetchTarget &stream,
-    const std::vector<DirectionUpdateEntry> &entries)
+std::vector<ResolvedBranch>
+makeDirectionUpdateBranches(const FetchTarget &stream)
 {
-    predictor->updateWithDirectionEntries(
-        entries, makeActualContext(stream),
-        stream.predMetas[predictor->getComponentIdx()],
-        stream.phistory);
-}
-
-DirectionUpdateEntry
-makeDirectionEntry(const BTBEntry &entry, bool actual_taken,
-                   bool is_new_entry, bool actual_mispred = false)
-{
-    return makeDirectionUpdateEntry(
-        createResolvedBranch(entry, actual_taken, actual_mispred),
-        entry.ctr >= 0, is_new_entry);
+    auto branches = makeUpdateBranchPrefix(stream.resolvedBranches);
+    for (auto &branch : branches) {
+        if (stream.squashType == SquashType::SQUASH_CTRL &&
+            stream.squashPC == branch.pc) {
+            branch.mispred = true;
+        }
+    }
+    return branches;
 }
 
 void updateDirectionPredictor(TimedBaseBTBPredictor *predictor,
                               const FetchTarget &stream,
-                              const BTBEntry &entry, bool actual_taken,
-                              bool is_new_entry)
+                              const BTBEntry &, bool,
+                              bool)
 {
-    const bool actual_mispred =
-        stream.squashType == SquashType::SQUASH_CTRL &&
-        stream.squashPC == entry.pc;
-    updateDirectionPredictor(
-        predictor, stream,
-        {makeDirectionEntry(entry, actual_taken, is_new_entry,
-                            actual_mispred)});
+    const auto update_branches = makeDirectionUpdateBranches(stream);
+    predictor->updateWithBranchUpdateContext(
+        makeActualContext(stream), update_branches,
+        stream.predMetas[predictor->getComponentIdx()],
+        stream.phistory);
 }
 
 void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,
@@ -1323,8 +1315,7 @@ TEST_F(BTBTAGETest, ResolvedUpdateUsesExplicitPrefix) {
 
     FetchTarget stream = createStream(0x1000, first, false, meta);
 
-    updateDirectionPredictor(
-        tage, stream, {makeDirectionEntry(first, false, false)});
+    updateDirectionPredictor(tage, stream, first, false, false);
 
     EXPECT_EQ(tage->tageTable[table][index][0].counter, -1)
         << "Resolved-update prefix branch should be trained";

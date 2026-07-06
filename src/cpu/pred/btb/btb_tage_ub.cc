@@ -496,10 +496,30 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
     ubStats.liveContextsPerTable[table] = exactTables[table].size();
 }
 
+std::vector<DirectionUpdateEntry>
+BTBTAGEUpperBound::buildUpdateEntriesFromMeta(
+    const UpperBoundMeta &predMeta,
+    const std::vector<ResolvedBranch> &update_branches) const
+{
+    std::vector<DirectionUpdateEntry> entries;
+    entries.reserve(update_branches.size());
+    for (const auto &branch : update_branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        const auto pred_it = predMeta.preds.find(branch.pc);
+        const bool has_pred = pred_it != predMeta.preds.end();
+        const bool base_taken = has_pred ? pred_it->second.basePred : true;
+        entries.push_back(makeDirectionUpdateEntry(
+            branch, base_taken, !has_pred));
+    }
+    return entries;
+}
+
 void
-BTBTAGEUpperBound::updateWithDirectionEntries(
-    const std::vector<DirectionUpdateEntry> &entries,
+BTBTAGEUpperBound::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
+    const std::vector<ResolvedBranch> &update_branches,
     const std::shared_ptr<void> &prediction_meta,
     const boost::dynamic_bitset<> &)
 {
@@ -509,6 +529,7 @@ BTBTAGEUpperBound::updateWithDirectionEntries(
         return;
     }
 
+    const auto entries = buildUpdateEntriesFromMeta(*predMeta, update_branches);
     updateWithEntries(entries, ctx, *predMeta);
 }
 

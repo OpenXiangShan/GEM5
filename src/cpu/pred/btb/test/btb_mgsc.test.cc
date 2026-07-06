@@ -115,13 +115,14 @@ void
 updateMgsc(BTBMGSC &mgsc, const FetchTarget &stream,
            const BTBEntry &entry, bool actual_taken)
 {
-    const auto actual_branches =
-        std::vector<ResolvedBranch>{makeResolvedBranch(entry, actual_taken)};
+    auto actual_branches =
+        makeUpdateBranchPrefix(stream.resolvedBranches);
+    if (actual_branches.empty()) {
+        actual_branches.push_back(makeResolvedBranch(entry, actual_taken));
+    }
     const auto ctx = makeBaseBranchUpdateContext(stream);
-    const auto entries = buildDirectionUpdateEntries(
-        {entry}, actual_branches);
-    mgsc.updateWithDirectionEntries(
-        entries, ctx, stream.predMetas[mgsc.getComponentIdx()],
+    mgsc.updateWithBranchUpdateContext(
+        ctx, actual_branches, stream.predMetas[mgsc.getComponentIdx()],
         stream.phistory);
 }
 

@@ -139,11 +139,11 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Update predictor state based on actual branch outcomes
     PredictorUpdateProtocol updateProtocol() const override
     {
-        return PredictorUpdateProtocol::DirectionEntries;
+        return PredictorUpdateProtocol::BranchContext;
     }
-    void updateWithDirectionEntries(
-        const std::vector<DirectionUpdateEntry> &entries,
+    void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
+        const std::vector<ResolvedBranch> &update_branches,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &) override;
     bool canResolveUpdate(Addr update_start_pc) override;
@@ -382,6 +382,9 @@ private:
     void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,
                            const std::shared_ptr<TageMeta> &predMeta);
+    std::vector<DirectionUpdateEntry> buildUpdateEntriesFromMeta(
+        const TageMeta &predMeta,
+        const std::vector<ResolvedBranch> &update_branches) const;
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;

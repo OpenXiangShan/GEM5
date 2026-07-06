@@ -92,17 +92,17 @@ FetchTarget stream;
 stream.startPC = pc;
 stream.predMetas[0] = meta;  // Must set meta from prediction phase
 
-// Update predictor through explicit DirectionUpdateEntry inputs.
+// Update direction predictor through actual resolved branch facts plus
+// prediction-time meta/history.
 auto ctx = makeBaseBranchUpdateContext(stream);
 ResolvedBranch actual_branch;
 actual_branch.pc = entry.pc;
 actual_branch.taken = taken;
 actual_branch.mispred = mispred;
 actual_branch.isCond = true;
-const std::vector<DirectionUpdateEntry> entries = {
-    makeDirectionUpdateEntry(actual_branch, entry.ctr >= 0, false)
-};
-tage->updateWithDirectionEntries(entries, ctx, meta, stream.phistory);
+const std::vector<ResolvedBranch> actual_branches = {actual_branch};
+tage->updateWithBranchUpdateContext(
+    ctx, actual_branches, meta, stream.phistory);
 ```
 
 3. control squash/Recovery Phase:
@@ -174,7 +174,8 @@ auto ctx = makeBaseBranchUpdateContext(stream);
 
 // Update BTB
 btb->updateWithBranchUpdateContext(
-    ctx, actual_branches, stream.predMetas[btb->getComponentIdx()]);
+    ctx, actual_branches, stream.predMetas[btb->getComponentIdx()],
+    stream.phistory);
 ```
 
 #### Important Notes

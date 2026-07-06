@@ -778,8 +778,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
         // Update predictor components
         updatePredictorComponents(
             ftq_target.predMetas, ftq_target.phistory, ftq_target.previousPCs,
-            ftq_target.predBTBEntries, update_ctx, update_branches,
-            /*resolved_update=*/false);
+            update_ctx, update_branches, /*resolved_update=*/false);
 
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
@@ -836,9 +835,7 @@ DecoupledBPUWithBTB::resolveUpdate(
 
     return updatePredictorComponents(
         target.predMetas, target.phistory, target.previousPCs,
-        target.predBTBEntries,
-        update_ctx, update_branches,
-        /*resolved_update=*/true);
+        update_ctx, update_branches, /*resolved_update=*/true);
 }
 
 void
@@ -881,7 +878,6 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const std::array<std::shared_ptr<void>, 8> &prediction_metas,
     const boost::dynamic_bitset<> &phistory,
     const std::queue<Addr> &previous_pcs,
-    const std::vector<BTBEntry> &pred_btb_entries,
     const BranchUpdateContext &update_ctx,
     const std::vector<ResolvedBranch> &update_branches,
     bool resolved_update)
@@ -895,9 +891,6 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         return false;
     }
 
-    bool direction_update_entries_ready = false;
-    std::vector<BTBEntry> direction_update_base_entries;
-
     for (int i = 0; i < numComponents; ++i) {
         auto *component = components[i];
         if (component->getResolvedUpdate() != resolved_update) {
@@ -909,25 +902,9 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         const auto prediction_meta =
             prediction_metas[component->getComponentIdx()];
         switch (component->updateProtocol()) {
-          case PredictorUpdateProtocol::DirectionEntries: {
-            if (!direction_update_entries_ready) {
-                direction_update_base_entries =
-                    selectPredictedBTBEntriesForUpdate(
-                        pred_btb_entries, update_ctx, update_branches,
-                        predictWidth);
-                direction_update_entries_ready = true;
-            }
-            const auto direction_entries =
-                buildDirectionUpdateEntries(
-                    direction_update_base_entries, update_branches);
-            component->updateWithDirectionEntries(
-                direction_entries, update_ctx, prediction_meta, phistory);
-            break;
-          }
-
           case PredictorUpdateProtocol::BranchContext:
             component->updateWithBranchUpdateContext(
-                update_ctx, update_branches, prediction_meta);
+                update_ctx, update_branches, prediction_meta, phistory);
             break;
 
           case PredictorUpdateProtocol::AheadPipelineState:

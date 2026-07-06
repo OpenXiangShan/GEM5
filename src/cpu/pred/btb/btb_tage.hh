@@ -168,11 +168,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Update predictor state based on actual branch outcomes
     PredictorUpdateProtocol updateProtocol() const override
     {
-        return PredictorUpdateProtocol::DirectionEntries;
+        return PredictorUpdateProtocol::BranchContext;
     }
-    void updateWithDirectionEntries(
-        const std::vector<DirectionUpdateEntry> &entries,
+    void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
+        const std::vector<ResolvedBranch> &update_branches,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &phistory) override;
     bool canResolveUpdate(Addr update_start_pc) override;
@@ -508,6 +508,9 @@ private:
                            const BranchUpdateContext &ctx,
                            const std::shared_ptr<TageMeta> &predMeta,
                            const boost::dynamic_bitset<> &phistory);
+    std::vector<DirectionUpdateEntry> buildUpdateEntriesFromMeta(
+        const TageMeta &predMeta,
+        const std::vector<ResolvedBranch> &update_branches) const;
 
     // Helper methods for LRU management
     void updateLRU(int table, Addr index, unsigned way);

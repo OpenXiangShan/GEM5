@@ -210,7 +210,8 @@ void
 BTBRAS::updateWithBranchUpdateContext(
     const BranchUpdateContext &ctx,
     const std::vector<ResolvedBranch> &update_branches,
-    const std::shared_ptr<void> &prediction_meta)
+    const std::shared_ptr<void> &prediction_meta,
+    const boost::dynamic_bitset<> &)
 {
     const ThreadID tid = ctx.tid;
     assert(tid < numThreads);

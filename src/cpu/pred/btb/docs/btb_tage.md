@@ -136,18 +136,19 @@ The update process involves:
 4. Allocating new entries on mispredictions
 
 ```cpp
-void updateWithDirectionEntries(
-    const std::vector<DirectionUpdateEntry> &entries,
+void updateWithBranchUpdateContext(
     const BranchUpdateContext &update_ctx,
-    const FetchTarget &stream) {
-    Addr startAddr = stream.startPC;
+    const std::vector<ResolvedBranch> &update_branches,
+    const std::shared_ptr<void> &prediction_meta,
+    const boost::dynamic_bitset<> &phistory) {
+    Addr startAddr = update_ctx.startPC;
     
     // Get prediction metadata
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
     
     // Update each branch entry
-    for (const auto &update_entry : entries) {
-        Addr branch_pc = update_entry.pc;
+    for (const auto &branch : update_branches) {
+        Addr branch_pc = branch.pc;
         bool actual_taken = update_entry.actualTaken;
         auto pred_it = meta->preds.find(branch_pc);
         
@@ -322,19 +323,18 @@ FetchTarget stream;
 stream.startPC = pc;
 stream.predMetas[0] = meta;  // Must include metadata from prediction phase
 
-// Update predictor state through explicit DirectionUpdateEntry inputs. The
-// adapter consumes the resolved branch record, but the direction payload only
-// keeps pc/taken/mispred plus prediction-time base state.
+// Update predictor state through actual resolved branch facts plus prediction
+// meta/history. Direction predictors build their private table-update payloads
+// from this public branch-context input.
 auto update_ctx = makeBaseBranchUpdateContext(stream);
 ResolvedBranch actual_branch;
 actual_branch.pc = branch_info.pc;
 actual_branch.taken = actual_taken;
 actual_branch.mispred = mispred;
 actual_branch.isCond = true;
-const std::vector<DirectionUpdateEntry> entries = {
-    makeDirectionUpdateEntry(actual_branch, base_taken, is_new_entry)
-};
-tage->updateWithDirectionEntries(entries, update_ctx, meta, stream.phistory);
+const std::vector<ResolvedBranch> update_branches = {actual_branch};
+tage->updateWithBranchUpdateContext(
+    update_ctx, update_branches, meta, stream.phistory);
 ```
 
 #### Recovery Phase (Misprediction)

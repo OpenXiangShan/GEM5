@@ -103,85 +103,6 @@ makeUpdateEntries(const FetchTarget &stream,
 
 } // namespace
 
-TEST(UpdateEntryBuilderTest, DirectionUpdateUsesActualBranchPrefix)
-{
-    const BTBEntry prefix_entry = makeEntry(0x1000, true);
-    const BTBEntry later_entry = makeEntry(0x1004, true);
-
-    const auto entries = buildDirectionUpdateEntries(
-        {prefix_entry, later_entry},
-        {makeResolvedBranch(prefix_entry.pc, false, false)});
-
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, prefix_entry.pc);
-    EXPECT_FALSE(entries[0].actualTaken);
-    EXPECT_FALSE(entries[0].isNewEntry);
-}
-
-TEST(UpdateEntryBuilderTest, DirectionNewNotTakenEntryKeepsActualOutcome)
-{
-    const BTBEntry new_entry = makeEntry(0x1010, true);
-
-    const auto entries = buildDirectionUpdateEntries(
-        {}, {makeResolvedBranch(new_entry.pc, false, false)});
-
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, new_entry.pc);
-    EXPECT_TRUE(entries[0].baseTaken);
-    EXPECT_FALSE(entries[0].actualTaken);
-    EXPECT_TRUE(entries[0].isNewEntry);
-}
-
-TEST(UpdateEntryBuilderTest, DirectionEntryKeepsBaseDirection)
-{
-    BTBEntry entry = makeEntry(0x1014, true);
-    entry.ctr = -1;
-
-    const auto entries = buildDirectionUpdateEntries(
-        {entry}, {makeResolvedBranch(entry.pc, true, false)});
-
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, entry.pc);
-    EXPECT_FALSE(entries[0].baseTaken);
-    EXPECT_TRUE(entries[0].actualTaken);
-}
-
-TEST(UpdateEntryBuilderTest, DirectionResolvedBranchOutcomeOverridesContext)
-{
-    const BTBEntry entry = makeEntry(0x1018, true);
-
-    const auto entries = buildDirectionUpdateEntries(
-        {entry}, {makeResolvedBranch(entry.pc, true, true)});
-
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, entry.pc);
-    EXPECT_TRUE(entries[0].actualTaken);
-    EXPECT_TRUE(entries[0].mispred);
-}
-
-TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresActualBranchSet)
-{
-    const BTBEntry cond_entry = makeEntry(0x1020, true);
-
-    const auto entries = buildDirectionUpdateEntries({cond_entry}, {});
-
-    EXPECT_TRUE(entries.empty());
-}
-
-TEST(UpdateEntryBuilderTest, DirectionUpdateRequiresMatchingActualBranch)
-{
-    const BTBEntry predicted_cond = makeEntry(0x1024, true);
-    const ResolvedBranch other_branch =
-        makeResolvedBranch(0x1028, false, false);
-
-    const auto entries =
-        buildDirectionUpdateEntries({predicted_cond}, {other_branch});
-
-    ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, other_branch.pc);
-    EXPECT_TRUE(entries[0].isNewEntry);
-}
-
 TEST(UpdateEntryBuilderTest, TargetUpdateUsesActualBranchPrefix)
 {
     const BTBEntry prefix_entry = makeEntry(0x2000, false);
@@ -697,7 +618,7 @@ TEST(UpdateEntryBuilderTest, FetchTargetResolvedBranchesUseUpdateBranchPrefix)
     EXPECT_EQ(update_branches[1].pc, second.pc);
 }
 
-TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionAndTarget)
+TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsTarget)
 {
     const BTBEntry predicted = makeEntry(0x1000, true);
     const ResolvedBranch missing = makeResolvedBranch(0x1008, false, false);
@@ -717,19 +638,6 @@ TEST(UpdateEntryBuilderTest, ResolvedBranchMissingFromPredictionTrainsDirectionA
     ASSERT_EQ(update_branches.size(), 2);
     EXPECT_EQ(update_branches[0].pc, missing.pc);
     EXPECT_EQ(update_branches[1].pc, taken.pc);
-
-    const auto direction_entries = buildDirectionUpdateEntries(
-        pred_update_entries, update_branches);
-
-    ASSERT_EQ(direction_entries.size(), 2);
-    EXPECT_EQ(direction_entries[0].pc, missing.pc);
-    EXPECT_TRUE(direction_entries[0].isNewEntry);
-    EXPECT_TRUE(direction_entries[0].baseTaken);
-    EXPECT_FALSE(direction_entries[0].actualTaken);
-    EXPECT_EQ(direction_entries[1].pc, taken.pc);
-    EXPECT_TRUE(direction_entries[1].isNewEntry);
-    EXPECT_TRUE(direction_entries[1].actualTaken);
-    EXPECT_TRUE(direction_entries[1].mispred);
 
     const auto target_entries = buildTargetUpdateEntries(
         pred_update_entries, update_branches);
@@ -850,14 +758,6 @@ TEST(UpdateEntryBuilderTest, NotTakenMissingBranchDoesNotTrainTarget)
         makeUpdateEntries(stream, 32, update_branches);
 
     ASSERT_TRUE(pred_update_entries.empty());
-
-    const auto direction_entries = buildDirectionUpdateEntries(
-        pred_update_entries, update_branches);
-
-    ASSERT_EQ(direction_entries.size(), 1);
-    EXPECT_EQ(direction_entries[0].pc, missing.pc);
-    EXPECT_TRUE(direction_entries[0].baseTaken);
-    EXPECT_FALSE(direction_entries[0].actualTaken);
 
     const auto target_entries = buildTargetUpdateEntries(
         pred_update_entries, update_branches);

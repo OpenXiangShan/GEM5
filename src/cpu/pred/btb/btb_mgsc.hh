@@ -192,11 +192,11 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Update predictor state based on actual branch outcomes
     PredictorUpdateProtocol updateProtocol() const override
     {
-        return PredictorUpdateProtocol::DirectionEntries;
+        return PredictorUpdateProtocol::BranchContext;
     }
-    void updateWithDirectionEntries(
-        const std::vector<DirectionUpdateEntry> &entries,
+    void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
+        const std::vector<ResolvedBranch> &update_branches,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &) override;
 
@@ -591,8 +591,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
   private:
     void initStorage();
-
-    // Metadata for MGSC predictions
     typedef struct MgscMeta
     {
         std::unordered_map<Addr, MgscPrediction> preds;
@@ -624,6 +622,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
             indexPFoldedHist = other.indexPFoldedHist;
         }
     } MgscMeta;
+
+    std::vector<DirectionUpdateEntry> buildUpdateEntriesFromMeta(
+        const MgscMeta &meta,
+        const std::vector<ResolvedBranch> &update_branches) const;
 
     void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,

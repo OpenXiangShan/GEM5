@@ -52,17 +52,19 @@ direction/target entry builder 在存在 per-entry resolved fact 时不会依赖
 这正是当前协议区别于旧模型的关键：旧模型经常用 predicted BTB entries 加一个
 executed branch summary 去猜训练 entry；新模型优先消费真实 resolved facts。
 
-## Direction Entries
+## Direction Predictor Update
 
-`buildDirectionUpdateEntries()` 构造给 BTBTAGE、MicroTAGE、MGSC 等方向预测器消费
-的训练 entry。
+BTBTAGE、MicroTAGE、MGSC 等方向预测器的 public update 输入是
+`BranchUpdateContext + resolved branch set + prediction-time meta/history`。
+组件内部可以继续构造自己的 direction table-update payload，但 top-level 不再从
+predicted BTB entries 生成公共 `DirectionUpdateEntry`。
 
 输入包括：
 
-- actual update prefix 内的 predicted BTB entries；
-- actual branch prefix 中预测 BTB 没有命中的 conditional branch，对它们生成
-  direction-only entry；
-- actual branch prefix 和 prediction-time meta/history snapshot。
+- actual branch prefix 中的 conditional branch actual taken/mispred；
+- prediction-time meta/history snapshot 中保存的 provider/base direction；
+- 对 prediction meta 中不存在的新 conditional branch，使用 prediction-time history
+  snapshot 和 neutral base direction 在组件内部训练。
 
 对 resolved update 来说，普通方向预测器只保留 actual branch prefix 里的 entry。MGSC
 有自己的 filter，因为它对 conditional entry 集合的需求略有不同。

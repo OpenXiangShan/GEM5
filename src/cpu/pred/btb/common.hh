@@ -471,7 +471,6 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
 enum class PredictorUpdateProtocol
 {
     None,
-    DirectionEntries,
     BranchContext,
     AheadPipelineState
 };
@@ -484,46 +483,6 @@ findActualUpdateBranch(
         actual_update_branches.begin(), actual_update_branches.end(),
         [pc](const auto &branch) { return branch.pc == pc; });
     return it == actual_update_branches.end() ? nullptr : &*it;
-}
-
-inline std::vector<DirectionUpdateEntry>
-buildDirectionUpdateEntries(
-    const std::vector<BTBEntry> &pred_update_entries,
-    const std::vector<ResolvedBranch> &actual_update_branches)
-{
-    std::vector<DirectionUpdateEntry> entries;
-    entries.reserve(pred_update_entries.size() +
-                    actual_update_branches.size());
-
-    const auto has_pred_entry_pc = [&](Addr pc) {
-        return std::any_of(
-            pred_update_entries.begin(), pred_update_entries.end(),
-            [pc](const auto &entry) { return entry.pc == pc; });
-    };
-
-    auto add_entry = [&](const ResolvedBranch &branch, bool base_taken,
-                         bool is_new_entry) {
-        entries.push_back(makeDirectionUpdateEntry(
-            branch, base_taken, is_new_entry));
-    };
-
-    for (const auto &entry : pred_update_entries) {
-        const auto *actual_branch =
-            findActualUpdateBranch(actual_update_branches, entry.pc);
-        if (!entry.isCond || !actual_branch) {
-            continue;
-        }
-        add_entry(*actual_branch, entry.ctr >= 0, false);
-    }
-    for (const auto &branch : actual_update_branches) {
-        if (!branch.isCond || has_pred_entry_pc(branch.pc)) {
-            continue;
-        }
-        // Missing predicted entries use the neutral ctr=0 base direction.
-        add_entry(branch, true, true);
-    }
-
-    return entries;
 }
 
 inline std::vector<TargetUpdateEntry>

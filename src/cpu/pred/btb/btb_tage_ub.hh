@@ -109,11 +109,11 @@ class BTBTAGEUpperBound : public BTBTAGE
                       const PathHistoryUpdate &update) override;
     PredictorUpdateProtocol updateProtocol() const override
     {
-        return PredictorUpdateProtocol::DirectionEntries;
+        return PredictorUpdateProtocol::BranchContext;
     }
-    void updateWithDirectionEntries(
-        const std::vector<DirectionUpdateEntry> &entries,
+    void updateWithBranchUpdateContext(
         const BranchUpdateContext &ctx,
+        const std::vector<ResolvedBranch> &update_branches,
         const std::shared_ptr<void> &prediction_meta,
         const boost::dynamic_bitset<> &) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
@@ -183,6 +183,9 @@ class BTBTAGEUpperBound : public BTBTAGE
     void updateWithEntries(const std::vector<DirectionUpdateEntry> &entries,
                            const BranchUpdateContext &ctx,
                            const UpperBoundMeta &predMeta);
+    std::vector<DirectionUpdateEntry> buildUpdateEntriesFromMeta(
+        const UpperBoundMeta &predMeta,
+        const std::vector<ResolvedBranch> &update_branches) const;
     void refreshContextStats(unsigned table);
     void notePredictionResult(Addr branchPC,
                               const TagePrediction &pred,
