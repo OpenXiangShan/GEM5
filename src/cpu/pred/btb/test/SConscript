@@ -20,6 +20,12 @@ GTest('abtb.test',
     '../timed_base_pred.cc',
 )
 
+GTest('ubtb.test',
+    '../btb_ubtb.cc',
+    'ubtb.test.cc',
+    '../timed_base_pred.cc',
+)
+
 # Add TAGE test with necessary dependencies
 GTest('tage.test', 
     '../btb_tage.cc',
@@ -60,6 +66,7 @@ GTest('update_entry.test',
 # Add the test to UNITTESTS target
 env.Append(UNITTESTS=['uras.test',
         'btb.test',
+        'ubtb.test',
         'tage.test',
         'mgsc.test',
         'folded_hist.test',

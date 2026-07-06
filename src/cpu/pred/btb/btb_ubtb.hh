@@ -47,14 +47,21 @@
 
 #include <queue>
 
-#include "arch/generic/pcstate.hh"
-#include "base/logging.hh"
 #include "base/types.hh"
-#include "config/the_isa.hh"
 #include "cpu/pred/btb/common.hh"
+#include "cpu/pred/btb/test_stats.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
-#include "debug/UBTB.hh"
-#include "params/UBTB.hh"
+
+#ifdef UNIT_TEST
+    #include <gtest/gtest.h>
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+#else
+    #include "arch/generic/pcstate.hh"
+    #include "base/logging.hh"
+    #include "config/the_isa.hh"
+    #include "debug/UBTB.hh"
+    #include "params/UBTB.hh"
+#endif
 
 namespace gem5
 {
@@ -65,20 +72,29 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+#ifdef UNIT_TEST
+namespace test {
+#endif
+
 class UBTB : public TimedBaseBTBPredictor
 {
   private:
 
   public:
 
-    typedef UBTBParams Params;
-
     /** Creates a uBTB with the given number of entries, number of bits per
      *  tag, and instruction offset amount.
      *  @param numEntries Number of entries for the uBTB.
      *  @param tagBits Number of bits for each tag in the uBTB.
      */
+#ifdef UNIT_TEST
+    UBTB(unsigned numEntries, unsigned tagBits, unsigned numDelay,
+         bool usingS3Pred = false);
+#else
+    typedef UBTBParams Params;
+
     UBTB(const Params& p);
+#endif
 
     /*
      * Micro-BTB Entry with timestamp for MRU replacement
@@ -99,6 +115,12 @@ class UBTB : public TimedBaseBTBPredictor
 
     using UBTBIter = typename std::vector<TickedUBTBEntry>::iterator;
     using UBTBHeap = std::vector<UBTBIter>; // for MRU tracking
+
+#ifdef UNIT_TEST
+    unsigned tickCounter{0};
+    unsigned getComponentIdx() { return 0; }
+    uint64_t curTick() { return tickCounter++; }
+#endif
 
     void tickStart() override{};
     void tick() override{};
@@ -136,13 +158,11 @@ class UBTB : public TimedBaseBTBPredictor
         const std::vector<ResolvedBranch> &update_branches,
         const std::shared_ptr<void> &prediction_meta) override;
 
-    /** for statistics only
-     * @param stream The fetch stream containing execution results
-     * @param branch The committed branch result
-     */
+#ifndef UNIT_TEST
     void recordCommittedBranchStats(
         const ResolvedBranch &branch,
         const std::shared_ptr<void> &prediction_meta) override;
+#endif
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
@@ -153,8 +173,10 @@ class UBTB : public TimedBaseBTBPredictor
     }
 
     void reset();
+#ifndef UNIT_TEST
     void setTrace() override;
     TraceManager *ubtbTrace;
+#endif
 
     // for debuggin purpose
     void printTickedUBTBEntry(const TickedUBTBEntry &e) {
@@ -298,58 +320,74 @@ class UBTB : public TimedBaseBTBPredictor
     bool usingS3Pred;    // using S3 prediction to update uBTB
 
 
+#ifdef UNIT_TEST
+    using Scalar = test_stats::Scalar;
+
+public:
+    struct UBTBStats
+    {
+#else
+    using Scalar = statistics::Scalar;
+
     struct UBTBStats : public statistics::Group
     {
+#endif
 
-        statistics::Scalar predMiss;
-        statistics::Scalar predHit;
-        statistics::Scalar updateMiss;
-        statistics::Scalar updateHit;
-        statistics::Scalar s3UpdateHits;
-        statistics::Scalar s3UpdateMisses;
+        Scalar predMiss;
+        Scalar predHit;
+        Scalar updateMiss;
+        Scalar updateHit;
+        Scalar s3UpdateHits;
+        Scalar s3UpdateMisses;
 
         // per branch statistics
-        statistics::Scalar allBranchHits;
-        statistics::Scalar allBranchHitTakens;
-        statistics::Scalar allBranchHitNotTakens;
-        statistics::Scalar allBranchMisses;
-        statistics::Scalar allBranchMissTakens;
-        statistics::Scalar allBranchMissNotTakens;
+        Scalar allBranchHits;
+        Scalar allBranchHitTakens;
+        Scalar allBranchHitNotTakens;
+        Scalar allBranchMisses;
+        Scalar allBranchMissTakens;
+        Scalar allBranchMissNotTakens;
 
-        statistics::Scalar condHits;
-        statistics::Scalar condHitTakens;
-        statistics::Scalar condHitNotTakens;
-        statistics::Scalar condMisses;
-        statistics::Scalar condMissTakens;
-        statistics::Scalar condMissNotTakens;
-        statistics::Scalar condPredCorrect;
-        statistics::Scalar condPredWrong;
+        Scalar condHits;
+        Scalar condHitTakens;
+        Scalar condHitNotTakens;
+        Scalar condMisses;
+        Scalar condMissTakens;
+        Scalar condMissNotTakens;
+        Scalar condPredCorrect;
+        Scalar condPredWrong;
 
-        statistics::Scalar uncondHits;
-        statistics::Scalar uncondMisses;
+        Scalar uncondHits;
+        Scalar uncondMisses;
 
-        statistics::Scalar indirectHits;
-        statistics::Scalar indirectMisses;
-        statistics::Scalar indirectPredCorrect;
-        statistics::Scalar indirectPredWrong;
+        Scalar indirectHits;
+        Scalar indirectMisses;
+        Scalar indirectPredCorrect;
+        Scalar indirectPredWrong;
 
-        statistics::Scalar callHits;
-        statistics::Scalar callMisses;
+        Scalar callHits;
+        Scalar callMisses;
 
-        statistics::Scalar returnHits;
-        statistics::Scalar returnMisses;
+        Scalar returnHits;
+        Scalar returnMisses;
 
-        statistics::Scalar s1Hits3FallThrough;
-        statistics::Scalar s1Misses3Taken;
-        statistics::Scalar s1Hits3Taken;
-        statistics::Scalar s1Misses3FallThrough;
-        statistics::Scalar s1InvalidatedEntries;
+        Scalar s1Hits3FallThrough;
+        Scalar s1Misses3Taken;
+        Scalar s1Hits3Taken;
+        Scalar s1Misses3FallThrough;
+        Scalar s1InvalidatedEntries;
 
+#ifndef UNIT_TEST
         UBTBStats(statistics::Group* parent);
+#endif
     } ubtbStats;
 
 
 };
+
+#ifdef UNIT_TEST
+} // namespace test
+#endif
 
 } // namespace btb_pred
 } // namespace branch_prediction

@@ -30,10 +30,15 @@
 #include "cpu/pred/btb/btb_ubtb.hh"
 
 #include "base/intmath.hh"
-#include "base/trace.hh"
 #include "common.hh"
-#include "cpu/o3/dyn_inst.hh"
-#include "debug/Fetch.hh"
+
+#ifdef UNIT_TEST
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+#else
+    #include "base/trace.hh"
+    #include "cpu/o3/dyn_inst.hh"
+    #include "debug/Fetch.hh"
+#endif
 
 namespace gem5
 {
@@ -44,6 +49,26 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+#ifdef UNIT_TEST
+namespace test {
+#endif
+
+#ifdef UNIT_TEST
+UBTB::UBTB(unsigned numEntries, unsigned tagBits, unsigned numDelay,
+           bool usingS3Pred)
+    : TimedBaseBTBPredictor(),
+      lastPred(),
+      meta(),
+      ubtb(),
+      mruList(),
+      numEntries(numEntries),
+      tagBits(tagBits),
+      tagMask((1UL << tagBits) - 1),
+      usingS3Pred(usingS3Pred),
+      ubtbStats()
+{
+    setNumDelay(numDelay);
+#else
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
       lastPred(),
@@ -56,6 +81,7 @@ UBTB::UBTB(const Params &p)
       usingS3Pred(p.usingS3Pred),
       ubtbStats(this)
 {
+#endif
     if (!isPowerOf2(numEntries)) {
         fatal("uBTB entries is not a power of 2!");
     }
@@ -69,11 +95,13 @@ UBTB::UBTB(const Params &p)
     }
     std::make_heap(mruList.begin(), mruList.end(), older());
 
+#ifndef UNIT_TEST
     hasDB = true;
     dbName = "ubtb";
+#endif
 }
 
-
+#ifndef UNIT_TEST
 void
 UBTB::setTrace()
 {
@@ -85,6 +113,7 @@ UBTB::setTrace()
         ubtbTrace->init_table();
     }
 }
+#endif
 
 void
 UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
@@ -406,6 +435,7 @@ UBTB::updateWithBranchUpdateContext(
         findFirstTakenActualUpdateBranch(update_branches), ctx, meta.get());
 }
 
+#ifndef UNIT_TEST
 void
 UBTB::recordCommittedBranchStats(
     const ResolvedBranch &branch,
@@ -500,8 +530,10 @@ UBTB::recordCommittedBranchStats(
         }
     }
 }
+#endif
 
 // Initialize uBTB statistics
+#ifndef UNIT_TEST
 UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
@@ -557,6 +589,11 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries")
 {
 }
+#endif
+
+#ifdef UNIT_TEST
+}  // namespace test
+#endif
 
 }  // namespace btb_pred
 }  // namespace branch_prediction
