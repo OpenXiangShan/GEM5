@@ -890,9 +890,17 @@ def xiangshan_system_init():
     parser.add_argument(
         "--enable-llbpx",
         "--enable-llbp",
+        dest="enable_llbpx",
         action="store_true",
-        default=False,
-        help="Enable the experimental BTB-side LLBP-X direction override component",
+        default=True,
+        help="Enable the experimental BTB-side LLBP-X direction override component (default: enabled)",
+    )
+    parser.add_argument(
+        "--disable-llbpx",
+        "--disable-llbp",
+        dest="enable_llbpx",
+        action="store_false",
+        help="Disable the experimental BTB-side LLBP-X direction override component",
     )
     parser.add_argument(
         "--enable-llbpx-timing",
@@ -900,6 +908,12 @@ def xiangshan_system_init():
         action="store_true",
         default=False,
         help="Enable the LLBP-X Pattern Buffer timing gate",
+    )
+    parser.add_argument(
+        "--ideal-llbpx-large-tables",
+        action="store_true",
+        default=False,
+        help="Use a much larger LLBP-X context store, pattern store, and PB for idealized-capacity experiments",
     )
 
     # Add the ruby specific and protocol specific args

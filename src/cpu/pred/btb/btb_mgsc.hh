@@ -54,8 +54,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
         Addr btb_pc;                      // BTB entry PC
         int total_sum;                    // Total weighted sum
         bool use_mgsc;                    // Whether to use MGSC prediction
-        bool taken;                       // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
-        bool taken_before_sc;             // Tage prediction (before SC)
+        bool taken;                       // Final prediction after MGSC arbitration
+        bool taken_before_sc;             // Primary prediction before SC
         bool tage_conf_high;
         bool tage_conf_mid;
         bool tage_conf_low;
@@ -301,8 +301,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
                                const FetchTarget &stream);
-    void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
-                               bool tage_pred_taken);
+    void recordPredictionStats(const MgscPrediction &pred, bool actual_taken,
+                               bool sc_pred_taken,
+                               bool primary_pred_taken);
 
     /** global backward branch history indexed tables */
     // number of global backward branch history indexed tables

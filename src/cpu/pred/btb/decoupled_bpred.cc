@@ -86,9 +86,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     if (microtage->isEnabled()) components.push_back(microtage);
     if (mbtb->isEnabled()) components.push_back(mbtb);
     if (tage->isEnabled()) components.push_back(tage);
+    if (llbpx->isEnabled()) components.push_back(llbpx);
     if (ras->isEnabled()) components.push_back(ras);
     if (ittage->isEnabled()) components.push_back(ittage);
-    if (llbpx->isEnabled()) components.push_back(llbpx);
     if (mgsc->isEnabled()) components.push_back(mgsc);
     numComponents = components.size();
     panic_if(numComponents > MaxBTBPredComponents,
@@ -106,6 +106,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
                 someDBenabled = true;
             }
         }
+    }
+    if (llbpx->isEnabled() && tage->isEnabled()) {
+        llbpx->setTage(tage);
+        tage->setLlbpx(llbpx);
     }
     if (bpDBSwitches.size() > 0) {
         warn("bpDBSwitches contains unknown switches\n");
@@ -797,6 +801,7 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID t
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
+        target.tageAllocatedTables.clear();
 
         // only mbtb can generate new entry
         if (mbtb->isEnabled()) {
@@ -830,17 +835,25 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
+        target.tageAllocatedTables.clear();
 
         // only mbtb can generate new entry
         if (mbtb->isEnabled()) {
             mbtb->getAndSetNewBTBEntry(target);
         }
 
-        // Update predictor components
+        // Update predictor components.  LLBP-X follows TAGE allocation, so
+        // update it after TAGE has published successful allocation tables.
         for (int i = 0; i < numComponents; ++i) {
+            if (components[i] == llbpx) {
+                continue;
+            }
             if (!components[i]->getResolvedUpdate()) {
                 components[i]->update(target);
             }
+        }
+        if (llbpx->isEnabled() && !llbpx->getResolvedUpdate()) {
+            llbpx->update(target);
         }
     }
 }

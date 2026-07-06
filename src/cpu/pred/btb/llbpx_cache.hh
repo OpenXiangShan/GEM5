@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <list>
+#include <unordered_map>
 #include <vector>
 
 #include "base/types.hh"
@@ -82,6 +84,14 @@ class SetAssociativeStore
         return nullptr;
     }
 
+    bool
+    hasAnyForKey(Addr key) const
+    {
+        const auto &set = data[setIndex(key)];
+        return std::any_of(set.begin(), set.end(),
+            [](const Entry &entry) { return entry.valid; });
+    }
+
     Entry &
     allocate(Addr key, Addr tag)
     {
@@ -108,6 +118,157 @@ class SetAssociativeStore
     unsigned numWays{1};
     uint64_t tick{0};
     std::vector<std::vector<Entry>> data;
+};
+
+template <class Entry>
+class SparseSetAssociativeStore
+{
+  private:
+    using KeyValue = std::pair<Addr, Entry>;
+    using Set = std::list<KeyValue>;
+    using Iterator = typename Set::iterator;
+
+  public:
+    SparseSetAssociativeStore() = default;
+
+    SparseSetAssociativeStore(unsigned maxSize, unsigned assoc)
+    {
+        reset(maxSize, assoc);
+    }
+
+    void
+    reset(unsigned maxSize, unsigned assoc)
+    {
+        numWays = std::max(1u, assoc);
+        unlimited = maxSize == 0;
+        if (unlimited) {
+            capacity = 0;
+            numSets = 1;
+        } else {
+            capacity = std::max(numWays, maxSize);
+            numSets = std::max(1u, capacity / numWays);
+            assert((numSets & (numSets - 1)) == 0);
+            assert(numSets * numWays == capacity);
+        }
+        setMask = numSets - 1;
+        index.clear();
+        data.clear();
+        data.resize(numSets);
+    }
+
+    unsigned
+    maxSize() const
+    {
+        return capacity;
+    }
+
+    unsigned
+    ways() const
+    {
+        return numWays;
+    }
+
+    Entry *
+    get(Addr key)
+    {
+        auto it = index.find(key);
+        return it == index.end() ? nullptr : &it->second->second;
+    }
+
+    const Entry *
+    get(Addr key) const
+    {
+        auto it = index.find(key);
+        return it == index.end() ? nullptr : &it->second->second;
+    }
+
+    bool
+    exists(Addr key) const
+    {
+        return index.find(key) != index.end();
+    }
+
+    Set &
+    getSet(Addr key)
+    {
+        return data[setIndex(key)];
+    }
+
+    const Set &
+    getSet(Addr key) const
+    {
+        return data[setIndex(key)];
+    }
+
+    Entry *
+    getVictim(Addr key)
+    {
+        auto &set = getSet(key);
+        if (unlimited || set.size() < numWays) {
+            return nullptr;
+        }
+        return &set.back().second;
+    }
+
+    void
+    touch(Addr key)
+    {
+        auto it = index.find(key);
+        if (it == index.end()) {
+            return;
+        }
+        auto &set = getSet(key);
+        set.splice(set.begin(), set, it->second);
+    }
+
+    void
+    bump(Addr key, bool front = true)
+    {
+        auto it = index.find(key);
+        if (it == index.end()) {
+            return;
+        }
+        auto &set = getSet(key);
+        if (front) {
+            set.splice(set.begin(), set, it->second);
+        } else {
+            set.splice(set.end(), set, it->second);
+        }
+    }
+
+    Entry *
+    insert(Addr key)
+    {
+        if (auto *entry = get(key)) {
+            return entry;
+        }
+
+        auto &set = getSet(key);
+        if (!unlimited && set.size() >= numWays) {
+            auto last = std::prev(set.end());
+            index.erase(last->first);
+            set.pop_back();
+        }
+
+        auto it = set.emplace(set.begin(), KeyValue(key, Entry()));
+        index[key] = it;
+        return &it->second;
+    }
+
+  private:
+    unsigned
+    setIndex(Addr key) const
+    {
+        return key & setMask;
+    }
+
+    unsigned capacity{1};
+    unsigned numWays{1};
+    unsigned numSets{1};
+    Addr setMask{0};
+    bool unlimited{false};
+    std::unordered_map<Addr, Iterator> index;
+    std::vector<Set> data;
 };
 
 } // namespace llbpx

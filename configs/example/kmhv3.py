@@ -110,9 +110,17 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.llbpx.enabled = True
+            cpu.branchPred.llbpx.enabled = bool(
+                getattr(args, 'enable_llbpx', True))
+            cpu.branchPred.llbpx.tageNumPredictors = cpu.branchPred.tage.numPredictors
             cpu.branchPred.llbpx.enableTiming = bool(
                 getattr(args, 'enable_llbpx_timing', False))
+            if getattr(args, 'ideal_llbpx_large_tables', False):
+                cpu.branchPred.llbpx.contextSets = 65536
+                cpu.branchPred.llbpx.contextWays = 4
+                cpu.branchPred.llbpx.patternSets = 262144
+                cpu.branchPred.llbpx.patternWays = 4
+                cpu.branchPred.llbpx.patternBufferSize = 4096
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 

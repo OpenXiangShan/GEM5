@@ -36,6 +36,15 @@ GTest('mgsc.test',
     '../timed_base_pred.cc',
 )
 
+GTest('llbpx.test',
+    '../btb_llbpx.cc',
+    '../btb_tage.cc',
+    '../btb_tage_ub.cc',
+    'btb_llbpx.test.cc',
+    '../folded_hist.cc',
+    '../timed_base_pred.cc',
+)
+
 GTest('folded_hist.test',
     'folded_hist.test.cc',
     '../folded_hist.cc',

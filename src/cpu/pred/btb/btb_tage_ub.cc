@@ -266,7 +266,6 @@ BTBTAGEUpperBound::notePredictionResult(
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
     CondTakens &results) const
 {
-    results.push_back({btbEntry.pc, pred.taken || btbEntry.alwaysTaken});
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -281,6 +280,18 @@ BTBTAGEUpperBound::notePredictionResult(
         (abs(pred.mainInfo.entry.counter * 2 + 1) <= 1);
     tageInfoForMgscs[btbEntry.pc].tage_pred_alt_diff =
         pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+    auto &tageInfo = tageInfoForMgscs[btbEntry.pc];
+    const bool useLlbpxProvider = tageInfo.llbpx_pred_valid &&
+        (pred.finalProviderTable < 0 ||
+         tageInfo.llbpx_provider_table >= pred.finalProviderTable);
+    tageInfo.primary_pred_taken = useLlbpxProvider ?
+        tageInfo.llbpx_pred_taken : pred.taken;
+    tageInfo.primary_provider_is_llbpx = useLlbpxProvider;
+    tageInfo.primary_provider_table = useLlbpxProvider ?
+        tageInfo.llbpx_provider_table : pred.finalProviderTable;
+    tageInfo.llbpx_provider_used = useLlbpxProvider;
+    results.push_back({btbEntry.pc,
+                       tageInfo.primary_pred_taken || btbEntry.alwaysTaken});
 }
 
 void
@@ -302,7 +313,6 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         auto &stagePred = stagePreds[s];
         stagePred.condTakens.clear();
-        stagePred.tageInfoForMgscs.clear();
 
         for (auto &btbEntry : stagePred.btbEntries) {
             if (!(btbEntry.isCond && btbEntry.valid)) {

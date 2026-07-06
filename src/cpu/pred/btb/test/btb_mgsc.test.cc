@@ -431,6 +431,53 @@ TEST(BTBMGSCTest, GateHighConfBypassWhenWeak)
     EXPECT_FALSE(it->second.use_mgsc);
 }
 
+TEST(BTBMGSCTest, GateHighConfBypassFallsBackToPrimaryProvider)
+{
+    BTBMGSC mgsc;
+    Addr start_pc = 0x1000;
+    Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+
+    boost::dynamic_bitset<> history(64, 0);
+    std::vector<FullBTBPrediction> stage_preds(2);
+    for (auto &pred : stage_preds) {
+        pred.bbStart = start_pc;
+        pred.btbEntries = {entry};
+        auto tage_info = TageInfoForMGSC(
+            /*tage_pred_taken=*/false,
+            /*tage_main_taken=*/false,
+            /*tage_pred_conf_high=*/true,
+            /*tage_pred_conf_mid=*/false,
+            /*tage_pred_conf_low=*/false,
+            /*tage_pred_alt_diff=*/false);
+        tage_info.primary_pred_taken = true;
+        tage_info.primary_provider_is_llbpx = true;
+        tage_info.primary_provider_table = 12;
+        tage_info.llbpx_provider_used = true;
+        tage_info.llbpx_pred_taken = true;
+        tage_info.llbpx_provider_table = 12;
+        pred.tageInfoForMgscs[branch_pc] = tage_info;
+    }
+
+    const auto &tage_info = stage_preds[0].tageInfoForMgscs[branch_pc];
+    // total_sum = 16, total_thres = 35 => high-conf bypasses SC and
+    // falls back to the primary provider instead of the original TAGE value.
+    setAllTableCountersForPc(mgsc, start_pc, branch_pc, tage_info,
+                             /*bw=*/4, /*l=*/4, /*i=*/0, /*g=*/0, /*p=*/-1, /*bias=*/-2);
+
+    mgsc.putPCHistory(start_pc, history, stage_preds);
+
+    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    ASSERT_TRUE(found);
+    EXPECT_TRUE(taken);
+
+    const auto &preds = BTBMGSC::TestAccess::preds(mgsc);
+    auto it = preds.find(branch_pc);
+    ASSERT_NE(it, preds.end());
+    EXPECT_FALSE(it->second.use_mgsc);
+    EXPECT_TRUE(it->second.taken_before_sc);
+}
+
 TEST(BTBMGSCTest, ForceUseSCOverridesTage)
 {
     BTBMGSC mgsc;
