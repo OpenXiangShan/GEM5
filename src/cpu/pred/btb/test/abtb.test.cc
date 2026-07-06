@@ -201,6 +201,32 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
     }
 }
 
+TEST_F(ABTBTest, ActualUpdateCanAllocateWithoutPredictionMeta){
+    Addr prevPC = 0x1000;
+    Addr startPC = 0x2000;
+    Addr brPC = 0x2004;
+    Addr target = 0x3000;
+
+    FetchTarget stream;
+    stream.startPC = startPC;
+    stream.previousPCs.push(prevPC);
+    resolveStream(stream, true, brPC, target, true);
+
+    const auto update_branches =
+        makeUpdateBranchPrefix(stream.resolvedBranches);
+    abtb->updateWithAheadPipelineState(
+        nullptr,
+        makeBaseBranchUpdateContext(stream),
+        stream.previousPCs, update_branches);
+
+    makePrediction(prevPC, abtb);
+    auto pred = makePrediction(startPC, abtb);
+
+    ASSERT_EQ(pred.btbEntries.size(), 1);
+    EXPECT_EQ(pred.btbEntries[0].pc, brPC);
+    EXPECT_EQ(pred.btbEntries[0].target, target);
+}
+
 } // namespace test
 } // namespace btb_pred
 } // namespace branch_prediction

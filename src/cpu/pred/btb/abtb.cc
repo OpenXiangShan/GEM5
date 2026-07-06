@@ -693,17 +693,21 @@ AheadBTB::updateWithAheadPipelineState(
         update_ctx.startPC, update_branches, predictWidth);
 
     // 1. Process old entries
-    auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
+    const auto old_entries = meta ?
+        processOldEntries(meta->hit_entries, end_inst_pc) :
+        std::vector<BTBEntry>{};
 
     // 2. Collect entries to update
     const auto entries_to_update = buildTargetUpdateEntries(
         old_entries, update_branches);
 
     // 3. Check prediction hit status, for stats recording
-    const auto *taken_entry = findTakenTargetUpdateEntry(entries_to_update);
-    checkPredictionHit(
-        taken_entry ? &taken_entry->actualBranch : nullptr,
-        meta.get(), update_ctx.predTick);
+    if (meta) {
+        const auto *taken_entry = findTakenTargetUpdateEntry(entries_to_update);
+        checkPredictionHit(
+            taken_entry ? &taken_entry->actualBranch : nullptr,
+            meta.get(), update_ctx.predTick);
+    }
 
     if (!entries_to_update.empty()) {
         updateWithEntries(entries_to_update, update_ctx,
