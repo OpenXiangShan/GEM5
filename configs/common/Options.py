@@ -331,6 +331,62 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         Enable dynamic per-source admission for L1D local
                         prefetch candidates. Pfahead candidates bypass this
                         local admission path by default.""")
+    parser.add_argument("--enable-l1d-pfahead-source-pf-admission",
+                        action="store_true", default=False,
+                        help="""
+                        When L1D source admission is enabled, also apply it to
+                        L1D pfahead candidates instead of bypassing them.""")
+    parser.add_argument("--enable-l1d-pfahead-downstream-reject-feedback",
+                        action="store_true", default=False,
+                        help="""
+                        Feed downstream PFQ hint accepted/rejected results
+                        back to an independent L1D pfahead admission gate.""")
+    parser.add_argument("--l1d-pfahead-feedback-init-level",
+                        action="store", default=4, type=int,
+                        help="""
+                        Initial L1D pfahead downstream feedback admission
+                        level. Valid range is 0..4.""")
+    parser.add_argument("--l1d-pfahead-feedback-min-level",
+                        action="store", default=0, type=int,
+                        help="""
+                        Minimum L1D pfahead downstream feedback admission
+                        level. Valid range is 0..4.""")
+    parser.add_argument("--l1d-pfahead-feedback-min-samples",
+                        action="store", default=256, type=int,
+                        help="""
+                        Minimum downstream PFQ hint feedback samples before
+                        updating one L1D pfahead source.""")
+    parser.add_argument("--l1d-pfahead-feedback-reject-pct",
+                        action="store", default=75, type=int,
+                        help="""
+                        Reject percentage that marks an L1D pfahead source as
+                        downstream-pressure negative.""")
+    parser.add_argument("--l1d-pfahead-feedback-recover-pct",
+                        action="store", default=50, type=int,
+                        help="""
+                        Reject percentage below which an L1D pfahead source
+                        can recover its feedback admission level.""")
+    parser.add_argument("--l1d-pfahead-feedback-down-streak-threshold",
+                        action="store", default=2, type=int,
+                        help="""
+                        Consecutive bad downstream feedback windows required
+                        before demoting L1D pfahead admission.""")
+    parser.add_argument("--l1d-pfahead-feedback-up-streak-threshold",
+                        action="store", default=2, type=int,
+                        help="""
+                        Consecutive good downstream feedback windows required
+                        before promoting L1D pfahead admission.""")
+    parser.add_argument("--l1d-pfahead-feedback-rescue-interval",
+                        action="store", default=0, type=int,
+                        help="""
+                        Number of min-level L2 feedback windows before one
+                        L1D pfahead feedback rescue probing window. 0 disables
+                        rescue probing.""")
+    parser.add_argument("--l1d-pfahead-feedback-rescue-level",
+                        action="store", default=1, type=int,
+                        help="""
+                        Temporary L1D pfahead feedback admission level used
+                        during rescue probing. Valid range is 0..4.""")
     parser.add_argument("--source-pf-admission-epoch", action="store", default=4096, type=int,
                         help="""
                         Number of source-admission events per dynamic prefetch
@@ -395,6 +451,56 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         Let upstream pfahead/hint requests bypass the
                         high-pressure raw-level source gate. Candidate
                         admission is not affected.""")
+
+    source_pf_admission_override_fields = (
+        "epoch",
+        "init-level",
+        "min-probe-level",
+        "high-conf-level",
+        "hysteresis",
+        "pressure-pfq-pct",
+        "rescue-interval",
+        "rescue-level",
+        "unused-weight",
+        "drop-full-weight",
+        "min-issued",
+        "min-useful",
+        "down-streak-threshold",
+        "warmup-epochs",
+        "delayed-window-epochs",
+        "hint-min-level",
+    )
+
+    def add_source_pf_admission_overrides(prefix, label):
+        dest_prefix = prefix.replace("-", "_")
+        for field in source_pf_admission_override_fields:
+            parser.add_argument(
+                "--{}-source-pf-admission-{}".format(prefix, field),
+                action="store", default=None, type=int,
+                help="""
+                Override --source-pf-admission-{} for {} prefetchers only.
+                If omitted, the shared source-pf-admission value is used.
+                """.format(field, label))
+
+        dest = "{}_source_pf_admission_hint_ignore_pressure_gate".format(
+            dest_prefix)
+        parser.add_argument(
+            "--{}-source-pf-admission-hint-ignore-pressure-gate".format(prefix),
+            action="store_true", default=None, dest=dest,
+            help="""
+            Override --source-pf-admission-hint-ignore-pressure-gate to true
+            for {} prefetchers only. If omitted, the shared value is used.
+            """.format(label))
+        parser.add_argument(
+            "--no-{}-source-pf-admission-hint-ignore-pressure-gate".format(prefix),
+            action="store_false", default=None, dest=dest,
+            help="""
+            Override --source-pf-admission-hint-ignore-pressure-gate to false
+            for {} prefetchers only. If omitted, the shared value is used.
+            """.format(label))
+
+    add_source_pf_admission_overrides("l1d", "L1D")
+    add_source_pf_admission_overrides("l2-l3", "L2/L3")
 
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',

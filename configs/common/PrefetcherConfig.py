@@ -130,60 +130,128 @@ def _configure_l3_prefetcher(prefetcher, options):
         prefetcher.queue_size = 64
         prefetcher.max_prefetch_requests_with_pending_translation = 128
 
+SOURCE_ADMISSION_L2_LEVELS = ('l2', 'l2_wrapper')
+SOURCE_ADMISSION_L2_L3_LEVELS = SOURCE_ADMISSION_L2_LEVELS + ('l3',)
+
+
+def _source_admission_override_prefix(cache_level):
+    if cache_level == 'l1d':
+        return 'l1d'
+    if cache_level in SOURCE_ADMISSION_L2_L3_LEVELS:
+        return 'l2_l3'
+    return None
+
+
+def _get_source_admission_option(options, cache_level, field):
+    shared = getattr(options, 'source_pf_admission_{}'.format(field))
+    prefix = _source_admission_override_prefix(cache_level)
+    if prefix is None:
+        return shared
+
+    override = getattr(
+        options,
+        '{}_source_pf_admission_{}'.format(prefix, field),
+        None)
+    if override is not None:
+        return override
+    return shared
+
+
 def _configure_source_admission(prefetcher, cache_level, options):
-    source_admission_levels = ('l2', 'l2_wrapper')
     enable_candidate_admission = (
         getattr(options, 'enable_source_pf_admission', False) and
-        cache_level in source_admission_levels)
+        cache_level in SOURCE_ADMISSION_L2_LEVELS)
     enable_hint_admission = (
         getattr(options, 'enable_pfahead_source_pf_admission', False) and
-        cache_level in source_admission_levels)
+        cache_level in SOURCE_ADMISSION_L2_LEVELS)
     enable_pfq_admission = (
         getattr(options, 'enable_unified_pfq_source_pf_admission', False) and
-        cache_level in source_admission_levels + ('l3',))
+        cache_level in SOURCE_ADMISSION_L2_L3_LEVELS)
     enable_l1d_admission = (
         getattr(options, 'enable_l1d_source_pf_admission', False) and
         cache_level == 'l1d')
+    enable_l1d_pfahead_feedback = (
+        getattr(options, 'enable_l1d_pfahead_downstream_reject_feedback',
+                False) and
+        cache_level == 'l1d')
     if not (enable_candidate_admission or enable_hint_admission or
-            enable_pfq_admission or enable_l1d_admission):
+            enable_pfq_admission or enable_l1d_admission or
+            enable_l1d_pfahead_feedback):
         return
     if not hasattr(prefetcher, 'enable_source_admission'):
         return
 
-    prefetcher.enable_source_admission = True
+    apply_l1d_pfahead_admission = getattr(
+        options, 'enable_l1d_pfahead_source_pf_admission', False)
+
+    prefetcher.enable_source_admission = (
+        enable_candidate_admission or enable_hint_admission or
+        enable_pfq_admission or enable_l1d_admission)
     prefetcher.source_admission_apply_to_candidates = \
         enable_candidate_admission or enable_l1d_admission
     prefetcher.source_admission_apply_to_hints = enable_hint_admission
     prefetcher.source_admission_apply_to_pfq = enable_pfq_admission
     prefetcher.source_admission_skip_pfahead_candidates = \
-        enable_l1d_admission
-    prefetcher.source_admission_epoch = options.source_pf_admission_epoch
-    prefetcher.source_admission_init_level = options.source_pf_admission_init_level
-    prefetcher.source_admission_min_probe_level = \
-        options.source_pf_admission_min_probe_level
-    prefetcher.source_admission_high_conf_level = \
-        options.source_pf_admission_high_conf_level
-    prefetcher.source_admission_hysteresis = options.source_pf_admission_hysteresis
-    prefetcher.source_admission_pressure_pfq_pct = \
-        options.source_pf_admission_pressure_pfq_pct
-    prefetcher.source_admission_rescue_interval = \
-        options.source_pf_admission_rescue_interval
-    prefetcher.source_admission_rescue_level = options.source_pf_admission_rescue_level
-    prefetcher.source_admission_unused_weight = options.source_pf_admission_unused_weight
-    prefetcher.source_admission_drop_full_weight = \
-        options.source_pf_admission_drop_full_weight
-    prefetcher.source_admission_min_issued = options.source_pf_admission_min_issued
-    prefetcher.source_admission_min_useful = options.source_pf_admission_min_useful
+        enable_l1d_admission and not apply_l1d_pfahead_admission
+    prefetcher.source_admission_epoch = _get_source_admission_option(
+        options, cache_level, 'epoch')
+    prefetcher.source_admission_init_level = _get_source_admission_option(
+        options, cache_level, 'init_level')
+    prefetcher.source_admission_min_probe_level = _get_source_admission_option(
+        options, cache_level, 'min_probe_level')
+    prefetcher.source_admission_high_conf_level = _get_source_admission_option(
+        options, cache_level, 'high_conf_level')
+    prefetcher.source_admission_hysteresis = _get_source_admission_option(
+        options, cache_level, 'hysteresis')
+    prefetcher.source_admission_pressure_pfq_pct = _get_source_admission_option(
+        options, cache_level, 'pressure_pfq_pct')
+    prefetcher.source_admission_rescue_interval = _get_source_admission_option(
+        options, cache_level, 'rescue_interval')
+    prefetcher.source_admission_rescue_level = _get_source_admission_option(
+        options, cache_level, 'rescue_level')
+    prefetcher.source_admission_unused_weight = _get_source_admission_option(
+        options, cache_level, 'unused_weight')
+    prefetcher.source_admission_drop_full_weight = _get_source_admission_option(
+        options, cache_level, 'drop_full_weight')
+    prefetcher.source_admission_min_issued = _get_source_admission_option(
+        options, cache_level, 'min_issued')
+    prefetcher.source_admission_min_useful = _get_source_admission_option(
+        options, cache_level, 'min_useful')
     prefetcher.source_admission_down_streak_threshold = \
-        options.source_pf_admission_down_streak_threshold
-    prefetcher.source_admission_warmup_epochs = \
-        options.source_pf_admission_warmup_epochs
+        _get_source_admission_option(
+            options, cache_level, 'down_streak_threshold')
+    prefetcher.source_admission_warmup_epochs = _get_source_admission_option(
+        options, cache_level, 'warmup_epochs')
     prefetcher.source_admission_delayed_window_epochs = \
-        options.source_pf_admission_delayed_window_epochs
-    prefetcher.source_admission_hint_min_level = \
-        options.source_pf_admission_hint_min_level
+        _get_source_admission_option(
+            options, cache_level, 'delayed_window_epochs')
+    prefetcher.source_admission_hint_min_level = _get_source_admission_option(
+        options, cache_level, 'hint_min_level')
     prefetcher.source_admission_hint_ignore_pressure_gate = \
-        options.source_pf_admission_hint_ignore_pressure_gate
+        _get_source_admission_option(
+            options, cache_level, 'hint_ignore_pressure_gate')
+    if (enable_l1d_pfahead_feedback and
+            hasattr(prefetcher,
+                    'enable_l1d_pfahead_downstream_reject_feedback')):
+        prefetcher.enable_l1d_pfahead_downstream_reject_feedback = True
+        prefetcher.l1d_pfahead_feedback_init_level = \
+            options.l1d_pfahead_feedback_init_level
+        prefetcher.l1d_pfahead_feedback_min_level = \
+            options.l1d_pfahead_feedback_min_level
+        prefetcher.l1d_pfahead_feedback_min_samples = \
+            options.l1d_pfahead_feedback_min_samples
+        prefetcher.l1d_pfahead_feedback_reject_pct = \
+            options.l1d_pfahead_feedback_reject_pct
+        prefetcher.l1d_pfahead_feedback_recover_pct = \
+            options.l1d_pfahead_feedback_recover_pct
+        prefetcher.l1d_pfahead_feedback_down_streak_threshold = \
+            options.l1d_pfahead_feedback_down_streak_threshold
+        prefetcher.l1d_pfahead_feedback_up_streak_threshold = \
+            options.l1d_pfahead_feedback_up_streak_threshold
+        prefetcher.l1d_pfahead_feedback_rescue_interval = \
+            options.l1d_pfahead_feedback_rescue_interval
+        prefetcher.l1d_pfahead_feedback_rescue_level = \
+            options.l1d_pfahead_feedback_rescue_level
 
 def create_prefetcher(cpu, cache_level, options):
     prefetcher_attr = '{}_hwp_type'.format(cache_level)

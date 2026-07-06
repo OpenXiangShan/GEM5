@@ -235,6 +235,26 @@ class QueuedPrefetcher(BasePrefetcher):
         "Allow upstream hints to bypass the high-pressure raw-level gate")
     source_admission_apply_to_pfq = Param.Bool(False,
         "Apply dynamic source admission when requests enter the local PFQ")
+    enable_l1d_pfahead_downstream_reject_feedback = Param.Bool(False,
+        "Feed downstream PFQ hint admission results back to L1D pfahead admission")
+    l1d_pfahead_feedback_init_level = Param.Unsigned(4,
+        "Initial L1D pfahead downstream feedback admission level")
+    l1d_pfahead_feedback_min_level = Param.Unsigned(0,
+        "Minimum L1D pfahead downstream feedback admission level")
+    l1d_pfahead_feedback_min_samples = Param.Unsigned(256,
+        "Minimum downstream feedback samples before updating L1D pfahead admission")
+    l1d_pfahead_feedback_reject_pct = Param.Percent(75,
+        "Reject percentage that demotes L1D pfahead feedback admission")
+    l1d_pfahead_feedback_recover_pct = Param.Percent(50,
+        "Reject percentage below which L1D pfahead feedback admission recovers")
+    l1d_pfahead_feedback_down_streak_threshold = Param.Unsigned(2,
+        "Bad feedback windows required before demoting L1D pfahead admission")
+    l1d_pfahead_feedback_up_streak_threshold = Param.Unsigned(2,
+        "Good feedback windows required before promoting L1D pfahead admission")
+    l1d_pfahead_feedback_rescue_interval = Param.Unsigned(0,
+        "Min-level L2 feedback windows before one L1D pfahead rescue probe")
+    l1d_pfahead_feedback_rescue_level = Param.Unsigned(1,
+        "Temporary L1D pfahead feedback admission level for rescue probing")
 
 
 class XSStridePrefetcher(QueuedPrefetcher):

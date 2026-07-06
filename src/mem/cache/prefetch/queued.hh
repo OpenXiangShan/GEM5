@@ -115,6 +115,7 @@ class Queued : public Base
         int32_t priority;
         bool pfahead;
         int pfahead_host;
+        Queued *pfaheadFeedbackSource;
         PFQIngress ingress;
         /** Request used when a translation is needed */
         RequestPtr translationRequest;
@@ -132,6 +133,7 @@ class Queued : public Base
         DeferredPacket(Queued *o, PrefetchInfo const &pfi, Tick t,
             int32_t prio) : owner(o), pfInfo(pfi), tick(t), pkt(nullptr),
             priority(prio), pfahead(false), pfahead_host(0),
+            pfaheadFeedbackSource(nullptr),
             ingress(PFQIngress::LocalCandidate), translationRequest(), tc(nullptr),
             ongoingTranslation(false) {
         }
@@ -288,6 +290,36 @@ class Queued : public Base
     /** Whether requests are controlled when entering the local PFQ. */
     const bool sourceAdmissionApplyToPFQ;
 
+    /** Enable downstream PFQ hint feedback for L1D pfahead candidates. */
+    const bool l1dPfaheadFeedbackEnabled;
+
+    /** Initial L1D pfahead feedback admission level, in the range [0, 4]. */
+    const uint8_t l1dPfaheadFeedbackInitLevel;
+
+    /** Minimum L1D pfahead feedback admission level. */
+    const uint8_t l1dPfaheadFeedbackMinLevel;
+
+    /** Minimum downstream feedback samples before updating one source. */
+    const uint32_t l1dPfaheadFeedbackMinSamples;
+
+    /** Reject percentage that marks a bad downstream feedback window. */
+    const uint32_t l1dPfaheadFeedbackRejectPct;
+
+    /** Reject percentage below which a source can recover. */
+    const uint32_t l1dPfaheadFeedbackRecoverPct;
+
+    /** Consecutive bad feedback windows required before demotion. */
+    const uint32_t l1dPfaheadFeedbackDownStreakThreshold;
+
+    /** Consecutive good feedback windows required before promotion. */
+    const uint32_t l1dPfaheadFeedbackUpStreakThreshold;
+
+    /** Min-level windows before forcing one pfahead rescue probing window. */
+    const uint32_t l1dPfaheadFeedbackRescueInterval;
+
+    /** Temporary pfahead feedback admission level during rescue probing. */
+    const uint8_t l1dPfaheadFeedbackRescueLevel;
+
     struct SourceAdmissionState
     {
         std::array<uint8_t, NUM_PF_SOURCES> level{};
@@ -309,6 +341,26 @@ class Queued : public Base
         uint32_t epochEvents = 0;
         uint64_t epochCount = 0;
     } sourceAdmission;
+
+    struct L1DPfaheadFeedbackState
+    {
+        std::array<uint8_t, NUM_PF_SOURCES> level{};
+        std::array<uint8_t, NUM_PF_SOURCES> sampleCtr{};
+        std::array<uint8_t, NUM_PF_SOURCES> downStreak{};
+        std::array<uint8_t, NUM_PF_SOURCES> upStreak{};
+        std::array<uint64_t, NUM_PF_SOURCES> windowAccepted{};
+        std::array<uint64_t, NUM_PF_SOURCES> windowRejected{};
+        std::array<uint64_t, NUM_PF_SOURCES> l2WindowAccepted{};
+        std::array<uint64_t, NUM_PF_SOURCES> l2WindowRejected{};
+        std::array<uint64_t, NUM_PF_SOURCES> l3WindowAccepted{};
+        std::array<uint64_t, NUM_PF_SOURCES> l3WindowRejected{};
+        std::array<uint32_t, NUM_PF_SOURCES> feedbackRejectPct{};
+        std::array<uint32_t, NUM_PF_SOURCES> l2FeedbackRejectPct{};
+        std::array<uint32_t, NUM_PF_SOURCES> l3FeedbackRejectPct{};
+        std::array<uint32_t, NUM_PF_SOURCES> minLevelWindows{};
+        std::array<uint32_t, NUM_PF_SOURCES> minLevelSamples{};
+        std::array<bool, NUM_PF_SOURCES> rescueActive{};
+    } l1dPfaheadFeedback;
 
     EventFunctionWrapper tlbReqEvent;
 
@@ -337,12 +389,31 @@ class Queued : public Base
         statistics::Vector pfSourceAdmissionPFQLocalAccepted;
         statistics::Vector pfSourceAdmissionPFQHintRejected;
         statistics::Vector pfSourceAdmissionPFQHintAccepted;
+        statistics::Vector pfSourcePfaheadFeedbackAccepted;
+        statistics::Vector pfSourcePfaheadFeedbackRejected;
+        statistics::Vector pfSourcePfaheadFeedbackRejectPct;
+        statistics::Vector pfSourcePfaheadL2FeedbackAccepted;
+        statistics::Vector pfSourcePfaheadL2FeedbackRejected;
+        statistics::Vector pfSourcePfaheadL2FeedbackRejectPct;
+        statistics::Vector pfSourcePfaheadL3FeedbackAccepted;
+        statistics::Vector pfSourcePfaheadL3FeedbackRejected;
+        statistics::Vector pfSourcePfaheadL3FeedbackRejectPct;
+        statistics::Vector pfSourcePfaheadAdmissionLevel;
+        statistics::Vector pfSourcePfaheadAdmissionAccepted;
+        statistics::Vector pfSourcePfaheadAdmissionRejected;
+        statistics::Vector pfSourcePfaheadFeedbackDemotions;
+        statistics::Vector pfSourcePfaheadFeedbackPromotions;
+        statistics::Vector pfSourcePfaheadFeedbackRescueEpochs;
+        statistics::Vector pfSourcePfaheadFeedbackRescueActive;
     } statsQueued;
 
   public:
 
     Queued(const QueuedPrefetcherParams &p);
     virtual ~Queued();
+
+    void resetStats() override;
+    void preDumpStats() override;
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
@@ -429,6 +500,19 @@ class Queued : public Base
     bool sourceAdmissionAllowCandidate(const AddrPriority &addr_prio);
     bool sourceAdmissionAllowHint(PrefetchSourceType src);
     bool sourceAdmissionAllowPFQ(const DeferredPacket &dpp);
+    bool l1dPfaheadFeedbackActive() const;
+    bool l1dPfaheadFeedbackAllow(PrefetchSourceType src);
+    void l1dPfaheadFeedbackRecordPFQResult(PrefetchSourceType src,
+                                           bool accepted,
+                                           unsigned downstream_level);
+    uint8_t l1dPfaheadFeedbackEffectiveLevel(PrefetchSourceType src) const;
+    void l1dPfaheadFeedbackMaybeStartRescue(int src);
+    void l1dPfaheadFeedbackResetState();
+    void l1dPfaheadFeedbackSyncStats();
+    void l1dPfaheadFeedbackUpdateSource(int src);
+    void l1dPfaheadFeedbackUpdateAggregatePct(int src);
+    void l1dPfaheadFeedbackUpdateL3Pct(int src);
+    void l1dPfaheadFeedbackSetLevel(PrefetchSourceType src, uint8_t level);
     bool sourceAdmissionSourceReady(PrefetchSourceType src) const;
     void sourceAdmissionAccountEvent();
     void sourceAdmissionAccountQueueFull(PrefetchSourceType src);

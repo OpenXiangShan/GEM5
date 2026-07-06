@@ -200,6 +200,35 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       sourceAdmissionHintIgnorePressureGate(
           p.source_admission_hint_ignore_pressure_gate),
       sourceAdmissionApplyToPFQ(p.source_admission_apply_to_pfq),
+      l1dPfaheadFeedbackEnabled(
+          p.enable_l1d_pfahead_downstream_reject_feedback),
+      l1dPfaheadFeedbackInitLevel(static_cast<uint8_t>(
+          std::max<uint32_t>(
+              std::min<uint32_t>(4, p.l1d_pfahead_feedback_init_level),
+              std::min<uint32_t>(4, p.l1d_pfahead_feedback_min_level)))),
+      l1dPfaheadFeedbackMinLevel(static_cast<uint8_t>(
+          std::min<uint32_t>(4, p.l1d_pfahead_feedback_min_level))),
+      l1dPfaheadFeedbackMinSamples(std::max<uint32_t>(
+          1, p.l1d_pfahead_feedback_min_samples)),
+      l1dPfaheadFeedbackRejectPct(std::min<uint32_t>(
+          100, p.l1d_pfahead_feedback_reject_pct)),
+      l1dPfaheadFeedbackRecoverPct(std::min<uint32_t>(
+          100, p.l1d_pfahead_feedback_recover_pct)),
+      l1dPfaheadFeedbackDownStreakThreshold(std::min<uint32_t>(
+          std::numeric_limits<uint8_t>::max(), std::max<uint32_t>(
+              1, p.l1d_pfahead_feedback_down_streak_threshold))),
+      l1dPfaheadFeedbackUpStreakThreshold(std::min<uint32_t>(
+          std::numeric_limits<uint8_t>::max(), std::max<uint32_t>(
+              1, p.l1d_pfahead_feedback_up_streak_threshold))),
+      l1dPfaheadFeedbackRescueInterval(
+          p.l1d_pfahead_feedback_rescue_interval),
+      l1dPfaheadFeedbackRescueLevel(static_cast<uint8_t>(
+          std::min<uint32_t>(
+              l1dPfaheadFeedbackInitLevel,
+              std::max<uint32_t>(
+                  std::min<uint32_t>(4,
+                      p.l1d_pfahead_feedback_rescue_level),
+                  l1dPfaheadFeedbackMinLevel)))),
       tlbReqEvent(
           [this]{ processMissingTranslations(queueSize); },
           name()),
@@ -216,6 +245,8 @@ Queued::Queued(const QueuedPrefetcherParams &p)
         sourceAdmission.level[src] = sourceAdmissionInitLevel;
         statsQueued.pfSourceAdmissionLevel[src] = sourceAdmissionInitLevel;
     }
+    l1dPfaheadFeedbackResetState();
+    l1dPfaheadFeedbackSyncStats();
 }
 
 Queued::~Queued()
@@ -224,6 +255,21 @@ Queued::~Queued()
     for (DeferredPacket &p : pfq) {
         delete p.pkt;
     }
+}
+
+void
+Queued::resetStats()
+{
+    Base::resetStats();
+    l1dPfaheadFeedbackResetState();
+    l1dPfaheadFeedbackSyncStats();
+}
+
+void
+Queued::preDumpStats()
+{
+    Base::preDumpStats();
+    l1dPfaheadFeedbackSyncStats();
 }
 
 void
@@ -457,18 +503,30 @@ bool
 Queued::sourceAdmissionAllowCandidate(const AddrPriority &addr_prio)
 {
     const int idx = static_cast<int>(addr_prio.pfSource);
-    if (!sourceAdmissionEnabled || !sourceAdmissionApplyToCandidates) {
+    const bool apply_candidate_admission =
+        sourceAdmissionEnabled && sourceAdmissionApplyToCandidates;
+    const bool apply_pfahead_feedback =
+        addr_prio.pfahead && l1dPfaheadFeedbackActive();
+
+    if (!apply_candidate_admission && !apply_pfahead_feedback) {
         return true;
     }
 
-    if (sourceAdmissionSkipPfaheadCandidates && addr_prio.pfahead &&
+    if (apply_candidate_admission &&
+        sourceAdmissionSkipPfaheadCandidates && addr_prio.pfahead &&
         idx > static_cast<int>(PrefetchSourceType::PF_NONE) &&
         idx < NUM_PF_SOURCES) {
         statsQueued.pfSourceAdmissionPfaheadCandidateBypassed[idx]++;
-        return true;
+    } else if (apply_candidate_admission &&
+               !sourceAdmissionAllow(addr_prio.pfSource)) {
+        return false;
     }
 
-    return sourceAdmissionAllow(addr_prio.pfSource);
+    if (apply_pfahead_feedback) {
+        return l1dPfaheadFeedbackAllow(addr_prio.pfSource);
+    }
+
+    return true;
 }
 
 bool
@@ -506,17 +564,353 @@ Queued::sourceAdmissionAllowPFQ(const DeferredPacket &dpp)
     }
 
     if (dpp.ingress == PFQIngress::UpstreamHint) {
-        return sourceAdmissionAllowWithPolicy(src,
+        const bool accepted = sourceAdmissionAllowWithPolicy(src,
             statsQueued.pfSourceAdmissionPFQHintAccepted,
             statsQueued.pfSourceAdmissionPFQHintRejected,
             sourceAdmissionHintMinLevel,
             sourceAdmissionHintIgnorePressureGate);
+        if (dpp.pfahead && dpp.pfaheadFeedbackSource != nullptr &&
+            dpp.pfaheadFeedbackSource != this) {
+            const unsigned downstream_level =
+                cache != nullptr ? cache->level() : 0;
+            dpp.pfaheadFeedbackSource->
+                l1dPfaheadFeedbackRecordPFQResult(src, accepted,
+                                                  downstream_level);
+        }
+        return accepted;
     }
 
     return sourceAdmissionAllowWithPolicy(src,
         statsQueued.pfSourceAdmissionPFQLocalAccepted,
         statsQueued.pfSourceAdmissionPFQLocalRejected,
         0, false);
+}
+
+bool
+Queued::l1dPfaheadFeedbackActive() const
+{
+    return l1dPfaheadFeedbackEnabled && cache != nullptr &&
+           cache->level() == 1;
+}
+
+bool
+Queued::l1dPfaheadFeedbackAllow(PrefetchSourceType src)
+{
+    if (!l1dPfaheadFeedbackActive()) {
+        return true;
+    }
+
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return true;
+    }
+
+    bool accept = false;
+    l1dPfaheadFeedbackMaybeStartRescue(idx);
+    const uint8_t level = l1dPfaheadFeedbackEffectiveLevel(src);
+    if (level > 0) {
+        const uint8_t ctr = l1dPfaheadFeedback.sampleCtr[idx]++;
+        switch (level) {
+          case 1:
+            accept = (ctr & 0x3) == 0;
+            break;
+          case 2:
+            accept = (ctr & 0x1) == 0;
+            break;
+          case 3:
+            accept = (ctr & 0x3) != 3;
+            break;
+          default:
+            accept = true;
+            break;
+        }
+    }
+
+    if (accept) {
+        statsQueued.pfSourcePfaheadAdmissionAccepted[idx]++;
+    } else {
+        statsQueued.pfSourcePfaheadAdmissionRejected[idx]++;
+    }
+
+    if (!l1dPfaheadFeedback.rescueActive[idx] &&
+        l1dPfaheadFeedback.level[idx] == l1dPfaheadFeedbackMinLevel &&
+        l1dPfaheadFeedback.minLevelSamples[idx] <
+            std::numeric_limits<uint32_t>::max()) {
+        l1dPfaheadFeedback.minLevelSamples[idx]++;
+        if (l1dPfaheadFeedback.minLevelSamples[idx] >=
+            l1dPfaheadFeedbackMinSamples) {
+            l1dPfaheadFeedback.minLevelSamples[idx] = 0;
+            if (l1dPfaheadFeedback.minLevelWindows[idx] <
+                std::numeric_limits<uint32_t>::max()) {
+                l1dPfaheadFeedback.minLevelWindows[idx]++;
+            }
+        }
+    }
+    return accept;
+}
+
+void
+Queued::l1dPfaheadFeedbackRecordPFQResult(PrefetchSourceType src,
+                                          bool accepted,
+                                          unsigned downstream_level)
+{
+    if (!l1dPfaheadFeedbackActive()) {
+        return;
+    }
+
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    if (accepted) {
+        statsQueued.pfSourcePfaheadFeedbackAccepted[idx]++;
+        l1dPfaheadFeedback.windowAccepted[idx]++;
+    } else {
+        statsQueued.pfSourcePfaheadFeedbackRejected[idx]++;
+        l1dPfaheadFeedback.windowRejected[idx]++;
+    }
+    l1dPfaheadFeedbackUpdateAggregatePct(idx);
+
+    if (downstream_level == 2) {
+        if (accepted) {
+            statsQueued.pfSourcePfaheadL2FeedbackAccepted[idx]++;
+            l1dPfaheadFeedback.l2WindowAccepted[idx]++;
+        } else {
+            statsQueued.pfSourcePfaheadL2FeedbackRejected[idx]++;
+            l1dPfaheadFeedback.l2WindowRejected[idx]++;
+        }
+        l1dPfaheadFeedbackUpdateSource(idx);
+    } else if (downstream_level == 3) {
+        if (accepted) {
+            statsQueued.pfSourcePfaheadL3FeedbackAccepted[idx]++;
+            l1dPfaheadFeedback.l3WindowAccepted[idx]++;
+        } else {
+            statsQueued.pfSourcePfaheadL3FeedbackRejected[idx]++;
+            l1dPfaheadFeedback.l3WindowRejected[idx]++;
+        }
+        l1dPfaheadFeedbackUpdateL3Pct(idx);
+    }
+}
+
+uint8_t
+Queued::l1dPfaheadFeedbackEffectiveLevel(PrefetchSourceType src) const
+{
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return 4;
+    }
+
+    uint8_t level = l1dPfaheadFeedback.level[idx];
+    if (l1dPfaheadFeedback.rescueActive[idx]) {
+        level = std::max<uint8_t>(level, l1dPfaheadFeedbackRescueLevel);
+    }
+    return std::min<uint8_t>(
+        level, std::min<uint8_t>(4, l1dPfaheadFeedbackInitLevel));
+}
+
+void
+Queued::l1dPfaheadFeedbackMaybeStartRescue(int src)
+{
+    if (src <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        src >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    if (l1dPfaheadFeedbackRescueInterval == 0 ||
+        l1dPfaheadFeedbackRescueLevel == l1dPfaheadFeedbackMinLevel ||
+        l1dPfaheadFeedback.level[src] != l1dPfaheadFeedbackMinLevel ||
+        l1dPfaheadFeedback.rescueActive[src]) {
+        return;
+    }
+
+    if (l1dPfaheadFeedback.minLevelWindows[src] <
+        l1dPfaheadFeedbackRescueInterval) {
+        return;
+    }
+
+    l1dPfaheadFeedback.rescueActive[src] = true;
+    l1dPfaheadFeedback.minLevelWindows[src] = 0;
+    l1dPfaheadFeedback.minLevelSamples[src] = 0;
+    statsQueued.pfSourcePfaheadFeedbackRescueEpochs[src]++;
+    statsQueued.pfSourcePfaheadFeedbackRescueActive[src] = 1;
+}
+
+void
+Queued::l1dPfaheadFeedbackResetState()
+{
+    for (int src = 0; src < NUM_PF_SOURCES; ++src) {
+        l1dPfaheadFeedback.level[src] = std::max<uint8_t>(
+            l1dPfaheadFeedbackInitLevel, l1dPfaheadFeedbackMinLevel);
+        l1dPfaheadFeedback.sampleCtr[src] = 0;
+        l1dPfaheadFeedback.downStreak[src] = 0;
+        l1dPfaheadFeedback.upStreak[src] = 0;
+        l1dPfaheadFeedback.windowAccepted[src] = 0;
+        l1dPfaheadFeedback.windowRejected[src] = 0;
+        l1dPfaheadFeedback.l2WindowAccepted[src] = 0;
+        l1dPfaheadFeedback.l2WindowRejected[src] = 0;
+        l1dPfaheadFeedback.l3WindowAccepted[src] = 0;
+        l1dPfaheadFeedback.l3WindowRejected[src] = 0;
+        l1dPfaheadFeedback.feedbackRejectPct[src] = 0;
+        l1dPfaheadFeedback.l2FeedbackRejectPct[src] = 0;
+        l1dPfaheadFeedback.l3FeedbackRejectPct[src] = 0;
+        l1dPfaheadFeedback.minLevelWindows[src] = 0;
+        l1dPfaheadFeedback.minLevelSamples[src] = 0;
+        l1dPfaheadFeedback.rescueActive[src] = false;
+    }
+}
+
+void
+Queued::l1dPfaheadFeedbackSyncStats()
+{
+    for (int src = 0; src < NUM_PF_SOURCES; ++src) {
+        statsQueued.pfSourcePfaheadAdmissionLevel[src] =
+            l1dPfaheadFeedback.level[src];
+        statsQueued.pfSourcePfaheadFeedbackRejectPct[src] =
+            l1dPfaheadFeedback.feedbackRejectPct[src];
+        statsQueued.pfSourcePfaheadL2FeedbackRejectPct[src] =
+            l1dPfaheadFeedback.l2FeedbackRejectPct[src];
+        statsQueued.pfSourcePfaheadL3FeedbackRejectPct[src] =
+            l1dPfaheadFeedback.l3FeedbackRejectPct[src];
+        statsQueued.pfSourcePfaheadFeedbackRescueActive[src] =
+            l1dPfaheadFeedback.rescueActive[src] ? 1 : 0;
+    }
+}
+
+void
+Queued::l1dPfaheadFeedbackSetLevel(PrefetchSourceType src, uint8_t level)
+{
+    const int idx = static_cast<int>(src);
+    if (idx <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        idx >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    level = std::min<uint8_t>(4, level);
+    level = std::max<uint8_t>(level, l1dPfaheadFeedbackMinLevel);
+    if (l1dPfaheadFeedback.level[idx] == level) {
+        return;
+    }
+
+    l1dPfaheadFeedback.level[idx] = level;
+    statsQueued.pfSourcePfaheadAdmissionLevel[idx] = level;
+}
+
+void
+Queued::l1dPfaheadFeedbackUpdateSource(int src)
+{
+    if (src <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        src >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    const uint64_t accepted = l1dPfaheadFeedback.l2WindowAccepted[src];
+    const uint64_t rejected = l1dPfaheadFeedback.l2WindowRejected[src];
+    const uint64_t samples = accepted + rejected;
+    if (samples < l1dPfaheadFeedbackMinSamples) {
+        return;
+    }
+
+    const auto pf_src = static_cast<PrefetchSourceType>(src);
+    const uint64_t reject_pct = (rejected * 100) / samples;
+    l1dPfaheadFeedback.l2FeedbackRejectPct[src] = reject_pct;
+    statsQueued.pfSourcePfaheadL2FeedbackRejectPct[src] = reject_pct;
+
+    uint8_t level = l1dPfaheadFeedback.level[src];
+    if (reject_pct >= l1dPfaheadFeedbackRejectPct) {
+        l1dPfaheadFeedback.upStreak[src] = 0;
+        if (l1dPfaheadFeedback.downStreak[src] <
+            std::numeric_limits<uint8_t>::max()) {
+            l1dPfaheadFeedback.downStreak[src]++;
+        }
+        if (l1dPfaheadFeedback.downStreak[src] >=
+            l1dPfaheadFeedbackDownStreakThreshold) {
+            if (level > l1dPfaheadFeedbackMinLevel) {
+                level--;
+                l1dPfaheadFeedbackSetLevel(pf_src, level);
+                statsQueued.pfSourcePfaheadFeedbackDemotions[src]++;
+            }
+            l1dPfaheadFeedback.downStreak[src] = 0;
+        }
+    } else if (reject_pct <= l1dPfaheadFeedbackRecoverPct) {
+        l1dPfaheadFeedback.downStreak[src] = 0;
+        if (l1dPfaheadFeedback.upStreak[src] <
+            std::numeric_limits<uint8_t>::max()) {
+            l1dPfaheadFeedback.upStreak[src]++;
+        }
+        if (l1dPfaheadFeedback.upStreak[src] >=
+            l1dPfaheadFeedbackUpStreakThreshold) {
+            if (level < l1dPfaheadFeedbackInitLevel && level < 4) {
+                level++;
+                l1dPfaheadFeedbackSetLevel(pf_src, level);
+                statsQueued.pfSourcePfaheadFeedbackPromotions[src]++;
+            }
+            l1dPfaheadFeedback.upStreak[src] = 0;
+        }
+    } else {
+        l1dPfaheadFeedback.downStreak[src] = 0;
+        l1dPfaheadFeedback.upStreak[src] = 0;
+    }
+
+    if (l1dPfaheadFeedback.rescueActive[src]) {
+        l1dPfaheadFeedback.rescueActive[src] = false;
+    }
+    if (l1dPfaheadFeedback.level[src] != l1dPfaheadFeedbackMinLevel) {
+        l1dPfaheadFeedback.minLevelWindows[src] = 0;
+        l1dPfaheadFeedback.minLevelSamples[src] = 0;
+    }
+
+    l1dPfaheadFeedback.l2WindowAccepted[src] = 0;
+    l1dPfaheadFeedback.l2WindowRejected[src] = 0;
+    statsQueued.pfSourcePfaheadFeedbackRescueActive[src] =
+        l1dPfaheadFeedback.rescueActive[src] ? 1 : 0;
+}
+
+void
+Queued::l1dPfaheadFeedbackUpdateAggregatePct(int src)
+{
+    if (src <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        src >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    const uint64_t accepted = l1dPfaheadFeedback.windowAccepted[src];
+    const uint64_t rejected = l1dPfaheadFeedback.windowRejected[src];
+    const uint64_t samples = accepted + rejected;
+    if (samples < l1dPfaheadFeedbackMinSamples) {
+        return;
+    }
+
+    const uint32_t reject_pct = (rejected * 100) / samples;
+    l1dPfaheadFeedback.feedbackRejectPct[src] = reject_pct;
+    statsQueued.pfSourcePfaheadFeedbackRejectPct[src] = reject_pct;
+    l1dPfaheadFeedback.windowAccepted[src] = 0;
+    l1dPfaheadFeedback.windowRejected[src] = 0;
+}
+
+void
+Queued::l1dPfaheadFeedbackUpdateL3Pct(int src)
+{
+    if (src <= static_cast<int>(PrefetchSourceType::PF_NONE) ||
+        src >= NUM_PF_SOURCES) {
+        return;
+    }
+
+    const uint64_t accepted = l1dPfaheadFeedback.l3WindowAccepted[src];
+    const uint64_t rejected = l1dPfaheadFeedback.l3WindowRejected[src];
+    const uint64_t samples = accepted + rejected;
+    if (samples < l1dPfaheadFeedbackMinSamples) {
+        return;
+    }
+
+    const uint32_t reject_pct = (rejected * 100) / samples;
+    l1dPfaheadFeedback.l3FeedbackRejectPct[src] = reject_pct;
+    statsQueued.pfSourcePfaheadL3FeedbackRejectPct[src] = reject_pct;
+    l1dPfaheadFeedback.l3WindowAccepted[src] = 0;
+    l1dPfaheadFeedback.l3WindowRejected[src] = 0;
 }
 
 void
@@ -929,7 +1323,39 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     ADD_STAT(pfSourceAdmissionPFQHintRejected, statistics::units::Count::get(),
         "upstream hint PFQ insertions rejected by unified dynamic source admission"),
     ADD_STAT(pfSourceAdmissionPFQHintAccepted, statistics::units::Count::get(),
-        "upstream hint PFQ insertions accepted by unified dynamic source admission")
+        "upstream hint PFQ insertions accepted by unified dynamic source admission"),
+    ADD_STAT(pfSourcePfaheadFeedbackAccepted, statistics::units::Count::get(),
+        "downstream PFQ accepted feedback for L1D pfahead requests"),
+    ADD_STAT(pfSourcePfaheadFeedbackRejected, statistics::units::Count::get(),
+        "downstream PFQ rejected feedback for L1D pfahead requests"),
+    ADD_STAT(pfSourcePfaheadFeedbackRejectPct, statistics::units::Count::get(),
+        "last L1D pfahead downstream feedback reject percentage"),
+    ADD_STAT(pfSourcePfaheadL2FeedbackAccepted, statistics::units::Count::get(),
+        "L2 PFQ accepted feedback for L1D pfahead requests"),
+    ADD_STAT(pfSourcePfaheadL2FeedbackRejected, statistics::units::Count::get(),
+        "L2 PFQ rejected feedback for L1D pfahead requests"),
+    ADD_STAT(pfSourcePfaheadL2FeedbackRejectPct, statistics::units::Count::get(),
+        "last L2 PFQ feedback reject percentage for L1D pfahead"),
+    ADD_STAT(pfSourcePfaheadL3FeedbackAccepted, statistics::units::Count::get(),
+        "L3 PFQ accepted feedback for L1D pfahead requests"),
+    ADD_STAT(pfSourcePfaheadL3FeedbackRejected, statistics::units::Count::get(),
+        "L3 PFQ rejected feedback for L1D pfahead requests"),
+    ADD_STAT(pfSourcePfaheadL3FeedbackRejectPct, statistics::units::Count::get(),
+        "last L3 PFQ feedback reject percentage for L1D pfahead"),
+    ADD_STAT(pfSourcePfaheadAdmissionLevel, statistics::units::Count::get(),
+        "current L1D pfahead downstream feedback admission level"),
+    ADD_STAT(pfSourcePfaheadAdmissionAccepted, statistics::units::Count::get(),
+        "L1D pfahead candidates accepted by downstream feedback admission"),
+    ADD_STAT(pfSourcePfaheadAdmissionRejected, statistics::units::Count::get(),
+        "L1D pfahead candidates rejected by downstream feedback admission"),
+    ADD_STAT(pfSourcePfaheadFeedbackDemotions, statistics::units::Count::get(),
+        "L1D pfahead feedback admission demotions"),
+    ADD_STAT(pfSourcePfaheadFeedbackPromotions, statistics::units::Count::get(),
+        "L1D pfahead feedback admission promotions"),
+    ADD_STAT(pfSourcePfaheadFeedbackRescueEpochs, statistics::units::Count::get(),
+        "L1D pfahead feedback rescue probe activations"),
+    ADD_STAT(pfSourcePfaheadFeedbackRescueActive, statistics::units::Count::get(),
+        "current L1D pfahead feedback rescue active state")
 {   using namespace statistics;
     pfRemovedFull_srcs
         .init(NUM_PF_SOURCES)
@@ -973,6 +1399,54 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     pfSourceAdmissionPFQHintAccepted
         .init(NUM_PF_SOURCES)
         .flags(total);
+    pfSourcePfaheadFeedbackAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadFeedbackRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadFeedbackRejectPct
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadL2FeedbackAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadL2FeedbackRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadL2FeedbackRejectPct
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadL3FeedbackAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadL3FeedbackRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadL3FeedbackRejectPct
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadAdmissionLevel
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadAdmissionAccepted
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadAdmissionRejected
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadFeedbackDemotions
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadFeedbackPromotions
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadFeedbackRescueEpochs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
+    pfSourcePfaheadFeedbackRescueActive
+        .init(NUM_PF_SOURCES)
+        .flags(total);
 
     for (int src = 0; src < NUM_PF_SOURCES; ++src) {
         const char *name = prefetchSourceName(src);
@@ -989,6 +1463,22 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
         pfSourceAdmissionPFQLocalAccepted.subname(src, name);
         pfSourceAdmissionPFQHintRejected.subname(src, name);
         pfSourceAdmissionPFQHintAccepted.subname(src, name);
+        pfSourcePfaheadFeedbackAccepted.subname(src, name);
+        pfSourcePfaheadFeedbackRejected.subname(src, name);
+        pfSourcePfaheadFeedbackRejectPct.subname(src, name);
+        pfSourcePfaheadL2FeedbackAccepted.subname(src, name);
+        pfSourcePfaheadL2FeedbackRejected.subname(src, name);
+        pfSourcePfaheadL2FeedbackRejectPct.subname(src, name);
+        pfSourcePfaheadL3FeedbackAccepted.subname(src, name);
+        pfSourcePfaheadL3FeedbackRejected.subname(src, name);
+        pfSourcePfaheadL3FeedbackRejectPct.subname(src, name);
+        pfSourcePfaheadAdmissionLevel.subname(src, name);
+        pfSourcePfaheadAdmissionAccepted.subname(src, name);
+        pfSourcePfaheadAdmissionRejected.subname(src, name);
+        pfSourcePfaheadFeedbackDemotions.subname(src, name);
+        pfSourcePfaheadFeedbackPromotions.subname(src, name);
+        pfSourcePfaheadFeedbackRescueEpochs.subname(src, name);
+        pfSourcePfaheadFeedbackRescueActive.subname(src, name);
     }
 }
 
@@ -1263,6 +1753,10 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         // if found the dpp is pfahead marked
         // send it to next level pfq
         if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
+            if (l1dPfaheadFeedbackActive() &&
+                dpp.pfaheadFeedbackSource == nullptr) {
+                dpp.pfaheadFeedbackSource = this;
+            }
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
             DPRINTF(HWPrefetchOther,
