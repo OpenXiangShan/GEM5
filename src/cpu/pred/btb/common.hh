@@ -714,11 +714,7 @@ struct FetchTarget
         Addr squash_pc, const ResolvedBranch *actual_branch) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                update.shamt++;
-            }
-        }
+        update.shamt = predictedCFIsBefore(squash_pc);
         if (actual_branch && actual_branch->isCond) {
             update.shamt++;
             update.taken = actual_branch->taken;
@@ -730,11 +726,7 @@ struct FetchTarget
         Addr squash_pc, const ResolvedBranch *actual_branch) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                update.shamt++;
-            }
-        }
+        update.shamt = predictedCFIsBefore(squash_pc);
         if (actual_branch && actual_branch->isCond) {
             update.shamt++;
             update.taken =
@@ -764,6 +756,17 @@ struct FetchTarget
     size_t addResolvedBranches(const std::vector<ResolvedBranch> &branches)
     {
         return insertResolvedBranchesByPC(resolvedBranches, branches);
+    }
+
+  private:
+    unsigned predictedCFIsBefore(Addr squash_pc) const
+    {
+        return std::count_if(
+            predBTBEntries.begin(), predBTBEntries.end(),
+            [this, squash_pc](const auto &entry) {
+                return entry.valid && entry.pc >= startPC &&
+                    entry.pc < squash_pc;
+            });
     }
 
 };
