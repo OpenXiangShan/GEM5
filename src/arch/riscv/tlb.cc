@@ -691,7 +691,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
         TlbEntry *merged_entry = prepareL1CompressedInsert(
             entry, translateMode);
         if (merged_entry) {
-            if (translateMode == direct && walker)
+            if (walker)
                 walker->notifyTlbRefillHint(*merged_entry, translateMode);
             return merged_entry;
         }
@@ -739,6 +739,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
             DPRINTF(TLBGPre, "l1 newEntry->vaddr %#x vpn %#x \n", newEntry->vaddr, vpn);
         }
 
+        if (walker)
+            walker->notifyTlbRefillHint(*newEntry, translateMode);
         return newEntry;
     }
 
@@ -762,7 +764,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     // stats all insert number
     stats.ALLInsert++;
     allUsed++;
-    if (translateMode == direct && walker)
+    if (walker)
         walker->notifyTlbRefillHint(*newEntry, translateMode);
     return newEntry;
 }
@@ -1317,26 +1319,53 @@ TLB::refillHintMaySatisfy(const RequestPtr &req, ThreadContext *tc,
 {
     (void)mode;
 
-    if (translateMode != direct || req->get_two_stage_state())
-        return false;
-
-    SATP satp = tc->readMiscReg(MISCREG_SATP);
-    if (satp.mode != AddrXlateMode::SV39 &&
-        satp.mode != AddrXlateMode::SV48)
-        return false;
-    if (entry.asid != satp.asid)
-        return false;
-
-    Addr vaddr = VADDR_SEXT(satp.mode, req->getVaddr());
-    if ((vaddr & ~mask(entry.logBytes)) != entry.vaddr)
-        return false;
+    auto covers = [&entry](Addr addr, Addr base) {
+        return (addr & ~mask(entry.logBytes)) == base;
+    };
 
     if (entry.isCompressed) {
+        if (translateMode != direct || req->get_two_stage_state())
+            return false;
+        SATP satp = tc->readMiscReg(MISCREG_SATP);
+        if (satp.mode != AddrXlateMode::SV39 &&
+            satp.mode != AddrXlateMode::SV48)
+            return false;
+        Addr vaddr = VADDR_SEXT(satp.mode, req->getVaddr());
         const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
-        return entry.validIdx & (1 << sub_idx);
+        return entry.asid == satp.asid && covers(vaddr, entry.vaddr) &&
+               (entry.validIdx & (1 << sub_idx));
     }
 
-    return true;
+    if (translateMode == direct) {
+        if (req->get_two_stage_state())
+            return false;
+
+        SATP satp = tc->readMiscReg(MISCREG_SATP);
+        if (satp.mode != AddrXlateMode::SV39 &&
+            satp.mode != AddrXlateMode::SV48)
+            return false;
+        Addr vaddr = VADDR_SEXT(satp.mode, req->getVaddr());
+        return entry.asid == satp.asid && covers(vaddr, entry.vaddr);
+    }
+
+    if (!req->get_two_stage_state())
+        return false;
+
+    SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+    HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
+    Addr vaddr = VADDR_SEXT(hgatp.mode, req->getVaddr());
+
+    switch (translateMode) {
+      case allstage:
+        return vsatp.mode != 0 && entry.asid == vsatp.asid &&
+               entry.vmid == hgatp.vmid && covers(vaddr, entry.vaddr);
+      case vsstage:
+        return false;
+      case gstage:
+        return false;
+      default:
+        return false;
+    }
 }
 
 TlbEntry *

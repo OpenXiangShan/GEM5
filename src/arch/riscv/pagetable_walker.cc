@@ -125,7 +125,27 @@ Walker::WalkerStats::WalkerStats(statistics::Group *parent)
       ADD_STAT(ptwMissQueueHintResolved, statistics::units::Count::get(),
                "Number of hint retried MissQueue entries completed immediately"),
       ADD_STAT(ptwMissQueueHintDelayed, statistics::units::Count::get(),
-               "Number of hint retried MissQueue entries delayed again")
+               "Number of hint retried MissQueue entries delayed again"),
+      ADD_STAT(ptwMissQueueHintDirectChecks, statistics::units::Count::get(),
+               "Number of direct refill hint MissQueue checks"),
+      ADD_STAT(ptwMissQueueHintDirectMatches, statistics::units::Count::get(),
+               "Number of direct refill hint MissQueue matches"),
+      ADD_STAT(ptwMissQueueHintDirectRetries, statistics::units::Count::get(),
+               "Number of direct refill hint MissQueue retries"),
+      ADD_STAT(ptwMissQueueHintDirectResolved, statistics::units::Count::get(),
+               "Number of direct refill hint retries completed immediately"),
+      ADD_STAT(ptwMissQueueHintDirectDelayed, statistics::units::Count::get(),
+               "Number of direct refill hint retries delayed again"),
+      ADD_STAT(ptwMissQueueHintAllstageChecks, statistics::units::Count::get(),
+               "Number of all-stage refill hint MissQueue checks"),
+      ADD_STAT(ptwMissQueueHintAllstageMatches, statistics::units::Count::get(),
+               "Number of all-stage refill hint MissQueue matches"),
+      ADD_STAT(ptwMissQueueHintAllstageRetries, statistics::units::Count::get(),
+               "Number of all-stage refill hint MissQueue retries"),
+      ADD_STAT(ptwMissQueueHintAllstageResolved, statistics::units::Count::get(),
+               "Number of all-stage refill hint retries completed immediately"),
+      ADD_STAT(ptwMissQueueHintAllstageDelayed, statistics::units::Count::get(),
+               "Number of all-stage refill hint retries delayed again")
 {
 }
 
@@ -253,6 +273,81 @@ Walker::recordPtwMissQueueFifoBlocked()
     stats.ptwMissQueueFifoBlocked++;
 }
 
+void
+Walker::recordPtwMissQueueHintCheck(uint8_t translateMode)
+{
+    switch (translateMode) {
+      case direct:
+        stats.ptwMissQueueHintDirectChecks++;
+        break;
+      case allstage:
+        stats.ptwMissQueueHintAllstageChecks++;
+        break;
+      default:
+        break;
+    }
+}
+
+void
+Walker::recordPtwMissQueueHintMatch(uint8_t translateMode)
+{
+    switch (translateMode) {
+      case direct:
+        stats.ptwMissQueueHintDirectMatches++;
+        break;
+      case allstage:
+        stats.ptwMissQueueHintAllstageMatches++;
+        break;
+      default:
+        break;
+    }
+}
+
+void
+Walker::recordPtwMissQueueHintRetry(uint8_t translateMode)
+{
+    switch (translateMode) {
+      case direct:
+        stats.ptwMissQueueHintDirectRetries++;
+        break;
+      case allstage:
+        stats.ptwMissQueueHintAllstageRetries++;
+        break;
+      default:
+        break;
+    }
+}
+
+void
+Walker::recordPtwMissQueueHintResolved(uint8_t translateMode)
+{
+    switch (translateMode) {
+      case direct:
+        stats.ptwMissQueueHintDirectResolved++;
+        break;
+      case allstage:
+        stats.ptwMissQueueHintAllstageResolved++;
+        break;
+      default:
+        break;
+    }
+}
+
+void
+Walker::recordPtwMissQueueHintDelayed(uint8_t translateMode)
+{
+    switch (translateMode) {
+      case direct:
+        stats.ptwMissQueueHintDirectDelayed++;
+        break;
+      case allstage:
+        stats.ptwMissQueueHintAllstageDelayed++;
+        break;
+      default:
+        break;
+    }
+}
+
 bool
 Walker::ptwMissQueueHintMatch(const MissQueueEntry &entry,
                               const TlbEntry &refill_entry,
@@ -267,10 +362,44 @@ Walker::ptwMissQueueHintMatch(const MissQueueEntry &entry,
 void
 Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
 {
-    if (!enablePtwLevelLimit || translateMode != direct ||
-        retryingPtwMissQueue || processingPtwMissQueueHint ||
-        ptwMissQueue.empty())
+    if (translateMode != direct && translateMode != allstage)
         return;
+    if (translateMode == allstage && !entry.pte.r && !entry.pte.x)
+        return;
+
+    if (!enablePtwLevelLimit || retryingPtwMissQueue ||
+        processingPtwMissQueueHint || ptwMissQueue.empty())
+        return;
+
+    if (translateMode == allstage) {
+        MissQueueEntry mq_entry = ptwMissQueue.front();
+        stats.ptwMissQueueHintChecks++;
+        recordPtwMissQueueHintCheck(translateMode);
+        if (!ptwMissQueueHintMatch(mq_entry, entry, translateMode))
+            return;
+
+        ptwMissQueue.pop_front();
+        stats.ptwMissQueueHintMatches++;
+        recordPtwMissQueueHintMatch(translateMode);
+        stats.ptwMissQueueHintRetries++;
+        recordPtwMissQueueHintRetry(translateMode);
+
+        processingPtwMissQueueHint = true;
+        bool resolved = tlb->retryTimingPtwMiss(mq_entry.tc,
+                                                mq_entry.translation,
+                                                mq_entry.req,
+                                                mq_entry.mode,
+                                                true);
+        processingPtwMissQueueHint = false;
+        if (resolved) {
+            stats.ptwMissQueueHintResolved++;
+            recordPtwMissQueueHintResolved(translateMode);
+        } else {
+            stats.ptwMissQueueHintDelayed++;
+            recordPtwMissQueueHintDelayed(translateMode);
+        }
+        return;
+    }
 
     std::deque<MissQueueEntry> remaining;
     std::deque<MissQueueEntry> matched;
@@ -280,8 +409,10 @@ Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
         MissQueueEntry mq_entry = ptwMissQueue.front();
         ptwMissQueue.pop_front();
         stats.ptwMissQueueHintChecks++;
+        recordPtwMissQueueHintCheck(translateMode);
         if (ptwMissQueueHintMatch(mq_entry, entry, translateMode)) {
             stats.ptwMissQueueHintMatches++;
+            recordPtwMissQueueHintMatch(translateMode);
             matched.push_back(mq_entry);
         } else {
             remaining.push_back(mq_entry);
@@ -294,15 +425,19 @@ Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
         MissQueueEntry mq_entry = matched.front();
         matched.pop_front();
         stats.ptwMissQueueHintRetries++;
+        recordPtwMissQueueHintRetry(translateMode);
         bool resolved = tlb->retryTimingPtwMiss(mq_entry.tc,
                                                 mq_entry.translation,
                                                 mq_entry.req,
                                                 mq_entry.mode,
                                                 true);
-        if (resolved)
+        if (resolved) {
             stats.ptwMissQueueHintResolved++;
-        else
+            recordPtwMissQueueHintResolved(translateMode);
+        } else {
             stats.ptwMissQueueHintDelayed++;
+            recordPtwMissQueueHintDelayed(translateMode);
+        }
     }
 
     processingPtwMissQueueHint = false;

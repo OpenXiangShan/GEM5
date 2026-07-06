@@ -336,6 +336,16 @@ namespace RiscvISA
             statistics::Scalar ptwMissQueueHintRetries;
             statistics::Scalar ptwMissQueueHintResolved;
             statistics::Scalar ptwMissQueueHintDelayed;
+            statistics::Scalar ptwMissQueueHintDirectChecks;
+            statistics::Scalar ptwMissQueueHintDirectMatches;
+            statistics::Scalar ptwMissQueueHintDirectRetries;
+            statistics::Scalar ptwMissQueueHintDirectResolved;
+            statistics::Scalar ptwMissQueueHintDirectDelayed;
+            statistics::Scalar ptwMissQueueHintAllstageChecks;
+            statistics::Scalar ptwMissQueueHintAllstageMatches;
+            statistics::Scalar ptwMissQueueHintAllstageRetries;
+            statistics::Scalar ptwMissQueueHintAllstageResolved;
+            statistics::Scalar ptwMissQueueHintAllstageDelayed;
         } stats;
 
         struct WalkerSenderState : public Packet::SenderState
@@ -409,6 +419,11 @@ namespace RiscvISA
         void releasePtwLevel(WalkerState *state);
         void retryPtwLevelBlockedStates();
         void recordPtwLevelBlocked(int level);
+        void recordPtwMissQueueHintCheck(uint8_t translateMode);
+        void recordPtwMissQueueHintMatch(uint8_t translateMode);
+        void recordPtwMissQueueHintRetry(uint8_t translateMode);
+        void recordPtwMissQueueHintResolved(uint8_t translateMode);
+        void recordPtwMissQueueHintDelayed(uint8_t translateMode);
         bool ptwMissQueueHintMatch(const MissQueueEntry &entry,
                                    const TlbEntry &refill_entry,
                                    uint8_t translateMode) const;
