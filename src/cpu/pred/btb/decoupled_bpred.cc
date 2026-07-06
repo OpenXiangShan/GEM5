@@ -876,44 +876,6 @@ DecoupledBPUWithBTB::canResolveUpdateComponents(Addr update_start_pc)
     return true;
 }
 
-void
-DecoupledBPUWithBTB::updatePredictorComponent(
-    TimedBaseBTBPredictor *component,
-    const BranchUpdateContext &update_ctx,
-    const std::shared_ptr<void> &prediction_meta,
-    const boost::dynamic_bitset<> &phistory,
-    const std::queue<Addr> &previous_pcs,
-    const std::vector<BTBEntry> &pred_update_entries,
-    const std::vector<ResolvedBranch> &update_branches)
-{
-    switch (component->updateProtocol()) {
-      case PredictorUpdateProtocol::DirectionEntries: {
-        const auto entries = buildDirectionUpdateEntries(
-            pred_update_entries, update_branches);
-        component->updateWithDirectionEntries(
-            entries, update_ctx, prediction_meta, phistory);
-        return;
-      }
-
-      case PredictorUpdateProtocol::BranchContext:
-        component->updateWithBranchUpdateContext(
-            update_ctx, update_branches, prediction_meta);
-        return;
-
-      case PredictorUpdateProtocol::AheadPipelineState:
-        panic_if(component != abtb,
-                 "Only AheadBTB may use ahead-pipeline update state");
-        abtb->updateWithAheadPipelineState(
-            prediction_meta, update_ctx, previous_pcs, update_branches);
-        return;
-
-      case PredictorUpdateProtocol::None:
-        break;
-    }
-
-    panic("BTB component has no explicit update protocol");
-}
-
 bool
 DecoupledBPUWithBTB::updatePredictorComponents(
     const std::array<std::shared_ptr<void>, 8> &prediction_metas,
@@ -928,14 +890,13 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         return true;
     }
 
-    const auto pred_update_entries =
-        selectPredictedBTBEntriesForUpdate(
-            pred_btb_entries, update_ctx, update_branches, predictWidth);
-
     if (resolved_update &&
         !canResolveUpdateComponents(update_ctx.startPC)) {
         return false;
     }
+
+    bool direction_update_entries_ready = false;
+    std::vector<BTBEntry> direction_update_base_entries;
 
     for (int i = 0; i < numComponents; ++i) {
         auto *component = components[i];
@@ -945,10 +906,40 @@ DecoupledBPUWithBTB::updatePredictorComponents(
         if (resolved_update) {
             component->noteResolveUpdateAccepted(update_ctx.startPC);
         }
-        updatePredictorComponent(
-            component, update_ctx,
-            prediction_metas[component->getComponentIdx()], phistory,
-            previous_pcs, pred_update_entries, update_branches);
+        const auto prediction_meta =
+            prediction_metas[component->getComponentIdx()];
+        switch (component->updateProtocol()) {
+          case PredictorUpdateProtocol::DirectionEntries: {
+            if (!direction_update_entries_ready) {
+                direction_update_base_entries =
+                    selectPredictedBTBEntriesForUpdate(
+                        pred_btb_entries, update_ctx, update_branches,
+                        predictWidth);
+                direction_update_entries_ready = true;
+            }
+            const auto direction_entries =
+                buildDirectionUpdateEntries(
+                    direction_update_base_entries, update_branches);
+            component->updateWithDirectionEntries(
+                direction_entries, update_ctx, prediction_meta, phistory);
+            break;
+          }
+
+          case PredictorUpdateProtocol::BranchContext:
+            component->updateWithBranchUpdateContext(
+                update_ctx, update_branches, prediction_meta);
+            break;
+
+          case PredictorUpdateProtocol::AheadPipelineState:
+            panic_if(component != abtb,
+                     "Only AheadBTB may use ahead-pipeline update state");
+            abtb->updateWithAheadPipelineState(
+                prediction_meta, update_ctx, previous_pcs, update_branches);
+            break;
+
+          case PredictorUpdateProtocol::None:
+            panic("BTB component has no explicit update protocol");
+        }
     }
 
     return true;
