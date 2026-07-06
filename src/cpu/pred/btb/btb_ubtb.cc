@@ -344,25 +344,27 @@ UBTB::reconcileWithActualBranch(
 void
 UBTB::updateWithContext(const ResolvedBranch *taken_branch,
                         const BranchUpdateContext &ctx,
-                        const UBTBMeta &meta)
+                        const UBTBMeta *meta)
 {
-    auto pred_hit_entry = meta.hit_entry;
-    // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
     auto startAddr = ctx.startPC;
     Addr oldtag = getTag(startAddr, ctx.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
     UBTBIter oldEntryIter = ubtb.end();
 
-    oldEntryIter = meta.hit_entry.valid ?
-                    std::find_if(ubtb.begin(), ubtb.end(), [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
-                        return e.valid && e.tag == oldtag &&
-                               e.pc >= startAddr && e.pc < block_end;
-                    }) : ubtb.end();
+    if (meta && meta->hit_entry.valid) {
+        oldEntryIter =
+            std::find_if(ubtb.begin(), ubtb.end(),
+                         [oldtag, startAddr, block_end](
+                             const TickedUBTBEntry &e) {
+                             return e.valid && e.tag == oldtag &&
+                                    e.pc >= startAddr && e.pc < block_end;
+                         });
+    }
 
-    if (taken_branch) {
-        if (!pred_hit_entry.valid ||
-            pred_hit_entry.pc != taken_branch->pc) {
+    if (meta && taken_branch) {
+        if (!meta->hit_entry.valid ||
+            meta->hit_entry.pc != taken_branch->pc) {
             DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n",
                     taken_branch->pc, ctx.predTick);
             ubtbStats.updateMiss++;
@@ -374,8 +376,22 @@ UBTB::updateWithContext(const ResolvedBranch *taken_branch,
     // Verify uBTB state
     assert(ubtb.size() <= numEntries);
     if (!usingS3Pred) {
-        reconcileWithActualBranch(
-            oldEntryIter, taken_branch, startAddr, ctx.asidHash);
+        if (meta) {
+            reconcileWithActualBranch(
+                oldEntryIter, taken_branch, startAddr, ctx.asidHash);
+        } else if (taken_branch) {
+            oldEntryIter =
+                std::find_if(ubtb.begin(), ubtb.end(),
+                             [oldtag, taken_branch](
+                                 const TickedUBTBEntry &e) {
+                                 return e.valid && e.tag == oldtag &&
+                                        e.pc == taken_branch->pc;
+                             });
+            auto entry_to_update = oldEntryIter != ubtb.end() ?
+                oldEntryIter : selectReplacementEntry();
+            replaceOldEntryFromActualBranch(
+                entry_to_update, *taken_branch, startAddr, ctx.asidHash);
+        }
     }
 }
 
@@ -386,11 +402,8 @@ UBTB::updateWithBranchUpdateContext(
     const std::shared_ptr<void> &prediction_meta)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(prediction_meta);
-    if (!meta) {
-        return;
-    }
     updateWithContext(
-        findFirstTakenActualUpdateBranch(update_branches), ctx, *meta);
+        findFirstTakenActualUpdateBranch(update_branches), ctx, meta.get());
 }
 
 void

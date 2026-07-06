@@ -203,7 +203,7 @@ class UBTB : public TimedBaseBTBPredictor
 
     void updateWithContext(const ResolvedBranch *taken_branch,
                            const BranchUpdateContext &ctx,
-                           const UBTBMeta &meta);
+                           const UBTBMeta *meta);
 
     // helper methods
     /*
