@@ -253,6 +253,10 @@ BTBITTAGE::updateWithBranchUpdateContext(
 {
     // get tage predictions from meta
     auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
+    if (!meta) {
+        DPRINTF(ITTAGE, "update: no prediction meta, skip\n");
+        return;
+    }
     std::vector<ResolvedBranch> branches;
     branches.reserve(update_branches.size());
     for (const auto &branch : update_branches) {
@@ -274,10 +278,10 @@ BTBITTAGE::updateWithResolvedBranches(
 {
     Addr startAddr = ctx.startPC;
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
-    auto preds = meta.preds;
-    auto updateTagFoldedHist = meta.tagFoldedHist;
-    auto updateAltTagFoldedHist = meta.altTagFoldedHist;
-    auto updateIndexFoldedHist = meta.indexFoldedHist;
+    const auto &preds = meta.preds;
+    const auto &updateTagFoldedHist = meta.tagFoldedHist;
+    const auto &updateAltTagFoldedHist = meta.altTagFoldedHist;
+    const auto &updateIndexFoldedHist = meta.indexFoldedHist;
 
     // update each branch
     for (const auto &branch : branches) {
@@ -641,6 +645,9 @@ BTBITTAGE::recordCommittedBranchStats(
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(prediction_meta);
+    if (!meta) {
+        return;
+    }
     auto pc = branch.pc;
     auto npc = branch.target;
     auto pred_it = meta->preds.find(pc);
