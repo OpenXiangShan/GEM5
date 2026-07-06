@@ -19,6 +19,23 @@ function check() {
     fi
 }
 
+function warn() {
+    echo "WARN: $1"
+}
+
+function rebuild_without_pgo() {
+    warn "$1"
+    cd "$gem5_home"
+    rm -rf llvm-pgo
+    CC=clang CXX=clang++ scons -c build/RISCV/gem5.fast --gold-linker
+    check $?
+    rm -rf build/RISCV
+    CC=clang CXX=clang++ scons build/RISCV/gem5.fast -j $build_threads --gold-linker
+    check $?
+    printf "Non-PGO build is done after PGO fallback.\n"
+    exit 0
+}
+
 load=$(cat /proc/loadavg | awk '{print $2}' | cut -d. -f1)
 build_threads=${build_threads:-$(( $(nproc) - $load ))}
 
@@ -43,20 +60,32 @@ cd llvm-pgo
 # run gem5 and let it to generate profile here
 export LLVM_PROFILE_FILE=$(pwd)/default.profraw
 
+profile_run_status=0
+
 $gem5_home/build/RISCV/gem5.fast \
      $gem5_home/configs/example/idealkmhv3.py \
      --raw-cpt \
      --generic-rv-cpt=$GEM5_PGO_CPT
-check $?
+profile_run_status=$?
+if [ $profile_run_status -ne 0 ]; then
+    rebuild_without_pgo "PGO profiling workload exited with status $profile_run_status; clean artifacts and rebuild without PGO"
+else
+    if [ -f default.profraw ]; then
+        # TODO: only one profile file is generated, provide multiple
+        llvm-profdata merge default.profraw --output=gem5_single.profdata
+        merge_status=$?
+        if [ $merge_status -ne 0 ]; then
+            rebuild_without_pgo "llvm-profdata merge failed with status $merge_status; clean artifacts and rebuild without PGO"
+        fi
+    else
+        rebuild_without_pgo "default.profraw is missing after the profiling run; clean artifacts and rebuild without PGO"
+    fi
 
-# TODO: only one profile file is generated, provide multiple
-llvm-profdata merge default.profraw --output=gem5_single.profdata
-check $?
+    cd ..
 
-cd ..
+    # build gem5 final artifact
+    CC=clang CXX=clang++ scons build/RISCV/gem5.fast -j $build_threads --gold-linker --pgo-use=llvm-pgo/gem5_single.profdata
+    check $?
 
-# build gem5 with pgo instrumentation
-CC=clang CXX=clang++ scons build/RISCV/gem5.fast -j $build_threads --gold-linker --pgo-use=llvm-pgo/gem5_single.profdata
-check $?
-
-printf "PGO build is done!\n"
+    printf "PGO build is done!\n"
+fi

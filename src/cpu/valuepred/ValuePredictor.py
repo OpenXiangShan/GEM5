@@ -5,7 +5,7 @@ from m5.SimObject import *
 
 class ValuePredType(ScopedEnum):
     # vals will contains value predictor type
-    vals = ["EStride", "MemoryRenaming", "IdealConstantLVP",
+    vals = ["EStride", "VTAGE", "MemoryRenaming", "IdealConstantLVP",
             "ExampleValuePredictor", "CompositeValuePredictor"]
 
 class ValuePredictor(SimObject):
@@ -45,6 +45,74 @@ class ExampleValuePredictor(ValuePredictor):
     cxx_class = "gem5::valuepred::ExampleValuePredictor"
     cxx_header = "cpu/valuepred/example_value_predictor.hh"
     abstract = False
+
+class VTAGE(ValuePredictor):
+    type = "VTAGE"
+    cxx_class = "gem5::valuepred::VTAGE"
+    cxx_header = "cpu/valuepred/vtage.hh"
+    abstract = False
+
+    numHistories = Param.Unsigned(8,
+        "Number of VTAGE history banks excluding the base bank")
+    numBanks = Param.Unsigned(9,
+        "Total VTAGE banks including the base bank")
+    histLengths = VectorParam.Unsigned(
+        [0, 0, 3, 7, 15, 31, 63, 90, 127],
+        "History length per VTAGE bank, including the base bank")
+    requireHistoryExt = Param.Bool(
+        False,
+        "Fatal if the predict request does not provide FetchTarget history")
+    logBankSize = Param.Unsigned(9, "Log2 entries per VTAGE bank")
+    tagBits = Param.Unsigned(11, "VTAGE tag width")
+    confBits = Param.Unsigned(11, "VTAGE confidence-counter width")
+    usefulBits = Param.Unsigned(2, "VTAGE usefulness-counter width")
+    logValueArrayEntries = Param.Unsigned(9,
+        "Log2 entries per VTAGE value-array way")
+
+    predictConfThreshold = Param.Unsigned(1024,
+        "Minimum confidence needed to issue a VTAGE prediction")
+    hashOnlyUpgradeThreshold = Param.Unsigned(1023,
+        "Minimum confidence before trying to upgrade hash-only entries")
+    mispredBackoffDistance = Param.Unsigned(128,
+        "Number of dynamic instructions to suppress VTAGE after a selected misprediction")
+    agingTickMax = Param.Unsigned(1024,
+        "Threshold for triggering global usefulness aging")
+    agingPenaltyOnAlloc = Param.Unsigned(1,
+        "Aging-tick increment after a successful VTAGE allocation")
+    agingPenaltyOnNoAlloc = Param.Unsigned(5,
+        "Aging-tick increment after a non-allocating VTAGE update")
+
+    l1HitMaxCycles = Param.Unsigned(4,
+        "Observed latency upper bound for L1-like loads")
+    l2HitMaxCycles = Param.Unsigned(20,
+        "Observed latency upper bound for L2-like loads")
+    llcHitMaxCycles = Param.Unsigned(50,
+        "Observed latency upper bound for LLC-like loads")
+    fastInstCycles = Param.Unsigned(1,
+        "Observed latency upper bound for fast loads")
+    mfastInstCycles = Param.Unsigned(14,
+        "Observed latency upper bound for medium-fast loads")
+
+    enableStochasticTraining = Param.Bool(
+        True,
+        "Use probabilistic VTAGE training helpers instead of deterministic always-on updates")
+    rngSeed = Param.Unsigned(1, "VTAGE RNG seed")
+    allocProbLoadL1Hit = Param.Float(
+        0.25, "Allocation probability for fast/L1-like loads")
+    allocProbLoadMiss = Param.Float(
+        1.0, "Allocation probability for slower loads")
+    confIncProbLowValue = Param.Float(
+        1.0, "Confidence increment probability when the actual value is small or sign-extended")
+    confIncProbFastLoad = Param.Float(
+        1.0, "Confidence increment probability for fast loads")
+    uIncProbFastLoad = Param.Float(
+        0.5, "Usefulness increment probability for medium-fast loads")
+    valueArrayUpgradeProb = Param.Float(
+        0.25, "Probability of promoting a hash-only entry into the value array")
+    shortHistoryAllocBias = Param.Float(
+        0.125, "Bias toward allocating from shorter-history banks")
+    deepAllocExtraHopProb = Param.Float(
+        0.125, "Probability of skipping one extra bank toward deeper history on allocation")
 
 class CVPArb(SimObject):
     type = "CVPArb"

@@ -212,6 +212,8 @@ class VPFeedback
     bool offeredPrediction = false;
     RegVal predictedValue = 0;
     bool wouldHaveBeenCorrect = false;
+    bool overallPredictionMade = false;
+    bool overallPredictionCorrect = false;
 };
 
 class VPChooserFeedback

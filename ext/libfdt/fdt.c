@@ -64,8 +64,6 @@ const void *fdt_offset_ptr(const void *fdt, int offset, unsigned int len)
 
         p = _fdt_offset_ptr(fdt, offset);
 
-        if (p + len < p)
-                return NULL;
         return p;
 }
 
