@@ -526,6 +526,36 @@ TEST_F(BTBTAGETest, BasicPrediction) {
     EXPECT_GE(table, 0) << "No TAGE table entry was allocated";
 }
 
+TEST_F(BTBTAGETest, TageDoesNotArbitrateLLBPXCandidate)
+{
+    Addr startPC = 0x1000;
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+
+    stagePreds[1].bbStart = startPC;
+    stagePreds[1].btbEntries = {entry};
+
+    auto &tageInfo = stagePreds[1].tageInfoForMgscs[entry.pc];
+    tageInfo.llbpx_pred_valid = true;
+    tageInfo.llbpx_pred_taken = true;
+    tageInfo.llbpx_provider_table = 3;
+
+    tage->putPCHistory(startPC, history, stagePreds);
+
+    auto [found, taken] = findCondTaken(stagePreds[1].condTakens,
+                                        entry.pc);
+    ASSERT_TRUE(found);
+    EXPECT_FALSE(taken);
+
+    const auto &info = stagePreds[1].tageInfoForMgscs[entry.pc];
+    EXPECT_FALSE(info.llbpx_provider_used);
+    EXPECT_FALSE(info.primary_provider_is_llbpx);
+    EXPECT_FALSE(info.primary_pred_taken);
+    EXPECT_EQ(info.primary_provider_table, -1);
+    EXPECT_TRUE(info.llbpx_pred_valid);
+    EXPECT_TRUE(info.llbpx_pred_taken);
+    EXPECT_EQ(info.llbpx_provider_table, 3);
+}
+
 // Test basic history update functionality (PHR semantics)
 TEST_F(BTBTAGETest, HistoryUpdate) {
     // Use a fixed control PC to derive PHR bits
@@ -679,6 +709,37 @@ TEST_F(BTBTAGETest, UsefulBitIgnoresWeakCounterTransition) {
     EXPECT_EQ(tage->tageTable[3][mainIndex][0].counter, 0);
     EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
         << "Useful bit should not be cleared only because the provider becomes weak";
+}
+
+TEST_F(BTBTAGETest, LLBPXProviderCoTrainsTageProvider)
+{
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+
+    setupTageEntry(tage, 0x1000, 2, 2, false);
+    Addr providerIndex = tage->getTageIndex(0x1000, 2);
+    auto &provider = tage->tageTable[2][providerIndex][0];
+    const short counterBefore = provider.counter;
+
+    predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    tage->setTestLLBPXProviderInfo(entry.pc, true, 2);
+    auto stream = createStream(0x1000, entry, false, meta);
+    stream = setMispredStream(stream);
+    tage->update(stream);
+    tage->clearTestLLBPXProviderInfo();
+
+    EXPECT_NE(provider.counter, counterBefore)
+        << "TAGE provider counter should still train when LLBP-X is provider";
+    EXPECT_EQ(static_cast<uint64_t>(
+                  tage->tageStats.updateSkippedByLLBPXProvider), 0);
+    EXPECT_EQ(static_cast<uint64_t>(
+                  tage->tageStats.updateLLBPXProviderWrong), 1);
+
+    auto allocIt = stream.tageAllocatedTables.find(entry.pc);
+    ASSERT_TRUE(allocIt != stream.tageAllocatedTables.end());
+    EXPECT_GE(allocIt->second, 3U)
+        << "Wrong LLBP-X provider should allocate only longer history tables";
 }
 
 // Test entry allocation mechanism

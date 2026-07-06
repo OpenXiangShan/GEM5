@@ -6,6 +6,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -42,6 +43,8 @@ namespace btb_pred
 #ifdef UNIT_TEST
 namespace test {
 #endif
+
+class BTBLLBPX;
 
 class BTBTAGE : public TimedBaseBTBPredictor
 {
@@ -185,6 +188,26 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // check folded hists after speculative update and recover
     virtual void checkFoldedHist(const bitset &history, const char *when);
     void checkFoldedHist(const bitset &history, ThreadID tid, const char *when);
+
+    unsigned getNumPredictors() const { return numPredictors; }
+    unsigned getHistoryLength(unsigned table) const { return histLengths.at(table); }
+    Addr getLlbpxPatternKey(ThreadID tid, Addr startPC, Addr branchPC,
+                            unsigned table, Addr contextKey,
+                            uint8_t asidHash = 0) const;
+    Addr getLlbpxPatternKeyFromSnapshot(const FetchTarget &entry, Addr startPC,
+                                        Addr branchPC, unsigned table,
+                                        Addr contextKey,
+                                        uint8_t asidHash = 0) const;
+    void setLlbpx(BTBLLBPX *llbpx) { llbpxPredictor = llbpx; }
+#ifdef UNIT_TEST
+    void setTestLLBPXProviderInfo(Addr pc, bool pred, int providerDepth)
+    {
+        testLlbpxProviderPC = pc;
+        testLlbpxProviderPred = pred;
+        testLlbpxProviderDepth = providerDepth;
+    }
+    void clearTestLLBPXProviderInfo() { testLlbpxProviderPC.reset(); }
+#endif
 
 #ifndef UNIT_TEST
   protected:
@@ -384,6 +407,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar predFinalSourceBase;
         Scalar updateFinalSourceBaseCorrect;
         Scalar updateFinalSourceBaseWrong;
+        Scalar updateSkippedByLLBPXProvider;
+        Scalar updateLLBPXProviderWrong;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
@@ -462,6 +487,7 @@ public:
     struct AllocationTraceInfo
     {
         bool success = false;
+        std::vector<unsigned> llbpxTables;
         uint64_t table = 0;
         uint64_t index = 0;
         uint64_t way = 0;
@@ -510,6 +536,12 @@ private:
     unsigned getNumWays(unsigned table) const;
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
+    BTBLLBPX *llbpxPredictor{nullptr};
+#ifdef UNIT_TEST
+    std::optional<Addr> testLlbpxProviderPC;
+    bool testLlbpxProviderPred{false};
+    int testLlbpxProviderDepth{-1};
+#endif
 
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);

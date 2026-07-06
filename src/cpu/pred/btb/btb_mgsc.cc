@@ -517,8 +517,11 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
             }
         }
     }
-    // Final prediction, total_sum >= 0 means taken if use_sc_pred
-    bool taken = use_sc_pred ? (total_sum >= 0) : tage_info.tage_pred_taken;
+    // Final prediction, total_sum >= 0 means taken if use_sc_pred.
+    // Otherwise MGSC falls back to the current primary provider, which may be
+    // TAGE or an LLBP-X pre-SC override.
+    const bool primary_pred_taken = tage_info.primary_pred_taken;
+    bool taken = use_sc_pred ? (total_sum >= 0) : primary_pred_taken;
 
     // DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
     // DPRINTF(MGSC, "local tag_index: %d, local_percsum: %d, total_sum: %d\n", lIndex[0], l_percsum, total_sum);
@@ -534,7 +537,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
-    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,
+    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, primary_pred_taken,
                           tage_info.tage_pred_conf_high, tage_info.tage_pred_conf_mid, tage_info.tage_pred_conf_low,
                           total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff,
                           l_weight_scale_diff, i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff,
@@ -802,8 +805,8 @@ BTBMGSC::updateGlobalThreshold(Addr pc, bool update_direction)
 }
 
 void
-BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
-                               bool tage_pred_taken)
+BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken,
+                               bool sc_pred_taken, bool primary_pred_taken)
 {
     auto tage_conf_high = pred.tage_conf_high;
     auto tage_conf_mid = pred.tage_conf_mid;
@@ -812,13 +815,13 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
     // SC vs TAGE outcomes
     if (pred.use_mgsc) {
         mgscStats.scUsed++;
-        if (sc_pred_taken == actual_taken && tage_pred_taken != actual_taken) {
+        if (sc_pred_taken == actual_taken && primary_pred_taken != actual_taken) {
             mgscStats.scCorrectTageWrong++;
-        } else if (sc_pred_taken != actual_taken && tage_pred_taken == actual_taken) {
+        } else if (sc_pred_taken != actual_taken && primary_pred_taken == actual_taken) {
             mgscStats.scWrongTageCorrect++;
-        } else if (sc_pred_taken == actual_taken && tage_pred_taken == actual_taken) {
+        } else if (sc_pred_taken == actual_taken && primary_pred_taken == actual_taken) {
             mgscStats.scCorrectTageCorrect++;
-        } else if (sc_pred_taken != actual_taken && tage_pred_taken != actual_taken) {
+        } else if (sc_pred_taken != actual_taken && primary_pred_taken != actual_taken) {
             mgscStats.scWrongTageWrong++;
         }
     } else {
@@ -908,9 +911,9 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
     auto use_mgsc = pred.use_mgsc;
     auto total_thres = pred.total_thres;
     auto sc_pred_taken = total_sum >= 0;
-    auto tage_pred_taken = pred.taken_before_sc;  // tage predictions
+    auto primary_pred_taken = pred.taken_before_sc;
 
-    recordPredictionStats(pred, actual_taken, sc_pred_taken, tage_pred_taken);
+    recordPredictionStats(pred, actual_taken, sc_pred_taken, primary_pred_taken);
 
 #ifndef UNIT_TEST
     // Write trace record
@@ -924,7 +927,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         MgscTrace t;
         t.set(entry.pc,
             stream.startPC, getOffset(entry.pc),
-            tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
+            primary_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
             pred.bw_percsum, pred.l_percsum, pred.i_percsum,
             pred.g_percsum, pred.p_percsum, pred.bias_percsum,
             total_sum, total_thres, effective_gate, margin,

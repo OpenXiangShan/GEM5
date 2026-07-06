@@ -255,6 +255,13 @@ struct TageInfoForMGSC
     int tage_provider_table;
     int tage_final_provider_table;
     bool tage_final_provider_is_alt;
+    bool primary_pred_taken;
+    bool primary_provider_is_llbpx;
+    int primary_provider_table;
+    bool llbpx_provider_used;
+    bool llbpx_pred_valid;
+    bool llbpx_pred_taken;
+    int llbpx_provider_table;
 
     // Addr offset; // retrived from lowest bits of pc
     TageInfoForMGSC()
@@ -266,7 +273,14 @@ struct TageInfoForMGSC
             tage_pred_alt_diff(false),
             tage_provider_table(-1),
             tage_final_provider_table(-1),
-            tage_final_provider_is_alt(false)
+            tage_final_provider_is_alt(false),
+            primary_pred_taken(false),
+            primary_provider_is_llbpx(false),
+            primary_provider_table(-1),
+            llbpx_provider_used(false),
+            llbpx_pred_valid(false),
+            llbpx_pred_taken(false),
+            llbpx_provider_table(-1)
     {
     }
     TageInfoForMGSC(bool tage_pred_taken, bool tage_main_taken, bool tage_pred_conf_high, bool tage_pred_conf_mid,
@@ -279,7 +293,14 @@ struct TageInfoForMGSC
             tage_pred_alt_diff(tage_pred_alt_diff),
             tage_provider_table(-1),
             tage_final_provider_table(-1),
-            tage_final_provider_is_alt(false)
+            tage_final_provider_is_alt(false),
+            primary_pred_taken(tage_pred_taken),
+            primary_provider_is_llbpx(false),
+            primary_provider_table(-1),
+            llbpx_provider_used(false),
+            llbpx_pred_valid(false),
+            llbpx_pred_taken(false),
+            llbpx_provider_table(-1)
     {
     }
 };
@@ -378,6 +399,9 @@ struct FetchTarget
     Addr updateEndInstPC;   // end pc of the squash inst/taken inst
     // for components to decide which entries to update
     std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
+    // Update side channel: TAGE publishes successful allocation tables so
+    // LLBP-X can allocate matching long-history patterns after TAGE updates.
+    mutable std::unordered_map<Addr, unsigned> tageAllocatedTables;
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
@@ -434,6 +458,7 @@ struct FetchTarget
        predMetas.fill(nullptr);
        predBTBEntries.clear();
        updateBTBEntries.clear();
+       tageAllocatedTables.clear();
    }
 
     // the default exe result should be consistent with prediction
@@ -558,7 +583,6 @@ struct FullBTBPrediction
     Addr returnTarget; // for RAS
 
     std::unordered_map<Addr, TageInfoForMGSC> tageInfoForMgscs;
-
     unsigned predSource;
     OverrideReason overrideReason;
     Tick predTick;
@@ -808,7 +832,72 @@ struct TageMissTrace : public Record
     }
 };
 
-struct BTBTrace : public Record {
+struct LlbpxTrace : public Record
+{
+    void set(uint64_t startPC, uint64_t branchPC, uint64_t actualTaken,
+        uint64_t basePred, uint64_t llbpxPred, uint64_t providerUsed,
+        uint64_t overridden, uint64_t directionChanged,
+        uint64_t providerDepthEligible, uint64_t providerTimingReady,
+        uint64_t providerInfoMissing, uint64_t contextHit, uint64_t patternHit,
+        uint64_t patternBufferInFlight, uint64_t wi, uint64_t allocTargetWi,
+        uint64_t baseProviderHistIdxBias, uint64_t hitHistIdxBias,
+        uint64_t keyTable, uint64_t cid, uint64_t allocTargetCid,
+        uint64_t bcid, uint64_t pcid, uint64_t pbcid, uint64_t key,
+        uint64_t contextTag, uint64_t patternTag,
+        uint64_t tageAllocTriggered, uint64_t tageAllocTableMask,
+        uint64_t allocTableMask, uint64_t allocContextCreated,
+        uint64_t allocContextRevisit, uint64_t allocPatternCreated,
+        uint64_t allocPatternRevisit, uint64_t allocSkipNoKey,
+        uint64_t updatePatternCalled, uint64_t updatePatternFound,
+        uint64_t counterBias, uint64_t counterBeforeBiased,
+        uint64_t counterAfterBiased)
+    {
+        _tick = curTick();
+        _uint64_data["startPC"] = startPC;
+        _uint64_data["branchPC"] = branchPC;
+        _uint64_data["actualTaken"] = actualTaken;
+        _uint64_data["basePred"] = basePred;
+        _uint64_data["llbpxPred"] = llbpxPred;
+        _uint64_data["providerUsed"] = providerUsed;
+        _uint64_data["overridden"] = overridden;
+        _uint64_data["directionChanged"] = directionChanged;
+        _uint64_data["providerDepthEligible"] = providerDepthEligible;
+        _uint64_data["providerTimingReady"] = providerTimingReady;
+        _uint64_data["providerInfoMissing"] = providerInfoMissing;
+        _uint64_data["contextHit"] = contextHit;
+        _uint64_data["patternHit"] = patternHit;
+        _uint64_data["patternBufferInFlight"] = patternBufferInFlight;
+        _uint64_data["wi"] = wi;
+        _uint64_data["allocTargetWi"] = allocTargetWi;
+        _uint64_data["baseProviderHistIdxBias"] = baseProviderHistIdxBias;
+        _uint64_data["hitHistIdxBias"] = hitHistIdxBias;
+        _uint64_data["keyTable"] = keyTable;
+        _uint64_data["cid"] = cid;
+        _uint64_data["allocTargetCid"] = allocTargetCid;
+        _uint64_data["bcid"] = bcid;
+        _uint64_data["pcid"] = pcid;
+        _uint64_data["pbcid"] = pbcid;
+        _uint64_data["key"] = key;
+        _uint64_data["contextTag"] = contextTag;
+        _uint64_data["patternTag"] = patternTag;
+        _uint64_data["tageAllocTriggered"] = tageAllocTriggered;
+        _uint64_data["tageAllocTableMask"] = tageAllocTableMask;
+        _uint64_data["allocTableMask"] = allocTableMask;
+        _uint64_data["allocContextCreated"] = allocContextCreated;
+        _uint64_data["allocContextRevisit"] = allocContextRevisit;
+        _uint64_data["allocPatternCreated"] = allocPatternCreated;
+        _uint64_data["allocPatternRevisit"] = allocPatternRevisit;
+        _uint64_data["allocSkipNoKey"] = allocSkipNoKey;
+        _uint64_data["updatePatternCalled"] = updatePatternCalled;
+        _uint64_data["updatePatternFound"] = updatePatternFound;
+        _uint64_data["counterBias"] = counterBias;
+        _uint64_data["counterBeforeBiased"] = counterBeforeBiased;
+        _uint64_data["counterAfterBiased"] = counterAfterBiased;
+    }
+};
+
+struct BTBTrace : public Record
+{
     // mode: read, write, evict
     void set(uint64_t pc, uint64_t brType, uint64_t target, uint64_t idx, uint64_t mode, uint64_t hit) {
         _tick = curTick();

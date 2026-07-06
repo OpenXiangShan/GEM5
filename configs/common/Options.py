@@ -283,7 +283,7 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--enable-bp-db", nargs='*', default=["basic"], action='append',
                         help="enable bp database for specified subdatabase, "
                         "basic branch trace is enabled by default even without specifying, "
-                        "available subdatabase: basic, tage, ras, loop")
+                        "available subdatabase: basic, tage, llbpx, ras, loop")
 
     parser.add_argument("--list-rp-types",
                         action=ListRP, nargs=0,
