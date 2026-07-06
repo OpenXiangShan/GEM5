@@ -428,10 +428,10 @@ MBTB::checkPredictionHit(const ResolvedBranch *taken_branch,
  * 5. Update MRU information
  */
 void
-MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
+MBTB::updateBTBEntry(const ResolvedBranch &actual_branch,
+                     const BTBEntry *base_entry,
                      const BranchUpdateContext &ctx)
 {
-    const auto &actual_branch = update_entry.actualBranch;
     btbStats.updateTotal++;
 
     // Select SRAM based on entry PC's 32B-aligned address
@@ -473,7 +473,7 @@ MBTB::updateBTBEntry(const TargetUpdateEntry &update_entry,
 
     const auto entry_to_write =
         buildUpdatedTargetEntry(
-            update_entry, existing_ptr,
+            actual_branch, base_entry, existing_ptr,
             getTag(actual_branch.pc, ctx.asidHash));
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
@@ -599,33 +599,90 @@ MBTB::updateWithBranchUpdateContext(
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", ctx.startPC);
     auto meta = std::static_pointer_cast<BTBMeta>(
         prediction_meta);
-    const auto entries = buildTargetUpdateEntries(
+    const auto pred_update_entries =
         meta ? selectPredictedBTBEntriesForUpdate(
             meta->hit_entries, ctx, update_branches, predictWidth) :
-            std::vector<BTBEntry>{},
-        update_branches);
-    updateWithEntries(entries, ctx, meta.get());
+            std::vector<BTBEntry>{};
+    updateWithBranches(
+        pred_update_entries, update_branches, ctx, meta.get());
+}
+
+bool
+MBTB::hasTargetUpdate(
+    const std::vector<BTBEntry> &pred_update_entries,
+    const std::vector<ResolvedBranch> &update_branches) const
+{
+    for (const auto &entry : pred_update_entries) {
+        if (!entry.valid) {
+            continue;
+        }
+        if (findActualUpdateBranch(update_branches, entry.pc)) {
+            return true;
+        }
+    }
+
+    return findFirstTakenActualUpdateBranch(update_branches) != nullptr;
 }
 
 void
-MBTB::updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                        const BranchUpdateContext &ctx,
-                        const BTBMeta *meta)
+MBTB::updateWithBranches(
+    const std::vector<BTBEntry> &pred_update_entries,
+    const std::vector<ResolvedBranch> &update_branches,
+    const BranchUpdateContext &ctx,
+    const BTBMeta *meta)
 {
-    if (entries.empty()) {
+    if (!hasTargetUpdate(pred_update_entries, update_branches)) {
         return;
     }
 
-    // 1. Check prediction hit status, for stats recording
+    auto is_predicted_update_pc = [&](Addr pc) {
+        return std::any_of(
+            pred_update_entries.begin(), pred_update_entries.end(),
+            [pc](const auto &entry) {
+                return entry.valid && entry.pc == pc;
+            });
+    };
+    auto find_taken_target_update_branch = [&]() -> const ResolvedBranch * {
+        for (const auto &entry : pred_update_entries) {
+            if (!entry.valid) {
+                continue;
+            }
+            const auto *actual_branch =
+                findActualUpdateBranch(update_branches, entry.pc);
+            if (actual_branch && actual_branch->taken) {
+                return actual_branch;
+            }
+        }
+        for (const auto &branch : update_branches) {
+            if (branch.taken && !is_predicted_update_pc(branch.pc)) {
+                return &branch;
+            }
+        }
+        return nullptr;
+    };
+
     if (meta) {
-        const auto *taken_entry = findTakenTargetUpdateEntry(entries);
         checkPredictionHit(
-            taken_entry ? &taken_entry->actualBranch : nullptr,
-            meta, ctx.predTick);
+            find_taken_target_update_branch(), meta, ctx.predTick);
     }
 
-    for (const auto &entry : entries) {
-        updateBTBEntry(entry, ctx);
+    for (const auto &entry : pred_update_entries) {
+        if (!entry.valid) {
+            continue;
+        }
+        const auto *actual_branch =
+            findActualUpdateBranch(update_branches, entry.pc);
+        if (!actual_branch) {
+            continue;
+        }
+        updateBTBEntry(*actual_branch, &entry, ctx);
+    }
+
+    for (const auto &branch : update_branches) {
+        if (!branch.taken || is_predicted_update_pc(branch.pc)) {
+            continue;
+        }
+        updateBTBEntry(branch, nullptr, ctx);
     }
 }
 

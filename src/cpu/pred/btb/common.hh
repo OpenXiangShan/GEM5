@@ -393,6 +393,25 @@ makeTargetEntryWriteBase(const TargetUpdateEntry &update_entry)
     return entry;
 }
 
+inline BTBEntry
+makeTargetEntryWriteBase(const ResolvedBranch &actual_branch,
+                         const BTBEntry *base_entry)
+{
+    if (base_entry) {
+        BTBEntry entry;
+        entry.target = base_entry->target;
+        entry.ctr = base_entry->ctr;
+        entry.source = base_entry->source;
+        return entry;
+    }
+
+    BTBEntry entry;
+    entry.target = actual_branch.target;
+    entry.ctr = 0;
+    entry.source = -1;
+    return entry;
+}
+
 inline TargetUpdateEntry
 makeTargetUpdateEntry(const ResolvedBranch &actual_branch,
                       Addr base_target,
@@ -417,15 +436,15 @@ makeTargetUpdateEntryFromBase(const BTBEntry &base_entry,
 }
 
 inline BTBEntry
-buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
+buildUpdatedTargetEntry(const ResolvedBranch &actual_branch,
+                        const BTBEntry *base_entry,
                         const BTBEntry *existing_entry,
                         Addr tag)
 {
-    const auto &actual_branch = update_entry.actualBranch;
     BTBEntry entry_to_write =
         (actual_branch.isCond && existing_entry) ?
             BTBEntry(*existing_entry) :
-            makeTargetEntryWriteBase(update_entry);
+            makeTargetEntryWriteBase(actual_branch, base_entry);
 
     applyActualBranchIdentity(entry_to_write, actual_branch);
     entry_to_write.tag = tag;
@@ -440,6 +459,16 @@ buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
     }
 
     return entry_to_write;
+}
+
+inline BTBEntry
+buildUpdatedTargetEntry(const TargetUpdateEntry &update_entry,
+                        const BTBEntry *existing_entry,
+                        Addr tag)
+{
+    const auto base_entry = makeTargetEntryWriteBase(update_entry);
+    return buildUpdatedTargetEntry(
+        update_entry.actualBranch, &base_entry, existing_entry, tag);
 }
 
 enum class PredictorUpdateProtocol

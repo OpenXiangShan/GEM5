@@ -267,15 +267,24 @@ class MBTB : public TimedBaseBTBPredictor
                             const BTBMeta *meta,
                             Tick pred_tick);
 
-    void updateWithEntries(const std::vector<TargetUpdateEntry> &entries,
-                           const BranchUpdateContext &ctx,
-                           const BTBMeta *meta);
+    bool hasTargetUpdate(
+        const std::vector<BTBEntry> &pred_update_entries,
+        const std::vector<ResolvedBranch> &update_branches) const;
+
+    void updateWithBranches(
+        const std::vector<BTBEntry> &pred_update_entries,
+        const std::vector<ResolvedBranch> &update_branches,
+        const BranchUpdateContext &ctx,
+        const BTBMeta *meta);
 
     /** Update or replace BTB entry
-     *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
+     *  @param branch Actual branch to update/replace
+     *  @param base_entry Prediction-time entry used when no newer table entry
+     *  exists during update
      *  @param ctx Target update context
      */
-    void updateBTBEntry(const TargetUpdateEntry &entry,
+    void updateBTBEntry(const ResolvedBranch &branch,
+                        const BTBEntry *base_entry,
                         const BranchUpdateContext &ctx);
 
     // Helper: update an existing entry in SRAM set
