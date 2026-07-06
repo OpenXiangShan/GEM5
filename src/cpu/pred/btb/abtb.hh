@@ -195,7 +195,7 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     std::vector<TargetUpdateEntry> collectEntriesToUpdateFromS3Pred(
         const std::vector<BTBEntry>& old_entries,
-        FullBTBPrediction &s3Pred);
+        const FullBTBPrediction &s3Pred);
     ResolvedBranch makeS3PredictedBranchForTargetUpdate(
         const BTBEntry &entry,
         bool taken) const;
@@ -226,7 +226,8 @@ class AheadBTB : public TimedBaseBTBPredictor
     }
 
 
-    void updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC);
+    void updateUsingS3Pred(
+        const FullBTBPrediction &s3Pred, const Addr previousPC);
 
   private:
     /** Returns the index into the BTB, based on the branch's PC.

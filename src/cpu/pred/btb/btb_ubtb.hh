@@ -125,7 +125,7 @@ class UBTB : public TimedBaseBTBPredictor
      *
      * @param s3Pred The S3 prediction containing branch information and target
      */
-    void updateUsingS3Pred(FullBTBPrediction &s3Pred);
+    void updateUsingS3Pred(const FullBTBPrediction &s3Pred);
 
     PredictorUpdateProtocol updateProtocol() const override
     {

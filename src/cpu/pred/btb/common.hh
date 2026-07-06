@@ -828,15 +828,15 @@ struct FullBTBPrediction
         s1Source(-1),
         s3Source(-1) {}
 
-    BTBEntry getTakenEntry() {
+    BTBEntry getTakenEntry() const {
         // IMPORTANT: assume entries are sorted
-        for (auto &entry : this->btbEntries) {
+        for (const auto &entry : this->btbEntries) {
             // hit
             if (entry.valid) {
                 if (entry.isCond) {
                     // find corresponding direction pred in condTakens
                     // TODO: use lower-bit offset of branch instruction
-                    auto& pc = entry.pc;
+                    const auto &pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {   // find and taken, return the entry
@@ -852,22 +852,22 @@ struct FullBTBPrediction
         return BTBEntry(); // not found, return empty entry
     }
 
-    bool isTaken() {
+    bool isTaken() const {
         return getTakenEntry().valid;   // if find a taken entry, return true
     }
 
-    Addr getFallThrough(Addr predictWidth) {
+    Addr getFallThrough(Addr predictWidth) const {
         // max 64 byte block, 32 byte aligned
         return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
 
-    Addr getEntryTarget(const BTBEntry &entry) {
+    Addr getEntryTarget(const BTBEntry &entry) const {
         Addr target = entry.target;
         // indirect target should come from ipred or ras,
         // or btb itself when ipred miss
         if (entry.isIndirect) {
             if (!entry.isReturn) { // normal indirect, see ittage
-                auto& pc = entry.pc;
+                const auto &pc = entry.pc;
                 auto it = IndirectTakens_find(indirectTargets, pc);
                 if (it != indirectTargets.end()) { // found in ittage, use it
                     target = it->second;
@@ -879,7 +879,7 @@ struct FullBTBPrediction
         return target;
     }
 
-    Addr getTarget(Addr predictWidth) {
+    Addr getTarget(Addr predictWidth) const {
         Addr target;
         const auto &entry = getTakenEntry();
         if (entry.valid) { // found a taken entry
@@ -890,7 +890,7 @@ struct FullBTBPrediction
         return target;
     }
 
-    Addr getEnd(Addr predictWidth) {
+    Addr getEnd(Addr predictWidth) const {
         if (isTaken()) {
             return getTakenEntry().getEnd();
         } else {
@@ -899,11 +899,12 @@ struct FullBTBPrediction
     }
 
 
-    Addr controlAddr() {
+    Addr controlAddr() const {
         return getTakenEntry().pc;
     }
 
-    std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
+    std::pair<bool, OverrideReason> match(
+        const FullBTBPrediction &other, Addr predictWidth) const
     {
         auto this_taken_entry = this->getTakenEntry();
         auto other_taken_entry = other.getTakenEntry();
@@ -927,14 +928,14 @@ struct FullBTBPrediction
         }
     }
 
-    DirectionHistoryUpdate getGHistUpdate()  //global or local
+    DirectionHistoryUpdate getGHistUpdate() const  //global or local
     {
         DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
-        for (auto &entry : btbEntries) {
+        for (const auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) { // if found a cond branch, shamt++
                     update.shamt++;
-                    auto& pc = entry.pc;
+                    const auto &pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) { // if the cond branch is taken, taken = true
@@ -953,14 +954,14 @@ struct FullBTBPrediction
         return update;
     }
 
-    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
+    DirectionHistoryUpdate getBwHistUpdate() const //global backward or imli
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : btbEntries) {
+        for (const auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) {
                     update.shamt++;
-                    auto& pc = entry.pc;
+                    const auto &pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
@@ -977,7 +978,7 @@ struct FullBTBPrediction
         return update;
     }
 
-    PathHistoryUpdate getPHistUpdate() //path
+    PathHistoryUpdate getPHistUpdate() const //path
     {
         PathHistoryUpdate update;
         const auto &entry = getTakenEntry();

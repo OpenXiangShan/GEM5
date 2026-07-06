@@ -233,7 +233,7 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry,
 
 
 void
-UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
+UBTB::updateUsingS3Pred(const FullBTBPrediction &s3Pred)
 {
     if (!usingS3Pred) {
         return;

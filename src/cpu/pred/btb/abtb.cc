@@ -585,7 +585,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag,
 
 
 void
-AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
+AheadBTB::updateUsingS3Pred(
+    const FullBTBPrediction &s3Pred, const Addr previousPC)
 {
     if (!usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: not using S3 prediction for update, skipping\n");
@@ -612,7 +613,7 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
 }
 std::vector<TargetUpdateEntry>
 AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entries,
-                                     FullBTBPrediction &s3Pred)
+                                     const FullBTBPrediction &s3Pred)
 {
     std::vector<TargetUpdateEntry> all_entries;
     all_entries.reserve(old_entries.size() + 1);
