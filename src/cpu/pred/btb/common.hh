@@ -299,7 +299,7 @@ findActualUpdateSummaryBranch(
 }
 
 inline const ResolvedBranch *
-findTakenReturnStackUpdateBranch(
+findTakenActualUpdateSummaryBranch(
     const std::vector<ResolvedBranch> &branches)
 {
     const auto *branch = findActualUpdateSummaryBranch(branches);

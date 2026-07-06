@@ -684,7 +684,7 @@ TEST(UpdateEntryBuilderTest, ActualUpdateSummaryUsesTakenElseLastBranch)
     EXPECT_EQ(findActualUpdateSummaryBranch({}), nullptr);
 }
 
-TEST(UpdateEntryBuilderTest, ReturnStackUpdateUsesTakenSummaryBranch)
+TEST(UpdateEntryBuilderTest, TakenActualSummaryIsSeparateFromRASAction)
 {
     auto call = makeResolvedBranch(0x1000, true, false);
     call.isCond = false;
@@ -705,28 +705,28 @@ TEST(UpdateEntryBuilderTest, ReturnStackUpdateUsesTakenSummaryBranch)
 
     const std::vector<ResolvedBranch> call_branches = {not_taken_call, call};
     const auto *call_update =
-        findTakenReturnStackUpdateBranch(call_branches);
+        findTakenActualUpdateSummaryBranch(call_branches);
     ASSERT_NE(call_update, nullptr);
     EXPECT_EQ(call_update->pc, call.pc);
     EXPECT_TRUE(isReturnStackActionBranch(*call_update));
 
     const std::vector<ResolvedBranch> ret_branches = {ret};
     const auto *ret_update =
-        findTakenReturnStackUpdateBranch(ret_branches);
+        findTakenActualUpdateSummaryBranch(ret_branches);
     ASSERT_NE(ret_update, nullptr);
     EXPECT_EQ(ret_update->pc, ret.pc);
     EXPECT_TRUE(isReturnStackActionBranch(*ret_update));
 
     const std::vector<ResolvedBranch> non_ras_branches = {taken_cond};
     const auto *non_ras_update =
-        findTakenReturnStackUpdateBranch(non_ras_branches);
+        findTakenActualUpdateSummaryBranch(non_ras_branches);
     ASSERT_NE(non_ras_update, nullptr);
     EXPECT_FALSE(isReturnStackActionBranch(*non_ras_update));
 
     const std::vector<ResolvedBranch> not_taken_branches = {not_taken_call};
     const std::vector<ResolvedBranch> empty_branches;
-    EXPECT_EQ(findTakenReturnStackUpdateBranch(not_taken_branches), nullptr);
-    EXPECT_EQ(findTakenReturnStackUpdateBranch(empty_branches), nullptr);
+    EXPECT_EQ(findTakenActualUpdateSummaryBranch(not_taken_branches), nullptr);
+    EXPECT_EQ(findTakenActualUpdateSummaryBranch(empty_branches), nullptr);
 }
 
 TEST(UpdateEntryBuilderTest, MispredictedActualUpdateBranchIsExplicit)

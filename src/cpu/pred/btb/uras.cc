@@ -181,25 +181,27 @@ BTBuRAS::updateWithBranchUpdateContext(
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;
     printStack("before update", stack, sp);
-    const auto *actual_ras_branch =
-        findTakenReturnStackUpdateBranch(update_branches);
-    if (actual_ras_branch && isReturnStackActionBranch(*actual_ras_branch)) {
+    const auto *taken_summary_branch =
+        findTakenActualUpdateSummaryBranch(update_branches);
+    if (taken_summary_branch &&
+        isReturnStackActionBranch(*taken_summary_branch)) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(prediction_meta);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
-        auto miss = actual_ras_branch->mispred;
-        if (actual_ras_branch->isCall) {
-            Addr retAddr = actual_ras_branch->pc + actual_ras_branch->size;
+        auto miss = taken_summary_branch->mispred;
+        if (taken_summary_branch->isCall) {
+            Addr retAddr =
+                taken_summary_branch->pc + taken_summary_branch->size;
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::PUSH, ctx.startPC, actual_ras_branch->pc, retAddr,
+                NonSpecRASTrace rec(RAS_OP::PUSH, ctx.startPC, taken_summary_branch->pc, retAddr,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }
             push(retAddr, stack, sp);
         }
-        if (actual_ras_branch->isReturn) {
+        if (taken_summary_branch->isReturn) {
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::POP, ctx.startPC, actual_ras_branch->pc, actual_ras_branch->target,
+                NonSpecRASTrace rec(RAS_OP::POP, ctx.startPC, taken_summary_branch->pc, taken_summary_branch->target,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }
