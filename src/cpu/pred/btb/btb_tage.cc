@@ -1015,7 +1015,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             if (allocInfo.success) {
                 stream.tageAllocatedTables[btb_entry.pc] = allocInfo.table;
 #ifndef UNIT_TEST
-                if (llbpxPredictor) {
+                if (llbpxPredictor && !llbpx_provider) {
                     llbpxPredictor->onTageAllocation(
                         stream, btb_entry, allocInfo.llbpxTables,
                         actual_taken);
