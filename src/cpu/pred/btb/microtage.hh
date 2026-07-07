@@ -125,9 +125,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
-    void refreshPredictionMeta(Addr startAddr,
-                               const boost::dynamic_bitset<> &history,
-                               FullBTBPrediction &pred) override;
 
     // Speculatively update path folded histories.
     void specUpdatePHist(const boost::dynamic_bitset<> &history,
@@ -246,6 +243,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Whether to update on read
     bool updateOnRead;
     bool usingS3Pred;
+    bool s3UpdateUseResolveBackpressure;
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
@@ -312,6 +310,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
         Scalar s3UpdateResetU;
         Scalar s3UpdateUtageHit;
         Scalar s3UpdateUtageHitWrong;
+        Scalar s3UpdateResolvedBypass;
+        Scalar s3UpdateResolvedBackpressure;
 
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
@@ -362,26 +362,7 @@ public:
         TageMeta() : aheadIndexFoldedHistValid(false) {}
     } TageMeta;
 
-    enum class TrainingMode
-    {
-        Resolved,
-        S3Update
-    };
-
-    void trainEntries(const std::vector<BTBEntry> &entries_to_update,
-                      const std::shared_ptr<TageMeta> &predMeta,
-                      const Addr &startPC,
-                      ThreadID tid,
-                      uint8_t asidHash,
-                      TrainingMode mode,
-                      const FetchTarget *stream,
-                      const CondTakens *teacherCondTakens);
-
-#ifdef UNIT_TEST
-  public:
-#else
-  private:
-#endif
+private:
 
     // Helper method to generate prediction for a single BTB entry
     // If predMeta is provided, use snapshot folded history for index/tag calculation (update path)
@@ -414,7 +395,7 @@ public:
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
-                                 TrainingMode mode,
+                                 TageStats *stats,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
