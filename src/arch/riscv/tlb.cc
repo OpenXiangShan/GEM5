@@ -1832,6 +1832,7 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
     Addr paddr;
     TlbEntry *e_l2tlbVsstage = nullptr;
     TlbEntry *e_l2tlbGstage = nullptr;
+    const bool is_prefetch = req->isPrefetch();
 
     if (hitInSp) {  //hit sp,obtain PA direatly
         if (fault == NoFault) {
@@ -1841,16 +1842,14 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
             return std::make_pair(true, fault);
         }
     } else {    //hit l2l1/l2/l3,trigger PTW
-        if (translation != nullptr && !from_miss_queue &&
+        if (translation != nullptr && !from_miss_queue && !is_prefetch &&
             walker->hasPendingPtwMiss()) {
-            walker->recordPtwMissQueueFifoBlocked();
             walker->enqueuePtwMiss(tc, translation, req, mode, false);
             delayed = true;
             return std::make_pair(true, fault);
         }
         if (translation != nullptr &&
-            !walker->canStartPtwLevel(level, false, false)) {
-            walker->recordPtwMissQueueResourceBlocked();
+            !walker->canStartPtwLevel(level, false, false, is_prefetch)) {
             walker->enqueuePtwMiss(tc, translation, req, mode, from_miss_queue);
             delayed = true;
             return std::make_pair(true, fault);
@@ -2278,7 +2277,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
     PrivilegeMode pmode = getMemPriv(tc, mode);
     bool continuePtw = false;
     int l1tlbtype = H_L1miss;
-
+    const bool is_prefetch = req->isPrefetch();
 
     TLB *l2tlb;
     if (isStage2) {
@@ -2348,8 +2347,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                     return std::make_shared<AddressFault>(req->getVaddr(), 0, code);
                 }
                 if (translation != nullptr && !from_miss_queue &&
-                    walker->hasPendingPtwMiss()) {
-                    walker->recordPtwMissQueueFifoBlocked();
+                    !is_prefetch && walker->hasPendingPtwMiss()) {
                     walker->enqueuePtwMiss(tc, translation, req, mode, false);
                     delayed = true;
                     return fault;
@@ -2357,8 +2355,8 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 int walk_level = req->get_h_gstage() ?
                     req->get_two_stage_level() : req->get_level();
                 if (translation != nullptr &&
-                    !walker->canStartPtwLevel(walk_level, false, false)) {
-                    walker->recordPtwMissQueueResourceBlocked();
+                    !walker->canStartPtwLevel(walk_level, false, false,
+                                              is_prefetch)) {
                     walker->enqueuePtwMiss(tc, translation, req, mode,
                                            from_miss_queue);
                     delayed = true;
@@ -2608,16 +2606,15 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             if (traceFlag)
                 DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
             int walk_level = satp.mode == AddrXlateMode::SV48 ? 3 : 2;
-            if (translation != nullptr && !from_miss_queue &&
+            if (translation != nullptr && !from_miss_queue && !is_prefetch &&
                 walker->hasPendingPtwMiss()) {
-                walker->recordPtwMissQueueFifoBlocked();
                 walker->enqueuePtwMiss(tc, translation, req, mode, false);
                 delayed = true;
                 return fault;
             }
             if (translation != nullptr &&
-                !walker->canStartPtwLevel(walk_level, false, false)) {
-                walker->recordPtwMissQueueResourceBlocked();
+                !walker->canStartPtwLevel(walk_level, false, false,
+                                          is_prefetch)) {
                 walker->enqueuePtwMiss(tc, translation, req, mode, from_miss_queue);
                 delayed = true;
                 return fault;

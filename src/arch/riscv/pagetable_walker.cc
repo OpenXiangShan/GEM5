@@ -89,85 +89,8 @@ Walker::WalkerStats::WalkerStats(statistics::Group *parent)
                    statistics::units::Cycle,
                    statistics::units::Count>::get(),
                "Average PTW memory latency",
-               ptwMemCycle / ptwMemCount),
-      ADD_STAT(ptwLevel0ResourceBlocked, statistics::units::Count::get(),
-               "Number of one-stage direct PTW walks blocked by level-0 limit"),
-      ADD_STAT(ptwLevel1ResourceBlocked, statistics::units::Count::get(),
-               "Number of one-stage direct PTW walks blocked by level-1 limit"),
-      ADD_STAT(ptwLevel2ResourceBlocked, statistics::units::Count::get(),
-               "Number of one-stage direct PTW walks blocked by level-2 limit"),
-      ADD_STAT(ptwLevel3ResourceBlocked, statistics::units::Count::get(),
-               "Number of one-stage direct PTW walks blocked by level-3 limit"),
-      ADD_STAT(ptwMissQueueResourceBlocked, statistics::units::Count::get(),
-               "Number of PTW misses enqueued because the target PTW level was busy"),
-      ADD_STAT(ptwMissQueueFifoBlocked, statistics::units::Count::get(),
-               "Number of PTW misses enqueued to preserve MissQueue FIFO order"),
-      ADD_STAT(ptwMissQueueFullBlocked, statistics::units::Count::get(),
-               "Number of PTW misses blocked because MissQueue was full"),
-      ADD_STAT(ptwMissQueueEnqueues, statistics::units::Count::get(),
-               "Number of one-stage direct PTW misses enqueued"),
-      ADD_STAT(ptwMissQueueDequeues, statistics::units::Count::get(),
-               "Number of one-stage direct PTW misses dequeued"),
-      ADD_STAT(ptwMissQueueRequeues, statistics::units::Count::get(),
-               "Number of one-stage direct PTW miss queue head retries"),
-      ADD_STAT(ptwMissQueueAdmissionWaits, statistics::units::Count::get(),
-               "Number of one-stage direct PTW misses waiting for MissQueue space"),
-      ADD_STAT(ptwMissQueueAdmissionRetries, statistics::units::Count::get(),
-               "Number of waiting one-stage direct PTW misses admitted to MissQueue"),
-      ADD_STAT(ptwMissQueueFullEvents, statistics::units::Count::get(),
-               "Number of one-stage direct PTW miss queue full events"),
-      ADD_STAT(ptwMissQueueHintChecks, statistics::units::Count::get(),
-               "Number of MissQueue entries checked by TLB refill hints"),
-      ADD_STAT(ptwMissQueueHintMatches, statistics::units::Count::get(),
-               "Number of MissQueue entries matched by TLB refill hints"),
-      ADD_STAT(ptwMissQueueHintRetries, statistics::units::Count::get(),
-               "Number of MissQueue entries retried by TLB refill hints"),
-      ADD_STAT(ptwMissQueueHintResolved, statistics::units::Count::get(),
-               "Number of hint retried MissQueue entries completed immediately"),
-      ADD_STAT(ptwMissQueueHintDelayed, statistics::units::Count::get(),
-               "Number of hint retried MissQueue entries delayed again"),
-      ADD_STAT(ptwMissQueueHintDirectChecks, statistics::units::Count::get(),
-               "Number of direct refill hint MissQueue checks"),
-      ADD_STAT(ptwMissQueueHintDirectMatches, statistics::units::Count::get(),
-               "Number of direct refill hint MissQueue matches"),
-      ADD_STAT(ptwMissQueueHintDirectRetries, statistics::units::Count::get(),
-               "Number of direct refill hint MissQueue retries"),
-      ADD_STAT(ptwMissQueueHintDirectResolved, statistics::units::Count::get(),
-               "Number of direct refill hint retries completed immediately"),
-      ADD_STAT(ptwMissQueueHintDirectDelayed, statistics::units::Count::get(),
-               "Number of direct refill hint retries delayed again"),
-      ADD_STAT(ptwMissQueueHintAllstageChecks, statistics::units::Count::get(),
-               "Number of all-stage refill hint MissQueue checks"),
-      ADD_STAT(ptwMissQueueHintAllstageMatches, statistics::units::Count::get(),
-               "Number of all-stage refill hint MissQueue matches"),
-      ADD_STAT(ptwMissQueueHintAllstageRetries, statistics::units::Count::get(),
-               "Number of all-stage refill hint MissQueue retries"),
-      ADD_STAT(ptwMissQueueHintAllstageResolved, statistics::units::Count::get(),
-               "Number of all-stage refill hint retries completed immediately"),
-      ADD_STAT(ptwMissQueueHintAllstageDelayed, statistics::units::Count::get(),
-               "Number of all-stage refill hint retries delayed again")
+               ptwMemCycle / ptwMemCount)
 {
-}
-
-void
-Walker::recordPtwLevelBlocked(int level)
-{
-    switch (level) {
-      case 0:
-        stats.ptwLevel0ResourceBlocked++;
-        break;
-      case 1:
-        stats.ptwLevel1ResourceBlocked++;
-        break;
-      case 2:
-        stats.ptwLevel2ResourceBlocked++;
-        break;
-      case 3:
-        stats.ptwLevel3ResourceBlocked++;
-        break;
-      default:
-        panic("Invalid PTW level %d\n", level);
-    }
 }
 
 bool
@@ -199,10 +122,8 @@ Walker::reservePtwLevel(WalkerState *state, int level)
         return true;
 
     releasePtwLevel(state);
-    if (ptwLevelActive[level] >= ptwLevelLimit[level]) {
-        recordPtwLevelBlocked(level);
+    if (ptwLevelActive[level] >= ptwLevelLimit[level])
         return false;
-    }
 
     ptwLevelActive[level]++;
     state->reservedPtwLevel = level;
@@ -238,16 +159,19 @@ Walker::retryPtwLevelBlockedStates()
 
 bool
 Walker::usePtwLevelLimitForStart(bool from_forward_pre_req,
-                                 bool from_back_pre_req) const
+                                 bool from_back_pre_req,
+                                 bool is_prefetch) const
 {
-    return enablePtwLevelLimit && !from_forward_pre_req && !from_back_pre_req;
+    return enablePtwLevelLimit && !from_forward_pre_req &&
+           !from_back_pre_req && !is_prefetch;
 }
 
 bool
 Walker::canStartPtwLevel(int level, bool from_forward_pre_req,
-                         bool from_back_pre_req)
+                         bool from_back_pre_req, bool is_prefetch)
 {
-    if (!usePtwLevelLimitForStart(from_forward_pre_req, from_back_pre_req))
+    if (!usePtwLevelLimitForStart(from_forward_pre_req, from_back_pre_req,
+                                  is_prefetch))
         return true;
 
     panic_if(level < 0 || level >= static_cast<int>(ptwLevelLimit.size()),
@@ -257,95 +181,7 @@ Walker::canStartPtwLevel(int level, bool from_forward_pre_req,
     if (ptwLevelActive[level] < ptwLevelLimit[level])
         return true;
 
-    recordPtwLevelBlocked(level);
     return false;
-}
-
-void
-Walker::recordPtwMissQueueResourceBlocked()
-{
-    stats.ptwMissQueueResourceBlocked++;
-}
-
-void
-Walker::recordPtwMissQueueFifoBlocked()
-{
-    stats.ptwMissQueueFifoBlocked++;
-}
-
-void
-Walker::recordPtwMissQueueHintCheck(uint8_t translateMode)
-{
-    switch (translateMode) {
-      case direct:
-        stats.ptwMissQueueHintDirectChecks++;
-        break;
-      case allstage:
-        stats.ptwMissQueueHintAllstageChecks++;
-        break;
-      default:
-        break;
-    }
-}
-
-void
-Walker::recordPtwMissQueueHintMatch(uint8_t translateMode)
-{
-    switch (translateMode) {
-      case direct:
-        stats.ptwMissQueueHintDirectMatches++;
-        break;
-      case allstage:
-        stats.ptwMissQueueHintAllstageMatches++;
-        break;
-      default:
-        break;
-    }
-}
-
-void
-Walker::recordPtwMissQueueHintRetry(uint8_t translateMode)
-{
-    switch (translateMode) {
-      case direct:
-        stats.ptwMissQueueHintDirectRetries++;
-        break;
-      case allstage:
-        stats.ptwMissQueueHintAllstageRetries++;
-        break;
-      default:
-        break;
-    }
-}
-
-void
-Walker::recordPtwMissQueueHintResolved(uint8_t translateMode)
-{
-    switch (translateMode) {
-      case direct:
-        stats.ptwMissQueueHintDirectResolved++;
-        break;
-      case allstage:
-        stats.ptwMissQueueHintAllstageResolved++;
-        break;
-      default:
-        break;
-    }
-}
-
-void
-Walker::recordPtwMissQueueHintDelayed(uint8_t translateMode)
-{
-    switch (translateMode) {
-      case direct:
-        stats.ptwMissQueueHintDirectDelayed++;
-        break;
-      case allstage:
-        stats.ptwMissQueueHintAllstageDelayed++;
-        break;
-      default:
-        break;
-    }
 }
 
 bool
@@ -373,31 +209,15 @@ Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
 
     if (translateMode == allstage) {
         MissQueueEntry mq_entry = ptwMissQueue.front();
-        stats.ptwMissQueueHintChecks++;
-        recordPtwMissQueueHintCheck(translateMode);
         if (!ptwMissQueueHintMatch(mq_entry, entry, translateMode))
             return;
 
         ptwMissQueue.pop_front();
-        stats.ptwMissQueueHintMatches++;
-        recordPtwMissQueueHintMatch(translateMode);
-        stats.ptwMissQueueHintRetries++;
-        recordPtwMissQueueHintRetry(translateMode);
 
         processingPtwMissQueueHint = true;
-        bool resolved = tlb->retryTimingPtwMiss(mq_entry.tc,
-                                                mq_entry.translation,
-                                                mq_entry.req,
-                                                mq_entry.mode,
-                                                true);
+        tlb->retryTimingPtwMiss(mq_entry.tc, mq_entry.translation,
+                                mq_entry.req, mq_entry.mode, true);
         processingPtwMissQueueHint = false;
-        if (resolved) {
-            stats.ptwMissQueueHintResolved++;
-            recordPtwMissQueueHintResolved(translateMode);
-        } else {
-            stats.ptwMissQueueHintDelayed++;
-            recordPtwMissQueueHintDelayed(translateMode);
-        }
         return;
     }
 
@@ -408,11 +228,7 @@ Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
     while (!ptwMissQueue.empty()) {
         MissQueueEntry mq_entry = ptwMissQueue.front();
         ptwMissQueue.pop_front();
-        stats.ptwMissQueueHintChecks++;
-        recordPtwMissQueueHintCheck(translateMode);
         if (ptwMissQueueHintMatch(mq_entry, entry, translateMode)) {
-            stats.ptwMissQueueHintMatches++;
-            recordPtwMissQueueHintMatch(translateMode);
             matched.push_back(mq_entry);
         } else {
             remaining.push_back(mq_entry);
@@ -424,20 +240,8 @@ Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
     while (!matched.empty()) {
         MissQueueEntry mq_entry = matched.front();
         matched.pop_front();
-        stats.ptwMissQueueHintRetries++;
-        recordPtwMissQueueHintRetry(translateMode);
-        bool resolved = tlb->retryTimingPtwMiss(mq_entry.tc,
-                                                mq_entry.translation,
-                                                mq_entry.req,
-                                                mq_entry.mode,
-                                                true);
-        if (resolved) {
-            stats.ptwMissQueueHintResolved++;
-            recordPtwMissQueueHintResolved(translateMode);
-        } else {
-            stats.ptwMissQueueHintDelayed++;
-            recordPtwMissQueueHintDelayed(translateMode);
-        }
+        tlb->retryTimingPtwMiss(mq_entry.tc, mq_entry.translation,
+                                mq_entry.req, mq_entry.mode, true);
     }
 
     processingPtwMissQueueHint = false;
@@ -457,10 +261,7 @@ Walker::enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
     entry.mode = mode;
 
     if (!front && ptwMissQueue.size() >= ptwMissQueueSize) {
-        stats.ptwMissQueueFullEvents++;
-        stats.ptwMissQueueFullBlocked++;
         ptwMissQueueWaiters.push_back(entry);
-        stats.ptwMissQueueAdmissionWaits++;
         DPRINTF(PageTableWalker,
                 "PTW MissQueue full, hold vaddr %#lx waiter size %u\n",
                 req->getVaddr(), ptwMissQueueWaiters.size());
@@ -473,10 +274,6 @@ Walker::enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
     } else {
         ptwMissQueue.push_back(entry);
     }
-    if (front)
-        stats.ptwMissQueueRequeues++;
-    else
-        stats.ptwMissQueueEnqueues++;
     DPRINTF(PageTableWalker,
             "Enqueue PTW miss vaddr %#lx queue size %u\n",
             req->getVaddr(), ptwMissQueue.size());
@@ -493,7 +290,6 @@ Walker::retryPtwMissQueue()
            ptwMissQueue.size() < ptwMissQueueSize) {
         ptwMissQueue.push_back(ptwMissQueueWaiters.front());
         ptwMissQueueWaiters.pop_front();
-        stats.ptwMissQueueAdmissionRetries++;
     }
     if (ptwMissQueue.empty())
         return;
@@ -504,7 +300,6 @@ Walker::retryPtwMissQueue()
         ptwMissQueueHeadRequeued = false;
         MissQueueEntry entry = ptwMissQueue.front();
         ptwMissQueue.pop_front();
-        stats.ptwMissQueueDequeues++;
         DPRINTF(PageTableWalker,
                 "Dequeue PTW miss vaddr %#lx queue size %u\n",
                 entry.req->getVaddr(), ptwMissQueue.size());
@@ -516,7 +311,6 @@ Walker::retryPtwMissQueue()
                ptwMissQueue.size() < ptwMissQueueSize) {
             ptwMissQueue.push_back(ptwMissQueueWaiters.front());
             ptwMissQueueWaiters.pop_front();
-            stats.ptwMissQueueAdmissionRetries++;
         }
     }
     retryingPtwMissQueue = false;
@@ -2045,7 +1839,8 @@ Walker::WalkerState::usePtwLevelLimit() const
 {
     return timing && (translateMode == defaultmode ||
                       translateMode == twoStageMode) &&
-           !fromPre && !fromBackPre;
+           !fromPre && !fromBackPre &&
+           mainReq && !mainReq->isPrefetch();
 }
 
 int

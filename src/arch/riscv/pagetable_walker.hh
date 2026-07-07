@@ -318,34 +318,6 @@ namespace RiscvISA
             statistics::Scalar ptwMemCount;
             statistics::Scalar ptwMemCycle;
             statistics::Formula ptwAvgMemLatency;
-            statistics::Scalar ptwLevel0ResourceBlocked;
-            statistics::Scalar ptwLevel1ResourceBlocked;
-            statistics::Scalar ptwLevel2ResourceBlocked;
-            statistics::Scalar ptwLevel3ResourceBlocked;
-            statistics::Scalar ptwMissQueueResourceBlocked;
-            statistics::Scalar ptwMissQueueFifoBlocked;
-            statistics::Scalar ptwMissQueueFullBlocked;
-            statistics::Scalar ptwMissQueueEnqueues;
-            statistics::Scalar ptwMissQueueDequeues;
-            statistics::Scalar ptwMissQueueRequeues;
-            statistics::Scalar ptwMissQueueAdmissionWaits;
-            statistics::Scalar ptwMissQueueAdmissionRetries;
-            statistics::Scalar ptwMissQueueFullEvents;
-            statistics::Scalar ptwMissQueueHintChecks;
-            statistics::Scalar ptwMissQueueHintMatches;
-            statistics::Scalar ptwMissQueueHintRetries;
-            statistics::Scalar ptwMissQueueHintResolved;
-            statistics::Scalar ptwMissQueueHintDelayed;
-            statistics::Scalar ptwMissQueueHintDirectChecks;
-            statistics::Scalar ptwMissQueueHintDirectMatches;
-            statistics::Scalar ptwMissQueueHintDirectRetries;
-            statistics::Scalar ptwMissQueueHintDirectResolved;
-            statistics::Scalar ptwMissQueueHintDirectDelayed;
-            statistics::Scalar ptwMissQueueHintAllstageChecks;
-            statistics::Scalar ptwMissQueueHintAllstageMatches;
-            statistics::Scalar ptwMissQueueHintAllstageRetries;
-            statistics::Scalar ptwMissQueueHintAllstageResolved;
-            statistics::Scalar ptwMissQueueHintAllstageDelayed;
         } stats;
 
         struct WalkerSenderState : public Packet::SenderState
@@ -418,12 +390,6 @@ namespace RiscvISA
         bool reservePtwLevel(WalkerState *state, int level);
         void releasePtwLevel(WalkerState *state);
         void retryPtwLevelBlockedStates();
-        void recordPtwLevelBlocked(int level);
-        void recordPtwMissQueueHintCheck(uint8_t translateMode);
-        void recordPtwMissQueueHintMatch(uint8_t translateMode);
-        void recordPtwMissQueueHintRetry(uint8_t translateMode);
-        void recordPtwMissQueueHintResolved(uint8_t translateMode);
-        void recordPtwMissQueueHintDelayed(uint8_t translateMode);
         bool ptwMissQueueHintMatch(const MissQueueEntry &entry,
                                    const TlbEntry &refill_entry,
                                    uint8_t translateMode) const;
@@ -454,11 +420,11 @@ namespace RiscvISA
         void recvReqRetry();
         bool sendTiming(WalkerState * sendingState, PacketPtr pkt);
         bool usePtwLevelLimitForStart(bool from_forward_pre_req,
-                                      bool from_back_pre_req) const;
+                                      bool from_back_pre_req,
+                                      bool is_prefetch) const;
         bool canStartPtwLevel(int level, bool from_forward_pre_req,
-                              bool from_back_pre_req);
-        void recordPtwMissQueueResourceBlocked();
-        void recordPtwMissQueueFifoBlocked();
+                              bool from_back_pre_req,
+                              bool is_prefetch);
         bool enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
                             const RequestPtr &req, BaseMMU::Mode mode, bool front = false);
         bool hasPendingPtwMiss() const
