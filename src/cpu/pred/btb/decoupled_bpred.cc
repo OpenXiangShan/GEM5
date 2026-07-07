@@ -442,6 +442,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         } else if (abtb->isEnabled()) {
             abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], 0);
         }
+        if (microtage->isEnabled()) {
+            microtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+        }
     }
 
     // 4. Record override bubbles and update statistics

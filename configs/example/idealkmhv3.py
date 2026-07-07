@@ -108,6 +108,8 @@ def setKmhV3IdealParams(args, system):
             # TAGE table sizes and numWays tunning
             cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
             cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
+            cpu.branchPred.microtage.usingS3Pred = True
+            cpu.branchPred.microtage.s3UpdateUseResolveBackpressure = False
             # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
