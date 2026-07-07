@@ -1157,7 +1157,7 @@ class BTBLLBPX(TimedBaseBTBPredictor):
     tageNumPredictors = Param.Unsigned(8, "Expected number of TAGE predictor tables")
     contextSets = Param.Unsigned(14 * 1024, "Number of LLBP-X context sets")
     contextWays = Param.Unsigned(7, "Ways per LLBP-X context set")
-    patternSets = Param.Unsigned(64, "Number of LLBP-X pattern sets; 0 means unlimited per-context storage")
+    patternSets = Param.Unsigned(0, "Number of LLBP-X pattern sets; 0 means unlimited per-context storage")
     patternWays = Param.Unsigned(4, "Ways per LLBP-X pattern set")
     patternBufferSize = Param.Unsigned(64, "Entries in the LLBP-X pattern buffer")
     tagBits = Param.Unsigned(16, "LLBP-X tag width")
