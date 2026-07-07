@@ -88,6 +88,34 @@ BTBLLBPX::LLBPXStats::LLBPXStats(statistics::Group *parent)
                "LLBP-X pattern allocations by TAGE table"),
       ADD_STAT(allocPatternByDepthClass, statistics::units::Count::get(),
                "LLBP-X pattern allocations by adaptive depth class"),
+      ADD_STAT(contextTotalEntries, statistics::units::Count::get(),
+               "Total LLBP-X context entry capacity"),
+      ADD_STAT(contextValidEntries, statistics::units::Count::get(),
+               "Live LLBP-X context entries"),
+      ADD_STAT(contextFreeEntries, statistics::units::Count::get(),
+               "Free LLBP-X context entries"),
+      ADD_STAT(contextFullSets, statistics::units::Count::get(),
+               "LLBP-X context sets whose ways are all occupied"),
+      ADD_STAT(contextEmptySets, statistics::units::Count::get(),
+               "LLBP-X context sets with no live entries"),
+      ADD_STAT(contextSetOccupancy, statistics::units::Count::get(),
+               "LLBP-X context-set occupancy distribution by used ways"),
+      ADD_STAT(patternTotalEntries, statistics::units::Count::get(),
+               "Live LLBP-X pattern entries across all contexts"),
+      ADD_STAT(patternBoundedCapacity, statistics::units::Count::get(),
+               "Total bounded LLBP-X pattern capacity across live contexts"),
+      ADD_STAT(patternFreeEntries, statistics::units::Count::get(),
+               "Free bounded LLBP-X pattern slots across live contexts"),
+      ADD_STAT(patternTotalSets, statistics::units::Count::get(),
+               "Total LLBP-X pattern sets across live contexts"),
+      ADD_STAT(patternFullSets, statistics::units::Count::get(),
+               "LLBP-X pattern sets whose ways are all occupied"),
+      ADD_STAT(patternEmptySets, statistics::units::Count::get(),
+               "LLBP-X pattern sets with no live entries"),
+      ADD_STAT(contextsWithAnyFullPatternSet, statistics::units::Count::get(),
+               "LLBP-X live contexts containing at least one full pattern set"),
+      ADD_STAT(patternSetOccupancy, statistics::units::Count::get(),
+               "LLBP-X pattern-set occupancy distribution by used ways"),
       ADD_STAT(updateCalls, statistics::units::Count::get(),
                "LLBP-X update calls"),
       ADD_STAT(updateEntriesSeen, statistics::units::Count::get(),
@@ -141,6 +169,8 @@ BTBLLBPX::BTBLLBPX(const Params &p)
     : TimedBaseBTBPredictor(p),
       numThreads(p.numThreads),
       tageNumPredictors(p.tageNumPredictors),
+      patternSetCapacity(p.patternSets),
+      patternSetAssoc(p.patternWays),
       tagBits(p.tagBits),
       keyBits(p.keyBits),
       rcrEntries(p.rcrEntries),
@@ -189,6 +219,8 @@ BTBLLBPX::BTBLLBPX(const Params &p)
     llbpxStats.allocPatternByTable.init(std::max<unsigned>(tageNumPredictors, 1));
     llbpxStats.allocPatternByDepthClass.init(2);
     llbpxStats.lookupByDepthClass.init(2);
+    llbpxStats.contextSetOccupancy.init(contexts.ways() + 1);
+    llbpxStats.patternSetOccupancy.init(patternSetAssoc + 2);
     hasDB = true;
     dbName = std::string("llbpx");
 #endif
@@ -198,6 +230,8 @@ BTBLLBPX::BTBLLBPX(bool adaptCtxDepthParam)
     : TimedBaseBTBPredictor(),
       numThreads(MaxThreads),
       tageNumPredictors(8),
+      patternSetCapacity(64),
+      patternSetAssoc(4),
       tagBits(16),
       keyBits(32),
       rcrEntries(32),
@@ -228,6 +262,89 @@ BTBLLBPX::BTBLLBPX(bool adaptCtxDepthParam)
     ContextEntry::defaultPatternSetCapacity = 64;
     ContextEntry::defaultPatternSetAssoc = 4;
     setNumDelay(2);
+}
+#endif
+
+#ifndef UNIT_TEST
+void
+BTBLLBPX::preDumpStats()
+{
+    TimedBaseBTBPredictor::preDumpStats();
+    refreshStorageStats();
+}
+
+void
+BTBLLBPX::refreshStorageStats()
+{
+    llbpxStats.contextTotalEntries = contexts.sets() * contexts.ways();
+    llbpxStats.contextValidEntries = contexts.validEntries();
+    llbpxStats.contextFreeEntries =
+        llbpxStats.contextTotalEntries.value() - llbpxStats.contextValidEntries.value();
+    llbpxStats.contextFullSets = 0;
+    llbpxStats.contextEmptySets = 0;
+    llbpxStats.patternTotalEntries = 0;
+    llbpxStats.patternBoundedCapacity = 0;
+    llbpxStats.patternFreeEntries = 0;
+    llbpxStats.patternTotalSets = 0;
+    llbpxStats.patternFullSets = 0;
+    llbpxStats.patternEmptySets = 0;
+    llbpxStats.contextsWithAnyFullPatternSet = 0;
+
+    for (unsigned occ = 0; occ < llbpxStats.contextSetOccupancy.size(); ++occ) {
+        llbpxStats.contextSetOccupancy[occ] = 0;
+    }
+    for (unsigned occ = 0; occ < llbpxStats.patternSetOccupancy.size(); ++occ) {
+        llbpxStats.patternSetOccupancy[occ] = 0;
+    }
+
+    for (unsigned set = 0; set < contexts.sets(); ++set) {
+        const unsigned occ = contexts.setOccupancy(set);
+        llbpxStats.contextSetOccupancy[occ]++;
+        if (occ == 0) {
+            llbpxStats.contextEmptySets++;
+        } else if (occ == contexts.ways()) {
+            llbpxStats.contextFullSets++;
+        }
+
+        for (const auto &ctx : contexts.setEntries(set)) {
+            if (!ctx.valid) {
+                continue;
+            }
+            const auto *patterns = ctx.patternSetIfPresent();
+            if (!patterns) {
+                continue;
+            }
+
+            bool anyFullPatternSet = false;
+            llbpxStats.patternTotalEntries += patterns->entries();
+            llbpxStats.patternTotalSets += patterns->sets();
+
+            if (!patterns->isUnlimited()) {
+                llbpxStats.patternBoundedCapacity += patterns->maxSize();
+                llbpxStats.patternFreeEntries +=
+                    patterns->maxSize() - patterns->entries();
+            }
+
+            for (unsigned pset = 0; pset < patterns->sets(); ++pset) {
+                const unsigned pocc = patterns->setOccupancy(pset);
+                const unsigned bucket = std::min<unsigned>(
+                    pocc, llbpxStats.patternSetOccupancy.size() - 1);
+                llbpxStats.patternSetOccupancy[bucket]++;
+
+                if (pocc == 0) {
+                    llbpxStats.patternEmptySets++;
+                }
+                if (!patterns->isUnlimited() && pocc == patterns->ways()) {
+                    llbpxStats.patternFullSets++;
+                    anyFullPatternSet = true;
+                }
+            }
+
+            if (anyFullPatternSet) {
+                llbpxStats.contextsWithAnyFullPatternSet++;
+            }
+        }
+    }
 }
 #endif
 
