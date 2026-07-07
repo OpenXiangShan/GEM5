@@ -167,7 +167,8 @@ jobs:
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           if [[ "${{ inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
             export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
-            export GCB_MULTI_CORE_RESTORER=""
+            export GCB_MULTI_CORE_RESTORER="/nfs/home/share/gem5_ci/tools/gcb-2core-restorer.bin"
+            test -f "$GCB_MULTI_CORE_RESTORER"
           fi
           case "${{ inputs.vector_type }}" in
             "base")
@@ -257,7 +258,8 @@ jobs:
           CONFIG_PATH="$GEM5_HOME/$CONFIG_PATH"
           if [[ "${{ inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
             export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
-            export GCB_MULTI_CORE_RESTORER=""
+            export GCB_MULTI_CORE_RESTORER="/nfs/home/share/gem5_ci/tools/gcb-2core-restorer.bin"
+            test -f "$GCB_MULTI_CORE_RESTORER"
           fi
 
           extra_args="${{ inputs.extra_args }}"
