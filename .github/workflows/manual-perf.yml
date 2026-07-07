@@ -54,6 +54,16 @@ on:
         required: false
         type: string
         default: ''
+      distributed_servers:
+        description: 'Optional distributed server list. Use default for node020-node034,node036-node039; leave empty for old single-runner parallel path'
+        required: false
+        type: string
+        default: ''
+      distributed_jobs_per_server:
+        description: 'Distributed jobs per server'
+        required: false
+        type: number
+        default: 32
       branch:
         description: 'Branch, tag or SHA to test (leave empty for current branch)'
         required: false
@@ -90,6 +100,8 @@ jobs:
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       vector_type: ${{ github.event.inputs.vector_type }}
       extra_args: ${{ github.event.inputs.extra_args }}
+      distributed_servers: ${{ github.event.inputs.distributed_servers }}
+      distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
       timeout_minutes: 720

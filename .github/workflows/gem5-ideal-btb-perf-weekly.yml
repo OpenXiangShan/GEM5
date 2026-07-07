@@ -37,5 +37,7 @@ jobs:
     with:
       config_path: configs/example/smt_idealkmhv3.py
       benchmark_type: "gcc12-spec06-smt-1.0c"
+      distributed_servers: "default"
+      distributed_jobs_per_server: 32
       check_result: false
       timeout_minutes: 720
