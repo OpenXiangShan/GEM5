@@ -53,6 +53,32 @@ class SetAssociativeStore
     }
 
     unsigned
+    validEntries() const
+    {
+        unsigned count = 0;
+        for (const auto &set : data) {
+            count += std::count_if(set.begin(), set.end(),
+                [](const Entry &entry) { return entry.valid; });
+        }
+        return count;
+    }
+
+    unsigned
+    setOccupancy(unsigned set) const
+    {
+        assert(set < data.size());
+        return std::count_if(data[set].begin(), data[set].end(),
+            [](const Entry &entry) { return entry.valid; });
+    }
+
+    const std::vector<Entry> &
+    setEntries(unsigned set) const
+    {
+        assert(set < data.size());
+        return data[set];
+    }
+
+    unsigned
     setIndex(Addr key) const
     {
         assert(numSets > 0);
@@ -166,6 +192,31 @@ class SparseSetAssociativeStore
     ways() const
     {
         return numWays;
+    }
+
+    unsigned
+    sets() const
+    {
+        return numSets;
+    }
+
+    bool
+    isUnlimited() const
+    {
+        return unlimited;
+    }
+
+    unsigned
+    entries() const
+    {
+        return index.size();
+    }
+
+    unsigned
+    setOccupancy(unsigned set) const
+    {
+        assert(set < data.size());
+        return data[set].size();
     }
 
     Entry *

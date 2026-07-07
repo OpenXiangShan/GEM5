@@ -71,6 +71,9 @@ class BTBLLBPX : public TimedBaseBTBPredictor
                           bool actualTaken);
     bool getProviderUpdateInfo(const FetchTarget &entry, Addr branchPC,
                                bool &llbpxPred, int &providerDepth);
+#ifndef UNIT_TEST
+    void preDumpStats() override;
+#endif
 #ifdef UNIT_TEST
     struct TestAccess;
 #endif
@@ -319,6 +322,20 @@ class BTBLLBPX : public TimedBaseBTBPredictor
         statistics::Scalar allocPatternRevisit;
         statistics::Vector allocPatternByTable;
         statistics::Vector allocPatternByDepthClass;
+        statistics::Scalar contextTotalEntries;
+        statistics::Scalar contextValidEntries;
+        statistics::Scalar contextFreeEntries;
+        statistics::Scalar contextFullSets;
+        statistics::Scalar contextEmptySets;
+        statistics::Vector contextSetOccupancy;
+        statistics::Scalar patternTotalEntries;
+        statistics::Scalar patternBoundedCapacity;
+        statistics::Scalar patternFreeEntries;
+        statistics::Scalar patternTotalSets;
+        statistics::Scalar patternFullSets;
+        statistics::Scalar patternEmptySets;
+        statistics::Scalar contextsWithAnyFullPatternSet;
+        statistics::Vector patternSetOccupancy;
         statistics::Scalar updateCalls;
         statistics::Scalar updateEntriesSeen;
         statistics::Scalar updateEntriesWithMeta;
@@ -387,6 +404,7 @@ class BTBLLBPX : public TimedBaseBTBPredictor
                                     Addr branchPC, Addr contextKey,
                                     unsigned wi, unsigned table,
                                     uint8_t asidHash) const;
+    void refreshStorageStats();
 
     Addr hashBits(const boost::dynamic_bitset<> &history, unsigned bits) const;
     Addr mix(Addr value) const;
@@ -404,6 +422,8 @@ class BTBLLBPX : public TimedBaseBTBPredictor
 
     const unsigned numThreads;
     const unsigned tageNumPredictors;
+    const unsigned patternSetCapacity;
+    const unsigned patternSetAssoc;
     const unsigned tagBits;
     const unsigned keyBits;
     const unsigned rcrEntries;
