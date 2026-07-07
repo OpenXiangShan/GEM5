@@ -39,6 +39,16 @@ on:
         type: number
         default: 360
         description: "Job timeout in minutes"
+      distributed_servers:
+        required: false
+        type: string
+        default: ""
+        description: "Optional distributed runner server list. Empty keeps using parallel_sim.sh; 'default' uses the shared SMT node pool."
+      distributed_jobs_per_server:
+        required: false
+        type: number
+        default: 32
+        description: "Maximum concurrent gem5 jobs per distributed server."
 
 permissions:
   contents: read
@@ -192,9 +202,14 @@ jobs:
         id: archive
         env:
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
+          BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
+          SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
+          EXTRA_ARGS_INPUT: ${{ inputs.extra_args }}
+          DISTRIBUTED_SERVERS_RAW: ${{ inputs.distributed_servers }}
+          DISTRIBUTED_JOBS_PER_SERVER_RAW: ${{ inputs.distributed_jobs_per_server }}
         run: |
           ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
-          BENCHMARK_DIR="${ARCHIVE_ROOT}/${{ inputs.benchmark_type }}"
+          BENCHMARK_DIR="${ARCHIVE_ROOT}/${BENCHMARK_TYPE_INPUT}"
           TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
           COMMIT_SHORT=$(git rev-parse --short HEAD)
           RUN_NUMBER="${{ github.run_number }}"
@@ -202,6 +217,15 @@ jobs:
           CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
           CONFIG_NAME=${CONFIG_NAME:-config}
           TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
+          DEFAULT_DISTRIBUTED_SERVERS="node020-node034,node036-node039"
+          DISTRIBUTED_DISPATCH_HOST="ci-runner@172.28.9.101"
+          DISTRIBUTED_SERVERS_INPUT="$DISTRIBUTED_SERVERS_RAW"
+          DISTRIBUTED_SERVERS=$(echo "$DISTRIBUTED_SERVERS_INPUT" | xargs)
+          if [ "$DISTRIBUTED_SERVERS" = "default" ]; then
+            DISTRIBUTED_SERVERS="$DEFAULT_DISTRIBUTED_SERVERS"
+          fi
+          DISTRIBUTED_REQUIRE_IDLE_CPUS="$DISTRIBUTED_JOBS_PER_SERVER_RAW"
+          DISTRIBUTED_IDLE_PROBE_MODE="physical"
 
           mkdir -p "$TARGET_DIR"
 
@@ -212,6 +236,10 @@ jobs:
             echo "commit_short=$COMMIT_SHORT"
             echo "config_name=$CONFIG_NAME"
             echo "run_number=$RUN_NUMBER"
+            echo "distributed_servers=$DISTRIBUTED_SERVERS"
+            echo "distributed_require_idle_cpus=$DISTRIBUTED_REQUIRE_IDLE_CPUS"
+            echo "distributed_idle_probe_mode=$DISTRIBUTED_IDLE_PROBE_MODE"
+            echo "distributed_dispatch_host=$DISTRIBUTED_DISPATCH_HOST"
           } >> "$GITHUB_OUTPUT"
 
           echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
@@ -221,11 +249,22 @@ jobs:
           echo "config_path: $CONFIG_PATH_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "config_name: $CONFIG_NAME" >> "$TARGET_DIR/metadata.txt"
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
-          echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
-          echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
-          cat >> "$TARGET_DIR/metadata.txt" <<'EOF'
-          extra_args: ${{ inputs.extra_args }}
-          EOF
+          echo "benchmark_type: $BENCHMARK_TYPE_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "specific_benchmarks: $SPECIFIC_BENCHMARKS_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_servers_input: $DISTRIBUTED_SERVERS_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_servers: $DISTRIBUTED_SERVERS" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_server_domain: " >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_jobs_per_server: $DISTRIBUTED_JOBS_PER_SERVER_RAW" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_require_idle_cpus: $DISTRIBUTED_REQUIRE_IDLE_CPUS" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_idle_probe_mode: $DISTRIBUTED_IDLE_PROBE_MODE" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_idle_cpu_threshold: 30" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_ssh_config: " >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_ssh_user: " >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_dispatch_host: $DISTRIBUTED_DISPATCH_HOST" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_launch_retries: 3" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_launch_retry_delay: 30" >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_launch_interval: 0.5" >> "$TARGET_DIR/metadata.txt"
+          printf 'extra_args: %s\n' "$EXTRA_ARGS_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
 
           {
@@ -240,11 +279,22 @@ jobs:
           GEM5_HOME: ${{ github.workspace }}
           GEM5_BUILD_TYPE: fast
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+          CONFIG_PATH_INPUT: ${{ inputs.config_path }}
+          BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
+          SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
+          EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
+          CHECKPOINT_LIST: ${{ steps.config.outputs.checkpoint_list }}
+          CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
+          DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
+          DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
+          DISTRIBUTED_REQUIRE_IDLE_CPUS: ${{ steps.archive.outputs.distributed_require_idle_cpus }}
+          DISTRIBUTED_IDLE_PROBE_MODE: ${{ steps.archive.outputs.distributed_idle_probe_mode }}
+          DISTRIBUTED_DISPATCH_HOST: ${{ steps.archive.outputs.distributed_dispatch_host }}
         run: |
           mkdir -p "$PERF_ARCHIVE_DIR"
           cd "$PERF_ARCHIVE_DIR"
 
-          CONFIG_PATH="${{ inputs.config_path }}"
+          CONFIG_PATH="$CONFIG_PATH_INPUT"
           if [[ "$CONFIG_PATH" == /* ]]; then
             echo "Error: config_path must be repo-root-relative, got absolute path: '$CONFIG_PATH'"
             exit 1
@@ -255,21 +305,46 @@ jobs:
           fi
 
           CONFIG_PATH="$GEM5_HOME/$CONFIG_PATH"
-          if [[ "${{ inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
+          if [[ "$BENCHMARK_TYPE_INPUT" == gcc12-spec06-smt-* ]]; then
             export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
             export GCB_MULTI_CORE_RESTORER=""
           fi
 
-          extra_args="${{ inputs.extra_args }}"
+          extra_args="$EXTRA_GEM5_ARGS_RAW"
           extra_args="$(echo "$extra_args" | xargs)"
           echo "Resolved extra gem5 args: $extra_args"
 
-          bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-            ${{ steps.config.outputs.checkpoint_list }} \
-            ${{ steps.config.outputs.checkpoint_root_node}} \
-            spec_all \
-            "${{ inputs.specific_benchmarks }}" \
-            "$extra_args"
+          distributed_servers="$DISTRIBUTED_SERVERS"
+          if [ -n "$distributed_servers" ]; then
+            echo "Using distributed gem5 runner on servers: $distributed_servers"
+            python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
+              --servers "$distributed_servers" \
+              --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
+              --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \
+              --idle-probe-mode "$DISTRIBUTED_IDLE_PROBE_MODE" \
+              --dispatch-host "$DISTRIBUTED_DISPATCH_HOST" \
+              --launch-retries 3 \
+              --launch-retry-delay 30 \
+              --launch-interval 0.5 \
+              --ssh-option StrictHostKeyChecking=accept-new \
+              --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
+              --ssh-option ConnectTimeout=10 \
+              --build-type "$GEM5_BUILD_TYPE" \
+              "$(realpath "$CONFIG_PATH")" \
+              "$CHECKPOINT_LIST" \
+              "$CHECKPOINT_ROOT_NODE" \
+              spec_all \
+              "$SPECIFIC_BENCHMARKS_INPUT" \
+              "$extra_args"
+          else
+            echo "Using local parallel_sim.sh runner"
+            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+              "$CHECKPOINT_LIST" \
+              "$CHECKPOINT_ROOT_NODE" \
+              spec_all \
+              "$SPECIFIC_BENCHMARKS_INPUT" \
+              "$extra_args"
+          fi
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
