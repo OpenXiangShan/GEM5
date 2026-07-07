@@ -311,6 +311,15 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
+    [MISCREG_MSTATEEN0]     = "MSTATEEN0",
+    [MISCREG_MSTATEEN1]     = "MSTATEEN1",
+    [MISCREG_MSTATEEN2]     = "MSTATEEN2",
+    [MISCREG_MSTATEEN3]     = "MSTATEEN3",
+    [MISCREG_SENVCFG]       = "SENVCFG",
+    [MISCREG_SSTATEEN0] = "SSTATEEN0",
+    [MISCREG_SSTATEEN1] = "SSTATEEN1",
+    [MISCREG_SSTATEEN2] = "SSTATEEN2",
+    [MISCREG_SSTATEEN3] = "SSTATEEN3",
     [MISCREG_FFLAGS_EXE]    = "FFLAGS_EXE",
 }};
 
