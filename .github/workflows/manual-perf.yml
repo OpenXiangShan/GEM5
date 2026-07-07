@@ -72,7 +72,6 @@ on:
         description: 'Branch, tag or SHA to test (leave empty for current branch)'
         required: false
         type: string
-
 jobs:
   setup:
     runs-on: ubuntu-latest

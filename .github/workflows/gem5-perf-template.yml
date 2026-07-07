@@ -330,6 +330,7 @@ jobs:
           {
             echo "### Live archive output"
             echo "- Path: \`$TARGET_DIR\`"
+            echo "- Extra args: \`${{ inputs.extra_args }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: XS-GEM5 - Run performance test
