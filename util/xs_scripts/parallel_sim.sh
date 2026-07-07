@@ -93,6 +93,7 @@ export cpt_dir=`realpath $3`
 export tag=$4
 
 export log_file='log.txt'
+export GEM5_PERF_LOG_LIMIT_BYTES="${GEM5_PERF_LOG_LIMIT_BYTES:-67108864}"
 
 export ds=$(pwd)  # data storage. It is specific for BOSC machines, you can ignore it
 export full_work_dir=$ds/$tag # work dir wheter stats data stored
@@ -224,7 +225,12 @@ function arg_wrapper() {
     dw=${args[4]}
     sample=${args[5]}
 
-    run $checkpoint $work_dir >$work_dir/$log_file 2>&1
+    if ! [[ "$GEM5_PERF_LOG_LIMIT_BYTES" =~ ^[0-9]+$ ]] || [ "$GEM5_PERF_LOG_LIMIT_BYTES" -lt 1 ]; then
+        echo "Invalid GEM5_PERF_LOG_LIMIT_BYTES='$GEM5_PERF_LOG_LIMIT_BYTES'" >&2
+        exit 1
+    fi
+
+    run $checkpoint $work_dir 2>&1 | tail -c "$GEM5_PERF_LOG_LIMIT_BYTES" >$work_dir/$log_file
 }
 
 
