@@ -52,6 +52,14 @@ class RiscvPagetableWalker(ClockedObject):
     pma_checker = Param.PMAChecker(Parent.any, "PMA Checker")
     pmp = Param.PMP(Parent.any, "PMP")
     open_nextline = Param.Bool(True, "open nextline pre")
+    enable_ptw_level_limit = Param.Bool(True,
+            "Enable one-stage direct PTW parallelism limits by walk level")
+    ptw_level0_limit = Param.Unsigned(6, "PTW level-0 parallelism limit")
+    ptw_level1_limit = Param.Unsigned(1, "PTW level-1 parallelism limit")
+    ptw_level2_limit = Param.Unsigned(1, "PTW level-2 parallelism limit")
+    ptw_level3_limit = Param.Unsigned(1, "PTW level-3 parallelism limit")
+    ptw_miss_queue_size = Param.Unsigned(40,
+            "Number of pending one-stage direct PTW misses")
 
 class RiscvTLB(BaseTLB):
     type = 'RiscvTLB'

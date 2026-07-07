@@ -889,6 +889,43 @@ def xiangshan_system_init():
         help="Disable L1 direct one-stage TLB compression for A/B validation",
     )
     parser.add_argument(
+        "--disable-ptw-level-limit",
+        action="store_false",
+        dest="enable_ptw_level_limit",
+        default=True,
+        help="Disable PTW level parallelism limits for A/B validation",
+    )
+    parser.add_argument(
+        "--ptw-level0-limit",
+        type=int,
+        default=6,
+        help="PTW level-0 parallelism limit",
+    )
+    parser.add_argument(
+        "--ptw-level1-limit",
+        type=int,
+        default=1,
+        help="PTW level-1 parallelism limit",
+    )
+    parser.add_argument(
+        "--ptw-level2-limit",
+        type=int,
+        default=1,
+        help="PTW level-2 parallelism limit",
+    )
+    parser.add_argument(
+        "--ptw-level3-limit",
+        type=int,
+        default=1,
+        help="PTW level-3 parallelism limit",
+    )
+    parser.add_argument(
+        "--ptw-miss-queue-size",
+        type=int,
+        default=40,
+        help="PTW MissQueue size",
+    )
+    parser.add_argument(
         "--standalone-sc",
         action="store_true",
         default=False,
