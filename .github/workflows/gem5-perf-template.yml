@@ -217,11 +217,13 @@ jobs:
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
+          echo "extra_args: ${{ inputs.extra_args }}" >> "$TARGET_DIR/metadata.txt"
           echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
 
           {
             echo "### Live archive output"
             echo "- Path: \`$TARGET_DIR\`"
+            echo "- Extra args: \`${{ inputs.extra_args }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: XS-GEM5 - Run performance test

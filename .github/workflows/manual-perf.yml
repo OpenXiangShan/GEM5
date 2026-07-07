@@ -53,6 +53,11 @@ on:
         description: 'Branch, tag or SHA to test (leave empty for current branch)'
         required: false
         type: string
+      extra_args:
+        description: 'Extra gem5 args, e.g. "-P system.cpu[0].branchPred.llbpx.patternSets=0"'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   setup:
@@ -65,13 +70,19 @@ jobs:
       - name: Resolve parameters
         id: resolve
         run: |
+          EXTRA_ARGS="${{ github.event.inputs.extra_args }}"
+
           if [[ "${{ github.event.inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
             echo "config_path=configs/example/smt_idealkmhv3.py" >> $GITHUB_OUTPUT
-            echo "extra_args=" >> $GITHUB_OUTPUT
           else
             echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
-            echo "extra_args=" >> $GITHUB_OUTPUT
           fi
+
+          {
+            echo "extra_args<<EOF"
+            printf '%s\n' "$EXTRA_ARGS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
           
           if [ -n "${{ github.event.inputs.branch }}" ]; then
             echo "pr_sha=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
