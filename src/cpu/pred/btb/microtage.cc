@@ -41,7 +41,6 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
       maxBranchPositions(32),
       updateOnRead(false),
       usingS3Pred(false),
-      s3UpdateUseResolveBackpressure(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
       bankBaseShift(instShiftAmt),
@@ -75,7 +74,6 @@ maxHistLen(p.maxHistLen),
     maxBranchPositions(p.maxBranchPositions),
     updateOnRead(p.updateOnRead),
     usingS3Pred(p.usingS3Pred),
-    s3UpdateUseResolveBackpressure(p.s3UpdateUseResolveBackpressure),
     numBanks(p.numBanks),
     bankIdWidth(ceilLog2(p.numBanks)),
     bankBaseShift(instShiftAmt), // strip instruction alignment bits before indexing
@@ -752,13 +750,14 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
 }
 
 /**
- * @brief Probe resolved update for bank conflicts without mutating state.
- * Returns false if the update cannot proceed due to a bank conflict.
+ * @brief Probe whether the resolved-update path may proceed this cycle.
+ *
+ * In S3 teacher-update mode, MicroTAGE no longer participates in resolved
+ * update backpressure and always lets the caller proceed.
  */
 bool
 MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
-    if (usingS3Pred && !s3UpdateUseResolveBackpressure) {
-        tageStats.s3UpdateResolvedBypass++;
+    if (usingS3Pred) {
         return true;
     }
 
@@ -788,14 +787,13 @@ MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
 
 /**
  * @brief Perform resolved update after probe success.
+ *
+ * In S3 teacher-update mode this callback becomes a no-op because functional
+ * predictor state is updated by updateUsingS3Pred().
  */
 void
 MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
     if (usingS3Pred) {
-        tageStats.s3UpdateResolvedBackpressure++;
-        if (enableBankConflict && predBankValid && s3UpdateUseResolveBackpressure) {
-            predBankValid = false;
-        }
         return;
     }
     if (enableBankConflict && predBankValid) {
@@ -1352,10 +1350,6 @@ MicroTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, in
              "number of S3 teacher updates where utage provided the main prediction"),
     ADD_STAT(s3UpdateUtageHitWrong, statistics::units::Count::get(),
              "number of S3 teacher updates where utage prediction disagreed with the S3 teacher"),
-    ADD_STAT(s3UpdateResolvedBypass, statistics::units::Count::get(),
-             "number of resolved-update probes bypassed in S3 teacher-update mode"),
-    ADD_STAT(s3UpdateResolvedBackpressure, statistics::units::Count::get(),
-             "number of resolved-update callbacks observed while S3 teacher-update mode keeps backpressure enabled"),
 
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
     ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
