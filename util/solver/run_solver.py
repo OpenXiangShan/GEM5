@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from math import prod
+import os
 from pathlib import Path
 import sys
 import time
@@ -20,6 +21,95 @@ from util.solver.reporting.charts import render_charts
 from util.solver.reporting.markdown import render_summary, write_summary
 from util.solver.solver.grid import GridSolver
 from util.solver.solver.random import RandomSolver
+
+
+def _escape_github_annotation(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def format_best_trial(best) -> str:
+    if best is None or best.objective_value is None:
+        return "none"
+    return f"{best.trial_id}={best.objective_value:.6f}"
+
+
+def format_evaluated_trial(trial) -> str:
+    parts = [
+        f"{trial.trial_id}",
+        f"status={trial.status}",
+        f"duration={trial.duration_sec:.1f}s",
+    ]
+    if trial.objective_value is not None:
+        parts.append(f"objective={trial.objective_value:.6f}")
+    if trial.invalid_reason:
+        parts.append(f"reason={trial.invalid_reason}")
+    return ", ".join(parts)
+
+
+class ProgressReporter:
+    def __init__(self, label: str = "solver") -> None:
+        self.label = label
+
+    def emit(
+        self,
+        message: str,
+        *,
+        annotate: bool = False,
+        annotation_title: str | None = None,
+    ) -> None:
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[{self.label} {timestamp}] {message}", flush=True)
+        if annotate and os.environ.get("GITHUB_ACTIONS") == "true":
+            title = _escape_github_annotation(annotation_title or self.label)
+            body = _escape_github_annotation(message)
+            print(f"::notice title={title}::{body}", flush=True)
+
+    def phase(self, phase: str, message: str, *, annotate: bool = False) -> None:
+        self.emit(
+            f"{phase}: {message}",
+            annotate=annotate,
+            annotation_title=f"{self.label} {phase}",
+        )
+
+    def batch_started(
+        self,
+        batch_index: int,
+        trials,
+        completed_trials: int,
+        max_trials: int | None,
+    ) -> None:
+        budget = "unbounded" if max_trials is None else str(max_trials)
+        trial_ids = ", ".join(trial.trial_id for trial in trials)
+        self.phase(
+            "batch",
+            (
+                f"batch {batch_index} start; launching {len(trials)} trial(s); "
+                f"completed={completed_trials}/{budget}; trials=[{trial_ids}]"
+            ),
+            annotate=True,
+        )
+
+    def batch_completed(
+        self,
+        batch_index: int,
+        evaluated,
+        history,
+        best,
+        batch_duration_sec: float,
+    ) -> None:
+        valid_count = sum(1 for trial in history if trial.status == "valid")
+        invalid_count = len(history) - valid_count
+        self.phase(
+            "batch",
+            (
+                f"batch {batch_index} complete in {batch_duration_sec:.1f}s; "
+                f"history={len(history)} total, {valid_count} valid, "
+                f"{invalid_count} invalid; best={format_best_trial(best)}"
+            ),
+            annotate=True,
+        )
+        for trial in evaluated:
+            self.emit(f"trial result: {format_evaluated_trial(trial)}")
 
 
 def build_argparser() -> argparse.ArgumentParser:
@@ -119,10 +209,29 @@ def should_stop(problem, history, start_time: float) -> tuple[bool, str | None]:
 
 def main() -> int:
     args = build_argparser().parse_args()
+    progress = ProgressReporter()
     workdir = Path(args.workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
+    progress.phase(
+        "setup",
+        f"workdir={workdir}; problem_ref={args.problem_ref}",
+        annotate=True,
+    )
     problem = parse_problem(args.problem_ref)
     problem = apply_runtime_overrides(problem, args)
+    parameter_names = ", ".join(parameter.name for parameter in problem.parameters)
+    search_space = prod(
+        parameter.domain.cardinality() for parameter in problem.parameters
+    )
+    progress.phase(
+        "setup",
+        (
+            f"problem={problem.name}; benchmark={problem.benchmark_type}; "
+            f"objective={problem.objective.source_kind}:{problem.objective.metric}; "
+            f"parameters={len(problem.parameters)} [{parameter_names}]; "
+            f"search_space={search_space}"
+        ),
+    )
 
     executor = CiLocalParallelExecutor(
         workdir=workdir,
@@ -148,18 +257,48 @@ def main() -> int:
     write_json(workdir / "metadata.json", metadata)
 
     bind_output = workdir / "binding.json"
+    progress.phase("bind", "binding solver parameters to live gem5 objects", annotate=True)
     problem = bind_problem_targets(executor, problem, bind_output)
     write_json(workdir / "parsed_problem.json", problem)
+    progress.phase(
+        "bind",
+        f"binding complete; metadata written to {bind_output.name}",
+    )
 
     solver = choose_solver(problem, args.solver_kind, args.seed)
-    preview = solver.propose([], min(args.max_parallel_trials, problem.stop.max_trials or args.max_parallel_trials))
+    solver_name = solver.__class__.__name__
+    preview_count = min(
+        args.max_parallel_trials,
+        problem.stop.max_trials or args.max_parallel_trials,
+    )
+    preview = solver.propose([], preview_count)
+    progress.phase(
+        "preview",
+        f"solver={solver_name}; prepared {len(preview)} preview trial(s)",
+        annotate=True,
+    )
     if args.dry_run:
         write_json(workdir / "preview_trials.json", preview)
+        progress.phase(
+            "final",
+            f"dry-run complete; preview written to {workdir / 'preview_trials.json'}",
+            annotate=True,
+        )
         return 0
 
     history = []
     solver = choose_solver(problem, args.solver_kind, args.seed)
+    progress.phase(
+        "search",
+        (
+            f"starting iterative search with solver={solver.__class__.__name__}; "
+            f"max_parallel_trials={args.max_parallel_trials}; "
+            f"max_parallel_workloads={args.max_parallel_workloads}"
+        ),
+        annotate=True,
+    )
     start_time = time.monotonic()
+    batch_index = 0
     while True:
         stop, reason = should_stop(problem, history, start_time)
         if stop:
@@ -175,6 +314,14 @@ def main() -> int:
         if not trials:
             metadata["stop_reason"] = "solver exhausted search space"
             break
+        batch_index += 1
+        progress.batch_started(
+            batch_index,
+            trials,
+            completed_trials=len(history),
+            max_trials=problem.stop.max_trials,
+        )
+        batch_start = time.monotonic()
         executed = executor.run_trials(problem, trials)
         evaluated = [evaluate_trial(problem, result) for result in executed]
         history.extend(evaluated)
@@ -183,6 +330,13 @@ def main() -> int:
         summary = render_summary(problem, history)
         write_summary(workdir / "summary.md", summary)
         render_charts(problem, history, workdir / "charts")
+        progress.batch_completed(
+            batch_index,
+            evaluated,
+            history,
+            best,
+            batch_duration_sec=time.monotonic() - batch_start,
+        )
 
     best = best_trial(history, direction=problem.objective.direction)
     persist_run_state(workdir, problem, history, best)
@@ -190,6 +344,17 @@ def main() -> int:
     write_summary(workdir / "summary.md", summary)
     render_charts(problem, history, workdir / "charts")
     write_json(workdir / "metadata.json", metadata)
+    valid_count = sum(1 for trial in history if trial.status == "valid")
+    invalid_count = len(history) - valid_count
+    progress.phase(
+        "final",
+        (
+            f"stop_reason={metadata['stop_reason']}; "
+            f"history={len(history)} total, {valid_count} valid, "
+            f"{invalid_count} invalid; best={format_best_trial(best)}"
+        ),
+        annotate=True,
+    )
     return 0
 
 
