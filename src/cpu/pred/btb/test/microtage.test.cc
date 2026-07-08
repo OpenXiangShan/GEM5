@@ -56,7 +56,6 @@ class MicroTAGES3UpdateTest : public ::testing::Test
     {
         tage = std::make_unique<MicroTAGE>(4, 1, 32, 4);
         tage->usingS3Pred = true;
-        tage->s3UpdateUseResolveBackpressure = false;
     }
 
     void

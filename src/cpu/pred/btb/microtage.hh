@@ -243,7 +243,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Whether to update on read
     bool updateOnRead;
     bool usingS3Pred;
-    bool s3UpdateUseResolveBackpressure;
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
@@ -310,8 +309,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
         Scalar s3UpdateResetU;
         Scalar s3UpdateUtageHit;
         Scalar s3UpdateUtageHitWrong;
-        Scalar s3UpdateResolvedBypass;
-        Scalar s3UpdateResolvedBackpressure;
 
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
