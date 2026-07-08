@@ -42,6 +42,10 @@ typings
 /*debug*
 /*build*
 /*test*
+!tests/
+!tests/pyunit/
+!tests/pyunit/solver/
+!tests/pyunit/solver/*.py
 /*txt*
 /ext/dramsim3/DRAMsim3/
 .cache

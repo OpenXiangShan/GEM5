@@ -931,6 +931,24 @@ def xiangshan_system_init():
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
+    parser.add_argument(
+        "--solver-problem-ref",
+        type=str,
+        default="",
+        help="Solver problem spec used by the CI parameter solver prototype",
+    )
+    parser.add_argument(
+        "--solver-bind-output",
+        type=str,
+        default="",
+        help="Write solver binding metadata and exit before instantiate",
+    )
+    parser.add_argument(
+        "--solver-overlay",
+        type=str,
+        default="",
+        help="Apply a solver overlay JSON before instantiate",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
