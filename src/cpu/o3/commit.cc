@@ -1689,12 +1689,18 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 "at the head of the ROB, PC %s.\n",
                 tid, head_inst->seqNum, head_inst->pcState());
 
-        // Memory-ordering instructions such as sfence.vma must not execute
-        // until older stores are visible; otherwise page-table updates may
-        // race with the TLB invalidation.
+        // Memory-ordering instructions such as sfence.vma and architectural
+        // fence must not execute until older stores are visible. RISC-V AMO
+        // fence micro-ops are already ordered by the normal barrier path and
+        // should not force a full store-buffer drain.
+        const bool is_ordering_barrier =
+            head_inst->isReadBarrier() || head_inst->isWriteBarrier();
+        const bool is_amo_fence_microop =
+            is_ordering_barrier && head_inst->isMicroop() &&
+            !head_inst->isNonSpeculative();
         const bool needs_store_drain =
             head_inst->isMemRef() || head_inst->isReturn() ||
-            head_inst->isReadBarrier() || head_inst->isWriteBarrier();
+            (is_ordering_barrier && !is_amo_fence_microop);
         const bool stores_drained =
             !needs_store_drain || iewStage->flushStores(tid, head_inst->seqNum);
         if (needs_store_drain && (inst_num > 0 || !stores_drained)) {
