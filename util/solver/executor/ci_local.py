@@ -47,6 +47,10 @@ class CiLocalParallelExecutor(BaseExecutor):
         self.gem5_data_proc = gem5_data_proc or DEFAULT_GEM5_DATA_PROC
         self.repo_root = Path(__file__).resolve().parents[3]
 
+    def _log(self, message: str) -> None:
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[solver-exec {timestamp}] {message}", flush=True)
+
     def gem5_binary(self) -> Path:
         return self.repo_root / f"build/RISCV/gem5.{self.build_type}"
 
@@ -188,6 +192,9 @@ class CiLocalParallelExecutor(BaseExecutor):
         bind_output = Path(bind_output)
         bind_output.parent.mkdir(parents=True, exist_ok=True)
         bind_log = bind_output.with_suffix(".log")
+        self._log(
+            f"binding {problem.name} with representative checkpoint {checkpoint}"
+        )
         with bind_log.open("w", encoding="utf-8") as handle:
             subprocess.run(
                 cmd,
@@ -197,9 +204,11 @@ class CiLocalParallelExecutor(BaseExecutor):
                 stdout=handle,
                 stderr=subprocess.STDOUT,
             )
+        self._log(f"binding complete; log saved to {bind_log}")
 
     def _run_workload(
         self,
+        trial_id: str,
         problem: ParsedProblem,
         workload_name: str,
         checkpoint: Path,
@@ -219,10 +228,15 @@ class CiLocalParallelExecutor(BaseExecutor):
             checkpoint,
             overlay_path=overlay_path,
         )
+        self._log(
+            f"{trial_id}: start workload {workload_name} "
+            f"({checkpoint.name})"
+        )
         timeout_seconds = self._remaining_timeout(deadline)
         if timeout_seconds == 0.0:
             running_path.unlink(missing_ok=True)
             abort_path.touch()
+            self._log(f"{trial_id}: workload {workload_name} timed out before launch")
             return "timeout", 124
         try:
             with log_path.open("w", encoding="utf-8") as handle:
@@ -238,17 +252,24 @@ class CiLocalParallelExecutor(BaseExecutor):
         except subprocess.TimeoutExpired:
             running_path.unlink(missing_ok=True)
             abort_path.touch()
+            self._log(f"{trial_id}: workload {workload_name} timed out")
             return "timeout", 124
 
         running_path.unlink(missing_ok=True)
         if completed.returncode != 0:
             abort_path.touch()
+            self._log(
+                f"{trial_id}: workload {workload_name} failed "
+                f"(return_code={completed.returncode})"
+            )
             return "failed", completed.returncode
         completed_path.touch()
+        self._log(f"{trial_id}: workload {workload_name} completed")
         return "completed", 0
 
     def _run_trial_workloads(
         self,
+        trial_id: str,
         problem: ParsedProblem,
         entries: list[tuple[str, Path]],
         raw_dir: Path,
@@ -263,10 +284,15 @@ class CiLocalParallelExecutor(BaseExecutor):
             f"workloads: {len(entries)}",
             f"max_parallel_workloads: {self.max_parallel_workloads}",
         ]
+        self._log(
+            f"{trial_id}: launching {len(entries)} workload(s) "
+            f"with max_parallel_workloads={self.max_parallel_workloads}"
+        )
 
         def run_entry(entry: tuple[str, Path]):
             workload_name, checkpoint = entry
             status, return_code = self._run_workload(
+                trial_id,
                 problem,
                 workload_name,
                 checkpoint,
@@ -304,10 +330,15 @@ class CiLocalParallelExecutor(BaseExecutor):
                 trial_return_code = return_code
 
         log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._log(
+            f"{trial_id}: workloads finished with status={trial_status} "
+            f"(return_code={trial_return_code})"
+        )
         return trial_status, trial_return_code
 
     def _run_standard_trial(
         self,
+        trial_id: str,
         problem: ParsedProblem,
         benchmark,
         raw_dir: Path,
@@ -316,6 +347,7 @@ class CiLocalParallelExecutor(BaseExecutor):
     ) -> tuple[str, int]:
         entries = self._benchmark_entries(problem, benchmark)
         return self._run_trial_workloads(
+            trial_id,
             problem,
             entries,
             raw_dir,
@@ -325,6 +357,7 @@ class CiLocalParallelExecutor(BaseExecutor):
 
     def _run_custom_trial(
         self,
+        trial_id: str,
         problem: ParsedProblem,
         raw_dir: Path,
         overlay_path: Path,
@@ -332,6 +365,7 @@ class CiLocalParallelExecutor(BaseExecutor):
     ) -> tuple[str, int]:
         entries = self._custom_bin_entries(problem)
         return self._run_trial_workloads(
+            trial_id,
             problem,
             entries,
             raw_dir,
@@ -352,9 +386,11 @@ class CiLocalParallelExecutor(BaseExecutor):
         write_overlay(overlay_path, trial.trial_id, trial.assignments)
         log_path = trial_dir / "executor.log"
 
+        self._log(f"starting {trial.trial_id} with assignments={trial.assignments}")
         start = time.monotonic()
         if problem.custom_bin:
             status, return_code = self._run_custom_trial(
+                trial.trial_id,
                 problem,
                 raw_dir,
                 overlay_path,
@@ -362,6 +398,7 @@ class CiLocalParallelExecutor(BaseExecutor):
             )
         else:
             status, return_code = self._run_standard_trial(
+                trial.trial_id,
                 problem,
                 benchmark,
                 raw_dir,
@@ -377,9 +414,16 @@ class CiLocalParallelExecutor(BaseExecutor):
         }
         if problem.custom_bin:
             raw_files["custom_bin"] = problem.custom_bin
+        if problem.objective.source_kind == "score_txt":
+            self._log(f"{trial.trial_id}: generating score.txt")
         score_path = self._maybe_generate_score(problem, benchmark, trial_dir)
         if score_path is not None:
             raw_files["score_txt"] = str(score_path)
+            self._log(f"{trial.trial_id}: score.txt ready at {score_path}")
+        self._log(
+            f"completed {trial.trial_id}: status={status}, return_code={return_code}, "
+            f"duration={duration:.1f}s"
+        )
         return TrialExecutionResult(
             trial_id=trial.trial_id,
             generation=trial.generation,
@@ -393,6 +437,10 @@ class CiLocalParallelExecutor(BaseExecutor):
 
     def run_trials(self, problem: ParsedProblem, trials: list[TrialRequest]) -> list[TrialExecutionResult]:
         benchmark = resolve_benchmark(problem.benchmark_type)
+        self._log(
+            f"executing batch of {len(trials)} trial(s) "
+            f"with max_parallel_trials={self.max_parallel_trials}"
+        )
         if len(trials) <= 1 or self.max_parallel_trials <= 1:
             return [
                 self._run_single_trial(problem, benchmark, trial)

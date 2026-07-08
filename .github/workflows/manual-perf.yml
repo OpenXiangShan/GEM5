@@ -116,9 +116,10 @@ jobs:
       - name: Run solver controller
         run: |
           export GEM5_HOME=$(pwd)
+          export PYTHONUNBUFFERED=1
           mkdir -p "${{ needs.setup.outputs.run_dir }}"
           cmd=(
-            python3 util/solver/run_solver.py
+            python3 -u util/solver/run_solver.py
             --problem-ref "${{ github.event.inputs.problem_ref }}"
             --workdir "${{ needs.setup.outputs.run_dir }}"
             --benchmark-type "${{ github.event.inputs.benchmark_type }}"
