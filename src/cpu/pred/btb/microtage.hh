@@ -359,7 +359,11 @@ public:
         TageMeta() : aheadIndexFoldedHistValid(false) {}
     } TageMeta;
 
-private:
+#ifdef UNIT_TEST
+  public:
+#else
+  private:
+#endif
 
     // Helper method to generate prediction for a single BTB entry
     // If predMeta is provided, use snapshot folded history for index/tag calculation (update path)

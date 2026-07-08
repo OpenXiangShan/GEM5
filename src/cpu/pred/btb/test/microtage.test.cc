@@ -40,6 +40,7 @@ makeStagePred(Addr start_pc, const std::vector<BTBEntry> &entries,
 {
     FullBTBPrediction pred;
     pred.tid = 0;
+    pred.asidHash = 0;
     pred.bbStart = start_pc;
     pred.btbEntries = entries;
     pred.condTakens = cond_takens;
@@ -114,6 +115,22 @@ TEST_F(MicroTAGES3UpdateTest, LearnsFromS3TeacherDirection)
     EXPECT_TRUE(after);
 }
 
+TEST_F(MicroTAGES3UpdateTest, S3NoHitStatsMirrorPredictionAccounting)
+{
+    BTBEntry entry = makeCondEntry(0x1800, -1);
+    FullBTBPrediction seed = makeStagePred(0x1800, {entry}, {{entry.pc, false}});
+    primePrediction(tage.get(), seed);
+
+    FullBTBPrediction teacher = makeStagePred(0x1800, {entry}, {{entry.pc, true}});
+    tage->updateUsingS3Pred(teacher);
+
+    EXPECT_EQ(tage->tageStats.s3UpdateEntries, 1ULL);
+    EXPECT_EQ(tage->tageStats.s3UpdateNoHitUseBim, 1ULL);
+    EXPECT_EQ(tage->tageStats.s3UpdateUseAlt, 1ULL);
+    EXPECT_EQ(tage->tageStats.updateNoHitUseBim, 0ULL);
+    EXPECT_EQ(tage->tageStats.updateUseAlt, 0ULL);
+}
+
 TEST_F(MicroTAGES3UpdateTest, StopsTrainingAfterFirstTakenControl)
 {
     BTBEntry first = makeCondEntry(0x1000, -1);
@@ -135,6 +152,62 @@ TEST_F(MicroTAGES3UpdateTest, MissingPredictionMetaSkipsSafely)
     FullBTBPrediction teacher = makeStagePred(0x2000, {makeCondEntry(0x2000)},
                                               {{0x2000, true}});
     EXPECT_NO_THROW(tage->updateUsingS3Pred(teacher));
+}
+
+TEST_F(MicroTAGES3UpdateTest, S3AllocationCountersStaySplitFromNormalUpdateCounters)
+{
+    BTBEntry entry = makeCondEntry(0x3000, -1);
+    FullBTBPrediction seed = makeStagePred(0x3000, {entry}, {{entry.pc, false}});
+    primePrediction(tage.get(), seed);
+
+    auto meta = tage->threadMeta[0];
+    ASSERT_NE(meta, nullptr);
+
+    uint64_t allocated_table = 0;
+    uint64_t allocated_index = 0;
+    uint64_t allocated_way = 0;
+    bool allocated = tage->handleNewEntryAllocation(
+        seed.bbStart, entry, true, 0, meta, seed.asidHash, &tage->tageStats,
+        allocated_table, allocated_index, allocated_way);
+
+    EXPECT_TRUE(allocated);
+    EXPECT_EQ(tage->tageStats.s3UpdateAllocSuccess, 1ULL);
+    EXPECT_EQ(tage->tageStats.updateAllocSuccess, 0ULL);
+}
+
+TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
+{
+    BTBEntry entry = makeCondEntry(0x3800, -1);
+    FullBTBPrediction seed = makeStagePred(0x3800, {entry}, {{entry.pc, false}});
+    primePrediction(tage.get(), seed);
+
+    auto meta = tage->threadMeta[0];
+    ASSERT_NE(meta, nullptr);
+
+    const unsigned blocked_table = tage->numPredictors - 1;
+    Addr blocked_index = tage->getTageIndex(
+        seed.bbStart, blocked_table, meta->indexFoldedHist[blocked_table].get(),
+        seed.asidHash);
+    auto &blocked_way = tage->tageTable[blocked_table][blocked_index][0];
+    blocked_way = MicroTAGE::TageEntry(0x55, 3, entry.pc);
+    blocked_way.useful = true;
+
+    tage->usefulResetCnt = 255;
+
+    uint64_t allocated_table = 0;
+    uint64_t allocated_index = 0;
+    uint64_t allocated_way = 0;
+    bool allocated = tage->handleNewEntryAllocation(
+        seed.bbStart, entry, true, blocked_table, meta, seed.asidHash,
+        &tage->tageStats, allocated_table, allocated_index, allocated_way);
+
+    EXPECT_FALSE(allocated);
+    EXPECT_EQ(tage->tageStats.s3UpdateAllocFailure, 1ULL);
+    EXPECT_EQ(tage->tageStats.updateAllocFailure, 0ULL);
+    EXPECT_EQ(tage->tageStats.s3UpdateResetU, 1ULL);
+    EXPECT_EQ(tage->tageStats.updateResetU, 0ULL);
+    EXPECT_EQ(tage->tageStats.s3UpdateAllocFailureNoValidTable, 1ULL);
+    EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, 0ULL);
 }
 
 } // namespace test
