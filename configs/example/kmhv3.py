@@ -120,7 +120,6 @@ def setKmhV3Params(args, system):
             cpu.branchPred.abtb.enabled = True
             cpu.branchPred.microtage.enabled = True
             cpu.branchPred.microtage.usingS3Pred = True
-            cpu.branchPred.microtage.enableBankConflict = True
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
