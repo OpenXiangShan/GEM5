@@ -94,6 +94,47 @@ class CiLocalExecutorCommandTestCase(unittest.TestCase):
 
         self.assertNotIn("--raw-cpt", cmd)
 
+    def test_score_failure_is_attached_to_trial_instead_of_raising(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint = Path(tmpdir) / "demo.zstd"
+            checkpoint.write_text("", encoding="utf-8")
+            executor = CiLocalParallelExecutor(
+                workdir=tmpdir,
+                build_type="fast",
+                max_parallel_trials=1,
+            )
+            problem = make_problem()
+            problem.objective = ObjectiveSpec(
+                source_kind="score_txt",
+                metric="Estimated Int score per GHz",
+            )
+            problem.specific_benchmarks = "demo"
+            trial = TrialRequest("trial_0001", 0, {"x": 1})
+            with patch(
+                "util.solver.executor.ci_local.iter_workload_entries",
+                return_value=[["demo", "frag"]],
+            ):
+                with patch(
+                    "util.solver.executor.ci_local.locate_checkpoint",
+                    return_value=str(checkpoint),
+                ):
+                    with patch(
+                        "util.solver.executor.ci_local.subprocess.run",
+                        return_value=SimpleNamespace(returncode=0),
+                    ):
+                        with patch.object(
+                            CiLocalParallelExecutor,
+                            "_maybe_generate_score",
+                            return_value=(None, "score evaluator failed with return_code=1"),
+                        ):
+                            result = executor.run_trials(problem, [trial])[0]
+
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(
+            result.error,
+            "score evaluator failed with return_code=1",
+        )
+
 
 class CiLocalExecutorParallelismTestCase(unittest.TestCase):
     def test_standard_mode_runs_trials_concurrently(self):
@@ -136,7 +177,11 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                     return_value=str(Path(tmpdir) / "demo.zstd"),
                 ):
                     with patch("util.solver.executor.ci_local.subprocess.run", side_effect=fake_run):
-                        with patch.object(CiLocalParallelExecutor, "_maybe_generate_score", return_value=None):
+                        with patch.object(
+                            CiLocalParallelExecutor,
+                            "_maybe_generate_score",
+                            return_value=(None, None),
+                        ):
                             results = executor.run_trials(problem, trials)
 
         self.assertEqual([result.trial_id for result in results], ["trial_0001", "trial_0002"])
@@ -181,7 +226,11 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                     side_effect=[str(checkpoint_a), str(checkpoint_b)],
                 ):
                     with patch("util.solver.executor.ci_local.subprocess.run", side_effect=fake_run):
-                        with patch.object(CiLocalParallelExecutor, "_maybe_generate_score", return_value=None):
+                        with patch.object(
+                            CiLocalParallelExecutor,
+                            "_maybe_generate_score",
+                            return_value=(None, None),
+                        ):
                             results = executor.run_trials(problem, trials)
 
         self.assertEqual(results[0].status, "completed")
@@ -218,7 +267,11 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
             problem.custom_bin = f"{bin_a},{bin_b}"
             trials = [TrialRequest("trial_0001", 0, {"x": 1})]
             with patch("util.solver.executor.ci_local.subprocess.run", side_effect=fake_run):
-                with patch.object(CiLocalParallelExecutor, "_maybe_generate_score", return_value=None):
+                with patch.object(
+                    CiLocalParallelExecutor,
+                    "_maybe_generate_score",
+                    return_value=(None, None),
+                ):
                     results = executor.run_trials(problem, trials)
 
         self.assertEqual(results[0].status, "completed")

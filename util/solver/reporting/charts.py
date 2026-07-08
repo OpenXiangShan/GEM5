@@ -5,6 +5,25 @@ from pathlib import Path
 from util.solver.types import EvaluatedTrial, ParsedProblem
 
 
+def best_objective_series(
+    problem: ParsedProblem,
+    history: list[EvaluatedTrial],
+) -> list[float]:
+    values = []
+    best_so_far = None
+    for trial in history:
+        if trial.status != "valid" or trial.objective_value is None:
+            continue
+        if best_so_far is None:
+            best_so_far = trial.objective_value
+        elif problem.objective.direction == "max":
+            best_so_far = max(best_so_far, trial.objective_value)
+        else:
+            best_so_far = min(best_so_far, trial.objective_value)
+        values.append(best_so_far)
+    return values
+
+
 def _svg_header(width: int, height: int) -> list[str]:
     return [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
@@ -31,18 +50,7 @@ def _render_objective_chart(problem: ParsedProblem, history: list[EvaluatedTrial
     height = 240
     margin = 40
     lines = _svg_header(width, height)
-    values = []
-    best_so_far = None
-    for trial in history:
-        if trial.status != "valid" or trial.objective_value is None:
-            continue
-        if best_so_far is None:
-            best_so_far = trial.objective_value
-        elif problem.objective.direction == "max":
-            best_so_far = max(best_so_far, trial.objective_value)
-        else:
-            best_so_far = min(best_so_far, trial.objective_value)
-        values.append(best_so_far)
+    values = best_objective_series(problem, history)
 
     lines.append(
         f'<text x="{margin}" y="20" font-size="16">Best objective so far</text>'

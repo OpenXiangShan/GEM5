@@ -56,6 +56,7 @@ class ParsedProblem:
     objective: ObjectiveSpec
     stop: StopSpec
     solver_hint: str | None = None
+    summary_top_n: int = 16
 
     def parameter_map(self) -> dict[str, ParsedParameter]:
         return {parameter.name: parameter for parameter in self.parameters}
@@ -78,6 +79,7 @@ class TrialExecutionResult:
     duration_sec: float
     outdir: str
     raw_files: dict[str, str] = field(default_factory=dict)
+    error: str | None = None
 
 
 @dataclass

@@ -72,6 +72,42 @@ class GridAndProcessingTestCase(unittest.TestCase):
             self.assertEqual(evaluated.status, "valid")
             self.assertEqual(evaluated.objective_value, 22.75)
 
+    def test_execution_error_marks_trial_invalid(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trial_dir = Path(tmpdir) / "trial_0001"
+            (trial_dir / "raw" / "spec_all" / "demo").mkdir(parents=True)
+            problem = ParsedProblem(
+                name="ScoreProblem",
+                problem_ref="dummy.py:ScoreProblem",
+                config_path="configs/example/idealkmhv3.py",
+                benchmark_type="gcc15-spec06-0.3c",
+                specific_benchmarks="",
+                custom_bin="",
+                extra_args="",
+                parameters=[],
+                objective=ObjectiveSpec(
+                    source_kind="score_txt",
+                    metric="Estimated Int score per GHz",
+                ),
+                stop=StopSpec(max_trials=1),
+            )
+            execution = TrialExecutionResult(
+                trial_id="trial_0001",
+                generation=0,
+                assignments={},
+                status="completed",
+                return_code=0,
+                duration_sec=1.0,
+                outdir=str(trial_dir),
+                error="score evaluator failed with return_code=1",
+            )
+            evaluated = evaluate_trial(problem, execution)
+            self.assertEqual(evaluated.status, "invalid")
+            self.assertEqual(
+                evaluated.invalid_reason,
+                "score evaluator failed with return_code=1",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

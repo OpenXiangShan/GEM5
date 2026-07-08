@@ -146,4 +146,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: solver-run-${{ github.run_id }}
-          path: ${{ needs.setup.outputs.run_dir }}
+          path: |
+            ${{ needs.setup.outputs.run_dir }}/summary.md
+            ${{ needs.setup.outputs.run_dir }}/artifact_manifest.json
+            ${{ needs.setup.outputs.run_dir }}/metadata.json
+            ${{ needs.setup.outputs.run_dir }}/parsed_problem.json
+            ${{ needs.setup.outputs.run_dir }}/binding.json
+            ${{ needs.setup.outputs.run_dir }}/history.jsonl
+            ${{ needs.setup.outputs.run_dir }}/history.csv
+            ${{ needs.setup.outputs.run_dir }}/best_result.json
+            ${{ needs.setup.outputs.run_dir }}/charts/**

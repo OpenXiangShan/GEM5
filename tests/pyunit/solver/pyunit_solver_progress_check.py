@@ -115,7 +115,7 @@ class ExecutorProgressLoggingTestCase(unittest.TestCase):
                             with patch.object(
                                 CiLocalParallelExecutor,
                                 "_maybe_generate_score",
-                                return_value=None,
+                                return_value=(None, None),
                             ):
                                 executor.run_trials(problem, trials)
                 output = buffer.getvalue()

@@ -172,6 +172,11 @@ def parse_problem(problem_ref: str) -> ParsedProblem:
         raise SpecLoadError(f"{problem_cls.__name__}.config_path must be set")
     if not benchmark_type:
         raise SpecLoadError(f"{problem_cls.__name__}.benchmark_type must be set")
+    summary_top_n = int(getattr(problem_cls, "summary_top_n", 16) or 16)
+    if summary_top_n < 1:
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.summary_top_n must be >= 1"
+        )
 
     parameters = [field.to_parameter(name) for name, field in problem_cls.iter_tunables()]
     return ParsedProblem(
@@ -186,6 +191,7 @@ def parse_problem(problem_ref: str) -> ParsedProblem:
         objective=objective,
         stop=stop,
         solver_hint=getattr(problem_cls, "solver_name", None),
+        summary_top_n=summary_top_n,
     )
 
 
