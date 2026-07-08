@@ -134,7 +134,7 @@ jobs:
             cmd+=(--custom-bin "${{ github.event.inputs.custom_bin }}")
           fi
           if [ -n "${{ github.event.inputs.extra_args }}" ]; then
-            cmd+=(--extra-args "${{ github.event.inputs.extra_args }}")
+            cmd+=("--extra-args=${{ github.event.inputs.extra_args }}")
           fi
           if [ -n "${{ github.event.inputs.max_trials }}" ]; then
             cmd+=(--max-trials "${{ github.event.inputs.max_trials }}")
