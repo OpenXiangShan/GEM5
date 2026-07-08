@@ -47,7 +47,8 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
       indexShift(bankBaseShift + ceilLog2(numBanks)),
       enableBankConflict(false),
       lastPredBankId(0),
-      predBankValid(false)
+      predBankValid(false),
+      tageStats()
 {
     setNumDelay(0);
 
@@ -565,14 +566,14 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
                              const TagePrediction &pred) {
     // Mirror the normal update path, but interpret mismatch against the S3 teacher
     // instead of a resolved squash/commit outcome.
-    if (pred.mainprovided) {
-        tageStats.s3UpdateUseAlt++;
-    } else {
-        tageStats.s3UpdateNoHitUseBim++;
-    }
-
     auto &main_info = pred.mainInfo;
     bool used_base = !pred.mainprovided;
+    if (!main_info.found) {
+        tageStats.s3UpdateNoHitUseBim++;
+    }
+    if (!main_info.found || used_base) {
+        tageStats.s3UpdateUseAlt++;
+    }
     bool base_taken = entry.ctr >= 0;
 
     if (main_info.found) {
@@ -672,6 +673,34 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     // - For each table from start_table upward, check the set at computed index.
     // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
     // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
+    auto count_alloc_success = [&]() {
+        if (stats) {
+            stats->s3UpdateAllocSuccess++;
+        } else {
+            tageStats.updateAllocSuccess++;
+        }
+    };
+    auto count_alloc_failure = [&]() {
+        if (stats) {
+            stats->s3UpdateAllocFailure++;
+        } else {
+            tageStats.updateAllocFailure++;
+        }
+    };
+    auto count_reset_u = [&]() {
+        if (stats) {
+            stats->s3UpdateResetU++;
+        } else {
+            tageStats.updateResetU++;
+        }
+    };
+    auto count_no_valid_table = [&]() {
+        if (stats) {
+            stats->s3UpdateAllocFailureNoValidTable++;
+        } else {
+            tageStats.updateAllocFailureNoValidTable++;
+        }
+    };
 
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
@@ -694,10 +723,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                 DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
                 cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
-                tageStats.updateAllocSuccess++;
-                if (stats) {
-                    stats->s3UpdateAllocSuccess++;
-                }
+                count_alloc_success();
                 allocated_table = ti;
                 allocated_index = newIndex;
                 allocated_way = way;
@@ -718,19 +744,13 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
             }
         }
 
-        tageStats.updateAllocFailure++;
-        if (stats) {
-            stats->s3UpdateAllocFailure++;
-        }
+        count_alloc_failure();
         usefulResetCnt++;
     }
 
     if (usefulResetCnt >= 256) {
         usefulResetCnt = 0;
-        tageStats.updateResetU++;
-        if (stats) {
-            stats->s3UpdateResetU++;
-        }
+        count_reset_u();
         DPRINTF(UTAGE, "reset useful bit of all entries\n");
         for (auto &table : tageTable) {
             for (auto &set : table) {
@@ -742,10 +762,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     }
 
     DPRINTF(UTAGE, "no eligible way found for allocation starting from table %d\n", start_table);
-    tageStats.updateAllocFailureNoValidTable++;
-    if (stats) {
-        stats->s3UpdateAllocFailureNoValidTable++;
-    }
+    count_no_valid_table();
     return false;
 }
 
