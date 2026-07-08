@@ -68,6 +68,7 @@ buildPredictionFromPairBlock(ThreadID tid,
 {
     FullBTBPrediction pred;
     pred.tid = tid;
+    pred.asidHash = basePred.asidHash;
     pred.bbStart = blockStartPC;
     pred.predSource = basePred.predSource;
     pred.overrideReason = OverrideReason::NO_OVERRIDE;

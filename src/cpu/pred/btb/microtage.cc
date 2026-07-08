@@ -410,7 +410,8 @@ MicroTAGE::refreshPredictionMeta(Addr startPC,
         if (!(btb_entry.isCond && btb_entry.valid)) {
             continue;
         }
-        meta->preds[btb_entry.pc] = generateSinglePrediction(btb_entry, startPC);
+        meta->preds[btb_entry.pc] = generateSinglePrediction(
+            btb_entry, startPC, nullptr, pred.tid, pred.asidHash);
     }
 }
 

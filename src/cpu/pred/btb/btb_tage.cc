@@ -548,7 +548,8 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
             continue;
         }
 
-        auto tage_pred = generateSinglePrediction(btb_entry, startPC);
+        auto tage_pred = generateSinglePrediction(
+            btb_entry, startPC, nullptr, pred.tid, pred.asidHash);
         meta->preds[btb_entry.pc] = tage_pred;
 
         auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];
