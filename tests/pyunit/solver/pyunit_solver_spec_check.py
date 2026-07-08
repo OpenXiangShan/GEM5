@@ -46,6 +46,7 @@ class SolverSpecParseTestCase(unittest.TestCase):
         self.assertEqual(problem.specific_benchmarks, "astar")
         self.assertEqual(problem.objective.source_kind, "score_txt")
         self.assertEqual(problem.objective.metric, "Estimated Int score per GHz")
+        self.assertEqual(problem.summary_top_n, 16)
         self.assertEqual(len(problem.parameters), 5)
         self.assertEqual(problem.parameters[0].name, "allocProbLoadL1Hit")
         self.assertEqual(problem.parameters[-1].name, "deepAllocExtraHopProb")
@@ -53,6 +54,21 @@ class SolverSpecParseTestCase(unittest.TestCase):
             self.assertEqual(parameter.mode, "infer")
             self.assertEqual(parameter.domain.iter_values()[0], 0.0)
             self.assertEqual(parameter.domain.iter_values()[-1], 1.0)
+
+    def test_parse_coremark_smoke_problem(self):
+        problem = parse_problem(
+            "configs/solver_specs/coremark_ipc_smoke.py:CoremarkIPCSmoke"
+        )
+        self.assertEqual(problem.name, "CoremarkIPCSmoke")
+        self.assertEqual(
+            problem.custom_bin,
+            "/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",
+        )
+        self.assertEqual(problem.objective.source_kind, "stats")
+        self.assertEqual(problem.objective.metric, "system.cpu.ipc")
+        self.assertEqual(problem.extra_args, "--maxinsts=1000000")
+        self.assertEqual(problem.summary_top_n, 8)
+        self.assertEqual(len(problem.parameters), 2)
 
 
 if __name__ == "__main__":

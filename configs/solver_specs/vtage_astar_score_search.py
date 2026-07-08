@@ -7,6 +7,7 @@ class VTAGEAstarScoreSearch(SolveSpec):
     specific_benchmarks = "astar"
     extra_args = ""
     solver_name = "random"
+    summary_top_n = 16
 
     allocProbLoadL1Hit = InferTunable(
         target="system.cpu[0].valuePred.predictors[1].allocProbLoadL1Hit",

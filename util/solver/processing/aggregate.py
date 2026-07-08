@@ -26,6 +26,8 @@ def evaluate_trial(problem: ParsedProblem, execution: TrialExecutionResult) -> E
 
     if execution.status != "completed":
         invalid_reason = execution.status
+    elif execution.error:
+        invalid_reason = execution.error
     elif execution.return_code not in (0, None):
         invalid_reason = f"return_code={execution.return_code}"
     elif abort_count > 0:

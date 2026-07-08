@@ -412,14 +412,17 @@ class CiLocalParallelExecutor(BaseExecutor):
             "executor_log": str(log_path),
             "raw_dir": str(raw_dir),
         }
+        error = None
         if problem.custom_bin:
             raw_files["custom_bin"] = problem.custom_bin
         if problem.objective.source_kind == "score_txt":
             self._log(f"{trial.trial_id}: generating score.txt")
-        score_path = self._maybe_generate_score(problem, benchmark, trial_dir)
+        score_path, error = self._maybe_generate_score(problem, benchmark, trial_dir)
         if score_path is not None:
             raw_files["score_txt"] = str(score_path)
             self._log(f"{trial.trial_id}: score.txt ready at {score_path}")
+        elif error:
+            self._log(f"{trial.trial_id}: score generation failed: {error}")
         self._log(
             f"completed {trial.trial_id}: status={status}, return_code={return_code}, "
             f"duration={duration:.1f}s"
@@ -433,6 +436,7 @@ class CiLocalParallelExecutor(BaseExecutor):
             duration_sec=duration,
             outdir=str(trial_dir),
             raw_files=raw_files,
+            error=error,
         )
 
     def run_trials(self, problem: ParsedProblem, trials: list[TrialRequest]) -> list[TrialExecutionResult]:
@@ -458,18 +462,25 @@ class CiLocalParallelExecutor(BaseExecutor):
                 results[future_map[future]] = future.result()
         return results
 
-    def _maybe_generate_score(self, problem: ParsedProblem, benchmark, trial_dir: Path) -> Path | None:
+    def _maybe_generate_score(
+        self,
+        problem: ParsedProblem,
+        benchmark,
+        trial_dir: Path,
+    ) -> tuple[Path | None, str | None]:
         if problem.objective.source_kind != "score_txt" and not Path(self.gem5_data_proc).exists():
-            return None
+            return None, None
         if not Path(self.gem5_data_proc).exists():
             if problem.objective.source_kind == "score_txt":
-                raise FileNotFoundError(
-                    f"score objective requires gem5_data_proc at {self.gem5_data_proc}"
+                return (
+                    None,
+                    f"score objective requires gem5_data_proc at {self.gem5_data_proc}",
                 )
-            return None
+            return None, None
         raw_spec_dir = trial_dir / "raw" / "spec_all"
         score_path = trial_dir / "score.txt"
         score_log = trial_dir / "score.log"
+        score_scratch_dir = trial_dir / "score_workdir"
         return_code = run_score_evaluator(
             gem5_data_proc=self.gem5_data_proc,
             score_script=benchmark.score_script,
@@ -478,11 +489,12 @@ class CiLocalParallelExecutor(BaseExecutor):
             repo_root=self.repo_root,
             score_path=score_path,
             score_log=score_log,
+            scratch_dir=score_scratch_dir,
         )
         if return_code == 0:
-            return score_path
+            return score_path, None
         if problem.objective.source_kind == "score_txt":
-            raise RuntimeError(f"failed to generate score.txt for {trial_dir}")
+            return None, f"score evaluator failed with return_code={return_code}"
         if score_path.is_file() and score_path.stat().st_size > 0:
-            return score_path
-        return None
+            return score_path, None
+        return None, None

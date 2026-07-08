@@ -18,7 +18,12 @@ from util.solver.parser.load_spec import parse_problem
 from util.solver.processing.aggregate import best_trial, evaluate_trial
 from util.solver.processing.persist import persist_run_state, write_json
 from util.solver.reporting.charts import render_charts
-from util.solver.reporting.markdown import render_summary, write_summary
+from util.solver.reporting.markdown import (
+    builtin_report_sections,
+    publish_step_summary,
+    render_summary,
+    write_summary,
+)
 from util.solver.solver.grid import GridSolver
 from util.solver.solver.random import RandomSolver
 
@@ -327,9 +332,6 @@ def main() -> int:
         history.extend(evaluated)
         best = best_trial(history, direction=problem.objective.direction)
         persist_run_state(workdir, problem, history, best)
-        summary = render_summary(problem, history)
-        write_summary(workdir / "summary.md", summary)
-        render_charts(problem, history, workdir / "charts")
         progress.batch_completed(
             batch_index,
             evaluated,
@@ -340,10 +342,24 @@ def main() -> int:
 
     best = best_trial(history, direction=problem.objective.direction)
     persist_run_state(workdir, problem, history, best)
-    summary = render_summary(problem, history)
+    chart_paths = render_charts(problem, history, workdir / "charts")
+    extra_sections = builtin_report_sections(problem, history)
+    summary = render_summary(problem, history, extra_sections=extra_sections)
     write_summary(workdir / "summary.md", summary)
-    render_charts(problem, history, workdir / "charts")
+    publish_step_summary(summary)
     write_json(workdir / "metadata.json", metadata)
+    artifact_manifest = {
+        "summary_md": str(workdir / "summary.md"),
+        "metadata_json": str(workdir / "metadata.json"),
+        "parsed_problem_json": str(workdir / "parsed_problem.json"),
+        "binding_json": str(workdir / "binding.json"),
+        "history_jsonl": str(workdir / "history.jsonl"),
+        "history_csv": str(workdir / "history.csv"),
+        "best_result_json": str(workdir / "best_result.json"),
+        "charts": chart_paths,
+        "extra_sections_count": len(extra_sections),
+    }
+    write_json(workdir / "artifact_manifest.json", artifact_manifest)
     valid_count = sum(1 for trial in history if trial.status == "valid")
     invalid_count = len(history) - valid_count
     progress.phase(

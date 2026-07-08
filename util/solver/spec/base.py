@@ -27,6 +27,7 @@ class SolveSpec(metaclass=SolveSpecMeta):
     custom_bin = ""
     extra_args = ""
     solver_name = None
+    summary_top_n = 16
 
     @classmethod
     def iter_tunables(cls):
