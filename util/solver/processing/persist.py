@@ -27,6 +27,11 @@ def write_history_csv(path: str | Path, history: list[EvaluatedTrial]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     assignment_keys = sorted({key for trial in history for key in trial.assignments})
+    objective_keys = sorted({
+        key
+        for trial in history
+        for key in trial.objective_values
+    })
     fieldnames = [
         "trial_id",
         "generation",
@@ -34,7 +39,7 @@ def write_history_csv(path: str | Path, history: list[EvaluatedTrial]) -> None:
         "objective_value",
         "invalid_reason",
         "duration_sec",
-    ] + assignment_keys
+    ] + objective_keys + assignment_keys
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -47,6 +52,8 @@ def write_history_csv(path: str | Path, history: list[EvaluatedTrial]) -> None:
                 "invalid_reason": trial.invalid_reason,
                 "duration_sec": trial.duration_sec,
             }
+            for key in objective_keys:
+                row[key] = trial.objective_values.get(key)
             for key in assignment_keys:
                 row[key] = trial.assignments.get(key)
             writer.writerow(row)

@@ -1,5 +1,5 @@
 name: Manual Solver Run
-run-name: ${{ format('{0} - {1} - {2} - {3}', github.event.inputs.note || 'Manual Solver Run', github.event.inputs.problem_ref, github.event.inputs.custom_bin && 'custom-bin' || github.event.inputs.benchmark_type, github.event.inputs.branch || github.ref_name) }}
+run-name: ${{ format('{0} - {1} - {2} - {3}', github.event.inputs.note || 'Manual Solver Run', github.event.inputs.problem_ref, github.event.inputs.benchmark_type, github.event.inputs.branch || github.ref_name) }}
 
 on:
   workflow_dispatch:
@@ -50,6 +50,7 @@ on:
           - auto
           - grid
           - random
+          - nsga2
       specific_benchmarks:
         description: "Optional comma-separated case-insensitive substring filters matched against each workload-list line from the selected benchmark_type. Empty means run all workloads. Leave empty when custom_bin is set."
         required: false
@@ -113,25 +114,17 @@ jobs:
           export GEM5_HOME=$(pwd)
           bash util/pgo/basic_pgo_new.sh
 
+      - name: Prepare solver Python dependencies
+        run: |
+          python3 -m venv .venv-solver
+          .venv-solver/bin/python -m pip install deap
+
       - name: Run solver controller
         run: |
           export GEM5_HOME=$(pwd)
-          export PYTHONUNBUFFERED=1
           mkdir -p "${{ needs.setup.outputs.run_dir }}"
-          echo "Solver runtime parameters:"
-          echo "  problem_ref=${{ github.event.inputs.problem_ref }}"
-          echo "  benchmark_type=${{ github.event.inputs.benchmark_type }}"
-          echo "  solver_kind=${{ github.event.inputs.solver_kind }}"
-          echo "  max_parallel_trials=${{ github.event.inputs.max_parallel_trials }}"
-          echo "  max_parallel_workloads=${{ github.event.inputs.max_parallel_workloads }}"
-          echo "  specific_benchmarks=${{ github.event.inputs.specific_benchmarks }}"
-          echo "  custom_bin=${{ github.event.inputs.custom_bin }}"
-          echo "  extra_args=${{ github.event.inputs.extra_args }}"
-          echo "  max_trials=${{ github.event.inputs.max_trials }}"
-          echo "  branch=${{ github.event.inputs.branch || github.ref_name }}"
-          echo "  run_dir=${{ needs.setup.outputs.run_dir }}"
           cmd=(
-            python3 -u util/solver/run_solver.py
+            python3 util/solver/run_solver.py
             --problem-ref "${{ github.event.inputs.problem_ref }}"
             --workdir "${{ needs.setup.outputs.run_dir }}"
             --benchmark-type "${{ github.event.inputs.benchmark_type }}"
@@ -146,7 +139,7 @@ jobs:
             cmd+=(--custom-bin "${{ github.event.inputs.custom_bin }}")
           fi
           if [ -n "${{ github.event.inputs.extra_args }}" ]; then
-            cmd+=("--extra-args=${{ github.event.inputs.extra_args }}")
+            cmd+=(--extra-args "${{ github.event.inputs.extra_args }}")
           fi
           if [ -n "${{ github.event.inputs.max_trials }}" ]; then
             cmd+=(--max-trials "${{ github.event.inputs.max_trials }}")
@@ -158,18 +151,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: solver-run-${{ github.run_id }}
-          path: |
-            ${{ needs.setup.outputs.run_dir }}/summary.md
-            ${{ needs.setup.outputs.run_dir }}/artifact_manifest.json
-            ${{ needs.setup.outputs.run_dir }}/metadata.json
-            ${{ needs.setup.outputs.run_dir }}/parsed_problem.json
-            ${{ needs.setup.outputs.run_dir }}/binding.json
-            ${{ needs.setup.outputs.run_dir }}/history.jsonl
-            ${{ needs.setup.outputs.run_dir }}/history.csv
-            ${{ needs.setup.outputs.run_dir }}/best_result.json
-            ${{ needs.setup.outputs.run_dir }}/charts/**
-
-      - name: Cleanup solver workdir
-        if: ${{ always() }}
-        run: |
-          rm -rf "${{ needs.setup.outputs.run_dir }}"
+          path: ${{ needs.setup.outputs.run_dir }}

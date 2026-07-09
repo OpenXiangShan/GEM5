@@ -1,6 +1,36 @@
 import unittest
 
-from util.solver.parser.load_spec import parse_problem
+from util.solver.parser.load_spec import SpecLoadError, parse_problem
+from util.solver.spec import Maximize, Minimize, SolveSpec, Stop
+from util.solver.types import ObjectiveSpec
+
+
+class MinStatsProblem(SolveSpec):
+    config_path = "configs/example/idealkmhv3.py"
+    benchmark_type = "gcc15-spec06-0.3c"
+    objective = Minimize.stats("system.cpu.branchMispredicts")
+    stop = Stop(max_trials=1)
+
+
+class InvalidMinScoreProblem(SolveSpec):
+    config_path = "configs/example/idealkmhv3.py"
+    benchmark_type = "gcc15-spec06-0.3c"
+    objective = ObjectiveSpec(
+        source_kind="score_txt",
+        metric="Estimated Int score per GHz",
+        direction="min",
+    )
+    stop = Stop(max_trials=1)
+
+
+class MultiObjectiveProblem(SolveSpec):
+    config_path = "configs/example/idealkmhv3.py"
+    benchmark_type = "gcc15-spec06-0.3c"
+    objectives = [
+        Maximize.stats("system.cpu.ipc"),
+        Minimize.stats("system.cpu.branchMispredicts"),
+    ]
+    stop = Stop(max_trials=1)
 
 
 class SolverSpecParseTestCase(unittest.TestCase):
@@ -55,6 +85,31 @@ class SolverSpecParseTestCase(unittest.TestCase):
             self.assertEqual(parameter.domain.iter_values()[0], 0.0)
             self.assertEqual(parameter.domain.iter_values()[-1], 1.0)
 
+    def test_parse_min_stats_problem(self):
+        problem = parse_problem(f"{__file__}:MinStatsProblem")
+        self.assertEqual(problem.name, "MinStatsProblem")
+        self.assertEqual(problem.objective.source_kind, "stats")
+        self.assertEqual(problem.objective.metric, "system.cpu.branchMispredicts")
+        self.assertEqual(problem.objective.direction, "min")
+
+    def test_parse_rejects_min_score_problem(self):
+        with self.assertRaisesRegex(
+            SpecLoadError,
+            "only supports Maximize.score_txt",
+        ):
+            parse_problem(f"{__file__}:InvalidMinScoreProblem")
+
+    def test_parse_multi_objective_problem(self):
+        problem = parse_problem(f"{__file__}:MultiObjectiveProblem")
+        self.assertEqual(problem.name, "MultiObjectiveProblem")
+        self.assertEqual(len(problem.objectives), 2)
+        self.assertTrue(problem.is_multi_objective())
+        self.assertEqual(problem.primary_objective().metric, "system.cpu.ipc")
+        self.assertEqual(
+            [objective.direction for objective in problem.objectives],
+            ["max", "min"],
+        )
+
     def test_parse_coremark_smoke_problem(self):
         problem = parse_problem(
             "configs/solver_specs/coremark_ipc_smoke.py:CoremarkIPCSmoke"
@@ -68,7 +123,7 @@ class SolverSpecParseTestCase(unittest.TestCase):
         self.assertEqual(problem.objective.metric, "system.cpu.ipc")
         self.assertEqual(problem.extra_args, "--maxinsts=1000000")
         self.assertEqual(problem.summary_top_n, 8)
-        self.assertEqual(len(problem.parameters), 2)
+        self.assertEqual(len(problem.parameters), 5)
 
 
 if __name__ == "__main__":

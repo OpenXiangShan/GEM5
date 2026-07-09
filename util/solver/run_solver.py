@@ -15,7 +15,11 @@ if str(REPO_ROOT) not in sys.path:
 from util.solver.executor.ci_local import CiLocalParallelExecutor
 from util.solver.parser.bind_targets import bind_problem_targets
 from util.solver.parser.load_spec import parse_problem
-from util.solver.processing.aggregate import best_trial, evaluate_trial
+from util.solver.processing.aggregate import (
+    best_trial,
+    evaluate_trial,
+    pareto_frontier,
+)
 from util.solver.processing.persist import persist_run_state, write_json
 from util.solver.reporting.charts import render_charts
 from util.solver.reporting.markdown import (
@@ -25,6 +29,7 @@ from util.solver.reporting.markdown import (
     write_summary,
 )
 from util.solver.solver.grid import GridSolver
+from util.solver.solver.nsga2 import Nsga2Solver
 from util.solver.solver.random import RandomSolver
 
 
@@ -32,8 +37,27 @@ def _escape_github_annotation(value: str) -> str:
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
+def github_annotations_enabled() -> bool:
+    return os.environ.get("SOLVER_GITHUB_ANNOTATIONS", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def format_best_trial(best) -> str:
-    if best is None or best.objective_value is None:
+    if best is None:
+        return "none"
+    if best.objective_values:
+        parts = []
+        for key, value in sorted(best.objective_values.items()):
+            if value is None:
+                continue
+            parts.append(f"{key}={value:.6f}")
+        if parts:
+            return f"{best.trial_id}[{', '.join(parts)}]"
+    if best.objective_value is None:
         return "none"
     return f"{best.trial_id}={best.objective_value:.6f}"
 
@@ -44,7 +68,15 @@ def format_evaluated_trial(trial) -> str:
         f"status={trial.status}",
         f"duration={trial.duration_sec:.1f}s",
     ]
-    if trial.objective_value is not None:
+    if trial.objective_values:
+        objective_parts = []
+        for key, value in sorted(trial.objective_values.items()):
+            if value is None:
+                continue
+            objective_parts.append(f"{key}={value:.6f}")
+        if objective_parts:
+            parts.append(f"objectives=[{', '.join(objective_parts)}]")
+    elif trial.objective_value is not None:
         parts.append(f"objective={trial.objective_value:.6f}")
     if trial.invalid_reason:
         parts.append(f"reason={trial.invalid_reason}")
@@ -64,7 +96,11 @@ class ProgressReporter:
     ) -> None:
         timestamp = time.strftime("%H:%M:%S")
         print(f"[{self.label} {timestamp}] {message}", flush=True)
-        if annotate and os.environ.get("GITHUB_ACTIONS") == "true":
+        if (
+            annotate
+            and os.environ.get("GITHUB_ACTIONS") == "true"
+            and github_annotations_enabled()
+        ):
             title = _escape_github_annotation(annotation_title or self.label)
             body = _escape_github_annotation(message)
             print(f"::notice title={title}::{body}", flush=True)
@@ -124,7 +160,7 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--benchmark-type", default="")
     parser.add_argument(
         "--solver-kind",
-        choices=["auto", "grid", "random"],
+        choices=["auto", "grid", "random", "nsga2"],
         default="auto",
     )
     parser.add_argument("--max-parallel-trials", type=int, default=4)
@@ -164,38 +200,62 @@ def choose_solver(problem, solver_kind: str, seed: int):
         return GridSolver(problem)
     if solver_kind == "random":
         return RandomSolver(problem, seed=seed)
+    if solver_kind == "nsga2":
+        return Nsga2Solver(problem, seed=seed)
     if problem.solver_hint == "grid":
         return GridSolver(problem)
     if problem.solver_hint == "random":
         return RandomSolver(problem, seed=seed)
+    if problem.solver_hint == "nsga2":
+        return Nsga2Solver(problem, seed=seed)
     total_points = prod(parameter.domain.cardinality() for parameter in problem.parameters)
     max_trials = problem.stop.max_trials
     if max_trials is not None and total_points <= max_trials:
         return GridSolver(problem)
+    if problem.is_multi_objective():
+        return Nsga2Solver(problem, seed=seed)
     return RandomSolver(problem, seed=seed)
 
 
 def _no_improve_count(problem, history) -> int:
-    best = None
+    objectives = problem.objective_list()
+    if len(objectives) <= 1:
+        best = None
+        stale = 0
+        direction = objectives[0].direction if objectives else "max"
+        for trial in history:
+            if trial.status != "valid" or trial.objective_value is None:
+                stale += 1
+                continue
+            if best is None:
+                best = trial.objective_value
+                stale = 0
+                continue
+            improved = (
+                trial.objective_value > best
+                if direction == "max"
+                else trial.objective_value < best
+            )
+            if improved:
+                best = trial.objective_value
+                stale = 0
+            else:
+                stale += 1
+        return stale
+
     stale = 0
-    for trial in history:
-        if trial.status != "valid" or trial.objective_value is None:
-            stale += 1
-            continue
-        if best is None:
-            best = trial.objective_value
-            stale = 0
-            continue
-        improved = (
-            trial.objective_value > best
-            if problem.objective.direction == "max"
-            else trial.objective_value < best
-        )
+    previous_frontier: list = []
+    for index, trial in enumerate(history):
+        current_history = history[: index + 1]
+        current_frontier = pareto_frontier(current_history, objectives)
+        frontier_ids = {item.trial_id for item in current_frontier}
+        previous_ids = {item.trial_id for item in previous_frontier}
+        improved = frontier_ids != previous_ids and trial.trial_id in frontier_ids
         if improved:
-            best = trial.objective_value
             stale = 0
         else:
             stale += 1
+        previous_frontier = current_frontier
     return stale
 
 
@@ -232,7 +292,7 @@ def main() -> int:
         "setup",
         (
             f"problem={problem.name}; benchmark={problem.benchmark_type}; "
-            f"objective={problem.objective.source_kind}:{problem.objective.metric}; "
+            f"objectives={'; '.join(obj.display_name() for obj in problem.objective_list())}; "
             f"parameters={len(problem.parameters)} [{parameter_names}]; "
             f"search_space={search_space}"
         ),
@@ -260,6 +320,20 @@ def main() -> int:
         "stop_reason": None,
     }
     write_json(workdir / "metadata.json", metadata)
+    progress.phase(
+        "setup",
+        (
+            "runtime parameters: "
+            f"solver_kind={metadata['solver_kind']}, "
+            f"benchmark_type={metadata['benchmark_type']}, "
+            f"specific_benchmarks={metadata['specific_benchmarks'] or '<none>'}, "
+            f"custom_bin={metadata['custom_bin'] or '<none>'}, "
+            f"extra_args={metadata['extra_args'] or '<none>'}, "
+            f"max_parallel_trials={metadata['max_parallel_trials']}, "
+            f"max_parallel_workloads={metadata['max_parallel_workloads']}, "
+            f"gem5_build_type={metadata['gem5_build_type']}"
+        ),
+    )
 
     bind_output = workdir / "binding.json"
     progress.phase("bind", "binding solver parameters to live gem5 objects", annotate=True)
@@ -272,6 +346,8 @@ def main() -> int:
 
     solver = choose_solver(problem, args.solver_kind, args.seed)
     solver_name = solver.__class__.__name__
+    metadata["solver_backend"] = solver_name
+    metadata["solver_report"] = solver.report_metadata()
     preview_count = min(
         args.max_parallel_trials,
         problem.stop.max_trials or args.max_parallel_trials,
@@ -330,7 +406,14 @@ def main() -> int:
         executed = executor.run_trials(problem, trials)
         evaluated = [evaluate_trial(problem, result) for result in executed]
         history.extend(evaluated)
-        best = best_trial(history, direction=problem.objective.direction)
+        metadata["solver_report"] = solver.report_metadata()
+        primary = problem.primary_objective()
+        best = best_trial(
+            history,
+            direction=primary.direction if primary is not None else "max",
+            objective=primary,
+            objectives=problem.objective_list(),
+        )
         persist_run_state(workdir, problem, history, best)
         progress.batch_completed(
             batch_index,
@@ -340,11 +423,23 @@ def main() -> int:
             batch_duration_sec=time.monotonic() - batch_start,
         )
 
-    best = best_trial(history, direction=problem.objective.direction)
+    primary = problem.primary_objective()
+    metadata["solver_report"] = solver.report_metadata()
+    best = best_trial(
+        history,
+        direction=primary.direction if primary is not None else "max",
+        objective=primary,
+        objectives=problem.objective_list(),
+    )
     persist_run_state(workdir, problem, history, best)
     chart_paths = render_charts(problem, history, workdir / "charts")
     extra_sections = builtin_report_sections(problem, history)
-    summary = render_summary(problem, history, extra_sections=extra_sections)
+    summary = render_summary(
+        problem,
+        history,
+        metadata=metadata,
+        extra_sections=extra_sections,
+    )
     write_summary(workdir / "summary.md", summary)
     publish_step_summary(summary)
     write_json(workdir / "metadata.json", metadata)

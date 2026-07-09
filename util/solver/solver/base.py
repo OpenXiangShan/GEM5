@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from util.solver.types import ParsedProblem, TrialRequest
 
 
@@ -17,6 +19,13 @@ class BaseSolver:
 
     def observe(self, results) -> None:
         return None
+
+    def report_metadata(self) -> dict[str, Any]:
+        return {
+            "solver_backend": self.__class__.__name__,
+            "generation": self._generation,
+            "next_trial_index": self._next_trial_index,
+        }
 
     def _make_trial(self, assignments: dict) -> TrialRequest:
         trial_id = f"trial_{self._next_trial_index:04d}"
