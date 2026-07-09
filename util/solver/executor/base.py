@@ -14,5 +14,8 @@ class BaseExecutor:
     ) -> list[TrialExecutionResult]:
         raise NotImplementedError
 
+    def cancel(self) -> None:
+        return None
+
     def cleanup(self) -> None:
         return None

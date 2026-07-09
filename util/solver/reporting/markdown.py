@@ -12,6 +12,8 @@ from util.solver.processing.aggregate import (
 from util.solver.reporting.charts import best_objective_series
 from util.solver.types import EvaluatedTrial, ObjectiveSpec, ParsedProblem
 
+MERMAID_CONVERGENCE_FULL_X_AXIS_LIMIT = 12
+
 
 def builtin_report_sections(
     problem: ParsedProblem,
@@ -360,6 +362,15 @@ def _vtage_report_sections(history: list[EvaluatedTrial]) -> list[str]:
     ]
 
 
+def _format_convergence_x_axis(series_length: int) -> str:
+    if series_length <= 0:
+        return 'x-axis "Valid Trial"'
+    if series_length > MERMAID_CONVERGENCE_FULL_X_AXIS_LIMIT:
+        return f'x-axis "Valid Trial" 1 --> {series_length}'
+    x_axis = ", ".join(str(index) for index in range(1, series_length + 1))
+    return f'x-axis "Valid Trial" [{x_axis}]'
+
+
 def _mermaid_convergence_chart(problem: ParsedProblem, history: list[EvaluatedTrial]) -> list[str]:
     series = best_objective_series(problem, history)
     lines = ["## Charts", ""]
@@ -367,7 +378,6 @@ def _mermaid_convergence_chart(problem: ParsedProblem, history: list[EvaluatedTr
         lines.append("No valid objective values yet.")
         return lines
 
-    x_axis = ", ".join(str(index) for index in range(1, len(series) + 1))
     values = ", ".join(f"{value:.6f}" for value in series)
     y_min = min(series)
     y_max = max(series)
@@ -386,7 +396,7 @@ def _mermaid_convergence_chart(problem: ParsedProblem, history: list[EvaluatedTr
             "```mermaid",
             "xychart-beta",
             '    title "Best Objective So Far"',
-            f'    x-axis "Valid Trial" [{x_axis}]',
+            f"    {_format_convergence_x_axis(len(series))}",
             f'    y-axis "Objective" {y_min:.6f} --> {y_max:.6f}',
             f"    line [{values}]",
             "```",

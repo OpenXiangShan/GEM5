@@ -3,7 +3,10 @@ import unittest
 from unittest import mock
 
 from util.solver.reporting.charts import render_charts
-from util.solver.reporting.markdown import publish_step_summary, render_summary
+from util.solver.reporting.markdown import (
+    publish_step_summary,
+    render_summary,
+)
 from util.solver.types import EvaluatedTrial, ObjectiveSpec, ParsedProblem, StopSpec
 
 
@@ -109,6 +112,71 @@ class ReportingTestCase(unittest.TestCase):
         self.assertIn("trial_0002", summary)
         self.assertIn("Representative best: `trial_0002`", summary)
         self.assertLess(summary.find("| trial_0002 |"), summary.find("| trial_0001 |"))
+
+    def test_render_summary_keeps_full_convergence_x_axis_for_short_series(self):
+        problem = ParsedProblem(
+            name="ShortSeriesExample",
+            problem_ref="example.py:ShortSeriesExample",
+            config_path="configs/example/idealkmhv3.py",
+            benchmark_type="gcc15-spec06-0.3c",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+            parameters=[],
+            objective=ObjectiveSpec(source_kind="stats", metric="system.cpu.ipc"),
+            stop=StopSpec(max_trials=3),
+            summary_top_n=16,
+        )
+        history = [
+            EvaluatedTrial(
+                trial_id=f"trial_{index:04d}",
+                generation=index - 1,
+                assignments={"x": index},
+                status="valid",
+                objective_value=float(index),
+                metrics={},
+                invalid_reason=None,
+                outdir=f"/tmp/trial_{index:04d}",
+                duration_sec=1.0,
+            )
+            for index in range(1, 4)
+        ]
+
+        summary = render_summary(problem, history)
+        self.assertIn('x-axis "Valid Trial" [1, 2, 3]', summary)
+
+    def test_render_summary_uses_sparse_convergence_x_axis_for_long_series(self):
+        problem = ParsedProblem(
+            name="LongSeriesExample",
+            problem_ref="example.py:LongSeriesExample",
+            config_path="configs/example/idealkmhv3.py",
+            benchmark_type="gcc15-spec06-0.3c",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+            parameters=[],
+            objective=ObjectiveSpec(source_kind="stats", metric="system.cpu.ipc"),
+            stop=StopSpec(max_trials=20),
+            summary_top_n=16,
+        )
+        history = [
+            EvaluatedTrial(
+                trial_id=f"trial_{index:04d}",
+                generation=index - 1,
+                assignments={"x": index},
+                status="valid",
+                objective_value=float(index),
+                metrics={},
+                invalid_reason=None,
+                outdir=f"/tmp/trial_{index:04d}",
+                duration_sec=1.0,
+            )
+            for index in range(1, 21)
+        ]
+
+        summary = render_summary(problem, history)
+        self.assertIn('x-axis "Valid Trial" 1 --> 20', summary)
+        self.assertNotIn('x-axis "Valid Trial" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10', summary)
 
     def test_render_multi_objective_summary_and_charts(self):
         problem = ParsedProblem(

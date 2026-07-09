@@ -96,6 +96,7 @@ jobs:
 
   solve:
     needs: setup
+    if: ${{ always() }}
     runs-on: [self-hosted, node]
     timeout-minutes: 720
     env:
@@ -205,3 +206,8 @@ jobs:
         with:
           name: solver-run-${{ github.run_id }}
           path: ${{ needs.setup.outputs.run_dir }}
+
+      - name: Cleanup solver workdir
+        if: ${{ always() }}
+        run: |
+          rm -rf "${{ needs.setup.outputs.run_dir }}"

@@ -4,7 +4,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from pathlib import Path
 import shlex
+import signal
 import subprocess
+import threading
 import time
 
 from util.solver.executor.base import BaseExecutor
@@ -46,6 +48,9 @@ class CiLocalParallelExecutor(BaseExecutor):
         self.timeout_minutes = timeout_minutes
         self.gem5_data_proc = gem5_data_proc or DEFAULT_GEM5_DATA_PROC
         self.repo_root = Path(__file__).resolve().parents[3]
+        self._cancel_requested = threading.Event()
+        self._active_processes: set[subprocess.Popen] = set()
+        self._process_lock = threading.Lock()
 
     def _log(self, message: str) -> None:
         timestamp = time.strftime("%H:%M:%S")
@@ -206,6 +211,67 @@ class CiLocalParallelExecutor(BaseExecutor):
             )
         self._log(f"binding complete; log saved to {bind_log}")
 
+    def cancel(self) -> None:
+        self._cancel_requested.set()
+        with self._process_lock:
+            active = list(self._active_processes)
+        for process in active:
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+            except ProcessLookupError:
+                continue
+            except OSError:
+                continue
+
+    def _register_process(self, process: subprocess.Popen) -> None:
+        with self._process_lock:
+            self._active_processes.add(process)
+
+    def _unregister_process(self, process: subprocess.Popen) -> None:
+        with self._process_lock:
+            self._active_processes.discard(process)
+
+    def _run_command(
+        self,
+        cmd: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        stdout_handle,
+        timeout: float | None,
+    ) -> subprocess.CompletedProcess:
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=stdout_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        self._register_process(process)
+        try:
+            return_code = process.wait(timeout=timeout)
+            return subprocess.CompletedProcess(cmd, return_code)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+            raise exc
+        finally:
+            self._unregister_process(process)
+
+    def _cancellation_error(self) -> tuple[str, int]:
+        return "cancelled", 130
+
     def _run_workload(
         self,
         trial_id: str,
@@ -232,6 +298,11 @@ class CiLocalParallelExecutor(BaseExecutor):
             f"{trial_id}: start workload {workload_name} "
             f"({checkpoint.name})"
         )
+        if self._cancel_requested.is_set():
+            running_path.unlink(missing_ok=True)
+            abort_path.touch()
+            self._log(f"{trial_id}: workload {workload_name} cancelled before launch")
+            return self._cancellation_error()
         timeout_seconds = self._remaining_timeout(deadline)
         if timeout_seconds == 0.0:
             running_path.unlink(missing_ok=True)
@@ -240,13 +311,11 @@ class CiLocalParallelExecutor(BaseExecutor):
             return "timeout", 124
         try:
             with log_path.open("w", encoding="utf-8") as handle:
-                completed = subprocess.run(
+                completed = self._run_command(
                     cmd,
-                    check=False,
                     cwd=workload_dir,
                     env=self._base_env(),
-                    stdout=handle,
-                    stderr=subprocess.STDOUT,
+                    stdout_handle=handle,
                     timeout=timeout_seconds,
                 )
         except subprocess.TimeoutExpired:
@@ -254,8 +323,18 @@ class CiLocalParallelExecutor(BaseExecutor):
             abort_path.touch()
             self._log(f"{trial_id}: workload {workload_name} timed out")
             return "timeout", 124
+        except KeyboardInterrupt:
+            running_path.unlink(missing_ok=True)
+            abort_path.touch()
+            self._log(f"{trial_id}: workload {workload_name} cancelled")
+            self._cancel_requested.set()
+            return self._cancellation_error()
 
         running_path.unlink(missing_ok=True)
+        if self._cancel_requested.is_set():
+            abort_path.touch()
+            self._log(f"{trial_id}: workload {workload_name} cancelled")
+            return self._cancellation_error()
         if completed.returncode != 0:
             abort_path.touch()
             self._log(
@@ -290,6 +369,9 @@ class CiLocalParallelExecutor(BaseExecutor):
         )
 
         def run_entry(entry: tuple[str, Path]):
+            if self._cancel_requested.is_set():
+                workload_name, checkpoint = entry
+                return workload_name, checkpoint, *self._cancellation_error()
             workload_name, checkpoint = entry
             status, return_code = self._run_workload(
                 trial_id,
@@ -313,7 +395,17 @@ class CiLocalParallelExecutor(BaseExecutor):
                     for index, entry in enumerate(entries)
                 }
                 for future in as_completed(future_map):
-                    workload_results[future_map[future]] = future.result()
+                    index = future_map[future]
+                    try:
+                        workload_results[index] = future.result()
+                    except KeyboardInterrupt:
+                        self._cancel_requested.set()
+                        workload_name, checkpoint = entries[index]
+                        workload_results[index] = (
+                            workload_name,
+                            checkpoint,
+                            *self._cancellation_error(),
+                        )
 
         trial_status = "completed"
         trial_return_code = 0
@@ -321,11 +413,15 @@ class CiLocalParallelExecutor(BaseExecutor):
             lines.append(
                 f"{workload_name}: {checkpoint} -> {status} (return_code={return_code})"
             )
+            if status == "cancelled":
+                trial_status = "cancelled"
+                trial_return_code = 130
+                continue
             if status == "timeout":
                 trial_status = "timeout"
                 trial_return_code = 124
                 continue
-            if status == "failed" and trial_status != "timeout":
+            if status == "failed" and trial_status not in {"timeout", "cancelled"}:
                 trial_status = "failed"
                 trial_return_code = return_code
 
@@ -388,23 +484,29 @@ class CiLocalParallelExecutor(BaseExecutor):
 
         self._log(f"starting {trial.trial_id} with assignments={trial.assignments}")
         start = time.monotonic()
-        if problem.custom_bin:
-            status, return_code = self._run_custom_trial(
-                trial.trial_id,
-                problem,
-                raw_dir,
-                overlay_path,
-                log_path,
-            )
-        else:
-            status, return_code = self._run_standard_trial(
-                trial.trial_id,
-                problem,
-                benchmark,
-                raw_dir,
-                overlay_path,
-                log_path,
-            )
+        try:
+            if self._cancel_requested.is_set():
+                status, return_code = self._cancellation_error()
+            elif problem.custom_bin:
+                status, return_code = self._run_custom_trial(
+                    trial.trial_id,
+                    problem,
+                    raw_dir,
+                    overlay_path,
+                    log_path,
+                )
+            else:
+                status, return_code = self._run_standard_trial(
+                    trial.trial_id,
+                    problem,
+                    benchmark,
+                    raw_dir,
+                    overlay_path,
+                    log_path,
+                )
+        except KeyboardInterrupt:
+            self._cancel_requested.set()
+            status, return_code = self._cancellation_error()
         duration = time.monotonic() - start
 
         raw_files = {
@@ -415,11 +517,15 @@ class CiLocalParallelExecutor(BaseExecutor):
         error = None
         if problem.custom_bin:
             raw_files["custom_bin"] = problem.custom_bin
-        if problem.uses_score_txt():
+        if status == "cancelled":
+            error = "cancelled"
+        elif problem.uses_score_txt():
             self._log(f"{trial.trial_id}: generating score.txt")
         elif problem.uses_benchmark_weighted_stats():
             self._log(f"{trial.trial_id}: generating weighted stats")
-        generated_files, error = self._maybe_generate_score(problem, benchmark, trial_dir)
+        generated_files = {}
+        if status != "cancelled":
+            generated_files, error = self._maybe_generate_score(problem, benchmark, trial_dir)
         if "score_txt" in generated_files:
             raw_files["score_txt"] = generated_files["score_txt"]
             self._log(f"{trial.trial_id}: score.txt ready at {generated_files['score_txt']}")
@@ -453,10 +559,12 @@ class CiLocalParallelExecutor(BaseExecutor):
             f"with max_parallel_trials={self.max_parallel_trials}"
         )
         if len(trials) <= 1 or self.max_parallel_trials <= 1:
-            return [
-                self._run_single_trial(problem, benchmark, trial)
-                for trial in trials
-            ]
+            results = []
+            for trial in trials:
+                results.append(self._run_single_trial(problem, benchmark, trial))
+                if self._cancel_requested.is_set():
+                    break
+            return results
 
         results = [None] * len(trials)
         max_workers = min(self.max_parallel_trials, len(trials))
@@ -466,8 +574,23 @@ class CiLocalParallelExecutor(BaseExecutor):
                 for index, trial in enumerate(trials)
             }
             for future in as_completed(future_map):
-                results[future_map[future]] = future.result()
-        return results
+                index = future_map[future]
+                try:
+                    results[index] = future.result()
+                except KeyboardInterrupt:
+                    self._cancel_requested.set()
+                    trial = trials[index]
+                    results[index] = TrialExecutionResult(
+                        trial_id=trial.trial_id,
+                        generation=trial.generation,
+                        assignments=trial.assignments,
+                        status="cancelled",
+                        return_code=130,
+                        duration_sec=0.0,
+                        outdir=str(self.workdir / "trials" / trial.trial_id),
+                        error="cancelled",
+                    )
+        return [result for result in results if result is not None]
 
     def _maybe_generate_score(
         self,
