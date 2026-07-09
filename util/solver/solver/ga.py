@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import random
 
-from util.solver.processing.aggregate import pareto_frontier
+from util.solver.processing.aggregate import objective_value_for_trial
 from util.solver.solver.base import BaseSolver
 from util.solver.solver.deap_support import import_deap
 from util.solver.types import freeze_value
 
 
-class Nsga2Solver(BaseSolver):
+class GaSolver(BaseSolver):
     def __init__(
         self,
         problem,
@@ -16,36 +16,47 @@ class Nsga2Solver(BaseSolver):
         population_size: int = 8,
         mutation_prob: float = 0.3,
         crossover_prob: float = 0.9,
+        elite_count: int = 2,
+        tournament_size: int = 3,
     ):
         super().__init__(problem)
+        if problem.is_multi_objective():
+            raise ValueError(
+                "GaSolver only supports single-objective problems; "
+                "use Nsga2Solver for multi-objective search"
+            )
+        self._objective = problem.primary_objective()
+        if self._objective is None:
+            raise ValueError("GaSolver requires one primary objective")
         self._rng = random.Random(seed)
         self._population_size = max(4, population_size)
         self._mutation_prob = mutation_prob
         self._crossover_prob = crossover_prob
+        self._elite_count = max(1, min(elite_count, self._population_size))
+        self._tournament_size = max(1, tournament_size)
         self._seen = set()
         self._pending_generation = []
         self._generation_history: list[dict] = []
         self._last_population_size = 0
-        self._last_frontier_size = 0
         self._last_selected_parent_pool = 0
+        self._last_elite_count = 0
         self._last_generated_trials = 0
         self._last_generation_mode = "init"
+        self._last_best_objective: float | None = None
+        self._last_mean_objective: float | None = None
         self._base, self._creator, self._tools = import_deap()
         self._fitness_cls = self._ensure_fitness_type()
         self._individual_cls = self._ensure_individual_type()
 
     def _ensure_fitness_type(self):
-        name = "SolverNSGA2Fitness"
+        name = "SolverGAFitness"
         if not hasattr(self._creator, name):
-            weights = tuple(
-                1.0 if objective.direction == "max" else -1.0
-                for objective in self.problem.objective_list()
-            )
-            self._creator.create(name, self._base.Fitness, weights=weights)
+            direction = 1.0 if self._objective.direction == "max" else -1.0
+            self._creator.create(name, self._base.Fitness, weights=(direction,))
         return getattr(self._creator, name)
 
     def _ensure_individual_type(self):
-        name = "SolverNSGA2Individual"
+        name = "SolverGAIndividual"
         if not hasattr(self._creator, name):
             self._creator.create(
                 name,
@@ -56,8 +67,7 @@ class Nsga2Solver(BaseSolver):
         return getattr(self._creator, name)
 
     def _make_individual(self, assignments: dict) -> dict:
-        individual = self._individual_cls(assignments)
-        return individual
+        return self._individual_cls(assignments)
 
     def _sample_assignment(self) -> dict:
         return {
@@ -72,8 +82,7 @@ class Nsga2Solver(BaseSolver):
         self._seen.add(key)
         return self._make_trial(assignments)
 
-    def _initial_generation(self, batch_size: int):
-        self._last_generation_mode = "initial_sampling"
+    def _random_unique_trials(self, batch_size: int):
         trials = []
         attempts = 0
         max_attempts = max(64, batch_size * 64)
@@ -82,6 +91,13 @@ class Nsga2Solver(BaseSolver):
             trial = self._unique_trial_from_assignment(self._sample_assignment())
             if trial is not None:
                 trials.append(trial)
+        return trials
+
+    def _initial_generation(self, batch_size: int):
+        self._last_generation_mode = "initial_sampling"
+        self._last_selected_parent_pool = 0
+        self._last_elite_count = 0
+        trials = self._random_unique_trials(batch_size)
         self._last_generated_trials = len(trials)
         return trials
 
@@ -90,23 +106,26 @@ class Nsga2Solver(BaseSolver):
         for trial in history:
             if trial.status != "valid":
                 continue
-            if not trial.objective_values:
+            objective_value = objective_value_for_trial(trial, self._objective)
+            if objective_value is None:
                 continue
             individual = self._make_individual(dict(trial.assignments))
-            values = []
-            missing = False
-            for objective in self.problem.objective_list():
-                value = trial.objective_values.get(objective.key())
-                if value is None:
-                    missing = True
-                    break
-                values.append(value)
-            if missing:
-                continue
-            individual.fitness.values = tuple(values)
+            individual.fitness.values = (objective_value,)
             individual.trial_id = trial.trial_id
             population.append(individual)
         return population
+
+    def _update_population_stats(self, population) -> None:
+        self._last_population_size = len(population)
+        if not population:
+            self._last_best_objective = None
+            self._last_mean_objective = None
+            return
+        values = [float(individual.fitness.values[0]) for individual in population]
+        self._last_best_objective = (
+            max(values) if self._objective.direction == "max" else min(values)
+        )
+        self._last_mean_objective = sum(values) / len(values)
 
     def _mutate_assignment(self, base_assignment: dict) -> dict:
         mutated = dict(base_assignment)
@@ -131,16 +150,43 @@ class Nsga2Solver(BaseSolver):
                 child_b[parameter.name] = left[parameter.name]
         return child_a, child_b
 
+    def _unique_parents(self, individuals):
+        unique = []
+        seen = set()
+        for individual in individuals:
+            trial_id = getattr(individual, "trial_id", None)
+            key = trial_id or freeze_value(dict(individual))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(individual)
+        return unique
+
     def _offspring_from_population(self, population, batch_size: int):
         self._last_generation_mode = "offspring"
         trials = []
         if not population:
             return self._initial_generation(batch_size)
 
-        parents = list(population)
-        selected_parent_pool = min(len(parents), self._population_size)
-        self._tools.selNSGA2(parents, selected_parent_pool)
-        self._last_selected_parent_pool = selected_parent_pool
+        parent_pool_limit = min(len(population), self._population_size)
+        elites = list(
+            self._tools.selBest(population, min(parent_pool_limit, self._elite_count))
+        )
+        extra_parent_slots = max(0, parent_pool_limit - len(elites))
+        tournament_winners = []
+        if extra_parent_slots:
+            tournament_winners = list(
+                self._tools.selTournament(
+                    population,
+                    extra_parent_slots,
+                    tournsize=min(len(population), self._tournament_size),
+                )
+            )
+        parents = self._unique_parents(elites + tournament_winners)
+        if not parents:
+            parents = list(self._tools.selBest(population, 1))
+        self._last_selected_parent_pool = len(parents)
+        self._last_elite_count = len(self._unique_parents(elites))
         attempts = 0
         max_attempts = max(128, batch_size * 128)
         while len(trials) < batch_size and attempts < max_attempts:
@@ -164,8 +210,7 @@ class Nsga2Solver(BaseSolver):
                 if len(trials) >= batch_size:
                     break
         if len(trials) < batch_size:
-            top_up = self._initial_generation(batch_size - len(trials))
-            trials.extend(top_up)
+            trials.extend(self._random_unique_trials(batch_size - len(trials)))
         self._last_generated_trials = len(trials)
         return trials
 
@@ -177,10 +222,12 @@ class Nsga2Solver(BaseSolver):
                 "requested_batch_size": batch_size,
                 "generated_trials": self._last_generated_trials,
                 "population_size": self._last_population_size,
-                "frontier_size": self._last_frontier_size,
                 "selected_parent_pool": self._last_selected_parent_pool,
+                "elite_count": self._last_elite_count,
                 "pending_trials": len(self._pending_generation),
                 "seen_assignments": len(self._seen),
+                "best_objective": self._last_best_objective,
+                "mean_objective": self._last_mean_objective,
             }
         )
 
@@ -197,25 +244,11 @@ class Nsga2Solver(BaseSolver):
             return pending
 
         if not history:
+            self._update_population_stats([])
             generated = self._initial_generation(max(batch_size, self._population_size))
-            self._last_population_size = 0
-            self._last_frontier_size = 0
         else:
             population = self._history_to_population(history)
-            frontier = pareto_frontier(history, self.problem.objective_list())
-            self._last_population_size = len(population)
-            self._last_frontier_size = len(frontier)
-            if frontier:
-                frontier_ids = {trial.trial_id for trial in frontier}
-                frontier_population = [
-                    individual for individual in population
-                    if getattr(individual, "trial_id", None) in frontier_ids
-                ]
-                if frontier_population:
-                    population = frontier_population + [
-                        individual for individual in population
-                        if getattr(individual, "trial_id", None) not in frontier_ids
-                    ]
+            self._update_population_stats(population)
             generated = self._offspring_from_population(
                 population,
                 max(batch_size, self._population_size),
@@ -232,18 +265,22 @@ class Nsga2Solver(BaseSolver):
         metadata = super().report_metadata()
         metadata.update(
             {
-                "solver_backend": "Nsga2Solver",
-                "algorithm": "NSGA-II via DEAP",
+                "solver_backend": "GaSolver",
+                "algorithm": "Genetic Algorithm via DEAP",
                 "population_size": self._population_size,
+                "elite_count": self._elite_count,
+                "tournament_size": self._tournament_size,
                 "mutation_prob": self._mutation_prob,
                 "crossover_prob": self._crossover_prob,
                 "rng_seen_assignments": len(self._seen),
                 "last_generation_mode": self._last_generation_mode,
                 "last_population_size": self._last_population_size,
-                "last_frontier_size": self._last_frontier_size,
                 "last_selected_parent_pool": self._last_selected_parent_pool,
+                "last_elite_count": self._last_elite_count,
                 "last_generated_trials": self._last_generated_trials,
                 "pending_trials": len(self._pending_generation),
+                "last_best_objective": self._last_best_objective,
+                "last_mean_objective": self._last_mean_objective,
                 "generation_history": list(self._generation_history),
             }
         )

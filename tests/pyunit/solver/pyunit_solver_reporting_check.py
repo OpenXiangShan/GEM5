@@ -274,6 +274,91 @@ class ReportingTestCase(unittest.TestCase):
         self.assertIn("New Samples By Generation", summary)
         self.assertIn("process health indicators", summary)
 
+    def test_render_summary_includes_ga_progress_section(self):
+        problem = ParsedProblem(
+            name="SingleObjectiveExample",
+            problem_ref="example.py:SingleObjectiveExample",
+            config_path="configs/example/idealkmhv3.py",
+            benchmark_type="gcc15-spec06-0.3c",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+            parameters=[],
+            objective=ObjectiveSpec(source_kind="stats", metric="system.cpu.ipc"),
+            objectives=[],
+            stop=StopSpec(max_trials=4),
+            summary_top_n=16,
+        )
+        history = [
+            EvaluatedTrial(
+                trial_id="trial_0001",
+                generation=0,
+                assignments={"x": 1},
+                status="valid",
+                objective_value=10.0,
+                objective_values={"max:stats:system.cpu.ipc": 10.0},
+                metrics={},
+                invalid_reason=None,
+                outdir="/tmp/trial_0001",
+                duration_sec=1.0,
+            ),
+            EvaluatedTrial(
+                trial_id="trial_0002",
+                generation=1,
+                assignments={"x": 2},
+                status="valid",
+                objective_value=11.5,
+                objective_values={"max:stats:system.cpu.ipc": 11.5},
+                metrics={},
+                invalid_reason=None,
+                outdir="/tmp/trial_0002",
+                duration_sec=1.0,
+            ),
+        ]
+
+        summary = render_summary(
+            problem,
+            history,
+            metadata={
+                "solver_kind": "ga",
+                "solver_backend": "GaSolver",
+                "solver_report": {
+                    "algorithm": "Genetic Algorithm via DEAP",
+                    "population_size": 8,
+                    "elite_count": 2,
+                    "tournament_size": 3,
+                    "mutation_prob": 0.3,
+                    "crossover_prob": 0.9,
+                    "last_best_objective": 11.5,
+                    "last_mean_objective": 10.75,
+                    "generation_history": [
+                        {
+                            "generation": 0,
+                            "elite_count": 0,
+                            "generated_trials": 8,
+                        },
+                        {
+                            "generation": 1,
+                            "elite_count": 2,
+                            "generated_trials": 8,
+                            "best_objective": 11.5,
+                            "mean_objective": 10.75,
+                        },
+                    ],
+                },
+            },
+        )
+        self.assertIn("## Solver Algorithm", summary)
+        self.assertIn("Genetic Algorithm via DEAP", summary)
+        self.assertIn("tournament_size", summary)
+        self.assertIn("last_best_objective", summary)
+        self.assertIn("## GA Progress", summary)
+        self.assertIn("Best Objective By Generation", summary)
+        self.assertIn("Mean Objective By Generation", summary)
+        self.assertIn("Elite Seeds By Generation", summary)
+        self.assertIn("New Samples By Generation", summary)
+        self.assertIn("breeding pool is improving", summary)
+
     def test_publish_step_summary_overwrites_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             summary_path = tempfile.NamedTemporaryFile(dir=tmpdir, delete=False)
