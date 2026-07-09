@@ -273,8 +273,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar overrideFallThruMismatch;
         statistics::Scalar overrideControlAddrMismatch;
         statistics::Scalar overrideTargetMismatch;
-        statistics::Scalar overrideEndMismatch;
-        statistics::Scalar overrideHistInfoMismatch;
 
         statistics::Distribution fsqEntryDist;
         statistics::Scalar fsqEntryEnqueued;
@@ -311,6 +309,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
         statistics::Scalar s1PredWrongAbtb;
+        statistics::Vector2d s1PredWrongBySourceAndReason;
         statistics::Scalar s3PredWrongMbtb;
         statistics::Scalar s3PredWrongTage;
         statistics::Scalar s3PredWrongIttage;

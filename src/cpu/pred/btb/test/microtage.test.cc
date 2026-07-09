@@ -167,7 +167,8 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationCountersStaySplitFromNormalUpdateCount
     uint64_t allocated_index = 0;
     uint64_t allocated_way = 0;
     bool allocated = tage->handleNewEntryAllocation(
-        seed.bbStart, entry, true, 0, meta, seed.asidHash, &tage->tageStats,
+        seed.bbStart, entry, true, 0, meta, seed.asidHash,
+        MicroTAGE::TrainingMode::S3Update,
         allocated_table, allocated_index, allocated_way);
 
     EXPECT_TRUE(allocated);
@@ -199,7 +200,8 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
     uint64_t allocated_way = 0;
     bool allocated = tage->handleNewEntryAllocation(
         seed.bbStart, entry, true, blocked_table, meta, seed.asidHash,
-        &tage->tageStats, allocated_table, allocated_index, allocated_way);
+        MicroTAGE::TrainingMode::S3Update,
+        allocated_table, allocated_index, allocated_way);
 
     EXPECT_FALSE(allocated);
     EXPECT_EQ(tage->tageStats.s3UpdateAllocFailure, 1ULL);

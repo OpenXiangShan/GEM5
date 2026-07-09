@@ -359,6 +359,21 @@ public:
         TageMeta() : aheadIndexFoldedHistValid(false) {}
     } TageMeta;
 
+    enum class TrainingMode
+    {
+        Resolved,
+        S3Update
+    };
+
+    void trainEntries(const std::vector<BTBEntry> &entries_to_update,
+                      const std::shared_ptr<TageMeta> &predMeta,
+                      const Addr &startPC,
+                      ThreadID tid,
+                      uint8_t asidHash,
+                      TrainingMode mode,
+                      const FetchTarget *stream,
+                      const CondTakens *teacherCondTakens);
+
 #ifdef UNIT_TEST
   public:
 #else
@@ -396,7 +411,7 @@ public:
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
-                                 TageStats *stats,
+                                 TrainingMode mode,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
