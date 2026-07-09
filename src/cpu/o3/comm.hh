@@ -263,6 +263,9 @@ struct TimeStruct
         /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
         std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
 
+        /** IEW detected a redirect before the delayed formal squash reaches Fetch. */
+        bool redirectPending = false;  // *F
+
         unsigned iqCount;
         unsigned ldstqCount;
         unsigned robCount;

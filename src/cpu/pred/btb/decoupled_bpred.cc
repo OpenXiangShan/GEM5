@@ -225,23 +225,51 @@ DecoupledBPUWithBTB::ftqFull(ThreadID tid) const
     return logicalFreeFTQEntries(tid) == 0;
 }
 
+bool
+DecoupledBPUWithBTB::isThreadActive(ThreadID tid) const
+{
+    if (!cpu) {
+        return true;
+    }
+
+    auto *tc = cpu->getContext(tid);
+    return tc && tc->status() == gem5::ThreadContext::Active;
+}
+
+bool
+DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
+{
+    const auto &thread = threads[tid];
+    return isThreadActive(tid) &&
+           !thread.squashing &&
+           !thread.redirectPending &&
+           !thread.validprediction &&
+           !ftqFull(tid);
+}
+
 ThreadID
 DecoupledBPUWithBTB::scheduleThread()
 {
     for (ThreadID offset = 0; offset < numThreads; ++offset) {
         const ThreadID tid = (nextPredictTid + offset) % numThreads;
 
-        if (cpu) {
-            auto *tc = cpu->getContext(tid);
-            if (!tc || tc->status() != gem5::ThreadContext::Active) {
-                continue;
+        if (!isThreadActive(tid)) {
+            continue;
+        }
+
+        if (!canStartPrediction(tid)) {
+            dbpBtbStats.scheduleIneligibleThreadSkips++;
+            if (threads[tid].redirectPending) {
+                dbpBtbStats.redirectPendingPredictionSkips++;
             }
+            continue;
         }
 
         nextPredictTid = (tid + 1) % numThreads;
         return tid;
     }
 
+    dbpBtbStats.scheduleNoEligibleThread++;
     return InvalidThreadID;
 }
 
@@ -252,7 +280,14 @@ DecoupledBPUWithBTB::tick()
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
     ThreadID curTid = scheduleThread();
-    if (curTid == InvalidThreadID) {
+    bool anyActiveThread = false;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (isThreadActive(tid)) {
+            anyActiveThread = true;
+            break;
+        }
+    }
+    if (!anyActiveThread) {
         return;
     }
 
@@ -276,8 +311,7 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    // 1. Request new prediction if FSQ not full and we are idle
-    if (!threads[curTid].validprediction && !ftqFull(curTid)) {
+    if (curTid != InvalidThreadID) {
         if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
@@ -561,6 +595,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 {
     // Set squashing state
     threads[tid].squashing = true;
+    threads[tid].redirectPending = false;
 
     // Find the target being squashed
     if (!ftq.hasTarget(target_id, tid)) {
@@ -630,6 +665,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     bool is_indirect = static_inst->isIndirectCtrl();
 
     if (!ftq.hasTarget(target_id, tid)) {
+        threads[tid].redirectPending = false;
         DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
         return;
     }
@@ -777,6 +813,12 @@ void
 DecoupledBPUWithBTB::blockPredictionOnce(ThreadID tid)
 {
     threads[tid].blockPredictionPending = true;
+}
+
+void
+DecoupledBPUWithBTB::setRedirectPending(ThreadID tid, bool pending)
+{
+    threads[tid].redirectPending = pending;
 }
 
 void
@@ -969,14 +1011,17 @@ DecoupledBPUWithBTB::checkHistories(const boost::dynamic_bitset<> &history,
 void
 DecoupledBPUWithBTB::resetPC(Addr new_pc)
 {
-    for (int i = 0; i < numThreads; i++)
+    for (int i = 0; i < numThreads; i++) {
         threads[i].s0PC = new_pc;
+        threads[i].redirectPending = false;
+    }
 }
 
 void
 DecoupledBPUWithBTB::resetPC(ThreadID tid, Addr new_pc)
 {
     threads[tid].s0PC = new_pc;
+    threads[tid].redirectPending = false;
 }
 
 Addr
