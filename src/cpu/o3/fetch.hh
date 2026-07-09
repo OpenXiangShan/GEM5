@@ -548,6 +548,7 @@ class Fetch
      */
     bool checkDecoupledFrontend(ThreadID tid);
     ThreadID getEligibleFetchTargetTid();
+    void clearRedirectPending(ThreadID tid);
 
     /** Prepare fetch address and handle status transitions.
      * @param tid Thread ID

@@ -652,8 +652,6 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
                             const InstSeqNum &seq, ThreadID tid,
                             const unsigned &currentLoopIter, const bool fromCommit)
 {
-    threads[tid].redirectPending = false;
-
     if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
         auto branchClass = classifyBranch(static_inst);
@@ -667,6 +665,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     bool is_indirect = static_inst->isIndirectCtrl();
 
     if (!ftq.hasTarget(target_id, tid)) {
+        threads[tid].redirectPending = false;
         DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
         return;
     }
@@ -698,8 +697,6 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
 {
-    threads[tid].redirectPending = false;
-
     dbpBtbStats.nonControlSquash++;
     DPRINTF(DecoupleBP,
             "non control squash: target id: %d, inst_pc: %#lx, "
@@ -715,8 +712,6 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid, const unsigned &currentLoopIter)
 {
-    threads[tid].redirectPending = false;
-
     dbpBtbStats.trapSquash++;
     DPRINTF(DecoupleBP,
             "Trap squash: target id: %d, inst_pc: %#lx\n",
