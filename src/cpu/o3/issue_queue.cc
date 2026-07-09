@@ -197,11 +197,17 @@ IssueQue::IssueQue(const IssueQueParams& params)
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
       iqname(params.name),
+      vectorSplitUnits(params.vectorSplitUnits),
+      nextVectorSplitUnit(0),
       inflightIssues(scheduleToExecDelay, 0),
+      vectorSplitStates(params.vectorSplitUnits),
       vectorReadyQEvent([this]() { processVectorReadyQ(); },
                         csprintf("%s.vectorReadyQEvent", params.name)),
       selector(params.sel)
 {
+    panic_if(vectorSplitUnits == 0,
+             "%s: vectorSplitUnits must be greater than 0\n", iqname);
+
     // TODO: keep this in sync with the current load IQ naming convention.
     // This should become an explicit IssueQue parameter when the config grows
     // more load pipes or renames the queues.
@@ -392,20 +398,81 @@ IssueQue::isBlockingVectorSplitInst(const DynInstPtr& inst) const
     return isVectorMemInst(inst) && inst->opClass() != enums::VectorUnitStrideLoad;
 }
 
+bool
+IssueQue::hasAvailableVectorSplitUnit() const
+{
+    for (const auto& unit : vectorSplitStates) {
+        if (!unit.blocked()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+int
+IssueQue::selectVectorSplitUnit()
+{
+    if (vectorSplitStates.empty()) {
+        return -1;
+    }
+
+    for (unsigned offset = 0; offset < vectorSplitStates.size(); ++offset) {
+        const unsigned idx = (nextVectorSplitUnit + offset) %
+                             vectorSplitStates.size();
+        if (!vectorSplitStates[idx].blocked()) {
+            nextVectorSplitUnit = (idx + 1) % vectorSplitStates.size();
+            return idx;
+        }
+    }
+
+    return -1;
+}
+
+Tick
+IssueQue::nextVectorSplitReleaseTick() const
+{
+    Tick next_tick = MaxTick;
+
+    for (const auto& unit : vectorSplitStates) {
+        if (!unit.splitQ.empty() && !unit.splitQReleaseTicks.empty()) {
+            next_tick = std::min(next_tick, unit.splitQReleaseTicks.front());
+        }
+    }
+
+    return next_tick;
+}
+
+void
+IssueQue::eraseVectorSplitBlocker(InstSeqNum seq_num)
+{
+    for (auto& unit : vectorSplitStates) {
+        unit.blockingSeqs.erase(seq_num);
+    }
+}
+
 void
 IssueQue::scheduleVectorReadyQEvent()
 {
-    if (!cpu || vectorReadyQEvent.scheduled()) {
+    if (!cpu) {
         return;
     }
 
-    if (!vectorSplitQ.empty() && !vectorSplitQReleaseTicks.empty()) {
-        cpu->schedule(vectorReadyQEvent, vectorSplitQReleaseTicks.front());
+    Tick next_tick = MaxTick;
+    if (!vectorReadyQ.empty() && hasAvailableVectorSplitUnit()) {
+        next_tick = curTick();
+    } else {
+        next_tick = nextVectorSplitReleaseTick();
+    }
+
+    if (next_tick == MaxTick) {
         return;
     }
 
-    if (!vectorReadyQ.empty()) {
-        cpu->schedule(vectorReadyQEvent, curTick());
+    if (vectorReadyQEvent.scheduled()) {
+        cpu->reschedule(vectorReadyQEvent, next_tick, true);
+    } else {
+        cpu->schedule(vectorReadyQEvent, next_tick);
     }
 }
 
@@ -443,12 +510,13 @@ IssueQue::tryStartVectorMemSplit()
             vectorReadyQReplay.pop();
             if (inst) {
                 vectorReadyQSeqs.erase(inst->seqNum);
-                vectorBlockingSplitSeqs.erase(inst->seqNum);
+                eraseVectorSplitBlocker(inst->seqNum);
             }
             continue;
         }
 
-        if (!vectorBlockingSplitSeqs.empty()) {
+        const int split_unit = selectVectorSplitUnit();
+        if (split_unit < 0) {
             return;
         }
 
@@ -457,17 +525,18 @@ IssueQue::tryStartVectorMemSplit()
 
         assert(cpu);
         const Tick releaseTick = cpu->clockEdge(Cycles(3));
-        vectorSplitQ.push(inst);
-        vectorSplitQReleaseTicks.push(releaseTick);
-        vectorSplitQReplay.push(replay);
+        auto& unit = vectorSplitStates[split_unit];
+        unit.splitQ.push(inst);
+        unit.splitQReleaseTicks.push(releaseTick);
+        unit.splitQReplay.push(replay);
         if (isBlockingVectorSplitInst(inst)) {
-            vectorBlockingSplitSeqs.insert(inst->seqNum);
+            unit.blockingSeqs.insert(inst->seqNum);
         }
 
         DPRINTF(Schedule,
-                "[sn:%llu] enter vector split, replay:%d, release at %llu, "
-                "blocking:%d\n",
-                inst->seqNum, replay, releaseTick,
+                "[sn:%llu] enter vector split unit %d, replay:%d, release at "
+                "%llu, blocking:%d\n",
+                inst->seqNum, split_unit, replay, releaseTick,
                 isBlockingVectorSplitInst(inst));
     }
 }
@@ -485,13 +554,13 @@ IssueQue::releaseVectorDelayedReadyQ()
         if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
             if (inst) {
                 vectorReadyQSeqs.erase(inst->seqNum);
-                vectorBlockingSplitSeqs.erase(inst->seqNum);
+                eraseVectorSplitBlocker(inst->seqNum);
             }
             continue;
         }
 
         vectorReadyQSeqs.erase(inst->seqNum);
-        vectorBlockingSplitSeqs.erase(inst->seqNum);
+        eraseVectorSplitBlocker(inst->seqNum);
         if (replay) {
             replayQ.push(inst);
             DPRINTF(Schedule, "[sn:%llu] released to replayQ after vector delay\n",
@@ -513,29 +582,32 @@ IssueQue::processVectorReadyQ()
 {
     tryStartVectorMemSplit();
 
-    assert(vectorSplitQ.size() == vectorSplitQReleaseTicks.size());
-    assert(vectorSplitQ.size() == vectorSplitQReplay.size());
-    while (!vectorSplitQ.empty() && !vectorSplitQReleaseTicks.empty() &&
-           !vectorSplitQReplay.empty() &&
-           vectorSplitQReleaseTicks.front() <= curTick()) {
-        auto inst = vectorSplitQ.front();
-        const bool replay = vectorSplitQReplay.front();
-        vectorSplitQ.pop();
-        vectorSplitQReleaseTicks.pop();
-        vectorSplitQReplay.pop();
+    for (auto& unit : vectorSplitStates) {
+        assert(unit.splitQ.size() == unit.splitQReleaseTicks.size());
+        assert(unit.splitQ.size() == unit.splitQReplay.size());
+        while (!unit.splitQ.empty() && !unit.splitQReleaseTicks.empty() &&
+               !unit.splitQReplay.empty() &&
+               unit.splitQReleaseTicks.front() <= curTick()) {
+            auto inst = unit.splitQ.front();
+            const bool replay = unit.splitQReplay.front();
+            unit.splitQ.pop();
+            unit.splitQReleaseTicks.pop();
+            unit.splitQReplay.pop();
 
-        if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
-            if (inst) {
-                vectorReadyQSeqs.erase(inst->seqNum);
-                vectorBlockingSplitSeqs.erase(inst->seqNum);
+            if (!inst || inst->isSquashed() || (!replay && inst->canceled())) {
+                if (inst) {
+                    vectorReadyQSeqs.erase(inst->seqNum);
+                    eraseVectorSplitBlocker(inst->seqNum);
+                }
+                continue;
             }
-            continue;
-        }
 
-        vectorDelayedReadyQ.push(inst);
-        vectorDelayedReadyQReplay.push(replay);
-        DPRINTF(Schedule, "[sn:%llu] moved to vectorDelayedReadyQ, replay:%d\n",
-                inst->seqNum, replay);
+            vectorDelayedReadyQ.push(inst);
+            vectorDelayedReadyQReplay.push(replay);
+            DPRINTF(Schedule,
+                    "[sn:%llu] moved to vectorDelayedReadyQ, replay:%d\n",
+                    inst->seqNum, replay);
+        }
     }
 
     releaseVectorDelayedReadyQ();
@@ -668,7 +740,9 @@ IssueQue::idle()
     }
     idle |= replayQ.size() > 0;
     idle |= vectorReadyQ.size() > 0;
-    idle |= vectorSplitQ.size() > 0;
+    for (const auto& unit : vectorSplitStates) {
+        idle |= unit.splitQ.size() > 0;
+    }
     idle |= vectorDelayedReadyQ.size() > 0;
     return idle;
 }
@@ -1008,7 +1082,7 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
         if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
             assert(inst->isIssued());
             vectorReadyQSeqs.erase(inst->seqNum);
-            vectorBlockingSplitSeqs.erase(inst->seqNum);
+            eraseVectorSplitBlocker(inst->seqNum);
             it = instList.erase(it);
         } else {
             ++it;
@@ -1042,7 +1116,7 @@ IssueQue::doSquash(SquashInfo squashInfo)
             (*it)->clearScheduled();
             (*it)->setCancel();
             vectorReadyQSeqs.erase((*it)->seqNum);
-            vectorBlockingSplitSeqs.erase((*it)->seqNum);
+            eraseVectorSplitBlocker((*it)->seqNum);
             it = instList.erase(it);
             assert(instList.size() >= instNum);
         } else {
@@ -1070,6 +1144,8 @@ IssueQue::doSquash(SquashInfo squashInfo)
             }
         }
     }
+
+    scheduleVectorReadyQEvent();
 }
 
 void

@@ -122,6 +122,8 @@ class IssueQue : public SimObject
     int numLoadPipe = 0;
     int numStorePipe = 0;
     int loadPipeId = -1;
+    const unsigned vectorSplitUnits;
+    unsigned nextVectorSplitUnit = 0;
 
     struct select_policy
     {
@@ -168,16 +170,23 @@ class IssueQue : public SimObject
     // srcIdx : inst
     std::vector<std::vector<std::pair<uint8_t, DynInstPtr>>> subDepGraph;
 
+    struct VectorSplitUnitState
+    {
+        std::queue<DynInstPtr> splitQ;
+        std::queue<Tick> splitQReleaseTicks;
+        std::queue<bool> splitQReplay;
+        std::unordered_set<InstSeqNum> blockingSeqs;
+
+        bool blocked() const { return !blockingSeqs.empty(); }
+    };
+
     std::queue<DynInstPtr> replayQ;  // only for mem
     std::queue<DynInstPtr> vectorReadyQ;
     std::queue<bool> vectorReadyQReplay;
-    std::queue<DynInstPtr> vectorSplitQ;
-    std::queue<Tick> vectorSplitQReleaseTicks;
-    std::queue<bool> vectorSplitQReplay;
+    std::vector<VectorSplitUnitState> vectorSplitStates;
     std::queue<DynInstPtr> vectorDelayedReadyQ;
     std::queue<bool> vectorDelayedReadyQReplay;
     std::unordered_set<InstSeqNum> vectorReadyQSeqs;
-    std::unordered_set<InstSeqNum> vectorBlockingSplitSeqs;
     EventFunctionWrapper vectorReadyQEvent;
 
     CPU* cpu = nullptr;
@@ -209,6 +218,10 @@ class IssueQue : public SimObject
     bool checkScoreboard(const DynInstPtr& inst);
     bool isVectorMemInst(const DynInstPtr& inst) const;
     bool isBlockingVectorSplitInst(const DynInstPtr& inst) const;
+    bool hasAvailableVectorSplitUnit() const;
+    int selectVectorSplitUnit();
+    Tick nextVectorSplitReleaseTick() const;
+    void eraseVectorSplitBlocker(InstSeqNum seq_num);
     void enqueueVectorMemDelay(const DynInstPtr& inst, bool replay);
     void tryStartVectorMemSplit();
     void scheduleVectorReadyQEvent();
