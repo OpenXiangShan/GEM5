@@ -50,6 +50,7 @@ on:
           - auto
           - grid
           - random
+          - nsga2
       specific_benchmarks:
         description: "Optional comma-separated case-insensitive substring filters matched against each workload-list line from the selected benchmark_type. Empty means run all workloads. Leave empty when custom_bin is set."
         required: false
@@ -112,6 +113,11 @@ jobs:
         run: |
           export GEM5_HOME=$(pwd)
           bash util/pgo/basic_pgo_new.sh
+
+      - name: Prepare solver Python dependencies
+        run: |
+          python3 -m venv .venv-solver
+          .venv-solver/bin/python -m pip install deap
 
       - name: Run solver controller
         run: |
