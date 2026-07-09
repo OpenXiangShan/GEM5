@@ -5,6 +5,7 @@ import argparse
 from math import prod
 import os
 from pathlib import Path
+import signal
 import sys
 import time
 
@@ -281,159 +282,27 @@ def should_stop(problem, history, start_time: float) -> tuple[bool, str | None]:
     return False, None
 
 
-def main() -> int:
-    args = build_argparser().parse_args()
-    progress = ProgressReporter()
-    workdir = Path(args.workdir).resolve()
-    workdir.mkdir(parents=True, exist_ok=True)
-    progress.phase(
-        "setup",
-        f"workdir={workdir}; problem_ref={args.problem_ref}",
-        annotate=True,
-    )
-    problem = parse_problem(args.problem_ref)
-    problem = apply_runtime_overrides(problem, args)
-    parameter_names = ", ".join(parameter.name for parameter in problem.parameters)
-    search_space = prod(
-        parameter.domain.cardinality() for parameter in problem.parameters
-    )
-    progress.phase(
-        "setup",
-        (
-            f"problem={problem.name}; benchmark={problem.benchmark_type}; "
-            f"objectives={'; '.join(obj.display_name() for obj in problem.objective_list())}; "
-            f"parameters={len(problem.parameters)} [{parameter_names}]; "
-            f"search_space={search_space}"
-        ),
-    )
+def _signal_name(signum: int | None) -> str:
+    if signum is None:
+        return "SIGINT"
+    try:
+        return signal.Signals(signum).name
+    except ValueError:
+        return f"signal {signum}"
 
-    executor = CiLocalParallelExecutor(
-        workdir=workdir,
-        build_type=args.gem5_build_type,
-        max_parallel_trials=args.max_parallel_trials,
-        max_parallel_workloads=args.max_parallel_workloads,
-        timeout_minutes=args.timeout_minutes,
-    )
-    metadata = {
-        "problem_ref": args.problem_ref,
-        "resolved_problem_ref": problem.problem_ref,
-        "solver_kind": args.solver_kind,
-        "max_parallel_trials": args.max_parallel_trials,
-        "max_parallel_workloads": args.max_parallel_workloads,
-        "gem5_build_type": args.gem5_build_type,
-        "benchmark_type": problem.benchmark_type,
-        "specific_benchmarks": problem.specific_benchmarks,
-        "custom_bin": problem.custom_bin,
-        "extra_args": problem.extra_args,
-        "dry_run": args.dry_run,
-        "stop_reason": None,
-    }
-    write_json(workdir / "metadata.json", metadata)
-    progress.phase(
-        "setup",
-        (
-            "runtime parameters: "
-            f"solver_kind={metadata['solver_kind']}, "
-            f"benchmark_type={metadata['benchmark_type']}, "
-            f"specific_benchmarks={metadata['specific_benchmarks'] or '<none>'}, "
-            f"custom_bin={metadata['custom_bin'] or '<none>'}, "
-            f"extra_args={metadata['extra_args'] or '<none>'}, "
-            f"max_parallel_trials={metadata['max_parallel_trials']}, "
-            f"max_parallel_workloads={metadata['max_parallel_workloads']}, "
-            f"gem5_build_type={metadata['gem5_build_type']}"
-        ),
-    )
 
-    bind_output = workdir / "binding.json"
-    progress.phase("bind", "binding solver parameters to live gem5 objects", annotate=True)
-    problem = bind_problem_targets(executor, problem, bind_output)
-    write_json(workdir / "parsed_problem.json", problem)
-    progress.phase(
-        "bind",
-        f"binding complete; metadata written to {bind_output.name}",
-    )
-
-    solver = choose_solver(problem, args.solver_kind, args.seed)
-    solver_name = solver.__class__.__name__
-    metadata["solver_backend"] = solver_name
-    metadata["solver_report"] = solver.report_metadata()
-    preview_count = min(
-        args.max_parallel_trials,
-        problem.stop.max_trials or args.max_parallel_trials,
-    )
-    preview = solver.propose([], preview_count)
-    progress.phase(
-        "preview",
-        f"solver={solver_name}; prepared {len(preview)} preview trial(s)",
-        annotate=True,
-    )
-    if args.dry_run:
-        write_json(workdir / "preview_trials.json", preview)
-        progress.phase(
-            "final",
-            f"dry-run complete; preview written to {workdir / 'preview_trials.json'}",
-            annotate=True,
-        )
-        return 0
-
-    history = []
-    solver = choose_solver(problem, args.solver_kind, args.seed)
-    progress.phase(
-        "search",
-        (
-            f"starting iterative search with solver={solver.__class__.__name__}; "
-            f"max_parallel_trials={args.max_parallel_trials}; "
-            f"max_parallel_workloads={args.max_parallel_workloads}"
-        ),
-        annotate=True,
-    )
-    start_time = time.monotonic()
-    batch_index = 0
-    while True:
-        stop, reason = should_stop(problem, history, start_time)
-        if stop:
-            metadata["stop_reason"] = reason
-            break
-        remaining = None
-        if problem.stop.max_trials is not None:
-            remaining = problem.stop.max_trials - len(history)
-            if remaining <= 0:
-                break
-        batch_size = args.max_parallel_trials if remaining is None else min(args.max_parallel_trials, remaining)
-        trials = solver.propose(history, batch_size)
-        if not trials:
-            metadata["stop_reason"] = "solver exhausted search space"
-            break
-        batch_index += 1
-        progress.batch_started(
-            batch_index,
-            trials,
-            completed_trials=len(history),
-            max_trials=problem.stop.max_trials,
-        )
-        batch_start = time.monotonic()
-        executed = executor.run_trials(problem, trials)
-        evaluated = [evaluate_trial(problem, result) for result in executed]
-        history.extend(evaluated)
-        metadata["solver_report"] = solver.report_metadata()
-        primary = problem.primary_objective()
-        best = best_trial(
-            history,
-            direction=primary.direction if primary is not None else "max",
-            objective=primary,
-            objectives=problem.objective_list(),
-        )
-        persist_run_state(workdir, problem, history, best)
-        progress.batch_completed(
-            batch_index,
-            evaluated,
-            history,
-            best,
-            batch_duration_sec=time.monotonic() - batch_start,
-        )
-
+def finalize_run(
+    *,
+    workdir: Path,
+    problem,
+    history,
+    solver,
+    metadata: dict,
+    progress: ProgressReporter,
+):
     primary = problem.primary_objective()
-    metadata["solver_report"] = solver.report_metadata()
+    if solver is not None:
+        metadata["solver_report"] = solver.report_metadata()
     best = best_trial(
         history,
         direction=primary.direction if primary is not None else "max",
@@ -462,6 +331,8 @@ def main() -> int:
         "best_result_json": str(workdir / "best_result.json"),
         "charts": chart_paths,
         "extra_sections_count": len(extra_sections),
+        "partial_summary": bool(metadata.get("partial_summary")),
+        "stop_reason": metadata.get("stop_reason"),
     }
     write_json(workdir / "artifact_manifest.json", artifact_manifest)
     valid_count = sum(1 for trial in history if trial.status == "valid")
@@ -475,7 +346,224 @@ def main() -> int:
         ),
         annotate=True,
     )
-    return 0
+    return best
+
+
+def main() -> int:
+    args = build_argparser().parse_args()
+    progress = ProgressReporter()
+    workdir = Path(args.workdir).resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    executor = None
+    problem = None
+    solver = None
+    metadata = None
+    history = []
+    cancelled = False
+    cancel_signal = None
+
+    def request_cancel(signum: int, _frame) -> None:
+        nonlocal cancelled, cancel_signal
+        signal_name = _signal_name(signum)
+        cancel_signal = signal_name
+        if not cancelled:
+            progress.phase(
+                "cancel",
+                (
+                    f"received {signal_name}; stopping in-flight work and "
+                    "finalizing partial results"
+                ),
+                annotate=True,
+            )
+        cancelled = True
+        if metadata is not None:
+            metadata["stop_reason"] = f"cancelled by {signal_name}"
+            metadata["partial_summary"] = True
+            metadata["cancel_signal"] = signal_name
+        if executor is not None:
+            executor.cancel()
+
+    previous_handlers = {}
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        previous_handlers[signum] = signal.getsignal(signum)
+        signal.signal(signum, request_cancel)
+
+    exit_code = 0
+    try:
+        progress.phase(
+            "setup",
+            f"workdir={workdir}; problem_ref={args.problem_ref}",
+            annotate=True,
+        )
+        problem = parse_problem(args.problem_ref)
+        problem = apply_runtime_overrides(problem, args)
+        parameter_names = ", ".join(parameter.name for parameter in problem.parameters)
+        search_space = prod(
+            parameter.domain.cardinality() for parameter in problem.parameters
+        )
+        progress.phase(
+            "setup",
+            (
+                f"problem={problem.name}; benchmark={problem.benchmark_type}; "
+                f"objectives={'; '.join(obj.display_name() for obj in problem.objective_list())}; "
+                f"parameters={len(problem.parameters)} [{parameter_names}]; "
+                f"search_space={search_space}"
+            ),
+        )
+
+        executor = CiLocalParallelExecutor(
+            workdir=workdir,
+            build_type=args.gem5_build_type,
+            max_parallel_trials=args.max_parallel_trials,
+            max_parallel_workloads=args.max_parallel_workloads,
+            timeout_minutes=args.timeout_minutes,
+        )
+        metadata = {
+            "problem_ref": args.problem_ref,
+            "resolved_problem_ref": problem.problem_ref,
+            "solver_kind": args.solver_kind,
+            "max_parallel_trials": args.max_parallel_trials,
+            "max_parallel_workloads": args.max_parallel_workloads,
+            "gem5_build_type": args.gem5_build_type,
+            "benchmark_type": problem.benchmark_type,
+            "specific_benchmarks": problem.specific_benchmarks,
+            "custom_bin": problem.custom_bin,
+            "extra_args": problem.extra_args,
+            "dry_run": args.dry_run,
+            "stop_reason": None,
+            "partial_summary": False,
+            "cancel_signal": None,
+        }
+        write_json(workdir / "metadata.json", metadata)
+        progress.phase(
+            "setup",
+            (
+                "runtime parameters: "
+                f"solver_kind={metadata['solver_kind']}, "
+                f"benchmark_type={metadata['benchmark_type']}, "
+                f"specific_benchmarks={metadata['specific_benchmarks'] or '<none>'}, "
+                f"custom_bin={metadata['custom_bin'] or '<none>'}, "
+                f"extra_args={metadata['extra_args'] or '<none>'}, "
+                f"max_parallel_trials={metadata['max_parallel_trials']}, "
+                f"max_parallel_workloads={metadata['max_parallel_workloads']}, "
+                f"gem5_build_type={metadata['gem5_build_type']}"
+            ),
+        )
+
+        bind_output = workdir / "binding.json"
+        progress.phase("bind", "binding solver parameters to live gem5 objects", annotate=True)
+        problem = bind_problem_targets(executor, problem, bind_output)
+        write_json(workdir / "parsed_problem.json", problem)
+        progress.phase(
+            "bind",
+            f"binding complete; metadata written to {bind_output.name}",
+        )
+
+        solver = choose_solver(problem, args.solver_kind, args.seed)
+        solver_name = solver.__class__.__name__
+        metadata["solver_backend"] = solver_name
+        metadata["solver_report"] = solver.report_metadata()
+        preview_count = min(
+            args.max_parallel_trials,
+            problem.stop.max_trials or args.max_parallel_trials,
+        )
+        preview = solver.propose([], preview_count)
+        progress.phase(
+            "preview",
+            f"solver={solver_name}; prepared {len(preview)} preview trial(s)",
+            annotate=True,
+        )
+        if args.dry_run:
+            write_json(workdir / "preview_trials.json", preview)
+            progress.phase(
+                "final",
+                f"dry-run complete; preview written to {workdir / 'preview_trials.json'}",
+                annotate=True,
+            )
+            return 0
+
+        history = []
+        solver = choose_solver(problem, args.solver_kind, args.seed)
+        progress.phase(
+            "search",
+            (
+                f"starting iterative search with solver={solver.__class__.__name__}; "
+                f"max_parallel_trials={args.max_parallel_trials}; "
+                f"max_parallel_workloads={args.max_parallel_workloads}"
+            ),
+            annotate=True,
+        )
+        start_time = time.monotonic()
+        batch_index = 0
+        while True:
+            if cancelled:
+                break
+            stop, reason = should_stop(problem, history, start_time)
+            if stop:
+                metadata["stop_reason"] = reason
+                break
+            remaining = None
+            if problem.stop.max_trials is not None:
+                remaining = problem.stop.max_trials - len(history)
+                if remaining <= 0:
+                    break
+            batch_size = args.max_parallel_trials if remaining is None else min(args.max_parallel_trials, remaining)
+            trials = solver.propose(history, batch_size)
+            if not trials:
+                metadata["stop_reason"] = "solver exhausted search space"
+                break
+            batch_index += 1
+            progress.batch_started(
+                batch_index,
+                trials,
+                completed_trials=len(history),
+                max_trials=problem.stop.max_trials,
+            )
+            batch_start = time.monotonic()
+            try:
+                executed = executor.run_trials(problem, trials)
+            except KeyboardInterrupt:
+                request_cancel(signal.SIGINT, None)
+                executed = []
+            evaluated = [evaluate_trial(problem, result) for result in executed]
+            history.extend(evaluated)
+            metadata["solver_report"] = solver.report_metadata()
+            primary = problem.primary_objective()
+            best = best_trial(
+                history,
+                direction=primary.direction if primary is not None else "max",
+                objective=primary,
+                objectives=problem.objective_list(),
+            )
+            persist_run_state(workdir, problem, history, best)
+            progress.batch_completed(
+                batch_index,
+                evaluated,
+                history,
+                best,
+                batch_duration_sec=time.monotonic() - batch_start,
+            )
+
+        if cancelled:
+            metadata["stop_reason"] = f"cancelled by {cancel_signal or 'SIGINT'}"
+            metadata["partial_summary"] = True
+            metadata["cancel_signal"] = cancel_signal or "SIGINT"
+            exit_code = 130
+
+        finalize_run(
+            workdir=workdir,
+            problem=problem,
+            history=history,
+            solver=solver,
+            metadata=metadata,
+            progress=progress,
+        )
+        return exit_code
+    finally:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
+        if executor is not None:
+            executor.cleanup()
 
 
 if __name__ == "__main__":

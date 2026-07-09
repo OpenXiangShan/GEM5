@@ -135,8 +135,9 @@ class CiLocalExecutorCommandTestCase(unittest.TestCase):
                     "util.solver.executor.ci_local.locate_checkpoint",
                     return_value=str(checkpoint),
                 ):
-                    with patch(
-                        "util.solver.executor.ci_local.subprocess.run",
+                    with patch.object(
+                        CiLocalParallelExecutor,
+                        "_run_command",
                         return_value=SimpleNamespace(returncode=0),
                     ):
                         with patch.object(
@@ -193,7 +194,11 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                     "util.solver.executor.ci_local.locate_checkpoint",
                     return_value=str(Path(tmpdir) / "demo.zstd"),
                 ):
-                    with patch("util.solver.executor.ci_local.subprocess.run", side_effect=fake_run):
+                    with patch.object(
+                        CiLocalParallelExecutor,
+                        "_run_command",
+                        side_effect=fake_run,
+                    ):
                         with patch.object(
                             CiLocalParallelExecutor,
                             "_maybe_generate_score",
@@ -242,7 +247,11 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                     "util.solver.executor.ci_local.locate_checkpoint",
                     side_effect=[str(checkpoint_a), str(checkpoint_b)],
                 ):
-                    with patch("util.solver.executor.ci_local.subprocess.run", side_effect=fake_run):
+                    with patch.object(
+                        CiLocalParallelExecutor,
+                        "_run_command",
+                        side_effect=fake_run,
+                    ):
                         with patch.object(
                             CiLocalParallelExecutor,
                             "_maybe_generate_score",
@@ -283,7 +292,11 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
             problem = make_problem()
             problem.custom_bin = f"{bin_a},{bin_b}"
             trials = [TrialRequest("trial_0001", 0, {"x": 1})]
-            with patch("util.solver.executor.ci_local.subprocess.run", side_effect=fake_run):
+            with patch.object(
+                CiLocalParallelExecutor,
+                "_run_command",
+                side_effect=fake_run,
+            ):
                 with patch.object(
                     CiLocalParallelExecutor,
                     "_maybe_generate_score",
