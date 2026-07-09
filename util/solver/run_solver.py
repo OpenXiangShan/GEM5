@@ -193,6 +193,10 @@ def apply_runtime_overrides(problem, args):
     if args.extra_args:
         merged = " ".join(part for part in [problem.extra_args.strip(), args.extra_args.strip()] if part)
         problem.extra_args = merged
+    if problem.custom_bin and problem.uses_score_txt():
+        raise ValueError(
+            "score_txt objective does not support custom_bin; use stats objective for standalone workload bins"
+        )
     return problem
 
 

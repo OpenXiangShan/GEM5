@@ -207,6 +207,10 @@ def _validate_objective(problem_cls, objective: ObjectiveSpec) -> None:
         raise SpecLoadError(
             f"{problem_cls.__name__}.objective.source_kind must be 'stats' or 'score_txt'"
         )
+    if objective.benchmark_aggregate not in {"mean", "geomean"}:
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.objective.benchmark_aggregate must be 'mean' or 'geomean'"
+        )
     if objective.source_kind == "score_txt" and objective.direction != "max":
         raise SpecLoadError(
             f"{problem_cls.__name__}.objective only supports Maximize.score_txt(...)"

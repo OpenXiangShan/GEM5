@@ -208,6 +208,16 @@ objective = Maximize.stats("system.cpu.ipc")
 
 - executor 实际会优先从 `workload_dir/stats.txt` 取
 - 若不存在，会回退到 `workload_dir/m5out/stats.txt`
+- 如果是 `custom_bin` 模式：对该 trial 下所有 workload 的该指标做算术平均
+- 如果是普通 benchmark set 模式（例如 `gcc15-spec06-0.3c`）：不会再直接对 workload 等权平均，而是调用 `gem5_data_proc` 先按 slice / input 做加权，得到每个 benchmark 的 weighted metric，再在 benchmark 间做聚合
+- benchmark 间默认聚合是算术平均；如果你想改成几何平均，可以写：
+
+```python
+objective = Maximize.stats(
+    "system.cpu.ipc",
+    benchmark_aggregate="geomean",
+)
+```
 
 #### 从 `stats.txt` 最小化单个指标
 
@@ -215,7 +225,7 @@ objective = Maximize.stats("system.cpu.ipc")
 objective = Minimize.stats("system.cpu.branchMispredicts")
 ```
 
-同样会按 workload 聚合后取平均值，只是 solver 会把更小的值视为更优。
+同样遵循上面的聚合规则，只是 solver 会把更小的值视为更优。
 
 #### 从 `score.txt` 最大化单个指标
 
@@ -224,6 +234,11 @@ objective = Maximize.score_txt("Estimated Int score per GHz")
 ```
 
 当前还不支持 `Minimize.score_txt(...)`。
+
+注意：
+
+- `score_txt` 只适用于可由 `gem5_data_proc` 算分的 benchmark set
+- 如果设置了 `custom_bin`，controller 会直接报错，因为单独的 workload bin / checkpoint 不具备 SPEC score 语义
 
 #### 多目标写法
 
@@ -509,6 +524,7 @@ VTAGEIPCSearch
 - `custom_bin` 模式下，如果填一个路径，就表示该 trial 只有一个 workload；
   如果填多个逗号/换行分隔路径，就会把这些自定义 checkpoint 当成该 trial
   的 workload 集合，并按 `max_parallel_workloads` 并行。
+- `custom_bin` 模式下不允许 `score_txt` objective；如果你需要优化自定义 workload，只能使用 `stats(...)`
 
 ## 9. `solver_kind=auto` 到底怎么选
 
@@ -619,7 +635,7 @@ VTAGEIPCSearch
 
 ### 10.7 `score.txt`
 
-即使 objective 是 `stats`，当前 executor 也会在 `gem5_data_proc` 可用时顺手生成 `score.txt`，便于人工参考。
+如果 objective 使用了 `score_txt`，或者是 benchmark set 上的 `stats(...)`（需要 weighted csv 聚合），executor 会调用 `gem5_data_proc` 生成相应的聚合结果文件。
 
 ## 11. 一个新 config 要怎么接入 solver runtime
 

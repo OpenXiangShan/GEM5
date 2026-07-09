@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
-from statistics import fmean
+from statistics import fmean, geometric_mean
 
 from util.solver.processing.extract import (
+    collect_weighted_stats,
     collect_workload_stats,
     count_abort_files,
     count_workload_dirs,
@@ -12,7 +14,39 @@ from util.solver.processing.extract import (
 from util.solver.types import EvaluatedTrial, ObjectiveSpec, ParsedProblem, TrialExecutionResult
 
 
+def _aggregate_stats_values(
+    values: dict[str, float],
+    *,
+    aggregate: str,
+    metric_name: str,
+    scope_label: str,
+) -> tuple[float | None, str | None]:
+    numeric_values = [
+        float(value)
+        for value in values.values()
+        if value is not None and not math.isnan(value)
+    ]
+    if not numeric_values:
+        return None, f"missing stats metric {metric_name}"
+    if aggregate == "mean":
+        return fmean(numeric_values), None
+    if aggregate == "geomean":
+        invalid = [
+            name for name, value in values.items()
+            if value is None or math.isnan(value) or value <= 0
+        ]
+        if invalid:
+            joined = ", ".join(sorted(invalid))
+            return (
+                None,
+                f"metric {metric_name} requires positive {scope_label} values for geomean; invalid: {joined}",
+            )
+        return geometric_mean(numeric_values), None
+    return None, f"unsupported benchmark aggregate {aggregate}"
+
+
 def _extract_objective_value(
+    problem: ParsedProblem,
     objective: ObjectiveSpec,
     execution: TrialExecutionResult,
     spec_dir: Path,
@@ -20,17 +54,39 @@ def _extract_objective_value(
     metrics: dict,
 ) -> tuple[float | None, str | None]:
     if objective.source_kind == "stats":
-        values = collect_workload_stats(spec_dir, objective.metric)
-        metrics.setdefault("stats_values", {})[objective.metric] = values
-        metrics.setdefault("stats_samples", {})[objective.metric] = len(values)
-        if not values:
-            return None, f"missing stats metric {objective.metric}"
-        if workload_count and len(values) != workload_count:
-            return (
-                None,
-                f"metric {objective.metric} missing in {workload_count - len(values)} workload(s)",
+        if problem.custom_bin:
+            values = collect_workload_stats(spec_dir, objective.metric)
+            metrics.setdefault("stats_values", {})[objective.metric] = values
+            metrics.setdefault("stats_samples", {})[objective.metric] = len(values)
+            if not values:
+                return None, f"missing stats metric {objective.metric}"
+            if workload_count and len(values) != workload_count:
+                return (
+                    None,
+                    f"metric {objective.metric} missing in {workload_count - len(values)} workload(s)",
+                )
+            return _aggregate_stats_values(
+                values,
+                aggregate="mean",
+                metric_name=objective.metric,
+                scope_label="workload",
             )
-        return fmean(values.values()), None
+
+        weighted_csv = execution.raw_files.get("weighted_csv")
+        if not weighted_csv or not Path(weighted_csv).is_file():
+            return None, f"missing weighted stats csv for metric {objective.metric}"
+        values = collect_weighted_stats(weighted_csv, objective.metric)
+        metrics.setdefault("weighted_stats_values", {})[objective.metric] = values
+        metrics.setdefault("weighted_stats_samples", {})[objective.metric] = len(values)
+        if not values:
+            return None, f"missing weighted stats metric {objective.metric}"
+        return _aggregate_stats_values(
+            values,
+            aggregate=objective.benchmark_aggregate,
+            metric_name=objective.metric,
+            scope_label="benchmark",
+        )
+
     if objective.source_kind == "score_txt":
         score_path = execution.raw_files.get("score_txt")
         if not score_path or not Path(score_path).is_file():
@@ -70,6 +126,7 @@ def evaluate_trial(problem: ParsedProblem, execution: TrialExecutionResult) -> E
     else:
         for objective in problem.objective_list():
             value, error = _extract_objective_value(
+                problem,
                 objective,
                 execution,
                 spec_dir,

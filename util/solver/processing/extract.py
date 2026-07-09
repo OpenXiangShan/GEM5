@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 
@@ -36,6 +37,32 @@ def parse_score_file(path: str | Path) -> dict[str, float]:
     return metrics
 
 
+def parse_weighted_stats_csv(path: str | Path) -> dict[str, dict[str, float]]:
+    results: dict[str, dict[str, float]] = {}
+    with open(path, "r", encoding="utf-8", errors="replace", newline="") as handle:
+        reader = csv.reader(handle)
+        header = next(reader, None)
+        if not header or len(header) < 2:
+            return results
+        metric_names = [name.strip() for name in header[1:]]
+        for row in reader:
+            if not row:
+                continue
+            benchmark = row[0].strip()
+            if not benchmark:
+                continue
+            metrics: dict[str, float] = {}
+            for metric_name, value in zip(metric_names, row[1:]):
+                if not metric_name:
+                    continue
+                try:
+                    metrics[metric_name] = float(value)
+                except ValueError:
+                    continue
+            results[benchmark] = metrics
+    return results
+
+
 def collect_workload_stats(spec_dir: str | Path, metric_name: str) -> dict[str, float]:
     spec_dir = Path(spec_dir)
     results = {}
@@ -51,6 +78,15 @@ def collect_workload_stats(spec_dir: str | Path, metric_name: str) -> dict[str, 
             if metric_name in metrics:
                 results[workload_dir.name] = metrics[metric_name]
                 break
+    return results
+
+
+def collect_weighted_stats(path: str | Path, metric_name: str) -> dict[str, float]:
+    rows = parse_weighted_stats_csv(path)
+    results = {}
+    for benchmark, metrics in rows.items():
+        if metric_name in metrics:
+            results[benchmark] = metrics[metric_name]
     return results
 
 
