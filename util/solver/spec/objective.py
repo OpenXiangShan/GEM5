@@ -11,3 +11,9 @@ class Maximize:
     @staticmethod
     def score_txt(metric: str) -> ObjectiveSpec:
         return ObjectiveSpec(source_kind="score_txt", metric=metric, direction="max")
+
+
+class Minimize:
+    @staticmethod
+    def stats(metric: str) -> ObjectiveSpec:
+        return ObjectiveSpec(source_kind="stats", metric=metric, direction="min")

@@ -161,11 +161,11 @@ def load_problem_class(problem_ref: str):
 def parse_problem(problem_ref: str) -> ParsedProblem:
     spec_path, class_name, problem_cls = resolve_problem_class(problem_ref)
     objective = getattr(problem_cls, "objective", None)
+    objectives = getattr(problem_cls, "objectives", None)
     stop = getattr(problem_cls, "stop", None)
-    if not isinstance(objective, ObjectiveSpec):
-        raise SpecLoadError(f"{problem_cls.__name__}.objective must be an ObjectiveSpec")
     if not isinstance(stop, StopSpec):
         raise SpecLoadError(f"{problem_cls.__name__}.stop must be a StopSpec")
+    parsed_objectives = _parse_objectives(problem_cls, objective, objectives)
     config_path = getattr(problem_cls, "config_path", "")
     benchmark_type = getattr(problem_cls, "benchmark_type", "")
     if not config_path:
@@ -188,11 +188,63 @@ def parse_problem(problem_ref: str) -> ParsedProblem:
         custom_bin=getattr(problem_cls, "custom_bin", "") or "",
         extra_args=getattr(problem_cls, "extra_args", "") or "",
         parameters=parameters,
-        objective=objective,
+        objective=parsed_objectives[0],
         stop=stop,
+        objectives=parsed_objectives,
         solver_hint=getattr(problem_cls, "solver_name", None),
         summary_top_n=summary_top_n,
     )
+
+
+def _validate_objective(problem_cls, objective: ObjectiveSpec) -> None:
+    if not isinstance(objective, ObjectiveSpec):
+        raise SpecLoadError(f"{problem_cls.__name__}.objective entries must be ObjectiveSpec")
+    if objective.direction not in {"max", "min"}:
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.objective.direction must be 'max' or 'min'"
+        )
+    if objective.source_kind not in {"stats", "score_txt"}:
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.objective.source_kind must be 'stats' or 'score_txt'"
+        )
+    if objective.source_kind == "score_txt" and objective.direction != "max":
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.objective only supports Maximize.score_txt(...)"
+        )
+    if not objective.metric:
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.objective.metric must not be empty"
+        )
+
+
+def _parse_objectives(problem_cls, objective, objectives) -> list[ObjectiveSpec]:
+    if objective is not None and objectives is not None:
+        raise SpecLoadError(
+            f"{problem_cls.__name__} must define only one of objective or objectives"
+        )
+    if objectives is not None:
+        if not isinstance(objectives, (list, tuple)) or not objectives:
+            raise SpecLoadError(
+                f"{problem_cls.__name__}.objectives must be a non-empty list of ObjectiveSpec"
+            )
+        parsed = list(objectives)
+    elif objective is not None:
+        parsed = [objective]
+    else:
+        raise SpecLoadError(
+            f"{problem_cls.__name__} must define objective or objectives"
+        )
+
+    seen = set()
+    for item in parsed:
+        _validate_objective(problem_cls, item)
+        key = item.key()
+        if key in seen:
+            raise SpecLoadError(
+                f"{problem_cls.__name__}.objectives contains duplicate objective {key}"
+            )
+        seen.add(key)
+    return parsed
 
 
 def merge_binding_payload(problem: ParsedProblem, payload: dict[str, Any]) -> ParsedProblem:

@@ -11,6 +11,13 @@ class ObjectiveSpec:
     metric: str
     direction: str = "max"
 
+    def key(self) -> str:
+        return f"{self.direction}:{self.source_kind}:{self.metric}"
+
+    def display_name(self) -> str:
+        verb = "maximize" if self.direction == "max" else "minimize"
+        return f"{verb} {self.source_kind}:{self.metric}"
+
 
 @dataclass
 class StopSpec:
@@ -53,13 +60,37 @@ class ParsedProblem:
     custom_bin: str
     extra_args: str
     parameters: list[ParsedParameter]
-    objective: ObjectiveSpec
+    objective: ObjectiveSpec | None
     stop: StopSpec
+    objectives: list[ObjectiveSpec] = field(default_factory=list)
     solver_hint: str | None = None
     summary_top_n: int = 16
 
     def parameter_map(self) -> dict[str, ParsedParameter]:
         return {parameter.name: parameter for parameter in self.parameters}
+
+    def objective_list(self) -> list[ObjectiveSpec]:
+        if self.objectives:
+            return list(self.objectives)
+        if self.objective is not None:
+            return [self.objective]
+        return []
+
+    def primary_objective(self) -> ObjectiveSpec | None:
+        if self.objective is not None:
+            return self.objective
+        if self.objectives:
+            return self.objectives[0]
+        return None
+
+    def is_multi_objective(self) -> bool:
+        return len(self.objective_list()) > 1
+
+    def uses_score_txt(self) -> bool:
+        return any(
+            objective.source_kind == "score_txt"
+            for objective in self.objective_list()
+        )
 
 
 @dataclass
@@ -94,6 +125,7 @@ class EvaluatedTrial:
     outdir: str
     duration_sec: float
     raw_files: dict[str, str] = field(default_factory=dict)
+    objective_values: dict[str, float | None] = field(default_factory=dict)
 
 
 def freeze_value(value: Any) -> str:

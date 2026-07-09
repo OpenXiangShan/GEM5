@@ -50,8 +50,9 @@
 - 当前支持的搜索域只有：
   - `Range(...)`
   - `Choice([...])`
-- 当前目标函数只支持：
+- 当前目标函数支持以下单目标或多目标组合写法：
   - `Maximize.stats("...")`
+  - `Minimize.stats("...")`
   - `Maximize.score_txt("...")`
 - 当前图表输出实际是 SVG，不是设计稿里写的 PNG。
 - 当前没有实现 resume / restart / 多机调度 / 高级求解算法。
@@ -68,7 +69,7 @@ solver spec 是一个 `SolveSpec` 子类。当前实现入口在：
 
 - `config_path`
 - `benchmark_type`
-- `objective`
+- `objective` 或 `objectives`
 - `stop`
 
 可选属性：
@@ -88,6 +89,7 @@ from util.solver.spec import (
     Choice,
     InferTunable,
     Maximize,
+    Minimize,
     Range,
     SolveSpec,
     Stop,
@@ -194,9 +196,9 @@ Choice([
 
 ### 5.1 目标函数
 
-当前代码只实现了两种：
+当前每个 objective 条目只支持三种写法：
 
-#### 从 `stats.txt` 取单个指标
+#### 从 `stats.txt` 最大化单个指标
 
 ```python
 objective = Maximize.stats("system.cpu.ipc")
@@ -207,11 +209,48 @@ objective = Maximize.stats("system.cpu.ipc")
 - executor 实际会优先从 `workload_dir/stats.txt` 取
 - 若不存在，会回退到 `workload_dir/m5out/stats.txt`
 
-#### 从 `score.txt` 取单个指标
+#### 从 `stats.txt` 最小化单个指标
+
+```python
+objective = Minimize.stats("system.cpu.branchMispredicts")
+```
+
+同样会按 workload 聚合后取平均值，只是 solver 会把更小的值视为更优。
+
+#### 从 `score.txt` 最大化单个指标
 
 ```python
 objective = Maximize.score_txt("Estimated Int score per GHz")
 ```
+
+当前还不支持 `Minimize.score_txt(...)`。
+
+#### 多目标写法
+
+如果你要做真正的双目标/多目标优化，使用 `objectives = [...]`：
+
+```python
+objectives = [
+    Maximize.stats("system.cpu.ipc"),
+    Minimize.stats("system.cpu.branchMispredicts"),
+]
+```
+
+当前多目标语义是 Pareto 支配，不是加权和：
+
+- 一个 trial 若在所有 objective 上都不差于另一个 trial，且至少一个 objective 更好，则支配对方
+- summary 会展示 Pareto frontier
+- `best_result.json` 在多目标场景下表示 controller 选出的代表 frontier 点；完整 frontier 以 `summary.md` 和 `history.jsonl` 为准
+- `no_improve_trials` 在多目标场景下按 “Pareto frontier 是否继续改进” 判断
+
+如果你希望 candidate generation 也对 Pareto frontier 敏感，而不是仅在结果分析阶段做多目标比较，可以显式指定：
+
+```bash
+--solver-kind nsga2
+```
+
+当前 `nsga2` backend 通过 repo 本地虚拟环境 `.venv-solver/` 中安装的 `deap`
+提供 NSGA-II 原语。
 
 ### 5.2 停止条件
 
@@ -475,6 +514,7 @@ VTAGEIPCSearch
 
 - `--solver-kind grid`
 - 或 `--solver-kind random`
+- 或 `--solver-kind nsga2`
 
 ## 10. 输出目录怎么看
 
@@ -529,12 +569,20 @@ VTAGEIPCSearch
 
 - 总 trial 数
 - valid / invalid 数量
-- best trial
+- 单目标时的 representative best
+- 多目标时的 Pareto frontier 和 representative best
 - top results 表
 
 ### 10.4 `history.jsonl`
 
 这是最适合程序读的历史格式。每行一个 trial。
+
+多目标时，每个 trial 会带：
+
+- `objective_value`
+  - 兼容字段，对应 primary objective
+- `objective_values`
+  - 所有 objective 的完整数值映射
 
 ### 10.5 `trials/trial_xxxx/executor.log`
 
