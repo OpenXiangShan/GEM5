@@ -1493,11 +1493,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     Addr fallThroughAddr = pred.getFallThrough(predictWidth);
     Addr nextPC = pred.getTarget(predictWidth);
 
-    // Configure target entry with prediction details
-    panic_if(numComponents > entry.predMetas.size(),
-             "Too many BTB predictor components (%u) for FetchTarget meta slots (%zu)",
-             numComponents, entry.predMetas.size());
-
     auto pairMeta = pairtage ? std::static_pointer_cast<PairTAGE::TageMeta>(
         pairtage->getPredictionMeta()) : nullptr;
     const bool pairtageFallThroughHit = pairMeta &&

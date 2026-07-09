@@ -375,7 +375,7 @@ struct FetchTarget
 
     // prediction metas
     // FIXME: use vec
-    std::array<std::shared_ptr<void>, 12> predMetas; // each component has a meta, TODO
+    std::array<std::shared_ptr<void>, 9> predMetas; // each component has a meta, TODO
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History
