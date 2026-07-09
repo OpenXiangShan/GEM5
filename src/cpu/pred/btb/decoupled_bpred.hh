@@ -141,6 +141,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
+        bool nextPredictionAfterSquash{false};
         bool blockPredictionPending{false};
     } threads[MaxThreads];
 
