@@ -33,6 +33,13 @@ class MultiObjectiveProblem(SolveSpec):
     stop = Stop(max_trials=1)
 
 
+class InvalidAggregateProblem(SolveSpec):
+    config_path = "configs/example/idealkmhv3.py"
+    benchmark_type = "gcc15-spec06-0.3c"
+    objective = Maximize.stats("system.cpu.ipc", benchmark_aggregate="median")
+    stop = Stop(max_trials=1)
+
+
 class SolverSpecParseTestCase(unittest.TestCase):
     def test_parse_vtage_problem(self):
         problem = parse_problem(
@@ -98,6 +105,13 @@ class SolverSpecParseTestCase(unittest.TestCase):
             "only supports Maximize.score_txt",
         ):
             parse_problem(f"{__file__}:InvalidMinScoreProblem")
+
+    def test_parse_rejects_invalid_benchmark_aggregate(self):
+        with self.assertRaisesRegex(
+            SpecLoadError,
+            "benchmark_aggregate must be 'mean' or 'geomean'",
+        ):
+            parse_problem(f"{__file__}:InvalidAggregateProblem")
 
     def test_parse_multi_objective_problem(self):
         problem = parse_problem(f"{__file__}:MultiObjectiveProblem")

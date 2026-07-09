@@ -59,6 +59,23 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "custom-bin"):
             apply_runtime_overrides(problem, args)
 
+    def test_apply_runtime_overrides_rejects_score_txt_with_custom_bin(self):
+        problem = make_problem()
+        problem.objective = ObjectiveSpec(
+            source_kind="score_txt",
+            metric="Estimated Int score per GHz",
+        )
+        args = argparse.Namespace(
+            max_trials=None,
+            benchmark_type="",
+            specific_benchmarks="",
+            custom_bin="/tmp/demo.bin",
+            extra_args="",
+        )
+
+        with self.assertRaisesRegex(ValueError, "score_txt objective does not support custom_bin"):
+            apply_runtime_overrides(problem, args)
+
 
 class CiLocalExecutorCommandTestCase(unittest.TestCase):
     def test_custom_bin_command_adds_raw_cpt(self):
@@ -125,7 +142,7 @@ class CiLocalExecutorCommandTestCase(unittest.TestCase):
                         with patch.object(
                             CiLocalParallelExecutor,
                             "_maybe_generate_score",
-                            return_value=(None, "score evaluator failed with return_code=1"),
+                            return_value=({}, "score evaluator failed with return_code=1"),
                         ):
                             result = executor.run_trials(problem, [trial])[0]
 
@@ -180,7 +197,7 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                         with patch.object(
                             CiLocalParallelExecutor,
                             "_maybe_generate_score",
-                            return_value=(None, None),
+                            return_value=({}, None),
                         ):
                             results = executor.run_trials(problem, trials)
 
@@ -229,7 +246,7 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                         with patch.object(
                             CiLocalParallelExecutor,
                             "_maybe_generate_score",
-                            return_value=(None, None),
+                            return_value=({}, None),
                         ):
                             results = executor.run_trials(problem, trials)
 
@@ -270,7 +287,7 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                 with patch.object(
                     CiLocalParallelExecutor,
                     "_maybe_generate_score",
-                    return_value=(None, None),
+                    return_value=({}, None),
                 ):
                     results = executor.run_trials(problem, trials)
 

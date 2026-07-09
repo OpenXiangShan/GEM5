@@ -144,7 +144,7 @@ class GridAndProcessingTestCase(unittest.TestCase):
                 config_path="configs/example/idealkmhv3.py",
                 benchmark_type="gcc15-spec06-0.3c",
                 specific_benchmarks="",
-                custom_bin="",
+                custom_bin="/tmp/demo.bin",
                 extra_args="",
                 parameters=[],
                 objective=Minimize.stats("system.cpu.branchMispredicts"),
@@ -162,6 +162,154 @@ class GridAndProcessingTestCase(unittest.TestCase):
             evaluated = evaluate_trial(problem, execution)
             self.assertEqual(evaluated.status, "valid")
             self.assertEqual(evaluated.objective_value, 12.0)
+
+    def test_custom_bin_stats_objective_uses_workload_mean(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trial_dir = Path(tmpdir) / "trial_0001"
+            raw_a = trial_dir / "raw" / "spec_all" / "a"
+            raw_b = trial_dir / "raw" / "spec_all" / "b"
+            raw_a.mkdir(parents=True)
+            raw_b.mkdir(parents=True)
+            (raw_a / "stats.txt").write_text("system.cpu.ipc 4.0\n", encoding="utf-8")
+            (raw_b / "stats.txt").write_text("system.cpu.ipc 10.0\n", encoding="utf-8")
+            problem = ParsedProblem(
+                name="CustomBinStatsProblem",
+                problem_ref="dummy.py:CustomBinStatsProblem",
+                config_path="configs/example/idealkmhv3.py",
+                benchmark_type="gcc15-spec06-0.3c",
+                specific_benchmarks="",
+                custom_bin="/tmp/a.bin,/tmp/b.bin",
+                extra_args="",
+                parameters=[],
+                objective=Maximize.stats("system.cpu.ipc"),
+                stop=StopSpec(max_trials=1),
+            )
+            execution = TrialExecutionResult(
+                trial_id="trial_0001",
+                generation=0,
+                assignments={},
+                status="completed",
+                return_code=0,
+                duration_sec=1.0,
+                outdir=str(trial_dir),
+                raw_files={"custom_bin": problem.custom_bin},
+            )
+            evaluated = evaluate_trial(problem, execution)
+            self.assertEqual(evaluated.status, "valid")
+            self.assertEqual(evaluated.objective_value, 7.0)
+
+    def test_benchmark_set_stats_objective_uses_weighted_csv_mean(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trial_dir = Path(tmpdir) / "trial_0001"
+            raw_dir = trial_dir / "raw" / "spec_all" / "demo"
+            raw_dir.mkdir(parents=True)
+            (raw_dir / "stats.txt").write_text("system.cpu.ipc 999.0\n", encoding="utf-8")
+            weighted_csv = trial_dir / "weighted_stats.csv"
+            weighted_csv.write_text(
+                ",system.cpu.ipc,system.cpu.branchMispredicts\n"
+                "astar,4.0,10.0\n"
+                "gcc,10.0,20.0\n",
+                encoding="utf-8",
+            )
+            problem = ParsedProblem(
+                name="WeightedStatsProblem",
+                problem_ref="dummy.py:WeightedStatsProblem",
+                config_path="configs/example/idealkmhv3.py",
+                benchmark_type="gcc15-spec06-0.3c",
+                specific_benchmarks="",
+                custom_bin="",
+                extra_args="",
+                parameters=[],
+                objective=Maximize.stats("system.cpu.ipc"),
+                stop=StopSpec(max_trials=1),
+            )
+            execution = TrialExecutionResult(
+                trial_id="trial_0001",
+                generation=0,
+                assignments={},
+                status="completed",
+                return_code=0,
+                duration_sec=1.0,
+                outdir=str(trial_dir),
+                raw_files={"weighted_csv": str(weighted_csv)},
+            )
+            evaluated = evaluate_trial(problem, execution)
+            self.assertEqual(evaluated.status, "valid")
+            self.assertEqual(evaluated.objective_value, 7.0)
+
+    def test_benchmark_set_stats_objective_supports_geomean(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trial_dir = Path(tmpdir) / "trial_0001"
+            (trial_dir / "raw" / "spec_all" / "demo").mkdir(parents=True)
+            weighted_csv = trial_dir / "weighted_stats.csv"
+            weighted_csv.write_text(
+                ",system.cpu.ipc\n"
+                "astar,4.0\n"
+                "gcc,9.0\n",
+                encoding="utf-8",
+            )
+            problem = ParsedProblem(
+                name="WeightedStatsGeoProblem",
+                problem_ref="dummy.py:WeightedStatsGeoProblem",
+                config_path="configs/example/idealkmhv3.py",
+                benchmark_type="gcc15-spec06-0.3c",
+                specific_benchmarks="",
+                custom_bin="",
+                extra_args="",
+                parameters=[],
+                objective=Maximize.stats("system.cpu.ipc", benchmark_aggregate="geomean"),
+                stop=StopSpec(max_trials=1),
+            )
+            execution = TrialExecutionResult(
+                trial_id="trial_0001",
+                generation=0,
+                assignments={},
+                status="completed",
+                return_code=0,
+                duration_sec=1.0,
+                outdir=str(trial_dir),
+                raw_files={"weighted_csv": str(weighted_csv)},
+            )
+            evaluated = evaluate_trial(problem, execution)
+            self.assertEqual(evaluated.status, "valid")
+            self.assertEqual(evaluated.objective_value, 6.0)
+
+    def test_benchmark_set_stats_objective_geomean_rejects_non_positive_values(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trial_dir = Path(tmpdir) / "trial_0001"
+            (trial_dir / "raw" / "spec_all" / "demo").mkdir(parents=True)
+            weighted_csv = trial_dir / "weighted_stats.csv"
+            weighted_csv.write_text(
+                ",system.cpu.ipc\n"
+                "astar,0.0\n"
+                "gcc,9.0\n",
+                encoding="utf-8",
+            )
+            problem = ParsedProblem(
+                name="WeightedStatsGeoProblem",
+                problem_ref="dummy.py:WeightedStatsGeoProblem",
+                config_path="configs/example/idealkmhv3.py",
+                benchmark_type="gcc15-spec06-0.3c",
+                specific_benchmarks="",
+                custom_bin="",
+                extra_args="",
+                parameters=[],
+                objective=Maximize.stats("system.cpu.ipc", benchmark_aggregate="geomean"),
+                stop=StopSpec(max_trials=1),
+            )
+            execution = TrialExecutionResult(
+                trial_id="trial_0001",
+                generation=0,
+                assignments={},
+                status="completed",
+                return_code=0,
+                duration_sec=1.0,
+                outdir=str(trial_dir),
+                raw_files={"weighted_csv": str(weighted_csv)},
+            )
+            evaluated = evaluate_trial(problem, execution)
+            self.assertEqual(evaluated.status, "invalid")
+            self.assertIn("requires positive benchmark values for geomean", evaluated.invalid_reason)
 
     def test_best_trial_prefers_smaller_value_for_min_direction(self):
         history = [
@@ -208,6 +356,7 @@ class GridAndProcessingTestCase(unittest.TestCase):
                 encoding="utf-8",
             )
             problem = parse_problem(f"{__file__}:TinyMultiObjectiveSearch")
+            problem.custom_bin = "/tmp/demo.bin"
             execution = TrialExecutionResult(
                 trial_id="trial_0001",
                 generation=0,

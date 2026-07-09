@@ -417,10 +417,17 @@ class CiLocalParallelExecutor(BaseExecutor):
             raw_files["custom_bin"] = problem.custom_bin
         if problem.uses_score_txt():
             self._log(f"{trial.trial_id}: generating score.txt")
-        score_path, error = self._maybe_generate_score(problem, benchmark, trial_dir)
-        if score_path is not None:
-            raw_files["score_txt"] = str(score_path)
-            self._log(f"{trial.trial_id}: score.txt ready at {score_path}")
+        elif problem.uses_benchmark_weighted_stats():
+            self._log(f"{trial.trial_id}: generating weighted stats")
+        generated_files, error = self._maybe_generate_score(problem, benchmark, trial_dir)
+        if "score_txt" in generated_files:
+            raw_files["score_txt"] = generated_files["score_txt"]
+            self._log(f"{trial.trial_id}: score.txt ready at {generated_files['score_txt']}")
+        if "weighted_csv" in generated_files:
+            raw_files["weighted_csv"] = generated_files["weighted_csv"]
+            self._log(
+                f"{trial.trial_id}: weighted stats ready at {generated_files['weighted_csv']}"
+            )
         elif error:
             self._log(f"{trial.trial_id}: score generation failed: {error}")
         self._log(
@@ -467,21 +474,29 @@ class CiLocalParallelExecutor(BaseExecutor):
         problem: ParsedProblem,
         benchmark,
         trial_dir: Path,
-    ) -> tuple[Path | None, str | None]:
+    ) -> tuple[dict[str, str], str | None]:
         needs_score = problem.uses_score_txt()
-        if not needs_score and not Path(self.gem5_data_proc).exists():
-            return None, None
+        needs_weighted_stats = problem.uses_benchmark_weighted_stats()
+        if problem.custom_bin and needs_score:
+            return (
+                {},
+                "score_txt objective does not support custom_bin; use stats objective for standalone workload bins",
+            )
+        if not needs_score and not needs_weighted_stats:
+            return {}, None
         if not Path(self.gem5_data_proc).exists():
-            if needs_score:
-                return (
-                    None,
-                    f"score objective requires gem5_data_proc at {self.gem5_data_proc}",
-                )
-            return None, None
+            requirement = "score objective" if needs_score else "benchmark-set stats objective"
+            return (
+                {},
+                f"{requirement} requires gem5_data_proc at {self.gem5_data_proc}",
+            )
         raw_spec_dir = trial_dir / "raw" / "spec_all"
         score_path = trial_dir / "score.txt"
         score_log = trial_dir / "score.log"
         score_scratch_dir = trial_dir / "score_workdir"
+        weighted_csv_path = (
+            trial_dir / "weighted_stats.csv" if needs_weighted_stats else None
+        )
         return_code = run_score_evaluator(
             gem5_data_proc=self.gem5_data_proc,
             score_script=benchmark.score_script,
@@ -491,11 +506,18 @@ class CiLocalParallelExecutor(BaseExecutor):
             score_path=score_path,
             score_log=score_log,
             scratch_dir=score_scratch_dir,
+            weighted_csv_path=weighted_csv_path,
+            emit_score=needs_score,
         )
+        generated_files: dict[str, str] = {}
+        if weighted_csv_path is not None and weighted_csv_path.is_file():
+            generated_files["weighted_csv"] = str(weighted_csv_path)
+        if needs_score and score_path.is_file() and score_path.stat().st_size > 0:
+            generated_files["score_txt"] = str(score_path)
         if return_code == 0:
-            return score_path, None
+            return generated_files, None
         if needs_score:
-            return None, f"score evaluator failed with return_code={return_code}"
-        if score_path.is_file() and score_path.stat().st_size > 0:
-            return score_path, None
-        return None, None
+            return {}, f"score evaluator failed with return_code={return_code}"
+        if needs_weighted_stats:
+            return {}, f"weighted stats evaluator failed with return_code={return_code}"
+        return generated_files, None

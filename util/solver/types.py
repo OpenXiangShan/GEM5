@@ -10,6 +10,7 @@ class ObjectiveSpec:
     source_kind: str
     metric: str
     direction: str = "max"
+    benchmark_aggregate: str = "mean"
 
     def key(self) -> str:
         return f"{self.direction}:{self.source_kind}:{self.metric}"
@@ -91,6 +92,15 @@ class ParsedProblem:
             objective.source_kind == "score_txt"
             for objective in self.objective_list()
         )
+
+    def uses_stats(self) -> bool:
+        return any(
+            objective.source_kind == "stats"
+            for objective in self.objective_list()
+        )
+
+    def uses_benchmark_weighted_stats(self) -> bool:
+        return (not self.custom_bin) and self.uses_stats()
 
 
 @dataclass
