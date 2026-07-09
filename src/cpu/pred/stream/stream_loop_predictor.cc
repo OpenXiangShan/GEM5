@@ -15,7 +15,7 @@ StreamLoopPredictor::StreamLoopPredictor(const Params &params)
 
 void
 StreamLoopPredictor::insertEntry(Addr branchAddr, LoopEntry loopEntry) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC) {
         debugFlagOn = true;
     }
@@ -38,7 +38,7 @@ StreamLoopPredictor::insertEntry(Addr branchAddr, LoopEntry loopEntry) {
 void
 StreamLoopPredictor::updateTripCount(unsigned fsqId, Addr branchAddr)
 {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
@@ -74,7 +74,7 @@ StreamLoopPredictor::updateTripCount(unsigned fsqId, Addr branchAddr)
 
 std::pair<bool, Addr>
 StreamLoopPredictor::makeLoopPrediction(Addr branchAddr) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
@@ -101,7 +101,7 @@ StreamLoopPredictor::makeLoopPrediction(Addr branchAddr) {
 
 void
 StreamLoopPredictor::updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarget, Addr fallThruPC, int detectedCount, bool intraTaken) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
@@ -125,7 +125,7 @@ StreamLoopPredictor::updateEntry(Addr branchAddr, Addr targetAddr, Addr outTarge
 
 void
 StreamLoopPredictor::updateMRULoop(Addr branchAddr) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC) {
         debugFlagOn = true;
     }
@@ -163,7 +163,7 @@ StreamLoopPredictor::restoreLoopTable(std::list<std::pair<Addr, unsigned int>> m
 
 void
 StreamLoopPredictor::controlSquash(unsigned fsqId, FetchStream stream, Addr branchAddr, Addr targetAddr) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
@@ -196,7 +196,7 @@ StreamLoopPredictor::controlSquash(unsigned fsqId, FetchStream stream, Addr bran
 
 std::pair<bool, std::vector<DivideEntry> >
 StreamLoopPredictor::updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAddr) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (streamStart == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
@@ -239,7 +239,7 @@ StreamLoopPredictor::updateTAGE(Addr streamStart, Addr branchAddr, Addr targetAd
 
 void
 StreamLoopPredictor::deleteEntry(Addr branchAddr) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }

@@ -57,8 +57,10 @@ main(int argc, char **argv)
         &PyMem_RawFree);
 
     // This can help python find libraries at run time relative to this binary.
-    // It's probably not necessary, but is mostly harmless and might be useful.
+    // Python 3.11 deprecated Py_SetProgramName(), so skip it there.
+#if PY_VERSION_HEX < 0x030B0000
     Py_SetProgramName(program.get());
+#endif
 
     py::scoped_interpreter guard(true, argc, argv);
 

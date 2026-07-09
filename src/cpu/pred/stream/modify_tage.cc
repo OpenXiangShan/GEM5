@@ -220,7 +220,7 @@ void
 StreamTAGE::putPCHistory(Addr cur_chunk_start, Addr stream_start, const bitset &history) {
     DPRINTF(Override, "In tage.putPCHistory().\n");
 
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     TickedStreamStorage *target = nullptr;
     TickedStreamStorage *alt_target = nullptr;
     int main_table = -1;

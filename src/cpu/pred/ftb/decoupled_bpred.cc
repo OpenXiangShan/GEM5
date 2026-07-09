@@ -1107,7 +1107,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     }
 
     auto pc = stream.startPC;
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (pc == ObservingPC) {
         debugFlagOn = true;
     }
@@ -1443,7 +1443,7 @@ void DecoupledBPUWithFTB::update(unsigned stream_id, ThreadID tid)
     if (fetchStreamQueue.empty())
         return;
     auto it = fetchStreamQueue.begin();
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     while (it != fetchStreamQueue.end() && stream_id >= it->first) {
         auto &stream = it->second;
         // dequeue
@@ -2162,7 +2162,7 @@ DecoupledBPUWithFTB::dumpFsq(const char *when)
 void
 DecoupledBPUWithFTB::tryEnqFetchStream()
 {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (s0PC == ObservingPC) {
         debugFlagOn = true;
     }
@@ -2414,7 +2414,7 @@ DecoupledBPUWithFTB::generateAndSetNewFetchStream()
     auto &entry = entry_new;
     entry.startPC = s0PC;
     entry.predMetas.resize(numComponents);
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (s0PC == ObservingPC) {
         debugFlagOn = true;
     }
