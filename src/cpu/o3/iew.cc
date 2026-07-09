@@ -568,6 +568,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
             "\n", tid, inst->seqNum, inst->pcState() );
 
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
+        toFetch->iewInfo[tid].redirectPending = true;
         toCommit->squash[tid] = true;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
@@ -605,6 +606,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
     // misprediction because it requires the violator itself to be included in
     // the squash.
     if (!toCommit->squash[tid] || inst->seqNum <= toCommit->squashedSeqNum[tid]) {
+        toFetch->iewInfo[tid].redirectPending = true;
         toCommit->squash[tid] = true;
 
         toCommit->squashedSeqNum[tid] = inst->seqNum;
@@ -636,6 +638,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
             "insts, PC: %s [sn:%llu].\n",
             tid, inst->pcState(), inst->seqNum);
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
+        toFetch->iewInfo[tid].redirectPending = true;
         toCommit->squash[tid] = true;
 
         toCommit->valuePredictionError[tid] = true;
@@ -1612,20 +1615,16 @@ IEW::executeInsts()
     while (threads != end) {
         ThreadID tid = *threads++;
         fetchRedirect[tid] = false;
-        toFetch->iewInfo[tid].ldstqCount=ldstQueue.getCount(tid);
-        toFetch->iewInfo[tid].robCount= rob->getThreadEntries(tid);
-        toFetch->iewInfo[tid].iqCount= scheduler->getIQInsts(tid);
+        auto &iew_info = toFetch->iewInfo[tid];
+        iew_info.ldstqCount = ldstQueue.getCount(tid);
+        iew_info.robCount = rob->getThreadEntries(tid);
+        iew_info.iqCount = scheduler->getIQInsts(tid);
     }
 
     // Uncomment this if you want to see all available instructions.
     // @todo This doesn't actually work anymore, we should fix it.
 //    printAvailableInsts();
 
-    // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
-    ThreadID tid = *activeThreads->begin();
-    toFetch->iewInfo[tid].resolvedCFIs.clear();
-
-    
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;
     fromIssue->size = 0;
@@ -1842,6 +1841,10 @@ IEW::tick()
 
     wroteToTimeBuffer = false;
     updatedQueues = false;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        toFetch->iewInfo[tid].redirectPending = false;
+        toFetch->iewInfo[tid].resolvedCFIs.clear();
+    }
 
     scheduler->tick();
     ldstQueue.tick();

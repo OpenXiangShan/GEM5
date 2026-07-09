@@ -91,6 +91,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     : fetchPolicy(params.smtFetchPolicy),
       cpu(_cpu),
       branchPred(nullptr),
+      dbpbtb(nullptr),
       resolveQueueSize(params.resolveQueueSize),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
@@ -118,12 +119,25 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              fetchWidth, static_cast<int>(MaxWidth));
 
     smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
+    // IEW reports an early redirect before the formal Commit squash reaches
+    // Fetch:
+    //   T0                 IEW detects a wrong-path condition
+    //   T0 + iewToFetch    Fetch sees redirectPending
+    //   T0 + commitToFetch Commit squash reaches Fetch
+    // Hold the hint only across that gap so SMT arbitration can avoid the
+    // doomed thread without turning the hint into a sticky recovery state.
+    const auto redirect_pending_gap =
+        commitToFetchDelay > iewToFetchDelay ?
+        static_cast<unsigned>(commitToFetchDelay - iewToFetchDelay) : 0;
+    redirectPendingHoldCycles = redirect_pending_gap + 1;
     for (int i = 0; i < MaxThreads; i++) {
         setThreadStatus(i, Idle);
         decoder[i] = nullptr;
         threads[i].fetchpc.reset(params.isa[0]->newPCState());
         macroop[i] = nullptr;
         delayedCommit[i] = false;
+        redirectPending[i] = false;
+        redirectPendingCycles[i] = 0;
         lastIcacheStall[i] = 0;
         smtBorrowThrottleCycles[i] = 0;
     }
@@ -170,6 +184,16 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 }
 
 Fetch::~Fetch() = default;
+
+void
+Fetch::clearRedirectPending(ThreadID tid)
+{
+    redirectPending[tid] = false;
+    redirectPendingCycles[tid] = 0;
+    if (dbpbtb) {
+        dbpbtb->setRedirectPending(tid, false);
+    }
+}
 
 bool
 Fetch::isTraceMode() const
@@ -288,6 +312,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of times an entry is enqueued to the resolve queue"),
     ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
              "Number of entries in the resolve queue"),
+    ADD_STAT(redirectPendingFetchSkips, statistics::units::Count::get(),
+             "Number of FTQ heads skipped because IEW reported a pending redirect"),
+    ADD_STAT(redirectPendingOnlyFetchCycles, statistics::units::Count::get(),
+             "Number of fetch attempts blocked because all FTQ heads were redirect-pending"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -381,6 +409,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .init(1, 8, 1);
         resolveQueueOccupancy
             .init(0, 32, 1);
+        redirectPendingFetchSkips
+            .prereq(redirectPendingFetchSkips);
+        redirectPendingOnlyFetchCycles
+            .prereq(redirectPendingOnlyFetchCycles);
         traceMetaStores
             .prereq(traceMetaStores);
         traceMetaCleanupSquashCalls
@@ -475,6 +507,7 @@ Fetch::clearStates(ThreadID tid)
     set(threads[tid].fetchpc, cpu->pcState(tid));
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
+    clearRedirectPending(tid);
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
@@ -503,6 +536,7 @@ Fetch::resetStage()
         macroop[tid] = NULL;
 
         delayedCommit[tid] = false;
+        clearRedirectPending(tid);
         threads[tid].cacheReq.reset();
 
         threads[tid].reset();
@@ -1169,6 +1203,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     else
         macroop[tid] = NULL;
     decoder[tid]->reset();
+    clearRedirectPending(tid);
 
     // Clear the icache miss if it's outstanding.
     DPRINTF(Fetch, "[tid:%i] Squash: clear cacheReq, current fetchStatus[tid]=%d\n", tid, fetchStatus[tid]);
@@ -1332,6 +1367,17 @@ Fetch::initializeTickState()
     // get the distribution of fetch status
     fetchStats.fetchStatusDist[fetchStatus[0]]++;
 
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!redirectPending[tid]) {
+            continue;
+        }
+        if (redirectPendingCycles[tid] == 0) {
+            clearRedirectPending(tid);
+        } else {
+            --redirectPendingCycles[tid];
+        }
+    }
+
     // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1344,6 +1390,8 @@ Fetch::initializeTickState()
             waitForVsetvl[tid] = false;
         }
     }
+
+    handleIEWSignals();
 
     DPRINTF(Fetch, "Running stage.\n");
     return status_change;
@@ -1602,8 +1650,6 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     // Check squash signals from commit.
     bool commitSquashed = handleCommitSignals(tid);
 
-    handleIEWSignals();
-
     if (commitSquashed) {
         return true;
     }
@@ -1650,6 +1696,11 @@ Fetch::handleIEWSignals()
     uint8_t enqueueSize = 0;
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (numThreads > 1 && fromIEW->iewInfo[tid].redirectPending) {
+            redirectPending[tid] = true;
+            redirectPendingCycles[tid] = redirectPendingHoldCycles;
+            dbpbtb->setRedirectPending(tid, true);
+        }
         enqueueSize += fromIEW->iewInfo[tid].resolvedCFIs.size();
     }
 
@@ -1749,6 +1800,7 @@ Fetch::handleCommitSignals(ThreadID tid)
             localSquashVer[tid].getVersion());
 
     auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+    clearRedirectPending(tid);
 
     if (mispred_inst) {
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
@@ -1788,6 +1840,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                 "from decode.\n",tid);
 
         auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
+        clearRedirectPending(tid);
         if (fromDecode->decodeInfo[tid].branchMispredict) {
             assert(dbpbtb);
             const auto next_pc =
@@ -1900,6 +1953,28 @@ Fetch::checkDecoupledFrontend(ThreadID tid)
     return true;
 }
 
+ThreadID
+Fetch::getEligibleFetchTargetTid()
+{
+    std::array<bool, MaxThreads> eligible;
+    eligible.fill(true);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        eligible[tid] = !redirectPending[tid];
+    }
+
+    unsigned skipped = 0;
+    ThreadID tid = dbpbtb->getTargetTid(eligible, &skipped);
+    if (skipped) {
+        fetchStats.redirectPendingFetchSkips += skipped;
+        DPRINTF(Fetch, "Skipped %u FTQ heads while backend redirect is pending\n",
+                skipped);
+    }
+    if (tid == InvalidThreadID && skipped) {
+        fetchStats.redirectPendingOnlyFetchCycles++;
+    }
+    return tid;
+}
+
 bool
 Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
 {
@@ -1944,7 +2019,7 @@ Fetch::fetch(bool &status_change)
     //////////////////////////////////////////
     // Start actual fetch
     //////////////////////////////////////////
-    auto tid = dbpbtb->getTargetTid();
+    auto tid = getEligibleFetchTargetTid();
 
     if (tid == InvalidThreadID) {
         return;
