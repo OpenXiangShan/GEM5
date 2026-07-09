@@ -307,17 +307,6 @@ DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
     auto &target = ftq.fetching(tid);
     target.fetchInstNum = fetched_inst_num;
-    if (target.pairtageUsed) {
-        if (target.pairtageSecondBlock) {
-            dbpBtbStats.pairtageSecondBlockFetched++;
-            dbpBtbStats.pairtageSecondBlockFetchedInsts += fetched_inst_num;
-            dbpBtbStats.pairtageSecondBlockFetchedInstsDist.sample(
-                fetched_inst_num, 1);
-        } else {
-            dbpBtbStats.pairtageFirstBlockFetched++;
-            dbpBtbStats.pairtageFirstBlockFetchedInsts += fetched_inst_num;
-        }
-    }
     ftq.finishTarget(tid);
 }
 
@@ -857,18 +846,6 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 1. Create a new fetch target entry with prediction information
     FetchTarget entry = createFetchTargetEntry(tid);
-    if (pairtage && pairtage->isEnabled()) {
-        auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
-            pairtage->getPredictionMeta());
-        if (pairMeta && pairMeta->predictedFirstBlock.valid) {
-            dbpBtbStats.pairtageFirstBlockCandidates++;
-            if (entry.pairtageUsed) {
-                dbpBtbStats.pairtageFirstBlockSelected++;
-            } else {
-                dbpBtbStats.pairtageFirstBlockOverridden++;
-            }
-        }
-    }
 
     // 2. Update global PC state to target or fall-through
     s0PC = threads[tid].finalPred.getTarget(predictWidth);;
@@ -916,45 +893,18 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
-    dbpBtbStats.pairtageSecondBlockAttempted++;
-
     if (!pairtage->secondBlockEnabled()) {
-        dbpBtbStats.pairtageSecondBlockSkippedDisabled++;
         return;
     }
 
     if (!currentFirstBlockHasAllowedPairPhase(tid)) {
-        dbpBtbStats.pairtageSecondBlockSkippedOddPhase++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block for thread %u because first block phase is Odd\n",
                 tid);
         return;
     }
 
-    auto firstBlockStatus = pairtageFirstBlockStatusForSecondBlock(tid);
-    if (firstBlockStatus != PairtageFirstBlockSecondBlockStatus::Match) {
-        dbpBtbStats.pairtageSecondBlockSkippedFirstBlockOverridden++;
-        switch (firstBlockStatus) {
-          case PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss:
-            dbpBtbStats.pairtageSecondBlockNoFirstBlockCandidate++;
-            dbpBtbStats.pairtageSecondBlockNoFirstBlockLookupMiss++;
-            break;
-          case PairtageFirstBlockSecondBlockStatus::NoCandidateUntrainable:
-            dbpBtbStats.pairtageSecondBlockNoFirstBlockCandidate++;
-            dbpBtbStats.pairtageSecondBlockNoFirstBlockUntrainable++;
-            break;
-          case PairtageFirstBlockSecondBlockStatus::FallThruMismatch:
-            dbpBtbStats.pairtageSecondBlockFirstBlockMismatchFallThru++;
-            break;
-          case PairtageFirstBlockSecondBlockStatus::ControlAddrMismatch:
-            dbpBtbStats.pairtageSecondBlockFirstBlockMismatchControlAddr++;
-            break;
-          case PairtageFirstBlockSecondBlockStatus::TargetMismatch:
-            dbpBtbStats.pairtageSecondBlockFirstBlockMismatchTarget++;
-            break;
-          case PairtageFirstBlockSecondBlockStatus::Match:
-            break;
-        }
+    if (!pairtageFirstBlockMatchesForSecondBlock(tid)) {
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block for thread %u because first block was overridden by final prediction\n",
                 tid);
@@ -962,7 +912,6 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     }
 
     if (ftq.full(tid)) {
-        dbpBtbStats.pairtageSecondBlockSkippedFtqFull++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block enqueue for thread %u because FTQ is full\n",
                 tid);
@@ -971,7 +920,6 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     auto secondBlock = pairtage->getSecondPredBlock();
     if (!secondBlock.valid) {
-        dbpBtbStats.pairtageSecondBlockNoCandidate++;
         DPRINTF(DecoupleBP,
                 "No pending PairTAGE second block for thread %u after first block\n",
                 tid);
@@ -983,7 +931,6 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
             buildSecondTrainingPairBlockFromPrediction(
                 thread.secondBlockTrainPred, predictWidth);
         if (!pairBlocksMatch(secondBlock, trainedSecondBlock)) {
-            dbpBtbStats.pairtageSecondBlockTeacherDisagree++;
             DPRINTF(DecoupleBP,
                     "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
                     "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
@@ -995,9 +942,6 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
                     trainedSecondBlock.targetPC, trainedSecondBlock.taken);
             return;
         }
-        dbpBtbStats.pairtageSecondBlockTeacherAgree++;
-    } else {
-        dbpBtbStats.pairtageSecondBlockNoTeacher++;
     }
 
     auto secondPred = buildPredictionFromPairBlock(
@@ -1019,13 +963,6 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     thread.pendingSecondBlockEntry = entry;
     thread.pendingSecondBlockValid = true;
-    dbpBtbStats.pairtageSecondBlockEnqueued++;
-    dbpBtbStats.pairtageSecondBlockPredBytes += entry.predEndPC - entry.startPC;
-    if (entry.predTaken) {
-        dbpBtbStats.pairtageSecondBlockPredTaken++;
-    } else {
-        dbpBtbStats.pairtageSecondBlockPredNotTaken++;
-    }
 
     DPRINTF(DecoupleBP,
             "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
@@ -1075,8 +1012,7 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
         return;
     }
 
-    if (pairtageFirstBlockStatusForSecondBlock(tid) !=
-        PairtageFirstBlockSecondBlockStatus::Match) {
+    if (!pairtageFirstBlockMatchesForSecondBlock(tid)) {
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second-block training prediction for thread %u because first block was overridden\n",
                 tid);
@@ -1115,7 +1051,6 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
     }
 
     thread.secondBlockTrainPredReady = true;
-    dbpBtbStats.pairtageSecondBlockTrainPrepared++;
 
     DPRINTF(DecoupleBP,
             "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
@@ -1132,15 +1067,15 @@ DecoupledBPUWithBTB::currentFirstBlockHasAllowedPairPhase(ThreadID tid) const
            pairtage->phaseEnabled(ftq.back(tid).pairPhase);
 }
 
-DecoupledBPUWithBTB::PairtageFirstBlockSecondBlockStatus
-DecoupledBPUWithBTB::pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const
+bool
+DecoupledBPUWithBTB::pairtageFirstBlockMatchesForSecondBlock(ThreadID tid) const
 {
     if (!pairtage || !pairtage->isEnabled()) {
-        return PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss;
+        return false;
     }
 
     if (!currentFirstBlockHasAllowedPairPhase(tid)) {
-        return PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss;
+        return false;
     }
 
     auto &thread = threads[tid];
@@ -1148,35 +1083,16 @@ DecoupledBPUWithBTB::pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const
         pairtage->getPredictionMeta());
     if (!pairMeta || !pairMeta->firstBlockValid ||
         !pairMeta->predictedFirstBlock.valid) {
-        return buildFirstTrainingPairBlockFromPrediction(thread.finalPred,
-                                                         predictWidth).valid ?
-            PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss :
-            PairtageFirstBlockSecondBlockStatus::NoCandidateUntrainable;
+        return false;
     }
 
     auto actualFirstBlock = buildFirstTrainingPairBlockFromPrediction(
         thread.finalPred, predictWidth);
     if (!actualFirstBlock.valid) {
-        return PairtageFirstBlockSecondBlockStatus::NoCandidateUntrainable;
+        return false;
     }
 
-    if (pairBlocksMatch(actualFirstBlock, pairMeta->predictedFirstBlock)) {
-        return PairtageFirstBlockSecondBlockStatus::Match;
-    }
-
-    if (actualFirstBlock.taken != pairMeta->predictedFirstBlock.taken) {
-        return PairtageFirstBlockSecondBlockStatus::FallThruMismatch;
-    }
-    if (actualFirstBlock.branchPC != pairMeta->predictedFirstBlock.branchPC) {
-        return PairtageFirstBlockSecondBlockStatus::ControlAddrMismatch;
-    }
-    if (actualFirstBlock.targetPC != pairMeta->predictedFirstBlock.targetPC ||
-        actualFirstBlock.fallThrough !=
-            pairMeta->predictedFirstBlock.fallThrough) {
-        return PairtageFirstBlockSecondBlockStatus::TargetMismatch;
-    }
-
-    return PairtageFirstBlockSecondBlockStatus::TargetMismatch;
+    return pairBlocksMatch(actualFirstBlock, pairMeta->predictedFirstBlock);
 }
 
 bool

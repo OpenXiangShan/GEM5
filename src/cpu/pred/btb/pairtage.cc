@@ -3,15 +3,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
-#include <numeric>
-#include <string>
 
 #include "base/intmath.hh"
-
-#ifndef UNIT_TEST
-#include "base/trace.hh"
-
-#endif
+#include "sim/core.hh"
 
 namespace gem5
 {
@@ -22,39 +16,22 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-#ifdef UNIT_TEST
-namespace test
-{
-#endif
-
 void
-PairTAGE::TageEntry::setBlock(unsigned blockIdx, const PairBlockInfo &block)
+PairTAGE::PairTAGEEntry::setBlock(unsigned blockIdx, const PairBlockInfo &block)
 {
     assert(blockIdx < NumBlocksPerEntry);
     blocks[blockIdx] = block;
 }
 
 void
-PairTAGE::TageEntry::clearBlock(unsigned blockIdx)
+PairTAGE::PairTAGEEntry::clearBlock(unsigned blockIdx)
 {
     assert(blockIdx < NumBlocksPerEntry);
     blocks[blockIdx].clear();
 }
 
-unsigned
-PairTAGE::TageEntry::numValidBlocks() const
-{
-    unsigned validBlocks = 0;
-    for (const auto &block : blocks) {
-        if (block.valid) {
-            ++validBlocks;
-        }
-    }
-    return validBlocks;
-}
-
 void
-PairTAGE::TageEntry::strengthenIdentity()
+PairTAGE::PairTAGEEntry::strengthenIdentity()
 {
     if (identityConfidence < MaxIdentityConfidence) {
         ++identityConfidence;
@@ -62,7 +39,7 @@ PairTAGE::TageEntry::strengthenIdentity()
 }
 
 bool
-PairTAGE::TageEntry::weakenIdentity()
+PairTAGE::PairTAGEEntry::weakenIdentity()
 {
     if (identityConfidence > 0) {
         --identityConfidence;
@@ -70,90 +47,6 @@ PairTAGE::TageEntry::weakenIdentity()
     return identityConfidence == 0;
 }
 
-#ifdef UNIT_TEST
-namespace
-{
-
-std::vector<unsigned>
-defaultHistLengths(unsigned numPredictors)
-{
-    std::vector<unsigned> lengths(numPredictors);
-    for (unsigned i = 0; i < numPredictors; ++i) {
-        lengths[i] = (i + 1) * 4;
-    }
-    return lengths;
-}
-
-}  // anonymous namespace
-
-PairTAGE::PairTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
-    : TimedBaseBTBPredictor(),
-      numPredictors(numPredictors),
-      tableSizes(numPredictors, tableSize),
-      tableIndexBits(numPredictors),
-      tableTagBits(numPredictors, 16),
-      tablePcShifts(numPredictors, 1),
-      histLengths(defaultHistLengths(numPredictors)),
-      maxHistLen(histLengths.empty() ? 0 : histLengths.back()),
-      numTablesToAlloc(1),
-      numWays(numWays),
-      maxBranchPositions(32),
-      enableSecondBlock(true),
-      allowOddPhase(false),
-      trainStandaloneFallThrough(false)
-{
-    setNumDelay(0);
-    blockSize = 32;
-
-    tageTable.resize(numPredictors);
-    for (unsigned i = 0; i < numPredictors; ++i) {
-        tageTable[i].resize(tableSizes[i]);
-        for (unsigned j = 0; j < tableSizes[i]; ++j) {
-            tageTable[i][j].resize(numWays);
-        }
-        tableIndexBits[i] = ceilLog2(tableSizes[i]);
-        tagFoldedHist.emplace_back(histLengths[i], tableTagBits[i], 16);
-        altTagFoldedHist.emplace_back(histLengths[i], tableTagBits[i] - 1, 16);
-        indexFoldedHist.emplace_back(histLengths[i], tableIndexBits[i], 16);
-    }
-}
-
-void
-PairTAGE::installEntryForTest(unsigned table, unsigned way, Addr startPC,
-                              const PairBlockInfo &firstBlock,
-                              const PairBlockInfo &secondBlock,
-                              uint8_t identityConfidence)
-{
-    assert(table < numPredictors);
-    assert(way < numWays);
-
-    const Addr index = getTageIndex(startPC, table);
-    auto &entry = tageTable[table][index][way];
-    entry.valid = true;
-    entry.tag = getTageTag(
-        startPC, table, tagFoldedHist[table].get(),
-        altTagFoldedHist[table].get());
-    entry.counter = firstBlock.taken ? 0 : -1;
-    entry.useful = false;
-    entry.identityConfidence = identityConfidence;
-    entry.setBlock(0, firstBlock);
-    if (secondBlock.valid) {
-        entry.setBlock(1, secondBlock);
-    } else {
-        entry.clearBlock(1);
-    }
-}
-
-const PairTAGE::TageEntry &
-PairTAGE::tableEntryForTest(unsigned table, unsigned way, Addr startPC) const
-{
-    assert(table < numPredictors);
-    assert(way < numWays);
-
-    const Addr index = getTageIndex(startPC, table);
-    return tageTable[table][index][way];
-}
-#else
 PairTAGE::PairTAGE(const Params &p)
     : TimedBaseBTBPredictor(p),
       numPredictors(p.numPredictors),
@@ -168,8 +61,7 @@ PairTAGE::PairTAGE(const Params &p)
       maxBranchPositions(p.maxBranchPositions),
       enableSecondBlock(p.enableSecondBlock),
       allowOddPhase(p.allowOddPhase),
-      trainStandaloneFallThrough(p.trainStandaloneFallThrough),
-      pairTageStats(this, numPredictors, numWays, tableSizes)
+      trainStandaloneFallThrough(p.trainStandaloneFallThrough)
 {
     if (tablePcShifts.size() < numPredictors) {
         tablePcShifts.resize(numPredictors, 1);
@@ -191,144 +83,8 @@ PairTAGE::PairTAGE(const Params &p)
         indexFoldedHist.emplace_back(histLengths[i], tableIndexBits[i], 16);
     }
 }
-#endif
 
 PairTAGE::~PairTAGE() = default;
-
-#ifndef UNIT_TEST
-PairTAGE::PairTageStats::PairTageStats(
-    statistics::Group *parent, unsigned numPredictors, unsigned numWays,
-    const std::vector<unsigned> &tableSizes)
-    : statistics::Group(parent),
-      ADD_STAT(predCalls, statistics::units::Count::get(),
-               "prediction lookups issued to PairTAGE"),
-      ADD_STAT(predOddPhaseSkipped, statistics::units::Count::get(),
-               "prediction lookups skipped because PairTAGE phase is Odd"),
-      ADD_STAT(predHit, statistics::units::Count::get(),
-               "prediction lookups that hit a valid PairTAGE first block"),
-      ADD_STAT(predMiss, statistics::units::Count::get(),
-               "prediction lookups that missed in PairTAGE"),
-      ADD_STAT(predSecondBlockAvailable, statistics::units::Count::get(),
-               "prediction hits that also carried a valid second block"),
-      ADD_STAT(refreshCalls, statistics::units::Count::get(),
-               "second-boundary meta refresh lookups issued to PairTAGE"),
-      ADD_STAT(refreshOddPhaseSkipped, statistics::units::Count::get(),
-               "meta refresh lookups skipped because PairTAGE phase is Odd"),
-      ADD_STAT(refreshHit, statistics::units::Count::get(),
-               "meta refresh lookups that hit a valid PairTAGE first block"),
-      ADD_STAT(refreshMiss, statistics::units::Count::get(),
-               "meta refresh lookups that missed in PairTAGE"),
-      ADD_STAT(trainCalls, statistics::units::Count::get(),
-               "training calls issued to PairTAGE"),
-      ADD_STAT(trainOddPhaseSkipped, statistics::units::Count::get(),
-               "training calls skipped because the FTQ entry phase is Odd"),
-      ADD_STAT(trainNoMeta, statistics::units::Count::get(),
-               "training calls skipped because prediction meta is unavailable"),
-      ADD_STAT(trainProviderHit, statistics::units::Count::get(),
-               "training calls whose provider lookup hit an existing entry"),
-      ADD_STAT(trainProviderMiss, statistics::units::Count::get(),
-               "training calls whose provider lookup missed and required allocation"),
-      ADD_STAT(trainFirstBlockValid, statistics::units::Count::get(),
-               "training calls with a valid first block to install"),
-      ADD_STAT(trainFirstBlockInvalid, statistics::units::Count::get(),
-               "training calls whose first block could not be formed"),
-      ADD_STAT(trainFirstBlockInvalidNoTakenEntry,
-               statistics::units::Count::get(),
-               "invalid first-block trains with no taken entry to encode"),
-      ADD_STAT(trainFirstBlockInvalidNoNotTakenDirectCond,
-               statistics::units::Count::get(),
-               "invalid first-block trains with no not-taken direct conditional"),
-      ADD_STAT(trainFirstBlockInvalidFilteredIndirect,
-               statistics::units::Count::get(),
-               "invalid first-block trains filtered by indirect branches"),
-      ADD_STAT(trainFirstBlockInvalidFilteredCall,
-               statistics::units::Count::get(),
-               "invalid first-block trains filtered by call entries"),
-      ADD_STAT(trainFirstBlockInvalidFilteredReturn,
-               statistics::units::Count::get(),
-               "invalid first-block trains filtered by return entries"),
-      ADD_STAT(trainFirstBlockInvalidUnsupportedFormat,
-               statistics::units::Count::get(),
-               "invalid first-block trains rejected by unsupported formats"),
-      ADD_STAT(trainSecondBlockValid, statistics::units::Count::get(),
-               "training calls with a valid second block to install"),
-      ADD_STAT(trainFallThroughSkippedNoSecondBlock,
-               statistics::units::Count::get(),
-               "fallthrough first-block trains skipped because no second block was available"),
-      ADD_STAT(clearEntryOnInvalidTrain, statistics::units::Count::get(),
-               "existing provider entries cleared because no valid first block was trainable"),
-      ADD_STAT(updateExistingProvider, statistics::units::Count::get(),
-               "writes that updated an existing provider entry in place"),
-      ADD_STAT(providerIdentityStrengthened, statistics::units::Count::get(),
-               "provider entries whose identity confidence increased after matching training"),
-      ADD_STAT(providerIdentityWeakened, statistics::units::Count::get(),
-               "provider entries whose identity confidence decreased after mismatching training"),
-      ADD_STAT(providerIdentityRewritten, statistics::units::Count::get(),
-               "provider entries rewritten in place after repeated identity mismatches"),
-      ADD_STAT(allocIntoInvalidSlot, statistics::units::Count::get(),
-               "allocations that found an invalid way"),
-      ADD_STAT(allocOverwriteValid, statistics::units::Count::get(),
-               "allocations that had to overwrite a valid entry"),
-      ADD_STAT(allocOverwriteValidSecondBlock, statistics::units::Count::get(),
-               "allocations that overwrote a valid entry carrying a second block"),
-      ADD_STAT(allocFailureNoCandidate, statistics::units::Count::get(),
-               "allocations that could not find a victim in higher tables"),
-      ADD_STAT(usefulReset, statistics::units::Count::get(),
-               "global useful-bit resets triggered by allocation pressure"),
-      ADD_STAT(installSecondBlock, statistics::units::Count::get(),
-               "writes that installed a second block into the table"),
-      ADD_STAT(clearSecondBlock, statistics::units::Count::get(),
-               "writes that removed a previously stored second block"),
-      ADD_STAT(liveValidEntries, statistics::units::Count::get(),
-               "current number of valid PairTAGE entries"),
-      ADD_STAT(liveSecondBlockEntries, statistics::units::Count::get(),
-               "current number of PairTAGE entries carrying a valid second block"),
-      ADD_STAT(predTableHits, statistics::units::Count::get(),
-               "prediction hits per PairTAGE table"),
-      ADD_STAT(trainProviderTableHits, statistics::units::Count::get(),
-               "provider hits per PairTAGE table during training"),
-      ADD_STAT(allocTableInstalls, statistics::units::Count::get(),
-               "new allocations installed per PairTAGE table"),
-      ADD_STAT(tableWrites, statistics::units::Count::get(),
-               "writes per PairTAGE table"),
-      ADD_STAT(tableOverwrites, statistics::units::Count::get(),
-               "valid-entry overwrites per PairTAGE table"),
-      ADD_STAT(liveValidEntriesPerTable, statistics::units::Count::get(),
-               "current valid entries per PairTAGE table"),
-      ADD_STAT(liveSecondBlockEntriesPerTable, statistics::units::Count::get(),
-               "current second-block-carrying entries per PairTAGE table"),
-      ADD_STAT(liveOccupancyRate, statistics::units::Ratio::get(),
-               "current live PairTAGE occupancy ratio"),
-      ADD_STAT(liveSecondBlockEntryRate, statistics::units::Ratio::get(),
-               "current ratio of second-block-carrying entries over all PairTAGE slots")
-{
-    const auto totalTableSlots =
-        std::accumulate(tableSizes.begin(), tableSizes.end(), uint64_t(0)) * numWays;
-
-    predTableHits.init(numPredictors);
-    trainProviderTableHits.init(numPredictors);
-    allocTableInstalls.init(numPredictors);
-    tableWrites.init(numPredictors);
-    tableOverwrites.init(numPredictors);
-    liveValidEntriesPerTable.init(numPredictors);
-    liveSecondBlockEntriesPerTable.init(numPredictors);
-
-    for (unsigned i = 0; i < numPredictors; ++i) {
-        const auto tableName = "T" + std::to_string(i);
-        predTableHits.subname(i, tableName);
-        trainProviderTableHits.subname(i, tableName);
-        allocTableInstalls.subname(i, tableName);
-        tableWrites.subname(i, tableName);
-        tableOverwrites.subname(i, tableName);
-        liveValidEntriesPerTable.subname(i, tableName);
-        liveSecondBlockEntriesPerTable.subname(i, tableName);
-    }
-
-    liveOccupancyRate = liveValidEntries / statistics::constant(totalTableSlots);
-    liveSecondBlockEntryRate =
-        liveSecondBlockEntries / statistics::constant(totalTableSlots);
-}
-#endif
 
 void
 PairTAGE::tickStart()
@@ -356,9 +112,6 @@ void
 PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
 {
     secondPredBlock.clear();
-#ifndef UNIT_TEST
-    pairTageStats.predCalls++;
-#endif
 
     meta = std::make_shared<TageMeta>();
     meta->tagFoldedHist = tagFoldedHist;
@@ -373,34 +126,19 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     meta->predictedSecondBlock.clear();
 
     if (!phaseEnabled(predictionPhase)) {
-#ifndef UNIT_TEST
-        pairTageStats.predOddPhaseSkipped++;
-#endif
         return;
     }
 
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
-#ifndef UNIT_TEST
-        pairTageStats.predMiss++;
-#endif
         return;
     }
-#ifndef UNIT_TEST
-    pairTageStats.predHit++;
-    pairTageStats.predTableHits[tableInfo.table]++;
-#endif
 
     meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
     meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
     meta->predictedSecondBlock = tableInfo.entry.secondBlock();
     secondPredBlock = tableInfo.entry.secondBlock();
-#ifndef UNIT_TEST
-    if (tableInfo.entry.secondBlock().valid) {
-        pairTageStats.predSecondBlockAvailable++;
-    }
-#endif
 
     if (!tableInfo.entry.firstBlock().valid) {
         return;
@@ -424,9 +162,6 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
                                 FullBTBPrediction &pred)
 {
     (void)pred;
-#ifndef UNIT_TEST
-    pairTageStats.refreshCalls++;
-#endif
 
     meta = std::make_shared<TageMeta>();
     meta->tagFoldedHist = tagFoldedHist;
@@ -441,22 +176,13 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
     meta->predictedSecondBlock.clear();
 
     if (!phaseEnabled(predictionPhase)) {
-#ifndef UNIT_TEST
-        pairTageStats.refreshOddPhaseSkipped++;
-#endif
         return;
     }
 
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
-#ifndef UNIT_TEST
-        pairTageStats.refreshMiss++;
-#endif
         return;
     }
-#ifndef UNIT_TEST
-    pairTageStats.refreshHit++;
-#endif
 
     meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
     meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
@@ -468,37 +194,6 @@ PairTAGE::PairBlockInfo
 PairTAGE::getSecondPredBlock() const
 {
     return secondPredBlock;
-}
-
-void
-PairTAGE::noteEntryRewrite(unsigned table, const TageEntry &oldEntry,
-                           const TageEntry &newEntry)
-{
-#ifdef UNIT_TEST
-    (void)table;
-    (void)oldEntry;
-    (void)newEntry;
-#else
-    if (!oldEntry.valid && newEntry.valid) {
-        pairTageStats.liveValidEntries++;
-        pairTageStats.liveValidEntriesPerTable[table]++;
-    } else if (oldEntry.valid && !newEntry.valid) {
-        pairTageStats.liveValidEntries--;
-        pairTageStats.liveValidEntriesPerTable[table]--;
-    }
-
-    const bool oldHasSecond = oldEntry.hasSecondBlock();
-    const bool newHasSecond = newEntry.hasSecondBlock();
-    if (!oldHasSecond && newHasSecond) {
-        pairTageStats.liveSecondBlockEntries++;
-        pairTageStats.liveSecondBlockEntriesPerTable[table]++;
-        pairTageStats.installSecondBlock++;
-    } else if (oldHasSecond && !newHasSecond) {
-        pairTageStats.liveSecondBlockEntries--;
-        pairTageStats.liveSecondBlockEntriesPerTable[table]--;
-        pairTageStats.clearSecondBlock++;
-    }
-#endif
 }
 
 void
@@ -565,7 +260,7 @@ PairTAGE::betterProviderCandidate(const TageTableInfo &candidate,
 
 int
 PairTAGE::selectMatchingReplacementWay(
-    const std::vector<TageEntry> &set, Addr tag,
+    const std::vector<PairTAGEEntry> &set, Addr tag,
     const PairBlockInfo &trainedBlock,
     const PairBlockInfo &trainedSecondBlock) const
 {
@@ -591,7 +286,7 @@ PairTAGE::selectMatchingReplacementWay(
         return selectedWay;
     };
 
-    const int firstBlockVictim = selectVictim([&](const TageEntry &entry) {
+    const int firstBlockVictim = selectVictim([&](const PairTAGEEntry &entry) {
         return !blocksMatch(entry.firstBlock(), trainedBlock);
     });
     if (firstBlockVictim >= 0) {
@@ -599,7 +294,7 @@ PairTAGE::selectMatchingReplacementWay(
     }
 
     if (trainedSecondBlock.valid) {
-        return selectVictim([&](const TageEntry &entry) {
+        return selectVictim([&](const PairTAGEEntry &entry) {
             return !blocksMatch(entry.secondBlock(), trainedSecondBlock);
         });
     }
@@ -608,7 +303,7 @@ PairTAGE::selectMatchingReplacementWay(
 }
 
 int
-PairTAGE::selectAllocationWay(const std::vector<TageEntry> &set) const
+PairTAGE::selectAllocationWay(const std::vector<PairTAGEEntry> &set) const
 {
     for (unsigned way = 0; way < set.size(); ++way) {
         if (!set[way].valid) {
@@ -636,9 +331,6 @@ PairTAGE::selectAllocationWay(const std::vector<TageEntry> &set) const
 void
 PairTAGE::resetUsefulBits()
 {
-#ifndef UNIT_TEST
-    pairTageStats.usefulReset++;
-#endif
     usefulResetCnt = 0;
     for (auto &table : tageTable) {
         for (auto &set : table) {
@@ -682,9 +374,6 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
     }
 
     if (candidateTables.empty()) {
-#ifndef UNIT_TEST
-        pairTageStats.allocFailureNoCandidate++;
-#endif
         usefulResetCnt++;
         if (usefulResetCnt >= 256) {
             resetUsefulBits();
@@ -708,30 +397,15 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
         const Addr index =
             getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
         auto &targetEntry = tageTable[table][index][way];
-        const auto oldEntry = targetEntry;
 
-#ifndef UNIT_TEST
-        if (!oldEntry.valid) {
-            pairTageStats.allocIntoInvalidSlot++;
-        } else {
-            pairTageStats.allocOverwriteValid++;
-            pairTageStats.tableOverwrites[table]++;
-            if (oldEntry.hasSecondBlock()) {
-                pairTageStats.allocOverwriteValidSecondBlock++;
-            }
-        }
-        pairTageStats.allocTableInstalls[table]++;
-        pairTageStats.tableWrites[table]++;
-#endif
-
-        TageEntry newEntry;
+        PairTAGEEntry newEntry;
         newEntry.valid = true;
         newEntry.tag = getTageTag(
             startPC, table, predMeta.tagFoldedHist[table].get(),
             predMeta.altTagFoldedHist[table].get());
         newEntry.counter = trainedBlock.taken ? 0 : -1;
         newEntry.useful = false;
-        newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
+        newEntry.identityConfidence = PairTAGEEntry::InitialIdentityConfidence;
         newEntry.setBlock(0, trainedBlock);
         if (trainedSecondBlock.valid) {
             newEntry.setBlock(1, trainedSecondBlock);
@@ -739,7 +413,6 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
             newEntry.clearBlock(1);
         }
 
-        noteEntryRewrite(table, oldEntry, newEntry);
         targetEntry = newEntry;
     }
 
@@ -863,12 +536,6 @@ PairTAGE::lookupProviders(Addr startPC) const
 }
 
 PairTAGE::TageTableInfo
-PairTAGE::lookupEntry(Addr startPC, const TageMeta &predMeta) const
-{
-    return lookupProviders(startPC, predMeta).main;
-}
-
-PairTAGE::TageTableInfo
 PairTAGE::lookupEntry(Addr startPC) const
 {
     return lookupProviders(startPC).main;
@@ -901,11 +568,7 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
     pred.indirectTargets.clear();
     pred.tageInfoForMgscs.clear();
     pred.returnTarget = 0;
-#ifdef UNIT_TEST
-    pred.predTick = 0;
-#else
     pred.predTick = curTick();
-#endif
 
     if (!block.valid) {
         return;
@@ -932,36 +595,6 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
 PairTAGE::PairBlockInfo
 PairTAGE::buildTrainingBlock(const FetchTarget &entry) const
 {
-    return buildTrainingBlockResult(entry).block;
-}
-
-PairTAGE::PairBlockInfo
-PairTAGE::buildTrainingBlock(const FullBTBPrediction &pred) const
-{
-    return buildTrainingBlockResult(pred).block;
-}
-
-PairTAGE::TrainingBlockBuildStatus
-PairTAGE::classifyUnsupportedTrainingEntry(const BTBEntry &entry) const
-{
-    if (!entry.valid) {
-        return TrainingBlockBuildStatus::UnsupportedFormat;
-    }
-    if (entry.isIndirect) {
-        return TrainingBlockBuildStatus::FilteredIndirect;
-    }
-    if (entry.isCall) {
-        return TrainingBlockBuildStatus::FilteredCall;
-    }
-    if (entry.isReturn) {
-        return TrainingBlockBuildStatus::FilteredReturn;
-    }
-    return TrainingBlockBuildStatus::UnsupportedFormat;
-}
-
-PairTAGE::TrainingBlockBuildResult
-PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
-{
     const BTBEntry *trainEntry = nullptr;
     const BTBEntry *fallbackEntry = nullptr;
 
@@ -973,8 +606,7 @@ PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
             }
         }
         if (!trainEntry) {
-            return TrainingBlockBuildResult(
-                PairBlockInfo{}, TrainingBlockBuildStatus::NoTakenEntry);
+            return PairBlockInfo{};
         }
     } else {
         // PairTAGE stores only one not-taken direct conditional per block.
@@ -994,13 +626,9 @@ PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
         }
         if (!trainEntry) {
             if (fallbackEntry) {
-                return TrainingBlockBuildResult(
-                    PairBlockInfo{},
-                    classifyUnsupportedTrainingEntry(*fallbackEntry));
+                return PairBlockInfo{};
             }
-            return TrainingBlockBuildResult(
-                PairBlockInfo(false, entry.startPC, entry.predEndPC, true),
-                TrainingBlockBuildStatus::Valid);
+            return PairBlockInfo(false, entry.startPC, entry.predEndPC, true);
         }
     }
 
@@ -1008,37 +636,30 @@ PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
         (!trainEntry->valid || !trainEntry->isCond ||
          !trainEntry->isDirect || trainEntry->isIndirect ||
          trainEntry->isCall || trainEntry->isReturn)) {
-        return TrainingBlockBuildResult(
-            PairBlockInfo{}, classifyUnsupportedTrainingEntry(*trainEntry));
+        return PairBlockInfo{};
     }
 
     if (entry.predTaken) {
         const auto &branchInfo = entry.predBranchInfo;
-        return TrainingBlockBuildResult(
-            PairBlockInfo(true, branchInfo.pc, branchInfo.target,
-                          branchInfo.isCond, branchInfo.isDirect,
-                          branchInfo.isIndirect, branchInfo.isCall,
-                          branchInfo.isReturn, branchInfo.size),
-            TrainingBlockBuildStatus::Valid);
+        return PairBlockInfo(true, branchInfo.pc, branchInfo.target,
+                             branchInfo.isCond, branchInfo.isDirect,
+                             branchInfo.isIndirect, branchInfo.isCall,
+                             branchInfo.isReturn, branchInfo.size);
     }
 
-    return TrainingBlockBuildResult(
-        PairBlockInfo(false, trainEntry->pc, trainEntry->target),
-        TrainingBlockBuildStatus::Valid);
+    return PairBlockInfo(false, trainEntry->pc, trainEntry->target);
 }
 
-PairTAGE::TrainingBlockBuildResult
-PairTAGE::buildTrainingBlockResult(const FullBTBPrediction &pred) const
+PairTAGE::PairBlockInfo
+PairTAGE::buildTrainingBlock(const FullBTBPrediction &pred) const
 {
     auto predCopy = pred;
     const BTBEntry *trainEntry = nullptr;
-    const BTBEntry *fallbackEntry = nullptr;
 
     if (predCopy.isTaken()) {
         auto takenEntry = predCopy.getTakenEntry();
         if (!takenEntry.valid) {
-            return TrainingBlockBuildResult(
-                PairBlockInfo{}, TrainingBlockBuildStatus::NoTakenEntry);
+            return PairBlockInfo{};
         }
         for (const auto &btbEntry : predCopy.btbEntries) {
             if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
@@ -1047,17 +668,13 @@ PairTAGE::buildTrainingBlockResult(const FullBTBPrediction &pred) const
             }
         }
         if (!trainEntry) {
-            return TrainingBlockBuildResult(
-                PairBlockInfo{}, TrainingBlockBuildStatus::NoTakenEntry);
+            return PairBlockInfo{};
         }
     } else {
         for (auto it = predCopy.btbEntries.rbegin();
              it != predCopy.btbEntries.rend(); ++it) {
             if (!it->valid) {
                 continue;
-            }
-            if (!fallbackEntry) {
-                fallbackEntry = &*it;
             }
             if (it->isCond && it->isDirect &&
                 !it->isIndirect && !it->isCall && !it->isReturn) {
@@ -1066,27 +683,17 @@ PairTAGE::buildTrainingBlockResult(const FullBTBPrediction &pred) const
             }
         }
         if (!trainEntry) {
-            if (fallbackEntry) {
-                return TrainingBlockBuildResult(
-                    PairBlockInfo{},
-                    classifyUnsupportedTrainingEntry(*fallbackEntry));
-            }
-            return TrainingBlockBuildResult(
-                PairBlockInfo{},
-                TrainingBlockBuildStatus::NoNotTakenDirectCond);
+            return PairBlockInfo{};
         }
     }
 
     if (!trainEntry->valid || !trainEntry->isCond ||
         !trainEntry->isDirect || trainEntry->isIndirect ||
         trainEntry->isCall || trainEntry->isReturn) {
-        return TrainingBlockBuildResult(
-            PairBlockInfo{}, classifyUnsupportedTrainingEntry(*trainEntry));
+        return PairBlockInfo{};
     }
 
-    return TrainingBlockBuildResult(
-        PairBlockInfo(predCopy.isTaken(), trainEntry->pc, trainEntry->target),
-        TrainingBlockBuildStatus::Valid);
+    return PairBlockInfo(predCopy.isTaken(), trainEntry->pc, trainEntry->target);
 }
 
 bool
@@ -1130,7 +737,7 @@ PairTAGE::blockIdentityMatches(const PairBlockInfo &lhs,
 }
 
 bool
-PairTAGE::entryMatchesTraining(const TageEntry &entry,
+PairTAGE::entryMatchesTraining(const PairTAGEEntry &entry,
                                const PairBlockInfo &firstBlock,
                                const PairBlockInfo &secondBlock) const
 {
@@ -1147,103 +754,49 @@ void
 PairTAGE::trainFromS3Pred(const FetchTarget &entry,
                               const FullBTBPrediction *secondPred)
 {
-#ifndef UNIT_TEST
-    pairTageStats.trainCalls++;
-#endif
     if (!phaseEnabled(entry.pairPhase)) {
-#ifndef UNIT_TEST
-        pairTageStats.trainOddPhaseSkipped++;
-#endif
         return;
     }
 
     auto predMeta = std::static_pointer_cast<TageMeta>(
         entry.predMetas[getComponentIdx()]);
     if (!predMeta) {
-#ifndef UNIT_TEST
-        pairTageStats.trainNoMeta++;
-#endif
         return;
     }
 
     auto providers = lookupProviders(entry.startPC, *predMeta);
     auto provider = providers.main;
     auto altProvider = providers.alt;
-    auto trainedBlockResult = buildTrainingBlockResult(entry);
-    auto trainedBlock = trainedBlockResult.block;
-    auto trainedSecondBlock =
+
+    auto trainedFirstBlock = buildTrainingBlock(entry);
+
+    auto secondBlockTrainInfo =
         (enableSecondBlock && secondPred) ? buildTrainingBlock(*secondPred)
                                           : PairBlockInfo{};
-#ifndef UNIT_TEST
-    if (provider.found) {
-        pairTageStats.trainProviderHit++;
-        pairTageStats.trainProviderTableHits[provider.table]++;
-    } else {
-        pairTageStats.trainProviderMiss++;
-    }
-#endif
 
-    if (!trainedBlock.valid) {
-#ifndef UNIT_TEST
-        pairTageStats.trainFirstBlockInvalid++;
-        switch (trainedBlockResult.status) {
-          case TrainingBlockBuildStatus::NoTakenEntry:
-            pairTageStats.trainFirstBlockInvalidNoTakenEntry++;
-            break;
-          case TrainingBlockBuildStatus::NoNotTakenDirectCond:
-            pairTageStats.trainFirstBlockInvalidNoNotTakenDirectCond++;
-            break;
-          case TrainingBlockBuildStatus::FilteredIndirect:
-            pairTageStats.trainFirstBlockInvalidFilteredIndirect++;
-            break;
-          case TrainingBlockBuildStatus::FilteredCall:
-            pairTageStats.trainFirstBlockInvalidFilteredCall++;
-            break;
-          case TrainingBlockBuildStatus::FilteredReturn:
-            pairTageStats.trainFirstBlockInvalidFilteredReturn++;
-            break;
-          case TrainingBlockBuildStatus::UnsupportedFormat:
-            pairTageStats.trainFirstBlockInvalidUnsupportedFormat++;
-            break;
-          case TrainingBlockBuildStatus::Valid:
-            break;
-        }
-#endif
+    if (!trainedFirstBlock.valid) {
         if (provider.found) {
             auto &providerEntry =
                 tageTable[provider.table][provider.index][provider.way];
-#ifndef UNIT_TEST
-            pairTageStats.clearEntryOnInvalidTrain++;
-            noteEntryRewrite(provider.table, providerEntry, TageEntry{});
-#endif
-            providerEntry = TageEntry{};
+            providerEntry = PairTAGEEntry{};
         }
         return;
     }
     const bool skipStandaloneFallThrough =
-        trainedBlock.isFallThrough() && !trainedSecondBlock.valid &&
+        trainedFirstBlock.isFallThrough() && !secondBlockTrainInfo.valid &&
         !trainStandaloneFallThrough;
     if (skipStandaloneFallThrough) {
-#ifndef UNIT_TEST
-        pairTageStats.trainFallThroughSkippedNoSecondBlock++;
-#endif
         return;
     }
-#ifndef UNIT_TEST
-    pairTageStats.trainFirstBlockValid++;
-    if (trainedSecondBlock.valid) {
-        pairTageStats.trainSecondBlockValid++;
-    }
-#endif
 
     const bool providerMatchesTraining = provider.found &&
-        entryMatchesTraining(provider.entry, trainedBlock, trainedSecondBlock);
+        entryMatchesTraining(provider.entry, trainedFirstBlock, secondBlockTrainInfo);
     const bool providerFirstBlockMatches = provider.found &&
-        blocksMatch(provider.entry.firstBlock(), trainedBlock);
+        blocksMatch(provider.entry.firstBlock(), trainedFirstBlock);
     const bool providerFirstBlockIdentityMatches = provider.found &&
-        blockIdentityMatches(provider.entry.firstBlock(), trainedBlock);
+        blockIdentityMatches(provider.entry.firstBlock(), trainedFirstBlock);
     const bool altMatchesTraining = altProvider.found &&
-        entryMatchesTraining(altProvider.entry, trainedBlock, trainedSecondBlock);
+        entryMatchesTraining(altProvider.entry, trainedFirstBlock, secondBlockTrainInfo);
     const bool canAllocHigher = provider.found &&
         provider.table < numPredictors - 1;
     bool preserveProviderOnMismatch = provider.found &&
@@ -1256,57 +809,32 @@ PairTAGE::trainFromS3Pred(const FetchTarget &entry,
             tageTable[provider.table][provider.index][provider.way];
         const auto oldEntry = providerEntry;
         const bool shouldRewrite = providerEntry.weakenIdentity();
-#ifndef UNIT_TEST
-        if (providerEntry.identityConfidence != oldEntry.identityConfidence) {
-            pairTageStats.providerIdentityWeakened++;
-        }
-#endif
         if (shouldRewrite && oldEntry.identityConfidence == 0) {
-            TageEntry newEntry;
+            PairTAGEEntry newEntry;
             newEntry.valid = true;
             newEntry.tag = getTageTag(
                 entry.startPC, provider.table,
                 predMeta->tagFoldedHist[provider.table].get(),
                 predMeta->altTagFoldedHist[provider.table].get());
-            newEntry.counter = trainedBlock.taken ? 0 : -1;
+            newEntry.counter = trainedFirstBlock.taken ? 0 : -1;
             newEntry.useful = false;
-            newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
-            newEntry.setBlock(0, trainedBlock);
-            if (trainedSecondBlock.valid) {
-                newEntry.setBlock(1, trainedSecondBlock);
+            newEntry.identityConfidence = PairTAGEEntry::InitialIdentityConfidence;
+            newEntry.setBlock(0, trainedFirstBlock);
+            if (secondBlockTrainInfo.valid) {
+                newEntry.setBlock(1, secondBlockTrainInfo);
             } else {
                 newEntry.clearBlock(1);
             }
 
-#ifndef UNIT_TEST
-            pairTageStats.updateExistingProvider++;
-            pairTageStats.providerIdentityRewritten++;
-            pairTageStats.tableWrites[provider.table]++;
-#endif
-            noteEntryRewrite(provider.table, oldEntry, newEntry);
             providerEntry = newEntry;
             preserveProviderOnMismatch = false;
             providerRewrittenForIdentity = true;
-        } else if (providerEntry.identityConfidence !=
-                   oldEntry.identityConfidence) {
-#ifndef UNIT_TEST
-            pairTageStats.updateExistingProvider++;
-            pairTageStats.tableWrites[provider.table]++;
-#endif
         }
     } else if (provider.found && providerFirstBlockIdentityMatches &&
                !providerFirstBlockMatches && preserveProviderOnMismatch) {
         auto &providerEntry =
             tageTable[provider.table][provider.index][provider.way];
-        const auto oldEntry = providerEntry;
         providerEntry.strengthenIdentity();
-#ifndef UNIT_TEST
-        if (providerEntry.identityConfidence != oldEntry.identityConfidence) {
-            pairTageStats.updateExistingProvider++;
-            pairTageStats.providerIdentityStrengthened++;
-            pairTageStats.tableWrites[provider.table]++;
-        }
-#endif
     }
 
     if (provider.found && !preserveProviderOnMismatch &&
@@ -1314,13 +842,13 @@ PairTAGE::trainFromS3Pred(const FetchTarget &entry,
         auto &providerEntry =
             tageTable[provider.table][provider.index][provider.way];
         auto oldEntry = providerEntry;
-        TageEntry newEntry = oldEntry;
+        PairTAGEEntry newEntry = oldEntry;
 
         short trainedCounter = oldEntry.counter;
-        if (blocksMatch(oldEntry.firstBlock(), trainedBlock)) {
-            updateCounter(trainedBlock.taken, 3, trainedCounter);
+        if (blocksMatch(oldEntry.firstBlock(), trainedFirstBlock)) {
+            updateCounter(trainedFirstBlock.taken, 3, trainedCounter);
         } else {
-            trainedCounter = trainedBlock.taken ? 0 : -1;
+            trainedCounter = trainedFirstBlock.taken ? 0 : -1;
         }
 
         newEntry.valid = true;
@@ -1334,57 +862,35 @@ PairTAGE::trainFromS3Pred(const FetchTarget &entry,
             newEntry.useful = true;
         }
         if (providerFirstBlockIdentityMatches) {
-            const auto oldConfidence = newEntry.identityConfidence;
             newEntry.strengthenIdentity();
-#ifndef UNIT_TEST
-            if (newEntry.identityConfidence != oldConfidence) {
-                pairTageStats.providerIdentityStrengthened++;
-            }
-#endif
         } else {
-            newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
+            newEntry.identityConfidence = PairTAGEEntry::InitialIdentityConfidence;
         }
-        newEntry.setBlock(0, trainedBlock);
-        if (trainedSecondBlock.valid) {
-            newEntry.setBlock(1, trainedSecondBlock);
+        newEntry.setBlock(0, trainedFirstBlock);
+        if (secondBlockTrainInfo.valid) {
+            newEntry.setBlock(1, secondBlockTrainInfo);
         } else {
             newEntry.clearBlock(1);
         }
 
-#ifndef UNIT_TEST
-        pairTageStats.updateExistingProvider++;
-        pairTageStats.tableWrites[provider.table]++;
-#endif
-        noteEntryRewrite(provider.table, oldEntry, newEntry);
         providerEntry = newEntry;
     } else if (provider.found && providerFirstBlockMatches) {
         auto &providerEntry =
             tageTable[provider.table][provider.index][provider.way];
         auto oldEntry = providerEntry;
-        TageEntry newEntry = oldEntry;
+        PairTAGEEntry newEntry = oldEntry;
         short trainedCounter = oldEntry.counter;
 
-        updateCounter(trainedBlock.taken, 3, trainedCounter);
+        updateCounter(trainedFirstBlock.taken, 3, trainedCounter);
         newEntry.counter = trainedCounter;
         if (altProvider.found && !altMatchesTraining) {
             newEntry.useful = true;
         }
-        const auto oldConfidence = newEntry.identityConfidence;
         newEntry.strengthenIdentity();
-#ifndef UNIT_TEST
-        if (newEntry.identityConfidence != oldConfidence) {
-            pairTageStats.providerIdentityStrengthened++;
-        }
-#endif
 
         if (newEntry.counter != oldEntry.counter ||
             newEntry.useful != oldEntry.useful ||
             newEntry.identityConfidence != oldEntry.identityConfidence) {
-#ifndef UNIT_TEST
-            pairTageStats.updateExistingProvider++;
-            pairTageStats.tableWrites[provider.table]++;
-#endif
-            noteEntryRewrite(provider.table, oldEntry, newEntry);
             providerEntry = newEntry;
         }
     }
@@ -1401,8 +907,8 @@ PairTAGE::trainFromS3Pred(const FetchTarget &entry,
     }
 
     if (needHigherAlloc) {
-        allocateEntries(entry.startPC, *predMeta, trainedBlock,
-                        trainedSecondBlock, allocStartTable);
+        allocateEntries(entry.startPC, *predMeta, trainedFirstBlock,
+                        secondBlockTrainInfo, allocStartTable);
     }
 }
 
@@ -1489,10 +995,6 @@ PairTAGE::doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target)
         aheadIndexFoldedHist.pop();
     }
 }
-
-#ifdef UNIT_TEST
-}  // namespace test
-#endif
 
 }  // namespace btb_pred
 

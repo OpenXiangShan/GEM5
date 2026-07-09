@@ -9,14 +9,7 @@
 #include "base/types.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
-
-#ifdef UNIT_TEST
-#include "cpu/pred/btb/test/test_dprintf.hh"
-
-#else
 #include "params/PairTAGE.hh"
-
-#endif
 
 namespace gem5
 {
@@ -27,11 +20,6 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-#ifdef UNIT_TEST
-namespace test
-{
-#endif
-
 class PairTAGE : public TimedBaseBTBPredictor
 {
     using bitset = boost::dynamic_bitset<>;
@@ -39,11 +27,7 @@ class PairTAGE : public TimedBaseBTBPredictor
   public:
     static constexpr unsigned NumBlocksPerEntry = 2;
 
-#ifdef UNIT_TEST
-    PairTAGE(unsigned numPredictors = 4, unsigned numWays = 1, unsigned tableSize = 512);
-#else
     typedef PairTAGEParams Params;
-#endif
 
     struct PairBlockInfo
     {
@@ -105,7 +89,7 @@ class PairTAGE : public TimedBaseBTBPredictor
         bool isFallThrough() const { return valid && fallThrough; }
     };
 
-    struct TageEntry
+    struct PairTAGEEntry
     {
         static constexpr uint8_t MaxIdentityConfidence = 3;
         static constexpr uint8_t InitialIdentityConfidence = 1;
@@ -117,17 +101,9 @@ class PairTAGE : public TimedBaseBTBPredictor
         uint8_t identityConfidence;
         std::array<PairBlockInfo, NumBlocksPerEntry> blocks;
 
-        TageEntry()
+        PairTAGEEntry()
             : valid(false), tag(0), counter(0), useful(false),
               identityConfidence(0), blocks{}
-        {
-        }
-
-        TageEntry(Addr tag, short counter, const PairBlockInfo &firstBlock,
-                  const PairBlockInfo &secondBlock = PairBlockInfo())
-            : valid(true), tag(tag), counter(counter), useful(false),
-              identityConfidence(InitialIdentityConfidence),
-              blocks{firstBlock, secondBlock}
         {
         }
 
@@ -141,7 +117,6 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         void setBlock(unsigned blockIdx, const PairBlockInfo &block);
         void clearBlock(unsigned blockIdx);
-        unsigned numValidBlocks() const;
         void strengthenIdentity();
         bool weakenIdentity();
     };
@@ -165,7 +140,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     struct TageTableInfo
     {
         bool found;
-        TageEntry entry;
+        PairTAGEEntry entry;
         unsigned table;
         Addr index;
         Addr tag;
@@ -173,7 +148,7 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
 
-        TageTableInfo(bool found, const TageEntry &entry, unsigned table, Addr index, Addr tag, unsigned way)
+        TageTableInfo(bool found, const PairTAGEEntry &entry, unsigned table, Addr index, Addr tag, unsigned way)
             : found(found), entry(entry), table(table), index(index), tag(tag), way(way)
         {
         }
@@ -185,9 +160,7 @@ class PairTAGE : public TimedBaseBTBPredictor
         TageTableInfo alt;
     };
 
-#ifndef UNIT_TEST
     PairTAGE(const Params &p);
-#endif
     ~PairTAGE();
 
     void tickStart() override;
@@ -218,186 +191,29 @@ class PairTAGE : public TimedBaseBTBPredictor
         return allowOddPhase || phase == PairPhase::Even;
     }
 
-    unsigned getNumPredictors() const { return numPredictors; }
-    unsigned getNumWays() const { return numWays; }
-    unsigned getBlocksPerEntry() const { return NumBlocksPerEntry; }
-
-    const std::vector<std::vector<std::vector<TageEntry>>> &getTageTable() const { return tageTable; }
-
-    std::vector<std::vector<std::vector<TageEntry>>> &getTageTable() { return tageTable; }
-
-#ifdef UNIT_TEST
-    PairBlockInfo buildFirstTrainingBlockForTest(const FetchTarget &entry) const
-    {
-        return buildTrainingBlockResult(entry).block;
-    }
-
-    PairBlockInfo buildSecondTrainingBlockForTest(
-        const FullBTBPrediction &pred) const
-    {
-        return buildTrainingBlockResult(pred).block;
-    }
-
-    BTBEntry buildBTBEntryForTest(const PairBlockInfo &block) const
-    {
-        return buildBTBEntry(block);
-    }
-
-    FullBTBPrediction buildStagePredictionForTest(
-        const PairBlockInfo &block) const
-    {
-        FullBTBPrediction pred;
-        fillStagePrediction(block, pred);
-        return pred;
-    }
-
-    bool blocksMatchForTest(const PairBlockInfo &lhs,
-                            const PairBlockInfo &rhs) const
-    {
-        return blocksMatch(lhs, rhs);
-    }
-
-    ProviderInfo lookupProvidersForTest(Addr startPC) const
-    {
-        return lookupProviders(startPC);
-    }
-
-    bool allocateEntriesForTest(Addr startPC,
-                                const PairBlockInfo &trainedBlock,
-                                const PairBlockInfo &trainedSecondBlock,
-                                unsigned startTable)
-    {
-        TageMeta predMeta;
-        predMeta.tagFoldedHist = tagFoldedHist;
-        predMeta.altTagFoldedHist = altTagFoldedHist;
-        predMeta.indexFoldedHist = indexFoldedHist;
-        return allocateEntries(startPC, predMeta, trainedBlock,
-                               trainedSecondBlock, startTable);
-    }
-
-    void installEntryForTest(unsigned table, unsigned way, Addr startPC,
-                             const PairBlockInfo &firstBlock,
-                             const PairBlockInfo &secondBlock = PairBlockInfo(),
-                             uint8_t identityConfidence =
-                                 TageEntry::InitialIdentityConfidence);
-
-    const TageEntry &tableEntryForTest(unsigned table, unsigned way,
-                                       Addr startPC) const;
-#endif
-
   private:
-    enum class TrainingBlockBuildStatus
-    {
-        Valid,
-        NoTakenEntry,
-        NoNotTakenDirectCond,
-        FilteredIndirect,
-        FilteredCall,
-        FilteredReturn,
-        UnsupportedFormat
-    };
-
-    struct TrainingBlockBuildResult
-    {
-        PairBlockInfo block;
-        TrainingBlockBuildStatus status;
-
-        TrainingBlockBuildResult(
-            const PairBlockInfo &block = PairBlockInfo(),
-            TrainingBlockBuildStatus status =
-                TrainingBlockBuildStatus::UnsupportedFormat)
-            : block(block), status(status)
-        {
-        }
-    };
-
-#ifndef UNIT_TEST
-    struct PairTageStats : public statistics::Group
-    {
-        statistics::Scalar predCalls;
-        statistics::Scalar predOddPhaseSkipped;
-        statistics::Scalar predHit;
-        statistics::Scalar predMiss;
-        statistics::Scalar predSecondBlockAvailable;
-        statistics::Scalar refreshCalls;
-        statistics::Scalar refreshOddPhaseSkipped;
-        statistics::Scalar refreshHit;
-        statistics::Scalar refreshMiss;
-        statistics::Scalar trainCalls;
-        statistics::Scalar trainOddPhaseSkipped;
-        statistics::Scalar trainNoMeta;
-        statistics::Scalar trainProviderHit;
-        statistics::Scalar trainProviderMiss;
-        statistics::Scalar trainFirstBlockValid;
-        statistics::Scalar trainFirstBlockInvalid;
-        statistics::Scalar trainFirstBlockInvalidNoTakenEntry;
-        statistics::Scalar trainFirstBlockInvalidNoNotTakenDirectCond;
-        statistics::Scalar trainFirstBlockInvalidFilteredIndirect;
-        statistics::Scalar trainFirstBlockInvalidFilteredCall;
-        statistics::Scalar trainFirstBlockInvalidFilteredReturn;
-        statistics::Scalar trainFirstBlockInvalidUnsupportedFormat;
-        statistics::Scalar trainSecondBlockValid;
-        statistics::Scalar trainFallThroughSkippedNoSecondBlock;
-        statistics::Scalar clearEntryOnInvalidTrain;
-        statistics::Scalar updateExistingProvider;
-        statistics::Scalar providerIdentityStrengthened;
-        statistics::Scalar providerIdentityWeakened;
-        statistics::Scalar providerIdentityRewritten;
-        statistics::Scalar allocIntoInvalidSlot;
-        statistics::Scalar allocOverwriteValid;
-        statistics::Scalar allocOverwriteValidSecondBlock;
-        statistics::Scalar allocFailureNoCandidate;
-        statistics::Scalar usefulReset;
-        statistics::Scalar installSecondBlock;
-        statistics::Scalar clearSecondBlock;
-        statistics::Scalar liveValidEntries;
-        statistics::Scalar liveSecondBlockEntries;
-        statistics::Vector predTableHits;
-        statistics::Vector trainProviderTableHits;
-        statistics::Vector allocTableInstalls;
-        statistics::Vector tableWrites;
-        statistics::Vector tableOverwrites;
-        statistics::Vector liveValidEntriesPerTable;
-        statistics::Vector liveSecondBlockEntriesPerTable;
-        statistics::Formula liveOccupancyRate;
-        statistics::Formula liveSecondBlockEntryRate;
-
-        PairTageStats(statistics::Group *parent, unsigned numPredictors,
-                      unsigned numWays, const std::vector<unsigned> &tableSizes);
-    };
-#endif
-
     ProviderInfo lookupProviders(Addr startPC) const;
     ProviderInfo lookupProviders(Addr startPC, const TageMeta &predMeta) const;
     TageTableInfo lookupEntry(Addr startPC) const;
-    TageTableInfo lookupEntry(Addr startPC, const TageMeta &predMeta) const;
     BTBEntry buildBTBEntry(const PairBlockInfo &block) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
-    TrainingBlockBuildStatus classifyUnsupportedTrainingEntry(
-        const BTBEntry &entry) const;
-    TrainingBlockBuildResult buildTrainingBlockResult(
-        const FetchTarget &entry) const;
-    TrainingBlockBuildResult buildTrainingBlockResult(
-        const FullBTBPrediction &pred) const;
     PairBlockInfo buildTrainingBlock(const FetchTarget &entry) const;
     PairBlockInfo buildTrainingBlock(const FullBTBPrediction &pred) const;
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
     bool blockIdentityMatches(const PairBlockInfo &lhs,
                               const PairBlockInfo &rhs) const;
-    bool entryMatchesTraining(const TageEntry &entry, const PairBlockInfo &firstBlock,
+    bool entryMatchesTraining(const PairTAGEEntry &entry, const PairBlockInfo &firstBlock,
                               const PairBlockInfo &secondBlock) const;
-    void noteEntryRewrite(unsigned table, const TageEntry &oldEntry,
-                          const TageEntry &newEntry);
     void updateCounter(bool taken, unsigned width, short &counter);
     bool satIncrement(int max, short &counter);
     bool satDecrement(int min, short &counter);
     bool betterProviderCandidate(const TageTableInfo &candidate,
                                  const TageTableInfo &current) const;
     int selectMatchingReplacementWay(
-        const std::vector<TageEntry> &set, Addr tag,
+        const std::vector<PairTAGEEntry> &set, Addr tag,
         const PairBlockInfo &trainedBlock,
         const PairBlockInfo &trainedSecondBlock) const;
-    int selectAllocationWay(const std::vector<TageEntry> &set) const;
+    int selectAllocationWay(const std::vector<PairTAGEEntry> &set) const;
     void resetUsefulBits();
     bool allocateEntries(Addr startPC, const TageMeta &predMeta,
                          const PairBlockInfo &trainedBlock,
@@ -424,7 +240,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     unsigned maxHistLen;
     const unsigned numTablesToAlloc;
     const unsigned numWays;
-    std::vector<std::vector<std::vector<TageEntry>>> tageTable;
+    std::vector<std::vector<std::vector<PairTAGEEntry>>> tageTable;
     const unsigned maxBranchPositions;
     int usefulResetCnt{0};
     unsigned instShiftAmt{1};
@@ -435,14 +251,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     const bool enableSecondBlock;
     const bool allowOddPhase;
     const bool trainStandaloneFallThrough;
-#ifndef UNIT_TEST
-    PairTageStats pairTageStats;
-#endif
 };
-
-#ifdef UNIT_TEST
-}  // namespace test
-#endif
 
 }  // namespace btb_pred
 
