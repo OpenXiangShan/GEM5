@@ -50,6 +50,7 @@ on:
           - auto
           - grid
           - random
+          - ga
           - nsga2
       specific_benchmarks:
         description: "Optional comma-separated case-insensitive substring filters matched against each workload-list line from the selected benchmark_type. Empty means run all workloads. Leave empty when custom_bin is set."
