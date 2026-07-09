@@ -122,9 +122,61 @@ jobs:
       - name: Run solver controller
         run: |
           export GEM5_HOME=$(pwd)
+          export PYTHONUNBUFFERED=1
           mkdir -p "${{ needs.setup.outputs.run_dir }}"
+          echo "Workflow Inputs:"
+          echo "  problem_ref=${{ github.event.inputs.problem_ref }}"
+          echo "  benchmark_type=${{ github.event.inputs.benchmark_type }}"
+          echo "  solver_kind=${{ github.event.inputs.solver_kind }}"
+          echo "  max_parallel_trials=${{ github.event.inputs.max_parallel_trials }}"
+          echo "  max_parallel_workloads=${{ github.event.inputs.max_parallel_workloads }}"
+          echo "  specific_benchmarks=${{ github.event.inputs.specific_benchmarks }}"
+          echo "  custom_bin=${{ github.event.inputs.custom_bin }}"
+          echo "  extra_args=${{ github.event.inputs.extra_args }}"
+          echo "  max_trials=${{ github.event.inputs.max_trials }}"
+          echo "  branch=${{ github.event.inputs.branch || github.ref_name }}"
+          echo "  run_dir=${{ needs.setup.outputs.run_dir }}"
+          python3 - <<'PY'
+          import argparse
+          from util.solver.parser.load_spec import parse_problem
+          from util.solver.run_solver import apply_runtime_overrides
+
+          args = argparse.Namespace(
+              max_trials=int("${{ github.event.inputs.max_trials }}")
+              if "${{ github.event.inputs.max_trials }}" else None,
+              benchmark_type="${{ github.event.inputs.benchmark_type }}",
+              specific_benchmarks="${{ github.event.inputs.specific_benchmarks }}",
+              custom_bin="${{ github.event.inputs.custom_bin }}",
+              extra_args="${{ github.event.inputs.extra_args }}",
+          )
+          problem = parse_problem("${{ github.event.inputs.problem_ref }}")
+          problem = apply_runtime_overrides(problem, args)
+          print("Resolved Solver Parameters:")
+          print(f"  problem_name={problem.name}")
+          print(f"  resolved_problem_ref={problem.problem_ref}")
+          print(f"  benchmark_type={problem.benchmark_type}")
+          print(f"  solver_kind_input=${{ github.event.inputs.solver_kind }}")
+          print(f"  solver_hint={problem.solver_hint}")
+          print(f"  specific_benchmarks={problem.specific_benchmarks}")
+          print(f"  custom_bin={problem.custom_bin}")
+          print(f"  extra_args={problem.extra_args}")
+          print(f"  max_trials={problem.stop.max_trials}")
+          print(f"  timeout_hours={problem.stop.timeout_hours}")
+          print(f"  no_improve_trials={problem.stop.no_improve_trials}")
+          print(
+              "  objectives="
+              + "; ".join(
+                  f"{obj.direction}:{obj.source_kind}:{obj.metric}"
+                  for obj in problem.objective_list()
+              )
+          )
+          print(
+              "  parameters="
+              + ", ".join(parameter.name for parameter in problem.parameters)
+          )
+          PY
           cmd=(
-            python3 util/solver/run_solver.py
+            python3 -u util/solver/run_solver.py
             --problem-ref "${{ github.event.inputs.problem_ref }}"
             --workdir "${{ needs.setup.outputs.run_dir }}"
             --benchmark-type "${{ github.event.inputs.benchmark_type }}"
@@ -139,7 +191,7 @@ jobs:
             cmd+=(--custom-bin "${{ github.event.inputs.custom_bin }}")
           fi
           if [ -n "${{ github.event.inputs.extra_args }}" ]; then
-            cmd+=(--extra-args "${{ github.event.inputs.extra_args }}")
+            cmd+=("--extra-args=${{ github.event.inputs.extra_args }}")
           fi
           if [ -n "${{ github.event.inputs.max_trials }}" ]; then
             cmd+=(--max-trials "${{ github.event.inputs.max_trials }}")
