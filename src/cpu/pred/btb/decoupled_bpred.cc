@@ -637,7 +637,7 @@ DecoupledBPUWithBTB::tick()
             ftq.hasTarget(firstBlockTargetId, tid)) {
             const auto *secondPred = threads[tid].secondBlockTrainPredReady ?
                 &threads[tid].secondBlockTrainPred : nullptr;
-            pairtage->trainFromActualPred(ftq.get(firstBlockTargetId, tid),
+            pairtage->trainFromS3Pred(ftq.get(firstBlockTargetId, tid),
                                           secondPred);
         }
     }

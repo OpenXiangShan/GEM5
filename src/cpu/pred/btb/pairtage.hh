@@ -209,7 +209,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     void update(const FetchTarget &entry) override;
     PairBlockInfo getSecondPredBlock() const;
     void setPredictionPhase(PairPhase phase);
-    void trainFromActualPred(const FetchTarget &entry,
+    void trainFromS3Pred(const FetchTarget &entry,
                              const FullBTBPrediction *secondPred = nullptr);
     bool secondBlockEnabled() const { return enableSecondBlock; }
     bool oddPhaseAllowed() const { return allowOddPhase; }

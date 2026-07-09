@@ -1144,7 +1144,7 @@ PairTAGE::entryMatchesTraining(const TageEntry &entry,
 }
 
 void
-PairTAGE::trainFromActualPred(const FetchTarget &entry,
+PairTAGE::trainFromS3Pred(const FetchTarget &entry,
                               const FullBTBPrediction *secondPred)
 {
 #ifndef UNIT_TEST
