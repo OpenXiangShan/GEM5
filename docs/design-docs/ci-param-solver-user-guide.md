@@ -252,6 +252,16 @@ objectives = [
 当前 `nsga2` backend 通过 repo 本地虚拟环境 `.venv-solver/` 中安装的 `deap`
 提供 NSGA-II 原语。
 
+如果你是单目标问题，但希望比 `random` 更有演化式的 exploitation / exploration，
+可以显式指定：
+
+```bash
+--solver-kind ga
+```
+
+当前 `ga` backend 也复用同一个 `deap` 依赖，但只支持单目标问题；多目标仍应使用
+`nsga2`。
+
 ### 5.2 停止条件
 
 当前可用字段：
@@ -506,15 +516,28 @@ VTAGEIPCSearch
 
 1. 如果 spec 里写了 `solver_name = "grid"`，优先用 grid
 2. 如果 spec 里写了 `solver_name = "random"`，优先用 random
-3. 否则估算搜索空间大小
-4. 如果搜索空间总点数 `<= max_trials`，用 `GridSolver`
-5. 否则用 `RandomSolver`
+3. 如果 spec 里写了 `solver_name = "ga"`，优先用 ga
+4. 如果 spec 里写了 `solver_name = "nsga2"`，优先用 nsga2
+5. 否则估算搜索空间大小
+6. 如果搜索空间总点数 `<= max_trials`，用 `GridSolver`
+7. 否则如果是多目标问题，用 `Nsga2Solver`
+8. 否则用 `GaSolver`
 
 如果你不想依赖自动判断，就显式传：
 
 - `--solver-kind grid`
 - 或 `--solver-kind random`
+- 或 `--solver-kind ga`
 - 或 `--solver-kind nsga2`
+
+所以当前 `auto` 的直觉是：
+
+- 小空间且预算足够穷举：`grid`
+- 大空间多目标：`nsga2`
+- 大空间单目标：`ga`
+
+如果你希望固定某个 backend，而不是依赖自动判断，仍然建议在 spec 里写
+`solver_name = "..."`，或在命令行显式传 `--solver-kind ...`。
 
 ## 10. 输出目录怎么看
 
@@ -571,6 +594,8 @@ VTAGEIPCSearch
 - valid / invalid 数量
 - 单目标时的 representative best
 - 多目标时的 Pareto frontier 和 representative best
+- `Solver Algorithm` section 中的 backend 参数
+- `NSGA-II Progress` 或 `GA Progress` 这类算法特有过程信息
 - top results 表
 
 ### 10.4 `history.jsonl`

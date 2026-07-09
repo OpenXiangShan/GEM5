@@ -28,6 +28,7 @@ from util.solver.reporting.markdown import (
     render_summary,
     write_summary,
 )
+from util.solver.solver.ga import GaSolver
 from util.solver.solver.grid import GridSolver
 from util.solver.solver.nsga2 import Nsga2Solver
 from util.solver.solver.random import RandomSolver
@@ -160,7 +161,7 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--benchmark-type", default="")
     parser.add_argument(
         "--solver-kind",
-        choices=["auto", "grid", "random", "nsga2"],
+        choices=["auto", "grid", "random", "nsga2", "ga"],
         default="auto",
     )
     parser.add_argument("--max-parallel-trials", type=int, default=4)
@@ -202,19 +203,23 @@ def choose_solver(problem, solver_kind: str, seed: int):
         return RandomSolver(problem, seed=seed)
     if solver_kind == "nsga2":
         return Nsga2Solver(problem, seed=seed)
+    if solver_kind == "ga":
+        return GaSolver(problem, seed=seed)
     if problem.solver_hint == "grid":
         return GridSolver(problem)
     if problem.solver_hint == "random":
         return RandomSolver(problem, seed=seed)
     if problem.solver_hint == "nsga2":
         return Nsga2Solver(problem, seed=seed)
+    if problem.solver_hint == "ga":
+        return GaSolver(problem, seed=seed)
     total_points = prod(parameter.domain.cardinality() for parameter in problem.parameters)
     max_trials = problem.stop.max_trials
     if max_trials is not None and total_points <= max_trials:
         return GridSolver(problem)
     if problem.is_multi_objective():
         return Nsga2Solver(problem, seed=seed)
-    return RandomSolver(problem, seed=seed)
+    return GaSolver(problem, seed=seed)
 
 
 def _no_improve_count(problem, history) -> int:

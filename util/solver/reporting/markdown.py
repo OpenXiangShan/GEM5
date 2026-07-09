@@ -56,12 +56,17 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
         "solver_backend",
         "generation",
         "population_size",
+        "elite_count",
+        "tournament_size",
         "mutation_prob",
         "crossover_prob",
         "last_generation_mode",
         "last_population_size",
         "last_frontier_size",
         "last_selected_parent_pool",
+        "last_elite_count",
+        "last_best_objective",
+        "last_mean_objective",
         "last_generated_trials",
         "pending_trials",
         "rng_seen_assignments",
@@ -73,13 +78,15 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
         "algorithm": "Backend algorithm used for candidate generation.",
         "solver_backend": "Concrete solver implementation class selected by the controller.",
         "generation": "Current generation index already emitted by the solver.",
-        "population_size": "Target NSGA-II population size used to maintain the parent pool.",
+        "population_size": "Target evolutionary population size used to maintain the parent pool.",
+        "elite_count": "Configured number of incumbent elites reserved as guaranteed GA breeding seeds.",
+        "tournament_size": "Tournament width used by GA parent selection.",
         "mutation_prob": "Approximate fraction of parameters mutated when producing a child.",
         "crossover_prob": "Probability of recombining two parents instead of cloning them.",
         "last_generation_mode": "Whether the latest batch came from initial random sampling or offspring evolution.",
         "last_population_size": (
             "Number of valid historical trials available to the "
-            "NSGA-II population builder before the latest propose step."
+            "evolutionary population builder before the latest propose step."
         ),
         "last_frontier_size": (
             "Current Pareto frontier size seen by the solver before "
@@ -88,6 +95,18 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
         "last_selected_parent_pool": (
             "How many individuals were retained as the parent pool "
             "for the latest offspring step."
+        ),
+        "last_elite_count": (
+            "How many incumbent elites were force-kept in the latest "
+            "GA parent pool before crossover and mutation."
+        ),
+        "last_best_objective": (
+            "Best valid incumbent objective value visible to GA "
+            "before the latest propose step."
+        ),
+        "last_mean_objective": (
+            "Mean valid incumbent objective value visible to GA "
+            "before the latest propose step."
         ),
         "last_generated_trials": (
             "How many fresh trials were generated in the latest "
@@ -127,6 +146,57 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
     return lines
 
 
+def _render_xychart(
+    title: str,
+    x_values: list[int],
+    y_values: list[float],
+    *,
+    y_axis_label: str = "Value",
+    clamp_y_min_zero: bool = False,
+    integer_values: bool = False,
+) -> list[str]:
+    if not x_values or not y_values:
+        return []
+    y_min = min(y_values)
+    y_max = max(y_values)
+    if clamp_y_min_zero:
+        y_min = min(0.0, y_min)
+    if y_max == y_min:
+        delta = 1.0 if y_max == 0 else abs(y_max) * 0.05
+        if delta == 0:
+            delta = 1.0
+        y_min -= delta
+        y_max += delta
+    else:
+        padding = (y_max - y_min) * 0.05
+        y_min -= padding
+        y_max += padding
+    if clamp_y_min_zero:
+        y_min = max(0.0, y_min)
+
+    x_axis = ", ".join(str(value) for value in x_values)
+    if integer_values:
+        values = ", ".join(str(int(value)) for value in y_values)
+        y_min_text = str(int(y_min))
+        y_max_text = str(max(int(y_max), int(max(y_values, default=0))))
+    else:
+        values = ", ".join(f"{value:.6f}" for value in y_values)
+        y_min_text = f"{y_min:.6f}"
+        y_max_text = f"{y_max:.6f}"
+    return [
+        f"### {title}",
+        "",
+        "```mermaid",
+        "xychart-beta",
+        f'    title "{title}"',
+        f'    x-axis "Generation" [{x_axis}]',
+        f'    y-axis "{y_axis_label}" {y_min_text} --> {y_max_text}',
+        f"    line [{values}]",
+        "```",
+        "",
+    ]
+
+
 def _nsga2_progress_section(metadata: dict | None) -> list[str]:
     if not metadata:
         return []
@@ -136,26 +206,9 @@ def _nsga2_progress_section(metadata: dict | None) -> list[str]:
     history = solver_report.get("generation_history")
     if not isinstance(history, list) or not history:
         return []
-
-    def chart(title: str, key: str) -> list[str]:
-        x_axis = ", ".join(str(item.get("generation", 0)) for item in history)
-        value_list = [int(item.get(key, 0) or 0) for item in history]
-        values = ", ".join(str(value) for value in value_list)
-        y_max = max(value_list, default=1)
-        if y_max <= 0:
-            y_max = 1
-        return [
-            f"### {title}",
-            "",
-            "```mermaid",
-            "xychart-beta",
-            f'    title "{title}"',
-            f'    x-axis "Generation" [{x_axis}]',
-            f'    y-axis "Value" 0 --> {y_max}',
-            f"    line [{values}]",
-            "```",
-            "",
-        ]
+    backend = solver_report.get("solver_backend") or metadata.get("solver_backend")
+    if backend != "Nsga2Solver":
+        return []
 
     lines = [
         "## NSGA-II Progress",
@@ -170,9 +223,104 @@ def _nsga2_progress_section(metadata: dict | None) -> list[str]:
         ),
         "",
     ]
-    lines.extend(chart("Frontier Size By Generation", "frontier_size"))
-    lines.extend(chart("Parent Pool By Generation", "selected_parent_pool"))
-    lines.extend(chart("New Samples By Generation", "generated_trials"))
+    x_values = [int(item.get("generation", 0) or 0) for item in history]
+    lines.extend(
+        _render_xychart(
+            "Frontier Size By Generation",
+            x_values,
+            [float(int(item.get("frontier_size", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
+    lines.extend(
+        _render_xychart(
+            "Parent Pool By Generation",
+            x_values,
+            [float(int(item.get("selected_parent_pool", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
+    lines.extend(
+        _render_xychart(
+            "New Samples By Generation",
+            x_values,
+            [float(int(item.get("generated_trials", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
+    return lines
+
+
+def _ga_progress_section(metadata: dict | None) -> list[str]:
+    if not metadata:
+        return []
+    solver_report = metadata.get("solver_report")
+    if not isinstance(solver_report, dict):
+        return []
+    history = solver_report.get("generation_history")
+    if not isinstance(history, list) or not history:
+        return []
+    backend = solver_report.get("solver_backend") or metadata.get("solver_backend")
+    if backend != "GaSolver":
+        return []
+
+    lines = [
+        "## GA Progress",
+        "",
+        (
+            "Read these curves as process health indicators: best "
+            "objective shows exploitation quality, mean objective "
+            "shows whether the breeding pool is improving as a whole, "
+            "elite seed count shows how much incumbent quality is "
+            "being preserved, and new-sample count shows how much "
+            "fresh exploration each generation still contributes."
+        ),
+        "",
+    ]
+    float_history = [
+        item for item in history
+        if item.get("best_objective") is not None and item.get("mean_objective") is not None
+    ]
+    if float_history:
+        float_x = [int(item.get("generation", 0) or 0) for item in float_history]
+        lines.extend(
+            _render_xychart(
+                "Best Objective By Generation",
+                float_x,
+                [float(item.get("best_objective", 0.0) or 0.0) for item in float_history],
+                y_axis_label="Objective",
+            )
+        )
+        lines.extend(
+            _render_xychart(
+                "Mean Objective By Generation",
+                float_x,
+                [float(item.get("mean_objective", 0.0) or 0.0) for item in float_history],
+                y_axis_label="Objective",
+            )
+        )
+    x_values = [int(item.get("generation", 0) or 0) for item in history]
+    lines.extend(
+        _render_xychart(
+            "Elite Seeds By Generation",
+            x_values,
+            [float(int(item.get("elite_count", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
+    lines.extend(
+        _render_xychart(
+            "New Samples By Generation",
+            x_values,
+            [float(int(item.get("generated_trials", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
     return lines
 
 
@@ -307,6 +455,7 @@ def render_summary(
         lines.append(f"- stop_reason: `{metadata.get('stop_reason', 'n/a')}`")
     lines.extend(["", *_solver_algorithm_section(metadata)])
     lines.extend(["", *_nsga2_progress_section(metadata)])
+    lines.extend(["", *_ga_progress_section(metadata)])
     lines.extend(["", * _mermaid_convergence_chart(problem, history), ""])
     if problem.is_multi_objective():
         diversity = crowding_distance(frontier, objectives)
