@@ -97,7 +97,7 @@ jobs:
   solve:
     needs: setup
     runs-on: [self-hosted, node]
-    timeout-minutes: 720
+    timeout-minutes: 1440
     env:
       GCBV_REF_SO: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
       GEM5_BUILD_TYPE: fast
