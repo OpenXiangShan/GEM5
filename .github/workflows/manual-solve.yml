@@ -50,6 +50,7 @@ on:
           - auto
           - grid
           - random
+          - bayes
           - ga
           - nsga2
       specific_benchmarks:
@@ -119,7 +120,7 @@ jobs:
       - name: Prepare solver Python dependencies
         run: |
           python3 -m venv .venv-solver
-          .venv-solver/bin/python -m pip install deap
+          .venv-solver/bin/python -m pip install deap scikit-optimize
 
       - name: Run solver controller
         run: |

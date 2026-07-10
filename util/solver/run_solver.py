@@ -29,6 +29,7 @@ from util.solver.reporting.markdown import (
     render_summary,
     write_summary,
 )
+from util.solver.solver.bayes import BayesSolver
 from util.solver.solver.ga import GaSolver
 from util.solver.solver.grid import GridSolver
 from util.solver.solver.nsga2 import Nsga2Solver
@@ -162,7 +163,7 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--benchmark-type", default="")
     parser.add_argument(
         "--solver-kind",
-        choices=["auto", "grid", "random", "nsga2", "ga"],
+        choices=["auto", "grid", "random", "bayes", "nsga2", "ga"],
         default="auto",
     )
     parser.add_argument("--max-parallel-trials", type=int, default=4)
@@ -206,6 +207,8 @@ def choose_solver(problem, solver_kind: str, seed: int):
         return GridSolver(problem)
     if solver_kind == "random":
         return RandomSolver(problem, seed=seed)
+    if solver_kind == "bayes":
+        return BayesSolver(problem, seed=seed)
     if solver_kind == "nsga2":
         return Nsga2Solver(problem, seed=seed)
     if solver_kind == "ga":
@@ -214,6 +217,8 @@ def choose_solver(problem, solver_kind: str, seed: int):
         return GridSolver(problem)
     if problem.solver_hint == "random":
         return RandomSolver(problem, seed=seed)
+    if problem.solver_hint == "bayes":
+        return BayesSolver(problem, seed=seed)
     if problem.solver_hint == "nsga2":
         return Nsga2Solver(problem, seed=seed)
     if problem.solver_hint == "ga":

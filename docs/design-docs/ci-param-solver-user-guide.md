@@ -55,7 +55,7 @@
   - `Minimize.stats("...")`
   - `Maximize.score_txt("...")`
 - 当前图表输出实际是 SVG，不是设计稿里写的 PNG。
-- 当前没有实现 resume / restart / 多机调度 / 高级求解算法。
+- 当前没有实现 resume / restart / 多机调度。
 - 当前已经支持两级并行：
   - trial 间并行
   - 单个 trial 内 workload 并行
@@ -266,6 +266,22 @@ objectives = [
 
 当前 `nsga2` backend 通过 repo 本地虚拟环境 `.venv-solver/` 中安装的 `deap`
 提供 NSGA-II 原语。
+
+如果你是单目标问题，但希望使用基于 surrogate model 的贝叶斯优化，
+可以显式指定：
+
+```bash
+--solver-kind bayes
+```
+
+当前 `bayes` backend 复用 `scikit-optimize` 的 `skopt.Optimizer` ask/tell
+接口，而不是在仓库里重新实现 surrogate model 或 acquisition logic。
+
+注意：
+
+- `bayes` 目前只支持单目标问题
+- 多目标仍应使用 `nsga2`
+- `summary.md` 会额外显示 `Bayesian Optimization Progress`
 
 如果你是单目标问题，但希望比 `random` 更有演化式的 exploitation / exploration，
 可以显式指定：
@@ -532,8 +548,9 @@ VTAGEIPCSearch
 
 1. 如果 spec 里写了 `solver_name = "grid"`，优先用 grid
 2. 如果 spec 里写了 `solver_name = "random"`，优先用 random
-3. 如果 spec 里写了 `solver_name = "ga"`，优先用 ga
-4. 如果 spec 里写了 `solver_name = "nsga2"`，优先用 nsga2
+3. 如果 spec 里写了 `solver_name = "bayes"`，优先用 bayes
+4. 如果 spec 里写了 `solver_name = "ga"`，优先用 ga
+5. 如果 spec 里写了 `solver_name = "nsga2"`，优先用 nsga2
 5. 否则估算搜索空间大小
 6. 如果搜索空间总点数 `<= max_trials`，用 `GridSolver`
 7. 否则如果是多目标问题，用 `Nsga2Solver`
@@ -543,6 +560,7 @@ VTAGEIPCSearch
 
 - `--solver-kind grid`
 - 或 `--solver-kind random`
+- 或 `--solver-kind bayes`
 - 或 `--solver-kind ga`
 - 或 `--solver-kind nsga2`
 
@@ -551,6 +569,8 @@ VTAGEIPCSearch
 - 小空间且预算足够穷举：`grid`
 - 大空间多目标：`nsga2`
 - 大空间单目标：`ga`
+
+`bayes` 当前是显式 opt-in backend，不会在 `auto` 路径下被默认选中。
 
 如果你希望固定某个 backend，而不是依赖自动判断，仍然建议在 spec 里写
 `solver_name = "..."`，或在命令行显式传 `--solver-kind ...`。

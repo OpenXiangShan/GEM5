@@ -40,6 +40,14 @@ class InvalidAggregateProblem(SolveSpec):
     stop = Stop(max_trials=1)
 
 
+class BayesHintProblem(SolveSpec):
+    config_path = "configs/example/idealkmhv3.py"
+    benchmark_type = "gcc15-spec06-0.3c"
+    objective = Maximize.stats("system.cpu.ipc")
+    stop = Stop(max_trials=1)
+    solver_name = "bayes"
+
+
 class SolverSpecParseTestCase(unittest.TestCase):
     def test_parse_vtage_problem(self):
         problem = parse_problem(
@@ -112,6 +120,10 @@ class SolverSpecParseTestCase(unittest.TestCase):
             "benchmark_aggregate must be 'mean' or 'geomean'",
         ):
             parse_problem(f"{__file__}:InvalidAggregateProblem")
+
+    def test_parse_preserves_bayes_solver_hint(self):
+        problem = parse_problem(f"{__file__}:BayesHintProblem")
+        self.assertEqual(problem.solver_hint, "bayes")
 
     def test_parse_multi_objective_problem(self):
         problem = parse_problem(f"{__file__}:MultiObjectiveProblem")
