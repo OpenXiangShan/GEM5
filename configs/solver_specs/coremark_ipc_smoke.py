@@ -3,7 +3,7 @@ from util.solver.spec import InferTunable, Maximize, Range, SolveSpec, Stop
 
 class CoremarkIPCSmoke(SolveSpec):
     config_path = "configs/example/idealkmhv3.py"
-    benchmark_type = "gcc15-spec06-0.3c"
+    benchmark_type = "custom_bin"
     custom_bin = "/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin"
     extra_args = "--maxinsts=1000000"
     solver_name = "random"

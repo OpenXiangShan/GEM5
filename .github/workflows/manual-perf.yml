@@ -1,5 +1,5 @@
 name: Manual Solver Run
-run-name: ${{ format('{0} - {1} - {2} - {3}', github.event.inputs.note || 'Manual Solver Run', github.event.inputs.problem_ref, github.event.inputs.custom_bin && 'custom-bin' || github.event.inputs.benchmark_type, github.event.inputs.branch || github.ref_name) }}
+run-name: ${{ format('{0} - {1} - {2} - {3}', github.event.inputs.note || 'Manual Solver Run', github.event.inputs.problem_ref, github.event.inputs.benchmark_type == 'custom_bin' && 'custom-bin' || github.event.inputs.benchmark_type, github.event.inputs.branch || github.ref_name) }}
 
 on:
   workflow_dispatch:
@@ -15,11 +15,12 @@ on:
         type: string
         default: "VTAGEIPCSearch"
       benchmark_type:
-        description: "Benchmark coverage type used to pick the workload list and score config"
+        description: "Built-in checkpoint group to use, or custom_bin to disable built-in slices and use the custom_bin field instead"
         required: true
         type: choice
         default: "gcc15-spec06-0.3c"
         options:
+          - custom_bin
           - gcc12-spec06-0.3c
           - gcc12-spec06-smt-0.3c
           - gcc12-spec06-smt-1.0c
@@ -54,12 +55,12 @@ on:
           - ga
           - nsga2
       specific_benchmarks:
-        description: "Optional comma-separated case-insensitive substring filters matched against each workload-list line from the selected benchmark_type. Empty means run all workloads. Leave empty when custom_bin is set."
+        description: "Optional comma-separated case-insensitive substring filters matched against the selected built-in benchmark_type list. Ignored when benchmark_type=custom_bin."
         required: false
         type: string
         default: ""
       custom_bin:
-        description: "Optional absolute or repo-relative custom checkpoint input. Accepts one path or multiple comma/newline-separated .bin/.gz/.zstd paths. When set, it replaces workload-list filtering."
+        description: "Required only when benchmark_type=custom_bin. Accepts one path or multiple comma/newline-separated .bin/.gz/.zstd paths. Ignored for all built-in benchmark_type values."
         required: false
         type: string
         default: ""
@@ -141,7 +142,7 @@ jobs:
           python3 - <<'PY'
           import argparse
           from util.solver.parser.load_spec import parse_problem
-          from util.solver.run_solver import apply_runtime_overrides
+          from util.solver.run_solver import apply_runtime_overrides, runtime_messages
 
           args = argparse.Namespace(
               max_trials=int("${{ github.event.inputs.max_trials }}")
@@ -165,6 +166,8 @@ jobs:
           print(f"  max_trials={problem.stop.max_trials}")
           print(f"  timeout_hours={problem.stop.timeout_hours}")
           print(f"  no_improve_trials={problem.stop.no_improve_trials}")
+          for message in runtime_messages(problem):
+              print(f"  runtime_note={message}")
           print(
               "  objectives="
               + "; ".join(

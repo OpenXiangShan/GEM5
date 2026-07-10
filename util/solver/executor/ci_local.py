@@ -104,7 +104,9 @@ class CiLocalParallelExecutor(BaseExecutor):
     def _custom_bin_entries(self, problem: ParsedProblem) -> list[tuple[str, Path]]:
         paths = self._custom_bin_paths(problem)
         if not paths:
-            raise FileNotFoundError("custom_bin is set but no checkpoint path was resolved")
+            raise FileNotFoundError(
+                "benchmark_type=custom_bin requires at least one valid custom_bin checkpoint path"
+            )
 
         entries = []
         multi = len(paths) > 1
@@ -115,7 +117,7 @@ class CiLocalParallelExecutor(BaseExecutor):
         return entries
 
     def _selected_checkpoint(self, problem: ParsedProblem) -> str:
-        if problem.custom_bin:
+        if problem.uses_custom_bin_mode():
             return str(self._custom_bin_entries(problem)[0][1])
         benchmark = resolve_benchmark(problem.benchmark_type)
         return select_representative_checkpoint(benchmark, problem.specific_benchmarks)
@@ -487,7 +489,7 @@ class CiLocalParallelExecutor(BaseExecutor):
         try:
             if self._cancel_requested.is_set():
                 status, return_code = self._cancellation_error()
-            elif problem.custom_bin:
+            elif problem.uses_custom_bin_mode():
                 status, return_code = self._run_custom_trial(
                     trial.trial_id,
                     problem,
@@ -515,7 +517,7 @@ class CiLocalParallelExecutor(BaseExecutor):
             "raw_dir": str(raw_dir),
         }
         error = None
-        if problem.custom_bin:
+        if problem.uses_custom_bin_mode():
             raw_files["custom_bin"] = problem.custom_bin
         if status == "cancelled":
             error = "cancelled"
@@ -553,7 +555,9 @@ class CiLocalParallelExecutor(BaseExecutor):
         )
 
     def run_trials(self, problem: ParsedProblem, trials: list[TrialRequest]) -> list[TrialExecutionResult]:
-        benchmark = resolve_benchmark(problem.benchmark_type)
+        benchmark = None
+        if not problem.uses_custom_bin_mode():
+            benchmark = resolve_benchmark(problem.benchmark_type)
         self._log(
             f"executing batch of {len(trials)} trial(s) "
             f"with max_parallel_trials={self.max_parallel_trials}"
@@ -600,10 +604,11 @@ class CiLocalParallelExecutor(BaseExecutor):
     ) -> tuple[dict[str, str], str | None]:
         needs_score = problem.uses_score_txt()
         needs_weighted_stats = problem.uses_benchmark_weighted_stats()
-        if problem.custom_bin and needs_score:
+        if problem.uses_custom_bin_mode() and needs_score:
             return (
                 {},
-                "score_txt objective does not support custom_bin; use stats objective for standalone workload bins",
+                "score_txt objective does not support benchmark_type=custom_bin; "
+                "use stats objective for standalone workload bins",
             )
         if not needs_score and not needs_weighted_stats:
             return {}, None

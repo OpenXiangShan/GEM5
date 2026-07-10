@@ -142,7 +142,7 @@ class GridAndProcessingTestCase(unittest.TestCase):
                 name="MinStatsProblem",
                 problem_ref="dummy.py:MinStatsProblem",
                 config_path="configs/example/idealkmhv3.py",
-                benchmark_type="gcc15-spec06-0.3c",
+                benchmark_type="custom_bin",
                 specific_benchmarks="",
                 custom_bin="/tmp/demo.bin",
                 extra_args="",
@@ -176,7 +176,7 @@ class GridAndProcessingTestCase(unittest.TestCase):
                 name="CustomBinStatsProblem",
                 problem_ref="dummy.py:CustomBinStatsProblem",
                 config_path="configs/example/idealkmhv3.py",
-                benchmark_type="gcc15-spec06-0.3c",
+                benchmark_type="custom_bin",
                 specific_benchmarks="",
                 custom_bin="/tmp/a.bin,/tmp/b.bin",
                 extra_args="",
@@ -356,6 +356,7 @@ class GridAndProcessingTestCase(unittest.TestCase):
                 encoding="utf-8",
             )
             problem = parse_problem(f"{__file__}:TinyMultiObjectiveSearch")
+            problem.benchmark_type = "custom_bin"
             problem.custom_bin = "/tmp/demo.bin"
             execution = TrialExecutionResult(
                 trial_id="trial_0001",

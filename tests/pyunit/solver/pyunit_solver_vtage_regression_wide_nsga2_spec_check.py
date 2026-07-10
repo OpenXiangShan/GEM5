@@ -14,6 +14,7 @@ class VTAGERegressionWideNsga2SpecTestCase(unittest.TestCase):
             "VTAGERegressionWideNsga2Search"
         )
         self.assertEqual(problem.solver_hint, "nsga2")
+        self.assertEqual(problem.benchmark_type, "custom_bin")
         self.assertTrue(problem.is_multi_objective())
         self.assertEqual(len(problem.objectives), 4)
         self.assertEqual(problem.stop.max_trials, 5000)

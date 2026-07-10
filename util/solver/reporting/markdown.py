@@ -537,7 +537,7 @@ def render_summary(
         f"- Objectives: `{'; '.join(objective.display_name() for objective in objectives)}`",
         f"- Trials: {len(history)} total, {valid_count} valid, {invalid_count} invalid",
     ]
-    if problem.custom_bin:
+    if problem.uses_custom_bin_mode():
         lines.append(f"- Custom bin: `{problem.custom_bin}`")
     elif problem.specific_benchmarks:
         lines.append(f"- Workload filter: `{problem.specific_benchmarks}`")
@@ -561,6 +561,8 @@ def render_summary(
         lines.append(f"- gem5_build_type: `{metadata.get('gem5_build_type', 'n/a')}`")
         lines.append(f"- extra_args: `{metadata.get('extra_args', problem.extra_args)}`")
         lines.append(f"- stop_reason: `{metadata.get('stop_reason', 'n/a')}`")
+        for message in metadata.get("runtime_messages", []) or []:
+            lines.append(f"- runtime_note: `{message}`")
     lines.extend(["", *_solver_algorithm_section(metadata)])
     lines.extend(["", *_nsga2_progress_section(metadata)])
     lines.extend(["", *_ga_progress_section(metadata)])

@@ -45,6 +45,7 @@ class VTAGENsga2SpecTestCase(unittest.TestCase):
             "configs/solver_specs/vtage_astar_nsga2_search.py:VTAGEAstarNsga2Search"
         )
         self.assertEqual(problem.solver_hint, "nsga2")
+        self.assertEqual(problem.benchmark_type, "custom_bin")
         self.assertTrue(problem.is_multi_objective())
         self.assertEqual(len(problem.objectives), 4)
         self.assertEqual(problem.custom_bin.endswith(".zstd"), True)

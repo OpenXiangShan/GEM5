@@ -45,6 +45,7 @@ class VTAGEGaSpecTestCase(unittest.TestCase):
             "configs/solver_specs/vtage_astar_ga_ipc_search.py:VTAGEAstarGaIPCSearch"
         )
         self.assertEqual(problem.solver_hint, "ga")
+        self.assertEqual(problem.benchmark_type, "custom_bin")
         self.assertFalse(problem.is_multi_objective())
         self.assertEqual(problem.objective.metric, "system.cpu.ipc")
         self.assertEqual(problem.stop.max_trials, 4000)

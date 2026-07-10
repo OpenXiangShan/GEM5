@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 import json
 from typing import Any
 
+CUSTOM_BIN_BENCHMARK_TYPE = "custom_bin"
+
 
 @dataclass
 class ObjectiveSpec:
@@ -99,8 +101,11 @@ class ParsedProblem:
             for objective in self.objective_list()
         )
 
+    def uses_custom_bin_mode(self) -> bool:
+        return self.benchmark_type == CUSTOM_BIN_BENCHMARK_TYPE
+
     def uses_benchmark_weighted_stats(self) -> bool:
-        return (not self.custom_bin) and self.uses_stats()
+        return (not self.uses_custom_bin_mode()) and self.uses_stats()
 
 
 @dataclass
