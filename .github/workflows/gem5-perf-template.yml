@@ -110,6 +110,7 @@ jobs:
             "gcc15-spec06-0.3c")
               echo "checkpoint_json=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
+              echo "gcpt_restorer=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/gcpt/gcpt.bin" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc15-spec06-0.3c" >> $GITHUB_OUTPUT
@@ -119,6 +120,7 @@ jobs:
               echo "checkpoint_json=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json" >> $GITHUB_OUTPUT
               echo "coverage_target=0.8" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
+              echo "gcpt_restorer=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/gcpt/gcpt.bin" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc15-spec06-0.8c" >> $GITHUB_OUTPUT
@@ -127,6 +129,7 @@ jobs:
             "gcc15-spec06-1.0c")
               echo "checkpoint_json=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
+              echo "gcpt_restorer=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/gcpt/gcpt.bin" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc15-spec06-1.0c" >> $GITHUB_OUTPUT
@@ -334,6 +337,10 @@ jobs:
           fi
 
           extra_args="${{ inputs.extra_args }}"
+          gcpt_restorer="${{ steps.config.outputs.gcpt_restorer }}"
+          if [ -n "$gcpt_restorer" ]; then
+            extra_args="$extra_args --gcpt-restorer=$gcpt_restorer"
+          fi
           extra_args="$(echo "$extra_args" | xargs)"
           echo "Resolved extra gem5 args: $extra_args"
 
