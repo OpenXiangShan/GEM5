@@ -859,16 +859,20 @@ def append_launcher_output(job: PendingJob, stdout: bytes, stderr: bytes) -> Non
                 handle.write(b"\n")
 
 
-def mark_launcher_failure(job: PendingJob, message: str) -> None:
-    job.work_dir.mkdir(parents=True, exist_ok=True)
-    (job.work_dir / "running").unlink(missing_ok=True)
-    (job.work_dir / "completed").unlink(missing_ok=True)
-    (job.work_dir / "abort").touch()
-    with (job.work_dir / "log.txt").open("a", encoding="utf-8") as handle:
-        handle.write("\n===== distributed_sim launcher failure =====\n")
+def mark_work_dir_failure(work_dir: Path, header: str, message: str) -> None:
+    work_dir.mkdir(parents=True, exist_ok=True)
+    (work_dir / "running").unlink(missing_ok=True)
+    (work_dir / "completed").unlink(missing_ok=True)
+    (work_dir / "abort").touch()
+    with (work_dir / "log.txt").open("a", encoding="utf-8") as handle:
+        handle.write(f"\n===== distributed_sim {header} =====\n")
         handle.write(message)
         if not message.endswith("\n"):
             handle.write("\n")
+
+
+def mark_launcher_failure(job: PendingJob, message: str) -> None:
+    mark_work_dir_failure(job.work_dir, "launcher failure", message)
 
 
 def wait_for_visible_marker(job: PendingJob, timeout: float) -> str:
@@ -1035,22 +1039,38 @@ def run_scheduler(
     launch_interval: float,
     force: bool,
 ) -> int:
-    pending_workloads = [ScheduledWorkload(workload) for workload in workloads]
-    total = len(pending_workloads)
+    total = len(workloads)
     skipped = 0
     first_launches = 0
     launch_attempts = 0
     completed = 0
     failed = 0
     last_launch_at = 0.0
+    pending_workloads: list[ScheduledWorkload] = []
     checkpoint_by_workload: dict[Workload, Path] = {}
     for workload in workloads:
         work_dir = full_work_dir / workload.name
         if (work_dir / "completed").exists() and not force:
+            pending_workloads.append(ScheduledWorkload(workload))
             continue
-        checkpoint_by_workload[workload] = find_checkpoint(
-            cpt_dir, workload.checkpoint_key
-        )
+        try:
+            checkpoint_by_workload[workload] = find_checkpoint(
+                cpt_dir, workload.checkpoint_key
+            )
+        except FileNotFoundError as exc:
+            clear_stale_markers(work_dir, force=force)
+            mark_work_dir_failure(
+                work_dir,
+                "checkpoint failure",
+                (
+                    f"Failed to resolve checkpoint for workload {workload.name!r}: "
+                    f"{exc}"
+                ),
+            )
+            failed += 1
+            print(f"[fail] {workload.name} checkpoint: {exc}", flush=True)
+            continue
+        pending_workloads.append(ScheduledWorkload(workload))
 
     try:
         while pending_workloads or any(server.pending for server in servers):
