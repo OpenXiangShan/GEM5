@@ -141,6 +141,7 @@ class SolverSpecParseTestCase(unittest.TestCase):
             "configs/solver_specs/coremark_ipc_smoke.py:CoremarkIPCSmoke"
         )
         self.assertEqual(problem.name, "CoremarkIPCSmoke")
+        self.assertEqual(problem.benchmark_type, "custom_bin")
         self.assertEqual(
             problem.custom_bin,
             "/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",

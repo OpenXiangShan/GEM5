@@ -46,7 +46,7 @@ def _hist_length_candidates():
 
 class VTAGERegressionWideNsga2Search(SolveSpec):
     config_path = "configs/example/idealkmhv3.py"
-    benchmark_type = "gcc15-spec06-0.8c"
+    benchmark_type = "custom_bin"
     custom_bin = "\n".join([
         (
             "/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/"

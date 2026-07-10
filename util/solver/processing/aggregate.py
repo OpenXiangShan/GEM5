@@ -54,7 +54,7 @@ def _extract_objective_value(
     metrics: dict,
 ) -> tuple[float | None, str | None]:
     if objective.source_kind == "stats":
-        if problem.custom_bin:
+        if problem.uses_custom_bin_mode():
             values = collect_workload_stats(spec_dir, objective.metric)
             metrics.setdefault("stats_values", {})[objective.metric] = values
             metrics.setdefault("stats_samples", {})[objective.metric] = len(values)

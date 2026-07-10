@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from util.solver.executor.ci_local import CiLocalParallelExecutor
-from util.solver.run_solver import apply_runtime_overrides
+from util.solver.run_solver import apply_runtime_overrides, runtime_messages
 from util.solver.types import ObjectiveSpec, ParsedProblem, StopSpec, TrialRequest
 
 
@@ -28,11 +28,11 @@ def make_problem() -> ParsedProblem:
 
 
 class SolverRuntimeOverrideTestCase(unittest.TestCase):
-    def test_apply_runtime_overrides_sets_benchmark_and_custom_bin(self):
+    def test_apply_runtime_overrides_enables_custom_bin_mode(self):
         problem = make_problem()
         args = argparse.Namespace(
             max_trials=8,
-            benchmark_type="spec17-1.0c",
+            benchmark_type="custom_bin",
             specific_benchmarks="",
             custom_bin="/tmp/demo.bin",
             extra_args="--maxinsts=1000",
@@ -41,25 +41,57 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         updated = apply_runtime_overrides(problem, args)
 
         self.assertEqual(updated.stop.max_trials, 8)
-        self.assertEqual(updated.benchmark_type, "spec17-1.0c")
+        self.assertEqual(updated.benchmark_type, "custom_bin")
         self.assertEqual(updated.custom_bin, "/tmp/demo.bin")
         self.assertEqual(updated.specific_benchmarks, "")
         self.assertIn("--maxinsts=1000", updated.extra_args)
+        self.assertTrue(runtime_messages(updated))
 
-    def test_apply_runtime_overrides_rejects_filter_and_custom_bin(self):
+    def test_apply_runtime_overrides_rejects_filters_in_custom_bin_mode(self):
         problem = make_problem()
         args = argparse.Namespace(
             max_trials=None,
-            benchmark_type="",
+            benchmark_type="custom_bin",
             specific_benchmarks="mcf",
             custom_bin="/tmp/demo.bin",
             extra_args="",
         )
 
-        with self.assertRaisesRegex(ValueError, "custom-bin"):
+        with self.assertRaisesRegex(ValueError, "specific-benchmarks"):
             apply_runtime_overrides(problem, args)
 
-    def test_apply_runtime_overrides_rejects_score_txt_with_custom_bin(self):
+    def test_apply_runtime_overrides_rejects_missing_custom_bin_in_custom_mode(self):
+        problem = make_problem()
+        args = argparse.Namespace(
+            max_trials=None,
+            benchmark_type="custom_bin",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+        )
+
+        with self.assertRaisesRegex(ValueError, "requires a non-empty custom_bin"):
+            apply_runtime_overrides(problem, args)
+
+    def test_apply_runtime_overrides_ignores_custom_bin_outside_custom_mode(self):
+        problem = make_problem()
+        args = argparse.Namespace(
+            max_trials=None,
+            benchmark_type="spec17-1.0c",
+            specific_benchmarks="mcf",
+            custom_bin="/tmp/demo.bin",
+            extra_args="",
+        )
+
+        updated = apply_runtime_overrides(problem, args)
+
+        self.assertEqual(updated.benchmark_type, "spec17-1.0c")
+        self.assertEqual(updated.specific_benchmarks, "mcf")
+        self.assertEqual(updated.custom_bin, "")
+        self.assertTrue(runtime_messages(updated))
+        self.assertIn("ignores custom_bin", runtime_messages(updated)[0])
+
+    def test_apply_runtime_overrides_rejects_score_txt_with_custom_bin_mode(self):
         problem = make_problem()
         problem.objective = ObjectiveSpec(
             source_kind="score_txt",
@@ -67,13 +99,13 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         )
         args = argparse.Namespace(
             max_trials=None,
-            benchmark_type="",
+            benchmark_type="custom_bin",
             specific_benchmarks="",
             custom_bin="/tmp/demo.bin",
             extra_args="",
         )
 
-        with self.assertRaisesRegex(ValueError, "score_txt objective does not support custom_bin"):
+        with self.assertRaisesRegex(ValueError, "benchmark_type=custom_bin"):
             apply_runtime_overrides(problem, args)
 
 
@@ -86,6 +118,7 @@ class CiLocalExecutorCommandTestCase(unittest.TestCase):
                 max_parallel_trials=1,
             )
             problem = make_problem()
+            problem.benchmark_type = "custom_bin"
             cmd = executor._build_gem5_command(
                 problem,
                 "/tmp/demo.bin",
@@ -290,6 +323,7 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                 max_parallel_workloads=2,
             )
             problem = make_problem()
+            problem.benchmark_type = "custom_bin"
             problem.custom_bin = f"{bin_a},{bin_b}"
             trials = [TrialRequest("trial_0001", 0, {"x": 1})]
             with patch.object(

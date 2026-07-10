@@ -11,7 +11,7 @@ from util.solver.spec import (
 
 class VTAGEAstarGaIPCSearch(SolveSpec):
     config_path = "configs/example/idealkmhv3.py"
-    benchmark_type = "gcc15-spec06-0.3c"
+    benchmark_type = "custom_bin"
     custom_bin = (
         "/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/"
         "checkpoint-0-0-0/astar_biglakes/3421/_3421_0.140286_.zstd"

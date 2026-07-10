@@ -34,6 +34,7 @@ from util.solver.solver.ga import GaSolver
 from util.solver.solver.grid import GridSolver
 from util.solver.solver.nsga2 import Nsga2Solver
 from util.solver.solver.random import RandomSolver
+from util.solver.types import CUSTOM_BIN_BENCHMARK_TYPE
 
 
 def _escape_github_annotation(value: str) -> str:
@@ -160,7 +161,14 @@ def build_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--problem-ref", required=True)
     parser.add_argument("--workdir", required=True)
-    parser.add_argument("--benchmark-type", default="")
+    parser.add_argument(
+        "--benchmark-type",
+        default="",
+        help=(
+            "Built-in benchmark set to use, or custom_bin to disable built-in "
+            "checkpoint groups and consume workloads from --custom-bin."
+        ),
+    )
     parser.add_argument(
         "--solver-kind",
         choices=["auto", "grid", "random", "bayes", "nsga2", "ga"],
@@ -172,34 +180,82 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--gem5-build-type", default="fast")
     parser.add_argument("--timeout-minutes", type=int, default=360)
-    parser.add_argument("--specific-benchmarks", default="")
-    parser.add_argument("--custom-bin", default="")
+    parser.add_argument(
+        "--specific-benchmarks",
+        default="",
+        help=(
+            "Optional filter for built-in benchmark lists. Ignored unless "
+            "benchmark_type selects a built-in checkpoint group."
+        ),
+    )
+    parser.add_argument(
+        "--custom-bin",
+        default="",
+        help=(
+            "Required only when benchmark_type=custom_bin. Accepts one path "
+            "or comma/newline-separated checkpoint/bin paths; ignored otherwise."
+        ),
+    )
     parser.add_argument("--extra-args", default="")
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
 
 def apply_runtime_overrides(problem, args):
+    runtime_messages = []
+
     if args.max_trials is not None:
         problem.stop.max_trials = args.max_trials
     if args.benchmark_type:
         problem.benchmark_type = args.benchmark_type
-    if args.custom_bin:
-        problem.custom_bin = args.custom_bin
-    if problem.custom_bin and args.specific_benchmarks:
-        raise ValueError("--custom-bin cannot be combined with --specific-benchmarks")
-    if args.specific_benchmarks:
-        problem.specific_benchmarks = args.specific_benchmarks
-    if problem.custom_bin:
+    requested_custom_bin = args.custom_bin.strip()
+    requested_filters = args.specific_benchmarks.strip()
+
+    if problem.uses_custom_bin_mode():
+        if requested_custom_bin:
+            problem.custom_bin = requested_custom_bin
+        if requested_filters:
+            raise ValueError(
+                "--specific-benchmarks is not supported when --benchmark-type=custom_bin"
+            )
+        if problem.specific_benchmarks:
+            runtime_messages.append(
+                "benchmark_type=custom_bin ignores specific_benchmarks and uses only custom_bin workloads."
+            )
         problem.specific_benchmarks = ""
+        if not problem.custom_bin.strip():
+            raise ValueError(
+                "benchmark_type=custom_bin requires a non-empty custom_bin workload list"
+            )
+        runtime_messages.append(
+            "benchmark_type=custom_bin: built-in checkpoint groups are "
+            "disabled; trials will use workloads from custom_bin."
+        )
+    else:
+        if requested_filters:
+            problem.specific_benchmarks = requested_filters
+        ignored_custom_bin = requested_custom_bin or problem.custom_bin.strip()
+        if ignored_custom_bin:
+            runtime_messages.append(
+                f"benchmark_type={problem.benchmark_type} ignores custom_bin; "
+                f"set benchmark_type={CUSTOM_BIN_BENCHMARK_TYPE} to use "
+                "custom workloads."
+            )
+        problem.custom_bin = ""
     if args.extra_args:
         merged = " ".join(part for part in [problem.extra_args.strip(), args.extra_args.strip()] if part)
         problem.extra_args = merged
-    if problem.custom_bin and problem.uses_score_txt():
+    if problem.uses_custom_bin_mode() and problem.uses_score_txt():
         raise ValueError(
-            "score_txt objective does not support custom_bin; use stats objective for standalone workload bins"
+            "score_txt objective does not support benchmark_type=custom_bin; "
+            "use stats objective for standalone workload bins"
         )
+    setattr(problem, "_runtime_messages", runtime_messages)
     return problem
+
+
+def runtime_messages(problem) -> list[str]:
+    return list(getattr(problem, "_runtime_messages", []))
 
 
 def choose_solver(problem, solver_kind: str, seed: int):
@@ -402,6 +458,7 @@ def main() -> int:
         )
         problem = parse_problem(args.problem_ref)
         problem = apply_runtime_overrides(problem, args)
+        messages = runtime_messages(problem)
         parameter_names = ", ".join(parameter.name for parameter in problem.parameters)
         search_space = prod(
             parameter.domain.cardinality() for parameter in problem.parameters
@@ -438,6 +495,7 @@ def main() -> int:
             "stop_reason": None,
             "partial_summary": False,
             "cancel_signal": None,
+            "runtime_messages": messages,
         }
         write_json(workdir / "metadata.json", metadata)
         progress.phase(
@@ -454,6 +512,8 @@ def main() -> int:
                 f"gem5_build_type={metadata['gem5_build_type']}"
             ),
         )
+        for message in messages:
+            progress.phase("input", message)
 
         bind_output = workdir / "binding.json"
         progress.phase("bind", "binding solver parameters to live gem5 objects", annotate=True)
