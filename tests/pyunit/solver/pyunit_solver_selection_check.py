@@ -2,6 +2,7 @@ import unittest
 
 from util.solver.parser.load_spec import parse_problem
 from util.solver.run_solver import choose_solver
+from util.solver.solver.bayes import BayesSolver
 from util.solver.solver.ga import GaSolver
 from util.solver.solver.grid import GridSolver
 from util.solver.solver.nsga2 import Nsga2Solver
@@ -49,6 +50,16 @@ class AutoHintRandomSearch(SolveSpec):
     solver_name = "random"
 
 
+class AutoHintBayesSearch(SolveSpec):
+    config_path = "configs/example/idealkmhv3.py"
+    benchmark_type = "gcc15-spec06-0.3c"
+    knob_a = TunableParam.Unsigned(domain=Choice([1, 2, 3]))
+    knob_b = TunableParam.Unsigned(domain=Choice([10, 20, 30]))
+    objective = Maximize.stats("system.cpu.ipc")
+    stop = Stop(max_trials=4)
+    solver_name = "bayes"
+
+
 class SolverSelectionTestCase(unittest.TestCase):
     def test_auto_uses_grid_when_search_space_fits_budget(self):
         problem = parse_problem(f"{__file__}:AutoSmallSingleObjectiveSearch")
@@ -69,6 +80,16 @@ class SolverSelectionTestCase(unittest.TestCase):
         problem = parse_problem(f"{__file__}:AutoHintRandomSearch")
         solver = choose_solver(problem, "auto", seed=1)
         self.assertIsInstance(solver, RandomSolver)
+
+    def test_explicit_bayes_kind_selects_bayes_solver(self):
+        problem = parse_problem(f"{__file__}:AutoLargeSingleObjectiveSearch")
+        solver = choose_solver(problem, "bayes", seed=1)
+        self.assertIsInstance(solver, BayesSolver)
+
+    def test_solver_hint_bayes_overrides_auto(self):
+        problem = parse_problem(f"{__file__}:AutoHintBayesSearch")
+        solver = choose_solver(problem, "auto", seed=1)
+        self.assertIsInstance(solver, BayesSolver)
 
 
 if __name__ == "__main__":

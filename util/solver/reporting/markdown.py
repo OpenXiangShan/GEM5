@@ -60,6 +60,10 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
         "population_size",
         "elite_count",
         "tournament_size",
+        "base_estimator",
+        "acq_func",
+        "acq_optimizer",
+        "n_initial_points",
         "mutation_prob",
         "crossover_prob",
         "last_generation_mode",
@@ -68,6 +72,10 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
         "last_selected_parent_pool",
         "last_elite_count",
         "last_best_objective",
+        "last_best_transformed_objective",
+        "last_observed_trials",
+        "last_model_fit_size",
+        "observed_trials",
         "last_mean_objective",
         "last_generated_trials",
         "pending_trials",
@@ -83,6 +91,10 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
         "population_size": "Target evolutionary population size used to maintain the parent pool.",
         "elite_count": "Configured number of incumbent elites reserved as guaranteed GA breeding seeds.",
         "tournament_size": "Tournament width used by GA parent selection.",
+        "base_estimator": "Surrogate model family used by Bayesian optimization.",
+        "acq_func": "Acquisition function used to trade off exploitation and exploration.",
+        "acq_optimizer": "How the acquisition function is optimized to propose the next trial.",
+        "n_initial_points": "Number of startup random observations before relying on the surrogate model.",
         "mutation_prob": "Approximate fraction of parameters mutated when producing a child.",
         "crossover_prob": "Probability of recombining two parents instead of cloning them.",
         "last_generation_mode": "Whether the latest batch came from initial random sampling or offspring evolution.",
@@ -105,6 +117,22 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
         "last_best_objective": (
             "Best valid incumbent objective value visible to GA "
             "before the latest propose step."
+        ),
+        "last_best_transformed_objective": (
+            "Best internal minimization target visible to Bayesian optimization "
+            "after max/min direction normalization."
+        ),
+        "last_observed_trials": (
+            "How many newly completed valid trials were incorporated into the "
+            "Bayesian optimizer during the latest propose step."
+        ),
+        "last_model_fit_size": (
+            "Total number of valid observations currently informing the "
+            "Bayesian surrogate model."
+        ),
+        "observed_trials": (
+            "Cumulative number of valid observations already told back to the "
+            "Bayesian optimizer."
         ),
         "last_mean_objective": (
             "Mean valid incumbent objective value visible to GA "
@@ -326,6 +354,76 @@ def _ga_progress_section(metadata: dict | None) -> list[str]:
     return lines
 
 
+def _bayes_progress_section(metadata: dict | None) -> list[str]:
+    if not metadata:
+        return []
+    solver_report = metadata.get("solver_report")
+    if not isinstance(solver_report, dict):
+        return []
+    history = solver_report.get("generation_history")
+    if not isinstance(history, list) or not history:
+        return []
+    backend = solver_report.get("solver_backend") or metadata.get("solver_backend")
+    if backend != "BayesSolver":
+        return []
+
+    lines = [
+        "## Bayesian Optimization Progress",
+        "",
+        (
+            "Read these curves as process health indicators: best "
+            "objective shows incumbent quality, observed-trial count "
+            "shows how much real data has reached the surrogate, model-fit "
+            "size shows the effective BO training set, and new-sample count "
+            "shows how much fresh exploration each generation still emits."
+        ),
+        "",
+    ]
+    float_history = [
+        item for item in history
+        if item.get("best_objective") is not None
+    ]
+    if float_history:
+        float_x = [int(item.get("generation", 0) or 0) for item in float_history]
+        lines.extend(
+            _render_xychart(
+                "Best Objective By Generation",
+                float_x,
+                [float(item.get("best_objective", 0.0) or 0.0) for item in float_history],
+                y_axis_label="Objective",
+            )
+        )
+    x_values = [int(item.get("generation", 0) or 0) for item in history]
+    lines.extend(
+        _render_xychart(
+            "Observed Trials By Generation",
+            x_values,
+            [float(int(item.get("observed_trials", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
+    lines.extend(
+        _render_xychart(
+            "Model Fit Size By Generation",
+            x_values,
+            [float(int(item.get("model_fit_size", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
+    lines.extend(
+        _render_xychart(
+            "New Samples By Generation",
+            x_values,
+            [float(int(item.get("generated_trials", 0) or 0)) for item in history],
+            clamp_y_min_zero=True,
+            integer_values=True,
+        )
+    )
+    return lines
+
+
 def _format_objective_map(
     trial: EvaluatedTrial,
     objectives: list[ObjectiveSpec],
@@ -466,6 +564,7 @@ def render_summary(
     lines.extend(["", *_solver_algorithm_section(metadata)])
     lines.extend(["", *_nsga2_progress_section(metadata)])
     lines.extend(["", *_ga_progress_section(metadata)])
+    lines.extend(["", *_bayes_progress_section(metadata)])
     lines.extend(["", * _mermaid_convergence_chart(problem, history), ""])
     if problem.is_multi_objective():
         diversity = crowding_distance(frontier, objectives)

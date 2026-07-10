@@ -427,6 +427,94 @@ class ReportingTestCase(unittest.TestCase):
         self.assertIn("New Samples By Generation", summary)
         self.assertIn("breeding pool is improving", summary)
 
+    def test_render_summary_includes_bayes_progress_section(self):
+        problem = ParsedProblem(
+            name="BayesExample",
+            problem_ref="example.py:BayesExample",
+            config_path="configs/example/idealkmhv3.py",
+            benchmark_type="gcc15-spec06-0.3c",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+            parameters=[],
+            objective=ObjectiveSpec(source_kind="stats", metric="system.cpu.ipc"),
+            objectives=[],
+            stop=StopSpec(max_trials=4),
+            summary_top_n=16,
+        )
+        history = [
+            EvaluatedTrial(
+                trial_id="trial_0001",
+                generation=0,
+                assignments={"x": 1},
+                status="valid",
+                objective_value=10.0,
+                objective_values={"max:stats:system.cpu.ipc": 10.0},
+                metrics={},
+                invalid_reason=None,
+                outdir="/tmp/trial_0001",
+                duration_sec=1.0,
+            ),
+            EvaluatedTrial(
+                trial_id="trial_0002",
+                generation=1,
+                assignments={"x": 2},
+                status="valid",
+                objective_value=11.5,
+                objective_values={"max:stats:system.cpu.ipc": 11.5},
+                metrics={},
+                invalid_reason=None,
+                outdir="/tmp/trial_0002",
+                duration_sec=1.0,
+            ),
+        ]
+
+        summary = render_summary(
+            problem,
+            history,
+            metadata={
+                "solver_kind": "bayes",
+                "solver_backend": "BayesSolver",
+                "solver_report": {
+                    "algorithm": "Bayesian Optimization via scikit-optimize",
+                    "base_estimator": "GP",
+                    "acq_func": "LCB",
+                    "acq_optimizer": "sampling",
+                    "n_initial_points": 8,
+                    "observed_trials": 2,
+                    "last_model_fit_size": 2,
+                    "last_best_objective": 11.5,
+                    "last_best_transformed_objective": -11.5,
+                    "generation_history": [
+                        {
+                            "generation": 0,
+                            "observed_trials": 0,
+                            "model_fit_size": 0,
+                            "generated_trials": 2,
+                        },
+                        {
+                            "generation": 1,
+                            "observed_trials": 2,
+                            "model_fit_size": 2,
+                            "generated_trials": 2,
+                            "best_objective": 11.5,
+                        },
+                    ],
+                },
+            },
+        )
+        self.assertIn("## Solver Algorithm", summary)
+        self.assertIn("Bayesian Optimization via scikit-optimize", summary)
+        self.assertIn("base_estimator", summary)
+        self.assertIn("acq_func", summary)
+        self.assertIn("last_model_fit_size", summary)
+        self.assertIn("## Bayesian Optimization Progress", summary)
+        self.assertIn("Best Objective By Generation", summary)
+        self.assertIn("Observed Trials By Generation", summary)
+        self.assertIn("Model Fit Size By Generation", summary)
+        self.assertIn("New Samples By Generation", summary)
+        self.assertIn("surrogate", summary)
+
     def test_publish_step_summary_overwrites_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             summary_path = tempfile.NamedTemporaryFile(dir=tmpdir, delete=False)
