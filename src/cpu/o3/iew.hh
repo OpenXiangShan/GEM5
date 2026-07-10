@@ -507,7 +507,7 @@ class IEW
         /** Stat for total number of unblocking cycles. */
         statistics::Scalar unblockCycles;
         /** Stat for total number of instructions dispatched. */
-        statistics::Scalar dispatchedInsts;
+        statistics::Vector dispatchedInsts;
         /** Stat for total number of squashed instructions dispatch skips. */
         statistics::Scalar dispSquashedInsts;
         /** Stat for total number of dispatched load instructions. */

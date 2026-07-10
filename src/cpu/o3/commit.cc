@@ -322,7 +322,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     commitSquashedInsts.prereq(commitSquashedInsts);
     commitNonSpecStalls.prereq(commitNonSpecStalls);
-    branchMispredicts.prereq(branchMispredicts);
+
+    branchMispredicts
+        .init(cpu->numThreads)
+        .flags(total);
 
     numCommittedDist
         .init(0,commit->commitWidth * 8,1)
@@ -397,6 +400,34 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(total | pdf | dist);
 
     committedInstType.ysubnames(enums::OpClassStrings);
+
+    recovery_bubble
+        .init(cpu->numThreads)
+        .flags(total);
+
+    squashDueToBranch
+        .init(cpu->numThreads)
+        .flags(total);
+
+    squashDueToOrderViolation
+        .init(cpu->numThreads)
+        .flags(total);
+
+    squashDueToValuePrediction
+        .init(cpu->numThreads)
+        .flags(total);
+
+    squashDueToTrap
+        .init(cpu->numThreads)
+        .flags(total);
+
+    squashDueToTC
+        .init(cpu->numThreads)
+        .flags(total);
+
+    squashDueToSquashAfter
+        .init(cpu->numThreads)
+        .flags(total);
 
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
         squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
@@ -763,7 +794,7 @@ Commit::squashFromTrap(ThreadID tid)
     trapSquash[tid] = false;
 
     commitStatus[tid] = ROBSquashing;
-    stats.squashDueToTrap++;
+    stats.squashDueToTrap[tid]++;
     cpu->activityThisCycle();
 }
 
@@ -783,7 +814,7 @@ Commit::squashFromTC(ThreadID tid)
     assert(!thread[tid]->trapPending);
 
     commitStatus[tid] = ROBSquashing;
-    stats.squashDueToTC++;
+    stats.squashDueToTC[tid]++;
     cpu->activityThisCycle();
 
     tcSquash[tid] = false;
@@ -815,7 +846,7 @@ Commit::squashFromSquashAfter(ThreadID tid)
     squashAfterInst[tid] = NULL;
 
     commitStatus[tid] = ROBSquashing;
-    stats.squashDueToSquashAfter++;
+    stats.squashDueToSquashAfter[tid]++;
     cpu->activityThisCycle();
 }
 
@@ -1069,17 +1100,17 @@ Commit::commit()
                     tid,
                     fromIEW->mispredictInst[tid]->pcState().instAddr(),
                     fromIEW->squashedSeqNum[tid]);
-                stats.squashDueToBranch++;
+                stats.squashDueToBranch[tid]++;
             } else if (fromIEW->valuePredictionError[tid]) {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to value prediction error [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
-                stats.squashDueToValuePrediction++;
+                stats.squashDueToValuePrediction[tid]++;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
-                stats.squashDueToOrderViolation++;
+                stats.squashDueToOrderViolation[tid]++;
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -1132,7 +1163,7 @@ Commit::commit()
                 if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
                 }
-                ++stats.branchMispredicts;
+                ++stats.branchMispredicts[tid];
             }
 
             set(toIEW->commitInfo[tid].pc, fromIEW->pc[tid]);
@@ -1325,7 +1356,7 @@ Commit::commitInsts()
 
                     if (ismispred) {
                         ismispred = false;
-                        stats.recovery_bubble +=
+                        stats.recovery_bubble[tid] +=
                             (cpu->curCycle() - lastCommitCycle[tid]) *
                             renameWidth;
                     }
