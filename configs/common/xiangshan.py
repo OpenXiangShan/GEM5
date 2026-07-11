@@ -410,8 +410,8 @@ def config_difftest(cpu_list, args, sys):
                 cpu.enable_difftest = True
                 cpu.difftest_ref_so = args.difftest_ref_so
         else:
-            # sys.enable_mem_dedup = True
-            # cpu_list[0].enable_mem_dedup = True
+            sys.enable_mem_dedup = True
+            cpu_list[0].enable_mem_dedup = True
             cpu_list[0].enable_difftest = True
             cpu_list[0].difftest_ref_so = args.difftest_ref_so
 
