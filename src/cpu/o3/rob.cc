@@ -350,9 +350,7 @@ ROB::borrowingLimit(ThreadID tid) const
         const unsigned reserve =
             borrowingDonor[other] ? donor_resume_quota : base;
         const unsigned used = threadGroups[other].size();
-        if (used < reserve) {
-            reserved += reserve - used;
-        }
+        reserved += std::max(reserve, used);
     }
 
     if (reserved >= numEntries) {
