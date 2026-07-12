@@ -131,6 +131,7 @@ def template VConfExecute {{
             float vflmul = getVflmul(new_vtype.vlmul);
             uint32_t sew = getSew(new_vtype.vsew);
             uint32_t new_vill =
+                bits(requested_vtype, 63, 63) != 0 ||
                 !(vflmul >= 0.125 && vflmul <= 8) ||
                 sew > std::min(vflmul, 1.0f) * ELEN ||
                 (requested_vtype >> 8) != 0;
