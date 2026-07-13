@@ -734,11 +734,11 @@ int fdt_node_offset_by_phandle(const void *fdt, uint32_t phandle)
 
 int fdt_stringlist_contains(const char *strlist, int listlen, const char *str)
 {
-	int len = strlen(str);
+	int len = strlen(str) + 1;
 	const char *p;
 
 	while (listlen >= len) {
-		if (memcmp(str, strlist, len+1) == 0)
+		if (memcmp(str, strlist, len) == 0)
 			return 1;
 		p = memchr(strlist, '\0', listlen);
 		if (!p)
