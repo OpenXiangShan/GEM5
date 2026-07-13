@@ -16,6 +16,11 @@ from util.solver.executor.benchmarks import (
     resolve_benchmark,
     select_representative_checkpoint,
 )
+from util.solver.executor.distributed import (
+    DistributedExecutionConfig,
+    DistributedWorkloadJob,
+    DistributedWorkloadScheduler,
+)
 from util.solver.executor.evaluator import run_score_evaluator
 from util.solver.parser.load_spec import split_problem_ref
 from util.solver.runtime.overlay import write_overlay
@@ -36,17 +41,21 @@ class CiLocalParallelExecutor(BaseExecutor):
         max_parallel_workloads: int = 1,
         timeout_minutes: int | None = None,
         gem5_data_proc: str | None = None,
+        distributed_config: DistributedExecutionConfig | None = None,
     ) -> None:
         if max_parallel_trials < 1:
             raise ValueError("max_parallel_trials must be >= 1")
         if max_parallel_workloads < 1:
             raise ValueError("max_parallel_workloads must be >= 1")
+        if distributed_config is not None:
+            distributed_config.validate()
         self.workdir = Path(workdir)
         self.build_type = build_type
         self.max_parallel_trials = max_parallel_trials
         self.max_parallel_workloads = max_parallel_workloads
         self.timeout_minutes = timeout_minutes
         self.gem5_data_proc = gem5_data_proc or DEFAULT_GEM5_DATA_PROC
+        self.distributed_config = distributed_config
         self.repo_root = Path(__file__).resolve().parents[3]
         self._cancel_requested = threading.Event()
         self._active_processes: set[subprocess.Popen] = set()
@@ -184,6 +193,12 @@ class CiLocalParallelExecutor(BaseExecutor):
         if self.timeout_minutes is None:
             return None
         return self.timeout_minutes * 60
+
+    def _distributed_enabled(self) -> bool:
+        return (
+            self.distributed_config is not None
+            and self.distributed_config.enabled()
+        )
 
     def _remaining_timeout(self, deadline: float | None) -> float | None:
         if deadline is None:
@@ -471,6 +486,71 @@ class CiLocalParallelExecutor(BaseExecutor):
             log_path,
         )
 
+    def _finalize_trial_result(
+        self,
+        problem: ParsedProblem,
+        benchmark,
+        trial: TrialRequest,
+        *,
+        trial_dir: Path,
+        raw_dir: Path,
+        overlay_path: Path,
+        log_path: Path,
+        status: str,
+        return_code: int,
+        duration: float,
+    ) -> TrialExecutionResult:
+        raw_files = {
+            "overlay_json": str(overlay_path),
+            "executor_log": str(log_path),
+            "raw_dir": str(raw_dir),
+        }
+        error = None
+        if problem.uses_custom_bin_mode():
+            raw_files["custom_bin"] = problem.custom_bin
+        if status == "cancelled":
+            error = "cancelled"
+        elif problem.uses_score_txt():
+            self._log(f"{trial.trial_id}: generating score.txt")
+        elif problem.uses_benchmark_weighted_stats():
+            self._log(f"{trial.trial_id}: generating weighted stats")
+        generated_files = {}
+        if status != "cancelled":
+            generated_files, error = self._maybe_generate_score(
+                problem,
+                benchmark,
+                trial_dir,
+            )
+        if "score_txt" in generated_files:
+            raw_files["score_txt"] = generated_files["score_txt"]
+            self._log(
+                f"{trial.trial_id}: score.txt ready at "
+                f"{generated_files['score_txt']}"
+            )
+        if "weighted_csv" in generated_files:
+            raw_files["weighted_csv"] = generated_files["weighted_csv"]
+            self._log(
+                f"{trial.trial_id}: weighted stats ready at "
+                f"{generated_files['weighted_csv']}"
+            )
+        elif error:
+            self._log(f"{trial.trial_id}: score generation failed: {error}")
+        self._log(
+            f"completed {trial.trial_id}: status={status}, return_code={return_code}, "
+            f"duration={duration:.1f}s"
+        )
+        return TrialExecutionResult(
+            trial_id=trial.trial_id,
+            generation=trial.generation,
+            assignments=trial.assignments,
+            status=status,
+            return_code=return_code,
+            duration_sec=duration,
+            outdir=str(trial_dir),
+            raw_files=raw_files,
+            error=error,
+        )
+
     def _run_single_trial(
         self,
         problem: ParsedProblem,
@@ -511,53 +591,170 @@ class CiLocalParallelExecutor(BaseExecutor):
             status, return_code = self._cancellation_error()
         duration = time.monotonic() - start
 
-        raw_files = {
-            "overlay_json": str(overlay_path),
-            "executor_log": str(log_path),
-            "raw_dir": str(raw_dir),
-        }
-        error = None
-        if problem.uses_custom_bin_mode():
-            raw_files["custom_bin"] = problem.custom_bin
-        if status == "cancelled":
-            error = "cancelled"
-        elif problem.uses_score_txt():
-            self._log(f"{trial.trial_id}: generating score.txt")
-        elif problem.uses_benchmark_weighted_stats():
-            self._log(f"{trial.trial_id}: generating weighted stats")
-        generated_files = {}
-        if status != "cancelled":
-            generated_files, error = self._maybe_generate_score(problem, benchmark, trial_dir)
-        if "score_txt" in generated_files:
-            raw_files["score_txt"] = generated_files["score_txt"]
-            self._log(f"{trial.trial_id}: score.txt ready at {generated_files['score_txt']}")
-        if "weighted_csv" in generated_files:
-            raw_files["weighted_csv"] = generated_files["weighted_csv"]
-            self._log(
-                f"{trial.trial_id}: weighted stats ready at {generated_files['weighted_csv']}"
-            )
-        elif error:
-            self._log(f"{trial.trial_id}: score generation failed: {error}")
-        self._log(
-            f"completed {trial.trial_id}: status={status}, return_code={return_code}, "
-            f"duration={duration:.1f}s"
-        )
-        return TrialExecutionResult(
-            trial_id=trial.trial_id,
-            generation=trial.generation,
-            assignments=trial.assignments,
+        return self._finalize_trial_result(
+            problem,
+            benchmark,
+            trial,
+            trial_dir=trial_dir,
+            raw_dir=raw_dir,
+            overlay_path=overlay_path,
+            log_path=log_path,
             status=status,
             return_code=return_code,
-            duration_sec=duration,
-            outdir=str(trial_dir),
-            raw_files=raw_files,
-            error=error,
+            duration=duration,
         )
+
+    def _aggregate_workload_results(self, workload_results) -> tuple[str, int]:
+        status = "completed"
+        return_code = 0
+        for result in workload_results:
+            if result.status == "cancelled":
+                return "cancelled", 130
+            if result.status == "timeout":
+                status = "timeout"
+                return_code = 124
+                continue
+            if result.status != "completed" and status != "timeout":
+                status = "failed"
+                return_code = result.return_code
+        return status, return_code
+
+    def _run_trials_distributed(
+        self,
+        problem: ParsedProblem,
+        benchmark,
+        trials: list[TrialRequest],
+    ) -> list[TrialExecutionResult]:
+        assert self.distributed_config is not None
+        trial_state = {}
+        jobs: list[DistributedWorkloadJob] = []
+        start_times = {}
+        self._log(
+            f"executing batch of {len(trials)} trial(s) with distributed scheduler; "
+            f"max_parallel_trials={self.max_parallel_trials}, "
+            f"max_parallel_workloads={self.max_parallel_workloads}"
+        )
+        for trial in trials:
+            trial_dir = self.workdir / "trials" / trial.trial_id
+            raw_dir = trial_dir / "raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            overlay_path = trial_dir / "overlay.json"
+            write_overlay(overlay_path, trial.trial_id, trial.assignments)
+            log_path = trial_dir / "executor.log"
+            start_times[trial.trial_id] = time.monotonic()
+            if problem.uses_custom_bin_mode():
+                entries = self._custom_bin_entries(problem)
+            else:
+                entries = self._benchmark_entries(problem, benchmark)
+            trial_state[trial.trial_id] = {
+                "trial": trial,
+                "trial_dir": trial_dir,
+                "raw_dir": raw_dir,
+                "overlay_path": overlay_path,
+                "log_path": log_path,
+                "entries": entries,
+                "workload_results": [],
+            }
+            for workload_name, checkpoint in entries:
+                workload_dir = raw_dir / "spec_all" / workload_name
+                command = self._build_gem5_command(
+                    problem,
+                    checkpoint,
+                    overlay_path=overlay_path,
+                )
+                jobs.append(
+                    DistributedWorkloadJob(
+                        trial_id=trial.trial_id,
+                        workload_name=workload_name,
+                        checkpoint=checkpoint,
+                        work_dir=workload_dir,
+                        command=command,
+                        env=self._base_env(),
+                    )
+                )
+
+        deadline = None
+        timeout_seconds = self._timeout_seconds()
+        if timeout_seconds is not None:
+            deadline = time.monotonic() + timeout_seconds
+        scheduler = DistributedWorkloadScheduler(
+            self.distributed_config,
+            total_parallelism=self.max_parallel_trials * self.max_parallel_workloads,
+            log=self._log,
+            process_started=self._register_process,
+            process_finished=self._unregister_process,
+            cancel_requested=self._cancel_requested.is_set,
+        )
+        self._log(f"distributed scheduler config: {scheduler.describe()}")
+        distributed_results = scheduler.run(jobs, deadline=deadline)
+        for result in distributed_results:
+            state = trial_state.get(result.trial_id)
+            if state is not None:
+                state["workload_results"].append(result)
+
+        results: list[TrialExecutionResult] = []
+        for trial in trials:
+            state = trial_state[trial.trial_id]
+            workload_results = state["workload_results"]
+            expected = len(state["entries"])
+            workload_lines = []
+            if len(workload_results) != expected:
+                missing = expected - len(workload_results)
+                status, return_code = "failed", 1
+                workload_lines.append(
+                    f"missing distributed workload result(s): {missing}"
+                )
+            else:
+                status, return_code = self._aggregate_workload_results(
+                    workload_results
+                )
+            for result in sorted(
+                workload_results,
+                key=lambda item: item.workload_name,
+            ):
+                workload_lines.append(
+                    f"{result.workload_name}: {result.checkpoint} -> "
+                    f"{result.status} on {result.server_name} "
+                    f"(return_code={result.return_code}, {result.detail})"
+                )
+            state["log_path"].write_text(
+                "\n".join(
+                    [
+                        "execution_mode: distributed",
+                        f"workloads: {expected}",
+                        f"max_parallel_trials: {self.max_parallel_trials}",
+                        f"max_parallel_workloads: {self.max_parallel_workloads}",
+                        *workload_lines,
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            duration = time.monotonic() - start_times[trial.trial_id]
+            results.append(
+                self._finalize_trial_result(
+                    problem,
+                    benchmark,
+                    trial,
+                    trial_dir=state["trial_dir"],
+                    raw_dir=state["raw_dir"],
+                    overlay_path=state["overlay_path"],
+                    log_path=state["log_path"],
+                    status=status,
+                    return_code=return_code,
+                    duration=duration,
+                )
+            )
+            if self._cancel_requested.is_set():
+                break
+        return results
 
     def run_trials(self, problem: ParsedProblem, trials: list[TrialRequest]) -> list[TrialExecutionResult]:
         benchmark = None
         if not problem.uses_custom_bin_mode():
             benchmark = resolve_benchmark(problem.benchmark_type)
+        if self._distributed_enabled():
+            return self._run_trials_distributed(problem, benchmark, trials)
         self._log(
             f"executing batch of {len(trials)} trial(s) "
             f"with max_parallel_trials={self.max_parallel_trials}"

@@ -14,6 +14,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from util.solver.executor.ci_local import CiLocalParallelExecutor
+from util.solver.executor.distributed import (
+    DEFAULT_DISTRIBUTED_SERVERS,
+    DistributedExecutionConfig,
+)
 from util.solver.parser.bind_targets import bind_problem_targets
 from util.solver.parser.load_spec import parse_problem
 from util.solver.processing.aggregate import (
@@ -190,6 +194,53 @@ def build_argparser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-parallel-trials", type=int, default=4)
     parser.add_argument("--max-parallel-workloads", type=int, default=1)
+    parser.add_argument(
+        "--distributed-servers",
+        default="",
+        help=(
+            "Optional comma-separated distributed server list. Empty keeps "
+            "solver workloads on the current CI runner; 'default' expands to "
+            f"{DEFAULT_DISTRIBUTED_SERVERS}."
+        ),
+    )
+    parser.add_argument(
+        "--distributed-jobs-per-server",
+        type=int,
+        default=0,
+        help=(
+            "Maximum concurrent solver workloads per distributed server. "
+            "0 derives the cap from max_parallel_trials * max_parallel_workloads."
+        ),
+    )
+    parser.add_argument(
+        "--distributed-require-idle-cpus",
+        type=int,
+        default=-1,
+        help=(
+            "Minimum idle CPU units required before launching on a server. "
+            "-1 uses distributed_jobs_per_server, 0 disables idle probing."
+        ),
+    )
+    parser.add_argument(
+        "--distributed-idle-probe-mode",
+        choices=["physical", "logical"],
+        default="physical",
+    )
+    parser.add_argument(
+        "--distributed-idle-cpu-threshold",
+        type=float,
+        default=30.0,
+    )
+    parser.add_argument("--distributed-server-domain", default="")
+    parser.add_argument("--distributed-ssh-config", default="")
+    parser.add_argument("--distributed-ssh-user", default="")
+    parser.add_argument("--distributed-dispatch-host", default="")
+    parser.add_argument(
+        "--distributed-ssh-option",
+        action="append",
+        default=[],
+        help="Extra ssh option for distributed worker launches.",
+    )
     parser.add_argument("--max-trials", type=int)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--gem5-build-type", default="fast")
@@ -494,12 +545,26 @@ def main() -> int:
             ),
         )
 
+        distributed_config = DistributedExecutionConfig(
+            servers=args.distributed_servers,
+            jobs_per_server=args.distributed_jobs_per_server,
+            require_idle_cpus=args.distributed_require_idle_cpus,
+            idle_probe_mode=args.distributed_idle_probe_mode,
+            idle_cpu_threshold=args.distributed_idle_cpu_threshold,
+            server_domain=args.distributed_server_domain,
+            ssh_config=args.distributed_ssh_config,
+            ssh_user=args.distributed_ssh_user,
+            dispatch_host=args.distributed_dispatch_host,
+            ssh_options=tuple(args.distributed_ssh_option or []),
+        )
+        execution_mode = "distributed" if distributed_config.enabled() else "local"
         executor = CiLocalParallelExecutor(
             workdir=workdir,
             build_type=args.gem5_build_type,
             max_parallel_trials=args.max_parallel_trials,
             max_parallel_workloads=args.max_parallel_workloads,
             timeout_minutes=args.timeout_minutes,
+            distributed_config=distributed_config,
         )
         metadata = {
             "problem_ref": args.problem_ref,
@@ -513,6 +578,13 @@ def main() -> int:
             "specific_benchmarks": problem.specific_benchmarks,
             "custom_bin": problem.custom_bin,
             "extra_args": problem.extra_args,
+            "execution_mode": execution_mode,
+            "distributed_servers": args.distributed_servers,
+            "distributed_jobs_per_server": args.distributed_jobs_per_server,
+            "distributed_require_idle_cpus": args.distributed_require_idle_cpus,
+            "distributed_idle_probe_mode": args.distributed_idle_probe_mode,
+            "distributed_idle_cpu_threshold": args.distributed_idle_cpu_threshold,
+            "distributed_dispatch_host": args.distributed_dispatch_host,
             "dry_run": args.dry_run,
             "stop_reason": None,
             "partial_summary": False,
@@ -532,7 +604,9 @@ def main() -> int:
                 f"extra_args={metadata['extra_args'] or '<none>'}, "
                 f"max_parallel_trials={metadata['max_parallel_trials']}, "
                 f"max_parallel_workloads={metadata['max_parallel_workloads']}, "
-                f"gem5_build_type={metadata['gem5_build_type']}"
+                f"gem5_build_type={metadata['gem5_build_type']}, "
+                f"execution_mode={metadata['execution_mode']}, "
+                f"distributed_servers={metadata['distributed_servers'] or '<none>'}"
             ),
         )
         for message in messages:
