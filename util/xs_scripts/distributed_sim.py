@@ -627,6 +627,30 @@ def run_host_command(
     )
 
 
+def _format_seconds(value: float) -> str:
+    return f"{value:g}s"
+
+
+def _compact_message(text: str, *, limit: int = 240) -> str:
+    compact = " ".join(text.strip().split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def _idle_probe_route(
+    *,
+    server_name: str,
+    ssh_user: str,
+    dispatch_host: str,
+) -> str:
+    if server_name == "local":
+        return "locally"
+    if dispatch_host:
+        return f"via {dispatch_host}"
+    return f"via ssh to {make_ssh_target(server_name, ssh_user)}"
+
+
 def make_ssh_target(server_name: str, ssh_user: str) -> str:
     if not ssh_user or server_name == "local" or "@" in server_name:
         target = server_name
@@ -762,13 +786,32 @@ def probe_idle_cpus(
             dispatch_host=dispatch_host,
             timeout=timeout,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return None, str(exc)
+    except subprocess.TimeoutExpired:
+        route = _idle_probe_route(
+            server_name=server_name,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
+        )
+        return None, f"idle probe timed out after {_format_seconds(timeout)} {route}"
+    except OSError as exc:
+        route = _idle_probe_route(
+            server_name=server_name,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
+        )
+        detail = _compact_message(str(exc))
+        return None, f"idle probe failed {route}: {detail}"
 
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         stdout = result.stdout.decode(errors="replace").strip()
-        return None, stderr or stdout or f"probe exited with {result.returncode}"
+        route = _idle_probe_route(
+            server_name=server_name,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
+        )
+        detail = _compact_message(stderr or stdout or "no output")
+        return None, f"idle probe failed {route}: exit={result.returncode}, {detail}"
 
     text = result.stdout.decode(errors="replace").strip()
     match = re.search(r"(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([0-9.]+)", text)

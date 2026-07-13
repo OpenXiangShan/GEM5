@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 import tempfile
 import threading
@@ -7,9 +8,11 @@ import time
 import unittest
 from unittest.mock import patch
 
+import util.xs_scripts.distributed_sim as dist
 from util.solver.executor.ci_local import CiLocalParallelExecutor
 from util.solver.executor.distributed import (
     DistributedExecutionConfig,
+    DistributedWorkloadJob,
     DistributedWorkloadResult,
     DistributedWorkloadScheduler,
     resolve_jobs_per_server,
@@ -311,6 +314,76 @@ class SolverDistributedConfigTestCase(unittest.TestCase):
             scheduler._refresh_server_capacity(scheduler.servers[0], force=True)
 
         self.assertEqual(scheduler.servers[0].capacity, 0)
+
+    def test_idle_probe_timeout_message_is_compact(self):
+        long_command = [
+            "ssh",
+            "ci-runner@172.28.9.101",
+            "python3 -c " + "x" * 1000,
+        ]
+        with patch(
+            "util.xs_scripts.distributed_sim.run_host_command",
+            side_effect=subprocess.TimeoutExpired(cmd=long_command, timeout=10),
+        ):
+            idle_cpus, detail = dist.probe_idle_cpus(
+                server_name="node021",
+                idle_probe_mode="physical",
+                idle_cpu_threshold=30.0,
+                ssh_config="",
+                ssh_options=[],
+                ssh_user="",
+                dispatch_host="ci-runner@172.28.9.101",
+                timeout=10,
+            )
+
+        self.assertIsNone(idle_cpus)
+        self.assertEqual(
+            detail,
+            "idle probe timed out after 10s via ci-runner@172.28.9.101",
+        )
+        self.assertNotIn("python3 -c", detail)
+
+    def test_scheduler_launches_after_first_available_probe(self):
+        config = DistributedExecutionConfig(
+            servers="node001-node003",
+            jobs_per_server=1,
+            require_idle_cpus=1,
+            poll_interval=0.01,
+            launch_interval=0.0,
+        )
+        scheduler = DistributedWorkloadScheduler(
+            config,
+            total_parallelism=1,
+            log=lambda message: None,
+        )
+        probe_calls = []
+        launched = []
+
+        def fake_probe(server_name, **kwargs):
+            probe_calls.append(server_name)
+            return 1, "idle_physical_cores=1/64"
+
+        def fake_launch(scheduled, server):
+            launched.append((scheduled.job.workload_name, server.name))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            job = DistributedWorkloadJob(
+                trial_id="trial_0001",
+                workload_name="demo",
+                checkpoint=Path("demo.zstd"),
+                work_dir=Path(tmpdir) / "demo",
+                command=["true"],
+                env={},
+            )
+            with patch(
+                "util.solver.executor.distributed.dist.probe_idle_cpus",
+                side_effect=fake_probe,
+            ):
+                with patch.object(scheduler, "_launch", fake_launch):
+                    scheduler.run([job])
+
+        self.assertEqual(probe_calls, ["node001"])
+        self.assertEqual(launched, [("demo", "node001")])
 
 
 class CiLocalExecutorParallelismTestCase(unittest.TestCase):
