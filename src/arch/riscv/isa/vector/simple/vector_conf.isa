@@ -95,6 +95,20 @@ def template VConfExecute {{
     {
         auto tc = xc->tcBase();
 
+        STATUS status = xc->readMiscReg(MISCREG_STATUS);
+        if (status.vs == 0) {
+            return std::make_shared<IllegalInstFault>(
+                    "Vector instruction with VS off\n", machInst);
+        }
+        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+            VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+            if (vsstatus.vs == 0) {
+                return std::make_shared<IllegalInstFault>(
+                        "Vector instruction with VS off in virtual mode\n",
+                        machInst);
+            }
+        }
+
         %(op_decl)s;
         %(op_rd)s;
         %(code)s;
