@@ -430,7 +430,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(total);
 
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
-        squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
+        squashDueToValuePrediction + squashDueToTrap + squashDueToTC + \
+        squashDueToSquashAfter;
 }
 
 void
@@ -1354,14 +1355,14 @@ Commit::commitInsts()
                             head_inst->threadNumber,
                             head_inst->genDisassembly());
 
-                    if (ismispred) {
-                        ismispred = false;
+                    if (ismispred[tid]) {
+                        ismispred[tid] = false;
                         stats.recovery_bubble[tid] +=
                             (cpu->curCycle() - lastCommitCycle[tid]) *
                             renameWidth;
                     }
                     if (head_inst->mispredicted()) {
-                        ismispred = true;
+                        ismispred[tid] = true;
                     }
 
                     lastCommitCycle[tid] = cpu->curCycle();

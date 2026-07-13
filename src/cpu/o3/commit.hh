@@ -651,7 +651,7 @@ class Commit
         statistics::Formula totalSquash;
     } stats;
 
-    bool ismispred = false;
+    bool ismispred[MaxThreads] = {false};
 
     Tick lastCommitTick;
 
