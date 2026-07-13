@@ -1118,6 +1118,10 @@ decode QUADRANT {
                             Rd_sd = Rs1_sd/Rs2_sd;
                         }
                     }}, IntDivOp);
+                    0x4: pack({{
+                        Rd = (Rs1 & UINT64_C(0xffffffff)) |
+                             ((Rs2 & UINT64_C(0xffffffff)) << 32);
+                    }});
                     0x5: min({{
                         Rd = (((int64_t) Rs1) < ((int64_t) Rs2)) ? Rs1 : Rs2;
                     }});
