@@ -474,6 +474,16 @@ class DynInst : public ExecContext, public RefCounted
     /** Whether this load is predicted to strictly wait for prior store addrs. */
     bool mdpPredStrictWait = false;
 
+    /** Whether this dynamic load had an active StoreSet MDP dependency prediction. */
+    bool mdpPredictedDependent = false;
+
+    /** Latched SSIT lookup identity for MDP feedback/debug. */
+    int mdpPredSSITIndex = -1;
+    uint16_t mdpPredTag = 0;
+
+    /** Prevent duplicate MDP feedback from load replays or repeated pipe visits. */
+    bool mdpFeedbackUpdated = false;
+
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[8] = {0};
 

@@ -158,6 +158,9 @@ class MemDepUnit
     /** Issues the given instruction */
     void issue(const DynInstPtr &inst);
 
+    void mdpFeedback(const DynInstPtr &load_inst,
+                     StoreSet::MDPFeedbackSource source);
+
     /** Debugging function to dump the lists of instructions. */
     void dumpLists();
 
@@ -281,6 +284,12 @@ class MemDepUnit
         /** Stat for number of predicted conflicting loads
          */
         statistics::Scalar dependentLoads;
+        statistics::Scalar mdpFeedbackSqForwardInc;
+        statistics::Scalar mdpFeedbackSBufferForwardInc;
+        statistics::Scalar mdpFeedbackNoForwardDec;
+        statistics::Scalar mdpFeedbackSkipNotPredicted;
+        statistics::Scalar mdpFeedbackSkipDuplicate;
+        statistics::Scalar mdpCounterClearOnZero;
     } stats;
 };
 

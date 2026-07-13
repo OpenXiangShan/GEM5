@@ -2048,6 +2048,13 @@ IEW::mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
     instQueue.mdpAddrReplayUpdateStoreCompletedIdx(tid, store_completed_idx);
 }
 
+void
+IEW::mdpFeedback(const DynInstPtr &inst,
+                 StoreSet::MDPFeedbackSource source)
+{
+    instQueue.mdpFeedback(inst, source);
+}
+
 uint32_t
 IEW::getIQInsts()
 {

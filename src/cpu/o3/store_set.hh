@@ -30,6 +30,7 @@
 #define __CPU_O3_STORE_SET_HH__
 
 #include <cmath>
+#include <cstdint>
 #include <list>
 #include <map>
 #include <utility>
@@ -65,18 +66,68 @@ class StoreSet
   public:
     typedef unsigned SSID;
 
+    enum class MDPFeedbackSource
+    {
+        NoForward,
+        StoreQueue,
+        StoreBuffer,
+    };
+
+    enum class MDPFeedbackAction
+    {
+        Inc,
+        Dec,
+        ClearCounterZero,
+        SkipNoEntry,
+        SkipTagMiss,
+        SkipNotPredicted,
+        SatAt0,
+        SatAt3,
+    };
+
+    struct PredictionInfo
+    {
+        bool valid = false;
+        bool tagHit = false;
+        bool counterStrong = false;
+        bool predictedDependent = false;
+        int ssitIndex = -1;
+        uint16_t tag = 0;
+        uint16_t storedTag = 0;
+        SSID ssid = 0;
+        uint8_t counter = 0;
+        size_t producers = 0;
+    };
+
+    struct FeedbackResult
+    {
+        MDPFeedbackAction action = MDPFeedbackAction::SkipNotPredicted;
+        bool valid = false;
+        bool tagHit = false;
+        int ssitIndex = -1;
+        uint16_t tag = 0;
+        uint8_t oldCounter = 0;
+        uint8_t newCounter = 0;
+    };
+
   public:
     /** Default constructor.  init() must be called prior to use. */
     StoreSet() { };
 
     /** Creates store set predictor with given table sizes. */
-    StoreSet(uint64_t clear_period, int SSIT_size, int LFST_size,int _store_set_clear_thres, int _LFSTEntrySize);
+    StoreSet(uint64_t clear_period, int SSIT_size, int LFST_size,
+             int _store_set_clear_thres, int _LFSTEntrySize,
+             bool enable_feedback_counter, unsigned depend_threshold,
+             unsigned initial_counter, unsigned ssit_tag_bits);
 
     /** Default destructor. */
     ~StoreSet();
 
     /** Initializes the store set predictor with the given table sizes. */
-    void init(uint64_t clear_period, int clear_period_thres, int _SSIT_size, int _LFST_size, int _LFST_entry_size);
+    void init(uint64_t clear_period, int clear_period_thres,
+              int _SSIT_size, int _LFST_size, int _LFST_entry_size,
+              bool enable_feedback_counter, unsigned depend_threshold,
+              unsigned initial_counter, unsigned ssit_tag_bits);
 
     /** Records a memory ordering violation between the younger load
      * and the older store. */
@@ -101,7 +152,8 @@ class StoreSet
      * any store.  @return Returns the sequence number of the store
      * instruction this PC is dependent upon.  Returns 0 if none.
      */
-    std::vector<InstSeqNum> checkInst(Addr PC);
+    std::vector<InstSeqNum> checkInst(Addr PC,
+                                      PredictionInfo *pred_info = nullptr);
 
     /** Records this PC/sequence number as issued. */
     void issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store);
@@ -114,12 +166,21 @@ class StoreSet
 
     /** Debug function to dump the contents of the store list. */
     void dump();
-    bool checkInstStrict(Addr pc);
+    bool checkInstStrict(Addr pc, PredictionInfo *pred_info = nullptr);
+    FeedbackResult feedback(Addr load_pc, MDPFeedbackSource source,
+                            bool predicted);
   private:
 
     uint64_t lastClearPeriodCycle=0;
     Addr XORFold(Addr pc, uint64_t resetWidth);
     int findVictimInLFSTEntry(int store_SSID);
+    uint16_t calcTag(Addr pc) const;
+    bool ssitHit(Addr pc, int index) const;
+    bool predictsDependent(int index) const;
+    uint8_t saturatingInc(uint8_t counter) const;
+    uint8_t saturatingDec(uint8_t counter) const;
+    void setSSITEntry(Addr pc, SSID ssid, uint8_t initial_counter);
+    void invalidateSSITEntry(int index);
 
     /** Calculates the index into the SSIT based on the PC. */
     // inline int calcIndex(Addr PC)
@@ -138,6 +199,9 @@ class StoreSet
 
     /** Bit vector to tell if the SSIT has a valid entry. */
     std::vector<bool> validSSIT,SSITStrict;
+
+    std::vector<uint16_t> SSITTag;
+    std::vector<uint8_t> SSITCounter;
 
     /** Last Fetched Store Table. */
     std::vector<std::vector<InstSeqNum>> LFSTLarge,LFSTLargePC;
@@ -175,6 +239,11 @@ class StoreSet
 
     /** Number of memory operations predicted since last clear of predictor */
     int memOpsPred;
+
+    bool enableFeedbackCounter = true;
+    unsigned dependThreshold = 2;
+    unsigned initialCounter = 2;
+    unsigned ssitTagBits = 12;
 };
 
 } // namespace o3

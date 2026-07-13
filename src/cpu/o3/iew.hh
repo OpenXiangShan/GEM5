@@ -302,6 +302,8 @@ class IEW
     void mdpAddrReplayPipeDone(const DynInstPtr &inst);
     void mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
                                               size_t store_completed_idx);
+    void mdpFeedback(const DynInstPtr &inst,
+                     StoreSet::MDPFeedbackSource source);
 
     uint32_t getIQInsts();
 

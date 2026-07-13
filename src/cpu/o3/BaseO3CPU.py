@@ -201,6 +201,14 @@ class BaseO3CPU(BaseCPU):
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
+    EnableMDPFeedbackCounter = Param.Bool(True,
+        "Enable StoreSet MDP 2-bit feedback counters")
+    MDPDependThreshold = Param.Unsigned(2,
+        "StoreSet MDP counter threshold for predicting a dependency")
+    MDPInitialCounter = Param.Unsigned(2,
+        "Initial StoreSet MDP counter value on training allocation")
+    SSITTagBits = Param.Unsigned(12,
+        "PC tag bits stored in each StoreSet SSIT entry")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")

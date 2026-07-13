@@ -57,6 +57,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/replay_events.hh"
+#include "cpu/o3/store_set.hh"
 #include "cpu/o3/trace/TraceInstruction.hh"
 #include "cpu/utils.hh"
 #include "debug/Activity.hh"
@@ -65,6 +66,7 @@
 #include "debug/HtmCpu.hh"
 #include "debug/IEW.hh"
 #include "debug/LSQUnit.hh"
+#include "debug/MDPFeedback.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/StoreBuffer.hh"
 #include "debug/StorePipeline.hh"
@@ -1609,6 +1611,29 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     // Completion path after replay selection.  Full forwarding can write back
     // immediately; otherwise a normal load assembles cache and forwarded data
     // before completeDataAccess/writeback handling takes over.
+    auto mdp_feedback_source = StoreSet::MDPFeedbackSource::NoForward;
+    if (request) {
+        if (!request->SQforwardPackets.empty()) {
+            mdp_feedback_source = StoreSet::MDPFeedbackSource::StoreQueue;
+        } else if (!request->SBforwardPackets.empty()) {
+            mdp_feedback_source = StoreSet::MDPFeedbackSource::StoreBuffer;
+        }
+    }
+    const char *mdp_source_str = "none";
+    if (mdp_feedback_source == StoreSet::MDPFeedbackSource::StoreQueue) {
+        mdp_source_str = "sq";
+    } else if (mdp_feedback_source ==
+               StoreSet::MDPFeedbackSource::StoreBuffer) {
+        mdp_source_str = "sbuffer";
+    }
+    DPRINTF(MDPFeedback,
+            "MDP load feedback load_pc=%#x sn=%llu source=%s predicted=%d "
+            "pred_index=%d pred_tag=%#x duplicate=%d\n",
+            inst->pcState().instAddr(), inst->seqNum, mdp_source_str,
+            inst->mdpPredictedDependent, inst->mdpPredSSITIndex,
+            inst->mdpPredTag, inst->mdpFeedbackUpdated);
+    iewStage->mdpFeedback(inst, mdp_feedback_source);
+
     if (inst->fullForward()) {
         DPRINTF(LoadPipeline, "Load [sn:%llu] fullForward\n", inst->seqNum);
         assert(request);
