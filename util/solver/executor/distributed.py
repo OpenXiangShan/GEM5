@@ -270,6 +270,7 @@ class DistributedWorkloadScheduler:
         self.process_finished = process_finished or (lambda process: None)
         self.cancel_requested = cancel_requested or (lambda: False)
         self._last_launch_at = 0.0
+        self._next_server_index = 0
 
     def describe(self) -> dict[str, object]:
         return {
@@ -330,14 +331,15 @@ class DistributedWorkloadScheduler:
     def _select_server(self) -> _ServerState | None:
         if self._running_count() >= self.total_parallelism:
             return None
-        candidates = []
-        for server in self.servers:
+        server_count = len(self.servers)
+        for offset in range(server_count):
+            index = (self._next_server_index + offset) % server_count
+            server = self.servers[index]
             self._refresh_server_capacity(server)
             if len(server.pending) < server.capacity:
-                candidates.append(server)
-        if not candidates:
-            return None
-        return min(candidates, key=lambda item: (len(item.pending), item.name))
+                self._next_server_index = (index + 1) % server_count
+                return server
+        return None
 
     def _launch(self, scheduled: _ScheduledJob, server: _ServerState) -> None:
         job = scheduled.job
@@ -505,8 +507,6 @@ class DistributedWorkloadScheduler:
     ) -> list[DistributedWorkloadResult]:
         scheduled_jobs = [_ScheduledJob(job=job) for job in jobs]
         results: list[DistributedWorkloadResult] = []
-        for server in self.servers:
-            self._refresh_server_capacity(server, force=True)
         while scheduled_jobs or self._running_count():
             polled, retries = self._poll()
             results.extend(polled)
