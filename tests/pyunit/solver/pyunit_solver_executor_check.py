@@ -326,7 +326,7 @@ class SolverDistributedConfigTestCase(unittest.TestCase):
             side_effect=subprocess.TimeoutExpired(cmd=long_command, timeout=10),
         ):
             idle_cpus, detail = dist.probe_idle_cpus(
-                server_name="node021",
+                server_name="node025",
                 idle_probe_mode="physical",
                 idle_cpu_threshold=30.0,
                 ssh_config="",
@@ -339,7 +339,10 @@ class SolverDistributedConfigTestCase(unittest.TestCase):
         self.assertIsNone(idle_cpus)
         self.assertEqual(
             detail,
-            "idle probe timed out after 10s via ci-runner@172.28.9.101",
+            (
+                "idle probe to node025 (172.19.20.25) via dispatch host "
+                "ci-runner@172.28.9.101 timed out after 10s"
+            ),
         )
         self.assertNotIn("python3 -c", detail)
 
@@ -567,6 +570,8 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
                             return_code=0,
                             server_name="node020",
                             detail="mocked",
+                            started_at=1.0,
+                            finished_at=3.0,
                         )
                     )
                 return results
@@ -614,6 +619,82 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
         self.assertEqual(job.workload_name, "demo")
         self.assertTrue(any(part.startswith("--solver-overlay=") for part in job.command))
         self.assertTrue(str(job.work_dir).endswith("raw/spec_all/demo"))
+
+    def test_distributed_mode_uses_per_trial_workload_duration(self):
+        class FakeScheduler:
+            def __init__(self, config, **kwargs):
+                pass
+
+            def describe(self):
+                return {"mode": "distributed"}
+
+            def run(self, jobs, *, deadline=None):
+                results = []
+                windows = {
+                    "trial_0001": (10.0, 25.0),
+                    "trial_0002": (100.0, 104.0),
+                }
+                for job in jobs:
+                    job.work_dir.mkdir(parents=True, exist_ok=True)
+                    (job.work_dir / "completed").touch()
+                    started_at, finished_at = windows[job.trial_id]
+                    results.append(
+                        DistributedWorkloadResult(
+                            trial_id=job.trial_id,
+                            workload_name=job.workload_name,
+                            checkpoint=job.checkpoint,
+                            status="completed",
+                            return_code=0,
+                            server_name="node020",
+                            detail="mocked",
+                            started_at=started_at,
+                            finished_at=finished_at,
+                        )
+                    )
+                return results
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint = Path(tmpdir) / "demo.zstd"
+            checkpoint.write_text("", encoding="utf-8")
+            executor = CiLocalParallelExecutor(
+                workdir=tmpdir,
+                build_type="fast",
+                max_parallel_trials=2,
+                max_parallel_workloads=1,
+                distributed_config=DistributedExecutionConfig(
+                    servers="node020",
+                    jobs_per_server=1,
+                    require_idle_cpus=0,
+                ),
+            )
+            problem = make_problem()
+            trials = [
+                TrialRequest("trial_0001", 0, {"x": 1}),
+                TrialRequest("trial_0002", 0, {"x": 2}),
+            ]
+            with patch(
+                "util.solver.executor.ci_local.iter_workload_entries",
+                return_value=[["demo", "frag"]],
+            ):
+                with patch(
+                    "util.solver.executor.ci_local.locate_checkpoint",
+                    return_value=str(checkpoint),
+                ):
+                    with patch(
+                        "util.solver.executor.ci_local.DistributedWorkloadScheduler",
+                        FakeScheduler,
+                    ):
+                        with patch.object(
+                            CiLocalParallelExecutor,
+                            "_maybe_generate_score",
+                            return_value=({}, None),
+                        ):
+                            results = executor.run_trials(problem, trials)
+
+        self.assertEqual(
+            {result.trial_id: result.duration_sec for result in results},
+            {"trial_0001": 15.0, "trial_0002": 4.0},
+        )
 
 
 if __name__ == "__main__":

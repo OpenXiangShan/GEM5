@@ -619,6 +619,21 @@ class CiLocalParallelExecutor(BaseExecutor):
                 return_code = result.return_code
         return status, return_code
 
+    def _distributed_trial_duration(self, workload_results) -> float:
+        started = [
+            result.started_at
+            for result in workload_results
+            if result.started_at is not None
+        ]
+        finished = [
+            result.finished_at
+            for result in workload_results
+            if result.finished_at is not None
+        ]
+        if not started or not finished:
+            return 0.0
+        return max(0.0, max(finished) - min(started))
+
     def _run_trials_distributed(
         self,
         problem: ParsedProblem,
@@ -628,7 +643,6 @@ class CiLocalParallelExecutor(BaseExecutor):
         assert self.distributed_config is not None
         trial_state = {}
         jobs: list[DistributedWorkloadJob] = []
-        start_times = {}
         self._log(
             f"executing batch of {len(trials)} trial(s) with distributed scheduler; "
             f"max_parallel_trials={self.max_parallel_trials}, "
@@ -641,7 +655,6 @@ class CiLocalParallelExecutor(BaseExecutor):
             overlay_path = trial_dir / "overlay.json"
             write_overlay(overlay_path, trial.trial_id, trial.assignments)
             log_path = trial_dir / "executor.log"
-            start_times[trial.trial_id] = time.monotonic()
             if problem.uses_custom_bin_mode():
                 entries = self._custom_bin_entries(problem)
             else:
@@ -724,13 +737,14 @@ class CiLocalParallelExecutor(BaseExecutor):
                         f"workloads: {expected}",
                         f"max_parallel_trials: {self.max_parallel_trials}",
                         f"max_parallel_workloads: {self.max_parallel_workloads}",
+                        f"duration_sec: {self._distributed_trial_duration(workload_results):.3f}",
                         *workload_lines,
                     ]
                 )
                 + "\n",
                 encoding="utf-8",
             )
-            duration = time.monotonic() - start_times[trial.trial_id]
+            duration = self._distributed_trial_duration(workload_results)
             results.append(
                 self._finalize_trial_result(
                     problem,
