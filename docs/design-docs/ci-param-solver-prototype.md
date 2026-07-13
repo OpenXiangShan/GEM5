@@ -44,7 +44,8 @@
 
 原型阶段明确不做以下内容：
 
-- 多机调度与分布式执行
+- 跨 GitHub workflow 的递归触发式分布式执行；当前只做同一 NFS 工作区内的
+  SSH 可达服务器 workload 级调度
 - 复杂求解算法，如贝叶斯优化、遗传算法、HyperBand 等
 - 通用 resume/restart 协议
 - 任意 Python 脚本作为目标函数的完全自由执行模型
@@ -597,11 +598,15 @@ class BaseExecutor:
 原型执行器实现：
 
 - `CiLocalParallelExecutor`
+- `CiLocalParallelExecutor` 在指定 `distributed_servers` 时启用 solver 专用的
+  workload 级 distributed scheduler
 
 配置项：
 
 - `max_parallel_trials`
 - `max_parallel_workloads`
+- `distributed_servers`
+- `distributed_jobs_per_server`
 - `build_once_per_run`
 - `reuse_workdir`
 - `timeout_per_trial`

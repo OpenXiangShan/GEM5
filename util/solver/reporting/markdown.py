@@ -558,6 +558,23 @@ def render_summary(
         lines.append(
             f"- max_parallel_workloads: `{metadata.get('max_parallel_workloads', 'n/a')}`"
         )
+        lines.append(f"- execution_mode: `{metadata.get('execution_mode', 'local')}`")
+        if metadata.get("execution_mode") == "distributed":
+            lines.append(
+                f"- distributed_servers: `{metadata.get('distributed_servers', '')}`"
+            )
+            lines.append(
+                "- distributed_jobs_per_server: "
+                f"`{metadata.get('distributed_jobs_per_server', 'n/a')}`"
+            )
+            lines.append(
+                "- distributed_require_idle_cpus: "
+                f"`{metadata.get('distributed_require_idle_cpus', 'n/a')}`"
+            )
+            lines.append(
+                "- distributed_idle_probe_mode: "
+                f"`{metadata.get('distributed_idle_probe_mode', 'n/a')}`"
+            )
         lines.append(f"- gem5_build_type: `{metadata.get('gem5_build_type', 'n/a')}`")
         lines.append(f"- extra_args: `{metadata.get('extra_args', problem.extra_args)}`")
         lines.append(f"- stop_reason: `{metadata.get('stop_reason', 'n/a')}`")

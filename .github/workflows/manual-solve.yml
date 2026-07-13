@@ -49,6 +49,16 @@ on:
         required: false
         type: string
         default: "1"
+      distributed_servers:
+        description: "Optional distributed server list. Empty runs only on the current CI runner; default uses node020-node034,node036-node039."
+        required: false
+        type: string
+        default: ""
+      distributed_jobs_per_server:
+        description: "Maximum concurrent solver workloads per distributed server. 0 derives it from trial/workload parallelism."
+        required: false
+        type: string
+        default: "0"
       solver_kind:
         description: "Candidate generator"
         required: false
@@ -156,6 +166,8 @@ jobs:
           echo "  solver_kind=${{ github.event.inputs.solver_kind }}"
           echo "  max_parallel_trials=${{ github.event.inputs.max_parallel_trials }}"
           echo "  max_parallel_workloads=${{ github.event.inputs.max_parallel_workloads }}"
+          echo "  distributed_servers=${{ github.event.inputs.distributed_servers }}"
+          echo "  distributed_jobs_per_server=${{ github.event.inputs.distributed_jobs_per_server }}"
           echo "  specific_benchmarks=${{ github.event.inputs.specific_benchmarks }}"
           echo "  custom_bin=${{ github.event.inputs.custom_bin }}"
           echo "  extra_args=${{ github.event.inputs.extra_args }}"
@@ -214,6 +226,12 @@ jobs:
             --solver-kind "${{ github.event.inputs.solver_kind }}"
             --max-parallel-trials "${{ github.event.inputs.max_parallel_trials }}"
             --max-parallel-workloads "${{ github.event.inputs.max_parallel_workloads }}"
+            --distributed-servers "${{ github.event.inputs.distributed_servers }}"
+            --distributed-jobs-per-server "${{ github.event.inputs.distributed_jobs_per_server }}"
+            --distributed-dispatch-host "ci-runner@172.28.9.101"
+            --distributed-ssh-option StrictHostKeyChecking=accept-new
+            --distributed-ssh-option UserKnownHostsFile="${{ needs.setup.outputs.run_dir }}/known_hosts"
+            --distributed-ssh-option ConnectTimeout=10
           )
           if [ -n "${{ github.event.inputs.specific_benchmarks }}" ]; then
             cmd+=(--specific-benchmarks "${{ github.event.inputs.specific_benchmarks }}")

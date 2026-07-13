@@ -8,6 +8,14 @@ import unittest
 from unittest.mock import patch
 
 from util.solver.executor.ci_local import CiLocalParallelExecutor
+from util.solver.executor.distributed import (
+    DistributedExecutionConfig,
+    DistributedWorkloadResult,
+    DistributedWorkloadScheduler,
+    resolve_jobs_per_server,
+    resolve_require_idle_cpus,
+    resolve_server_names,
+)
 from util.solver.run_solver import apply_runtime_overrides, runtime_messages
 from util.solver.types import ObjectiveSpec, ParsedProblem, StopSpec, TrialRequest
 
@@ -239,6 +247,72 @@ class CiLocalExecutorCommandTestCase(unittest.TestCase):
         )
 
 
+class SolverDistributedConfigTestCase(unittest.TestCase):
+    def test_default_servers_and_auto_capacity(self):
+        config = DistributedExecutionConfig(servers="default")
+
+        names = resolve_server_names(config)
+
+        self.assertEqual(names[0], "node020")
+        self.assertEqual(names[-1], "node039")
+        self.assertEqual(len(names), 19)
+        jobs_per_server = resolve_jobs_per_server(
+            config,
+            total_parallelism=8,
+            server_count=3,
+        )
+        self.assertEqual(jobs_per_server, 3)
+        self.assertEqual(
+            resolve_require_idle_cpus(
+                config,
+                jobs_per_server=jobs_per_server,
+            ),
+            3,
+        )
+
+    def test_explicit_capacity_and_disabled_idle_probe(self):
+        config = DistributedExecutionConfig(
+            servers="node001-node002",
+            jobs_per_server=4,
+            require_idle_cpus=0,
+        )
+
+        self.assertEqual(resolve_server_names(config), ["node001", "node002"])
+        self.assertEqual(
+            resolve_jobs_per_server(
+                config,
+                total_parallelism=16,
+                server_count=2,
+            ),
+            4,
+        )
+        self.assertEqual(
+            resolve_require_idle_cpus(config, jobs_per_server=4),
+            0,
+        )
+
+    def test_busy_server_capacity_is_zero(self):
+        config = DistributedExecutionConfig(
+            servers="node001",
+            jobs_per_server=2,
+            require_idle_cpus=2,
+            load_probe_interval=0.01,
+        )
+        scheduler = DistributedWorkloadScheduler(
+            config,
+            total_parallelism=2,
+            log=lambda message: None,
+        )
+
+        with patch(
+            "util.solver.executor.distributed.dist.probe_idle_cpus",
+            return_value=(1, "idle_physical_cores=1/64"),
+        ):
+            scheduler._refresh_server_capacity(scheduler.servers[0], force=True)
+
+        self.assertEqual(scheduler.servers[0].capacity, 0)
+
+
 class CiLocalExecutorParallelismTestCase(unittest.TestCase):
     def test_standard_mode_runs_trials_concurrently(self):
         state = {
@@ -392,6 +466,81 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
 
         self.assertEqual(results[0].status, "completed")
         self.assertGreaterEqual(state["max_active"], 2)
+
+    def test_distributed_mode_builds_workload_jobs_with_overlay(self):
+        captured = {}
+
+        class FakeScheduler:
+            def __init__(self, config, **kwargs):
+                captured["config"] = config
+                captured["total_parallelism"] = kwargs["total_parallelism"]
+
+            def describe(self):
+                return {"mode": "distributed"}
+
+            def run(self, jobs, *, deadline=None):
+                captured["jobs"] = jobs
+                captured["deadline"] = deadline
+                results = []
+                for job in jobs:
+                    job.work_dir.mkdir(parents=True, exist_ok=True)
+                    (job.work_dir / "completed").touch()
+                    results.append(
+                        DistributedWorkloadResult(
+                            trial_id=job.trial_id,
+                            workload_name=job.workload_name,
+                            checkpoint=job.checkpoint,
+                            status="completed",
+                            return_code=0,
+                            server_name="node020",
+                            detail="mocked",
+                        )
+                    )
+                return results
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint = Path(tmpdir) / "demo.zstd"
+            checkpoint.write_text("", encoding="utf-8")
+            executor = CiLocalParallelExecutor(
+                workdir=tmpdir,
+                build_type="fast",
+                max_parallel_trials=2,
+                max_parallel_workloads=1,
+                distributed_config=DistributedExecutionConfig(
+                    servers="node020",
+                    jobs_per_server=1,
+                    require_idle_cpus=0,
+                ),
+            )
+            problem = make_problem()
+            trials = [TrialRequest("trial_0001", 0, {"x": 1})]
+            with patch(
+                "util.solver.executor.ci_local.iter_workload_entries",
+                return_value=[["demo", "frag"]],
+            ):
+                with patch(
+                    "util.solver.executor.ci_local.locate_checkpoint",
+                    return_value=str(checkpoint),
+                ):
+                    with patch(
+                        "util.solver.executor.ci_local.DistributedWorkloadScheduler",
+                        FakeScheduler,
+                    ):
+                        with patch.object(
+                            CiLocalParallelExecutor,
+                            "_maybe_generate_score",
+                            return_value=({}, None),
+                        ):
+                            results = executor.run_trials(problem, trials)
+
+        self.assertEqual(results[0].status, "completed")
+        self.assertEqual(captured["total_parallelism"], 2)
+        self.assertEqual(len(captured["jobs"]), 1)
+        job = captured["jobs"][0]
+        self.assertEqual(job.trial_id, "trial_0001")
+        self.assertEqual(job.workload_name, "demo")
+        self.assertTrue(any(part.startswith("--solver-overlay=") for part in job.command))
+        self.assertTrue(str(job.work_dir).endswith("raw/spec_all/demo"))
 
 
 if __name__ == "__main__":

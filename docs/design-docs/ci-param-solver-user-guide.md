@@ -517,6 +517,8 @@ VTAGEIPCSearch
 - `configuration`
 - `max_parallel_trials`
 - `max_parallel_workloads`
+- `distributed_servers`
+- `distributed_jobs_per_server`
 - `solver_kind`
 - `benchmark_type`
 - `specific_benchmarks`
@@ -535,6 +537,14 @@ VTAGEIPCSearch
   然后传给 controller 的 `--config-path`
 - 当前 workflow / controller 都会拒绝 `gcc12-spec06-smt-*`，因为 solver runtime
   还没有接 SMT config
+- `distributed_servers` 留空时，solver 只在当前 CI runner 上执行仿真，行为与旧版一致
+- `distributed_servers = default` 会展开为 `node020-node034,node036-node039`
+- `distributed_servers` 填显式列表或 range 时，solver 会把 batch 内的
+  `(trial, workload)` 任务按服务器空闲 CPU 和 per-server 上限分发到这些机器
+- `distributed_jobs_per_server = 0` 表示根据
+  `max_parallel_trials * max_parallel_workloads / server_count` 自动推导；
+  非 0 时作为每台服务器最大并发 workload 数
+- 分布式模式会在下发任务前检查目标服务器负载；负载不足时不会继续向该服务器提交任务
 - 如果 `benchmark_type = custom_bin`，则必须显式填写 `custom_bin`
 - 如果 `benchmark_type` 选择的是内建切片组，`custom_bin` 会被忽略
 - `specific_benchmarks` 只对内建 `benchmark_type` 生效；在 `custom_bin` 模式下会直接报错
@@ -553,6 +563,8 @@ VTAGEIPCSearch
   `1`
 - `max_parallel_workloads`:
   `1`
+- `distributed_servers`:
+  留空
 - `specific_benchmarks`:
   `bzip2_html_7052`
 - `max_trials`:
@@ -572,6 +584,10 @@ VTAGEIPCSearch
   `4`
 - `max_parallel_workloads`:
   `2`
+- `distributed_servers`:
+  留空，或填 `default` / 显式服务器列表启用多机仿真
+- `distributed_jobs_per_server`:
+  `0`
 - `specific_benchmarks`:
   留空
 - `max_trials`:
@@ -585,6 +601,13 @@ VTAGEIPCSearch
   控制一个 batch 里最多同时跑多少个 solver trial。
 - `max_parallel_workloads`
   控制单个 trial 内最多同时跑多少个 workload。
+- 默认 `distributed_servers` 留空时，以上两个参数只作用在当前 CI runner。
+- 指定 `distributed_servers` 后，solver 会把当前 batch 展开为 workload 级任务；
+  全局并发预算仍来自 `max_parallel_trials * max_parallel_workloads`，
+  每台服务器的并发上限由 `distributed_jobs_per_server` 或自动推导结果限制。
+- 分布式调度保持原有 trial 目录结构：
+  `trials/<trial_id>/raw/spec_all/<workload>/...`，因此后续
+  `score.txt` / weighted stats 聚合逻辑不变。
 - 普通 benchmark 模式下，solver 会直接解析 workload list 并按
   `max_parallel_workloads` 并行启动各个 workload。
 - `custom_bin` 模式下，如果 `benchmark_type = custom_bin` 且 `custom_bin` 填一个路径，就表示该 trial 只有一个 workload；
