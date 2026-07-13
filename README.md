@@ -2,7 +2,7 @@
 
 Documentation website: https://xs-gem5.readthedocs.io/zh-cn/latest/
 
-Design-doc entry for Kunminghu v3: [docs/design-docs](docs/design-docs)
+Design-doc entry: [docs/design-docs/README.md](docs/design-docs/README.md)
 
 XS-GEM5 is a gem5-based, full-system RISC-V simulator for XiangShan.
 
@@ -22,7 +22,8 @@ Our Chinese website is [here](https://xs-gem5.readthedocs.io/zh-cn/latest/), wel
 For a high-level map of the repository, see [ARCHITECTURE.md](ARCHITECTURE.md).
 It focuses on the XiangShan-aligned O3 CPU, the decoupled frontend, and the configuration/code boundaries that matter most for current development.
 
-For design-oriented frontend notes, see [docs/design-docs/frontend/README.md](docs/design-docs/frontend/README.md).
+For design-oriented notes, see [docs/design-docs/README.md](docs/design-docs/README.md).
+The index covers the Kunminghu v3 frontend/BPU and the XS-GEM5 SMT design.
 
 ## Thanks
 
