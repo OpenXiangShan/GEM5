@@ -1,13 +1,20 @@
+import random
 import unittest
 
 from configs.solver_specs.tage_tablesize_numways_ga_score_search import (
     TageTableSizeNumWaysGaScoreSearch,
     _BASELINE_NUM_WAYS,
     _BASELINE_TABLE_SIZES,
-    _TABLE_SIZE_TOTAL,
-    _table_size_candidates,
+    _BASELINE_TOTAL_SIZE,
+    _NUM_TABLES,
+    _NUM_WAY_VALUES,
+    _TABLE_SIZE_VALUES,
+    _TAGE_CONFIG_DOMAIN,
+    _split_tage_config,
+    _tage_total_size,
 )
 from util.solver.parser.load_spec import parse_problem
+from util.solver.solver.ga import GaSolver
 
 
 class FakeParamDesc:
@@ -46,17 +53,31 @@ class FakeRoot:
 
 
 class TageGaScoreSpecTestCase(unittest.TestCase):
-    def test_table_size_candidates_preserve_sum_and_power_of_two_bounds(self):
-        options = _table_size_candidates()
-        self.assertEqual(len(options), 504)
-        self.assertIn(_BASELINE_TABLE_SIZES, options)
-        for option in options:
-            self.assertEqual(len(option), 8)
-            self.assertEqual(sum(option), _TABLE_SIZE_TOTAL)
-            for value in option:
-                self.assertGreaterEqual(value, 256)
-                self.assertLessEqual(value, 8192)
-                self.assertEqual(value & (value - 1), 0)
+    def assert_valid_tage_config(self, config):
+        table_sizes, num_ways = _split_tage_config(config)
+        self.assertEqual(len(table_sizes), _NUM_TABLES)
+        self.assertEqual(len(num_ways), _NUM_TABLES)
+        self.assertEqual(_tage_total_size(table_sizes, num_ways), _BASELINE_TOTAL_SIZE)
+        for value in table_sizes:
+            self.assertIn(value, _TABLE_SIZE_VALUES)
+        for value in num_ways:
+            self.assertIn(value, _NUM_WAY_VALUES)
+
+    def test_tage_config_domain_samples_fixed_total_size(self):
+        self.assertEqual(_TAGE_CONFIG_DOMAIN.cardinality(), 75244734738)
+        self.assert_valid_tage_config(_BASELINE_TABLE_SIZES + _BASELINE_NUM_WAYS)
+
+        rng = random.Random(1)
+        samples = [_TAGE_CONFIG_DOMAIN.sample(rng) for _ in range(64)]
+        self.assertGreater(len({tuple(sample) for sample in samples}), 60)
+        for sample in samples:
+            self.assert_valid_tage_config(sample)
+
+        mutated = _TAGE_CONFIG_DOMAIN.mutate(rng, samples[0])
+        self.assert_valid_tage_config(mutated)
+        child_a, child_b = _TAGE_CONFIG_DOMAIN.crossover(rng, samples[0], samples[1])
+        self.assert_valid_tage_config(child_a)
+        self.assert_valid_tage_config(child_b)
 
     def test_parse_tage_table_numways_ga_score_problem(self):
         problem = parse_problem(
@@ -71,30 +92,38 @@ class TageGaScoreSpecTestCase(unittest.TestCase):
         self.assertEqual(problem.objective.metric, "Estimated Int score per GHz")
         self.assertEqual(problem.stop.max_trials, 4000)
         self.assertEqual(problem.stop.timeout_hours, 30)
-        self.assertEqual(problem.parameters[0].name, "tableSizes")
-        self.assertEqual(problem.parameters[0].domain.cardinality(), 504)
-        self.assertEqual(problem.parameters[1].name, "numWays0")
-        self.assertEqual(problem.parameters[-1].name, "numWays7")
+        self.assertEqual(len(problem.parameters), 1)
+        self.assertEqual(problem.parameters[0].name, "tableSizesNumWays")
+        self.assertEqual(problem.parameters[0].domain.cardinality(), 75244734738)
+        self.assertEqual(
+            problem.parameters[0].default,
+            _BASELINE_TABLE_SIZES + _BASELINE_NUM_WAYS,
+        )
 
-    def test_apply_trial_updates_numways_vector(self):
+    def test_ga_proposes_only_fixed_total_tage_configs(self):
+        problem = parse_problem(
+            "configs/solver_specs/tage_tablesize_numways_ga_score_search.py:"
+            "TageTableSizeNumWaysGaScoreSearch"
+        )
+        solver = GaSolver(problem, seed=1, population_size=4)
+        trials = solver.propose([], 8)
+        self.assertEqual(len(trials), 8)
+        for trial in trials:
+            self.assert_valid_tage_config(trial.assignments["tableSizesNumWays"])
+
+    def test_apply_trial_updates_table_sizes_and_numways_vectors(self):
         root = FakeRoot()
+        table_sizes = [4096, 4096, 4096, 8192, 8192, 8192, 8192, 4096]
+        num_ways = [1, 1, 8, 2, 2, 2, 2, 1]
         trial = type(
             "Trial",
             (),
-            {
-                "numWays0": 1,
-                "numWays1": 2,
-                "numWays2": 3,
-                "numWays3": 4,
-                "numWays4": 5,
-                "numWays5": 6,
-                "numWays6": 7,
-                "numWays7": 8,
-            },
+            {"tableSizesNumWays": table_sizes + num_ways},
         )()
         TageTableSizeNumWaysGaScoreSearch.apply_trial(root, trial)
         tage = root.system.cpu[0].branchPred.tage
-        self.assertEqual(tage.numWays, [1, 2, 3, 4, 5, 6, 7, 8])
+        self.assertEqual(tage.tableSizes, table_sizes)
+        self.assertEqual(tage.numWays, num_ways)
 
 
 if __name__ == "__main__":
