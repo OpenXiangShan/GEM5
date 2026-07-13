@@ -1,9 +1,19 @@
 import unittest
 import tempfile
+import json
 from pathlib import Path
 
+from util.solver.runtime.overlay import write_overlay
 from util.solver.runtime.path_resolver import resolve_object, resolve_target
 from util.solver.processing.extract import collect_workload_stats
+
+
+class FakeNumpyScalar:
+    def __init__(self, value):
+        self._value = value
+
+    def item(self):
+        return self._value
 
 
 class FakeParamDesc:
@@ -63,6 +73,29 @@ class PathResolverTestCase(unittest.TestCase):
             )
             metrics = collect_workload_stats(Path(tmpdir) / "spec_all", "system.cpu.ipc")
             self.assertEqual(metrics, {"demo": 3.25})
+
+    def test_write_overlay_accepts_numpy_like_scalars(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            overlay_path = Path(tmpdir) / "overlay.json"
+            write_overlay(
+                overlay_path,
+                "trial_0001",
+                {
+                    "confBits": FakeNumpyScalar(12),
+                    "history": [FakeNumpyScalar(1), FakeNumpyScalar(2)],
+                },
+            )
+
+            payload = json.loads(overlay_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["trial_id"], "trial_0001")
+        self.assertEqual(
+            payload["assignments"],
+            [
+                {"name": "confBits", "value": 12},
+                {"name": "history", "value": [1, 2]},
+            ],
+        )
 
 
 if __name__ == "__main__":

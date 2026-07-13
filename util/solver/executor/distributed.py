@@ -84,6 +84,8 @@ class DistributedWorkloadResult:
     return_code: int
     server_name: str
     detail: str = ""
+    started_at: float | None = None
+    finished_at: float | None = None
 
 
 @dataclass(frozen=True)
@@ -386,7 +388,7 @@ class DistributedWorkloadScheduler:
                 scheduled=scheduled,
                 server=server,
                 proc=proc,
-                started_at=time.time(),
+                started_at=time.monotonic(),
             )
         )
         self.log(
@@ -405,6 +407,7 @@ class DistributedWorkloadScheduler:
                     still_pending.append(pending)
                     continue
                 self.process_finished(pending.proc)
+                finished_at = time.monotonic()
                 stdout, stderr = pending.proc.communicate()
                 scheduled = pending.scheduled
                 job = scheduled.job
@@ -457,6 +460,8 @@ class DistributedWorkloadScheduler:
                         return_code=code,
                         server_name=server.name,
                         detail=f"marker={marker or '<none>'}",
+                        started_at=pending.started_at,
+                        finished_at=finished_at,
                     )
                 )
                 self.log(
@@ -494,6 +499,8 @@ class DistributedWorkloadScheduler:
                         return_code=return_code,
                         server_name=server.name,
                         detail=message,
+                        started_at=pending.started_at,
+                        finished_at=time.monotonic(),
                     )
                 )
             server.pending = []
@@ -525,6 +532,8 @@ class DistributedWorkloadScheduler:
                             return_code=130,
                             server_name="<not-launched>",
                             detail="cancelled before launch",
+                            started_at=None,
+                            finished_at=time.monotonic(),
                         )
                     )
                 break
@@ -548,6 +557,8 @@ class DistributedWorkloadScheduler:
                             return_code=124,
                             server_name="<not-launched>",
                             detail="timeout before launch",
+                            started_at=None,
+                            finished_at=time.monotonic(),
                         )
                     )
                 break

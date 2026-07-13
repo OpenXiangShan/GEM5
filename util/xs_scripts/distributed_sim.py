@@ -638,7 +638,27 @@ def _compact_message(text: str, *, limit: int = 240) -> str:
     return compact[: limit - 3] + "..."
 
 
-def _idle_probe_route(
+def _cluster_node_ip(server_name: str) -> str | None:
+    match = re.fullmatch(r"node0*(\d+)(?:\..*)?", server_name)
+    if match is None:
+        return None
+    node_id = int(match.group(1))
+    if not 1 <= node_id <= 254:
+        return None
+    return f"172.19.20.{node_id}"
+
+
+def _idle_probe_target(server_name: str, ssh_user: str) -> str:
+    if server_name == "local":
+        return "local"
+    target = make_ssh_target(server_name, ssh_user)
+    ip = _cluster_node_ip(server_name)
+    if ip is not None:
+        return f"{target} ({ip})"
+    return target
+
+
+def _idle_probe_context(
     *,
     server_name: str,
     ssh_user: str,
@@ -646,9 +666,10 @@ def _idle_probe_route(
 ) -> str:
     if server_name == "local":
         return "locally"
+    target = _idle_probe_target(server_name, ssh_user)
     if dispatch_host:
-        return f"via {dispatch_host}"
-    return f"via ssh to {make_ssh_target(server_name, ssh_user)}"
+        return f"to {target} via dispatch host {dispatch_host}"
+    return f"to {target}"
 
 
 def make_ssh_target(server_name: str, ssh_user: str) -> str:
@@ -787,31 +808,31 @@ def probe_idle_cpus(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        route = _idle_probe_route(
+        context = _idle_probe_context(
             server_name=server_name,
             ssh_user=ssh_user,
             dispatch_host=dispatch_host,
         )
-        return None, f"idle probe timed out after {_format_seconds(timeout)} {route}"
+        return None, f"idle probe {context} timed out after {_format_seconds(timeout)}"
     except OSError as exc:
-        route = _idle_probe_route(
+        context = _idle_probe_context(
             server_name=server_name,
             ssh_user=ssh_user,
             dispatch_host=dispatch_host,
         )
         detail = _compact_message(str(exc))
-        return None, f"idle probe failed {route}: {detail}"
+        return None, f"idle probe {context} failed: {detail}"
 
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         stdout = result.stdout.decode(errors="replace").strip()
-        route = _idle_probe_route(
+        context = _idle_probe_context(
             server_name=server_name,
             ssh_user=ssh_user,
             dispatch_host=dispatch_host,
         )
         detail = _compact_message(stderr or stdout or "no output")
-        return None, f"idle probe failed {route}: exit={result.returncode}, {detail}"
+        return None, f"idle probe {context} failed: exit={result.returncode}, {detail}"
 
     text = result.stdout.decode(errors="replace").strip()
     match = re.search(r"(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([0-9.]+)", text)

@@ -193,6 +193,10 @@ def to_jsonable(value: Any) -> Any:
         return [to_jsonable(item) for item in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
+    if hasattr(value, "tolist") and callable(value.tolist):
+        return to_jsonable(value.tolist())
+    if hasattr(value, "item") and callable(value.item):
+        return to_jsonable(value.item())
     if hasattr(value, "getValue") and callable(value.getValue):
         return to_jsonable(value.getValue())
     if hasattr(value, "value"):
