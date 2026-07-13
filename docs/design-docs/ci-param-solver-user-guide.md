@@ -34,8 +34,16 @@
 当前实现有几个重要边界，使用前应先接受它们：
 
 - 当前只支持 Python config 脚本，不支持 shell wrapper 作为 solver runtime 接入点。
-- 当前已经接好 solver runtime 的 config 是
-  [configs/example/idealkmhv3.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/idealkmhv3.py)。
+- 当前已经接好 solver runtime、并在 CI 手动入口里暴露选择的 config 是：
+  - [configs/example/idealkmhv3.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/idealkmhv3.py)
+  - [configs/example/kmhv3.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/kmhv3.py)
+  - [configs/example/kmhv2.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/kmhv2.py)
+- 当前 solver runtime / CI 手动入口暂不支持 SMT config，也不接受 `gcc12-spec06-smt-*`
+  benchmark_type。
+- 这里的“支持多个 config”只表示 runtime 接口已经接好；某个具体 solver spec
+  能否在所选 config 上工作，仍取决于它的 `target` 路径能否在该 config 上成功绑定。
+  例如当前文档中的 `VTAGEIPCSearch` 仍依赖 `idealkmhv3.py` 里的 value predictor
+  结构，不能直接切到 `kmhv3.py` / `kmhv2.py`。
 - `target` 路径当前只支持：
   - 属性访问
   - 列表下标
@@ -368,6 +376,24 @@ controller 会自动设置：
 
 其中 `M5_OVERRIDE_PY_SOURCE=true` 的作用是让 gem5 运行时优先使用当前源码里的 Python 配置，而不是依赖旧的嵌入式 Python 模块。
 
+如果你想在本地临时覆盖 spec 默认的 `config_path`，可以额外传：
+
+```bash
+--config-path configs/example/kmhv3.py
+```
+
+当前只接受这三个 repo-root-relative 路径：
+
+- `configs/example/idealkmhv3.py`
+- `configs/example/kmhv3.py`
+- `configs/example/kmhv2.py`
+
+或对应 basename：
+
+- `idealkmhv3.py`
+- `kmhv3.py`
+- `kmhv2.py`
+
 ### 7.2 先做 dry-run
 
 第一次写 spec 时，建议先做 dry-run，只验证：
@@ -488,6 +514,7 @@ VTAGEIPCSearch
 
 - `note`
 - `problem_ref`
+- `configuration`
 - `max_parallel_trials`
 - `max_parallel_workloads`
 - `solver_kind`
@@ -500,6 +527,14 @@ VTAGEIPCSearch
 
 输入语义补充：
 
+- `configuration` 当前只允许：
+  - `idealkmhv3.py`
+  - `kmhv3.py`
+  - `kmhv2.py`
+- workflow 会把 `configuration` 解析成对应的 repo-root-relative `config_path`，
+  然后传给 controller 的 `--config-path`
+- 当前 workflow / controller 都会拒绝 `gcc12-spec06-smt-*`，因为 solver runtime
+  还没有接 SMT config
 - 如果 `benchmark_type = custom_bin`，则必须显式填写 `custom_bin`
 - 如果 `benchmark_type` 选择的是内建切片组，`custom_bin` 会被忽略
 - `specific_benchmarks` 只对内建 `benchmark_type` 生效；在 `custom_bin` 模式下会直接报错
@@ -510,6 +545,8 @@ VTAGEIPCSearch
 
 - `problem_ref`:
   `configs/solver_specs/vtage_ipc_search.py:VTAGEIPCSearch`
+- `configuration`:
+  `idealkmhv3.py`
 - `solver_kind`:
   `random`
 - `max_parallel_trials`:
@@ -527,6 +564,8 @@ VTAGEIPCSearch
 
 - `problem_ref`:
   `configs/solver_specs/vtage_ipc_search.py:VTAGEIPCSearch`
+- `configuration`:
+  `idealkmhv3.py`
 - `solver_kind`:
   `auto`
 - `max_parallel_trials`:
@@ -670,7 +709,8 @@ VTAGEIPCSearch
 
 ## 11. 一个新 config 要怎么接入 solver runtime
 
-如果将来你想把 solver 用到别的 config 脚本上，当前至少需要做两件事。
+如果将来你想把 solver 用到别的 config 脚本上，除了当前已经支持的
+`idealkmhv3.py` / `kmhv3.py` / `kmhv2.py` 之外，至少还需要做两件事。
 
 ### 11.1 给 argparse 增加三个参数
 
@@ -696,6 +736,10 @@ if maybe_handle_solver_runtime(root, args):
 ```
 
 这样 bind-only 模式才能提前退出，overlay 模式才能在 instantiate 前完成参数注入。
+
+除此之外，如果你希望新 config 也能进入当前 solver CLI / CI 白名单，还需要同步更新
+`util/solver/run_solver.py` / `util/solver/types.py` 里的允许列表，以及
+workflow dispatch 的 `configuration` 选项。
 
 ## 12. 常见失败与排查方法
 

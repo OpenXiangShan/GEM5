@@ -1,5 +1,5 @@
 name: Manual Solver Run
-run-name: ${{ format('{0} - {1} - {2} - {3}', github.event.inputs.note || 'Manual Solver Run', github.event.inputs.problem_ref, github.event.inputs.benchmark_type == 'custom_bin' && 'custom-bin' || github.event.inputs.benchmark_type, github.event.inputs.branch || github.ref_name) }}
+run-name: ${{ format('{0} - {1} - {2} - {3} - {4}', github.event.inputs.note || 'Manual Solver Run', github.event.inputs.problem_ref, github.event.inputs.configuration, github.event.inputs.benchmark_type == 'custom_bin' && 'custom-bin' || github.event.inputs.benchmark_type, github.event.inputs.branch || github.ref_name) }}
 
 on:
   workflow_dispatch:
@@ -14,6 +14,15 @@ on:
         required: true
         type: string
         default: "VTAGEIPCSearch"
+      configuration:
+        description: "Choose Kunminghu configuration (non-SMT only)"
+        required: true
+        type: choice
+        default: "idealkmhv3.py"
+        options:
+          - kmhv2.py
+          - kmhv3.py
+          - idealkmhv3.py
       benchmark_type:
         description: "Built-in checkpoint group to use, or custom_bin to disable built-in slices and use the custom_bin field instead"
         required: true
@@ -22,8 +31,6 @@ on:
         options:
           - custom_bin
           - gcc12-spec06-0.3c
-          - gcc12-spec06-smt-0.3c
-          - gcc12-spec06-smt-1.0c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
           - gcc15-spec06-0.3c
@@ -83,12 +90,26 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
+      config_path: ${{ steps.resolve.outputs.config_path }}
       pr_sha: ${{ steps.resolve.outputs.pr_sha }}
       run_dir: ${{ steps.resolve.outputs.run_dir }}
     steps:
       - name: Resolve parameters
         id: resolve
         run: |
+          case "${{ github.event.inputs.configuration }}" in
+            kmhv2.py|kmhv3.py|idealkmhv3.py)
+              echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Error: unsupported configuration '${{ github.event.inputs.configuration }}'" >&2
+              exit 1
+              ;;
+          esac
+          if [[ "${{ github.event.inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
+            echo "Error: SMT benchmark_type is not supported by the solver workflow yet" >&2
+            exit 1
+          fi
           if [ -n "${{ github.event.inputs.branch }}" ]; then
             echo "pr_sha=${{ github.event.inputs.branch }}" >> "$GITHUB_OUTPUT"
           else
@@ -98,7 +119,6 @@ jobs:
 
   solve:
     needs: setup
-    if: ${{ always() }}
     runs-on: [self-hosted, node]
     timeout-minutes: 720
     env:
@@ -130,6 +150,8 @@ jobs:
           mkdir -p "${{ needs.setup.outputs.run_dir }}"
           echo "Workflow Inputs:"
           echo "  problem_ref=${{ github.event.inputs.problem_ref }}"
+          echo "  configuration=${{ github.event.inputs.configuration }}"
+          echo "  config_path=${{ needs.setup.outputs.config_path }}"
           echo "  benchmark_type=${{ github.event.inputs.benchmark_type }}"
           echo "  solver_kind=${{ github.event.inputs.solver_kind }}"
           echo "  max_parallel_trials=${{ github.event.inputs.max_parallel_trials }}"
@@ -148,6 +170,7 @@ jobs:
           args = argparse.Namespace(
               max_trials=int("${{ github.event.inputs.max_trials }}")
               if "${{ github.event.inputs.max_trials }}" else None,
+              config_path="${{ needs.setup.outputs.config_path }}",
               benchmark_type="${{ github.event.inputs.benchmark_type }}",
               specific_benchmarks="${{ github.event.inputs.specific_benchmarks }}",
               custom_bin="${{ github.event.inputs.custom_bin }}",
@@ -158,6 +181,7 @@ jobs:
           print("Resolved Solver Parameters:")
           print(f"  problem_name={problem.name}")
           print(f"  resolved_problem_ref={problem.problem_ref}")
+          print(f"  config_path={problem.config_path}")
           print(f"  benchmark_type={problem.benchmark_type}")
           print(f"  solver_kind_input=${{ github.event.inputs.solver_kind }}")
           print(f"  solver_hint={problem.solver_hint}")
@@ -185,6 +209,7 @@ jobs:
             python3 -u util/solver/run_solver.py
             --problem-ref "${{ github.event.inputs.problem_ref }}"
             --workdir "${{ needs.setup.outputs.run_dir }}"
+            --config-path "${{ needs.setup.outputs.config_path }}"
             --benchmark-type "${{ github.event.inputs.benchmark_type }}"
             --solver-kind "${{ github.event.inputs.solver_kind }}"
             --max-parallel-trials "${{ github.event.inputs.max_parallel_trials }}"

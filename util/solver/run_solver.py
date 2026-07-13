@@ -34,7 +34,12 @@ from util.solver.solver.ga import GaSolver
 from util.solver.solver.grid import GridSolver
 from util.solver.solver.nsga2 import Nsga2Solver
 from util.solver.solver.random import RandomSolver
-from util.solver.types import CUSTOM_BIN_BENCHMARK_TYPE
+from util.solver.types import (
+    CUSTOM_BIN_BENCHMARK_TYPE,
+    SUPPORTED_SOLVER_CONFIG_PATHS,
+    normalize_solver_config_path,
+    validate_solver_benchmark_type,
+)
 
 
 def _escape_github_annotation(value: str) -> str:
@@ -170,6 +175,15 @@ def build_argparser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--config-path",
+        default="",
+        help=(
+            "Optional runtime config override. Accepts only the supported "
+            "Kunminghu config scripts: "
+            + ", ".join(SUPPORTED_SOLVER_CONFIG_PATHS)
+        ),
+    )
+    parser.add_argument(
         "--solver-kind",
         choices=["auto", "grid", "random", "bayes", "nsga2", "ga"],
         default="auto",
@@ -208,6 +222,13 @@ def apply_runtime_overrides(problem, args):
         problem.stop.max_trials = args.max_trials
     if args.benchmark_type:
         problem.benchmark_type = args.benchmark_type
+    validate_solver_benchmark_type(problem.benchmark_type)
+    requested_config_path = getattr(args, "config_path", "").strip()
+    if requested_config_path:
+        problem.config_path = normalize_solver_config_path(requested_config_path)
+        runtime_messages.append(
+            f"config_path overridden at runtime: {problem.config_path}"
+        )
     requested_custom_bin = args.custom_bin.strip()
     requested_filters = args.specific_benchmarks.strip()
 
@@ -487,6 +508,7 @@ def main() -> int:
             "max_parallel_trials": args.max_parallel_trials,
             "max_parallel_workloads": args.max_parallel_workloads,
             "gem5_build_type": args.gem5_build_type,
+            "config_path": problem.config_path,
             "benchmark_type": problem.benchmark_type,
             "specific_benchmarks": problem.specific_benchmarks,
             "custom_bin": problem.custom_bin,
@@ -502,6 +524,7 @@ def main() -> int:
             "setup",
             (
                 "runtime parameters: "
+                f"config_path={metadata['config_path']}, "
                 f"solver_kind={metadata['solver_kind']}, "
                 f"benchmark_type={metadata['benchmark_type']}, "
                 f"specific_benchmarks={metadata['specific_benchmarks'] or '<none>'}, "
