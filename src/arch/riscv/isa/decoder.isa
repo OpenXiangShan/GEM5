@@ -1119,8 +1119,7 @@ decode QUADRANT {
                         }
                     }}, IntDivOp);
                     0x4: pack({{
-                        Rd = (Rs1 & UINT64_C(0xffffffff)) |
-                             ((Rs2 & UINT64_C(0xffffffff)) << 32);
+                        Rd = (bits(Rs2, 31, 0) << 32) | bits(Rs1, 31, 0);
                     }});
                     0x5: min({{
                         Rd = (((int64_t) Rs1) < ((int64_t) Rs2)) ? Rs1 : Rs2;
@@ -1200,6 +1199,10 @@ decode QUADRANT {
                             Rd = Rs1%Rs2;
                         }
                     }}, IntDivOp);
+                    0x4: packh({{
+                        // It doesn't need to sign ext as MSB is always 0
+                        Rd = (Rs2_ub << 8) | Rs1_ub;
+                    }});
                     0x5: maxu({{
                         Rd = Rs1 > Rs2 ? Rs1 : Rs2;
                     }});
@@ -1258,9 +1261,17 @@ decode QUADRANT {
                             Rd_sd = Rs1_sw/Rs2_sw;
                         }
                     }}, IntDivOp);
-                    0x4: zext_h({{
-                        Rd = Rs1_uh;
-                    }});
+                    0x4: decode RS2 {
+                        0x0: zext_h({{
+                            Rd = Rs1_uh;
+                        }});
+                        // In terms of functionality, we can execute zext.h like packw (Rs2_uh = 0).
+                        // However, instruction fusion relies on zext.h, so we do a 'decode RS2' to distinct them.
+                        // refer to src/arch/riscv/insts/fusion.cc.
+                        default: packw({{
+                            Rd_sd = sext<32>((Rs2_uh << 16) | Rs1_uh);
+                        }});
+                    }
                     0x10: sh2add_uw({{
                         Rd = (((uint64_t)Rs1_uw) << 2) + Rs2;
                     }});
