@@ -424,6 +424,17 @@ BaseSimpleCPU::postExecute(const Fault &fault)
     if (curStaticInst->isVector()){
         t_info.execContextStats.numVecAluAccesses++;
         t_info.execContextStats.numVecInsts++;
+        if (fault == NoFault &&
+            (curStaticInst->numDestRegs() > 0 ||
+             curStaticInst->isVectorConfig())) {
+            RiscvISA::STATUS status =
+                threadContexts[curThread]->readMiscRegNoEffect(
+                    RiscvISA::MiscRegIndex::MISCREG_STATUS);
+            status.sd = 1;
+            status.vs = 3;
+            threadContexts[curThread]->setMiscRegNoEffect(
+                RiscvISA::MiscRegIndex::MISCREG_STATUS, (RegVal)status);
+        }
     }
 
     //number of function calls/returns to get window accesses
