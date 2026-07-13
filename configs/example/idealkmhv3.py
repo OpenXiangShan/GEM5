@@ -106,8 +106,8 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
             # TAGE table sizes and numWays tunning
-            cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
-            cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
+            cpu.branchPred.tage.tableSizes = [2048, 4096, 8192, 8192, 8192, 4096, 8192, 4096]
+            cpu.branchPred.tage.numWays = [5, 7, 5, 8, 8, 8, 8, 8]
             # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
