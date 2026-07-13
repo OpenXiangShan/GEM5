@@ -5,6 +5,41 @@ import json
 from typing import Any
 
 CUSTOM_BIN_BENCHMARK_TYPE = "custom_bin"
+SMT_BENCHMARK_PREFIX = "gcc12-spec06-smt-"
+SUPPORTED_SOLVER_CONFIG_BASENAMES = (
+    "kmhv2.py",
+    "kmhv3.py",
+    "idealkmhv3.py",
+)
+SUPPORTED_SOLVER_CONFIG_PATHS = tuple(
+    f"configs/example/{name}" for name in SUPPORTED_SOLVER_CONFIG_BASENAMES
+)
+
+
+def normalize_solver_config_path(raw_config_path: str) -> str:
+    config_path = raw_config_path.strip()
+    if not config_path:
+        raise ValueError("config_path must not be empty")
+    basename_map = {
+        name: f"configs/example/{name}"
+        for name in SUPPORTED_SOLVER_CONFIG_BASENAMES
+    }
+    if config_path in basename_map:
+        return basename_map[config_path]
+    if config_path in SUPPORTED_SOLVER_CONFIG_PATHS:
+        return config_path
+    allowed = ", ".join(SUPPORTED_SOLVER_CONFIG_PATHS)
+    raise ValueError(
+        f"unsupported config_path {raw_config_path!r}; expected one of: {allowed}"
+    )
+
+
+def validate_solver_benchmark_type(benchmark_type: str) -> None:
+    if benchmark_type.startswith(SMT_BENCHMARK_PREFIX):
+        raise ValueError(
+            f"SMT benchmark_type {benchmark_type!r} is not supported by the "
+            "solver runtime yet; choose a non-SMT benchmark_type"
+        )
 
 
 @dataclass

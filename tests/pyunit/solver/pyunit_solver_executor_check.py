@@ -32,6 +32,7 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         problem = make_problem()
         args = argparse.Namespace(
             max_trials=8,
+            config_path="",
             benchmark_type="custom_bin",
             specific_benchmarks="",
             custom_bin="/tmp/demo.bin",
@@ -51,6 +52,7 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         problem = make_problem()
         args = argparse.Namespace(
             max_trials=None,
+            config_path="",
             benchmark_type="custom_bin",
             specific_benchmarks="mcf",
             custom_bin="/tmp/demo.bin",
@@ -64,6 +66,7 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         problem = make_problem()
         args = argparse.Namespace(
             max_trials=None,
+            config_path="",
             benchmark_type="custom_bin",
             specific_benchmarks="",
             custom_bin="",
@@ -77,6 +80,7 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         problem = make_problem()
         args = argparse.Namespace(
             max_trials=None,
+            config_path="",
             benchmark_type="spec17-1.0c",
             specific_benchmarks="mcf",
             custom_bin="/tmp/demo.bin",
@@ -99,6 +103,7 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         )
         args = argparse.Namespace(
             max_trials=None,
+            config_path="",
             benchmark_type="custom_bin",
             specific_benchmarks="",
             custom_bin="/tmp/demo.bin",
@@ -106,6 +111,53 @@ class SolverRuntimeOverrideTestCase(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "benchmark_type=custom_bin"):
+            apply_runtime_overrides(problem, args)
+
+    def test_apply_runtime_overrides_normalizes_supported_config_basename(self):
+        problem = make_problem()
+        args = argparse.Namespace(
+            max_trials=None,
+            config_path="kmhv3.py",
+            benchmark_type="spec17-1.0c",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+        )
+
+        updated = apply_runtime_overrides(problem, args)
+
+        self.assertEqual(updated.config_path, "configs/example/kmhv3.py")
+        self.assertIn(
+            "config_path overridden at runtime: configs/example/kmhv3.py",
+            runtime_messages(updated),
+        )
+
+    def test_apply_runtime_overrides_rejects_unsupported_config_path(self):
+        problem = make_problem()
+        args = argparse.Namespace(
+            max_trials=None,
+            config_path="configs/example/smt_idealkmhv3.py",
+            benchmark_type="gcc15-spec06-0.3c",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+        )
+
+        with self.assertRaisesRegex(ValueError, "unsupported config_path"):
+            apply_runtime_overrides(problem, args)
+
+    def test_apply_runtime_overrides_rejects_smt_benchmark_type(self):
+        problem = make_problem()
+        args = argparse.Namespace(
+            max_trials=None,
+            config_path="",
+            benchmark_type="gcc12-spec06-smt-0.3c",
+            specific_benchmarks="",
+            custom_bin="",
+            extra_args="",
+        )
+
+        with self.assertRaisesRegex(ValueError, "SMT benchmark_type"):
             apply_runtime_overrides(problem, args)
 
 

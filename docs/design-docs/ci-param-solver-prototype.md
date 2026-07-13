@@ -11,6 +11,8 @@
 - 框架解析并校验用户输入
 - 使用最简单的随机搜索或穷举搜索生成 trial
 - 在现有 CI 的单机环境中执行 trial，可串行也可并行
+- 在 CI 手动入口中允许用户在受限的非 SMT Kunminghu config 范围内覆盖
+  spec 默认 `config_path`
 - 对 trial 结果做聚合、过滤、持久化
 - 在 CI 中输出简明表格与基础图表
 
@@ -47,6 +49,9 @@
 - 通用 resume/restart 协议
 - 任意 Python 脚本作为目标函数的完全自由执行模型
 - 对所有 gem5 config 脚本零修改兼容
+- SMT config 与 `gcc12-spec06-smt-*` benchmark_type
+- 任意 repo 相对 config path；当前只允许 `configs/example/idealkmhv3.py`、
+  `configs/example/kmhv3.py`、`configs/example/kmhv2.py`
 - 对任意 `VectorParam` 进行复杂结构搜索
 
 ## 3. 分层架构
@@ -70,6 +75,7 @@
   - branch/SHA
   - note
   - benchmark override
+  - configuration override
 
 输出：
 
@@ -269,6 +275,17 @@ class EStrideSearch(SolveSpec):
     objective = Maximize.score_txt("Estimated Int score per GHz")
     stop = Stop(max_trials=24, no_improve_trials=8, timeout_hours=12)
 ```
+
+CI / CLI 允许在运行时用 `configuration` / `--config-path` 覆盖 spec 中的
+`config_path`，但仅限以下非 SMT config：
+
+- `configs/example/idealkmhv3.py`
+- `configs/example/kmhv3.py`
+- `configs/example/kmhv2.py`
+
+这个覆盖只改变 gem5 config 入口，不保证某个 spec 的 `target` 路径在所有 config
+上都存在。例如 `VTAGEIPCSearch` 依赖 `idealkmhv3.py` 中的 value predictor 层级，
+切到 `kmhv3.py` 或 `kmhv2.py` 时应先用 bind-only/dry-run 验证 target 绑定。
 
 对于原型跑通案例，推荐的示例更接近下面这种形式：
 
