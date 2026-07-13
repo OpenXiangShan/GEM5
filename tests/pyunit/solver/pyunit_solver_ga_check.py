@@ -36,6 +36,31 @@ class TinyGaMinSearch(SolveSpec):
     stop = Stop(max_trials=4)
 
 
+class HookedVectorDomain:
+    def sample(self, rng):
+        return [rng.randrange(10), rng.randrange(10)]
+
+    def mutate(self, rng, value):
+        return [value[0], value[1] + 1]
+
+    def crossover(self, rng, left, right):
+        return [left[0], right[1]], [right[0], left[1]]
+
+    def cardinality(self):
+        return 100
+
+    def to_dict(self):
+        return {"kind": "hooked_vector"}
+
+
+class TinyGaHookedDomainSearch(SolveSpec):
+    config_path = "configs/example/idealkmhv3.py"
+    benchmark_type = "gcc15-spec06-0.3c"
+    vector = TunableParam.VectorUnsigned(domain=HookedVectorDomain())
+    objective = Maximize.stats("system.cpu.ipc")
+    stop = Stop(max_trials=4)
+
+
 class GaSolverTestCase(unittest.TestCase):
     def test_ga_proposes_unique_trials_and_reports_progress(self):
         problem = parse_problem(f"{__file__}:TinyGaSearch")
@@ -114,6 +139,19 @@ class GaSolverTestCase(unittest.TestCase):
             )
         solver.propose(history, 2)
         self.assertEqual(solver.report_metadata()["last_best_objective"], 5.0)
+
+    def test_ga_uses_domain_hooks_when_present(self):
+        problem = parse_problem(f"{__file__}:TinyGaHookedDomainSearch")
+        solver = GaSolver(problem, seed=1, population_size=4)
+        child_a, child_b = solver._crossover_assignments(
+            {"vector": [1, 2]},
+            {"vector": [3, 4]},
+        )
+        self.assertEqual(child_a["vector"], [1, 4])
+        self.assertEqual(child_b["vector"], [3, 2])
+
+        mutated = solver._mutate_assignment({"vector": [5, 6]})
+        self.assertEqual(mutated["vector"], [5, 7])
 
 
 if __name__ == "__main__":

@@ -135,14 +135,28 @@ class GaSolver(BaseSolver):
         mutate_count = max(1, int(len(parameters) * self._mutation_prob))
         chosen = self._rng.sample(parameters, k=min(len(parameters), mutate_count))
         for parameter in chosen:
-            mutated[parameter.name] = parameter.domain.sample(self._rng)
+            mutate = getattr(parameter.domain, "mutate", None)
+            if callable(mutate):
+                mutated[parameter.name] = mutate(
+                    self._rng,
+                    mutated[parameter.name],
+                )
+            else:
+                mutated[parameter.name] = parameter.domain.sample(self._rng)
         return mutated
 
     def _crossover_assignments(self, left: dict, right: dict) -> tuple[dict, dict]:
         child_a = {}
         child_b = {}
         for parameter in self.problem.parameters:
-            if self._rng.random() < 0.5:
+            crossover = getattr(parameter.domain, "crossover", None)
+            if callable(crossover):
+                child_a[parameter.name], child_b[parameter.name] = crossover(
+                    self._rng,
+                    left[parameter.name],
+                    right[parameter.name],
+                )
+            elif self._rng.random() < 0.5:
                 child_a[parameter.name] = left[parameter.name]
                 child_b[parameter.name] = right[parameter.name]
             else:
