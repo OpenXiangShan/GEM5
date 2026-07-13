@@ -588,11 +588,11 @@ class Commit
          */
         statistics::Scalar commitNonSpecStalls;
 
-        statistics::Scalar recovery_bubble;
+        statistics::Vector recovery_bubble;
         /** Stat for the total number of branch mispredicts that caused a
          * squash.
          */
-        statistics::Scalar branchMispredicts;
+        statistics::Vector branchMispredicts;
         /** Distribution of the number of committed instructions each cycle. */
         statistics::Distribution numCommittedDist;
 
@@ -642,16 +642,16 @@ class Commit
         statistics::Scalar vectorVta;
         statistics::Scalar vectorVtu;
 
-        statistics::Scalar squashDueToBranch;
-        statistics::Scalar squashDueToOrderViolation;
-        statistics::Scalar squashDueToValuePrediction;
-        statistics::Scalar squashDueToTrap;
-        statistics::Scalar squashDueToTC;
-        statistics::Scalar squashDueToSquashAfter;
+        statistics::Vector squashDueToBranch;
+        statistics::Vector squashDueToOrderViolation;
+        statistics::Vector squashDueToValuePrediction;
+        statistics::Vector squashDueToTrap;
+        statistics::Vector squashDueToTC;
+        statistics::Vector squashDueToSquashAfter;
         statistics::Formula totalSquash;
     } stats;
 
-    bool ismispred = false;
+    bool ismispred[MaxThreads] = {false};
 
     Tick lastCommitTick;
 

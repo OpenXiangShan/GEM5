@@ -234,6 +234,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         .init(cpu->numThreads)
         .flags(statistics::total);
 
+    dispatchedInsts
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
     wbRate
         .flags(statistics::total);
     wbRate = writebackCount / cpu->baseStats.numCycles;
@@ -1181,7 +1185,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
         }
         ppDispatch->notify(inst);
 
-        ++iewStats.dispatchedInsts;
+        ++iewStats.dispatchedInsts[tid];
 
         insts_to_dispatch.pop_front();
         dispatched++;
@@ -1282,7 +1286,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
                     ++iewStats.dispNonSpecInsts;
                 }
             }
-            ++iewStats.dispatchedInsts;
+            ++iewStats.dispatchedInsts[tid];
             dispQue[id].push_back(inst);
 
             if (!inst->isNop() && !inst->isEliminated()) {
