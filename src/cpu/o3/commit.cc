@@ -1536,6 +1536,17 @@ Commit::commitInsts()
                             RiscvISA::MiscRegIndex::MISCREG_STATUS,
                             (RegVal)status, tid);
                     }
+                    if (head_inst->isVector() &&
+                        (head_inst->numDestRegs() > 0 ||
+                         head_inst->staticInst->isVectorConfig())) {
+                        RiscvISA::STATUS status = cpu->readMiscRegNoEffect(
+                            RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
+                        status.sd = 1;
+                        status.vs = 3;
+                        cpu->setMiscRegNoEffect(
+                            RiscvISA::MiscRegIndex::MISCREG_STATUS,
+                            (RegVal)status, tid);
+                    }
                     if (head_inst->isUpdateVsstatusSd()) {
                         auto v = cpu->readMiscRegNoEffect(
                             RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
