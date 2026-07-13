@@ -1184,10 +1184,18 @@ def format VectorReduceIntFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = """
+        (_microIdx + 1 == (vflmul < 1 ? 1 : vflmul))
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    old_dest_reg_id = """
+        (_microIdx == 0)
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
@@ -1244,10 +1252,18 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, VecTempReg0)"
+    dest_reg_id = """
+        (_microIdx + 1 == (vflmul < 1 ? 1 : vflmul))
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    old_dest_reg_id = """
+        (_microIdx == 0)
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
@@ -1302,10 +1318,18 @@ def format VectorReduceFloatWideningFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = """
+        (_microIdx + 1 == (vflmul < 1 ? 1 : vflmul))
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    old_dest_reg_id = """
+        (_microIdx == 0)
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
@@ -1402,10 +1426,18 @@ def format VectorReduceIntWideningFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = """
+        (_microIdx + 1 == (vflmul < 1 ? 1 : vflmul))
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
-    old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    old_dest_reg_id = """
+        (_microIdx == 0)
+            ? RegId(VecRegClass, _machInst.vd)
+            : RegId(VecRegClass, VecTempReg0)
+    """
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
