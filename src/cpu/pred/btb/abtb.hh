@@ -153,11 +153,6 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    /** Returns whether the last AheadBTB prediction produced any native hit
-     *  entries before mixing with uBTB stage-0 output.
-     */
-    bool lastPredHasEntries(ThreadID tid) const;
-
     void recoverState(const FetchTarget &entry);
 
 #ifndef UNIT_TEST

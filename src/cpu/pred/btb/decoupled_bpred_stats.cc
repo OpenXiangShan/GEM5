@@ -16,44 +16,6 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-namespace
-{
-
-constexpr int NumS1SourceBuckets = 3;
-constexpr int NumOverrideReasonBuckets = 4;
-
-constexpr const char *S1SourceLabels[NumS1SourceBuckets] = {
-    "fallthrough",
-    "ubtb",
-    "abtb"
-};
-
-constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
-    "no_override",
-    "fall_thru",
-    "control_addr",
-    "target"
-};
-
-int
-overrideReasonBucket(OverrideReason reason)
-{
-    switch (reason) {
-      case OverrideReason::NO_OVERRIDE:
-        return 0;
-      case OverrideReason::FALL_THRU:
-        return 1;
-      case OverrideReason::CONTROL_ADDR:
-        return 2;
-      case OverrideReason::TARGET:
-        return 3;
-    }
-
-    return 0;
-}
-
-} // namespace
-
 void
 DecoupledBPUWithBTB::initDB()
 {
@@ -495,8 +457,6 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
-    ADD_STAT(s1PredWrongBySourceAndReason, statistics::units::Count::get(),
-             "committed S1 mispredictions bucketed by S1 source and override reason"),
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
     ADD_STAT(s3PredWrongTage, statistics::units::Count::get(), "S3pred wrong blame tage "),
     ADD_STAT(s3PredWrongIttage, statistics::units::Count::get(), "S3pred wrong blame ittage "),
@@ -510,16 +470,9 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
-    s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
     branchClassCounts.init(NumBranchClasses);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
-    for (int i = 0; i < NumS1SourceBuckets; ++i) {
-        s1PredWrongBySourceAndReason.subname(i, S1SourceLabels[i]);
-    }
-    for (int i = 0; i < NumOverrideReasonBuckets; ++i) {
-        s1PredWrongBySourceAndReason.ysubname(i, OverrideReasonLabels[i]);
-    }
     for (size_t i = 0; i < NumBranchClasses; ++i) {
         branchClassCounts.subname(i, BranchClassLabels[i]);
         branchClassMisses.subname(i, BranchClassLabels[i]);
@@ -541,6 +494,9 @@ void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
             case OverrideReason::TARGET:
                 dbpBtbStats.overrideTargetMismatch++;
                 break;
+            case OverrideReason::END:
+            case OverrideReason::HIST_INFO:
+            case OverrideReason::NO_OVERRIDE:
             default:
                 break;
         }
@@ -887,21 +843,15 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     auto exeBranchInfo = entry.exeBranchInfo;
 
     bool onlyDirectionWrong = entry.exeTaken != entry.predTaken;
-    int s1SourceBucket = 0;
 
     assert(s1PredSource < mbtbid);
     if (s1PredSource == ubtbid) {
         dbpBtbStats.s1PredWrongUbtb++;
-        s1SourceBucket = 1;
     } else if (s1PredSource == abtbid) {
         dbpBtbStats.s1PredWrongAbtb++;
-        s1SourceBucket = 2;
     }else {
         dbpBtbStats.s1PredWrongFallthrough++;
     }
-
-    dbpBtbStats.s1PredWrongBySourceAndReason
-        [s1SourceBucket][overrideReasonBucket(entry.overrideReason)]++;
 
     if (s3PredSource == rasid) {
         if (exeBranchInfo.isCond) {

@@ -265,7 +265,6 @@ DecoupledBPUWithBTB::tick()
             }
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
-            threads[tid].nextPredictionAfterSquash = true;
             tage->dryRunCycle(threads[tid].s0PC);
             DPRINTF(Override, "Squashing, BPU state updated.\n");
             threads[tid].squashing = false;
@@ -451,11 +450,6 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     // 4. Record override bubbles and update statistics
     if (first_hit_stage > 0) {
         dbpBtbStats.overrideCount++;
-        if (finalPred.s1Source == ubtb->getComponentIdx()) {
-            ubtb->recordS1OverrideDetail(overrideReason,
-                                         abtb->lastPredHasEntries(tid),
-                                         threads[tid].nextPredictionAfterSquash);
-        }
     }
 
     // 5. Finalize prediction process
@@ -527,7 +521,6 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 5. Add entry to fetch target queue
     ftq.insert(entry);
-    threads[tid].nextPredictionAfterSquash = false;
     threads[tid].validprediction = false;
 
     // 6. Debug output and update statistics

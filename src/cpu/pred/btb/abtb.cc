@@ -375,15 +375,6 @@ AheadBTB::getPredictionMeta(ThreadID tid)
     return state.meta;
 }
 
-bool
-AheadBTB::lastPredHasEntries(ThreadID tid) const
-{
-    if (tid >= threadStates.size()) {
-        return false;
-    }
-    return !threadState(tid).lastPredEntries.empty();
-}
-
 void
 AheadBTB::recoverState(const FetchTarget &entry)
 {

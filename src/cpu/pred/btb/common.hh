@@ -98,7 +98,9 @@ enum class OverrideReason
     NO_OVERRIDE,
     FALL_THRU,
     CONTROL_ADDR,
-    TARGET
+    TARGET,
+    END,
+    HIST_INFO
 };
 
 enum class HistoryType

@@ -141,7 +141,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
-        bool nextPredictionAfterSquash{false};
         bool blockPredictionPending{false};
     } threads[MaxThreads];
 
@@ -310,7 +309,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
         statistics::Scalar s1PredWrongAbtb;
-        statistics::Vector2d s1PredWrongBySourceAndReason;
         statistics::Scalar s3PredWrongMbtb;
         statistics::Scalar s3PredWrongTage;
         statistics::Scalar s3PredWrongIttage;

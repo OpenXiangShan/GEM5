@@ -44,53 +44,6 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-namespace
-{
-
-constexpr int NumOverrideReasonBuckets = 3;
-constexpr int NumBoolBuckets = 2;
-
-constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
-    "fall_thru",
-    "control_addr",
-    "target"
-};
-
-constexpr const char *AbtbHitLabels[NumBoolBuckets] = {
-    "abtb_miss",
-    "abtb_hit"
-};
-
-constexpr const char *AfterSquashLabels[NumBoolBuckets] = {
-    "normal",
-    "after_squash"
-};
-
-int
-overrideReasonBucket(OverrideReason reason)
-{
-    switch (reason) {
-      case OverrideReason::FALL_THRU:
-        return 0;
-      case OverrideReason::CONTROL_ADDR:
-        return 1;
-      case OverrideReason::TARGET:
-        return 2;
-      case OverrideReason::NO_OVERRIDE:
-        break;
-    }
-
-    return -1;
-}
-
-int
-boolBucket(bool value)
-{
-    return value ? 1 : 0;
-}
-
-} // namespace
-
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
       lastPred(),
@@ -468,23 +421,6 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     }
 }
 
-void
-UBTB::recordS1OverrideDetail(OverrideReason reason,
-                             bool abtbHit,
-                             bool afterSquash)
-{
-    const int reasonBucket = overrideReasonBucket(reason);
-    if (reasonBucket < 0) {
-        return;
-    }
-
-    ubtbStats.s1OverrideByReason[reasonBucket]++;
-    ubtbStats.s1OverrideByReasonAndAbtbHit
-        [reasonBucket][boolBucket(abtbHit)]++;
-    ubtbStats.s1OverrideByReasonAndAfterSquash
-        [reasonBucket][boolBucket(afterSquash)]++;
-}
-
 // Initialize uBTB statistics
 UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
     : statistics::Group(parent),
@@ -538,29 +474,8 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(s1Misses3Taken, statistics::units::Count::get(), "s1 misses s3 predicted taken"),
       ADD_STAT(s1Hits3Taken, statistics::units::Count::get(), "s1 hits s3 predicted taken"),
       ADD_STAT(s1Misses3FallThrough, statistics::units::Count::get(), "s1 misses s3 predicted fall through"),
-      ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries"),
-      ADD_STAT(s1OverrideByReason, statistics::units::Count::get(),
-               "uBTB-sourced S1 override events bucketed by override reason"),
-      ADD_STAT(s1OverrideByReasonAndAbtbHit, statistics::units::Count::get(),
-               "uBTB-sourced S1 override events bucketed by override reason and native aBTB hit"),
-      ADD_STAT(s1OverrideByReasonAndAfterSquash, statistics::units::Count::get(),
-               "uBTB-sourced S1 override events bucketed by override reason "
-               "and whether the prediction is the first one after squash "
-               "recovery")
+      ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries")
 {
-    s1OverrideByReason.init(NumOverrideReasonBuckets);
-    s1OverrideByReasonAndAbtbHit.init(NumOverrideReasonBuckets, NumBoolBuckets);
-    s1OverrideByReasonAndAfterSquash.init(NumOverrideReasonBuckets, NumBoolBuckets);
-
-    for (int i = 0; i < NumOverrideReasonBuckets; ++i) {
-        s1OverrideByReason.subname(i, OverrideReasonLabels[i]);
-        s1OverrideByReasonAndAbtbHit.subname(i, OverrideReasonLabels[i]);
-        s1OverrideByReasonAndAfterSquash.subname(i, OverrideReasonLabels[i]);
-    }
-    for (int i = 0; i < NumBoolBuckets; ++i) {
-        s1OverrideByReasonAndAbtbHit.ysubname(i, AbtbHitLabels[i]);
-        s1OverrideByReasonAndAfterSquash.ysubname(i, AfterSquashLabels[i]);
-    }
 }
 
 }  // namespace btb_pred
