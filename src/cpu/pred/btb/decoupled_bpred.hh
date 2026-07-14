@@ -142,14 +142,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
         FullBTBPrediction secondBlockTrainPred;
-        FetchTarget pendingSecondBlockEntry;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
         bool nextPredictionAfterSquash{false};
         bool blockPredictionPending{false};
         bool redirectPending{false};
-        bool pendingSecondBlockValid{false};
         bool secondBlockTrainPredReady{false};
         bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
@@ -178,7 +176,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
     bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
     bool pairtageFirstBlockMatchesForSecondBlock(ThreadID tid) const;
-    bool predictionMatchesPairtageFirstBlock(const FullBTBPrediction &pred) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);

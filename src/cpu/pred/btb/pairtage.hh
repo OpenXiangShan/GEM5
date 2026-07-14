@@ -107,8 +107,6 @@ class PairTAGE : public TimedBaseBTBPredictor
         {
         }
 
-        bool taken() const { return counter >= 0; }
-
         const PairBlockInfo &firstBlock() const { return blocks[0]; }
 
         const PairBlockInfo &secondBlock() const { return blocks[1]; }
@@ -126,15 +124,9 @@ class PairTAGE : public TimedBaseBTBPredictor
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
-        bool aheadIndexFoldedHistValid;
+        bool aheadIndexFoldedHistValid{false};
         std::vector<PathFoldedHist> aheadIndexFoldedHist;
-        bitset history;
-        bool firstBlockValid;
-        bool secondBlockValid;
         PairBlockInfo predictedFirstBlock;
-        PairBlockInfo predictedSecondBlock;
-
-        TageMeta() : aheadIndexFoldedHistValid(false), firstBlockValid(false), secondBlockValid(false) {}
     };
 
     struct TageTableInfo
@@ -161,11 +153,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     };
 
     PairTAGE(const Params &p);
-    ~PairTAGE();
 
-    void tickStart() override;
-    void tick() override;
-    void dryRunCycle(Addr startAddr) override;
     void putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
@@ -175,17 +163,14 @@ class PairTAGE : public TimedBaseBTBPredictor
     void specUpdatePHist(const bitset &history,
                          FullBTBPrediction &pred,
                          const PathHistoryUpdate &update) override;
-    void recoverHist(const bitset &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
     void recoverPHist(const bitset &history,
                       const FetchTarget &entry,
                       const PathHistoryUpdate &update) override;
-    void update(const FetchTarget &entry) override;
     PairBlockInfo getSecondPredBlock() const;
     void setPredictionPhase(PairPhase phase);
     void trainFromS3Pred(const FetchTarget &entry,
-                             const FullBTBPrediction *secondPred = nullptr);
+                         const FullBTBPrediction *secondPred = nullptr);
     bool secondBlockEnabled() const { return enableSecondBlock; }
-    bool oddPhaseAllowed() const { return allowOddPhase; }
     bool phaseEnabled(PairPhase phase) const
     {
         return allowOddPhase || phase == PairPhase::Even;
@@ -220,9 +205,7 @@ class PairTAGE : public TimedBaseBTBPredictor
                          const PairBlockInfo &trainedSecondBlock,
                          unsigned startTable);
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist) const;
-    Addr getTageIndex(Addr pc, int table) const;
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist) const;
-    unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC) const;
     Addr getFallThrough(Addr startPC) const;
     bool isBranchInFirstBlock(Addr branchPC, Addr startPC) const;
     void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
@@ -237,11 +220,9 @@ class PairTAGE : public TimedBaseBTBPredictor
     std::vector<PathFoldedHist> altTagFoldedHist;
     std::vector<PathFoldedHist> indexFoldedHist;
     LFSR64 allocLFSR;
-    unsigned maxHistLen;
     const unsigned numTablesToAlloc;
     const unsigned numWays;
     std::vector<std::vector<std::vector<PairTAGEEntry>>> tageTable;
-    const unsigned maxBranchPositions;
     int usefulResetCnt{0};
     unsigned instShiftAmt{1};
     std::queue<std::vector<PathFoldedHist>> aheadIndexFoldedHist;

@@ -55,10 +55,8 @@ PairTAGE::PairTAGE(const Params &p)
       tableTagBits(p.TTagBitSizes),
       tablePcShifts(p.TTagPcShifts),
       histLengths(p.histLengths),
-      maxHistLen(p.maxHistLen),
       numTablesToAlloc(p.numTablesToAlloc),
       numWays(p.numWays),
-      maxBranchPositions(p.maxBranchPositions),
       enableSecondBlock(p.enableSecondBlock),
       allowOddPhase(p.allowOddPhase),
       trainStandaloneFallThrough(p.trainStandaloneFallThrough)
@@ -84,24 +82,6 @@ PairTAGE::PairTAGE(const Params &p)
     }
 }
 
-PairTAGE::~PairTAGE() = default;
-
-void
-PairTAGE::tickStart()
-{
-}
-
-void
-PairTAGE::tick()
-{
-}
-
-void
-PairTAGE::dryRunCycle(Addr startAddr)
-{
-    (void)startAddr;
-}
-
 void
 PairTAGE::setPredictionPhase(PairPhase phase)
 {
@@ -111,6 +91,7 @@ PairTAGE::setPredictionPhase(PairPhase phase)
 void
 PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
 {
+    (void)history;
     secondPredBlock.clear();
 
     meta = std::make_shared<TageMeta>();
@@ -121,9 +102,6 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     if (meta->aheadIndexFoldedHistValid) {
         meta->aheadIndexFoldedHist = aheadIndexFoldedHist.front();
     }
-    meta->history = history;
-    meta->predictedFirstBlock.clear();
-    meta->predictedSecondBlock.clear();
 
     if (!phaseEnabled(predictionPhase)) {
         return;
@@ -134,10 +112,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
         return;
     }
 
-    meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
-    meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
-    meta->predictedSecondBlock = tableInfo.entry.secondBlock();
     secondPredBlock = tableInfo.entry.secondBlock();
 
     if (!tableInfo.entry.firstBlock().valid) {
@@ -161,6 +136,7 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
                                 const bitset &history,
                                 FullBTBPrediction &pred)
 {
+    (void)history;
     (void)pred;
 
     meta = std::make_shared<TageMeta>();
@@ -171,9 +147,6 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
     if (meta->aheadIndexFoldedHistValid) {
         meta->aheadIndexFoldedHist = aheadIndexFoldedHist.front();
     }
-    meta->history = history;
-    meta->predictedFirstBlock.clear();
-    meta->predictedSecondBlock.clear();
 
     if (!phaseEnabled(predictionPhase)) {
         return;
@@ -184,10 +157,7 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
         return;
     }
 
-    meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
-    meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
-    meta->predictedSecondBlock = tableInfo.entry.secondBlock();
 }
 
 PairTAGE::PairBlockInfo
@@ -420,16 +390,6 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
 }
 
 void
-PairTAGE::recoverHist(const bitset &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken)
-{
-    (void)history;
-    (void)entry;
-    (void)shamt;
-    (void)cond_taken;
-}
-
-void
 PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
                           const PathHistoryUpdate &update)
 {
@@ -461,15 +421,6 @@ PairTAGE::recoverPHist(const bitset &history, const FetchTarget &entry,
     }
 
     doUpdateHist(history, update.taken, update.pc, update.target);
-}
-
-void
-PairTAGE::update(const FetchTarget &entry)
-{
-    (void)entry;
-
-    // Training is intentionally deferred. The table storage is fully
-    // initialized and exposed, but no state mutation happens on update yet.
 }
 
 PairTAGE::ProviderInfo
@@ -752,7 +703,7 @@ PairTAGE::entryMatchesTraining(const PairTAGEEntry &entry,
 
 void
 PairTAGE::trainFromS3Pred(const FetchTarget &entry,
-                              const FullBTBPrediction *secondPred)
+                          const FullBTBPrediction *secondPred)
 {
     if (!phaseEnabled(entry.pairPhase)) {
         return;
@@ -932,29 +883,6 @@ PairTAGE::getTageIndex(Addr pc, int table, uint64_t foldedHist) const
     const Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
-}
-
-Addr
-PairTAGE::getTageIndex(Addr pc, int table) const
-{
-    return getTageIndex(pc, table, indexFoldedHist[table].get());
-}
-
-unsigned
-PairTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) const
-{
-    const Addr alignedPC = startPC & ~(blockSize - 1);
-    unsigned position = 0;
-
-    if (branchPC >= alignedPC) {
-        position = (branchPC - alignedPC) >> instShiftAmt;
-    }
-
-    if (position >= maxBranchPositions) {
-        position %= maxBranchPositions;
-    }
-
-    return position;
 }
 
 Addr

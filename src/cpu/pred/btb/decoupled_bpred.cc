@@ -572,11 +572,9 @@ DecoupledBPUWithBTB::tick()
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
             threads[tid].nextPredictionAfterSquash = true;
-            threads[tid].pendingSecondBlockValid = false;
             threads[tid].secondBlockTrainPredReady = false;
             threads[tid].firstBlockProcessedThisTick = false;
             threads[tid].secondBlockTrainPred = FullBTBPrediction();
-            threads[tid].pendingSecondBlockEntry = FetchTarget();
             tage->dryRunCycle(threads[tid].s0PC);
             DPRINTF(Override, "Squashing, BPU state updated.\n");
             threads[tid].squashing = false;
@@ -882,9 +880,6 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 {
     auto &thread = threads[tid];
 
-    thread.pendingSecondBlockValid = false;
-    thread.pendingSecondBlockEntry = FetchTarget();
-
     if (!thread.firstBlockProcessedThisTick) {
         return;
     }
@@ -952,17 +947,12 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     }
     refreshSecondBlockPredictionMetas(tid, secondPred);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
-    entry.pairtageUsed = true;
-    entry.pairtageSecondBlock = true;
 
     thread.s0PC = secondPred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
     ftq.insert(entry);
     advancePairPhase(thread.s0PairPhase);
-
-    thread.pendingSecondBlockEntry = entry;
-    thread.pendingSecondBlockValid = true;
 
     DPRINTF(DecoupleBP,
             "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
@@ -1081,8 +1071,7 @@ DecoupledBPUWithBTB::pairtageFirstBlockMatchesForSecondBlock(ThreadID tid) const
     auto &thread = threads[tid];
     auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
         pairtage->getPredictionMeta());
-    if (!pairMeta || !pairMeta->firstBlockValid ||
-        !pairMeta->predictedFirstBlock.valid) {
+    if (!pairMeta || !pairMeta->predictedFirstBlock.valid) {
         return false;
     }
 
@@ -1093,26 +1082,6 @@ DecoupledBPUWithBTB::pairtageFirstBlockMatchesForSecondBlock(ThreadID tid) const
     }
 
     return pairBlocksMatch(actualFirstBlock, pairMeta->predictedFirstBlock);
-}
-
-bool
-DecoupledBPUWithBTB::predictionMatchesPairtageFirstBlock(
-    const FullBTBPrediction &pred) const
-{
-    if (!pairtage || !pairtage->isEnabled()) {
-        return false;
-    }
-
-    auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
-        pairtage->getPredictionMeta());
-    if (!pairMeta || !pairMeta->firstBlockValid ||
-        !pairMeta->predictedFirstBlock.valid) {
-        return false;
-    }
-
-    return pairBlocksMatch(
-        buildFirstTrainingPairBlockFromPrediction(pred, predictWidth),
-        pairMeta->predictedFirstBlock);
 }
 
 /**
@@ -1496,7 +1465,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     auto pairMeta = pairtage ? std::static_pointer_cast<PairTAGE::TageMeta>(
         pairtage->getPredictionMeta()) : nullptr;
     const bool pairtageFallThroughHit = pairMeta &&
-        pairMeta->firstBlockValid &&
         pairMeta->predictedFirstBlock.valid &&
         pairMeta->predictedFirstBlock.isFallThrough();
 
@@ -1525,8 +1493,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.predTick = pred.predTick;
     entry.predSource = pred.predSource;
     entry.overrideReason = pred.overrideReason;
-    entry.pairtageUsed = predictionMatchesPairtageFirstBlock(pred);
-    entry.pairtageSecondBlock = false;
 
     entry.s1Source = pred.s1Source;
     entry.s3Source = pred.s3Source;
