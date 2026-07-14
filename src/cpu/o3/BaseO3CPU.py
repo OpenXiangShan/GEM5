@@ -211,7 +211,7 @@ class BaseO3CPU(BaseCPU):
     EnableReplayBasedMDP = Param.Bool(True,
         "Use replay-based mem dependency prediction (loads don't stall in IQ, "
         "but may replay in load pipe)")
-    EnableMDPStrictWait = Param.Bool(False,
+    EnableMDPStrictWait = Param.Bool(True,
         "Enable StoreSet strict-wait in mem dep prediction (checkInstStrict)")
 
     numPhysIntRegs = Param.Unsigned(224,
