@@ -59,7 +59,10 @@ namespace o3
 {
 
 Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
-    : cpu(_cpu),
+    : ratSnapshotActive(params.robWalkPolicy == ROBWalkPolicy::NaiveCpt),
+      numMaxRatSnapshot(params.numMaxRatSnapshot),
+      ratSnapshotDistance(params.ratSnapshotDistance),
+      cpu(_cpu),
       iewToRenameDelay(params.iewToRenameDelay),
       decodeToRenameDelay(params.decodeToRenameDelay),
       commitToRenameDelay(params.commitToRenameDelay),
@@ -151,7 +154,15 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
       ADD_STAT(stallEvents, statistics::units::Count::get(),
                "count of stall events"),
       ADD_STAT(smtStallEvents, statistics::units::Count::get(),
-               "Number of events the Rename has stalled per thread")
+               "Number of events the Rename has stalled per thread"),
+      ADD_STAT(assignedRatSnapshot, statistics::units::Count::get(),
+               "Number of RAT checkpoints taken"),
+      ADD_STAT(committedRatSnapshot, statistics::units::Count::get(),
+               "Number of RAT checkpoints released at commit"),
+      ADD_STAT(squashedRatSnapshot, statistics::units::Count::get(),
+               "Number of RAT checkpoints discarded on squash"),
+      ADD_STAT(distanceRatSnapshot, statistics::units::Count::get(),
+               "Instruction distance between successive RAT checkpoints")
 {
     squashCycles.prereq(squashCycles);
     idleCycles.prereq(idleCycles);
@@ -204,6 +215,8 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
         stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
         smtStallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
     }
+
+    distanceRatSnapshot.init(10, 100, 5).flags(statistics::pdf);
 }
 
 void
@@ -272,7 +285,11 @@ Rename::resetStage()
         stalls[tid].iew = false;
         finalCommitSeq[tid] = 0;
         releaseSeq[tid] = 0;
+        ratSnapshotBuffer[tid].clear();
     }
+
+    numRatSnapshotInUse = 0;
+    lastRatSnapshotDistance = 0;
 }
 
 void
@@ -306,7 +323,8 @@ Rename::isDrained() const
 {
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         if (!historyBuffer[tid].empty() ||
-            !fixedbuffer[tid].empty())
+            !fixedbuffer[tid].empty() ||
+            !ratSnapshotBuffer[tid].empty())
             return false;
     }
     return true;
@@ -324,6 +342,7 @@ Rename::drainSanityCheck() const
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         assert(historyBuffer[tid].empty());
         assert(fixedbuffer[tid].empty());
+        assert(ratSnapshotBuffer[tid].empty());
     }
 }
 
@@ -477,6 +496,8 @@ Rename::releasePhysRegs()
         }
 
         removeFromHistory(releaseSeq[tid], tid);
+        if (ratSnapshotActive)
+            commitSnapshot(finalCommitSeq[tid], tid);
         // doneSeqNum is also reused as a squash-progress marker while the
         // ROB is walking younger entries. Only real commit progress should
         // release physical registers.
@@ -585,6 +606,14 @@ Rename::renameInsts(ThreadID tid)
         renameSrcRegs(inst, inst->threadNumber);
 
         renameDestRegs(inst, inst->threadNumber);
+
+        if (ratSnapshotActive) {
+            if (ratSnapshotAvailable() && suitableForRatSnapshot(inst)) {
+                takeSnapshot(inst, tid);
+            } else {
+                ++lastRatSnapshotDistance;
+            }
+        }
 
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtRename);
 
@@ -742,6 +771,9 @@ Rename::tryFreePReg(PhysRegIdPtr preg)
 void
 Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
 {
+    if (ratSnapshotActive)
+        squashSnapshot(squashed_seq_num, tid);
+
     auto hb_it = historyBuffer[tid].begin();
 
     // After a syscall squashes everything, the history buffer may be empty
@@ -784,6 +816,71 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
 
         ++stats.undoneMaps;
     }
+}
+
+int
+Rename::countRatSnapshots()
+{
+    int total = 0;
+    for (ThreadID tid = 0; tid < numThreads; tid++)
+        total += countRatSnapshots(tid);
+    return total;
+}
+
+size_t
+Rename::countRatSnapshots(ThreadID tid)
+{
+    return ratSnapshotBuffer[tid].size();
+}
+
+void
+Rename::takeSnapshot(const DynInstPtr &inst, ThreadID tid)
+{
+    inst->setRatSnapshotted();
+    numRatSnapshotInUse++;
+    ratSnapshotBuffer[tid].push_front(inst->seqNum);
+    assert(numRatSnapshotInUse <= numMaxRatSnapshot);
+
+    stats.assignedRatSnapshot++;
+    stats.distanceRatSnapshot.sample(lastRatSnapshotDistance);
+    lastRatSnapshotDistance = 0;
+
+    DPRINTF(Rename, "[tid:%i] Took RAT checkpoint at [sn:%llu], inUse %d\n",
+            tid, inst->seqNum, numRatSnapshotInUse);
+}
+
+void
+Rename::commitSnapshot(InstSeqNum commit_seq_num, ThreadID tid)
+{
+    // Oldest checkpoints sit at the back; release those the commit head passed.
+    while (!ratSnapshotBuffer[tid].empty() &&
+           ratSnapshotBuffer[tid].back() <= commit_seq_num) {
+        ratSnapshotBuffer[tid].pop_back();
+        numRatSnapshotInUse--;
+        stats.committedRatSnapshot++;
+    }
+    assert(numRatSnapshotInUse >= 0);
+}
+
+void
+Rename::squashSnapshot(InstSeqNum squash_seq_num, ThreadID tid)
+{
+    // Newest checkpoints sit at the front; release those on the discarded
+    // (younger) path. The checkpoint at the redirect itself survives and is
+    // released later at commit.
+    while (!ratSnapshotBuffer[tid].empty() &&
+           ratSnapshotBuffer[tid].front() > squash_seq_num) {
+        ratSnapshotBuffer[tid].pop_front();
+        numRatSnapshotInUse--;
+        stats.squashedRatSnapshot++;
+    }
+    assert(numRatSnapshotInUse >= 0);
+}
+
+bool
+Rename::suitableForRatSnapshot(const DynInstPtr &inst)
+{
+    return inst->isControl() && lastRatSnapshotDistance >= ratSnapshotDistance;
 }
 
 void

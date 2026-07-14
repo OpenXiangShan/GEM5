@@ -191,7 +191,7 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     assert((robWalkPolicy == ROBWalkPolicy::Rollback && rollbackWidth > 0)
            || (robWalkPolicy == ROBWalkPolicy::Replay && replayWidth > 0)
            || (robWalkPolicy == ROBWalkPolicy::ConstCycle && constSquashCycle > 0)
-        //    || robWalkPolicy == ROBWalkPolicy::NaiveCpt
+           || (robWalkPolicy == ROBWalkPolicy::NaiveCpt && replayWidth > 0)
         //    || robWalkPolicy == ROBWalkPolicy::ConfidentCpt
            );
 
@@ -889,6 +889,15 @@ ROB::computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash)
                 ROB,
                 "Recovery with replay, walk ROB with width %u in %f cycles\n",
                 dyn_squash_width, expected_cycles);
+            break;
+
+        case ROBWalkPolicy::NaiveCpt:
+            // Checkpoints are recorded in rename but not yet consumed here;
+            // recover like Replay until the snapshot-aware model (Task 4).
+            expected_cycles =
+                std::max(2.0, ((double)uncommitted_insts / replayWidth));
+            dyn_squash_width = ceil((double)to_squash / expected_cycles);
+            dyn_squash_width = std::max(dyn_squash_width, 1u);
             break;
 
         case ROBWalkPolicy::ConstCycle:
