@@ -80,6 +80,7 @@ MemDepUnit::MemDepUnit(const BaseO3CPUParams &params)
       depPred(params.store_set_clear_period, params.SSITSize,
               params.LFSTSize, params.store_set_clear_thres,
               params.LFSTEntrySize, params.EnableMDPFeedbackCounter,
+              params.EnableMDPSBufferForwardFeedback,
               params.MDPDependThreshold, params.MDPInitialCounter,
               params.SSITTagBits),
       iqPtr(NULL),
@@ -122,8 +123,10 @@ MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
 
     depPred.init(params.store_set_clear_period, params.store_set_clear_thres,
             params.SSITSize, params.LFSTSize, params.LFSTEntrySize,
-            params.EnableMDPFeedbackCounter, params.MDPDependThreshold,
-            params.MDPInitialCounter, params.SSITTagBits);
+            params.EnableMDPFeedbackCounter,
+            params.EnableMDPSBufferForwardFeedback,
+            params.MDPDependThreshold, params.MDPInitialCounter,
+            params.SSITTagBits);
 
     enableReplayBasedMDP = params.EnableReplayBasedMDP;
     enableMDPStrictWait = params.EnableMDPStrictWait;
@@ -149,6 +152,8 @@ MemDepUnit::MemDepUnitStats::MemDepUnitStats(statistics::Group *parent)
                "Number of MDP feedback increments from SQ forwarding."),
       ADD_STAT(mdpFeedbackSBufferForwardInc, statistics::units::Count::get(),
                "Number of MDP feedback increments from SBuffer forwarding."),
+      ADD_STAT(mdpFeedbackSBufferForwardDec, statistics::units::Count::get(),
+               "Number of MDP feedback decrements from SBuffer forwarding."),
       ADD_STAT(mdpFeedbackNoForwardDec, statistics::units::Count::get(),
                "Number of MDP feedback decrements from non-forwarded loads."),
       ADD_STAT(mdpFeedbackSkipNotPredicted, statistics::units::Count::get(),
@@ -679,10 +684,18 @@ MemDepUnit::mdpFeedback(const DynInstPtr &load_inst,
         break;
       case Action::Dec:
       case Action::SatAt0:
-        ++stats.mdpFeedbackNoForwardDec;
+        if (source == StoreSet::MDPFeedbackSource::StoreBuffer) {
+            ++stats.mdpFeedbackSBufferForwardDec;
+        } else {
+            ++stats.mdpFeedbackNoForwardDec;
+        }
         break;
       case Action::ClearCounterZero:
-        ++stats.mdpFeedbackNoForwardDec;
+        if (source == StoreSet::MDPFeedbackSource::StoreBuffer) {
+            ++stats.mdpFeedbackSBufferForwardDec;
+        } else {
+            ++stats.mdpFeedbackNoForwardDec;
+        }
         ++stats.mdpCounterClearOnZero;
         break;
       case Action::SkipNotPredicted:

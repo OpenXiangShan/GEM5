@@ -203,6 +203,8 @@ class BaseO3CPU(BaseCPU):
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
     EnableMDPFeedbackCounter = Param.Bool(True,
         "Enable StoreSet MDP 2-bit feedback counters")
+    EnableMDPSBufferForwardFeedback = Param.Bool(False,
+        "Treat successful SBuffer forwarding as positive StoreSet MDP feedback")
     MDPDependThreshold = Param.Unsigned(2,
         "StoreSet MDP counter threshold for predicting a dependency")
     MDPInitialCounter = Param.Unsigned(2,

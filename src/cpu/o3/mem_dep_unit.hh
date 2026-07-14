@@ -286,6 +286,7 @@ class MemDepUnit
         statistics::Scalar dependentLoads;
         statistics::Scalar mdpFeedbackSqForwardInc;
         statistics::Scalar mdpFeedbackSBufferForwardInc;
+        statistics::Scalar mdpFeedbackSBufferForwardDec;
         statistics::Scalar mdpFeedbackNoForwardDec;
         statistics::Scalar mdpFeedbackSkipNotPredicted;
         statistics::Scalar mdpFeedbackSkipDuplicate;

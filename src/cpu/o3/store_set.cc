@@ -63,11 +63,14 @@ mdpFeedbackSourceName(StoreSet::MDPFeedbackSource source)
 
 StoreSet::StoreSet(uint64_t clear_period, int _SSIT_size, int _LFST_size,
                    int _store_set_clear_thres, int _LFSTEntrySize,
-                   bool enable_feedback_counter, unsigned depend_threshold,
-                   unsigned initial_counter, unsigned ssit_tag_bits)
+                   bool enable_feedback_counter,
+                   bool enable_sbuffer_forward_feedback,
+                   unsigned depend_threshold, unsigned initial_counter,
+                   unsigned ssit_tag_bits)
     : clearPeriod(clear_period), SSITSize(_SSIT_size), LFSTSize(_LFST_size),LFSTEntrySize(_LFSTEntrySize),
       clearPeriodThreshold(_store_set_clear_thres),
       enableFeedbackCounter(enable_feedback_counter),
+      enableSBufferForwardFeedback(enable_sbuffer_forward_feedback),
       dependThreshold(std::min<unsigned>(depend_threshold, 3)),
       initialCounter(std::min<unsigned>(initial_counter, 3)),
       ssitTagBits(ssit_tag_bits)
@@ -133,8 +136,10 @@ StoreSet::~StoreSet()
 void
 StoreSet::init(uint64_t clear_period, int clear_period_thres,
                int _SSIT_size, int _LFST_size, int _LFST_entry_size,
-               bool enable_feedback_counter, unsigned depend_threshold,
-               unsigned initial_counter, unsigned ssit_tag_bits)
+               bool enable_feedback_counter,
+               bool enable_sbuffer_forward_feedback,
+               unsigned depend_threshold, unsigned initial_counter,
+               unsigned ssit_tag_bits)
 {
     SSITSize = _SSIT_size;
     LFSTSize = _LFST_size;
@@ -142,6 +147,7 @@ StoreSet::init(uint64_t clear_period, int clear_period_thres,
     clearPeriodThreshold = clear_period_thres;
     LFSTEntrySize = _LFST_entry_size;
     enableFeedbackCounter = enable_feedback_counter;
+    enableSBufferForwardFeedback = enable_sbuffer_forward_feedback;
     dependThreshold = std::min<unsigned>(depend_threshold, 3);
     initialCounter = std::min<unsigned>(initial_counter, 3);
     ssitTagBits = ssit_tag_bits;
@@ -669,9 +675,11 @@ StoreSet::feedback(Addr load_pc, MDPFeedbackSource source, bool predicted)
         return result;
     }
 
-    const bool forwarded = source == MDPFeedbackSource::StoreQueue ||
-                           source == MDPFeedbackSource::StoreBuffer;
-    if (forwarded) {
+    const bool positive_feedback =
+        source == MDPFeedbackSource::StoreQueue ||
+        (enableSBufferForwardFeedback &&
+         source == MDPFeedbackSource::StoreBuffer);
+    if (positive_feedback) {
         result.newCounter = saturatingInc(result.oldCounter);
         SSITCounter[index] = result.newCounter;
         result.action = result.oldCounter == result.newCounter ?

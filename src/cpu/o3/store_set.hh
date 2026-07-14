@@ -117,8 +117,10 @@ class StoreSet
     /** Creates store set predictor with given table sizes. */
     StoreSet(uint64_t clear_period, int SSIT_size, int LFST_size,
              int _store_set_clear_thres, int _LFSTEntrySize,
-             bool enable_feedback_counter, unsigned depend_threshold,
-             unsigned initial_counter, unsigned ssit_tag_bits);
+             bool enable_feedback_counter,
+             bool enable_sbuffer_forward_feedback,
+             unsigned depend_threshold, unsigned initial_counter,
+             unsigned ssit_tag_bits);
 
     /** Default destructor. */
     ~StoreSet();
@@ -126,8 +128,10 @@ class StoreSet
     /** Initializes the store set predictor with the given table sizes. */
     void init(uint64_t clear_period, int clear_period_thres,
               int _SSIT_size, int _LFST_size, int _LFST_entry_size,
-              bool enable_feedback_counter, unsigned depend_threshold,
-              unsigned initial_counter, unsigned ssit_tag_bits);
+              bool enable_feedback_counter,
+              bool enable_sbuffer_forward_feedback,
+              unsigned depend_threshold, unsigned initial_counter,
+              unsigned ssit_tag_bits);
 
     /** Records a memory ordering violation between the younger load
      * and the older store. */
@@ -241,6 +245,7 @@ class StoreSet
     int memOpsPred;
 
     bool enableFeedbackCounter = true;
+    bool enableSBufferForwardFeedback = false;
     unsigned dependThreshold = 2;
     unsigned initialCounter = 2;
     unsigned ssitTagBits = 12;
