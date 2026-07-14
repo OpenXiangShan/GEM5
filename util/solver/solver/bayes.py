@@ -47,7 +47,7 @@ class BayesSolver(BaseSolver):
         self._last_model_fit_size = 0
         self._last_pending_buffer = 0
         self._Optimizer, self._Integer, self._Categorical = import_skopt()
-        self._dimensions, self._decoders = self._build_dimensions()
+        self._dimensions, self._decoders, self._encoders = self._build_dimensions()
         self._optimizer = self._Optimizer(
             dimensions=self._dimensions,
             base_estimator=self._base_estimator,
@@ -68,6 +68,7 @@ class BayesSolver(BaseSolver):
     def _build_dimensions(self):
         dimensions = []
         decoders = []
+        encoders = []
         for parameter in self.problem.parameters:
             domain = parameter.domain
             if isinstance(domain, RangeDomain):
@@ -82,17 +83,20 @@ class BayesSolver(BaseSolver):
                         self._Integer(int(domain.start), int(domain.stop), name=parameter.name)
                     )
                     decoders.append(None)
+                    encoders.append(None)
                     continue
                 if _supports_categorical_values(values):
                     dimensions.append(
                         self._Categorical(values, name=parameter.name)
                     )
                     decoders.append(None)
+                    encoders.append(None)
                 else:
                     dimensions.append(
                         self._Integer(0, len(values) - 1, name=parameter.name)
                     )
                     decoders.append(_index_decoder(values))
+                    encoders.append(_index_encoder(values))
                 continue
             if isinstance(domain, ChoiceDomain):
                 values = domain.iter_values()
@@ -101,22 +105,26 @@ class BayesSolver(BaseSolver):
                         self._Categorical(values, name=parameter.name)
                     )
                     decoders.append(None)
+                    encoders.append(None)
                 else:
                     dimensions.append(
                         self._Integer(0, len(values) - 1, name=parameter.name)
                     )
                     decoders.append(_index_decoder(values))
+                    encoders.append(_index_encoder(values))
                 continue
             values = domain.iter_values()
             if _supports_categorical_values(values):
                 dimensions.append(self._Categorical(values, name=parameter.name))
                 decoders.append(None)
+                encoders.append(None)
             else:
                 dimensions.append(
                     self._Integer(0, len(values) - 1, name=parameter.name)
                 )
                 decoders.append(_index_decoder(values))
-        return dimensions, decoders
+                encoders.append(_index_encoder(values))
+        return dimensions, decoders, encoders
 
     def _point_to_assignments(self, point) -> dict:
         assignments = {}
@@ -127,6 +135,16 @@ class BayesSolver(BaseSolver):
                 value = decoder(value)
             assignments[parameter.name] = value
         return assignments
+
+    def _assignments_to_point(self, assignments: dict) -> list:
+        point = []
+        for index, parameter in enumerate(self.problem.parameters):
+            value = assignments[parameter.name]
+            encoder = self._encoders[index]
+            if encoder is not None:
+                value = encoder(value)
+            point.append(value)
+        return point
 
     def _drain_pending(self, batch_size: int):
         if not self._pending_generation:
@@ -153,7 +171,9 @@ class BayesSolver(BaseSolver):
         )
 
     def _update_observations(self, history) -> None:
-        observed_this_round = 0
+        points = []
+        values = []
+        trial_ids = []
         for trial in history:
             if trial.status != "valid":
                 continue
@@ -162,12 +182,13 @@ class BayesSolver(BaseSolver):
             objective_value = objective_value_for_trial(trial, self._objective)
             if objective_value is None or not math.isfinite(float(objective_value)):
                 continue
-            point = [trial.assignments[parameter.name] for parameter in self.problem.parameters]
-            transformed = self._transform_objective(float(objective_value))
-            self._optimizer.tell(point, transformed)
-            self._told_trial_ids.add(trial.trial_id)
-            observed_this_round += 1
-        self._last_observed_trials = observed_this_round
+            points.append(self._assignments_to_point(trial.assignments))
+            values.append(self._transform_objective(float(objective_value)))
+            trial_ids.append(trial.trial_id)
+        if points:
+            self._optimizer.tell(points, values)
+            self._told_trial_ids.update(trial_ids)
+        self._last_observed_trials = len(points)
         self._last_model_fit_size = len(self._told_trial_ids)
         if self._told_trial_ids:
             try:
@@ -183,7 +204,11 @@ class BayesSolver(BaseSolver):
     def _ask_unique_trials(self, batch_size: int):
         trials = []
         attempts = 0
-        max_attempts = max(128, batch_size * 128)
+        model_ready = bool(getattr(self._optimizer, "models", []))
+        # skopt's parallel ask uses constant liar and refits a copy for each
+        # fake point, so emit one model-guided point and let random top-up fill
+        # the rest of the parallel batch.
+        max_attempts = 1 if model_ready else max(128, batch_size * 128)
         while len(trials) < batch_size and attempts < max_attempts:
             attempts += 1
             point = self._optimizer.ask()
@@ -193,6 +218,8 @@ class BayesSolver(BaseSolver):
                 continue
             self._seen.add(key)
             trials.append(self._make_trial(assignments))
+            if model_ready:
+                break
         return trials
 
     def _random_top_up(self, batch_size: int):
@@ -278,3 +305,12 @@ def _index_decoder(values):
         return values[int(index)]
 
     return decode
+
+
+def _index_encoder(values):
+    value_to_index = {freeze_value(value): index for index, value in enumerate(values)}
+
+    def encode(value):
+        return value_to_index[freeze_value(value)]
+
+    return encode
