@@ -1,10 +1,10 @@
 import argparse
-import importlib
 import sys
 
 import m5
 from m5.defines import buildEnv
 from m5.objects import *
+from m5.objects.ValuePredictor import *
 from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
@@ -21,12 +21,6 @@ from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
 from util.solver.runtime.integration import maybe_handle_solver_runtime
-
-_valuepred = importlib.import_module("m5.objects.ValuePredictor")
-CVPConfidenceArb = _valuepred.CVPConfidenceArb
-CompositeValuePredictor = _valuepred.CompositeValuePredictor
-IdealConstantLVP = _valuepred.IdealConstantLVP
-VTAGE = _valuepred.VTAGE
 
 def setPtwLevelLimitParams(args, tlb):
     tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
