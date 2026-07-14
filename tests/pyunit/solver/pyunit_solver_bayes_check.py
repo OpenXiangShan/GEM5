@@ -50,6 +50,19 @@ class TinyBayesMinSearch(SolveSpec):
     stop = Stop(max_trials=4)
 
 
+class TellSpy:
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+        self.calls = []
+
+    def tell(self, x, y, fit=True):
+        self.calls.append((x, y, fit))
+        return self._wrapped.tell(x, y, fit=fit)
+
+    def __getattr__(self, name):
+        return getattr(self._wrapped, name)
+
+
 class BayesSolverTestCase(unittest.TestCase):
     def test_bayes_proposes_unique_trials_and_reports_progress(self):
         problem = parse_problem(f"{__file__}:TinyBayesSearch")
@@ -93,6 +106,40 @@ class BayesSolverTestCase(unittest.TestCase):
         self.assertIsNotNone(report["last_best_transformed_objective"])
         self.assertEqual(len(report["generation_history"]), 2)
 
+    def test_bayes_batches_new_observations_into_one_tell(self):
+        problem = parse_problem(f"{__file__}:TinyBayesSearch")
+        solver = BayesSolver(problem, seed=1, n_initial_points=2)
+        trials = solver.propose([], 3)
+        history = []
+        for trial in trials:
+            objective_value = float(
+                trial.assignments["knob_a"] * 100 + trial.assignments["knob_b"]
+            )
+            history.append(
+                EvaluatedTrial(
+                    trial_id=trial.trial_id,
+                    generation=trial.generation,
+                    assignments=trial.assignments,
+                    status="valid",
+                    objective_value=objective_value,
+                    objective_values={"max:stats:system.cpu.ipc": objective_value},
+                    metrics={},
+                    invalid_reason=None,
+                    outdir=f"/tmp/{trial.trial_id}",
+                    duration_sec=1.0,
+                )
+            )
+
+        spy = TellSpy(solver._optimizer)
+        solver._optimizer = spy
+        solver.propose(history, 2)
+
+        self.assertEqual(len(spy.calls), 1)
+        points, values, fit = spy.calls[0]
+        self.assertTrue(fit)
+        self.assertEqual(len(points), 3)
+        self.assertEqual(len(values), 3)
+
     def test_bayes_supports_non_scalar_choice_values(self):
         problem = parse_problem(f"{__file__}:TinyBayesVectorSearch")
         solver = BayesSolver(problem, seed=1, n_initial_points=2)
@@ -107,6 +154,32 @@ class BayesSolverTestCase(unittest.TestCase):
                     [0, 4, 8, 16],
                 ],
             )
+
+    def test_bayes_tells_non_scalar_choice_values_back_to_skopt(self):
+        problem = parse_problem(f"{__file__}:TinyBayesVectorSearch")
+        solver = BayesSolver(problem, seed=1, n_initial_points=2)
+        trials = solver.propose([], 2)
+        history = []
+        for index, trial in enumerate(trials):
+            objective_value = float(index + 1)
+            history.append(
+                EvaluatedTrial(
+                    trial_id=trial.trial_id,
+                    generation=trial.generation,
+                    assignments=trial.assignments,
+                    status="valid",
+                    objective_value=objective_value,
+                    objective_values={"max:stats:system.cpu.ipc": objective_value},
+                    metrics={},
+                    invalid_reason=None,
+                    outdir=f"/tmp/{trial.trial_id}",
+                    duration_sec=1.0,
+                )
+            )
+
+        next_trials = solver.propose(history, 1)
+        self.assertEqual(len(next_trials), 1)
+        self.assertEqual(solver.report_metadata()["observed_trials"], 2)
 
     def test_bayes_rejects_multi_objective_problem(self):
         problem = parse_problem(f"{__file__}:TinyBayesMultiObjectiveSearch")
