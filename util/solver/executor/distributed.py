@@ -31,7 +31,7 @@ class DistributedExecutionConfig:
     ssh_options: tuple[str, ...] = ()
     poll_interval: float = 5.0
     load_probe_interval: float = 15.0
-    load_probe_timeout: float = 10.0
+    load_probe_timeout: float = 5.0
     marker_timeout: float = 30.0
     launch_retries: int = 3
     launch_retry_delay: float = 30.0
@@ -150,6 +150,19 @@ def resolve_require_idle_cpus(
     return jobs_per_server
 
 
+def resolve_max_jobs_per_server(
+    config: DistributedExecutionConfig,
+    *,
+    jobs_per_server: int,
+    total_parallelism: int,
+) -> int:
+    if total_parallelism < 1:
+        raise ValueError("total_parallelism must be >= 1")
+    if config.jobs_per_server > 0:
+        return jobs_per_server
+    return min(total_parallelism, max(jobs_per_server, jobs_per_server * 4))
+
+
 def _append_launcher_output(job: DistributedWorkloadJob, stdout: bytes, stderr: bytes) -> None:
     if not stdout and not stderr:
         return
@@ -266,6 +279,11 @@ class DistributedWorkloadScheduler:
             config,
             jobs_per_server=self.jobs_per_server,
         )
+        self.max_jobs_per_server = resolve_max_jobs_per_server(
+            config,
+            jobs_per_server=self.jobs_per_server,
+            total_parallelism=self.total_parallelism,
+        )
         self.servers = [_ServerState(name=name) for name in server_names]
         self.log = log
         self.process_started = process_started or (lambda process: None)
@@ -279,6 +297,7 @@ class DistributedWorkloadScheduler:
             "mode": "distributed",
             "servers": [server.name for server in self.servers],
             "jobs_per_server": self.jobs_per_server,
+            "max_jobs_per_server": self.max_jobs_per_server,
             "require_idle_cpus": self.require_idle_cpus,
             "idle_probe_mode": self.config.idle_probe_mode,
             "idle_cpu_threshold": self.config.idle_cpu_threshold,
@@ -321,7 +340,7 @@ class DistributedWorkloadScheduler:
                 f"require>={self.require_idle_cpus}"
             )
             return
-        server.capacity = min(self.jobs_per_server, idle_cpus)
+        server.capacity = min(self.max_jobs_per_server, idle_cpus)
         self.log(
             f"[solver-distributed] use {server.name}: capacity={server.capacity}, "
             f"{detail}"
@@ -330,9 +349,24 @@ class DistributedWorkloadScheduler:
     def _running_count(self) -> int:
         return sum(len(server.pending) for server in self.servers)
 
+    def _available_servers(self) -> list[_ServerState]:
+        return [
+            server
+            for server in self.servers
+            if server.last_probe_at and len(server.pending) < server.capacity
+        ]
+
+    @staticmethod
+    def _available_slots(server: _ServerState) -> int:
+        return max(0, server.capacity - len(server.pending))
+
     def _select_server(self) -> _ServerState | None:
         if self._running_count() >= self.total_parallelism:
             return None
+        available = self._available_servers()
+        if available:
+            return max(available, key=self._available_slots)
+
         server_count = len(self.servers)
         for offset in range(server_count):
             index = (self._next_server_index + offset) % server_count
