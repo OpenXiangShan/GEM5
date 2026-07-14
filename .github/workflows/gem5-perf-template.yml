@@ -190,7 +190,11 @@ jobs:
       - name: Build GEM5 fast
         run: |
           export GEM5_HOME=$(pwd)
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          if [[ "${{ inputs.benchmark_type }}" == gcc15-spec26-* ]]; then
+            export GCBV_REF_SO="/nfs/home/yangxianhui/workspace/GEM5/riscv64-nemu-interpreter-gem5-ref-smstateen-sv48-v3-so"
+          else
+            export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          fi
           if [[ "${{ inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
             export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
             export GCB_MULTI_CORE_RESTORER=""
@@ -309,7 +313,10 @@ jobs:
         run: |
           mkdir -p "$PERF_ARCHIVE_DIR"
           cd "$PERF_ARCHIVE_DIR"
-
+          if [[ "$BENCHMARK_TYPE_INPUT" == gcc15-spec26-* ]]; then
+            export GCBV_REF_SO="/nfs/home/yangxianhui/workspace/GEM5/riscv64-nemu-interpreter-gem5-ref-smstateen-sv48-v3-so"
+          fi
+          echo "Using GCBV_REF_SO=$GCBV_REF_SO"
           CONFIG_PATH="$CONFIG_PATH_INPUT"
           if [[ "$CONFIG_PATH" == /* ]]; then
             echo "Error: config_path must be repo-root-relative, got absolute path: '$CONFIG_PATH'"
