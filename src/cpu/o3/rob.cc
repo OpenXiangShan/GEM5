@@ -857,11 +857,11 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
                 total_inst_to_squash++;
             }
         }
-        unsigned num_uncommited_inst =
+        unsigned num_uncommitted_inst =
             instList[tid].size() - total_inst_to_squash;
 
         dynSquashWidth =
-            computeDynSquashWidth(num_uncommited_inst, total_inst_to_squash);
+            computeDynSquashWidth(num_uncommitted_inst, total_inst_to_squash);
     }
 
     if (!instList[tid].empty()) {
@@ -929,7 +929,7 @@ ROB::computeSnapshotSquashWidth(InstSeqNum squash_num, ThreadID tid)
 
     if (hit) {
         older_after_snapshot = 0;
-        stats.hittedRobRatSnapshot++;
+        stats.robRatSnapshotHits++;
     }
 
     double expected_cycles =
@@ -975,7 +975,7 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
     ADD_STAT(writes, statistics::units::Count::get(),
         "The number of ROB writes"),
     ADD_STAT(instPergroup, statistics::units::Count::get()),
-    ADD_STAT(hittedRobRatSnapshot, statistics::units::Count::get(),
+    ADD_STAT(robRatSnapshotHits, statistics::units::Count::get(),
         "Squashes that landed exactly on a RAT checkpoint (NaiveCpt)"),
     ADD_STAT(snapshotSquashWidth, statistics::units::Count::get(),
         "Distribution of NaiveCpt dynamic squash width")

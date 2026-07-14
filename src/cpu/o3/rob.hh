@@ -407,7 +407,7 @@ class ROB
 
         statistics::Distribution instPergroup;
 
-        statistics::Scalar hittedRobRatSnapshot;
+        statistics::Scalar robRatSnapshotHits;
         statistics::Distribution snapshotSquashWidth;
     } stats;
 };
