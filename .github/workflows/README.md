@@ -58,8 +58,8 @@
 
 - 添加 `perf` / `perf-align` 标签会在对应性能 workflow 中触发测试，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
-- Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 触发性能 workflow
-- `manual-perf.yml` 当前已切换为 solver 手动入口；旧性能手动入口备份保存在 `.github/workflows/manual-perf.yml.bak`
+- Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
+- 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
 
 ### 性能结果
 
@@ -198,7 +198,7 @@ python actions_gem5.py --token <github-token> --always-on
 A: 性能测试耗时长，会拖慢 PR 审查。现在改为按需触发，既节省资源，又保持灵活性。
 
 **Q: 如何触发性能测试？**
-A: 在 PR 上添加 `perf` 或 `perf-align` 标签。`manual-perf.yml` 当前用于 solver，旧性能手动入口定义保存在 `.github/workflows/manual-perf.yml.bak`。
+A: 在 PR 上添加 `perf` 或 `perf-align` 标签；需要自定义配置时使用 `manual-perf.yml`。
 
 **Q: 为什么外部 fork PR 加标签不会触发性能测试？**
 A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
