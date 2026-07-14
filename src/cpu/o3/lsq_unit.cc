@@ -1612,10 +1612,14 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     // immediately; otherwise a normal load assembles cache and forwarded data
     // before completeDataAccess/writeback handling takes over.
     auto mdp_feedback_source = StoreSet::MDPFeedbackSource::NoForward;
+    bool mdp_sq_forwarded = false;
+    bool mdp_sbuffer_forwarded = false;
     if (request) {
-        if (!request->SQforwardPackets.empty()) {
+        mdp_sq_forwarded = !request->SQforwardPackets.empty();
+        mdp_sbuffer_forwarded = !request->SBforwardPackets.empty();
+        if (mdp_sq_forwarded) {
             mdp_feedback_source = StoreSet::MDPFeedbackSource::StoreQueue;
-        } else if (!request->SBforwardPackets.empty()) {
+        } else if (mdp_sbuffer_forwarded) {
             mdp_feedback_source = StoreSet::MDPFeedbackSource::StoreBuffer;
         }
     }
@@ -1628,10 +1632,12 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     }
     DPRINTF(MDPFeedback,
             "MDP load feedback load_pc=%#x sn=%llu source=%s predicted=%d "
-            "pred_index=%d pred_tag=%#x duplicate=%d\n",
+            "sq_forwarded=%d sbuffer_forwarded=%d pred_index=%d "
+            "pred_tag=%#x duplicate=%d\n",
             inst->pcState().instAddr(), inst->seqNum, mdp_source_str,
-            inst->mdpPredictedDependent, inst->mdpPredSSITIndex,
-            inst->mdpPredTag, inst->mdpFeedbackUpdated);
+            inst->mdpPredictedDependent, mdp_sq_forwarded,
+            mdp_sbuffer_forwarded, inst->mdpPredSSITIndex, inst->mdpPredTag,
+            inst->mdpFeedbackUpdated);
     iewStage->mdpFeedback(inst, mdp_feedback_source);
 
     if (inst->fullForward()) {

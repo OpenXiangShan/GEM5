@@ -202,13 +202,11 @@ class BaseO3CPU(BaseCPU):
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
     EnableMDPFeedbackCounter = Param.Bool(True,
-        "Enable StoreSet MDP 2-bit feedback counters")
+        "Enable StoreSet MDP 4-bit feedback counters")
     EnableMDPSBufferForwardFeedback = Param.Bool(False,
         "Treat successful SBuffer forwarding as positive StoreSet MDP feedback")
-    MDPDependThreshold = Param.Unsigned(2,
-        "StoreSet MDP counter threshold for predicting a dependency")
     MDPInitialCounter = Param.Unsigned(2,
-        "Initial StoreSet MDP counter value on training allocation")
+        "Initial StoreSet MDP 4-bit counter value on training allocation")
     SSITTagBits = Param.Unsigned(12,
         "PC tag bits stored in each StoreSet SSIT entry")
 

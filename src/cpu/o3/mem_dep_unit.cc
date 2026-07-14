@@ -81,7 +81,7 @@ MemDepUnit::MemDepUnit(const BaseO3CPUParams &params)
               params.LFSTSize, params.store_set_clear_thres,
               params.LFSTEntrySize, params.EnableMDPFeedbackCounter,
               params.EnableMDPSBufferForwardFeedback,
-              params.MDPDependThreshold, params.MDPInitialCounter,
+              params.MDPInitialCounter,
               params.SSITTagBits),
       iqPtr(NULL),
       stats(nullptr)
@@ -125,7 +125,7 @@ MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
             params.SSITSize, params.LFSTSize, params.LFSTEntrySize,
             params.EnableMDPFeedbackCounter,
             params.EnableMDPSBufferForwardFeedback,
-            params.MDPDependThreshold, params.MDPInitialCounter,
+            params.MDPInitialCounter,
             params.SSITTagBits);
 
     enableReplayBasedMDP = params.EnableReplayBasedMDP;
@@ -675,7 +675,7 @@ MemDepUnit::mdpFeedback(const DynInstPtr &load_inst,
     using Action = StoreSet::MDPFeedbackAction;
     switch (result.action) {
       case Action::Inc:
-      case Action::SatAt3:
+      case Action::SatAtMax:
         if (source == StoreSet::MDPFeedbackSource::StoreQueue) {
             ++stats.mdpFeedbackSqForwardInc;
         } else if (source == StoreSet::MDPFeedbackSource::StoreBuffer) {

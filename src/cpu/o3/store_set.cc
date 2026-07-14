@@ -65,14 +65,13 @@ StoreSet::StoreSet(uint64_t clear_period, int _SSIT_size, int _LFST_size,
                    int _store_set_clear_thres, int _LFSTEntrySize,
                    bool enable_feedback_counter,
                    bool enable_sbuffer_forward_feedback,
-                   unsigned depend_threshold, unsigned initial_counter,
+                   unsigned initial_counter,
                    unsigned ssit_tag_bits)
     : clearPeriod(clear_period), SSITSize(_SSIT_size), LFSTSize(_LFST_size),LFSTEntrySize(_LFSTEntrySize),
       clearPeriodThreshold(_store_set_clear_thres),
       enableFeedbackCounter(enable_feedback_counter),
       enableSBufferForwardFeedback(enable_sbuffer_forward_feedback),
-      dependThreshold(std::min<unsigned>(depend_threshold, 3)),
-      initialCounter(std::min<unsigned>(initial_counter, 3)),
+      initialCounter(std::min<unsigned>(initial_counter, MAX_COUNTER)),
       ssitTagBits(ssit_tag_bits)
 {
     DPRINTF(StoreSet, "StoreSet: Creating store set object.\n");
@@ -138,7 +137,7 @@ StoreSet::init(uint64_t clear_period, int clear_period_thres,
                int _SSIT_size, int _LFST_size, int _LFST_entry_size,
                bool enable_feedback_counter,
                bool enable_sbuffer_forward_feedback,
-               unsigned depend_threshold, unsigned initial_counter,
+               unsigned initial_counter,
                unsigned ssit_tag_bits)
 {
     SSITSize = _SSIT_size;
@@ -148,8 +147,7 @@ StoreSet::init(uint64_t clear_period, int clear_period_thres,
     LFSTEntrySize = _LFST_entry_size;
     enableFeedbackCounter = enable_feedback_counter;
     enableSBufferForwardFeedback = enable_sbuffer_forward_feedback;
-    dependThreshold = std::min<unsigned>(depend_threshold, 3);
-    initialCounter = std::min<unsigned>(initial_counter, 3);
+    initialCounter = std::min<unsigned>(initial_counter, MAX_COUNTER);
     ssitTagBits = ssit_tag_bits;
 
     DPRINTF(StoreSet, "StoreSet: Creating store set object.\n");
@@ -228,17 +226,10 @@ StoreSet::ssitHit(Addr pc, int index) const
     return SSITTag[index] == calcTag(pc);
 }
 
-bool
-StoreSet::predictsDependent(int index) const
-{
-    assert(index < SSITSize);
-    return !enableFeedbackCounter || SSITCounter[index] >= dependThreshold;
-}
-
 uint8_t
 StoreSet::saturatingInc(uint8_t counter) const
 {
-    return counter == 3 ? 3 : counter + 1;
+    return counter == MAX_COUNTER ? MAX_COUNTER : counter + 1;
 }
 
 uint8_t
@@ -256,7 +247,7 @@ StoreSet::setSSITEntry(Addr pc, SSID ssid, uint8_t initial_counter)
     validSSIT[index] = true;
     SSIT[index] = ssid;
     SSITTag[index] = calcTag(pc);
-    SSITCounter[index] = std::min<uint8_t>(initial_counter, 3);
+    SSITCounter[index] = std::min<uint8_t>(initial_counter, MAX_COUNTER);
 }
 
 void
@@ -293,21 +284,20 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
     const char *action = "allocate_both";
     SSID chosen_ssid = std::min(load_ssid, store_ssid);
     if (load_hit && store_hit) {
-        action = load_ssid == store_ssid ? "same_ssid_inc" : "merge_ssid";
+        action = load_ssid == store_ssid ?
+            "same_ssid_set_max" : "merge_ssid_set_max";
     } else if (load_hit) {
         chosen_ssid = load_ssid;
-        action = "allocate_store";
+        action = "allocate_store_set_max";
     } else if (store_hit) {
         chosen_ssid = store_ssid;
-        action = "allocate_load";
+        action = "allocate_load_set_max";
     }
 
-    setSSITEntry(load_PC, chosen_ssid,
-                 load_hit ? saturatingInc(old_load_counter) :
-                            initialCounter);
-    setSSITEntry(store_PC, chosen_ssid,
-                 store_hit ? saturatingInc(old_store_counter) :
-                             initialCounter);
+    // A RAW violation is definitive dependency evidence. Train both sides of
+    // the StoreSet association at maximum confidence.
+    setSSITEntry(load_PC, chosen_ssid, MAX_COUNTER);
+    setSSITEntry(store_PC, chosen_ssid, MAX_COUNTER);
 
     if (load_index == store_index && calcTag(load_PC) == calcTag(store_PC)) {
         SSITStrict[load_index] = true;
@@ -362,35 +352,25 @@ StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cyc
     assert(index < SSITSize);
 
     const bool tag_hit = ssitHit(store_PC, index);
-    const bool strong = tag_hit && predictsDependent(index);
     const char *action = "insert_lfst";
 
     if (!validSSIT[index]) {
         action = "skip_no_entry";
         DPRINTF(MDPFeedback,
                 "MDP insertStore store_pc=%#x sn=%llu index=%d valid=0 "
-                "tag_hit=0 counter=0 threshold=%u action=%s ssid=0 "
+                "tag_hit=0 counter=0 action=%s ssid=0 "
                 "lfst_slot=-1\n",
-                store_PC, store_seq_num, index, dependThreshold, action);
+                store_PC, store_seq_num, index, action);
         // Do nothing if there's no valid entry.
         return;
     } else if (!tag_hit) {
         action = "skip_tag_miss";
         DPRINTF(MDPFeedback,
                 "MDP insertStore store_pc=%#x sn=%llu index=%d valid=1 "
-                "tag_hit=0 counter=%u threshold=%u action=%s ssid=%u "
+                "tag_hit=0 counter=%u action=%s ssid=%u "
                 "lfst_slot=-1\n",
                 store_PC, store_seq_num, index, SSITCounter[index],
-                dependThreshold, action, SSIT[index]);
-        return;
-    } else if (!strong) {
-        action = "skip_counter_weak";
-        DPRINTF(MDPFeedback,
-                "MDP insertStore store_pc=%#x sn=%llu index=%d valid=1 "
-                "tag_hit=1 counter=%u threshold=%u action=%s ssid=%u "
-                "lfst_slot=-1\n",
-                store_PC, store_seq_num, index, SSITCounter[index],
-                dependThreshold, action, SSIT[index]);
+                action, SSIT[index]);
         return;
     } else {
         store_SSID = SSIT[index];
@@ -417,10 +397,10 @@ StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cyc
                 store_PC, store_seq_num, store_SSID, victim_inst);
         DPRINTF(MDPFeedback,
                 "MDP insertStore store_pc=%#x sn=%llu index=%d valid=1 "
-                "tag_hit=1 counter=%u threshold=%u action=%s ssid=%u "
+                "tag_hit=1 counter=%u action=%s ssid=%u "
                 "lfst_slot=%d\n",
                 store_PC, store_seq_num, index, SSITCounter[index],
-                dependThreshold, action, store_SSID, victim_inst);
+                action, store_SSID, victim_inst);
         dump();
     }
 }
@@ -432,11 +412,9 @@ StoreSet::checkInstStrict(Addr pc, PredictionInfo *pred_info)
     assert(index < SSITSize);
 
     const bool tag_hit = ssitHit(pc, index);
-    const bool strong = tag_hit && predictsDependent(index);
     if (pred_info) {
         pred_info->valid = validSSIT[index];
         pred_info->tagHit = tag_hit;
-        pred_info->counterStrong = strong;
         pred_info->ssitIndex = index;
         pred_info->tag = calcTag(pc);
         pred_info->storedTag = validSSIT[index] ? SSITTag[index] : 0;
@@ -444,7 +422,7 @@ StoreSet::checkInstStrict(Addr pc, PredictionInfo *pred_info)
         pred_info->counter = validSSIT[index] ? SSITCounter[index] : 0;
     }
 
-    if (!tag_hit || !strong) {
+    if (!tag_hit) {
         DPRINTF(MDPFeedback,
                 "MDP strict lookup load_pc=%#x index=%d tag_hit=%d "
                 "counter=%u strict=0 result=0\n",
@@ -472,12 +450,10 @@ StoreSet::checkInst(Addr PC, PredictionInfo *pred_info)
     std::vector<InstSeqNum> vec = {};
     const uint16_t tag = calcTag(PC);
     const bool tag_hit = ssitHit(PC, index);
-    const bool strong = tag_hit && predictsDependent(index);
 
     if (pred_info) {
         pred_info->valid = validSSIT[index];
         pred_info->tagHit = tag_hit;
-        pred_info->counterStrong = strong;
         pred_info->ssitIndex = index;
         pred_info->tag = tag;
         pred_info->storedTag = validSSIT[index] ? SSITTag[index] : 0;
@@ -492,9 +468,9 @@ StoreSet::checkInst(Addr PC, PredictionInfo *pred_info)
                 PC, index);
         DPRINTF(MDPFeedback,
                 "MDP lookup load_pc=%#x index=%d valid=0 tag_hit=0 "
-                "stored_tag=0 calc_tag=%#x ssid=0 counter=0 threshold=%u "
+                "stored_tag=0 calc_tag=%#x ssid=0 counter=0 "
                 "result=%s producers=0\n",
-                PC, index, tag, dependThreshold, result);
+                PC, index, tag, result);
 
         // Return 0 if there's no valid entry.
         return vec;
@@ -503,18 +479,9 @@ StoreSet::checkInst(Addr PC, PredictionInfo *pred_info)
         DPRINTF(MDPFeedback,
                 "MDP lookup load_pc=%#x index=%d valid=1 tag_hit=0 "
                 "stored_tag=%#x calc_tag=%#x ssid=%u counter=%u "
-                "threshold=%u result=%s producers=0\n",
+                "result=%s producers=0\n",
                 PC, index, SSITTag[index], tag, SSIT[index],
-                SSITCounter[index], dependThreshold, result);
-        return vec;
-    } else if (!strong) {
-        result = "counter_weak";
-        DPRINTF(MDPFeedback,
-                "MDP lookup load_pc=%#x index=%d valid=1 tag_hit=1 "
-                "stored_tag=%#x calc_tag=%#x ssid=%u counter=%u "
-                "threshold=%u result=%s producers=0\n",
-                PC, index, SSITTag[index], tag, SSIT[index],
-                SSITCounter[index], dependThreshold, result);
+                SSITCounter[index], result);
         return vec;
     } else {
         inst_SSID = SSIT[index];
@@ -550,9 +517,9 @@ StoreSet::checkInst(Addr PC, PredictionInfo *pred_info)
         DPRINTF(MDPFeedback,
                 "MDP lookup load_pc=%#x index=%d valid=1 tag_hit=1 "
                 "stored_tag=%#x calc_tag=%#x ssid=%u counter=%u "
-                "threshold=%u result=%s producers=%llu\n",
+                "result=%s producers=%llu\n",
                 PC, index, SSITTag[index], tag, inst_SSID,
-                SSITCounter[index], dependThreshold, result,
+                SSITCounter[index], result,
                 static_cast<unsigned long long>(vec.size()));
         return vec;
     }
@@ -665,7 +632,7 @@ StoreSet::feedback(Addr load_pc, MDPFeedbackSource source, bool predicted)
     }
 
     if (!enableFeedbackCounter) {
-        result.action = MDPFeedbackAction::SatAt3;
+        result.action = MDPFeedbackAction::SatAtMax;
         DPRINTF(MDPFeedback,
                 "MDP feedback load_pc=%#x index=%d valid=1 tag_hit=1 "
                 "source=%s predicted=1 old_ctr=%u new_ctr=%u "
@@ -683,7 +650,7 @@ StoreSet::feedback(Addr load_pc, MDPFeedbackSource source, bool predicted)
         result.newCounter = saturatingInc(result.oldCounter);
         SSITCounter[index] = result.newCounter;
         result.action = result.oldCounter == result.newCounter ?
-            MDPFeedbackAction::SatAt3 : MDPFeedbackAction::Inc;
+            MDPFeedbackAction::SatAtMax : MDPFeedbackAction::Inc;
     } else {
         result.newCounter = saturatingDec(result.oldCounter);
         SSITCounter[index] = result.newCounter;
@@ -703,7 +670,7 @@ StoreSet::feedback(Addr load_pc, MDPFeedbackSource source, bool predicted)
       case MDPFeedbackAction::ClearCounterZero:
         action = "clear_counter_zero"; break;
       case MDPFeedbackAction::SatAt0: action = "sat_at_0"; break;
-      case MDPFeedbackAction::SatAt3: action = "sat_at_3"; break;
+      case MDPFeedbackAction::SatAtMax: action = "sat_at_max"; break;
       default: action = "skip_not_predicted"; break;
     }
     DPRINTF(MDPFeedback,
