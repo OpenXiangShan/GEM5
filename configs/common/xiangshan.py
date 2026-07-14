@@ -971,7 +971,7 @@ def xiangshan_system_init():
         "--rob-walk-policy",
         type=str,
         default="Replay",
-        choices=["Rollback", "Replay", "ConstCycle", "NaiveCpt", "ConfidentCpt"],
+        choices=["Rollback", "Replay", "ConstCycle", "NaiveCpt"],
         help="ROB misprediction-recovery walk policy. NaiveCpt enables the "
               "RAT-checkpoint recovery-cost model.",
     )
