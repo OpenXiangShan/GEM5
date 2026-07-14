@@ -1890,6 +1890,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
     HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
     Addr vaddr = VADDR_SEXT(hgatp.mode, req->getVaddr());
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
+    STATUS vstatus = tc->readMiscReg(MISCREG_VSSTATUS);
     Fault fault = NoFault;
     PrivilegeMode pmode = getMemPriv(tc, mode);
     bool continuePtw =false;
@@ -1922,7 +1923,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
-            fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pteVS, 0, false);
+            fault = checkPermissions(vstatus, pmode, vaddr, mode, e[0]->pteVS, 0, false);
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
@@ -1966,7 +1967,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 //return fault;
                 return std::make_pair(hit_type,fault);
             } else {
-                fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+                fault = checkPermissions(vstatus, pmode, vaddr, mode, e[0]->pte, 0, false);
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
@@ -2062,7 +2063,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             if ((hgatp.mode == AddrXlateMode::SV39) && (i_e == L_L2L3 || i_e == L_L2sp3))
                 continue;
             e[i_e] = l2tlb->lookupL2TLB(req->getgPaddr(), hgatp.vmid, mode, false, i_e, true, gstage);
-            if (e[i_e]) {
+            if (e[i_e] && e[i_e]->pte.v) {
                 if (e[i_e]->level < hit_level) {
                     e[0] = e[i_e];
                     hit_level = e[i_e]->level;
@@ -2124,7 +2125,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 if ((vsatp.mode == AddrXlateMode::SV39) && (i_e == L_L2L3 || i_e == L_L2sp3))
                     continue;
                 e[i_e] = l2tlb->lookupL2TLB(vaddr, vsatp.asid, mode, false, i_e, true, vsstage);
-                if (e[i_e]) {
+                if (e[i_e] && e[i_e]->pte.v) {
                     if (e[i_e]->level < hit_level) {
                         e[0] = e[i_e];
                         hit_level = e[i_e]->level;
@@ -2175,7 +2176,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         if ((hgatp.mode == AddrXlateMode::SV39) && (i_e == L_L2L3 || i_e == L_L2sp3))
                             continue;
                         e[i_e] = l2tlb->lookupL2TLB(gPaddr, hgatp.vmid, mode, false, i_e, true, gstage);
-                        if (e[i_e]) {
+                        if (e[i_e] && e[i_e]->pte.v) {
                             if (e[i_e]->level < hit_level) {
                                 e[0] = e[i_e];
                                 hit_level = e[i_e]->level;
