@@ -16,6 +16,7 @@ from util.solver.executor.distributed import (
     DistributedWorkloadResult,
     DistributedWorkloadScheduler,
     resolve_jobs_per_server,
+    resolve_max_jobs_per_server,
     resolve_require_idle_cpus,
     resolve_server_names,
 )
@@ -272,6 +273,14 @@ class SolverDistributedConfigTestCase(unittest.TestCase):
             ),
             3,
         )
+        self.assertEqual(
+            resolve_max_jobs_per_server(
+                config,
+                jobs_per_server=jobs_per_server,
+                total_parallelism=8,
+            ),
+            8,
+        )
 
     def test_explicit_capacity_and_disabled_idle_probe(self):
         config = DistributedExecutionConfig(
@@ -293,6 +302,60 @@ class SolverDistributedConfigTestCase(unittest.TestCase):
             resolve_require_idle_cpus(config, jobs_per_server=4),
             0,
         )
+        self.assertEqual(
+            resolve_max_jobs_per_server(
+                config,
+                jobs_per_server=4,
+                total_parallelism=16,
+            ),
+            4,
+        )
+
+    def test_default_idle_probe_timeout_is_five_seconds(self):
+        config = DistributedExecutionConfig(
+            servers="node001",
+            require_idle_cpus=1,
+            load_probe_interval=0.01,
+        )
+        scheduler = DistributedWorkloadScheduler(
+            config,
+            total_parallelism=1,
+            log=lambda message: None,
+        )
+        captured = {}
+
+        def fake_probe(server_name, **kwargs):
+            captured["timeout"] = kwargs["timeout"]
+            return 1, "idle_physical_cores=1/64"
+
+        with patch(
+            "util.solver.executor.distributed.dist.probe_idle_cpus",
+            side_effect=fake_probe,
+        ):
+            scheduler._refresh_server_capacity(scheduler.servers[0], force=True)
+
+        self.assertEqual(captured["timeout"], 5.0)
+
+    def test_auto_capacity_scales_with_idle_cpus_but_is_capped(self):
+        config = DistributedExecutionConfig(
+            servers="node001-node006",
+            load_probe_interval=0.01,
+        )
+        scheduler = DistributedWorkloadScheduler(
+            config,
+            total_parallelism=12,
+            log=lambda message: None,
+        )
+
+        with patch(
+            "util.solver.executor.distributed.dist.probe_idle_cpus",
+            return_value=(64, "idle_physical_cores=64/64"),
+        ):
+            scheduler._refresh_server_capacity(scheduler.servers[0], force=True)
+
+        self.assertEqual(scheduler.jobs_per_server, 2)
+        self.assertEqual(scheduler.max_jobs_per_server, 8)
+        self.assertEqual(scheduler.servers[0].capacity, 8)
 
     def test_busy_server_capacity_is_zero(self):
         config = DistributedExecutionConfig(
@@ -387,6 +450,41 @@ class SolverDistributedConfigTestCase(unittest.TestCase):
 
         self.assertEqual(probe_calls, ["node001"])
         self.assertEqual(launched, [("demo", "node001")])
+
+    def test_scheduler_reuses_available_capacity_before_next_probe(self):
+        config = DistributedExecutionConfig(
+            servers="node001-node006",
+            poll_interval=0.01,
+            launch_interval=0.0,
+        )
+        scheduler = DistributedWorkloadScheduler(
+            config,
+            total_parallelism=12,
+            log=lambda message: None,
+        )
+        probe_calls = []
+
+        def fake_probe(server_name, **kwargs):
+            probe_calls.append(server_name)
+            return 64, "idle_physical_cores=64/64"
+
+        with patch(
+            "util.solver.executor.distributed.dist.probe_idle_cpus",
+            side_effect=fake_probe,
+        ):
+            for _ in range(8):
+                server = scheduler._select_server()
+                self.assertIsNotNone(server)
+                self.assertEqual(server.name, "node001")
+                server.pending.append(object())
+
+            self.assertEqual(probe_calls, ["node001"])
+
+            server = scheduler._select_server()
+            self.assertIsNotNone(server)
+            self.assertEqual(server.name, "node002")
+
+        self.assertEqual(probe_calls, ["node001", "node002"])
 
 
 class CiLocalExecutorParallelismTestCase(unittest.TestCase):
