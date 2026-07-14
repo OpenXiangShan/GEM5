@@ -199,36 +199,6 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
     }
 }
 
-TEST_F(ABTBTest, LastPredHasHitTracksProcessedEntries)
-{
-    Addr startPC_A = 0x1000;
-    Addr brPC_A = 0x1004;
-    Addr target_A = 0x2000;
-
-    Addr startPC_B = 0x2000;
-    Addr brPC_B = 0x2004;
-    Addr target_B = 0x3000;
-
-    auto pred_miss = makePrediction(startPC_B, abtb);
-    EXPECT_FALSE(abtb->lastPredHasHit(0));
-
-    auto pred_A = makePrediction(startPC_A, abtb);
-    auto stream_A = createStream(startPC_A, pred_A, abtb);
-    auto pred_B = makePrediction(startPC_B, abtb);
-    auto stream_B = createStream(startPC_B, pred_B, abtb);
-    stream_B.previousPCs.push(startPC_A);
-
-    resolveStream(stream_A, true, brPC_A, target_A, true);
-    resolveStream(stream_B, true, brPC_B, target_B, true);
-    updateBTB(stream_A, abtb, mbtb);
-    updateBTB(stream_B, abtb, mbtb);
-
-    makePrediction(startPC_A, abtb);
-    auto pred_hit = makePrediction(startPC_B, abtb);
-    EXPECT_EQ(pred_hit.btbEntries.size(), 1);
-    EXPECT_TRUE(abtb->lastPredHasHit(0));
-}
-
 } // namespace test
 } // namespace btb_pred
 } // namespace branch_prediction

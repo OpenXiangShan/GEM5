@@ -465,28 +465,35 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         overrideReason = reason;
     }
 
-    // update ubtb/abtb using final S3 prediction
-    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        const bool ubtb_hit = ubtb->isEnabled() && ubtb->lastPredHit();
-        const bool abtb_hit = abtb->isEnabled() && abtb->lastPredHasHit(tid);
-        const bool allow_ubtb_s3_update =
-            ubtb->isEnabled() && !abtb_hit;
+    auto &s3Pred = predsOfEachStage[numStages - 1];
 
-        if (allow_ubtb_s3_update) {
+    // Update uBTB only for the first prediction block after a control squash.
+    auto &thread = threads[tid];
+    if (thread.pendingUbtbS3UpdateAfterCtrlSquash) {
+        if (s3Pred.bbStart == thread.pendingUbtbS3UpdatePC) {
             DPRINTF(Override,
-                    "uBTB S3 update allowed: ubtb_hit=%d abtb_hit=%d\n",
-                    ubtb_hit, abtb_hit);
-            ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-        } else if (ubtb->isEnabled()) {
+                    "Consuming uBTB post-squash S3 update for tid %u pc %#lx\n",
+                    tid, s3Pred.bbStart);
+            if (ubtb->isEnabled()) {
+                ubtb->updateUsingS3Pred(s3Pred);
+            }
+            thread.pendingUbtbS3UpdateAfterCtrlSquash = false;
+            thread.pendingUbtbS3UpdatePC = 0;
+        } else {
             DPRINTF(Override,
-                    "uBTB S3 update skipped: ubtb_hit=%d abtb_hit=%d\n",
-                    ubtb_hit, abtb_hit);
+                    "Defer uBTB post-squash S3 update for tid %u pending pc "
+                    "%#lx current pc %#lx\n",
+                    tid, thread.pendingUbtbS3UpdatePC, s3Pred.bbStart);
         }
+    }
+
+    // update abtb using final S3 prediction
+    if (s3Pred.btbEntries.size() > 0) {
         if (abtb->isEnabled() && !ftq.empty(tid)) {
             auto previous_block_startpc = ftq.back(tid).startPC;
-            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], previous_block_startpc);
+            abtb->updateUsingS3Pred(s3Pred, previous_block_startpc);
         } else if (abtb->isEnabled()) {
-            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], 0);
+            abtb->updateUsingS3Pred(s3Pred, 0);
         }
     }
 
@@ -619,6 +626,8 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
         clearPreds(tid);
         threads[tid].validprediction = false;
         threads[tid].s0PC = redirect_pc;
+        threads[tid].pendingUbtbS3UpdateAfterCtrlSquash = false;
+        threads[tid].pendingUbtbS3UpdatePC = 0;
         return;
     }
 
@@ -649,6 +658,16 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Update PC and target ID
     threads[tid].s0PC = redirect_pc;
+    if (squash_type == SQUASH_CTRL) {
+        threads[tid].pendingUbtbS3UpdateAfterCtrlSquash = true;
+        threads[tid].pendingUbtbS3UpdatePC = redirect_pc;
+        DPRINTF(Override,
+                "Armed uBTB post-squash S3 update for tid %u pc %#lx\n",
+                tid, redirect_pc);
+    } else {
+        threads[tid].pendingUbtbS3UpdateAfterCtrlSquash = false;
+        threads[tid].pendingUbtbS3UpdatePC = 0;
+    }
 
     DPRINTF(DecoupleBP,
             "After squash, fsqId(next alloc)=%lu, fetchHeadFsqId=%lu, s0pc=%#lx\n",
@@ -678,6 +697,8 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
 
     if (!ftq.hasTarget(target_id, tid)) {
         threads[tid].redirectPending = false;
+        threads[tid].pendingUbtbS3UpdateAfterCtrlSquash = false;
+        threads[tid].pendingUbtbS3UpdatePC = 0;
         DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
         return;
     }
@@ -1026,6 +1047,8 @@ DecoupledBPUWithBTB::resetPC(Addr new_pc)
     for (int i = 0; i < numThreads; i++) {
         threads[i].s0PC = new_pc;
         threads[i].redirectPending = false;
+        threads[i].pendingUbtbS3UpdateAfterCtrlSquash = false;
+        threads[i].pendingUbtbS3UpdatePC = 0;
     }
 }
 
@@ -1034,6 +1057,8 @@ DecoupledBPUWithBTB::resetPC(ThreadID tid, Addr new_pc)
 {
     threads[tid].s0PC = new_pc;
     threads[tid].redirectPending = false;
+    threads[tid].pendingUbtbS3UpdateAfterCtrlSquash = false;
+    threads[tid].pendingUbtbS3UpdatePC = 0;
 }
 
 Addr

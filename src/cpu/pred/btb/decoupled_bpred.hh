@@ -143,6 +143,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool squashing{false};
         bool blockPredictionPending{false};
         bool redirectPending{false};
+        bool pendingUbtbS3UpdateAfterCtrlSquash{false};
+        Addr pendingUbtbS3UpdatePC{0};
     } threads[MaxThreads];
 
     std::vector<HistoryManager> historyManagers;

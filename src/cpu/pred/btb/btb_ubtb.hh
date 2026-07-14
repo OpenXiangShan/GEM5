@@ -127,12 +127,6 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
-    bool
-    lastPredHit() const
-    {
-        return lastPred.hit;
-    }
-
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
