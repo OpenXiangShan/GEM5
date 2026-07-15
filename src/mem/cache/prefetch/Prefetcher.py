@@ -778,7 +778,7 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     delay_queue_cycles = 300
     crossPage = False
     replay_trace_prefix = "pbop"
-    enable_student_cover = True
+    enable_student_cover = False
     student_teacher_top_n = 1
     student_pool_size = 8
     student_conf_alpha = 0.0
@@ -806,7 +806,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     delay_queue_size = 16
     delay_queue_cycles = 300
     replay_trace_prefix = "vbop"
-    enable_student_cover = True
+    enable_student_cover = False
     student_teacher_top_n = 1
     student_pool_size = 4
     student_conf_alpha = 0.0
