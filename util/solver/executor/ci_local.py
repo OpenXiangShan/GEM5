@@ -296,7 +296,7 @@ class CiLocalParallelExecutor(BaseExecutor):
         workload_name: str,
         checkpoint: Path,
         raw_dir: Path,
-        overlay_path: Path,
+        overlay_path: Path | None,
         deadline: float | None,
     ) -> tuple[str, int]:
         workload_dir = raw_dir / "spec_all" / workload_name
@@ -369,7 +369,7 @@ class CiLocalParallelExecutor(BaseExecutor):
         problem: ParsedProblem,
         entries: list[tuple[str, Path]],
         raw_dir: Path,
-        overlay_path: Path,
+        overlay_path: Path | None,
         log_path: Path,
     ) -> tuple[str, int]:
         deadline = None
@@ -455,7 +455,7 @@ class CiLocalParallelExecutor(BaseExecutor):
         problem: ParsedProblem,
         benchmark,
         raw_dir: Path,
-        overlay_path: Path,
+        overlay_path: Path | None,
         log_path: Path,
     ) -> tuple[str, int]:
         entries = self._benchmark_entries(problem, benchmark)
@@ -473,7 +473,7 @@ class CiLocalParallelExecutor(BaseExecutor):
         trial_id: str,
         problem: ParsedProblem,
         raw_dir: Path,
-        overlay_path: Path,
+        overlay_path: Path | None,
         log_path: Path,
     ) -> tuple[str, int]:
         entries = self._custom_bin_entries(problem)
@@ -549,6 +549,7 @@ class CiLocalParallelExecutor(BaseExecutor):
             outdir=str(trial_dir),
             raw_files=raw_files,
             error=error,
+            is_baseline=trial.is_baseline,
         )
 
     def _run_single_trial(
@@ -561,10 +562,19 @@ class CiLocalParallelExecutor(BaseExecutor):
         raw_dir = trial_dir / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
         overlay_path = trial_dir / "overlay.json"
-        write_overlay(overlay_path, trial.trial_id, trial.assignments)
+        write_overlay(
+            overlay_path,
+            trial.trial_id,
+            trial.assignments,
+            is_baseline=trial.is_baseline,
+        )
+        runtime_overlay_path = None if trial.is_baseline else overlay_path
         log_path = trial_dir / "executor.log"
 
-        self._log(f"starting {trial.trial_id} with assignments={trial.assignments}")
+        if trial.is_baseline:
+            self._log(f"starting {trial.trial_id} with config defaults")
+        else:
+            self._log(f"starting {trial.trial_id} with assignments={trial.assignments}")
         start = time.monotonic()
         try:
             if self._cancel_requested.is_set():
@@ -574,7 +584,7 @@ class CiLocalParallelExecutor(BaseExecutor):
                     trial.trial_id,
                     problem,
                     raw_dir,
-                    overlay_path,
+                    runtime_overlay_path,
                     log_path,
                 )
             else:
@@ -583,7 +593,7 @@ class CiLocalParallelExecutor(BaseExecutor):
                     problem,
                     benchmark,
                     raw_dir,
-                    overlay_path,
+                    runtime_overlay_path,
                     log_path,
                 )
         except KeyboardInterrupt:
@@ -653,7 +663,13 @@ class CiLocalParallelExecutor(BaseExecutor):
             raw_dir = trial_dir / "raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             overlay_path = trial_dir / "overlay.json"
-            write_overlay(overlay_path, trial.trial_id, trial.assignments)
+            write_overlay(
+                overlay_path,
+                trial.trial_id,
+                trial.assignments,
+                is_baseline=trial.is_baseline,
+            )
+            runtime_overlay_path = None if trial.is_baseline else overlay_path
             log_path = trial_dir / "executor.log"
             if problem.uses_custom_bin_mode():
                 entries = self._custom_bin_entries(problem)
@@ -673,7 +689,7 @@ class CiLocalParallelExecutor(BaseExecutor):
                 command = self._build_gem5_command(
                     problem,
                     checkpoint,
-                    overlay_path=overlay_path,
+                    overlay_path=runtime_overlay_path,
                 )
                 jobs.append(
                     DistributedWorkloadJob(
@@ -804,6 +820,7 @@ class CiLocalParallelExecutor(BaseExecutor):
                         duration_sec=0.0,
                         outdir=str(self.workdir / "trials" / trial.trial_id),
                         error="cancelled",
+                        is_baseline=trial.is_baseline,
                     )
         return [result for result in results if result is not None]
 

@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -717,6 +718,87 @@ class CiLocalExecutorParallelismTestCase(unittest.TestCase):
         self.assertEqual(job.workload_name, "demo")
         self.assertTrue(any(part.startswith("--solver-overlay=") for part in job.command))
         self.assertTrue(str(job.work_dir).endswith("raw/spec_all/demo"))
+
+    def test_distributed_baseline_uses_config_defaults_without_overlay(self):
+        captured = {}
+
+        class FakeScheduler:
+            def __init__(self, config, **kwargs):
+                pass
+
+            def describe(self):
+                return {"mode": "distributed"}
+
+            def run(self, jobs, *, deadline=None):
+                captured["jobs"] = jobs
+                results = []
+                for job in jobs:
+                    job.work_dir.mkdir(parents=True, exist_ok=True)
+                    (job.work_dir / "completed").touch()
+                    results.append(
+                        DistributedWorkloadResult(
+                            trial_id=job.trial_id,
+                            workload_name=job.workload_name,
+                            checkpoint=job.checkpoint,
+                            status="completed",
+                            return_code=0,
+                            server_name="node020",
+                            detail="mocked",
+                            started_at=1.0,
+                            finished_at=2.0,
+                        )
+                    )
+                return results
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint = Path(tmpdir) / "demo.zstd"
+            checkpoint.write_text("", encoding="utf-8")
+            executor = CiLocalParallelExecutor(
+                workdir=tmpdir,
+                build_type="fast",
+                max_parallel_trials=1,
+                distributed_config=DistributedExecutionConfig(
+                    servers="node020",
+                    jobs_per_server=1,
+                    require_idle_cpus=0,
+                ),
+            )
+            problem = make_problem()
+            trials = [
+                TrialRequest(
+                    "trial_baseline",
+                    0,
+                    {"x": 1},
+                    is_baseline=True,
+                )
+            ]
+            with patch(
+                "util.solver.executor.ci_local.iter_workload_entries",
+                return_value=[["demo", "frag"]],
+            ), patch(
+                "util.solver.executor.ci_local.locate_checkpoint",
+                return_value=str(checkpoint),
+            ), patch(
+                "util.solver.executor.ci_local.DistributedWorkloadScheduler",
+                FakeScheduler,
+            ), patch.object(
+                CiLocalParallelExecutor,
+                "_maybe_generate_score",
+                return_value=({}, None),
+            ):
+                results = executor.run_trials(problem, trials)
+
+            overlay_path = Path(tmpdir) / "trials/trial_baseline/overlay.json"
+            overlay = json.loads(overlay_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(
+            any(
+                part.startswith("--solver-overlay=")
+                for part in captured["jobs"][0].command
+            )
+        )
+        self.assertTrue(results[0].is_baseline)
+        self.assertTrue(overlay["is_baseline"])
 
     def test_distributed_mode_uses_per_trial_workload_duration(self):
         class FakeScheduler:

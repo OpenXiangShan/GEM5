@@ -27,7 +27,9 @@ def _resolved_kind(param_desc) -> str:
     return base
 
 
-def _load_overlay(path: str | Path) -> list[OverlayAssignment]:
+def _load_overlay(
+    path: str | Path,
+) -> tuple[list[OverlayAssignment], bool]:
     payload = load_overlay(path)
     assignments = []
     for record in payload.get("assignments", []):
@@ -38,7 +40,7 @@ def _load_overlay(path: str | Path) -> list[OverlayAssignment]:
                 target=record.get("target"),
             )
         )
-    return assignments
+    return assignments, bool(payload.get("is_baseline", False))
 
 
 def dump_problem_bindings(root, problem_ref: str, output_path: str | Path) -> None:
@@ -83,7 +85,9 @@ def dump_problem_bindings(root, problem_ref: str, output_path: str | Path) -> No
 def apply_trial_overlay(root, problem_ref: str, overlay_path: str | Path) -> None:
     problem = parse_problem(problem_ref)
     parameter_map = problem.parameter_map()
-    assignments = _load_overlay(overlay_path)
+    assignments, is_baseline = _load_overlay(overlay_path)
+    if is_baseline:
+        return
     trial_values: dict[str, Any] = {}
 
     for assignment in assignments:

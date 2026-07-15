@@ -9,9 +9,13 @@ class GridSolver(BaseSolver):
     def __init__(self, problem):
         super().__init__(problem)
         self._value_matrix = [parameter.domain.iter_values() for parameter in problem.parameters]
-        self._product_iter = itertools.product(*self._value_matrix) if self._value_matrix else iter([()])
+        self._product_iter = (
+            itertools.product(*self._value_matrix)
+            if self._value_matrix
+            else iter([])
+        )
 
-    def propose(self, history, batch_size: int):
+    def _propose(self, history, batch_size: int):
         trials = []
         while len(trials) < batch_size:
             try:

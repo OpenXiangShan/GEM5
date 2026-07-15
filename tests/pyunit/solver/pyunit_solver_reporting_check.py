@@ -110,7 +110,8 @@ class ReportingTestCase(unittest.TestCase):
 
         summary = render_summary(problem, history)
         self.assertIn("trial_0002", summary)
-        self.assertIn("Representative best: `trial_0002`", summary)
+        self.assertIn("## Best Result", summary)
+        self.assertIn("- Trial: `trial_0002`", summary)
         self.assertLess(summary.find("| trial_0002 |"), summary.find("| trial_0001 |"))
 
     def test_render_summary_keeps_full_convergence_x_axis_for_short_series(self):

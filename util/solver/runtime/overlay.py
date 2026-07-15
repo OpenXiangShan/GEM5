@@ -7,9 +7,15 @@ from typing import Any
 from util.solver.types import to_jsonable
 
 
-def build_overlay_payload(trial_id: str, assignments: dict[str, Any]) -> dict[str, Any]:
+def build_overlay_payload(
+    trial_id: str,
+    assignments: dict[str, Any],
+    *,
+    is_baseline: bool = False,
+) -> dict[str, Any]:
     return {
         "trial_id": trial_id,
+        "is_baseline": is_baseline,
         "assignments": [
             {"name": name, "value": to_jsonable(value)}
             for name, value in assignments.items()
@@ -17,12 +23,22 @@ def build_overlay_payload(trial_id: str, assignments: dict[str, Any]) -> dict[st
     }
 
 
-def write_overlay(path: str | Path, trial_id: str, assignments: dict[str, Any]) -> None:
+def write_overlay(
+    path: str | Path,
+    trial_id: str,
+    assignments: dict[str, Any],
+    *,
+    is_baseline: bool = False,
+) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(
-            to_jsonable(build_overlay_payload(trial_id, assignments)),
+            build_overlay_payload(
+                trial_id,
+                assignments,
+                is_baseline=is_baseline,
+            ),
             handle,
             indent=2,
             sort_keys=True,

@@ -104,6 +104,8 @@ class GaSolver(BaseSolver):
     def _history_to_population(self, history):
         population = []
         for trial in history:
+            if getattr(trial, "is_baseline", False):
+                continue
             if trial.status != "valid":
                 continue
             objective_value = objective_value_for_trial(trial, self._objective)
@@ -252,14 +254,14 @@ class GaSolver(BaseSolver):
         self._pending_generation = self._pending_generation[batch_size:]
         return trials
 
-    def propose(self, history, batch_size: int):
+    def _propose(self, history, batch_size: int):
         pending = self._drain_pending(batch_size)
         if pending:
             return pending
 
         if not history:
             self._update_population_stats([])
-            generated = self._initial_generation(max(batch_size, self._population_size))
+            generated = self._initial_generation(batch_size)
         else:
             population = self._history_to_population(history)
             self._update_population_stats(population)

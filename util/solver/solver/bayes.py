@@ -175,6 +175,8 @@ class BayesSolver(BaseSolver):
         values = []
         trial_ids = []
         for trial in history:
+            if getattr(trial, "is_baseline", False):
+                continue
             if trial.status != "valid":
                 continue
             if trial.trial_id in self._told_trial_ids:
@@ -239,7 +241,7 @@ class BayesSolver(BaseSolver):
             trials.append(self._make_trial(assignments))
         return trials
 
-    def propose(self, history, batch_size: int):
+    def _propose(self, history, batch_size: int):
         pending = self._drain_pending(batch_size)
         if pending:
             return pending

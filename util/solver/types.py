@@ -148,6 +148,7 @@ class TrialRequest:
     trial_id: str
     generation: int
     assignments: dict[str, Any]
+    is_baseline: bool = False
 
 
 @dataclass
@@ -161,6 +162,7 @@ class TrialExecutionResult:
     outdir: str
     raw_files: dict[str, str] = field(default_factory=dict)
     error: str | None = None
+    is_baseline: bool = False
 
 
 @dataclass
@@ -176,6 +178,7 @@ class EvaluatedTrial:
     duration_sec: float
     raw_files: dict[str, str] = field(default_factory=dict)
     objective_values: dict[str, float | None] = field(default_factory=dict)
+    is_baseline: bool = False
 
 
 def freeze_value(value: Any) -> str:

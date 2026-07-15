@@ -12,7 +12,7 @@ class RandomSolver(BaseSolver):
         self._rng = random.Random(seed)
         self._seen = set()
 
-    def propose(self, history, batch_size: int):
+    def _propose(self, history, batch_size: int):
         trials = []
         max_attempts = max(32, batch_size * 32)
         attempts = 0

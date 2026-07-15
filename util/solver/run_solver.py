@@ -28,7 +28,6 @@ from util.solver.processing.aggregate import (
 from util.solver.processing.persist import persist_run_state, write_json
 from util.solver.reporting.charts import render_charts
 from util.solver.reporting.markdown import (
-    builtin_report_sections,
     publish_step_summary,
     render_summary,
     write_summary,
@@ -81,6 +80,8 @@ def format_evaluated_trial(trial) -> str:
         f"status={trial.status}",
         f"duration={trial.duration_sec:.1f}s",
     ]
+    if getattr(trial, "is_baseline", False):
+        parts.append("candidate=config_defaults")
     if trial.objective_values:
         objective_parts = []
         for key, value in sorted(trial.objective_values.items()):
@@ -351,13 +352,22 @@ def choose_solver(problem, solver_kind: str, seed: int):
         return Nsga2Solver(problem, seed=seed)
     if problem.solver_hint == "ga":
         return GaSolver(problem, seed=seed)
-    total_points = prod(parameter.domain.cardinality() for parameter in problem.parameters)
+    total_points = search_candidate_count(problem)
     max_trials = problem.stop.max_trials
     if max_trials is not None and total_points <= max_trials:
         return GridSolver(problem)
     if problem.is_multi_objective():
         return Nsga2Solver(problem, seed=seed)
     return GaSolver(problem, seed=seed)
+
+
+def search_candidate_count(problem) -> int:
+    assignment_points = (
+        prod(parameter.domain.cardinality() for parameter in problem.parameters)
+        if problem.parameters
+        else 0
+    )
+    return assignment_points + 1
 
 
 def _no_improve_count(problem, history) -> int:
@@ -444,7 +454,7 @@ def finalize_run(
     )
     persist_run_state(workdir, problem, history, best)
     chart_paths = render_charts(problem, history, workdir / "charts")
-    extra_sections = builtin_report_sections(problem, history)
+    extra_sections = []
     summary = render_summary(
         problem,
         history,
@@ -532,16 +542,20 @@ def main() -> int:
         problem = apply_runtime_overrides(problem, args)
         messages = runtime_messages(problem)
         parameter_names = ", ".join(parameter.name for parameter in problem.parameters)
-        search_space = prod(
-            parameter.domain.cardinality() for parameter in problem.parameters
+        assignment_space = (
+            prod(parameter.domain.cardinality() for parameter in problem.parameters)
+            if problem.parameters
+            else 0
         )
+        search_space = search_candidate_count(problem)
         progress.phase(
             "setup",
             (
                 f"problem={problem.name}; benchmark={problem.benchmark_type}; "
                 f"objectives={'; '.join(obj.display_name() for obj in problem.objective_list())}; "
                 f"parameters={len(problem.parameters)} [{parameter_names}]; "
-                f"search_space={search_space}"
+                f"search_space={search_space} "
+                f"({assignment_space} assignments + config default)"
             ),
         )
 
@@ -630,6 +644,8 @@ def main() -> int:
             problem.stop.max_trials or args.max_parallel_trials,
         )
         preview = solver.propose([], preview_count)
+        metadata["solver_report"] = solver.report_metadata()
+        write_json(workdir / "metadata.json", metadata)
         progress.phase(
             "preview",
             f"solver={solver_name}; prepared {len(preview)} preview trial(s)",

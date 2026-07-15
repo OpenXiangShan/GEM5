@@ -48,12 +48,15 @@ class GridAndProcessingTestCase(unittest.TestCase):
         self.assertEqual(
             assignments,
             [
+                {},
                 {"knob": 1, "mode": 10},
                 {"knob": 1, "mode": 20},
                 {"knob": 2, "mode": 10},
                 {"knob": 2, "mode": 20},
             ],
         )
+        self.assertTrue(trials[0].is_baseline)
+        self.assertTrue(all(not trial.is_baseline for trial in trials[1:]))
 
     def test_score_txt_objective_is_extracted(self):
         with tempfile.TemporaryDirectory() as tmpdir:

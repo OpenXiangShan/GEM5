@@ -268,7 +268,10 @@ objectives = [
 
 - 一个 trial 若在所有 objective 上都不差于另一个 trial，且至少一个 objective 更好，则支配对方
 - summary 会展示 Pareto frontier
-- `best_result.json` 在多目标场景下表示 controller 选出的代表 frontier 点；完整 frontier 以 `summary.md` 和 `history.jsonl` 为准
+- `best_result.json` 在多目标场景下表示 Pareto frontier 中 primary objective
+  最优的代表点；primary objective 相同时保持 frontier 的既有顺序
+- summary 会在 top results 之外单独展示该代表点的完整 objectives 和
+  assignments；完整 frontier 仍以 `summary.md` 和 `history.jsonl` 为准
 - `no_improve_trials` 在多目标场景下按 “Pareto frontier 是否继续改进” 判断
 
 如果你希望 candidate generation 也对 Pareto frontier 敏感，而不是仅在结果分析阶段做多目标比较，可以显式指定：
@@ -306,7 +309,22 @@ objectives = [
 当前 `ga` backend 也复用同一个 `deap` 依赖，但只支持单目标问题；多目标仍应使用
 `nsga2`。
 
-### 5.2 停止条件
+### 5.2 默认配置 baseline
+
+每次搜索的第一个候选固定为 config-default baseline：
+
+- `trial_0001` 不携带 assignments，也不向 gem5 传递 `--solver-overlay`
+- direct target 和 `apply_trial()` 都不会执行，因此测到的是 config 脚本完成默认
+  tuning 后的真实配置
+- baseline 会进入 history、Pareto/最佳结果比较和停止条件
+- baseline 是一次真实模拟，因此占用一个 `max_trials` 预算
+- GA、NSGA-II 和 Bayes 不会把 baseline 当作参数向量训练，但后续候选仍会与它
+  比较；只要 baseline 有效，单目标搜索最终报告的 best result 不会比它更差
+
+summary 和 history 会将该 trial 标记为 config defaults，`history.jsonl` 与
+`history.csv` 中同时记录 `is_baseline = true`。
+
+### 5.3 停止条件
 
 当前可用字段：
 
