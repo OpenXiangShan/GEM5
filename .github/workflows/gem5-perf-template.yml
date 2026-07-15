@@ -168,7 +168,7 @@ jobs:
             "gcc15-spec26-0.3c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec26_cpts/gcc15/spec26_0.3c.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec26_gcc15_rv64gc_base_260517/checkpoint" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci-26.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec26_cpts/gcc15/spec26_0.3c.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc15-spec26-0.3c" >> $GITHUB_OUTPUT
               echo "comment=run 30% coverage SPEC CPU2026 checkpoints plus 722.palm_r/201821 regression" >> $GITHUB_OUTPUT
@@ -176,7 +176,7 @@ jobs:
             "gcc15-spec26-1.0c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec26_cpts/gcc15/spec26_1.0c.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec26_gcc15_rv64gc_base_260517/checkpoint" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci-26.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec26_cpts/gcc15/spec26_1.0c.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc15-spec26-1.0c" >> $GITHUB_OUTPUT
               echo "comment=run 100% coverage SPEC CPU2026 checkpoints" >> $GITHUB_OUTPUT
