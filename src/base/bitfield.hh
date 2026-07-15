@@ -125,9 +125,15 @@ template <int N>
 constexpr uint64_t
 sext(uint64_t val)
 {
-    bool sign_bit = bits(val, N - 1);
-    if (sign_bit)
-        val |= ~mask(N);
+    static_assert(
+        N > 0 && N <= 64,
+        "sext<N>: N must be between 1 and 64"
+    );
+    if constexpr (N < 64) {
+        val &= mask(N);
+        if (bits(val, N - 1))
+            val |= ~mask(N);
+    }
     return val;
 }
 
