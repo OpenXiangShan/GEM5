@@ -15,23 +15,31 @@ namespace gem5
 namespace o3
 {
 
+constexpr unsigned
+distanceMdpLog2(unsigned value)
+{
+    return value <= 1 ? 0 : 1 + distanceMdpLog2(value >> 1);
+}
+
 class DistanceMDP
 {
   public:
-    static constexpr unsigned NumEntries = 32;
+    static constexpr unsigned NumEntries = 64;
     static constexpr unsigned TagBits = 14;
-    static constexpr unsigned CounterBits = 4;
-    static constexpr unsigned DistanceBits = 6;
+    static constexpr unsigned CounterBits = 7;
+    static constexpr unsigned DistanceBits = 7;
     static constexpr unsigned VAddrBits = 39;
     static constexpr uint8_t MaxCounter = (1U << CounterBits) - 1;
     static constexpr uint8_t MaxDistance = (1U << DistanceBits) - 1;
-    static constexpr uint64_t StrictTimeout = 2048;
+    static constexpr uint64_t StrictTimeout = 10000;
 
     struct Entry
     {
         bool valid = false;
         uint16_t tag = 0;
         uint8_t counter = 0;
+        bool hasDistance = false;
+        bool multiDistance = false;
         bool waitAllStore = false;
         uint8_t distance = 0;
         uint64_t strictExpireCycle = 0;
@@ -44,6 +52,8 @@ class DistanceMDP
         unsigned entryIndex = 0;
         uint16_t tag = 0;
         uint8_t counter = 0;
+        bool hasDistance = false;
+        bool multiDistance = false;
         bool waitAllStore = false;
         uint8_t distance = 0;
     };
@@ -61,6 +71,9 @@ class DistanceMDP
     {
         TrainAction action = TrainAction::InvalidDistance;
         bool strictExpired = false;
+        bool strictFallback = false;
+        bool multiDistance = false;
+        bool distanceChanged = false;
         unsigned entryIndex = 0;
         uint16_t tag = 0;
         uint8_t distance = 0;
@@ -106,8 +119,10 @@ class DistanceMDP
     unsigned replacementVictim() const;
 
   private:
+    static_assert(NumEntries > 0 && (NumEntries & (NumEntries - 1)) == 0,
+                  "DistanceMDP entries must be a power of two");
     static constexpr unsigned PlruBits = NumEntries - 1;
-    static constexpr unsigned PlruLevels = 5;
+    static constexpr unsigned PlruLevels = distanceMdpLog2(NumEntries);
 
     std::array<Entry, NumEntries> entries{};
     std::bitset<PlruBits> plru;

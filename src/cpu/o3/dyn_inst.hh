@@ -488,6 +488,7 @@ class DynInst : public ExecContext, public RefCounted
     bool distanceMdpLookupIssued = false;
     bool distanceMdpPredicted = false;
     bool distanceMdpPredictionConsumed = false;
+    bool distanceMdpHasDistance = false;
     bool distanceMdpWaitAll = false;
     uint8_t distanceMdpDistance = 0;
     int distanceMdpEntryIndex = -1;

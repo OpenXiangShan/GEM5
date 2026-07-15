@@ -488,9 +488,6 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     }
     panic_if(_enableDistanceMDP && !_enableReplayBasedMDP,
              "EnableDistanceMDP requires EnableReplayBasedMDP\n");
-    panic_if(_enableDistanceMDP && SQEntries > 63,
-             "EnableDistanceMDP requires SQEntries <= 63 (got %u)\n",
-             SQEntries);
     assert(_storeWbStage >= 2 && _storeWbStage <= 4);
     panic_if(dcacheSetDivNum == 0, "DcacheSetDivNum must be >= 1\n");
     panic_if(!isPowerOf2(dcacheSetDivNum),

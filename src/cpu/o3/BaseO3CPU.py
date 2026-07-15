@@ -200,7 +200,7 @@ class BaseO3CPU(BaseCPU):
     store_set_clear_thres = Param.Unsigned(1048576,"")
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
-    enable_storeSet_train = Param.Bool(True, "Training store set predictor")
+    enable_storeSet_train = Param.Bool(False, "Training store set predictor")
     EnableMDPFeedbackCounter = Param.Bool(True,
         "Enable StoreSet MDP 4-bit feedback counters")
     EnableMDPSBufferForwardFeedback = Param.Bool(False,
@@ -219,7 +219,7 @@ class BaseO3CPU(BaseCPU):
     EnableReplayBasedMDP = Param.Bool(True,
         "Use replay-based mem dependency prediction (loads don't stall in IQ, "
         "but may replay in load pipe)")
-    EnableDistanceMDP = Param.Bool(False,
+    EnableDistanceMDP = Param.Bool(True,
         "Use the SQ-distance memory dependence predictor instead of StoreSet")
     EnableMDPStrictWait = Param.Bool(False,
         "Enable StoreSet strict-wait in mem dep prediction (checkInstStrict)")

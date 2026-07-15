@@ -68,7 +68,9 @@ DistanceMDP::lookup(Addr pc, uint64_t result_cycle)
     prediction.hit = true;
     prediction.entryIndex = *index;
     prediction.counter = matched.counter;
-    prediction.waitAllStore = matched.waitAllStore;
+    prediction.hasDistance = matched.hasDistance;
+    prediction.multiDistance = matched.multiDistance;
+    prediction.waitAllStore = matched.waitAllStore || matched.multiDistance;
     prediction.distance = matched.distance;
     return prediction;
 }
@@ -91,20 +93,31 @@ DistanceMDP::train(Addr load_pc, size_t load_boundary,
 {
     TrainResult result;
     result.tag = hash(load_pc);
-    const auto distance = encodeDistance(load_boundary, store_index);
-    if (!distance) {
+    if (load_boundary <= store_index) {
         return result;
     }
-    result.distance = *distance;
+
+    const auto distance = encodeDistance(load_boundary, store_index);
+    result.strictFallback = !distance;
+    // Zero is reserved for strict-only entries without a target store.
+    result.distance = distance.value_or(0);
 
     const auto matched_index = find(result.tag);
     if (matched_index) {
         result.entryIndex = *matched_index;
         Entry &matched = entries[*matched_index];
         result.strictExpired = expireStrict(matched, cycle);
-        result.action = matched.waitAllStore ?
+        result.action = (matched.waitAllStore || matched.multiDistance) ?
             TrainAction::StrictRefresh : TrainAction::StrictUpgrade;
-        matched.distance = *distance;
+        result.distanceChanged = distance && matched.hasDistance &&
+            matched.distance != *distance;
+        result.multiDistance = matched.multiDistance ||
+            result.distanceChanged ||
+            (result.strictFallback && matched.hasDistance);
+        matched.multiDistance = result.multiDistance;
+        // An overflow has no safe target, so it must discard any old one.
+        matched.hasDistance = !result.strictFallback;
+        matched.distance = result.distance;
         matched.counter = MaxCounter;
         matched.waitAllStore = true;
         matched.strictExpireCycle = cycle + StrictTimeout;
@@ -133,9 +146,11 @@ DistanceMDP::train(Addr load_pc, size_t load_boundary,
         .valid = true,
         .tag = result.tag,
         .counter = MaxCounter,
-        .waitAllStore = false,
-        .distance = *distance,
-        .strictExpireCycle = 0,
+        .hasDistance = !result.strictFallback,
+        .multiDistance = false,
+        .waitAllStore = result.strictFallback,
+        .distance = result.distance,
+        .strictExpireCycle = result.strictFallback ? cycle + StrictTimeout : 0,
     };
     touch(target);
     return result;

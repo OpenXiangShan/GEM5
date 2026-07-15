@@ -74,6 +74,8 @@ def setKmhV3IdealParams(args, system):
         cpu.StoreWbStage = 4
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
+        cpu.EnableReplayBasedMDP = True
+        cpu.EnableDistanceMDP = True
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2

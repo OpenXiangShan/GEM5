@@ -196,7 +196,7 @@ LSQUnit::WritebackRegEvent::process()
 {
     assert(!lsqPtr->cpu->switchedOut());
 
-    lsqPtr->writebackReg(inst, pkt);
+    lsqPtr->writebackReg(inst, pkt, request);
 
     assert(request);
     request->writebackDone();
@@ -408,7 +408,7 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
                     pkt->getHtmTransactionFailedInCacheRC() );
             }
 
-            writebackReg(inst, request->mainPacket());
+            writebackReg(inst, request->mainPacket(), request);
             if (inst->isStore() || inst->isAtomic()) {
                 request->writebackDone();
                 completeStore(request->instruction()->sqIt);
@@ -498,6 +498,7 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     depCheckShift = params.LSQDepCheckShift;
     checkLoads = params.LSQCheckLoads;
     needsTSO = params.needsTSO;
+    distanceMdpClearThreshold = params.store_set_clear_thres;
 
     // Clear RAR/RAW queues
     RARQueue.clear();
@@ -555,6 +556,7 @@ LSQUnit::resetState()
     retryPkt = NULL;
     memDepViolator = NULL;
     distanceMdp.clear();
+    distanceMdpLastClearCycle = cpu ? uint64_t(cpu->curCycle()) : 0;
 
     stalled = false;
 
@@ -632,13 +634,21 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of DistanceMDP wait-all upgrades"),
       ADD_STAT(distanceMdpStrictRefreshes, statistics::units::Count::get(),
                "Number of DistanceMDP wait-all deadline refreshes"),
+      ADD_STAT(distanceMdpMultiDistanceUpgrades,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP entries marked as multi-distance wait-all"),
       ADD_STAT(distanceMdpInvalidDistanceTrain,
                statistics::units::Count::get(),
-               "Number of DistanceMDP training events outside age 1..63"),
+               "Number of DistanceMDP training events with invalid store-load order"),
+      ADD_STAT(distanceMdpOverflowStrictFallbacks,
+               statistics::units::Count::get(),
+               "Number of out-of-range DistanceMDP trains converted to wait-all"),
       ADD_STAT(distanceMdpPlruEvictions, statistics::units::Count::get(),
                "Number of DistanceMDP PLRU evictions"),
       ADD_STAT(distanceMdpStrictExpirations, statistics::units::Count::get(),
                "Number of lazily expired DistanceMDP wait-all entries"),
+      ADD_STAT(distanceMdpPeriodicClears, statistics::units::Count::get(),
+               "Number of periodic DistanceMDP full-table clears"),
       ADD_STAT(distanceMdpSqIncrements, statistics::units::Count::get(),
                "Number of DistanceMDP counter increments from SQ forwarding"),
       ADD_STAT(distanceMdpSbufferDecrements, statistics::units::Count::get(),
@@ -659,6 +669,9 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of DistanceMDP feedback tag mismatches"),
       ADD_STAT(distanceMdpDuplicateFeedback, statistics::units::Count::get(),
                "Number of duplicate DistanceMDP feedback events"),
+      ADD_STAT(distanceMdpStalePredictions,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP S1 predictions dropped because the S0 entry changed"),
       ADD_STAT(distanceMdpRawViolationNoPrediction,
                statistics::units::Count::get(),
                "Number of RAW violations without a DistanceMDP prediction"),
@@ -748,11 +761,14 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     loadTranslationLat
         .init(0, 299, 10)
         .flags(statistics::nozero);
-    distanceMdpTrainDistance.init(0, 63, 1).flags(statistics::nozero);
-    distanceMdpPredictionDistance.init(0, 63, 1)
+    distanceMdpTrainDistance.init(0, DistanceMDP::MaxDistance, 1)
         .flags(statistics::nozero);
-    distanceMdpCounter.init(0, 15, 1).flags(statistics::nozero);
-    distanceMdpOccupancy.init(0, 32, 1).flags(statistics::nozero);
+    distanceMdpPredictionDistance.init(0, DistanceMDP::MaxDistance, 1)
+        .flags(statistics::nozero);
+    distanceMdpCounter.init(0, DistanceMDP::MaxCounter, 1)
+        .flags(statistics::nozero);
+    distanceMdpOccupancy.init(0, DistanceMDP::NumEntries, 1)
+        .flags(statistics::nozero);
 
     RARQueueLatency
         .init(0, 500, 20)
@@ -1044,22 +1060,32 @@ LSQUnit::trainDistanceMDP(const DynInstPtr &store_inst,
         ++stats.distanceMdpStrictRefreshes;
         break;
     }
+    if (result.strictFallback) {
+        ++stats.distanceMdpOverflowStrictFallbacks;
+    }
+    if (result.multiDistance && result.distanceChanged) {
+        ++stats.distanceMdpMultiDistanceUpgrades;
+    }
     if (result.strictExpired) {
         ++stats.distanceMdpStrictExpirations;
     }
     if (result.action != Action::InvalidDistance) {
-        stats.distanceMdpTrainDistance.sample(result.distance);
+        if (!result.strictFallback) {
+            stats.distanceMdpTrainDistance.sample(result.distance);
+        }
         stats.distanceMdpOccupancy.sample(distanceMdp.occupancy());
     }
 
     DPRINTF(DistanceMDP,
             "train load_pc=%#x load_sn=%llu store_sn=%llu action=%u "
             "entry=%u tag=%#x boundary=%lu store_idx=%lu distance=%u "
+            "strict_fallback=%d multi_distance=%d distance_changed=%d "
             "expired=%d occupancy=%u\n",
             violating_load->pcState().instAddr(), violating_load->seqNum,
             store_inst->seqNum, static_cast<unsigned>(result.action),
             result.entryIndex, result.tag, violating_load->sqIt.idx(),
-            store_inst->sqIt.idx(), result.distance, result.strictExpired,
+            store_inst->sqIt.idx(), result.distance, result.strictFallback,
+            result.multiDistance, result.distanceChanged, result.strictExpired,
             distanceMdp.occupancy());
 }
 
@@ -1450,6 +1476,24 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
     DPRINTF(LoadPipeline, "Load [sn:%ld] set replay, dropReqNow: %d\n", inst->seqNum, dropReqNow);
 }
 
+bool
+LSQUnit::checkDistanceMdpClear(uint64_t cycle)
+{
+    const uint64_t delta = cycle - distanceMdpLastClearCycle;
+    if (delta <= distanceMdpClearThreshold) {
+        return false;
+    }
+
+    distanceMdp.clear();
+    distanceMdpLastClearCycle = cycle;
+    ++stats.distanceMdpPeriodicClears;
+    stats.distanceMdpOccupancy.sample(distanceMdp.occupancy());
+    DPRINTF(DistanceMDP,
+            "periodic clear cycle=%llu delta=%llu threshold=%llu\n",
+            cycle, delta, distanceMdpClearThreshold);
+    return true;
+}
+
 void
 LSQUnit::lookupDistanceMdp(const DynInstPtr &inst)
 {
@@ -1465,13 +1509,16 @@ LSQUnit::lookupDistanceMdp(const DynInstPtr &inst)
 
     ++stats.distanceMdpLookups;
     const uint64_t result_cycle = uint64_t(cpu->curCycle()) + 1;
+    checkDistanceMdpClear(result_cycle);
     const auto prediction = distanceMdp.lookup(
         inst->pcState().instAddr(), result_cycle);
     if (prediction.strictExpired) {
         ++stats.distanceMdpStrictExpirations;
     }
 
-    inst->distanceMdpPredicted = prediction.hit;
+    inst->distanceMdpHasDistance = prediction.hasDistance;
+    inst->distanceMdpPredicted = prediction.hit &&
+        (prediction.waitAllStore || prediction.hasDistance);
     inst->distanceMdpWaitAll = prediction.waitAllStore;
     inst->distanceMdpDistance = prediction.distance;
     inst->distanceMdpEntryIndex = prediction.hit ?
@@ -1486,11 +1533,14 @@ LSQUnit::lookupDistanceMdp(const DynInstPtr &inst)
 
     DPRINTF(DistanceMDP,
             "S0 lookup pc=%#x sn=%llu result_cycle=%llu hit=%d entry=%d "
-            "tag=%#x counter=%u distance=%u wait_all=%d expired=%d\n",
+            "tag=%#x counter=%u distance=%u has_distance=%d wait_all=%d "
+            "multi_distance=%d predict=%d expired=%d\n",
             inst->pcState().instAddr(), inst->seqNum, result_cycle,
             prediction.hit, inst->distanceMdpEntryIndex, prediction.tag,
             prediction.counter, prediction.distance,
-            prediction.waitAllStore, prediction.strictExpired);
+            prediction.hasDistance, prediction.waitAllStore,
+            prediction.multiDistance, inst->distanceMdpPredicted,
+            prediction.strictExpired);
 }
 
 void
@@ -1662,6 +1712,36 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     }
 
     return load_fault;
+}
+
+void
+LSQUnit::updateMdpFeedbackOnLoadSuccess(const DynInstPtr &inst,
+                                        LSQRequest *request)
+{
+    if (!inst || !inst->isLoad() || !request || inst->isSquashed() ||
+        !inst->isExecuted() || inst->getFault() != NoFault) {
+        return;
+    }
+
+    const bool sq_forwarded = !request->SQforwardPackets.empty();
+    const bool sbuffer_forwarded = !request->SBforwardPackets.empty();
+    const auto source = sq_forwarded ? MDPFeedbackSource::StoreQueue :
+        sbuffer_forwarded ? MDPFeedbackSource::StoreBuffer :
+        MDPFeedbackSource::NoForward;
+    const char *source_name = sq_forwarded ? "sq" :
+        sbuffer_forwarded ? "sbuffer" : "none";
+
+    DPRINTF(MDPFeedback,
+            "MDP successful-load feedback load_pc=%#x sn=%llu source=%s "
+            "sq_forwarded=%d sbuffer_forwarded=%d\n",
+            inst->pcState().instAddr(), inst->seqNum, source_name,
+            sq_forwarded, sbuffer_forwarded);
+
+    if (lsq->enableDistanceMDP()) {
+        updateDistanceMdpFeedback(inst, source);
+    } else {
+        iewStage->mdpFeedback(inst, source);
+    }
 }
 
 void
@@ -1866,42 +1946,6 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     // No nuke happens, prepare the inst data
     // assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
     request = currentLoadRequest(inst);
-    // Completion path after replay selection.  Full forwarding can write back
-    // immediately; otherwise a normal load assembles cache and forwarded data
-    // before completeDataAccess/writeback handling takes over.
-    auto mdp_feedback_source = MDPFeedbackSource::NoForward;
-    bool mdp_sq_forwarded = false;
-    bool mdp_sbuffer_forwarded = false;
-    if (request) {
-        mdp_sq_forwarded = !request->SQforwardPackets.empty();
-        mdp_sbuffer_forwarded = !request->SBforwardPackets.empty();
-        if (mdp_sq_forwarded) {
-            mdp_feedback_source = MDPFeedbackSource::StoreQueue;
-        } else if (mdp_sbuffer_forwarded) {
-            mdp_feedback_source = MDPFeedbackSource::StoreBuffer;
-        }
-    }
-    const char *mdp_source_str = "none";
-    if (mdp_feedback_source == MDPFeedbackSource::StoreQueue) {
-        mdp_source_str = "sq";
-    } else if (mdp_feedback_source ==
-               MDPFeedbackSource::StoreBuffer) {
-        mdp_source_str = "sbuffer";
-    }
-    DPRINTF(MDPFeedback,
-            "MDP load feedback load_pc=%#x sn=%llu source=%s predicted=%d "
-            "sq_forwarded=%d sbuffer_forwarded=%d pred_index=%d "
-            "pred_tag=%#x duplicate=%d\n",
-            inst->pcState().instAddr(), inst->seqNum, mdp_source_str,
-            inst->mdpPredictedDependent, mdp_sq_forwarded,
-            mdp_sbuffer_forwarded, inst->mdpPredSSITIndex, inst->mdpPredTag,
-            inst->mdpFeedbackUpdated);
-    if (lsq->enableDistanceMDP()) {
-        updateDistanceMdpFeedback(inst, mdp_feedback_source);
-    } else {
-        iewStage->mdpFeedback(inst, mdp_feedback_source);
-    }
-
     if (inst->fullForward()) {
         DPRINTF(LoadPipeline, "Load [sn:%llu] fullForward\n", inst->seqNum);
         assert(request);
@@ -1909,7 +1953,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         request->forward();
         PacketPtr pkt = makeFullFwdPkt(inst, request);
         // this load gets full data from sq or sbuffer
-        writebackReg(inst, pkt);
+        writebackReg(inst, pkt, request);
         request->writebackDone();
         delete pkt;
     } else {
@@ -3090,7 +3134,8 @@ LSQUnit::storePostSend()
 }
 
 void
-LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
+LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt,
+                      LSQRequest *request)
 {
     assert(!inst->isSplitStoreAddr());
     iewStage->wakeCPU();
@@ -3156,6 +3201,8 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
                     "due to pending fault.\n", inst->seqNum);
         }
     }
+
+    updateMdpFeedbackOnLoadSuccess(inst, request);
 
     const bool finish_after_writeback =
         !inst->isNormalLd() || !inst->inPipe();
@@ -3637,15 +3684,29 @@ LSQUnit::applyDistanceMdpPrediction(const DynInstPtr &inst,
         return false;
     }
 
-    inst->distanceMdpPredictionConsumed = true;
     if (!request->isNormalLd() || request->mainReq()->isLLSC() ||
         inst->strictlyOrdered()) {
         inst->distanceMdpPredicted = false;
         return false;
     }
 
-    distanceMdp.commitLookup(inst->distanceMdpEntryIndex,
-                             inst->distanceMdpTag);
+    if (!inst->distanceMdpWaitAll && !inst->distanceMdpHasDistance) {
+        inst->distanceMdpPredicted = false;
+        return false;
+    }
+
+    if (!distanceMdp.commitLookup(inst->distanceMdpEntryIndex,
+                                  inst->distanceMdpTag)) {
+        ++stats.distanceMdpStalePredictions;
+        inst->distanceMdpPredicted = false;
+        DPRINTF(DistanceMDP,
+                "S1 stale prediction pc=%#x sn=%llu entry=%d tag=%#x\n",
+                inst->pcState().instAddr(), inst->seqNum,
+                inst->distanceMdpEntryIndex, inst->distanceMdpTag);
+        return false;
+    }
+
+    inst->distanceMdpPredictionConsumed = true;
 
     if (inst->distanceMdpWaitAll) {
         ++stats.distanceMdpStrictPredictions;

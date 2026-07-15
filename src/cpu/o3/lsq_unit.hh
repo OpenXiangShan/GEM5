@@ -498,7 +498,8 @@ class LSQUnit
     void resetState();
 
     /** Writes back the instruction, sending it to IEW. */
-    void writebackReg(const DynInstPtr &inst, PacketPtr pkt);
+    void writebackReg(const DynInstPtr &inst, PacketPtr pkt,
+                      LSQRequest *request);
 
     /** Completes the store at the specified index. */
     void completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffer = false);
@@ -770,6 +771,8 @@ class LSQUnit
     bool countedStLdViolationThisCycle = false;
 
     DistanceMDP distanceMdp;
+    uint64_t distanceMdpClearThreshold = 0;
+    uint64_t distanceMdpLastClearCycle = 0;
 
     unsigned lastClockSQPopEntries;
     unsigned lastClockLQPopEntries;
@@ -867,9 +870,12 @@ class LSQUnit
         statistics::Scalar distanceMdpViolationHits;
         statistics::Scalar distanceMdpStrictUpgrades;
         statistics::Scalar distanceMdpStrictRefreshes;
+        statistics::Scalar distanceMdpMultiDistanceUpgrades;
         statistics::Scalar distanceMdpInvalidDistanceTrain;
+        statistics::Scalar distanceMdpOverflowStrictFallbacks;
         statistics::Scalar distanceMdpPlruEvictions;
         statistics::Scalar distanceMdpStrictExpirations;
+        statistics::Scalar distanceMdpPeriodicClears;
         statistics::Scalar distanceMdpSqIncrements;
         statistics::Scalar distanceMdpSbufferDecrements;
         statistics::Scalar distanceMdpNoForwardDecrements;
@@ -878,6 +884,7 @@ class LSQUnit
         statistics::Scalar distanceMdpFeedbackInvalidEntry;
         statistics::Scalar distanceMdpFeedbackTagMismatch;
         statistics::Scalar distanceMdpDuplicateFeedback;
+        statistics::Scalar distanceMdpStalePredictions;
         statistics::Scalar distanceMdpRawViolationNoPrediction;
         statistics::Scalar distanceMdpRawViolationHit;
         statistics::Scalar distanceMdpRawViolationMiss;
@@ -974,9 +981,12 @@ class LSQUnit
 
     bool squashMark{false};
 
+    bool checkDistanceMdpClear(uint64_t cycle);
     void lookupDistanceMdp(const DynInstPtr &inst);
     bool applyDistanceMdpPrediction(const DynInstPtr &inst,
                                     LSQRequest *request);
+    void updateMdpFeedbackOnLoadSuccess(const DynInstPtr &inst,
+                                        LSQRequest *request);
     void updateDistanceMdpFeedback(const DynInstPtr &inst,
                                    MDPFeedbackSource source);
 
