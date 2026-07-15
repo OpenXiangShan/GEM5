@@ -836,7 +836,12 @@ class CiLocalParallelExecutor(BaseExecutor):
         weighted_csv_path = (
             trial_dir / "weighted_stats.csv" if needs_weighted_stats else None
         )
-        return_code = run_score_evaluator(
+        stats_metrics = [
+            objective.metric
+            for objective in problem.objective_list()
+            if objective.source_kind == "stats"
+        ]
+        evaluation = run_score_evaluator(
             gem5_data_proc=self.gem5_data_proc,
             score_script=benchmark.score_script,
             raw_spec_dir=raw_spec_dir,
@@ -847,12 +852,16 @@ class CiLocalParallelExecutor(BaseExecutor):
             scratch_dir=score_scratch_dir,
             weighted_csv_path=weighted_csv_path,
             emit_score=needs_score,
+            stats_metrics=stats_metrics,
         )
+        return_code = evaluation.return_code
         generated_files: dict[str, str] = {}
         if weighted_csv_path is not None and weighted_csv_path.is_file():
             generated_files["weighted_csv"] = str(weighted_csv_path)
         if needs_score and score_path.is_file() and score_path.stat().st_size > 0:
             generated_files["score_txt"] = str(score_path)
+        if evaluation.error:
+            return {}, evaluation.error
         if return_code == 0:
             return generated_files, None
         if needs_score:
