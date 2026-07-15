@@ -10,19 +10,14 @@ from util.solver.processing.aggregate import (
     pareto_frontier,
 )
 from util.solver.reporting.charts import best_objective_series
-from util.solver.types import EvaluatedTrial, ObjectiveSpec, ParsedProblem
+from util.solver.types import (
+    EvaluatedTrial,
+    ObjectiveSpec,
+    ParsedProblem,
+    freeze_value,
+)
 
 MERMAID_CONVERGENCE_FULL_X_AXIS_LIMIT = 12
-
-
-def builtin_report_sections(
-    problem: ParsedProblem,
-    history: list[EvaluatedTrial],
-) -> list[str]:
-    sections = []
-    if problem.name.startswith("VTAGE"):
-        sections.extend(_vtage_report_sections(history))
-    return sections
 
 
 def _format_objective(value: float | None) -> str:
@@ -56,6 +51,7 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
     preferred_order = [
         "algorithm",
         "solver_backend",
+        "config_default_trial",
         "generation",
         "population_size",
         "elite_count",
@@ -87,6 +83,9 @@ def _solver_algorithm_section(metadata: dict | None) -> list[str]:
     explanations = {
         "algorithm": "Backend algorithm used for candidate generation.",
         "solver_backend": "Concrete solver implementation class selected by the controller.",
+        "config_default_trial": (
+            "First trial evaluated without a solver overlay, using the config defaults."
+        ),
         "generation": "Current generation index already emitted by the solver.",
         "population_size": "Target evolutionary population size used to maintain the parent pool.",
         "elite_count": "Configured number of incumbent elites reserved as guaranteed GA breeding seeds.",
@@ -435,29 +434,53 @@ def _format_objective_map(
     return ", ".join(parts)
 
 
-def _vtage_report_sections(history: list[EvaluatedTrial]) -> list[str]:
-    valid = [
-        trial for trial in history
-        if trial.status == "valid" and trial.objective_value is not None
-    ]
-    if not valid:
-        return ["## VTAGE Notes\n\nNo valid VTAGE trials yet."]
-
-    best = max(valid, key=lambda trial: trial.objective_value)
-    assignments = ", ".join(
-        f"{name}={value}" for name, value in best.assignments.items()
+def _format_assignments(trial: EvaluatedTrial) -> str:
+    if trial.is_baseline:
+        return "config defaults (no solver overlay)"
+    return ", ".join(
+        f"{key}={value}" for key, value in trial.assignments.items()
     )
-    return [
-        "\n".join(
+
+
+def _best_result_section(
+    problem: ParsedProblem,
+    best: EvaluatedTrial | None,
+    objectives: list[ObjectiveSpec],
+) -> list[str]:
+    if best is None:
+        return []
+
+    lines = ["## Best Result", ""]
+    if problem.is_multi_objective():
+        lines.extend(
             [
-                "## VTAGE Notes",
+                "A multi-objective search has no unique best point. This is "
+                "the Pareto-frontier representative with the best primary "
+                "objective; ties keep the existing frontier order.",
                 "",
-                f"- Best VTAGE trial: `{best.trial_id}`",
-                f"- Best objective: `{best.objective_value:.6f}`",
-                f"- Parameters: `{assignments}`",
             ]
         )
-    ]
+    lines.extend(
+        [
+            f"- Trial: `{best.trial_id}`",
+            f"- Objectives: `{_format_objective_map(best, objectives)}`",
+            "",
+            "### Assignments",
+            "",
+            "```text",
+        ]
+    )
+    if best.is_baseline:
+        lines.append("config defaults (no solver overlay)")
+    elif best.assignments:
+        lines.extend(
+            f"{name} = {freeze_value(value)}"
+            for name, value in best.assignments.items()
+        )
+    else:
+        lines.append("(none)")
+    lines.extend(["```", ""])
+    return lines
 
 
 def _format_convergence_x_axis(series_length: int) -> str:
@@ -541,12 +564,10 @@ def render_summary(
         lines.append(f"- Custom bin: `{problem.custom_bin}`")
     elif problem.specific_benchmarks:
         lines.append(f"- Workload filter: `{problem.specific_benchmarks}`")
-    if best is not None:
-        lines.append(f"- Representative best: `{best.trial_id}`")
-        lines.append(f"- Representative values: `{_format_objective_map(best, objectives)}`")
     if problem.is_multi_objective():
         lines.append(f"- Pareto frontier size: `{len(frontier)}`")
-    lines.extend(["", "## Run Configuration", ""])
+    lines.extend(["", *_best_result_section(problem, best, objectives)])
+    lines.extend(["## Run Configuration", ""])
     lines.append(f"- Config path: `{problem.config_path}`")
     if metadata is not None:
         lines.append(f"- Problem ref: `{metadata.get('resolved_problem_ref', problem.problem_ref)}`")
@@ -607,9 +628,7 @@ def render_summary(
             lines.append("| trial | crowding_distance | objectives | assignments |")
             lines.append("| --- | ---: | --- | --- |")
             for trial in frontier[:problem.summary_top_n]:
-                assignments = ", ".join(
-                    f"{key}={value}" for key, value in trial.assignments.items()
-                )
+                assignments = _format_assignments(trial)
                 diversity_value = _format_solver_value(
                     diversity.get(trial.trial_id, 0.0)
                 )
@@ -648,7 +667,7 @@ def render_summary(
             ),
         )
     for trial in ranked[:problem.summary_top_n]:
-        assignments = ", ".join(f"{key}={value}" for key, value in trial.assignments.items())
+        assignments = _format_assignments(trial)
         lines.append(
             f"| {trial.trial_id} | {_format_objective_map(trial, objectives)} | {trial.status} | {assignments} |"
         )

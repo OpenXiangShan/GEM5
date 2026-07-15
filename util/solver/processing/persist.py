@@ -35,6 +35,7 @@ def write_history_csv(path: str | Path, history: list[EvaluatedTrial]) -> None:
     fieldnames = [
         "trial_id",
         "generation",
+        "is_baseline",
         "status",
         "objective_value",
         "invalid_reason",
@@ -47,6 +48,7 @@ def write_history_csv(path: str | Path, history: list[EvaluatedTrial]) -> None:
             row = {
                 "trial_id": trial.trial_id,
                 "generation": trial.generation,
+                "is_baseline": trial.is_baseline,
                 "status": trial.status,
                 "objective_value": trial.objective_value,
                 "invalid_reason": trial.invalid_reason,

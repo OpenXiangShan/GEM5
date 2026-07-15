@@ -154,6 +154,7 @@ def evaluate_trial(problem: ParsedProblem, execution: TrialExecutionResult) -> E
         duration_sec=execution.duration_sec,
         raw_files=execution.raw_files,
         objective_values=objective_values,
+        is_baseline=getattr(execution, "is_baseline", False),
     )
 
 def objective_value_for_trial(
@@ -260,7 +261,21 @@ def best_trial(
     active_objectives = list(objectives or ([] if objective is None else [objective]))
     if len(active_objectives) > 1:
         frontier = pareto_frontier(history, active_objectives)
-        return frontier[0] if frontier else None
+        if not frontier:
+            return None
+        representative_objective = objective or active_objectives[0]
+        ranked = []
+        for trial in frontier:
+            value = objective_value_for_trial(trial, representative_objective)
+            if value is not None:
+                ranked.append((trial, value))
+        if not ranked:
+            return frontier[0]
+        return sorted(
+            ranked,
+            key=lambda item: item[1],
+            reverse=representative_objective.direction == "max",
+        )[0][0]
 
     valid_trials = [
         trial
