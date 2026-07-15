@@ -636,7 +636,7 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of DistanceMDP wait-all deadline refreshes"),
       ADD_STAT(distanceMdpMultiDistanceUpgrades,
                statistics::units::Count::get(),
-               "Number of DistanceMDP entries marked as multi-distance wait-all"),
+               "Number of DistanceMDP multi-distance events that refresh wait-all"),
       ADD_STAT(distanceMdpInvalidDistanceTrain,
                statistics::units::Count::get(),
                "Number of DistanceMDP training events with invalid store-load order"),
@@ -1534,13 +1534,12 @@ LSQUnit::lookupDistanceMdp(const DynInstPtr &inst)
     DPRINTF(DistanceMDP,
             "S0 lookup pc=%#x sn=%llu result_cycle=%llu hit=%d entry=%d "
             "tag=%#x counter=%u distance=%u has_distance=%d wait_all=%d "
-            "multi_distance=%d predict=%d expired=%d\n",
+            "predict=%d expired=%d\n",
             inst->pcState().instAddr(), inst->seqNum, result_cycle,
             prediction.hit, inst->distanceMdpEntryIndex, prediction.tag,
             prediction.counter, prediction.distance,
             prediction.hasDistance, prediction.waitAllStore,
-            prediction.multiDistance, inst->distanceMdpPredicted,
-            prediction.strictExpired);
+            inst->distanceMdpPredicted, prediction.strictExpired);
 }
 
 void

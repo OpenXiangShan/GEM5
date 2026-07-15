@@ -39,7 +39,6 @@ class DistanceMDP
         uint16_t tag = 0;
         uint8_t counter = 0;
         bool hasDistance = false;
-        bool multiDistance = false;
         bool waitAllStore = false;
         uint8_t distance = 0;
         uint64_t strictExpireCycle = 0;
@@ -53,7 +52,6 @@ class DistanceMDP
         uint16_t tag = 0;
         uint8_t counter = 0;
         bool hasDistance = false;
-        bool multiDistance = false;
         bool waitAllStore = false;
         uint8_t distance = 0;
     };

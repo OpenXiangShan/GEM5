@@ -69,8 +69,7 @@ DistanceMDP::lookup(Addr pc, uint64_t result_cycle)
     prediction.entryIndex = *index;
     prediction.counter = matched.counter;
     prediction.hasDistance = matched.hasDistance;
-    prediction.multiDistance = matched.multiDistance;
-    prediction.waitAllStore = matched.waitAllStore || matched.multiDistance;
+    prediction.waitAllStore = matched.waitAllStore;
     prediction.distance = matched.distance;
     return prediction;
 }
@@ -107,14 +106,12 @@ DistanceMDP::train(Addr load_pc, size_t load_boundary,
         result.entryIndex = *matched_index;
         Entry &matched = entries[*matched_index];
         result.strictExpired = expireStrict(matched, cycle);
-        result.action = (matched.waitAllStore || matched.multiDistance) ?
+        result.action = matched.waitAllStore ?
             TrainAction::StrictRefresh : TrainAction::StrictUpgrade;
         result.distanceChanged = distance && matched.hasDistance &&
             matched.distance != *distance;
-        result.multiDistance = matched.multiDistance ||
-            result.distanceChanged ||
+        result.multiDistance = result.distanceChanged ||
             (result.strictFallback && matched.hasDistance);
-        matched.multiDistance = result.multiDistance;
         // An overflow has no safe target, so it must discard any old one.
         matched.hasDistance = !result.strictFallback;
         matched.distance = result.distance;
@@ -147,7 +144,6 @@ DistanceMDP::train(Addr load_pc, size_t load_boundary,
         .tag = result.tag,
         .counter = MaxCounter,
         .hasDistance = !result.strictFallback,
-        .multiDistance = false,
         .waitAllStore = result.strictFallback,
         .distance = result.distance,
         .strictExpireCycle = result.strictFallback ? cycle + StrictTimeout : 0,
