@@ -1098,7 +1098,7 @@ InstructionQueue::mdpAddrReplayUpdateStoreCompletedIdx(
 
 void
 InstructionQueue::mdpFeedback(const DynInstPtr &load_inst,
-                              StoreSet::MDPFeedbackSource source)
+                              MDPFeedbackSource source)
 {
     if (!load_inst) {
         return;

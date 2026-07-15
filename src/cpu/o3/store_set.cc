@@ -46,14 +46,14 @@ namespace
 {
 
 const char *
-mdpFeedbackSourceName(StoreSet::MDPFeedbackSource source)
+mdpFeedbackSourceName(MDPFeedbackSource source)
 {
     switch (source) {
-      case StoreSet::MDPFeedbackSource::NoForward:
+      case MDPFeedbackSource::NoForward:
         return "none";
-      case StoreSet::MDPFeedbackSource::StoreQueue:
+      case MDPFeedbackSource::StoreQueue:
         return "sq";
-      case StoreSet::MDPFeedbackSource::StoreBuffer:
+      case MDPFeedbackSource::StoreBuffer:
         return "sbuffer";
     }
     return "unknown";

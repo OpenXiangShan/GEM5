@@ -466,6 +466,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _enableReplayBasedMDP(params.EnableReplayBasedMDP),
+      _enableDistanceMDP(params.EnableDistanceMDP),
       _storeWbStage(params.StoreWbStage),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
@@ -485,6 +486,11 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     if (!_enableLdMissReplay && _enablePipeNukeCheck) {
         panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
     }
+    panic_if(_enableDistanceMDP && !_enableReplayBasedMDP,
+             "EnableDistanceMDP requires EnableReplayBasedMDP\n");
+    panic_if(_enableDistanceMDP && SQEntries > 63,
+             "EnableDistanceMDP requires SQEntries <= 63 (got %u)\n",
+             SQEntries);
     assert(_storeWbStage >= 2 && _storeWbStage <= 4);
     panic_if(dcacheSetDivNum == 0, "DcacheSetDivNum must be >= 1\n");
     panic_if(!isPowerOf2(dcacheSetDivNum),
@@ -1652,6 +1658,18 @@ DynInstPtr
 LSQ::getMemDepViolator(ThreadID tid)
 {
     return thread.at(tid).getMemDepViolator();
+}
+
+void
+LSQ::trainDistanceMDP(const DynInstPtr &store_inst,
+                      const DynInstPtr &violating_load)
+{
+    panic_if(!store_inst || !violating_load,
+             "DistanceMDP training requires a store and a load\n");
+    panic_if(store_inst->threadNumber != violating_load->threadNumber,
+             "DistanceMDP cannot train across threads\n");
+    thread.at(violating_load->threadNumber).trainDistanceMDP(
+        store_inst, violating_load);
 }
 
 int

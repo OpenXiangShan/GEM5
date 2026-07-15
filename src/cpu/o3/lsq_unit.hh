@@ -63,6 +63,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/cpu.hh"
+#include "cpu/o3/distance_mdp.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
@@ -385,6 +386,10 @@ class LSQUnit
 
     /** Returns the memory ordering violator. */
     DynInstPtr getMemDepViolator();
+
+    /** Train DistanceMDP from the final store-load RAW violation. */
+    void trainDistanceMDP(const DynInstPtr &store_inst,
+                          const DynInstPtr &violating_load);
 
     /** Check if there exists raw nuke between load and store. */
     bool pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst);
@@ -764,6 +769,8 @@ class LSQUnit
     /** Avoid counting the same store-load violation more than once per cycle. */
     bool countedStLdViolationThisCycle = false;
 
+    DistanceMDP distanceMdp;
+
     unsigned lastClockSQPopEntries;
     unsigned lastClockLQPopEntries;
     /** Store requests for potential RAR violations */
@@ -845,6 +852,40 @@ class LSQUnit
 
         /** RAW violations where replay-based MDP used strict wait. */
         statistics::Scalar rawViolationMdpStrict;
+
+        statistics::Scalar distanceMdpLookups;
+        statistics::Scalar distanceMdpTagHits;
+        statistics::Scalar distanceMdpTagMisses;
+        statistics::Scalar distanceMdpDistancePredictions;
+        statistics::Scalar distanceMdpStrictPredictions;
+        statistics::Scalar distanceMdpTargetValid;
+        statistics::Scalar distanceMdpTargetGone;
+        statistics::Scalar distanceMdpTargetAddrReady;
+        statistics::Scalar distanceMdpDistanceReplays;
+        statistics::Scalar distanceMdpStrictReplays;
+        statistics::Scalar distanceMdpAllocations;
+        statistics::Scalar distanceMdpViolationHits;
+        statistics::Scalar distanceMdpStrictUpgrades;
+        statistics::Scalar distanceMdpStrictRefreshes;
+        statistics::Scalar distanceMdpInvalidDistanceTrain;
+        statistics::Scalar distanceMdpPlruEvictions;
+        statistics::Scalar distanceMdpStrictExpirations;
+        statistics::Scalar distanceMdpSqIncrements;
+        statistics::Scalar distanceMdpSbufferDecrements;
+        statistics::Scalar distanceMdpNoForwardDecrements;
+        statistics::Scalar distanceMdpCounterZeroClears;
+        statistics::Scalar distanceMdpFeedbackInvalidIndex;
+        statistics::Scalar distanceMdpFeedbackInvalidEntry;
+        statistics::Scalar distanceMdpFeedbackTagMismatch;
+        statistics::Scalar distanceMdpDuplicateFeedback;
+        statistics::Scalar distanceMdpRawViolationNoPrediction;
+        statistics::Scalar distanceMdpRawViolationHit;
+        statistics::Scalar distanceMdpRawViolationMiss;
+        statistics::Scalar distanceMdpRawViolationStrict;
+        statistics::Distribution distanceMdpTrainDistance;
+        statistics::Distribution distanceMdpPredictionDistance;
+        statistics::Distribution distanceMdpCounter;
+        statistics::Distribution distanceMdpOccupancy;
 
         /** Load-load/snoop ordering violations. */
         statistics::Scalar loadOrderViolation;
@@ -932,6 +973,12 @@ class LSQUnit
     void tagReadFailReplay();
 
     bool squashMark{false};
+
+    void lookupDistanceMdp(const DynInstPtr &inst);
+    bool applyDistanceMdpPrediction(const DynInstPtr &inst,
+                                    LSQRequest *request);
+    void updateDistanceMdpFeedback(const DynInstPtr &inst,
+                                   MDPFeedbackSource source);
 
     /**
      * Helper function to check address range overlap and determine coverage type

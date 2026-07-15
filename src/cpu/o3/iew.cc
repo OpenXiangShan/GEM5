@@ -95,6 +95,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       enableStoreSetTrain(params.enable_storeSet_train),
+      enableDistanceMDP(params.EnableDistanceMDP),
       numThreads(params.numThreads),
       iewStats(cpu)
 {
@@ -1577,7 +1578,11 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             fetchRedirect[tid] = true;
 
             // Tell the instruction queue that a violation has occured.
-            if (enableStoreSetTrain) {
+            if (enableDistanceMDP) {
+                if (inst->isStore() && violator->isLoad()) {
+                    ldstQueue.trainDistanceMDP(inst, violator);
+                }
+            } else if (enableStoreSetTrain) {
                 instQueue.violation(inst, violator);
             }
             violator->setProducerStorePC(inst->pcState().instAddr());
@@ -2050,7 +2055,7 @@ IEW::mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
 
 void
 IEW::mdpFeedback(const DynInstPtr &inst,
-                 StoreSet::MDPFeedbackSource source)
+                 MDPFeedbackSource source)
 {
     instQueue.mdpFeedback(inst, source);
 }

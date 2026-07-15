@@ -159,7 +159,7 @@ class MemDepUnit
     void issue(const DynInstPtr &inst);
 
     void mdpFeedback(const DynInstPtr &load_inst,
-                     StoreSet::MDPFeedbackSource source);
+                     MDPFeedbackSource source);
 
     /** Debugging function to dump the lists of instructions. */
     void dumpLists();
@@ -264,6 +264,9 @@ class MemDepUnit
 
     /** If true, MDP uses StoreSet strict-wait flag (checkInstStrict). */
     bool enableMDPStrictWait = false;
+
+    /** If true, DistanceMDP owns prediction, training, and feedback. */
+    bool enableDistanceMDP = false;
 
     /** The thread id of this memory dependence unit. */
     int id;

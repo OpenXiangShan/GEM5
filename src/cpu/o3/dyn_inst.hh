@@ -484,6 +484,17 @@ class DynInst : public ExecContext, public RefCounted
     /** Prevent duplicate MDP feedback from load replays or repeated pipe visits. */
     bool mdpFeedbackUpdated = false;
 
+    /** DistanceMDP lookup state is latched across all load-pipe replays. */
+    bool distanceMdpLookupIssued = false;
+    bool distanceMdpPredicted = false;
+    bool distanceMdpPredictionConsumed = false;
+    bool distanceMdpWaitAll = false;
+    uint8_t distanceMdpDistance = 0;
+    int distanceMdpEntryIndex = -1;
+    uint16_t distanceMdpTag = 0;
+    InstSeqNum distanceMdpPredictedStoreSeq = 0;
+    bool distanceMdpFeedbackUpdated = false;
+
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[8] = {0};
 

@@ -38,6 +38,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/mdp.hh"
 
 namespace gem5
 {
@@ -65,13 +66,6 @@ class StoreSet
 {
   public:
     typedef unsigned SSID;
-
-    enum class MDPFeedbackSource
-    {
-        NoForward,
-        StoreQueue,
-        StoreBuffer,
-    };
 
     enum class MDPFeedbackAction
     {

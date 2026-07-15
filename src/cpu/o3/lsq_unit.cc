@@ -62,6 +62,7 @@
 #include "cpu/utils.hh"
 #include "debug/Activity.hh"
 #include "debug/Diff.hh"
+#include "debug/DistanceMDP.hh"
 #include "debug/Hint.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/IEW.hh"
@@ -553,6 +554,7 @@ LSQUnit::resetState()
 
     retryPkt = NULL;
     memDepViolator = NULL;
+    distanceMdp.clear();
 
     stalled = false;
 
@@ -602,6 +604,78 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of RAW violations where replay-based MDP predicted other stores only"),
       ADD_STAT(rawViolationMdpStrict, statistics::units::Count::get(),
                "Number of RAW violations where replay-based MDP used strict wait"),
+      ADD_STAT(distanceMdpLookups, statistics::units::Count::get(),
+               "Number of DistanceMDP S0 lookups"),
+      ADD_STAT(distanceMdpTagHits, statistics::units::Count::get(),
+               "Number of DistanceMDP tag hits"),
+      ADD_STAT(distanceMdpTagMisses, statistics::units::Count::get(),
+               "Number of DistanceMDP tag misses"),
+      ADD_STAT(distanceMdpDistancePredictions, statistics::units::Count::get(),
+               "Number of consumed DistanceMDP distance predictions"),
+      ADD_STAT(distanceMdpStrictPredictions, statistics::units::Count::get(),
+               "Number of consumed DistanceMDP strict predictions"),
+      ADD_STAT(distanceMdpTargetValid, statistics::units::Count::get(),
+               "Number of DistanceMDP targets still present in the SQ"),
+      ADD_STAT(distanceMdpTargetGone, statistics::units::Count::get(),
+               "Number of DistanceMDP targets no longer present in the SQ"),
+      ADD_STAT(distanceMdpTargetAddrReady, statistics::units::Count::get(),
+               "Number of DistanceMDP targets with ready STA"),
+      ADD_STAT(distanceMdpDistanceReplays, statistics::units::Count::get(),
+               "Number of DistanceMDP target-STA replays"),
+      ADD_STAT(distanceMdpStrictReplays, statistics::units::Count::get(),
+               "Number of DistanceMDP wait-all replays"),
+      ADD_STAT(distanceMdpAllocations, statistics::units::Count::get(),
+               "Number of DistanceMDP allocations"),
+      ADD_STAT(distanceMdpViolationHits, statistics::units::Count::get(),
+               "Number of DistanceMDP violation tag hits"),
+      ADD_STAT(distanceMdpStrictUpgrades, statistics::units::Count::get(),
+               "Number of DistanceMDP wait-all upgrades"),
+      ADD_STAT(distanceMdpStrictRefreshes, statistics::units::Count::get(),
+               "Number of DistanceMDP wait-all deadline refreshes"),
+      ADD_STAT(distanceMdpInvalidDistanceTrain,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP training events outside age 1..63"),
+      ADD_STAT(distanceMdpPlruEvictions, statistics::units::Count::get(),
+               "Number of DistanceMDP PLRU evictions"),
+      ADD_STAT(distanceMdpStrictExpirations, statistics::units::Count::get(),
+               "Number of lazily expired DistanceMDP wait-all entries"),
+      ADD_STAT(distanceMdpSqIncrements, statistics::units::Count::get(),
+               "Number of DistanceMDP counter increments from SQ forwarding"),
+      ADD_STAT(distanceMdpSbufferDecrements, statistics::units::Count::get(),
+               "Number of DistanceMDP decrements from SBuffer-only forwarding"),
+      ADD_STAT(distanceMdpNoForwardDecrements,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP decrements without SQ forwarding"),
+      ADD_STAT(distanceMdpCounterZeroClears, statistics::units::Count::get(),
+               "Number of DistanceMDP entries cleared at counter zero"),
+      ADD_STAT(distanceMdpFeedbackInvalidIndex,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP feedback events with invalid index"),
+      ADD_STAT(distanceMdpFeedbackInvalidEntry,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP feedback events for invalid entries"),
+      ADD_STAT(distanceMdpFeedbackTagMismatch,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP feedback tag mismatches"),
+      ADD_STAT(distanceMdpDuplicateFeedback, statistics::units::Count::get(),
+               "Number of duplicate DistanceMDP feedback events"),
+      ADD_STAT(distanceMdpRawViolationNoPrediction,
+               statistics::units::Count::get(),
+               "Number of RAW violations without a DistanceMDP prediction"),
+      ADD_STAT(distanceMdpRawViolationHit, statistics::units::Count::get(),
+               "Number of RAW violations that matched the predicted target"),
+      ADD_STAT(distanceMdpRawViolationMiss, statistics::units::Count::get(),
+               "Number of RAW violations that missed the predicted target"),
+      ADD_STAT(distanceMdpRawViolationStrict, statistics::units::Count::get(),
+               "Number of RAW violations after a strict prediction"),
+      ADD_STAT(distanceMdpTrainDistance,
+               "DistanceMDP trained distance distribution"),
+      ADD_STAT(distanceMdpPredictionDistance,
+               "DistanceMDP consumed distance distribution"),
+      ADD_STAT(distanceMdpCounter,
+               "DistanceMDP counter distribution after feedback"),
+      ADD_STAT(distanceMdpOccupancy,
+               "DistanceMDP valid-entry occupancy distribution"),
       ADD_STAT(loadOrderViolation, statistics::units::Count::get(),
                "Number of load-load or snoop ordering violations"),
       ADD_STAT(busForwardSuccess, statistics::units::Count::get(),
@@ -674,6 +748,11 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     loadTranslationLat
         .init(0, 299, 10)
         .flags(statistics::nozero);
+    distanceMdpTrainDistance.init(0, 63, 1).flags(statistics::nozero);
+    distanceMdpPredictionDistance.init(0, 63, 1)
+        .flags(statistics::nozero);
+    distanceMdpCounter.init(0, 15, 1).flags(statistics::nozero);
+    distanceMdpOccupancy.init(0, 32, 1).flags(statistics::nozero);
 
     RARQueueLatency
         .init(0, 500, 20)
@@ -916,6 +995,72 @@ LSQUnit::getMemDepViolator()
     memDepViolator = NULL;
 
     return temp;
+}
+
+void
+LSQUnit::trainDistanceMDP(const DynInstPtr &store_inst,
+                          const DynInstPtr &violating_load)
+{
+    panic_if(!lsq->enableDistanceMDP(),
+             "DistanceMDP training while predictor is disabled\n");
+    panic_if(!store_inst || !store_inst->isStore() || !violating_load ||
+             !violating_load->isLoad(),
+             "DistanceMDP requires a store-load RAW violation\n");
+
+    if (violating_load->distanceMdpWaitAll &&
+        violating_load->distanceMdpPredicted) {
+        ++stats.distanceMdpRawViolationStrict;
+    } else if (!violating_load->distanceMdpPredicted) {
+        ++stats.distanceMdpRawViolationNoPrediction;
+    } else if (violating_load->distanceMdpPredictedStoreSeq ==
+               store_inst->seqNum) {
+        ++stats.distanceMdpRawViolationHit;
+    } else {
+        ++stats.distanceMdpRawViolationMiss;
+    }
+
+    const auto result = distanceMdp.train(
+        violating_load->pcState().instAddr(),
+        violating_load->sqIt.idx(), store_inst->sqIt.idx(),
+        uint64_t(cpu->curCycle()));
+    using Action = DistanceMDP::TrainAction;
+    switch (result.action) {
+      case Action::InvalidDistance:
+        ++stats.distanceMdpInvalidDistanceTrain;
+        break;
+      case Action::AllocateInvalid:
+        ++stats.distanceMdpAllocations;
+        break;
+      case Action::AllocateEviction:
+        ++stats.distanceMdpAllocations;
+        ++stats.distanceMdpPlruEvictions;
+        break;
+      case Action::StrictUpgrade:
+        ++stats.distanceMdpViolationHits;
+        ++stats.distanceMdpStrictUpgrades;
+        break;
+      case Action::StrictRefresh:
+        ++stats.distanceMdpViolationHits;
+        ++stats.distanceMdpStrictRefreshes;
+        break;
+    }
+    if (result.strictExpired) {
+        ++stats.distanceMdpStrictExpirations;
+    }
+    if (result.action != Action::InvalidDistance) {
+        stats.distanceMdpTrainDistance.sample(result.distance);
+        stats.distanceMdpOccupancy.sample(distanceMdp.occupancy());
+    }
+
+    DPRINTF(DistanceMDP,
+            "train load_pc=%#x load_sn=%llu store_sn=%llu action=%u "
+            "entry=%u tag=%#x boundary=%lu store_idx=%lu distance=%u "
+            "expired=%d occupancy=%u\n",
+            violating_load->pcState().instAddr(), violating_load->seqNum,
+            store_inst->seqNum, static_cast<unsigned>(result.action),
+            result.entryIndex, result.tag, violating_load->sqIt.idx(),
+            store_inst->sqIt.idx(), result.distance, result.strictExpired,
+            distanceMdp.occupancy());
 }
 
 unsigned
@@ -1255,17 +1400,20 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                             countedStLdViolationThisCycle = true;
                         }
                         ++stats.rawMemOrderViolation;
-                        if (ld_inst->mdpPredStrictWait) {
-                            ++stats.rawViolationMdpStrict;
-                        } else if (ld_inst->mdpProducingStores.empty()) {
-                            ++stats.rawViolationMdpNoPred;
-                        } else if (std::find(ld_inst->mdpProducingStores.begin(),
-                                             ld_inst->mdpProducingStores.end(),
-                                             inst->seqNum) !=
-                                   ld_inst->mdpProducingStores.end()) {
-                            ++stats.rawViolationMdpHit;
-                        } else {
-                            ++stats.rawViolationMdpMiss;
+                        if (!lsq->enableDistanceMDP()) {
+                            if (ld_inst->mdpPredStrictWait) {
+                                ++stats.rawViolationMdpStrict;
+                            } else if (ld_inst->mdpProducingStores.empty()) {
+                                ++stats.rawViolationMdpNoPred;
+                            } else if (std::find(
+                                    ld_inst->mdpProducingStores.begin(),
+                                    ld_inst->mdpProducingStores.end(),
+                                    inst->seqNum) !=
+                                    ld_inst->mdpProducingStores.end()) {
+                                ++stats.rawViolationMdpHit;
+                            } else {
+                                ++stats.rawViolationMdpMiss;
+                            }
                         }
 
                         return std::make_shared<GenericISA::M5PanicFault>(
@@ -1303,6 +1451,49 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
 }
 
 void
+LSQUnit::lookupDistanceMdp(const DynInstPtr &inst)
+{
+    if (!lsq->enableDistanceMDP() || inst->distanceMdpLookupIssued) {
+        return;
+    }
+
+    inst->distanceMdpLookupIssued = true;
+    inst->distanceMdpFeedbackUpdated = false;
+    if (!inst->isLoad() || inst->isDataPrefetch() || inst->isInstPrefetch()) {
+        return;
+    }
+
+    ++stats.distanceMdpLookups;
+    const uint64_t result_cycle = uint64_t(cpu->curCycle()) + 1;
+    const auto prediction = distanceMdp.lookup(
+        inst->pcState().instAddr(), result_cycle);
+    if (prediction.strictExpired) {
+        ++stats.distanceMdpStrictExpirations;
+    }
+
+    inst->distanceMdpPredicted = prediction.hit;
+    inst->distanceMdpWaitAll = prediction.waitAllStore;
+    inst->distanceMdpDistance = prediction.distance;
+    inst->distanceMdpEntryIndex = prediction.hit ?
+        static_cast<int>(prediction.entryIndex) : -1;
+    inst->distanceMdpTag = prediction.tag;
+
+    if (prediction.hit) {
+        ++stats.distanceMdpTagHits;
+    } else {
+        ++stats.distanceMdpTagMisses;
+    }
+
+    DPRINTF(DistanceMDP,
+            "S0 lookup pc=%#x sn=%llu result_cycle=%llu hit=%d entry=%d "
+            "tag=%#x counter=%u distance=%u wait_all=%d expired=%d\n",
+            inst->pcState().instAddr(), inst->seqNum, result_cycle,
+            prediction.hit, inst->distanceMdpEntryIndex, prediction.tag,
+            prediction.counter, prediction.distance,
+            prediction.waitAllStore, prediction.strictExpired);
+}
+
+void
 LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
     // S0 is the single load-pipe entry point. First issues, slow replays, and
@@ -1312,6 +1503,7 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
     inst->setSkipRawCheck();
+    lookupDistanceMdp(inst);
 
     int idx = loadPipeSx[0]->size;
     loadPipeSx[0]->insts[idx] = inst;
@@ -1472,6 +1664,72 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     return load_fault;
 }
 
+void
+LSQUnit::updateDistanceMdpFeedback(const DynInstPtr &inst,
+                                   MDPFeedbackSource source)
+{
+    if (!inst->distanceMdpPredicted ||
+        !inst->distanceMdpPredictionConsumed) {
+        return;
+    }
+    if (inst->distanceMdpFeedbackUpdated) {
+        ++stats.distanceMdpDuplicateFeedback;
+        return;
+    }
+
+    inst->distanceMdpFeedbackUpdated = true;
+    const auto result = distanceMdp.feedback(
+        inst->distanceMdpEntryIndex, inst->distanceMdpTag, source);
+    using Action = DistanceMDP::FeedbackAction;
+    bool feedback_applied = false;
+    switch (result.action) {
+      case Action::Increment:
+      case Action::Saturated:
+        ++stats.distanceMdpSqIncrements;
+        feedback_applied = true;
+        break;
+      case Action::Decrement:
+        if (source == MDPFeedbackSource::StoreBuffer) {
+            ++stats.distanceMdpSbufferDecrements;
+        } else {
+            ++stats.distanceMdpNoForwardDecrements;
+        }
+        feedback_applied = true;
+        break;
+      case Action::ClearCounterZero:
+        if (source == MDPFeedbackSource::StoreBuffer) {
+            ++stats.distanceMdpSbufferDecrements;
+        } else {
+            ++stats.distanceMdpNoForwardDecrements;
+        }
+        ++stats.distanceMdpCounterZeroClears;
+        feedback_applied = true;
+        break;
+      case Action::InvalidIndex:
+        ++stats.distanceMdpFeedbackInvalidIndex;
+        break;
+      case Action::InvalidEntry:
+        ++stats.distanceMdpFeedbackInvalidEntry;
+        break;
+      case Action::TagMismatch:
+        ++stats.distanceMdpFeedbackTagMismatch;
+        break;
+    }
+
+    if (feedback_applied) {
+        stats.distanceMdpCounter.sample(result.newCounter);
+        stats.distanceMdpOccupancy.sample(distanceMdp.occupancy());
+    }
+    DPRINTF(DistanceMDP,
+            "feedback pc=%#x sn=%llu entry=%d tag=%#x source=%u "
+            "action=%u old_counter=%u new_counter=%u occupancy=%u\n",
+            inst->pcState().instAddr(), inst->seqNum,
+            inst->distanceMdpEntryIndex, inst->distanceMdpTag,
+            static_cast<unsigned>(source),
+            static_cast<unsigned>(result.action), result.oldCounter,
+            result.newCounter, distanceMdp.occupancy());
+}
+
 Fault
 LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 {
@@ -1611,23 +1869,23 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     // Completion path after replay selection.  Full forwarding can write back
     // immediately; otherwise a normal load assembles cache and forwarded data
     // before completeDataAccess/writeback handling takes over.
-    auto mdp_feedback_source = StoreSet::MDPFeedbackSource::NoForward;
+    auto mdp_feedback_source = MDPFeedbackSource::NoForward;
     bool mdp_sq_forwarded = false;
     bool mdp_sbuffer_forwarded = false;
     if (request) {
         mdp_sq_forwarded = !request->SQforwardPackets.empty();
         mdp_sbuffer_forwarded = !request->SBforwardPackets.empty();
         if (mdp_sq_forwarded) {
-            mdp_feedback_source = StoreSet::MDPFeedbackSource::StoreQueue;
+            mdp_feedback_source = MDPFeedbackSource::StoreQueue;
         } else if (mdp_sbuffer_forwarded) {
-            mdp_feedback_source = StoreSet::MDPFeedbackSource::StoreBuffer;
+            mdp_feedback_source = MDPFeedbackSource::StoreBuffer;
         }
     }
     const char *mdp_source_str = "none";
-    if (mdp_feedback_source == StoreSet::MDPFeedbackSource::StoreQueue) {
+    if (mdp_feedback_source == MDPFeedbackSource::StoreQueue) {
         mdp_source_str = "sq";
     } else if (mdp_feedback_source ==
-               StoreSet::MDPFeedbackSource::StoreBuffer) {
+               MDPFeedbackSource::StoreBuffer) {
         mdp_source_str = "sbuffer";
     }
     DPRINTF(MDPFeedback,
@@ -1638,7 +1896,11 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
             inst->mdpPredictedDependent, mdp_sq_forwarded,
             mdp_sbuffer_forwarded, inst->mdpPredSSITIndex, inst->mdpPredTag,
             inst->mdpFeedbackUpdated);
-    iewStage->mdpFeedback(inst, mdp_feedback_source);
+    if (lsq->enableDistanceMDP()) {
+        updateDistanceMdpFeedback(inst, mdp_feedback_source);
+    } else {
+        iewStage->mdpFeedback(inst, mdp_feedback_source);
+    }
 
     if (inst->fullForward()) {
         DPRINTF(LoadPipeline, "Load [sn:%llu] fullForward\n", inst->seqNum);
@@ -3366,6 +3628,98 @@ LSQUnit::forwardFromBus(DynInstPtr inst, LSQRequest *request)
     stats.busForwardSuccess++;
 }
 
+bool
+LSQUnit::applyDistanceMdpPrediction(const DynInstPtr &inst,
+                                    LSQRequest *request)
+{
+    if (!lsq->enableDistanceMDP() || !inst->distanceMdpPredicted ||
+        inst->distanceMdpPredictionConsumed) {
+        return false;
+    }
+
+    inst->distanceMdpPredictionConsumed = true;
+    if (!request->isNormalLd() || request->mainReq()->isLLSC() ||
+        inst->strictlyOrdered()) {
+        inst->distanceMdpPredicted = false;
+        return false;
+    }
+
+    distanceMdp.commitLookup(inst->distanceMdpEntryIndex,
+                             inst->distanceMdpTag);
+
+    if (inst->distanceMdpWaitAll) {
+        ++stats.distanceMdpStrictPredictions;
+        if (inst->sqIt.idx() > storeCompletedIdx + 1) {
+            const size_t required = inst->sqIt.idx() - 1;
+            ++stats.distanceMdpStrictReplays;
+            inst->setMdpAddrReplay();
+            loadSetReplay(inst, request, true);
+            iewStage->mdpAddrReplayRegisterStrict(inst, required);
+            DPRINTF(DistanceMDP,
+                    "S1 strict replay pc=%#x sn=%llu entry=%d tag=%#x "
+                    "store_completed=%lu required=%lu\n",
+                    inst->pcState().instAddr(), inst->seqNum,
+                    inst->distanceMdpEntryIndex, inst->distanceMdpTag,
+                    storeCompletedIdx, required);
+            return true;
+        }
+
+        DPRINTF(DistanceMDP,
+                "S1 strict satisfied pc=%#x sn=%llu entry=%d tag=%#x\n",
+                inst->pcState().instAddr(), inst->seqNum,
+                inst->distanceMdpEntryIndex, inst->distanceMdpTag);
+        return false;
+    }
+
+    ++stats.distanceMdpDistancePredictions;
+    stats.distanceMdpPredictionDistance.sample(inst->distanceMdpDistance);
+    const auto target = DistanceMDP::decodeTarget(
+        inst->sqIt.idx(), inst->distanceMdpDistance);
+    if (!target || !storeQueue.isValidIdx(*target)) {
+        ++stats.distanceMdpTargetGone;
+        DPRINTF(DistanceMDP,
+                "S1 target gone pc=%#x sn=%llu entry=%d tag=%#x "
+                "boundary=%lu distance=%u\n",
+                inst->pcState().instAddr(), inst->seqNum,
+                inst->distanceMdpEntryIndex, inst->distanceMdpTag,
+                inst->sqIt.idx(), inst->distanceMdpDistance);
+        return false;
+    }
+
+    auto store_it = storeQueue.getIterator(*target);
+    const auto &store_inst = store_it->instruction();
+    if (!store_it->valid() || !store_inst ||
+        store_inst->seqNum >= inst->seqNum || store_it.idx() != *target) {
+        ++stats.distanceMdpTargetGone;
+        return false;
+    }
+
+    ++stats.distanceMdpTargetValid;
+    inst->distanceMdpPredictedStoreSeq = store_inst->seqNum;
+    if (store_it->addrReady()) {
+        ++stats.distanceMdpTargetAddrReady;
+        DPRINTF(DistanceMDP,
+                "S1 target ready pc=%#x sn=%llu target_idx=%lu "
+                "target_sn=%llu\n",
+                inst->pcState().instAddr(), inst->seqNum, *target,
+                store_inst->seqNum);
+        return false;
+    }
+
+    ++stats.distanceMdpDistanceReplays;
+    inst->setMdpAddrReplay();
+    loadSetReplay(inst, request, true);
+    iewStage->mdpAddrReplayRegister(inst, {store_inst->seqNum});
+    DPRINTF(DistanceMDP,
+            "S1 distance replay pc=%#x sn=%llu entry=%d tag=%#x "
+            "boundary=%lu distance=%u target_idx=%lu target_sn=%llu\n",
+            inst->pcState().instAddr(), inst->seqNum,
+            inst->distanceMdpEntryIndex, inst->distanceMdpTag,
+            inst->sqIt.idx(), inst->distanceMdpDistance, *target,
+            store_inst->seqNum);
+    return true;
+}
+
 Fault
 LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 {
@@ -3444,7 +3798,12 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // the predictor says it must wait for older store addresses.  A replay
     // here means "try this load again after the named store address condition
     // becomes true", not that a real address overlap has been found.
-    if (lsq->enableReplayBasedMDP() && request->isNormalLd() &&
+    if (applyDistanceMdpPrediction(load_inst, request)) {
+        return NoFault;
+    }
+
+    if (!lsq->enableDistanceMDP() && lsq->enableReplayBasedMDP() &&
+        request->isNormalLd() &&
         (load_inst->mdpPredStrictWait || !load_inst->mdpProducingStores.empty()) &&
         !request->mainReq()->isLLSC()) {
         if (load_inst->mdpPredStrictWait) {

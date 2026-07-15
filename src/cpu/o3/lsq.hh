@@ -948,6 +948,9 @@ class LSQ
     /** Gets the instruction that caused the memory ordering violation. */
     DynInstPtr getMemDepViolator(ThreadID tid);
 
+    void trainDistanceMDP(const DynInstPtr &store_inst,
+                          const DynInstPtr &violating_load);
+
     /** Returns the head index of the load queue for a specific thread. */
     int getLoadHead(ThreadID tid);
 
@@ -1284,6 +1287,7 @@ class LSQ
     bool enableLdMissReplay() const { return _enableLdMissReplay; }
     bool enablePipeNukeCheck() const { return _enablePipeNukeCheck; }
     bool enableReplayBasedMDP() const { return _enableReplayBasedMDP; }
+    bool enableDistanceMDP() const { return _enableDistanceMDP; }
     int storeWbStage() const { return _storeWbStage; }
 
   public:
@@ -1456,6 +1460,7 @@ class LSQ
     bool _enableLdMissReplay;
     bool _enablePipeNukeCheck;
     bool _enableReplayBasedMDP;
+    bool _enableDistanceMDP;
 
     int _storeWbStage;
 

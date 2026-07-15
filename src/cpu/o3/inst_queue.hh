@@ -221,7 +221,7 @@ class InstructionQueue
     void mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
                                               size_t store_completed_idx);
     void mdpFeedback(const DynInstPtr &load_inst,
-                     StoreSet::MDPFeedbackSource source);
+                     MDPFeedbackSource source);
 
     /** Gets a memory instruction that was blocked on the cache. NULL if none
      *  available.
