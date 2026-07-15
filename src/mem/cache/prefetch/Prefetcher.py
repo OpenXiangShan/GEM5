@@ -815,7 +815,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     student_filter_entries = 4096
     student_hash_mode = "bop_rr"
     student_hash_count = 1
-    student_delay_queue_enable = True
+    student_delay_queue_enable = False
     student_delay_queue_size = 64
     student_delay_queue_cycles = 300
 
