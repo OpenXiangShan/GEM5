@@ -629,6 +629,14 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
                 memcpy(Vd + i * byte_offset, s + i * byte_offset, byte_offset);
             }
         }
+        // Fill mask destination tail bits with ones.
+        // Mask-producing instructions always treat their tail as agnostic.
+        const uint64_t rVl = xc->readMiscReg(MISCREG_VL);
+        for (uint64_t bit = rVl; bit < VLEN; ++bit) {
+            Vd[bit / 8] |= static_cast<uint8_t>(
+                1U << (bit % 8));
+        }
+
         xc->setRegOperand(this, 0, &tmp_d0);
         if (traceData)
             traceData->setData(tmp_d0);

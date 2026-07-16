@@ -141,6 +141,40 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     else:
         divrVl = ''
 
+    agnostic_load_code = ''
+    if base_type.startswith('Vl') and not vecWhole:
+        agnostic_load_code = '''
+    // Fill RVV tail-agnostic and mask-agnostic load elements with ones.
+    const size_t reg_elem_base =
+        (vmi.rs / elem_num_per_vreg) * elem_num_per_vreg;
+    const size_t elem_bytes = VLENB / elem_num_per_vreg;
+    auto vd_bytes =
+        tmp_d0.as<uint8_t>();
+
+    for (size_t vdElemIdx = 0;
+         vdElemIdx < elem_num_per_vreg;
+         ++vdElemIdx) {
+        const size_t agnostic_ei =
+            reg_elem_base + vdElemIdx;
+
+        if (agnostic_ei >= rVl) {
+            if (machInst.vtype8.vta) {
+                std::memset(
+                    vd_bytes + vdElemIdx * elem_bytes,
+                    0xff,
+                    elem_bytes);
+            }
+        } else if (!this->vm &&
+                   !elem_mask(v0, agnostic_ei) &&
+                   machInst.vtype8.vma) {
+            std::memset(
+                vd_bytes + vdElemIdx * elem_bytes,
+                0xff,
+                elem_bytes);
+        }
+    }
+'''
+
     microiop = InstObjParams(name + '_micro',
         Name + 'Micro',
         exec_template_base + 'MicroInst',
@@ -163,6 +197,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
             'is_vecIndex'   : is_vecIndex,
 
             'wb_elem_mask'  : wb_elem_mask,
+            'agnostic_load_code' : agnostic_load_code,
 
             'divrVl'        : divrVl
         },
