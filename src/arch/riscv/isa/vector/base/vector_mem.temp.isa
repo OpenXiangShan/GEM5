@@ -172,6 +172,8 @@ Fault
         %(memacc_code)s;
     }
 
+
+
     %(op_wb)s;
     return fault;
 }
@@ -300,6 +302,12 @@ Fault
     }
 
     %(vfof_get_code)s;
+
+
+    %(agnostic_load_code)s
+
+
+
     %(op_wb)s;
     return NoFault;
 }

@@ -74,6 +74,62 @@ let {{
             }
             """ % (code)
 
+
+    def regularAgnosticWrapper(code, withvm = True):
+        if withvm:
+            return """
+            if (ei < rVl) {
+                if (this->vm || elem_mask(v0, ei)) {
+                    %s
+                } else if (machInst.vtype8.vma) {
+                    std::memset(
+                        reinterpret_cast<uint8_t *>(Vd) +
+                            i * sizeof(ElemType),
+                        0xff,
+                        sizeof(ElemType));
+                }
+            } else if (machInst.vtype8.vta) {
+                std::memset(
+                        reinterpret_cast<uint8_t *>(Vd) +
+                            i * sizeof(ElemType),
+                        0xff,
+                        sizeof(ElemType));
+            }
+            """ % code
+        else:
+            return """
+            if (ei < rVl) {
+                %s
+            } else if (machInst.vtype8.vta) {
+                std::memset(
+                        reinterpret_cast<uint8_t *>(Vd) +
+                            i * sizeof(ElemType),
+                        0xff,
+                        sizeof(ElemType));
+            }
+            """ % code
+
+    def maskResultAgnosticWrapper(code, withvm = True):
+        if withvm:
+            return """
+            if (ei < rVl) {
+                if (this->vm || elem_mask(v0, ei)) {
+                    %s
+                } else if (machInst.vtype8.vma) {
+                    const uint32_t agnostic_bit = offset + i;
+                    reinterpret_cast<uint8_t *>(Vd)[agnostic_bit / 8] |=
+                        static_cast<uint8_t>(
+                            1U << (agnostic_bit %% 8));
+                }
+            }
+            """ % code
+        else:
+            return """
+            if (ei < rVl) {
+                %s
+            }
+            """ % code
+
     def eiDeclarePrefix(code, widening = False):
         if widening:
             return '''
@@ -183,7 +239,7 @@ def format VectorIntFormat(code, category, *flags) {{
         set_src_reg_idx += setSrcVm()
 
     # code
-    code = maskCondWrapper(code, mask_cond)
+    code = regularAgnosticWrapper(code, mask_cond)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
 
@@ -420,7 +476,7 @@ def format VectorIntMaskFormat(code, category, *flags) {{
         set_src_reg_idx += setSrcVm()
 
     #code
-    code = maskCondWrapper(code, mask_cond)
+    code = maskResultAgnosticWrapper(code, mask_cond)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
 
@@ -540,7 +596,7 @@ def format VectorFloatFormat(code, category, *flags) {{
     if v0_required:
         set_src_reg_idx += setSrcVm()
     # code
-    code = maskCondWrapper(code, mask_cond)
+    code = regularAgnosticWrapper(code, mask_cond)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
@@ -797,7 +853,7 @@ def format VectorFloatMaskFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
 
-    code = maskCondWrapper(code)
+    code = maskResultAgnosticWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
