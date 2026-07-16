@@ -221,6 +221,8 @@ class BaseO3CPU(BaseCPU):
         "but may replay in load pipe)")
     EnableDistanceMDP = Param.Bool(True,
         "Use the SQ-distance memory dependence predictor instead of StoreSet")
+    EnableDistanceMDPStrict = Param.Bool(True,
+        "Allow DistanceMDP strict wait-all predictions")
     EnableMDPStrictWait = Param.Bool(False,
         "Enable StoreSet strict-wait in mem dep prediction (checkInstStrict)")
 

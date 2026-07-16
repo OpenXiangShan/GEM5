@@ -1288,6 +1288,10 @@ class LSQ
     bool enablePipeNukeCheck() const { return _enablePipeNukeCheck; }
     bool enableReplayBasedMDP() const { return _enableReplayBasedMDP; }
     bool enableDistanceMDP() const { return _enableDistanceMDP; }
+    bool enableDistanceMDPStrict() const
+    {
+        return _enableDistanceMDPStrict;
+    }
     int storeWbStage() const { return _storeWbStage; }
 
   public:
@@ -1461,6 +1465,7 @@ class LSQ
     bool _enablePipeNukeCheck;
     bool _enableReplayBasedMDP;
     bool _enableDistanceMDP;
+    bool _enableDistanceMDPStrict;
 
     int _storeWbStage;
 

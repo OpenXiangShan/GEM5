@@ -467,6 +467,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _enableReplayBasedMDP(params.EnableReplayBasedMDP),
       _enableDistanceMDP(params.EnableDistanceMDP),
+      _enableDistanceMDPStrict(params.EnableDistanceMDPStrict),
       _storeWbStage(params.StoreWbStage),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),

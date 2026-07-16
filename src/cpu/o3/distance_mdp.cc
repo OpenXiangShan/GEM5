@@ -1,5 +1,6 @@
 #include "cpu/o3/distance_mdp.hh"
 
+#include <algorithm>
 #include <cassert>
 
 namespace gem5
@@ -108,10 +109,11 @@ DistanceMDP::train(Addr load_pc, size_t load_boundary,
         result.strictExpired = expireStrict(matched, cycle);
         result.action = matched.waitAllStore ?
             TrainAction::StrictRefresh : TrainAction::StrictUpgrade;
-        result.distanceChanged = distance && matched.hasDistance &&
-            matched.distance != *distance;
-        result.multiDistance = result.distanceChanged ||
-            (result.strictFallback && matched.hasDistance);
+        if (distance && matched.hasDistance) {
+            // The encoded value is the complement of the store age, so the
+            // larger nonzero value identifies the closer store.
+            result.distance = std::max(matched.distance, *distance);
+        }
         // An overflow has no safe target, so it must discard any old one.
         matched.hasDistance = !result.strictFallback;
         matched.distance = result.distance;
@@ -154,7 +156,7 @@ DistanceMDP::train(Addr load_pc, size_t load_boundary,
 
 DistanceMDP::FeedbackResult
 DistanceMDP::feedback(unsigned entry_index, uint16_t tag,
-                      MDPFeedbackSource source)
+                      MDPFeedbackSource source, bool release_strict)
 {
     FeedbackResult result;
     result.entryIndex = entry_index;
@@ -172,6 +174,13 @@ DistanceMDP::feedback(unsigned entry_index, uint16_t tag,
     if (matched.tag != tag) {
         result.action = FeedbackAction::TagMismatch;
         return result;
+    }
+
+    if (release_strict && source == MDPFeedbackSource::NoForward &&
+        matched.waitAllStore && matched.hasDistance) {
+        matched.waitAllStore = false;
+        matched.strictExpireCycle = 0;
+        result.strictReleased = true;
     }
 
     result.oldCounter = matched.counter;

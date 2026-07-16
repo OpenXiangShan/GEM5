@@ -861,6 +861,7 @@ class LSQUnit
         statistics::Scalar distanceMdpTagMisses;
         statistics::Scalar distanceMdpDistancePredictions;
         statistics::Scalar distanceMdpStrictPredictions;
+        statistics::Scalar distanceMdpStrictPredictionsSuppressed;
         statistics::Scalar distanceMdpTargetValid;
         statistics::Scalar distanceMdpTargetGone;
         statistics::Scalar distanceMdpTargetAddrReady;
@@ -870,11 +871,11 @@ class LSQUnit
         statistics::Scalar distanceMdpViolationHits;
         statistics::Scalar distanceMdpStrictUpgrades;
         statistics::Scalar distanceMdpStrictRefreshes;
-        statistics::Scalar distanceMdpMultiDistanceUpgrades;
         statistics::Scalar distanceMdpInvalidDistanceTrain;
         statistics::Scalar distanceMdpOverflowStrictFallbacks;
         statistics::Scalar distanceMdpPlruEvictions;
         statistics::Scalar distanceMdpStrictExpirations;
+        statistics::Scalar distanceMdpStrictNoForwardReleases;
         statistics::Scalar distanceMdpPeriodicClears;
         statistics::Scalar distanceMdpSqIncrements;
         statistics::Scalar distanceMdpSbufferDecrements;
@@ -884,6 +885,8 @@ class LSQUnit
         statistics::Scalar distanceMdpFeedbackInvalidEntry;
         statistics::Scalar distanceMdpFeedbackTagMismatch;
         statistics::Scalar distanceMdpDuplicateFeedback;
+        statistics::Vector distanceMdpPredictionOutcomes;
+        statistics::Vector storeSetPredictionOutcomes;
         statistics::Scalar distanceMdpStalePredictions;
         statistics::Scalar distanceMdpRawViolationNoPrediction;
         statistics::Scalar distanceMdpRawViolationHit;

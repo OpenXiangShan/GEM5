@@ -484,6 +484,12 @@ class DynInst : public ExecContext, public RefCounted
     /** Prevent duplicate MDP feedback from load replays or repeated pipe visits. */
     bool mdpFeedbackUpdated = false;
 
+    /** Latches MDP address replay history across all load-pipe entries. */
+    bool mdpAddrReplayed = false;
+
+    /** Prevent duplicate MDP prediction-accuracy samples for this dynamic load. */
+    bool mdpPredictionAccuracyUpdated = false;
+
     /** DistanceMDP lookup state is latched across all load-pipe replays. */
     bool distanceMdpLookupIssued = false;
     bool distanceMdpPredicted = false;
@@ -1189,7 +1195,10 @@ class DynInst : public ExecContext, public RefCounted
     void setSTLFReplay() { setReplay(LdStReplayType::STLFReplay); }
     bool needSTLFReplay() const { return getReplayType() == LdStReplayType::STLFReplay; }
 
-    void setMdpAddrReplay() { setReplay(LdStReplayType::MdpAddrReplay); }
+    void setMdpAddrReplay() {
+        mdpAddrReplayed = true;
+        setReplay(LdStReplayType::MdpAddrReplay);
+    }
     bool needMdpAddrReplay() const { return getReplayType() == LdStReplayType::MdpAddrReplay; }
 
     void setNukeReplay() { setReplay(LdStReplayType::NukeReplay); }

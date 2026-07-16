@@ -26,12 +26,12 @@ class DistanceMDP
   public:
     static constexpr unsigned NumEntries = 64;
     static constexpr unsigned TagBits = 14;
-    static constexpr unsigned CounterBits = 7;
+    static constexpr unsigned CounterBits = 4;
     static constexpr unsigned DistanceBits = 7;
     static constexpr unsigned VAddrBits = 39;
     static constexpr uint8_t MaxCounter = (1U << CounterBits) - 1;
     static constexpr uint8_t MaxDistance = (1U << DistanceBits) - 1;
-    static constexpr uint64_t StrictTimeout = 10000;
+    static constexpr uint64_t StrictTimeout = 1024 * 16;
 
     struct Entry
     {
@@ -70,8 +70,6 @@ class DistanceMDP
         TrainAction action = TrainAction::InvalidDistance;
         bool strictExpired = false;
         bool strictFallback = false;
-        bool multiDistance = false;
-        bool distanceChanged = false;
         unsigned entryIndex = 0;
         uint16_t tag = 0;
         uint8_t distance = 0;
@@ -91,6 +89,7 @@ class DistanceMDP
     struct FeedbackResult
     {
         FeedbackAction action = FeedbackAction::InvalidIndex;
+        bool strictReleased = false;
         unsigned entryIndex = 0;
         uint16_t tag = 0;
         uint8_t oldCounter = 0;
@@ -108,7 +107,7 @@ class DistanceMDP
     TrainResult train(Addr load_pc, size_t load_boundary,
                       size_t store_index, uint64_t cycle);
     FeedbackResult feedback(unsigned entry_index, uint16_t tag,
-                            MDPFeedbackSource source);
+                            MDPFeedbackSource source, bool release_strict);
 
     void clear();
     unsigned occupancy() const;
