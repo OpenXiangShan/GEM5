@@ -40,57 +40,6 @@ DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
 namespace
 {
 
-BTBEntry
-buildPairBlockEntry(const PairTAGE::PairBlockInfo &block, int pairComponentIdx)
-{
-    BTBEntry entry;
-    entry.valid = block.valid && !block.isFallThrough();
-    entry.pc = block.branchPC;
-    entry.target = block.targetPC;
-    entry.size = block.isFallThrough() ? 0 : block.size;
-    entry.isCond = block.isCond;
-    entry.isDirect = block.isDirect;
-    entry.isIndirect = block.isIndirect;
-    entry.isCall = block.isCall;
-    entry.isReturn = block.isReturn;
-    entry.alwaysTaken = entry.valid && !block.isCond;
-    entry.ctr = block.taken ? 0 : -1;
-    entry.source = pairComponentIdx;
-    return entry;
-}
-
-FullBTBPrediction
-buildPredictionFromPairBlock(ThreadID tid,
-    const PairTAGE::PairBlockInfo &block,
-    Addr blockStartPC,
-    const FullBTBPrediction &basePred,
-    int pairComponentIdx)
-{
-    FullBTBPrediction pred;
-    pred.tid = tid;
-    pred.asidHash = basePred.asidHash;
-    pred.bbStart = blockStartPC;
-    pred.predSource = basePred.predSource;
-    pred.overrideReason = OverrideReason::NO_OVERRIDE;
-    pred.predTick = basePred.predTick;
-    pred.s1Source = pairComponentIdx;
-    pred.s3Source = pairComponentIdx;
-
-    auto entry = buildPairBlockEntry(block, pairComponentIdx);
-    pred.btbEntries.push_back(entry);
-    if (entry.valid && entry.isCond) {
-        pred.condTakens.push_back({entry.pc, block.taken});
-    }
-    if (entry.valid && entry.isIndirect) {
-        if (entry.isReturn) {
-            pred.returnTarget = block.targetPC;
-        } else {
-            pred.indirectTargets.push_back({entry.pc, block.targetPC});
-        }
-    }
-    return pred;
-}
-
 bool
 predictionHasEntry(const FullBTBPrediction &pred, Addr pc)
 {
@@ -1096,8 +1045,30 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         }
     }
 
-    auto secondPred = buildPredictionFromPairBlock(
-        tid, secondBlock, thread.s0PC, thread.finalPred, pairtage->getComponentIdx());
+    // Cast the second block prediction into a FullBTBPrediction for FTQ enqueue & refreshing metas
+    FullBTBPrediction secondPred;
+    secondPred.tid = tid;
+    secondPred.asidHash = thread.finalPred.asidHash;
+    secondPred.bbStart = thread.s0PC;
+    secondPred.predSource = pairtage->getComponentIdx();
+    secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
+    secondPred.predTick = thread.finalPred.predTick;
+    secondPred.s1Source = pairtage->getComponentIdx();
+    secondPred.s3Source = pairtage->getComponentIdx();
+
+    BTBEntry secondEntry = secondBlock.buildBTBEntry(pairtage->getComponentIdx());
+    secondPred.btbEntries.push_back(secondEntry);
+    if (secondEntry.valid && secondEntry.isCond) {
+        secondPred.condTakens.push_back({secondEntry.pc, secondBlock.taken});
+    }
+    if (secondEntry.valid && secondEntry.isIndirect) {
+        if (secondEntry.isReturn) {
+            secondPred.returnTarget = secondEntry.target;
+        } else {
+            secondPred.indirectTargets.push_back({secondEntry.pc, secondEntry.target});
+        }
+    }
+
     if (thread.secondBlockTrainPredReady) {
         mergeSecondBlockTeacherContext(secondPred, thread.secondBlockTrainPred,
                                        secondBlock);
@@ -1631,8 +1602,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.falseHit = false;
     entry.predBTBEntries = pred.btbEntries;
     if (pairtageFallThroughHit && entry.predBTBEntries.empty()) {
-        entry.predBTBEntries.push_back(buildPairBlockEntry(
-            pairMeta->predictedFirstBlock, pairtage->getComponentIdx()));
+        entry.predBTBEntries.push_back(pairMeta->predictedFirstBlock.buildBTBEntry(pairtage->getComponentIdx()));
     }
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;

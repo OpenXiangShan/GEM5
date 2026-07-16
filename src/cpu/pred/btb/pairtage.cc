@@ -492,25 +492,6 @@ PairTAGE::lookupEntry(Addr startPC) const
     return lookupProviders(startPC).main;
 }
 
-BTBEntry
-PairTAGE::buildBTBEntry(const PairBlockInfo &block) const
-{
-    BTBEntry entry;
-    entry.valid = block.valid && !block.isFallThrough();
-    entry.pc = block.branchPC;
-    entry.target = block.targetPC;
-    entry.size = block.isFallThrough() ? 0 : block.size;
-    entry.isCond = block.isCond;
-    entry.isDirect = block.isDirect;
-    entry.isIndirect = block.isIndirect;
-    entry.isCall = block.isCall;
-    entry.isReturn = block.isReturn;
-    entry.alwaysTaken = entry.valid && !block.isCond;
-    entry.ctr = block.taken ? 0 : -1;
-    entry.source = componentIdx;
-    return entry;
-}
-
 void
 PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const
 {
@@ -529,7 +510,7 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
         return;
     }
 
-    auto entry = buildBTBEntry(block);
+    auto entry = block.buildBTBEntry(componentIdx);
     pred.btbEntries.push_back(entry);
     if (entry.isCond) {
         pred.condTakens.push_back({entry.pc, block.taken});

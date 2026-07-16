@@ -87,6 +87,23 @@ class PairTAGE : public TimedBaseBTBPredictor
         }
 
         bool isFallThrough() const { return valid && fallThrough; }
+        BTBEntry buildBTBEntry(int componentIdx) const {
+            BTBEntry entry;
+            entry.valid = valid && !fallThrough;
+            entry.pc = branchPC;
+            entry.target = targetPC;
+            entry.size = fallThrough ? 0 : size;
+            entry.isCond = isCond;
+            entry.isDirect = isDirect;
+            entry.isIndirect = isIndirect;
+            entry.isCall = isCall;
+            entry.isReturn = isReturn;
+            entry.alwaysTaken = entry.valid && !isCond;
+            entry.ctr = taken ? 0 : -1;
+            entry.source = componentIdx;
+
+            return entry;
+        };
     };
 
     struct PairTAGEEntry
@@ -222,7 +239,6 @@ class PairTAGE : public TimedBaseBTBPredictor
     ProviderInfo lookupProviders(Addr startPC) const;
     ProviderInfo lookupProviders(Addr startPC, const TageMeta &predMeta) const;
     TageTableInfo lookupEntry(Addr startPC) const;
-    BTBEntry buildBTBEntry(const PairBlockInfo &block) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
     PairBlockInfo buildTrainingBlock(const TrainPacket &packet) const;
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
