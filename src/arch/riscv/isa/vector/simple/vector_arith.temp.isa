@@ -1937,6 +1937,30 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
     %(code)s;
+
+    // Fill RVV tail-agnostic and mask-agnostic slide elements with ones.
+    for (uint32_t agnostic_i = 0;
+         agnostic_i < elem_num_per_vreg;
+         ++agnostic_i) {
+        const uint32_t agnostic_ei =
+            vmi.rs + agnostic_i;
+
+        const bool is_tail = agnostic_ei >= rVl;
+        const bool is_masked_off =
+            agnostic_ei < rVl &&
+            !this->vm &&
+            !elem_mask(v0, agnostic_ei);
+
+        if ((is_tail && machInst.vtype8.vta) ||
+            (is_masked_off && machInst.vtype8.vma)) {
+            std::memset(
+                reinterpret_cast<uint8_t *>(Vd) +
+                    agnostic_i * sizeof(ElemType),
+                0xff,
+                sizeof(ElemType));
+        }
+    }
+
     %(op_wb)s;
 
     return NoFault;
@@ -1965,6 +1989,30 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
     %(code)s;
+
+    // Fill RVV tail-agnostic and mask-agnostic slide elements with ones.
+    for (uint32_t agnostic_i = 0;
+         agnostic_i < elem_num_per_vreg;
+         ++agnostic_i) {
+        const uint32_t agnostic_ei =
+            vmi.rs + agnostic_i;
+
+        const bool is_tail = agnostic_ei >= rVl;
+        const bool is_masked_off =
+            agnostic_ei < rVl &&
+            !this->vm &&
+            !elem_mask(v0, agnostic_ei);
+
+        if ((is_tail && machInst.vtype8.vta) ||
+            (is_masked_off && machInst.vtype8.vma)) {
+            std::memset(
+                reinterpret_cast<uint8_t *>(Vd) +
+                    agnostic_i * sizeof(ElemType),
+                0xff,
+                sizeof(ElemType));
+        }
+    }
+
     %(op_wb)s;
 
     return NoFault;
