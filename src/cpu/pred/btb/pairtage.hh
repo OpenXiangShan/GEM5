@@ -129,6 +129,47 @@ class PairTAGE : public TimedBaseBTBPredictor
         PairBlockInfo predictedFirstBlock;
     };
 
+    struct TrainPacket
+    {
+        enum class BlockKind : uint8_t
+        {
+            Invalid,
+            FallThrough,
+            Branch
+        };
+
+        enum class BranchFlag : uint8_t
+        {
+            Conditional = 1U << 0,
+            Direct = 1U << 1,
+            Indirect = 1U << 2,
+            Call = 1U << 3,
+            Return = 1U << 4
+        };
+
+        Addr startPC{0};
+        PairPhase phase{PairPhase::Even};
+        std::shared_ptr<const TageMeta> meta;
+        BlockKind kind{BlockKind::Invalid};
+        Addr branchPC{0};
+        Addr targetPC{0};
+        bool taken{false};
+        uint8_t branchFlags{0};
+        uint8_t size{0};
+
+        static constexpr uint8_t
+        branchFlag(BranchFlag flag)
+        {
+            return static_cast<uint8_t>(flag);
+        }
+
+        bool
+        hasBranchFlag(BranchFlag flag) const
+        {
+            return branchFlags & branchFlag(flag);
+        }
+    };
+
     struct TageTableInfo
     {
         bool found;
@@ -168,8 +209,9 @@ class PairTAGE : public TimedBaseBTBPredictor
                       const PathHistoryUpdate &update) override;
     PairBlockInfo getSecondPredBlock() const;
     void setPredictionPhase(PairPhase phase);
-    void trainFromS3Pred(const FetchTarget &entry,
-                         const FullBTBPrediction *secondPred = nullptr);
+    void trainFromS3Pred(
+        const TrainPacket &finalTrainPacket,
+        const TrainPacket *twoTakenTrainPacket = nullptr);
     bool secondBlockEnabled() const { return enableSecondBlock; }
     bool phaseEnabled(PairPhase phase) const
     {
@@ -182,8 +224,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     TageTableInfo lookupEntry(Addr startPC) const;
     BTBEntry buildBTBEntry(const PairBlockInfo &block) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
-    PairBlockInfo buildTrainingBlock(const FetchTarget &entry) const;
-    PairBlockInfo buildTrainingBlock(const FullBTBPrediction &pred) const;
+    PairBlockInfo buildTrainingBlock(const TrainPacket &packet) const;
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
     bool blockIdentityMatches(const PairBlockInfo &lhs,
                               const PairBlockInfo &rhs) const;

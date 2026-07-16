@@ -544,107 +544,23 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
 }
 
 PairTAGE::PairBlockInfo
-PairTAGE::buildTrainingBlock(const FetchTarget &entry) const
+PairTAGE::buildTrainingBlock(const TrainPacket &packet) const
 {
-    const BTBEntry *trainEntry = nullptr;
-    const BTBEntry *fallbackEntry = nullptr;
-
-    if (entry.predTaken) {
-        for (const auto &btbEntry : entry.predBTBEntries) {
-            if (btbEntry.valid && btbEntry.pc == entry.predBranchInfo.pc) {
-                trainEntry = &btbEntry;
-                break;
-            }
-        }
-        if (!trainEntry) {
-            return PairBlockInfo{};
-        }
-    } else {
-        // PairTAGE stores only one not-taken direct conditional per block.
-        for (auto it = entry.predBTBEntries.rbegin();
-             it != entry.predBTBEntries.rend(); ++it) {
-            if (!it->valid) {
-                continue;
-            }
-            if (!fallbackEntry) {
-                fallbackEntry = &*it;
-            }
-            if (it->isCond && it->isDirect &&
-                !it->isIndirect && !it->isCall && !it->isReturn) {
-                trainEntry = &*it;
-                break;
-            }
-        }
-        if (!trainEntry) {
-            if (fallbackEntry) {
-                return PairBlockInfo{};
-            }
-            return PairBlockInfo(false, entry.startPC, entry.predEndPC, true);
-        }
-    }
-
-    if (!entry.predTaken &&
-        (!trainEntry->valid || !trainEntry->isCond ||
-         !trainEntry->isDirect || trainEntry->isIndirect ||
-         trainEntry->isCall || trainEntry->isReturn)) {
+    if (packet.kind == TrainPacket::BlockKind::Invalid) {
         return PairBlockInfo{};
     }
 
-    if (entry.predTaken) {
-        const auto &branchInfo = entry.predBranchInfo;
-        return PairBlockInfo(true, branchInfo.pc, branchInfo.target,
-                             branchInfo.isCond, branchInfo.isDirect,
-                             branchInfo.isIndirect, branchInfo.isCall,
-                             branchInfo.isReturn, branchInfo.size);
+    if (packet.kind == TrainPacket::BlockKind::FallThrough) {
+        return PairBlockInfo(false, packet.branchPC, packet.targetPC, true);
     }
 
-    return PairBlockInfo(false, trainEntry->pc, trainEntry->target);
-}
-
-PairTAGE::PairBlockInfo
-PairTAGE::buildTrainingBlock(const FullBTBPrediction &pred) const
-{
-    auto predCopy = pred;
-    const BTBEntry *trainEntry = nullptr;
-
-    if (predCopy.isTaken()) {
-        auto takenEntry = predCopy.getTakenEntry();
-        if (!takenEntry.valid) {
-            return PairBlockInfo{};
-        }
-        for (const auto &btbEntry : predCopy.btbEntries) {
-            if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
-                trainEntry = &btbEntry;
-                break;
-            }
-        }
-        if (!trainEntry) {
-            return PairBlockInfo{};
-        }
-    } else {
-        for (auto it = predCopy.btbEntries.rbegin();
-             it != predCopy.btbEntries.rend(); ++it) {
-            if (!it->valid) {
-                continue;
-            }
-            if (it->isCond && it->isDirect &&
-                !it->isIndirect && !it->isCall && !it->isReturn) {
-                trainEntry = &*it;
-                break;
-            }
-        }
-        if (!trainEntry) {
-            return PairBlockInfo{};
-        }
-    }
-
-    if (!trainEntry->valid || !trainEntry->isCond ||
-        !trainEntry->isDirect || trainEntry->isIndirect ||
-        trainEntry->isCall || trainEntry->isReturn) {
-        return PairBlockInfo{};
-    }
-
-    return PairBlockInfo(predCopy.isTaken(), trainEntry->pc, trainEntry->target);
+    return PairBlockInfo(
+        packet.taken, packet.branchPC, packet.targetPC,
+        packet.hasBranchFlag(TrainPacket::BranchFlag::Conditional),
+        packet.hasBranchFlag(TrainPacket::BranchFlag::Direct),
+        packet.hasBranchFlag(TrainPacket::BranchFlag::Indirect),
+        packet.hasBranchFlag(TrainPacket::BranchFlag::Call),
+        packet.hasBranchFlag(TrainPacket::BranchFlag::Return), packet.size);
 }
 
 bool
@@ -702,28 +618,29 @@ PairTAGE::entryMatchesTraining(const PairTAGEEntry &entry,
 }
 
 void
-PairTAGE::trainFromS3Pred(const FetchTarget &entry,
-                          const FullBTBPrediction *secondPred)
+PairTAGE::trainFromS3Pred(
+    const TrainPacket &finalTrainPacket,
+    const TrainPacket *twoTakenTrainPacket)
 {
-    if (!phaseEnabled(entry.pairPhase)) {
+    if (!phaseEnabled(finalTrainPacket.phase)) {
         return;
     }
 
-    auto predMeta = std::static_pointer_cast<TageMeta>(
-        entry.predMetas[getComponentIdx()]);
+    const auto &predMeta = finalTrainPacket.meta;
     if (!predMeta) {
         return;
     }
 
-    auto providers = lookupProviders(entry.startPC, *predMeta);
+    const Addr pairEntryStartPC = finalTrainPacket.startPC;
+    auto providers = lookupProviders(pairEntryStartPC, *predMeta);
     auto provider = providers.main;
     auto altProvider = providers.alt;
 
-    auto trainedFirstBlock = buildTrainingBlock(entry);
+    auto trainedFirstBlock = buildTrainingBlock(finalTrainPacket);
 
     auto secondBlockTrainInfo =
-        (enableSecondBlock && secondPred) ? buildTrainingBlock(*secondPred)
-                                          : PairBlockInfo{};
+        (enableSecondBlock && twoTakenTrainPacket) ?
+            buildTrainingBlock(*twoTakenTrainPacket) : PairBlockInfo{};
 
     if (!trainedFirstBlock.valid) {
         if (provider.found) {
@@ -764,7 +681,7 @@ PairTAGE::trainFromS3Pred(const FetchTarget &entry,
             PairTAGEEntry newEntry;
             newEntry.valid = true;
             newEntry.tag = getTageTag(
-                entry.startPC, provider.table,
+                pairEntryStartPC, provider.table,
                 predMeta->tagFoldedHist[provider.table].get(),
                 predMeta->altTagFoldedHist[provider.table].get());
             newEntry.counter = trainedFirstBlock.taken ? 0 : -1;
@@ -804,7 +721,7 @@ PairTAGE::trainFromS3Pred(const FetchTarget &entry,
 
         newEntry.valid = true;
         newEntry.tag = getTageTag(
-            entry.startPC, provider.table,
+            pairEntryStartPC, provider.table,
             predMeta->tagFoldedHist[provider.table].get(),
             predMeta->altTagFoldedHist[provider.table].get());
         newEntry.counter = trainedCounter;
@@ -858,7 +775,7 @@ PairTAGE::trainFromS3Pred(const FetchTarget &entry,
     }
 
     if (needHigherAlloc) {
-        allocateEntries(entry.startPC, *predMeta, trainedFirstBlock,
+        allocateEntries(pairEntryStartPC, *predMeta, trainedFirstBlock,
                         secondBlockTrainInfo, allocStartTable);
     }
 }

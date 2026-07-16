@@ -142,6 +142,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
         FullBTBPrediction secondBlockTrainPred;
+        PairTAGE::TrainPacket finalTrainPacket;
+        PairTAGE::TrainPacket twoTakenTrainPacket;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
