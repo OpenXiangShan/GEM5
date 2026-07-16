@@ -41,62 +41,6 @@ namespace
 {
 
 bool
-predictionHasEntry(const FullBTBPrediction &pred, Addr pc)
-{
-    return std::any_of(pred.btbEntries.begin(), pred.btbEntries.end(),
-        [pc](const BTBEntry &entry) {
-            return entry.valid && entry.pc == pc;
-        });
-}
-
-void
-setCondTaken(CondTakens &condTakens, Addr pc, bool taken)
-{
-    auto it = CondTakens_find(condTakens, pc);
-    if (it != condTakens.end()) {
-        it->second = taken;
-        return;
-    }
-    condTakens.push_back({pc, taken});
-}
-
-void
-mergeSecondBlockTeacherContext(FullBTBPrediction &pred,
-                               const FullBTBPrediction &teacherPred,
-                               const PairTAGE::PairBlockInfo &pairSecondBlock)
-{
-    if (!pairSecondBlock.valid || pairSecondBlock.isFallThrough()) {
-        return;
-    }
-
-    const Addr selectedPC = pairSecondBlock.branchPC;
-    for (const auto &teacherEntry : teacherPred.btbEntries) {
-        if (!teacherEntry.valid || !teacherEntry.isCond) {
-            continue;
-        }
-        if (teacherEntry.pc < pred.bbStart || teacherEntry.pc >= selectedPC) {
-            continue;
-        }
-        if (predictionHasEntry(pred, teacherEntry.pc)) {
-            continue;
-        }
-
-        pred.btbEntries.push_back(teacherEntry);
-        Addr teacherPC = teacherEntry.pc;
-        auto teacherCond = CondTakens_find(teacherPred.condTakens,
-                                           teacherPC);
-        bool taken = teacherCond != teacherPred.condTakens.end() &&
-            teacherCond->second;
-        setCondTaken(pred.condTakens, teacherEntry.pc, taken);
-    }
-
-    std::sort(pred.btbEntries.begin(), pred.btbEntries.end(),
-        [](const BTBEntry &lhs, const BTBEntry &rhs) {
-            return lhs.pc < rhs.pc;
-        });
-}
-
-bool
 predictionHasUsableEntry(const FullBTBPrediction &pred)
 {
     for (const auto &entry : pred.btbEntries) {
@@ -1069,10 +1013,30 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         }
     }
 
-    if (thread.secondBlockTrainPredReady) {
-        mergeSecondBlockTeacherContext(secondPred, thread.secondBlockTrainPred,
-                                       secondBlock);
+    // Merge second block teacher's more btb entries
+    // TODO: This is not a real behavior on final design but it should be compatible with
+    // the current train datapath in BPU model, which stores every BTB entry in the FTQ
+    // entry and not lookup tables another time when training in every predictor.
+    if (thread.secondBlockTrainPredReady && secondBlock.valid && !secondBlock.isFallThrough()) {
+        for (const auto &teacherEntry : thread.secondBlockTrainPred.btbEntries) {
+            if (!teacherEntry.valid || !teacherEntry.isCond) {
+                continue;
+            }
+            if (teacherEntry.pc < secondPred.bbStart || teacherEntry.pc >= secondBlock.branchPC) {
+                continue;
+            }
+            if (teacherEntry.pc == secondBlock.branchPC) {
+                continue;
+            }
+
+            secondPred.btbEntries.push_back(teacherEntry);
+            secondPred.condTakens.push_back({teacherEntry.pc, false});
+        }
+
+        std::sort(secondPred.btbEntries.begin(), secondPred.btbEntries.end(),
+                  [](const BTBEntry &lhs, const BTBEntry &rhs) { return lhs.pc < rhs.pc; });
     }
+
     refreshSecondBlockPredictionMetas(tid, secondPred);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
 
