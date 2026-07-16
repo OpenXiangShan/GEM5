@@ -387,9 +387,21 @@ class LSQUnit
     /** Returns the memory ordering violator. */
     DynInstPtr getMemDepViolator();
 
-    /** Train DistanceMDP from the final store-load RAW violation. */
-    void trainDistanceMDP(const DynInstPtr &store_inst,
-                          const DynInstPtr &violating_load);
+    /** Record a DistanceMDP RAW candidate before the squash reaches commit. */
+    void recordDistanceMDPRawTrainingCandidate(
+        const DynInstPtr &store_inst, const DynInstPtr &violating_load);
+
+    /** Preserve a RAW candidate until its memory-order commit squash. */
+    void deferDistanceMDPTraining(const DynInstPtr &store_inst,
+                                  const DynInstPtr &violating_load);
+
+    /** Train the candidate selected by the matching commit-side squash. */
+    void trainDistanceMDPAtCommitSquash(const DynInstPtr &violating_load,
+                                        const InstSeqNum &squashed_num);
+
+    /** Update DistanceMDP from a retained store identity. */
+    void trainDistanceMDP(const DynInstPtr &violating_load,
+                          InstSeqNum store_seq_num, uint64_t store_sq_idx);
 
     /** Check if there exists raw nuke between load and store. */
     bool pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst);
@@ -892,6 +904,10 @@ class LSQUnit
         statistics::Scalar distanceMdpRawViolationHit;
         statistics::Scalar distanceMdpRawViolationMiss;
         statistics::Scalar distanceMdpRawViolationStrict;
+        statistics::Scalar distanceMdpRawTrainingMultiStoreLoads;
+        statistics::Scalar distanceMdpRawTrainingDeferred;
+        statistics::Scalar distanceMdpRawTrainingCommitSquash;
+        statistics::Scalar distanceMdpRawTrainingDiscarded;
         statistics::Distribution distanceMdpTrainDistance;
         statistics::Distribution distanceMdpPredictionDistance;
         statistics::Distribution distanceMdpCounter;

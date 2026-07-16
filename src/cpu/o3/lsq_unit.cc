@@ -688,6 +688,21 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of RAW violations that missed the predicted target"),
       ADD_STAT(distanceMdpRawViolationStrict, statistics::units::Count::get(),
                "Number of RAW violations after a strict prediction"),
+      ADD_STAT(distanceMdpRawTrainingMultiStoreLoads,
+               statistics::units::Count::get(),
+               "Number of dynamic loads with RAW training candidates from "
+               "multiple store sequence numbers"),
+      ADD_STAT(distanceMdpRawTrainingDeferred, statistics::units::Count::get(),
+               "Number of DistanceMDP RAW candidates deferred to commit "
+               "squash"),
+      ADD_STAT(distanceMdpRawTrainingCommitSquash,
+               statistics::units::Count::get(),
+               "Number of DistanceMDP RAW candidates trained at commit "
+               "squash"),
+      ADD_STAT(distanceMdpRawTrainingDiscarded,
+               statistics::units::Count::get(),
+               "Number of deferred DistanceMDP RAW candidates discarded by "
+               "another squash"),
       ADD_STAT(distanceMdpTrainDistance,
                "DistanceMDP trained distance distribution"),
       ADD_STAT(distanceMdpPredictionDistance,
@@ -1029,14 +1044,101 @@ LSQUnit::getMemDepViolator()
 }
 
 void
-LSQUnit::trainDistanceMDP(const DynInstPtr &store_inst,
-                          const DynInstPtr &violating_load)
+LSQUnit::recordDistanceMDPRawTrainingCandidate(
+    const DynInstPtr &store_inst, const DynInstPtr &violating_load)
+{
+    panic_if(!lsq->enableDistanceMDP(),
+             "DistanceMDP RAW candidate while predictor is disabled\n");
+    panic_if(!store_inst || !store_inst->isStore() || !violating_load ||
+             !violating_load->isLoad(),
+             "DistanceMDP requires a store-load RAW candidate\n");
+
+    if (!violating_load->distanceMdpRawTrainingSeen) {
+        violating_load->distanceMdpRawTrainingSeen = true;
+        violating_load->distanceMdpRawTrainingStoreSeq = store_inst->seqNum;
+    } else if (!violating_load->distanceMdpRawTrainingMultiStore &&
+               violating_load->distanceMdpRawTrainingStoreSeq !=
+                   store_inst->seqNum) {
+        violating_load->distanceMdpRawTrainingMultiStore = true;
+        ++stats.distanceMdpRawTrainingMultiStoreLoads;
+        DPRINTF(DistanceMDP,
+                "raw multi-store candidate load_pc=%#x load_sn=%llu "
+                "first_store_sn=%llu store_sn=%llu\n",
+                violating_load->pcState().instAddr(), violating_load->seqNum,
+                violating_load->distanceMdpRawTrainingStoreSeq,
+                store_inst->seqNum);
+    }
+}
+
+void
+LSQUnit::deferDistanceMDPTraining(const DynInstPtr &store_inst,
+                                  const DynInstPtr &violating_load)
+{
+    panic_if(!lsq->enableDistanceMDP(),
+             "Deferred DistanceMDP training while predictor is disabled\n");
+    panic_if(!store_inst || !store_inst->isStore() || !violating_load ||
+             !violating_load->isLoad(),
+             "Deferred DistanceMDP training requires a store-load RAW "
+             "violation\n");
+
+    if (violating_load->distanceMdpRawTrainingPending) {
+        DPRINTF(DistanceMDP,
+                "keep deferred RAW train load_pc=%#x load_sn=%llu "
+                "store_sn=%llu first_store_sn=%llu\n",
+                violating_load->pcState().instAddr(), violating_load->seqNum,
+                store_inst->seqNum,
+                violating_load->distanceMdpRawTrainingPendingStoreSeq);
+        return;
+    }
+
+    violating_load->distanceMdpRawTrainingPending = true;
+    violating_load->distanceMdpRawTrainingPendingStoreSeq = store_inst->seqNum;
+    violating_load->distanceMdpRawTrainingPendingStoreSqIdx =
+        store_inst->sqIt.idx();
+    ++stats.distanceMdpRawTrainingDeferred;
+
+    DPRINTF(DistanceMDP,
+            "defer RAW train load_pc=%#x load_sn=%llu store_sn=%llu "
+            "store_idx=%lu\n",
+            violating_load->pcState().instAddr(), violating_load->seqNum,
+            store_inst->seqNum,
+            violating_load->distanceMdpRawTrainingPendingStoreSqIdx);
+}
+
+void
+LSQUnit::trainDistanceMDPAtCommitSquash(const DynInstPtr &violating_load,
+                                        const InstSeqNum &squashed_num)
+{
+    panic_if(!violating_load || !violating_load->isLoad(),
+             "Commit-squash DistanceMDP training requires a load\n");
+    panic_if(!violating_load->distanceMdpRawTrainingPending,
+             "Commit-squash DistanceMDP training has no pending RAW candidate\n");
+    panic_if(violating_load->seqNum != squashed_num + 1,
+             "Commit-squash DistanceMDP load sequence does not match squash\n");
+
+    const InstSeqNum store_seq_num =
+        violating_load->distanceMdpRawTrainingPendingStoreSeq;
+    const uint64_t store_sq_idx =
+        violating_load->distanceMdpRawTrainingPendingStoreSqIdx;
+    violating_load->distanceMdpRawTrainingPending = false;
+    ++stats.distanceMdpRawTrainingCommitSquash;
+
+    DPRINTF(DistanceMDP,
+            "commit-squash RAW train load_pc=%#x load_sn=%llu store_sn=%llu "
+            "squash_sn=%llu\n",
+            violating_load->pcState().instAddr(), violating_load->seqNum,
+            store_seq_num, squashed_num);
+    trainDistanceMDP(violating_load, store_seq_num, store_sq_idx);
+}
+
+void
+LSQUnit::trainDistanceMDP(const DynInstPtr &violating_load,
+                          InstSeqNum store_seq_num, uint64_t store_sq_idx)
 {
     panic_if(!lsq->enableDistanceMDP(),
              "DistanceMDP training while predictor is disabled\n");
-    panic_if(!store_inst || !store_inst->isStore() || !violating_load ||
-             !violating_load->isLoad(),
-             "DistanceMDP requires a store-load RAW violation\n");
+    panic_if(!violating_load || !violating_load->isLoad(),
+             "DistanceMDP requires a load RAW violator\n");
 
     if (violating_load->distanceMdpWaitAll &&
         violating_load->distanceMdpPredicted) {
@@ -1044,7 +1146,7 @@ LSQUnit::trainDistanceMDP(const DynInstPtr &store_inst,
     } else if (!violating_load->distanceMdpPredicted) {
         ++stats.distanceMdpRawViolationNoPrediction;
     } else if (violating_load->distanceMdpPredictedStoreSeq ==
-               store_inst->seqNum) {
+               store_seq_num) {
         ++stats.distanceMdpRawViolationHit;
     } else {
         ++stats.distanceMdpRawViolationMiss;
@@ -1052,7 +1154,7 @@ LSQUnit::trainDistanceMDP(const DynInstPtr &store_inst,
 
     const auto result = distanceMdp.train(
         violating_load->pcState().instAddr(),
-        violating_load->sqIt.idx(), store_inst->sqIt.idx(),
+        violating_load->sqIt.idx(), store_sq_idx,
         uint64_t(cpu->curCycle()));
     using Action = DistanceMDP::TrainAction;
     switch (result.action) {
@@ -1093,9 +1195,9 @@ LSQUnit::trainDistanceMDP(const DynInstPtr &store_inst,
             "entry=%u tag=%#x boundary=%lu store_idx=%lu distance=%u "
             "strict_fallback=%d expired=%d occupancy=%u\n",
             violating_load->pcState().instAddr(), violating_load->seqNum,
-            store_inst->seqNum, static_cast<unsigned>(result.action),
+            store_seq_num, static_cast<unsigned>(result.action),
             result.entryIndex, result.tag, violating_load->sqIt.idx(),
-            store_inst->sqIt.idx(), result.distance, result.strictFallback,
+            store_sq_idx, result.distance, result.strictFallback,
             result.strictExpired, distanceMdp.occupancy());
 }
 
@@ -2947,6 +3049,17 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
                 "[sn:%lli]\n",
                 loadQueue.back().instruction()->pcState(),
                 loadQueue.back().instruction()->seqNum);
+
+        const auto &squashed_load = loadQueue.back().instruction();
+        if (squashed_load->distanceMdpRawTrainingPending) {
+            squashed_load->distanceMdpRawTrainingPending = false;
+            ++stats.distanceMdpRawTrainingDiscarded;
+            DPRINTF(DistanceMDP,
+                    "discard deferred RAW train load_pc=%#x load_sn=%llu "
+                    "squash_sn=%llu\n",
+                    squashed_load->pcState().instAddr(),
+                    squashed_load->seqNum, squashed_num);
+        }
 
         if (isStalled() && loadQueue.tail() == stallingLoadIdx) {
             stalled = false;

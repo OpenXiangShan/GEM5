@@ -550,6 +550,13 @@ IEW::squash(ThreadID tid)
     // Tell the IQ to start squashing.
     instQueue.squash(tid);
 
+    const auto &raw_training_load =
+        fromCommit->commitInfo[tid].distanceMdpRawTrainingInst;
+    if (raw_training_load) {
+        ldstQueue.trainDistanceMDPAtCommitSquash(
+            raw_training_load, fromCommit->commitInfo[tid].doneSeqNum);
+    }
+
     // Tell the LDSTQ to start squashing.
     ldstQueue.squash(fromCommit->commitInfo[tid].doneSeqNum, tid);
     updatedQueues = true;
@@ -584,6 +591,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         inst->staticInst->advancePC(*toCommit->pc[tid]);
 
         toCommit->mispredictInst[tid] = inst;
+        toCommit->distanceMdpRawTrainingInst[tid] = nullptr;
         toCommit->includeSquashInst[tid] = false;
 
         wroteToTimeBuffer = true;
@@ -599,9 +607,12 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
     stallSig->blockRename[tid] = true;
 }
 
-void
-IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
+bool
+IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid,
+                         bool defer_distance_mdp_training)
 {
+    bool squash_sent = false;
+
     DPRINTF(IEW, "[tid:%i] Memory violation, squashing violator and younger "
             "insts, PC: %s [sn:%llu].\n", tid, inst->pcState(), inst->seqNum);
     // Need to include inst->seqNum in the following comparison to cover the
@@ -619,11 +630,14 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
         set(toCommit->pc[tid], inst->pcState());
         toCommit->mispredictInst[tid] = NULL;
+        toCommit->distanceMdpRawTrainingInst[tid] =
+            defer_distance_mdp_training ? inst : nullptr;
 
         // Must include the memory violator in the squash.
         toCommit->includeSquashInst[tid] = true;
 
         wroteToTimeBuffer = true;
+        squash_sent = true;
 
         DPRINTF(DecoupleBP,
                 "Memory violation (pc=%#lx) set target id "
@@ -634,6 +648,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
     }
 
     stallSig->blockRename[tid] = true;
+    return squash_sent;
 }
 
 void
@@ -656,6 +671,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
         inst->staticInst->advancePC(*toCommit->pc[tid]);
 
         toCommit->mispredictInst[tid] = NULL;
+        toCommit->distanceMdpRawTrainingInst[tid] = nullptr;
 
         // Even speculatively executed value prediction instructions cannot
         // be squashed after obtaining a correct result.
@@ -1577,18 +1593,24 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 
             fetchRedirect[tid] = true;
 
-            // Tell the instruction queue that a violation has occured.
-            if (enableDistanceMDP) {
-                if (inst->isStore() && violator->isLoad()) {
-                    ldstQueue.trainDistanceMDP(inst, violator);
-                }
+            const bool distance_mdp_raw =
+                enableDistanceMDP && inst->isStore() && violator->isLoad();
+
+            // Record RAW candidates immediately, but train only after the
+            // matching memory-order squash returns from commit.
+            if (distance_mdp_raw) {
+                ldstQueue.recordDistanceMDPRawTrainingCandidate(
+                    inst, violator);
             } else if (enableStoreSetTrain) {
                 instQueue.violation(inst, violator);
             }
             violator->setProducerStorePC(inst->pcState().instAddr());
 
             // Squash.
-            squashDueToMemOrder(violator, tid);
+            if (squashDueToMemOrder(violator, tid, distance_mdp_raw) &&
+                distance_mdp_raw) {
+                ldstQueue.deferDistanceMDPTraining(inst, violator);
+            }
 
             ++iewStats.memOrderViolationEvents;
         }

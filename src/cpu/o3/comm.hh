@@ -147,6 +147,7 @@ struct IEWStruct
 
     DynInstPtr insts[MaxWidth];
     DynInstPtr mispredictInst[MaxThreads];
+    DynInstPtr distanceMdpRawTrainingInst[MaxThreads];
     Addr mispredPC[MaxThreads];
     InstSeqNum squashedSeqNum[MaxThreads];
     uint64_t squashedTargetId[MaxThreads];
@@ -299,6 +300,9 @@ struct TimeStruct
 
         /// Instruction that caused the a non-mispredict squash
         DynInstPtr squashInst; // *F
+
+        /// RAW violating load whose DistanceMDP train awaits this squash.
+        DynInstPtr distanceMdpRawTrainingInst; // *I
 
         /// Hack for now to send back a strictly ordered access to the
         /// IEW stage.

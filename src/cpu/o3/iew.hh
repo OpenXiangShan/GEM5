@@ -318,7 +318,8 @@ class IEW
     /** Sends commit proper information for a squash due to a memory order
      * violation.
      */
-    void squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid);
+    bool squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid,
+                             bool defer_distance_mdp_training);
 
     /** Sends commit proper information for a squash due to a value
      * mispredict.

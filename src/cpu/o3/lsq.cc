@@ -1659,15 +1659,37 @@ LSQ::getMemDepViolator(ThreadID tid)
 }
 
 void
-LSQ::trainDistanceMDP(const DynInstPtr &store_inst,
-                      const DynInstPtr &violating_load)
+LSQ::recordDistanceMDPRawTrainingCandidate(
+    const DynInstPtr &store_inst, const DynInstPtr &violating_load)
 {
     panic_if(!store_inst || !violating_load,
-             "DistanceMDP training requires a store and a load\n");
+             "DistanceMDP RAW candidate requires a store and a load\n");
     panic_if(store_inst->threadNumber != violating_load->threadNumber,
-             "DistanceMDP cannot train across threads\n");
-    thread.at(violating_load->threadNumber).trainDistanceMDP(
+             "DistanceMDP RAW candidate cannot cross threads\n");
+    thread.at(violating_load->threadNumber).
+        recordDistanceMDPRawTrainingCandidate(store_inst, violating_load);
+}
+
+void
+LSQ::deferDistanceMDPTraining(const DynInstPtr &store_inst,
+                              const DynInstPtr &violating_load)
+{
+    panic_if(!store_inst || !violating_load,
+             "Deferred DistanceMDP training requires a store and a load\n");
+    panic_if(store_inst->threadNumber != violating_load->threadNumber,
+             "Deferred DistanceMDP training cannot cross threads\n");
+    thread.at(violating_load->threadNumber).deferDistanceMDPTraining(
         store_inst, violating_load);
+}
+
+void
+LSQ::trainDistanceMDPAtCommitSquash(const DynInstPtr &violating_load,
+                                    const InstSeqNum &squashed_num)
+{
+    panic_if(!violating_load,
+             "Commit-squash DistanceMDP training requires a load\n");
+    thread.at(violating_load->threadNumber).trainDistanceMDPAtCommitSquash(
+        violating_load, squashed_num);
 }
 
 int

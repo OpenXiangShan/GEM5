@@ -761,6 +761,7 @@ Commit::squashAll(ThreadID tid)
 
     toIEW->commitInfo[tid].mispredictInst = NULL;
     toIEW->commitInfo[tid].squashInst = NULL;
+    toIEW->commitInfo[tid].distanceMdpRawTrainingInst = nullptr;
 
     set(toIEW->commitInfo[tid].pc, pc[tid]);
 
@@ -1148,6 +1149,8 @@ Commit::commit()
 
             toIEW->commitInfo[tid].mispredictInst =
                 fromIEW->mispredictInst[tid];
+            toIEW->commitInfo[tid].distanceMdpRawTrainingInst =
+                fromIEW->distanceMdpRawTrainingInst[tid];
             toIEW->commitInfo[tid].branchTaken =
                 fromIEW->branchTaken[tid];
 

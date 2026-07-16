@@ -948,8 +948,12 @@ class LSQ
     /** Gets the instruction that caused the memory ordering violation. */
     DynInstPtr getMemDepViolator(ThreadID tid);
 
-    void trainDistanceMDP(const DynInstPtr &store_inst,
-                          const DynInstPtr &violating_load);
+    void recordDistanceMDPRawTrainingCandidate(
+        const DynInstPtr &store_inst, const DynInstPtr &violating_load);
+    void deferDistanceMDPTraining(const DynInstPtr &store_inst,
+                                  const DynInstPtr &violating_load);
+    void trainDistanceMDPAtCommitSquash(const DynInstPtr &violating_load,
+                                        const InstSeqNum &squashed_num);
 
     /** Returns the head index of the load queue for a specific thread. */
     int getLoadHead(ThreadID tid);

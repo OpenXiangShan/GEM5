@@ -502,6 +502,16 @@ class DynInst : public ExecContext, public RefCounted
     InstSeqNum distanceMdpPredictedStoreSeq = 0;
     bool distanceMdpFeedbackUpdated = false;
 
+    /** RAW training stores already observed for this dynamic load. */
+    bool distanceMdpRawTrainingSeen = false;
+    bool distanceMdpRawTrainingMultiStore = false;
+    InstSeqNum distanceMdpRawTrainingStoreSeq = 0;
+
+    /** RAW training state retained until the corresponding commit squash. */
+    bool distanceMdpRawTrainingPending = false;
+    InstSeqNum distanceMdpRawTrainingPendingStoreSeq = 0;
+    uint64_t distanceMdpRawTrainingPendingStoreSqIdx = 0;
+
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[8] = {0};
 
