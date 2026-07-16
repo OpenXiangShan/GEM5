@@ -164,3 +164,27 @@ class XSDRRIPRP(BaseReplacementPolicy):
     mode = Param.Int(2, "Mode: 0=SRRIP, 1=BRRIP, 2=DRRIP (Set Dueling)")
     num_sets = Param.Int(0, "Number of sets in the cache (required for DRRIP mode)")
     num_ways = Param.Int(Parent.assoc, "Number of ways in each set")
+
+class LeewayL2RP(BaseReplacementPolicy):
+    type = 'LeewayL2RP'
+    cxx_class = 'gem5::replacement_policy::LeewayL2'
+    cxx_header = "mem/cache/replacement_policies/leeway_l2_rp.hh"
+
+    num_sets = Param.Int(0, "Number of sets in the cache")
+    num_ways = Param.Int(Parent.assoc, "Number of ways in each set")
+    ldpt_entries = Param.Unsigned(16384, "Number of LDPT entries")
+    sample_sets = Param.Unsigned(64, "Sampled sets used to train LDPT")
+    mode = Param.String("nru", "Leeway recency mode: lru or nru")
+    nru_bits = Param.Unsigned(2, "NRU aging bits, only used in nru mode")
+    require_pc_signature = Param.Bool(True,
+        "Skip ordinary requests without PC for LDPT training")
+    ld_increase_threshold = Param.Unsigned(1,
+        "Confidence threshold for increasing stable live distance")
+    ld_decrease_threshold = Param.Unsigned(7,
+        "Confidence threshold for decreasing stable live distance")
+
+class LeewayL2LRURP(LeewayL2RP):
+    mode = "lru"
+
+class LeewayL2NRURP(LeewayL2RP):
+    mode = "nru"
