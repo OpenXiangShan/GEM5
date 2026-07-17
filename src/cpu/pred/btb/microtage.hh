@@ -391,7 +391,7 @@ public:
     // If predMeta is nullptr, use current folded history (prediction path)
     TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
                                            const Addr &startPC,
-                                           const std::shared_ptr<TageMeta> predMeta = nullptr,
+                                           const std::shared_ptr<TageMeta>& predMeta = nullptr,
                                            ThreadID tid = 0,
                                            uint8_t asidHash = 0);
 
@@ -422,7 +422,7 @@ public:
                                  const BTBEntry &entry,
                                  bool actual_taken,
                                  unsigned main_table,
-                                 std::shared_ptr<TageMeta> meta,
+                                 const std::shared_ptr<TageMeta>& meta,
                                  uint8_t asidHash,
                                  TrainingMode mode,
                                  uint64_t &allocated_table,

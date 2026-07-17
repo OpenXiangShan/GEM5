@@ -455,7 +455,7 @@ MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, ThreadID tid,
 
 std::vector<MBTB::TickedBTBEntry>
 MBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash,
-             std::shared_ptr<BTBMeta> meta)
+             const std::shared_ptr<BTBMeta>& meta)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {

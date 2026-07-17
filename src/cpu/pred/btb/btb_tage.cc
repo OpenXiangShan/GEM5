@@ -300,7 +300,7 @@ BTBTAGE::tickStart() {}
 BTBTAGE::TagePrediction
 BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
-                                 std::shared_ptr<TageMeta> predMeta,
+                                 const std::shared_ptr<TageMeta>& predMeta,
                                  ThreadID tid,
                                  uint8_t asidHash) const
 {
@@ -514,7 +514,12 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
     threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
     threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
-    threadMeta[tid]->history = history;
+    // TageMeta::history is a full-length dynamic_bitset kept only "for viewing"
+    // and read exclusively on the enableDB trace path (TageMissTrace). Skip the
+    // per-prediction heap copy unless database tracing is active.
+    if (enableDB) {
+        threadMeta[tid]->history = history;
+    }
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -785,7 +790,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  const BTBEntry &entry,
                                  bool actual_taken,
                                  unsigned start_table,
-                                 std::shared_ptr<TageMeta> meta,
+                                 const std::shared_ptr<TageMeta>& meta,
                                  uint8_t asidHash,
                                  ThreadID tid,
                                  AllocationTraceInfo &allocInfo) {

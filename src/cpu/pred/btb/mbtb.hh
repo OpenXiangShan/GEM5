@@ -356,7 +356,7 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> lookup(Addr block_pc, ThreadID tid,
                                        uint8_t asidHash,
-                                       std::shared_ptr<BTBMeta> meta);
+                                       const std::shared_ptr<BTBMeta>& meta);
     std::vector<TickedBTBEntry> lookupNoSideEffect(
         Addr block_pc, ThreadID tid, uint8_t asidHash) const;
 

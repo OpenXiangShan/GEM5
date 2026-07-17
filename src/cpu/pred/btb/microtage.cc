@@ -215,7 +215,7 @@ MicroTAGE::tickStart() {}
 MicroTAGE::TagePrediction
 MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
-                                 std::shared_ptr<TageMeta> predMeta,
+                                 const std::shared_ptr<TageMeta>& predMeta,
                                  ThreadID tid,
                                  uint8_t asidHash) {
     DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
@@ -737,7 +737,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  const BTBEntry &entry,
                                  bool actual_taken,
                                  unsigned start_table,
-                                 std::shared_ptr<TageMeta> meta,
+                                 const std::shared_ptr<TageMeta>& meta,
                                  uint8_t asidHash,
                                  TrainingMode mode,
                                  uint64_t &allocated_table,
