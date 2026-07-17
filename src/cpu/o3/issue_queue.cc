@@ -676,6 +676,19 @@ IssueQue::releaseVectorSplitUnits(VectorSplitKind kind)
 void
 IssueQue::processVectorReadyQ()
 {
+    // Fast path for issue queues with no vector-split work in flight, which is
+    // all of them on scalar-only workloads. With the per-kind ready queues, the
+    // delayed-ready queue and every per-unit split queue empty, each step below
+    // is a no-op and scheduleVectorReadyQEvent() resolves to MaxTick and
+    // schedules nothing. Returning early is therefore bit-identical, including
+    // host-side event scheduling, while dropping the per-cycle vector
+    // bookkeeping every issue queue would otherwise run.
+    if (vectorLoadReadyQ.empty() && vectorStoreReadyQ.empty() &&
+        vectorDelayedReadyQ.empty() &&
+        nextVectorSplitReleaseTick() == MaxTick) {
+        return;
+    }
+
     tryStartVectorMemSplit();
 
     releaseVectorSplitUnits(VectorSplitKind::Load);
