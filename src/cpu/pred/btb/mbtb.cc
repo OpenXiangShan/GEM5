@@ -276,7 +276,7 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
-        for (auto e : entries) {
+        for (const auto &e : entries) {
             stagePreds[s].btbEntries.push_back(BTBEntry(e));
         }
         checkAscending(stagePreds[s].btbEntries);

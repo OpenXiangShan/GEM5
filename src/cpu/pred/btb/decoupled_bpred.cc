@@ -477,7 +477,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     finalPred.s3Source = -1;
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
-        for (auto entry : predsOfEachStage[0].btbEntries){
+        for (const auto &entry : predsOfEachStage[0].btbEntries){
             if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 ||entry.alwaysTaken){
                 finalPred.s1Source = entry.source;
                 break;
@@ -488,7 +488,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     bool found_s3_taken = false;
     bool na_s3_taken_but_have_cond = false;
 
-    for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
+    for (const BTBEntry &entry : predsOfEachStage[2].btbEntries) {
         if (entry.isDirect || entry.isIndirect || entry.ctr >= 0 || entry.alwaysTaken) {
             found_s3_taken = true;
         }else if (entry.isCond){
