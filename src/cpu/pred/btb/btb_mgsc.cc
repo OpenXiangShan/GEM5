@@ -35,6 +35,26 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+namespace
+{
+
+// Snapshot a folded-history vector as raw folded values. Prediction and tag
+// lookups read the values directly and recovery restores them through
+// recoverValue(), so the metadata only needs the folded value and not the full
+// object with its per-shift position tables.
+template <typename Src>
+void
+snapshotFoldedValues(const Src &src, std::vector<uint64_t> &dst)
+{
+    dst.resize(src.size());
+    for (size_t i = 0; i < src.size(); ++i) {
+        dst[i] = src[i].get();
+    }
+}
+
+}  // namespace
+
+
 #ifdef UNIT_TEST
 namespace test
 {
@@ -605,13 +625,22 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
         return;  // Just return if MGSC is disabled
     }
 
-    // Clear old prediction metadata and save current history state
+    // Clear old prediction metadata and save current history state. Only the
+    // folded values are stored (see MgscMeta); recovery restores them via
+    // recoverValue().
     threadMeta[tid] = std::make_shared<MgscMeta>();
-    threadMeta[tid]->indexBwFoldedHist = state.indexBwFoldedHist;
-    threadMeta[tid]->indexLFoldedHist = state.indexLFoldedHist;
-    threadMeta[tid]->indexIFoldedHist = state.indexIFoldedHist;
-    threadMeta[tid]->indexGFoldedHist = state.indexGFoldedHist;
-    threadMeta[tid]->indexPFoldedHist = state.indexPFoldedHist;
+    snapshotFoldedValues(state.indexBwFoldedHist, threadMeta[tid]->indexBwFoldedHist);
+    snapshotFoldedValues(state.indexIFoldedHist, threadMeta[tid]->indexIFoldedHist);
+    snapshotFoldedValues(state.indexGFoldedHist, threadMeta[tid]->indexGFoldedHist);
+    snapshotFoldedValues(state.indexPFoldedHist, threadMeta[tid]->indexPFoldedHist);
+    {
+        const auto &src = state.indexLFoldedHist;
+        auto &dst = threadMeta[tid]->indexLFoldedHist;
+        dst.resize(src.size());
+        for (size_t k = 0; k < src.size(); ++k) {
+            snapshotFoldedValues(src[k], dst[k]);
+        }
+    }
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -646,11 +675,18 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
     auto &state = historyState(pred.tid);
     threadMeta[pred.tid] = std::make_shared<MgscMeta>();
     auto &meta = threadMeta[pred.tid];
-    meta->indexBwFoldedHist = state.indexBwFoldedHist;
-    meta->indexLFoldedHist = state.indexLFoldedHist;
-    meta->indexIFoldedHist = state.indexIFoldedHist;
-    meta->indexGFoldedHist = state.indexGFoldedHist;
-    meta->indexPFoldedHist = state.indexPFoldedHist;
+    snapshotFoldedValues(state.indexBwFoldedHist, meta->indexBwFoldedHist);
+    snapshotFoldedValues(state.indexIFoldedHist, meta->indexIFoldedHist);
+    snapshotFoldedValues(state.indexGFoldedHist, meta->indexGFoldedHist);
+    snapshotFoldedValues(state.indexPFoldedHist, meta->indexPFoldedHist);
+    {
+        const auto &src = state.indexLFoldedHist;
+        auto &dst = meta->indexLFoldedHist;
+        dst.resize(src.size());
+        for (size_t k = 0; k < src.size(); ++k) {
+            snapshotFoldedValues(src[k], dst[k]);
+        }
+    }
 
     for (const auto &btb_entry : pred.btbEntries) {
         if (!(btb_entry.isCond && btb_entry.valid)) {
@@ -1299,7 +1335,7 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
     auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < gTableNum; i++) {
-        state.indexGFoldedHist[i].recover(predMeta->indexGFoldedHist[i]);
+        state.indexGFoldedHist[i].recoverValue(predMeta->indexGFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken, state.indexGFoldedHist);
 }
@@ -1328,7 +1364,7 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
     auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < pTableNum; i++) {
-        state.indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
+        state.indexPFoldedHist[i].recoverValue(predMeta->indexPFoldedHist[i]);
     }
     doUpdateHist(history, update.shamt, update.taken, state.indexPFoldedHist,
                  update.pc, update.target);
@@ -1356,7 +1392,7 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget
     auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < bwTableNum; i++) {
-        state.indexBwFoldedHist[i].recover(predMeta->indexBwFoldedHist[i]);
+        state.indexBwFoldedHist[i].recoverValue(predMeta->indexBwFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken, state.indexBwFoldedHist);
 }
@@ -1383,7 +1419,7 @@ BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
     auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < iTableNum; i++) {
-        state.indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
+        state.indexIFoldedHist[i].recoverValue(predMeta->indexIFoldedHist[i]);
     }
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
@@ -1414,7 +1450,7 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
         for (int i = 0; i < lTableNum; i++) {
-            state.indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
+            state.indexLFoldedHist[k][i].recoverValue(predMeta->indexLFoldedHist[k][i]);
         }
     }
     const Addr localHistoryIndex =

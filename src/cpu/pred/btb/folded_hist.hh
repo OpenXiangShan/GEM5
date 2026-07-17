@@ -122,6 +122,16 @@ class FoldedHistBase
     void recover(const FoldedHistBase &other);
 
     /**
+     * Recover the folded history directly from a previously snapshotted value.
+     * Equivalent to recover() when the snapshot was taken with get(): both set
+     * only _folded (the config fields are invariant for a given table). Used so
+     * that recovery metadata can store just the folded value instead of the
+     * full object.
+     * @param value The folded history value captured earlier via get()
+     */
+    void recoverValue(uint64_t value) { _folded = value; }
+
+    /**
      * Verify that the folded history is consistent with the global history
      * @param ghr Global history register to check against
      */
@@ -188,6 +198,16 @@ class TageFoldedHist
     void update(const boost::dynamic_bitset<> &history, int shamt, bool taken,
                 Addr pc = 0, Addr target = 0);
     void recover(const TageFoldedHist &other);
+    // Recover directly from a value snapshotted via get(); sets only the active
+    // sub-history's folded value, matching recover() for the active type.
+    void recoverValue(uint64_t value)
+    {
+        if (isPathBased()) {
+            pathHist.recoverValue(value);
+        } else {
+            directionHist.recoverValue(value);
+        }
+    }
     void check(const boost::dynamic_bitset<> &history) const;
     HistoryType getHistoryType() const { return historyType; }
     bool isPathBased() const { return historyType == HistoryType::PATH; }
