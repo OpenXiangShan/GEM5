@@ -129,6 +129,11 @@ AddOption('--no-compress-debug', action='store_true',
           help="Don't compress debug info in build files")
 AddOption('--with-lto', action='store_true',
           help='Enable Link-Time Optimization')
+AddOption('--march', action='store', default=None, metavar='ARCH',
+          help='Tune opt/fast codegen for a target micro-architecture by '
+               'adding -march=ARCH -mtune=ARCH (e.g. znver3, which uses AVX2 '
+               'and runs on Zen3 and Zen4, or native). Opt-in: the default '
+               'build stays generic and portable for cross-node fan-out.')
 AddOption('--verbose', action='store_true',
           help='Print full tool command lines')
 AddOption('--without-python', action='store_true',

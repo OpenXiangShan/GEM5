@@ -676,6 +676,17 @@ if GetOption('debug_cycle'):
 # individual files are decoupled from those used at link time
 # (i.e. you can compile with -O3 and perform LTO with -O0), so we need
 # to also update the linker flags based on the target.
+
+# Opt-in target micro-architecture tuning for the opt/fast builds. This is
+# empty by default so the shipped binary stays generic and portable across a
+# heterogeneous cluster; a host-tuned binary may use ISA extensions absent on
+# older nodes and would SIGILL there. Select with --march=<arch>, e.g.
+# --march=znver3 (AVX2, runs on Zen3 and Zen4) or --march=native. Applies to
+# both the GCC and the clang/AOCC compilers.
+_target_march = GetOption('march')
+march_flags = (['-march=%s' % _target_march, '-mtune=%s' % _target_march]
+               if _target_march else [])
+
 if env['GCC']:
     if sys.platform == 'sunos5':
         envs['debug'].Append(CCFLAGS=['-gstabs+'])
@@ -685,8 +696,8 @@ if env['GCC']:
     # opt and fast share the same cc flags, also add the optimization to the
     # linkflags as LTO defers the optimization to link time
     for target in ['opt', 'fast']:
-        envs[target].Append(CCFLAGS=['-O3', '${LTO_CCFLAGS}'])
-        envs[target].Append(LINKFLAGS=['-O3', '${LTO_LINKFLAGS}'])
+        envs[target].Append(CCFLAGS=['-O3'] + march_flags + ['${LTO_CCFLAGS}'])
+        envs[target].Append(LINKFLAGS=['-O3'] + march_flags + ['${LTO_LINKFLAGS}'])
 
 elif env['CLANG']:
     envs['debug'].Append(CCFLAGS=['-g', '-O0'])
@@ -702,8 +713,11 @@ elif env['CLANG']:
             '${PGO}',
             ])
     else:
+        # Plain clang / AOCC clang: honor the opt-in --march tuning without
+        # the AOCC_SH fast-math+amdlibm path, which would change FP results.
         for target in ['opt', 'fast']:
-            envs[target].Append(CCFLAGS=['-O3'])
+            envs[target].Append(CCFLAGS=['-O3'] + march_flags)
+            envs[target].Append(LINKFLAGS=march_flags)
 
     for target in ['opt', 'fast']:
         if GetOption('pgo_prof'):
