@@ -152,31 +152,41 @@ buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
 }
 
 PairTAGE::TrainPacket
-buildTwoTakenTrainPacket(const FullBTBPrediction &pred, PairPhase phase)
+buildTwoTakenTrainPacket(Addr startPC, PairPhase phase,
+                         const std::vector<BTBEntry> &btbEntries,
+                         const CondTakens &condTakens)
 {
     using BlockKind = PairTAGE::TrainPacket::BlockKind;
     using BranchFlag = PairTAGE::TrainPacket::BranchFlag;
 
     PairTAGE::TrainPacket packet;
-    packet.startPC = pred.bbStart;
+    packet.startPC = startPC;
     packet.phase = phase;
 
-    auto predCopy = pred;
     const BTBEntry *trainEntry = nullptr;
-    if (predCopy.isTaken()) {
-        auto takenEntry = predCopy.getTakenEntry();
-        if (!takenEntry.valid) {
-            return packet;
+    bool taken = false;
+    for (const auto &entry : btbEntries) {
+        if (!entry.valid) {
+            continue;
         }
-        for (const auto &btbEntry : predCopy.btbEntries) {
-            if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
-                trainEntry = &btbEntry;
+
+        if (entry.isCond) {
+            const Addr branchPC = entry.pc;
+            auto direction = CondTakens_find(condTakens, branchPC);
+            if (direction != condTakens.end() && direction->second) {
+                trainEntry = &entry;
+                taken = true;
                 break;
             }
+        } else if (entry.isUncond()) {
+            trainEntry = &entry;
+            taken = true;
+            break;
         }
-    } else {
-        for (auto it = predCopy.btbEntries.rbegin();
-             it != predCopy.btbEntries.rend(); ++it) {
+    }
+
+    if (!taken) {
+        for (auto it = btbEntries.rbegin(); it != btbEntries.rend(); ++it) {
             if (it->valid && it->isCond && it->isDirect &&
                 !it->isIndirect && !it->isCall && !it->isReturn) {
                 trainEntry = &*it;
@@ -194,7 +204,7 @@ buildTwoTakenTrainPacket(const FullBTBPrediction &pred, PairPhase phase)
     packet.kind = BlockKind::Branch;
     packet.branchPC = trainEntry->pc;
     packet.targetPC = trainEntry->target;
-    packet.taken = predCopy.isTaken();
+    packet.taken = taken;
     packet.branchFlags =
         PairTAGE::TrainPacket::branchFlag(BranchFlag::Conditional) |
         PairTAGE::TrainPacket::branchFlag(BranchFlag::Direct);
@@ -225,56 +235,6 @@ buildFirstTrainingPairBlockFromPrediction(const FullBTBPrediction &pred,
                 trainEntry->isCond, trainEntry->isDirect,
                 trainEntry->isIndirect, trainEntry->isCall,
                 trainEntry->isReturn, trainEntry->size);
-        }
-    } else {
-        for (auto it = predCopy.btbEntries.rbegin();
-             it != predCopy.btbEntries.rend(); ++it) {
-            if (it->valid && it->isCond && it->isDirect &&
-                !it->isIndirect && !it->isCall && !it->isReturn) {
-                trainEntry = &*it;
-                break;
-            }
-        }
-    }
-
-    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
-        !trainEntry->isDirect || trainEntry->isIndirect ||
-        trainEntry->isCall || trainEntry->isReturn) {
-        if (!predCopy.isTaken() && predCopy.btbEntries.empty()) {
-            return PairTAGE::PairBlockInfo(
-                false, predCopy.bbStart, predCopy.getFallThrough(predictWidth),
-                true);
-        }
-        if (!predCopy.isTaken() && predCopy.btbEntries.size() == 1) {
-            const auto &marker = predCopy.btbEntries.front();
-            if (!marker.valid && marker.pc == predCopy.bbStart) {
-                return PairTAGE::PairBlockInfo(
-                    false, marker.pc, marker.target, true);
-            }
-        }
-        return PairTAGE::PairBlockInfo{};
-    }
-
-    return PairTAGE::PairBlockInfo(
-        predCopy.isTaken(), trainEntry->pc, trainEntry->target);
-}
-
-PairTAGE::PairBlockInfo
-buildSecondTrainingPairBlockFromPrediction(const FullBTBPrediction &pred,
-                                           Addr predictWidth)
-{
-    auto predCopy = pred;
-    const BTBEntry *trainEntry = nullptr;
-
-    if (predCopy.isTaken()) {
-        auto takenEntry = predCopy.getTakenEntry();
-        if (takenEntry.valid) {
-            for (const auto &btbEntry : predCopy.btbEntries) {
-                if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
-                    trainEntry = &btbEntry;
-                    break;
-                }
-            }
         }
     } else {
         for (auto it = predCopy.btbEntries.rbegin();
@@ -598,8 +558,9 @@ DecoupledBPUWithBTB::tick()
         auto &thread = threads[tid];
         thread.finalTrainPacket = PairTAGE::TrainPacket{};
         thread.twoTakenTrainPacket = PairTAGE::TrainPacket{};
+        thread.twoTakenBTBEntries.clear();
         thread.firstBlockProcessedThisTick = false;
-        thread.secondBlockTrainPredReady = false;
+        thread.twoTakenTrainReady = false;
     }
 
     ThreadID curTid = scheduleThread();
@@ -624,9 +585,8 @@ DecoupledBPUWithBTB::tick()
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
             threads[tid].nextPredictionAfterSquash = true;
-            threads[tid].secondBlockTrainPredReady = false;
+            threads[tid].twoTakenTrainReady = false;
             threads[tid].firstBlockProcessedThisTick = false;
-            threads[tid].secondBlockTrainPred = FullBTBPrediction();
             tage->dryRunCycle(threads[tid].s0PC);
             DPRINTF(Override, "Squashing, BPU state updated.\n");
             threads[tid].squashing = false;
@@ -668,7 +628,7 @@ DecoupledBPUWithBTB::tick()
 
         if (thread.firstBlockProcessedThisTick && pairtage &&
             pairtage->isEnabled()) {
-            const auto *secondPacket = thread.secondBlockTrainPredReady ?
+            const auto *secondPacket = thread.twoTakenTrainReady ?
                 &thread.twoTakenTrainPacket : nullptr;
             pairtage->trainFromS3Pred(thread.finalTrainPacket, secondPacket);
         }
@@ -971,22 +931,21 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
-    if (thread.secondBlockTrainPredReady) {
-        auto trainedSecondBlock =
-            buildSecondTrainingPairBlockFromPrediction(
-                thread.secondBlockTrainPred, predictWidth);
-        if (!pairBlocksMatch(secondBlock, trainedSecondBlock)) {
-            DPRINTF(DecoupleBP,
-                    "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
-                    "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
-                    "teacher(valid=%d pc=%#lx target=%#lx taken=%d)\n",
-                    tid,
-                    secondBlock.valid, secondBlock.branchPC,
-                    secondBlock.targetPC, secondBlock.taken,
-                    trainedSecondBlock.valid, trainedSecondBlock.branchPC,
-                    trainedSecondBlock.targetPC, trainedSecondBlock.taken);
-            return;
-        }
+    if (thread.twoTakenTrainReady &&
+        !pairtage->secondBlockMatches(thread.twoTakenTrainPacket)) {
+        const auto &teacherPacket = thread.twoTakenTrainPacket;
+        const bool teacherValid = teacherPacket.kind !=
+            PairTAGE::TrainPacket::BlockKind::Invalid;
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
+                "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
+                "teacher(valid=%d pc=%#lx target=%#lx taken=%d)\n",
+                tid,
+                secondBlock.valid, secondBlock.branchPC,
+                secondBlock.targetPC, secondBlock.taken,
+                teacherValid, teacherPacket.branchPC,
+                teacherPacket.targetPC, teacherPacket.taken);
+        return;
     }
 
     // Cast the second block prediction into a FullBTBPrediction for FTQ enqueue & refreshing metas
@@ -1017,8 +976,8 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     // TODO: This is not a real behavior on final design but it should be compatible with
     // the current train datapath in BPU model, which stores every BTB entry in the FTQ
     // entry and not lookup tables another time when training in every predictor.
-    if (thread.secondBlockTrainPredReady && secondBlock.valid && !secondBlock.isFallThrough()) {
-        for (const auto &teacherEntry : thread.secondBlockTrainPred.btbEntries) {
+    if (thread.twoTakenTrainReady && secondBlock.valid && !secondBlock.isFallThrough()) {
+        for (const auto &teacherEntry : thread.twoTakenBTBEntries) {
             if (!teacherEntry.valid || !teacherEntry.isCond) {
                 continue;
             }
@@ -1075,8 +1034,9 @@ void
 DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
 {
     auto &thread = threads[tid];
-    thread.secondBlockTrainPredReady = false;
-    thread.secondBlockTrainPred = FullBTBPrediction();
+    thread.twoTakenTrainReady = false;
+    thread.twoTakenTrainPacket = PairTAGE::TrainPacket{};
+    thread.twoTakenBTBEntries.clear();
 
     if (!thread.firstBlockProcessedThisTick) {
         return;
@@ -1101,45 +1061,35 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
         return;
     }
 
-    auto &secondPred = thread.secondBlockTrainPred;
-    secondPred.tid = tid;
-    secondPred.asidHash = thread.finalPred.asidHash;
-    secondPred.bbStart = thread.s0PC;
-    secondPred.predSource = thread.finalPred.predSource;
-    secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
-    secondPred.predTick = thread.finalPred.predTick;
-    secondPred.s1Source = mbtb->getComponentIdx();
-    secondPred.s3Source = mbtb->getComponentIdx();
+    const Addr startPC = thread.s0PC;
+    const uint8_t asidHash = thread.finalPred.asidHash;
+    auto &btbEntries = thread.twoTakenBTBEntries;
+    btbEntries = mbtb->getPredictedEntriesNoSideEffect(startPC, asidHash);
 
-    secondPred.btbEntries = mbtb->getPredictedEntriesNoSideEffect(
-        thread.s0PC, secondPred.asidHash);
-    secondPred.condTakens.clear();
-    secondPred.indirectTargets.clear();
-    secondPred.tageInfoForMgscs.clear();
-    secondPred.returnTarget = 0;
+    CondTakens condTakens;
+    condTakens.reserve(btbEntries.size());
 
     if (tage && tage->isEnabled()) {
-        tage->lookupNoSideEffect(thread.s0PC, secondPred.btbEntries,
-                                 secondPred.condTakens, tid,
-                                 secondPred.asidHash);
-        secondPred.s3Source = tage->getComponentIdx();
+        tage->lookupNoSideEffect(startPC, btbEntries, condTakens, tid,
+                                 asidHash);
     } else {
-        for (const auto &entry : secondPred.btbEntries) {
+        for (const auto &entry : btbEntries) {
             if (entry.valid && entry.isCond) {
-                secondPred.condTakens.push_back(
+                condTakens.push_back(
                     {entry.pc, entry.alwaysTaken || (entry.ctr >= 0)});
             }
         }
     }
 
     thread.twoTakenTrainPacket =
-        buildTwoTakenTrainPacket(secondPred, thread.s0PairPhase);
-    thread.secondBlockTrainPredReady = true;
+        buildTwoTakenTrainPacket(startPC, thread.s0PairPhase,
+                                 btbEntries, condTakens);
+    thread.twoTakenTrainReady = true;
 
     DPRINTF(DecoupleBP,
             "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
             "cond takens\n",
-            tid, secondPred.bbStart, secondPred.btbEntries.size(), secondPred.condTakens.size());
+            tid, startPC, btbEntries.size(), condTakens.size());
 }
 
 bool

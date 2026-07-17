@@ -225,6 +225,7 @@ class PairTAGE : public TimedBaseBTBPredictor
                       const FetchTarget &entry,
                       const PathHistoryUpdate &update) override;
     PairBlockInfo getSecondPredBlock() const;
+    bool secondBlockMatches(const TrainPacket &packet) const;
     void setPredictionPhase(PairPhase phase);
     void trainFromS3Pred(
         const TrainPacket &finalTrainPacket,

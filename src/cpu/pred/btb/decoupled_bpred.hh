@@ -141,16 +141,16 @@ class DecoupledBPUWithBTB : public BPredUnit
         boost::dynamic_bitset<> commitHistory;
         PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
-        FullBTBPrediction secondBlockTrainPred;
         PairTAGE::TrainPacket finalTrainPacket;
         PairTAGE::TrainPacket twoTakenTrainPacket;
+        std::vector<BTBEntry> twoTakenBTBEntries;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
         bool nextPredictionAfterSquash{false};
         bool blockPredictionPending{false};
         bool redirectPending{false};
-        bool secondBlockTrainPredReady{false};
+        bool twoTakenTrainReady{false};
         bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 

@@ -166,6 +166,12 @@ PairTAGE::getSecondPredBlock() const
     return secondPredBlock;
 }
 
+bool
+PairTAGE::secondBlockMatches(const TrainPacket &packet) const
+{
+    return blocksMatch(secondPredBlock, buildTrainingBlock(packet));
+}
+
 void
 PairTAGE::updateCounter(bool taken, unsigned width, short &counter)
 {
