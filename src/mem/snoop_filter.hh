@@ -254,7 +254,7 @@ class SnoopFilter : public SimObject
      * @param ports SnoopMask of the requested ports
      * @return SnoopList containing all the requested ResponsePorts
      */
-    SnoopList maskToPortList(SnoopMask ports) const;
+    SnoopList maskToPortList(const SnoopMask& ports) const;
 
   private:
 
@@ -342,12 +342,20 @@ SnoopFilter::portToMask(const ResponsePort& port) const
 }
 
 inline SnoopFilter::SnoopList
-SnoopFilter::maskToPortList(SnoopMask port_mask) const
+SnoopFilter::maskToPortList(const SnoopMask& port_mask) const
 {
+    // In setCPUSidePorts(), cpuSidePorts and the local mask-bit ids are
+    // assigned in lockstep, so cpuSidePorts[i] is exactly the port that owns
+    // local mask bit i (portToMask(*cpuSidePorts[i]) == 1 << i). This lets us
+    // test a single bit per port instead of constructing a one-hot SnoopMask
+    // and AND-ing across all SNOOP_MASK_SIZE bits for every port. The produced
+    // list (ports whose bit is set, in ascending index order) is identical.
     SnoopList res;
-    for (const auto& p : cpuSidePorts)
-        if ((port_mask & portToMask(*p)).any())
-            res.push_back(p);
+    const size_t num_ports = cpuSidePorts.size();
+    for (size_t i = 0; i < num_ports; i++) {
+        if (port_mask[i])
+            res.push_back(cpuSidePorts[i]);
+    }
     return res;
 }
 
