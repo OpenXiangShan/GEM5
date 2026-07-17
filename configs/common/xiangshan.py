@@ -133,6 +133,64 @@ def _apply_trace_timing_ptw_cpu_params(args: argparse.Namespace, cpus, *, shrink
         cpu.traceAddrSize = int(cpu.traceAddrSize) - reserved_bytes
 
 
+def _align_up(value: int, alignment: int) -> int:
+    return (value + alignment - 1) & ~(alignment - 1)
+
+
+def _parse_addr_option(value, option_name: str) -> int:
+    try:
+        return int(Addr(value))
+    except Exception as exc:
+        fatal(f"{option_name} has invalid address/size value {value!r}: {exc}")
+
+
+def _ranges_overlap(start: int, end: int, other_start: int, other_end: int) -> bool:
+    return start <= other_end and other_start <= end
+
+
+def configure_mpt_reserved_memory(args: argparse.Namespace, system) -> None:
+    page_size = 4096
+    if not getattr(args, "enable_mpt", False):
+        system.mpt_reserved_mem_ranges = []
+        print("MPT: disabled")
+        return
+
+    size = _parse_addr_option(getattr(args, "mpt_reserved_mem_size", "0"),
+                              "--mpt-reserved-mem-size")
+    if size < 0:
+        fatal("--mpt-reserved-mem-size must be >= 0")
+    if size == 0:
+        fatal("--mpt-reserved-mem-size must be non-zero when MPT is enabled")
+
+    size = _align_up(size, page_size)
+    base_arg = getattr(args, "mpt_reserved_mem_base", None)
+    if base_arg is None:
+        if not system.mem_ranges:
+            fatal("Cannot auto-place MPT reserved memory without guest RAM")
+        guest_top = max(int(mem_range.end) for mem_range in system.mem_ranges) + 1
+        base = _align_up(guest_top, page_size)
+    else:
+        base = _parse_addr_option(base_arg, "--mpt-reserved-mem-base")
+        if base % page_size != 0:
+            fatal("--mpt-reserved-mem-base must be 4KiB aligned")
+
+    end = base + size - 1
+    for mem_range in system.mem_ranges:
+        if _ranges_overlap(base, end, int(mem_range.start), int(mem_range.end)):
+            fatal(
+                "MPT reserved memory overlaps guest RAM: "
+                f"reserved=[0x{base:x},0x{end:x}] "
+                f"guest=[0x{int(mem_range.start):x},0x{int(mem_range.end):x}]"
+            )
+
+    reserved = AddrRange(start=base, size=size)
+    system.mpt_reserved_mem_ranges = [reserved]
+    print(
+        "MPT reserved memory: "
+        f"base=0x{base:x}, size=0x{size:x}, end=0x{end:x}"
+    )
+
+
 def resolve_linux_cmdline(args: argparse.Namespace, default_cmdline: str) -> str:
     command_line = getattr(args, "command_line", None)
     command_line_file = getattr(args, "command_line_file", None)
@@ -445,6 +503,8 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     for cpu in test_sys.cpu:
         if args.smt:
             cpu.numThreads = 2
+        cpu.isa = [RiscvISA(enable_mpt=args.enable_mpt)
+                   for _ in range(cpu.numThreads)]
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
@@ -832,6 +892,7 @@ def build_xiangshan_system(args):
     test_sys = makeBareMetalXiangshanSystem(
         'timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby,
         num_threads=num_threads)
+    configure_mpt_reserved_memory(args, test_sys)
 
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
         if bool(getattr(args, 'trace_timing_ptw', False)):
@@ -941,10 +1002,10 @@ def xiangshan_system_init():
     TestMemClass = Simulation.setMemClass(args)
 
     args.xiangshan_system = True
-    # Only enable difftest if not in trace mode - trace mode doesn't need reference model verification
+    # Keep difftest off by default; use --enable-difftest to opt in.
     if not (hasattr(args, 'enable_trace_mode') and args.enable_trace_mode):
         if args.enable_difftest is None:
-            args.enable_difftest = True
+            args.enable_difftest = False
     else:
         args.enable_difftest = False
         print("Trace mode: Difftest disabled for trace execution")

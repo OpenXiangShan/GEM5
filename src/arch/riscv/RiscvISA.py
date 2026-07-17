@@ -39,8 +39,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from m5.objects.BaseISA import BaseISA
+from m5.params import Param
 
 class RiscvISA(BaseISA):
     type = 'RiscvISA'
     cxx_class = 'gem5::RiscvISA::ISA'
     cxx_header = "arch/riscv/isa.hh"
+    enable_mpt = Param.Bool(False, "Enable the memory protection table")

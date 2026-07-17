@@ -645,6 +645,23 @@ def addXiangshanCommonOptions(parser):
                         default=None, help="The path of mmc img")
     parser.add_argument("--mmc-cptbin", action="store",
                         type=str, default=None, help="The path of mmc cptbin")
+    parser.set_defaults(enable_mpt=True)
+    parser.add_argument("--enable-mpt", action="store_true",
+                        dest="enable_mpt",
+                        help="Enable simulated MPT protection")
+    parser.add_argument("--disable-mpt", action="store_false",
+                        dest="enable_mpt",
+                        help="Disable simulated MPT protection")
+    parser.add_argument("--mpt-reserved-mem-size", action="store",
+                        type=str, default="64MB",
+                        help="Hidden physical memory size reserved for "
+                             "simulated MPT tables. Required when MPT is "
+                             "enabled.")
+    parser.add_argument("--mpt-reserved-mem-base", action="store",
+                        type=str, default=None,
+                        help="Optional base address for hidden simulated MPT "
+                             "memory. Defaults to the first page-aligned "
+                             "address after guest RAM.")
 
     # Difftest option
     parser.set_defaults(enable_difftest=None)

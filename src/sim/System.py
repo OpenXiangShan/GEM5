@@ -80,6 +80,9 @@ class System(SimObject):
     # I/O bridge or cache
     mem_ranges = VectorParam.AddrRange([], "Ranges that constitute main memory")
 
+    mpt_reserved_mem_ranges = VectorParam.AddrRange([],
+        "Hidden physical memory ranges reserved for simulated MPT tables")
+
     # The ranges backed by a shadowed ROM
     shadow_rom_ranges = VectorParam.AddrRange([], "Ranges  backed by a " \
                                                   "shadowed ROM")

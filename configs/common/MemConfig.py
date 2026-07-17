@@ -203,16 +203,29 @@ def config_mem(options, system):
     # array of memory interfaces and set their parameters to match
     # their address mapping in the case of a DRAM
     range_iter = 0
-    for r in system.mem_ranges:
+    memory_ranges = [(r, False) for r in system.mem_ranges]
+    mpt_reserved_ranges = list(getattr(system, "mpt_reserved_mem_ranges", []))
+    if mpt_reserved_ranges and not opt_mem_type:
+        fatal("MPT reserved memory requires a primary --mem-type")
+    for r in mpt_reserved_ranges:
+        memory_ranges.append((r, True))
+
+    for r, is_mpt_reserved in memory_ranges:
         # As the loops iterates across ranges, assign them alternatively
         # to DRAM and NVM if both configured, starting with DRAM
-        range_iter += 1
+        if not is_mpt_reserved:
+            range_iter += 1
 
         for i in range(nbr_mem_ctrls):
-            if opt_mem_type and (not opt_nvm_type or range_iter % 2 != 0):
+            if opt_mem_type and (
+                    is_mpt_reserved or not opt_nvm_type or
+                    range_iter % 2 != 0):
                 # Create the DRAM interface
                 dram_intf = create_mem_intf(intf, r, i,
                     intlv_bits, intlv_size, opt_xor_low_bit)
+                if is_mpt_reserved:
+                    dram_intf.conf_table_reported = False
+                    dram_intf.kvm_map = False
 
                 # Set the number of ranks based on the command-line
                 # options if it was explicitly set
@@ -244,7 +257,8 @@ def config_mem(options, system):
 
                 mem_ctrls.append(mem_ctrl)
 
-            elif opt_nvm_type and (not opt_mem_type or range_iter % 2 == 0):
+            elif opt_nvm_type and not is_mpt_reserved and (
+                    not opt_mem_type or range_iter % 2 == 0):
                 nvm_intf = create_mem_intf(n_intf, r, i,
                     intlv_bits, intlv_size, opt_xor_low_bit)
 

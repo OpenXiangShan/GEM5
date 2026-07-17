@@ -37,6 +37,7 @@
 #include "arch/riscv/interrupts.hh"
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/pagetable.hh"
+#include "arch/riscv/pagetable_walker.hh"
 #include "arch/riscv/pmp.hh"
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
@@ -264,7 +265,7 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_SCAUSE]        = "SCAUSE",
     [MISCREG_STVAL]         = "STVAL",
     [MISCREG_SATP]          = "SATP",
-
+    [MISCREG_MMPT]          = "MMPT",
     [MISCREG_RESERVED03]    = "",
     [MISCREG_RESERVED04]    = "",
     [MISCREG_RESERVED05]    = "",
@@ -331,7 +332,7 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
 
 
 
-ISA::ISA(const Params &p) : BaseISA(p)
+ISA::ISA(const Params &p) : BaseISA(p), enableMpt(p.enable_mpt)
 {
     _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs, sizeof(RegVal));
     _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs, sizeof(RegVal));
@@ -384,6 +385,8 @@ void ISA::clear()
     miscRegFile[MISCREG_PRV] = PRV_M;
     miscRegFile[MISCREG_ISA] = 0x80000000003411af;
     miscRegFile[MISCREG_IMPID] = 0;
+    miscRegFile[MISCREG_MMPT] =
+        enableMpt ? 0x2100000000000000ULL : 0;
     miscRegFile[MISCREG_MIDELEG] = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
     if (FullSystem) {
         // Xiangshan assume machine boots with FS off
@@ -574,6 +577,7 @@ ISA::hpmCounterEnabled(int misc_reg) const
 RegVal
 ISA::readMiscRegNoEffect(int misc_reg) const
 {
+
     if ((misc_reg >= RiscvISA::MiscRegIndex::MISCREG_PMPADDR00) &&
         (misc_reg < RiscvISA::MiscRegIndex::MISCREG_PMPADDR00 + 16)) {
         auto mmu = dynamic_cast<RiscvISA::MMU *>(tc->getMMUPtr());
@@ -796,7 +800,17 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
             warn("enable SV48\n");
         }
-    } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
+    } else if ((v == 1) && (misc_reg == MISCREG_MMPT)) {
+        RegVal old_val = readMiscRegNoEffect(MISCREG_MMPT);
+        setMiscRegNoEffect(MISCREG_MMPT, val);
+        if (old_val != val) {
+            if (globalMPTCache != nullptr) {
+                globalMPTCache->mfence_all();
+            }
+            globalMPT.flushPendingMptReads();
+            tc->getCpuPtr()->flushTLBs();
+        }
+    }else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
         setMiscRegNoEffect(MISCREG_VSEPC, val);
     } else if ((v == 1) && ((misc_reg == MISCREG_STVEC))) {
         setMiscRegNoEffect(MISCREG_VSTVEC, val & ~(0x2UL));
@@ -936,7 +950,20 @@ ISA::setMiscReg(int misc_reg, RegVal val)
 
             }
             break;
-          case MISCREG_TSELECT:
+          case MISCREG_MMPT:
+            {
+                RegVal old_val = readMiscRegNoEffect(misc_reg);
+                setMiscRegNoEffect(misc_reg, val);
+                if (old_val != val) {
+                    if (globalMPTCache != nullptr) {
+                        globalMPTCache->mfence_all();
+                    }
+                    globalMPT.flushPendingMptReads();
+                    tc->getCpuPtr()->flushTLBs();
+                }
+            }
+            break;
+            case MISCREG_TSELECT:
             {
                 // we don't support debugging, so always set a different value
                 // than written

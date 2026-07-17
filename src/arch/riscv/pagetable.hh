@@ -33,16 +33,216 @@
 
 #include <array>
 
+#include "arch/generic/mmu.hh"
 #include "base/bitunion.hh"
 #include "base/logging.hh"
 #include "base/trie.hh"
 #include "base/types.hh"
 #include "sim/serialize.hh"
 
+#ifndef MPT_ENABLED
+#define MPT_ENABLED 1
+#endif
+#define MPT_CACHE_ENABLED 1
+//#include "params/RiscvTLB.hh"
+//#else
+//#define MPT_CACHE_ENABLED 0
+//#endif
+
+
+#ifndef MPT_SIMULATE_N_BIT
+#define MPT_SIMULATE_N_BIT 0
+#endif
+
+
+#ifndef MPT_CACHE_SIZE
+#define MPT_CACHE_SIZE 128    //`MPT_CACHE_SIZE` is 128 by default.
+#endif
 namespace gem5
 {
 
 namespace RiscvISA {
+
+#if MPT_ENABLED
+inline int getPageShiftForLevel(int level){ // Return the `log2` value corresponding to the page size for each level.
+    switch (level) {
+        case 0: return 12; // log2(4KB)
+        case 1: return 21; // log2(2MB)
+        case 2: return 30; // log2(1GB)
+        case 3: return 39; // log2(512GB)
+        default: panic("Invalid MPT level: %d", level);
+    }
+}
+
+
+
+//MPT Information
+BitUnion32(MPTInfoRaw)
+    Bitfield<31, 12>   reserved;        // The remaining bits are reserved.
+    Bitfield<11, 6>    mptLogBytes;
+        // 6 bits, with a maximum value of 63, supporting `log2(64EB) = 48`, covering all napot levels.
+    Bitfield<4>        napot;           // N ，napot
+    Bitfield<3>        perm_x;
+    Bitfield<2>        perm_w;
+    Bitfield<1>        perm_r;
+    Bitfield<0>        valid;
+EndBitUnion(MPTInfoRaw);
+
+
+
+
+#endif //MPT_ENABLED
+
+
+
+#if MPT_ENABLED
+// -----------------------------
+// MPT permission bit definition.
+// -----------------------------
+#define MPT_PERM_R  (1 << 0)
+#define MPT_PERM_W  (1 << 1)
+#define MPT_PERM_X  (1 << 2)
+
+
+// -----------------------------
+//Smmp52 related parameter definition.
+// -----------------------------
+#define MPT_LEVELS 4                 // Smmp52 uses levels L3 through L0.
+#define MPT_MPTE_SIZE 8              // Each MPTE occupies 8 bytes.
+#define MPT_NUM_PERMS 16             // Each MPTE controls the permissions of 16 sub-pages.
+#define MPT_PERM_BITS_PER_ENTRY 3    // Each sub-page permission occupies 3 bits.
+#define MPT_PERM_MASK 0x7            // Low 3-bit mask.
+
+// Unit page size at each level. This is the single-page granularity, not the
+// MPTE granularity.
+#define MPT_LEAF_L0_PAGE_SIZE   (1UL << 12) // 4KB
+#define MPT_LEAF_L1_PAGE_SIZE   (1UL << 21) // 2MB
+#define MPT_LEAF_L2_PAGE_SIZE   (1UL << 30) // 1GB
+#define MPT_LEAF_L3_PAGE_SIZE   (1UL << 39) // 512GB
+
+// The coverage range of each MPTE (in bytes) = 16 × single page granularity.
+#define MPT_REGION_SIZE_L0   (MPT_NUM_PERMS * MPT_LEAF_L0_PAGE_SIZE) // 64KB
+#define MPT_REGION_SIZE_L1   (MPT_NUM_PERMS * MPT_LEAF_L1_PAGE_SIZE) // 32MB
+#define MPT_REGION_SIZE_L2   (MPT_NUM_PERMS * MPT_LEAF_L2_PAGE_SIZE) // 16GB
+#define MPT_REGION_SIZE_L3   (MPT_NUM_PERMS * MPT_LEAF_L3_PAGE_SIZE) // 8TB
+// Smmpt52 permits this maximum range; Xiangshan does not require it today.
+
+struct MPTE52
+{
+    uint64_t raw;
+    // Default constructor (invalid entry).
+    MPTE52();
+    // Construct with the raw value.
+    MPTE52(uint64_t val);
+    // Whether it is valid.
+    bool isValid() const;
+    // Whether it is a leaf.
+    bool isLeaf() const;
+    // N （bit 63）
+    bool getN() const;
+    // Physical page number of the next-level page table (used when not a leaf).
+    Addr nextLevelPPN() const;
+    // Physical address of the next-level page table (aligned to 4KB pages).
+    Addr nextLevelPAddr() const;
+    // Retrieve the permissions of the `pi`-th page.（pi ∈ [0, 15]）
+    uint8_t perms(uint8_t pi) const;
+};
+
+uint64_t getPageSizeForLevel(int level);
+uint64_t getRegionSizeForLevel(int level);
+uint8_t log2floor(uint64_t x);
+bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level);
+
+inline bool
+mptPermAllowsAccess(uint8_t perm, BaseMMU::Mode mode)
+{
+    switch (mode) {
+      case BaseMMU::Read:
+        return perm & MPT_PERM_R;
+      case BaseMMU::Write:
+        return perm & MPT_PERM_W;
+      case BaseMMU::Execute:
+        return perm & MPT_PERM_X;
+      default:
+        return false;
+    }
+}
+
+inline Addr
+mptPermSlotAlign(Addr pa, int level)
+{
+    return pa & ~(getPageSizeForLevel(level) - 1);
+}
+
+inline bool
+mptLevelCoversLogBytes(uint8_t level, unsigned logBytes)
+{
+    return static_cast<unsigned>(getPageShiftForLevel(level)) >= logBytes;
+}
+
+#endif //MPT_ENABLED
+
+#if MPT_CACHE_ENABLED
+struct MPTCacheEntry
+{
+    Addr tag;
+    // Region base. The unordered map address is the lookup key; this tag is
+    // kept for debug output and future set-associative mapping work.
+
+    // Cached MPTE. This contains the raw 64-bit value, including the N bit.
+    MPTE52 mpte;
+    bool valid = false;
+
+    //Make the cache entry carry its own granularity information.
+    int level = -1;
+    uint8_t log2RegionSize = 0;
+
+     // Use a static function to implement the alignment functionality.
+    static Addr regionAlignStatic(Addr pa, int level) {
+        // The same logic as `MPTCache52::regionAlign`.
+        return pa & ~(getRegionSizeForLevel(level) - 1);
+    }
+
+};
+#endif //MPT_CACHE_ENABLED
+
+#if MPT_ENABLED
+struct MPTInfoInTLB
+{
+    uint8_t raw;
+    uint8_t mptlevel;
+    bool valid;
+    MPTInfoInTLB()
+    {
+        raw = 0;
+        mptlevel = 0;
+        valid = false;
+    }
+
+    void write_mpt_raw(uint8_t perm, uint8_t level)
+    {
+        raw = perm;
+        mptlevel = level;
+        valid = true;
+    }
+
+    void invalidate()
+    {
+        raw = 0;
+        mptlevel = 0;
+        valid = false;
+    }
+};
+#endif //MPT_ENABLED
+
+
+BitUnion64(MMPT)
+    Bitfield<63, 60> mode;
+    Bitfield<59, 58> zero;
+    Bitfield<57, 52> sdid;
+    Bitfield<51, 44> zero2;
+    Bitfield<43, 0> ppn;
+EndBitUnion(MMPT)
 
 BitUnion64(SATP)
     Bitfield<63, 60> mode;
@@ -214,6 +414,9 @@ struct TlbEntry : public Serializable
     uint8_t validIdx;
     uint8_t pteIdx;
     std::array<uint8_t, 8> ppnLow;
+#if MPT_ENABLED
+    MPTInfoInTLB mptInfo;
+#endif //MPT_ENABLED
 
     TlbEntryTrie::Handle trieHandle;
 

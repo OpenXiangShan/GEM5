@@ -191,6 +191,8 @@ System::System(const Params &p)
               &dedupMemManager, p.enable_mem_dedup),
       ShadowRomRanges(p.shadow_rom_ranges.begin(),
                       p.shadow_rom_ranges.end()),
+      MptReservedMemRanges(p.mpt_reserved_mem_ranges.begin(),
+                           p.mpt_reserved_mem_ranges.end()),
       memoryMode(p.mem_mode),
       _cacheLineSize(p.cache_line_size),
       numWorkIds(p.num_work_ids),

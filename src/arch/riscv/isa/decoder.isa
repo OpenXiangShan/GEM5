@@ -2276,6 +2276,13 @@ decode QUADRANT {
 
                         }
                     }},IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    0x5F: mfence({{
+                        if (globalMPTCache != nullptr) {
+                            globalMPTCache->mfence_all();
+                            globalMPT.flushPendingMptReads();
+                        }
+                        xc->tcBase()->getCpuPtr()->flushTLBs();
+                    }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
                 }
             }
             format CSROp {

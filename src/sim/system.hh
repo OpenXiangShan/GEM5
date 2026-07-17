@@ -398,6 +398,12 @@ class System : public SimObject, public PCEventScope
      */
     AddrRangeList getShadowRomRanges() const { return ShadowRomRanges; }
 
+    /*
+     * Return hidden physical ranges reserved for simulated MPT tables.
+     */
+    const AddrRangeList &getMptReservedMemRanges() const
+    { return MptReservedMemRanges; }
+
     /**
      * Get the guest byte order.
      */
@@ -436,6 +442,8 @@ class System : public SimObject, public PCEventScope
     memory::PhysicalMemory physmem;
 
     AddrRangeList ShadowRomRanges;
+
+    AddrRangeList MptReservedMemRanges;
 
     enums::MemoryMode memoryMode;
 

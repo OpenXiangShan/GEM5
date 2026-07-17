@@ -105,6 +105,11 @@ class RiscvTLB(BaseTLB):
     open_back_pre = Param.Bool(False,"open back_pre")
     initial_back_pre_precision_value = Param.Bool(False,"initial value of back_pre_precision")
     initial_forward_pre_precision_value = Param.Bool(False,"initial value of forward_pre_precision")
+    mptcache_l0_size = Param.Int(32, "MPTCache L0 size")
+    mptcache_l1_size = Param.Int(32, "MPTCache L1 size")
+    mptcache_l2_size = Param.Int(32, "MPTCache L2 size")
+    mptcache_l3_size = Param.Int(32, "MPTCache L3 size")
+    mptcache_sp_size = Param.Int(32, "MPTCache SP size")
 
 class RiscvTLBL2(RiscvTLB):
     is_L1tlb = False

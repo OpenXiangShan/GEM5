@@ -56,6 +56,9 @@ uncacheable(params.uncacheable.begin(), params.uncacheable.end())
 void
 PMAChecker::check(const RequestPtr &req)
 {
+    if (req->isMptWalk()) {
+        return;
+    }
     if (isUncacheable(req->getPaddr(), req->getSize())) {
         req->setFlags(Request::UNCACHEABLE | Request::STRICT_ORDER);
     }

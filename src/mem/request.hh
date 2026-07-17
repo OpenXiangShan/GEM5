@@ -569,6 +569,8 @@ class Request
     bool _finishGVA = false;
 
     bool _isHInst = false;
+        //HasMPTCheck
+    bool isMptreq = false;//默认false
 
   public:
 
@@ -614,6 +616,7 @@ class Request
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _xsMetadata(other._xsMetadata),
           _localAccessor(other._localAccessor),
+          isMptreq(other.isMptreq),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth)
     {
@@ -638,7 +641,14 @@ class Request
         assert(mgmt_req->isMemMgmt());
         return mgmt_req;
     }
-
+    void setMptWalk(bool isMpt)
+    {
+        isMptreq = isMpt;
+    }
+    bool isMptWalk() const
+    {
+        return isMptreq;
+    }
     bool isMisalignedFetch()
     {
         return misalignedFetch;

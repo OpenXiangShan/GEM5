@@ -213,6 +213,7 @@ enum MiscRegIndex
     MISCREG_SCAUSE,
     MISCREG_STVAL,
     MISCREG_SATP,
+    MISCREG_MMPT,
 
     MISCREG_RESERVED03, // MISCREG_UTVEC,
     MISCREG_RESERVED04, // MISCREG_USCRATCH,
@@ -519,6 +520,7 @@ enum CSRIndex
     CSR_VSATP       = 0x280,
     CSR_MTINST      = 0x34A,
     CSR_MTVAL2      = 0x34B,
+    CSR_MMPT       = 0xBC3,
 };
 
 struct CSRMetadata
@@ -758,6 +760,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VSATP, {"vsatp", MISCREG_VSATP}},
     {CSR_MTINST, {"mtinst", MISCREG_MTINST}},
     {CSR_MTVAL2, {"mtval2", MISCREG_MTVAL2}},
+    {CSR_MMPT,{"mmpt", MISCREG_MMPT}},
 };
 
 /**
@@ -1149,6 +1152,18 @@ CSR_STRUCT_START(vsatp)
     }_64;
   };
 CSR_STRUCT_END(vsatp)
+
+CSR_STRUCT_START(mmpt)
+  union
+  {
+    struct
+    {
+      uint64_t ppn  :44;
+      uint64_t sdid :16;
+      uint64_t mode : 4;
+    }_64;
+  };
+CSR_STRUCT_END(mmpt)
 
 } // namespace RiscvISA
 } // namespace gem5

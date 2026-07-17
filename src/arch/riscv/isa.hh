@@ -81,6 +81,7 @@ class ISA : public BaseISA
 {
   protected:
     std::vector<RegVal> miscRegFile;
+    const bool enableMpt;
     uint32_t matrixTileM = 0;
     uint32_t matrixTileK = 0;
     uint32_t matrixTileN = 0;

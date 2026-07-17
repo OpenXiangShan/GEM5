@@ -57,6 +57,10 @@ PMP::pmpCheck(const RequestPtr &req, BaseMMU::Mode mode,
               RiscvISA::PrivilegeMode pmode, ThreadContext *tc,
               Addr vaddr)
 {
+    if (req->isMptWalk()) {
+        return NoFault;
+    }
+
     // First determine if pmp table should be consulted
     if (!shouldCheckPMP(pmode, mode, tc))
         return NoFault;

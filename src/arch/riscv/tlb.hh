@@ -43,10 +43,22 @@
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/utility.hh"
 #include "base/statistics.hh"
+#include "mem/packet.hh"
 #include "mem/request.hh"
 #include "params/RiscvTLB.hh"
 #include "sim/sim_object.hh"
 
+#ifndef MPT_ENABLED
+#define MPT_ENABLED 1
+#endif
+//#include "sim/stat_control.hh"
+//#else
+//#define MPT_ENABLED 0
+//#endif
+
+// Whether MPT Cache is enabled.
+//#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
+#define MPT_CACHE_ENABLED 1
 namespace gem5
 {
 
@@ -268,7 +280,7 @@ class TLB : public BaseTLB
     Fault L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool is_pre, bool is_back_pre);
 
     Fault L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
-                     const RequestPtr &req, bool is_pre, bool is_back_pre);
+                     const RequestPtr &req, bool is_pre, bool is_back_pre, TlbEntry* e0);
     bool checkPrePrecision(uint64_t &removeNoUsePre, uint64_t &usedPre);
     void sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestPtr &req, Addr pre_block,
                                 uint16_t asid, bool forward, int check_level, STATUS status, PrivilegeMode pmode,
@@ -313,6 +325,7 @@ class TLB : public BaseTLB
     void useNewPriv(ThreadContext *tc) {
       use_old_priv = false;
     }
+
 
 
     std::vector<TlbEntry> tlbL2L3;  // our TLB
