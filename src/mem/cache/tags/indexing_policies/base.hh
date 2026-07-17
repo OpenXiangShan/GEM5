@@ -160,6 +160,13 @@ class BaseIndexingPolicy : public SimObject
      * Should be called immediately before ReplacementPolicy's findVictim()
      * not to break cache resizing.
      *
+     * Lifetime contract: the returned reference is valid only until the next
+     * getPossibleEntries() call on the same policy. Some implementations (e.g.
+     * SkewedAssociative) return a reference to an internal buffer that the next
+     * call overwrites; identity-mapped policies return a reference to persistent
+     * set storage. Callers must consume the result (or copy it) before issuing
+     * another lookup on this policy, and must not iterate it reentrantly.
+     *
      * @param addr The addr to a find possible entries for.
      * @return The possible entries.
      */
