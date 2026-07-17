@@ -2270,7 +2270,10 @@ Commit::markCompletedInsts()
             fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
 
-            panic_if(!rob->findInst(inst->threadNumber, inst->seqNum),
+            // The ROB-membership flag is the authoritative marker set on ROB
+            // insertion and cleared on retire/squash, so it is an exact O(1)
+            // stand-in for the O(ROB) instList scan performed by findInst.
+            panic_if(!inst->isInROB(),
                      "[tid:%i] [sn:%llu] Committed instruction not found in ROB",
                      inst->threadNumber,
                      inst->seqNum);
