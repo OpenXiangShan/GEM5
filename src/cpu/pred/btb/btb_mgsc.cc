@@ -590,8 +590,11 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             const auto &info =
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            // Capture the taken bit before moving pred into the metadata map to
+            // avoid a second copy of its per-table index vectors.
+            const bool predTaken = pred.taken;
+            threadMeta[tid]->preds[btb_entry.pc] = std::move(pred);
+            results.push_back({btb_entry.pc, predTaken || btb_entry.alwaysTaken});
         }
     }
 }
