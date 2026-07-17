@@ -527,29 +527,22 @@ TlbEntry *
 TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f_level, bool sign_used,
                  uint8_t translateMode)
 {
-    Addr tem;
+    // Base right-shifts shared by every level. Each per-level VPN value is
+    // derived lazily inside its own branch below, so a call computes only the
+    // value it actually uses rather than all four levels up front. doTranslate
+    // invokes this once per level for the same address, which previously
+    // repeated the identical shifts on every call. The finer-grained tem_f
+    // feeds the trie keys (f_vpnl2l*); the block-granular tem_v feeds the
+    // LRU-refresh base (vpnl2l*/vpnl2sp*). Keys, trie lookups, LRU updates and
+    // stats are all unchanged.
     // f_vpnl2l? : vpn[3] vpn[2] vpn[1] vpn[0] offset
-    // f_vpnl2l3 : vpn[3]   0      0      0       0
-    // f_vpnl2l2 : vpn[3] vpn[2]   0      0       0
-    // f_vpnl2l1 : vpn[3] vpn[2] vpn[1]   0       0
-    // f_vpnl2l0 : vpn[3] vpn[2] vpn[1] vpn[0]    0
-    tem = vpn >> PageShift;
-    Addr f_vpnl2l3 = (tem >> 3 * LEVEL_BITS) << (PageShift + 3 * LEVEL_BITS);
-    Addr f_vpnl2l2 = (tem >> 2 * LEVEL_BITS) << (PageShift + 2 * LEVEL_BITS);
-    Addr f_vpnl2l1 = (tem >> 1 * LEVEL_BITS) << (PageShift + 1 * LEVEL_BITS);
-    Addr f_vpnl2l0 = (tem >> 0 * LEVEL_BITS) << (PageShift + 0 * LEVEL_BITS);
+    const Addr tem_f = vpn >> PageShift;
+    const Addr tem_v = vpn >> (PageShift + L2TLB_BLK_OFFSET);
     DPRINTF(TLB, "f_vpnl2l3 %#x f_vpnl2l2 %#x f_vpnl2l1 %#x f_vpnl2l0 %#x vpn %#x\n",
-            f_vpnl2l3, f_vpnl2l2, f_vpnl2l1, f_vpnl2l0, vpn);
-
-    tem = vpn >> (PageShift + L2TLB_BLK_OFFSET);
-    Addr vpnl2l3 = (tem >> 3 * LEVEL_BITS) << (PageShift + 3 * LEVEL_BITS + L2TLB_BLK_OFFSET);
-    Addr vpnl2l2 = (tem >> 2 * LEVEL_BITS) << (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET);
-    Addr vpnl2l1 = (tem >> 1 * LEVEL_BITS) << (PageShift + 1 * LEVEL_BITS + L2TLB_BLK_OFFSET);
-    Addr vpnl2l0 = (tem >> 0 * LEVEL_BITS) << (PageShift + 0 * LEVEL_BITS + L2TLB_BLK_OFFSET);
-
-    Addr vpnl2sp3, vpnl2sp2, vpnl2sp1;
-
-    vpnl2sp3 = vpnl2l3, vpnl2sp2 = vpnl2l2, vpnl2sp1 = vpnl2l1;
+            (tem_f >> 3 * LEVEL_BITS) << (PageShift + 3 * LEVEL_BITS),
+            (tem_f >> 2 * LEVEL_BITS) << (PageShift + 2 * LEVEL_BITS),
+            (tem_f >> 1 * LEVEL_BITS) << (PageShift + 1 * LEVEL_BITS),
+            (tem_f >> 0 * LEVEL_BITS) << (PageShift + 0 * LEVEL_BITS), vpn);
 
     Addr step;
     int i;
@@ -560,6 +553,9 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         panic("wrong in tlb config\n");
 
     if (f_level == L_L2L3) {
+        Addr f_vpnl2l3 = (tem_f >> 3 * LEVEL_BITS) << (PageShift + 3 * LEVEL_BITS);
+        Addr vpnl2l3 = (tem_v >> 3 * LEVEL_BITS)
+                       << (PageShift + 3 * LEVEL_BITS + L2TLB_BLK_OFFSET);
         DPRINTF(TLB, "look up l2tlb in l2l3\n");
         TlbEntry *entry_l2l3 = trieL2L3.lookup(buildKey(f_vpnl2l3, asid, translateMode));
         entry_l2 = entry_l2l3;
@@ -569,6 +565,9 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                            TlbEntryTrie::MaxBits - 3 * LEVEL_BITS);
     }
     if (f_level == L_L2L2) {
+        Addr f_vpnl2l2 = (tem_f >> 2 * LEVEL_BITS) << (PageShift + 2 * LEVEL_BITS);
+        Addr vpnl2l2 = (tem_v >> 2 * LEVEL_BITS)
+                       << (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET);
         DPRINTF(TLB, "look up l2tlb in l2l2 key %#x\n", buildKey(f_vpnl2l2, asid, translateMode));
         TlbEntry *entry_l2l2 = trieL2L2.lookup(buildKey(f_vpnl2l2, asid, translateMode));
         entry_l2 = entry_l2l2;
@@ -578,6 +577,9 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                            TlbEntryTrie::MaxBits - 2 * LEVEL_BITS);
     }
     if (f_level == L_L2L1) {
+        Addr f_vpnl2l1 = (tem_f >> 1 * LEVEL_BITS) << (PageShift + 1 * LEVEL_BITS);
+        Addr vpnl2l1 = (tem_v >> 1 * LEVEL_BITS)
+                       << (PageShift + 1 * LEVEL_BITS + L2TLB_BLK_OFFSET);
         DPRINTF(TLB, "look up l2tlb in l2l1\n");
         TlbEntry *entry_l2l1 = trieL2L1.lookup(buildKey(f_vpnl2l1, asid, translateMode));
         entry_l2 = entry_l2l1;
@@ -587,6 +589,8 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                            TlbEntryTrie::MaxBits - LEVEL_BITS);
     }
     if (f_level == L_L2L0) {
+        Addr vpnl2l0 = (tem_v >> 0 * LEVEL_BITS)
+                       << (PageShift + 0 * LEVEL_BITS + L2TLB_BLK_OFFSET);
         DPRINTF(TLB, "look up l2tlb in l2l0\n");
         TlbEntry *entry_l2l0 = trieL2L0.lookup(buildKey(vpn, asid, translateMode));
         entry_l2 = entry_l2l0;
@@ -632,6 +636,9 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         }
     }
     if (f_level == L_L2sp3) {
+        Addr f_vpnl2l3 = (tem_f >> 3 * LEVEL_BITS) << (PageShift + 3 * LEVEL_BITS);
+        Addr vpnl2sp3 = (tem_v >> 3 * LEVEL_BITS)
+                        << (PageShift + 3 * LEVEL_BITS + L2TLB_BLK_OFFSET);
         DPRINTF(TLB, "look up l2tlb in l2sp3\n");
         constexpr unsigned prefix_width =
             TlbEntryTrie::MaxBits - 3 * LEVEL_BITS;
@@ -646,6 +653,9 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         }
     }
     if (f_level == L_L2sp2) {
+        Addr f_vpnl2l2 = (tem_f >> 2 * LEVEL_BITS) << (PageShift + 2 * LEVEL_BITS);
+        Addr vpnl2sp2 = (tem_v >> 2 * LEVEL_BITS)
+                        << (PageShift + 2 * LEVEL_BITS + L2TLB_BLK_OFFSET);
         DPRINTF(TLB, "look up l2tlb in l2sp2\n");
         constexpr unsigned prefix_width =
             TlbEntryTrie::MaxBits - 2 * LEVEL_BITS;
@@ -660,6 +670,9 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         }
     }
     if (f_level == L_L2sp1) {
+        Addr f_vpnl2l1 = (tem_f >> 1 * LEVEL_BITS) << (PageShift + 1 * LEVEL_BITS);
+        Addr vpnl2sp1 = (tem_v >> 1 * LEVEL_BITS)
+                        << (PageShift + 1 * LEVEL_BITS + L2TLB_BLK_OFFSET);
         DPRINTF(TLB, "look up l2tlb in l2sp1\n");
         constexpr unsigned prefix_width =
             TlbEntryTrie::MaxBits - LEVEL_BITS;
