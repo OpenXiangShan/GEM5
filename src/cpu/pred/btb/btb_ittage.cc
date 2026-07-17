@@ -20,6 +20,26 @@ namespace branch_prediction {
 
 namespace btb_pred{
 
+namespace
+{
+
+// Snapshot a folded-history vector as raw folded values. Prediction and tag
+// lookups read the values directly and recovery restores them through
+// recoverValue(), so the metadata only needs the folded value and not the full
+// object with its per-shift position tables.
+template <typename Src>
+void
+snapshotFoldedValues(const Src &src, std::vector<uint64_t> &dst)
+{
+    dst.resize(src.size());
+    for (size_t i = 0; i < src.size(); ++i) {
+        dst[i] = src[i].get();
+    }
+}
+
+}  // namespace
+
+
 BTBITTAGE::BTBITTAGE(const Params& p):
 TimedBaseBTBPredictor(p),
 numPredictors(p.numPredictors),
@@ -203,10 +223,10 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
 
     // clear old metas
     threadMeta[tid] = std::make_shared<TageMeta>();
-    // assign history for meta
-    threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
-    threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
-    threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
+    // assign history for meta as folded values (see TageMeta)
+    snapshotFoldedValues(state.tagFoldedHist, threadMeta[tid]->tagFoldedHist);
+    snapshotFoldedValues(state.altTagFoldedHist, threadMeta[tid]->altTagFoldedHist);
+    snapshotFoldedValues(state.indexFoldedHist, threadMeta[tid]->indexFoldedHist);
 
     lookupEntries.clear();
     lookupIndices.clear();
@@ -257,9 +277,9 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
 
     threadMeta[pred.tid] = std::make_shared<TageMeta>();
     auto &meta = threadMeta[pred.tid];
-    meta->tagFoldedHist = state.tagFoldedHist;
-    meta->altTagFoldedHist = state.altTagFoldedHist;
-    meta->indexFoldedHist = state.indexFoldedHist;
+    snapshotFoldedValues(state.tagFoldedHist, meta->tagFoldedHist);
+    snapshotFoldedValues(state.altTagFoldedHist, meta->altTagFoldedHist);
+    snapshotFoldedValues(state.indexFoldedHist, meta->indexFoldedHist);
 
     lookupEntries.clear();
     lookupIndices.clear();
@@ -482,10 +502,10 @@ BTBITTAGE::update(const FetchTarget &stream)
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
                     Addr newIndex = getTageIndex(
-                        startAddr, ti, updateIndexFoldedHist[ti].get(),
+                        startAddr, ti, updateIndexFoldedHist[ti],
                         stream.asidHash, stream.tid);
-                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(),
-                                             updateAltTagFoldedHist[ti].get(), stream.asidHash);
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti],
+                                             updateAltTagFoldedHist[ti], stream.asidHash);
                     assert(newIndex < tageTable[ti].size());
                     auto &newEntry = tageTable[ti][newIndex];
 
@@ -679,9 +699,9 @@ BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     auto &state = historyState(entry.tid);
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
-        state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        state.tagFoldedHist[i].recoverValue(predMeta->tagFoldedHist[i]);
+        state.altTagFoldedHist[i].recoverValue(predMeta->altTagFoldedHist[i]);
+        state.indexFoldedHist[i].recoverValue(predMeta->indexFoldedHist[i]);
     }
     doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
 }

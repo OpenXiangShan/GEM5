@@ -232,11 +232,11 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(
-            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
+            startPC, i, predMeta->indexFoldedHist[i], asidHash, tid)
                               : getTageIndex(
             startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(),
+                            predMeta->tagFoldedHist[i],predMeta->altTagFoldedHist[i],
                             position, asidHash)
                         : getTageTag(startPC, i, state.tagFoldedHist[i].get(),
                                      state.altTagFoldedHist[i].get(), position, asidHash);
@@ -356,11 +356,19 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     // btb entries should already be in stagePreds
     // get prediction and save it
 
-    // Clear old prediction metadata and save current history state
+    // Clear old prediction metadata and save current history state. Non-ahead
+    // folded histories are stored as values (see TageMeta); recovery restores
+    // them via recoverValue().
     threadMeta[tid] = std::make_shared<TageMeta>();
-    threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
-    threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
-    threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
+    auto snapshotFoldedValues = [](const auto &src, std::vector<uint64_t> &dst) {
+        dst.resize(src.size());
+        for (size_t i = 0; i < src.size(); ++i) {
+            dst[i] = src[i].get();
+        }
+    };
+    snapshotFoldedValues(state.tagFoldedHist, threadMeta[tid]->tagFoldedHist);
+    snapshotFoldedValues(state.altTagFoldedHist, threadMeta[tid]->altTagFoldedHist);
+    snapshotFoldedValues(state.indexFoldedHist, threadMeta[tid]->indexFoldedHist);
     threadMeta[tid]->aheadIndexFoldedHistValid =
         !state.aheadIndexFoldedHist.empty();
     if (threadMeta[tid]->aheadIndexFoldedHistValid) {
@@ -785,9 +793,9 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(
-            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
+            startPC, ti, meta->indexFoldedHist[ti], asidHash, tid);
         Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(),
+            meta->tagFoldedHist[ti], meta->altTagFoldedHist[ti],
             position, asidHash);
 
         auto &set = tageTable[ti][newIndex];
@@ -1325,7 +1333,7 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     }
     // Restore current folded index history exactly to prediction-time state.
     for (int i = 0; i < numPredictors; i++) {
-        state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        state.indexFoldedHist[i].recoverValue(predMeta->indexFoldedHist[i]);
     }
 
     // Restore delayed index folded history slot exactly to prediction-time state.
@@ -1349,8 +1357,8 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     }
 
     for (int i = 0; i < numPredictors; i++) {
-        state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        state.altTagFoldedHist[i].recoverValue(predMeta->altTagFoldedHist[i]);
+        state.tagFoldedHist[i].recoverValue(predMeta->tagFoldedHist[i]);
     }
     doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
 }

@@ -257,12 +257,14 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     {
         std::unordered_map<Addr, TagePrediction> preds;
         bitset usefulMask;
-        std::vector<PathFoldedHist> tagFoldedHist;
-        std::vector<PathFoldedHist> altTagFoldedHist;
-        std::vector<PathFoldedHist> indexFoldedHist;
+        // Folded-history snapshots stored as raw values (get()); update lookups
+        // read them directly and recovery restores them via recoverValue().
+        std::vector<uint64_t> tagFoldedHist;
+        std::vector<uint64_t> altTagFoldedHist;
+        std::vector<uint64_t> indexFoldedHist;
         TageMeta(std::unordered_map<Addr, TagePrediction> preds, bitset usefulMask,
-                 std::vector<PathFoldedHist> tagFoldedHist, std::vector<PathFoldedHist> altTagFoldedHist,
-                 std::vector<PathFoldedHist> indexFoldedHist)
+                 std::vector<uint64_t> tagFoldedHist, std::vector<uint64_t> altTagFoldedHist,
+                 std::vector<uint64_t> indexFoldedHist)
             : preds(preds),
               usefulMask(usefulMask),
               tagFoldedHist(tagFoldedHist),
