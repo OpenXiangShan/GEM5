@@ -220,29 +220,27 @@ class DecoupledBPUWithBTB : public BPredUnit
     void clearPreds(ThreadID tid) {
         for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
             FullBTBPrediction &p = threads[tid].predsOfEachStage[i];
-            // Retain the heap buffers of the growable containers across the
-            // per-cycle reset so they are not reallocated on every prediction.
-            // The buffers are moved aside first (so the object reset frees
-            // nothing), emptied, then re-adopted with their capacity intact.
-            // Every scalar field is reset exactly as a fresh
-            // FullBTBPrediction() would leave it, so behavior is
-            // bit-identical: btbEntries/condTakens/indirectTargets are
-            // order-deterministic vectors, and tageInfoForMgscs is only ever
-            // accessed by key (never iterated), so retaining its buckets
-            // changes no observable prediction result.
-            auto btbEntries = std::move(p.btbEntries);
-            auto condTakens = std::move(p.condTakens);
-            auto indirectTargets = std::move(p.indirectTargets);
-            auto tageInfoForMgscs = std::move(p.tageInfoForMgscs);
-            btbEntries.clear();
-            condTakens.clear();
-            indirectTargets.clear();
-            tageInfoForMgscs.clear();
-            p = FullBTBPrediction();
-            p.btbEntries = std::move(btbEntries);
-            p.condTakens = std::move(condTakens);
-            p.indirectTargets = std::move(indirectTargets);
-            p.tageInfoForMgscs = std::move(tageInfoForMgscs);
+            // Reset each stage prediction to its default state in place while
+            // keeping the heap capacity of the growable containers, so they are
+            // not reallocated on every prediction. Clearing the containers
+            // directly, rather than assigning a fresh FullBTBPrediction, avoids
+            // building a temporary and replacing the container buffers. The
+            // observable state is unchanged: every member is set to the value
+            // the default constructor would give it, btbEntries/condTakens/
+            // indirectTargets are order-deterministic and tageInfoForMgscs is
+            // only ever accessed by key, never iterated.
+            p.btbEntries.clear();
+            p.condTakens.clear();
+            p.indirectTargets.clear();
+            p.tageInfoForMgscs.clear();
+            p.tid = 0;
+            p.asidHash = 0;
+            p.bbStart = 0;
+            p.returnTarget = 0;
+            p.overrideReason = OverrideReason::NO_OVERRIDE;
+            p.predTick = 0;
+            p.s1Source = -1;
+            p.s3Source = -1;
             p.predSource = i;
         }
     }
