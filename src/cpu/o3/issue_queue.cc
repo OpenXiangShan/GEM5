@@ -967,11 +967,16 @@ IssueQue::selectInst()
     selectQ.clear();
     for (int pi = 0; pi < outports; pi++) {
         auto readyQ = readyQs[pi];
-        for (auto it = readyQ->begin(); it != readyQ->end(); ++it) {
-            DPRINTF(Schedule, "readyQ for port %d has [sn:%llu] %s [tid:%u]\n", pi, (*it)->seqNum,
-                    (*it)->genDisassembly(), (*it)->threadNumber);
+        // This diagnostic walk only feeds DPRINTF, so gate the whole readyQ
+        // traversal on the trace flag instead of walking the list every cycle
+        // and per port when tracing is disabled.
+        if (debug::Schedule) {
+            for (auto it = readyQ->begin(); it != readyQ->end(); ++it) {
+                DPRINTF(Schedule, "readyQ for port %d has [sn:%llu] %s [tid:%u]\n", pi, (*it)->seqNum,
+                        (*it)->genDisassembly(), (*it)->threadNumber);
+            }
         }
-        
+
         selector->begin(readyQ);
         for (auto it = selector->select(readyQ->begin(), pi); it != readyQ->end(); it = selector->select(it, pi)) {
             auto& inst = *it;
