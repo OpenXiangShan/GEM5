@@ -750,6 +750,20 @@ LSQ::clearAddresses()
 void
 LSQ::advanceDcacheMainPipe()
 {
+    // Fast path for a drained pipe: with no refill queued and every stage
+    // invalid, the readiness cascade fires no callback, the data-array conflict
+    // check short-circuits on .valid (no stat), and the only write would be
+    // dcacheMainPipe = next_pipe overwriting already-invalid slots with invalid
+    // slots. Every reader guards on .valid before touching the payload, so the
+    // retained (invalid) slots are never observed. Skipping is bit-identical.
+    if (dcacheMainPipeRefillQ.empty() &&
+        !dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead).valid &&
+        !dcacheMainPipeStage(DcacheMainPipeStage::S2DataResp).valid &&
+        !dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).valid &&
+        !dcacheMainPipeStage(DcacheMainPipeStage::S4DataWrite).valid) {
+        return;
+    }
+
     DcacheMainPipeBufferedPipe next_pipe = {};
 
     const auto &s1_data_read =
