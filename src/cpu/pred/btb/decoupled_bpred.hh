@@ -219,8 +219,31 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void clearPreds(ThreadID tid) {
         for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
-            threads[tid].predsOfEachStage[i] = FullBTBPrediction();
-            threads[tid].predsOfEachStage[i].predSource = i;
+            FullBTBPrediction &p = threads[tid].predsOfEachStage[i];
+            // Retain the heap buffers of the growable containers across the
+            // per-cycle reset so they are not reallocated on every prediction.
+            // The buffers are moved aside first (so the object reset frees
+            // nothing), emptied, then re-adopted with their capacity intact.
+            // Every scalar field is reset exactly as a fresh
+            // FullBTBPrediction() would leave it, so behavior is
+            // bit-identical: btbEntries/condTakens/indirectTargets are
+            // order-deterministic vectors, and tageInfoForMgscs is only ever
+            // accessed by key (never iterated), so retaining its buckets
+            // changes no observable prediction result.
+            auto btbEntries = std::move(p.btbEntries);
+            auto condTakens = std::move(p.condTakens);
+            auto indirectTargets = std::move(p.indirectTargets);
+            auto tageInfoForMgscs = std::move(p.tageInfoForMgscs);
+            btbEntries.clear();
+            condTakens.clear();
+            indirectTargets.clear();
+            tageInfoForMgscs.clear();
+            p = FullBTBPrediction();
+            p.btbEntries = std::move(btbEntries);
+            p.condTakens = std::move(condTakens);
+            p.indirectTargets = std::move(indirectTargets);
+            p.tageInfoForMgscs = std::move(tageInfoForMgscs);
+            p.predSource = i;
         }
     }
 
