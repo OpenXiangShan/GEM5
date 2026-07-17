@@ -13,6 +13,7 @@
 #include "debug/BTB.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPVerbose.hh"
+#include "debug/FoldedHist.hh"
 #include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
@@ -1431,20 +1432,27 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
         s0LHistory[localHistoryIndex]);
 
 #ifndef NDEBUG
-    if (tage->isEnabled()) {
-        tage->checkFoldedHist(
-            tage->usesPathHistory() ? s0PHistory : s0History, tid,
-            "speculative update");
-    }
-    if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory, tid, "speculative update");
-    }
-    if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory, tid, "speculative update");
-    }
-    if (mgsc->isEnabled()) {
-        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
-                              "speculative update");
+    // Folded-history consistency verification recomputes each bank's fold from
+    // scratch and asserts it matches the incrementally-maintained value. It has
+    // no side effects on prediction state, so it is gated behind the FoldedHist
+    // debug flag: skipped by default (even in .opt), available via
+    // --debug-flags=FoldedHist. The #ifndef NDEBUG keeps it out of .fast.
+    if (debug::FoldedHist) {
+        if (tage->isEnabled()) {
+            tage->checkFoldedHist(
+                tage->usesPathHistory() ? s0PHistory : s0History, tid,
+                "speculative update");
+        }
+        if (ittage->isEnabled()) {
+            ittage->checkFoldedHist(s0PHistory, tid, "speculative update");
+        }
+        if (microtage->isEnabled()) {
+            microtage->checkFoldedHist(s0PHistory, tid, "speculative update");
+        }
+        if (mgsc->isEnabled()) {
+            mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
+                                  "speculative update");
+        }
     }
 #endif
 }
@@ -1547,26 +1555,32 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
     checkHistories(s0History, s0PHistory, tid);
-    if (tage->isEnabled()) {
-        tage->checkFoldedHist(
-            tage->usesPathHistory() ? s0PHistory : s0History, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
-    }
-    if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
-    }
-    if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
-    }
-    if (mgsc->isEnabled()) {
-        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    // See note at the speculative-update site: folded-history consistency
+    // checks are gated behind the FoldedHist debug flag, off by default and
+    // free of side effects. The checkHistories call above is unrelated and
+    // stays.
+    if (debug::FoldedHist) {
+        if (tage->isEnabled()) {
+            tage->checkFoldedHist(
+                tage->usesPathHistory() ? s0PHistory : s0History, tid,
+                squash_type == SQUASH_CTRL ? "control squash" :
+                squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+        }
+        if (ittage->isEnabled()) {
+            ittage->checkFoldedHist(s0PHistory, tid,
+                squash_type == SQUASH_CTRL ? "control squash" :
+                squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+        }
+        if (microtage->isEnabled()) {
+            microtage->checkFoldedHist(s0PHistory, tid,
+                squash_type == SQUASH_CTRL ? "control squash" :
+                squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+        }
+        if (mgsc->isEnabled()) {
+            mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
+                squash_type == SQUASH_CTRL ? "control squash" :
+                squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+        }
     }
 #endif
 }
