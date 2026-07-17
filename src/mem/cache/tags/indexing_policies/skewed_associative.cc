@@ -207,18 +207,20 @@ SkewedAssociative::regenerateAddr(const Addr tag,
            ((deskew(addr_set, entry->getWay()) & setMask) << setShift);
 }
 
-std::vector<ReplaceableEntry*>
+const std::vector<ReplaceableEntry*>&
 SkewedAssociative::getPossibleEntries(const Addr addr) const
 {
-    std::vector<ReplaceableEntry*> entries;
+    // Reuse the scratch buffer to avoid a per-lookup heap allocation. resize()
+    // is a no-op once the buffer has reached the associativity.
+    possibleEntries.resize(assoc);
 
     // Parse all ways
     for (uint32_t way = 0; way < assoc; ++way) {
         // Apply hash to get set, and get way entry in it
-        entries.push_back(sets[getSet(addr, way)][way]);
+        possibleEntries[way] = sets[getSet(addr, way)][way];
     }
 
-    return entries;
+    return possibleEntries;
 }
 
 } // namespace gem5

@@ -58,7 +58,7 @@ Entry*
 AssociativeSet<Entry>::findEntry(Addr addr, bool is_secure) const
 {
     Addr tag = indexingPolicy->extractTag(addr);
-    const std::vector<ReplaceableEntry*> selected_entries =
+    const std::vector<ReplaceableEntry*>& selected_entries =
         indexingPolicy->getPossibleEntries(addr);
 
     for (const auto& location : selected_entries) {
@@ -83,7 +83,7 @@ Entry*
 AssociativeSet<Entry>::findVictim(Addr addr, bool *victim_secure)
 {
     // Get possible entries to be victimized
-    const std::vector<ReplaceableEntry*> selected_entries =
+    const std::vector<ReplaceableEntry*>& selected_entries =
         indexingPolicy->getPossibleEntries(addr);
     Entry* victim = static_cast<Entry*>(replacementPolicy->getVictim(
                             selected_entries));
@@ -100,7 +100,7 @@ template<class Entry>
 std::vector<Entry *>
 AssociativeSet<Entry>::getPossibleEntries(const Addr addr) const
 {
-    std::vector<ReplaceableEntry *> selected_entries =
+    const std::vector<ReplaceableEntry *>& selected_entries =
         indexingPolicy->getPossibleEntries(addr);
     std::vector<Entry *> entries(selected_entries.size(), nullptr);
 

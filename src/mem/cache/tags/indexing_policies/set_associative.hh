@@ -116,8 +116,8 @@ class SetAssociative : public BaseIndexingPolicy
      * @param addr The addr to a find possible entries for.
      * @return The possible entries.
      */
-    std::vector<ReplaceableEntry*> getPossibleEntries(const Addr addr) const
-                                                                     override;
+    const std::vector<ReplaceableEntry*>&
+        getPossibleEntries(const Addr addr) const override;
 
     /**
      * Regenerate an entry's address from its tag and assigned set and way.

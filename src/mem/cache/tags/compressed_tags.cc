@@ -107,7 +107,7 @@ CompressedTags::findVictim(Addr addr, const bool is_secure,
                            std::vector<CacheBlk*>& evict_blks)
 {
     // Get all possible locations of this superblock
-    const std::vector<ReplaceableEntry*> superblock_entries =
+    const std::vector<ReplaceableEntry*>& superblock_entries =
         indexingPolicy->getPossibleEntries(addr);
 
     // Check if the superblock this address belongs to has been allocated. If

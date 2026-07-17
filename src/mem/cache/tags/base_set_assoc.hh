@@ -174,7 +174,7 @@ class BaseSetAssoc : public BaseTags
                          std::vector<CacheBlk*>& evict_blks) override
     {
         // Get possible entries to be victimized
-        const std::vector<ReplaceableEntry*> entries =
+        const std::vector<ReplaceableEntry*>& entries =
             indexingPolicy->getPossibleEntries(addr);
 
         // Choose replacement victim from replacement candidates

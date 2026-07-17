@@ -69,7 +69,7 @@ SetAssociative::regenerateAddr(const Addr tag, const ReplaceableEntry* entry)
     return (tag << tagShift) | (((entry->getSet() << sliceShift) | slice_idx) << setShift);
 }
 
-std::vector<ReplaceableEntry*>
+const std::vector<ReplaceableEntry*>&
 SetAssociative::getPossibleEntries(const Addr addr) const
 {
     return sets[extractSet(addr)];

@@ -86,6 +86,17 @@ class SkewedAssociative : public BaseIndexingPolicy
     const int msbShift;
 
     /**
+     * Scratch buffer reused by getPossibleEntries() so it can return a
+     * reference to its result instead of allocating a fresh vector on every
+     * call. Unlike the identity-mapped policies, skewing gathers entries from
+     * different sets, so the candidates are not stored contiguously and must be
+     * assembled per lookup. The buffer is single-writer (gem5 is a
+     * single-threaded event loop) and callers consume the returned reference
+     * before issuing the next lookup.
+     */
+    mutable std::vector<ReplaceableEntry*> possibleEntries;
+
+    /**
      * The hash function itself. Uses the hash function H, as described in
      * "Skewed-Associative Caches", from Seznec et al. (section 3.3): It
      * applies an XOR to the MSB and LSB, shifts all bits one bit to the right,
@@ -160,8 +171,8 @@ class SkewedAssociative : public BaseIndexingPolicy
      * @param addr The addr to a find possible entries for.
      * @return The possible entries.
      */
-    std::vector<ReplaceableEntry*> getPossibleEntries(const Addr addr) const
-                                                                   override;
+    const std::vector<ReplaceableEntry*>&
+        getPossibleEntries(const Addr addr) const override;
 
     /**
      * Regenerate an entry's address from its tag and assigned set and way.

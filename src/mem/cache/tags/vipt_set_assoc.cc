@@ -70,7 +70,7 @@ VIPTSetAssoc::findBlock(Addr addr, bool is_secure) const
         Addr addrAlias = (addr & ~(((1 << indexingPolicy->getAliasBits()) - 1) << pageShift)) \
                          | (i << pageShift);
 
-        const std::vector<ReplaceableEntry*> entries =
+        const std::vector<ReplaceableEntry*>& entries =
             indexingPolicy->getPossibleEntries(addrAlias);
 
         // Search for block
