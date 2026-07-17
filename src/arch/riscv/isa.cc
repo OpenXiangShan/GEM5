@@ -598,8 +598,9 @@ ISA::readMiscRegNoEffect(int misc_reg) const
 RegVal
 ISA::readMiscReg(int misc_reg)
 {
-    int v = readMiscRegNoEffect(MISCREG_VIRMODE);
-    auto pm = readMiscRegNoEffect(MISCREG_PRV);
+    // VIRMODE is a plain (non-PMP, in-range) CSR, so its no-effect read is
+    // just a register-file load; avoid the out-of-line call on this hot path.
+    int v = miscRegFile[MISCREG_VIRMODE];
     if ((v == 1) && (misc_reg == MISCREG_SSCRATCH)) {
         return readMiscRegNoEffect(MISCREG_VSSCRATCH);
     }
