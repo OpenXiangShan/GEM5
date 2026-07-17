@@ -1329,7 +1329,17 @@ void
 Scheduler::SpecWakeupCompletion::process()
 {
     to_issue_queue->wakeUpDependents(inst, true);
-    (*owner)[inst->seqNum].erase(this);
+    // Drop this fired event from its seqNum bucket and remove the bucket once it
+    // empties. seqNums are never reused, so leaving empty buckets behind would
+    // grow the map without bound; an empty bucket and an absent key are
+    // equivalent to every reader, so pruning is bit-identical.
+    auto it = owner->find(inst->seqNum);
+    if (it != owner->end()) {
+        it->second.erase(this);
+        if (it->second.empty()) {
+            owner->erase(it);
+        }
+    }
 }
 
 const char*
@@ -1982,12 +1992,16 @@ Scheduler::loadCancel(const DynInstPtr& inst)
     while (!dfs.empty()) {
         auto top = dfs.top();
         dfs.pop();
-        // clear pending wake events scheduled by top
-        auto& pendingEvents = specWakeEvents[top->seqNum];
-        for (auto it = pendingEvents.begin(); it != pendingEvents.end(); it++) {
-            cpu->deschedule(*it);
+        // clear pending wake events scheduled by top; look the bucket up instead
+        // of operator[] so a cancel for a seqNum with no pending events does not
+        // create (and immediately erase) an empty bucket.
+        auto peIt = specWakeEvents.find(top->seqNum);
+        if (peIt != specWakeEvents.end()) {
+            for (auto it = peIt->second.begin(); it != peIt->second.end(); it++) {
+                cpu->deschedule(*it);
+            }
+            specWakeEvents.erase(peIt);
         }
-        specWakeEvents.erase(top->seqNum);
         for (int i = 0; i < top->numDestRegs(); i++) {
             auto dst = top->renamedDestIdx(i);
             if (dst->isFixedMapping()) {
