@@ -186,6 +186,18 @@ class IssueQue : public SimObject
     // srcIdx : inst
     std::vector<std::vector<std::pair<uint8_t, DynInstPtr>>> subDepGraph;
 
+    // Sparse index of subDepGraph entries that may be non-empty. subDepGraph is
+    // sized to the total physical register count (int+float+vec+vec-elem, a few
+    // thousand entries) but only a handful hold waiting consumers at any time.
+    // doSquash walks this list instead of the full vector so a per-squash scan
+    // is proportional to the working set, not the register file size. Invariant:
+    // depIdxActive[idx] == (idx present in activeDepIdx); every non-empty
+    // subDepGraph vector is registered here. Empty-but-registered entries are
+    // pruned lazily during doSquash, so skipping unregistered indices is
+    // bit-identical (their erase loop would find nothing).
+    std::vector<uint32_t> activeDepIdx;
+    std::vector<bool> depIdxActive;
+
     struct VectorSplitUnitState
     {
         std::queue<DynInstPtr> splitQ;
