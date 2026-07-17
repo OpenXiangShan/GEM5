@@ -1120,9 +1120,11 @@ IEW::dispatchInstFromRename(ThreadID tid)
         bool add_to_iq = false;
         auto &inst = insts_to_dispatch.front();
         disp_seq++;
-        int ins = cpu->cpuStats.committedInsts.total();
-        if (cpu->hasHintDownStream() && ins % 10000 == 1) {
-            cpu->hintDownStream->notifyIns(ins);
+        if (cpu->hasHintDownStream()) {
+            int ins = cpu->cpuStats.committedInsts.total();
+            if (ins % 10000 == 1) {
+                cpu->hintDownStream->notifyIns(ins);
+            }
         }
 
         if (inst->isSquashed()) {
@@ -1315,9 +1317,11 @@ IEW::classifyInstToDispQue(ThreadID tid)
     unsigned dispatched = 0;
     while (!insts_to_dispatch.empty()) {
         auto& inst = insts_to_dispatch.front();
-        int ins = cpu->cpuStats.committedInsts.total();
-        if (cpu->hasHintDownStream() && ins % 10000 == 1) {
-            cpu->hintDownStream->notifyIns(ins);
+        if (cpu->hasHintDownStream()) {
+            int ins = cpu->cpuStats.committedInsts.total();
+            if (ins % 10000 == 1) {
+                cpu->hintDownStream->notifyIns(ins);
+            }
         }
         int id = getInstDQType(inst);
         if (dispQue[id].size() < dqSize[id]) {
