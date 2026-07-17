@@ -156,6 +156,12 @@ class IssueQue : public SimObject
     std::list<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
 
+    // Shadow of the value last written to the avgInsts time-average stat, used
+    // to skip redundant per-cycle writes when occupancy is unchanged. The
+    // AvgStor integrates value*time, so re-writing the same value is a no-op
+    // for the reported average; skipping it is bit-identical.
+    uint64_t lastAvgInsts = 0;
+
     std::vector<uint8_t*> instNumClassify;
     uint64_t instNum = 0;
 

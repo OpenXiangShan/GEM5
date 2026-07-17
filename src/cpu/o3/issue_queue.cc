@@ -1063,8 +1063,11 @@ IssueQue::scheduleInst()
 
             if (!opPipelined[inst->opClass()]) {
                 portBusy[pi] = -1ll;
-            } else if (scheduler->getCorrectedOpLat(inst) > 1 && inst->numDestRegs() > 0) {
-                portBusy[pi] |= 1ll << scheduler->getCorrectedOpLat(inst);
+            } else {
+                const int lat = scheduler->getCorrectedOpLat(inst);
+                if (lat > 1 && inst->numDestRegs() > 0) {
+                    portBusy[pi] |= 1ll << lat;
+                }
             }
 
             scheduler->specWakeUpDependents(inst, this);
@@ -1077,7 +1080,13 @@ IssueQue::scheduleInst()
 void
 IssueQue::tick()
 {
-    iqstats->avgInsts = instNum;
+    // avgInsts is a time-weighted Average; re-writing an unchanged value only
+    // adds value*0-effect integration, so skip the write when occupancy did not
+    // change this cycle. The reported average is bit-identical.
+    if (instNum != lastAvgInsts) {
+        iqstats->avgInsts = instNum;
+        lastAvgInsts = instNum;
+    }
 
     if (instNumInsert > 0) {
         iqstats->insertDist[instNumInsert]++;
@@ -1772,10 +1781,10 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
         return;
     }
 
+    const int oplat = getCorrectedOpLat(inst);
+    assert(oplat < 64);
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
-        int oplat = getCorrectedOpLat(inst);
         int wakeDelay = oplat - 1;
-        assert(oplat < 64);
         int diff = std::abs(from_issue_queue->getIssueStages() - to->getIssueStages());
         if (from_issue_queue->getIssueStages() > to->getIssueStages()) {
             wakeDelay += diff;
