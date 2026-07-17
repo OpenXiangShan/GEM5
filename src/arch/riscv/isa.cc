@@ -746,7 +746,11 @@ ISA::readMiscReg(int misc_reg)
                 return 0;
             }
         }
-        return readMiscRegNoEffect(misc_reg);
+        // PMP address registers are handled by their own switch case above, so
+        // any register reaching here is a plain in-range CSR whose no-effect
+        // read is just a register-file load. Index directly to skip the
+        // out-of-line call on this hot path.
+        return miscRegFile[misc_reg];
     }
 }
 
