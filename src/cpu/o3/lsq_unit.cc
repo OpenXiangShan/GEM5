@@ -1167,7 +1167,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
      * like the implementation that came before it, we're overly conservative.
      */
     while (loadIt != loadQueue.end()) {
-        DynInstPtr ld_inst = loadIt->instruction();
+        const DynInstPtr &ld_inst = loadIt->instruction();
         LSQRequest *load_request = loadIt->request();
         if (!ld_inst || !load_request || !ld_inst->effAddrValid() ||
                 ld_inst->strictlyOrdered()) {
@@ -1184,7 +1184,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         }
 
         bool done_checking_load = false;
-        for (auto req0 : inst_request->_reqs) {
+        for (const auto &req0 : inst_request->_reqs) {
             if (!req0 || !req0->hasPaddr()) {
                 continue;
             }
@@ -1195,7 +1195,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
             DPRINTF(LSQUnit, "Checking for violations for [sn:%lli], addr: %#lx\n",
                     inst->seqNum, req0->getPaddr());
 
-            for (auto req1 : load_request->_reqs) {
+            for (const auto &req1 : load_request->_reqs) {
                     if (!req1 || !req1->hasPaddr()) {
                         continue;
                     }
