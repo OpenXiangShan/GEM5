@@ -81,7 +81,12 @@ FetchTargetQueue::insert(FetchTarget& target)
 {
     ThreadID tid = target.tid;
     assert(queue[tid].cap.size() < ftqSize[tid]);
-    queue[tid].cap.push_back(target);
+    // The caller's fetch target is dead after insertion (only read afterward
+    // on debug-print paths, which touch scalar fields), so move it into the
+    // queue instead of copying. This avoids re-allocating the entry's
+    // full-length history bitsets, BTB-entry vector and metadata on every
+    // prediction; the queued entry holds the same values a copy would.
+    queue[tid].cap.push_back(std::move(target));
 }
 
 void
