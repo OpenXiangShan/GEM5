@@ -77,7 +77,9 @@ VIPTSetAssoc::findBlock(Addr addr, bool is_secure) const
         for (const auto& location : entries) {
             CacheBlk* blk = static_cast<CacheBlk*>(location);
             int way = location->getWay();
-            if (blk->matchTag(tag, is_secure)) {
+            // Entries here are exactly CacheBlk (BaseSetAssoc holds
+            // std::vector<CacheBlk>), so the non-virtual match is equivalent.
+            if (blk->matchTagDirect(tag, is_secure)) {
                 if ((blk->getWay() != way) && (blk->getWay() != DEFAULTWAYPRE))
                     panic("Unexpected way %d\n", blk->getWay());
                 blk->setHitWay(way);

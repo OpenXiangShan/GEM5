@@ -84,6 +84,20 @@ class TaggedEntry : public ReplaceableEntry
     }
 
     /**
+     * Non-virtual tag match that reads the base fields directly. For an entry
+     * whose concrete type does not override isValid()/getTag() (e.g. a plain
+     * CacheBlk held by BaseSetAssoc/VIPTSetAssoc storage) this is identical to
+     * the virtual matchTag(), but it lets the hot tag-lookup loop avoid a
+     * virtual dispatch per probed way. Must NOT be used on entries whose
+     * dynamic type overrides those accessors (e.g. SectorSubBlk).
+     */
+    bool
+    matchTagDirect(Addr tag, bool is_secure) const
+    {
+        return _valid && (_tag == tag) && (_secure == is_secure);
+    }
+
+    /**
      * Insert the block by assigning it a tag and marking it valid. Touches
      * block if it hadn't been touched previously.
      *
