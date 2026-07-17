@@ -260,7 +260,7 @@ DynInst::~DynInst()
     }
 #endif
 
-    delete [] memData;
+    freeMemData();
     delete traceData;
     fault = NoFault;
 

@@ -1331,10 +1331,7 @@ LSQUnit::storeSetReplay(const DynInstPtr& inst, LSQRequest* request)
     inst->translationCompleted(false);
     inst->savedRequest = nullptr;
     storeQueue[inst->sqIdx].setRequest(nullptr);
-    if (inst->memData) {
-        delete [] inst->memData;
-        inst->memData = nullptr;
-    }
+    inst->freeMemData();
     if (request) {
         request->discard();
     }
@@ -2009,8 +2006,7 @@ LSQUnit::storeDoWriteSQ(const DynInstPtr &inst)
             Fault fault;
             fault = write(request, inst->memData, inst->sqIdx);
             // release temporal data
-            delete [] inst->memData;
-            inst->memData = nullptr;
+            inst->freeMemData();
 
             if (fault != NoFault)
                 inst->getFault() = fault;
@@ -2429,7 +2425,7 @@ LSQUnit::directStoreToCache()
     }
 
     assert(!inst->memData);
-    inst->memData = new uint8_t[request->_size];
+    inst->allocMemData(request->_size);
 
     if (storeWBIt->isAllZeros()) {
         memset(inst->memData, 0, request->_size);
@@ -3667,7 +3663,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     if (request->mainReq()->isLocalAccess()) {
         assert(!load_inst->memData);
-        load_inst->memData = new uint8_t[MaxDataBytes];
+        load_inst->allocMemData(MaxDataBytes);
 
         gem5::ThreadContext *thread = cpu->tcBase(lsqID);
         PacketPtr main_pkt = new Packet(request->mainReq(), MemCmd::ReadReq);
@@ -3842,8 +3838,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
                 // Allocate memory if this is the first time a load is issued.
                 if (!load_inst->memData) {
-                    load_inst->memData =
-                        new uint8_t[request->mainReq()->getSize()];
+                    load_inst->allocMemData(request->mainReq()->getSize());
                 }
                 if (store_it->isAllZeros()) {
                     for (int i=0;i<request->mainReq()->getSize();i++) {
@@ -3939,7 +3934,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // no need to send to cache
                 stats.sbufferFullForward++;
                 if (!load_inst->memData) {
-                    load_inst->memData = new uint8_t[request->mainReq()->getSize()];
+                    load_inst->allocMemData(request->mainReq()->getSize());
                 }
 
                 load_inst->setFullForward();
@@ -3965,7 +3960,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // for a pending cache response, or sends a new cache request.
     // Allocate memory if this is the first time a load is issued.
     if (!load_inst->memData) {
-        load_inst->memData = new uint8_t[request->mainReq()->getSize()];
+        load_inst->allocMemData(request->mainReq()->getSize());
     }
 
 

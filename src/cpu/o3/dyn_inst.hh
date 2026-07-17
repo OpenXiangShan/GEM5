@@ -461,8 +461,36 @@ class DynInst : public ExecContext, public RefCounted
     /** The size of the request */
     unsigned effSize;
 
+    /** Inline storage for small memory-access buffers. Scalar loads/stores
+     * (the overwhelming majority) fit here, so they avoid a per-access heap
+     * new[]/delete[] pair. Larger split/vector accesses still heap-allocate.
+     * 8-byte aligned so the uint64_t punning callers do on memData is aligned,
+     * matching the alignment a heap allocation would have provided. */
+    alignas(8) uint8_t memDataInline[8];
+
     /** Pointer to the data for the memory access. */
     uint8_t *memData = nullptr;
+
+    /** Allocate the memory-access buffer, using inline storage when the size
+     * fits. Callers guarantee memData is null beforehand, matching the raw
+     * new[] sites this replaces. */
+    void
+    allocMemData(size_t size)
+    {
+        memData = (size <= sizeof(memDataInline)) ?
+            memDataInline : new uint8_t[size];
+    }
+
+    /** Release a buffer allocated by allocMemData, freeing the heap only when
+     * inline storage was not used. */
+    void
+    freeMemData()
+    {
+        if (memData && memData != memDataInline) {
+            delete[] memData;
+        }
+        memData = nullptr;
+    }
 
     /** Load queue index. */
     ssize_t lqIdx = -1;

@@ -2811,7 +2811,7 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
 
     if (!isLoad && !isAtomic) {
         // store inst temporally saves its data in memData
-        inst->memData = new uint8_t[size];
+        inst->allocMemData(size);
         memcpy(inst->memData, data, size);
     }
 
