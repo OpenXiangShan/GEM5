@@ -601,23 +601,18 @@ ISA::readMiscReg(int misc_reg)
     // VIRMODE is a plain (non-PMP, in-range) CSR, so its no-effect read is
     // just a register-file load; avoid the out-of-line call on this hot path.
     int v = miscRegFile[MISCREG_VIRMODE];
-    if ((v == 1) && (misc_reg == MISCREG_SSCRATCH)) {
-        return readMiscRegNoEffect(MISCREG_VSSCRATCH);
-    }
-    if ((v == 1) && (misc_reg == MISCREG_SATP)) {
-        return readMiscRegNoEffect(MISCREG_VSATP);
-    }
-    if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
-        return readMiscRegNoEffect(MISCREG_VSEPC);
-    }
-    if ((v == 1) && (misc_reg == MISCREG_STVAL)) {
-        return readMiscRegNoEffect(MISCREG_VSTVAL);
-    }
-    if ((v == 1) && (misc_reg == MISCREG_SCAUSE)) {
-        return readMiscRegNoEffect(MISCREG_VSCAUSE);
-    }
-    if ((v == 1) && (misc_reg == MISCREG_STVEC)) {
-        return readMiscRegNoEffect(MISCREG_VSTVEC);
+    // Virtualized-mode S-mode CSR aliases are only relevant when v == 1, so
+    // gate all of them behind a single test instead of one per register.
+    if (v == 1) {
+        switch (misc_reg) {
+          case MISCREG_SSCRATCH: return readMiscRegNoEffect(MISCREG_VSSCRATCH);
+          case MISCREG_SATP:     return readMiscRegNoEffect(MISCREG_VSATP);
+          case MISCREG_SEPC:     return readMiscRegNoEffect(MISCREG_VSEPC);
+          case MISCREG_STVAL:    return readMiscRegNoEffect(MISCREG_VSTVAL);
+          case MISCREG_SCAUSE:   return readMiscRegNoEffect(MISCREG_VSCAUSE);
+          case MISCREG_STVEC:    return readMiscRegNoEffect(MISCREG_VSTVEC);
+          default: break;
+        }
     }
     if (misc_reg == MISCREG_HIE) {
         auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
