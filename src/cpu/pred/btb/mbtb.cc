@@ -327,6 +327,25 @@ MBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
     }
 }
 
+std::shared_ptr<MBTB::BTBMeta>
+MBTB::acquireBTBMeta()
+{
+    auto pool = btbMetaPool;
+    BTBMeta *obj;
+    if (!pool->empty()) {
+        obj = pool->back().release();
+        pool->pop_back();
+        // Reset to a fresh BTBMeta: the hit-entry vector is refilled by lookup
+        // this prediction, so empty it (retaining capacity) before reuse.
+        obj->hit_entries.clear();
+    } else {
+        obj = new BTBMeta();
+    }
+    return std::shared_ptr<BTBMeta>(obj, [pool](BTBMeta *p) {
+        pool->emplace_back(p);
+    });
+}
+
 void
 MBTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
@@ -334,7 +353,7 @@ MBTB::putPCHistory(Addr startAddr,
 {
     const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
     assert(tid < threadMeta.size());
-    threadMeta[tid] = std::make_shared<BTBMeta>();
+    threadMeta[tid] = acquireBTBMeta();
     const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     // Lookup all matching entries in BTB
     auto find_entries = lookup(startAddr, tid, asidHash, threadMeta[tid]);

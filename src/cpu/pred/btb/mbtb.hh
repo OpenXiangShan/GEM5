@@ -261,6 +261,13 @@ class MBTB : public TimedBaseBTBPredictor
     // entry, so concurrent SMT lookups must not overwrite another thread.
     std::vector<std::shared_ptr<BTBMeta>> threadMeta;
 
+    // Free-list of reusable BTBMeta objects (see BTBTAGE::acquireTageMeta for
+    // rationale): recycling avoids re-allocating the hit-entry vector storage on
+    // every prediction.
+    std::shared_ptr<std::vector<std::unique_ptr<BTBMeta>>> btbMetaPool{
+        std::make_shared<std::vector<std::unique_ptr<BTBMeta>>>()};
+    std::shared_ptr<BTBMeta> acquireBTBMeta();
+
     /** Process BTB entries for prediction
      *  @param entries Vector of BTB entries to process
      *  @param startAddr Start address of the fetch block
