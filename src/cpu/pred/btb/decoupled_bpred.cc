@@ -417,8 +417,13 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
 
     DPRINTF(Override, "Requesting new prediction for PC %#lx\n", thread.s0PC);
 
-    // Reset all stage-local prediction fields before components fill them.
-    clearPreds(tid);
+    // The stage predictions are already in their reset state on entry: every
+    // path that leaves them dirty ends by calling clearPreds() --
+    // generateFinalPredAndCreateBubbles() at the tail of the previous
+    // prediction, handleSquash() on a redirect, and the constructor's initial
+    // reset. Nothing between those points and here writes predsOfEachStage, so
+    // a second clear would only redo identical work. The per-stage identity
+    // fields the components rely on are (re)established just below.
     for (int i = 0; i < numStages; i++) {
         predsOfEachStage[i].tid = tid;
         predsOfEachStage[i].asidHash = asid_hash;
