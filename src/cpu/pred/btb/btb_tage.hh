@@ -516,6 +516,17 @@ private:
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
 
+    // Free-list of reusable TageMeta objects. A meta is allocated once per
+    // prediction and retained in an FTQ entry until it commits or squashes;
+    // recycling the object across predictions avoids re-allocating the snapshot
+    // vectors and the prediction map's bucket storage every time. The pool is
+    // held through a shared_ptr captured by each meta's deleter, so an
+    // outstanding meta can be returned safely even if this predictor is torn
+    // down first.
+    std::shared_ptr<std::vector<std::unique_ptr<TageMeta>>> tageMetaPool{
+        std::make_shared<std::vector<std::unique_ptr<TageMeta>>>()};
+    std::shared_ptr<TageMeta> acquireTageMeta();
+
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;

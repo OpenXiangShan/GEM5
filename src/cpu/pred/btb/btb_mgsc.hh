@@ -626,6 +626,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
     } MgscMeta;
 
     std::vector<std::shared_ptr<MgscMeta>> threadMeta;
+
+    // Free-list of reusable MgscMeta objects (see BTBTAGE::acquireTageMeta for
+    // rationale): recycling avoids re-allocating the folded-history snapshot
+    // vectors and the prediction map's bucket storage on every prediction. Held
+    // through a shared_ptr captured by each meta's deleter so outstanding metas
+    // return safely even if this predictor is torn down first.
+    std::shared_ptr<std::vector<std::unique_ptr<MgscMeta>>> mgscMetaPool{
+        std::make_shared<std::vector<std::unique_ptr<MgscMeta>>>()};
+    std::shared_ptr<MgscMeta> acquireMgscMeta();
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;

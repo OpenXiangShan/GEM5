@@ -515,6 +515,31 @@ BTBTAGE::dryRunCycle(Addr startPC) {
  * @param history Current branch history
  * @param stagePreds Vector of predictions for different pipeline stages
  */
+std::shared_ptr<BTBTAGE::TageMeta>
+BTBTAGE::acquireTageMeta()
+{
+    auto pool = tageMetaPool;
+    TageMeta *obj;
+    if (!pool->empty()) {
+        obj = pool->back().release();
+        pool->pop_back();
+        // Reset to the state a fresh TageMeta would present before the
+        // predictor fills it: the map is emptied (entries are inserted by key
+        // during lookup, and it is only ever read by key or sorted after
+        // iteration, so retaining bucket storage changes no result); the
+        // snapshot vectors are fully overwritten by snapshotFoldedValues (a
+        // resize to the same length keeps capacity without touching values);
+        // history is consumed only on the enableDB trace path, where it is
+        // overwritten before use.
+        obj->preds.clear();
+    } else {
+        obj = new TageMeta();
+    }
+    return std::shared_ptr<TageMeta>(obj, [pool](TageMeta *p) {
+        pool->emplace_back(p);
+    });
+}
+
 void
 BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     const ThreadID tid = predictorTid(stagePreds);
@@ -535,7 +560,7 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     // get prediction and save it
 
     // Clear old prediction metadata and save current history state
-    threadMeta[tid] = std::make_shared<TageMeta>();
+    threadMeta[tid] = acquireTageMeta();
     snapshotFoldedValues(state.tagFoldedHist, threadMeta[tid]->tagFoldedHist);
     snapshotFoldedValues(state.altTagFoldedHist, threadMeta[tid]->altTagFoldedHist);
     snapshotFoldedValues(state.indexFoldedHist, threadMeta[tid]->indexFoldedHist);

@@ -335,6 +335,28 @@ MicroTAGE::dryRunCycle(Addr startPC) {
  * @param history Current branch history
  * @param stagePreds Vector of predictions for different pipeline stages
  */
+std::shared_ptr<MicroTAGE::TageMeta>
+MicroTAGE::acquireTageMeta()
+{
+    auto pool = tageMetaPool;
+    TageMeta *obj;
+    if (!pool->empty()) {
+        obj = pool->back().release();
+        pool->pop_back();
+        // Reset to the state a fresh TageMeta would present before the predictor
+        // fills it: the map is emptied (inserted by key during lookup, only read
+        // by key or sorted after iteration). Every other field
+        // (aheadIndexFoldedHistValid/aheadIndexFoldedHist, history and the
+        // snapshot vectors) is unconditionally overwritten each prediction.
+        obj->preds.clear();
+    } else {
+        obj = new TageMeta();
+    }
+    return std::shared_ptr<TageMeta>(obj, [pool](TageMeta *p) {
+        pool->emplace_back(p);
+    });
+}
+
 void
 MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     const ThreadID tid = predictorTid(stagePreds);
@@ -359,7 +381,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     // Clear old prediction metadata and save current history state. Non-ahead
     // folded histories are stored as values (see TageMeta); recovery restores
     // them via recoverValue().
-    threadMeta[tid] = std::make_shared<TageMeta>();
+    threadMeta[tid] = acquireTageMeta();
     auto snapshotFoldedValues = [](const auto &src, std::vector<uint64_t> &dst) {
         dst.resize(src.size());
         for (size_t i = 0; i < src.size(); ++i) {

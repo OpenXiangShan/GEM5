@@ -284,6 +284,13 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     } TageMeta;
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
+
+    // Free-list of reusable TageMeta objects (see BTBTAGE::acquireTageMeta for
+    // rationale): recycling avoids re-allocating the snapshot vectors and the
+    // prediction map's bucket storage on every prediction.
+    std::shared_ptr<std::vector<std::unique_ptr<TageMeta>>> tageMetaPool{
+        std::make_shared<std::vector<std::unique_ptr<TageMeta>>>()};
+    std::shared_ptr<TageMeta> acquireTageMeta();
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;

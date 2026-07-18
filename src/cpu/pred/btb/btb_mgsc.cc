@@ -611,6 +611,28 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
  * @param history Current branch history
  * @param stagePreds Vector of predictions for different pipeline stages
  */
+std::shared_ptr<BTBMGSC::MgscMeta>
+BTBMGSC::acquireMgscMeta()
+{
+    auto pool = mgscMetaPool;
+    MgscMeta *obj;
+    if (!pool->empty()) {
+        obj = pool->back().release();
+        pool->pop_back();
+        // Reset to the state a fresh MgscMeta would present: the map is emptied
+        // (entries are inserted by key during lookup and only ever read by key,
+        // so retaining bucket storage changes no result); the folded-history
+        // snapshot vectors are fully overwritten by snapshotFoldedValues (a
+        // resize to the same length keeps capacity without touching values).
+        obj->preds.clear();
+    } else {
+        obj = new MgscMeta();
+    }
+    return std::shared_ptr<MgscMeta>(obj, [pool](MgscMeta *p) {
+        pool->emplace_back(p);
+    });
+}
+
 void
 BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds)
@@ -631,7 +653,7 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     // Clear old prediction metadata and save current history state. Only the
     // folded values are stored (see MgscMeta); recovery restores them via
     // recoverValue().
-    threadMeta[tid] = std::make_shared<MgscMeta>();
+    threadMeta[tid] = acquireMgscMeta();
     snapshotFoldedValues(state.indexBwFoldedHist, threadMeta[tid]->indexBwFoldedHist);
     snapshotFoldedValues(state.indexIFoldedHist, threadMeta[tid]->indexIFoldedHist);
     snapshotFoldedValues(state.indexGFoldedHist, threadMeta[tid]->indexGFoldedHist);

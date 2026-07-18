@@ -211,6 +211,27 @@ BTBITTAGE::dryRunCycle(Addr startPC) {
   return;
 }
 
+std::shared_ptr<BTBITTAGE::TageMeta>
+BTBITTAGE::acquireTageMeta()
+{
+    auto pool = tageMetaPool;
+    TageMeta *obj;
+    if (!pool->empty()) {
+        obj = pool->back().release();
+        pool->pop_back();
+        // Reset to the state a fresh TageMeta would present: the map is emptied
+        // (inserted by key during lookup; only ever read by key or by an
+        // order-independent any-hit scan). usefulMask and the snapshot vectors
+        // are unconditionally overwritten each prediction.
+        obj->preds.clear();
+    } else {
+        obj = new TageMeta();
+    }
+    return std::shared_ptr<TageMeta>(obj, [pool](TageMeta *p) {
+        pool->emplace_back(p);
+    });
+}
+
 void
 BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     const ThreadID tid = predictorTid(stagePreds);
@@ -222,7 +243,7 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     DPRINTF(ITTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
 
     // clear old metas
-    threadMeta[tid] = std::make_shared<TageMeta>();
+    threadMeta[tid] = acquireTageMeta();
     // assign history for meta as folded values (see TageMeta)
     snapshotFoldedValues(state.tagFoldedHist, threadMeta[tid]->tagFoldedHist);
     snapshotFoldedValues(state.altTagFoldedHist, threadMeta[tid]->altTagFoldedHist);
