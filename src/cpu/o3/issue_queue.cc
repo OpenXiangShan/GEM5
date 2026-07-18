@@ -1835,6 +1835,12 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
 
     const int oplat = getCorrectedOpLat(inst);
     assert(oplat < 64);
+    // The immediate (wakeDelay == 0) wakeups all fire this tick and each would
+    // otherwise re-insert this producer's destinations into the regcache; cache
+    // them once for the whole same-tick group. Deferred wakeups keep inserting
+    // at their own fire tick (default cacheProducer=true), so their timing is
+    // unchanged. Mirror wakeUpDependents()'s speculative canceled-producer skip.
+    bool producerCached = false;
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
         int wakeDelay = oplat - 1;
         int diff = std::abs(from_issue_queue->getIssueStages() - to->getIssueStages());
@@ -1847,7 +1853,11 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
         DPRINTF(Schedule, "[sn:%llu] %s create wakeupEvent to %s, delay %d cycles\n", inst->seqNum,
                 from_issue_queue->getName(), to->getName(), wakeDelay);
         if (wakeDelay == 0) {
-            to->wakeUpDependents(inst, true);
+            if (!producerCached && !inst->canceled()) {
+                cacheProducerRegs(inst);
+                producerCached = true;
+            }
+            to->wakeUpDependents(inst, true, /*cacheProducer=*/false);
             if (!(inst->isFloating() || inst->isVector())) {
                 for (int i = 0; i < inst->numDestRegs(); i++) {
                     PhysRegIdPtr dst = inst->renamedDestIdx(i);
