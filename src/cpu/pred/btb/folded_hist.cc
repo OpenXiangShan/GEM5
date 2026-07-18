@@ -251,12 +251,6 @@ TageFoldedHist::TageFoldedHist(int histLen, int foldedLen,
     }
 }
 
-uint64_t
-TageFoldedHist::get() const
-{
-    return isPathBased() ? pathHist.get() : directionHist.get();
-}
-
 boost::dynamic_bitset<>
 TageFoldedHist::getAsBitset() const
 {

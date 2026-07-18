@@ -193,7 +193,13 @@ class TageFoldedHist
     TageFoldedHist(int histLen, int foldedLen, int maxShamt,
                    HistoryType historyType);
 
-    uint64_t get() const;
+    // Defined inline so the hot TAGE/MicroTAGE prediction loops (a different
+    // translation unit from folded_hist.cc, built without LTO) can inline this
+    // trivial dispatch instead of emitting an out-of-line call per table lookup.
+    uint64_t get() const
+    {
+        return isPathBased() ? pathHist.get() : directionHist.get();
+    }
     boost::dynamic_bitset<> getAsBitset() const;
     void update(const boost::dynamic_bitset<> &history, int shamt, bool taken,
                 Addr pc = 0, Addr target = 0);
