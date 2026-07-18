@@ -1871,8 +1871,15 @@ Scheduler::specWakeUpFromVP(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn:%llu] VP speculative wakeup dependents\n", inst->seqNum);
     // Wake consumers already in IQ via speculative wakeup (preserves subDepGraph)
+    // Populate the regcache once for the whole fan-out; the per-queue
+    // wakeUpDependents() below would otherwise repeat the same idempotent
+    // insert. wakeUpDependents(speculative=true) skips the insert entirely for
+    // a canceled producer, so mirror that guard here.
+    if (!inst->canceled()) {
+        cacheProducerRegs(inst);
+    }
     for (auto to : issueQues) {
-        to->wakeUpDependents(inst, true);  // speculative=true -> depgraph preserved
+        to->wakeUpDependents(inst, true, /*cacheProducer=*/false);  // speculative=true -> depgraph preserved
     }
     // Set earlyScoreboard + bypassScoreboard (but NOT scoreboard) so that
     // future consumers entering IQ via insert() will:
@@ -1897,11 +1904,17 @@ Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
 {
     assert(inst->isLoad());
     auto from_issue_queue = inst->issueQue;
+    // Insert the load's destinations into the regcache once instead of once per
+    // woken queue; wakeUpDependents(speculative=true) skips the insert for a
+    // canceled producer, so mirror that guard.
+    if (!inst->canceled()) {
+        cacheProducerRegs(inst);
+    }
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
 
         DPRINTF(Schedule, "[sn:%llu] %s create wakeupEvent to %s at loadpipe, no delay\n", inst->seqNum,
                 from_issue_queue->getName(), to->getName());
-        to->wakeUpDependents(inst, true);
+        to->wakeUpDependents(inst, true, /*cacheProducer=*/false);
 
         for (int i = 0; i < inst->numDestRegs(); i++) {
             PhysRegIdPtr dst = inst->renamedDestIdx(i);
