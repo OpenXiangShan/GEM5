@@ -67,8 +67,10 @@ def setKmhV3IdealParams(args, system):
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = 160
+        cpu.numROBEntries = args.ROBTotalEntry
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.smtBorrowDonorReserveEntries = args.smtROBDonorEntry
+        cpu.smtBorrowBaseReserveEntries = args.smtROBBaseEntry
 
         # lsu
         cpu.StoreWbStage = 4

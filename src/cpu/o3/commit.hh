@@ -649,6 +649,12 @@ class Commit
         statistics::Vector squashDueToTC;
         statistics::Vector squashDueToSquashAfter;
         statistics::Formula totalSquash;
+
+        statistics::Vector ROBFull;
+        statistics::Distribution smtRestEntryWhileROBFull;
+        statistics::Vector ROBBorrowingStateChange;
+        statistics::VectorDistribution smtStateHoldCycle;
+        statistics::VectorDistribution smtROBEntriesWhlieStateChange;
     } stats;
 
     bool ismispred[MaxThreads] = {false};
@@ -683,6 +689,12 @@ class Commit
     void traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst);
 
 public:
+    void recordROBBorrowingStateChangeStats(
+        ThreadID tid, bool old_donor,
+        unsigned state_hold_cycle,
+        unsigned rob_entries_used,
+        unsigned rob_entries_free);
+
     const CommitStats& getCommitStats() const { return stats; }
     uint64_t getTraceCommitIndex(ThreadID tid) const { return traceCommitIndex[tid]; }
 };

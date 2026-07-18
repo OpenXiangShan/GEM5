@@ -316,7 +316,17 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(squashDueToSquashAfter, statistics::units::Count::get(),
                "Number of squash due to squash after"),
       ADD_STAT(totalSquash, statistics::units::Count::get(),
-               "Total number of squash")
+               "Total number of squash"),
+      ADD_STAT(ROBFull, statistics::units::Count::get(),
+               "Total number of ROBFull"),
+      ADD_STAT(smtRestEntryWhileROBFull, statistics::units::Count::get(),
+               "Distribution of total rest entries while ROBFull in SMT mode"),
+      ADD_STAT(ROBBorrowingStateChange, statistics::units::Count::get(),
+               "changing times of borrowing state"),
+      ADD_STAT(smtStateHoldCycle, statistics::units::Count::get(),
+               "SMT base/donor state holding cycle distribution"),
+      ADD_STAT(smtROBEntriesWhlieStateChange, statistics::units::Count::get(),
+               "SMT ROB thread used/rest entries distribution while state change")
 {
     using namespace statistics;
 
@@ -432,6 +442,34 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
         squashDueToValuePrediction + squashDueToTrap + squashDueToTC + \
         squashDueToSquashAfter;
+
+    ROBFull
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    smtRestEntryWhileROBFull
+        .init(0, 160, 5)
+        .flags(statistics::pdf);
+
+    ROBBorrowingStateChange
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    smtStateHoldCycle
+        .init(2, 0, 100, 10)
+        .flags(statistics::pdf);
+    
+    smtStateHoldCycle.subname(0, "Base");
+    smtStateHoldCycle.subname(1, "Donor");
+
+    smtROBEntriesWhlieStateChange
+        .init(4, 0, 160, 8)
+        .flags(statistics::pdf);
+
+    smtROBEntriesWhlieStateChange.subname(0, "BaseToDonor_used");
+    smtROBEntriesWhlieStateChange.subname(1, "BaseToDonor_rest");
+    smtROBEntriesWhlieStateChange.subname(2, "DonorToBase_used");
+    smtROBEntriesWhlieStateChange.subname(3, "DonorToBase_rest");
 }
 
 void
@@ -912,6 +950,8 @@ Commit::tick()
             }
         }
     }
+    
+    rob->addBorrowingStateHoldCycle();
 
     commit();
 
@@ -2069,7 +2109,7 @@ Commit::moveInstsToBuffer()
             donor = borrowingDonorCycles[i] > 0;
         }
 
-        rob->setBorrowingDonor(i, donor);
+        rob->setBorrowingDonor(i, donor, this);
     }
 
     // check threads stall & status
@@ -2087,6 +2127,12 @@ Commit::moveInstsToBuffer()
             block_reason = StallReason::CommitSquash;
         } else if (block) {
             block_reason = robInfoFromIEW->iewInfo[i].robHeadStallReason;
+            stats.ROBFull[i]++;
+            unsigned restEntry = rob->getTotalEntries();
+            for (int j = 0; j < numThreads; j++) {
+                restEntry -= rob->getThreadEntries(j);
+            }
+            stats.smtRestEntryWhileROBFull.sample(restEntry);
             if (block_reason == StallReason::NoStall) {
                 block_reason = StallReason::ROBFull;
             }
@@ -2402,6 +2448,22 @@ Commit::dumpTicks(const DynInstPtr &inst)
     assert(archDBer);
     archDBer->memTraceWrite(curTick(), inst->isLoad(), inst->pcState().instAddr(), inst->effAddr, inst->physEffAddr,
                             inst->firstIssue, inst->translatedTick, inst->completionTick, curTick(), 0, inst->pf_source);
+}
+
+
+void
+Commit::recordROBBorrowingStateChangeStats(
+    ThreadID tid, bool old_donor,
+    unsigned state_hold_cycle,
+    unsigned rob_entries_used,
+    unsigned rob_entries_free)
+{
+    stats.smtStateHoldCycle[old_donor].sample(state_hold_cycle);
+    stats.smtROBEntriesWhlieStateChange[(int)(old_donor) * 2]
+        .sample(rob_entries_used);
+    stats.smtROBEntriesWhlieStateChange[(int)(old_donor) * 2 + 1]
+        .sample(rob_entries_free);
+    stats.ROBBorrowingStateChange[tid]++;
 }
 
 } // namespace o3
