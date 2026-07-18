@@ -677,7 +677,7 @@ BTBITTAGE::tageHit(ThreadID tid)
     if (!meta) {
         return false;
     }
-    auto preds = std::static_pointer_cast<TageMeta>(meta)->preds;
+    const auto &preds = std::static_pointer_cast<TageMeta>(meta)->preds;
     bool hit = false;
     for (auto & [pc, pred] : preds) {
         if (pred.mainInfo.found) {
