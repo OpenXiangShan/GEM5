@@ -1951,8 +1951,10 @@ void
 Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
 {
     if (regid->is(IntRegClass)) {
-        if (regCache.contains(regid->flatIndex())) {
-            regCache.get(regid->flatIndex());
+        // get() both reports presence and performs the same most-recently-used
+        // bump the original contains()+get() pair relied on, so folding the two
+        // lookups into one is bit-identical while dropping a redundant map find.
+        if (regCache.get(regid->flatIndex())) {
             return;
         }
     }
