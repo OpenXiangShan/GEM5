@@ -361,6 +361,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     unsigned numCtrsPerLine;
     unsigned numCtrsPerLineBits;
+    // floorLog2(blockSize), cached once because blockSize is fixed after
+    // construction and this shift is used on every SC index computation.
+    unsigned blockSizeShift;
 
     // Test switches for SC tables
     bool forceUseSC;

@@ -80,6 +80,7 @@ BTBMGSC::initStorage()
 
     assert(isPowerOf2(numCtrsPerLine));
     numCtrsPerLineBits = log2i(numCtrsPerLine);
+    blockSizeShift = floorLog2(blockSize);
 
     threadHistory.resize(MaxThreads);
     threadMeta.resize(MaxThreads);
@@ -1141,7 +1142,7 @@ BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
     Addr mask = (1ULL << localIndexBits) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    Addr pcBits = (pc >> blockSizeShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
     const Addr localIndex = xorAsidHashIntoIndex(
@@ -1158,7 +1159,7 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0,
     Addr mask = (1ULL << (localIndexBits - 2)) - 1;
 
     // Extract lower bits of PC directly and combine with low bits
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    Addr pcBits = (pc >> blockSizeShift) & mask;
     unsigned index = (pcBits << 2) + (lowbit1 << 1) + lowbit0;
     const Addr localIndex = xorAsidHashIntoIndex(
         index, localIndexBits, asidHash);
@@ -1172,7 +1173,7 @@ BTBMGSC::getPcIndex(Addr pc, unsigned tableIndexBits, uint8_t asidHash)
     Addr mask = (1ULL << tableIndexBits) - 1;
 
     // Extract lower bits of PC directly without bitset
-    Addr baseIndex = (pc >> floorLog2(blockSize)) & mask;
+    Addr baseIndex = (pc >> blockSizeShift) & mask;
     return xorAsidHashIntoIndex(baseIndex, tableIndexBits, asidHash);
 }
 
