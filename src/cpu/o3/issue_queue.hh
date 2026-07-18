@@ -266,7 +266,8 @@ class IssueQue : public SimObject
     void scheduleVectorReadyQEvent();
     void releaseVectorDelayedReadyQ();
     void issueToFu();
-    void wakeUpDependents(const DynInstPtr& inst, bool speculative);
+    void wakeUpDependents(const DynInstPtr& inst, bool speculative,
+                          bool cacheProducer = true);
     void selectInst();
     void scheduleInst();
     void addIfReady(const DynInstPtr& inst);
@@ -447,6 +448,12 @@ class Scheduler : public SimObject
 
     void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);
+
+    // Populate the integer regcache for a producer's destination registers.
+    // wakeUpDependents() performs the same idempotent inserts inline; this lets
+    // callers that fan a single producer out to every issue queue do the insert
+    // once instead of once per queue.
+    void cacheProducerRegs(const DynInstPtr& inst);
 
     uint32_t getOpLatency(const DynInstPtr& inst);
     uint32_t getCorrectedOpLat(const DynInstPtr& inst);

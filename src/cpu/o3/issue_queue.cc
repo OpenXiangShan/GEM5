@@ -884,7 +884,7 @@ IssueQue::markMemDepDone(const DynInstPtr& inst)
 }
 
 void
-IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
+IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative, bool cacheProducer)
 {
     if (speculative && inst->canceled()) [[unlikely]] {
         return;
@@ -894,7 +894,9 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) [[unlikely]] {
             continue;
         }
-        scheduler->regCache.insert(dst->flatIndex(), {});
+        if (cacheProducer) {
+            scheduler->regCache.insert(dst->flatIndex(), {});
+        }
         DPRINTF(Schedule, "was %s woken by p%lu [sn:%llu]\n", speculative ? "spec" : "wb", dst->flatIndex(),
                 inst->seqNum);
         auto& depgraph = subDepGraph[dst->flatIndex()];
@@ -2075,6 +2077,18 @@ Scheduler::loadCancel(const DynInstPtr& inst)
 }
 
 void
+Scheduler::cacheProducerRegs(const DynInstPtr& inst)
+{
+    for (int i = 0; i < inst->numDestRegs(); i++) {
+        PhysRegIdPtr dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) [[unlikely]] {
+            continue;
+        }
+        regCache.insert(dst->flatIndex(), {});
+    }
+}
+
+void
 Scheduler::writebackWakeup(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn:%llu] was writeback\n", inst->seqNum);
@@ -2087,8 +2101,13 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
         }
         scoreboard[dst->flatIndex()] = true;
     }
+    // Insert this producer's destinations into the regcache once. Each
+    // wakeUpDependents() below would otherwise repeat the same idempotent
+    // insert for every issue queue; the regcache is shared scheduler state and
+    // no wakeUpDependents() reads it, so the final state is bit-identical.
+    cacheProducerRegs(inst);
     for (auto it : issueQues) {
-        it->wakeUpDependents(inst, false);
+        it->wakeUpDependents(inst, false, /*cacheProducer=*/false);
     }
 }
 
