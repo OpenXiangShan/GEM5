@@ -90,6 +90,7 @@ ittageStats(this, p.numPredictors)
     //     useAlt[i].resize(1, 0);
     // }
     usefulResetCnt = 0;
+    blockSizeShift = floorLog2(blockSize);
 }
 
 ThreadID
@@ -567,7 +568,7 @@ BTBITTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
     uint64_t mask = ((1ULL << tableTagBits[t]) - 1);
 
     // Extract lower bits of PC
-    uint64_t pcBits = (pc >> floorLog2(blockSize));
+    uint64_t pcBits = (pc >> blockSizeShift);
 
     // Prepare alt tag: shift left by 1 and mask
     uint64_t altTagBits = (altFoldedHist << 1);
@@ -593,7 +594,7 @@ BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
     uint64_t mask = ((1ULL << localIndexBits) - 1);
 
     // Extract lower bits of PC and XOR with folded history
-    uint64_t pcBits = (pc >> floorLog2(blockSize));
+    uint64_t pcBits = (pc >> blockSizeShift);
     Addr localIndex = xorAsidHashIntoIndex(
         (pcBits ^ foldedHist) & mask, localIndexBits, asidHash);
     return partitionIndex(localIndex, tableSizes[t], tid);

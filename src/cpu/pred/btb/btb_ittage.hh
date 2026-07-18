@@ -178,6 +178,10 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     unsigned maxHistLen;
 
+    // floorLog2(blockSize), cached once because blockSize is fixed after
+    // construction and this shift is used on every index/tag computation.
+    unsigned blockSizeShift;
+
     std::vector<std::vector<TageEntry>> tageTable;
 
     std::vector<TageEntry> lookupEntries;
