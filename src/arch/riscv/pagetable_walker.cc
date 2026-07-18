@@ -84,11 +84,14 @@
 #ifndef MPT_FORCE_ALLOW_PERMS
 #define MPT_FORCE_ALLOW_PERMS 0
 #endif
+
 namespace gem5
 {
 
 namespace RiscvISA {
 #if MPT_ENABLED
+
+static constexpr Cycles MPT_CACHE_HIT_LATENCY = Cycles(3);
 
 static constexpr uint8_t MPT_ALLOW_ALL_PERMS =
     MPT_PERM_R | MPT_PERM_W | MPT_PERM_X;
@@ -1671,6 +1674,11 @@ Walker::getPort(const std::string &if_name, PortID idx)
 
 Walker::WalkerState::~WalkerState()
 {
+    if (mptCacheHitEvent != nullptr) {
+        if (mptCacheHitEvent->scheduled())
+            walker->deschedule(*mptCacheHitEvent);
+        delete mptCacheHitEvent;
+    }
 }
 
 void
@@ -3803,6 +3811,8 @@ Walker::WalkerState::startPteReadMPTCheck()
             pteReadPaddr);
 
     if (!startMPTwalk()) {
+        if (mptCacheHitPending)
+            return NoFault;
         walker->releasePtwLevel(this);
         walker->retryPtwLevelBlockedStates();
         walker->retryPtwMissQueue();
@@ -3859,6 +3869,8 @@ bool Walker::WalkerState::startMPTwalk(){
         paForMPTCheck, requestors.front().tc, walker->pma, walker->pmp,
         mpt_level, this);
     if (hit){
+        const bool retryingCacheHit = mptCacheHitRetry;
+        mptCacheHitRetry = false;
         DPRINTF(PageTableWalker, "MPT cace hit\n");
         int mptlevel = cacheEntry.level;
         if (!cacheEntry.valid) {
@@ -3886,6 +3898,12 @@ bool Walker::WalkerState::startMPTwalk(){
             MPTresult = mptPermAllows(perm, mptCheckMode);
             mptInfo.write_mpt_raw(perm, mptlevel);
         }
+
+        if (!retryingCacheHit && timing &&
+            MPT_CACHE_HIT_LATENCY != Cycles(0)) {
+            scheduleMptCacheHit();
+            return false;
+        }
         return true;
     }else{
         DPRINTF(PageTableWalker, "MPT cache all miss for inter mpt check(read only),setup mptwalk\n");
@@ -3894,6 +3912,31 @@ bool Walker::WalkerState::startMPTwalk(){
         //globalMPT.walk(mpt_level,globalMPT.mmpt.ppn,PaddrUT,requestors.front().tc, walker->pma, walker->pmp,this);
         return false;
     }
+}
+
+void
+Walker::WalkerState::scheduleMptCacheHit()
+{
+    if (mptCacheHitPending)
+        return;
+
+    if (mptCacheHitEvent == nullptr) {
+        mptCacheHitEvent = new EventFunctionWrapper(
+            [this] {
+                mptCacheHitPending = false;
+                if (read != nullptr && read->isResponse())
+                    mptCacheHitRetry = true;
+                // Use the same completion path as an asynchronous MPT
+                // memory response.  In particular, a final-leaf response
+                // may complete the walk and remove this state from
+                // Walker::currStates.
+                globalMPT.completeMptWaiter(this);
+            }, name() + ".mpt_cache_hit");
+    }
+
+    mptCacheHitPending = true;
+    walker->schedule(*mptCacheHitEvent,
+                     curTick() + walker->cyclesToTicks(MPT_CACHE_HIT_LATENCY));
 }
 
 bool Walker::WalkerState::LastMPTwalk(){

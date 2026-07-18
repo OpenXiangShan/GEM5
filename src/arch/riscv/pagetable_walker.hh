@@ -57,6 +57,7 @@
 #include "mem/request.hh"
 #include "params/RiscvPagetableWalker.hh"
 #include "sim/clocked_object.hh"
+#include "sim/eventq.hh"
 #include "sim/faults.hh"
 #include "sim/system.hh"
 
@@ -236,6 +237,9 @@ class MPTCache52;
             int mpt_level=4;
             MPTInfoInTLB mptInfo = MPTInfoInTLB();
             bool mptGranularityClipped=false;
+            EventFunctionWrapper *mptCacheHitEvent = nullptr;
+            bool mptCacheHitPending = false;
+            bool mptCacheHitRetry = false;
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
                         const RequestPtr &_req, bool _isFunctional = false) :
@@ -288,6 +292,7 @@ class MPTCache52;
             bool startMPTwalk();
             bool LastMPTwalk();
             bool completeMPTWalk();
+            void scheduleMptCacheHit();
             bool stepMPTwalk();
             bool stepMPTwalkFromMPTE(uint64_t raw, Addr mptePaddr);
             Fault startPteReadMPTCheck();
