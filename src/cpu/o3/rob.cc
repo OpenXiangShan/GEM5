@@ -46,6 +46,7 @@
 #include "base/logging.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/commit.hh"
 #include "debug/Fetch.hh"
 #include "debug/ROB.hh"
 #include "params/BaseO3CPU.hh"
@@ -381,7 +382,7 @@ ROB::setBorrowingDonor(ThreadID tid, bool donor, Commit* commit)
 }
 
 void 
-ROB::addBorrowStateHoldCycle() {
+ROB::addBorrowingStateHoldCycle() {
     for (int i = 0; i < numThreads; ++i) {
         borrowingStateHoldCycle[i]++;
     }

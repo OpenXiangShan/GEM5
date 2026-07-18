@@ -214,8 +214,10 @@ class ROB
     }
 
     /** Returns whether the thread may borrow unused ROB capacity. */
-    void setBorrowingDonor(ThreadID tid, bool donor)
-    { borrowingDonor[tid] = donor; }
+    void setBorrowingDonor(ThreadID tid, bool donor, Commit* commit);
+
+    /** add cycle count for borrowing state holding cycle stats */
+    void addBorrowingStateHoldCycle();
 
     /** Returns whether the thread can reserve the requested ROB entries. */
     bool canAllocate(ThreadID tid, unsigned entries) const;

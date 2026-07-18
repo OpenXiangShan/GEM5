@@ -654,7 +654,7 @@ class Commit
         statistics::Distribution smtRestEntryWhileROBFull;
         statistics::Vector ROBBorrowingStateChange;
         statistics::VectorDistribution smtStateHoldCycle;
-        statistics::VectorDistribution smtROBEntriesWhlieStateChange;
+        statistics::VectorDistribution smtROBEntriesWhileStateChange;
     } stats;
 
     bool ismispred[MaxThreads] = {false};

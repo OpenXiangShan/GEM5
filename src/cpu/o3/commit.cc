@@ -325,7 +325,7 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "changing times of borrowing state"),
       ADD_STAT(smtStateHoldCycle, statistics::units::Count::get(),
                "SMT base/donor state holding cycle distribution"),
-      ADD_STAT(smtROBEntriesWhlieStateChange, statistics::units::Count::get(),
+      ADD_STAT(smtROBEntriesWhileStateChange, statistics::units::Count::get(),
                "SMT ROB thread used/rest entries distribution while state change")
 {
     using namespace statistics;
@@ -462,14 +462,14 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     smtStateHoldCycle.subname(0, "Base");
     smtStateHoldCycle.subname(1, "Donor");
 
-    smtROBEntriesWhlieStateChange
+    smtROBEntriesWhileStateChange
         .init(4, 0, 160, 8)
         .flags(statistics::pdf);
 
-    smtROBEntriesWhlieStateChange.subname(0, "BaseToDonor_used");
-    smtROBEntriesWhlieStateChange.subname(1, "BaseToDonor_rest");
-    smtROBEntriesWhlieStateChange.subname(2, "DonorToBase_used");
-    smtROBEntriesWhlieStateChange.subname(3, "DonorToBase_rest");
+    smtROBEntriesWhileStateChange.subname(0, "BaseToDonor_used");
+    smtROBEntriesWhileStateChange.subname(1, "BaseToDonor_rest");
+    smtROBEntriesWhileStateChange.subname(2, "DonorToBase_used");
+    smtROBEntriesWhileStateChange.subname(3, "DonorToBase_rest");
 }
 
 void
@@ -2459,9 +2459,9 @@ Commit::recordROBBorrowingStateChangeStats(
     unsigned rob_entries_free)
 {
     stats.smtStateHoldCycle[old_donor].sample(state_hold_cycle);
-    stats.smtROBEntriesWhlieStateChange[(int)(old_donor) * 2]
+    stats.smtROBEntriesWhileStateChange[(int)(old_donor) * 2]
         .sample(rob_entries_used);
-    stats.smtROBEntriesWhlieStateChange[(int)(old_donor) * 2 + 1]
+    stats.smtROBEntriesWhileStateChange[(int)(old_donor) * 2 + 1]
         .sample(rob_entries_free);
     stats.ROBBorrowingStateChange[tid]++;
 }
