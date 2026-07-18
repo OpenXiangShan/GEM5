@@ -1053,8 +1053,24 @@ class VectorBase : public DataWrapVec<Derived, VectorInfoProxy>
     Proxy
     operator[](off_type index)
     {
-        panic_if(!(index < size()), this->name());
+        if (GEM5_UNLIKELY(!(index < size())))
+            indexError(index);
         return Proxy(this->self(), index);
+    }
+
+  private:
+    /**
+     * Report an out-of-bounds index access and abort. Kept out-of-line and
+     * never inlined so that operator[] stays small enough to be inlined into
+     * hot stat-increment sites (the panic machinery would otherwise force a
+     * stack buffer, a stack-protector canary, and a full stack frame onto the
+     * fast path on every access).
+     */
+    GEM5_NO_INLINE [[noreturn]] void
+    indexError(off_type index) const
+    {
+        panic("Stat %s: index %d out of bounds (size %d)",
+              this->name(), index, size());
     }
 };
 
