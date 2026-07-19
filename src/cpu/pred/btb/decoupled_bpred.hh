@@ -177,7 +177,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void processSecondBlock(ThreadID tid);
     void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
     bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
-    bool pairtageFirstBlockMatchesForSecondBlock(ThreadID tid) const;
+    bool pairtageFirstBlockNotOverriden(ThreadID tid) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);

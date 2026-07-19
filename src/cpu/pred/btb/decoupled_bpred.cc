@@ -212,87 +212,6 @@ buildTwoTakenTrainPacket(Addr startPC, PairPhase phase,
     return packet;
 }
 
-PairTAGE::PairBlockInfo
-buildFirstTrainingPairBlockFromPrediction(const FullBTBPrediction &pred,
-                                          Addr predictWidth)
-{
-    auto predCopy = pred;
-    const BTBEntry *trainEntry = nullptr;
-
-    if (predCopy.isTaken()) {
-        auto takenEntry = predCopy.getTakenEntry();
-        if (takenEntry.valid) {
-            for (const auto &btbEntry : predCopy.btbEntries) {
-                if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
-                    trainEntry = &btbEntry;
-                    break;
-                }
-            }
-        }
-        if (trainEntry && trainEntry->valid) {
-            return PairTAGE::PairBlockInfo(
-                true, trainEntry->pc, predCopy.getEntryTarget(*trainEntry),
-                trainEntry->isCond, trainEntry->isDirect,
-                trainEntry->isIndirect, trainEntry->isCall,
-                trainEntry->isReturn, trainEntry->size);
-        }
-    } else {
-        for (auto it = predCopy.btbEntries.rbegin();
-             it != predCopy.btbEntries.rend(); ++it) {
-            if (it->valid && it->isCond && it->isDirect &&
-                !it->isIndirect && !it->isCall && !it->isReturn) {
-                trainEntry = &*it;
-                break;
-            }
-        }
-    }
-
-    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
-        !trainEntry->isDirect || trainEntry->isIndirect ||
-        trainEntry->isCall || trainEntry->isReturn) {
-        if (!predCopy.isTaken() && predCopy.btbEntries.empty()) {
-            return PairTAGE::PairBlockInfo(
-                false, predCopy.bbStart, predCopy.getFallThrough(predictWidth),
-                true);
-        }
-        if (!predCopy.isTaken() && predCopy.btbEntries.size() == 1) {
-            const auto &marker = predCopy.btbEntries.front();
-            if (!marker.valid && marker.pc == predCopy.bbStart) {
-                return PairTAGE::PairBlockInfo(
-                    false, marker.pc, marker.target, true);
-            }
-        }
-        return PairTAGE::PairBlockInfo{};
-    }
-
-    return PairTAGE::PairBlockInfo(
-        predCopy.isTaken(), trainEntry->pc, trainEntry->target);
-}
-
-bool
-pairBlocksMatch(const PairTAGE::PairBlockInfo &lhs,
-                const PairTAGE::PairBlockInfo &rhs)
-{
-    if (lhs.valid != rhs.valid) {
-        return false;
-    }
-
-    if (!lhs.valid) {
-        return true;
-    }
-
-    return lhs.taken == rhs.taken &&
-           lhs.fallThrough == rhs.fallThrough &&
-           lhs.branchPC == rhs.branchPC &&
-           lhs.targetPC == rhs.targetPC &&
-           lhs.isCond == rhs.isCond &&
-           lhs.isDirect == rhs.isDirect &&
-           lhs.isIndirect == rhs.isIndirect &&
-           lhs.isCall == rhs.isCall &&
-           lhs.isReturn == rhs.isReturn &&
-           lhs.size == rhs.size;
-}
-
 PairPhase
 flippedPairPhase(PairPhase phase)
 {
@@ -909,7 +828,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
-    if (!pairtageFirstBlockMatchesForSecondBlock(tid)) {
+    if (!pairtageFirstBlockNotOverriden(tid)) {
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block for thread %u because first block was overridden by final prediction\n",
                 tid);
@@ -1054,7 +973,7 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
         return;
     }
 
-    if (!pairtageFirstBlockMatchesForSecondBlock(tid)) {
+    if (!pairtageFirstBlockNotOverriden(tid)) {
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second-block training prediction for thread %u because first block was overridden\n",
                 tid);
@@ -1102,7 +1021,7 @@ DecoupledBPUWithBTB::currentFirstBlockHasAllowedPairPhase(ThreadID tid) const
 }
 
 bool
-DecoupledBPUWithBTB::pairtageFirstBlockMatchesForSecondBlock(ThreadID tid) const
+DecoupledBPUWithBTB::pairtageFirstBlockNotOverriden(ThreadID tid) const
 {
     if (!pairtage || !pairtage->isEnabled()) {
         return false;
@@ -1112,20 +1031,17 @@ DecoupledBPUWithBTB::pairtageFirstBlockMatchesForSecondBlock(ThreadID tid) const
         return false;
     }
 
-    auto &thread = threads[tid];
-    auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
-        pairtage->getPredictionMeta());
-    if (!pairMeta || !pairMeta->predictedFirstBlock.valid) {
+    const auto &packet = threads[tid].finalTrainPacket;
+    if (!packet.meta ||
+        packet.kind == PairTAGE::TrainPacket::BlockKind::Invalid ||
+        !packet.meta->predictedFirstBlock.valid) {
         return false;
     }
 
-    auto actualFirstBlock = buildFirstTrainingPairBlockFromPrediction(
-        thread.finalPred, predictWidth);
-    if (!actualFirstBlock.valid) {
-        return false;
-    }
-
-    return pairBlocksMatch(actualFirstBlock, pairMeta->predictedFirstBlock);
+    const auto &pairFirstBlock = packet.meta->predictedFirstBlock;
+    return pairFirstBlock.branchPC == packet.branchPC &&
+           pairFirstBlock.taken == packet.taken &&
+           pairFirstBlock.targetPC == packet.targetPC;
 }
 
 /**
