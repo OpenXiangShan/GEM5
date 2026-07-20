@@ -173,9 +173,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     ThreadID scheduleThread();
 
     void processNewPrediction(ThreadID tid);
-    void prepareSecondBlockTrainingPrediction(ThreadID tid);
-    void processSecondBlock(ThreadID tid);
-    void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
+    void prepareTwoTakenTraining(ThreadID tid);
+    void processTwoTakenBlock(ThreadID tid);
+    void refreshTwoTakenPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
     bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
     bool pairtageFirstBlockNotOverriden(ThreadID tid) const;
 

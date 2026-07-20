@@ -507,8 +507,8 @@ DecoupledBPUWithBTB::tick()
     for (int tid = 0; tid < numThreads; tid++) {
         auto &thread = threads[tid];
 
-        prepareSecondBlockTrainingPrediction(tid);
-        processSecondBlock(tid);
+        prepareTwoTakenTraining(tid);
+        processTwoTakenBlock(tid);
 
         if (thread.firstBlockProcessedThisTick && pairtage &&
             pairtage->isEnabled()) {
@@ -770,7 +770,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 }
 
 void
-DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
+DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
 {
     auto &thread = threads[tid];
 
@@ -879,7 +879,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
                   [](const BTBEntry &lhs, const BTBEntry &rhs) { return lhs.pc < rhs.pc; });
     }
 
-    refreshSecondBlockPredictionMetas(tid, secondPred);
+    refreshTwoTakenPredictionMetas(tid, secondPred);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
 
     thread.s0PC = secondPred.getTarget(predictWidth);
@@ -898,7 +898,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 }
 
 void
-DecoupledBPUWithBTB::refreshSecondBlockPredictionMetas(
+DecoupledBPUWithBTB::refreshTwoTakenPredictionMetas(
     ThreadID tid, FullBTBPrediction &pred)
 {
     auto &thread = threads[tid];
@@ -914,7 +914,7 @@ DecoupledBPUWithBTB::refreshSecondBlockPredictionMetas(
 }
 
 void
-DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
+DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
 {
     auto &thread = threads[tid];
     thread.twoTakenTrainReady = false;
