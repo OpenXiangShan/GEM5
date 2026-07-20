@@ -926,6 +926,24 @@ def xiangshan_system_init():
         help="PTW MissQueue size",
     )
     parser.add_argument(
+        "--smtROBDonorEntry",
+        type=int,
+        default=8,
+        help="Minimum ROB entries reserved for a borrowing donor to resume",
+    )
+    parser.add_argument(
+        "--smtROBBaseEntry",
+        type=int,
+        default=80,
+        help="Minimum ROB entries reserved for a borrowing base to resume",
+    )
+    parser.add_argument(
+        "--ROBTotalEntry",
+        type=int,
+        default=160,
+        help="Number of reorder buffer entries",
+    )
+    parser.add_argument(
         "--standalone-sc",
         action="store_true",
         default=False,
