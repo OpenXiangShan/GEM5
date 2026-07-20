@@ -132,6 +132,57 @@ PairTAGE::getPredictionMeta(ThreadID tid)
     return meta;
 }
 
+PairTAGE::TrainPacket
+PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) const
+{
+    using BranchFlag = TrainPacket::BranchFlag;
+
+    TrainPacket packet;
+    packet.startPC = finalPred.bbStart;
+    packet.phase = predictionPhase;
+    packet.meta = meta;
+
+    auto trainEntry = finalPred.getTakenEntry();
+    const bool taken = trainEntry.valid;
+    bool hasValidEntry = taken;
+    if (!taken) {
+        for (auto it = finalPred.btbEntries.rbegin(); it != finalPred.btbEntries.rend(); ++it) {
+            if (!it->valid) {
+                continue;
+            }
+            hasValidEntry = true;
+            if (it->isCond && it->isDirect && !it->isIndirect && !it->isCall && !it->isReturn) {
+                trainEntry = *it;
+                break;
+            }
+        }
+    }
+
+    if (!trainEntry.valid) {
+        if (!hasValidEntry) {
+            packet.valid = true;
+            packet.branchPC = finalPred.bbStart;
+            packet.targetPC = getFallThrough(finalPred.bbStart);
+        }
+        return packet;
+    }
+
+    packet.valid = true;
+    packet.hasBranch = true;
+    packet.taken = taken;
+    packet.branchPC = trainEntry.pc;
+    packet.targetPC = taken ? finalPred.getEntryTarget(trainEntry) : trainEntry.target;
+    if (taken) {
+        packet.size = trainEntry.size;
+        packet.setBranchFlags(trainEntry);
+    } else {
+        packet.branchFlags =
+            TrainPacket::branchFlag(BranchFlag::Conditional) | TrainPacket::branchFlag(BranchFlag::Direct);
+        packet.size = 4;
+    }
+    return packet;
+}
+
 void
 PairTAGE::refreshPredictionMeta(Addr startAddr,
                                 const bitset &history,

@@ -41,82 +41,6 @@ namespace
 {
 
 PairTAGE::TrainPacket
-buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
-{
-    using BranchFlag = PairTAGE::TrainPacket::BranchFlag;
-
-    PairTAGE::TrainPacket packet;
-    packet.startPC = entry.startPC;
-    packet.phase = entry.pairPhase;
-    packet.meta = std::static_pointer_cast<PairTAGE::TageMeta>(
-        entry.predMetas[pairComponentIdx]);
-
-    const BTBEntry *trainEntry = nullptr;
-    const BTBEntry *fallbackEntry = nullptr;
-    if (entry.predTaken) {
-        for (const auto &btbEntry : entry.predBTBEntries) {
-            if (btbEntry.valid && btbEntry.pc == entry.predBranchInfo.pc) {
-                trainEntry = &btbEntry;
-                break;
-            }
-        }
-        if (!trainEntry) {
-            return packet;
-        }
-    } else {
-        for (auto it = entry.predBTBEntries.rbegin();
-             it != entry.predBTBEntries.rend(); ++it) {
-            if (!it->valid) {
-                continue;
-            }
-            if (!fallbackEntry) {
-                fallbackEntry = &*it;
-            }
-            if (it->isCond && it->isDirect &&
-                !it->isIndirect && !it->isCall && !it->isReturn) {
-                trainEntry = &*it;
-                break;
-            }
-        }
-        if (!trainEntry) {
-            if (fallbackEntry) {
-                return packet;
-            }
-            packet.valid = true;
-            packet.branchPC = entry.startPC;
-            packet.targetPC = entry.predEndPC;
-            return packet;
-        }
-    }
-
-    if (!entry.predTaken &&
-        (!trainEntry->valid || !trainEntry->isCond ||
-         !trainEntry->isDirect || trainEntry->isIndirect ||
-         trainEntry->isCall || trainEntry->isReturn)) {
-        return packet;
-    }
-
-    packet.valid = true;
-    packet.hasBranch = true;
-    packet.taken = entry.predTaken;
-    if (entry.predTaken) {
-        const auto &branch = entry.predBranchInfo;
-        packet.branchPC = branch.pc;
-        packet.targetPC = branch.target;
-        packet.size = branch.size;
-        packet.setBranchFlags(branch);
-    } else {
-        packet.branchPC = trainEntry->pc;
-        packet.targetPC = trainEntry->target;
-        packet.branchFlags =
-            PairTAGE::TrainPacket::branchFlag(BranchFlag::Conditional) |
-            PairTAGE::TrainPacket::branchFlag(BranchFlag::Direct);
-        packet.size = 4;
-    }
-    return packet;
-}
-
-PairTAGE::TrainPacket
 buildTwoTakenTrainPacket(Addr startPC, PairPhase phase,
                          const std::vector<BTBEntry> &btbEntries,
                          const CondTakens &condTakens)
@@ -734,6 +658,10 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 1. Create a new fetch target entry with prediction information
     FetchTarget entry = createFetchTargetEntry(tid);
 
+    if (pairtage && pairtage->isEnabled()) {
+        threads[tid].finalTrainPacket = pairtage->buildTrainPacketFromPredForFirstBlock(threads[tid].finalPred);
+    }
+
     // 2. Update global PC state to target or fall-through
     s0PC = threads[tid].finalPred.getTarget(predictWidth);;
 
@@ -763,10 +691,6 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     printTarget(entry);
     dbpBtbStats.fsqEntryEnqueued++;
 
-    if (pairtage && pairtage->isEnabled()) {
-        threads[tid].finalTrainPacket =
-            buildFinalTrainPacket(entry, pairtage->getComponentIdx());
-    }
 }
 
 void
