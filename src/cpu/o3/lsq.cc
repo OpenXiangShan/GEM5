@@ -466,7 +466,6 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _enableReplayBasedMDP(params.EnableReplayBasedMDP),
-      _enableDistanceMDP(params.EnableDistanceMDP),
       _enableDistanceMDPStrict(params.EnableDistanceMDPStrict),
       _storeWbStage(params.StoreWbStage),
       waitingForStaleTranslation(false),
@@ -487,8 +486,10 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     if (!_enableLdMissReplay && _enablePipeNukeCheck) {
         panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
     }
-    panic_if(_enableDistanceMDP && !_enableReplayBasedMDP,
-             "EnableDistanceMDP requires EnableReplayBasedMDP\n");
+    panic_if((params.EnableDistanceMDP || params.MDPSwitchInstCount != 0) &&
+                 !_enableReplayBasedMDP,
+             "DistanceMDP, including dynamic switching to it, requires "
+             "EnableReplayBasedMDP\n");
     assert(_storeWbStage >= 2 && _storeWbStage <= 4);
     panic_if(dcacheSetDivNum == 0, "DcacheSetDivNum must be >= 1\n");
     panic_if(!isPowerOf2(dcacheSetDivNum),

@@ -34,11 +34,11 @@
 
 #include "base/compiler.hh"
 #include "base/debug.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
-#include "debug/MDPFeedback.hh"
 #include "debug/MemDepUnit.hh"
 #include "params/BaseO3CPU.hh"
 
@@ -47,25 +47,6 @@ namespace gem5
 
 namespace o3
 {
-
-namespace
-{
-
-const char *
-mdpFeedbackSourceName(MDPFeedbackSource source)
-{
-    switch (source) {
-      case MDPFeedbackSource::NoForward:
-        return "none";
-      case MDPFeedbackSource::StoreQueue:
-        return "sq";
-      case MDPFeedbackSource::StoreBuffer:
-        return "sbuffer";
-    }
-    return "unknown";
-}
-
-} // anonymous namespace
 
 #ifdef DEBUG
 int MemDepUnit::MemDepEntry::memdep_count = 0;
@@ -77,12 +58,10 @@ MemDepUnit::MemDepUnit() : iqPtr(NULL), stats(nullptr) {}
 
 MemDepUnit::MemDepUnit(const BaseO3CPUParams &params)
     : _name(params.name + ".memdepunit"),
-      depPred(params.store_set_clear_period, params.SSITSize,
+      depPred(params.store_set_clear_period,
+              params.store_set_strict_clear_period, params.SSITSize,
               params.LFSTSize, params.store_set_clear_thres,
-              params.LFSTEntrySize, params.EnableMDPFeedbackCounter,
-              params.EnableMDPSBufferForwardFeedback,
-              params.MDPInitialCounter,
-              params.SSITTagBits),
+              params.LFSTEntrySize),
       iqPtr(NULL),
       stats(nullptr)
 {
@@ -121,16 +100,15 @@ MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
     _name = csprintf("%s.memDep%d", params.name, tid);
     id = tid;
 
-    depPred.init(params.store_set_clear_period, params.store_set_clear_thres,
-            params.SSITSize, params.LFSTSize, params.LFSTEntrySize,
-            params.EnableMDPFeedbackCounter,
-            params.EnableMDPSBufferForwardFeedback,
-            params.MDPInitialCounter,
-            params.SSITTagBits);
+    depPred.init(params.store_set_clear_period,
+            params.store_set_strict_clear_period,
+            params.store_set_clear_thres, params.SSITSize, params.LFSTSize,
+            params.LFSTEntrySize);
 
     enableReplayBasedMDP = params.EnableReplayBasedMDP;
     enableMDPStrictWait = params.EnableMDPStrictWait;
-    enableDistanceMDP = params.EnableDistanceMDP;
+    mayUseStoreSet = !params.EnableDistanceMDP ||
+                     params.MDPSwitchInstCount != 0;
 
     std::string stats_group_name = csprintf("MemDepUnit__%i", tid);
     cpu->addStatGroup(stats_group_name.c_str(), &stats);
@@ -149,20 +127,11 @@ MemDepUnit::MemDepUnitStats::MemDepUnitStats(statistics::Group *parent)
                "Number of conflicting stores."),
       ADD_STAT(dependentLoads, statistics::units::Count::get(),
                "Number of  predicted conflicting loads."),
-      ADD_STAT(mdpFeedbackSqForwardInc, statistics::units::Count::get(),
-               "Number of MDP feedback increments from SQ forwarding."),
-      ADD_STAT(mdpFeedbackSBufferForwardInc, statistics::units::Count::get(),
-               "Number of MDP feedback increments from SBuffer forwarding."),
-      ADD_STAT(mdpFeedbackSBufferForwardDec, statistics::units::Count::get(),
-               "Number of MDP feedback decrements from SBuffer forwarding."),
-      ADD_STAT(mdpFeedbackNoForwardDec, statistics::units::Count::get(),
-               "Number of MDP feedback decrements from non-forwarded loads."),
-      ADD_STAT(mdpFeedbackSkipNotPredicted, statistics::units::Count::get(),
-               "Number of MDP feedback events skipped because load was not predicted dependent."),
-      ADD_STAT(mdpFeedbackSkipDuplicate, statistics::units::Count::get(),
-               "Number of duplicate MDP feedback events skipped."),
-      ADD_STAT(mdpCounterClearOnZero, statistics::units::Count::get(),
-               "Number of SSIT entries invalidated when MDP counter reached zero.")
+      ADD_STAT(storeSetStrictTimeouts, statistics::units::Count::get(),
+               "Number of global StoreSet strict-window expirations."),
+      ADD_STAT(storeSetStrictEntriesCleared,
+               statistics::units::Count::get(),
+               "Number of SSIT strict entries cleared by expiration.")
 {
 }
 
@@ -195,8 +164,33 @@ MemDepUnit::takeOverFrom()
     // Be sure to reset all state.
     loadBarrierSNs.clear();
     storeBarrierSNs.clear();
-    if (!enableDistanceMDP) {
+    if (mayUseStoreSet) {
         depPred.clear();
+    }
+}
+
+void
+MemDepUnit::selectMdpPredictor(const DynInstPtr &inst)
+{
+    if (inst->mdpPredictorSelected) {
+        return;
+    }
+
+    inst->mdpPredictorSelected = true;
+    inst->distanceMdpSelected = cpu->useDistanceMDP();
+    DPRINTF(MemDepUnit,
+            "Selected %s for instruction PC %s [sn:%lli].\n",
+            inst->distanceMdpSelected ? "DistanceMDP" : "StoreSet",
+            inst->pcState(), inst->seqNum);
+}
+
+void
+MemDepUnit::updateStoreSetStrictCounter(Cycles cur_cycle)
+{
+    const unsigned cleared = depPred.updateStrictCounter(cur_cycle);
+    if (cleared != 0) {
+        ++stats.storeSetStrictTimeouts;
+        stats.storeSetStrictEntriesCleared += cleared;
     }
 }
 
@@ -242,6 +236,10 @@ void
 MemDepUnit::insert(const DynInstPtr &inst)
 {
     ThreadID tid = inst->threadNumber;
+    selectMdpPredictor(inst);
+    if (!inst->distanceMdpSelected) {
+        updateStoreSetStrictCounter(cpu->curCycle());
+    }
 
     MemDepEntryPtr inst_entry = std::make_shared<MemDepEntry>(inst);
 
@@ -261,7 +259,6 @@ MemDepUnit::insert(const DynInstPtr &inst)
     std::vector<InstSeqNum>  producing_stores;
     bool store_set_pred = false;
     bool strict_wait = false;
-    StoreSet::PredictionInfo pred_info;
     if ((inst->isLoad() || inst->isAtomic()) && hasLoadBarrier()) {
         DPRINTF(MemDepUnit, "%d load barriers in flight\n",
                 loadBarrierSNs.size());
@@ -275,23 +272,19 @@ MemDepUnit::insert(const DynInstPtr &inst)
                                 std::begin(storeBarrierSNs),
                                 std::end(storeBarrierSNs));
     } else {
-        if (inst->isLoad() && !enableDistanceMDP) {
+        if (inst->isLoad() && !inst->distanceMdpSelected) {
             store_set_pred = true;
-            producing_stores = depPred.checkInst(inst->pcState().instAddr(),
-                                                 &pred_info);
+            producing_stores = depPred.checkInst(inst->pcState().instAddr());
             if (enableMDPStrictWait) {
                 strict_wait = depPred.checkInstStrict(
-                    inst->pcState().instAddr(), &pred_info);
+                    inst->pcState().instAddr());
             }
         }
     }
 
-    if (inst->isLoad() && !enableDistanceMDP) {
+    if (inst->isLoad() && !inst->distanceMdpSelected) {
         inst->mdpPredictedDependent =
             store_set_pred && (strict_wait || !producing_stores.empty());
-        inst->mdpPredSSITIndex = store_set_pred ? pred_info.ssitIndex : -1;
-        inst->mdpPredTag = store_set_pred ? pred_info.tag : 0;
-        inst->mdpFeedbackUpdated = false;
         if (enableReplayBasedMDP && store_set_pred) {
             inst->mdpProducingStores = producing_stores;
             inst->mdpPredStrictWait = strict_wait;
@@ -299,15 +292,6 @@ MemDepUnit::insert(const DynInstPtr &inst)
             inst->mdpProducingStores.clear();
             inst->mdpPredStrictWait = false;
         }
-        DPRINTF(MDPFeedback,
-                "MDP memdep insert load_pc=%#x sn=%llu producers=%llu "
-                "strict=%d replay_based=%d predicted=%d pred_index=%d "
-                "pred_tag=%#x\n",
-                inst->pcState().instAddr(), inst->seqNum,
-                static_cast<unsigned long long>(producing_stores.size()),
-                strict_wait, enableReplayBasedMDP,
-                inst->mdpPredictedDependent, inst->mdpPredSSITIndex,
-                inst->mdpPredTag);
     }
 
     std::vector<MemDepEntryPtr> store_entries;
@@ -371,7 +355,7 @@ MemDepUnit::insert(const DynInstPtr &inst)
         DPRINTF(MemDepUnit, "Inserting store/atomic PC %s [sn:%lli].\n",
                 inst->pcState(), inst->seqNum);
 
-        if (!enableDistanceMDP) {
+        if (!inst->distanceMdpSelected) {
             depPred.insertStore(inst->pcState().instAddr(), inst->seqNum,
                     inst->threadNumber, cpu->curCycle());
         }
@@ -387,6 +371,10 @@ MemDepUnit::insert(const DynInstPtr &inst)
 void
 MemDepUnit::insertNonSpec(const DynInstPtr &inst)
 {
+    selectMdpPredictor(inst);
+    if (!inst->distanceMdpSelected) {
+        updateStoreSetStrictCounter(cpu->curCycle());
+    }
     insertBarrier(inst);
 
     // Might want to turn this part into an inline function or something.
@@ -395,7 +383,7 @@ MemDepUnit::insertNonSpec(const DynInstPtr &inst)
         DPRINTF(MemDepUnit, "Inserting store/atomic PC %s [sn:%lli].\n",
                 inst->pcState(), inst->seqNum);
 
-        if (!enableDistanceMDP) {
+        if (!inst->distanceMdpSelected) {
             depPred.insertStore(inst->pcState().instAddr(), inst->seqNum,
                     inst->threadNumber, cpu->curCycle());
         }
@@ -631,7 +619,7 @@ MemDepUnit::squash(const InstSeqNum &squashed_num, ThreadID tid)
     }
 
     // Tell the dependency predictor to squash as well.
-    if (!enableDistanceMDP) {
+    if (mayUseStoreSet) {
         depPred.squash(squashed_num, tid);
     }
 }
@@ -640,15 +628,18 @@ void
 MemDepUnit::violation(const DynInstPtr &store_inst,
         const DynInstPtr &violating_load)
 {
-    if (enableDistanceMDP) {
+    if (!violating_load->mdpPredictorSelected ||
+        violating_load->distanceMdpSelected) {
         return;
     }
     DPRINTF(MemDepUnit, "Passing violating PCs to store sets,"
             " load: %#x, store: %#x\n", violating_load->pcState().instAddr(),
             store_inst->pcState().instAddr());
     // Tell the memory dependence unit of the violation.
+    const Cycles cur_cycle = cpu->curCycle();
+    updateStoreSetStrictCounter(cur_cycle);
     depPred.violation(store_inst->pcState().instAddr(),
-            violating_load->pcState().instAddr());
+            violating_load->pcState().instAddr(), cur_cycle);
 }
 
 void
@@ -657,70 +648,9 @@ MemDepUnit::issue(const DynInstPtr &inst)
     DPRINTF(MemDepUnit, "Issuing instruction PC %#x [sn:%lli].\n",
             inst->pcState().instAddr(), inst->seqNum);
 
-    if (!enableDistanceMDP) {
+    if (inst->mdpPredictorSelected && !inst->distanceMdpSelected) {
         depPred.issued(inst->pcState().instAddr(), inst->seqNum,
                        inst->isStore());
-    }
-}
-
-void
-MemDepUnit::mdpFeedback(const DynInstPtr &load_inst,
-                        MDPFeedbackSource source)
-{
-    if (enableDistanceMDP) {
-        return;
-    }
-    if (!load_inst || !load_inst->isLoad()) {
-        return;
-    }
-
-    if (load_inst->mdpFeedbackUpdated) {
-        ++stats.mdpFeedbackSkipDuplicate;
-        DPRINTF(MDPFeedback,
-                "MDP feedback duplicate load_pc=%#x sn=%llu source=%s "
-                "predicted=%d pred_index=%d pred_tag=%#x\n",
-                load_inst->pcState().instAddr(), load_inst->seqNum,
-                mdpFeedbackSourceName(source),
-                load_inst->mdpPredictedDependent,
-                load_inst->mdpPredSSITIndex, load_inst->mdpPredTag);
-        return;
-    }
-
-    auto result = depPred.feedback(load_inst->pcState().instAddr(), source,
-                                   load_inst->mdpPredictedDependent);
-    load_inst->mdpFeedbackUpdated = true;
-
-    using Action = StoreSet::MDPFeedbackAction;
-    switch (result.action) {
-      case Action::Inc:
-      case Action::SatAtMax:
-        if (source == MDPFeedbackSource::StoreQueue) {
-            ++stats.mdpFeedbackSqForwardInc;
-        } else if (source == MDPFeedbackSource::StoreBuffer) {
-            ++stats.mdpFeedbackSBufferForwardInc;
-        }
-        break;
-      case Action::Dec:
-      case Action::SatAt0:
-        if (source == MDPFeedbackSource::StoreBuffer) {
-            ++stats.mdpFeedbackSBufferForwardDec;
-        } else {
-            ++stats.mdpFeedbackNoForwardDec;
-        }
-        break;
-      case Action::ClearCounterZero:
-        if (source == MDPFeedbackSource::StoreBuffer) {
-            ++stats.mdpFeedbackSBufferForwardDec;
-        } else {
-            ++stats.mdpFeedbackNoForwardDec;
-        }
-        ++stats.mdpCounterClearOnZero;
-        break;
-      case Action::SkipNotPredicted:
-        ++stats.mdpFeedbackSkipNotPredicted;
-        break;
-      default:
-        break;
     }
 }
 

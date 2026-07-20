@@ -302,8 +302,6 @@ class IEW
     void mdpAddrReplayPipeDone(const DynInstPtr &inst);
     void mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
                                               size_t store_completed_idx);
-    void mdpFeedback(const DynInstPtr &inst,
-                     MDPFeedbackSource source);
 
     uint32_t getIQInsts();
 
@@ -487,7 +485,6 @@ class IEW
     unsigned wbWidth;
 
     bool enableStoreSetTrain;
-    bool enableDistanceMDP;
 
     /** Number of active threads. */
     ThreadID numThreads;

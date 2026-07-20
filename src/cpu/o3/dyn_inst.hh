@@ -477,12 +477,9 @@ class DynInst : public ExecContext, public RefCounted
     /** Whether this dynamic load had an active StoreSet MDP dependency prediction. */
     bool mdpPredictedDependent = false;
 
-    /** Latched SSIT lookup identity for MDP feedback/debug. */
-    int mdpPredSSITIndex = -1;
-    uint16_t mdpPredTag = 0;
-
-    /** Prevent duplicate MDP feedback from load replays or repeated pipe visits. */
-    bool mdpFeedbackUpdated = false;
+    /** Memory-dependence predictor selected when this instruction entered IQ. */
+    bool mdpPredictorSelected = false;
+    bool distanceMdpSelected = false;
 
     /** Latches MDP address replay history across all load-pipe entries. */
     bool mdpAddrReplayed = false;

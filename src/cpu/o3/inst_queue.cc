@@ -1096,16 +1096,6 @@ InstructionQueue::mdpAddrReplayUpdateStoreCompletedIdx(
     }
 }
 
-void
-InstructionQueue::mdpFeedback(const DynInstPtr &load_inst,
-                              MDPFeedbackSource source)
-{
-    if (!load_inst) {
-        return;
-    }
-    memDepUnit[load_inst->threadNumber].mdpFeedback(load_inst, source);
-}
-
 DynInstPtr
 InstructionQueue::getBlockedMemInstToExecute()
 {

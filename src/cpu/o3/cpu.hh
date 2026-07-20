@@ -466,6 +466,16 @@ class CPU : public BaseCPU
      */
     bool removeInstsThisCycle;
 
+  private:
+    /** One-shot committed-instruction threshold for changing MDPs. */
+    const uint64_t mdpSwitchInstCount;
+    bool distanceMdpActive;
+    bool mdpSwitchDone;
+
+  public:
+    /** Predictor assigned to newly inserted memory instructions. */
+    bool useDistanceMDP() const { return distanceMdpActive; }
+
   protected:
     /** The fetch stage. */
     Fetch fetch;
@@ -672,6 +682,8 @@ class CPU : public BaseCPU
         /** Stat for the number of committed ops (including micro ops) per
          *  thread. */
         statistics::Vector committedOps;
+        /** Number of one-shot StoreSet/DistanceMDP selector changes. */
+        statistics::Scalar mdpPredictorSwitches;
         /** Stat for the CPI per thread. */
         statistics::Formula cpi;
         /** Stat for the total CPI. */

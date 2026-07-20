@@ -30,7 +30,6 @@
 #define __CPU_O3_STORE_SET_HH__
 
 #include <cmath>
-#include <cstdint>
 #include <list>
 #include <map>
 #include <utility>
@@ -38,7 +37,6 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/o3/mdp.hh"
 
 namespace gem5
 {
@@ -67,68 +65,31 @@ class StoreSet
   public:
     typedef unsigned SSID;
 
-    enum class MDPFeedbackAction
-    {
-        Inc,
-        Dec,
-        ClearCounterZero,
-        SkipNoEntry,
-        SkipTagMiss,
-        SkipNotPredicted,
-        SatAt0,
-        SatAtMax,
-    };
-
-    struct PredictionInfo
-    {
-        bool valid = false;
-        bool tagHit = false;
-        bool predictedDependent = false;
-        int ssitIndex = -1;
-        uint16_t tag = 0;
-        uint16_t storedTag = 0;
-        SSID ssid = 0;
-        uint8_t counter = 0;
-        size_t producers = 0;
-    };
-
-    struct FeedbackResult
-    {
-        MDPFeedbackAction action = MDPFeedbackAction::SkipNotPredicted;
-        bool valid = false;
-        bool tagHit = false;
-        int ssitIndex = -1;
-        uint16_t tag = 0;
-        uint8_t oldCounter = 0;
-        uint8_t newCounter = 0;
-    };
-
   public:
     /** Default constructor.  init() must be called prior to use. */
     StoreSet() { };
 
     /** Creates store set predictor with given table sizes. */
-    StoreSet(uint64_t clear_period, int SSIT_size, int LFST_size,
-             int _store_set_clear_thres, int _LFSTEntrySize,
-             bool enable_feedback_counter,
-             bool enable_sbuffer_forward_feedback,
-             unsigned initial_counter,
-             unsigned ssit_tag_bits);
+    StoreSet(uint64_t clear_period, uint64_t strict_clear_period,
+             int SSIT_size, int LFST_size, int _store_set_clear_thres,
+             int _LFSTEntrySize);
 
     /** Default destructor. */
     ~StoreSet();
 
     /** Initializes the store set predictor with the given table sizes. */
-    void init(uint64_t clear_period, int clear_period_thres,
-              int _SSIT_size, int _LFST_size, int _LFST_entry_size,
-              bool enable_feedback_counter,
-              bool enable_sbuffer_forward_feedback,
-              unsigned initial_counter,
-              unsigned ssit_tag_bits);
+    void init(uint64_t clear_period, uint64_t strict_clear_period,
+              int clear_period_thres, int _SSIT_size, int _LFST_size,
+              int _LFST_entry_size);
 
     /** Records a memory ordering violation between the younger load
      * and the older store. */
-    void violation(Addr store_PC, Addr load_PC);
+    void violation(Addr store_PC, Addr load_PC, Cycles cur_cycle);
+
+    /** Lazily advances the global strict timer and clears expired flags.
+     * @return Number of strict SSIT entries cleared by this update.
+     */
+    unsigned updateStrictCounter(Cycles cur_cycle);
 
     /** Clears the store set predictor every so often so that all the
      * entries aren't used and stores are constantly predicted as
@@ -149,8 +110,7 @@ class StoreSet
      * any store.  @return Returns the sequence number of the store
      * instruction this PC is dependent upon.  Returns 0 if none.
      */
-    std::vector<InstSeqNum> checkInst(Addr PC,
-                                      PredictionInfo *pred_info = nullptr);
+    std::vector<InstSeqNum> checkInst(Addr PC);
 
     /** Records this PC/sequence number as issued. */
     void issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store);
@@ -163,22 +123,12 @@ class StoreSet
 
     /** Debug function to dump the contents of the store list. */
     void dump();
-    bool checkInstStrict(Addr pc, PredictionInfo *pred_info = nullptr);
-    FeedbackResult feedback(Addr load_pc, MDPFeedbackSource source,
-                            bool predicted);
+    bool checkInstStrict(Addr pc);
   private:
-
-    static constexpr uint8_t MAX_COUNTER = 15;
 
     uint64_t lastClearPeriodCycle=0;
     Addr XORFold(Addr pc, uint64_t resetWidth);
     int findVictimInLFSTEntry(int store_SSID);
-    uint16_t calcTag(Addr pc) const;
-    bool ssitHit(Addr pc, int index) const;
-    uint8_t saturatingInc(uint8_t counter) const;
-    uint8_t saturatingDec(uint8_t counter) const;
-    void setSSITEntry(Addr pc, SSID ssid, uint8_t initial_counter);
-    void invalidateSSITEntry(int index);
 
     /** Calculates the index into the SSIT based on the PC. */
     // inline int calcIndex(Addr PC)
@@ -197,9 +147,6 @@ class StoreSet
 
     /** Bit vector to tell if the SSIT has a valid entry. */
     std::vector<bool> validSSIT,SSITStrict;
-
-    std::vector<uint16_t> SSITTag;
-    std::vector<uint8_t> SSITCounter;
 
     /** Last Fetched Store Table. */
     std::vector<std::vector<InstSeqNum>> LFSTLarge,LFSTLargePC;
@@ -229,6 +176,13 @@ class StoreSet
     int LFSTEntrySize;
     uint64_t clearPeriodThreshold;
 
+    /** Global cycle window shared by all strict SSIT entries. */
+    uint64_t strictClearPeriod = 0;
+    uint64_t strictCounter = 0;
+    uint64_t strictLastUpdateCycle = 0;
+    unsigned strictEntryCount = 0;
+    bool strictTimerActive = false;
+
     /** Mask to obtain the index. */
     int indexMask;
 
@@ -238,10 +192,6 @@ class StoreSet
     /** Number of memory operations predicted since last clear of predictor */
     int memOpsPred;
 
-    bool enableFeedbackCounter = true;
-    bool enableSBufferForwardFeedback = false;
-    unsigned initialCounter = 2;
-    unsigned ssitTagBits = 12;
 };
 
 } // namespace o3

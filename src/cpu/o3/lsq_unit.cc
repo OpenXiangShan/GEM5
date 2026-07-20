@@ -1047,11 +1047,12 @@ void
 LSQUnit::recordDistanceMDPRawTrainingCandidate(
     const DynInstPtr &store_inst, const DynInstPtr &violating_load)
 {
-    panic_if(!lsq->enableDistanceMDP(),
-             "DistanceMDP RAW candidate while predictor is disabled\n");
     panic_if(!store_inst || !store_inst->isStore() || !violating_load ||
              !violating_load->isLoad(),
              "DistanceMDP requires a store-load RAW candidate\n");
+    panic_if(!violating_load->mdpPredictorSelected ||
+                 !violating_load->distanceMdpSelected,
+             "DistanceMDP RAW candidate belongs to another predictor\n");
 
     if (!violating_load->distanceMdpRawTrainingSeen) {
         violating_load->distanceMdpRawTrainingSeen = true;
@@ -1074,12 +1075,13 @@ void
 LSQUnit::deferDistanceMDPTraining(const DynInstPtr &store_inst,
                                   const DynInstPtr &violating_load)
 {
-    panic_if(!lsq->enableDistanceMDP(),
-             "Deferred DistanceMDP training while predictor is disabled\n");
     panic_if(!store_inst || !store_inst->isStore() || !violating_load ||
              !violating_load->isLoad(),
              "Deferred DistanceMDP training requires a store-load RAW "
              "violation\n");
+    panic_if(!violating_load->mdpPredictorSelected ||
+                 !violating_load->distanceMdpSelected,
+             "Deferred DistanceMDP training belongs to another predictor\n");
 
     if (violating_load->distanceMdpRawTrainingPending) {
         DPRINTF(DistanceMDP,
@@ -1135,10 +1137,11 @@ void
 LSQUnit::trainDistanceMDP(const DynInstPtr &violating_load,
                           InstSeqNum store_seq_num, uint64_t store_sq_idx)
 {
-    panic_if(!lsq->enableDistanceMDP(),
-             "DistanceMDP training while predictor is disabled\n");
     panic_if(!violating_load || !violating_load->isLoad(),
              "DistanceMDP requires a load RAW violator\n");
+    panic_if(!violating_load->mdpPredictorSelected ||
+                 !violating_load->distanceMdpSelected,
+             "DistanceMDP training belongs to another predictor\n");
 
     if (violating_load->distanceMdpWaitAll &&
         violating_load->distanceMdpPredicted) {
@@ -1538,7 +1541,8 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                             countedStLdViolationThisCycle = true;
                         }
                         ++stats.rawMemOrderViolation;
-                        if (!lsq->enableDistanceMDP()) {
+                        if (ld_inst->mdpPredictorSelected &&
+                            !ld_inst->distanceMdpSelected) {
                             if (ld_inst->mdpPredStrictWait) {
                                 ++stats.rawViolationMdpStrict;
                             } else if (ld_inst->mdpProducingStores.empty()) {
@@ -1609,7 +1613,8 @@ LSQUnit::checkDistanceMdpClear(uint64_t cycle)
 void
 LSQUnit::lookupDistanceMdp(const DynInstPtr &inst)
 {
-    if (!lsq->enableDistanceMDP() || inst->distanceMdpLookupIssued) {
+    if (!inst->mdpPredictorSelected || !inst->distanceMdpSelected ||
+        inst->distanceMdpLookupIssued) {
         return;
     }
 
@@ -1855,7 +1860,7 @@ LSQUnit::updateMdpFeedbackOnLoadSuccess(const DynInstPtr &inst,
             inst->pcState().instAddr(), inst->seqNum, source_name,
             sq_forwarded, sbuffer_forwarded);
 
-    if (lsq->enableDistanceMDP()) {
+    if (inst->mdpPredictorSelected && inst->distanceMdpSelected) {
         if (inst->distanceMdpPredicted &&
             inst->distanceMdpPredictionConsumed) {
             recordMDPPredictionOutcome(
@@ -1865,7 +1870,7 @@ LSQUnit::updateMdpFeedbackOnLoadSuccess(const DynInstPtr &inst,
                 source == MDPFeedbackSource::StoreQueue);
         }
         updateDistanceMdpFeedback(inst, source);
-    } else {
+    } else if (inst->mdpPredictorSelected) {
         if (inst->mdpPredictedDependent) {
             recordMDPPredictionOutcome(
                 stats.storeSetPredictionOutcomes,
@@ -1873,7 +1878,6 @@ LSQUnit::updateMdpFeedbackOnLoadSuccess(const DynInstPtr &inst,
                 inst->mdpPredStrictWait, inst->mdpAddrReplayed,
                 source == MDPFeedbackSource::StoreQueue);
         }
-        iewStage->mdpFeedback(inst, source);
     }
 }
 
@@ -3839,7 +3843,8 @@ bool
 LSQUnit::applyDistanceMdpPrediction(const DynInstPtr &inst,
                                     LSQRequest *request)
 {
-    if (!lsq->enableDistanceMDP() || !inst->distanceMdpPredicted ||
+    if (!inst->mdpPredictorSelected || !inst->distanceMdpSelected ||
+        !inst->distanceMdpPredicted ||
         inst->distanceMdpPredictionConsumed) {
         return false;
     }
@@ -4023,7 +4028,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         return NoFault;
     }
 
-    if (!lsq->enableDistanceMDP() && lsq->enableReplayBasedMDP() &&
+    if (load_inst->mdpPredictorSelected &&
+        !load_inst->distanceMdpSelected && lsq->enableReplayBasedMDP() &&
         request->isNormalLd() &&
         (load_inst->mdpPredStrictWait || !load_inst->mdpProducingStores.empty()) &&
         !request->mainReq()->isLLSC()) {

@@ -91,6 +91,9 @@ CPU::CPU(const BaseO3CPUParams &params)
       instcount(0),
 #endif
       removeInstsThisCycle(false),
+      mdpSwitchInstCount(params.MDPSwitchInstCount),
+      distanceMdpActive(params.EnableDistanceMDP),
+      mdpSwitchDone(false),
       fetch(this, params),
       decode(this, params),
       rename(this, params),
@@ -356,6 +359,8 @@ CPU::CPUStats::CPUStats(CPU *cpu)
                "Number of Instructions Simulated"),
       ADD_STAT(committedOps, statistics::units::Count::get(),
                "Number of Ops (including micro ops) Simulated"),
+      ADD_STAT(mdpPredictorSwitches, statistics::units::Count::get(),
+               "Number of one-shot StoreSet/DistanceMDP selector changes"),
       ADD_STAT(cpi, statistics::units::Rate<
                     statistics::units::Cycle, statistics::units::Count>::get(),
                "CPI: Cycles Per Instruction"),
@@ -1378,6 +1383,20 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         }
 
         const uint64_t committedThreadInsts = thread[tid]->numInst;
+
+        if (mdpSwitchInstCount && !mdpSwitchDone &&
+            committedThreadInsts >= mdpSwitchInstCount) {
+            const bool was_distance_mdp = distanceMdpActive;
+            distanceMdpActive = !distanceMdpActive;
+            mdpSwitchDone = true;
+            ++cpuStats.mdpPredictorSwitches;
+            DPRINTF(O3CPU,
+                    "[tid:%i] Switching memory-dependence predictor after "
+                    "%llu committed instructions: %s -> %s\n",
+                    tid, committedThreadInsts,
+                    was_distance_mdp ? "DistanceMDP" : "StoreSet",
+                    distanceMdpActive ? "DistanceMDP" : "StoreSet");
+        }
 
         if (this->nextDumpInstCount && !dump_done
                 && committedThreadInsts >= this->nextDumpInstCount) {

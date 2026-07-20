@@ -196,19 +196,14 @@ class BaseO3CPU(BaseCPU):
     store_set_clear_period = Param.Unsigned(250000,
             "Number of load/store insts before the dep predictor "
             "should be invalidated")
+    store_set_strict_clear_period = Param.Unsigned(8192,
+            "CPU cycles before all StoreSet strict flags are cleared "
+            "(0 disables expiration)")
     LFSTSize = Param.Unsigned(32, "Last fetched store table size")
     store_set_clear_thres = Param.Unsigned(1048576,"")
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(False, "Training store set predictor")
-    EnableMDPFeedbackCounter = Param.Bool(True,
-        "Enable StoreSet MDP 4-bit feedback counters")
-    EnableMDPSBufferForwardFeedback = Param.Bool(False,
-        "Treat successful SBuffer forwarding as positive StoreSet MDP feedback")
-    MDPInitialCounter = Param.Unsigned(2,
-        "Initial StoreSet MDP 4-bit counter value on training allocation")
-    SSITTagBits = Param.Unsigned(12,
-        "PC tag bits stored in each StoreSet SSIT entry")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
@@ -221,9 +216,12 @@ class BaseO3CPU(BaseCPU):
         "but may replay in load pipe)")
     EnableDistanceMDP = Param.Bool(True,
         "Use the SQ-distance memory dependence predictor instead of StoreSet")
+    MDPSwitchInstCount = Param.Counter(0,
+        "Toggle once between StoreSet and DistanceMDP after this many "
+        "committed instructions (0 disables switching)")
     EnableDistanceMDPStrict = Param.Bool(True,
         "Allow DistanceMDP strict wait-all predictions")
-    EnableMDPStrictWait = Param.Bool(False,
+    EnableMDPStrictWait = Param.Bool(True,
         "Enable StoreSet strict-wait in mem dep prediction (checkInstStrict)")
 
     numPhysIntRegs = Param.Unsigned(224,

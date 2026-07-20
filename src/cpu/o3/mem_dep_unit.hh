@@ -158,9 +158,6 @@ class MemDepUnit
     /** Issues the given instruction */
     void issue(const DynInstPtr &inst);
 
-    void mdpFeedback(const DynInstPtr &load_inst,
-                     MDPFeedbackSource source);
-
     /** Debugging function to dump the lists of instructions. */
     void dumpLists();
 
@@ -256,6 +253,12 @@ class MemDepUnit
     /** Inserts the SN of a barrier inst. to the list of tracked barriers */
     void insertBarrierSN(const DynInstPtr &barr_inst);
 
+    /** Latch the CPU-wide predictor selector for a memory instruction. */
+    void selectMdpPredictor(const DynInstPtr &inst);
+
+    /** Advance the StoreSet strict timer and account for any expiration. */
+    void updateStoreSetStrictCounter(Cycles cur_cycle);
+
     /** Pointer to the IQ. */
     InstructionQueue *iqPtr;
 
@@ -265,8 +268,8 @@ class MemDepUnit
     /** If true, MDP uses StoreSet strict-wait flag (checkInstStrict). */
     bool enableMDPStrictWait = false;
 
-    /** If true, DistanceMDP owns prediction, training, and feedback. */
-    bool enableDistanceMDP = false;
+    /** Whether this run can insert state into the StoreSet predictor. */
+    bool mayUseStoreSet = true;
 
     /** The thread id of this memory dependence unit. */
     int id;
@@ -287,13 +290,10 @@ class MemDepUnit
         /** Stat for number of predicted conflicting loads
          */
         statistics::Scalar dependentLoads;
-        statistics::Scalar mdpFeedbackSqForwardInc;
-        statistics::Scalar mdpFeedbackSBufferForwardInc;
-        statistics::Scalar mdpFeedbackSBufferForwardDec;
-        statistics::Scalar mdpFeedbackNoForwardDec;
-        statistics::Scalar mdpFeedbackSkipNotPredicted;
-        statistics::Scalar mdpFeedbackSkipDuplicate;
-        statistics::Scalar mdpCounterClearOnZero;
+        /** Number of global StoreSet strict-window expirations. */
+        statistics::Scalar storeSetStrictTimeouts;
+        /** Number of SSIT strict entries cleared by expiration. */
+        statistics::Scalar storeSetStrictEntriesCleared;
     } stats;
 };
 

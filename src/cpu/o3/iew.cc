@@ -95,7 +95,6 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       enableStoreSetTrain(params.enable_storeSet_train),
-      enableDistanceMDP(params.EnableDistanceMDP),
       numThreads(params.numThreads),
       iewStats(cpu)
 {
@@ -1593,8 +1592,9 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 
             fetchRedirect[tid] = true;
 
-            const bool distance_mdp_raw =
-                enableDistanceMDP && inst->isStore() && violator->isLoad();
+            const bool distance_mdp_raw = inst->isStore() &&
+                violator->isLoad() && violator->mdpPredictorSelected &&
+                violator->distanceMdpSelected;
 
             // Record RAW candidates immediately, but train only after the
             // matching memory-order squash returns from commit.
@@ -2073,13 +2073,6 @@ IEW::mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
                                           size_t store_completed_idx)
 {
     instQueue.mdpAddrReplayUpdateStoreCompletedIdx(tid, store_completed_idx);
-}
-
-void
-IEW::mdpFeedback(const DynInstPtr &inst,
-                 MDPFeedbackSource source)
-{
-    instQueue.mdpFeedback(inst, source);
 }
 
 uint32_t
