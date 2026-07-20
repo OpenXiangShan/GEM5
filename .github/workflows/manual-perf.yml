@@ -84,7 +84,7 @@ jobs:
           else
             echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
           fi
-          
+
           if [ -n "${{ github.event.inputs.branch }}" ]; then
             echo "pr_sha=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
           else
