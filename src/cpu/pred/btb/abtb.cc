@@ -258,50 +258,29 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
                                     std::vector<FullBTBPrediction>& stagePreds)
 {    // S0 prediction source statistic is tracked by AheadBTB
     // AheadBTB always has aheadPipelinedStages > 0
-    BTBEntry ubtb_pred_entry;
-    std::vector<TickedBTBEntry> mixed_entries;
+    std::vector<TickedBTBEntry> selected_entries;
 
-    // if ubtb has prediction, add ubtb entry to aBTB entries
-    if (stagePreds[0].btbEntries.size() > 0) {
-        DPRINTF(ABTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
+    if (!entries.empty()) {
+        // RTL S1 arbitration gives ABTB exclusive priority once ABTB is valid.
+        // If these entries later predict not-taken, S1 falls through instead of
+        // falling back to an earlier uBTB taken prediction.
+        selected_entries = entries;
+        btbStats.S0PredUseABTB++;
+    } else if (stagePreds[0].btbEntries.size() > 0) {
+        DPRINTF(ABTB, "AheadBTB: ABTB miss, keeping uBTB prediction\n");
         btbStats.S0PredUseUBTB++;
-        //if ubtb has prediction, add ubtb entry to aBTB entries
-        ubtb_pred_entry = stagePreds[0].btbEntries[0];
+        const auto &ubtb_pred_entry = stagePreds[0].btbEntries[0];
         assert(ubtb_pred_entry.valid);
-        mixed_entries = entries;
-        for (auto &entry : mixed_entries) {
-            if (entry.pc == ubtb_pred_entry.pc) {
-                entry.valid = false; // invalidate duplicated entry from aBTB (only use for align counter)
-                break;
-            }
-        }
-        mixed_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
-        // Deduplicate entries by pc (order can change)
-        std::sort(mixed_entries.begin(), mixed_entries.end(),
-              [](const TickedBTBEntry& a, const TickedBTBEntry& b) {
-                  return a.pc < b.pc;
-              });
-        // Drop entries invalidated during deduplication above
-        mixed_entries.erase(std::remove_if(mixed_entries.begin(), mixed_entries.end(),
-              [](const TickedBTBEntry& entry) {
-                  return !entry.valid;
-              }),
-              mixed_entries.end());
-        // return;
-    } else {// no uBTB prediction, only use aBTB prediction
-        mixed_entries = entries;
-        if (entries.size() > 0) {
-            btbStats.S0PredUseABTB++;
-        } else {
-            btbStats.S0Predmiss++;
-        }
+        selected_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
+    } else {
+        btbStats.S0Predmiss++;
     }
 
     FillStageLoop(s) {
         DPRINTF(ABTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
-        for (auto e : mixed_entries) {
+        for (auto e : selected_entries) {
             stagePreds[s].btbEntries.push_back(BTBEntry(e));
         }
         checkAscending(stagePreds[s].btbEntries);
@@ -313,7 +292,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     }
 
     // Set predictions for each branch
-    for (auto &e : mixed_entries) {
+    for (auto &e : selected_entries) {
         assert(e.valid);
         if (e.isCond) {
             FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
