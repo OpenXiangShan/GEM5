@@ -40,17 +40,6 @@ DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
 namespace
 {
 
-bool
-predictionHasUsableEntry(const FullBTBPrediction &pred)
-{
-    for (const auto &entry : pred.btbEntries) {
-        if (entry.valid) {
-            return true;
-        }
-    }
-    return false;
-}
-
 PairTAGE::TrainPacket
 buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
 {
@@ -593,7 +582,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     // Search from last stage to first for valid predictions
     for (int i = (int)numStages - 1; i >= 0; i--) {
-        if (predictionHasUsableEntry(predsOfEachStage[i])) {
+        if (!predsOfEachStage[i].btbEntries.empty()) {
             chosenPrediction = &predsOfEachStage[i];
             DPRINTF(Override, "Selected prediction from stage %d\n", i);
             break;
@@ -666,7 +655,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 
     // update ubtb/abtb using final S3 prediction
-    if (predictionHasUsableEntry(predsOfEachStage[numStages - 1])) {
+    if (!predsOfEachStage[numStages - 1].btbEntries.empty()) {
         if (ubtb->isEnabled()) {
             ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
         }
