@@ -489,10 +489,13 @@ TLB::autoOpenNextline()
     return auto_nextline;
 }
 void
-TLB::updateL2TLBSeq(TlbEntryTrie *Trie_l2, Addr vpn, Addr step, uint16_t asid, uint8_t translateMode)
+TLB::updateL2TLBSeq(TlbEntryTrie *Trie_l2, Addr vpn, Addr step,
+                    uint16_t asid, uint8_t translateMode,
+                    unsigned prefix_width)
 {
     for (int i = 0; i < l2tlbLineSize; i++) {
-        TlbEntry *m_entry = (*Trie_l2).lookup(buildKey(vpn + step * i, asid, translateMode));
+        TlbEntry *m_entry = Trie_l2->lookup(
+            buildKey(vpn + step * i, asid, translateMode), prefix_width);
         if (m_entry == nullptr) {
             DPRINTF(TLB, "l2sp1 vaddr basic %#x vaddr %#x \n", vpn, vpn + step * i);
             panic("l2 TLB link num is empty\n");
@@ -542,7 +545,8 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         entry_l2 = entry_l2l3;
         step = 0x1ll << (PageShift + 3 * LEVEL_BITS);
         if ((!hidden) && (entry_l2l3))
-            updateL2TLBSeq(&trieL2L3, vpnl2l3, step, asid, translateMode);
+            updateL2TLBSeq(&trieL2L3, vpnl2l3, step, asid, translateMode,
+                           TlbEntryTrie::MaxBits - 3 * LEVEL_BITS);
     }
     if (f_level == L_L2L2) {
         DPRINTF(TLB, "look up l2tlb in l2l2 key %#x\n", buildKey(f_vpnl2l2, asid, translateMode));
@@ -550,7 +554,8 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         entry_l2 = entry_l2l2;
         step = 0x1ll << (PageShift + 2 * LEVEL_BITS);
         if ((!hidden) && (entry_l2l2))
-            updateL2TLBSeq(&trieL2L2, vpnl2l2, step, asid, translateMode);
+            updateL2TLBSeq(&trieL2L2, vpnl2l2, step, asid, translateMode,
+                           TlbEntryTrie::MaxBits - 2 * LEVEL_BITS);
     }
     if (f_level == L_L2L1) {
         DPRINTF(TLB, "look up l2tlb in l2l1\n");
@@ -558,7 +563,8 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
         entry_l2 = entry_l2l1;
         step = 0x1ll << (PageShift + 1 * LEVEL_BITS);
         if ((!hidden) && (entry_l2l1))
-            updateL2TLBSeq(&trieL2L1, vpnl2l1, step, asid, translateMode);
+            updateL2TLBSeq(&trieL2L1, vpnl2l1, step, asid, translateMode,
+                           TlbEntryTrie::MaxBits - LEVEL_BITS);
     }
     if (f_level == L_L2L0) {
         DPRINTF(TLB, "look up l2tlb in l2l0\n");
@@ -607,56 +613,44 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
     }
     if (f_level == L_L2sp3) {
         DPRINTF(TLB, "look up l2tlb in l2sp3\n");
-        TlbEntry *entry_l2sp3 = trieL2sp.lookup(buildKey(f_vpnl2l3, asid, translateMode));
+        constexpr unsigned prefix_width =
+            TlbEntryTrie::MaxBits - 3 * LEVEL_BITS;
+        TlbEntry *entry_l2sp3 = trieL2sp.lookup(
+            buildKey(f_vpnl2l3, asid, translateMode), prefix_width);
         entry_l2 = entry_l2sp3;
         step = 0x1ll << (PageShift + 3 * LEVEL_BITS);
         if (entry_l2sp3) {
-            if (entry_l2sp3->level == L2L2CheckLevel) {
-                DPRINTF(TLB, "hit in sp but sp2 , return\n");
-                return nullptr;
-            }
-            if (entry_l2sp3->level == L2L1CheckLevel) {
-                DPRINTF(TLB, "hit in sp but sp1 , return\n");
-                return nullptr;
-            }
             if (!hidden)
-                updateL2TLBSeq(&trieL2sp, vpnl2sp3, step, asid, translateMode);
+                updateL2TLBSeq(&trieL2sp, vpnl2sp3, step, asid,
+                               translateMode, prefix_width);
         }
     }
     if (f_level == L_L2sp2) {
         DPRINTF(TLB, "look up l2tlb in l2sp2\n");
-        TlbEntry *entry_l2sp2 = trieL2sp.lookup(buildKey(f_vpnl2l2, asid, translateMode));
+        constexpr unsigned prefix_width =
+            TlbEntryTrie::MaxBits - 2 * LEVEL_BITS;
+        TlbEntry *entry_l2sp2 = trieL2sp.lookup(
+            buildKey(f_vpnl2l2, asid, translateMode), prefix_width);
         entry_l2 = entry_l2sp2;
         step = 0x1ll << (PageShift + 2 * LEVEL_BITS);
         if (entry_l2sp2) {
-            if (entry_l2sp2->level == L2L3CheckLevel) {
-                DPRINTF(TLB, "hit in sp but sp3 , return\n");
-                return nullptr;
-            }
-            if (entry_l2sp2->level == L2L1CheckLevel) {
-                DPRINTF(TLB, "hit in sp but sp1 , return\n");
-                return nullptr;
-            }
             if (!hidden)
-                updateL2TLBSeq(&trieL2sp, vpnl2sp2, step, asid, translateMode);
+                updateL2TLBSeq(&trieL2sp, vpnl2sp2, step, asid,
+                               translateMode, prefix_width);
         }
     }
     if (f_level == L_L2sp1) {
         DPRINTF(TLB, "look up l2tlb in l2sp1\n");
-        TlbEntry *entry_l2sp1 = trieL2sp.lookup(buildKey(f_vpnl2l1, asid, translateMode));
+        constexpr unsigned prefix_width =
+            TlbEntryTrie::MaxBits - LEVEL_BITS;
+        TlbEntry *entry_l2sp1 = trieL2sp.lookup(
+            buildKey(f_vpnl2l1, asid, translateMode), prefix_width);
         entry_l2 = entry_l2sp1;
         step = 0x1ll << (PageShift + LEVEL_BITS);
         if (entry_l2sp1) {
-            if (entry_l2sp1->level == L2L3CheckLevel) {
-                DPRINTF(TLB, "hit in sp but sp3 , return\n");
-                return nullptr;
-            }
-            if (entry_l2sp1->level == L2L2CheckLevel) {
-                DPRINTF(TLB, "hit in sp but sp2 , return\n");
-                return nullptr;
-            }
             if (!hidden)
-                updateL2TLBSeq(&trieL2sp, vpnl2sp1, step, asid, translateMode);
+                updateL2TLBSeq(&trieL2sp, vpnl2sp1, step, asid,
+                               translateMode, prefix_width);
         }
     }
 
