@@ -138,6 +138,13 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 
+    /** Records fine-grained attribution for S1 override events whose source is
+     *  uBTB. The counters are updated at override time rather than commit time.
+     */
+    void recordS1OverrideDetail(OverrideReason reason,
+                                bool abtbHit,
+                                bool afterSquash);
+
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
@@ -325,6 +332,9 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar s1Hits3Taken;
         statistics::Scalar s1Misses3FallThrough;
         statistics::Scalar s1InvalidatedEntries;
+        statistics::Vector s1OverrideByReason;
+        statistics::Vector2d s1OverrideByReasonAndAbtbHit;
+        statistics::Vector2d s1OverrideByReasonAndAfterSquash;
 
         UBTBStats(statistics::Group* parent);
     } ubtbStats;
