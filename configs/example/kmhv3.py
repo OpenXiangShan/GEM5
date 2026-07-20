@@ -152,8 +152,8 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].do_fast_writeline = False
                 system.l2_caches[i].prefetch_can_offload = False
                 # Configure XSDRRIP replacement policy (DRRIP mode)
-                # L2: 2MB, 8-way, 64B line → 4096 sets
-                system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
+                # L2: 1MB, 8-way, 64B line → 2048 sets
+                system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=2048)
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 1
@@ -165,8 +165,8 @@ def setKmhV3Params(args, system):
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    # Each slice: 1MB/4 = 256KB, 8-way, 64B line → 512 sets
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=512)
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
