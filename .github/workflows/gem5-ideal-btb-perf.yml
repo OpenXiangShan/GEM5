@@ -25,5 +25,5 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
-      benchmark_type: "gcc15-spec06-0.8c"
+      benchmark_type: "gcc15-spec06-1.0c"
       pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
