@@ -140,6 +140,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void update(const FetchTarget &entry) override;
     bool canResolveUpdate(const FetchTarget &entry) override;
     void doResolveUpdate(const FetchTarget &entry) override;
+    // Train MicroTAGE from the final-stage teacher prediction instead of commit-time truth.
+    void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
@@ -240,6 +242,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // Whether to update on read
     bool updateOnRead;
+    bool usingS3Pred;
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
@@ -287,6 +290,25 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
         Scalar updateUtageHit;
         Scalar updateUtageHitWrong;
+
+        Scalar s3UpdateEntries;
+        Scalar s3UpdateNoMeta;
+        Scalar s3UpdateNoHitUseBim;
+        Scalar s3UpdateUseAlt;
+        Scalar s3UpdateUseAltCorrect;
+        Scalar s3UpdateUseAltWrong;
+        Scalar s3UpdateAltDiffers;
+        Scalar s3UpdateUseAltOnNaUpdated;
+        Scalar s3UpdateProviderNa;
+        Scalar s3UpdateUseAltOnNaCorrect;
+        Scalar s3UpdateUseAltOnNaWrong;
+        Scalar s3UpdateAllocFailure;
+        Scalar s3UpdateAllocFailureNoValidTable;
+        Scalar s3UpdateAllocSuccess;
+        Scalar s3UpdateMispred;
+        Scalar s3UpdateResetU;
+        Scalar s3UpdateUtageHit;
+        Scalar s3UpdateUtageHitWrong;
 
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
@@ -337,7 +359,26 @@ public:
         TageMeta() : aheadIndexFoldedHistValid(false) {}
     } TageMeta;
 
-private:
+    enum class TrainingMode
+    {
+        Resolved,
+        S3Update
+    };
+
+    void trainEntries(const std::vector<BTBEntry> &entries_to_update,
+                      const std::shared_ptr<TageMeta> &predMeta,
+                      const Addr &startPC,
+                      ThreadID tid,
+                      uint8_t asidHash,
+                      TrainingMode mode,
+                      const FetchTarget *stream,
+                      const CondTakens *teacherCondTakens);
+
+#ifdef UNIT_TEST
+  public:
+#else
+  private:
+#endif
 
     // Helper method to generate prediction for a single BTB entry
     // If predMeta is provided, use snapshot folded history for index/tag calculation (update path)
@@ -350,12 +391,18 @@ private:
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    // Build the reachable conditional prefix for S3 teacher update.
+    std::vector<BTBEntry> prepareS3UpdateEntries(const FullBTBPrediction &s3Pred);
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
                                  const FetchTarget &stream);
+    // Reuse the provider/allocation policy under an S3-teacher mismatch definition.
+    bool updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
+                                 bool actual_taken,
+                                 const TagePrediction &pred);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
@@ -364,6 +411,7 @@ private:
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
+                                 TrainingMode mode,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
