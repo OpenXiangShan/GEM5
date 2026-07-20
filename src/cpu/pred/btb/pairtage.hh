@@ -174,16 +174,29 @@ class PairTAGE : public TimedBaseBTBPredictor
         uint8_t branchFlags{0};
         uint8_t size{0};
 
-        static constexpr uint8_t
-        branchFlag(BranchFlag flag)
-        {
-            return static_cast<uint8_t>(flag);
-        }
+        static constexpr uint8_t branchFlag(BranchFlag flag) { return static_cast<uint8_t>(flag); }
 
-        bool
-        hasBranchFlag(BranchFlag flag) const
+        bool hasBranchFlag(BranchFlag flag) const { return branchFlags & branchFlag(flag); }
+        void setBranchFlags(const BranchInfo &branch)
         {
-            return branchFlags & branchFlag(flag);
+            uint8_t flags = 0;
+            if (branch.isCond) {
+                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Conditional);
+            }
+            if (branch.isDirect) {
+                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Direct);
+            }
+            if (branch.isIndirect) {
+                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Indirect);
+            }
+            if (branch.isCall) {
+                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Call);
+            }
+            if (branch.isReturn) {
+                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Return);
+            }
+
+            branchFlags = flags;
         }
     };
 

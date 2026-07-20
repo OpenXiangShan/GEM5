@@ -51,30 +51,6 @@ predictionHasUsableEntry(const FullBTBPrediction &pred)
     return false;
 }
 
-uint8_t
-getTrainBranchFlags(const BranchInfo &branch)
-{
-    using BranchFlag = PairTAGE::TrainPacket::BranchFlag;
-
-    uint8_t flags = 0;
-    if (branch.isCond) {
-        flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Conditional);
-    }
-    if (branch.isDirect) {
-        flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Direct);
-    }
-    if (branch.isIndirect) {
-        flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Indirect);
-    }
-    if (branch.isCall) {
-        flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Call);
-    }
-    if (branch.isReturn) {
-        flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Return);
-    }
-    return flags;
-}
-
 PairTAGE::TrainPacket
 buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
 {
@@ -138,8 +114,8 @@ buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
         const auto &branch = entry.predBranchInfo;
         packet.branchPC = branch.pc;
         packet.targetPC = branch.target;
-        packet.branchFlags = getTrainBranchFlags(branch);
         packet.size = branch.size;
+        packet.setBranchFlags(branch);
     } else {
         packet.branchPC = trainEntry->pc;
         packet.targetPC = trainEntry->target;
