@@ -353,6 +353,7 @@ public:
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
+        std::vector<BTBEntry> abtbEntries;
         bool aheadIndexFoldedHistValid;
         std::vector<PathFoldedHist> aheadIndexFoldedHist;
         bitset history;     // for viewing
@@ -393,6 +394,13 @@ public:
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
     // Build the reachable conditional prefix for S3 teacher update.
     std::vector<BTBEntry> prepareS3UpdateEntries(const FullBTBPrediction &s3Pred);
+    std::vector<BTBEntry> prepareS3UpdateEntriesFromAbtbMeta(
+        const std::vector<BTBEntry> &abtbEntries,
+        FullBTBPrediction &s3Pred,
+        CondTakens &teacherCondTakens);
+    std::vector<BTBEntry> getAbtbConditionalEntries(
+        const std::vector<BTBEntry> &btbEntries) const;
+    bool isAbtbEntry(const BTBEntry &entry) const;
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
