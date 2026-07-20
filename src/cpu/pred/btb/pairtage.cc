@@ -183,6 +183,63 @@ PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) co
     return packet;
 }
 
+PairTAGE::TrainPacket
+PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BTBEntry> &btbEntries,
+                                   const CondTakens &condTakens) const
+{
+    using BranchFlag = TrainPacket::BranchFlag;
+
+    TrainPacket packet;
+    packet.startPC = startPC;
+    packet.phase = phase;
+
+    const BTBEntry *trainEntry = nullptr;
+    bool taken = false;
+    for (const auto &entry : btbEntries) {
+        if (!entry.valid) {
+            continue;
+        }
+
+        if (entry.isCond) {
+            const Addr branchPC = entry.pc;
+            auto direction = CondTakens_find(condTakens, branchPC);
+            if (direction != condTakens.end() && direction->second) {
+                trainEntry = &entry;
+                taken = true;
+                break;
+            }
+        } else if (entry.isUncond()) {
+            trainEntry = &entry;
+            taken = true;
+            break;
+        }
+    }
+
+    if (!taken) {
+        for (auto it = btbEntries.rbegin(); it != btbEntries.rend(); ++it) {
+            if (it->valid && it->isCond && it->isDirect && !it->isIndirect && !it->isCall && !it->isReturn) {
+                trainEntry = &*it;
+                break;
+            }
+        }
+    }
+
+    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond || !trainEntry->isDirect || trainEntry->isIndirect ||
+        trainEntry->isCall || trainEntry->isReturn) {
+        return packet;
+    }
+
+    packet.valid = true;
+    packet.hasBranch = true;
+    packet.branchPC = trainEntry->pc;
+    packet.targetPC = trainEntry->target;
+    packet.taken = taken;
+    packet.branchFlags =
+        TrainPacket::branchFlag(BranchFlag::Conditional) | TrainPacket::branchFlag(BranchFlag::Direct);
+    packet.size = 4;
+    return packet;
+}
+
 void
 PairTAGE::refreshPredictionMeta(Addr startAddr,
                                 const bitset &history,
