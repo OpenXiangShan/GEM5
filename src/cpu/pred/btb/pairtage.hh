@@ -32,8 +32,8 @@ class PairTAGE : public TimedBaseBTBPredictor
     struct PairBlockInfo
     {
         bool valid;
+        bool hasBranch;
         bool taken;
-        bool fallThrough;
         Addr branchPC;
         Addr targetPC;
         bool isCond;
@@ -44,27 +44,27 @@ class PairTAGE : public TimedBaseBTBPredictor
         uint8_t size;
 
         PairBlockInfo()
-            : valid(false), taken(false), fallThrough(false),
+            : valid(false), hasBranch(false), taken(false),
               branchPC(0), targetPC(0),
               isCond(false), isDirect(false), isIndirect(false),
               isCall(false), isReturn(false), size(0)
         {
         }
 
-        PairBlockInfo(bool taken, Addr branchPC, Addr targetPC,
-                      bool fallThrough = false)
-            : valid(true), taken(taken), fallThrough(fallThrough),
-              branchPC(branchPC), targetPC(targetPC),
-              isCond(!fallThrough), isDirect(!fallThrough), isIndirect(false),
-              isCall(false), isReturn(false), size(fallThrough ? 0 : 4)
+        static PairBlockInfo
+        makeBranchless(Addr startPC, Addr targetPC)
         {
+            PairBlockInfo block;
+            block.valid = true;
+            block.branchPC = startPC;
+            block.targetPC = targetPC;
+            return block;
         }
 
         PairBlockInfo(bool taken, Addr branchPC, Addr targetPC,
                       bool isCond, bool isDirect, bool isIndirect,
-                      bool isCall, bool isReturn, uint8_t size,
-                      bool fallThrough = false)
-            : valid(true), taken(taken), fallThrough(fallThrough),
+                      bool isCall, bool isReturn, uint8_t size)
+            : valid(true), hasBranch(true), taken(taken),
               branchPC(branchPC), targetPC(targetPC),
               isCond(isCond), isDirect(isDirect), isIndirect(isIndirect),
               isCall(isCall), isReturn(isReturn), size(size)
@@ -74,8 +74,8 @@ class PairTAGE : public TimedBaseBTBPredictor
         void clear()
         {
             valid = false;
+            hasBranch = false;
             taken = false;
-            fallThrough = false;
             branchPC = 0;
             targetPC = 0;
             isCond = false;
@@ -86,13 +86,19 @@ class PairTAGE : public TimedBaseBTBPredictor
             size = 0;
         }
 
-        bool isFallThrough() const { return valid && fallThrough; }
+        bool hasConsistentState() const
+        {
+            return (!hasBranch || valid) && (!taken || hasBranch);
+        }
+
+        bool isBranchlessFallthrough() const { return valid && !hasBranch; }
+
         BTBEntry buildBTBEntry(int componentIdx) const {
             BTBEntry entry;
-            entry.valid = valid && !fallThrough;
+            entry.valid = valid && hasBranch;
             entry.pc = branchPC;
             entry.target = targetPC;
-            entry.size = fallThrough ? 0 : size;
+            entry.size = hasBranch ? size : 0;
             entry.isCond = isCond;
             entry.isDirect = isDirect;
             entry.isIndirect = isIndirect;
@@ -148,13 +154,6 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     struct TrainPacket
     {
-        enum class BlockKind : uint8_t
-        {
-            Invalid,
-            FallThrough,
-            Branch
-        };
-
         enum class BranchFlag : uint8_t
         {
             Conditional = 1U << 0,
@@ -167,16 +166,25 @@ class PairTAGE : public TimedBaseBTBPredictor
         Addr startPC{0};
         PairPhase phase{PairPhase::Even};
         std::shared_ptr<const TageMeta> meta;
-        BlockKind kind{BlockKind::Invalid};
+        bool valid{false};
+        bool hasBranch{false};
+        bool taken{false};
         Addr branchPC{0};
         Addr targetPC{0};
-        bool taken{false};
         uint8_t branchFlags{0};
         uint8_t size{0};
 
         static constexpr uint8_t branchFlag(BranchFlag flag) { return static_cast<uint8_t>(flag); }
 
         bool hasBranchFlag(BranchFlag flag) const { return branchFlags & branchFlag(flag); }
+
+        bool hasConsistentState() const
+        {
+            return (!hasBranch || valid) && (!taken || hasBranch);
+        }
+
+        bool isBranchlessFallthrough() const { return valid && !hasBranch; }
+
         void setBranchFlags(const BranchInfo &branch)
         {
             uint8_t flags = 0;

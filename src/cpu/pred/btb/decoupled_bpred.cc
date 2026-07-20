@@ -43,7 +43,6 @@ namespace
 PairTAGE::TrainPacket
 buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
 {
-    using BlockKind = PairTAGE::TrainPacket::BlockKind;
     using BranchFlag = PairTAGE::TrainPacket::BranchFlag;
 
     PairTAGE::TrainPacket packet;
@@ -83,7 +82,7 @@ buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
             if (fallbackEntry) {
                 return packet;
             }
-            packet.kind = BlockKind::FallThrough;
+            packet.valid = true;
             packet.branchPC = entry.startPC;
             packet.targetPC = entry.predEndPC;
             return packet;
@@ -97,7 +96,8 @@ buildFinalTrainPacket(const FetchTarget &entry, int pairComponentIdx)
         return packet;
     }
 
-    packet.kind = BlockKind::Branch;
+    packet.valid = true;
+    packet.hasBranch = true;
     packet.taken = entry.predTaken;
     if (entry.predTaken) {
         const auto &branch = entry.predBranchInfo;
@@ -121,7 +121,6 @@ buildTwoTakenTrainPacket(Addr startPC, PairPhase phase,
                          const std::vector<BTBEntry> &btbEntries,
                          const CondTakens &condTakens)
 {
-    using BlockKind = PairTAGE::TrainPacket::BlockKind;
     using BranchFlag = PairTAGE::TrainPacket::BranchFlag;
 
     PairTAGE::TrainPacket packet;
@@ -166,7 +165,8 @@ buildTwoTakenTrainPacket(Addr startPC, PairPhase phase,
         return packet;
     }
 
-    packet.kind = BlockKind::Branch;
+    packet.valid = true;
+    packet.hasBranch = true;
     packet.branchPC = trainEntry->pc;
     packet.targetPC = trainEntry->target;
     packet.taken = taken;
@@ -818,8 +818,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     if (thread.twoTakenTrainReady &&
         !pairtage->secondBlockMatches(thread.twoTakenTrainPacket)) {
         const auto &teacherPacket = thread.twoTakenTrainPacket;
-        const bool teacherValid = teacherPacket.kind !=
-            PairTAGE::TrainPacket::BlockKind::Invalid;
+        const bool teacherValid = teacherPacket.valid;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
                 "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
@@ -860,7 +859,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     // TODO: This is not a real behavior on final design but it should be compatible with
     // the current train datapath in BPU model, which stores every BTB entry in the FTQ
     // entry and not lookup tables another time when training in every predictor.
-    if (thread.twoTakenTrainReady && secondBlock.valid && !secondBlock.isFallThrough()) {
+    if (thread.twoTakenTrainReady && secondBlock.valid && !secondBlock.isBranchlessFallthrough()) {
         for (const auto &teacherEntry : thread.twoTakenBTBEntries) {
             if (!teacherEntry.valid || !teacherEntry.isCond) {
                 continue;
@@ -997,8 +996,7 @@ DecoupledBPUWithBTB::pairtageFirstBlockNotOverriden(ThreadID tid) const
     }
 
     const auto &packet = threads[tid].finalTrainPacket;
-    if (!packet.meta ||
-        packet.kind == PairTAGE::TrainPacket::BlockKind::Invalid ||
+    if (!packet.meta || !packet.valid ||
         !packet.meta->predictedFirstBlock.valid) {
         return false;
     }
@@ -1391,7 +1389,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
         pairtage->getPredictionMeta()) : nullptr;
     const bool pairtageFallThroughHit = pairMeta &&
         pairMeta->predictedFirstBlock.valid &&
-        pairMeta->predictedFirstBlock.isFallThrough();
+        pairMeta->predictedFirstBlock.isBranchlessFallthrough();
 
     entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
     entry.falseHit = false;

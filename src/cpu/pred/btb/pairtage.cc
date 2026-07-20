@@ -20,6 +20,7 @@ void
 PairTAGE::PairTAGEEntry::setBlock(unsigned blockIdx, const PairBlockInfo &block)
 {
     assert(blockIdx < NumBlocksPerEntry);
+    assert(block.hasConsistentState());
     blocks[blockIdx] = block;
 }
 
@@ -512,7 +513,7 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
         return;
     }
 
-    if (block.isFallThrough()) {
+    if (block.isBranchlessFallthrough()) {
         return;
     }
 
@@ -533,12 +534,15 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
 PairTAGE::PairBlockInfo
 PairTAGE::buildTrainingBlock(const TrainPacket &packet) const
 {
-    if (packet.kind == TrainPacket::BlockKind::Invalid) {
+    assert(packet.hasConsistentState());
+
+    if (!packet.valid) {
         return PairBlockInfo{};
     }
 
-    if (packet.kind == TrainPacket::BlockKind::FallThrough) {
-        return PairBlockInfo(false, packet.branchPC, packet.targetPC, true);
+    if (!packet.hasBranch) {
+        return PairBlockInfo::makeBranchless(
+            packet.branchPC, packet.targetPC);
     }
 
     return PairBlockInfo(
@@ -560,7 +564,7 @@ PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
         return true;
     }
     return lhs.taken == rhs.taken && lhs.branchPC == rhs.branchPC &&
-           lhs.fallThrough == rhs.fallThrough &&
+           lhs.hasBranch == rhs.hasBranch &&
            lhs.targetPC == rhs.targetPC &&
            lhs.isCond == rhs.isCond &&
            lhs.isDirect == rhs.isDirect &&
@@ -580,7 +584,7 @@ PairTAGE::blockIdentityMatches(const PairBlockInfo &lhs,
     if (!lhs.valid) {
         return true;
     }
-    return lhs.fallThrough == rhs.fallThrough &&
+    return lhs.hasBranch == rhs.hasBranch &&
            lhs.branchPC == rhs.branchPC &&
            lhs.isCond == rhs.isCond &&
            lhs.isDirect == rhs.isDirect &&
@@ -638,8 +642,7 @@ PairTAGE::trainFromS3Pred(
         return;
     }
     const bool skipStandaloneFallThrough =
-        trainedFirstBlock.isFallThrough() && !secondBlockTrainInfo.valid &&
-        !trainStandaloneFallThrough;
+        trainedFirstBlock.isBranchlessFallthrough() && !secondBlockTrainInfo.valid && !trainStandaloneFallThrough;
     if (skipStandaloneFallThrough) {
         return;
     }
