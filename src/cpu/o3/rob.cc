@@ -46,6 +46,7 @@
 #include "base/logging.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/commit.hh"
 #include "debug/Fetch.hh"
 #include "debug/ROB.hh"
 #include "params/BaseO3CPU.hh"
@@ -133,6 +134,7 @@ ROB::allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid)
 ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     : robPolicy(params.smtROBPolicy),
       borrowingDonorReserveEntries(params.smtBorrowDonorReserveEntries),
+      borrowingBaseReserveEntries(params.smtBorrowBaseReserveEntries),
       robWalkPolicy(params.robWalkPolicy),
       cpu(_cpu),
       numEntries(params.numROBEntries),
@@ -146,6 +148,7 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
 {
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
         borrowingDonor[tid] = false;
+        borrowingStateHoldCycle[tid] = 0;
     }
 
     //Figure out rob policy
@@ -337,7 +340,7 @@ ROB::borrowingLimit(ThreadID tid) const
     }
 
     const unsigned active_threads = std::max(1U, activeThreadCount());
-    const unsigned base = std::max(1U, numEntries / active_threads);
+    const unsigned base = borrowingBaseReserveEntries;
     const unsigned donor_resume_quota =
         std::min(base, borrowingDonorReserveEntries);
 
@@ -358,6 +361,31 @@ ROB::borrowingLimit(ThreadID tid) const
     }
 
     return numEntries - reserved;
+}
+
+void 
+ROB::setBorrowingDonor(ThreadID tid, bool donor, Commit* commit)
+{ 
+    if (borrowingDonor[tid] != donor) {
+        bool old_donor = borrowingDonor[tid];
+        unsigned state_hold_cycle = borrowingStateHoldCycle[tid];
+        unsigned rob_entries_used = threadGroups[tid].size();
+        unsigned rob_entries_free = numFreeEntries(tid);
+
+        commit->recordROBBorrowingStateChangeStats(
+            tid, old_donor, state_hold_cycle,
+            rob_entries_used, rob_entries_free);
+
+        borrowingDonor[tid] = donor; 
+        borrowingStateHoldCycle[tid] = 0;
+    }
+}
+
+void 
+ROB::addBorrowingStateHoldCycle() {
+    for (int i = 0; i < numThreads; ++i) {
+        borrowingStateHoldCycle[i]++;
+    }
 }
 
 bool
