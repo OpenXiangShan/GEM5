@@ -91,6 +91,8 @@ class RiscvTLB(BaseTLB):
     l2tlb_line_size = Param.Int(8, "l2TLB_line size")
     enable_l1_direct_compression = Param.Bool(
         False, "enable L1 direct one-stage TLB compression")
+    enable_mpt_tlb_info = Param.Bool(
+        True, "cache MPT permission info in TLB entries")
     regulation_num = Param.Int(70000, "train nextline num")
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
     walker = Param.RiscvPagetableWalker(\

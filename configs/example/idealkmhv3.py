@@ -29,6 +29,12 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_level3_limit = args.ptw_level3_limit
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
+def setMptTlbInfoParams(args, mmu):
+    enable = getattr(args, "enable_mpt_tlb_info", True)
+    mmu.itb.enable_mpt_tlb_info = enable
+    mmu.dtb.enable_mpt_tlb_info = enable
+    mmu.l2_shared.enable_mpt_tlb_info = enable
+
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -36,6 +42,7 @@ def setKmhV3IdealParams(args, system):
         cpu.mmu.itb.size = 96
         #cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         #cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
+        setMptTlbInfoParams(args, cpu.mmu)
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32

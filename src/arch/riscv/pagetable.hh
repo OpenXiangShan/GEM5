@@ -103,6 +103,10 @@ EndBitUnion(MPTInfoRaw);
 #define MPT_PERM_W  (1 << 1)
 #define MPT_PERM_X  (1 << 2)
 
+#ifndef MPT_FORCE_ALLOW_PERMS
+#define MPT_FORCE_ALLOW_PERMS 0
+#endif
+
 
 // -----------------------------
 //Smmp52 related parameter definition.
@@ -166,6 +170,17 @@ mptPermAllowsAccess(uint8_t perm, BaseMMU::Mode mode)
       default:
         return false;
     }
+}
+
+inline uint8_t
+mptEffectivePerm(uint8_t rawPerm)
+{
+#if MPT_FORCE_ALLOW_PERMS
+    (void)rawPerm;
+    return MPT_PERM_R | MPT_PERM_W | MPT_PERM_X;
+#else
+    return rawPerm;
+#endif
 }
 
 inline Addr

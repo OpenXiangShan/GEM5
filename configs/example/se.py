@@ -120,6 +120,10 @@ def get_processes(args):
 parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 Options.addSEOptions(parser)
+parser.set_defaults(enable_mpt_tlb_info=True)
+parser.add_argument("--disable-mpt-tlb-info", action="store_false",
+                    dest="enable_mpt_tlb_info",
+                    help="Disable caching MPT permission info in TLB entries")
 
 if '--ruby' in sys.argv:
     Ruby.define_options(parser)
@@ -294,6 +298,10 @@ def setKmhV3IdealParams(args, system):
         cpu.branchPred = bpClass()
 
         cpu.mmu.itb.size = 96
+        enable_mpt_tlb_info = getattr(args, "enable_mpt_tlb_info", True)
+        cpu.mmu.itb.enable_mpt_tlb_info = enable_mpt_tlb_info
+        cpu.mmu.dtb.enable_mpt_tlb_info = enable_mpt_tlb_info
+        cpu.mmu.l2_shared.enable_mpt_tlb_info = enable_mpt_tlb_info
 
         cpu.fetchWidth = 32     # 64byte fetch block have up to 32 instructions
         cpu.commitToFetchDelay = 2

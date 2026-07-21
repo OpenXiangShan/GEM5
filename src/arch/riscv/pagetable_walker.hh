@@ -240,6 +240,13 @@ class MPTCache52;
             EventFunctionWrapper *mptCacheHitEvent = nullptr;
             bool mptCacheHitPending = false;
             bool mptCacheHitRetry = false;
+            bool mptOnly = false;
+            bool mptOnlyHasEntry = false;
+            bool mptOnlyHasVsstageEntry = false;
+            bool mptOnlyHasGstageEntry = false;
+            TlbEntry mptOnlyEntry;
+            TlbEntry mptOnlyVsstageEntry;
+            TlbEntry mptOnlyGstageEntry;
           public:
             WalkerState(Walker * _walker, BaseMMU::Translation *_translation,
                         const RequestPtr &_req, bool _isFunctional = false) :
@@ -292,6 +299,7 @@ class MPTCache52;
             bool startMPTwalk();
             bool LastMPTwalk();
             bool completeMPTWalk();
+            bool completeMPTOnly();
             void scheduleMptCacheHit();
             bool stepMPTwalk();
             bool stepMPTwalkFromMPTE(uint64_t raw, Addr mptePaddr);
@@ -393,11 +401,19 @@ class MPTCache52;
                     bool frm_back_pre_req = false, int f_level = 2,
                     bool from_l2tlb = false, Addr asid = 0);
 
-        void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
-                                BaseMMU::Translation *translation,
-                                BaseMMU::Mode mode, Addr Paddr,
-                                TlbEntry *entry,TlbEntry *entryVsstage,
-                                TlbEntry *entryGstage);
+        Fault doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
+                                 BaseMMU::Translation *translation,
+                                 BaseMMU::Mode mode, Addr Paddr,
+                                 TlbEntry *entry, TlbEntry *entryVsstage,
+                                 TlbEntry *entryGstage);
+        void startMPTCheck(const RequestPtr &req, ThreadContext *tc,
+                           BaseMMU::Translation *translation,
+                           BaseMMU::Mode mode, Addr paddr,
+                           const TlbEntry *entry = nullptr,
+                           const TlbEntry *entryVsstage = nullptr,
+                           const TlbEntry *entryGstage = nullptr);
+        Fault checkMPTFunctional(Addr vaddr, Addr paddr,
+                                 BaseMMU::Mode mode);
 
 
 
@@ -602,6 +618,8 @@ struct MPT
     bool walk(int hit_level, Addr base, Addr paddrUT, ThreadContext *tc,
               PMAChecker *pma, PMP *pmp,
               Walker::WalkerState *senderState);
+    bool checkFunctional(Addr paddr, BaseMMU::Mode mode,
+                         System *sys) const;
 
     //all miss, 127*4; L3 hit , else miss,  127*3.   L3 L2 hit , l1 l0 miss, 127*2.   L3 L2 L1 hit , l0 miss 127
 

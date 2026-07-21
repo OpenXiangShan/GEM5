@@ -46,7 +46,8 @@ export LLVM_PROFILE_FILE=$(pwd)/default.profraw
 $gem5_home/build/RISCV/gem5.fast \
      $gem5_home/configs/example/idealkmhv3.py \
      --raw-cpt \
-     --generic-rv-cpt=$GEM5_PGO_CPT
+     --generic-rv-cpt=$GEM5_PGO_CPT \
+    #  --disable-mpt-tlb-info
 check $?
 
 # TODO: only one profile file is generated, provide multiple

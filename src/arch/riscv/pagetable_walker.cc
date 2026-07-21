@@ -800,6 +800,38 @@ MPT::walk(int hit_level, Addr base, Addr paddrUT, ThreadContext *tc,
     return readMPTE(paddr, tc, pma, pmp, senderState );
 }
 
+bool
+MPT::checkFunctional(Addr paddr, BaseMMU::Mode mode, System *sys) const
+{
+    panic_if(sys == nullptr, "Functional MPT check requires a system\n");
+
+    Addr base = mmpt.ppn << PageShift;
+    for (int level = 3; level >= 0; --level) {
+        const size_t shift = getPageShiftForLevel(level) + 4;
+        const size_t index = (paddr >> shift) & 0x1ff;
+        const Addr mptePaddr = base + index * MPT_MPTE_SIZE;
+        const uint64_t raw = sys->physProxy.read<uint64_t>(
+            mptePaddr, sys->getGuestByteOrder());
+        const MPTE52 mpte(raw);
+
+        if (!mpte.isValid()) {
+            return false;
+        }
+        if (mpte.isLeaf()) {
+            const uint8_t pi =
+                (paddr >> getPageShiftForLevel(level)) & 0xf;
+            return mptPermAllows(
+                effectiveMptPerm(mpte.perms(pi)), mode);
+        }
+        if (level == 0) {
+            return false;
+        }
+        base = mpte.nextLevelPAddr();
+    }
+
+    return false;
+}
+
 
 
 #endif // MPT_ENABLED
@@ -1009,6 +1041,7 @@ void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params )
             params->mptcache_l3_size,
             params->mptcache_sp_size);
 }
+
 std::pair<bool /*hit*/, MPTCacheEntry>
 MPTCache52::fetchDelayed(Addr pa, ThreadContext *tc, PMAChecker *pma,
                          PMP *pmp, int& mptlevel,
@@ -1538,14 +1571,27 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
     }
 }
 
-void
+Fault
 Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
                            BaseMMU::Mode mode, Addr Paddr, TlbEntry *entry, TlbEntry *entryVsstage,
                            TlbEntry *entryGstage)
 {
+    const bool hasUsableMptInfo =
+        entry != nullptr && entry->mptInfo.valid &&
+        mptLevelCoversLogBytes(entry->mptInfo.mptlevel, entry->logBytes);
+    const bool needsMptCheck = globalMPT.mmpt.mode != 0 &&
+        (!tlb->isMptTlbInfoEnabled() || !hasUsableMptInfo);
+
     if (translation == nullptr) {
         req->setPaddr(Paddr);
-        return;
+        return needsMptCheck ?
+            checkMPTFunctional(req->getVaddr(), Paddr, mode) : NoFault;
+    }
+
+    if (needsMptCheck) {
+        startMPTCheck(req, tc, translation, mode, Paddr, entry,
+                      entryVsstage, entryGstage);
+        return NoFault;
     }
 
     DPRINTF(PageTableWalker2, "schedule %d\n", curCycle());
@@ -1562,6 +1608,66 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
     if (!doL2TLBHitEvent.scheduled()) {
         schedule(doL2TLBHitEvent, curTick());
     }
+    return NoFault;
+}
+
+void
+Walker::startMPTCheck(const RequestPtr &req, ThreadContext *tc,
+                      BaseMMU::Translation *translation, BaseMMU::Mode mode,
+                      Addr paddr, const TlbEntry *entry,
+                      const TlbEntry *entryVsstage,
+                      const TlbEntry *entryGstage)
+{
+    panic_if(translation == nullptr,
+             "Timing MPT-only check requires a translation object\n");
+
+    WalkerState *state = new WalkerState(this, translation, req);
+    state->initState(tc, req, mode, sys->isTimingMode(), false, false);
+    panic_if(!state->isTiming(),
+             "MPT-only check started outside timing mode\n");
+
+    state->mptOnly = true;
+    state->mptCheckPaddr = paddr;
+    state->mptCheckMode = mode;
+    state->mptFaultMode = mode;
+    state->PaddrUT = paddr;
+    state->isMPTing = true;
+    state->finishMPTing = false;
+    state->mpt_level = 3;
+    state->read = nullptr;
+
+    if (entry != nullptr) {
+        state->mptOnlyEntry = *entry;
+        state->mptOnlyHasEntry = true;
+    }
+    if (entryVsstage != nullptr) {
+        state->mptOnlyVsstageEntry = *entryVsstage;
+        state->mptOnlyHasVsstageEntry = true;
+    }
+    if (entryGstage != nullptr) {
+        state->mptOnlyGstageEntry = *entryGstage;
+        state->mptOnlyHasGstageEntry = true;
+    }
+
+    currStates.push_back(state);
+    DPRINTF(PageTableWalker,
+            "Start MPT-only check vaddr %#lx paddr %#lx pc %#lx\n",
+            req->getVaddr(), paddr, req->getPC());
+
+    if (state->startMPTwalk()) {
+        state->finishMPTing = true;
+        state->scheduleMptCacheHit();
+    }
+}
+
+Fault
+Walker::checkMPTFunctional(Addr vaddr, Addr paddr, BaseMMU::Mode mode)
+{
+    if (globalMPT.mmpt.mode == 0 ||
+        globalMPT.checkFunctional(paddr, mode, sys)) {
+        return NoFault;
+    }
+    return createMPTPagefault(vaddr, paddr, mode);
 }
 
 Fault
@@ -1730,6 +1836,10 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         pteReadMptFaultPending = false;
         pteReadMptCheckedPaddr = 0;
         mptGranularityClipped = false;
+        mptOnly = false;
+        mptOnlyHasEntry = false;
+        mptOnlyHasVsstageEntry = false;
+        mptOnlyHasGstageEntry = false;
         DPRINTF(PageTableWalker, "WalkerState::initState for req %#x (vaddr %#x):\n", _req, _req->getVaddr());
         DPRINTFR(PageTableWalker, "\tvsatp %#x(mode: %d, asid: %#x, ppn:%#x)\n",
                  vsatp, vsatp >> 60, (vsatp >> 44) & 0xffff, vsatp & 0xfffffffffff);
@@ -1781,6 +1891,10 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         pteReadMptFaultPending = false;
         pteReadMptCheckedPaddr = 0;
         mptGranularityClipped = false;
+        mptOnly = false;
+        mptOnlyHasEntry = false;
+        mptOnlyHasVsstageEntry = false;
+        mptOnlyHasGstageEntry = false;
         assert(functional || !_req->get_h_inst());
     }
 }
@@ -1791,6 +1905,9 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
                                  BaseMMU::Mode _mode, bool from_l2tlb, Addr asid, bool from_forward_pre_req,
                                  bool from_back_pre_req)
 {
+    if (mptOnly) {
+        return std::make_pair(false, NoFault);
+    }
 
     SATP _satp = _tc->readMiscReg(MISCREG_SATP);
     bool priv_match;
@@ -2714,7 +2831,9 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         // step 8
                         unsigned tlbLogBytes = leafLogBytes;
                         mptGranularityClipped = false;
-                        if (globalMPT.mmpt.mode != 0 && mptInfo.valid) {
+                        if (walker->tlb != nullptr &&
+                            walker->tlb->isMptTlbInfoEnabled() &&
+                            globalMPT.mmpt.mode != 0 && mptInfo.valid) {
                             unsigned mptLogBytes =
                                 getPageShiftForLevel(mptInfo.mptlevel);
                             if (mptLogBytes < tlbLogBytes) {
@@ -2747,7 +2866,10 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             walker->getLevelForPageSizeLog2(tlbLogBytes);
                         assert(tlbEntryLevel >= 0);
                         entry.level = tlbEntryLevel;
-                        entry.mptInfo = mptInfo;
+                        entry.mptInfo =
+                            (walker->tlb != nullptr &&
+                             walker->tlb->isMptTlbInfoEnabled()) ?
+                            mptInfo : MPTInfoInTLB();
                         // put it non-writable into the TLB to detect
                         // writes and redo the page table walk in order
                         // to update the dirty flag.
@@ -2913,7 +3035,9 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     DPRINTF(PageTableWalker3, "level %d l2_level %d\n", level, l2_level);
                     inl2Entry.paddr = l2pte.ppn;
                     inl2Entry.pte = l2pte;
-                    if (globalMPT.mmpt.mode != 0 && mptInfo.valid) {
+                    if (walker->tlb != nullptr &&
+                        walker->tlb->isMptTlbInfoEnabled() &&
+                        globalMPT.mmpt.mode != 0 && mptInfo.valid) {
                         Addr checkedMptSlot =
                             mptPermSlotAlign(PaddrUT, mptInfo.mptlevel);
                         Addr entryMptSlot =
@@ -3019,7 +3143,9 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 l2pte = read->getLE_l2tlb<uint64_t>(n_l2_i);
                 nextlineEntry.paddr = l2pte.ppn;
                 nextlineEntry.pte = l2pte;
-                if (globalMPT.mmpt.mode != 0 && mptInfo.valid) {
+                if (walker->tlb != nullptr &&
+                    walker->tlb->isMptTlbInfoEnabled() &&
+                    globalMPT.mmpt.mode != 0 && mptInfo.valid) {
                     Addr checkedMptSlot =
                         mptPermSlotAlign(PaddrUT, mptInfo.mptlevel);
                     Addr entryMptSlot =
@@ -3948,9 +4074,76 @@ bool Walker::WalkerState::LastMPTwalk(){
     return false;
 }
 
+bool
+Walker::WalkerState::completeMPTOnly()
+{
+    finishMPTing = true;
+    isMPTing = false;
+    state = Ready;
+    nextState = Waiting;
+
+    if (walker->tlb->isMptTlbInfoEnabled() && mptInfo.valid &&
+        mptOnlyHasEntry) {
+        mptOnlyEntry.mptInfo = mptInfo;
+    }
+
+    for (auto &r : requestors) {
+        panic_if(r.translation == nullptr,
+                 "MPT-only timing request has no translation object\n");
+
+        r.req->setPaddr(mptCheckPaddr);
+        walker->pma->check(r.req);
+        Fault fault = walker->pmp->pmpCheck(
+            r.req, mode, pmode, r.tc);
+        if (fault == NoFault && !MPTresult) {
+            fault = walker->createMPTPagefault(
+                r.req->getVaddr(), mptCheckPaddr, mode);
+        }
+
+        if (fault == NoFault && walker->enableL1L2replace) {
+            if (mptOnlyHasEntry) {
+                TlbEntry l1Entry;
+                if (walker->tlb->isL1DirectCompressionEnabled() &&
+                    walker->tlb->buildSingleL1CompressedEntry(
+                        r.req->getVaddr(), mptOnlyEntry, direct, l1Entry)) {
+                    walker->tlb->insert(
+                        l1Entry.vaddr, l1Entry, false, direct);
+                    walker->tlb->recordL1CompressedEntry(l1Entry);
+                } else if (!walker->tlb->isL1DirectCompressionEnabled()) {
+                    walker->tlb->insert(
+                        mptOnlyEntry.vaddr, mptOnlyEntry, false, direct);
+                }
+            }
+            if (mptOnlyHasVsstageEntry) {
+                walker->tlb->insert(
+                    mptOnlyVsstageEntry.vaddr, mptOnlyVsstageEntry,
+                    false, vsstage);
+            }
+            if (mptOnlyHasGstageEntry) {
+                walker->tlb->insert(
+                    mptOnlyGstageEntry.gpaddr, mptOnlyGstageEntry,
+                    false, gstage);
+            }
+        }
+
+        DPRINTF(PageTableWalker,
+                "Finish MPT-only check vaddr %#lx paddr %#lx pc %#lx "
+                "allowed %d\n",
+                r.req->getVaddr(), mptCheckPaddr, r.req->getPC(),
+                fault == NoFault);
+        r.translation->finish(fault, r.req, r.tc, mode);
+    }
+    requestors.clear();
+    return true;
+}
+
 bool Walker::WalkerState::completeMPTWalk()
 {
     finishMPTing = true;
+
+    if (mptOnly) {
+        return completeMPTOnly();
+    }
 
     /*
      * MPT may be protecting either the already returned PTW response packet

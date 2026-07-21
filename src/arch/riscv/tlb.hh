@@ -80,6 +80,7 @@ class TLB : public BaseTLB
     bool isStage2;
     bool isTheSharedL2;
     bool enableL1DirectCompression;
+    bool enableMptTlbInfo;
     size_t size;
     size_t sizeBack;
     size_t l2TlbL3Size;
@@ -271,6 +272,7 @@ class TLB : public BaseTLB
                                       uint8_t translateMode,
                                       TlbEntry &compressed_entry) const;
     bool isL1DirectCompressionEnabled() const { return enableL1DirectCompression; }
+    bool isMptTlbInfoEnabled() const { return enableMptTlbInfo; }
     Addr translateWithTLB(Addr vaddr, uint16_t asid, BaseMMU::Mode mode, uint8_t translateMode);
     void recordL1CompressionPotential(Addr vaddr, PTE base_pte,
                                       const std::array<PTE, l2tlbLineSize> &ptes,
@@ -394,6 +396,10 @@ class TLB : public BaseTLB
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed, bool from_miss_queue = false);
+#if MPT_ENABLED
+    Fault checkMPTOnTlbHit(Addr vaddr, Addr paddr, BaseMMU::Mode mode,
+                           const TlbEntry *entry, bool &needs_mpt_check);
+#endif
 
 };
 

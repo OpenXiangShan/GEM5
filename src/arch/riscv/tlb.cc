@@ -115,6 +115,7 @@ TLB::TLB(const Params &p) :
     BaseTLB(p), is_dtlb(p.is_dtlb),is_L1tlb(p.is_L1tlb),isStage2(p.is_stage2),
     isTheSharedL2(p.is_the_sharedL2),
     enableL1DirectCompression(p.enable_l1_direct_compression),
+    enableMptTlbInfo(p.enable_mpt_tlb_info),
     size(p.size),sizeBack(32),
     l2TlbL3Size(p.l2tlb_l3_size),
     l2TlbL2Size(p.l2tlb_l2_size),l2TlbL1Size(p.l2tlb_l1_size),
@@ -192,6 +193,44 @@ TLB::TLB(const Params &p) :
                 l2TlbL3Size, l2TlbL2Size, l2TlbL1Size, l2TlbL0Size, l2TlbSpSize);
     }
 }
+
+#if MPT_ENABLED
+Fault
+TLB::checkMPTOnTlbHit(Addr vaddr, Addr paddr, BaseMMU::Mode mode,
+                      const TlbEntry *entry, bool &needs_mpt_check)
+{
+    needs_mpt_check = false;
+
+    if (globalMPT.mmpt.mode == 0) {
+        return NoFault;
+    }
+
+    if (enableMptTlbInfo) {
+        if (!entry->mptInfo.valid ||
+            !mptLevelCoversLogBytes(entry->mptInfo.mptlevel,
+                                    entry->logBytes)) {
+            needs_mpt_check = true;
+            DPRINTF(TLB,
+                    "TLB hit has unusable MPT info for vaddr %#x valid %d "
+                    "mptlevel %u logBytes %u, start MPT-only check\n",
+                    vaddr, entry->mptInfo.valid, entry->mptInfo.mptlevel,
+                    entry->logBytes);
+            return NoFault;
+        }
+
+        bool hasPerm = mptPermAllowsAccess(entry->mptInfo.raw, mode);
+        return hasPerm ? NoFault :
+            walker->createMPTPagefault(vaddr, paddr, mode);
+    }
+
+    needs_mpt_check = true;
+    DPRINTF(TLB,
+            "TLB hit without usable mptInfo for vaddr %#x paddr %#x, "
+            "start MPT-only check\n",
+            vaddr, paddr);
+    return NoFault;
+}
+#endif
 
 Walker *
 TLB::getWalker()
@@ -382,7 +421,7 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     }
 
 #if MPT_ENABLED
-    if (!hidden && entry && globalMPT.mmpt != 0 &&
+    if (enableMptTlbInfo && !hidden && entry && globalMPT.mmpt != 0 &&
         (!entry->mptInfo.valid ||
          !mptLevelCoversLogBytes(entry->mptInfo.mptlevel,
                                  entry->logBytes))) {
@@ -560,7 +599,7 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
 #if MPT_ENABLED
     auto filterInvalidMPTInfo = [&](TlbEntry *entry) -> TlbEntry * {
         bool isLeafEntry = entry && (entry->pte.r || entry->pte.x);
-        if (!hidden && entry && globalMPT.mmpt != 0 &&
+        if (enableMptTlbInfo && !hidden && entry && globalMPT.mmpt != 0 &&
             isLeafEntry &&
             (!entry->mptInfo.valid ||
              !mptLevelCoversLogBytes(entry->mptInfo.mptlevel,
@@ -1816,20 +1855,16 @@ TLB::L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vad
             }
 
             if (fault == NoFault && globalMPT.mmpt != 0) {
-                if (!e0->mptInfo.valid ||
-                    !mptLevelCoversLogBytes(e0->mptInfo.mptlevel,
-                                            e0->logBytes)) {
+                Addr paddr =
+                    e0->paddr << PageShift | (vaddr & mask(e0->logBytes));
+                bool needs_mpt_check = false;
+                fault = checkMPTOnTlbHit(vaddr, paddr, mode, e0,
+                                         needs_mpt_check);
+                if (needs_mpt_check) {
                     DPRINTF(TLB,
-                            "L2TLBCheck has unusable MPT info for vaddr %#x "
-                            "valid %d mptlevel %u logBytes %u, force walker refill\n",
-                            vaddr, e0->mptInfo.valid, e0->mptInfo.mptlevel,
-                            e0->logBytes);
-                    fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
-                } else {
-                    bool hasPerm =
-                        mptPermAllowsAccess(e0->mptInfo.raw, mode);
-                    Addr paddr = e0->paddr << PageShift | (vaddr & mask(e0->logBytes));
-                    fault = hasPerm ? NoFault : walker->createMPTPagefault(vaddr, paddr, mode);
+                            "Defer MPT check for L2 TLB leaf vaddr %#x "
+                            "paddr %#x to final hit scheduling\n",
+                            vaddr, paddr);
                 }
             }
 
@@ -1925,8 +1960,9 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
     if (hitInSp) {  //hit sp,obtain PA direatly
         if (fault == NoFault) {
             paddr = e_l2tlb->paddr << PageShift | (vaddr & mask(e_l2tlb->logBytes));
-            walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr,
-                                       e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage);
+            fault = walker->doL2TLBHitSchedule(
+                req, tc, translation, mode, paddr, e_l2tlb,
+                e_l2tlbVsstage, e_l2tlbGstage);
             delayed = translation != nullptr;
             return std::make_pair(true, fault);
         }
@@ -2090,10 +2126,10 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 }
 
 
-                walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr,
-                                           e_l2tlb, e_l2tlbVsstage,
-                                           e_l2tlbGstage);
-                return std::make_pair(hit_type,NoFault);
+                fault = walker->doL2TLBHitSchedule(
+                    req, tc, translation, mode, gPaddr, e_l2tlb,
+                    e_l2tlbVsstage, e_l2tlbGstage);
+                return std::make_pair(hit_type, fault);
             } else {
                 DPRINTF(TLB, "l1tlb miss in Gstage, set TwoStagePageTableWalk\n");
                 req->setTwoPtwWalk(true, 0, g_top_level, ppn, true);
@@ -2196,10 +2232,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     pgBase = e[0]->pte.ppn << 12;
                 }
                 gPaddr = pgBase | (gPaddr & PGMASK);
-                walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr,
-                                           e_l2tlb, e_l2tlbVsstage,
-                                           e_l2tlbGstage);
-                return std::make_pair(hit_type, NoFault);
+                fault = walker->doL2TLBHitSchedule(
+                    req, tc, translation, mode, gPaddr, e_l2tlb,
+                    e_l2tlbVsstage, e_l2tlbGstage);
+                return std::make_pair(hit_type, fault);
             }
         } else {
             hit_type = h_l2VSstageHitEnd;
@@ -2313,8 +2349,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                             gPaddr = pgBase | (gPaddr & PGMASK);
                             DPRINTFR(TLB, "GVA finish, got HPA %#x, "
                                      "schedule l2tlb hit event. (h_l2GstageHitEnd)\n", gPaddr);
-                            walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage,
-                                                       e_l2tlbGstage);
+                            fault = walker->doL2TLBHitSchedule(
+                                req, tc, translation, mode, gPaddr,
+                                e_l2tlb, e_l2tlbVsstage,
+                                e_l2tlbGstage);
                         } else {
                             DPRINTFR(TLB, "GVA not finish, "
                                      "still need to setTwoStagePTW. (h_l2VSstageHitContinue)\n");
@@ -2322,7 +2360,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                             hit_type = h_l2VSstageHitContinue;
                             req->setTwoPtwWalk(false, level, e[0]->level, e[0]->pte.ppn, hitInSp);
                         }
-                        return std::make_pair(hit_type, NoFault);
+                        return std::make_pair(hit_type, fault);
                     }
 
                 } else {
@@ -2619,9 +2657,9 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                     DPRINTF(TLBVerbosel2, "vaddr %#x,paddr %#x,pc %#x\n", vaddr, paddr, req->getPC());
                     TlbEntry *e_l2tlbVsstage = nullptr;
                     TlbEntry *e_l2tlbGstage = nullptr;
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr,
-                                               e[L_L2L0], e_l2tlbVsstage,
-                                               e_l2tlbGstage);
+                    fault = walker->doL2TLBHitSchedule(
+                        req, tc, translation, mode, paddr, e[L_L2L0],
+                        e_l2tlbVsstage, e_l2tlbGstage);
                     DPRINTF(TLBVerbosel2, "finish Schedule\n");
                     delayed = translation != nullptr;
                     if ((forward_pre_block != vaddr_block) && (!forward_pre[L_L2L0])
@@ -2789,39 +2827,21 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 req->getPC(), mode, e[0]->pte.d);
         fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
     }
+    bool start_mpt_check = false;
+    Addr mptCheckPaddr = 0;
     if (fault == NoFault && globalMPT.mmpt != 0) {
         DPRINTF(TLB, "TLB check MPT\n");
-        if (!e[0]->mptInfo.valid ||
-            !mptLevelCoversLogBytes(e[0]->mptInfo.mptlevel,
-                                    e[0]->logBytes)) {
-            DPRINTF(TLB,
-                    "L1 TLB hit has unusable MPT info for vaddr %#x valid %d "
-                    "mptlevel %u logBytes %u, force walker refill\n",
-                    vaddr, e[0]->mptInfo.valid, e[0]->mptInfo.mptlevel,
-                    e[0]->logBytes);
-            int walk_level = satp.mode == AddrXlateMode::SV48 ? 3 : 2;
-            fault = walker->start(0, tc, translation, req, mode, false, false,
-                                  walk_level, false, 0);
-            if (fault != NoFault) {
-                return fault;
-            }
+        mptCheckPaddr = getEntryPaddr(e[0], vaddr);
+        bool needs_mpt_check = false;
+        fault = checkMPTOnTlbHit(vaddr, mptCheckPaddr, mode, e[0],
+                                 needs_mpt_check);
+        if (needs_mpt_check) {
             if (translation != nullptr) {
-                delayed = true;
-                return fault;
+                start_mpt_check = true;
+            } else {
+                fault = walker->checkMPTFunctional(
+                    vaddr, mptCheckPaddr, mode);
             }
-            e[0] = lookup(vaddr, satp.asid, mode, false, true, direct,
-                          is_prefetch);
-            assert(e[0] != nullptr);
-            assert(e[0]->mptInfo.valid);
-            assert(mptLevelCoversLogBytes(e[0]->mptInfo.mptlevel,
-                                          e[0]->logBytes));
-        } else {
-            bool hasPerm =
-                mptPermAllowsAccess(e[0]->mptInfo.raw, mode);
-            Addr paddr =
-                e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
-            fault = hasPerm ? NoFault :
-                walker->createMPTPagefault(vaddr, paddr, mode);
         }
     }
 
@@ -2871,6 +2891,13 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                                        L2L1CheckLevel, status, pmode, mode, tc, translation);
             }
         }
+    }
+
+    if (start_mpt_check) {
+        walker->startMPTCheck(
+            req, tc, translation, mode, mptCheckPaddr);
+        delayed = true;
+        return NoFault;
     }
 
     return NoFault;
