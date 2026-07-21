@@ -72,6 +72,7 @@ def setKmhV3IdealParams(args, system):
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.smtBorrowDonorReserveEntries = args.smtROBDonorEntry
         cpu.smtBorrowBaseReserveEntries = args.smtROBBaseEntry
+        cpu.robWalkPolicy = 'NaiveCpt' # ideal core recovers via RAT checkpoints
 
         # lsu
         cpu.StoreWbStage = 4
