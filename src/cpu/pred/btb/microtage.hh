@@ -142,6 +142,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void doResolveUpdate(const FetchTarget &entry) override;
     // Train MicroTAGE from the final-stage teacher prediction instead of commit-time truth.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
+    void setAbtbComponentIdx(int idx) { abtbComponentIdx = idx; }
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
@@ -424,6 +425,7 @@ public:
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
 
+    int abtbComponentIdx{-1};
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);

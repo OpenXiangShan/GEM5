@@ -475,10 +475,12 @@ MicroTAGE::prepareS3UpdateEntries(const FullBTBPrediction &s3Pred)
 bool
 MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
 {
-    if (componentIdx <= 0) {
+#ifdef UNIT_TEST
+    if (abtbComponentIdx < 0) {
         return true;
     }
-    return entry.source == componentIdx - 1;
+#endif
+    return abtbComponentIdx >= 0 && entry.source == abtbComponentIdx;
 }
 
 std::vector<BTBEntry>

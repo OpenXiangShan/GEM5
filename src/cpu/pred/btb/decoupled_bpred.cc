@@ -121,6 +121,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
             }
         }
     }
+    if (microtage->isEnabled()) {
+        microtage->setAbtbComponentIdx(abtb->isEnabled() ?
+                                       abtb->getComponentIdx() : -1);
+    }
     if (bpDBSwitches.size() > 0) {
         warn("bpDBSwitches contains unknown switches\n");
         printf("unknown switches: ");

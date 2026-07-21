@@ -332,6 +332,10 @@ AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
 
     state.meta->valid = !entries.empty();
     state.meta->indexPhrHash = indexPhrHash;
+    state.meta->lookupIndex = state.currentLookupIndex;
+    // The lookup set remains meaningful even on a miss; S3 update may need it
+    // to allocate a fresh ABTB entry for a newly taken branch.
+    state.meta->lookupIndexValid = state.currentLookupIndexValid;
 
     // Save current BTB entries
     for (auto e: entries) {
@@ -340,6 +344,8 @@ AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
 
     state.lastPredEntries = state.meta->hit_entries;
     state.lastPredIndexPhrHash = state.meta->indexPhrHash;
+    state.lastPredLookupIndex = state.meta->lookupIndex;
+    state.lastPredLookupIndexValid = state.meta->lookupIndexValid;
 }
 
 void
@@ -397,6 +403,8 @@ AheadBTB::recoverState(const FetchTarget &entry)
     while (!state.aheadReadBtbEntries.empty()) {
         state.aheadReadBtbEntries.pop();
     }
+    state.currentLookupIndexValid = false;
+    state.lastPredLookupIndexValid = false;
 }
 
 void
@@ -428,6 +436,7 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash,
         return res; // ignore false hit when lowest bit is 1
     }
     auto &state = threadState(tid);
+    state.currentLookupIndexValid = false;
     Addr btb_idx = getIndex(block_pc, asidHash, indexPhrHash);
     auto btb_set = btb[btb_idx];
     assert(btb_idx < numSets);
@@ -449,6 +458,8 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash,
         // in case there are push without corresponding pop
         assert(state.aheadReadBtbEntries.size() == aheadPipelinedStages+1);
         std::tie(pc, idx_prvStartpc, set) = state.aheadReadBtbEntries.front();
+        state.currentLookupIndex = idx_prvStartpc;
+        state.currentLookupIndexValid = true;
         DPRINTF(AheadPipeline,
             "AheadBTB: [tid:%u] ahead-pipeline filled, using set %ld from pc %#lx\n",
             tid, idx_prvStartpc, pc);
@@ -469,7 +480,10 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash,
         if (way.valid && way.tag == tag_curStartpc) {
             res.push_back(way);
             way.tick = curTick();  // Update timestamp for MRU
-            std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
+            if (state.currentLookupIndexValid) {
+                std::make_heap(mruList[idx_prvStartpc].begin(),
+                               mruList[idx_prvStartpc].end(), older());
+            }
         }
     }
     return res;
@@ -714,33 +728,33 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         return;
     }
 
-    // AheadBTB use S3 prediction for update
     auto &state = threadState(s3Pred.tid);
-    if (!s3Pred.isTaken() || state.lastPredEntries.empty()) {
+    if (!s3Pred.isTaken() || !state.lastPredLookupIndexValid) {
         DPRINTF(ABTB,
-                "AheadBTB: S3 update skipped, taken %d, meta valid %d\n",
-                s3Pred.isTaken(), !state.lastPredEntries.empty());
+                "AheadBTB: S3 update skipped, taken %d, meta valid %d, "
+                "hit entries %lu, lookup index valid %d\n",
+                s3Pred.isTaken(), state.lastPredEntries.size(),
+                state.lastPredLookupIndexValid);
         return;
     }
 
     Addr end_inst_pc = s3Pred.getTakenEntry().pc;
-    auto old_entries= processOldEntries(state.lastPredEntries, end_inst_pc);
+    auto old_entries = processOldEntries(state.lastPredEntries, end_inst_pc);
 
-    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries,s3Pred);
+    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries, s3Pred);
 
     for (auto &entry : entries_to_update) {
         Addr startPC = s3Pred.bbStart;
-        Addr btb_tag = getTag(startPC, s3Pred.asidHash);  // use last pc to get tag
+        Addr btb_tag = getTag(startPC, s3Pred.asidHash);
         if (previousPC == 0) {
             DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
             return;
         }
-        Addr btb_idx = getIndex(previousPC, s3Pred.asidHash,
-                                state.lastPredIndexPhrHash);  // use last pc to get idx
+        Addr btb_idx = state.lastPredLookupIndex;
         BranchInfo takenbranchinfo;
         takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
         takenbranchinfo.target = s3Pred.getTakenEntry().target;
-        entry.source = getComponentIdx(); // mark the entry source as AheadBTB
+        entry.source = getComponentIdx();
 
         updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
     }
