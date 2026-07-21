@@ -220,6 +220,7 @@ class DynInst : public ExecContext, public RefCounted
                                  /// instructions ahead of it
         SerializeAfter,          /// Needs to serialize instructions behind it
         SerializeHandled,        /// Serialization has been handled
+        RatSnapshotted,          /// Instruction owns a RAT checkpoint
         NumStatus
     };
 
@@ -889,6 +890,15 @@ class DynInst : public ExecContext, public RefCounted
      *  serializing state.
      */
     bool isSerializeHandled() { return status[SerializeHandled]; }
+
+    /** Returns whether the instruction owns a RAT checkpoint. */
+    bool isRatSnapshotted() const { return status[RatSnapshotted]; }
+    /** Records that the instruction owns a RAT checkpoint. Does not capture
+     *  any alias-table state; it only marks the instruction so the ROB can
+     *  find the nearest checkpoint during a squash. */
+    void setRatSnapshotted() { status.set(RatSnapshotted); }
+    /** Clears the RAT-checkpoint mark. */
+    void clearRatSnapshotted() { status.reset(RatSnapshotted); }
 
     /** Returns the opclass of this instruction. */
     OpClass opClass() const { return staticInst->opClass(); }
