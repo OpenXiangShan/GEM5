@@ -84,6 +84,7 @@ def setKmhV3Params(args, system):
         cpu.RobCompressPolicy = 'none'
         cpu.numROBEntries = 352
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.robWalkPolicy = args.rob_walk_policy
 
         # lsu
         cpu.StoreWbStage = 4

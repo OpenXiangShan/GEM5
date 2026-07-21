@@ -967,6 +967,14 @@ def xiangshan_system_init():
         default="",
         help="Apply a solver overlay JSON before instantiate",
     )
+    parser.add_argument(
+        "--rob-walk-policy",
+        type=str,
+        default="Replay",
+        choices=["Rollback", "Replay", "ConstCycle", "NaiveCpt"],
+        help="ROB misprediction-recovery walk policy. NaiveCpt enables the "
+              "RAT-checkpoint recovery-cost model.",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

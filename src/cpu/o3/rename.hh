@@ -54,6 +54,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
+#include "enums/ROBWalkPolicy.hh"
 #include "sim/probe/probe.hh"
 
 namespace gem5
@@ -281,6 +282,40 @@ class Rename
 
     InstSeqNum releaseSeq[MaxThreads] = {};
 
+    /** RAT checkpoint records, per thread: sequence numbers of in-flight
+     *  control-flow instructions that currently own a checkpoint. Newest at
+     *  front, oldest at back (strictly descending by sequence number). */
+    std::list<InstSeqNum> ratSnapshotBuffer[MaxThreads];
+
+    /** True when the active recovery policy consumes RAT checkpoints
+     *  (NaiveCpt). Derived from robWalkPolicy at construction. */
+    bool ratSnapshotActive;
+    /** Maximum number of live checkpoints (slots). */
+    int numMaxRatSnapshot;
+    /** Minimum instructions between successive checkpoints. */
+    unsigned ratSnapshotDistance;
+    /** Live checkpoints across all threads (checkpoints are thread-shared). */
+    int numRatSnapshotInUse{0};
+    /** Instructions renamed since the last checkpoint was taken. */
+    unsigned lastRatSnapshotDistance{0};
+
+    /** Total live checkpoints across threads (invariant check). */
+    int countRatSnapshots();
+    size_t countRatSnapshots(ThreadID tid);
+    /** Whether a free checkpoint slot exists. */
+    bool ratSnapshotAvailable() {
+        assert(numRatSnapshotInUse == countRatSnapshots());
+        return numRatSnapshotInUse < numMaxRatSnapshot;
+    }
+    /** Record a checkpoint on this instruction. */
+    void takeSnapshot(const DynInstPtr &inst, ThreadID tid);
+    /** Release checkpoints at or older than the committed sequence number. */
+    void commitSnapshot(InstSeqNum commit_seq_num, ThreadID tid);
+    /** Release checkpoints strictly younger than the squash point. */
+    void squashSnapshot(InstSeqNum squash_seq_num, ThreadID tid);
+    /** Whether the instruction may carry a checkpoint. */
+    bool suitableForRatSnapshot(const DynInstPtr &inst);
+
     void tryFreePReg(PhysRegIdPtr phys_reg);
 
     /** Pointer to CPU. */
@@ -446,7 +481,12 @@ class Rename
         statistics::Vector stallEvents;
 
         statistics::VectorDistribution smtStallEvents;
-        
+
+        statistics::Scalar assignedRatSnapshot;
+        statistics::Scalar committedRatSnapshot;
+        statistics::Scalar squashedRatSnapshot;
+        statistics::Distribution distanceRatSnapshot;
+
     } stats;
 
     std::vector<StallReason> renameStalls;

@@ -349,7 +349,13 @@ class ROB
 
     unsigned constSquashCycle{1};
 
+    bool robWalkByDestRegs{false};
+
     unsigned computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash);
+
+    /** NaiveCpt recovery width: walk from the nearest checkpoint older than
+     *  the redirect, counted in destination-register reclaim work. */
+    unsigned computeSnapshotSquashWidth(InstSeqNum squash_num, ThreadID tid);
 
   public:
     /** Iterator pointing to the instruction which is the last instruction
@@ -400,6 +406,9 @@ class ROB
         statistics::Scalar writes;
 
         statistics::Distribution instPergroup;
+
+        statistics::Scalar robRatSnapshotHits;
+        statistics::Distribution snapshotSquashWidth;
     } stats;
 };
 
