@@ -863,6 +863,17 @@ decode QUADRANT {
                           new AtomicGenericOp<uint32_t>(Rs2_uw,
                                   [](uint32_t* b, uint32_t a){ *b = a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+                0x5: AtomicMemOp::amocas_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGeneric3Op<uint32_t>(Rs2_uw, Rd_sd,
+                                  [](uint32_t* b, uint32_t desired,
+                                     uint32_t expected) {
+                                      if (*b == expected)
+                                          *b = desired;
+                                  });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x4: AtomicMemOp::amoxor_w({{
                     Rd_sd = Mem_sw;
                 }}, {{
@@ -936,6 +947,17 @@ decode QUADRANT {
                           new AtomicGenericOp<uint64_t>(Rs2_ud,
                                   [](uint64_t* b, uint64_t a){ *b = a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+                0x5: AtomicMemOp::amocas_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                          new AtomicGeneric3Op<uint64_t>(Rs2_ud, Rd_sd,
+                                  [](uint64_t* b, uint64_t desired,
+                                     uint64_t expected) {
+                                      if (*b == expected)
+                                          *b = desired;
+                                  });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x4: AtomicMemOp::amoxor_d({{
                     Rd_sd = Mem_sd;
                 }}, {{
@@ -984,6 +1006,33 @@ decode QUADRANT {
                     TypedAtomicOpFunctor<uint64_t> *amo_op =
                       new AtomicGenericOp<uint64_t>(Rs2_ud,
                         [](uint64_t* b, uint64_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+            }
+            0x4: decode AMOFUNCT {
+                0x5: AtomicMemOp::amocas_q({{
+                    Rd = Mem_tud[0];
+                    RdHi = Mem_tud[1];
+                }}, {{
+                    if ((RD & 1) || (RS2 & 1)) {
+                        return std::make_shared<IllegalInstFault>(
+                                "AMOCAS.Q requires even rd and rs2",
+                                machInst);
+                    }
+
+                    Mem_tud = {Rd, RdHi};
+                    std::array<uint64_t, 2> desired = {Rs2, Rs2Hi};
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                        new AtomicGenericPair3Op<uint64_t>(
+                                Mem_tud, desired,
+                                [](uint64_t *memory,
+                                   std::array<uint64_t, 2> &expected,
+                                   std::array<uint64_t, 2> desired) {
+                                    if (memory[0] == expected[0] &&
+                                        memory[1] == expected[1]) {
+                                        memory[0] = desired[0];
+                                        memory[1] = desired[1];
+                                    }
+                                });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
             }
         }
@@ -2504,6 +2553,52 @@ decode QUADRANT {
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
                     }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
                         IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    0xb: sinval_vma({{
+                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                        HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                        int v = xc->readMiscReg(MISCREG_VIRMODE);
+                        auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                        if (v &&
+                            (pm == PRV_U ||
+                             (pm == PRV_S && hstatus.vtvm == 1))) {
+                            return std::make_shared<HVFault>();
+                        }
+                        if (!v &&
+                            (pm == PRV_U ||
+                             (pm == PRV_S && status.tvm == 1))) {
+                            return std::make_shared<IllegalInstFault>(
+                                "sinval_vma in user mode or TVM enabled",
+                                machInst);
+                        }
+                        xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+                    }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                        IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    0xc: decode RS2 {
+                        0x0: sfence_w_inval({{
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                            if (v && pm == PRV_U) {
+                                return std::make_shared<HVFault>();
+                            }
+                            if (!v && pm == PRV_U) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "sfence_w_inval in user mode", machInst);
+                            }
+                        }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                        0x1: sfence_inval_ir({{
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                            if (v && pm == PRV_U) {
+                                return std::make_shared<HVFault>();
+                            }
+                            if (!v && pm == PRV_U) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "sfence_inval_ir in user mode", machInst);
+                            }
+                        }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    }
                     0x18: mret({{
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             return std::make_shared<IllegalInstFault>(

@@ -1,7 +1,7 @@
 name: On-Demand RVV SPEC Test (Tier 1.5)
 
 on:
-  # Label触发: 添加 'rvv' 标签自动跑 gcc15-spec06-0.8c
+  # Label触发: 添加 'rvv' 标签自动跑 spec06int-rvv-0.8c
   push:
     branches: [ xs-dev ]
   pull_request_target:

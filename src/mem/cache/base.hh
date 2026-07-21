@@ -52,6 +52,7 @@
 #include <cstdint>
 #include <queue>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "base/addr_range.hh"
@@ -1647,6 +1648,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void unserialize(CheckpointIn &cp) override;
 
   private:
+
+    /** Packets forwarded as uncacheable writes and awaiting a response. */
+    std::unordered_set<PacketPtr> outstandingUncacheableWrites;
 
     const unsigned cacheLevel{0};
 
