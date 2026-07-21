@@ -351,7 +351,9 @@ class TLB : public BaseTLB
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
-    void updateL2TLBSeq(TlbEntryTrie *Trie_l2,Addr vpn,Addr step, uint16_t asid,uint8_t translateMode);
+    void updateL2TLBSeq(TlbEntryTrie *Trie_l2, Addr vpn, Addr step,
+                        uint16_t asid, uint8_t translateMode,
+                        unsigned prefix_width);
 
 
     void evictLRU();
