@@ -194,7 +194,7 @@ decode QUADRANT {
                     return std::make_shared<IllegalInstFault>(
                             "source reg x0", machInst);
                 }
-                Rc1_sw = (int32_t)(Rc1_sw + imm);
+                Rc1 = szext<32>(Rc1 + imm);
             }});
             0x2: c_li({{
                 imm = CIMM5;
@@ -737,7 +737,7 @@ decode QUADRANT {
         0x06: decode FUNCT3 {
             format IOp {
                 0x0: addiw({{
-                    Rd_sw = (int32_t)(Rs1_sw + imm);
+                    Rd = szext<32>(Rs1 + imm);
                 }}, int32_t);
                 0x1: decode FS3 {
                     0x0: slliw({{
