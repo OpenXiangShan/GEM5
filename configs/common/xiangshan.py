@@ -684,6 +684,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             name = PerfRecord.vals[i]
             type_str = "bigint unsigned" if name.lower().startswith(('at', 'pc', 'result')) else "char(20)"
             perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
+        perfCCT_cmd += ",TID int unsigned NOT NULL"
         perfCCT_cmd += ");"
 
         perfCCT_cmd += """
