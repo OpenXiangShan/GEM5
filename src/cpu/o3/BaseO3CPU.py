@@ -177,7 +177,11 @@ class BaseO3CPU(BaseCPU):
             "Time buffer size for forward communication")
 
     LQEntries = Param.Unsigned(72, "Number of load queue entries")
-    SQEntries = Param.Unsigned(56, "Number of store queue entries")
+    SQEntries = Param.Unsigned(56, "Number of physical store queue entries")
+    StoreQueueMultiple = Param.Unsigned(1,
+        "Virtual-to-physical store queue capacity multiplier (power of two)")
+    phySQFullCheckAtReplay = Param.Bool(False,
+        "Wait for physical store queue space before starting a full-SQ replay")
 
     LdPipeStages = Param.Unsigned(4, "Number of load pipeline stages")
     StPipeStages = Param.Unsigned(5, "Number of store pipeline stages")

@@ -910,6 +910,21 @@ class LSQ
     /** Iq issues a store to store pipeline. */
     void issueToStorePipe(const DynInstPtr &inst);
 
+    /** Whether a store uop may update its physical SQ window. */
+    bool storeQueueWriteReady(const DynInstPtr &inst) const;
+
+    /** Record the first address/data-ready transition for an SQ entry. */
+    void recordAddrOrDataReady(const DynInstPtr &inst);
+
+    /** Decrement the address/data-ready count when an SQ entry is removed. */
+    void recordAddrOrDataDequeue(const DynInstPtr &inst);
+
+    /** Whether a physical-SQ-full replay may enter its IQ replayQ. */
+    bool phySQFullReplayReady(const DynInstPtr &inst);
+
+    /** Record a post-issue replay caused by the physical SQ window. */
+    void recordStoreQueueReplay(const DynInstPtr &inst);
+
     /** Process instructions in each load/store pipeline stages. */
     void executePipeSx();
 
@@ -1516,7 +1531,13 @@ class LSQ
 
     /** Total Size of LQ Entries. */
     unsigned LQEntries;
-    /** Total Size of SQ Entries. */
+    /** Number of physical SQ entries available to STA/STD. */
+    unsigned physicalSQEntries;
+    /** Virtual-to-physical SQ capacity multiplier. */
+    unsigned storeQueueMultiple;
+    /** Whether a physical-SQ-full replay waits for physical SQ space. */
+    bool phySQFullCheckAtReplay;
+    /** Total number of virtual SQ entries. */
     unsigned SQEntries;
 
     /** Max number of memory instructions that may enter LSQ in one cycle. */

@@ -86,6 +86,7 @@ namespace o3
 {
 
 class IssueQue;
+class InstructionQueue;
 
 class DynInst : public ExecContext, public RefCounted
 {
@@ -496,6 +497,7 @@ class DynInst : public ExecContext, public RefCounted
     RequestPtr reqToVerify;
 
     IssueQue* issueQue = nullptr;
+    InstructionQueue* instQueue = nullptr;
     int issueportid = -1;
     int iqtag = -1;
 
@@ -1173,6 +1175,11 @@ class DynInst : public ExecContext, public RefCounted
 
     void setRescheduleReplay() { setReplay(LdStReplayType::RescheduleReplay); }
     bool needRescheduleReplay() const { return getReplayType() == LdStReplayType::RescheduleReplay; }
+
+    void setPhysicalSQFullReplay() { setReplay(LdStReplayType::PhysicalSQFullReplay); }
+    bool needPhysicalSQFullReplay() const {
+        return getReplayType() == LdStReplayType::PhysicalSQFullReplay;
+    }
 
     void setSTLFReplay() { setReplay(LdStReplayType::STLFReplay); }
     bool needSTLFReplay() const { return getReplayType() == LdStReplayType::STLFReplay; }
