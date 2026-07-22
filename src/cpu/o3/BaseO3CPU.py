@@ -180,7 +180,7 @@ class BaseO3CPU(BaseCPU):
     SQEntries = Param.Unsigned(56, "Number of physical store queue entries")
     StoreQueueMultiple = Param.Unsigned(1,
         "Virtual-to-physical store queue capacity multiplier (power of two)")
-    phySQFullCheckAtReplay = Param.Bool(False,
+    phySQFullCheckAtReplay = Param.Bool(True,
         "Wait for physical store queue space before starting a full-SQ replay")
 
     LdPipeStages = Param.Unsigned(4, "Number of load pipeline stages")
