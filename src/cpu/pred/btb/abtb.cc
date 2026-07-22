@@ -729,16 +729,18 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
     }
 
     auto &state = threadState(s3Pred.tid);
-    if (!s3Pred.isTaken() || !state.lastPredLookupIndexValid) {
+    if (!state.lastPredLookupIndexValid) {
         DPRINTF(ABTB,
-                "AheadBTB: S3 update skipped, taken %d, meta valid %d, "
-                "hit entries %lu, lookup index valid %d\n",
-                s3Pred.isTaken(), state.lastPredEntries.size(),
+                "AheadBTB: S3 update skipped, hit entries %lu, "
+                "lookup index valid %d\n",
+                state.lastPredEntries.size(),
                 state.lastPredLookupIndexValid);
         return;
     }
 
-    Addr end_inst_pc = s3Pred.getTakenEntry().pc;
+    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
+                            (s3Pred.bbStart + predictWidth) &
+                                ~mask(floorLog2(predictWidth) - 1);
     auto old_entries = processOldEntries(state.lastPredEntries, end_inst_pc);
 
     auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries, s3Pred);
