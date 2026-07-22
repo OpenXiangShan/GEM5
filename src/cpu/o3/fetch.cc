@@ -922,7 +922,20 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
-    if (run_out) {
+    const bool false_hit = run_out && stream.predTaken && !predict_taken;
+    if (false_hit) {
+        DPRINTF(DecoupleBP,
+                "False BTB hit at FTQ %lu: stream [%#lx, %#lx) "
+                "predicted control %#lx -> %#lx, fetched through %#lx; "
+                "redirect to fall-through %s\n",
+                dbpbtb->ftqHeadId(tid), stream.startPC, stream.predEndPC,
+                stream.predBranchInfo.pc, stream.predBranchInfo.target,
+                curr_pc, next_pc);
+        dbpbtb->nonControlSquash(dbpbtb->ftqHeadId(tid), next_pc,
+                                 inst->seqNum, tid, currentLoopIter);
+        ftqEntryFetchedInsts[tid] = 0;
+        threads[tid].valid = false;
+    } else if (run_out) {
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
