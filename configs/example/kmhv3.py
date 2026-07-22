@@ -156,8 +156,11 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].do_fast_writeline = False
                 system.l2_caches[i].prefetch_can_offload = False
                 # Configure XSDRRIP replacement policy (DRRIP mode)
-                # L2: 2MB, 8-way, 64B line → 4096 sets
-                system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
+                l2 = system.l2_caches[i]
+                l2_num_sets = int(l2.size) // (
+                    int(system.cache_line_size) * int(l2.assoc)
+                )
+                l2.replacement_policy = XSDRRIPRP(mode=2, num_sets=l2_num_sets)
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 1
@@ -165,12 +168,15 @@ def setKmhV3Params(args, system):
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.wpu = NULL
+                    l2 = l2_wrapper.slices[j].inner_cache
+                    l2.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    l2_num_sets = int(l2.size) // (
+                        int(system.cache_line_size) * int(l2.assoc)
+                    )
+                    l2.replacement_policy = XSDRRIPRP(mode=2, num_sets=l2_num_sets)
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
@@ -200,7 +206,7 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '1MB'
+    args.l2_size = '2MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
 
     # Match the memories with the CPUs, based on the options for the test system
