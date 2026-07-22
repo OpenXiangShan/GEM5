@@ -21,6 +21,8 @@ enum LdStReplayType
     MshrAliasFailReplay,
     HitInWriteBufferReplay,
     MshrArbFailReplay,
+    /** Wait for the post-translation MPT permission pipeline. */
+    MptReplay,
     LdStReplayTypeCount
 };
 
@@ -39,6 +41,7 @@ static const char *load_store_replay_event_str[LdStReplayTypeCount] =
     "MshrAliasFailReplay",
     "HitInWriteBufferReplay",
     "MshrArbFailReplay",
+    "MptReplay",
 };
 
 } // namespace o3

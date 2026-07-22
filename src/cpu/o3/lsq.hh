@@ -372,12 +372,27 @@ class LSQ
 
         uint32_t numTranslatedFragments;
         uint32_t numInTranslationFragments;
+        unsigned mptPendingFragments = 0;
 
 
         void markDelayed() override { flags.set(Flag::Delayed); }
+        void markMptDelayed() override { ++mptPendingFragments; }
         bool isDelayed() { return flags.isSet(Flag::Delayed); }
 
       public:
+        /** True while one or more translated fragments await MPT permission. */
+        bool isMptDelayed() const { return mptPendingFragments != 0; }
+
+        /** Complete one fragment whose address translation was MPT-delayed. */
+        void finishMpt(const Fault &fault, const RequestPtr &req,
+                       ThreadContext *tc, BaseMMU::Mode mode) override
+        {
+            panic_if(mptPendingFragments == 0,
+                     "MPT completion without a pending LSQ fragment\n");
+            --mptPendingFragments;
+            finish(fault, req, tc, mode);
+        }
+
         LSQUnit& _port;
         const DynInstPtr _inst;
         uint32_t _taskId;

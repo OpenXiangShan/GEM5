@@ -40,6 +40,7 @@
 
 #include "arch/generic/mmu.hh"
 #include "arch/riscv/isa.hh"
+#include "arch/riscv/mpt_unit.hh"
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/pma_checker.hh"
 #include "arch/riscv/tlb.hh"
@@ -55,10 +56,15 @@ class MMU : public BaseMMU
 {
   public:
     PMAChecker *pma;
+    MptUnit *mptUnit;
 
     MMU(const RiscvMMUParams &p)
-      : BaseMMU(p), pma(p.pma_checker)
-    {}
+      : BaseMMU(p), pma(p.pma_checker), mptUnit(p.mpt_unit)
+    {
+        panic_if(mptUnit == nullptr, "RISC-V MMU requires an MPT unit\n");
+        static_cast<TLB *>(itb)->setMptUnit(mptUnit);
+        static_cast<TLB *>(dtb)->setMptUnit(mptUnit);
+    }
 
     TranslationGenPtr
     translateFunctional(Addr start, Addr size, ThreadContext *tc,
@@ -80,12 +86,31 @@ class MMU : public BaseMMU
         return static_cast<TLB*>(dtb)->getWalker();
     }
 
+    MptUnit *
+    getMptUnit()
+    {
+        return mptUnit;
+    }
+
+    void
+    flushMpt()
+    {
+        mptUnit->flush();
+    }
+
+    void
+    syncMpt(ThreadContext *tc)
+    {
+        mptUnit->syncMMPT(tc);
+    }
+
     void
     takeOverFrom(BaseMMU *old_mmu) override
     {
       MMU *ommu = dynamic_cast<MMU*>(old_mmu);
       BaseMMU::takeOverFrom(ommu);
       pma->takeOverFrom(ommu->pma);
+      mptUnit->flush();
 
     }
 

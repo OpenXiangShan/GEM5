@@ -54,7 +54,6 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
-#include <map>
 #include <memory>
 #include <numeric>
 
@@ -80,1111 +79,11 @@
 #ifndef MPT_ENABLED
 #define MPT_ENABLED 1
 #endif
-#define MPT_CACHE_ENABLED 1
-#ifndef MPT_FORCE_ALLOW_PERMS
-#define MPT_FORCE_ALLOW_PERMS 0
-#endif
 
 namespace gem5
 {
 
 namespace RiscvISA {
-#if MPT_ENABLED
-
-static constexpr Cycles MPT_CACHE_HIT_LATENCY = Cycles(3);
-
-static constexpr uint8_t MPT_ALLOW_ALL_PERMS =
-    MPT_PERM_R | MPT_PERM_W | MPT_PERM_X;
-static constexpr unsigned MPT_ROOT_ENTRIES = PageBytes / MPT_MPTE_SIZE;
-static constexpr Addr MPT_PPN_MASK = (1ULL << 44) - 1;
-static constexpr int MPT_CACHE_SP_LEVEL = 5;
-
-static Addr
-mptSPCacheKey(Addr aligned, int level)
-{
-    assert((aligned & 0x7) == 0);
-    return aligned | static_cast<Addr>(level & 0x7);
-}
-
-static constexpr uint64_t
-makeAllowAllLeafMPTE()
-{
-    uint64_t mpte = 0x3; // valid + leaf
-    for (unsigned i = 0; i < MPT_NUM_PERMS; ++i) {
-        mpte |= static_cast<uint64_t>(MPT_ALLOW_ALL_PERMS)
-            << (10 + i * MPT_PERM_BITS_PER_ENTRY);
-    }
-    return mpte;
-}
-
-static constexpr uint64_t MPT_ALLOW_ALL_LEAF_MPTE =
-    makeAllowAllLeafMPTE();
-
-static uint64_t
-makeInternalMPTE(Addr nextLevelPaddr)
-{
-    return 0x1 | ((nextLevelPaddr >> PageShift) << 10);
-}
-
-static uint8_t
-effectiveMptPerm(uint8_t rawPerm)
-{
-#if MPT_FORCE_ALLOW_PERMS
-    (void)rawPerm;
-    return MPT_ALLOW_ALL_PERMS;
-#else
-    return rawPerm;
-#endif
-}
-
-static bool
-mptPermAllows(uint8_t perm, BaseMMU::Mode mode)
-{
-    return mptPermAllowsAccess(perm, mode);
-}
-
-PLRUTreeN::PLRUTreeN(size_t ways)
-    : numWays(ways), bits(ways > 1 ? ways - 1 : 0, false)
-{
-    assert((ways & (ways - 1)) == 0 && "PLRU requires power-of-two number of ways");
-}
-
-size_t PLRUTreeN::getVictim() const {
-    size_t idx = 0;
-    while (idx < bits.size()) {
-        idx = bits[idx] ? (2 * idx + 2) : (2 * idx + 1);
-    }
-    return idx - bits.size();
-}
-
-void PLRUTreeN::access(size_t way) {
-    size_t idx = way + bits.size();
-    while (idx > 0) {
-        size_t parent = (idx - 1) / 2;
-        bits[parent] = (idx % 2 == 0); // 右子 = 1，左子 = 0
-        idx = parent;
-    }
-}
-
-void PLRUTreeN::reset() {
-    std::fill(bits.begin(), bits.end(), false);
-}
-
-//std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> gem5::RiscvISA::mptContextMap;
-
-
-MPT::MPT() : rootPPN(0), nextPPN(0x10000) {
-    //rootPPN = buildSimulatedMPTTree();
-    MptReadReq = nullptr;
-    hasActiveMptRead = false;
-    processingMptResp = false;
-    walker = nullptr;
-    mptretry = false;
-    mptinflight = 0;
-    simulatedTreeBuilt = false;
-    simulatedRootPaddr = 0;
-
-}
-
-Addr
-MPT::buildSimulatedMPTTree(System *sys)
-{
-    if (sys == nullptr) {
-        panic("Cannot build simulated MPT tree without System\n");
-    }
-
-    static constexpr Addr MPT_INDEX_MASK = MPT_ROOT_ENTRIES - 1;
-    auto mptIndex = [](Addr paddr, int level) {
-        return (paddr >> (getPageShiftForLevel(level) + 4)) &
-            MPT_INDEX_MASK;
-    };
-    auto l1TableKey = [](Addr rootIdx, Addr l2Idx) {
-        return (rootIdx << 9) | l2Idx;
-    };
-    auto l0TableKey = [](Addr rootIdx, Addr l2Idx, Addr l1Idx) {
-        return (rootIdx << 18) | (l2Idx << 9) | l1Idx;
-    };
-
-    AddrRangeList ranges = sys->getPhysMem().getConfAddrRanges();
-    const Addr l0TableCoverage =
-        MPT_ROOT_ENTRIES * getRegionSizeForLevel(0);
-    std::map<Addr, Addr> l2Tables;
-    std::map<Addr, Addr> l1Tables;
-    std::map<Addr, Addr> l0Tables;
-
-    for (const auto &range : ranges) {
-        if (!range.valid() || range.size() == 0) {
-            continue;
-        }
-
-        Addr chunk = range.start() & ~(l0TableCoverage - 1);
-        while (chunk <= range.end()) {
-            Addr rootIdx = mptIndex(chunk, 3);
-            Addr l2Idx = mptIndex(chunk, 2);
-            Addr l1Idx = mptIndex(chunk, 1);
-            l2Tables.emplace(rootIdx, 0);
-            l1Tables.emplace(l1TableKey(rootIdx, l2Idx), 0);
-            l0Tables.emplace(l0TableKey(rootIdx, l2Idx, l1Idx), 0);
-            if (chunk > MaxAddr - l0TableCoverage) {
-                break;
-            }
-            chunk += l0TableCoverage;
-        }
-    }
-
-    const uint64_t tablePages =
-        1 + l2Tables.size() + l1Tables.size() + l0Tables.size();
-    const uint64_t tableBytes = tablePages * PageBytes;
-
-    const AddrRangeList &reservedRanges = sys->getMptReservedMemRanges();
-    if (reservedRanges.empty()) {
-        panic("Cannot build simulated MPT tree: no explicit MPT reserved "
-              "memory range configured for %llu pages (%llu bytes), "
-              "MMPT=%#lx mode=%#lx\n",
-              static_cast<unsigned long long>(tablePages),
-              static_cast<unsigned long long>(tableBytes),
-              static_cast<uint64_t>(mmpt), mmpt.mode);
-    }
-
-    Addr selected = 0;
-    bool found = false;
-    for (const auto &range : reservedRanges) {
-        if (!range.valid() || range.size() < tableBytes) {
-            continue;
-        }
-
-        Addr candidate = (range.start() + PageBytes - 1) & ~(PageBytes - 1);
-        if (candidate > MaxAddr - tableBytes + 1) {
-            continue;
-        }
-        if (!range.contains(candidate) ||
-                !range.contains(candidate + tableBytes - 1)) {
-            continue;
-        }
-
-        selected = candidate;
-        found = true;
-        break;
-    }
-
-    if (!found) {
-        panic("Cannot build simulated MPT tree: explicit MPT reserved memory "
-              "is too small for %llu pages (%llu bytes), MMPT=%#lx "
-              "mode=%#lx\n",
-              static_cast<unsigned long long>(tablePages),
-              static_cast<unsigned long long>(tableBytes),
-              static_cast<uint64_t>(mmpt), mmpt.mode);
-    }
-    if (!sys->isMemAddr(selected) ||
-            !sys->isMemAddr(selected + tableBytes - 1)) {
-        panic("Cannot build simulated MPT tree: reserved range "
-              "[%#lx, %#lx] is not backed by physical memory, MMPT=%#lx "
-              "mode=%#lx\n",
-              selected, selected + tableBytes - 1,
-              static_cast<uint64_t>(mmpt), mmpt.mode);
-    }
-    if ((selected & (PageBytes - 1)) != 0) {
-        panic("Simulated MPT root is not page aligned: root=%#lx MMPT=%#lx "
-              "mode=%#lx\n", selected, static_cast<uint64_t>(mmpt),
-              mmpt.mode);
-    }
-    Addr rootPpn = selected >> PageShift;
-    rootPPN = rootPpn;
-    if ((rootPpn & ~MPT_PPN_MASK) != 0) {
-        panic("Simulated MPT root PPN exceeds MMPT.ppn field: root=%#lx "
-              "ppn=%#lx MMPT=%#lx mode=%#lx\n",
-              selected, rootPpn, static_cast<uint64_t>(mmpt), mmpt.mode);
-    }
-
-    Addr nextTablePaddr = selected + PageBytes;
-    auto allocTable = [&nextTablePaddr]() {
-        Addr tablePaddr = nextTablePaddr;
-        nextTablePaddr += PageBytes;
-        return tablePaddr;
-    };
-    auto writeMPTE = [sys](Addr tablePaddr, Addr index, uint64_t mpte) {
-        sys->physProxy.write<uint64_t>(
-            tablePaddr + index * MPT_MPTE_SIZE,
-            mpte, sys->getGuestByteOrder());
-    };
-    auto clearTable = [&writeMPTE](Addr tablePaddr) {
-        for (unsigned i = 0; i < MPT_ROOT_ENTRIES; ++i) {
-            writeMPTE(tablePaddr, i, 0);
-        }
-    };
-    auto fillAllowAllLeafTable = [&writeMPTE](Addr tablePaddr) {
-        for (unsigned i = 0; i < MPT_ROOT_ENTRIES; ++i) {
-            writeMPTE(tablePaddr, i, MPT_ALLOW_ALL_LEAF_MPTE);
-        }
-    };
-
-    clearTable(selected);
-    for (auto &table : l2Tables) {
-        table.second = allocTable();
-        clearTable(table.second);
-    }
-    for (auto &table : l1Tables) {
-        table.second = allocTable();
-        clearTable(table.second);
-    }
-    for (auto &table : l0Tables) {
-        table.second = allocTable();
-        fillAllowAllLeafTable(table.second);
-    }
-    assert(nextTablePaddr == selected + tableBytes);
-
-    for (const auto &table : l2Tables) {
-        writeMPTE(selected, table.first, makeInternalMPTE(table.second));
-    }
-    for (const auto &table : l1Tables) {
-        Addr rootIdx = table.first >> 9;
-        Addr l2Idx = table.first & MPT_INDEX_MASK;
-        writeMPTE(l2Tables[rootIdx], l2Idx, makeInternalMPTE(table.second));
-    }
-    for (const auto &table : l0Tables) {
-        Addr rootIdx = table.first >> 18;
-        Addr l2Idx = (table.first >> 9) & MPT_INDEX_MASK;
-        Addr l1Idx = table.first & MPT_INDEX_MASK;
-        writeMPTE(l1Tables[l1TableKey(rootIdx, l2Idx)], l1Idx,
-                  makeInternalMPTE(table.second));
-    }
-
-    DPRINTF(PageTableWalker,
-            "Built simulated L0-leaf allow-all MPT at paddr %#lx ppn %#lx "
-            "pages %llu bytes %llu l2 %lu l1 %lu l0 %lu\n",
-            selected, rootPpn, static_cast<unsigned long long>(tablePages),
-            static_cast<unsigned long long>(tableBytes), l2Tables.size(),
-            l1Tables.size(), l0Tables.size());
-    return selected;
-}
-
-bool
-MPT::ensureSimulatedMPTTree(System *sys, ThreadContext *tc)
-{
-    if (mmpt.mode == 0 || mmpt.ppn != 0) {
-        return false;
-    }
-    if (tc == nullptr) {
-        panic("Cannot initialize simulated MPT tree without ThreadContext: "
-              "MMPT=%#lx mode=%#lx\n",
-              static_cast<uint64_t>(mmpt), mmpt.mode);
-    }
-
-    if (!simulatedTreeBuilt) {
-        simulatedRootPaddr = buildSimulatedMPTTree(sys);
-        simulatedTreeBuilt = true;
-    }
-
-    if ((simulatedRootPaddr & (PageBytes - 1)) != 0) {
-        panic("Stored simulated MPT root is not page aligned: root=%#lx "
-              "MMPT=%#lx mode=%#lx\n",
-              simulatedRootPaddr, static_cast<uint64_t>(mmpt), mmpt.mode);
-    }
-    Addr rootPpn = simulatedRootPaddr >> PageShift;
-    if ((rootPpn & ~MPT_PPN_MASK) != 0) {
-        panic("Stored simulated MPT root PPN exceeds MMPT.ppn field: "
-              "root=%#lx ppn=%#lx MMPT=%#lx mode=%#lx\n",
-              simulatedRootPaddr, rootPpn, static_cast<uint64_t>(mmpt),
-              mmpt.mode);
-    }
-
-    MMPT newMmpt = mmpt;
-    newMmpt.ppn = rootPpn;
-    tc->setMiscRegNoEffect(MISCREG_MMPT, newMmpt);
-    mmpt = newMmpt;
-    if (globalMPTCache != nullptr) {
-        globalMPTCache->mfence_all();
-    }
-
-    DPRINTF(PageTableWalker,
-            "Initialized simulated MPT MMPT=%#lx rootPaddr=%#lx\n",
-            static_cast<uint64_t>(mmpt), simulatedRootPaddr);
-    return true;
-}
-
-static void
-discardMptPacket(PacketPtr pkt)
-{
-    if (pkt == nullptr) {
-        return;
-    }
-    if (pkt->senderState != nullptr) {
-        delete pkt->popSenderState();
-    }
-    delete pkt;
-}
-
-static void
-addUniqueMptWaiter(std::vector<Walker::WalkerState*> &waiters,
-                   Walker::WalkerState *senderState)
-{
-    if (senderState == nullptr) {
-        return;
-    }
-    if (std::find(waiters.begin(), waiters.end(), senderState) ==
-            waiters.end()) {
-        waiters.push_back(senderState);
-    }
-}
-
-bool MPT::sendMptPacket() {
-    if (mptinflight > 0) {
-        return true;
-    }
-
-    if (!hasActiveMptRead) {
-        if (pendingMptReads.empty()) {
-            return false;
-        }
-        activeMptRead = pendingMptReads.front();
-        hasActiveMptRead = true;
-        pendingMptReads.pop_front();
-    }
-
-    PacketPtr pkt = activeMptRead.pkt;
-    if (pkt == nullptr) {
-        panic("MPT active read has no owned request packet: "
-              "mptePaddr=%#lx hasActiveMptRead=%d mptinflight=%d "
-              "mptretry=%d pending=%lu processingMptResp=%d\n",
-              activeMptRead.mptePaddr, hasActiveMptRead, mptinflight,
-              mptretry, pendingMptReads.size(), processingMptResp);
-    }
-    if (!pkt->isRequest()) {
-        panic("MPT tried to send non-request packet: pkt=%s "
-              "mptePaddr=%#lx hasActiveMptRead=%d mptinflight=%d "
-              "mptretry=%d pending=%lu processingMptResp=%d\n",
-              pkt->print(), activeMptRead.mptePaddr, hasActiveMptRead,
-              mptinflight, mptretry, pendingMptReads.size(),
-              processingMptResp);
-    }
-    MptReadReq = pkt;
-
-    Walker *pktWalker = walker;
-    auto *senderState = pkt->findNextSenderState<Walker::WalkerSenderState>();
-    if (senderState != nullptr && senderState->senderWalk != nullptr) {
-        pktWalker = senderState->senderWalk->walker;
-    }
-    if (pktWalker == nullptr) {
-        panic("MPT packet has no walker to send timing request");
-        return false;
-    }
-
-    if (pktWalker->port.sendTimingReq(pkt)) {//使用walker port 发送
-        DPRINTF(PageTableWalker, "me send MPT packet\n");
-        activeMptRead.pkt = nullptr;
-        MptReadReq = nullptr;
-        mptretry = false;
-        mptinflight++;
-        return true;
-    }
-
-    DPRINTF(PageTableWalker, "mpt port busy\n");
-    mptretry = true;
-    return true;
-}
-
-bool MPT::issueMptPacket()
-{
-    return sendMptPacket();
-}
-
-bool MPT::enqueueMptPacket(PacketPtr pkt, Walker::WalkerState *senderState)
-{
-    Addr mptePaddr = pkt->req->getPaddr();
-
-    if (!pkt->isRequest()) {
-        panic("MPT tried to enqueue non-request packet: pkt=%s "
-              "mptePaddr=%#lx hasActiveMptRead=%d mptinflight=%d "
-              "mptretry=%d pending=%lu processingMptResp=%d\n",
-              pkt->print(), mptePaddr, hasActiveMptRead, mptinflight,
-              mptretry, pendingMptReads.size(), processingMptResp);
-    }
-
-    if (hasActiveMptRead && activeMptRead.mptePaddr == mptePaddr) {
-        addUniqueMptWaiter(activeMptRead.waiters, senderState);
-        discardMptPacket(pkt);
-        DPRINTF(PageTableWalker, "merge active MPT packet %#lx waiters=%lu\n",
-                mptePaddr, activeMptRead.waiters.size());
-        return true;
-    }
-
-    for (auto &pending : pendingMptReads) {
-        if (pending.mptePaddr == mptePaddr) {
-            addUniqueMptWaiter(pending.waiters, senderState);
-            discardMptPacket(pkt);
-            DPRINTF(PageTableWalker, "merge pending MPT packet %#lx waiters=%lu\n",
-                    mptePaddr, pending.waiters.size());
-            return true;
-        }
-    }
-
-    MptPendingRead group;
-    group.mptePaddr = mptePaddr;
-    group.pkt = pkt;
-    addUniqueMptWaiter(group.waiters, senderState);
-
-    if (processingMptResp || hasActiveMptRead || mptretry ||
-            mptinflight > 0) {
-        pendingMptReads.push_back(group);
-        DPRINTF(PageTableWalker, "queue MPT packet %#lx pending=%lu\n",
-                mptePaddr, pendingMptReads.size());
-        return true;
-    }
-
-    activeMptRead = group;
-    hasActiveMptRead = true;
-    return issueMptPacket();
-}
-
-void MPT::flushPendingMptReads()
-{
-    if (hasActiveMptRead && mptinflight == 0) {
-        discardMptPacket(activeMptRead.pkt);
-        activeMptRead = MptPendingRead();
-        hasActiveMptRead = false;
-        MptReadReq = nullptr;
-    }
-    while (!pendingMptReads.empty()) {
-        discardMptPacket(pendingMptReads.front().pkt);
-        pendingMptReads.pop_front();
-    }
-    mptretry = false;
-    processingMptResp = false;
-}
-
-PacketPtr MPT::CreateMptReqPacket(Addr paddr,Walker::WalkerState* senderState) {
-    Walker::WalkerSenderState* walker_state = new Walker::WalkerSenderState(senderState);
-    DPRINTF(PageTableWalker,"start create  MPT packet");
-    Request::Flags flags = Request::PHYSICAL;
-
-    RequestPtr request = std::make_shared<Request>(
-        paddr, 8, flags, senderState->walker->requestorId);
-
-    request->setMptWalk(true);
-
-    PacketPtr pkt = new Packet(request, MemCmd::ReadReq);
-
-    pkt->allocate();
-    pkt->pushSenderState(walker_state);
-    return pkt;
-}
-
-bool MPT::MptRecvTimingResp(PacketPtr pkt){
-    if (mptinflight <= 0) {
-        panic("MPT received timing response with no inflight request: pkt=%s "
-              "hasActiveMptRead=%d mptretry=%d pending=%lu "
-              "processingMptResp=%d\n",
-              pkt->print(), hasActiveMptRead, mptretry,
-              pendingMptReads.size(), processingMptResp);
-    }
-    mptinflight--;
-    MptReadReq = nullptr;
-    processingMptResp = true;
-    MptPendingRead completedRead = activeMptRead;
-    activeMptRead = MptPendingRead();
-    hasActiveMptRead = false;
-
-    Walker::WalkerSenderState * senderState = nullptr;
-    Packet::SenderState * rawSenderState = nullptr;
-    if (pkt->senderState != nullptr) {
-        rawSenderState = pkt->popSenderState();
-        senderState = dynamic_cast<Walker::WalkerSenderState *>(
-                rawSenderState);
-    }
-    if (pkt->isRead()) {
-        DPRINTF(PageTableWalker,"hi MptRecvTimingResp");
-        // should not have a pending read it we also had one outstanding
-        pkt->headerDelay = pkt->payloadDelay = 0;
-        uint64_t raw = pkt->getLE<uint64_t>();
-        Addr mptePaddr = pkt->req->getPaddr();
-        std::vector<Walker::WalkerState*> waiters = completedRead.waiters;
-        if (waiters.empty() && senderState != nullptr) {
-            waiters.push_back(senderState->senderWalk);
-        }
-
-        for (auto *senderWalk : waiters) {
-            if (senderWalk == nullptr) {
-                continue;
-            }
-            bool islastMPT = senderWalk->stepMPTwalkFromMPTE(raw, mptePaddr);
-            if (islastMPT) {
-                completeMptWaiter(senderWalk);
-            }
-        }
-    }
-    if (senderState != nullptr) {
-        delete senderState;
-    } else {
-        delete rawSenderState;
-    }
-    delete pkt;
-    processingMptResp = false;
-    if (mptinflight == 0 && !mptretry && MptReadReq == nullptr) {
-        issueMptPacket();
-    }
-    return true;
-}
-
-void MPT::completeMptWaiter(Walker::WalkerState *senderWalk)
-{
-    bool walkComplete = senderWalk->completeMPTWalk();
-    if (!walkComplete) {
-        return;
-    }
-    std::list<Walker::WalkerState *>::iterator iter;
-    bool erased = false;
-    for (iter = senderWalk->walker->currStates.begin();
-         iter != senderWalk->walker->currStates.end(); iter++) {
-        Walker::WalkerState *walkerState = *(iter);
-        if (walkerState == senderWalk) {
-            DPRINTF(PageTableWalker,
-                    "Walk complete for %#lx (pc=%#lx), erase it\n",
-                    senderWalk->mainReq->getVaddr(), senderWalk->mainReq->getPC());
-            iter = senderWalk->walker->currStates.erase(iter);
-            erased = true;
-            break;
-        }
-    }
-    if (erased) {
-        senderWalk->walker->releasePtwLevel(senderWalk);
-        senderWalk->walker->retryPtwLevelBlockedStates();
-        senderWalk->walker->retryPtwMissQueue();
-        delete senderWalk;
-    }
-}
-
-bool Walker::WalkerState::stepMPTwalk(){
-    Addr paddr= MptReadReq->req->getPaddr();
-    //uint64_t raw=MptReadReq->getLE_l2tlb<uint64_t>((paddr>>3)&0b111);
-    uint64_t raw=MptReadReq->getLE <uint64_t>( );
-    return stepMPTwalkFromMPTE(raw, paddr);
-}
-
-bool Walker::WalkerState::stepMPTwalkFromMPTE(uint64_t raw, Addr mptePaddr)
-{
-    DPRINTF(PageTableWalker, "MPT refill mpte paddr:%#lx raw:%#lx\n",
-            mptePaddr, raw);
-    MPTE52 mpte(raw);
-    uint64_t regionSize = getRegionSizeForLevel(mpt_level);
-    Addr aligned = globalMPTCache->regionAlign(PaddrUT, mpt_level);
-    MPTCacheEntry entry = {
-        aligned, mpte, true, mpt_level, log2floor(regionSize)
-    };
-    if (!mpte.isValid() || ((!mpte.isLeaf()) && mpt_level == 0)) {
-        DPRINTF(PageTableWalker, "MPT walk failed with req:%#lx level:%i mpte:%#lx\n",
-                PaddrUT, mpt_level, raw);
-        if (mptCheckingPteRead) {
-            pteReadMptResult = false;
-        } else {
-            MPTresult = false;
-            mptInfo.invalidate();
-        }
-        if (isMPTing){
-            return true;
-        }
-        else{
-            sendPackets();//就算没过，也要sendpackets，然后recvpacket立马报mptfault，gem5就是这样的
-            return false; // Invalid entry.
-        }
-
-    }
-    int cacheLevel =
-        (mpte.isLeaf() && mpt_level > 0) ? MPT_CACHE_SP_LEVEL : mpt_level;
-    Addr cacheKey = (cacheLevel == MPT_CACHE_SP_LEVEL) ?
-        mptSPCacheKey(aligned, mpt_level) : aligned;
-    bool insertedNewEntry =
-        globalMPTCache->insertOrRefreshEntry(cacheLevel, cacheKey, entry);
-
-
-    if (mpte.isLeaf()) {
-        // Find the leaf entry and return directly.
-        if (insertedNewEntry) {
-            if (mpt_level == 0) ++globalMPTCache->mptCacheL0Misses;//统计数据
-            else ++globalMPTCache->mptCacheSPMisses;
-        }
-
-        uint8_t pi = (PaddrUT >> getPageShiftForLevel(mpt_level)) & 0xF;
-        uint8_t rawPerm = mpte.perms(pi);
-        uint8_t perm = effectiveMptPerm(rawPerm);
-        DPRINTF(PageTableWalker,
-                "MPT walk leaf req:%#lx mpte:%#lx rawPerm:%#x effectivePerm:%#x\n",
-                PaddrUT, raw, rawPerm, perm);
-        if (mptCheckingPteRead) {
-            pteReadMptResult = mptPermAllows(perm, mptCheckMode);
-        } else {
-            MPTresult = mptPermAllows(perm, mptCheckMode);
-            mptInfo.write_mpt_raw(perm, mpt_level);
-        }
-        if (isMPTing) {
-            return true;
-        }
-        else {
-            sendPackets();//就算没过，也要sendpackets，然后recvpacket立马报mptfault，gem5就是这样的
-            return false;
-        }
-
-    } else{
-        DPRINTF(PageTableWalker, "MPT walk internal req:%#lx level:%i mpte:%#lx\n",
-                PaddrUT, mpt_level, raw);
-        if (insertedNewEntry) {
-            if (mpt_level == 1) ++globalMPTCache->mptCacheL1Misses;
-            else if (mpt_level == 2) ++globalMPTCache->mptCacheL2Misses;
-            else if (mpt_level == 3) ++globalMPTCache->mptCacheL3Misses;
-        }
-
-        Addr base = mpte.nextLevelPAddr();
-        mpt_level--;
-        bool Nofault = globalMPT.walk(mpt_level,base,PaddrUT,requestors.front().tc, walker->pma, walker->pmp,this);
-        if (!Nofault){
-            if (mptCheckingPteRead) {
-                pteReadMptResult = false;
-            } else {
-                MPTresult = false;
-                mptInfo.invalidate();
-            }
-            if (isMPTing){
-                return true;
-            }
-            else{
-                sendPackets();//就算没过，也要sendpackets，然后recvpacket立马报mptfault，gem5就是这样的
-                return false;
-            }
-        }
-        return false;
-    }
-}
-
-
-bool MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp ,Walker::WalkerState* senderState )
-{
-
-    DPRINTF(PageTableWalker,"start readMPTE");
-    walker = senderState->walker;
-    PacketPtr req = CreateMptReqPacket(paddr,senderState);
-    // 2 PMA check
-
-    pma->check(req->req);
-
-    // 3 Retrieve privilege level: Called by a member function within the class
-    //PrivilegeMode pmode = tlb->getMemPriv(tc, BaseMMU::Read);
-    PrivilegeMode pmode = PRV_S;
-    //reference：pmp->pmpCheck(req, mode, static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, mode), tc);
-    gem5::Fault fault = NoFault;
-    //gem5::Fault fault = pmp->pmpCheck(req->req, BaseMMU::Read, pmode, tc);
-    if (fault != NoFault) {
-        return false;
-        DPRINTF(PageTableWalker,"PMP blocked access to MPTE at 0x%lx\n", paddr);
-    }
-    return enqueueMptPacket(req, senderState);
-}
-
-// Multi-level Smmpt52 traversal returning an MPTE52 or invalid entry.
-bool
-MPT::walk(int hit_level, Addr base, Addr paddrUT, ThreadContext *tc,
-          PMAChecker *pma, PMP *pmp, Walker::WalkerState *senderState)
-{
-    //Addr base = rootPPN << 12;  // Page table base address = PPN × 4KB (Page table page size is fixed at 4KB).
-    //这里暂时忽略mpte 格式不匹配的af，大概26年3月能修
-    MPTCacheEntry entry;
-    // Each MPTE controls 16 regions at the current page granularity.
-    // The low 4 bits after page shift are the MPTE permission index (pi),
-    // so table indexing must skip them.
-    size_t shift = getPageShiftForLevel(hit_level) + 4;
-    size_t index = (paddrUT >> shift) & 0x1FF;
-    Addr paddr = base + index * MPT_MPTE_SIZE;
-    DPRINTF(PageTableWalker,
-            "start mpt walk with level %i, paddr: %lx, base: %lx, "
-            "index: %lx, req: %lx\n",
-            hit_level, paddr, base, index, paddrUT);
-    // read MPTE
-    return readMPTE(paddr, tc, pma, pmp, senderState );
-}
-
-bool
-MPT::checkFunctional(Addr paddr, BaseMMU::Mode mode, System *sys) const
-{
-    panic_if(sys == nullptr, "Functional MPT check requires a system\n");
-
-    Addr base = mmpt.ppn << PageShift;
-    for (int level = 3; level >= 0; --level) {
-        const size_t shift = getPageShiftForLevel(level) + 4;
-        const size_t index = (paddr >> shift) & 0x1ff;
-        const Addr mptePaddr = base + index * MPT_MPTE_SIZE;
-        const uint64_t raw = sys->physProxy.read<uint64_t>(
-            mptePaddr, sys->getGuestByteOrder());
-        const MPTE52 mpte(raw);
-
-        if (!mpte.isValid()) {
-            return false;
-        }
-        if (mpte.isLeaf()) {
-            const uint8_t pi =
-                (paddr >> getPageShiftForLevel(level)) & 0xf;
-            return mptPermAllows(
-                effectiveMptPerm(mpte.perms(pi)), mode);
-        }
-        if (level == 0) {
-            return false;
-        }
-        base = mpte.nextLevelPAddr();
-    }
-
-    return false;
-}
-
-
-
-#endif // MPT_ENABLED
-
-#if MPT_CACHE_ENABLED
-
-MPTCache52::MPTCache52(size_t capL0, size_t capL1, size_t capL2, size_t capL3, size_t capSP)
-    : capacityL0(capL0),
-      capacityL1(capL1),
-      capacityL2(capL2),
-      capacityL3(capL3),
-      capacitySP(capSP),
-      plruL0(capL0),
-      plruL1(capL1),
-      plruL2(capL2),
-      plruL3(capL3),
-      plruSP(capSP)
-{
-    tagListL0.reserve(capL0);
-    tagListL1.reserve(capL1);
-    tagListL2.reserve(capL2);
-    tagListL3.reserve(capL3);
-    tagListSP.reserve(capSP);
-}
-
-MPTCache52::MPTCache52()
-    : capacityL0(configuredSizeL0),
-      capacityL1(configuredSizeL1),
-      capacityL2(configuredSizeL2),
-      capacityL3(configuredSizeL3),
-      capacitySP(configuredSizeSP),
-      plruL0(configuredSizeL0),
-      plruL1(configuredSizeL1),
-      plruL2(configuredSizeL2),
-      plruL3(configuredSizeL3),
-      plruSP(configuredSizeSP)
-{
-    tagListL0.reserve(capacityL0);
-    tagListL1.reserve(capacityL1);
-    tagListL2.reserve(capacityL2);
-    tagListL3.reserve(capacityL3);
-    tagListSP.reserve(capacitySP);
-}
-
-
-void MPTCache52::configureSize(int sL0, int sL1, int sL2, int sL3, int sSP) {
-    configuredSizeL0 = sL0;
-    configuredSizeL1 = sL1;
-    configuredSizeL2 = sL2;
-    configuredSizeL3 = sL3;
-    configuredSizeSP = sSP;
-}
-
-Addr MPTCache52::regionAlign(Addr pa, int level) const {
-    return pa & ~(getRegionSizeForLevel(level) - 1);
-}
-
-// non-const version
-std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) {
-    if (level == 0) return tableL0;
-    else if (level == 1) return tableL1;
-    else if (level == 2) return tableL2;
-    else if (level == 3) return tableL3;
-    else return tableSP;
-}
-
-// const : read only
-const std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) const {
-    if (level == 0) return tableL0;
-    else if (level == 1) return tableL1;
-    else if (level == 2) return tableL2;
-    else if (level == 3) return tableL3;
-    else return tableSP;
-}
-
-
-size_t& MPTCache52::getCapacityByLevel(int level) {
-    if (level == 0) return capacityL0;
-    else if (level == 1) return capacityL1;
-    else if (level == 2) return capacityL2;
-    else if (level == 3) return capacityL3;
-    else return capacitySP;
-}
-
-
-size_t MPTCache52::getCapacityByLevel(int level) const {
-    if (level == 0) return capacityL0;
-    else if (level == 1) return capacityL1;
-    else if (level == 2) return capacityL2;
-    else if (level == 3) return capacityL3;
-    else return capacitySP;
-}
-
-// -------- Supports PLRU (Pseudo-LRU) replacement. --------
-std::vector<Addr>& MPTCache52::getTagListByLevel(int level) {
-    if (level == 0) return tagListL0;
-    else if (level == 1) return tagListL1;
-    else if (level == 2) return tagListL2;
-    else if (level == 3) return tagListL3;
-    else return tagListSP;
-}
-
-PLRUTreeN& MPTCache52::getPLRUByLevel(int level) {
-    if (level == 0) return plruL0;
-    else if (level == 1) return plruL1;
-    else if (level == 2) return plruL2;
-    else if (level == 3) return plruL3;
-    else return plruSP;
-}
-
-const std::vector<Addr>& MPTCache52::getTagListByLevel(int level) const {
-    if (level == 0) return tagListL0;
-    else if (level == 1) return tagListL1;
-    else if (level == 2) return tagListL2;
-    else if (level == 3) return tagListL3;
-    else return tagListSP;
-}
-
-const PLRUTreeN& MPTCache52::getPLRUByLevel(int level) const {
-    if (level == 0) return plruL0;
-    else if (level == 1) return plruL1;
-    else if (level == 2) return plruL2;
-    else if (level == 3) return plruL3;
-    else return plruSP;
-}
-
-bool
-MPTCache52::insertOrRefreshEntry(int level, Addr aligned,
-                                 const MPTCacheEntry &entry)
-{
-    auto& table_mut = getTableByLevel(level);
-    size_t& cap = getCapacityByLevel(level);
-    auto& tagList = getTagListByLevel(level);
-    auto& plru = getPLRUByLevel(level);
-
-    assert(cap > 0);
-
-    auto existing = table_mut.find(aligned);
-    if (existing != table_mut.end()) {
-        existing->second = entry;
-        auto itTag = std::find(tagList.begin(), tagList.end(), aligned);
-        if (itTag != tagList.end()) {
-            size_t idx = std::distance(tagList.begin(), itTag);
-            plru.access(idx);
-        } else {
-            warn("MPTCache table/tagList mismatch level %d tag %#lx\n",
-                 level, aligned);
-            if (tagList.size() < cap) {
-                tagList.push_back(aligned);
-                plru.access(tagList.size() - 1);
-            }
-        }
-        DPRINTF(PageTableWalker,
-                "MPT cache refill duplicate/update level %d tag %#lx\n",
-                level, aligned);
-        return false;
-    }
-
-    if (table_mut.size() >= cap) {
-        size_t victimIdx = plru.getVictim();
-        assert(victimIdx < tagList.size());
-        Addr victimAddr = tagList[victimIdx];
-        table_mut.erase(victimAddr);
-        tagList[victimIdx] = aligned;
-        plru.access(victimIdx);
-    } else {
-        tagList.push_back(aligned);
-        plru.access(tagList.size() - 1);
-    }
-    table_mut[aligned] = entry;
-    DPRINTF(PageTableWalker, "MPT cache refill insert level %d tag %#lx\n",
-            level, aligned);
-    return true;
-}
-
-//int MPTCache52::configuredSize = MPT_CACHE_SIZE;
-int MPTCache52::configuredSizeL0 = 8;
-int MPTCache52::configuredSizeL1 = 8;
-int MPTCache52::configuredSizeL2 = 8;
-int MPTCache52::configuredSizeL3 = 8;
-int MPTCache52::configuredSizeSP = 8;
-
-//MPTCache52* globalMPTCache = nullptr;
-
-
-// Called during SimObject initialization to complete the construction.
-void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params )
-{
-    // MPTCache52::configureSize(params->mptcache_size);
-    // globalMPTCache = new MPTCache52();
-    MPTCache52::configureSize(
-        params->mptcache_l0_size,
-        params->mptcache_l1_size,
-        params->mptcache_l2_size,
-        params->mptcache_l3_size,
-        params->mptcache_sp_size
-    );
-    globalMPTCache = new MPTCache52();
-    globalMPT.walker = params->walker;
-
-    DPRINTF(PageTableWalker,
-            "Initialized globalMPTCache with size = L0:%d L1:%d "
-            "L2:%d L3:%d SP:%d\n",
-            params->mptcache_l0_size,
-            params->mptcache_l1_size,
-            params->mptcache_l2_size,
-            params->mptcache_l3_size,
-            params->mptcache_sp_size);
-}
-
-std::pair<bool /*hit*/, MPTCacheEntry>
-MPTCache52::fetchDelayed(Addr pa, ThreadContext *tc, PMAChecker *pma,
-                         PMP *pmp, int& mptlevel,
-                         Walker::WalkerState* senderState)
-{
-    bool hasLeafHit = false;
-    int leafHitLevel = -1;
-    bool leafHitFromSP = false;
-    MPTCacheEntry leafHitEntry;
-
-    bool hasInternalHit = false;
-    int internalHitLevel = 4;
-    MPTCacheEntry internalHitEntry;
-
-    auto recordPLRUAccess = [this](int level, Addr aligned) {
-        auto& tagList = this->getTagListByLevel(level);
-        auto& plru = this->getPLRUByLevel(level);
-        auto itTag = std::find(tagList.begin(), tagList.end(), aligned);
-        if (itTag != tagList.end()) {
-            size_t idx = std::distance(tagList.begin(), itTag);
-            plru.access(idx);
-        }
-    };
-
-    auto recordLevelHit = [](int level) {
-        if (level == 0) ++globalMPTCache->mptCacheL0Hits;
-        else if (level == 1) ++globalMPTCache->mptCacheL1Hits;
-        else if (level == 2) ++globalMPTCache->mptCacheL2Hits;
-        else if (level == 3) ++globalMPTCache->mptCacheL3Hits;
-    };
-
-    auto considerHit =
-        [&](const MPTCacheEntry &entry, int level, bool fromSP) {
-            if (!entry.valid) {
-                DPRINTF(PageTableWalker,
-                        "MPT cache invalid entry hit level %i paddr %#lx\n",
-                        level, pa);
-                return;
-            }
-
-            if (entry.mpte.isLeaf()) {
-                DPRINTF(PageTableWalker,
-                        "MPT cache hit leaf level %i paddr %#lx%s\n",
-                        level, pa, fromSP ? " [SP]" : "");
-                if (!hasLeafHit || level > leafHitLevel) {
-                    leafHitEntry = entry;
-                    leafHitLevel = level;
-                    leafHitFromSP = fromSP;
-                    hasLeafHit = true;
-                }
-            } else {
-                DPRINTF(PageTableWalker,
-                        "MPT cache hit internal level %i paddr %#lx%s\n",
-                        level, pa, fromSP ? " [SP]" : "");
-                if (!hasInternalHit || level < internalHitLevel) {
-                    internalHitEntry = entry;
-                    internalHitLevel = level;
-                    hasInternalHit = true;
-                }
-            }
-        };
-
-    auto& sptable = getTableByLevel(MPT_CACHE_SP_LEVEL);
-    for (int i = 0; i <= 3; i++) {
-        Addr aligned = regionAlign(pa, i);
-        auto& leveltable = getTableByLevel(i);
-        auto it = leveltable.find(aligned);
-        if (it != leveltable.end()) {
-            recordLevelHit(i);
-            recordPLRUAccess(i, aligned);
-            considerHit(it->second, i, false);
-        }
-
-        Addr spKey = mptSPCacheKey(aligned, i);
-        auto spit = sptable.find(spKey);
-        if (spit != sptable.end() && spit->second.level == i) {
-            ++globalMPTCache->mptCacheSPHits;
-            recordPLRUAccess(MPT_CACHE_SP_LEVEL, spKey);
-            considerHit(spit->second, i, true);
-        }
-    }
-
-    if (hasLeafHit) {
-        if (leafHitLevel > 0 && !leafHitFromSP) {
-            ++globalMPTCache->mptCacheSPHits;
-        }
-        mptlevel = leafHitLevel;
-        DPRINTF(PageTableWalker, "mptcache leaf hit,hitlevel=%i\n",
-                leafHitLevel);
-        return std::make_pair(true, leafHitEntry);
-    }
-
-    Addr baseaddr;
-    if (hasInternalHit) {
-        if (internalHitLevel == 0) {
-            DPRINTF(PageTableWalker,
-                    "MPT cache hit invalid level0 internal entry for pa %#lx\n",
-                    pa);
-            return std::make_pair(false, internalHitEntry);
-        }
-        mptlevel = internalHitLevel - 1;
-        baseaddr = internalHitEntry.mpte.nextLevelPAddr();
-        DPRINTF(PageTableWalker,
-                "MPT table walk resumes after internal cache hit at level %i, start level %i for pa %#lx\n",
-                internalHitLevel, mptlevel, pa);
-        globalMPT.walk(mptlevel, baseaddr, pa, tc, pma, pmp, senderState);
-        return std::make_pair(false, internalHitEntry);
-    }
-
-    mptlevel = 3;
-    baseaddr = globalMPT.mmpt.ppn << 12;
-    DPRINTF(PageTableWalker,
-            "MPT table walk start at root level %i for pa %#lx\n",
-            mptlevel, pa);
-    globalMPT.walk(mptlevel, baseaddr, pa, tc, pma, pmp, senderState);
-    return std::make_pair(false, MPTCacheEntry());
-}
-
-
-void MPTCache52::mfence_all(){
-
-    tableL0.clear();
-    tableL1.clear();
-    tableL2.clear();
-    tableL3.clear();
-    tableSP.clear();
-
-    tagListL0.clear();
-    tagListL1.clear();
-    tagListL2.clear();
-    tagListL3.clear();
-    tagListSP.clear();
-
-    plruL0.reset();
-    plruL1.reset();
-    plruL2.reset();
-    plruL3.reset();
-    plruSP.reset();
-
-}
-
-
-#endif//MPT_CACHE_ENABLED
 
 inline int Walker::getLevelForPageSizeLog2(uint8_t logBytes) {
     switch (logBytes) {
@@ -1579,7 +478,8 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
     const bool hasUsableMptInfo =
         entry != nullptr && entry->mptInfo.valid &&
         mptLevelCoversLogBytes(entry->mptInfo.mptlevel, entry->logBytes);
-    const bool needsMptCheck = globalMPT.mmpt.mode != 0 &&
+    panic_if(mptUnit == nullptr, "Walker has no per-core MPT unit\n");
+    const bool needsMptCheck = mptUnit->enabled() &&
         (!tlb->isMptTlbInfoEnabled() || !hasUsableMptInfo);
 
     if (translation == nullptr) {
@@ -1621,6 +521,24 @@ Walker::startMPTCheck(const RequestPtr &req, ThreadContext *tc,
     panic_if(translation == nullptr,
              "Timing MPT-only check requires a translation object\n");
 
+    /* MPT is a post-translation protection pipeline, not a page-table walk. */
+    translation->markMptDelayed();
+
+    /*
+     * Without mptInfo there is no MPT metadata to attach to a TLB entry.
+     * Keep this path independent from WalkerState so an MPT lookup cannot
+     * consume PTW state or participate in PTW coalescing.  The ordinary
+     * L2-to-L1 refill is retained by MptAccessState.  The mptInfo-enabled
+     * path below keeps the existing metadata refill behavior.
+     */
+    if (tlb != nullptr && !tlb->isMptTlbInfoEnabled()) {
+        auto *state = new MptAccessState(
+            this, req, tc, translation, mode, paddr, entry,
+            entryVsstage, entryGstage);
+        state->start();
+        return;
+    }
+
     WalkerState *state = new WalkerState(this, translation, req);
     state->initState(tc, req, mode, sys->isTimingMode(), false, false);
     panic_if(!state->isTiming(),
@@ -1654,17 +572,14 @@ Walker::startMPTCheck(const RequestPtr &req, ThreadContext *tc,
             "Start MPT-only check vaddr %#lx paddr %#lx pc %#lx\n",
             req->getVaddr(), paddr, req->getPC());
 
-    if (state->startMPTwalk()) {
-        state->finishMPTing = true;
-        state->scheduleMptCacheHit();
-    }
+    state->startMPTwalk();
 }
 
 Fault
 Walker::checkMPTFunctional(Addr vaddr, Addr paddr, BaseMMU::Mode mode)
 {
-    if (globalMPT.mmpt.mode == 0 ||
-        globalMPT.checkFunctional(paddr, mode, sys)) {
+    panic_if(mptUnit == nullptr, "Walker has no per-core MPT unit\n");
+    if (!mptUnit->enabled() || mptUnit->checkFunctional(paddr, mode)) {
         return NoFault;
     }
     return createMPTPagefault(vaddr, paddr, mode);
@@ -1689,10 +604,6 @@ bool
 Walker::recvTimingResp(PacketPtr pkt)
 {
 
-    if (pkt->req->isMptWalk()) {
-        DPRINTF(PageTableWalker,"hi mpt resp");
-        return  globalMPT.MptRecvTimingResp(pkt);
-    }
     WalkerSenderState * senderState =
         dynamic_cast<WalkerSenderState *>(pkt->popSenderState());
     DPRINTF(PageTableWalker,
@@ -1726,6 +637,30 @@ Walker::recvTimingResp(PacketPtr pkt)
 }
 
 void
+Walker::completeMptWaiter(WalkerState *sender_walk)
+{
+    const bool walk_complete = sender_walk->completeMPTWalk();
+    if (!walk_complete) {
+        return;
+    }
+
+    auto iter = std::find(currStates.begin(), currStates.end(), sender_walk);
+    if (iter == currStates.end()) {
+        return;
+    }
+
+    DPRINTF(PageTableWalker,
+            "MPT walk complete for %#lx (pc=%#lx), erase it\n",
+            sender_walk->mainReq->getVaddr(),
+            sender_walk->mainReq->getPC());
+    currStates.erase(iter);
+    releasePtwLevel(sender_walk);
+    retryPtwLevelBlockedStates();
+    retryPtwMissQueue();
+    delete sender_walk;
+}
+
+void
 Walker::WalkerPort::recvReqRetry()
 {
     walker->recvReqRetry();
@@ -1740,9 +675,6 @@ Walker::recvReqRetry()
         if (walkerState->isRetrying()) {
             walkerState->retry();
         }
-    }
-    if (globalMPT.mptretry){ //retry mpt
-        globalMPT.sendMptPacket();
     }
 }
 
@@ -1778,13 +710,106 @@ Walker::getPort(const std::string &if_name, PortID idx)
         return ClockedObject::getPort(if_name, idx);
 }
 
+Walker::MptAccessState::MptAccessState(
+    Walker *walker_, const RequestPtr &req_, ThreadContext *tc_,
+    BaseMMU::Translation *translation_, BaseMMU::Mode mode_, Addr paddr_,
+    const TlbEntry *entry_, const TlbEntry *entryVsstage_,
+    const TlbEntry *entryGstage_)
+    : walker(walker_), req(req_), tc(tc_), translation(translation_),
+      mode(mode_), paddr(paddr_)
+{
+    panic_if(walker == nullptr || req == nullptr || tc == nullptr ||
+                 translation == nullptr,
+             "Invalid lightweight MPT access state\n");
+
+    if (entry_ != nullptr) {
+        entry = *entry_;
+        hasEntry = true;
+    }
+    if (entryVsstage_ != nullptr) {
+        vstageEntry = *entryVsstage_;
+        hasVstageEntry = true;
+    }
+    if (entryGstage_ != nullptr) {
+        gstageEntry = *entryGstage_;
+        hasGstageEntry = true;
+    }
+}
+
+Walker::MptAccessState::~MptAccessState()
+{
+    if (!completed && walker != nullptr && walker->mptUnit != nullptr)
+        walker->mptUnit->cancel(this);
+}
+
+void
+Walker::MptAccessState::start()
+{
+    panic_if(walker->mptUnit == nullptr,
+             "Lightweight MPT access has no MPT unit\n");
+
+    const MptRequestSource source =
+        mode == BaseMMU::Execute ? MptRequestSource::Instruction :
+                                   MptRequestSource::Data;
+    walker->mptUnit->submit(this, paddr, mode, source);
+}
+
+void
+Walker::MptAccessState::finishMptLookup(const MptResult &result)
+{
+    if (completed)
+        return;
+    completed = true;
+
+    req->setPaddr(paddr);
+    walker->pma->check(req);
+    const PrivilegeMode pmode = walker->tlb->getMemPriv(tc, mode);
+    Fault fault = walker->pmp->pmpCheck(req, mode, pmode, tc);
+    if (fault == NoFault && !(result.valid && result.allowed)) {
+        fault = walker->createMPTPagefault(req->getVaddr(), paddr, mode);
+    }
+
+    /*
+     * A TLB hit in the shared L2 TLB normally promotes its entry into the
+     * L1 TLB before completing the translation.  The lightweight MPT path
+     * bypasses WalkerState::completeMPTOnly(), so preserve that refill here.
+     */
+    if (fault == NoFault && walker->enableL1L2replace) {
+        if (hasEntry) {
+            TlbEntry l1Entry;
+            if (walker->tlb->isL1DirectCompressionEnabled() &&
+                walker->tlb->buildSingleL1CompressedEntry(
+                    req->getVaddr(), entry, direct, l1Entry)) {
+                walker->tlb->insert(l1Entry.vaddr, l1Entry, false, direct);
+                walker->tlb->recordL1CompressedEntry(l1Entry);
+            } else if (!walker->tlb->isL1DirectCompressionEnabled()) {
+                walker->tlb->insert(entry.vaddr, entry, false, direct);
+            }
+        }
+        if (hasVstageEntry) {
+            walker->tlb->insert(vstageEntry.vaddr, vstageEntry,
+                                false, vsstage);
+        }
+        if (hasGstageEntry) {
+            walker->tlb->insert(gstageEntry.gpaddr, gstageEntry,
+                                false, gstage);
+        }
+    }
+
+    DPRINTF(PageTableWalker,
+            "Finish lightweight MPT check vaddr %#lx paddr %#lx pc %#lx "
+            "allowed %d\n",
+            req->getVaddr(), paddr, req->getPC(), fault == NoFault);
+
+    /* The translation callback may release itself; this client owns itself. */
+    translation->finishMpt(fault, req, tc, mode);
+    delete this;
+}
+
 Walker::WalkerState::~WalkerState()
 {
-    if (mptCacheHitEvent != nullptr) {
-        if (mptCacheHitEvent->scheduled())
-            walker->deschedule(*mptCacheHitEvent);
-        delete mptCacheHitEvent;
-    }
+    if (walker->mptUnit != nullptr)
+        walker->mptUnit->cancel(this);
 }
 
 void
@@ -2813,7 +1838,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         mptCheckMode = mode;
                         mptFaultMode = mode;
                         mptCheckingPteRead = false;
-                        if (globalMPT.mmpt.mode != 0 && !isMPTing) {
+                        if (walker->mptUnit != nullptr &&
+                            walker->mptUnit->enabled() && !isMPTing) {
                             isMPTing = true;
                             DPRINTF(PageTableWalker,"lastMPTwalk\n");
                             bool Cachehit=LastMPTwalk();
@@ -2833,7 +1859,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         mptGranularityClipped = false;
                         if (walker->tlb != nullptr &&
                             walker->tlb->isMptTlbInfoEnabled() &&
-                            globalMPT.mmpt.mode != 0 && mptInfo.valid) {
+                            walker->mptUnit != nullptr &&
+                            walker->mptUnit->enabled() && mptInfo.valid) {
                             unsigned mptLogBytes =
                                 getPageShiftForLevel(mptInfo.mptlevel);
                             if (mptLogBytes < tlbLogBytes) {
@@ -3037,7 +2064,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     inl2Entry.pte = l2pte;
                     if (walker->tlb != nullptr &&
                         walker->tlb->isMptTlbInfoEnabled() &&
-                        globalMPT.mmpt.mode != 0 && mptInfo.valid) {
+                        walker->mptUnit != nullptr &&
+                        walker->mptUnit->enabled() && mptInfo.valid) {
                         Addr checkedMptSlot =
                             mptPermSlotAlign(PaddrUT, mptInfo.mptlevel);
                         Addr entryMptSlot =
@@ -3145,7 +2173,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 nextlineEntry.pte = l2pte;
                 if (walker->tlb != nullptr &&
                     walker->tlb->isMptTlbInfoEnabled() &&
-                    globalMPT.mmpt.mode != 0 && mptInfo.valid) {
+                    walker->mptUnit != nullptr &&
+                    walker->mptUnit->enabled() && mptInfo.valid) {
                     Addr checkedMptSlot =
                         mptPermSlotAlign(PaddrUT, mptInfo.mptlevel);
                     Addr entryMptSlot =
@@ -3761,7 +2790,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     // passed, otherwise an address fault will be returned.
                     mainFault =
                         walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
-                    if (mainFault == NoFault && !MPTresult && globalMPT.mmpt.mode != 0){
+                    if (mainFault == NoFault && !MPTresult &&
+                        walker->mptUnit != nullptr &&
+                        walker->mptUnit->enabled()) {
                         mainFault=walker->createMPTPagefault(vaddr, paddr, mode);
                     }
                     if (mainFault != NoFault) {
@@ -3842,7 +2873,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     // passed, otherwise an address fault will be returned.
                     mainFault =
                         walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
-                    if (mainFault == NoFault && !MPTresult && globalMPT.mmpt.mode != 0) {
+                    if (mainFault == NoFault && !MPTresult &&
+                        walker->mptUnit != nullptr &&
+                        walker->mptUnit->enabled()) {
                         mainFault=walker->createMPTPagefault(vaddr, paddr, mode);
                     }
                     assert(mainFault == NoFault);
@@ -3911,7 +2944,8 @@ Walker::WalkerState::finishPteReadMPTFault()
 Fault
 Walker::WalkerState::startPteReadMPTCheck()
 {
-    if (!timing || globalMPT.mmpt.mode == 0 || read == nullptr ||
+    if (!timing || walker->mptUnit == nullptr ||
+        !walker->mptUnit->enabled() || read == nullptr ||
         !read->isRequest() || !read->isRead() || read->req->isMptWalk()) {
         return NoFault;
     }
@@ -3936,142 +2970,52 @@ Walker::WalkerState::startPteReadMPTCheck()
             "Check MPT permission before PTW PTE read paddr %#lx\n",
             pteReadPaddr);
 
-    if (!startMPTwalk()) {
-        if (mptCacheHitPending)
-            return NoFault;
-        walker->releasePtwLevel(this);
-        walker->retryPtwLevelBlockedStates();
-        walker->retryPtwMissQueue();
-        return NoFault;
-    }
-
-    isMPTing = false;
-    finishMPTing = true;
-    mptCheckingPteRead = false;
-    if (!pteReadMptResult) {
-        if (pteReadMptIsNextline) {
-            delete read;
-            read = nullptr;
-            nextline = false;
-            pteReadMptIsNextline = false;
-            return NoFault;
-        }
-        Fault fault = walker->createMPTPagefault(
-            entry.vaddr, pteReadPaddr, mptFaultMode);
-        pteReadMptFaultPending = true;
-        delete read;
-        read = nullptr;
-        return fault;
-    }
-
-    pteReadMptChecked = true;
-    pteReadMptCheckedPaddr = pteReadPaddr;
-    pteReadMptIsNextline = false;
-    pteReadMptFaultPending = false;
+    startMPTwalk();
+    walker->releasePtwLevel(this);
+    walker->retryPtwLevelBlockedStates();
+    walker->retryPtwMissQueue();
     return NoFault;
 }
 
-void
-// This detours the MMU sendPackets path for MPT packet handling.
-Walker::WalkerState::sendPacketsMPT()
+bool
+Walker::WalkerState::startMPTwalk()
 {
-    if (finishMPTing) {
-        completeMPTWalk();
-        return;
-    }
-    if (startMPTwalk()) {
-        finishMPTing = true;
-        completeMPTWalk();
-    }
-}
-
-bool Walker::WalkerState::startMPTwalk(){
     assert(mptCheckPaddr != 0);
-    Addr paForMPTCheck = mptCheckPaddr;
-    PaddrUT= paForMPTCheck ;
-    MPTCache52* cache = globalMPTCache;
-    assert(cache != nullptr);
-    auto [hit, cacheEntry] = cache->fetchDelayed(
-        paForMPTCheck, requestors.front().tc, walker->pma, walker->pmp,
-        mpt_level, this);
-    if (hit){
-        const bool retryingCacheHit = mptCacheHitRetry;
-        mptCacheHitRetry = false;
-        DPRINTF(PageTableWalker, "MPT cace hit\n");
-        int mptlevel = cacheEntry.level;
-        if (!cacheEntry.valid) {
-            DPRINTF(PageTableWalker,
-                    "MPTCache fetch failed: paddr=%#lx\n",
-                    paForMPTCheck);
-            return false;
-        }
-        if (!cacheEntry.mpte.isLeaf()) {
-            DPRINTF(PageTableWalker,
-                    "MPTCache hit internode paddr=%#lx\n",
-                    paForMPTCheck);
-            return false;
-        }
-        uint8_t pi = (paForMPTCheck >> getPageShiftForLevel(mptlevel)) & 0xF;
-        // NAPOT is already handled internally.
-        uint8_t rawPerm = cacheEntry.mpte.perms(pi);
-        uint8_t perm = effectiveMptPerm(rawPerm);
-        DPRINTF(PageTableWalker,
-                "MPTCache hit leaf paddr=%#lx rawPerm:%#x effectivePerm:%#x\n",
-                paForMPTCheck, rawPerm, perm);
-        if (mptCheckingPteRead) {
-            pteReadMptResult = mptPermAllows(perm, mptCheckMode);
-        } else {
-            MPTresult = mptPermAllows(perm, mptCheckMode);
-            mptInfo.write_mpt_raw(perm, mptlevel);
-        }
-
-        if (!retryingCacheHit && timing &&
-            MPT_CACHE_HIT_LATENCY != Cycles(0)) {
-            scheduleMptCacheHit();
-            return false;
-        }
-        return true;
-    }else{
-        DPRINTF(PageTableWalker, "MPT cache all miss for inter mpt check(read only),setup mptwalk\n");
-        //mpt_level = 3;
-        //PaddrUT= paForMPTCheck;
-        //globalMPT.walk(mpt_level,globalMPT.mmpt.ppn,PaddrUT,requestors.front().tc, walker->pma, walker->pmp,this);
-        return false;
+    panic_if(walker->mptUnit == nullptr,
+             "WalkerState cannot start MPT lookup without an MPT unit\n");
+    PaddrUT = mptCheckPaddr;
+    MptRequestSource source = MptRequestSource::Data;
+    if (mptCheckingPteRead) {
+        source = MptRequestSource::Ptw;
+    } else if (mptCheckMode == BaseMMU::Execute) {
+        source = MptRequestSource::Instruction;
     }
+    walker->mptUnit->submit(this, mptCheckPaddr, mptCheckMode, source);
+    return false;
 }
 
 void
-Walker::WalkerState::scheduleMptCacheHit()
+Walker::WalkerState::finishMptLookup(const MptResult &result)
 {
-    if (mptCacheHitPending)
-        return;
-
-    if (mptCacheHitEvent == nullptr) {
-        mptCacheHitEvent = new EventFunctionWrapper(
-            [this] {
-                mptCacheHitPending = false;
-                if (read != nullptr && read->isResponse())
-                    mptCacheHitRetry = true;
-                // Use the same completion path as an asynchronous MPT
-                // memory response.  In particular, a final-leaf response
-                // may complete the walk and remove this state from
-                // Walker::currStates.
-                globalMPT.completeMptWaiter(this);
-            }, name() + ".mpt_cache_hit");
+    if (mptCheckingPteRead) {
+        pteReadMptResult = result.valid && result.allowed;
+    } else {
+        MPTresult = result.valid && result.allowed;
+        if (result.valid) {
+            mptInfo.write_mpt_raw(result.permission, result.level);
+        } else {
+            mptInfo.invalidate();
+        }
     }
-
-    mptCacheHitPending = true;
-    walker->schedule(*mptCacheHitEvent,
-                     curTick() + walker->cyclesToTicks(MPT_CACHE_HIT_LATENCY));
+    walker->completeMptWaiter(this);
 }
 
-bool Walker::WalkerState::LastMPTwalk(){
-    isMPTing= true;
+bool
+Walker::WalkerState::LastMPTwalk()
+{
+    isMPTing = true;
     DPRINTF(PageTableWalker, "inner-LastMPTwalk");
-    if (startMPTwalk()){
-        return true;
-    }
-    return false;
+    return startMPTwalk();
 }
 
 bool
@@ -4131,7 +3075,7 @@ Walker::WalkerState::completeMPTOnly()
                 "allowed %d\n",
                 r.req->getVaddr(), mptCheckPaddr, r.req->getPC(),
                 fault == NoFault);
-        r.translation->finish(fault, r.req, r.tc, mode);
+        r.translation->finishMpt(fault, r.req, r.tc, mode);
     }
     requestors.clear();
     return true;
@@ -4360,10 +3304,3 @@ Walker::WalkerState::pageFault(bool present,bool G)
 
 } // namespace RiscvISA
 } // namespace gem5
-
-#if MPT_ENABLED
-//MPT globalMPT;
-gem5::RiscvISA::MPT gem5::RiscvISA::globalMPT;
-#endif
-
-gem5::RiscvISA::MPTCache52* gem5::RiscvISA::globalMPTCache = nullptr;

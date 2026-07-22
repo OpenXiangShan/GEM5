@@ -2277,10 +2277,11 @@ decode QUADRANT {
                         }
                     }},IsNonSpeculative, IsSerializeAfter, No_OpClass);
                     0x5F: mfence({{
-                        if (globalMPTCache != nullptr) {
-                            globalMPTCache->mfence_all();
-                            globalMPT.flushPendingMptReads();
-                        }
+                        auto *mmu = dynamic_cast<RiscvISA::MMU *>(
+                            xc->tcBase()->getMMUPtr());
+                        panic_if(mmu == nullptr,
+                                 "mfence requires a RISC-V MMU\n");
+                        mmu->flushMpt();
                         xc->tcBase()->getCpuPtr()->flushTLBs();
                     }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
                 }

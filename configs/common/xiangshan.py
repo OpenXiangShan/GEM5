@@ -191,6 +191,27 @@ def configure_mpt_reserved_memory(args: argparse.Namespace, system) -> None:
     )
 
 
+def configure_mpt_unit(args: argparse.Namespace, mmu) -> None:
+    unit = mmu.mpt_unit
+    unit.hit_latency = args.mpt_hit_latency
+    unit.lookup_width = args.mpt_lookup_width
+    unit.instruction_accept_width = args.mpt_i_accept_width
+    unit.data_accept_width = args.mpt_d_accept_width
+    unit.ptw_accept_width = args.mpt_ptw_accept_width
+    unit.instruction_queue_size = args.mpt_i_queue_size
+    unit.data_queue_size = args.mpt_d_queue_size
+    unit.ptw_queue_size = args.mpt_ptw_queue_size
+    unit.num_mshrs = args.mpt_mshrs
+    unit.targets_per_mshr = args.mpt_targets_per_mshr
+    unit.memory_issue_width = args.mpt_memory_issue_width
+    unit.max_memory_inflight = args.mpt_max_memory_inflight
+    unit.cache_l0_size = args.mpt_cache_l0_size
+    unit.cache_l1_size = args.mpt_cache_l1_size
+    unit.cache_l2_size = args.mpt_cache_l2_size
+    unit.cache_l3_size = args.mpt_cache_l3_size
+    unit.cache_sp_size = args.mpt_cache_sp_size
+
+
 def resolve_linux_cmdline(args: argparse.Namespace, default_cmdline: str) -> str:
     command_line = getattr(args, "command_line", None)
     command_line_file = getattr(args, "command_line_file", None)

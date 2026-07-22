@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_FETCH_HH__
 #define __CPU_O3_FETCH_HH__
 
+#include <array>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -122,15 +123,20 @@ class Fetch
         FetchTranslation(Fetch *_fetch) : fetch(_fetch) {}
 
         void markDelayed() {}
+        void markMptDelayed() override;
 
         void
         finish(const Fault &fault, const RequestPtr &req,
             gem5::ThreadContext *tc, BaseMMU::Mode mode)
         {
             assert(mode == BaseMMU::Execute);
-            fetch->finishTranslation(fault, req);
+            fetch->finishTranslation(fault, req, mptDelayed, mptStartTick);
             delete this;
         }
+
+      private:
+        bool mptDelayed = false;
+        Tick mptStartTick = 0;
     };
 
   private:
@@ -407,14 +413,17 @@ class Fetch
      */
     void sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
 
-    void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
+    void finishTranslation(const Fault &fault, const RequestPtr &mem_req,
+                           bool mpt_delayed = false,
+                           Tick mpt_start_tick = 0);
 
     /** Validate if a translation request is expected and should be processed.
      * @param tid Thread ID
      * @param mem_req The memory request to validate
      * @return true if request should be processed, false if should be ignored
      */
-    bool validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req);
+    bool validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req,
+                                    bool mpt_delayed);
 
     /** Handle successful translation and initiate cache access.
      * @param tid Thread ID
@@ -438,6 +447,10 @@ class Fetch
      * @return true if requests were successfully initiated
      */
     bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc);
+
+    void serviceFetchTranslationQueue(ThreadID tid);
+    bool activateFetchTranslationHead(ThreadID tid);
+    bool waitingForFetchTranslation(ThreadID tid) const;
 
     /** Process multi-cacheline fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
@@ -861,10 +874,33 @@ class Fetch
         }
     };
 
+    struct FetchTranslationBlock
+    {
+        uint64_t targetId = 0;
+        Addr baseAddr = 0;
+        std::array<RequestPtr, 2> requests;
+        std::array<Fault, 2> faults{{NoFault, NoFault}};
+        std::array<bool, 2> issued{{false, false}};
+        std::array<bool, 2> completed{{false, false}};
+        std::array<bool, 2> mptDelayed{{false, false}};
+        bool activated = false;
+
+        bool allCompleted() const
+        {
+            return completed[0] && completed[1];
+        }
+    };
+
     /** The size of the fetch buffer in bytes. Default is 66 bytes,
     *  make sure we could decode tail 4bytes if it is in [62, 66)
      */
     unsigned fetchBufferSize;
+
+    const unsigned fetchTranslationQueueSize;
+    const unsigned fetchTranslationIssueWidth;
+    std::deque<FetchTranslationBlock> fetchTranslationQueue[MaxThreads];
+    unsigned fetchTranslationsIssuedThisCycle = 0;
+    ThreadID fetchTranslationNextThread = 0;
 
     /**
      * Fetch buffer structure to encapsulate instruction fetch data.
@@ -1087,6 +1123,12 @@ class Fetch
          * due to a squash.
          */
         statistics::Scalar tlbSquashes;
+        /** Number of MPT permission checks completed after a fetch squash. */
+        statistics::Scalar mptSquashes;
+        /** Number of fetch translations that entered the MPT pipeline. */
+        statistics::Scalar mptTranslations;
+        /** Accumulated cycles spent waiting for fetch-side MPT checks. */
+        statistics::Scalar mptWaitCycles;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
         /** Rate of how often fetch was idle. */

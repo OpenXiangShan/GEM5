@@ -804,10 +804,9 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         RegVal old_val = readMiscRegNoEffect(MISCREG_MMPT);
         setMiscRegNoEffect(MISCREG_MMPT, val);
         if (old_val != val) {
-            if (globalMPTCache != nullptr) {
-                globalMPTCache->mfence_all();
-            }
-            globalMPT.flushPendingMptReads();
+            auto *mmu = dynamic_cast<RiscvISA::MMU *>(tc->getMMUPtr());
+            panic_if(mmu == nullptr, "MMPT write requires a RISC-V MMU\n");
+            mmu->syncMpt(tc);
             tc->getCpuPtr()->flushTLBs();
         }
     }else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
@@ -955,10 +954,11 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 RegVal old_val = readMiscRegNoEffect(misc_reg);
                 setMiscRegNoEffect(misc_reg, val);
                 if (old_val != val) {
-                    if (globalMPTCache != nullptr) {
-                        globalMPTCache->mfence_all();
-                    }
-                    globalMPT.flushPendingMptReads();
+                    auto *mmu =
+                        dynamic_cast<RiscvISA::MMU *>(tc->getMMUPtr());
+                    panic_if(mmu == nullptr,
+                             "MMPT write requires a RISC-V MMU\n");
+                    mmu->syncMpt(tc);
                     tc->getCpuPtr()->flushTLBs();
                 }
             }

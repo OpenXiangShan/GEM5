@@ -40,6 +40,7 @@ from m5.proxy import *
 
 from m5.objects.BaseMMU import BaseMMU
 from m5.objects.RiscvTLB import RiscvTLB, RiscvTLBL2
+from m5.objects.RiscvMptUnit import RiscvMptUnit
 from m5.objects.PMAChecker import PMAChecker
 from m5.objects.PMP import PMP
 
@@ -56,10 +57,15 @@ class RiscvMMU(BaseMMU):
                    next_level=Parent.l2_shared, is_dtlb=True)
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
+    mpt_unit = Param.RiscvMptUnit(RiscvMptUnit(), "Per-core MPT unit")
 
     @classmethod
     def walkerPorts(cls):
-        return ["mmu.itb.walker.port", "mmu.dtb.walker.port"]
+        return [
+            "mmu.itb.walker.port",
+            "mmu.dtb.walker.port",
+            "mmu.mpt_unit.port",
+        ]
 
     def connectWalkerPorts(self, iport, dport):
         self.itb.walker.port = iport

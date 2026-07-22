@@ -67,6 +67,18 @@ class BaseMMU : public SimObject
          */
         virtual void markDelayed() = 0;
 
+        /**
+         * Signal that address translation completed, but the translated
+         * physical address is waiting for an independent protection lookup.
+         *
+         * Most MMU users do not distinguish this condition from a page-table
+         * walk, so the default preserves the historical behavior.  OoO
+         * memory requests that model an independent protection pipeline can
+         * override it to keep MPT waiting out of the ordinary TLB replay
+         * path.
+         */
+        virtual void markMptDelayed() { markDelayed(); }
+
         /*
          * The memory for this object may be dynamically allocated, and it may
          * be responsible for cleaning itself up which will happen in this
@@ -74,6 +86,18 @@ class BaseMMU : public SimObject
          */
         virtual void finish(const Fault &fault, const RequestPtr &req,
                             ThreadContext *tc, BaseMMU::Mode mode) = 0;
+
+        /**
+         * Complete a delayed post-translation MPT permission lookup.  The
+         * default routes it through the ordinary completion callback; users
+         * that track protection and translation independently can override
+         * this hook.
+         */
+        virtual void finishMpt(const Fault &fault, const RequestPtr &req,
+                               ThreadContext *tc, BaseMMU::Mode mode)
+        {
+            finish(fault, req, tc, mode);
+        }
 
         /** This function is used by the page table walker to determine
          * if it should translate the a pending request or if the underlying

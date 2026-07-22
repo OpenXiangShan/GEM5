@@ -86,6 +86,15 @@ Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
         RequestPort(_cpu->name() + ".icache_port", _cpu), fetch(_fetch)
 {}
 
+void
+Fetch::FetchTranslation::markMptDelayed()
+{
+    if (!mptDelayed) {
+        mptDelayed = true;
+        mptStartTick = curTick();
+    }
+}
+
 
 Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     : fetchPolicy(params.smtFetchPolicy),
@@ -101,6 +110,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       retryPkt(),
       cacheBlkSize(cpu->cacheLineSize()),
       fetchBufferSize(params.fetchBufferSize),
+      fetchTranslationQueueSize(params.fetchTranslationQueueSize),
+      fetchTranslationIssueWidth(params.fetchTranslationIssueWidth),
       fetchQueueSize(params.fetchQueueSize),
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
@@ -116,6 +127,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("fetchWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
+    if (fetchTranslationQueueSize == 0 || fetchTranslationIssueWidth == 0) {
+        fatal("Fetch translation queue size and issue width must be positive\n");
+    }
 
     smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     for (int i = 0; i < MaxThreads; i++) {
@@ -238,6 +252,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of outstanding Icache misses that were squashed"),
     ADD_STAT(tlbSquashes, statistics::units::Count::get(),
              "Number of outstanding ITLB misses that were squashed"),
+    ADD_STAT(mptSquashes, statistics::units::Count::get(),
+             "Number of outstanding instruction MPT checks that were squashed"),
+    ADD_STAT(mptTranslations, statistics::units::Count::get(),
+             "Number of fetch translations that entered the MPT pipeline"),
+    ADD_STAT(mptWaitCycles, statistics::units::Cycle::get(),
+             "Cycles spent waiting for instruction MPT checks"),
     ADD_STAT(nisnDist, statistics::units::Count::get(),
              "Number of instructions fetched each cycle (Total)"),
     ADD_STAT(idleRate, statistics::units::Ratio::get(),
@@ -333,6 +353,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(icacheSquashes);
         tlbSquashes
             .prereq(tlbSquashes);
+        mptSquashes
+            .prereq(mptSquashes);
+        mptTranslations
+            .prereq(mptTranslations);
+        mptWaitCycles
+            .prereq(mptWaitCycles);
         nisnDist
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
@@ -476,6 +502,7 @@ Fetch::clearStates(ThreadID tid)
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
     threads[tid].cacheReq.reset();
+    fetchTranslationQueue[tid].clear();
     threads[tid].reset();
     fetchQueue[tid].clear();
 
@@ -504,6 +531,7 @@ Fetch::resetStage()
 
         delayedCommit[tid] = false;
         threads[tid].cacheReq.reset();
+        fetchTranslationQueue[tid].clear();
 
         threads[tid].reset();
         ftqEntryFetchedInsts[tid] = 0;
@@ -531,69 +559,146 @@ Fetch::resetStage()
 bool
 Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 {
-    DPRINTF(Fetch, "[tid:%i] Handling multi-cacheline fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
-    // Transition to WaitingCache state when initiating cache access
+    DPRINTF(Fetch,
+            "[tid:%i] Waiting for queued fetch translation at %#x, pc=%#lx\n",
+            tid, vaddr, pc);
     setThreadStatus(tid, WaitingCache);
-
-    // Reset cache request state for this thread
-    threads[tid].cacheReq.reset();
-    threads[tid].cacheReq.baseAddr = vaddr;
-    threads[tid].cacheReq.totalSize = fetchBufferSize;
-
-    Addr fetchPC = vaddr;
-    unsigned fetchSize = cacheBlkSize - fetchPC % cacheBlkSize;  // Size for first cache line
-
-    DPRINTF(Fetch, "[tid:%i] Creating first cache line request: addr=%#x, size=%d\n",
-            tid, fetchPC, fetchSize);
-
-    // Create and send first request (tail of first cache line)
-    RequestPtr first_mem_req = std::make_shared<Request>(
-        fetchPC, fetchSize,
-        Request::INST_FETCH, cpu->instRequestorId(), pc,
-        cpu->thread[tid]->contextId());
-
-    first_mem_req->taskId(cpu->taskId());
-    first_mem_req->setMisalignedFetch();
-    first_mem_req->setReqNum(1);
-
-    threads[tid].cacheReq.addRequest(first_mem_req); // packet will be created later
-
-    // Initiate translation for first request
-    updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
-    FetchTranslation *trans = new FetchTranslation(this);
-    cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
-                              trans, BaseMMU::Execute);
-
-    // Prepare second request (head of second cache line)
-    fetchPC += fetchSize;  // Move to start of next cache line
-    assert(fetchPC % cacheBlkSize == 0);
-    fetchSize = fetchBufferSize - fetchSize;  // Remaining size
-
-    DPRINTF(Fetch, "[tid:%i] Creating second cache line request: addr=%#x, size=%d\n",
-            tid, fetchPC, fetchSize);
-
-    // Create and send second request
-    RequestPtr second_mem_req = std::make_shared<Request>(
-        fetchPC, fetchSize,
-        Request::INST_FETCH, cpu->instRequestorId(), pc,
-        cpu->thread[tid]->contextId());
-
-    second_mem_req->taskId(cpu->taskId());
-    second_mem_req->setMisalignedFetch();
-    second_mem_req->setReqNum(2);
-
-    threads[tid].cacheReq.addRequest(second_mem_req);  // Add second request to cache request
-
-    DPRINTF(Fetch, "[tid:%i] Initiating translation for second cache line\n", tid);
-
-    // Always initiate translation for second request, regardless of first request status
-    updateCacheRequestStatusByRequest(tid, second_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
-    FetchTranslation *trans2 = new FetchTranslation(this);
-    cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
-                              trans2, BaseMMU::Execute);
+    serviceFetchTranslationQueue(tid);
+    if (threads[tid].cacheReq.getOverallStatus() == CacheIdle) {
+        setAllFetchStalls(StallReason::ITlbStall);
+    }
     return true;
+}
+
+void
+Fetch::serviceFetchTranslationQueue(ThreadID tid)
+{
+    if (!dbpbtb || !dbpbtb->ftqHasFetching(tid)) {
+        return;
+    }
+
+    auto &queue = fetchTranslationQueue[tid];
+    const uint64_t head_id = dbpbtb->ftqHeadId(tid);
+    while (!queue.empty() && queue.front().targetId < head_id) {
+        queue.pop_front();
+    }
+    if (!queue.empty() && queue.front().targetId > head_id) {
+        queue.clear();
+    }
+
+    uint64_t next_id = queue.empty() ? head_id : queue.back().targetId + 1;
+    while (queue.size() < fetchTranslationQueueSize &&
+           dbpbtb->ftqHasTarget(next_id, tid)) {
+        const auto &target = dbpbtb->ftqTarget(next_id, tid);
+        FetchTranslationBlock block;
+        block.targetId = next_id;
+        block.baseAddr = target.startPC;
+
+        Addr fetch_pc = target.startPC;
+        unsigned fetch_size = cacheBlkSize - fetch_pc % cacheBlkSize;
+        block.requests[0] = std::make_shared<Request>(
+            fetch_pc, fetch_size, Request::INST_FETCH,
+            cpu->instRequestorId(), target.startPC,
+            cpu->thread[tid]->contextId());
+        block.requests[0]->taskId(cpu->taskId());
+        block.requests[0]->setMisalignedFetch();
+        block.requests[0]->setReqNum(1);
+
+        fetch_pc += fetch_size;
+        assert(fetch_pc % cacheBlkSize == 0);
+        fetch_size = fetchBufferSize - fetch_size;
+        panic_if(fetch_size == 0,
+                 "Fetch translation block must span two cache lines\n");
+        block.requests[1] = std::make_shared<Request>(
+            fetch_pc, fetch_size, Request::INST_FETCH,
+            cpu->instRequestorId(), target.startPC,
+            cpu->thread[tid]->contextId());
+        block.requests[1]->taskId(cpu->taskId());
+        block.requests[1]->setMisalignedFetch();
+        block.requests[1]->setReqNum(2);
+
+        queue.push_back(std::move(block));
+        ++next_id;
+    }
+
+    for (auto &block : queue) {
+        for (unsigned request = 0; request < block.requests.size() &&
+             fetchTranslationsIssuedThisCycle < fetchTranslationIssueWidth;
+             ++request) {
+            if (block.issued[request]) {
+                continue;
+            }
+            block.issued[request] = true;
+            ++fetchTranslationsIssuedThisCycle;
+            auto *translation = new FetchTranslation(this);
+            cpu->mmu->translateTiming(
+                block.requests[request], cpu->thread[tid]->getTC(),
+                translation, BaseMMU::Execute);
+        }
+        if (fetchTranslationsIssuedThisCycle >=
+            fetchTranslationIssueWidth) {
+            break;
+        }
+    }
+
+    activateFetchTranslationHead(tid);
+}
+
+bool
+Fetch::activateFetchTranslationHead(ThreadID tid)
+{
+    auto &queue = fetchTranslationQueue[tid];
+    if (queue.empty() || !dbpbtb || !dbpbtb->ftqHasFetching(tid)) {
+        return false;
+    }
+
+    FetchTranslationBlock &block = queue.front();
+    if (block.targetId != dbpbtb->ftqHeadId(tid) || block.activated ||
+        !block.allCompleted() || threads[tid].valid) {
+        return false;
+    }
+
+    CacheRequestStatus status = threads[tid].cacheReq.getOverallStatus();
+    if (status != CacheIdle && status != AccessComplete) {
+        return false;
+    }
+
+    threads[tid].cacheReq.reset();
+    threads[tid].cacheReq.baseAddr = block.baseAddr;
+    threads[tid].cacheReq.totalSize = fetchBufferSize;
+    for (const auto &request : block.requests) {
+        threads[tid].cacheReq.addRequest(request);
+        updateCacheRequestStatusByRequest(tid, request, TlbWait);
+    }
+
+    for (unsigned request = 0; request < block.requests.size(); ++request) {
+        if (block.faults[request] != NoFault) {
+            handleTranslationFault(
+                tid, block.requests[request], block.faults[request]);
+            if (!finishTranslationEvent.scheduled()) {
+                block.activated = true;
+            }
+            return true;
+        }
+    }
+
+    block.activated = true;
+    for (const auto &request : block.requests) {
+        handleSuccessfulTranslation(tid, request, block.baseAddr);
+    }
+    return true;
+}
+
+bool
+Fetch::waitingForFetchTranslation(ThreadID tid) const
+{
+    if (!dbpbtb || !dbpbtb->ftqHasFetching(tid) ||
+        fetchTranslationQueue[tid].empty()) {
+        return false;
+    }
+    const auto &block = fetchTranslationQueue[tid].front();
+    return block.targetId == dbpbtb->ftqHeadId(tid) &&
+           !block.activated;
 }
 
 bool
@@ -949,26 +1054,25 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 }
 
 bool
-Fetch::validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req)
+Fetch::validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req,
+                                   bool mpt_delayed)
 {
-    // Check if this request belongs to current cache request
-    bool isExpectedReq = false;
-    for (size_t i = 0; i < threads[tid].cacheReq.requests.size(); i++) {
-        if (mem_req == threads[tid].cacheReq.requests[i]) {
-            isExpectedReq = true;
-            break;
+    for (const auto &block : fetchTranslationQueue[tid]) {
+        for (const auto &request : block.requests) {
+            if (mem_req == request) {
+                return true;
+            }
         }
     }
-
-    // Check if request should be processed using new state system
-    if (!isExpectedReq || !hasPendingCacheRequests(tid)) {
-        DPRINTF(Fetch, "[tid:%i] Ignoring translation completed after squash or unexpected request\n", tid);
-        DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n", tid, mem_req->getVaddr());
+    DPRINTF(Fetch,
+            "[tid:%i] Ignoring translation completed after squash for %#lx\n",
+            tid, mem_req->getVaddr());
+    if (mpt_delayed) {
+        ++fetchStats.mptSquashes;
+    } else {
         ++fetchStats.tlbSquashes;
-        return false;
     }
-
-    return true;
+    return false;
 }
 
 void
@@ -1096,13 +1200,10 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 }
 
 void
-Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
+Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
+                          bool mpt_delayed, Tick mpt_start_tick)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
-
-    // For multi-cacheline fetch, use the stored base address
-    // Both requests should use the same fetchBufferPC
-    Addr fetchPC = threads[tid].cacheReq.baseAddr;
 
     assert(!cpu->switchedOut());
 
@@ -1113,18 +1214,33 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
             tid, mem_req->getVaddr());
 
     // Validate if this request should be processed
-    if (!validateTranslationRequest(tid, mem_req)) {
+    if (mpt_delayed) {
+        ++fetchStats.mptTranslations;
+        fetchStats.mptWaitCycles += cpu->ticksToCycles(
+            curTick() - mpt_start_tick);
+    }
+
+    if (!validateTranslationRequest(tid, mem_req, mpt_delayed)) {
         return;
     }
 
-    // Handle translation result
-    if (fault == NoFault) {
-        handleSuccessfulTranslation(tid, mem_req, fetchPC);
-    } else {
-        handleTranslationFault(tid, mem_req, fault);
+    bool found = false;
+    for (auto &block : fetchTranslationQueue[tid]) {
+        for (unsigned request = 0; request < block.requests.size(); ++request) {
+            if (block.requests[request] == mem_req) {
+                block.faults[request] = fault;
+                block.completed[request] = true;
+                block.mptDelayed[request] = mpt_delayed;
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            break;
+        }
     }
-
-    _status = updateFetchStatus();
+    panic_if(!found, "Validated fetch translation request disappeared\n");
+    switchToActive();
 }
 
 void
@@ -1180,6 +1296,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
+    fetchTranslationQueue[tid].clear();
 
     // Drop any retry packets that belong to this squashed thread.
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
@@ -1314,6 +1431,14 @@ Fetch::tick()
     // - then run fetch using the supplied FTQ entry (if any)
     assert(dbpbtb);
     dbpbtb->tick();
+    fetchTranslationsIssuedThisCycle = 0;
+    for (ThreadID offset = 0; offset < numThreads; ++offset) {
+        const ThreadID tid =
+            (fetchTranslationNextThread + offset) % numThreads;
+        serviceFetchTranslationQueue(tid);
+    }
+    fetchTranslationNextThread =
+        (fetchTranslationNextThread + 1) % numThreads;
 
     // Perform fetch operations and instruction delivery
     fetchAndProcessInstructions(status_change);
@@ -2274,6 +2399,10 @@ Fetch::profileStall(ThreadID tid)
     } else if (fetchStatus[tid] == Squashing) {
         ++fetchStats.squashCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is squashing!\n", tid);
+    } else if (waitingForFetchTranslation(tid)) {
+        ++fetchStats.tlbCycles;
+        DPRINTF(Fetch, "[tid:%i] Fetch is waiting for queued translation!\n",
+                tid);
     } else if (threads[tid].cacheReq.getOverallStatus() == CacheWaitResponse) {
         ++fetchStats.icacheStallCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is waiting cache response!\n",
@@ -2349,7 +2478,8 @@ Fetch::hasPendingCacheRequests(ThreadID tid) const
 {
     // Check for any active cache operations (excluding terminal states)
     CacheRequestStatus overallStatus = threads[tid].cacheReq.getOverallStatus();
-    return (overallStatus == TlbWait ||
+    return waitingForFetchTranslation(tid) ||
+           (overallStatus == TlbWait ||
             overallStatus == CacheWaitResponse ||
             overallStatus == CacheWaitRetry);
 }

@@ -501,6 +501,8 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     RAWQueue.clear();
     RARReplayQueue.clear();
     RAWReplayQueue.clear();
+    mptWaitLoads.clear();
+    mptWaitStores.clear();
 
     enableStorePrefetchTrain = params.store_prefetch_train;
 
@@ -559,6 +561,8 @@ LSQUnit::resetState()
     RAWQueue.clear();
     RARReplayQueue.clear();
     RAWReplayQueue.clear();
+    mptWaitLoads.clear();
+    mptWaitStores.clear();
 
     cacheBlockMask = ~(((uint64_t)cpu->cacheLineSize()) - 1);
 }
@@ -658,6 +662,18 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of store replay events at the store pipe replay exit"),
       ADD_STAT(storeReplayTlbMiss, statistics::units::Count::get(),
                "Number of store TLB miss replay events at the store pipe replay exit"),
+      ADD_STAT(storeReplayMpt, statistics::units::Count::get(),
+               "Number of store MPT wait events at the store pipe replay exit"),
+      ADD_STAT(mptLoadWaits, statistics::units::Count::get(),
+               "Loads parked waiting for MPT permission"),
+      ADD_STAT(mptStoreWaits, statistics::units::Count::get(),
+               "Stores parked waiting for MPT permission"),
+      ADD_STAT(mptLoadWakeups, statistics::units::Count::get(),
+               "Loads woken from the MPT wait queue"),
+      ADD_STAT(mptStoreWakeups, statistics::units::Count::get(),
+               "Stores woken from the MPT wait queue"),
+      ADD_STAT(mptWaitRequestCycles, statistics::units::Cycle::get(),
+               "Accumulated request-cycles spent in MPT wait queues"),
       ADD_STAT(loadPipeReplayAccepted, statistics::units::Count::get(),
                "Number of replayQ load requests accepted by load pipe"),
       ADD_STAT(loadPipeFastReplayAccepted, statistics::units::Count::get(),
@@ -737,6 +753,8 @@ LSQUnit::drainSanityCheck() const
 
     assert(storesToWB == 0);
     assert(!retryPkt);
+    assert(mptWaitLoads.empty());
+    assert(mptWaitStores.empty());
 }
 
 void
@@ -1347,6 +1365,59 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
 }
 
+void
+LSQUnit::serviceMptWaitQueues()
+{
+    stats.mptWaitRequestCycles +=
+        mptWaitLoads.size() + mptWaitStores.size();
+
+    auto wakeLoads = [this]() {
+        for (auto it = mptWaitLoads.begin();
+             it != mptWaitLoads.end() &&
+                 loadPipeSx[0]->size < MaxPipeWidth;) {
+            const DynInstPtr inst = *it;
+            if (inst->isSquashed()) {
+                it = mptWaitLoads.erase(it);
+                continue;
+            }
+            if (!inst->translationCompleted()) {
+                ++it;
+                continue;
+            }
+
+            it = mptWaitLoads.erase(it);
+            inst->setLoadPipeSource(DynInst::LoadPipeSource::MptWait);
+            issueToLoadPipe(inst);
+            ++stats.mptLoadWakeups;
+        }
+    };
+
+    auto wakeStores = [this]() {
+        for (auto it = mptWaitStores.begin();
+             it != mptWaitStores.end() &&
+                 storePipeSx[0]->size < MaxPipeWidth;) {
+            const DynInstPtr inst = *it;
+            if (inst->isSquashed()) {
+                it = mptWaitStores.erase(it);
+                continue;
+            }
+            if (!inst->translationCompleted()) {
+                ++it;
+                continue;
+            }
+
+            it = mptWaitStores.erase(it);
+            issueToStorePipe(inst);
+            ++stats.mptStoreWakeups;
+        }
+    };
+
+    wakeLoads();
+    wakeStores();
+    if (!mptWaitLoads.empty() || !mptWaitStores.empty())
+        cpu->activityThisCycle();
+}
+
 Fault
 LSQUnit::loadDoTranslate(const DynInstPtr &inst)
 {
@@ -1357,13 +1428,20 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
     // Now initiateAcc only does TLB access
     load_fault = inst->initiateAcc();
 
+    auto *request = currentLoadRequest(inst);
     if (inst->isTranslationDelayed() && load_fault == NoFault) {
-        inst->setTLBMissReplay();
-        DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
+        if (request != nullptr && request->isMptDelayed()) {
+            inst->setMptReplay();
+            DPRINTF(LoadPipeline, "Load [sn:%llu] waits for MPT\n",
+                    inst->seqNum);
+        } else {
+            inst->setTLBMissReplay();
+            DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n",
+                    inst->seqNum);
+        }
     }
 
-    if (auto *request = currentLoadRequest(inst);
-        request && request->isTranslationComplete()) {
+    if (request && request->isTranslationComplete()) {
         inst->setNormalLd(request->isNormalLd());
 
         cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::VAddress, inst->effAddr);
@@ -1399,6 +1477,9 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
 
     // normal inst cache access
     if (request && request->isTranslationComplete()) {
+        panic_if(request->isMptDelayed(),
+                 "Load [sn:%llu] reached cache-send stage before MPT "
+                 "permission completed\n", inst->seqNum);
         if (request->isMemAccessRequired()) {
             // read() is the main LSQ access: it may satisfy the load from
             // SQ/SBuffer forwarding, send a DCache request, or leave replay
@@ -1774,7 +1855,12 @@ LSQUnit::executeLoadPipeSx()
                     }
                     inst->issueQue->retryMem(inst);
                 }
-                else if (inst->needTLBMissReplay()) iewStage->deferMemInst(inst);
+                else if (inst->needTLBMissReplay())
+                    iewStage->deferMemInst(inst);
+                else if (inst->needMptReplay()) {
+                    mptWaitLoads.push_back(inst);
+                    ++stats.mptLoadWaits;
+                }
 
 
                 if (inst->needTLBMissReplay()) {
@@ -1828,7 +1914,14 @@ LSQUnit::storeDoTranslate(const DynInstPtr &inst)
     Fault store_fault = inst->initiateAcc();
 
     if (inst->isTranslationDelayed() && store_fault == NoFault) {
-        inst->setTLBMissReplay();
+        auto *request = currentStoreRequest(inst);
+        if (request != nullptr && request->isMptDelayed()) {
+            inst->setMptReplay();
+            DPRINTF(StorePipeline, "Store [sn:%llu] waits for MPT\n",
+                    inst->seqNum);
+        } else {
+            inst->setTLBMissReplay();
+        }
     }
 
     return store_fault;
@@ -1851,6 +1944,9 @@ LSQUnit::storeDoWriteSQ(const DynInstPtr &inst)
 
     /* This is the place were instructions get the effAddr. */
     if (request && request->isTranslationComplete()) {
+        panic_if(request->isMptDelayed(),
+                 "Store [sn:%llu] reached SQ-write stage before MPT "
+                 "permission completed\n", inst->seqNum);
         if (request->isMemAccessRequired() && (inst->getFault() == NoFault)) {
 
             if (cpu->checker) {
@@ -1974,6 +2070,10 @@ LSQUnit::executeStorePipeSx()
                 if (inst->needTLBMissReplay()) {
                     iewStage->deferMemInst(inst);
                     stats.storeReplayTlbMiss++;
+                } else if (inst->needMptReplay()) {
+                    mptWaitStores.push_back(inst);
+                    ++stats.mptStoreWaits;
+                    stats.storeReplayMpt++;
                 }
                 inst->endPipelining();
                 inst = nullptr;
@@ -2012,6 +2112,7 @@ LSQUnit::executeStorePipeSx()
 void
 LSQUnit::executePipeSx()
 {
+    serviceMptWaitQueues();
     executeLoadPipeSx();
     executeStorePipeSx();
     updateCompletedIdx();
@@ -2755,6 +2856,18 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
             break;
         }
     }
+
+    auto removeSquashedMptWaits = [squashed_num](auto &queue) {
+        queue.erase(
+            std::remove_if(queue.begin(), queue.end(),
+                           [squashed_num](const DynInstPtr &inst) {
+                               return !inst || inst->isSquashed() ||
+                                      inst->seqNum > squashed_num;
+                           }),
+            queue.end());
+    };
+    removeSquashedMptWaits(mptWaitLoads);
+    removeSquashedMptWaits(mptWaitStores);
 
 }
 

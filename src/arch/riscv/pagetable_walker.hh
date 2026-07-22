@@ -47,6 +47,7 @@
 #include <vector>
 
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/mpt_unit.hh"
 #include "arch/riscv/pagetable.hh"
 #include "arch/riscv/pma_checker.hh"
 #include "arch/riscv/pmp.hh"
@@ -79,14 +80,6 @@ namespace RiscvISA
 // Whether MPT Cache is enabled.
 //#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
 #define MPT_CACHE_ENABLED 1
-#if MPT_ENABLED
-struct MPT;
-#endif
-
-
-class MPTCache52;
-
-
     class Walker : public ClockedObject
     {
       protected:
@@ -109,8 +102,45 @@ class MPTCache52;
         public:
         WalkerPort port;
 
+        /**
+         * Lightweight client for an MPT lookup after address translation has
+         * already completed.  It intentionally owns no PTW state and never
+         * consumes PTW-level resources.
+         */
+        class MptAccessState : public MptClient
+        {
+          private:
+            Walker *walker;
+            RequestPtr req;
+            ThreadContext *tc;
+            BaseMMU::Translation *translation;
+            BaseMMU::Mode mode;
+            Addr paddr;
+            bool hasEntry = false;
+            bool hasVstageEntry = false;
+            bool hasGstageEntry = false;
+            TlbEntry entry;
+            TlbEntry vstageEntry;
+            TlbEntry gstageEntry;
+            bool completed = false;
+
+          public:
+            MptAccessState(Walker *walker, const RequestPtr &req,
+                           ThreadContext *tc,
+                           BaseMMU::Translation *translation,
+                           BaseMMU::Mode mode, Addr paddr,
+                           const TlbEntry *entry = nullptr,
+                           const TlbEntry *entryVsstage = nullptr,
+                           const TlbEntry *entryGstage = nullptr);
+            ~MptAccessState() override;
+
+            void start();
+            void finishMptLookup(const MptResult &result) override;
+            std::string name() const { return walker->name(); }
+        };
+
         // State to track each walk of the page table
-        class WalkerState
+        class WalkerState : public MptClient
         {
           friend class Walker;
           private:
@@ -169,7 +199,6 @@ class MPTCache52;
             TlbEntry entry;
             TlbEntry inl2Entry;
             PacketPtr read;
-            PacketPtr MptReadReq;
             std::vector<PacketPtr> writes;
             Fault mainFault;
             BaseMMU::Mode mode;
@@ -237,9 +266,6 @@ class MPTCache52;
             int mpt_level=4;
             MPTInfoInTLB mptInfo = MPTInfoInTLB();
             bool mptGranularityClipped=false;
-            EventFunctionWrapper *mptCacheHitEvent = nullptr;
-            bool mptCacheHitPending = false;
-            bool mptCacheHitRetry = false;
             bool mptOnly = false;
             bool mptOnlyHasEntry = false;
             bool mptOnlyHasVsstageEntry = false;
@@ -300,9 +326,7 @@ class MPTCache52;
             bool LastMPTwalk();
             bool completeMPTWalk();
             bool completeMPTOnly();
-            void scheduleMptCacheHit();
-            bool stepMPTwalk();
-            bool stepMPTwalkFromMPTE(uint64_t raw, Addr mptePaddr);
+            void finishMptLookup(const MptResult &result) override;
             Fault startPteReadMPTCheck();
             bool finishPteReadMPTFault();
             std::string name() const {return walker->name();}
@@ -324,8 +348,6 @@ class MPTCache52;
             Fault twoStageWalk(PacketPtr &write);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
-            void sendMptPacket();
-            void sendPacketsMPT();
             void endWalk();
             bool usePtwLevelLimit() const;
             int currentPtwResourceLevel() const;
@@ -466,6 +488,7 @@ class MPTCache52;
         Tick lastPtwMemCycleTick;
         /** Number of PTW memory requests currently in flight. */
         unsigned outstandingPtwMemReqs;
+        MptUnit *mptUnit;
 
         void updatePtwMemCycleStats();
         bool ptwLevelAvailable(WalkerState *state, int level) const;
@@ -501,6 +524,7 @@ class MPTCache52;
         bool recvTimingResp(PacketPtr pkt);
         void deletestate(WalkerState * senderWalk);
         void recvReqRetry();
+        void completeMptWaiter(WalkerState *senderWalk);
         bool sendTiming(WalkerState * sendingState, PacketPtr pkt);
         bool usePtwLevelLimitForStart(bool from_forward_pre_req,
                                       bool from_back_pre_req,
@@ -528,12 +552,21 @@ class MPTCache52;
         {
             l2tlb = _l2tlb;
         }
+        void setMptUnit(MptUnit *unit)
+        {
+            mptUnit = unit;
+        }
+        MptUnit *getMptUnit() const
+        {
+            return mptUnit;
+        }
 
         using Params = RiscvPagetableWalkerParams;
 
         Walker(const Params &params) :
             ClockedObject(params), port(name() + ".port", this),
             funcState(this, NULL, NULL, true), stats(this), tlb(NULL),
+            l2tlb(NULL),
             sys(params.system),
             pma(params.pma_checker),
             pmp(params.pmp),
@@ -557,217 +590,11 @@ class MPTCache52;
             ptwMissQueueHeadRequeued(false),
             lastPtwMemCycleTick(0),
             outstandingPtwMemReqs(0),
+            mptUnit(nullptr),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }
     };
-
-
-class PLRUTreeN
-{
-  private:
-    size_t numWays;               // N: cache entry 个数，必须是2的幂
-    std::vector<bool> bits;       // 满二叉树内部方向位，大小为 N - 1
-
-  public:
-    // 构造函数
-    explicit PLRUTreeN(size_t ways);
-
-    // 获取应被替换的 victim entry 索引
-    size_t getVictim() const;
-
-    // 表示访问了某个 entry，更新树路径
-    void access(size_t way);
-
-    // 重置所有方向位为0
-    void reset();
-
-    // 返回树支持的容量
-    size_t size() const { return numWays; }
-};
-
-/* depracated implementation
-struct MPTSenderState : public Packet::SenderState
-{
-    ThreadContext *tc;
-    BaseMMU::Translation *translation;
-
-    MPTSenderState(ThreadContext *tc_, BaseMMU::Translation *tr_)
-        : tc(tc_), translation(tr_) {}
-};
-*/
-//new implementation
-extern std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> mptContextMap;
-
-struct MptPendingRead
-{
-    Addr mptePaddr = 0;
-    PacketPtr pkt = nullptr;
-    std::vector<Walker::WalkerState*> waiters;
-};
-
-struct MPT
-{
-    Addr rootPPN; // Root page table physical page number (in page number units).
-    //override:
-    Addr nextPPN;
-    MPT(); // Default constructor.
-    bool readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp,
-                  Walker::WalkerState *senderState);
-    // Smmpt52 multi-level traversal returning an MPTE52 or invalid entry.
-    bool walk(int hit_level, Addr base, Addr paddrUT, ThreadContext *tc,
-              PMAChecker *pma, PMP *pmp,
-              Walker::WalkerState *senderState);
-    bool checkFunctional(Addr paddr, BaseMMU::Mode mode,
-                         System *sys) const;
-
-    //all miss, 127*4; L3 hit , else miss,  127*3.   L3 L2 hit , l1 l0 miss, 127*2.   L3 L2 L1 hit , l0 miss 127
-
-    //Asynchronous delayed walk interface, triggers the callback to return the result after 127 cycles.
-    // void walkDelayed(Addr vaddr,
-    //                 int hit_level,
-    //                 Addr base,
-    //                  ThreadContext *tc,
-    //                  PMAChecker *pma, PMP *pmp,
-    //                  std::function<void(MPTCacheEntry)> callback); //const;
-    PacketPtr MptReadReq;
-    MptPendingRead activeMptRead;
-    bool hasActiveMptRead;
-    bool processingMptResp;
-    std::deque<MptPendingRead> pendingMptReads;
-    bool enqueueMptPacket(PacketPtr pkt, Walker::WalkerState* senderState);
-    bool issueMptPacket();
-    bool sendMptPacket();
-    PacketPtr CreateMptReqPacket(Addr paddr,Walker::WalkerState* senderState) ;
-    bool MptRecvTimingResp(PacketPtr pkt) ;
-    void completeMptWaiter(Walker::WalkerState *senderWalk);
-    void flushPendingMptReads();
-    bool ensureSimulatedMPTTree(System *sys, ThreadContext *tc);
-    Addr buildSimulatedMPTTree(System *sys);
-    Walker *walker;
-    int mptinflight;
-    bool mptretry;
-    MMPT mmpt;
-    bool simulatedTreeBuilt;
-    Addr simulatedRootPaddr;
-
-};
-
-
-
-
-class MPTCache52
-{
-  private:
-    size_t capacity;
-    size_t capacityL0;
-    size_t capacityL1;
-    size_t capacityL2;
-    size_t capacityL3;
-    size_t capacitySP;
-
-    static int configuredSize;
-
-    //std::unordered_map<Addr, MPTCacheEntry> table;
-
-    std::unordered_map<Addr, MPTCacheEntry> tableL0;
-    std::unordered_map<Addr, MPTCacheEntry> tableL1;
-    std::unordered_map<Addr, MPTCacheEntry> tableL2;
-    std::unordered_map<Addr, MPTCacheEntry> tableL3;
-    std::unordered_map<Addr, MPTCacheEntry> tableSP;
-
-// -------- PLRU Replacement Support --------
-// Tag order and replacement path for each level
-// Tag order table for each level's cache + corresponding PLRU tree
-    std::vector<Addr> tagListL0;
-    std::vector<Addr> tagListL1;
-    std::vector<Addr> tagListL2;
-    std::vector<Addr> tagListL3;
-    std::vector<Addr> tagListSP;
-
-    PLRUTreeN plruL0 = PLRUTreeN(1); // Default constructor, will resize later.
-    PLRUTreeN plruL1 = PLRUTreeN(1);
-    PLRUTreeN plruL2 = PLRUTreeN(1);
-    PLRUTreeN plruL3 = PLRUTreeN(1);
-    PLRUTreeN plruSP = PLRUTreeN(1);
-    // -------------------------------
-  public:
-    Addr regionAlign(Addr pa, int level) const;
-
-    // MPTCache Hit
-    mutable statistics::Scalar mptCacheL0Hits;
-    mutable statistics::Scalar mptCacheL1Hits;
-    mutable statistics::Scalar mptCacheL2Hits;
-    mutable statistics::Scalar mptCacheL3Hits;
-    mutable statistics::Scalar mptCacheSPHits;
-
-    // MPTCache Miss
-    mutable statistics::Scalar mptCacheL0Misses;
-    mutable statistics::Scalar mptCacheL1Misses;
-    mutable statistics::Scalar mptCacheL2Misses;
-    mutable statistics::Scalar mptCacheL3Misses;
-    mutable statistics::Scalar mptCacheSPMisses;
-
-
-
-    MPTCache52(size_t capL0, size_t capL1, size_t capL2, size_t capL3, size_t capSP);
-    MPTCache52();
-
-    static int configuredSizeL0;
-    static int configuredSizeL1;
-    static int configuredSizeL2;
-    static int configuredSizeL3;
-    static int configuredSizeSP;
-
-    static void configureSize(int sL0, int sL1, int sL2, int sL3, int sSP);
-
-    void initMPTCacheFromParams(const RiscvTLBParams *params );
-    void
-    sayhimpt()
-    {
-    }
-    // -------- PLRU Replacement Support --------
-    std::vector<Addr>& getTagListByLevel(int level);
-    PLRUTreeN& getPLRUByLevel(int level);
-    const std::vector<Addr>& getTagListByLevel(int level) const;
-    const PLRUTreeN& getPLRUByLevel(int level) const;      //const overload
-    // -------------------------------
-
-
-    // non-const
-    std::unordered_map<Addr, MPTCacheEntry>& getTableByLevel(int level);
-
-    // const
-    const std::unordered_map<Addr, MPTCacheEntry>& getTableByLevel(int level) const;
-
-    // non-const
-    size_t& getCapacityByLevel(int level);
-
-    // Read-only version (if the capacity needs to be read in a `const` function).
-    size_t getCapacityByLevel(int level) const;
-
-    // Insert a new refill entry, or refresh an existing tag without changing
-    // replacement state as a new allocation. Returns true only for a new tag.
-    bool insertOrRefreshEntry(int level, Addr aligned,
-                              const MPTCacheEntry &entry);
-
-    void mfence_all(); //just fence all entries in the cache.
-
-    std::pair<bool /*hit*/, MPTCacheEntry> fetchDelayed(
-        Addr pa, ThreadContext *tc, PMAChecker *pma, PMP *pmp,
-        int& mptlevel, gem5::RiscvISA::Walker::WalkerState* senderState);
-};
-
-
-
-
-extern gem5::RiscvISA::MPT globalMPT;
-
-//extern MPTCache52 globalMPTCache;
-extern gem5::RiscvISA::MPTCache52* globalMPTCache;
-
-
-
 } // namespace RiscvISA
 } // namespace gem5
 

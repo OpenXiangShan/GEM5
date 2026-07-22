@@ -39,6 +39,7 @@
 
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/mmu.hh"
+#include "arch/riscv/mpt_unit.hh"
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/pagetable.hh"
 #include "arch/riscv/pagetable_walker.hh"
@@ -134,7 +135,7 @@ TLB::TLB(const Params &p) :
     allForwardPre(0),removeNoUseForwardPre(0),removeNoUseBackPre(0),
     usedBackPre(0),test_num(0),allUsed(0),forwardUsedPre(0),
     lastVaddr(0),lastPc(0), traceFlag(false),
-    stats(this), pma(p.pma_checker),
+    walker(nullptr), mptUnit(nullptr), stats(this), pma(p.pma_checker),
     pmp(p.pmp),
     archDBer(p.arch_db),
     tlbL2L3(l2TlbL3Size *l2tlbLineSize),tlbL2L2(l2TlbL2Size *l2tlbLineSize),
@@ -144,11 +145,6 @@ TLB::TLB(const Params &p) :
 {
     L2TLB_L1_MASK = (((uint64_t)1) << static_cast<int>(std::log2(l2TlbL1Size / L2L1LRU_NUM))) - 1;
     L2TLB_L0_MASK = (((uint64_t)1) << static_cast<int>(std::log2(l2TlbL0Size / L2L0LRU_NUM))) - 1;
-    if (globalMPTCache == nullptr) {
-        globalMPTCache = new MPTCache52(
-            p.mptcache_l0_size, p.mptcache_l1_size, p.mptcache_l2_size,
-            p.mptcache_l3_size, p.mptcache_sp_size);
-    }
     if (is_L1tlb) {
         DPRINTF(TLBVerbose, "tlb11\n");
         for (size_t x = 0; x < size; x++) {
@@ -156,7 +152,6 @@ TLB::TLB(const Params &p) :
             freeList.push_back(&tlb[x]);
         }
         walker = p.walker;
-        globalMPT.walker = walker;
         walker->setTLB(this);
         TLB *l2tlb;
         if (isStage2) {
@@ -201,7 +196,7 @@ TLB::checkMPTOnTlbHit(Addr vaddr, Addr paddr, BaseMMU::Mode mode,
 {
     needs_mpt_check = false;
 
-    if (globalMPT.mmpt.mode == 0) {
+    if (mptUnit == nullptr || !mptUnit->enabled()) {
         return NoFault;
     }
 
@@ -236,6 +231,19 @@ Walker *
 TLB::getWalker()
 {
     return walker;
+}
+
+void
+TLB::setMptUnit(MptUnit *unit)
+{
+    mptUnit = unit;
+    if (walker != nullptr) {
+        walker->setMptUnit(unit);
+    }
+    auto *next = dynamic_cast<TLB *>(nextLevel());
+    if (next != nullptr && next->mptUnit != unit) {
+        next->setMptUnit(unit);
+    }
 }
 
 void
@@ -421,7 +429,8 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     }
 
 #if MPT_ENABLED
-    if (enableMptTlbInfo && !hidden && entry && globalMPT.mmpt != 0 &&
+    if (enableMptTlbInfo && !hidden && entry && mptUnit != nullptr &&
+        mptUnit->enabled() &&
         (!entry->mptInfo.valid ||
          !mptLevelCoversLogBytes(entry->mptInfo.mptlevel,
                                  entry->logBytes))) {
@@ -599,7 +608,8 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
 #if MPT_ENABLED
     auto filterInvalidMPTInfo = [&](TlbEntry *entry) -> TlbEntry * {
         bool isLeafEntry = entry && (entry->pte.r || entry->pte.x);
-        if (enableMptTlbInfo && !hidden && entry && globalMPT.mmpt != 0 &&
+        if (enableMptTlbInfo && !hidden && entry && mptUnit != nullptr &&
+            mptUnit->enabled() &&
             isLeafEntry &&
             (!entry->mptInfo.valid ||
              !mptLevelCoversLogBytes(entry->mptInfo.mptlevel,
@@ -1854,7 +1864,8 @@ TLB::L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vad
                 }
             }
 
-            if (fault == NoFault && globalMPT.mmpt != 0) {
+            if (fault == NoFault && mptUnit != nullptr &&
+                mptUnit->enabled()) {
                 Addr paddr =
                     e0->paddr << PageShift | (vaddr & mask(e0->logBytes));
                 bool needs_mpt_check = false;
@@ -2531,23 +2542,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                  bool &delayed, bool from_miss_queue)
 {
     delayed = false;
-    globalMPT.mmpt = tc->readMiscReg(MISCREG_MMPT);
-    if (globalMPT.mmpt.mode != 0 && globalMPT.mmpt.ppn == 0) {
-        System *mptSys = walker != nullptr ? walker->sys : tc->getSystemPtr();
-        if (mptSys == nullptr) {
-            panic("MPT is enabled with empty root PPN, but no system "
-                  "is available to build a simulated MPT tree: MMPT=%#lx "
-                  "mode=%#lx\n",
-                  static_cast<uint64_t>(globalMPT.mmpt),
-                  globalMPT.mmpt.mode);
-        }
-        if (walker != nullptr && globalMPT.walker == nullptr) {
-            globalMPT.walker = walker;
-        }
-        if (globalMPT.ensureSimulatedMPTTree(mptSys, tc)) {
-            globalMPT.mmpt = tc->readMiscReg(MISCREG_MMPT);
-        }
-    }
+    panic_if(mptUnit == nullptr, "RISC-V TLB has no per-core MPT unit\n");
+    mptUnit->syncMMPT(tc);
     SATP satp = tc->readMiscReg(MISCREG_SATP);
     // RISC-V Sv39/Sv48 require a canonical (sign-extended) virtual address.
     // If the incoming vaddr is non-canonical, it must raise a page fault and
@@ -2829,7 +2825,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     }
     bool start_mpt_check = false;
     Addr mptCheckPaddr = 0;
-    if (fault == NoFault && globalMPT.mmpt != 0) {
+    if (fault == NoFault && mptUnit->enabled()) {
         DPRINTF(TLB, "TLB check MPT\n");
         mptCheckPaddr = getEntryPaddr(e[0], vaddr);
         bool needs_mpt_check = false;

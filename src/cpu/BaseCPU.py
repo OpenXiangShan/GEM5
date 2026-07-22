@@ -198,6 +198,13 @@ class BaseCPU(ClockedObject):
                 iwc.cpu_side, dwc.cpu_side)
             self._cached_ports += ["itb_walker_cache.mem_side", \
                                    "dtb_walker_cache.mem_side"]
+            connected_walkers = {
+                "mmu.itb.walker.port", "mmu.dtb.walker.port"
+            }
+            self._cached_ports += [
+                port for port in self.ArchMMU.walkerPorts()
+                if port not in connected_walkers
+            ]
         else:
             self._cached_ports += self.ArchMMU.walkerPorts()
 

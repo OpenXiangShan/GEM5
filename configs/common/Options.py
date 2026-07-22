@@ -666,6 +666,35 @@ def addXiangshanCommonOptions(parser):
                         help="Optional base address for hidden simulated MPT "
                              "memory. Defaults to the first page-aligned "
                              "address after guest RAM.")
+    parser.add_argument("--mpt-hit-latency", type=int, default=3,
+                        help="MPT cache lookup pipeline latency in cycles")
+    parser.add_argument("--mpt-lookup-width", type=int, default=4,
+                        help="Shared MPT cache lookup width per cycle")
+    parser.add_argument("--mpt-i-accept-width", type=int, default=2,
+                        help="Instruction MPT requests accepted per cycle")
+    parser.add_argument("--mpt-d-accept-width", type=int, default=5,
+                        help="Data MPT requests accepted per cycle")
+    parser.add_argument("--mpt-ptw-accept-width", type=int, default=1,
+                        help="PTW MPT requests accepted per cycle")
+    parser.add_argument("--mpt-i-queue-size", type=int, default=8,
+                        help="Instruction MPT lookup queue size")
+    parser.add_argument("--mpt-d-queue-size", type=int, default=32,
+                        help="Data MPT lookup queue size")
+    parser.add_argument("--mpt-ptw-queue-size", type=int, default=16,
+                        help="PTW MPT lookup queue size")
+    parser.add_argument("--mpt-mshrs", type=int, default=8,
+                        help="Number of MPT miss status entries")
+    parser.add_argument("--mpt-targets-per-mshr", type=int, default=16,
+                        help="Maximum coalesced targets in one MPT MSHR")
+    parser.add_argument("--mpt-memory-issue-width", type=int, default=1,
+                        help="MPT memory requests issued per cycle")
+    parser.add_argument("--mpt-max-memory-inflight", type=int, default=8,
+                        help="Maximum in-flight MPT memory requests")
+    parser.add_argument("--mpt-cache-l0-size", type=int, default=32)
+    parser.add_argument("--mpt-cache-l1-size", type=int, default=32)
+    parser.add_argument("--mpt-cache-l2-size", type=int, default=32)
+    parser.add_argument("--mpt-cache-l3-size", type=int, default=32)
+    parser.add_argument("--mpt-cache-sp-size", type=int, default=32)
 
     # Difftest option
     parser.set_defaults(enable_difftest=None)

@@ -47,6 +47,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <memory>
 #include <queue>
@@ -538,11 +539,15 @@ class LSQUnit
      */
     void executeLoadPipeSx();
 
+    /** Move completed post-translation MPT waits into available pipe slots. */
+    void serviceMptWaitQueues();
+
     /**
      * Load pipeline stage contract:
      *
      * - S0 translate: start/finish address translation and record the
-     *   translated request.  A delayed translation marks TLBMissReplay; data
+     *   translated request. PTW delay uses TLBMissReplay, while a translated
+     *   request waiting only for MPT uses the dedicated MPT wait queue; data
      *   and cache replay decisions are left to later stages.
      * - S1 send: run the same-cycle RAW/nuke guard, then let read() perform
      *   SQ/SBuffer forwarding or send the cache request.  A sendable request
@@ -704,6 +709,10 @@ class LSQUnit
     TimeBuffer<StorePipeStruct> storePipe;
     /** Each stage in store pipeline. storePipeSx[0] means store pipe S0 */
     std::vector<TimeBuffer<StorePipeStruct>::wire> storePipeSx;
+
+    /** Instructions parked after address translation while MPT is pending. */
+    std::deque<DynInstPtr> mptWaitLoads;
+    std::deque<DynInstPtr> mptWaitStores;
 
   private:
     /** The number of places to shift addresses in the LSQ before checking
@@ -916,6 +925,12 @@ class LSQUnit
         /** Store replay counters recorded at the replay exit. */
         statistics::Scalar storeReplayTotal;
         statistics::Scalar storeReplayTlbMiss;
+        statistics::Scalar storeReplayMpt;
+        statistics::Scalar mptLoadWaits;
+        statistics::Scalar mptStoreWaits;
+        statistics::Scalar mptLoadWakeups;
+        statistics::Scalar mptStoreWakeups;
+        statistics::Scalar mptWaitRequestCycles;
         statistics::Vector loadPipeReplayAccepted;
         statistics::Vector loadPipeFastReplayAccepted;
         statistics::Vector loadReplayEvents;

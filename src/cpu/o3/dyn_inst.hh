@@ -253,7 +253,8 @@ class DynInst : public ExecContext, public RefCounted
     {
         IssueQueue,
         ReplayQueue,
-        FastReplay
+        FastReplay,
+        MptWait
     };
 
   private:
@@ -1090,6 +1091,8 @@ class DynInst : public ExecContext, public RefCounted
                 return 2;  // C_MA
               case LdStReplayType::TLBMissReplay:
                 return 3;  // C_TM
+              case LdStReplayType::MptReplay:
+                return 3;  // post-translation MPT permission wait
               case LdStReplayType::STLFReplay:
                 return 4;  // C_FF
               case LdStReplayType::CacheBlockedReplay:
@@ -1157,6 +1160,9 @@ class DynInst : public ExecContext, public RefCounted
 
     void setTLBMissReplay() { setReplay(LdStReplayType::TLBMissReplay); }
     bool needTLBMissReplay() const { return getReplayType() == LdStReplayType::TLBMissReplay; }
+
+    void setMptReplay() { setReplay(LdStReplayType::MptReplay); }
+    bool needMptReplay() const { return getReplayType() == LdStReplayType::MptReplay; }
 
     void setCacheMissReplay() { setReplay(LdStReplayType::CacheMissReplay); }
     bool needCacheMissReplay() const { return getReplayType() == LdStReplayType::CacheMissReplay; }

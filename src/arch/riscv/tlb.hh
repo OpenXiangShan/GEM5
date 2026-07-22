@@ -69,6 +69,7 @@ class ThreadContext;
 namespace RiscvISA {
 
 class Walker;
+class MptUnit;
 
 class TLB : public BaseTLB
 {
@@ -127,6 +128,7 @@ class TLB : public BaseTLB
     PrivilegeMode old_priv_ex;
 
     Walker *walker;
+    MptUnit *mptUnit;
 
     struct TlbStats : public statistics::Group
     {
@@ -210,6 +212,7 @@ class TLB : public BaseTLB
     TLB(const Params &p);
 
     Walker *getWalker();
+    void setMptUnit(MptUnit *unit);
 
     void takeOverFrom(BaseTLB *old) override {}
 
