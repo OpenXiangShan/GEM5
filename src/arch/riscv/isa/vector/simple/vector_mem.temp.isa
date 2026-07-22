@@ -323,6 +323,7 @@ def template VleffConstructor {{
         vmi.re = (i + 1) * elem_num_per_vreg;
         vmi.microVd = VD + i;
         microop = new %(class_name)sMicro(_machInst, i, vmi);
+        microop->resetOpClass(VectorUnitStrideFaultOnlyFirstLoadOp);
         microop->setDelayedCommit();
         microop->setFlag(IsLoad);
         this->microops.push_back(microop);
