@@ -63,6 +63,11 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     vfof_set_code = ''
     vfof_zero_idx_check_code = ''
     vfof_get_code = ''
+    vfof_execute_get_code = ''
+    vfof_initiate_wb_code = ''
+    vfof_predicate_code = ''
+    vfof_packet_copy_size = 'pkt->getSize()'
+    vfof_packet_size_check = 'assert(mem_size == pkt->getSize())'
     if vfof:
         vfof_set_code = '''
         auto base_addr = Rs1;
@@ -73,7 +78,16 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
             if (addr_fault) {
                 auto fault_addr = addr_fault->trap_value();
                 assert(fault_addr >= EA);
-                *fault_elem_idx = (fault_addr - base_addr) / elem_size;
+                auto global_fault_elem_idx =
+                    (fault_addr - base_addr) / elem_size;
+                if (global_fault_elem_idx >= vmi.rs) {
+                    *fault_elem_idx = global_fault_elem_idx - vmi.rs;
+                } else {
+                    *fault_elem_idx = 0;
+                }
+                if (global_fault_elem_idx > 0) {
+                    fault = NoFault;
+                }
             }
         } else {
             *fault_elem_idx = mem_size / elem_size;
@@ -84,8 +98,24 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
             return fault;
         '''
         vfof_get_code = '''
+        '''
+        vfof_execute_get_code = '''
         Vfof_ud[0] = *fault_elem_idx;
         '''
+        vfof_initiate_wb_code = '''
+        RiscvISA::VecRegContainer fault_count = {};
+        fault_count.as<uint64_t>()[0] = *fault_elem_idx;
+        xc->setRegOperand(this, 1, &fault_count);
+        '''
+        vfof_predicate_code = '''
+        if (!xc->readMemAccPredicate()) {
+            mem_size = 0;
+        } else {
+            mem_size = std::min(mem_size, uint32_t(Vfof_ud[0] * eewb));
+        }
+        '''
+        vfof_packet_copy_size = 'mem_size'
+        vfof_packet_size_check = 'assert(mem_size <= pkt->getSize())'
 
     vecWhole = base_type == 'VlWhole' or base_type == 'VsWhole'
     vecIndex = base_type == 'VlIndex' or base_type == 'VsIndex'
@@ -122,6 +152,11 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
             'vfof_set_code' : vfof_set_code,
             'vfof_zero_idx_check_code' : vfof_zero_idx_check_code,
             'vfof_get_code' : vfof_get_code,
+            'vfof_execute_get_code' : vfof_execute_get_code,
+            'vfof_initiate_wb_code' : vfof_initiate_wb_code,
+            'vfof_predicate_code' : vfof_predicate_code,
+            'vfof_packet_copy_size' : vfof_packet_copy_size,
+            'vfof_packet_size_check' : vfof_packet_size_check,
 
             'calc_memsize_code' : calc_memsize_code,
             'is_vecWhole'   : is_vecWhole,

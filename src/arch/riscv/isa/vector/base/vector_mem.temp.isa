@@ -232,6 +232,7 @@ Fault
                                   byte_enable);
 
     %(vfof_set_code)s;
+    %(vfof_initiate_wb_code)s;
     %(vfof_zero_idx_check_code)s;
 
     return fault;
@@ -281,9 +282,10 @@ Fault
     uint32_t eewb = eew_ / 8;
     uint32_t mem_size = %(calc_memsize_code)s;
     mem_size = vm_zero ? 0 : mem_size;
+    %(vfof_predicate_code)s;
     if (pkt) {
-        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
-        assert(mem_size == pkt->getSize());
+        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), %(vfof_packet_copy_size)s);
+        %(vfof_packet_size_check)s;
     } else {
         assert(mem_size == 0);
     }
@@ -398,7 +400,7 @@ Fault
     if (mem_size > 0) {
         %(vfof_set_code)s;
         %(vfof_zero_idx_check_code)s;
-        %(vfof_get_code)s;
+        %(vfof_execute_get_code)s;
 
         size_t elem_num_per_vreg = VLEN / width_EEW(machInst.width);
 
@@ -408,7 +410,7 @@ Fault
             %(memacc_code)s;
         }
     } else {
-        %(vfof_get_code)s;
+        %(vfof_execute_get_code)s;
         assert(fault == NoFault);
     }
 
