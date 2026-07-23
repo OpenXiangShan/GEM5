@@ -1187,8 +1187,25 @@ def run_scheduler(
             failed += new_failed
             pending_workloads.extend(retry_workloads)
 
-            if pending_workloads and not any(
-                not server.disabled for server in servers
+            runnable_workloads: list[ScheduledWorkload] = []
+            for scheduled in pending_workloads:
+                completed_marker = (
+                    full_work_dir / scheduled.workload.name / "completed"
+                )
+                if completed_marker.exists() and not force:
+                    skipped += 1
+                    print(
+                        f"[skip] {scheduled.workload.name} already completed",
+                        flush=True,
+                    )
+                else:
+                    runnable_workloads.append(scheduled)
+            pending_workloads = runnable_workloads
+
+            if (
+                pending_workloads
+                and not any(not server.disabled for server in servers)
+                and not any(server.pending for server in servers)
             ):
                 disabled = ", ".join(
                     f"{server.name} ({server.disable_reason})"
