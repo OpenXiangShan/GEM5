@@ -102,6 +102,8 @@ MptUnit::MptStats::MptStats(statistics::Group *parent)
                "MPT MPTE misses accepted by level"),
       ADD_STAT(totalCacheMisses, statistics::units::Count::get(),
                "MPT lookups with no cached leaf or internal entry"),
+      ADD_STAT(cacheBypasses, statistics::units::Count::get(),
+               "MPT lookups that bypassed the dedicated MPT cache"),
       ADD_STAT(lookupQueueOccupancy, statistics::units::Count::get(),
                "Accumulated MPT lookup queue occupancy"),
       ADD_STAT(lookupQueueSamples, statistics::units::Count::get(),
@@ -185,6 +187,7 @@ MptUnit::MptStats::MptStats(statistics::Group *parent)
 MptUnit::MptUnit(const Params &p)
     : ClockedObject(p), stats(this), port(name() + ".port", *this),
       system(p.system), requestorId(system->getRequestorId(this)),
+      enableMptCache(p.enable_mpt_cache),
       hitLatency(p.hit_latency), lookupWidth(p.lookup_width),
       acceptWidth{{p.instruction_accept_width, p.data_accept_width,
                    p.ptw_accept_width}},
@@ -217,10 +220,12 @@ MptUnit::MptUnit(const Params &p)
     cache[2].capacity = p.cache_l2_size;
     cache[3].capacity = p.cache_l3_size;
     cache[SuperpageCache].capacity = p.cache_sp_size;
-    for (unsigned partition = 0; partition < cache.size(); ++partition) {
-        panic_if(cache[partition].capacity == 0,
-                 "MPT cache partition %u must contain at least one entry\n",
-                 partition);
+    if (enableMptCache) {
+        for (unsigned partition = 0; partition < cache.size(); ++partition) {
+            panic_if(cache[partition].capacity == 0,
+                     "MPT cache partition %u must contain at least one entry\n",
+                     partition);
+        }
     }
 }
 
@@ -389,6 +394,18 @@ MptUnit::issueLookups()
             continue;
         }
 
+        if (!enableMptCache) {
+            ++stats.cacheBypasses;
+            target.level = 3;
+            target.tableBase = target.rootPpn << PageShift;
+            target.depth = 0;
+            if (!startTargetRead(target)) {
+                pendingWalks.push_back(target);
+            }
+            ++issued;
+            continue;
+        }
+
         PipelineEntry entry;
         entry.target = target;
         entry.probe = probeCache(target.paddr);
@@ -541,6 +558,10 @@ MptUnit::probeCache(Addr paddr)
 void
 MptUnit::insertCache(int level, Addr paddr, const MPTE52 &mpte)
 {
+    if (!enableMptCache) {
+        return;
+    }
+
     const bool superpage = mpte.isLeaf() && level > 0;
     const unsigned partition = superpage ? SuperpageCache : level;
     CachePartition &part = cache[partition];

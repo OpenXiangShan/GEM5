@@ -198,6 +198,7 @@ class MptUnit : public ClockedObject
         statistics::Vector internalHits;
         statistics::Vector mpteMisses;
         statistics::Scalar totalCacheMisses;
+        statistics::Scalar cacheBypasses;
         statistics::Scalar lookupQueueOccupancy;
         statistics::Scalar lookupQueueSamples;
         statistics::Scalar lookupQueueFullCycles;
@@ -229,6 +230,7 @@ class MptUnit : public ClockedObject
     System *const system;
     const RequestorID requestorId;
 
+    const bool enableMptCache;
     const Cycles hitLatency;
     const unsigned lookupWidth;
     const std::array<unsigned, NumSources> acceptWidth;

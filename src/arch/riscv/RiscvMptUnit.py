@@ -13,6 +13,7 @@ class RiscvMptUnit(ClockedObject):
     port = RequestPort("Memory-side port for MPT entry reads")
     system = Param.System(Parent.any, "System object")
 
+    enable_mpt_cache = Param.Bool(True, "Enable the dedicated MPT cache")
     hit_latency = Param.Cycles(3, "Pipelined MPT cache lookup latency")
     lookup_width = Param.Unsigned(4, "Shared MPT cache lookups per cycle")
     instruction_accept_width = Param.Unsigned(

@@ -656,6 +656,13 @@ def addXiangshanCommonOptions(parser):
     parser.add_argument("--disable-mpt-tlb-info", action="store_false",
                         dest="enable_mpt_tlb_info",
                         help="Disable caching MPT permission info in TLB entries")
+    parser.set_defaults(enable_mpt_cache=True)
+    parser.add_argument("--enable-mpt-cache", action="store_true",
+                        dest="enable_mpt_cache",
+                        help="Enable the dedicated simulated MPT cache")
+    parser.add_argument("--disable-mpt-cache", action="store_false",
+                        dest="enable_mpt_cache",
+                        help="Disable the dedicated simulated MPT cache")
     parser.add_argument("--mpt-reserved-mem-size", action="store",
                         type=str, default="64MB",
                         help="Hidden physical memory size reserved for "
