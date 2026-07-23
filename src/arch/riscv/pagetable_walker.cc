@@ -434,9 +434,21 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
     l2state.translation = translation;
     l2state.mode = mode;
     l2state.Paddr = Paddr;
-    l2state.entry = entry;
-    l2state.entryVsstage = entryVsstage;
-    l2state.entryGstage = entryGstage;
+    l2state.hasEntry = entry != nullptr;
+    l2state.hasEntryVsstage = entryVsstage != nullptr;
+    l2state.hasEntryGstage = entryGstage != nullptr;
+    if (entry) {
+        l2state.entry = *entry;
+        l2state.entry.trieHandle = nullptr;
+    }
+    if (entryVsstage) {
+        l2state.entryVsstage = *entryVsstage;
+        l2state.entryVsstage.trieHandle = nullptr;
+    }
+    if (entryGstage) {
+        l2state.entryGstage = *entryGstage;
+        l2state.entryGstage.trieHandle = nullptr;
+    }
     L2TLBrequestors.push_back(l2state);
 }
 
@@ -720,23 +732,40 @@ Walker::dol2TLBHit()
         //assert(l2tlbFault == NoFault);
         if (l2tlbFault == NoFault) {
             if (enableL1L2replace){ //write back entry from L2 to L1
-                if (dol2TLBHitrequestors.entry != nullptr) {
+                if (dol2TLBHitrequestors.hasEntry) {
+                    TlbEntry &entry = dol2TLBHitrequestors.entry;
                     TlbEntry l1_entry;
                     if (tlb->isL1DirectCompressionEnabled() &&
                         tlb->buildSingleL1CompressedEntry(dol2TLBHitrequestors.req->getVaddr(),
-                                                          *dol2TLBHitrequestors.entry, direct, l1_entry)) {
+                                                          entry, direct, l1_entry)) {
                         tlb->insert(l1_entry.vaddr, l1_entry, false, direct);
                         tlb->recordL1CompressedEntry(l1_entry);
                     } else if (!tlb->isL1DirectCompressionEnabled()) {
-                        tlb->insert(dol2TLBHitrequestors.entry->vaddr, *dol2TLBHitrequestors.entry, false, direct);
+                        tlb->insert(entry.vaddr, entry, false, direct);
                     }
                 }
-                if (dol2TLBHitrequestors.entryVsstage != nullptr)
-                    tlb->insert(dol2TLBHitrequestors.entryVsstage->vaddr, *dol2TLBHitrequestors.entryVsstage, false,
-                            vsstage);
-                if (dol2TLBHitrequestors.entryGstage != nullptr)
-                    tlb->insert(dol2TLBHitrequestors.entryGstage->gpaddr, *dol2TLBHitrequestors.entryGstage, false,
-                            gstage);
+                if (dol2TLBHitrequestors.hasEntryVsstage) {
+                    TlbEntry &entry = dol2TLBHitrequestors.entryVsstage;
+                    TlbEntry l1_entry;
+                    if (tlb->isL1DirectCompressionEnabled() &&
+                        tlb->buildSingleL1CompressedEntry(entry.vaddr, entry, vsstage, l1_entry)) {
+                        tlb->insert(l1_entry.vaddr, l1_entry, false, vsstage);
+                        tlb->recordL1CompressedEntry(l1_entry);
+                    } else if (!tlb->isL1DirectCompressionEnabled()) {
+                        tlb->insert(entry.vaddr, entry, false, vsstage);
+                    }
+                }
+                if (dol2TLBHitrequestors.hasEntryGstage) {
+                    TlbEntry &entry = dol2TLBHitrequestors.entryGstage;
+                    TlbEntry l1_entry;
+                    if (tlb->isL1DirectCompressionEnabled() &&
+                        tlb->buildSingleL1CompressedEntry(entry.gpaddr, entry, gstage, l1_entry)) {
+                        tlb->insert(l1_entry.vaddr, l1_entry, false, gstage);
+                        tlb->recordL1CompressedEntry(l1_entry);
+                    } else if (!tlb->isL1DirectCompressionEnabled()) {
+                        tlb->insert(entry.gpaddr, entry, false, gstage);
+                    }
+                }
             }
             dol2TLBHitrequestors.translation->finish(
                 l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
@@ -1027,7 +1056,29 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk(G): found the leaf pte.\n");
 
             if (finishGVA && (!isVsatp0Mode)) {
-                walker->tlb->insert(entry.gpaddr, entry, false, gstage);
+                if (walker->tlb->isL1DirectCompressionEnabled()) {
+                    TlbEntry compressed_entry;
+                    bool inserted_compressed = false;
+                    if (!tlbHit) {
+                        std::array<PTE, l2tlbLineSize> l1_compress_ptes;
+                        for (int compress_i = 0; compress_i < l2tlbLineSize; compress_i++) {
+                            l1_compress_ptes[compress_i] = read->getLE_l2tlb<uint64_t>(compress_i);
+                        }
+                        if (walker->tlb->buildL1CompressedEntry(entry.gpaddr, entry, l1_compress_ptes, gstage,
+                                                                 twoStageLevel, compressed_entry)) {
+                            walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, gstage);
+                            walker->tlb->recordL1CompressedEntry(compressed_entry);
+                            inserted_compressed = true;
+                        }
+                    }
+                    if (!inserted_compressed &&
+                        walker->tlb->buildSingleL1CompressedEntry(entry.gpaddr, entry, gstage, compressed_entry)) {
+                        walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, gstage);
+                        walker->tlb->recordL1CompressedEntry(compressed_entry);
+                    }
+                } else {
+                    walker->tlb->insert(entry.gpaddr, entry, false, gstage);
+                }
                 int l2_level = twoStageLevel;
                 inl2Entry.gpaddr = entry.gpaddr;
                 inl2Entry.pte = pte;
@@ -1234,7 +1285,30 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         gPaddr = gPaddr | (entry.vaddr & PGMASK);
 
                         entry.paddr = (gPaddr >> 12) << 12;
-                        walker->tlb->insert(entry.vaddr, entry, false, vsstage);
+                        if (walker->tlb->isL1DirectCompressionEnabled()) {
+                            TlbEntry compressed_entry;
+                            bool inserted_compressed = false;
+                            if (!tlbHit) {
+                                std::array<PTE, l2tlbLineSize> l1_compress_ptes;
+                                for (int compress_i = 0; compress_i < l2tlbLineSize; compress_i++) {
+                                    l1_compress_ptes[compress_i] = read->getLE_l2tlb<uint64_t>(compress_i);
+                                }
+                                if (walker->tlb->buildL1CompressedEntry(entry.vaddr, entry, l1_compress_ptes, vsstage,
+                                                                         level, compressed_entry)) {
+                                    walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, vsstage);
+                                    walker->tlb->recordL1CompressedEntry(compressed_entry);
+                                    inserted_compressed = true;
+                                }
+                            }
+                            if (!inserted_compressed &&
+                                walker->tlb->buildSingleL1CompressedEntry(entry.vaddr, entry, vsstage,
+                                                                           compressed_entry)) {
+                                walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, vsstage);
+                                walker->tlb->recordL1CompressedEntry(compressed_entry);
+                            }
+                        } else {
+                            walker->tlb->insert(entry.vaddr, entry, false, vsstage);
+                        }
                         if (!tlbHit) {
                             int l2_level = level;
                             inl2Entry.gpaddr = gPaddr;

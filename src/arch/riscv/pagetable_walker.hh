@@ -285,9 +285,12 @@ namespace RiscvISA
               BaseMMU::Translation *translation;
               BaseMMU::Mode mode;
               Addr Paddr;
-              TlbEntry *entry;
-              TlbEntry *entryVsstage;
-              TlbEntry *entryGstage;
+              bool hasEntry;
+              bool hasEntryVsstage;
+              bool hasEntryGstage;
+              TlbEntry entry;
+              TlbEntry entryVsstage;
+              TlbEntry entryGstage;
         };
         std::list<L2TlbState> L2TLBrequestors;
 
