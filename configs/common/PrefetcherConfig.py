@@ -76,10 +76,11 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
 
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
-def _configure_l2_composite_default(prefetcher):
+def _configure_l2_composite_default(prefetcher, options):
     # Normal L2CompositeWithWorker profile.
     prefetcher.enable_bop = True
-    prefetcher.enable_cdp = True
+    # Keep CDP off while evaluating its shared-state bandwidth impact in SMT.
+    prefetcher.enable_cdp = not getattr(options, "smt", False)
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = True
 
@@ -99,7 +100,7 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
         _configure_l2_composite_kmh_align(prefetcher)
     elif prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
-        _configure_l2_composite_default(prefetcher)
+        _configure_l2_composite_default(prefetcher, options)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
