@@ -2696,21 +2696,57 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 }
 
 PrivilegeMode
-TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
+TLB::currentMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
 {
-    if (use_old_priv && mode != BaseMMU::Execute) {
-        if (mode == BaseMMU::Execute) {
-            return old_priv_ex;
-        } else {
-            return old_priv_ldst;
-        }
-    }
     STATUS status = (STATUS)tc->readMiscReg(MISCREG_STATUS);
     PrivilegeMode pmode = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
     if (mode != BaseMMU::Execute && status.mprv == 1)
         pmode = (PrivilegeMode)(RegVal)status.mpp;
     return pmode;
 }
+
+PrivilegeMode
+TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
+{
+    if (mode != BaseMMU::Execute) {
+        const int tid = tc->threadId();
+        if (tid >= 0) {
+            const auto thread_idx = static_cast<size_t>(tid);
+            if (thread_idx < oldPrivByThread.size() &&
+                oldPrivByThread[thread_idx].valid) {
+                return oldPrivByThread[thread_idx].ldst;
+            }
+        }
+    }
+    return currentMemPriv(tc, mode);
+}
+
+void
+TLB::setOldPriv(ThreadContext *tc)
+{
+    const int tid = tc->threadId();
+    assert(tid >= 0);
+    const auto thread_idx = static_cast<size_t>(tid);
+    if (oldPrivByThread.size() <= thread_idx) {
+        oldPrivByThread.resize(thread_idx + 1);
+    }
+    oldPrivByThread[thread_idx].valid = true;
+    oldPrivByThread[thread_idx].ldst = currentMemPriv(tc, BaseMMU::Read);
+}
+
+void
+TLB::useNewPriv(ThreadContext *tc)
+{
+    const int tid = tc->threadId();
+    if (tid < 0) {
+        return;
+    }
+    const auto thread_idx = static_cast<size_t>(tid);
+    if (thread_idx < oldPrivByThread.size()) {
+        oldPrivByThread[thread_idx].valid = false;
+    }
+}
+
 bool
 TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::Mode mode)
 {
