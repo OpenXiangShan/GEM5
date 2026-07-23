@@ -375,6 +375,10 @@ class VleffMicroInst : public VectorMemMicroInst
         this->flags[IsLoad] = true;
     }
 
+  public:
+    uint32_t firstElemIdx() const { return vmi.rs; }
+    uint32_t elemSize() const { return eew / 8; }
+
     std::string generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
@@ -383,7 +387,7 @@ class VleffEndMicroInst : public VectorMicroInst
 {
 private:
     RegId srcRegIdxArr[8];   // vle tmp target, used to keep RAW sequence
-    RegId destRegIdxArr[1];  // vstart
+    RegId destRegIdxArr[1];  // vl
     uint8_t numSrcs;
 public:
     VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs);

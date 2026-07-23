@@ -402,6 +402,8 @@ VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
     for (uint8_t i = 0; i < _numSrcs; i++) {
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0 + i));
     }
+    setDestRegIdx(_numDestRegs++, VecRenamedVLReg);
+    _numTypedDestRegs[RMiscRegClass]++;
     this->numSrcs = _numSrcs;
     // printf("VleffEndMicroInst numSrc: %hhu, numDestRegs: %hhu\n", this->numSrcs, _numDestRegs);
 
@@ -429,8 +431,8 @@ VleffEndMicroInst::execute(ExecContext* xc, Trace::InstRecord* traceData) const
     }
     // printf("VleffEndMicroInst::execute new_vl sum done\n");
 
-    // xc->setRegOperand(this, 0, new_vl);
     xc->setMiscReg(MISCREG_VL, new_vl);
+    xc->setRegOperand(this, 0, new_vl);
 
     // printf("VleffEndMicroInst::execute setRegOperand done\n");
 
