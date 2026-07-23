@@ -150,6 +150,7 @@ class PairTAGE : public TimedBaseBTBPredictor
         bool aheadIndexFoldedHistValid{false};
         std::vector<PathFoldedHist> aheadIndexFoldedHist;
         PairBlockInfo predictedFirstBlock;
+        PairBlockInfo predictedSecondBlock;
     };
 
     struct TrainPacket
@@ -254,6 +255,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     void trainFromS3Pred(
         const TrainPacket &finalTrainPacket,
         const TrainPacket *twoTakenTrainPacket = nullptr);
+    void recordTwoTakenBlockEnqueued();
     bool secondBlockEnabled() const { return enableSecondBlock; }
     bool phaseEnabled(PairPhase phase) const
     {
@@ -261,11 +263,52 @@ class PairTAGE : public TimedBaseBTBPredictor
     }
 
   private:
+    enum TrainingType : unsigned
+    {
+        Fallthrough,
+        HasBranchNotTaken,
+        IsCond,
+        IsDirect,
+        IsIndirect,
+        IsCall,
+        IsReturn,
+        NumTrainingTypes
+    };
+
+    struct PairTAGEStats : public statistics::Group
+    {
+        statistics::Scalar firstBlockLookups;
+        statistics::Scalar firstBlockHits;
+        statistics::Formula firstBlockHitRate;
+        statistics::Scalar firstBlockAccuracySamples;
+        statistics::Scalar firstBlockCorrect;
+        statistics::Formula firstBlockAccuracy;
+
+        statistics::Scalar secondBlockProduced;
+        statistics::Formula secondBlockProductionRate;
+        statistics::Scalar secondBlockAccuracySamples;
+        statistics::Scalar secondBlockCorrect;
+        statistics::Formula secondBlockAccuracy;
+
+        statistics::Scalar twoTakenBlocksEnqueued;
+        statistics::Formula twoTakenEnqueueRate;
+
+        statistics::Vector firstBlockTrainTypes;
+        statistics::Vector secondBlockTrainTypes;
+
+        statistics::Scalar allocations;
+        statistics::Scalar evictions;
+
+        PairTAGEStats(statistics::Group *parent);
+    };
+
     ProviderInfo lookupProviders(Addr startPC) const;
     ProviderInfo lookupProviders(Addr startPC, const TageMeta &predMeta) const;
     TageTableInfo lookupEntry(Addr startPC) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
     PairBlockInfo buildTrainingBlock(const TrainPacket &packet) const;
+    void recordTrainingTypes(statistics::Vector &typeStats,
+                             const PairBlockInfo &block);
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
     bool blockIdentityMatches(const PairBlockInfo &lhs,
                               const PairBlockInfo &rhs) const;
@@ -314,6 +357,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     const bool enableSecondBlock;
     const bool allowOddPhase;
     const bool trainStandaloneFallThrough;
+    PairTAGEStats pairTageStats;
 };
 
 }  // namespace btb_pred

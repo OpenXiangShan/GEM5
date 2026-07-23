@@ -749,6 +749,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
     ftq.insert(entry);
+    pairtage->recordTwoTakenBlockEnqueued();
     advancePairPhase(thread.s0PairPhase);
 
     DPRINTF(DecoupleBP,

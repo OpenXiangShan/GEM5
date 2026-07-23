@@ -60,7 +60,8 @@ PairTAGE::PairTAGE(const Params &p)
       numWays(p.numWays),
       enableSecondBlock(p.enableSecondBlock),
       allowOddPhase(p.allowOddPhase),
-      trainStandaloneFallThrough(p.trainStandaloneFallThrough)
+      trainStandaloneFallThrough(p.trainStandaloneFallThrough),
+      pairTageStats(this)
 {
     if (tablePcShifts.size() < numPredictors) {
         tablePcShifts.resize(numPredictors, 1);
@@ -83,10 +84,69 @@ PairTAGE::PairTAGE(const Params &p)
     }
 }
 
+PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(firstBlockLookups, statistics::units::Count::get(),
+               "eligible normal prediction lookups issued to PairTAGE"),
+      ADD_STAT(firstBlockHits, statistics::units::Count::get(), "PairTAGE lookups that produced a valid first block"),
+      ADD_STAT(firstBlockHitRate, statistics::units::Ratio::get(), "fraction of eligible PairTAGE lookups that hit",
+               firstBlockHits / firstBlockLookups),
+      ADD_STAT(firstBlockAccuracySamples, statistics::units::Count::get(),
+               "PairTAGE first-block hits compared with a final prediction"),
+      ADD_STAT(firstBlockCorrect, statistics::units::Count::get(),
+               "PairTAGE first blocks matching final branch PC, direction, and target"),
+      ADD_STAT(firstBlockAccuracy, statistics::units::Ratio::get(),
+               "PairTAGE first-block agreement with final predictions", firstBlockCorrect / firstBlockAccuracySamples),
+      ADD_STAT(secondBlockProduced, statistics::units::Count::get(),
+               "PairTAGE first-block hits carrying a valid second block"),
+      ADD_STAT(secondBlockProductionRate, statistics::units::Ratio::get(),
+               "fraction of PairTAGE first-block hits carrying a second block", secondBlockProduced / firstBlockHits),
+      ADD_STAT(secondBlockAccuracySamples, statistics::units::Count::get(),
+               "PairTAGE second blocks compared with an available teacher prediction"),
+      ADD_STAT(secondBlockCorrect, statistics::units::Count::get(),
+               "PairTAGE second blocks fully matching the teacher prediction"),
+      ADD_STAT(secondBlockAccuracy, statistics::units::Ratio::get(),
+               "PairTAGE second-block agreement with teacher predictions",
+               secondBlockCorrect / secondBlockAccuracySamples),
+      ADD_STAT(twoTakenBlocksEnqueued, statistics::units::Count::get(),
+               "PairTAGE second blocks successfully enqueued into the FTQ"),
+      ADD_STAT(twoTakenEnqueueRate, statistics::units::Ratio::get(),
+               "fraction of produced PairTAGE second blocks enqueued into the FTQ",
+               twoTakenBlocksEnqueued / secondBlockProduced),
+      ADD_STAT(firstBlockTrainTypes, statistics::units::Count::get(),
+               "first-block types accepted by PairTAGE training"),
+      ADD_STAT(secondBlockTrainTypes, statistics::units::Count::get(),
+               "second-block types accepted by PairTAGE training"),
+      ADD_STAT(allocations, statistics::units::Count::get(), "PairTAGE table entries installed by allocation"),
+      ADD_STAT(evictions, statistics::units::Count::get(), "valid PairTAGE table entries overwritten by allocation")
+{
+    static constexpr std::array<const char *, NumTrainingTypes> typeNames = {
+        "fallthrough", "hasBranchNotTaken", "isCond", "isDirect", "isIndirect", "isCall", "isReturn"};
+
+    firstBlockTrainTypes.init(NumTrainingTypes);
+    secondBlockTrainTypes.init(NumTrainingTypes);
+    for (unsigned type = 0; type < NumTrainingTypes; ++type) {
+        firstBlockTrainTypes.subname(type, typeNames[type]);
+        secondBlockTrainTypes.subname(type, typeNames[type]);
+    }
+
+    firstBlockHitRate.precision(6);
+    firstBlockAccuracy.precision(6);
+    secondBlockProductionRate.precision(6);
+    secondBlockAccuracy.precision(6);
+    twoTakenEnqueueRate.precision(6);
+}
+
 void
 PairTAGE::setPredictionPhase(PairPhase phase)
 {
     predictionPhase = phase;
+}
+
+void
+PairTAGE::recordTwoTakenBlockEnqueued()
+{
+    pairTageStats.twoTakenBlocksEnqueued++;
 }
 
 void
@@ -108,16 +168,23 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
         return;
     }
 
+    pairTageStats.firstBlockLookups++;
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
         return;
     }
 
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
+    meta->predictedSecondBlock = tableInfo.entry.secondBlock();
     secondPredBlock = tableInfo.entry.secondBlock();
 
     if (!tableInfo.entry.firstBlock().valid) {
         return;
+    }
+
+    pairTageStats.firstBlockHits++;
+    if (tableInfo.entry.secondBlock().valid) {
+        pairTageStats.secondBlockProduced++;
     }
 
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
@@ -498,6 +565,10 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
             newEntry.clearBlock(1);
         }
 
+        pairTageStats.allocations++;
+        if (targetEntry.valid) {
+            pairTageStats.evictions++;
+        }
         targetEntry = newEntry;
     }
 
@@ -662,6 +733,38 @@ PairTAGE::buildTrainingBlock(const TrainPacket &packet) const
         packet.hasBranchFlag(TrainPacket::BranchFlag::Return), packet.size);
 }
 
+void
+PairTAGE::recordTrainingTypes(statistics::Vector &typeStats,
+                              const PairBlockInfo &block)
+{
+    assert(block.valid);
+    // Untaken branches use one outcome bucket; taken branches expose all type flags.
+    if (!block.hasBranch) {
+        typeStats[Fallthrough]++;
+        return;
+    }
+    if (!block.taken) {
+        typeStats[HasBranchNotTaken]++;
+        return;
+    }
+
+    if (block.isCond) {
+        typeStats[IsCond]++;
+    }
+    if (block.isDirect) {
+        typeStats[IsDirect]++;
+    }
+    if (block.isIndirect) {
+        typeStats[IsIndirect]++;
+    }
+    if (block.isCall) {
+        typeStats[IsCall]++;
+    }
+    if (block.isReturn) {
+        typeStats[IsReturn]++;
+    }
+}
+
 bool
 PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
 {
@@ -741,6 +844,23 @@ PairTAGE::trainFromS3Pred(
         (enableSecondBlock && twoTakenTrainPacket) ?
             buildTrainingBlock(*twoTakenTrainPacket) : PairBlockInfo{};
 
+    if (predMeta->predictedFirstBlock.valid) {
+        pairTageStats.firstBlockAccuracySamples++;
+        const auto &predictedFirstBlock = predMeta->predictedFirstBlock;
+        if (finalTrainPacket.valid && predictedFirstBlock.branchPC == finalTrainPacket.branchPC &&
+            predictedFirstBlock.taken == finalTrainPacket.taken &&
+            predictedFirstBlock.targetPC == finalTrainPacket.targetPC) {
+            pairTageStats.firstBlockCorrect++;
+        }
+    }
+
+    if (predMeta->predictedSecondBlock.valid && twoTakenTrainPacket) {
+        pairTageStats.secondBlockAccuracySamples++;
+        if (blocksMatch(predMeta->predictedSecondBlock, secondBlockTrainInfo)) {
+            pairTageStats.secondBlockCorrect++;
+        }
+    }
+
     if (!trainedFirstBlock.valid) {
         if (provider.found) {
             auto &providerEntry =
@@ -753,6 +873,11 @@ PairTAGE::trainFromS3Pred(
         trainedFirstBlock.isBranchlessFallthrough() && !secondBlockTrainInfo.valid && !trainStandaloneFallThrough;
     if (skipStandaloneFallThrough) {
         return;
+    }
+
+    recordTrainingTypes(pairTageStats.firstBlockTrainTypes, trainedFirstBlock);
+    if (secondBlockTrainInfo.valid) {
+        recordTrainingTypes(pairTageStats.secondBlockTrainTypes, secondBlockTrainInfo);
     }
 
     const bool providerMatchesTraining = provider.found &&
