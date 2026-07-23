@@ -38,7 +38,7 @@
 #include "mem/cache/prefetch/queued.hh"
 
 #include <cassert>
-#include <linux/limits.h>
+#include <climits>
 
 #include "arch/generic/tlb.hh"
 #include "base/logging.hh"
