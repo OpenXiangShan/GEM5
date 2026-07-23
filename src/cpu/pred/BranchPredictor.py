@@ -1125,7 +1125,7 @@ class PairTAGE(TimedBaseBTBPredictor):
     trainStandaloneFallThrough = Param.Bool(
         True,
         "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists")
-    numDelay = 0
+    numDelay = 2
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
