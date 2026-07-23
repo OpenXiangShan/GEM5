@@ -1169,6 +1169,9 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 
         bool done_checking_load = false;
         for (auto req0 : inst_request->_reqs) {
+            if (!req0->hasPaddr()) {
+                continue;
+            }
             Addr inst_eff_addr1 = req0->getPaddr() >> depCheckShift;
             Addr inst_eff_addr2 =
                 (req0->getPaddr() + req0->getSize() - 1) >> depCheckShift;
@@ -1177,6 +1180,9 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                     inst->seqNum, req0->getPaddr());
 
             for (auto req1 : load_request->_reqs) {
+                if (!req1->hasPaddr()) {
+                    continue;
+                }
                 Addr ld_eff_addr1 = req1->getPaddr() >> depCheckShift;
                 Addr ld_eff_addr2 = (req1->getPaddr() + req1->getSize() - 1) >> depCheckShift;
 
