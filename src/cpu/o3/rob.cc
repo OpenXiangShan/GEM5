@@ -588,9 +588,13 @@ ROB::drainSquashedHead(ThreadID tid)
 }
 
 bool
-ROB::isHeadGroupReady(ThreadID tid)
+ROB::isHeadGroupReady(ThreadID tid, DynInstPtr *blocking_inst)
 {
     stats.reads++;
+
+    if (blocking_inst) {
+        *blocking_inst = nullptr;
+    }
 
     if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
         auto it = instList[tid].begin();
@@ -600,6 +604,9 @@ ROB::isHeadGroupReady(ThreadID tid)
             if (!inst->readyToCommit()) {
                 if (i > 0 && inst->isSerializeBefore()) {
                     return true;
+                }
+                if (blocking_inst) {
+                    *blocking_inst = inst;
                 }
                 return false;
             }

@@ -311,6 +311,20 @@ class Scheduler : public SimObject
     bool old_disp = false;
     const int intRegfileBanks;
 
+    enum class SmtIssueState : unsigned
+    {
+        NoIqWork,
+        ControlBlocked,
+        Waiting,
+        // A candidate reached issue admission but did not enter a FU this
+        // cycle; this is not a count of every ready instruction in the IQ.
+        EligibleNoIssue,
+        Issued,
+        NumStates
+    };
+
+    static constexpr unsigned NumTrackedMissLevels = 3;
+
     struct SchedulerStats : public statistics::Group
     {
         SchedulerStats(statistics::Group* parent);
@@ -320,6 +334,11 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
+        statistics::Vector2d smtIssueStateCycles;
+        statistics::Scalar zeroIssueCycles;
+        statistics::Vector2d noIssueOutstandingMissMaskCycles;
+
+        void init(unsigned num_threads);
     } stats;
 
     struct disp_policy
@@ -341,6 +360,8 @@ class Scheduler : public SimObject
     std::vector<uint8_t*> dispOpdist;
 
     std::vector<DynInstPtr> instsToFu;
+    std::array<bool, MaxThreads> issueCandidateThisCycle = {};
+    std::array<bool, MaxThreads> issueProgressThisCycle = {};
 
     std::vector<bool> earlyScoreboard;
     std::vector<bool> bypassScoreboard;
@@ -366,6 +387,8 @@ class Scheduler : public SimObject
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
     bool ready(OpClass op, int disp_seq);
+    void noteIssueCandidate(ThreadID tid);
+    void sampleSmtIssueStates(bool control_blocked);
 
   public:
     PendingWakeEventsType specWakeEvents;
@@ -378,7 +401,7 @@ class Scheduler : public SimObject
     void setMainRdpOpt(bool enable);
 
     void tick();
-    void issueAndSelect();
+    void issueAndSelect(bool control_blocked = false);
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
     DynInstPtr getInstByDstReg(RegIndex flatIdx, ThreadID tid,

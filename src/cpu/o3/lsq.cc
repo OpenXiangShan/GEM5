@@ -1684,6 +1684,18 @@ int LSQ::numLoads(ThreadID tid) const { return thread.at(tid).numLoads(); }
 int LSQ::numRAREntries(ThreadID tid) const { return thread.at(tid).numRAREntries(); }
 int LSQ::numRAWEntries(ThreadID tid) const { return thread.at(tid).numRAWEntries(); }
 
+unsigned
+LSQ::maxInflightLoadDepth(ThreadID tid) const
+{
+    unsigned max_depth = 0;
+    for (const auto *request : thread.at(tid).inflightLoads) {
+        if (request->isAnyOutstandingRequest()) {
+            max_depth = std::max(max_depth, request->maxRequestDepth());
+        }
+    }
+    return max_depth;
+}
+
 int LSQ::anyInflightLoadsNotComplete()
 {
     int l1miss = 0, l2miss = 0, l3miss = 0, any = 0;
@@ -3118,6 +3130,30 @@ LSQ::LSQRequest::detachInflightLoad()
     }
 }
 
+void
+LSQ::LSQRequest::attachInflightLoad()
+{
+    if (!isLoad()) {
+        return;
+    }
+
+    auto &inflight = _port.inflightLoads;
+    if (std::find(inflight.begin(), inflight.end(), this) == inflight.end()) {
+        assert(inflight.size() < _port.numLoads() + 4);
+        inflight.emplace_back(this);
+    }
+}
+
+unsigned
+LSQ::LSQRequest::maxRequestDepth() const
+{
+    unsigned max_depth = 0;
+    for (const auto &request : _reqs) {
+        max_depth = std::max(max_depth, static_cast<unsigned>(request->depth));
+    }
+    return max_depth;
+}
+
 LSQ::LSQRequest::~LSQRequest()
 {
     assert(!isAnyOutstandingRequest());
@@ -3457,8 +3493,7 @@ LSQ::SingleDataRequest::sendPacketToCache()
     if (success) {
         _packets[0]->setLSQPtr(lsqUnit()->getLsq());
         if (isLoad()) {
-            assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads() + 4);
-            lsqUnit()->inflightLoads.emplace_back(this);
+            attachInflightLoad();
         }
 
         if (!bank_conflict) {
@@ -3515,6 +3550,9 @@ LSQ::SplitDataRequest::sendPacketToCache()
         } else {
             break;
         }
+    }
+    if (isLoad() && _numOutstandingPackets > 0) {
+        attachInflightLoad();
     }
     if (bank_conflict) {
         lsqUnit()->bankConflictReplaySchedule();

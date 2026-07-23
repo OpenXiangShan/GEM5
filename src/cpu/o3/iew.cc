@@ -1871,7 +1871,7 @@ IEW::tick()
 
         writebackInsts();
     }
-    scheduler->issueAndSelect();
+    scheduler->issueAndSelect(exeStatus == Squashing);
 
     bool broadcast_free_entries = false;
 
