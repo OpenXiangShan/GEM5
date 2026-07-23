@@ -663,6 +663,10 @@ def addXiangshanCommonOptions(parser):
     parser.add_argument("--disable-mpt-cache", action="store_false",
                         dest="enable_mpt_cache",
                         help="Disable the dedicated simulated MPT cache")
+    parser.add_argument("--mpt-ptw-check-mode", action="store",
+                        choices=("all", "leaf"), default="all",
+                        help="Select whether MPT protects every PTW PTE read "
+                             "or only leaf PTE reads")
     parser.add_argument("--mpt-reserved-mem-size", action="store",
                         type=str, default="64MB",
                         help="Hidden physical memory size reserved for "

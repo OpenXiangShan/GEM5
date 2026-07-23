@@ -194,6 +194,12 @@ def configure_mpt_reserved_memory(args: argparse.Namespace, system) -> None:
 def configure_mpt_unit(args: argparse.Namespace, mmu) -> None:
     unit = mmu.mpt_unit
     unit.enable_mpt_cache = getattr(args, "enable_mpt_cache", True)
+    check_intermediate_ptes = (
+        getattr(args, "mpt_ptw_check_mode", "all") == "all"
+    )
+    mmu.itb.walker.mpt_check_intermediate_ptes = check_intermediate_ptes
+    mmu.dtb.walker.mpt_check_intermediate_ptes = check_intermediate_ptes
+    mmu.l2_shared.walker.mpt_check_intermediate_ptes = check_intermediate_ptes
     unit.hit_latency = args.mpt_hit_latency
     unit.lookup_width = args.mpt_lookup_width
     unit.instruction_accept_width = args.mpt_i_accept_width

@@ -132,7 +132,13 @@ Walker::WalkerStats::WalkerStats(statistics::Group *parent)
                    statistics::units::Cycle,
                    statistics::units::Count>::get(),
                "Average PTW memory latency",
-               ptwMemCycle / ptwMemCount)
+               ptwMemCycle / ptwMemCount),
+      ADD_STAT(ptwMptPreReadChecks, statistics::units::Count::get(),
+               "MPT checks issued before PTW PTE reads"),
+      ADD_STAT(ptwMptLeafChecks, statistics::units::Count::get(),
+               "MPT checks issued after identifying leaf PTEs"),
+      ADD_STAT(ptwMptIntermediateSkipped, statistics::units::Count::get(),
+               "Intermediate PTE MPT checks skipped in leaf-only mode")
 {
 }
 
@@ -854,7 +860,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         mptCheckPaddr = 0;
         mptCheckMode = BaseMMU::Read;
         mptFaultMode = _mode;
-        mptCheckingPteRead = false;
+        pteMptCheckPhase = PteMptCheckPhase::None;
         pteReadMptResult = false;
         pteReadMptChecked = false;
         pteReadMptIsNextline = false;
@@ -909,7 +915,7 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         mptCheckPaddr = 0;
         mptCheckMode = BaseMMU::Read;
         mptFaultMode = _mode;
-        mptCheckingPteRead = false;
+        pteMptCheckPhase = PteMptCheckPhase::None;
         pteReadMptResult = false;
         pteReadMptChecked = false;
         pteReadMptIsNextline = false;
@@ -1239,6 +1245,10 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
 
     if (fault == NoFault) {
         if (pte.v && !pte.r && !pte.w && !pte.x) {
+            if (!walker->mptCheckIntermediatePtes && timing && !tlbHit &&
+                walker->mptUnit != nullptr && walker->mptUnit->enabled()) {
+                walker->stats.ptwMptIntermediateSkipped++;
+            }
             twoStageLevel--;
             if (twoStageLevel < 0) {
                 endWalk();
@@ -1293,6 +1303,10 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
         } else if (!pte.v || (!pte.r && pte.w)) {
             endWalk();
             return endGstageWalk();
+        } else if (!tlbHit && startLeafPteReadMPTCheck(
+                       read->req->getPaddr() +
+                       vaddr_choose * sizeof(PTE))) {
+            return NoFault;
         } else if (!pte.u) {
             endWalk();
             return endGstageWalk();
@@ -1515,6 +1529,11 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
             endWalk();
         } else {
             if (pte.r || pte.x) {
+                if (!tlbHit && startLeafPteReadMPTCheck(
+                        read->req->getPaddr() +
+                        vaddr_choose_flag * sizeof(PTE))) {
+                    return NoFault;
+                }
                 doEndWalk = true;
                 if (virt) {
                     fault = walker->tlb->checkPermissions(vsstatus, pmode, entry.vaddr, mode, pte, 0, false);
@@ -1624,6 +1643,11 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                 }
 
             } else {
+                if (!walker->mptCheckIntermediatePtes && timing && !tlbHit &&
+                    walker->mptUnit != nullptr &&
+                    walker->mptUnit->enabled()) {
+                    walker->stats.ptwMptIntermediateSkipped++;
+                }
                 level--;
                 if (level < 0) {
                     doEndWalk = true;
@@ -1782,6 +1806,11 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             // step 4:
             if (pte.r || pte.x) {
                 // step 5: leaf PTE
+                if (startLeafPteReadMPTCheck(
+                        read->req->getPaddr() +
+                        vaddr_choose * sizeof(PTE))) {
+                    return NoFault;
+                }
                 doEndWalk = true;
                 fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false);
                 // step 6
@@ -1837,7 +1866,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                         mptCheckPaddr = translatedPaddr;
                         mptCheckMode = mode;
                         mptFaultMode = mode;
-                        mptCheckingPteRead = false;
+                        pteMptCheckPhase = PteMptCheckPhase::None;
                         if (walker->mptUnit != nullptr &&
                             walker->mptUnit->enabled() && !isMPTing) {
                             isMPTing = true;
@@ -1909,6 +1938,11 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     }
                 }
             } else {
+                if (!walker->mptCheckIntermediatePtes && timing &&
+                    walker->mptUnit != nullptr &&
+                    walker->mptUnit->enabled()) {
+                    walker->stats.ptwMptIntermediateSkipped++;
+                }
                 level--;
                 if (level < 0) {
                     DPRINTF(PageTableWalker3,
@@ -1986,6 +2020,23 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             }
         }
     } else if (nextline) {
+        if (!walker->mptCheckIntermediatePtes && timing &&
+            walker->mptUnit != nullptr && walker->mptUnit->enabled()) {
+            for (int i = 0; i < l2tlbLineSize; ++i) {
+                const PTE candidate = read->getLE_l2tlb<uint64_t>(i);
+                const bool validLeaf = candidate.v &&
+                    (candidate.r || candidate.x) &&
+                    !(!candidate.r && candidate.w);
+                if (validLeaf) {
+                    const Addr ptePaddr = read->req->getPaddr() +
+                        i * sizeof(PTE);
+                    if (startLeafPteReadMPTCheck(ptePaddr)) {
+                        return NoFault;
+                    }
+                    break;
+                }
+            }
+        }
         nextlineEntry.logBytes = PageShift + (nextlineLevel * LEVEL_BITS);
         nextlineEntry.vaddr &= ~((1 << nextlineEntry.logBytes) - 1);
         nextlineEntry.level = nextlineLevel;
@@ -2698,7 +2749,10 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         if (write) {
             writes.push_back(write);
         }
-        if (isMPTing && !(mptCheckingPteRead && pteReadMptIsNextline))
+        if (isMPTing &&
+            (pteMptCheckPhase == PteMptCheckPhase::LeafPostRead ||
+             !(pteMptCheckPhase == PteMptCheckPhase::PreRead &&
+               pteReadMptIsNextline)))
             return false;
         if (!isMPTing)
             sendPackets();
@@ -2911,7 +2965,7 @@ Walker::WalkerState::finishPteReadMPTFault()
     Addr faultPaddr = mptCheckPaddr;
     isMPTing = false;
     finishMPTing = true;
-    mptCheckingPteRead = false;
+    pteMptCheckPhase = PteMptCheckPhase::None;
     pteReadMptResult = false;
     pteReadMptFaultPending = false;
 
@@ -2950,6 +3004,10 @@ Walker::WalkerState::startPteReadMPTCheck()
         return NoFault;
     }
 
+    if (!walker->mptCheckIntermediatePtes) {
+        return NoFault;
+    }
+
     Addr pteReadPaddr = read->req->getPaddr();
     if (pteReadMptChecked && pteReadMptCheckedPaddr == pteReadPaddr) {
         return NoFault;
@@ -2958,7 +3016,7 @@ Walker::WalkerState::startPteReadMPTCheck()
     mptCheckPaddr = pteReadPaddr;
     mptCheckMode = BaseMMU::Read;
     mptFaultMode = mode;
-    mptCheckingPteRead = true;
+    pteMptCheckPhase = PteMptCheckPhase::PreRead;
     pteReadMptResult = false;
     pteReadMptIsNextline = nextline;
     pteReadMptFaultPending = false;
@@ -2970,11 +3028,52 @@ Walker::WalkerState::startPteReadMPTCheck()
             "Check MPT permission before PTW PTE read paddr %#lx\n",
             pteReadPaddr);
 
+    walker->stats.ptwMptPreReadChecks++;
     startMPTwalk();
     walker->releasePtwLevel(this);
     walker->retryPtwLevelBlockedStates();
     walker->retryPtwMissQueue();
     return NoFault;
+}
+
+bool
+Walker::WalkerState::startLeafPteReadMPTCheck(Addr pte_paddr)
+{
+    if (walker->mptCheckIntermediatePtes || !timing ||
+        walker->mptUnit == nullptr || !walker->mptUnit->enabled()) {
+        return false;
+    }
+
+    panic_if(read == nullptr || !read->isResponse() || !read->isRead(),
+             "Leaf PTE MPT check requires a PTW read response\n");
+    if (read->req->isMptWalk()) {
+        return false;
+    }
+    if (pteReadMptChecked && pteReadMptCheckedPaddr == pte_paddr) {
+        return false;
+    }
+
+    mptCheckPaddr = pte_paddr;
+    mptCheckMode = BaseMMU::Read;
+    mptFaultMode = mode;
+    pteMptCheckPhase = PteMptCheckPhase::LeafPostRead;
+    pteReadMptResult = false;
+    pteReadMptIsNextline = nextline;
+    pteReadMptFaultPending = false;
+    isMPTing = true;
+    finishMPTing = false;
+    mpt_level = 3;
+
+    DPRINTF(PageTableWalker,
+            "Check MPT permission after identifying leaf PTE paddr %#lx\n",
+            pte_paddr);
+
+    walker->stats.ptwMptLeafChecks++;
+    startMPTwalk();
+    walker->releasePtwLevel(this);
+    walker->retryPtwLevelBlockedStates();
+    walker->retryPtwMissQueue();
+    return true;
 }
 
 bool
@@ -2985,7 +3084,7 @@ Walker::WalkerState::startMPTwalk()
              "WalkerState cannot start MPT lookup without an MPT unit\n");
     PaddrUT = mptCheckPaddr;
     MptRequestSource source = MptRequestSource::Data;
-    if (mptCheckingPteRead) {
+    if (pteMptCheckPhase != PteMptCheckPhase::None) {
         source = MptRequestSource::Ptw;
     } else if (mptCheckMode == BaseMMU::Execute) {
         source = MptRequestSource::Instruction;
@@ -2997,7 +3096,7 @@ Walker::WalkerState::startMPTwalk()
 void
 Walker::WalkerState::finishMptLookup(const MptResult &result)
 {
-    if (mptCheckingPteRead) {
+    if (pteMptCheckPhase != PteMptCheckPhase::None) {
         pteReadMptResult = result.valid && result.allowed;
     } else {
         MPTresult = result.valid && result.allowed;
@@ -3100,6 +3199,22 @@ bool Walker::WalkerState::completeMPTWalk()
         return inflight == 0 && writes.size() == 0 && requestors.empty();
     }
 
+    if (read->isResponse() &&
+        pteMptCheckPhase == PteMptCheckPhase::LeafPostRead) {
+        if (!pteReadMptResult) {
+            return finishPteReadMPTFault();
+        }
+        pteReadMptChecked = true;
+        pteReadMptCheckedPaddr = mptCheckPaddr;
+        pteMptCheckPhase = PteMptCheckPhase::None;
+        pteReadMptResult = false;
+        pteReadMptIsNextline = false;
+        isMPTing = false;
+        finishMPTing = false;
+        state = Translate;
+        return recvPacket(read);
+    }
+
     if (read->isResponse()) {
         /*
          * Keep isMPTing set while the original PTW response is consumed.
@@ -3109,13 +3224,14 @@ bool Walker::WalkerState::completeMPTWalk()
     }
 
     if (read->isRequest()) {
-        if (mptCheckingPteRead) {
+        if (pteMptCheckPhase == PteMptCheckPhase::PreRead) {
             if (!pteReadMptResult) {
                 return finishPteReadMPTFault();
             }
             pteReadMptChecked = true;
             pteReadMptCheckedPaddr = mptCheckPaddr;
-            mptCheckingPteRead = false;
+            pteMptCheckPhase = PteMptCheckPhase::None;
+            pteReadMptResult = false;
             pteReadMptIsNextline = false;
         }
         isMPTing = false;

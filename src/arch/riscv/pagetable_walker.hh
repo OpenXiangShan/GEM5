@@ -151,6 +151,13 @@ namespace RiscvISA
                 Translate,
             };
 
+            enum class PteMptCheckPhase
+            {
+                None,
+                PreRead,
+                LeafPostRead,
+            };
+
             struct RequestorState
             {
                 ThreadContext *tc;
@@ -254,7 +261,7 @@ namespace RiscvISA
             Addr mptCheckPaddr;
             BaseMMU::Mode mptCheckMode;
             BaseMMU::Mode mptFaultMode;
-            bool mptCheckingPteRead=false;
+            PteMptCheckPhase pteMptCheckPhase=PteMptCheckPhase::None;
             bool pteReadMptResult=false;
             bool pteReadMptChecked=false;
             bool pteReadMptIsNextline=false;
@@ -328,6 +335,7 @@ namespace RiscvISA
             bool completeMPTOnly();
             void finishMptLookup(const MptResult &result) override;
             Fault startPteReadMPTCheck();
+            bool startLeafPteReadMPTCheck(Addr pte_paddr);
             bool finishPteReadMPTFault();
             std::string name() const {return walker->name();}
 
@@ -406,6 +414,9 @@ namespace RiscvISA
             statistics::Scalar ptwMemCount;
             statistics::Scalar ptwMemCycle;
             statistics::Formula ptwAvgMemLatency;
+            statistics::Scalar ptwMptPreReadChecks;
+            statistics::Scalar ptwMptLeafChecks;
+            statistics::Scalar ptwMptIntermediateSkipped;
         } stats;
 
         struct WalkerSenderState : public Packet::SenderState
@@ -475,6 +486,7 @@ namespace RiscvISA
         bool ptwSquash;
         bool openNextLine;
         bool autoOpenNextLine;
+        bool mptCheckIntermediatePtes;
         bool enablePtwLevelLimit;
         std::array<unsigned, 4> ptwLevelLimit;
         std::array<unsigned, 4> ptwLevelActive;
@@ -576,6 +588,7 @@ namespace RiscvISA
             ptwSquash(params.ptw_squash),
             openNextLine(params.open_nextline),
             autoOpenNextLine(true),
+            mptCheckIntermediatePtes(params.mpt_check_intermediate_ptes),
             enablePtwLevelLimit(params.enable_ptw_level_limit),
             ptwLevelLimit({{
                 params.ptw_level0_limit,
