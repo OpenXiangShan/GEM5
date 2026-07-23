@@ -194,7 +194,7 @@ decode QUADRANT {
                     return std::make_shared<IllegalInstFault>(
                             "source reg x0", machInst);
                 }
-                Rc1_sw = (int32_t)(Rc1_sw + imm);
+                Rc1 = szext<32>(Rc1 + imm);
             }});
             0x2: c_li({{
                 imm = CIMM5;
@@ -285,10 +285,10 @@ decode QUADRANT {
                     }
                     0x1: decode CFUNCT2LOW {
                         0x0: c_subw({{
-                            Rp1_sd = (int32_t)Rp1_sd - Rp2_sw;
+                            Rp1 = szext<32>(Rp1 - Rp2);
                         }});
                         0x1: c_addw({{
-                            Rp1_sd = (int32_t)Rp1_sd + Rp2_sw;
+                            Rp1 = szext<32>(Rp1 + Rp2);
                         }});
                         0x2: c_mul({{
                             Rp1_sd = (Rp1_sd * Rp2_sd);
@@ -737,11 +737,11 @@ decode QUADRANT {
         0x06: decode FUNCT3 {
             format IOp {
                 0x0: addiw({{
-                    Rd_sw = (int32_t)(Rs1_sw + imm);
+                    Rd = szext<32>(Rs1 + imm);
                 }}, int32_t);
                 0x1: decode FS3 {
                     0x0: slliw({{
-                        Rd_sd = Rs1_sw << imm;
+                        Rd = szext<32>(Rs1 << imm);
                     }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT5; }});
                     0x1: slli_uw({{
                         Rd = ((uint64_t)(Rs1_uw)) << imm;
@@ -852,9 +852,9 @@ decode QUADRANT {
                 0x0: AtomicMemOp::amoadd_w({{
                     Rd_sd = Mem_sw;
                 }}, {{
-                    TypedAtomicOpFunctor<int32_t> *amo_op =
-                          new AtomicGenericOp<int32_t>(Rs2_sw,
-                                  [](int32_t* b, int32_t a){ *b += a; });
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGenericOp<uint32_t>(Rs2_sw,
+                                  [](uint32_t* b, uint32_t a){ *b += a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x1: AtomicMemOp::amoswap_w({{
                     Rd_sd = Mem_sw;
@@ -1274,21 +1274,21 @@ decode QUADRANT {
             format ROp {
                 0x0: decode FUNCT7 {
                     0x0: addw({{
-                        Rd_sd = Rs1_sw + Rs2_sw;
+                        Rd = szext<32>(Rs1 + Rs2);
                     }});
                     0x1: mulw({{
-                        Rd_sd = (int32_t)(Rs1_sw*Rs2_sw);
+                        Rd = szext<32>(Rs1 * Rs2);
                     }}, IntMultOp);
                     0x4: add_uw({{
                         Rd = Rs1_uw + Rs2;
                     }});
                     0x20: subw({{
-                        Rd_sd = Rs1_sw - Rs2_sw;
+                        Rd = szext<32>(Rs1 - Rs2);
                     }});
                 }
                 0x1: decode FUNCT7 {
                     0x0: sllw({{
-                        Rd_sd = Rs1_sw << Rs2<4:0>;
+                        Rd = szext<32>(Rs1 << Rs2<4:0>);
                     }});
                     0x30: rolw({{
                         int shamt = Rs2 & (32 - 1);
@@ -1319,7 +1319,7 @@ decode QUADRANT {
                         // However, instruction fusion relies on zext.h, so we do a 'decode RS2' to distinct them.
                         // refer to src/arch/riscv/insts/fusion.cc.
                         default: packw({{
-                            Rd_sd = sext<32>((Rs2_uh << 16) | Rs1_uh);
+                            Rd_sd = szext<32>((static_cast<uint32_t>(Rs2_uh) << 16) | static_cast<uint32_t>(Rs1_uh));
                         }});
                     }
                     0x10: sh2add_uw({{
