@@ -1169,6 +1169,9 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 
         bool done_checking_load = false;
         for (auto req0 : inst_request->_reqs) {
+            if (!req0->hasPaddr()) {
+                continue;
+            }
             Addr inst_eff_addr1 = req0->getPaddr() >> depCheckShift;
             Addr inst_eff_addr2 =
                 (req0->getPaddr() + req0->getSize() - 1) >> depCheckShift;
@@ -1177,6 +1180,9 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                     inst->seqNum, req0->getPaddr());
 
             for (auto req1 : load_request->_reqs) {
+                if (!req1->hasPaddr()) {
+                    continue;
+                }
                 Addr ld_eff_addr1 = req1->getPaddr() >> depCheckShift;
                 Addr ld_eff_addr2 = (req1->getPaddr() + req1->getSize() - 1) >> depCheckShift;
 
@@ -3393,9 +3399,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    if (load_inst->getFault() != NoFault) {
+    if (load_inst->getFault() != NoFault && !request->isPartialFault()) {
         // If the instruction has an outstanding fault, we cannot complete
-        // the access as this discards the current fault.
+        // the access as this discards the current fault. A split request with
+        // a partial translation fault must still issue its valid fragments.
         DPRINTF(LoadPipeline, "Not completing instruction [sn:%lli] access "
                 "due to pending fault.\n", load_inst->seqNum);
         return load_inst->getFault();
