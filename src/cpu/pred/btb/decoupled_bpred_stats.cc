@@ -439,7 +439,8 @@ classifyBranchImpl(const InstPtr &inst)
 } // anonymous namespace
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
-    statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum):
+    statistics::Group* parent, unsigned numStages, unsigned fsqSize,
+    unsigned maxInstsNum, unsigned ftqSize, unsigned numThreads):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -493,11 +494,19 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority"),
     ADD_STAT(scheduleIneligibleThreadSkips, statistics::units::Count::get(),
-    "round-robin BPU scheduler skipped an active thread that could not start a new prediction"),
+    "BPU scheduler skipped an active thread that could not start a new prediction"),
     ADD_STAT(scheduleNoEligibleThread, statistics::units::Count::get(),
-    "round-robin BPU scheduler found no thread eligible to start a new prediction"),
+    "BPU scheduler found no thread eligible to start a new prediction"),
     ADD_STAT(redirectPendingPredictionSkips, statistics::units::Count::get(),
-    "round-robin BPU scheduler skipped prediction because a redirect was pending"),
+    "BPU scheduler skipped prediction because a redirect was pending"),
+    ADD_STAT(smtBPUSelections, statistics::units::Count::get(),
+    "number of selections made by the SMT BPU request scheduler"),
+    ADD_STAT(smtBPUSelectionsByThread, statistics::units::Count::get(),
+    "number of SMT BPU request scheduler selections for each thread"),
+    ADD_STAT(smtBPURequestPolicyOverrides, statistics::units::Count::get(),
+    "times the SMT BPU request policy selected a thread other than the round-robin candidate"),
+    ADD_STAT(smtBPUSelectedReadyTargets, statistics::units::Count::get(),
+    "distribution of fetch-ready FTQ targets for the selected SMT thread"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
@@ -520,6 +529,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     branchClassCounts.init(NumBranchClasses);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
+    smtBPUSelectionsByThread.init(numThreads);
+    smtBPUSelectedReadyTargets.init(0, ftqSize, 1);
     for (int i = 0; i < NumS1SourceBuckets; ++i) {
         s1PredWrongBySourceAndReason.subname(i, S1SourceLabels[i]);
     }

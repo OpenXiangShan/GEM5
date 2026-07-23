@@ -76,6 +76,12 @@ public:
         return true;
     }
     inline uint32_t size(ThreadID tid) const { return queue[tid].cap.size(); }
+    inline uint32_t readySize(ThreadID tid) const {
+        const FetchTargetId tail = queue[tid].baseTargetId +
+                                   queue[tid].cap.size();
+        return queue[tid].fetchptr >= tail ? 0 :
+            static_cast<uint32_t>(tail - queue[tid].fetchptr);
+    }
 
     int getTargetTid();
     int getTargetTid(const std::array<bool, MaxThreads> &eligible,

@@ -65,9 +65,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftqMode(p.smtFTQMode),
       ftqPolicy(p.smtFTQPolicy),
       smtFTQThreshold(p.smtFTQThreshold),
+      smtBPURequestPolicy(p.smtBPURequestPolicy),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
-      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
+      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum,
+                  p.ftq_size, p.numThreads)
 {
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
@@ -250,6 +252,10 @@ DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
 ThreadID
 DecoupledBPUWithBTB::scheduleThread()
 {
+    ThreadID firstEligible = InvalidThreadID;
+    ThreadID selected = InvalidThreadID;
+    unsigned selectedReadyTargets = 0;
+
     for (ThreadID offset = 0; offset < numThreads; ++offset) {
         const ThreadID tid = (nextPredictTid + offset) % numThreads;
 
@@ -258,19 +264,55 @@ DecoupledBPUWithBTB::scheduleThread()
         }
 
         if (!canStartPrediction(tid)) {
-            dbpBtbStats.scheduleIneligibleThreadSkips++;
-            if (threads[tid].redirectPending) {
-                dbpBtbStats.redirectPendingPredictionSkips++;
+            // Preserve the old round-robin skip-counter semantics: only count
+            // ineligible threads before the first eligible thread.
+            if (firstEligible == InvalidThreadID) {
+                dbpBtbStats.scheduleIneligibleThreadSkips++;
+                if (threads[tid].redirectPending) {
+                    dbpBtbStats.redirectPendingPredictionSkips++;
+                }
             }
             continue;
         }
 
-        nextPredictTid = (tid + 1) % numThreads;
-        return tid;
+        if (firstEligible == InvalidThreadID) {
+            firstEligible = tid;
+        }
+
+        if (smtBPURequestPolicy == SMTBPURequestPolicy::RoundRobin) {
+            selected = tid;
+            break;
+        }
+
+        const unsigned readyTargets = ftq.readySize(tid);
+        if (selected == InvalidThreadID ||
+            readyTargets < selectedReadyTargets) {
+            selected = tid;
+            selectedReadyTargets = readyTargets;
+        }
     }
 
-    dbpBtbStats.scheduleNoEligibleThread++;
-    return InvalidThreadID;
+    if (selected == InvalidThreadID) {
+        dbpBtbStats.scheduleNoEligibleThread++;
+        return InvalidThreadID;
+    }
+
+    if (smtBPURequestPolicy == SMTBPURequestPolicy::RoundRobin) {
+        selectedReadyTargets = ftq.readySize(selected);
+    } else if (selected != firstEligible) {
+        dbpBtbStats.smtBPURequestPolicyOverrides++;
+        DPRINTF(Override,
+                "SMT BPU scheduler overrides RR tid %u (%u ready targets) "
+                "with tid %u (%u ready targets)\n",
+                firstEligible, ftq.readySize(firstEligible), selected,
+                selectedReadyTargets);
+    }
+
+    dbpBtbStats.smtBPUSelections++;
+    dbpBtbStats.smtBPUSelectionsByThread[selected]++;
+    dbpBtbStats.smtBPUSelectedReadyTargets.sample(selectedReadyTargets);
+    nextPredictTid = (selected + 1) % numThreads;
+    return selected;
 }
 
 

@@ -965,6 +965,9 @@ class SMTFTQMode(ScopedEnum):
 class SMTFTQPolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
 
+class SMTBPURequestPolicy(ScopedEnum):
+    vals = [ 'RoundRobin', 'LeastReadyFTQ' ]
+
 class TimedBaseBTBPredictor(SimObject):
     type = 'TimedBaseBTBPredictor'
     cxx_class = 'gem5::branch_prediction::btb_pred::TimedBaseBTBPredictor'
@@ -1200,6 +1203,10 @@ class DecoupledBPUWithBTB(BranchPredictor):
     smtFTQPolicy = Param.SMTFTQPolicy('Partitioned',
                                       "SMT shared FTQ allocation policy")
     smtFTQThreshold = Param.Int(100, "SMT FTQ Threshold Sharing Parameter")
+    smtBPURequestPolicy = Param.SMTBPURequestPolicy(
+        'RoundRobin',
+        "SMT BPU request policy: round-robin or prioritize the thread with "
+        "the fewest fetch-ready FTQ targets")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
 

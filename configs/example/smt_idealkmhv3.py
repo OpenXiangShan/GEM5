@@ -27,6 +27,8 @@ def setSharedLSQParams(args, system):
         cpu.smtROBPolicy = 'DynamicBorrowing'
         cpu.branchPred.smtFTQMode = 'Shared'
         cpu.branchPred.smtFTQPolicy = 'Partitioned'
+        # Prioritize the thread with the shorter fetch-ready target runway.
+        cpu.branchPred.smtBPURequestPolicy = 'LeastReadyFTQ'
 
 
 if __name__ == '__m5_main__':

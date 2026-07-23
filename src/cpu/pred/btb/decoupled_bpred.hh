@@ -31,6 +31,7 @@
 #include "debug/DBPBTBStats.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPProbe.hh"
+#include "enums/SMTBPURequestPolicy.hh"
 #include "enums/SMTFTQMode.hh"
 #include "enums/SMTFTQPolicy.hh"
 #include "params/DecoupledBPUWithBTB.hh"
@@ -125,6 +126,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     SMTFTQMode ftqMode;
     SMTFTQPolicy ftqPolicy;
     unsigned smtFTQThreshold;
+    SMTBPURequestPolicy smtBPURequestPolicy;
 
     FetchTargetQueue ftq;
 
@@ -312,6 +314,10 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar scheduleIneligibleThreadSkips;
         statistics::Scalar scheduleNoEligibleThread;
         statistics::Scalar redirectPendingPredictionSkips;
+        statistics::Scalar smtBPUSelections;
+        statistics::Vector smtBPUSelectionsByThread;
+        statistics::Scalar smtBPURequestPolicyOverrides;
+        statistics::Distribution smtBPUSelectedReadyTargets;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -322,7 +328,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
 
-        DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
+        DBPBTBStats(statistics::Group* parent, unsigned numStages,
+                    unsigned fsqSize, unsigned maxInstsNum,
+                    unsigned ftqSize, unsigned numThreads);
     } dbpBtbStats;
 
   public:

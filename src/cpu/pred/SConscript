@@ -51,7 +51,8 @@ SimObject('BranchPredictor.py', sim_objects=[
     'AheadBTB', 'MBTB', 'UBTB', 'DecoupledBPUWithBTB',
     'TimedBaseBTBPredictor', 'BTBRAS', 'BTBTAGE', 'BTBTAGEUpperBound',
     'MicroTAGE',
-    'BTBITTAGE', 'BTBMGSC'], enums=["BpType", "SMTFTQMode", "SMTFTQPolicy"])
+    'BTBITTAGE', 'BTBMGSC'], enums=["BpType", "SMTFTQMode", "SMTFTQPolicy",
+                                    "SMTBPURequestPolicy"])
 
 DebugFlag('Indirect')
 Source('bpred_unit.cc')
