@@ -56,6 +56,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/cache_probe_arg.hh"
+#include "mem/cache/prefetch/context_key.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "sim/arch_db.hh"
@@ -962,6 +963,9 @@ class Base : public ClockedObject
 
         /** The number of prefetch requests filtered before issuing. */
         statistics::Scalar pfFiltered;
+
+        /** Same-VA requests retained because they belong to other contexts. */
+        statistics::Scalar trainFilterContextAliases;
 
         /** The number of times a HW-prefetch is late
          * (hit in cache, MSHR, WB). */

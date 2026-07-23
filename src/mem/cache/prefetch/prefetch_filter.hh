@@ -3,16 +3,17 @@
 #ifndef GEM5_PREFETCH_FILTER_HH
 #define GEM5_PREFETCH_FILTER_HH
 
-#include <vector>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/prefetch/associative_set.hh"
-#include "mem/cache/tags/tagged_entry.hh"
+#include "mem/cache/prefetch/context_key.hh"
 #include "mem/cache/prefetch/queued.hh"  // for AddrPriority and PrefetchSourceType
+#include "mem/cache/tags/tagged_entry.hh"
 
 namespace gem5 {
 namespace prefetch {
@@ -25,7 +26,8 @@ class PrefetchFilter
   public:
   using TriggerInfo = Base::PFtriggerInfo;
 
-    struct Entry : public TaggedEntry {
+    struct Entry : public TaggedEntry
+    {
         Addr region_addr;    // region number (Vaddr[38:10] or Paddr[35:10] when paddr_valid)
         uint64_t region_bits; // which blocks in region should be prefetched (runtime width)
         uint64_t filter_bits; // which prefetch requests have been issued
@@ -33,11 +35,13 @@ class PrefetchFilter
         bool paddr_valid;     // true if region_addr is physical
         bool decr_mode;       // 1 if decrementing prefetch mode
         uint64_t PFlevel;      // prefetch level for this region, L1/L2/L3
+        ContextID contextId;   // VA namespace of this region
         std::vector<std::unique_ptr<TriggerInfo>> bitTriggers;
 
         Entry()
             : TaggedEntry(), region_addr(0), region_bits(0), filter_bits(0), alias_bits(0),
-              paddr_valid(false), decr_mode(false), PFlevel(0) {}
+              paddr_valid(false), decr_mode(false), PFlevel(0),
+              contextId(InvalidContextID) {}
 
         Entry(const Entry &other)
             : TaggedEntry(other),
@@ -47,7 +51,8 @@ class PrefetchFilter
               alias_bits(other.alias_bits),
               paddr_valid(other.paddr_valid),
               decr_mode(other.decr_mode),
-              PFlevel(other.PFlevel)
+              PFlevel(other.PFlevel),
+              contextId(other.contextId)
         {
             copyTriggers(other);
         }
@@ -63,6 +68,7 @@ class PrefetchFilter
                 paddr_valid = other.paddr_valid;
                 decr_mode = other.decr_mode;
                 PFlevel = other.PFlevel;
+                contextId = other.contextId;
                 copyTriggers(other);
             }
             return *this;
@@ -155,7 +161,8 @@ class PrefetchFilter
     // Statistics for the PrefetchFilter. Parent should be provided by the
     // owner (e.g. XSCompositePrefetcher::stats) so counters are exposed in
     // gem5's statistics framework.
-    struct Stats : public statistics::Group {
+    struct Stats : public statistics::Group
+    {
       Stats(statistics::Group *parent, const std::string &name);
         statistics::Scalar insertCount;
         statistics::Scalar queryHitCount;
@@ -168,6 +175,7 @@ class PrefetchFilter
         statistics::Scalar l3Calls;
         statistics::Scalar l3Issued;
         statistics::Scalar hashcollisionCount;
+        statistics::Scalar contextAliasCount;
     } stats;
     PrefetchSourceType pfSourceType;
     const std::string table_name;

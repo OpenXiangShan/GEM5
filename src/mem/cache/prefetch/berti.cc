@@ -85,8 +85,11 @@ BertiPrefetcher::HistoryTableEntry*
 BertiPrefetcher::updateHistoryTable(const PrefetchInfo &pfi)
 {
     Addr training_addr = useByteAddr ? pfi.getAddr() : blockIndex(pfi.getAddr());
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    Addr pc_key = contextKey(pcHash(pfi.getPC()), context_id);
     HistoryTableEntry *entry =
-        historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure());
+        historyTable.findEntry(pc_key, pfi.isSecure());
     HistoryInfo new_info = {
         .vAddr = training_addr,
         .timestamp = curCycle()
@@ -112,10 +115,12 @@ BertiPrefetcher::updateHistoryTable(const PrefetchInfo &pfi)
         }
     } else {
         DPRINTF(BertiPrefetcher, "PC=%lx, history table miss\n", pfi.getPC());
-        entry = historyTable.findVictim(pcHash(pfi.getPC()));
+        entry = historyTable.findVictim(pc_key);
         if (entry->hysteresis) {
             entry->hysteresis = false;
-            historyTable.insertEntry(pcHash(entry->pc), entry->isSecure(), entry, false);
+            historyTable.insertEntry(
+                contextKey(pcHash(entry->pc), entry->contextId),
+                entry->isSecure(), entry, false);
         } else {
             if (entry->bestDelta.status != NO_PREF) {
                 int64_t blk_delta =
@@ -130,9 +135,10 @@ BertiPrefetcher::updateHistoryTable(const PrefetchInfo &pfi)
             }
             // only when hysteresis is false
             entry->pc = pfi.getPC();
+            entry->contextId = context_id;
             entry->history.clear();
             entry->history.push_back(new_info);
-            historyTable.insertEntry(pcHash(pfi.getPC()), pfi.isSecure(), entry);
+            historyTable.insertEntry(pc_key, pfi.isSecure(), entry);
         }
     }
     return nullptr;
@@ -222,10 +228,14 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
             pfi.getPC(), blockAddress(pfi.getAddr()),
             pfi.isCacheMiss(), hitSearchLatency);
 
-    trainBlockFilter.insert(blockIndex(pfi.getAddr()), 0);
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    trainBlockFilter.insert(
+        contextKey(blockIndex(pfi.getAddr()), context_id), 0);
 
     if (!pfi.isCacheMiss()) {
-        HistoryTableEntry *hist_entry = historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure());
+        HistoryTableEntry *hist_entry = historyTable.findEntry(
+            contextKey(pcHash(pfi.getPC()), context_id), pfi.isSecure());
         if (hist_entry) {
             searchTimelyDeltas(*hist_entry, hitSearchLatency, curCycle(),
                                useByteAddr ? pfi.getAddr() : blockIndex(pfi.getAddr()));
@@ -277,15 +287,18 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
     }
     // buffered prefetch
     InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
-    
-    if (filter->contains(addr)) {
+
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    Addr filter_key = contextKey(addr, context_id);
+    if (filter->contains(filter_key)) {
         DPRINTF(BertiPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         int64_t blk_delta = (int64_t)blockIndex(addr) - blockIndex(pfi.getAddr());
         topDeltas[blk_delta] = topDeltas.count(blk_delta) ? topDeltas[blk_delta] + 1 : 1;
         DPRINTF(BertiPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(filter_key, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
         return true;
     }
@@ -315,8 +328,11 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     Cycles miss_refill_search_lat = Cycles(0);
     hitSearchLatency = Cycles(0);
 
-    HistoryTableEntry *entry =
-        historyTable.findEntry(pcHash(pkt->req->getPC()), pkt->req->isSecure());
+    ContextID context_id = pkt->req->hasContextId() ?
+        pkt->req->contextId() : InvalidContextID;
+    HistoryTableEntry *entry = historyTable.findEntry(
+        contextKey(pcHash(pkt->req->getPC()), context_id),
+        pkt->req->isSecure());
     if (!entry) {
         statsBerti.notifySkippedNoEntry++;
         return;

@@ -1,5 +1,6 @@
 #include "mem/cache/prefetch/cmc.hh"
 
+#include <algorithm>
 #include <memory>
 
 #include "base/output.hh"
@@ -13,7 +14,6 @@ namespace prefetch
 
 CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
 : Queued(p),
-    recorder(new Recorder(p.degree)),
     storage(p.storage_entries, p.storage_entries, p.storage_indexing_policy,
             p.storage_replacement_policy, StorageEntry()),
     degree(p.degree),
@@ -76,6 +76,16 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
     sendIDX_PTR = 0;
 }
 
+CMCPrefetcher::Recorder &
+CMCPrefetcher::recorderFor(ContextID context_id)
+{
+    auto &recorder = recorders[context_id];
+    if (!recorder) {
+        recorder = std::make_unique<Recorder>(degree);
+    }
+    return *recorder;
+}
+
 void
 CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool is_first_shot)
@@ -89,6 +99,9 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
     bool is_secure = pfi.isSecure();
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    auto &recorder = recorderFor(context_id);
     int prefetchSource = pf_source;
 
     // if (enableDB) {
@@ -126,7 +139,10 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
             (pf_source == PrefetchSourceType::CMC); // if cmc send pf to l2/3, this code line doesn't actually work
 
     // Prefetch: check if there is a match
-    StorageEntry *match_entry = storage.findEntry(hash(block_addr>>6, pc), is_secure);
+    Addr storage_key =
+        contextKey(hash(block_addr >> 6, pc), context_id);
+    StorageEntry *match_entry =
+        storage.findEntry(storage_key, is_secure);
     if (nocovered && match_entry) {
         storage.accessEntry(match_entry);
         // prefetch on cache miss only
@@ -134,7 +150,7 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
                 pc, block_addr);
         // printf("=== Storage hit, trigger addr: %lx\n", block_addr);
         match_entry->refcnt++;
-        int priority = recorder->nr_entry;
+        int priority = Recorder::nrEntry;
         uint32_t id = match_entry->id;
         //create a copy , insert to tpdataqueue
         StorageEntry entry_copy = StorageEntry(*match_entry);
@@ -176,22 +192,35 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
 
     /* 1. Train trigger */
     bool sms_hit = !pfi.isCacheMiss() && (prefetchSource == PrefetchSourceType::SStream || prefetchSource == PrefetchSourceType::SPht);
+    auto trigger_it = std::find_if(
+        trigger.begin(), trigger.end(),
+        [context_id](const RecordEntry &entry) {
+            return entry.contextId == context_id;
+        });
+    bool has_context_trigger = trigger_it != trigger.end();
     bool train_trigger =
-        (trigger.size() < 1 || match_entry) && !trigger.full();
+        (!has_context_trigger || match_entry) && !trigger.full();
     bool do_training =
-        !train_trigger && !trigger.empty() && nocovered;
+        !train_trigger && has_context_trigger && nocovered;
     if (train_trigger) {
         DPRINTF(CMCPrefetcher, "train_trigger index: %d, addr: %lx\n",
                 trigger.size()-1, block_addr);
         assert(!trigger.full());
 
-        trigger.push_back(RecordEntry(pc, block_addr, is_secure));
+        trigger.push_back(
+            RecordEntry(pc, block_addr, is_secure, context_id));
     }
 
     /* 2. Train entry */
     if (do_training) {
-        bool trained = recorder->train_entry(block_addr, is_secure, &finished);
-        auto &trigger_head = trigger.front();
+        bool trained = recorder.train_entry(block_addr, is_secure, &finished);
+        trigger_it = std::find_if(
+            trigger.begin(), trigger.end(),
+            [context_id](const RecordEntry &entry) {
+                return entry.contextId == context_id;
+            });
+        assert(trigger_it != trigger.end());
+        auto &trigger_head = *trigger_it;
         if (trained) {
             DPRINTF(CMCPrefetcher, "trained %x\n", block_addr);
         }
@@ -199,36 +228,41 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
             DPRINTF(CMCPrefetcher, "trigger train finished, pc: %lx, addr: %lx\n",
                     trigger_head.pc, trigger_head.addr);
 
-            StorageEntry *entry = storage.findEntry(hash(trigger_head.addr>>6, trigger_head.pc), trigger_head.is_secure);
+            Addr trigger_key = contextKey(
+                hash(trigger_head.addr >> 6, trigger_head.pc), context_id);
+            StorageEntry *entry =
+                storage.findEntry(trigger_key, trigger_head.is_secure);
             if (entry) {
                 // storage.accessEntry(entry); do not update replacement
                 DPRINTF(CMCPrefetcher, "CMC: enter the same trigger, pc: %lx, addr: %lx\n",
                                     trigger_head.pc, trigger_head.addr);
-                entry->addresses = recorder->entries;
+                entry->addresses = recorder.entries;
 
                 entry->refcnt++;
                 entry->id = acc_id;
+                entry->contextId = context_id;
             } else {
-                entry = storage.findVictim(hash(trigger_head.addr>>6, trigger_head.pc));
-                entry->addresses = recorder->entries;
+                entry = storage.findVictim(trigger_key);
+                entry->addresses = recorder.entries;
 
                 entry->refcnt = 0;
                 entry->id = acc_id;
+                entry->contextId = context_id;
 
                 storage.insertEntry(
-                    hash(trigger_head.addr>>6, trigger_head.pc),
+                    trigger_key,
                     trigger_head.is_secure,
                     entry
                 );
             }
 
-            for (auto addr: recorder->entries) {
+            for (auto addr: recorder.entries) {
                 DPRINTF(CMCPrefetcher, "entry addr: 0x%lx\n",
                         addr);
             }
-            trigger.pop_front();
+            trigger.erase(trigger_it);
 
-            recorder->reset();
+            recorder.reset();
             acc_id++;
 
             // if (enableDB) {
@@ -269,7 +303,7 @@ CMCPrefetcher::Recorder::train_entry(
 
     assert(!entry_empty());
     // enqueue entry
-    if (index >= nr_entry) {
+    if (index >= nrEntry) {
         // entry full
         entries.push_back(addr);
         index++;
@@ -288,14 +322,17 @@ CMCPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<
     // Count generated prefetch
     prefetchStats.pfGenerated++;
 
-    if (filter->contains(addr)) {
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    Addr filter_key = contextKey(addr, context_id);
+    if (filter->contains(filter_key)) {
         DPRINTF(CMCPrefetcher, "Skip recently prefetched: %lx\n", addr);
         // Count filtered prefetch
         prefetchStats.pfFiltered++;
         return false;
     } else {
         DPRINTF(CMCPrefetcher, "CMC: send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(filter_key, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
         return true;
     }
@@ -334,12 +371,12 @@ CMCPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
             sendIDX_PTR++;
             if (sendingEntry.trigger) {
                 addresses.push_back(AddrPriority(addr,
-                    recorder->nr_entry - sendIDX_PTR + 1,
+                    Recorder::nrEntry - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC,
                     *(sendingEntry.trigger)));
             } else {
                 addresses.push_back(AddrPriority(addr,
-                    recorder->nr_entry - sendIDX_PTR + 1,
+                    Recorder::nrEntry - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC));
             }
             return true;
@@ -361,12 +398,12 @@ CMCPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
             sendIDX_PTR++;
             if (sendingEntry.trigger) {
                 addresses.push_back(AddrPriority(addr,
-                    recorder->nr_entry - sendIDX_PTR + 1,
+                    Recorder::nrEntry - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC,
                     *(sendingEntry.trigger)));
             } else {
                 addresses.push_back(AddrPriority(addr,
-                    recorder->nr_entry - sendIDX_PTR + 1,
+                    Recorder::nrEntry - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC));
             }
             return true;

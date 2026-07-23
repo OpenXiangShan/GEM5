@@ -320,11 +320,14 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     Addr region_start = regionAddress(vaddr) * regionSize;
     Addr region_offset = regionOffset(vaddr);
     bool secure = pfi.isSecure();
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
     ReACTEntry *re_act_entry = nullptr;
     bool re_act_mode = false;
 
 
-    ACTEntry *entry = act.findEntry(region_addr, secure);
+    ACTEntry *entry =
+        act.findEntry(contextKey(region_addr, context_id), secure);
     if (entry) {
         // act hit
         act.accessEntry(entry);
@@ -353,37 +356,46 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     bool found = false;
     bool forward = true;
 
-    ACTEntry *old_neighbor_entry = act.findEntry(region_addr - 1, secure);
+    ACTEntry *old_neighbor_entry =
+        act.findEntry(contextKey(region_addr - 1, context_id), secure);
     if (old_neighbor_entry) {
         // act miss, but cur_region - 1 = entry_region found, => cur_region = entry_region + 1
         in_active_page = old_neighbor_entry->inActivePage(regionBlks);
         found = true;
         forward = true;
-    } else if ((old_neighbor_entry = act.findEntry(region_addr + 1, secure))) {
+    } else if ((old_neighbor_entry =
+                    act.findEntry(contextKey(region_addr + 1, context_id),
+                                  secure))) {
         // act miss, but cur_region + 1 = entry_region found, => cur_region = entry_region - 1
         in_active_page = old_neighbor_entry->inActivePage(regionBlks);
         found = true;
         forward = false;
     }
 
-    entry = act.findVictim(0);
+    entry = act.findVictim(contextKey(region_addr, context_id));
 
-    re_act_entry = re_act.findEntry(entry->regionAddr, secure);
+    re_act_entry = re_act.findEntry(
+        contextKey(entry->regionAddr, entry->contextId), entry->isSecure());
     if (re_act_entry) {
         re_act_mode = true;
         stats.actMNum++;
         entry->pc = re_act_entry->pc;
     } else {
         stats.allCntNum++;
-        re_act_entry = re_act.findVictim(0);
+        re_act_entry = re_act.findVictim(
+            contextKey(entry->regionAddr, entry->contextId));
         re_act_entry->pc = entry->pc;
         re_act_entry->regionAddr = entry->regionAddr;
+        re_act_entry->contextId = entry->contextId;
         re_act_entry->_setSecure(entry->isSecure());
-        re_act.insertEntry(re_act_entry->regionAddr, re_act_entry->isSecure(), re_act_entry);
+        re_act.insertEntry(
+            contextKey(re_act_entry->regionAddr, re_act_entry->contextId),
+            re_act_entry->isSecure(), re_act_entry);
     }
 
     updatePht(entry, region_start, re_act_mode, false, 0);  // update pht with evicted entry
     entry->pc = pc;
+    entry->contextId = context_id;
     entry->_setSecure(secure);
     entry->inBackwardMode = !forward;
     entry->regionAddr = region_start;
@@ -392,7 +404,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     //entry->repeat_region_bits = 0;
     entry->accessCount = 1;
     entry->hasIncreasedPht = false;
-    act.insertEntry(region_addr, secure, entry);
+    act.insertEntry(contextKey(region_addr, context_id), secure, entry);
 
     // print bits
     DPRINTF(XSCompositePrefetcher, "Access new region %lx, after access bit %lu, new act entry bits:\n", region_start,
@@ -422,7 +434,11 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     if (popCount(act_entry->regionBits) <= 1) {
         return;
     }
-    PhtEntry *pht_entry = pht.findEntry(phtHash(act_entry->pc, act_entry->regionOffset), act_entry->isSecure());
+    Addr pht_key = contextKey(
+        phtHash(act_entry->pc, act_entry->regionOffset),
+        act_entry->contextId);
+    PhtEntry *pht_entry =
+        pht.findEntry(pht_key, act_entry->isSecure());
     bool is_update = pht_entry != nullptr;
     if (pht_entry && early_update) {
         if (region_offset_now > act_entry->regionOffset) {
@@ -442,11 +458,12 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     if (early_update) {
         const int access_cnt_thres = 5;
         if (act_entry->accessCount > access_cnt_thres && (!pht_entry)) {
-            pht_entry = pht.findVictim(phtHash(act_entry->pc, act_entry->regionOffset));
+            pht_entry = pht.findVictim(pht_key);
             for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
                 pht_entry->hist[i].reset();
             }
             pht_entry->pc = act_entry->pc;
+            pht_entry->contextId = act_entry->contextId;
             act_entry->hasIncreasedPht = true;
             pht_entry->decr_mode = act_entry->inBackwardMode;
         } else {
@@ -455,12 +472,13 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     }
 
     if (!pht_entry) {
-        pht_entry = pht.findVictim(phtHash(act_entry->pc, act_entry->regionOffset));
+        pht_entry = pht.findVictim(pht_key);
         DPRINTF(XSCompositePrefetcher, "Evict PHT entry for PC %lx\n", pht_entry->pc);
         for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
             pht_entry->hist[i].reset();
         }
         pht_entry->pc = act_entry->pc;
+        pht_entry->contextId = act_entry->contextId;
         pht_entry->decr_mode = act_entry->inBackwardMode;
     }
 
@@ -470,8 +488,12 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     ACTEntry *act_entry_f = nullptr;
     ACTEntry *act_entry_b = nullptr;
     if (neighborPhtUpdate){
-        act_entry_f = act.findEntry(region_addr_find + 1, act_entry->isSecure());
-        act_entry_b = act.findEntry(region_addr_find - 1, act_entry->isSecure());
+        act_entry_f = act.findEntry(
+            contextKey(region_addr_find + 1, act_entry->contextId),
+            act_entry->isSecure());
+        act_entry_b = act.findEntry(
+            contextKey(region_addr_find - 1, act_entry->contextId),
+            act_entry->isSecure());
     }
     //  incr part
     if (act_entry_f) {
@@ -528,7 +550,7 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
             act_entry->regionAddr, act_entry->regionOffset, current_region_addr);
     if (!is_update) {
         DPRINTF(XSCompositePrefetcher, "Insert SMS PHT entry for PC %lx\n", act_entry->pc);
-        pht.insertEntry(phtHash(act_entry->pc, act_entry->regionOffset), act_entry->isSecure(), pht_entry);
+        pht.insertEntry(pht_key, act_entry->isSecure(), pht_entry);
     } else {
         DPRINTF(XSCompositePrefetcher, "Update SMS PHT entry for PC %lx, after update:\n", act_entry->pc);
     }
@@ -556,7 +578,10 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
     uint64_t region_bit_dec = 0;
     Addr region_dec_addr = 0;
     bool secure = pfi.isSecure();
-    PhtEntry *pht_entry = pht.findEntry(phtHash(pc, region_offset), secure);
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    PhtEntry *pht_entry = pht.findEntry(
+        contextKey(phtHash(pc, region_offset), context_id), secure);
     bool found = false;
     if (pht_entry) {
         pht.accessEntry(pht_entry);
@@ -652,26 +677,30 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
 {
     // Count generated prefetch
     prefetchStats.pfGenerated++;
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    Addr page_key = contextKey(regionAddress(addr), context_id);
+    Addr block_key = contextKey(addr, context_id);
 
-    if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
+    if (ahead_level < 2 && pfPageLRUFilter.contains(page_key)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
         // Count filtered prefetch
         prefetchStats.pfFiltered++;
         return false;
 
-    } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr))) {
+    } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(page_key)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L2 prefetched page: %lx\n", regionAddress(addr));
         // Count filtered prefetch
         prefetchStats.pfFiltered++;
         return false;
 
-    } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr))) {
+    } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(page_key)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L3 prefetched page: %lx\n", regionAddress(addr));
         // Count filtered prefetch
         prefetchStats.pfFiltered++;
         return false;
 
-    } else if (pfBlockLRUFilter.contains(addr)) {
+    } else if (pfBlockLRUFilter.contains(block_key)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently prefetched: %lx\n", addr);
         // Count filtered prefetch
         prefetchStats.pfFiltered++;
@@ -679,7 +708,7 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
 
     } else {
         if (!(src == PrefetchSourceType::SStream || src == PrefetchSourceType::StoreStream)) {
-            pfBlockLRUFilter.insert(addr, 0);
+            pfBlockLRUFilter.insert(block_key, 0);
         }
         if (archDBer) {
             archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
@@ -727,7 +756,9 @@ XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, s
         region_bit,0,true,decr,pfi.isSecure(),pf_level, &pfi.trigger_info);
     }
 
-    Filter.insert(pf_tgt_region, 0);
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
+    Filter.insert(contextKey(pf_tgt_region, context_id), 0);
 }
 
 void
@@ -757,7 +788,10 @@ XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
     if (pkt->req->hasVaddr()) {
         stats.refillNotifyCount++;
         berti->notifyFill(pkt);
-        pfBlockLRUFilter.insert(pkt->req->getVaddr(), 0);
+        ContextID context_id = pkt->req->hasContextId() ?
+            pkt->req->contextId() : InvalidContextID;
+        pfBlockLRUFilter.insert(
+            contextKey(pkt->req->getVaddr(), context_id), 0);
     }
 }
 

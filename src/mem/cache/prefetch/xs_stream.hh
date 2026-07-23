@@ -84,7 +84,11 @@ class XsStreamPrefetcher : public Queued
         bool active;
         int cnt;
         bool decrMode;
-        STREAMEntry() : TaggedEntry(), tag(0), bitVec(0), active(false), cnt(0), decrMode(false) {}
+        ContextID contextId;
+        STREAMEntry()
+            : TaggedEntry(), tag(0), bitVec(0), active(false), cnt(0),
+              decrMode(false), contextId(InvalidContextID)
+        {}
     };
     AssociativeSet<STREAMEntry> stream_array;
     STREAMEntry *streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr);

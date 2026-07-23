@@ -5,6 +5,7 @@
 #include <boost/compute/detail/lru_cache.hpp>
 #include <list>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "base/types.hh"
@@ -36,9 +37,12 @@ class CMCPrefetcher : public Queued
             Addr pc;
             Addr addr;
             bool is_secure;
-            RecordEntry(Addr p, Addr a, bool s)
-                : pc(p), addr(a), is_secure(s) {}
-            RecordEntry() : addr(0), is_secure(true) {}
+            ContextID contextId;
+            RecordEntry(Addr p, Addr a, bool s, ContextID context_id)
+                : pc(p), addr(a), is_secure(s), contextId(context_id) {}
+            RecordEntry()
+                : addr(0), is_secure(true), contextId(InvalidContextID)
+            {}
     };
     class Recorder
     {
@@ -52,7 +56,7 @@ class CMCPrefetcher : public Queued
 
             bool train_entry(Addr, bool, bool*);
             void reset();
-            const int nr_entry = 12;
+            static constexpr int nrEntry = 12;
         private:
     };
 
@@ -62,16 +66,21 @@ class CMCPrefetcher : public Queued
             std::vector<Addr> addresses;
             int refcnt;
             uint64_t id;
+            ContextID contextId;
             void invalidate() override;
             std::unique_ptr<TriggerInfo> trigger;
-            StorageEntry() : addresses(), refcnt(0), id(0), trigger(nullptr) {}
+            StorageEntry()
+                : addresses(), refcnt(0), id(0),
+                  contextId(InvalidContextID), trigger(nullptr)
+            {}
 
             // copy constructor
             StorageEntry(const StorageEntry &other)
                 : TaggedEntry(other),
                   addresses(other.addresses),
                   refcnt(other.refcnt),
-                  id(other.id)
+                  id(other.id),
+                  contextId(other.contextId)
             {
                 if (other.trigger) {
                     trigger = std::make_unique<TriggerInfo>(*(other.trigger));
@@ -86,6 +95,7 @@ class CMCPrefetcher : public Queued
                     addresses = other.addresses;
                     refcnt = other.refcnt;
                     id = other.id;
+                    contextId = other.contextId;
                     if (other.trigger) {
                         trigger = std::make_unique<TriggerInfo>(*(other.trigger));
                     } else {
@@ -100,7 +110,7 @@ class CMCPrefetcher : public Queued
             ~StorageEntry() = default;
     };
   private:
-    Recorder *recorder;
+    std::unordered_map<ContextID, std::unique_ptr<Recorder>> recorders;
     AssociativeSet<StorageEntry> storage;
     const int degree;
     uint64_t acc_id = 1;
@@ -131,9 +141,10 @@ class CMCPrefetcher : public Queued
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src);
 
+    Recorder &recorderFor(ContextID context_id);
+
     static const int STACK_SIZE = 4;
     boost::circular_buffer<RecordEntry> trigger;
-    // RecordEntry trigger_stack[STACK_SIZE];
     protected:
     std::list<StorageEntry> tpDataQueue;
     const int maxTpDataQueueSize = 8;
