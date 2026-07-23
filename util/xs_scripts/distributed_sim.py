@@ -32,6 +32,7 @@ DEFAULT_MARKER_TIMEOUT_SEC = 30.0
 DEFAULT_LAUNCH_RETRIES = 2
 DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
 DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
+DEFAULT_SERVER_FAILURE_THRESHOLD = 3
 ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -48,6 +49,9 @@ class ServerState:
     pending: list["PendingJob"]
     idle_cpus: int | None = None
     idle_probe_error: str = ""
+    launcher_failures: int = 0
+    disabled: bool = False
+    disable_reason: str = ""
 
 
 @dataclass
@@ -187,6 +191,16 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         help="Base seconds to wait before retrying a launcher-side SSH failure.",
     )
     parser.add_argument(
+        "--server-failure-threshold",
+        type=int,
+        default=DEFAULT_SERVER_FAILURE_THRESHOLD,
+        help=(
+            "Disable a remote server for the rest of the run after this many "
+            "launcher-side SSH failures. Only exit 255 failures that occur "
+            "before any status marker count toward the threshold."
+        ),
+    )
+    parser.add_argument(
         "--launch-interval",
         type=float,
         default=DEFAULT_LAUNCH_INTERVAL_SEC,
@@ -259,6 +273,8 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         parser.error("--launch-retries must be >= 0")
     if args.launch_retry_delay < 0:
         parser.error("--launch-retry-delay must be >= 0")
+    if args.server_failure_threshold < 1:
+        parser.error("--server-failure-threshold must be >= 1")
     if args.launch_interval < 0:
         parser.error("--launch-interval must be >= 0")
     return args, rest
@@ -980,6 +996,7 @@ def poll_jobs(
     marker_timeout: float,
     launch_retries: int,
     launch_retry_delay: float,
+    server_failure_threshold: int,
 ) -> tuple[int, int, list[ScheduledWorkload]]:
     completed = 0
     failed = 0
@@ -1015,13 +1032,29 @@ def poll_jobs(
                     flush=True,
                 )
             else:
-                if (
+                launcher_failure = (
                     server.name != "local"
                     and result == 255
-                    and job.attempt <= launch_retries
                     and marker == ""
                     and not has_any_marker(job.work_dir)
-                ):
+                )
+                if launcher_failure:
+                    server.launcher_failures += 1
+                    if (
+                        not server.disabled
+                        and server.launcher_failures >= server_failure_threshold
+                    ):
+                        server.disabled = True
+                        server.disable_reason = (
+                            f"{server.launcher_failures} launcher-side SSH "
+                            "failures before any status marker"
+                        )
+                        print(
+                            f"[server-disabled] {server.name}: "
+                            f"{server.disable_reason}",
+                            flush=True,
+                        )
+                if launcher_failure and job.attempt <= launch_retries:
                     delay = launch_retry_delay * job.attempt
                     append_launcher_retry(job, result, delay)
                     retry_workloads.append(
@@ -1076,7 +1109,11 @@ def abort_pending_jobs(servers: list[ServerState], message: str) -> None:
 
 
 def select_server(servers: list[ServerState], jobs_per_server: int) -> ServerState | None:
-    available = [server for server in servers if len(server.pending) < jobs_per_server]
+    available = [
+        server
+        for server in servers
+        if not server.disabled and len(server.pending) < jobs_per_server
+    ]
     if not available:
         return None
     return min(available, key=lambda server: (len(server.pending), server.name))
@@ -1100,6 +1137,7 @@ def run_scheduler(
     dispatch_host: str,
     launch_retries: int,
     launch_retry_delay: float,
+    server_failure_threshold: int,
     launch_interval: float,
     force: bool,
 ) -> int:
@@ -1143,10 +1181,23 @@ def run_scheduler(
                 marker_timeout=marker_timeout,
                 launch_retries=launch_retries,
                 launch_retry_delay=launch_retry_delay,
+                server_failure_threshold=server_failure_threshold,
             )
             completed += new_completed
             failed += new_failed
             pending_workloads.extend(retry_workloads)
+
+            if pending_workloads and not any(
+                not server.disabled for server in servers
+            ):
+                disabled = ", ".join(
+                    f"{server.name} ({server.disable_reason})"
+                    for server in servers
+                )
+                raise RuntimeError(
+                    "all distributed servers were disabled after repeated "
+                    f"launcher failures: {disabled}"
+                )
 
             launched_this_round = False
             while pending_workloads:
@@ -1252,6 +1303,16 @@ def run_scheduler(
         raise
 
     retry_attempts = launch_attempts - first_launches
+    disabled_servers = [server for server in servers if server.disabled]
+    if disabled_servers:
+        print(
+            "Disabled servers: "
+            + ", ".join(
+                f"{server.name} ({server.disable_reason})"
+                for server in disabled_servers
+            ),
+            flush=True,
+        )
     print(
         f"Summary: total={total} launch_attempts={launch_attempts} skipped={skipped} "
         f"completed={completed} failed={failed} "
@@ -1355,6 +1416,7 @@ def main(argv: list[str]) -> int:
         dispatch_host=args.dispatch_host,
         launch_retries=args.launch_retries,
         launch_retry_delay=args.launch_retry_delay,
+        server_failure_threshold=args.server_failure_threshold,
         launch_interval=args.launch_interval,
         force=args.force,
     )
