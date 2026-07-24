@@ -3362,12 +3362,30 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    if (load_inst->getFault() != NoFault) {
-        // If the instruction has an outstanding fault, we cannot complete
-        // the access as this discards the current fault.
-        DPRINTF(LoadPipeline, "Not completing instruction [sn:%lli] access "
-                "due to pending fault.\n", load_inst->seqNum);
+    /*
+     * A split load can have a PartialFault: an earlier fragment translated
+     * successfully while a later fragment faulted.  The translated prefix
+     * must still be sent to memory.  Keep the architectural fault attached
+     * to the instruction, but do not block the successful fragments here.
+     */
+    const bool partial_fault_load =
+        request->isSplit() && request->isPartialFault();
+
+    if (load_inst->getFault() != NoFault &&
+        !partial_fault_load) {
+        // A full translation fault has no valid memory fragment to access.
+        DPRINTF(LoadPipeline,
+                "Not completing instruction [sn:%lli] access "
+                "due to pending fault.\n",
+                load_inst->seqNum);
         return load_inst->getFault();
+    }
+
+    if (partial_fault_load) {
+        DPRINTF(LoadPipeline,
+                "Continuing partial-fault split load [sn:%lli]; "
+                "sending successfully translated prefix fragments.\n",
+                load_inst->seqNum);
     }
 
     load_entry.setRequest(request);

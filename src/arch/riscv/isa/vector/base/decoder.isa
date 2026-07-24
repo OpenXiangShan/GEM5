@@ -1925,8 +1925,22 @@ decode QUADRANT {
                         0x1: VectorNonSplitFormat::vfmv_s_f({{
                             auto fd = ftype_freg<et>(freg(Fs1_bits));
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
+
+                            // RVV vfmv.s.f tail-agnostic fix.
+                            //
+                            // When vl is nonzero, element 0 receives the
+                            // scalar floating-point value. All remaining
+                            // elements are tail elements.
                             if (rVl) {
                                 Vd_vu[0] = fd.v;
+
+                                if (machInst.vtype8.vta) {
+                                    for (uint32_t i = 1;
+                                         i < RiscvISA::VLENB / sizeof(Vd_vu[0]);
+                                         ++i) {
+                                        Vd_vu[i] = ~vu(0);
+                                    }
+                                }
                             }
                         }}, OPFVV, VectorMiscOp);
                     }
@@ -2190,6 +2204,16 @@ decode QUADRANT {
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
                             if (rVl) {
                                 Vd_vu[0] = Rs1_vu;
+
+                                // vmv.s.x only writes element 0. The remaining
+                                // destination elements are tail elements and
+                                // follow the vta policy.
+                                if (machInst.vtype8.vta) {
+                                    std::memset(
+                                        Vd_vu + 1,
+                                        0xff,
+                                        RiscvISA::VLENB - sizeof(vu));
+                                }
                             }
                         }}, OPMVX, VectorMiscOp);
                     }
