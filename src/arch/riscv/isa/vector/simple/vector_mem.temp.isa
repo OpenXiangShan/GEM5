@@ -659,7 +659,12 @@ template<typename ElemType>
             if (vmi.microVd >= 32) {
                 break;
             }
-            microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
+            // RVV indexed-load unique micro-op index fix.
+            microop =
+                new %(class_name)sMicro<ElemType>(
+                    machInst,
+                    i * nf + fn,
+                    vmi);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsLoad);
 
@@ -750,12 +755,33 @@ Fault
 
     uint32_t vdElemIdx = vmi.rs % (VLENB / elem_size);
     size_t ei = vmi.rs;
-    if (machInst.vm || elem_mask(v0, ei)) {
+    if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
         fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
                                 memAccessFlags, byte_enable);
         if (fault != NoFault)
             return fault;
         %(memacc_code)s;
+    }
+
+    // RVV indexed-load atomic agnostic fix.
+    if ((ei < rVl) &&
+        !machInst.vm &&
+        !elem_mask(v0, ei) &&
+        machInst.vtype8.vma) {
+        std::memset(
+            tmp_d0.as<uint8_t>() +
+                vdElemIdx * sizeof(vu),
+            0xff,
+            sizeof(vu));
+    } else if (
+        (rVl != 0) &&
+        (ei >= rVl) &&
+        machInst.vtype8.vta) {
+        std::memset(
+            tmp_d0.as<uint8_t>() +
+                vdElemIdx * sizeof(vu),
+            0xff,
+            sizeof(vu));
     }
 
     %(op_wb)s;
