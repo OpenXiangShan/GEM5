@@ -39,6 +39,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <algorithm>
 #include <cassert>
 
 #include "arch/generic/debugfaults.hh"
@@ -1261,6 +1262,15 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                 "[sn:%lli] at address %#x\n",
                                 inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
                         memDepViolator = ld_inst;
+                        if (iewStage->instQueue.usesPHAST(
+                                ld_inst->threadNumber)) {
+                            ld_inst->memDepInfo.violatingStoreSeqNum =
+                                inst->seqNum;
+                            ld_inst->memDepInfo.violatingStorePC =
+                                inst->pcState().instAddr();
+                            ld_inst->memDepInfo.storeQueueDistance =
+                                (ld_inst->sqIt - inst->sqIt) - 1;
+                        }
 
                         ++stats.memOrderViolation;
                         if (inst->isStore() && !countedStLdViolationThisCycle) {
@@ -2254,6 +2264,10 @@ LSQUnit::commitLoad()
 
     DPRINTF(LSQUnit, "Committing head load instruction, PC %s, [sn:%lu]\n",
             inst->pcState(), inst->seqNum);
+
+    if (inst->memDepInfo.predicted) {
+        iewStage->instQueue.commit(inst);
+    }
 
     // Update histogram with memory latency from load
     // Only take latency from load demand that where issued and did not fault
@@ -3603,6 +3617,30 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         } else {
             std::vector<InstSeqNum> wait_stores;
             wait_stores.reserve(load_inst->mdpProducingStores.size());
+            auto rememberPredStore = [&](const DynInstPtr &st_inst) {
+                if (!load_inst->memDepInfo.predicted) {
+                    return;
+                }
+                auto &info = load_inst->memDepInfo;
+                if (info.predStoreSizes.first != 0 &&
+                    info.predStoreAddrs.first == st_inst->effAddr &&
+                    info.predStoreSizes.first == st_inst->effSize) {
+                    return;
+                }
+                if (info.predStoreSizes.second != 0 &&
+                    info.predStoreAddrs.second == st_inst->effAddr &&
+                    info.predStoreSizes.second == st_inst->effSize) {
+                    return;
+                }
+                if (info.predStoreSizes.first == 0) {
+                    info.predStoreAddrs.first = st_inst->effAddr;
+                    info.predStoreSizes.first = st_inst->effSize;
+                } else if (info.predStoreSizes.second == 0) {
+                    info.predStoreAddrs.second = st_inst->effAddr;
+                    info.predStoreSizes.second = st_inst->effSize;
+                }
+            };
+
             for (auto st_it = storeQueue.begin(); st_it != storeQueue.end(); ++st_it) {
                 if (!st_it->valid() || !st_it->instruction()) {
                     continue;
@@ -3611,14 +3649,20 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 if (st_inst->seqNum >= load_inst->seqNum) {
                     break;
                 }
-                if (st_it->addrReady()) {
+
+                const bool predicted_store =
+                    std::find(load_inst->mdpProducingStores.begin(),
+                              load_inst->mdpProducingStores.end(),
+                              st_inst->seqNum) !=
+                    load_inst->mdpProducingStores.end();
+                if (!predicted_store) {
                     continue;
                 }
-                if (std::find(load_inst->mdpProducingStores.begin(),
-                              load_inst->mdpProducingStores.end(),
-                              st_inst->seqNum) != load_inst->mdpProducingStores.end()) {
-                    wait_stores.push_back(st_inst->seqNum);
+                if (st_it->addrReady()) {
+                    rememberPredStore(st_inst);
+                    continue;
                 }
+                wait_stores.push_back(st_inst->seqNum);
             }
 
             if (!wait_stores.empty()) {
@@ -3863,6 +3907,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;
                 load_inst->setProducerStorePC(store_it->instruction()->pcState().instAddr());
+                load_inst->memDepInfo.forwardedFrom =
+                    store_it->instruction()->seqNum;
 
                 return NoFault;
             } else if (

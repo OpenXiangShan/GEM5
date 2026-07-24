@@ -576,6 +576,7 @@ Commit::clearStates(ThreadID tid)
     pc[tid].reset(cpu->tcBase(tid)->getIsaPtr()->newPCState());
     lastCommitedSeqNum[tid] = 0;
     squashAfterInst[tid] = NULL;
+    committedBranchHistory[tid].clear();
 }
 
 void Commit::drain() { drainPending = true; }
@@ -641,6 +642,7 @@ Commit::takeOverFrom()
         trapSquash[tid] = false;
         tcSquash[tid] = false;
         squashAfterInst[tid] = NULL;
+        committedBranchHistory[tid].clear();
     }
     rob->takeOverFrom();
 }
@@ -1366,6 +1368,15 @@ Commit::commitInsts()
 
                 rob->drainSquashedHead(commit_thread);
 
+                if (head_inst->isLoad() &&
+                    head_inst->memDepInfo.violatingStoreSeqNum &&
+                    iewStage->instQueue.usesPHAST(tid)) {
+                    iewStage->instQueue.violation(
+                        head_inst->memDepInfo.violatingStoreSeqNum,
+                        head_inst->memDepInfo.violatingStorePC,
+                        head_inst, committedBranchHistory[tid]);
+                }
+
                 ++stats.commitSquashedInsts;
                 // Notify potential listeners that this instruction is squashed
                 ppSquash->notify(head_inst);
@@ -1902,6 +1913,21 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             head_inst->staticInst->disassemble(
                 head_inst->pcState().instAddr()).c_str(), inst_fault->name());
 
+        if (head_inst->isControl() &&
+            !(head_inst->isDirectCtrl() && head_inst->isUncondCtrl())) {
+            branchInfo branch_info = {
+                head_inst->isIndirectCtrl(),
+                head_inst->readPredTaken(),
+                head_inst->readPredTarg().instAddr(),
+                head_inst->seqNum,
+                head_inst->pcState().instAddr(),
+            };
+            committedBranchHistory[tid].push_front(branch_info);
+            if (committedBranchHistory[tid].size() > MAX_BRANCH_HISTORY) {
+                committedBranchHistory[tid].pop_back();
+            }
+        }
+
 
         if (head_inst->traceData) {
             // We ignore ReExecution "faults" here as they are not real
@@ -2287,6 +2313,19 @@ Commit::updateComInstStats(const DynInstPtr &inst)
                 branchLog.pop_front();
             }
             branchLog.push_back(temp);
+        }
+        if (!(inst->isDirectCtrl() && inst->isUncondCtrl())) {
+            branchInfo branch_info = {
+                inst->isIndirectCtrl(),
+                inst->readPredTaken(),
+                inst->readPredTarg().instAddr(),
+                inst->seqNum,
+                inst->pcState().instAddr(),
+            };
+            committedBranchHistory[tid].push_front(branch_info);
+            if (committedBranchHistory[tid].size() > MAX_BRANCH_HISTORY) {
+                committedBranchHistory[tid].pop_back();
+            }
         }
         // tracing recent taken branches
         DPRINTF(DecoupleBP, "Control inst %lu, PC: %#lx -> target: %#lx\n",

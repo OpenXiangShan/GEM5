@@ -44,12 +44,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdio>
 #include <deque>
 #include <list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "base/refcnt.hh"
 #include "base/trace.hh"
@@ -472,7 +474,32 @@ class DynInst : public ExecContext, public RefCounted
     ssize_t sqIdx = -1;
     typename LSQUnit::SQIterator sqIt;
 
-    /** Store-set predicted producing stores (for replay-based MDP). */
+    /** PHAST metadata carried by each load. */
+    struct MemDepInfo
+    {
+        /** Store this load received forwarded data from, if any. */
+        InstSeqNum forwardedFrom = 0;
+
+        /** Store-load violation training target. */
+        InstSeqNum violatingStoreSeqNum = 0;
+        Addr violatingStorePC = 0;
+
+        /** Zero-based distance from the load to the violating older store. */
+        std::ptrdiff_t storeQueueDistance = -1;
+
+        /** Store addresses/sizes used to validate a PHAST prediction. */
+        std::pair<Addr, Addr> predStoreAddrs = {0, 0};
+        std::pair<unsigned, unsigned> predStoreSizes = {0, 0};
+
+        /** PHAST table metadata used for confidence updates. */
+        unsigned predBranchHistLength = 0;
+        uint64_t predictorHash = 0;
+
+        /** True when this load received a valid PHAST prediction. */
+        bool predicted = false;
+    } memDepInfo;
+
+    /** Predicted producing stores (for replay-based MDP). */
     std::vector<InstSeqNum> mdpProducingStores;
 
     /** Whether this load is predicted to strictly wait for prior store addrs. */

@@ -612,6 +612,8 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
                 toCommit->squashedLoopIter[tid]);
     }
 
+    cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
+
     stallSig->blockRename[tid] = true;
 }
 
@@ -650,6 +652,8 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
                 toCommit->squashedTargetId[tid],
                 toCommit->squashedLoopIter[tid]);
     }
+
+    cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
 
     stallSig->blockRename[tid] = true;
 }
@@ -690,6 +694,8 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
                 toCommit->squashedTargetId[tid],
                 toCommit->squashedLoopIter[tid]);
     }
+
+    cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
 
     stallSig->blockRename[tid] = true;
 }
@@ -1643,8 +1649,10 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             fetchRedirect[tid] = true;
 
             // Tell the instruction queue that a violation has occured.
-            if (enableStoreSetTrain) {
-                instQueue.violation(inst, violator);
+            if (enableStoreSetTrain && !instQueue.usesPHAST(tid)) {
+                instQueue.violation(inst->seqNum,
+                    inst->pcState().instAddr(), violator,
+                    cpu->getCommit()->getBranchHistory(tid));
             }
             violator->setProducerStorePC(inst->pcState().instAddr());
 

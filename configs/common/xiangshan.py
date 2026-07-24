@@ -989,6 +989,36 @@ def xiangshan_system_init():
         help="ROB misprediction-recovery walk policy. NaiveCpt enables the "
               "RAT-checkpoint recovery-cost model.",
     )
+    parser.add_argument(
+        "--enable-phast-mdp",
+        action="store_true",
+        default=False,
+        help="Use PHAST memory dependence prediction instead of StoreSets.",
+    )
+    parser.add_argument(
+        "--phast-num-rows",
+        type=int,
+        default=128,
+        help="Rows per PHAST history table.",
+    )
+    parser.add_argument(
+        "--phast-associativity",
+        type=int,
+        default=4,
+        help="PHAST table associativity.",
+    )
+    parser.add_argument(
+        "--phast-tag-bits",
+        type=int,
+        default=16,
+        help="PHAST tag width.",
+    )
+    parser.add_argument(
+        "--phast-max-counter",
+        type=int,
+        default=16,
+        help="PHAST confidence counter maximum value.",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

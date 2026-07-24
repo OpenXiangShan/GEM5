@@ -50,6 +50,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('lsq.cc')
     Source('lsq_unit.cc')
     Source('mem_dep_unit.cc')
+    Source('phast.cc')
     Source('regfile.cc')
     Source('rename.cc')
     Source('rename_map.cc')

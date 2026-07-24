@@ -203,6 +203,7 @@ class Commit
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);
     LoadTripleCounter loadTripleCounter;
+    BranchHistory committedBranchHistory[MaxThreads];
 
     // --- Maps for "last time" tracking, keyed by static load PC ---
     std::unordered_map<Addr, Addr> lastLoadEA;
@@ -402,6 +403,11 @@ class Commit
 
     /** Sets the PC of a specific thread. */
     void pcState(const PCStateBase &val, ThreadID tid) { set(pc[tid], val); }
+
+    BranchHistory &getBranchHistory(ThreadID tid)
+    {
+        return committedBranchHistory[tid];
+    }
 
   private:
     /** Time buffer interface. */

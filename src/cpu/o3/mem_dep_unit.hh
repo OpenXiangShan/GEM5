@@ -46,11 +46,13 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/phast.hh"
 #include "cpu/o3/store_set.hh"
 #include "debug/MemDepUnit.hh"
 
@@ -120,8 +122,10 @@ class MemDepUnit
     /** Sets the pointer to the IQ. */
     void setIQ(InstructionQueue *iq_ptr);
 
+    bool usesPHAST() const { return enablePHASTMDP; }
+
     /** Inserts a memory instruction. */
-    void insert(const DynInstPtr &inst);
+    void insert(const DynInstPtr &inst, const BranchHistory &branchHistory);
 
     /** Inserts a non-speculative memory instruction. */
     void insertNonSpec(const DynInstPtr &inst);
@@ -152,11 +156,15 @@ class MemDepUnit
     void squash(const InstSeqNum &squashed_num, ThreadID tid);
 
     /** Indicates an ordering violation between a store and a younger load. */
-    void violation(const DynInstPtr &store_inst,
-                   const DynInstPtr &violating_load);
+    void violation(InstSeqNum store_seq_num, Addr store_pc,
+                   const DynInstPtr &violating_load,
+                   const BranchHistory &branchHistory);
 
     /** Issues the given instruction */
     void issue(const DynInstPtr &inst);
+
+    /** Updates predictor state when a load commits. */
+    void commit(const DynInstPtr &inst);
 
     /** Debugging function to dump the lists of instructions. */
     void dumpLists();
@@ -237,6 +245,7 @@ class MemDepUnit
      *  upon.
      */
     StoreSet depPred;
+    PHAST phastPred;
 
     /** Sequence numbers of outstanding load barriers. */
     std::unordered_set<InstSeqNum> loadBarrierSNs;
@@ -262,6 +271,9 @@ class MemDepUnit
     /** If true, MDP uses StoreSet strict-wait flag (checkInstStrict). */
     bool enableMDPStrictWait = false;
 
+    /** If true, use PHAST rather than StoreSets. */
+    bool enablePHASTMDP = false;
+
     /** The thread id of this memory dependence unit. */
     int id;
     struct MemDepUnitStats : public statistics::Group
@@ -281,6 +293,18 @@ class MemDepUnit
         /** Stat for number of predicted conflicting loads
          */
         statistics::Scalar dependentLoads;
+
+        /** PHAST lookup hits with at least one mapped in-flight store. */
+        statistics::Scalar phastPredictions;
+
+        /** Number of dynamic stores mapped from PHAST store distances. */
+        statistics::Scalar phastMappedStores;
+
+        /** PHAST updates from committed memory-order violations. */
+        statistics::Scalar phastViolationUpdates;
+
+        /** PHAST confidence updates from predicted load commit. */
+        statistics::Scalar phastCommitUpdates;
     } stats;
 };
 

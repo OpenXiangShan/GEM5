@@ -212,6 +212,12 @@ class BaseO3CPU(BaseCPU):
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
+    EnablePHASTMDP = Param.Bool(False,
+        "Use PHAST memory dependence prediction instead of StoreSets")
+    phast_num_rows = Param.Unsigned(128, "PHAST rows per history table")
+    phast_associativity = Param.Unsigned(4, "PHAST table associativity")
+    phast_tag_bits = Param.Unsigned(16, "PHAST tag bits")
+    phast_max_counter = Param.Unsigned(16, "PHAST confidence counter max")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")

@@ -1,5 +1,6 @@
 #include "cpu/o3/issue_queue.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -1060,7 +1061,8 @@ IssueQue::insert(const DynInstPtr& inst)
      */
     if (inst->isMemRef()) {
         // insert and check memDep
-        scheduler->memDepUnit[inst->threadNumber].insert(inst);
+        scheduler->memDepUnit[inst->threadNumber].insert(
+            inst, cpu->getDecode()->getBranchHistory(inst->threadNumber));
     } else {
         addIfReady(inst);
     }

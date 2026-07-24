@@ -774,6 +774,8 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
     if (ratSnapshotActive)
         squashSnapshot(squashed_seq_num, tid);
 
+    cpu->getDecode()->squashBranchHistory(tid, squashed_seq_num, false);
+
     auto hb_it = historyBuffer[tid].begin();
 
     // After a syscall squashes everything, the history buffer may be empty
