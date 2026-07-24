@@ -941,7 +941,7 @@ IssueQue::scheduleInst()
 
             if (!opPipelined[inst->opClass()]) {
                 portBusy[pi] = -1ll;
-            } else if (scheduler->getCorrectedOpLat(inst) > 1) {
+            } else if (scheduler->getCorrectedOpLat(inst) > 1 && inst->numDestRegs() > 0) {
                 portBusy[pi] |= 1ll << scheduler->getCorrectedOpLat(inst);
             }
 
