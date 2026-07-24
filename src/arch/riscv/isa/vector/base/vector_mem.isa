@@ -114,6 +114,78 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     agnostic_load_code = ''
     if base_type.startswith('Vl') and not vecWhole:
         agnostic_load_code = '''
+    using RvvLoadMicroType =
+        std::remove_cv_t<
+            std::remove_pointer_t<
+                decltype(this)>>;
+
+    if constexpr (
+        std::is_base_of_v<
+            VlIndexMicroInst,
+            RvvLoadMicroType>) {
+
+    // RVV indexed-load per-element agnostic fix.
+    //
+    // Each indexed-load micro-op processes one destination
+    // element. Filling every tail element from each micro-op
+    // can corrupt unread indices when vd overlaps vs2.
+    const size_t agnostic_ei = vmi.rs;
+    const size_t agnostic_vd_elem =
+        vmi.rs % elem_num_per_vreg;
+    const size_t agnostic_elem_bytes =
+        VLENB / elem_num_per_vreg;
+
+    auto agnostic_vd_bytes =
+        tmp_d0.as<uint8_t>();
+
+    if ((agnostic_ei < rVl) &&
+        !this->vm &&
+        !elem_mask(v0, agnostic_ei) &&
+        machInst.vtype8.vma) {
+        std::memset(
+            agnostic_vd_bytes +
+                agnostic_vd_elem *
+                    agnostic_elem_bytes,
+            0xff,
+            agnostic_elem_bytes);
+    } else if (
+        (rVl != 0) &&
+        (agnostic_ei >= rVl) &&
+        machInst.vtype8.vta) {
+        std::memset(
+            agnostic_vd_bytes +
+                agnostic_vd_elem *
+                    agnostic_elem_bytes,
+            0xff,
+            agnostic_elem_bytes);
+    }
+    // RVV indexed-load fractional-LMUL physical tail fix.
+    //
+    // For fractional LMUL, architectural VLMAX occupies only
+    // part of one physical vector register. No micro-op exists
+    // for elements beyond VLMAX, so the final indexed-load
+    // micro-op must apply tail-agnostic policy to that region.
+    //
+    // Do this only after every index has been consumed, avoiding
+    // corruption when vd overlaps the index register group.
+    if ((machInst.nf == 0) &&
+        this->isLastMicroop() &&
+        (rVl != 0) &&
+        (vflmul < 1) &&
+        machInst.vtype8.vta) {
+        const size_t physical_tail_begin =
+            vmi.re * agnostic_elem_bytes;
+
+        if (physical_tail_begin < VLENB) {
+            std::memset(
+                agnostic_vd_bytes + physical_tail_begin,
+                0xff,
+                VLENB - physical_tail_begin);
+        }
+    }
+
+} else {
+
     // Fill RVV tail-agnostic and mask-agnostic load elements with ones.
     const size_t reg_elem_base =
         (vmi.rs / elem_num_per_vreg) * elem_num_per_vreg;
@@ -121,28 +193,33 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     auto vd_bytes =
         tmp_d0.as<uint8_t>();
 
-    for (size_t vdElemIdx = 0;
-         vdElemIdx < elem_num_per_vreg;
-         ++vdElemIdx) {
-        const size_t agnostic_ei =
-            reg_elem_base + vdElemIdx;
+    // When vl is zero, no destination elements may be updated,
+    // including tail-agnostic and mask-agnostic elements.
+    if (rVl != 0) {
+        for (size_t vdElemIdx = 0;
+            vdElemIdx < elem_num_per_vreg;
+            ++vdElemIdx) {
+            const size_t agnostic_ei =
+                reg_elem_base + vdElemIdx;
 
-        if (agnostic_ei >= rVl) {
-            if (machInst.vtype8.vta) {
+            if (agnostic_ei >= rVl) {
+                if (machInst.vtype8.vta) {
+                    std::memset(
+                        vd_bytes + vdElemIdx * elem_bytes,
+                        0xff,
+                        elem_bytes);
+                }
+            } else if (!this->vm &&
+                    !elem_mask(v0, agnostic_ei) &&
+                    machInst.vtype8.vma) {
                 std::memset(
                     vd_bytes + vdElemIdx * elem_bytes,
                     0xff,
                     elem_bytes);
             }
-        } else if (!this->vm &&
-                   !elem_mask(v0, agnostic_ei) &&
-                   machInst.vtype8.vma) {
-            std::memset(
-                vd_bytes + vdElemIdx * elem_bytes,
-                0xff,
-                elem_bytes);
         }
-    }
+    }    }
+
 '''
 
     microiop = InstObjParams(name + '_micro',

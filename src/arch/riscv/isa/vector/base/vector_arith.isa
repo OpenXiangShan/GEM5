@@ -83,14 +83,14 @@ let {{
                     %s
                 } else if (machInst.vtype8.vma) {
                     std::memset(
-                        reinterpret_cast<uint8_t *>(Vd) +
+                        tmp_d0.as<uint8_t>() +
                             i * sizeof(ElemType),
                         0xff,
                         sizeof(ElemType));
                 }
-            } else if (machInst.vtype8.vta) {
+            } else if ((rVl != 0) && machInst.vtype8.vta) {
                 std::memset(
-                        reinterpret_cast<uint8_t *>(Vd) +
+                        tmp_d0.as<uint8_t>() +
                             i * sizeof(ElemType),
                         0xff,
                         sizeof(ElemType));
@@ -100,12 +100,73 @@ let {{
             return """
             if (ei < rVl) {
                 %s
-            } else if (machInst.vtype8.vta) {
+            } else if ((rVl != 0) && machInst.vtype8.vta) {
                 std::memset(
-                        reinterpret_cast<uint8_t *>(Vd) +
+                        tmp_d0.as<uint8_t>() +
                             i * sizeof(ElemType),
                         0xff,
                         sizeof(ElemType));
+            }
+            """ % code
+
+
+    def wideningAgnosticWrapper(code, withvm = True):
+        if withvm:
+            return """
+            if (ei < rVl) {
+                if (this->vm || elem_mask(v0, ei)) {
+                    %s
+                } else if (machInst.vtype8.vma) {
+                    std::memset(
+                        tmp_d0.as<uint8_t>() +
+                            i * sizeof(vwu),
+                        0xff,
+                        sizeof(vwu));
+                }
+            } else if ((rVl != 0) && machInst.vtype8.vta) {
+                std::memset(
+                    tmp_d0.as<uint8_t>() +
+                        i * sizeof(vwu),
+                    0xff,
+                    sizeof(vwu));
+            }
+            """ % code
+        else:
+            return """
+            if (ei < rVl) {
+                %s
+            } else if ((rVl != 0) && machInst.vtype8.vta) {
+                std::memset(
+                    tmp_d0.as<uint8_t>() +
+                        i * sizeof(vwu),
+                    0xff,
+                    sizeof(vwu));
+            }
+            """ % code
+
+    def narrowingAgnosticWrapper(code):
+        return """
+            // Narrowing operations write the destination element at
+            // i + offset. Handle active, mask-agnostic and
+            // tail-agnostic destination elements consistently.
+            if (rVl != 0) {
+                if (ei < rVl) {
+                    if (this->vm || elem_mask(v0, ei)) {
+                        %s
+                    } else if (machInst.vtype8.vma) {
+                        std::memset(
+                            tmp_d0.as<uint8_t>() +
+                                (i + offset) * sizeof(ElemType),
+                            0xff,
+                            sizeof(ElemType));
+                    }
+                } else if (machInst.vtype8.vta) {
+                    std::memset(
+                        tmp_d0.as<uint8_t>() +
+                            (i + offset) * sizeof(ElemType),
+                        0xff,
+                        sizeof(ElemType));
+                }
             }
             """ % code
 
@@ -117,7 +178,7 @@ let {{
                     %s
                 } else if (machInst.vtype8.vma) {
                     const uint32_t agnostic_bit = offset + i;
-                    reinterpret_cast<uint8_t *>(Vd)[agnostic_bit / 8] |=
+                    tmp_d0.as<uint8_t>()[agnostic_bit / 8] |=
                         static_cast<uint8_t>(
                             1U << (agnostic_bit %% 8));
                 }
@@ -290,7 +351,7 @@ def format VectorIntExtFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
 
-    code = maskCondWrapper(code)
+    code = regularAgnosticWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
     vm_decl_rd = vmDeclAndReadData()
@@ -351,7 +412,7 @@ def format VectorIntWideningFormat(code, category, *flags) {{
         set_src_reg_idx += setSrcVm()
 
     # code
-    code = maskCondWrapper(code, mask_cond)
+    code = wideningAgnosticWrapper(code, mask_cond)
     code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
 
@@ -411,7 +472,7 @@ def format VectorIntNarrowingFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     # code
-    code = maskCondWrapper(code)
+    code = narrowingAgnosticWrapper(code)
     code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
     code = narrowingOpRegisterConstraintChecks(code)
@@ -642,7 +703,7 @@ def format VectorFloatCvtFormat(code, category, *flags) {{
     set_src_reg_idx += setOldDestWrapper(dest_reg_id)
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
-    code = maskCondWrapper(code)
+    code = regularAgnosticWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
@@ -706,7 +767,7 @@ def format VectorFloatWideningFormat(code, category, *flags) {{
         set_src_reg_idx += setSrcVm()
 
     # code
-    code = maskCondWrapper(code, mask_cond)
+    code = wideningAgnosticWrapper(code, mask_cond)
     code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
@@ -754,7 +815,30 @@ def format VectorFloatWideningCvtFormat(code, category, *flags) {{
     set_src_reg_idx += setOldDestWrapper(dest_reg_id)
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
-    code = maskCondWrapper(code)
+    code = """
+    // RVV widening-conversion agnostic fix.
+    if (ei < rVl) {
+        if (this->vm ||
+            elem_mask(v0, ei)) {
+            %s
+        } else if (
+            machInst.vtype8.vma) {
+            std::memset(
+                tmp_d0.as<uint8_t>() +
+                    i * sizeof(vwu),
+                0xff,
+                sizeof(vwu));
+        }
+    } else if (
+        (rVl != 0) &&
+        machInst.vtype8.vta) {
+        std::memset(
+            tmp_d0.as<uint8_t>() +
+                i * sizeof(vwu),
+            0xff,
+            sizeof(vwu));
+    }
+    """ % (code)
     code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
@@ -798,7 +882,7 @@ def format VectorFloatNarrowingCvtFormat(code, category, *flags) {{
     set_src_reg_idx += setOldDestWrapper(dest_reg_id)
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
-    code = maskCondWrapper(code)
+    code = narrowingAgnosticWrapper(code)
     code = eiDeclarePrefix(code, widening=True)
     code = loopWrapper(code)
     code = fflags_wrapper(code)
@@ -1057,6 +1141,26 @@ def format VectorMaskFormat(code, category, *flags) {{
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
 
     code = loopWrapper(code, micro_inst = False)
+    code += """
+    // Mask logical instructions always have an
+    // agnostic tail.  Match the reference model by
+    // choosing all ones for tail bits.
+    //
+    // Prestart bits remain undisturbed, and when
+    // vstart >= vl (including vl == 0), vd is not
+    // modified.
+    const uint64_t mask_vstart =
+        xc->readMiscReg(MISCREG_VSTART);
+
+    if (mask_vstart < rVl) {
+        for (uint32_t bit = rVl;
+             bit < VLEN;
+             ++bit) {
+            Vd_ub[bit / 8] =
+                ASSIGN_VD_BIT(bit, true);
+        }
+    }
+    """
 
     iop = InstObjParams(name,
         Name,
@@ -1087,7 +1191,7 @@ def format VectorReduceIntFormat(code, category, *flags) {{
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Treat tail undisturbed/agnostic as the same
+    # Old vd is required for reduction chaining and tail-undisturbed
     # We always need old rd as src vreg
     set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVL()
@@ -1101,6 +1205,16 @@ def format VectorReduceIntFormat(code, category, *flags) {{
     code = """
     if (microIdx * elem_num_per_vreg < rVl) {
         %s
+
+        // Integer reduction writes only destination element 0.
+        // Match the reference model by filling the remaining
+        // tail elements with ones under the tail-agnostic policy.
+        if (machInst.vtype8.vta) {
+            std::memset(
+                tmp_d0.as<uint8_t>() + sizeof(ElemType),
+                0xff,
+                RiscvISA::VLENB - sizeof(ElemType));
+        }
     }
     """ % (code)
 
@@ -1130,16 +1244,25 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
+    dest_reg_id = "RegId(VecRegClass, VecTempReg0)"
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Treat tail undisturbed/agnostic as the same
+    # Old vd is required for reduction chaining and tail-undisturbed
     # We always need old rd as src vreg
-    set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
+    set_src_reg_idx += """
+        // Carry the ordered-reduction accumulator through a renamed
+        // internal vector temporary register.
+        if (_microIdx != 0) {
+            accSrcIdx = _numSrcRegs;
+            setSrcRegIdx(
+                _numSrcRegs++,
+                RegId(VecRegClass, VecTempReg0));
+        }
+    """
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
@@ -1167,8 +1290,11 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
         VectorReduceMicroDeclare.subst(microiop) + \
         VectorReduceMicroConstructor.subst(microiop) + \
         VectorReduceFloatMicroExecute.subst(microiop) + \
+        VectorReduceFloatFinalMicroDeclare.subst(iop) + \
+        VectorReduceFloatFinalMicroConstructor.subst(iop) + \
+        VectorReduceFloatFinalMicroExecute.subst(iop) + \
         VectorReduceMacroDeclare.subst(iop) + \
-        VectorReduceMacroConstructor.subst(iop)
+        VectorReduceFloatMacroConstructor.subst(iop)
     decode_block = VectorFloatDecodeBlock.subst(iop)
 }};
 
@@ -1183,7 +1309,7 @@ def format VectorReduceFloatWideningFormat(code, category, *flags) {{
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Treat tail undisturbed/agnostic as the same
+    # Old vd is required for reduction chaining and tail-undisturbed
     # We always need old rd as src vreg
     set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVL()
@@ -1283,7 +1409,7 @@ def format VectorReduceIntWideningFormat(code, category, *flags) {{
     set_dest_reg_idx = setDestWrapper(dest_reg_id)
     set_src_reg_idx = setSrcWrapper(src1_reg_id)
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
-    # Treat tail undisturbed/agnostic as the same
+    # Old vd is required for reduction chaining and tail-undisturbed
     # We always need old rd as src vreg
     set_src_reg_idx += setOldDestWrapper(old_dest_reg_id)
     set_src_reg_idx += setSrcVL()
