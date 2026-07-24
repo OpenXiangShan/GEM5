@@ -1161,7 +1161,10 @@ class LSQ
     uint64_t
     getDcacheDivBankSetKey(Addr vaddr) const;
 
-    Addr bankNum(Addr a) const { return (a >> 3) & 0x7; };
+    unsigned bankNum(Addr a) const
+    {
+        return (a >> dcacheBankOffsetBits) & (numBank - 1);
+    }
 
     bool loadBankConflictedCheck(Addr vaddr);
 
@@ -1287,9 +1290,7 @@ class LSQ
     int storeWbStage() const { return _storeWbStage; }
 
   public:
-    static constexpr unsigned DcacheBankCount = 8;
-
-    using DcacheBankMask = std::array<bool, DcacheBankCount>;
+    using DcacheBankMask = std::vector<bool>;
     using DcacheMainPipeCompleteCallback = std::function<void(Tick)>;
     using DcacheMainPipeS2Callback =
         std::function<DcacheMainPipeS2Result(Tick)>;
@@ -1368,7 +1369,8 @@ class LSQ
     dcacheMainPipeStage(DcacheMainPipeStage stage) const;
 
     DcacheBankMask fullDcacheBankMask() const;
-    DcacheBankMask storeMaskToDcacheBanks(const std::vector<bool> &mask) const;
+    DcacheBankMask storeMaskToDcacheBanks(
+        Addr block_addr, const std::vector<bool> &mask) const;
 
     DcacheMainPipeRequest makeDcacheRefillMainPipeRequest(
         Addr addr, bool need_data_read,
@@ -1426,7 +1428,7 @@ class LSQ
     /** The number of used cache ports in this cycle by loads. */
     int usedLoadPorts;
 
-    const int numBank = DcacheBankCount;
+    const unsigned numBank;
     bool dcacheWriteStall = false;
     const uint32_t sbufferEvictThreshold;
     const uint32_t sbufferEntries;
@@ -1451,6 +1453,9 @@ class LSQ
     const unsigned dcacheSetBits;
     const unsigned dcacheSetDivNum;
     const unsigned dcacheLineBits;
+    const unsigned dcacheBankBytes;
+    const unsigned dcacheBankOffsetBits;
+    const unsigned dcacheBankIndexBits;
     const unsigned dcacheSetBankBits;
 
     bool _enableLdMissReplay;
