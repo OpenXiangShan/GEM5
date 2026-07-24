@@ -1234,8 +1234,9 @@ Scheduler::SchedulerStats::init(unsigned)
         smtIssueStateCycles.ysubname(state, state_names[state]);
     }
 
+    static_assert(NumTrackedMissLevels == level_names.size());
     noIssueOutstandingMissMaskCycles
-        .init(level_names.size(), mask_names.size())
+        .init(NumTrackedMissLevels, mask_names.size())
         .flags(statistics::nozero);
     for (unsigned level = 0; level < level_names.size(); ++level) {
         noIssueOutstandingMissMaskCycles.subname(
