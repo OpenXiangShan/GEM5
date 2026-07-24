@@ -43,6 +43,7 @@ def setKmhV3Params(args, system):
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         setMptTlbInfoParams(args, cpu.mmu)
         configure_mpt_unit(args, cpu.mmu)
+        configure_tlb_prefetch(args, cpu.mmu)
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32

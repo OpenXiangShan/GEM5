@@ -219,6 +219,17 @@ def configure_mpt_unit(args: argparse.Namespace, mmu) -> None:
     unit.cache_sp_size = args.mpt_cache_sp_size
 
 
+def configure_tlb_prefetch(args: argparse.Namespace, mmu) -> None:
+    if getattr(args, "enable_tlb_prefetch", True):
+        return
+
+    for tlb in (mmu.itb, mmu.dtb, mmu.l2_shared):
+        tlb.walker.open_nextline = False
+        tlb.is_open_nextline = False
+        tlb.open_forward_pre = False
+        tlb.open_back_pre = False
+
+
 def resolve_linux_cmdline(args: argparse.Namespace, default_cmdline: str) -> str:
     command_line = getattr(args, "command_line", None)
     command_line_file = getattr(args, "command_line_file", None)

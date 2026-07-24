@@ -2628,6 +2628,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         twoStageLevel = 0;
 
         nextline = false;
+        openNextline = open_nextline;
         autoNextlineSign = auto_open_nextline;
         preHitInPtw = false;
 

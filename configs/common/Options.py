@@ -667,6 +667,11 @@ def addXiangshanCommonOptions(parser):
                         choices=("all", "leaf"), default="all",
                         help="Select whether MPT protects every PTW PTE read "
                              "or only leaf PTE reads")
+    parser.set_defaults(enable_tlb_prefetch=True)
+    parser.add_argument("--disable-tlb-prefetch", action="store_false",
+                        dest="enable_tlb_prefetch",
+                        help="Disable RISC-V TLB/PTW next-line, forward, and "
+                             "backward prefetching")
     parser.add_argument("--mpt-reserved-mem-size", action="store",
                         type=str, default="64MB",
                         help="Hidden physical memory size reserved for "
