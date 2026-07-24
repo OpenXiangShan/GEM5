@@ -1,6 +1,7 @@
 #ifndef __CPU_O3_ISSUE_QUEUE_HH__
 #define __CPU_O3_ISSUE_QUEUE_HH__
 
+#include <array>
 #include <cstdint>
 #include <list>
 #include <string>
@@ -388,7 +389,6 @@ class Scheduler : public SimObject
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
     bool ready(OpClass op, int disp_seq);
     void noteIssueCandidate(ThreadID tid);
-    void sampleSmtIssueStates(bool control_blocked);
 
   public:
     PendingWakeEventsType specWakeEvents;
@@ -401,7 +401,9 @@ class Scheduler : public SimObject
     void setMainRdpOpt(bool enable);
 
     void tick();
-    void issueAndSelect(bool control_blocked = false);
+    void issueAndSelect();
+    void sampleSmtIssueStates(
+        const std::array<bool, MaxThreads> &control_blocked);
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
     DynInstPtr getInstByDstReg(RegIndex flatIdx, ThreadID tid,

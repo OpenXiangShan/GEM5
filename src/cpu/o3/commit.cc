@@ -973,6 +973,27 @@ Commit::sampleSmtCommitStates()
         return;
     }
 
+    // Threads that never reached commitInsts() still need an explicit final
+    // state.  Only classify HeadReadyNoCommit when the head group is ready but
+    // this cycle produced no commit attempt or progress for that thread.
+    for (ThreadID tid : *activeThreads) {
+        if (smtCommitStateThisCycle[tid] != SmtCommitState::OtherWait ||
+            rob->isEmpty(tid) ||
+            (commitStatus[tid] != Running && commitStatus[tid] != Idle &&
+             commitStatus[tid] != FetchTrapPending)) {
+            continue;
+        }
+
+        DynInstPtr blocking_inst;
+        if (rob->isHeadGroupReady(tid, &blocking_inst)) {
+            smtCommitStateThisCycle[tid] =
+                SmtCommitState::HeadReadyNoCommit;
+        } else {
+            smtCommitStateThisCycle[tid] =
+                classifyCommitBlocker(blocking_inst);
+        }
+    }
+
     stats.smtCommitStateCycles
         [static_cast<unsigned>(smtCommitStateThisCycle[0])]
         [static_cast<unsigned>(smtCommitStateThisCycle[1])]++;
@@ -1773,6 +1794,11 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
+                    if (smtCommitStateThisCycle[tid] !=
+                        SmtCommitState::Committed) {
+                        smtCommitStateThisCycle[tid] =
+                            SmtCommitState::ControlOrMaintenance;
+                    }
                     DPRINTF(Commit, "Unable to commit head instruction PC:%s "
                             "[tid:%i] [sn:%llu].\n",
                             head_inst->pcState(), tid ,head_inst->seqNum);

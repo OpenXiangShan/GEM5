@@ -1463,7 +1463,8 @@ Scheduler::noteIssueCandidate(ThreadID tid)
 }
 
 void
-Scheduler::sampleSmtIssueStates(bool control_blocked)
+Scheduler::sampleSmtIssueStates(
+    const std::array<bool, MaxThreads> &control_blocked)
 {
     // The joint state and thread mask dimensions are intentionally dual-hart.
     // Leave them disabled for wider SMT configurations instead of producing a
@@ -1480,7 +1481,7 @@ Scheduler::sampleSmtIssueStates(bool control_blocked)
         if (issueProgressThisCycle[tid]) {
             state[tid] = SmtIssueState::Issued;
             any_progress = true;
-        } else if (control_blocked) {
+        } else if (control_blocked[tid]) {
             state[tid] = SmtIssueState::ControlBlocked;
         } else if (issueCandidateThisCycle[tid]) {
             state[tid] = SmtIssueState::EligibleNoIssue;
@@ -1497,7 +1498,9 @@ Scheduler::sampleSmtIssueStates(bool control_blocked)
 
     std::array<unsigned, MaxThreads> max_miss_depth = {};
     for (ThreadID tid = 0; tid < cpu->numThreads; ++tid) {
-        max_miss_depth[tid] = lsq->maxInflightLoadDepth(tid);
+        if (!issueProgressThisCycle[tid]) {
+            max_miss_depth[tid] = lsq->maxInflightLoadDepth(tid);
+        }
     }
     for (unsigned level = 1; level <= NumTrackedMissLevels; ++level) {
         unsigned mask = 0;
@@ -1512,7 +1515,7 @@ Scheduler::sampleSmtIssueStates(bool control_blocked)
 }
 
 void
-Scheduler::issueAndSelect(bool control_blocked)
+Scheduler::issueAndSelect()
 {
     issueCandidateThisCycle.fill(false);
     issueProgressThisCycle.fill(false);
@@ -1530,7 +1533,6 @@ Scheduler::issueAndSelect(bool control_blocked)
     for (auto it : issueQues) {
         it->issueToFu();
     }
-    sampleSmtIssueStates(control_blocked);
     if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
     }

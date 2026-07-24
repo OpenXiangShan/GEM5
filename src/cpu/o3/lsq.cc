@@ -3306,6 +3306,7 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
         _hasStaleTranslation = false;
         LSQRequest::_inst->hasPendingCacheReq(false);
         LSQRequest::_inst->pendingCacheReq = nullptr;
+        detachInflightLoad();
     }
     return true;
 }
@@ -3492,12 +3493,11 @@ LSQ::SingleDataRequest::sendPacketToCache()
                                             tag_read_fail, mshr_used, mshr_alias_fail, hit_in_write_buffer);
     if (success) {
         _packets[0]->setLSQPtr(lsqUnit()->getLsq());
-        if (isLoad()) {
-            attachInflightLoad();
-        }
-
         if (!bank_conflict) {
             _numOutstandingPackets = 1;
+            if (isLoad()) {
+                attachInflightLoad();
+            }
             LSQRequest::_inst->hasPendingCacheReq(true);
             LSQRequest::_inst->pendingCacheReq = this;
             DPRINTF(LSQ, "sendPacketToCache success [sn:%llu], pkt: %#lx\n",
