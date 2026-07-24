@@ -1393,6 +1393,20 @@ Commit::commitInsts()
                             return;
                         }
 
+                      // Vector loads write architectural vector registers.
+                      // Mark mstatus.VS dirty when the instruction commits.
+                      if (head_inst->isVector() && head_inst->isLoad()) {
+                          RiscvISA::STATUS status =
+                              cpu->readMiscRegNoEffect(
+                                  RiscvISA::MiscRegIndex::MISCREG_STATUS,
+                                  tid);
+                          status.sd = 1;
+                          status.vs = 3;
+                          cpu->setMiscRegNoEffect(
+                              RiscvISA::MiscRegIndex::MISCREG_STATUS,
+                              (RegVal)status, tid);
+                      }
+
                     if (head_inst->isUpdateVsstatusSd()) {
                         auto v = cpu->readMiscRegNoEffect(
                             RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);

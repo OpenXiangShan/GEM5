@@ -63,9 +63,9 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     vfof_set_code = ''
     vfof_zero_idx_check_code = ''
     vfof_get_code = ''
+    vfof_adjust_mem_size_code = ''
     if vfof:
         vfof_set_code = '''
-        auto base_addr = Rs1;
         uint32_t elem_size = (eew / 8);
         if (fault != NoFault) {
             auto addr_fault = dynamic_cast<AddressFault*>(fault.get());
@@ -73,18 +73,43 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
             if (addr_fault) {
                 auto fault_addr = addr_fault->trap_value();
                 assert(fault_addr >= EA);
-                *fault_elem_idx = (fault_addr - base_addr) / elem_size;
+                // This value is consumed by VleffEnd as the number of
+                // successful elements in this micro-op, so it must be local
+                // to this micro-op's effective address.
+                *fault_elem_idx = (fault_addr - EA) / elem_size;
             }
         } else {
             *fault_elem_idx = mem_size / elem_size;
         }
         '''
         vfof_zero_idx_check_code = '''
-        if (fault != NoFault && *fault_elem_idx == 0)
-            return fault;
+        // Only a fault on architectural element zero traps.
+        // A later fault terminates fault-only-first normally.
+        if (fault != NoFault) {
+            if ((vmi.rs + *fault_elem_idx) == 0)
+                return fault;
+
+            // Suppress the architectural exception.  The successful prefix
+            // will be completed and VleffEnd will shorten VL.
+            fault = NoFault;
+        }
         '''
         vfof_get_code = '''
         Vfof_ud[0] = *fault_elem_idx;
+        '''
+        vfof_adjust_mem_size_code = '''
+        if (pkt) {
+            // fault_elem_idx was calculated during initiateAcc relative
+            // to this micro-op's EA.  It is the successful prefix length.
+            mem_size = std::min<uint32_t>(
+                mem_size,
+                static_cast<uint32_t>(*fault_elem_idx * eewb));
+        } else {
+            // A later micro-op whose first local element faults contributes
+            // zero elements to the fault-only-first result.
+            mem_size = 0;
+        }
+        *fault_elem_idx = mem_size / eewb;
         '''
 
     vecWhole = base_type == 'VlWhole' or base_type == 'VsWhole'
@@ -114,6 +139,78 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     agnostic_load_code = ''
     if base_type.startswith('Vl') and not vecWhole:
         agnostic_load_code = '''
+    using RvvLoadMicroType =
+        std::remove_cv_t<
+            std::remove_pointer_t<
+                decltype(this)>>;
+
+    if constexpr (
+        std::is_base_of_v<
+            VlIndexMicroInst,
+            RvvLoadMicroType>) {
+
+    // RVV indexed-load per-element agnostic fix.
+    //
+    // Each indexed-load micro-op processes one destination
+    // element. Filling every tail element from each micro-op
+    // can corrupt unread indices when vd overlaps vs2.
+    const size_t agnostic_ei = vmi.rs;
+    const size_t agnostic_vd_elem =
+        vmi.rs % elem_num_per_vreg;
+    const size_t agnostic_elem_bytes =
+        VLENB / elem_num_per_vreg;
+
+    auto agnostic_vd_bytes =
+        tmp_d0.as<uint8_t>();
+
+    if ((agnostic_ei < rVl) &&
+        !this->vm &&
+        !elem_mask(v0, agnostic_ei) &&
+        machInst.vtype8.vma) {
+        std::memset(
+            agnostic_vd_bytes +
+                agnostic_vd_elem *
+                    agnostic_elem_bytes,
+            0xff,
+            agnostic_elem_bytes);
+    } else if (
+        (rVl != 0) &&
+        (agnostic_ei >= rVl) &&
+        machInst.vtype8.vta) {
+        std::memset(
+            agnostic_vd_bytes +
+                agnostic_vd_elem *
+                    agnostic_elem_bytes,
+            0xff,
+            agnostic_elem_bytes);
+    }
+    // RVV indexed-load fractional-LMUL physical tail fix.
+    //
+    // For fractional LMUL, architectural VLMAX occupies only
+    // part of one physical vector register. No micro-op exists
+    // for elements beyond VLMAX, so the final indexed-load
+    // micro-op must apply tail-agnostic policy to that region.
+    //
+    // Do this only after every index has been consumed, avoiding
+    // corruption when vd overlaps the index register group.
+    if ((machInst.nf == 0) &&
+        this->isLastMicroop() &&
+        (rVl != 0) &&
+        (vflmul < 1) &&
+        machInst.vtype8.vta) {
+        const size_t physical_tail_begin =
+            vmi.re * agnostic_elem_bytes;
+
+        if (physical_tail_begin < VLENB) {
+            std::memset(
+                agnostic_vd_bytes + physical_tail_begin,
+                0xff,
+                VLENB - physical_tail_begin);
+        }
+    }
+
+} else {
+
     // Fill RVV tail-agnostic and mask-agnostic load elements with ones.
     const size_t reg_elem_base =
         (vmi.rs / elem_num_per_vreg) * elem_num_per_vreg;
@@ -121,28 +218,33 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     auto vd_bytes =
         tmp_d0.as<uint8_t>();
 
-    for (size_t vdElemIdx = 0;
-         vdElemIdx < elem_num_per_vreg;
-         ++vdElemIdx) {
-        const size_t agnostic_ei =
-            reg_elem_base + vdElemIdx;
+    // When vl is zero, no destination elements may be updated,
+    // including tail-agnostic and mask-agnostic elements.
+    if (rVl != 0) {
+        for (size_t vdElemIdx = 0;
+            vdElemIdx < elem_num_per_vreg;
+            ++vdElemIdx) {
+            const size_t agnostic_ei =
+                reg_elem_base + vdElemIdx;
 
-        if (agnostic_ei >= rVl) {
-            if (machInst.vtype8.vta) {
+            if (agnostic_ei >= rVl) {
+                if (machInst.vtype8.vta) {
+                    std::memset(
+                        vd_bytes + vdElemIdx * elem_bytes,
+                        0xff,
+                        elem_bytes);
+                }
+            } else if (!this->vm &&
+                    !elem_mask(v0, agnostic_ei) &&
+                    machInst.vtype8.vma) {
                 std::memset(
                     vd_bytes + vdElemIdx * elem_bytes,
                     0xff,
                     elem_bytes);
             }
-        } else if (!this->vm &&
-                   !elem_mask(v0, agnostic_ei) &&
-                   machInst.vtype8.vma) {
-            std::memset(
-                vd_bytes + vdElemIdx * elem_bytes,
-                0xff,
-                elem_bytes);
         }
-    }
+    }    }
+
 '''
 
     microiop = InstObjParams(name + '_micro',
@@ -156,7 +258,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
             'vfof_set_code' : vfof_set_code,
             'vfof_zero_idx_check_code' : vfof_zero_idx_check_code,
             'vfof_get_code' : vfof_get_code,
-
+            'vfof_adjust_mem_size_code' : vfof_adjust_mem_size_code,
             'calc_memsize_code' : calc_memsize_code,
             'is_vecWhole'   : is_vecWhole,
             'is_vecIndex'   : is_vecIndex,
