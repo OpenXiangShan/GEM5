@@ -1126,6 +1126,7 @@ class PairTAGE(TimedBaseBTBPredictor):
         True,
         "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists")
     numDelay = 2
+    enabled = False
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
