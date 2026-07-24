@@ -384,8 +384,7 @@ class Fetch
      * Looks up the branch predictor, gets a prediction, and updates the PC.
      * @param inst The dynamic instruction object.
      * @param next_pc The PC state to update with the prediction.
-     * @return true if fetch should stop this cycle due to a predicted-taken
-     * branch. 2-Fetch may consume the current FTQ entry and continue.
+     * @return true if a branch was predicted taken.
      */
     bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc);
 
@@ -440,7 +439,6 @@ class Fetch
      * @return true if requests were successfully initiated
      */
     bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc);
-    bool idealFillFetchBuffer(Addr vaddr, ThreadID tid, Addr pc);
 
     /** Process multi-cacheline fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
@@ -574,7 +572,7 @@ class Fetch
      * @param tid The thread ID of the instruction.
      * @param pc The current program counter state (will be updated).
      * @param curMacroop The current macro-op being processed (if any).
-     * @return true if fetch should stop this cycle.
+     * @return true if a branch was predicted.
      */
     bool
     processSingleInstruction(ThreadID tid, PCStateBase &pc,
@@ -875,7 +873,6 @@ class Fetch
     *  make sure we could decode tail 4bytes if it is in [62, 66)
      */
     unsigned fetchBufferSize;
-    const bool idealFetchWindowFill;
 
     /**
      * Fetch buffer structure to encapsulate instruction fetch data.

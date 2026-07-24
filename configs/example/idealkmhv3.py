@@ -36,8 +36,6 @@ def setKmhV3IdealParams(args, system):
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
-        cpu.fetchBufferSize = 258
-        cpu.idealFetchWindowFill = True
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4  # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu
         cpu.fetchQueueSize = 64
@@ -113,8 +111,6 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
             cpu.branchPred.microtage.usingS3Pred = True
             # cpu.branchPred.microtage.enabled = False
-            cpu.branchPred.enable2Fetch = True
-            cpu.branchPred.maxFetchBytesPerCycle = 256
 
         # l1 cache per core
         if args.caches:

@@ -157,8 +157,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<HistoryManager> historyManagers;
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
-    const bool enable2Fetch;
-    const unsigned maxFetchBytesPerCycle;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -442,17 +440,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         return ftq.getTargetTid(eligible, ineligibleSkips);
     }
-    bool ftqHasNext(ThreadID tid) const
-    {
-        return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);
-    }
-    const FetchTarget &ftqNext(ThreadID tid)
-    {
-        assert(ftqHasNext(tid));
-        return ftq.get(ftq.fetchId(tid) + 1, tid);
-    }
-    bool is2FetchEnabled() const { return enable2Fetch; }
-    unsigned getMaxFetchBytesPerCycle() const { return maxFetchBytesPerCycle; }
 
     void dumpFsq(const char *when);
 

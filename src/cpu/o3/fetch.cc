@@ -72,8 +72,6 @@
 #include "debug/O3PipeView.hh"
 #include "debug/TraceReader.hh"
 #include "mem/packet.hh"
-#include "mem/se_translating_port_proxy.hh"
-#include "mem/translating_port_proxy.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
 #include "sim/system.hh"
@@ -104,7 +102,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       retryPkt(),
       cacheBlkSize(cpu->cacheLineSize()),
       fetchBufferSize(params.fetchBufferSize),
-      idealFetchWindowFill(params.idealFetchWindowFill),
       fetchQueueSize(params.fetchQueueSize),
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
@@ -924,8 +921,6 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         run_out = fall_thru >= stream.predEndPC;
     }
 
-    bool do_2fetch = false;
-
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
     const bool false_hit = run_out && stream.predTaken && !predict_taken;
@@ -942,34 +937,10 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
     } else if (run_out) {
-        if (predict_taken && dbpbtb->is2FetchEnabled() && dbpbtb->ftqHasNext(tid)) {
-            const Addr target_pc = stream.predBranchInfo.target;
-            const auto &next_stream = dbpbtb->ftqNext(tid);
-            const Addr span = next_stream.predEndPC - stream.startPC;
-            const unsigned max_bytes = dbpbtb->getMaxFetchBytesPerCycle();
-            const bool target_in_buffer =
-                target_pc >= threads[tid].startPC &&
-                target_pc + sizeof(RiscvISA::MachInst) <=
-                    threads[tid].startPC + fetchBufferSize;
-
-            if (target_pc == next_stream.startPC && span <= max_bytes &&
-                target_in_buffer) {
-                do_2fetch = true;
-                DPRINTF(DecoupleBP,
-                        "2Fetch: continue to next FTQ entry in cycle, "
-                        "cur [%#lx, %#lx), next [%#lx, %#lx), span=%lu, max=%u\n",
-                        stream.startPC, stream.predEndPC,
-                        next_stream.startPC, next_stream.predEndPC,
-                        span, max_bytes);
-            }
-        }
-
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
         ftqEntryFetchedInsts[tid] = 0;
-        if (!do_2fetch) {
-            threads[tid].valid = false;
-            DPRINTF(DecoupleBP, "Used up fetch targets.\n");
-        }
+        threads[tid].valid = false;
+        DPRINTF(DecoupleBP, "Used up fetch targets.\n");
     }
 
     inst->setLoopIteration(currentLoopIter);
@@ -995,45 +966,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         ++fetchStats.predictedBranches;
     }
 
-    return predict_taken && !do_2fetch;
-}
-
-bool
-Fetch::idealFillFetchBuffer(Addr vaddr, ThreadID tid, Addr pc)
-{
-    DPRINTF(Fetch,
-            "[tid:%i] Ideal full-window fill for addr %#x, pc=%#lx, size=%u\n",
-            tid, vaddr, pc, fetchBufferSize);
-
-    auto *tc = cpu->thread[tid]->getTC();
-    threads[tid].cacheReq.reset();
-    threads[tid].cacheReq.baseAddr = vaddr;
-    threads[tid].cacheReq.totalSize = fetchBufferSize;
-    threads[tid].startPC = vaddr;
-
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc, Request::INST_FETCH);
-        ok = proxy.tryReadBlob(vaddr, threads[tid].data, fetchBufferSize);
-    } else {
-        SETranslatingPortProxy proxy(tc, SETranslatingPortProxy::Always,
-                                     Request::INST_FETCH);
-        ok = proxy.tryReadBlob(vaddr, threads[tid].data, fetchBufferSize);
-    }
-
-    if (!ok) {
-        DPRINTF(Fetch,
-                "[tid:%i] Ideal full-window fill failed at addr %#x size=%u\n",
-                tid, vaddr, fetchBufferSize);
-        return false;
-    }
-
-    threads[tid].valid = true;
-    setThreadStatus(tid, Running);
-    setAllFetchStalls(StallReason::NoStall);
-    cpu->wakeCPU();
-    switchToActive();
-    return true;
+    return predict_taken;
 }
 
 bool
@@ -1058,10 +991,6 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 
     DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
             tid, vaddr, vaddr, pc);
-
-    if (idealFetchWindowFill) {
-        return idealFillFetchBuffer(vaddr, tid, pc);
-    }
 
     // With 66-byte fetchBufferSize, we always need to access 2 cache lines
     return handleMultiCacheLineFetch(vaddr, tid, pc);
@@ -2158,7 +2087,6 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
         fetch_pc + 4 > threads[tid].startPC + fetchBufferSize) {
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
                 tid, fetch_pc, threads[tid].startPC, threads[tid].startPC + fetchBufferSize);
-        threads[tid].valid = false;
         return StallReason::IcacheStall;
     }
 
@@ -2181,7 +2109,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                StaticInstPtr &curMacroop)
 {
     auto *dec_ptr = decoder[tid];
-    bool stopFetchThisCycle = false;
+    bool predictedBranch = false;
     bool newMacroop = false;
 
     // Create a copy of the current PC state to calculate the next PC.
@@ -2238,17 +2166,16 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     set(next_pc, pc);
 
     // Handle branch prediction and update next_pc for both modes
-    stopFetchThisCycle = lookupAndUpdateNextPC(instruction, *next_pc);
-    const bool predictedTaken = instruction->readPredTaken();
+    predictedBranch = lookupAndUpdateNextPC(instruction, *next_pc);
 
-    if (predictedTaken) {
+    if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
                 instruction->threadNumber, pc, *next_pc);
     }
 
     if (isTraceMode()) {
         assert(traceFetch);
-        traceFetch->postBranchPredict(tid, instruction, traceForThisInst, pc, *next_pc, predictedTaken);
+        traceFetch->postBranchPredict(tid, instruction, traceForThisInst, pc, *next_pc, predictedBranch);
     }
 
     // A new macro-op also begins if the PC changes discontinuously.
@@ -2276,7 +2203,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
             valuePred->valuePredict(predictRequest, instruction->vpRecord);
     }
 
-    return stopFetchThisCycle;
+    return predictedBranch;
 }
 
 void
@@ -2294,7 +2221,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     StaticInstPtr &curMacroop = macroop[tid];
 
     // Control flags for main fetch loop
-    bool stopFetchThisCycle = false;
+    bool predictedBranch = false;
 
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
@@ -2302,7 +2229,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !stopFetchThisCycle && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
+           !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2315,7 +2242,7 @@ Fetch::performInstructionFetch(ThreadID tid)
         // into multiple micro-ops.
         do {
             // Process a single instruction, from decoding to PC update.
-            stopFetchThisCycle = processSingleInstruction(tid, pc_state, curMacroop);
+            predictedBranch = processSingleInstruction(tid, pc_state, curMacroop);
 
         } while (curMacroop &&
                  numInst < fetchWidth &&
@@ -2334,7 +2261,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     }
 
     // Log why fetch stopped
-    if (stopFetchThisCycle) {
+    if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch instruction encountered.\n", tid);
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);
