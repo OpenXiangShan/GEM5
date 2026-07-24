@@ -110,6 +110,10 @@ if env['CONF']['TARGET_ISA'] == 'null':
     # Generate required debug flag headers for reader in NULL builds
     DebugFlag('TraceReader')
     env.Append(LIBS=['z'])
+    # Targeted regression tests for 3 trace-mode failure modes
+    # (commits 064029e6ef, add587d180, 803b6ec090). No gem5 link deps.
+    GTest('trace_mode_regression.test',
+          'trace/trace_mode_regression.test.cc')
     GTest('champsim_trace_reader.test',
           'trace/ChampSimTraceReader.test.cc',
           'trace/TraceReader.cc',
@@ -129,6 +133,10 @@ else:
     # Under real ISAs, link against common trace infra and avoid duplicate
     # compilation of cur_tick and stats glue (already provided by libs).
     env.Append(LIBS=['z'])
+    # Targeted regression tests for 3 trace-mode failure modes
+    # (commits 064029e6ef, add587d180, 803b6ec090). No gem5 link deps.
+    GTest('trace_mode_regression.test',
+          'trace/trace_mode_regression.test.cc')
     GTest('champsim_trace_reader.test',
           'trace/ChampSimTraceReader.test.cc',
           'trace/TraceReader.cc',
