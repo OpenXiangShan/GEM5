@@ -207,6 +207,7 @@ struct MPTCacheEntry
     // Cached MPTE. This contains the raw 64-bit value, including the N bit.
     MPTE52 mpte;
     bool valid = false;
+    bool prefetched = false;
 
     //Make the cache entry carry its own granularity information.
     int level = -1;

@@ -663,6 +663,24 @@ def addXiangshanCommonOptions(parser):
     parser.add_argument("--disable-mpt-cache", action="store_false",
                         dest="enable_mpt_cache",
                         help="Disable the dedicated simulated MPT cache")
+    parser.set_defaults(enable_mpt_cache_prefetch=False)
+    parser.add_argument("--enable-mpt-cache-prefetch", action="store_true",
+                        dest="enable_mpt_cache_prefetch",
+                        help="Prefetch forward adjacent MPTEs into the MPT cache")
+    parser.add_argument("--disable-mpt-cache-prefetch", action="store_false",
+                        dest="enable_mpt_cache_prefetch",
+                        help="Disable MPT cache prefetching")
+    parser.add_argument("--mpt-cache-prefetch-degree", type=int, default=1,
+                        help="Number of forward adjacent MPTEs to prefetch")
+    parser.add_argument("--mpt-cache-prefetch-level", type=int,
+                        choices=(0, 1, 2, 3), default=0,
+                        help="MPT level whose demand fills trigger prefetching")
+    parser.add_argument("--mpt-cache-prefetch-mshrs", type=int, default=2,
+                        help="MSHRs reserved for MPT cache prefetches")
+    parser.add_argument("--mpt-cache-prefetch-queue-size", type=int, default=8,
+                        help="Maximum pending MPT cache prefetches")
+    parser.add_argument("--mpt-cache-prefetch-issue-width", type=int, default=1,
+                        help="MPT cache prefetch requests issued per cycle")
     parser.add_argument("--mpt-ptw-check-mode", action="store",
                         choices=("all", "leaf"), default="all",
                         help="Select whether MPT protects every PTW PTE read "

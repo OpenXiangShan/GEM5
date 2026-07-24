@@ -127,6 +127,13 @@ class MptUnit : public ClockedObject
         Miss
     };
 
+    enum class PrefetchStartResult
+    {
+        Started,
+        Dropped,
+        Retry
+    };
+
     struct ProbeResult
     {
         ProbeKind kind = ProbeKind::Miss;
@@ -160,6 +167,28 @@ class MptUnit : public ClockedObject
         size_t operator()(const MshrKey &key) const;
     };
 
+    enum class MshrPool : uint8_t
+    {
+        Demand,
+        Prefetch
+    };
+
+    struct MshrRef
+    {
+        MshrPool pool = MshrPool::Demand;
+        unsigned slot = 0;
+
+        bool operator==(const MshrRef &other) const
+        {
+            return pool == other.pool && slot == other.slot;
+        }
+
+        bool operator!=(const MshrRef &other) const
+        {
+            return !(*this == other);
+        }
+    };
+
     struct Mshr
     {
         bool allocated = false;
@@ -168,6 +197,8 @@ class MptUnit : public ClockedObject
         MshrKey key;
         PacketPtr packet = nullptr;
         std::vector<Target> targets;
+        std::optional<Target> prefetchTarget;
+        bool prefetchUseful = false;
         Tick issueTick = 0;
     };
 
@@ -175,9 +206,10 @@ class MptUnit : public ClockedObject
     {
         const unsigned slot;
         const uint64_t generation;
+        const MshrPool pool;
 
-        MptSenderState(unsigned slot, uint64_t generation)
-            : slot(slot), generation(generation)
+        MptSenderState(MshrPool pool, unsigned slot, uint64_t generation)
+            : slot(slot), generation(generation), pool(pool)
         {}
     };
 
@@ -216,6 +248,14 @@ class MptUnit : public ClockedObject
         statistics::Scalar memoryRetries;
         statistics::Scalar memoryLatency;
         statistics::Scalar maxMemoryInflight;
+        statistics::Scalar prefetchIssued;
+        statistics::Scalar prefetchFilled;
+        statistics::Scalar prefetchUseful;
+        statistics::Scalar prefetchUnused;
+        statistics::Scalar prefetchDropped;
+        statistics::Scalar prefetchMerges;
+        statistics::Scalar prefetchMshrFull;
+        statistics::Scalar prefetchMemoryRequests;
         statistics::Vector walkDepth;
         statistics::Scalar staleEpochResponses;
         statistics::Scalar fenceFlushes;
@@ -231,6 +271,12 @@ class MptUnit : public ClockedObject
     const RequestorID requestorId;
 
     const bool enableMptCache;
+    const bool enableMptCachePrefetch;
+    const unsigned prefetchDegree;
+    const unsigned prefetchLevel;
+    const unsigned numPrefetchMshrs;
+    const unsigned prefetchQueueCapacity;
+    const unsigned prefetchIssueWidth;
     const Cycles hitLatency;
     const unsigned lookupWidth;
     const std::array<unsigned, NumSources> acceptWidth;
@@ -245,12 +291,16 @@ class MptUnit : public ClockedObject
     std::deque<PipelineEntry> pipeline;
     std::deque<Target> pendingWalks;
     std::deque<Target> bypassCompletions;
+    std::deque<Target> prefetchQueue;
 
     std::array<CachePartition, NumLevels + 1> cache;
     std::vector<Mshr> mshrs;
+    std::vector<Mshr> prefetchMshrs;
     std::unordered_map<MshrKey, unsigned, MshrKeyHash> mshrIndex;
-    std::deque<unsigned> readyMshrs;
-    std::optional<unsigned> blockedMshr;
+    std::unordered_map<MshrKey, unsigned, MshrKeyHash> prefetchMshrIndex;
+    std::deque<MshrRef> readyMshrs;
+    std::deque<unsigned> readyPrefetchMshrs;
+    std::optional<MshrRef> blockedMshr;
     unsigned memoryInflight = 0;
 
     MMPT mmpt = 0;
@@ -279,22 +329,37 @@ class MptUnit : public ClockedObject
     void completeBypasses();
 
     ProbeResult probeCache(Addr paddr);
-    void insertCache(int level, Addr paddr, const MPTE52 &mpte);
+    bool cacheCoversPrefetch(Addr paddr, int level) const;
+    bool insertCache(int level, Addr paddr, const MPTE52 &mpte,
+                     bool prefetched = false);
+    void markPrefetchUseful(Addr paddr, const MPTCacheEntry &entry);
     void clearCache();
     static Addr cacheKey(Addr paddr, int level, bool superpage);
 
     bool startTargetRead(Target target);
+    void queuePrefetches(const Target &target);
+    void issuePrefetches();
+    PrefetchStartResult startPrefetch(Target target);
+    bool prefetchQueued(const MshrKey &key) const;
+    MshrKey mshrKey(const Target &target) const;
     Addr mpteAddress(const Target &target) const;
-    PacketPtr createReadPacket(unsigned slot, uint64_t generation,
+    Mshr &getMshr(const MshrRef &ref);
+    const Mshr &getMshr(const MshrRef &ref) const;
+    bool validMshr(const MshrRef &ref) const;
+    void removeReadyMshr(const MshrRef &ref);
+    void promotePrefetchMshr(unsigned slot);
+    PacketPtr createReadPacket(const MshrRef &ref, uint64_t generation,
                                Addr paddr);
     void issueMemoryRequests();
-    bool sendMshr(unsigned slot);
+    bool sendMshr(const MshrRef &ref);
     bool recvTimingResp(PacketPtr pkt);
     void recvReqRetry();
-    void releaseMshr(unsigned slot);
+    void releaseMshr(const MshrRef &ref);
     void discardPacket(PacketPtr pkt);
 
     void consumeMpte(Target target, uint64_t raw);
+    void consumePrefetchedMpte(const Target &target, uint64_t raw,
+                               bool demand_merged);
     void completeTarget(const Target &target, const MptResult &result);
     void restartTarget(Target target);
     void invalidateForNewEpoch();

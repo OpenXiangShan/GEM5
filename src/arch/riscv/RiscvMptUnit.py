@@ -14,6 +14,24 @@ class RiscvMptUnit(ClockedObject):
     system = Param.System(Parent.any, "System object")
 
     enable_mpt_cache = Param.Bool(True, "Enable the dedicated MPT cache")
+    enable_cache_prefetch = Param.Bool(
+        False, "Enable adjacent-entry MPT cache prefetching"
+    )
+    prefetch_degree = Param.Unsigned(
+        1, "Number of forward adjacent MPTEs to prefetch"
+    )
+    prefetch_level = Param.Unsigned(
+        0, "MPT level whose demand fills trigger prefetching"
+    )
+    prefetch_mshrs = Param.Unsigned(
+        2, "Number of MSHRs reserved for MPT cache prefetches"
+    )
+    prefetch_queue_size = Param.Unsigned(
+        8, "Maximum number of pending MPT cache prefetches"
+    )
+    prefetch_issue_width = Param.Unsigned(
+        1, "Maximum MPT cache prefetches allocated and issued per cycle"
+    )
     hit_latency = Param.Cycles(3, "Pipelined MPT cache lookup latency")
     lookup_width = Param.Unsigned(4, "Shared MPT cache lookups per cycle")
     instruction_accept_width = Param.Unsigned(

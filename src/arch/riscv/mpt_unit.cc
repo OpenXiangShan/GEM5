@@ -138,6 +138,23 @@ MptUnit::MptStats::MptStats(statistics::Group *parent)
                "Accumulated MPT memory response latency"),
       ADD_STAT(maxMemoryInflight, statistics::units::Count::get(),
                "Maximum simultaneous MPT memory requests"),
+      ADD_STAT(prefetchIssued, statistics::units::Count::get(),
+               "MPT cache prefetches allocated to a prefetch MSHR"),
+      ADD_STAT(prefetchFilled, statistics::units::Count::get(),
+               "Valid MPT cache prefetch responses inserted into the cache"),
+      ADD_STAT(prefetchUseful, statistics::units::Count::get(),
+               "MPT cache prefetches consumed by a demand lookup"),
+      ADD_STAT(prefetchUnused, statistics::units::Count::get(),
+               "Prefetched MPT cache entries evicted or invalidated before "
+               "demand use"),
+      ADD_STAT(prefetchDropped, statistics::units::Count::get(),
+               "MPT cache prefetch candidates dropped before useful fill"),
+      ADD_STAT(prefetchMerges, statistics::units::Count::get(),
+               "Demand targets merged into an outstanding prefetch"),
+      ADD_STAT(prefetchMshrFull, statistics::units::Count::get(),
+               "MPT cache prefetch allocation stalls from full MSHRs"),
+      ADD_STAT(prefetchMemoryRequests, statistics::units::Count::get(),
+               "MPT cache prefetch requests issued to memory"),
       ADD_STAT(walkDepth, statistics::units::Count::get(),
                "Completed MPT lookups by number of memory levels read"),
       ADD_STAT(staleEpochResponses, statistics::units::Count::get(),
@@ -188,6 +205,11 @@ MptUnit::MptUnit(const Params &p)
     : ClockedObject(p), stats(this), port(name() + ".port", *this),
       system(p.system), requestorId(system->getRequestorId(this)),
       enableMptCache(p.enable_mpt_cache),
+      enableMptCachePrefetch(p.enable_cache_prefetch),
+      prefetchDegree(p.prefetch_degree), prefetchLevel(p.prefetch_level),
+      numPrefetchMshrs(p.prefetch_mshrs),
+      prefetchQueueCapacity(p.prefetch_queue_size),
+      prefetchIssueWidth(p.prefetch_issue_width),
       hitLatency(p.hit_latency), lookupWidth(p.lookup_width),
       acceptWidth{{p.instruction_accept_width, p.data_accept_width,
                    p.ptw_accept_width}},
@@ -196,6 +218,7 @@ MptUnit::MptUnit(const Params &p)
       numMshrs(p.num_mshrs), targetsPerMshr(p.targets_per_mshr),
       memoryIssueWidth(p.memory_issue_width),
       maxMemoryInflight(p.max_memory_inflight), mshrs(numMshrs),
+      prefetchMshrs(numPrefetchMshrs),
       serviceEvent([this] { process(); }, name() + ".service")
 {
     panic_if(system == nullptr, "MPT unit requires a System object\n");
@@ -205,8 +228,22 @@ MptUnit::MptUnit(const Params &p)
              "MPT targets_per_mshr must be positive\n");
     panic_if(memoryIssueWidth == 0,
              "MPT memory_issue_width must be positive\n");
-    panic_if(maxMemoryInflight == 0 || maxMemoryInflight > numMshrs,
-             "MPT max_memory_inflight must be in [1, num_mshrs]\n");
+    const unsigned total_mshrs = numMshrs +
+        (enableMptCachePrefetch ? numPrefetchMshrs : 0);
+    panic_if(maxMemoryInflight == 0 || maxMemoryInflight > total_mshrs,
+             "MPT max_memory_inflight must be in [1, total MSHRs]\n");
+    panic_if(enableMptCachePrefetch && !enableMptCache,
+             "MPT cache prefetching requires the MPT cache\n");
+    panic_if(enableMptCachePrefetch && prefetchDegree == 0,
+             "MPT prefetch_degree must be positive when enabled\n");
+    panic_if(enableMptCachePrefetch && prefetchLevel >= NumLevels,
+             "MPT prefetch_level must be in [0, %u]\n", NumLevels - 1);
+    panic_if(enableMptCachePrefetch && numPrefetchMshrs == 0,
+             "MPT prefetch_mshrs must be positive when enabled\n");
+    panic_if(enableMptCachePrefetch && prefetchQueueCapacity == 0,
+             "MPT prefetch_queue_size must be positive when enabled\n");
+    panic_if(enableMptCachePrefetch && prefetchIssueWidth == 0,
+             "MPT prefetch_issue_width must be positive when enabled\n");
 
     for (unsigned source = 0; source < NumSources; ++source) {
         panic_if(acceptWidth[source] == 0,
@@ -231,12 +268,16 @@ MptUnit::MptUnit(const Params &p)
 
 MptUnit::~MptUnit()
 {
-    for (auto &mshr : mshrs) {
-        if (mshr.packet != nullptr) {
-            discardPacket(mshr.packet);
-            mshr.packet = nullptr;
+    auto discard_packets = [this](auto &pool) {
+        for (auto &mshr : pool) {
+            if (mshr.packet != nullptr) {
+                discardPacket(mshr.packet);
+                mshr.packet = nullptr;
+            }
         }
-    }
+    };
+    discard_packets(mshrs);
+    discard_packets(prefetchMshrs);
 }
 
 Port &
@@ -272,7 +313,8 @@ bool
 MptUnit::hasServiceWork() const
 {
     if (!pipeline.empty() || !pendingWalks.empty() ||
-        !bypassCompletions.empty() || !readyMshrs.empty()) {
+        !bypassCompletions.empty() || !prefetchQueue.empty() ||
+        !readyMshrs.empty() || !readyPrefetchMshrs.empty()) {
         return true;
     }
     for (unsigned source = 0; source < NumSources; ++source) {
@@ -314,6 +356,7 @@ MptUnit::process()
     if (hitLatency == Cycles(0)) {
         completePipeline();
     }
+    issuePrefetches();
     issueMemoryRequests();
 
     if (hasServiceWork()) {
@@ -552,14 +595,54 @@ MptUnit::probeCache(Addr paddr)
         result.kind = ProbeKind::Miss;
         stats.totalCacheMisses++;
     }
+    if (result.kind != ProbeKind::Miss && result.entry.prefetched) {
+        markPrefetchUseful(paddr, result.entry);
+        result.entry.prefetched = false;
+    }
     return result;
 }
 
+bool
+MptUnit::cacheCoversPrefetch(Addr paddr, int requested_level) const
+{
+    for (int level = 0; level < static_cast<int>(NumLevels); ++level) {
+        const auto &part = cache[level];
+        const auto entry = part.entries.find(cacheKey(paddr, level, false));
+        if (entry != part.entries.end() && entry->second.valid &&
+            (entry->second.mpte.isLeaf() || level <= requested_level)) {
+            return true;
+        }
+
+        const auto &superpage = cache[SuperpageCache];
+        const auto leaf = superpage.entries.find(
+            cacheKey(paddr, level, true));
+        if (leaf != superpage.entries.end() && leaf->second.valid &&
+            leaf->second.mpte.isLeaf()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void
-MptUnit::insertCache(int level, Addr paddr, const MPTE52 &mpte)
+MptUnit::markPrefetchUseful(Addr paddr, const MPTCacheEntry &entry)
+{
+    const bool superpage = entry.mpte.isLeaf() && entry.level > 0;
+    CachePartition &part = cache[superpage ? SuperpageCache : entry.level];
+    const Addr key = cacheKey(paddr, entry.level, superpage);
+    auto stored = part.entries.find(key);
+    if (stored != part.entries.end() && stored->second.prefetched) {
+        stored->second.prefetched = false;
+        stats.prefetchUseful++;
+    }
+}
+
+bool
+MptUnit::insertCache(int level, Addr paddr, const MPTE52 &mpte,
+                     bool prefetched)
 {
     if (!enableMptCache) {
-        return;
+        return false;
     }
 
     const bool superpage = mpte.isLeaf() && level > 0;
@@ -571,10 +654,19 @@ MptUnit::insertCache(int level, Addr paddr, const MPTE52 &mpte)
     entry.tag = paddr & ~(getRegionSizeForLevel(level) - 1);
     entry.mpte = mpte;
     entry.valid = true;
+    entry.prefetched = prefetched;
     entry.level = level;
     entry.log2RegionSize = log2floor(getRegionSizeForLevel(level));
 
     auto existing = part.entries.find(key);
+    if (prefetched && existing != part.entries.end() &&
+        existing->second.valid) {
+        return false;
+    }
+    if (!prefetched && existing != part.entries.end() &&
+        existing->second.prefetched) {
+        stats.prefetchUnused++;
+    }
     if (existing == part.entries.end() &&
         part.entries.size() >= part.capacity) {
         Addr victim = 0;
@@ -585,18 +677,29 @@ MptUnit::insertCache(int level, Addr paddr, const MPTE52 &mpte)
                 victim = candidate;
             }
         }
+        auto victim_entry = part.entries.find(victim);
+        if (victim_entry != part.entries.end() &&
+            victim_entry->second.prefetched) {
+            stats.prefetchUnused++;
+        }
         part.entries.erase(victim);
         part.lastUse.erase(victim);
     }
 
     part.entries[key] = entry;
     part.lastUse[key] = ++part.sequence;
+    return true;
 }
 
 void
 MptUnit::clearCache()
 {
     for (auto &partition : cache) {
+        for (const auto &[key, entry] : partition.entries) {
+            if (entry.prefetched) {
+                stats.prefetchUnused++;
+            }
+        }
         partition.entries.clear();
         partition.lastUse.clear();
         partition.sequence = 0;
@@ -609,6 +712,80 @@ MptUnit::mpteAddress(const Target &target) const
     const size_t shift = getPageShiftForLevel(target.level) + 4;
     const size_t index = (target.paddr >> shift) & 0x1ff;
     return target.tableBase + index * MPT_MPTE_SIZE;
+}
+
+MptUnit::MshrKey
+MptUnit::mshrKey(const Target &target) const
+{
+    MshrKey key;
+    key.epoch = target.epoch;
+    key.rootPpn = target.rootPpn;
+    key.level = target.level;
+    key.mptePaddr = mpteAddress(target);
+    return key;
+}
+
+MptUnit::Mshr &
+MptUnit::getMshr(const MshrRef &ref)
+{
+    auto &pool = ref.pool == MshrPool::Prefetch ? prefetchMshrs : mshrs;
+    panic_if(ref.slot >= pool.size(), "Invalid MPT MSHR slot %u\n", ref.slot);
+    return pool[ref.slot];
+}
+
+const MptUnit::Mshr &
+MptUnit::getMshr(const MshrRef &ref) const
+{
+    const auto &pool =
+        ref.pool == MshrPool::Prefetch ? prefetchMshrs : mshrs;
+    panic_if(ref.slot >= pool.size(), "Invalid MPT MSHR slot %u\n", ref.slot);
+    return pool[ref.slot];
+}
+
+bool
+MptUnit::validMshr(const MshrRef &ref) const
+{
+    const auto &pool =
+        ref.pool == MshrPool::Prefetch ? prefetchMshrs : mshrs;
+    return ref.slot < pool.size() && pool[ref.slot].allocated;
+}
+
+void
+MptUnit::removeReadyMshr(const MshrRef &ref)
+{
+    readyMshrs.erase(
+        std::remove(readyMshrs.begin(), readyMshrs.end(), ref),
+        readyMshrs.end());
+    if (ref.pool == MshrPool::Prefetch) {
+        readyPrefetchMshrs.erase(
+            std::remove(readyPrefetchMshrs.begin(),
+                        readyPrefetchMshrs.end(), ref.slot),
+            readyPrefetchMshrs.end());
+    }
+}
+
+void
+MptUnit::promotePrefetchMshr(unsigned slot)
+{
+    const MshrRef ref{MshrPool::Prefetch, slot};
+    if (!validMshr(ref)) {
+        return;
+    }
+    Mshr &mshr = getMshr(ref);
+    if (mshr.inFlight || mshr.packet == nullptr) {
+        return;
+    }
+
+    readyPrefetchMshrs.erase(
+        std::remove(readyPrefetchMshrs.begin(), readyPrefetchMshrs.end(), slot),
+        readyPrefetchMshrs.end());
+    if (blockedMshr.has_value() && *blockedMshr == ref) {
+        return;
+    }
+    if (std::find(readyMshrs.begin(), readyMshrs.end(), ref) ==
+        readyMshrs.end()) {
+        readyMshrs.push_back(ref);
+    }
 }
 
 bool
@@ -625,11 +802,7 @@ MptUnit::startTargetRead(Target target)
     panic_if(target.level < 0 || target.level >= static_cast<int>(NumLevels),
              "Invalid MPT walk level %d\n", target.level);
 
-    MshrKey key;
-    key.epoch = target.epoch;
-    key.rootPpn = target.rootPpn;
-    key.level = target.level;
-    key.mptePaddr = mpteAddress(target);
+    const MshrKey key = mshrKey(target);
 
     auto existing = mshrIndex.find(key);
     if (existing != mshrIndex.end()) {
@@ -641,6 +814,25 @@ MptUnit::startTargetRead(Target target)
         mshr.targets.push_back(target);
         stats.mshrMerges++;
         stats.mpteMisses[target.level]++;
+        return true;
+    }
+
+    auto prefetched = prefetchMshrIndex.find(key);
+    if (prefetched != prefetchMshrIndex.end()) {
+        Mshr &mshr = prefetchMshrs[prefetched->second];
+        if (mshr.targets.size() >= targetsPerMshr) {
+            stats.mshrTargetFullEvents++;
+            return false;
+        }
+        mshr.targets.push_back(target);
+        stats.mshrMerges++;
+        stats.prefetchMerges++;
+        stats.mpteMisses[target.level]++;
+        if (!mshr.prefetchUseful) {
+            mshr.prefetchUseful = true;
+            stats.prefetchUseful++;
+        }
+        promotePrefetchMshr(prefetched->second);
         return true;
     }
 
@@ -664,24 +856,150 @@ MptUnit::startTargetRead(Target target)
     mshr.targets.clear();
     mshr.targets.reserve(targetsPerMshr);
     mshr.targets.push_back(target);
-    mshr.packet = createReadPacket(slot, mshr.generation, key.mptePaddr);
+    mshr.prefetchTarget.reset();
+    mshr.prefetchUseful = false;
+    const MshrRef ref{MshrPool::Demand, slot};
+    mshr.packet = createReadPacket(ref, mshr.generation, key.mptePaddr);
     mshr.issueTick = 0;
     mshrIndex.emplace(key, slot);
-    readyMshrs.push_back(slot);
+    readyMshrs.push_back(ref);
     stats.mshrAllocations++;
     stats.mpteMisses[target.level]++;
     return true;
 }
 
+bool
+MptUnit::prefetchQueued(const MshrKey &key) const
+{
+    return std::any_of(
+        prefetchQueue.begin(), prefetchQueue.end(),
+        [this, &key](const Target &target) {
+            return mshrKey(target) == key;
+        });
+}
+
+void
+MptUnit::queuePrefetches(const Target &target)
+{
+    if (!enableMptCachePrefetch || !enabled() ||
+        target.source == MptRequestSource::Ptw ||
+        target.level != static_cast<int>(prefetchLevel) ||
+        target.epoch != epoch || target.rootPpn != mmpt.ppn) {
+        return;
+    }
+
+    const Addr region_size = getRegionSizeForLevel(target.level);
+    const Addr region_base = target.paddr & ~(region_size - 1);
+    const unsigned index =
+        (target.paddr >> (getPageShiftForLevel(target.level) + 4)) & 0x1ff;
+
+    for (unsigned distance = 1; distance <= prefetchDegree; ++distance) {
+        if (distance >= MptRootEntries ||
+            index > MptRootEntries - 1 - distance) {
+            stats.prefetchDropped += prefetchDegree - distance + 1;
+            break;
+        }
+
+        Target candidate = target;
+        candidate.id = 0;
+        candidate.client = nullptr;
+        candidate.paddr = region_base + distance * region_size;
+        candidate.depth = 0;
+        candidate.enqueueTick = curTick();
+        const MshrKey key = mshrKey(candidate);
+
+        if (cacheCoversPrefetch(candidate.paddr, candidate.level) ||
+            mshrIndex.find(key) != mshrIndex.end() ||
+            prefetchMshrIndex.find(key) != prefetchMshrIndex.end() ||
+            prefetchQueued(key)) {
+            stats.prefetchDropped++;
+            continue;
+        }
+        if (prefetchQueue.size() >= prefetchQueueCapacity) {
+            stats.prefetchDropped++;
+            continue;
+        }
+        prefetchQueue.push_back(candidate);
+    }
+}
+
+MptUnit::PrefetchStartResult
+MptUnit::startPrefetch(Target target)
+{
+    if (!enableMptCachePrefetch || target.epoch != epoch ||
+        target.rootPpn != mmpt.ppn || !enabled()) {
+        stats.prefetchDropped++;
+        return PrefetchStartResult::Dropped;
+    }
+
+    const MshrKey key = mshrKey(target);
+    if (cacheCoversPrefetch(target.paddr, target.level) ||
+        mshrIndex.find(key) != mshrIndex.end() ||
+        prefetchMshrIndex.find(key) != prefetchMshrIndex.end()) {
+        stats.prefetchDropped++;
+        return PrefetchStartResult::Dropped;
+    }
+
+    unsigned slot = numPrefetchMshrs;
+    for (unsigned i = 0; i < numPrefetchMshrs; ++i) {
+        if (!prefetchMshrs[i].allocated) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == numPrefetchMshrs) {
+        stats.prefetchMshrFull++;
+        return PrefetchStartResult::Retry;
+    }
+
+    Mshr &mshr = prefetchMshrs[slot];
+    mshr.allocated = true;
+    mshr.inFlight = false;
+    ++mshr.generation;
+    mshr.key = key;
+    mshr.targets.clear();
+    mshr.targets.reserve(targetsPerMshr);
+    mshr.prefetchTarget = target;
+    mshr.prefetchUseful = false;
+    const MshrRef ref{MshrPool::Prefetch, slot};
+    mshr.packet = createReadPacket(ref, mshr.generation, key.mptePaddr);
+    mshr.issueTick = 0;
+    prefetchMshrIndex.emplace(key, slot);
+    readyPrefetchMshrs.push_back(slot);
+    stats.prefetchIssued++;
+    return PrefetchStartResult::Started;
+}
+
+void
+MptUnit::issuePrefetches()
+{
+    if (!enableMptCachePrefetch) {
+        return;
+    }
+
+    unsigned issued = 0;
+    while (issued < prefetchIssueWidth && !prefetchQueue.empty()) {
+        const PrefetchStartResult result = startPrefetch(prefetchQueue.front());
+        if (result == PrefetchStartResult::Retry) {
+            break;
+        }
+        prefetchQueue.pop_front();
+        if (result == PrefetchStartResult::Started) {
+            ++issued;
+        }
+    }
+}
+
 PacketPtr
-MptUnit::createReadPacket(unsigned slot, uint64_t generation, Addr paddr)
+MptUnit::createReadPacket(const MshrRef &ref, uint64_t generation, Addr paddr)
 {
     RequestPtr request = std::make_shared<Request>(
         paddr, MPT_MPTE_SIZE, Request::PHYSICAL, requestorId);
     request->setMptWalk(true);
     PacketPtr packet = new Packet(request, MemCmd::ReadReq);
     packet->allocate();
-    packet->pushSenderState(new MptSenderState(slot, generation));
+    packet->pushSenderState(
+        new MptSenderState(ref.pool, ref.slot, generation));
     return packet;
 }
 
@@ -695,27 +1013,56 @@ MptUnit::issueMemoryRequests()
     unsigned issued = 0;
     while (issued < memoryIssueWidth &&
            memoryInflight < maxMemoryInflight && !readyMshrs.empty()) {
-        const unsigned slot = readyMshrs.front();
-        Mshr &mshr = mshrs[slot];
+        const MshrRef ref = readyMshrs.front();
+        if (!validMshr(ref)) {
+            readyMshrs.pop_front();
+            continue;
+        }
+        Mshr &mshr = getMshr(ref);
         if (!mshr.allocated || mshr.inFlight || mshr.packet == nullptr) {
             readyMshrs.pop_front();
             continue;
         }
-        if (!sendMshr(slot)) {
-            blockedMshr = slot;
+        if (!sendMshr(ref)) {
+            blockedMshr = ref;
             return;
         }
         readyMshrs.pop_front();
         ++issued;
     }
+
+    unsigned prefetch_issued = 0;
+    while (issued < memoryIssueWidth &&
+           prefetch_issued < prefetchIssueWidth &&
+           memoryInflight < maxMemoryInflight &&
+           !readyPrefetchMshrs.empty()) {
+        const unsigned slot = readyPrefetchMshrs.front();
+        const MshrRef ref{MshrPool::Prefetch, slot};
+        if (!validMshr(ref)) {
+            readyPrefetchMshrs.pop_front();
+            continue;
+        }
+        Mshr &mshr = getMshr(ref);
+        if (mshr.inFlight || mshr.packet == nullptr) {
+            readyPrefetchMshrs.pop_front();
+            continue;
+        }
+        if (!sendMshr(ref)) {
+            blockedMshr = ref;
+            return;
+        }
+        readyPrefetchMshrs.pop_front();
+        ++issued;
+        ++prefetch_issued;
+    }
 }
 
 bool
-MptUnit::sendMshr(unsigned slot)
+MptUnit::sendMshr(const MshrRef &ref)
 {
-    Mshr &mshr = mshrs[slot];
+    Mshr &mshr = getMshr(ref);
     panic_if(!mshr.allocated || mshr.inFlight || mshr.packet == nullptr,
-             "Invalid MPT MSHR send for slot %u\n", slot);
+             "Invalid MPT MSHR send for slot %u\n", ref.slot);
     if (!port.sendTimingReq(mshr.packet)) {
         return false;
     }
@@ -725,6 +1072,9 @@ MptUnit::sendMshr(unsigned slot)
     mshr.issueTick = curTick();
     ++memoryInflight;
     stats.memoryRequests++;
+    if (ref.pool == MshrPool::Prefetch) {
+        stats.prefetchMemoryRequests++;
+    }
     if (stats.maxMemoryInflight.value() < memoryInflight) {
         stats.maxMemoryInflight = memoryInflight;
     }
@@ -737,20 +1087,22 @@ MptUnit::recvReqRetry()
     if (!blockedMshr.has_value()) {
         return;
     }
-    const unsigned slot = *blockedMshr;
-    if (!mshrs[slot].allocated || mshrs[slot].inFlight ||
-        mshrs[slot].packet == nullptr) {
+    const MshrRef ref = *blockedMshr;
+    if (!validMshr(ref)) {
+        blockedMshr.reset();
+        scheduleService();
+        return;
+    }
+    Mshr &mshr = getMshr(ref);
+    if (mshr.inFlight || mshr.packet == nullptr) {
         blockedMshr.reset();
         scheduleService();
         return;
     }
     stats.memoryRetries++;
-    if (memoryInflight < maxMemoryInflight && sendMshr(slot)) {
+    if (memoryInflight < maxMemoryInflight && sendMshr(ref)) {
         blockedMshr.reset();
-        auto it = std::find(readyMshrs.begin(), readyMshrs.end(), slot);
-        if (it != readyMshrs.end()) {
-            readyMshrs.erase(it);
-        }
+        removeReadyMshr(ref);
         scheduleService();
     }
 }
@@ -762,11 +1114,12 @@ MptUnit::recvTimingResp(PacketPtr pkt)
     panic_if(sender == nullptr, "MPT response has invalid sender state\n");
     const unsigned slot = sender->slot;
     const uint64_t generation = sender->generation;
+    const MshrRef ref{sender->pool, slot};
     delete sender;
 
-    panic_if(slot >= mshrs.size(), "MPT response has invalid MSHR slot %u\n",
-             slot);
-    Mshr &mshr = mshrs[slot];
+    panic_if(!validMshr(ref),
+             "MPT response has invalid MSHR slot %u\n", slot);
+    Mshr &mshr = getMshr(ref);
     panic_if(!mshr.allocated || !mshr.inFlight ||
              mshr.generation != generation,
              "Stale or unmatched MPT response for slot %u generation %llu\n",
@@ -778,9 +1131,10 @@ MptUnit::recvTimingResp(PacketPtr pkt)
     stats.memoryLatency += ticksToCycles(curTick() - mshr.issueTick);
     const MshrKey key = mshr.key;
     std::vector<Target> targets = std::move(mshr.targets);
+    std::optional<Target> prefetch_target = mshr.prefetchTarget;
     const bool response_error = pkt->isError();
     const uint64_t raw = response_error ? 0 : pkt->getLE<uint64_t>();
-    releaseMshr(slot);
+    releaseMshr(ref);
     delete pkt;
 
     if (key.epoch != epoch || key.rootPpn != mmpt.ppn) {
@@ -789,8 +1143,22 @@ MptUnit::recvTimingResp(PacketPtr pkt)
             restartTarget(target);
         }
     } else {
+        const bool demand_merged = !targets.empty();
+        if (prefetch_target.has_value()) {
+            consumePrefetchedMpte(*prefetch_target, raw, demand_merged);
+        }
         for (auto &target : targets) {
             consumeMpte(target, raw);
+        }
+
+        const MPTE52 mpte(raw);
+        const auto trigger = std::find_if(
+            targets.begin(), targets.end(), [](const Target &target) {
+                return target.source != MptRequestSource::Ptw;
+            });
+        if (!response_error && mpte.isValid() &&
+            (mpte.isLeaf() || key.level > 0) && trigger != targets.end()) {
+            queuePrefetches(*trigger);
         }
     }
 
@@ -799,17 +1167,24 @@ MptUnit::recvTimingResp(PacketPtr pkt)
 }
 
 void
-MptUnit::releaseMshr(unsigned slot)
+MptUnit::releaseMshr(const MshrRef &ref)
 {
-    Mshr &mshr = mshrs[slot];
+    Mshr &mshr = getMshr(ref);
     if (!mshr.allocated) {
         return;
     }
-    mshrIndex.erase(mshr.key);
+    if (ref.pool == MshrPool::Prefetch) {
+        prefetchMshrIndex.erase(mshr.key);
+    } else {
+        mshrIndex.erase(mshr.key);
+    }
+    removeReadyMshr(ref);
     mshr.allocated = false;
     mshr.inFlight = false;
     mshr.packet = nullptr;
     mshr.targets.clear();
+    mshr.prefetchTarget.reset();
+    mshr.prefetchUseful = false;
     mshr.issueTick = 0;
 }
 
@@ -823,6 +1198,28 @@ MptUnit::discardPacket(PacketPtr pkt)
         delete pkt->popSenderState();
     }
     delete pkt;
+}
+
+void
+MptUnit::consumePrefetchedMpte(const Target &target, uint64_t raw,
+                               bool demand_merged)
+{
+    if (target.epoch != epoch || target.rootPpn != mmpt.ppn) {
+        stats.prefetchDropped++;
+        return;
+    }
+
+    const MPTE52 mpte(raw);
+    if (!mpte.isValid() || (!mpte.isLeaf() && target.level == 0)) {
+        stats.prefetchDropped++;
+        return;
+    }
+
+    if (insertCache(target.level, target.paddr, mpte, !demand_merged)) {
+        stats.prefetchFilled++;
+    } else {
+        stats.prefetchDropped++;
+    }
 }
 
 void
@@ -901,29 +1298,46 @@ MptUnit::invalidateForNewEpoch()
     stats.fenceFlushes++;
 
     std::vector<Target> restart;
-    for (unsigned slot = 0; slot < mshrs.size(); ++slot) {
-        Mshr &mshr = mshrs[slot];
-        if (!mshr.allocated) {
-            continue;
+    stats.prefetchDropped += prefetchQueue.size();
+    prefetchQueue.clear();
+
+    auto invalidate_pool = [this, &restart](auto &pool, MshrPool pool_type) {
+        for (unsigned slot = 0; slot < pool.size(); ++slot) {
+            Mshr &mshr = pool[slot];
+            if (!mshr.allocated) {
+                continue;
+            }
+            restart.insert(restart.end(), mshr.targets.begin(),
+                           mshr.targets.end());
+            mshr.targets.clear();
+            if (pool_type == MshrPool::Prefetch) {
+                stats.prefetchDropped++;
+            }
+            if (!mshr.inFlight) {
+                discardPacket(mshr.packet);
+                mshr.packet = nullptr;
+                releaseMshr(MshrRef{pool_type, slot});
+            }
         }
-        restart.insert(restart.end(), mshr.targets.begin(),
-                       mshr.targets.end());
-        mshr.targets.clear();
-        if (!mshr.inFlight) {
-            discardPacket(mshr.packet);
-            mshr.packet = nullptr;
-            releaseMshr(slot);
-        }
-    }
+    };
+    invalidate_pool(mshrs, MshrPool::Demand);
+    invalidate_pool(prefetchMshrs, MshrPool::Prefetch);
 
     readyMshrs.erase(
         std::remove_if(readyMshrs.begin(), readyMshrs.end(),
-                       [this](unsigned slot) {
-                           return slot >= mshrs.size() ||
-                                  !mshrs[slot].allocated;
+                       [this](const MshrRef &ref) {
+                           return !validMshr(ref);
                        }),
         readyMshrs.end());
-    if (blockedMshr.has_value() && !mshrs[*blockedMshr].allocated) {
+    readyPrefetchMshrs.erase(
+        std::remove_if(readyPrefetchMshrs.begin(),
+                       readyPrefetchMshrs.end(),
+                       [this](unsigned slot) {
+                           return !validMshr(
+                               MshrRef{MshrPool::Prefetch, slot});
+                       }),
+        readyPrefetchMshrs.end());
+    if (blockedMshr.has_value() && !validMshr(*blockedMshr)) {
         blockedMshr.reset();
     }
 
@@ -971,11 +1385,7 @@ MptUnit::cancel(MptClient *client)
     erase_targets(pendingWalks);
     erase_targets(bypassCompletions);
 
-    for (unsigned slot = 0; slot < mshrs.size(); ++slot) {
-        Mshr &mshr = mshrs[slot];
-        if (!mshr.allocated) {
-            continue;
-        }
+    auto cancel_targets = [&removed, client](Mshr &mshr) {
         const auto old_size = mshr.targets.size();
         mshr.targets.erase(
             std::remove_if(mshr.targets.begin(), mshr.targets.end(),
@@ -984,21 +1394,53 @@ MptUnit::cancel(MptClient *client)
                            }),
             mshr.targets.end());
         removed |= old_size != mshr.targets.size();
+    };
+
+    for (unsigned slot = 0; slot < mshrs.size(); ++slot) {
+        Mshr &mshr = mshrs[slot];
+        if (!mshr.allocated) {
+            continue;
+        }
+        cancel_targets(mshr);
         if (mshr.targets.empty() && !mshr.inFlight) {
             discardPacket(mshr.packet);
             mshr.packet = nullptr;
-            releaseMshr(slot);
+            releaseMshr(MshrRef{MshrPool::Demand, slot});
+        }
+    }
+
+    for (unsigned slot = 0; slot < prefetchMshrs.size(); ++slot) {
+        Mshr &mshr = prefetchMshrs[slot];
+        if (!mshr.allocated) {
+            continue;
+        }
+        const bool had_targets = !mshr.targets.empty();
+        cancel_targets(mshr);
+        if (had_targets && mshr.targets.empty() && !mshr.inFlight) {
+            const MshrRef ref{MshrPool::Prefetch, slot};
+            removeReadyMshr(ref);
+            if ((!blockedMshr.has_value() || *blockedMshr != ref) &&
+                mshr.packet != nullptr) {
+                readyPrefetchMshrs.push_back(slot);
+            }
         }
     }
 
     readyMshrs.erase(
         std::remove_if(readyMshrs.begin(), readyMshrs.end(),
-                       [this](unsigned slot) {
-                           return slot >= mshrs.size() ||
-                                  !mshrs[slot].allocated;
+                       [this](const MshrRef &ref) {
+                           return !validMshr(ref);
                        }),
         readyMshrs.end());
-    if (blockedMshr.has_value() && !mshrs[*blockedMshr].allocated) {
+    readyPrefetchMshrs.erase(
+        std::remove_if(readyPrefetchMshrs.begin(),
+                       readyPrefetchMshrs.end(),
+                       [this](unsigned slot) {
+                           return !validMshr(
+                               MshrRef{MshrPool::Prefetch, slot});
+                       }),
+        readyPrefetchMshrs.end());
+    if (blockedMshr.has_value() && !validMshr(*blockedMshr)) {
         blockedMshr.reset();
     }
     if (removed) {
