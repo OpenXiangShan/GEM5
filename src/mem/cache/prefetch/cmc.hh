@@ -5,7 +5,6 @@
 #include <boost/compute/detail/lru_cache.hpp>
 #include <list>
 #include <memory>
-#include <unordered_map>
 #include <vector>
 
 #include "base/types.hh"
@@ -110,10 +109,28 @@ class CMCPrefetcher : public Queued
             ~StorageEntry() = default;
     };
   private:
-    std::unordered_map<ContextID, std::unique_ptr<Recorder>> recorders;
+    Recorder recorder;
     AssociativeSet<StorageEntry> storage;
-    const int degree;
     uint64_t acc_id = 1;
+
+    struct CMCStats : public statistics::Group
+    {
+        CMCStats(statistics::Group *parent);
+
+        statistics::Scalar storageHits;
+        statistics::Scalar storageMisses;
+        statistics::Scalar storageUnusedHits;
+        statistics::Scalar triggersCreated;
+        statistics::Scalar triggerStackFull;
+        statistics::Scalar trainingSamples;
+        statistics::Scalar trainingContextMismatches;
+        statistics::Scalar trainingCompletions;
+        statistics::Scalar storageInserts;
+        statistics::Scalar storageUpdates;
+        statistics::Scalar dataQueueEnqueues;
+        statistics::Scalar dataQueueDrops;
+        statistics::Scalar queuedCandidatesSent;
+    } statsCMC;
 
     bool enableDB;
     DataBase db;
@@ -141,15 +158,13 @@ class CMCPrefetcher : public Queued
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src);
 
-    Recorder &recorderFor(ContextID context_id);
-
     static const int STACK_SIZE = 4;
     boost::circular_buffer<RecordEntry> trigger;
     protected:
     std::list<StorageEntry> tpDataQueue;
     const int maxTpDataQueueSize = 8;
     StorageEntry sendingEntry;
-    int sendIDX_PTR = 0;// point to the next idx of sendingEntry 
+    int sendIDX_PTR = 0; // Points to the next address in sendingEntry.
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override;
     public:
     bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) override;

@@ -1,7 +1,7 @@
 #include "mem/cache/prefetch/cmc.hh"
 
-#include <algorithm>
 #include <memory>
+#include <unordered_map>
 
 #include "base/output.hh"
 #include "debug/CMCPrefetcher.hh"
@@ -12,11 +12,43 @@ namespace gem5
 namespace prefetch
 {
 
+CMCPrefetcher::CMCStats::CMCStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(storageHits, statistics::units::Count::get(),
+               "CMC storage lookup hits used for prefetching"),
+      ADD_STAT(storageMisses, statistics::units::Count::get(),
+               "CMC storage lookup misses on uncovered accesses"),
+      ADD_STAT(storageUnusedHits, statistics::units::Count::get(),
+               "CMC storage hits invalidated because another prefetcher covered the access"),
+      ADD_STAT(triggersCreated, statistics::units::Count::get(),
+               "CMC temporal triggers created"),
+      ADD_STAT(triggerStackFull, statistics::units::Count::get(),
+               "CMC trigger creation attempts blocked by a full trigger stack"),
+      ADD_STAT(trainingSamples, statistics::units::Count::get(),
+               "CMC temporal samples recorded"),
+      ADD_STAT(trainingContextMismatches, statistics::units::Count::get(),
+               "CMC samples skipped while another context owns the recorder"),
+      ADD_STAT(trainingCompletions, statistics::units::Count::get(),
+               "CMC temporal recordings completed"),
+      ADD_STAT(storageInserts, statistics::units::Count::get(),
+               "CMC temporal sequences inserted into storage"),
+      ADD_STAT(storageUpdates, statistics::units::Count::get(),
+               "CMC temporal sequences updated in storage"),
+      ADD_STAT(dataQueueEnqueues, statistics::units::Count::get(),
+               "CMC temporal sequences enqueued for buffered sending"),
+      ADD_STAT(dataQueueDrops, statistics::units::Count::get(),
+               "CMC queued temporal sequences dropped when the buffer is full"),
+      ADD_STAT(queuedCandidatesSent, statistics::units::Count::get(),
+               "CMC buffered candidates admitted for sending")
+{
+}
+
 CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
 : Queued(p),
+    recorder(p.degree),
     storage(p.storage_entries, p.storage_entries, p.storage_indexing_policy,
             p.storage_replacement_policy, StorageEntry()),
-    degree(p.degree),
+    statsCMC(this),
     enableDB(p.enablePrefetchDB),
     trigger(STACK_SIZE)
 {
@@ -76,16 +108,6 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
     sendIDX_PTR = 0;
 }
 
-CMCPrefetcher::Recorder &
-CMCPrefetcher::recorderFor(ContextID context_id)
-{
-    auto &recorder = recorders[context_id];
-    if (!recorder) {
-        recorder = std::make_unique<Recorder>(degree);
-    }
-    return *recorder;
-}
-
 void
 CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool is_first_shot)
@@ -101,7 +123,6 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
     bool is_secure = pfi.isSecure();
     ContextID context_id = pfi.hasContextId() ?
         pfi.contextId() : InvalidContextID;
-    auto &recorder = recorderFor(context_id);
     int prefetchSource = pf_source;
 
     // if (enableDB) {
@@ -144,6 +165,7 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
     StorageEntry *match_entry =
         storage.findEntry(storage_key, is_secure);
     if (nocovered && match_entry) {
+        statsCMC.storageHits++;
         storage.accessEntry(match_entry);
         // prefetch on cache miss only
         DPRINTF(CMCPrefetcher, "Storage hit, trigger pc: %lx, addr: %lx\n",
@@ -152,17 +174,21 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
         match_entry->refcnt++;
         int priority = Recorder::nrEntry;
         uint32_t id = match_entry->id;
-        //create a copy , insert to tpdataqueue
-        StorageEntry entry_copy = StorageEntry(*match_entry);
-        entry_copy.trigger = std::make_unique<TriggerInfo>(pfi.trigger_info);
-        if( tpDataQueue.size() >= maxTpDataQueueSize){
+        StorageEntry entry_copy(*match_entry);
+        entry_copy.trigger =
+            std::make_unique<TriggerInfo>(pfi.trigger_info);
+        if (tpDataQueue.size() >= maxTpDataQueueSize) {
             tpDataQueue.pop_front();
+            statsCMC.dataQueueDrops++;
         }
         tpDataQueue.push_back(entry_copy);
+        statsCMC.dataQueueEnqueues++;
+
         int num_send = 0;
         for (auto addr: match_entry->addresses) {
-            // addresses.push_back(AddrPriority(addr, mixedNum, PrefetchSourceType::CMC));
-            if (sendPFWithFilter(pfi, addr, addresses, priority, PrefetchSourceType::CMC)) {
+            if (sendPFWithFilter(
+                    pfi, addr, addresses, priority,
+                    PrefetchSourceType::CMC)) {
                 num_send++;
                 if (num_send > 24) {
                     addresses.back().pfahead = true;
@@ -181,10 +207,13 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
         }
     }
     else if (match_entry) {
+        statsCMC.storageUnusedHits++;
         // if storage entry can be covered by other prefetcher, shall we need to remove this entry?
         storage.invalidate(match_entry);
         DPRINTF(CMCPrefetcher, "Storage hit, but unused, trigger addr: %lx\n",
                 block_addr);
+    } else if (nocovered) {
+        statsCMC.storageMisses++;
     }
 
     // Train: update temporal access chain
@@ -192,47 +221,49 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
 
     /* 1. Train trigger */
     bool sms_hit = !pfi.isCacheMiss() && (prefetchSource == PrefetchSourceType::SStream || prefetchSource == PrefetchSourceType::SPht);
-    auto trigger_it = std::find_if(
-        trigger.begin(), trigger.end(),
-        [context_id](const RecordEntry &entry) {
-            return entry.contextId == context_id;
-        });
-    bool has_context_trigger = trigger_it != trigger.end();
+    // ContextID isolates ownership without creating per-context capacity.
+    bool wants_new_trigger = trigger.empty() || match_entry;
     bool train_trigger =
-        (!has_context_trigger || match_entry) && !trigger.full();
+        wants_new_trigger && !trigger.full();
     bool do_training =
-        !train_trigger && has_context_trigger && nocovered;
+        !train_trigger && !trigger.empty() && nocovered &&
+        trigger.front().contextId == context_id;
     if (train_trigger) {
+        statsCMC.triggersCreated++;
         DPRINTF(CMCPrefetcher, "train_trigger index: %d, addr: %lx\n",
                 trigger.size()-1, block_addr);
         assert(!trigger.full());
 
         trigger.push_back(
             RecordEntry(pc, block_addr, is_secure, context_id));
+    } else if (wants_new_trigger && trigger.full()) {
+        statsCMC.triggerStackFull++;
     }
-
+    if (!train_trigger && !trigger.empty() && nocovered &&
+        trigger.front().contextId != context_id) {
+        statsCMC.trainingContextMismatches++;
+    }
     /* 2. Train entry */
     if (do_training) {
+        statsCMC.trainingSamples++;
+        // Only the oldest trigger owner may advance the shared recorder.
         bool trained = recorder.train_entry(block_addr, is_secure, &finished);
-        trigger_it = std::find_if(
-            trigger.begin(), trigger.end(),
-            [context_id](const RecordEntry &entry) {
-                return entry.contextId == context_id;
-            });
-        assert(trigger_it != trigger.end());
-        auto &trigger_head = *trigger_it;
+        auto trigger_head = trigger.front();
         if (trained) {
             DPRINTF(CMCPrefetcher, "trained %x\n", block_addr);
         }
         if (finished) {
+            statsCMC.trainingCompletions++;
             DPRINTF(CMCPrefetcher, "trigger train finished, pc: %lx, addr: %lx\n",
                     trigger_head.pc, trigger_head.addr);
 
             Addr trigger_key = contextKey(
-                hash(trigger_head.addr >> 6, trigger_head.pc), context_id);
+                hash(trigger_head.addr >> 6, trigger_head.pc),
+                trigger_head.contextId);
             StorageEntry *entry =
                 storage.findEntry(trigger_key, trigger_head.is_secure);
             if (entry) {
+                statsCMC.storageUpdates++;
                 // storage.accessEntry(entry); do not update replacement
                 DPRINTF(CMCPrefetcher, "CMC: enter the same trigger, pc: %lx, addr: %lx\n",
                                     trigger_head.pc, trigger_head.addr);
@@ -240,14 +271,15 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
 
                 entry->refcnt++;
                 entry->id = acc_id;
-                entry->contextId = context_id;
+                entry->contextId = trigger_head.contextId;
             } else {
+                statsCMC.storageInserts++;
                 entry = storage.findVictim(trigger_key);
                 entry->addresses = recorder.entries;
 
                 entry->refcnt = 0;
                 entry->id = acc_id;
-                entry->contextId = context_id;
+                entry->contextId = trigger_head.contextId;
 
                 storage.insertEntry(
                     trigger_key,
@@ -260,7 +292,7 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
                 DPRINTF(CMCPrefetcher, "entry addr: 0x%lx\n",
                         addr);
             }
-            trigger.erase(trigger_it);
+            trigger.pop_front();
 
             recorder.reset();
             acc_id++;
@@ -379,6 +411,7 @@ CMCPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
                     Recorder::nrEntry - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC));
             }
+            statsCMC.queuedCandidatesSent++;
             return true;
         }else{
             //finished sending this entry
@@ -406,6 +439,7 @@ CMCPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
                     Recorder::nrEntry - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC));
             }
+            statsCMC.queuedCandidatesSent++;
             return true;
         }else{
             //should not happen
