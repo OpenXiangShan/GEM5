@@ -1435,6 +1435,13 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             request && request->isPartialFault()
             && !request->isComplete()) {
         assert(request->isSplit());
+        if (inst->opClass() == enums::VectorUnitStrideFaultOnlyFirstLoad) {
+            inst->setMemAccPredicate(false);
+            inst->setExecuted();
+            inst->setSkipFollowingPipe();
+            inst->setCanCommit();
+            return NoFault;
+        }
         // If we have a partial fault where the mem access is not complete yet
         // then the cache must have been blocked. This load will be re-executed
         // when the cache gets unblocked. We will handle the fault when the
