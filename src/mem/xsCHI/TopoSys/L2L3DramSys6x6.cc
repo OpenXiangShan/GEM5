@@ -1,4 +1,4 @@
-#include "mem/xsCHI/TopoSys/L2L3DramSys5x3.hh"
+#include "mem/xsCHI/TopoSys/L2L3DramSys6x6.hh"
 
 #include <algorithm>
 #include <cassert>
@@ -20,8 +20,8 @@ namespace xsCHI
 namespace
 {
 
-constexpr uint32_t MeshWidth = 5;
-constexpr uint32_t MeshHeight = 3;
+constexpr uint32_t MeshWidth = 6;
+constexpr uint32_t MeshHeight = 6;
 
 struct AttachTarget
 {
@@ -60,7 +60,8 @@ isPowerOfTwo(size_t value)
 }
 
 uint32_t
-parseMeshIndexToken(const std::string &meshToken, const std::string &rawAttachPoint,
+parseMeshIndexToken(const std::string &meshToken,
+                    const std::string &rawAttachPoint,
                     const char *kind)
 {
     panic_if(meshToken.size() <= 4 || meshToken.substr(0, 4) != "mesh",
@@ -153,7 +154,7 @@ connectPorts(CHIPort *a, CHIPort *b, const char *label)
 {
     assert(a != nullptr && b != nullptr);
     panic_if(a->isConnected() || b->isConnected(),
-             "L2L3DramSys5x3 mesh link %s is already connected", label);
+             "L2L3DramSys6x6 mesh link %s is already connected", label);
     a->connect(b);
 }
 
@@ -165,7 +166,7 @@ nodeIdOf(const AttachTarget &target)
 
 } // namespace
 
-L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
+L2L3DramSys6x6::L2L3DramSys6x6(const Params &p)
     : ClockedObject(p),
       l2wrap(p.L2Wrapper),
       hns(p.HNs.begin(), p.HNs.end()),
@@ -173,7 +174,12 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
       meshes{p.MeshNode0, p.MeshNode1, p.MeshNode2, p.MeshNode3, p.MeshNode4,
              p.MeshNode5, p.MeshNode6, p.MeshNode7, p.MeshNode8, p.MeshNode9,
              p.MeshNode10, p.MeshNode11, p.MeshNode12, p.MeshNode13,
-             p.MeshNode14},
+             p.MeshNode14, p.MeshNode15, p.MeshNode16, p.MeshNode17,
+             p.MeshNode18, p.MeshNode19, p.MeshNode20, p.MeshNode21,
+             p.MeshNode22, p.MeshNode23, p.MeshNode24, p.MeshNode25,
+             p.MeshNode26, p.MeshNode27, p.MeshNode28, p.MeshNode29,
+             p.MeshNode30, p.MeshNode31, p.MeshNode32, p.MeshNode33,
+             p.MeshNode34, p.MeshNode35},
       rnAttachPoint(p.rn_attach_point),
       hnAttachPoints(p.hn_attach_points.begin(), p.hn_attach_points.end()),
       dramAttachPoints(p.dram_attach_points.begin(),
@@ -182,43 +188,43 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
       shadowAttachPoints(p.shadow_attach_points.begin(),
                          p.shadow_attach_points.end())
 {
-    panic_if(l2wrap == nullptr, "L2L3DramSys5x3 requires L2Wrapper");
+    panic_if(l2wrap == nullptr, "L2L3DramSys6x6 requires L2Wrapper");
     for (size_t i = 0; i < meshes.size(); ++i) {
         panic_if(meshes[i] == nullptr,
-                 "L2L3DramSys5x3 requires MeshNode0~14, MeshNode%u is null",
+                 "L2L3DramSys6x6 requires MeshNode0~35, MeshNode%u is null",
                  static_cast<unsigned>(i));
     }
 
-    panic_if(hns.empty(), "L2L3DramSys5x3 requires at least one HN");
-    panic_if(drams.empty(), "L2L3DramSys5x3 requires at least one DRAM");
+    panic_if(hns.empty(), "L2L3DramSys6x6 requires at least one HN");
+    panic_if(drams.empty(), "L2L3DramSys6x6 requires at least one DRAM");
     panic_if(hns.size() != hnAttachPoints.size(),
-             "L2L3DramSys5x3 HN config length mismatch: hns=%u "
+             "L2L3DramSys6x6 HN config length mismatch: hns=%u "
              "attach_points=%u",
              static_cast<unsigned>(hns.size()),
              static_cast<unsigned>(hnAttachPoints.size()));
     panic_if(drams.size() != dramAttachPoints.size(),
-             "L2L3DramSys5x3 DRAM config length mismatch: drams=%u "
+             "L2L3DramSys6x6 DRAM config length mismatch: drams=%u "
              "attach_points=%u",
              static_cast<unsigned>(drams.size()),
              static_cast<unsigned>(dramAttachPoints.size()));
     panic_if(shadowBridges.size() != shadowAttachPoints.size(),
-             "L2L3DramSys5x3 shadow config length mismatch: bridges=%u "
+             "L2L3DramSys6x6 shadow config length mismatch: bridges=%u "
              "attach_points=%u",
              static_cast<unsigned>(shadowBridges.size()),
              static_cast<unsigned>(shadowAttachPoints.size()));
     panic_if(shadowBridges.size() != l2wrap->getShadowBridges().size(),
-             "L2L3DramSys5x3 shadow bridge mismatch with L2Wrapper: topo=%u "
+             "L2L3DramSys6x6 shadow bridge mismatch with L2Wrapper: topo=%u "
              "wrapper=%u",
              static_cast<unsigned>(shadowBridges.size()),
              static_cast<unsigned>(l2wrap->getShadowBridges().size()));
 
     if (!isPowerOfTwo(hns.size())) {
-        warn("L2L3DramSys5x3 HN count %u is not a power of two; current SAM "
+        warn("L2L3DramSys6x6 HN count %u is not a power of two; current SAM "
              "hash may not select every HN",
              static_cast<unsigned>(hns.size()));
     }
     if (!isPowerOfTwo(drams.size())) {
-        warn("L2L3DramSys5x3 DRAM count %u is not a power of two; current SAM "
+        warn("L2L3DramSys6x6 DRAM count %u is not a power of two; current SAM "
              "hash may not select every DRAM",
              static_cast<unsigned>(drams.size()));
     }
@@ -231,7 +237,7 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
     std::vector<uint32_t> hnIds;
     for (size_t i = 0; i < hns.size(); ++i) {
         panic_if(hns[i] == nullptr,
-                 "L2L3DramSys5x3 HN[%u] is null",
+                 "L2L3DramSys6x6 HN[%u] is null",
                  static_cast<unsigned>(i));
         const AttachTarget target =
             parseAttachPoint(hnAttachPoints[i], meshes, "HN");
@@ -244,7 +250,7 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
     std::vector<uint32_t> dramIds;
     for (size_t i = 0; i < drams.size(); ++i) {
         panic_if(drams[i] == nullptr,
-                 "L2L3DramSys5x3 DRAM[%u] is null",
+                 "L2L3DramSys6x6 DRAM[%u] is null",
                  static_cast<unsigned>(i));
         const AttachTarget target =
             parseAttachPoint(dramAttachPoints[i], meshes, "DRAM");
@@ -276,7 +282,7 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
 
     assert(l2wrap->getCHIPort() != nullptr);
     panic_if(l2wrap->getCHIPort()->isConnected(),
-             "L2L3DramSys5x3 RN network port already connected");
+             "L2L3DramSys6x6 RN network port already connected");
     l2wrap->getCHIPort()->connect(rnTarget.port);
 
     for (uint32_t y = 0; y < MeshHeight; ++y) {
@@ -302,7 +308,7 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
     for (size_t i = 0; i < hns.size(); ++i) {
         assert(hns[i]->getNetworkPort() != nullptr);
         panic_if(hns[i]->getNetworkPort()->isConnected(),
-                 "L2L3DramSys5x3 HN[%u] network port already connected",
+                 "L2L3DramSys6x6 HN[%u] network port already connected",
                  static_cast<unsigned>(i));
         hns[i]->getNetworkPort()->connect(hnTargets[i].port);
         inform("xsCHI HN[%u] placement: attach=%s node_id=%u",
@@ -313,7 +319,7 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
     for (size_t i = 0; i < drams.size(); ++i) {
         assert(drams[i]->getCHIPort() != nullptr);
         panic_if(drams[i]->getCHIPort()->isConnected(),
-                 "L2L3DramSys5x3 DRAM[%u] network port already connected",
+                 "L2L3DramSys6x6 DRAM[%u] network port already connected",
                  static_cast<unsigned>(i));
         drams[i]->getCHIPort()->connect(dramTargets[i].port);
         inform("xsCHI DRAM[%u] placement: attach=%s node_id=%u",
@@ -325,10 +331,10 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
     for (size_t i = 0; i < shadowBridges.size(); ++i) {
         CHIBridge *shadowBridge = shadowBridges[i];
         panic_if(shadowBridge == nullptr,
-                 "L2L3DramSys5x3 shadow bridge[%u] is null",
+                 "L2L3DramSys6x6 shadow bridge[%u] is null",
                  static_cast<unsigned>(i));
         panic_if(shadowBridge != l2wrap->getShadowBridges()[i],
-                 "L2L3DramSys5x3 shadow bridge[%u] pointer mismatch with "
+                 "L2L3DramSys6x6 shadow bridge[%u] pointer mismatch with "
                  "L2Wrapper",
                  static_cast<unsigned>(i));
 
@@ -338,17 +344,17 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
 
         CHIPort *shadowPort = shadowBridge->getNetworkPort();
         panic_if(shadowPort == nullptr,
-                 "L2L3DramSys5x3 shadow bridge[%u] has null network port",
+                 "L2L3DramSys6x6 shadow bridge[%u] has null network port",
                  static_cast<unsigned>(i));
         panic_if(shadowPort->isConnected(),
-                 "L2L3DramSys5x3 shadow bridge[%u] network port already "
+                 "L2L3DramSys6x6 shadow bridge[%u] network port already "
                  "connected",
                  static_cast<unsigned>(i));
         shadowPort->connect(attachTarget.port);
 
         const uint32_t shadowNodeId = nodeIdOf(attachTarget);
         panic_if(shadowNodeIds.count(shadowNodeId) > 0,
-                 "L2L3DramSys5x3 duplicate shadow node_id=%u for shadow[%u]",
+                 "L2L3DramSys6x6 duplicate shadow node_id=%u for shadow[%u]",
                  shadowNodeId, static_cast<unsigned>(i));
         shadowNodeIds.insert(shadowNodeId);
 
@@ -368,25 +374,13 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
         return (port != nullptr) && port->isConnected();
     };
 
-    inform("xsCHI mesh summary: 5x3 nodes "
-           "M0=(%u,%u) M1=(%u,%u) M2=(%u,%u) M3=(%u,%u) M4=(%u,%u) "
-           "M5=(%u,%u) M6=(%u,%u) M7=(%u,%u) M8=(%u,%u) M9=(%u,%u) "
-           "M10=(%u,%u) M11=(%u,%u) M12=(%u,%u) M13=(%u,%u) M14=(%u,%u)",
-           meshes[0]->getNodeX(), meshes[0]->getNodeY(),
-           meshes[1]->getNodeX(), meshes[1]->getNodeY(),
-           meshes[2]->getNodeX(), meshes[2]->getNodeY(),
-           meshes[3]->getNodeX(), meshes[3]->getNodeY(),
-           meshes[4]->getNodeX(), meshes[4]->getNodeY(),
-           meshes[5]->getNodeX(), meshes[5]->getNodeY(),
-           meshes[6]->getNodeX(), meshes[6]->getNodeY(),
-           meshes[7]->getNodeX(), meshes[7]->getNodeY(),
-           meshes[8]->getNodeX(), meshes[8]->getNodeY(),
-           meshes[9]->getNodeX(), meshes[9]->getNodeY(),
-           meshes[10]->getNodeX(), meshes[10]->getNodeY(),
-           meshes[11]->getNodeX(), meshes[11]->getNodeY(),
-           meshes[12]->getNodeX(), meshes[12]->getNodeY(),
-           meshes[13]->getNodeX(), meshes[13]->getNodeY(),
-           meshes[14]->getNodeX(), meshes[14]->getNodeY());
+    std::string meshSummary = "xsCHI mesh summary: 6x6 nodes";
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        meshSummary += " M" + std::to_string(i) + "=(" +
+                       std::to_string(meshes[i]->getNodeX()) + "," +
+                       std::to_string(meshes[i]->getNodeY()) + ")";
+    }
+    inform("%s", meshSummary.c_str());
     inform("xsCHI endpoint summary: RN@%s node_id=%u, HN_count=%u, "
            "DRAM_count=%u, shadow_count=%u",
            rnTarget.normalized.c_str(), l2Id, static_cast<unsigned>(hns.size()),
@@ -408,15 +402,15 @@ L2L3DramSys5x3::L2L3DramSys5x3(const Params &p)
 }
 
 gem5::Port &
-L2L3DramSys5x3::getPort(const std::string &if_name, PortID idx)
+L2L3DramSys6x6::getPort(const std::string &if_name, PortID idx)
 {
     return l2wrap->getPort(if_name, idx);
 }
 
 void
-L2L3DramSys5x3::init()
+L2L3DramSys6x6::init()
 {
-    DPRINTF(Cache, "Init L2-CHI_L3-DRAM(5x3) system\n");
+    DPRINTF(Cache, "Init L2-CHI_L3-DRAM(6x6) system\n");
 }
 
 } // namespace xsCHI

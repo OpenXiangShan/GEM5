@@ -14,6 +14,8 @@ class L2L3DramSys5x3(ClockedObject):
     cpu_side_port = ResponsePort("port for receiving requests from the CPU or other requestor")
     mem_side_port = RequestPort("This port is only used for redirecting uncached accesses")
     L2Wrapper = Param.CHI_L2('L2 Wrapper')
+    rn_attach_point = Param.String(
+        "mesh0.local0", "Main RN/L2 mesh attach point")
     ShadowRNBridges = VectorParam.CHIBridge([], "Shadow RN bridges")
     shadow_attach_points = VectorParam.String(
         [], "Per-shadow mesh attach point, e.g. mesh14.local0")
