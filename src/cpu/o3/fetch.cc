@@ -2032,23 +2032,25 @@ Fetch::fetch(bool &status_change)
     //////////////////////////////////////////
     // Start actual fetch
     //////////////////////////////////////////
+    std::list<ThreadID>::iterator threadit = activeThreads->begin();
+    std::list<ThreadID>::iterator end = activeThreads->end();
+    while (threadit != end) {
+        ThreadID tid = *threadit++;
+    performInstructionFetch(tid);
+    }
     auto tid = getEligibleFetchTargetTid();
-
     if (tid == InvalidThreadID) {
         return;
     }
-
     if (!checkDecoupledFrontend(tid)) {
         return;
     }
-
     if (!prepareFetchAddress(tid, status_change)) {
         return;
     }
-
     ++fetchStats.cycles;
-
-    performInstructionFetch(tid);
+    sendNextCacheRequest(tid, *threads[tid].fetchpc);
+    
 }
 
 StallReason
@@ -2273,8 +2275,7 @@ Fetch::performInstructionFetch(ThreadID tid)
         wroteToTimeBuffer = true;
     }
 
-    assert(fetchStatus[tid] == Running && "Fetch should be running");
-    sendNextCacheRequest(tid, pc_state);
+   // assert(fetchStatus[tid] == Running && "Fetch should be running");
 }
 
 void
