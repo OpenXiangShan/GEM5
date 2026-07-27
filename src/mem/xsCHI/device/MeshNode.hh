@@ -111,6 +111,9 @@ class MeshNode : public ClockedObject
 
         statistics::Vector dir_egress_flits;
         statistics::Vector dir_active_cycles;
+        statistics::Vector2d egress_flits_by_dir_channel;
+        statistics::Vector2d egress_channel_active_cycles;
+        statistics::Vector2d egress_parallel_channel_cycles_by_dir;
         statistics::Scalar send_event_cycles;
         statistics::Formula dir_link_util;
 
@@ -152,7 +155,7 @@ class MeshNode : public ClockedObject
     // output/channel opportunity.
     void onSendEvent();
 
-    bool trySendForOutput(PortIndex egress);
+    size_t trySendForOutput(PortIndex egress);
     bool trySendForOutputAndChannel(PortIndex egress,
                                     Flit::CHI_CHN_TYPE channel);
 

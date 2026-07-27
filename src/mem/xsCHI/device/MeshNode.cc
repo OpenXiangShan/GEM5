@@ -17,9 +17,9 @@ namespace xsCHI
 
 namespace
 {
-// Keep channel service order aligned with CHIPort receiver order so the
-// behavior is predictable end-to-end.
-constexpr std::array<Flit::CHI_CHN_TYPE, 4> kChannelPriority = {
+// Deterministic channel traversal order. This is not a shared-egress priority:
+// each CHI channel has an independent send opportunity in the same cycle.
+constexpr std::array<Flit::CHI_CHN_TYPE, 4> kChannelServiceOrder = {
     Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP,
     Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP,
     Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
@@ -46,6 +46,14 @@ MeshNode::MeshNodeStats::MeshNodeStats(MeshNode *parent)
                "Successful egress flits by mesh direction"),
       ADD_STAT(dir_active_cycles, statistics::units::Cycle::get(),
                "Cycles in which each mesh direction sent at least one flit"),
+      ADD_STAT(egress_flits_by_dir_channel, statistics::units::Count::get(),
+               "Successful egress flits grouped by mesh direction and CHI channel"),
+      ADD_STAT(egress_channel_active_cycles, statistics::units::Cycle::get(),
+               "Cycles in which each mesh direction/channel sent a flit"),
+      ADD_STAT(egress_parallel_channel_cycles_by_dir,
+               statistics::units::Cycle::get(),
+               "Scheduler cycles grouped by direction and number of CHI channels "
+               "that sent in parallel"),
       ADD_STAT(send_event_cycles, statistics::units::Cycle::get(),
                "Number of scheduler cycles processed by this mesh node"),
       ADD_STAT(dir_link_util, statistics::units::Ratio::get(),
@@ -126,6 +134,32 @@ MeshNode::MeshNodeStats::MeshNodeStats(MeshNode *parent)
         const std::string label = MeshNode::directionName(d);
         dir_egress_flits.subname(d, label);
         dir_active_cycles.subname(d, label);
+    }
+
+    egress_flits_by_dir_channel
+        .init(MeshNode::NumDirs, MeshNode::NumChannels)
+        .flags(nozero);
+    egress_channel_active_cycles
+        .init(MeshNode::NumDirs, MeshNode::NumChannels)
+        .flags(nozero);
+    egress_parallel_channel_cycles_by_dir
+        .init(MeshNode::NumDirs, MeshNode::NumChannels + 1)
+        .flags(nozero);
+    for (size_t d = 0; d < MeshNode::NumDirs; ++d) {
+        const std::string dirLabel = MeshNode::directionName(d);
+        egress_flits_by_dir_channel.subname(d, dirLabel);
+        egress_channel_active_cycles.subname(d, dirLabel);
+        egress_parallel_channel_cycles_by_dir.subname(d, dirLabel);
+    }
+    for (size_t c = 0; c < MeshNode::NumChannels; ++c) {
+        const auto ch = static_cast<Flit::CHI_CHN_TYPE>(c);
+        const std::string chLabel = MeshNode::channelName(ch);
+        egress_flits_by_dir_channel.ysubname(c, chLabel);
+        egress_channel_active_cycles.ysubname(c, chLabel);
+    }
+    for (size_t count = 0; count <= MeshNode::NumChannels; ++count) {
+        egress_parallel_channel_cycles_by_dir.ysubname(
+            count, std::to_string(count));
     }
 
     voq_full_events_by_egress
@@ -399,11 +433,16 @@ MeshNode::onSendEvent()
         const size_t pendingBefore = getQueueDepthAllChannels(egress);
         stats.voq_depth_accum_by_egress[i] += pendingBefore;
 
-        const bool sentOnEgress = trySendForOutput(egress);
+        const size_t sentChannels = trySendForOutput(egress);
+        const bool sentOnEgress = sentChannels > 0;
         sentAny |= sentOnEgress;
         const size_t pendingAfter = getQueueDepthAllChannels(egress);
 
         const int dirIdx = directionToIndex(egress);
+        if (dirIdx >= 0 && isEgressUsable(egress)) {
+            stats.egress_parallel_channel_cycles_by_dir[
+                static_cast<size_t>(dirIdx)][sentChannels]++;
+        }
         if (sentOnEgress && dirIdx >= 0) {
             stats.dir_active_cycles[static_cast<size_t>(dirIdx)]++;
         }
@@ -430,18 +469,20 @@ MeshNode::onSendEvent()
             sentAny ? 1 : 0, pending ? 1 : 0);
 }
 
-bool
+size_t
 MeshNode::trySendForOutput(PortIndex egress)
 {
     if (!isEgressUsable(egress)) {
-        return false;
+        return 0;
     }
 
-    bool sentAny = false;
-    for (const auto channel : kChannelPriority) {
-        sentAny |= trySendForOutputAndChannel(egress, channel);
+    size_t sentChannels = 0;
+    for (const auto channel : kChannelServiceOrder) {
+        if (trySendForOutputAndChannel(egress, channel)) {
+            sentChannels++;
+        }
     }
-    return sentAny;
+    return sentChannels;
 }
 
 bool
@@ -498,6 +539,10 @@ MeshNode::trySendForOutputAndChannel(PortIndex egress,
 
             if (dirIdx >= 0) {
                 stats.dir_egress_flits[static_cast<size_t>(dirIdx)]++;
+                stats.egress_flits_by_dir_channel[
+                    static_cast<size_t>(dirIdx)][channelIdx]++;
+                stats.egress_channel_active_cycles[
+                    static_cast<size_t>(dirIdx)][channelIdx]++;
             } else if (meshStatsValid) {
                 sampleHopCountByChannel(channel, hopCountAtEgress);
                 const Tick e2eLatency = curTick() >= injectTick ?

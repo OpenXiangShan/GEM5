@@ -22,7 +22,7 @@ namespace xsCHI
     {
     public:
         static constexpr uint32_t InvalidTxnId = static_cast<uint32_t>(-1);
-        static constexpr Tick TxnHoldPanicCycles = 5000000;
+        static constexpr Tick TxnHoldPanicCycles = 50000000;
 
         TxnIDManager(int max_outstanding)
             : max_outstanding(max_outstanding),
