@@ -213,6 +213,7 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       pfAdaptiveGradientMinSamples(p.pf_adaptive_dpf_min_samples),
       pfAdaptiveGradientDeadband(p.pf_adaptive_dpf_deadband),
       pfAdaptiveImproveMarginBps(p.pf_adaptive_improve_margin_bps),
+      pfAdaptiveHistoryFallback(p.pf_adaptive_history_fallback),
       pfAdaptiveBestTopK(std::max<unsigned>(1, p.pf_adaptive_best_topk)),
       pfAdaptiveTableEntries(p.pf_adaptive_table_entries),
       pfAdaptivePfBadEntries(p.pf_adaptive_pfbad_entries),
@@ -549,16 +550,20 @@ Queued::applyPfAdaptiveUpdate(const PfAdaptiveSample &sample)
         pfAdaptiveMissRateBps(
             sample.demandMisses, sample.demandAccesses);
     uint64_t best_rate = UINT64_MAX;
-    for (const auto &hist : pfAdaptiveSamples) {
-        if (hist.demandAccesses == 0) {
-            continue;
+    if (pfAdaptiveHistoryFallback) {
+        for (const auto &hist : pfAdaptiveSamples) {
+            if (hist.demandAccesses == 0) {
+                continue;
+            }
+            best_rate = std::min(best_rate,
+                pfAdaptiveMissRateBps(
+                    hist.demandMisses, hist.demandAccesses));
         }
-        best_rate = std::min(best_rate,
-            pfAdaptiveMissRateBps(hist.demandMisses, hist.demandAccesses));
     }
 
     const bool have_best = best_rate != UINT64_MAX;
-    const bool update =
+    const bool use_prediction =
+        !pfAdaptiveHistoryFallback ||
         !have_best ||
         current_rate * 10000 <
             best_rate * (10000 - pfAdaptiveImproveMarginBps);
@@ -571,9 +576,9 @@ Queued::applyPfAdaptiveUpdate(const PfAdaptiveSample &sample)
 
         const unsigned pred_pct =
             clampPfAdaptivePct(current_pct + gradient);
-        const unsigned best_pct = getPfAdaptiveBestPct(pf_source);
         unsigned next_pct = pred_pct;
-        if (!update) {
+        if (!use_prediction) {
+            const unsigned best_pct = getPfAdaptiveBestPct(pf_source);
             next_pct = quantizePfAdaptivePct(
                 (best_pct + pred_pct + 1) / 2);
         }

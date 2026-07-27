@@ -261,6 +261,9 @@ class Queued : public Base
     /** Required miss-rate improvement in basis points. */
     const unsigned pfAdaptiveImproveMarginBps;
 
+    /** Enable historical best-sample fallback in adaptive updates. */
+    const bool pfAdaptiveHistoryFallback;
+
     /** Number of best FIFO samples to average for fallback pct. */
     const unsigned pfAdaptiveBestTopK;
 

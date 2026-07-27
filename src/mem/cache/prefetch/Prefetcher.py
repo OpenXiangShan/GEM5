@@ -221,6 +221,8 @@ class QueuedPrefetcher(BasePrefetcher):
         "Deadband around zero useful-bad adaptive gradient score")
     pf_adaptive_improve_margin_bps = Param.Unsigned(0,
         "Required demand miss-rate improvement in basis points")
+    pf_adaptive_history_fallback = Param.Bool(True,
+        "Use historical best miss-rate samples as adaptive fallback")
     pf_adaptive_best_topk = Param.Unsigned(1,
         "Number of best FIFO samples averaged for adaptive fallback pct")
     pf_adaptive_table_entries = Param.Unsigned(32,

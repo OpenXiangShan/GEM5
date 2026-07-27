@@ -69,6 +69,7 @@ PF_CONTROL_CONFIG = {
         "dpf_min_samples": 1,
         "dpf_deadband": 0,
         "improve_margin_bps": 0,
+        "history_fallback": True,
         "best_topk": 1,
         "table_entries": 32,
         "pfbad_entries": {
@@ -351,6 +352,8 @@ def _apply_pf_adaptive(prefetcher, cache_level, config):
         adaptive, 'dpf_deadband', 0, "adaptive.dpf_deadband")
     prefetcher.pf_adaptive_improve_margin_bps = _bps_config(
         adaptive, 'improve_margin_bps', 0, "adaptive.improve_margin_bps")
+    prefetcher.pf_adaptive_history_fallback = bool(
+        adaptive.get('history_fallback', True))
     prefetcher.pf_adaptive_best_topk = _positive_int_config(
         adaptive, 'best_topk', 1, "adaptive.best_topk")
     prefetcher.pf_adaptive_table_entries = _nonnegative_int_config(
