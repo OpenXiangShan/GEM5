@@ -1084,6 +1084,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
 
     enableSC = Param.Bool(False, "Enable SC or not")
     updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
+    usingS3Pred = Param.Bool(False, "Whether using final-stage prediction to teacher-update MicroTAGE")
     # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([512] * 4,"the TAGE T0~Tn length")

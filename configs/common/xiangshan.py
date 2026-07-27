@@ -684,6 +684,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             name = PerfRecord.vals[i]
             type_str = "bigint unsigned" if name.lower().startswith(('at', 'pc', 'result')) else "char(20)"
             perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
+        perfCCT_cmd += ",TID int unsigned NOT NULL"
         perfCCT_cmd += ");"
 
         perfCCT_cmd += """
@@ -926,10 +927,54 @@ def xiangshan_system_init():
         help="PTW MissQueue size",
     )
     parser.add_argument(
+        "--smtROBDonorEntry",
+        type=int,
+        default=8,
+        help="Minimum ROB entries reserved for a borrowing donor to resume",
+    )
+    parser.add_argument(
+        "--smtROBBaseEntry",
+        type=int,
+        default=80,
+        help="Minimum ROB entries reserved for a borrowing base to resume",
+    )
+    parser.add_argument(
+        "--ROBTotalEntry",
+        type=int,
+        default=160,
+        help="Number of reorder buffer entries",
+    )
+    parser.add_argument(
         "--standalone-sc",
         action="store_true",
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
+    )
+    parser.add_argument(
+        "--solver-problem-ref",
+        type=str,
+        default="",
+        help="Solver problem spec used by the CI parameter solver prototype",
+    )
+    parser.add_argument(
+        "--solver-bind-output",
+        type=str,
+        default="",
+        help="Write solver binding metadata and exit before instantiate",
+    )
+    parser.add_argument(
+        "--solver-overlay",
+        type=str,
+        default="",
+        help="Apply a solver overlay JSON before instantiate",
+    )
+    parser.add_argument(
+        "--rob-walk-policy",
+        type=str,
+        default="Replay",
+        choices=["Rollback", "Replay", "ConstCycle", "NaiveCpt"],
+        help="ROB misprediction-recovery walk policy. NaiveCpt enables the "
+              "RAT-checkpoint recovery-cost model.",
     )
 
     # Add the ruby specific and protocol specific args

@@ -980,6 +980,15 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     // write
     if (pkt->isWrite() && pkt->cmd != MemCmd::LockedRMWWriteResp) {
         assert(pkt->req->isUncacheable());
+        outstandingUncacheableWrites.erase(pkt);
+        handleUncacheableWriteResp(pkt);
+        return;
+    }
+
+    // Error commands do not retain the IsWrite attribute. Recover the path
+    // from the packet tracked when this cache forwarded it.
+    if (is_error && outstandingUncacheableWrites.erase(pkt) != 0) {
+        assert(pkt->req->isUncacheable());
         handleUncacheableWriteResp(pkt);
         return;
     }
@@ -2729,8 +2738,20 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
 
     DPRINTF(Cache, "%s: write %s\n", __func__, tgt_pkt->print());
 
+    const bool track_response =
+        tgt_pkt->req->isUncacheable() && tgt_pkt->needsResponse();
+    if (track_response) {
+        assert(tgt_pkt->isWrite());
+        const bool inserted =
+            outstandingUncacheableWrites.insert(tgt_pkt).second;
+        panic_if(!inserted, "%s: uncacheable write packet already tracked",
+                 name());
+    }
+
     // forward as is, both for evictions and uncacheable writes
     if (!memSidePort.sendTimingReq(tgt_pkt)) {
+        if (track_response)
+            outstandingUncacheableWrites.erase(tgt_pkt);
         // note that we have now masked any requestBus and
         // schedSendEvent (we will wait for a retry before
         // doing anything), and this is so even if we do not

@@ -10,6 +10,8 @@ parser.add_argument('-z', '--zoom', action='store', type=float, default=1)
 parser.add_argument('-p', '--period', action='store', default=333)
 parser.add_argument('-r', '--rtl_dasm', action='store_true', default=False,
                     help='used for rtl log analysis, use dasm to disassemble the instructions')
+parser.add_argument('--tid', type=int, default=None,
+                    help='only show instructions from this hardware thread')
 
 args = parser.parse_args()
 
@@ -82,7 +84,17 @@ if args.visual:
 
 with sql.connect(sqldb) as con:
     cur = con.cursor()
-    cur.execute("SELECT * FROM LifeTimeCommitTrace")
+    table_columns = [row[1].lower() for row in
+                     cur.execute("PRAGMA table_info(LifeTimeCommitTrace)")]
+    if args.tid is not None:
+        if 'tid' not in table_columns:
+            parser.error("the trace database has no TID column")
+        if args.tid < 0:
+            parser.error("--tid must be non-negative")
+        cur.execute("SELECT * FROM LifeTimeCommitTrace WHERE TID = ?",
+                    (args.tid,))
+    else:
+        cur.execute("SELECT * FROM LifeTimeCommitTrace")
     col_name = [i[0] for i in cur.description]
     col_name = col_name[1:]
     col_name = [i.lower() for i in col_name]
@@ -99,6 +111,8 @@ with sql.connect(sqldb) as con:
                 if val < 0:
                     val = val + 1 << 64
                 records.append(hex(val))
+            elif col_name[i] == 'tid':
+                records.append(f'tid={val}')
             else:
                 if val not in inst_translate_map:
                     inst_translate_map[val] = DisAssemble(val)

@@ -627,6 +627,51 @@ def run_host_command(
     )
 
 
+def _format_seconds(value: float) -> str:
+    return f"{value:g}s"
+
+
+def _compact_message(text: str, *, limit: int = 240) -> str:
+    compact = " ".join(text.strip().split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def _cluster_node_ip(server_name: str) -> str | None:
+    match = re.fullmatch(r"node0*(\d+)(?:\..*)?", server_name)
+    if match is None:
+        return None
+    node_id = int(match.group(1))
+    if not 1 <= node_id <= 254:
+        return None
+    return f"172.19.20.{node_id}"
+
+
+def _idle_probe_target(server_name: str, ssh_user: str) -> str:
+    if server_name == "local":
+        return "local"
+    target = make_ssh_target(server_name, ssh_user)
+    ip = _cluster_node_ip(server_name)
+    if ip is not None:
+        return f"{target} ({ip})"
+    return target
+
+
+def _idle_probe_context(
+    *,
+    server_name: str,
+    ssh_user: str,
+    dispatch_host: str,
+) -> str:
+    if server_name == "local":
+        return "locally"
+    target = _idle_probe_target(server_name, ssh_user)
+    if dispatch_host:
+        return f"to {target} via dispatch host {dispatch_host}"
+    return f"to {target}"
+
+
 def make_ssh_target(server_name: str, ssh_user: str) -> str:
     if not ssh_user or server_name == "local" or "@" in server_name:
         target = server_name
@@ -762,13 +807,32 @@ def probe_idle_cpus(
             dispatch_host=dispatch_host,
             timeout=timeout,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return None, str(exc)
+    except subprocess.TimeoutExpired:
+        context = _idle_probe_context(
+            server_name=server_name,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
+        )
+        return None, f"idle probe {context} timed out after {_format_seconds(timeout)}"
+    except OSError as exc:
+        context = _idle_probe_context(
+            server_name=server_name,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
+        )
+        detail = _compact_message(str(exc))
+        return None, f"idle probe {context} failed: {detail}"
 
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         stdout = result.stdout.decode(errors="replace").strip()
-        return None, stderr or stdout or f"probe exited with {result.returncode}"
+        context = _idle_probe_context(
+            server_name=server_name,
+            ssh_user=ssh_user,
+            dispatch_host=dispatch_host,
+        )
+        detail = _compact_message(stderr or stdout or "no output")
+        return None, f"idle probe {context} failed: exit={result.returncode}, {detail}"
 
     text = result.stdout.decode(errors="replace").strip()
     match = re.search(r"(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([0-9.]+)", text)

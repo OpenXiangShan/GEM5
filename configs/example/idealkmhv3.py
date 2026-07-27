@@ -4,10 +4,12 @@ import sys
 import m5
 from m5.defines import buildEnv
 from m5.objects import *
+from m5.objects.ValuePredictor import *
 from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
 addToPath('../')
+addToPath('../../')
 
 from ruby import Ruby
 from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
@@ -18,8 +20,7 @@ from common.Benchmarks import *
 from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
-
-from m5.objects.ValuePredictor import *
+from util.solver.runtime.integration import maybe_handle_solver_runtime
 
 def setPtwLevelLimitParams(args, tlb):
     tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
@@ -67,8 +68,11 @@ def setKmhV3IdealParams(args, system):
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = 160
+        cpu.numROBEntries = args.ROBTotalEntry
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.smtBorrowDonorReserveEntries = args.smtROBDonorEntry
+        cpu.smtBorrowBaseReserveEntries = args.smtROBBaseEntry
+        cpu.robWalkPolicy = 'NaiveCpt' # ideal core recovers via RAT checkpoints
 
         # lsu
         cpu.StoreWbStage = 4
@@ -108,6 +112,7 @@ def setKmhV3IdealParams(args, system):
             # TAGE table sizes and numWays tunning
             cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
             cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
+            cpu.branchPred.microtage.usingS3Pred = True
             # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
@@ -173,5 +178,7 @@ if __name__ == '__m5_main__':
     setKmhV3IdealParams(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
+    if maybe_handle_solver_runtime(root, args):
+        sys.exit(0)
 
     Simulation.run_vanilla(args, root, test_sys, FutureClass)

@@ -15,7 +15,7 @@ on:
       benchmark_type:
         required: true
         type: string
-        description: "Benchmark type: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-0.8c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
+        description: "Benchmark type: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
       specific_benchmarks:
         required: false
         type: string
@@ -118,28 +118,20 @@ jobs:
               echo "comment=run 100% coverage spec06 checkpoints" >> $GITHUB_OUTPUT
               ;;
             "gcc15-spec06-0.3c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/spec06_0.3c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "checkpoint_list_source_json=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/gcc15-spec06-0.3.json" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc15-spec06-0.3c" >> $GITHUB_OUTPUT
-              echo "comment=run 30% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc15-spec06-0.8c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/spec06_0.8c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/gcc15-spec06-0.8.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc15-spec06-0.8c" >> $GITHUB_OUTPUT
-              echo "comment=run 80% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
+              echo "comment=run 30% coverage gcc15 spec06 checkpoints from spec06_gcc15_rv64gcb_base_260604" >> $GITHUB_OUTPUT
               ;;
             "gcc15-spec06-1.0c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/checkpoint.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "checkpoint_list=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/checkpoint.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/cluster-0-0.json" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc15-spec06-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
+              echo "comment=run 100% coverage gcc15 spec06 checkpoints from spec06_gcc15_rv64gcb_base_260604" >> $GITHUB_OUTPUT
               ;;
             "spec17-1.0c")
               echo "checkpoint_list=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst" >> $GITHUB_OUTPUT
@@ -182,7 +174,7 @@ jobs:
               echo "comment=run 100% coverage SPEC CPU2026 checkpoints" >> $GITHUB_OUTPUT
               ;;
             *)
-              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-0.8c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
+              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
               exit 1
               ;;
           esac
@@ -288,6 +280,45 @@ jobs:
             echo "- Path: \`$TARGET_DIR\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Prepare checkpoint list
+        id: checkpoints
+        env:
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+        run: |
+          mkdir -p "$PERF_ARCHIVE_DIR"
+
+          CHECKPOINT_LIST="${{ steps.config.outputs.checkpoint_list }}"
+          CHECKPOINT_LIST_SOURCE_JSON="${{ steps.config.outputs.checkpoint_list_source_json }}"
+
+          if [ -n "$CHECKPOINT_LIST_SOURCE_JSON" ]; then
+            GENERATED_LIST="$PERF_ARCHIVE_DIR/checkpoint_selection.lst"
+            python3 - "$CHECKPOINT_LIST_SOURCE_JSON" "$GENERATED_LIST" <<'PY'
+          import json
+          import sys
+
+          source_path, list_path = sys.argv[1:3]
+
+          with open(source_path) as source_file:
+              source = json.load(source_file)
+
+          list_lines = []
+
+          for benchmark, metadata in source.items():
+              point_items = list(metadata.get("points", {}).items())
+
+              for point, _weight in point_items:
+                  list_lines.append(
+                      f"{benchmark}_{point} {benchmark}/{point} 0 0 20 20\n"
+                  )
+
+          with open(list_path, "w") as output_list:
+              output_list.writelines(list_lines)
+          PY
+            CHECKPOINT_LIST="$GENERATED_LIST"
+          fi
+
+          echo "checkpoint_list=$CHECKPOINT_LIST" >> "$GITHUB_OUTPUT"
+
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
@@ -299,7 +330,7 @@ jobs:
           BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
-          CHECKPOINT_LIST: ${{ steps.config.outputs.checkpoint_list }}
+          CHECKPOINT_LIST: ${{ steps.checkpoints.outputs.checkpoint_list }}
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}

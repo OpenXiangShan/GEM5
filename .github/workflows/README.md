@@ -46,7 +46,7 @@
 
 ### 支持的标签
 
-- `perf`: 触发 `idealkmhv3.py` + `gcc15-spec06-0.8c`
+- `perf`: 触发 `idealkmhv3.py` + `gcc15-spec06-1.0c`
 - `perf-align`: 触发 `kmhv3.py` + `gcc15-spec06-0.3c`
 - `rvv`: 触发 `idealkmhv3.py` + `spec06int-rvv-0.8c`
 
@@ -92,7 +92,7 @@
 - ~~`difftest_check`~~ → 在 `pr-quick-check.yml`
 
 #### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
-默认跑 `gcc15-spec06-0.8c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
+默认跑 `gcc15-spec06-1.0c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
 
 #### 3. `gem5-align-btb-0.3c.yml` - Align 性能测试
 默认跑 `gcc15-spec06-0.3c`，在 `xs-dev`、`*-align` 分支和 PR `perf-align` 标签上自动触发
@@ -139,10 +139,10 @@ git push origin xs-dev
 # 只需要通过 Tier 1 快速检查即可
 
 # 场景2: 性能相关改动
-# 在 PR 上添加 perf 标签，运行 Ideal BTB 性能测试（idealkmhv3.py / gcc15-spec06-0.8c）
+# 在 PR 上添加 perf 标签，运行 Ideal BTB 性能测试（idealkmhv3.py / gcc15-spec06-1.0c）
 # 在 PR 上添加 perf-align 标签，运行 Align BTB 性能测试（kmhv3.py / gcc15-spec06-0.3c）
 
-# 或者把当前分支改名为*-perf, 每次 push 会自动运行 gcc15-spec06-0.8c。
+# 或者把当前分支改名为*-perf, 每次 push 会自动运行 gcc15-spec06-1.0c。
 # 如果是对齐 RTL 的轻量评估，可使用 *-align, 每次 push 会自动运行 gcc15-spec06-0.3c。
 ```
 

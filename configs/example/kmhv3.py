@@ -9,6 +9,7 @@ from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
 addToPath('../')
+addToPath('../../')
 
 from ruby import Ruby
 from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
@@ -19,6 +20,7 @@ from common.Benchmarks import *
 from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
+from util.solver.runtime.integration import maybe_handle_solver_runtime
 
 def setPtwLevelLimitParams(args, tlb):
     tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
@@ -38,11 +40,12 @@ def setKmhV3Params(args, system):
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
-        cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
-        cpu.commitToFetchDelay = 2
+        cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
+        cpu.commitToFetchDelay = 4
         cpu.fetchQueueSize = 64
 
         # decode
+        cpu.fetchToDecodeDelay = 3
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
@@ -51,7 +54,7 @@ def setKmhV3Params(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
-        cpu.enable_storeSet_train = False
+        cpu.enable_storeSet_train = True
 
         # dispatch
         cpu.enableDispatchStage = False
@@ -82,6 +85,7 @@ def setKmhV3Params(args, system):
         cpu.RobCompressPolicy = 'none'
         cpu.numROBEntries = 352
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.robWalkPolicy = args.rob_walk_policy
 
         # lsu
         cpu.StoreWbStage = 4
@@ -91,16 +95,16 @@ def setKmhV3Params(args, system):
         cpu.sbufferBankWriteAccurately = False
 
         # lsq
-        cpu.LQEntries = 72
-        cpu.SQEntries = 56
-        cpu.RARQEntries = 72
-        cpu.RAWQEntries = 32
+        cpu.LQEntries = 120
+        cpu.SQEntries = 64
+        cpu.RARQEntries = 96
+        cpu.RAWQEntries = 56
         cpu.LoadCompletionWidth = 8
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 16
-        cpu.SbufferEvictThreshold = 7
+        cpu.SbufferEvictThreshold = 8
         cpu.store_prefetch_train = False
 
         # branch predictor
@@ -119,6 +123,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = True
             cpu.branchPred.microtage.enabled = True
+            cpu.branchPred.microtage.usingS3Pred = True
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
@@ -196,7 +201,7 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '1MB'
+    args.l2_size = '2MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
 
     # Match the memories with the CPUs, based on the options for the test system
@@ -209,5 +214,7 @@ if __name__ == '__m5_main__':
     setKmhV3Params(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
+    if maybe_handle_solver_runtime(root, args):
+        sys.exit(0)
 
     Simulation.run_vanilla(args, root, test_sys, FutureClass)

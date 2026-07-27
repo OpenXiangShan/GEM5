@@ -46,6 +46,7 @@
 #include "base/logging.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/commit.hh"
 #include "debug/Fetch.hh"
 #include "debug/ROB.hh"
 #include "params/BaseO3CPU.hh"
@@ -133,6 +134,7 @@ ROB::allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid)
 ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     : robPolicy(params.smtROBPolicy),
       borrowingDonorReserveEntries(params.smtBorrowDonorReserveEntries),
+      borrowingBaseReserveEntries(params.smtBorrowBaseReserveEntries),
       robWalkPolicy(params.robWalkPolicy),
       cpu(_cpu),
       numEntries(params.numROBEntries),
@@ -140,12 +142,14 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       rollbackWidth(params.squashWidth),
       replayWidth(params.squashWidth),
       constSquashCycle(params.ConstSquashCycle),
+      robWalkByDestRegs(params.robWalkByDestRegs),
       numInstsInROB(0),
       numThreads(params.numThreads),
       stats(_cpu)
 {
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
         borrowingDonor[tid] = false;
+        borrowingStateHoldCycle[tid] = 0;
     }
 
     //Figure out rob policy
@@ -188,7 +192,7 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     assert((robWalkPolicy == ROBWalkPolicy::Rollback && rollbackWidth > 0)
            || (robWalkPolicy == ROBWalkPolicy::Replay && replayWidth > 0)
            || (robWalkPolicy == ROBWalkPolicy::ConstCycle && constSquashCycle > 0)
-        //    || robWalkPolicy == ROBWalkPolicy::NaiveCpt
+           || (robWalkPolicy == ROBWalkPolicy::NaiveCpt && replayWidth > 0)
         //    || robWalkPolicy == ROBWalkPolicy::ConfidentCpt
            );
 
@@ -337,7 +341,7 @@ ROB::borrowingLimit(ThreadID tid) const
     }
 
     const unsigned active_threads = std::max(1U, activeThreadCount());
-    const unsigned base = std::max(1U, numEntries / active_threads);
+    const unsigned base = borrowingBaseReserveEntries;
     const unsigned donor_resume_quota =
         std::min(base, borrowingDonorReserveEntries);
 
@@ -358,6 +362,31 @@ ROB::borrowingLimit(ThreadID tid) const
     }
 
     return numEntries - reserved;
+}
+
+void 
+ROB::setBorrowingDonor(ThreadID tid, bool donor, Commit* commit)
+{ 
+    if (borrowingDonor[tid] != donor) {
+        bool old_donor = borrowingDonor[tid];
+        unsigned state_hold_cycle = borrowingStateHoldCycle[tid];
+        unsigned rob_entries_used = threadGroups[tid].size();
+        unsigned rob_entries_free = numFreeEntries(tid);
+
+        commit->recordROBBorrowingStateChangeStats(
+            tid, old_donor, state_hold_cycle,
+            rob_entries_used, rob_entries_free);
+
+        borrowingDonor[tid] = donor; 
+        borrowingStateHoldCycle[tid] = 0;
+    }
+}
+
+void 
+ROB::addBorrowingStateHoldCycle() {
+    for (int i = 0; i < numThreads; ++i) {
+        borrowingStateHoldCycle[i]++;
+    }
 }
 
 bool
@@ -819,17 +848,21 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
 
     squashedSeqNum[tid] = squash_num;
 
-    // TODO: find the number of instructions to squash and
-    // the number of uncommited instructions
-    unsigned total_inst_to_squash = 0;
-    for (auto it = instList[tid].begin(); it != instList[tid].end(); ++it) {
-        if ((*it)->seqNum > squash_num) {
-            total_inst_to_squash++;
+    if (robWalkPolicy == ROBWalkPolicy::NaiveCpt) {
+        dynSquashWidth = computeSnapshotSquashWidth(squash_num, tid);
+    } else {
+        unsigned total_inst_to_squash = 0;
+        for (auto it = instList[tid].begin(); it != instList[tid].end(); ++it) {
+            if ((*it)->seqNum > squash_num) {
+                total_inst_to_squash++;
+            }
         }
-    }
-    unsigned num_uncommited_inst = instList[tid].size() - total_inst_to_squash;
+        unsigned num_uncommitted_inst =
+            instList[tid].size() - total_inst_to_squash;
 
-    dynSquashWidth = computeDynSquashWidth(num_uncommited_inst, total_inst_to_squash);
+        dynSquashWidth =
+            computeDynSquashWidth(num_uncommitted_inst, total_inst_to_squash);
+    }
 
     if (!instList[tid].empty()) {
         InstIt tail_thread = instList[tid].end();
@@ -875,6 +908,42 @@ ROB::computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash)
     return dyn_squash_width;
 }
 
+unsigned
+ROB::computeSnapshotSquashWidth(InstSeqNum squash_num, ThreadID tid)
+{
+    unsigned younger_before_squash = 0;   // work to squash (younger)
+    unsigned older_after_snapshot = 0;    // residual walk from nearest older cp
+    bool hit = false;
+
+    for (auto it = instList[tid].begin(); it != instList[tid].end(); ++it) {
+        unsigned w = robWalkByDestRegs ? (*it)->numDestRegs() : 1;
+        if ((*it)->seqNum > squash_num) {
+            younger_before_squash += w;
+        } else if ((*it)->seqNum < squash_num) {
+            older_after_snapshot =
+                (*it)->isRatSnapshotted() ? 0 : older_after_snapshot + w;
+        } else if ((*it)->isRatSnapshotted()) {
+            hit = true;
+        }
+    }
+
+    if (hit) {
+        older_after_snapshot = 0;
+        stats.robRatSnapshotHits++;
+    }
+
+    double expected_cycles =
+        std::max(2.0, ((double)older_after_snapshot / replayWidth));
+    unsigned dyn_squash_width = std::max(1u,
+        (unsigned)ceil((double)younger_before_squash / expected_cycles));
+
+    stats.snapshotSquashWidth.sample(dyn_squash_width);
+    DPRINTF(ROB, "NaiveCpt squash [sn:%llu] hit=%d residual=%u toSquash=%u "
+            "width=%u\n", squash_num, hit, older_after_snapshot,
+            younger_before_squash, dyn_squash_width);
+    return dyn_squash_width;
+}
+
 const DynInstPtr&
 ROB::readHeadInst(ThreadID tid)
 {
@@ -905,9 +974,14 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
         "The number of ROB reads"),
     ADD_STAT(writes, statistics::units::Count::get(),
         "The number of ROB writes"),
-    ADD_STAT(instPergroup, statistics::units::Count::get())
+    ADD_STAT(instPergroup, statistics::units::Count::get()),
+    ADD_STAT(robRatSnapshotHits, statistics::units::Count::get(),
+        "Squashes that landed exactly on a RAT checkpoint (NaiveCpt)"),
+    ADD_STAT(snapshotSquashWidth, statistics::units::Count::get(),
+        "Distribution of NaiveCpt dynamic squash width")
 {
     instPergroup.init(0, 8, 1).flags(statistics::nozero);
+    snapshotSquashWidth.init(0, 256, 6).flags(statistics::pdf);
 }
 
 DynInstPtr

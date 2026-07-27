@@ -67,6 +67,8 @@ namespace o3
 
 class CPU;
 
+class Commit;
+
 struct DerivO3CPUParams;
 
 /**
@@ -98,6 +100,11 @@ class ROB
 
     /** Minimum entries a donor thread keeps for restarting after a stall. */
     const unsigned borrowingDonorReserveEntries;
+
+    /** Minimum entries a base thread keeps for restarting after a stall. */
+    const unsigned borrowingBaseReserveEntries;
+
+    unsigned borrowingStateHoldCycle[MaxThreads];
 
     ROBWalkPolicy robWalkPolicy;
 
@@ -207,8 +214,10 @@ class ROB
     }
 
     /** Returns whether the thread may borrow unused ROB capacity. */
-    void setBorrowingDonor(ThreadID tid, bool donor)
-    { borrowingDonor[tid] = donor; }
+    void setBorrowingDonor(ThreadID tid, bool donor, Commit* commit);
+
+    /** add cycle count for borrowing state holding cycle stats */
+    void addBorrowingStateHoldCycle();
 
     /** Returns whether the thread can reserve the requested ROB entries. */
     bool canAllocate(ThreadID tid, unsigned entries) const;
@@ -216,6 +225,9 @@ class ROB
     /** Returns the number of entries being used by a specific thread. */
     unsigned getThreadEntries(ThreadID tid)
     { return threadGroups[tid].size(); }
+
+    unsigned getTotalEntries() 
+    { return numEntries; }
 
     /** Returns if the ROB is full. */
     bool isFull()
@@ -337,7 +349,13 @@ class ROB
 
     unsigned constSquashCycle{1};
 
+    bool robWalkByDestRegs{false};
+
     unsigned computeDynSquashWidth(unsigned uncommitted_insts, unsigned to_squash);
+
+    /** NaiveCpt recovery width: walk from the nearest checkpoint older than
+     *  the redirect, counted in destination-register reclaim work. */
+    unsigned computeSnapshotSquashWidth(InstSeqNum squash_num, ThreadID tid);
 
   public:
     /** Iterator pointing to the instruction which is the last instruction
@@ -388,6 +406,9 @@ class ROB
         statistics::Scalar writes;
 
         statistics::Distribution instPergroup;
+
+        statistics::Scalar robRatSnapshotHits;
+        statistics::Distribution snapshotSquashWidth;
     } stats;
 };
 

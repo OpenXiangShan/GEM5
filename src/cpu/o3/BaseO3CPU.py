@@ -160,6 +160,13 @@ class BaseO3CPU(BaseCPU):
     squashWidth = Param.Unsigned(8, "Squash width with rollback/redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
+    numMaxRatSnapshot = Param.Unsigned(4,
+        "Number of rename-map (RAT) checkpoints for NaiveCpt recovery")
+    ratSnapshotDistance = Param.Unsigned(32,
+        "Minimum instructions between successive RAT checkpoints")
+    robWalkByDestRegs = Param.Bool(True,
+        "Size the recovery walk by destination-register reclaim, "
+        "not by instruction count")
 
     trapLatency = Param.Cycles(13, "Trap latency")
     fetchTrapLatency = Param.Cycles(1, "Fetch trap latency")
@@ -258,6 +265,8 @@ class BaseO3CPU(BaseCPU):
         8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
     smtBorrowDonorReserveEntries = Param.Unsigned(
         8, "Minimum ROB entries reserved for a borrowing donor to resume")
+    smtBorrowBaseReserveEntries = Param.Unsigned(
+        80, "Minimum ROB entries reserved for a borrowing base to resume")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")
