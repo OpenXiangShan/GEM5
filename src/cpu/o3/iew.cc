@@ -81,6 +81,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : dqSize(params.numDQEntries),
       issueToExecQueue(params.backComSize, params.forwardComSize),
       valuePred(params.valuePred),
+      enableSelectiveVPFlush(params.enableSelectiveVPFlush),
       cpu(_cpu),
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
