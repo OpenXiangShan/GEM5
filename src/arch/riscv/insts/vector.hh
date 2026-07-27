@@ -386,11 +386,11 @@ class VleffMicroInst : public VectorMemMicroInst
 class VleffEndMicroInst : public VectorMicroInst
 {
 private:
-    RegId srcRegIdxArr[8];   // vle tmp target, used to keep RAW sequence
+    RegId srcRegIdxArr[11];  // vle tmp target + rs1 + vl + vd group anchor
     RegId destRegIdxArr[1];  // vl
     uint8_t numSrcs;
 public:
-    VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs);
+    VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs, uint8_t _vd);
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override;
 

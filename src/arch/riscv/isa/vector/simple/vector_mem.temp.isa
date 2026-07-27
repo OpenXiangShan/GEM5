@@ -335,7 +335,7 @@ def template VleffConstructor {{
         microop->setFlag(IsLoad);
         this->microops.push_back(microop);
     }
-    microop = new VleffEndMicroInst(_machInst, num_microops);
+    microop = new VleffEndMicroInst(_machInst, num_microops, VD);
     this->microops.push_back(microop);
 
     this->microops.front()->setFirstMicroop();

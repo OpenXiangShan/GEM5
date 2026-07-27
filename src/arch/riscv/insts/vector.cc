@@ -32,6 +32,7 @@
 #include <string>
 
 #include "arch/riscv/insts/static_inst.hh"
+#include "arch/riscv/page_size.hh"
 #include "arch/riscv/utility.hh"
 #include "cpu/static_inst.hh"
 
@@ -388,7 +389,8 @@ VMvWholeMicroInst::generateDisassembly(Addr pc,
     return ss.str();
 }
 
-VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
+VleffEndMicroInst::VleffEndMicroInst(
+    ExtMachInst extMachInst, uint8_t _numSrcs, uint8_t _vd)
     : VectorMicroInst("VleffEnd", extMachInst,
     VectorIntegerArithOp, 0)
 {
@@ -402,6 +404,9 @@ VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
     for (uint8_t i = 0; i < _numSrcs; i++) {
         setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0 + i));
     }
+    setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, extMachInst.rs1));
+    setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
+    setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, _vd));
     setDestRegIdx(_numDestRegs++, VecRenamedVLReg);
     _numTypedDestRegs[RMiscRegClass]++;
     this->numSrcs = _numSrcs;
@@ -414,32 +419,50 @@ VleffEndMicroInst::VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs)
 Fault
 VleffEndMicroInst::execute(ExecContext* xc, Trace::InstRecord* traceData) const
 {
-    // printf("VleffEndMicroInst::execute begin\n");
     vreg_t cnt[8];
     for (uint8_t i = 0; i < this->numSrcs; i++) {
         xc->getRegOperand(this, i, cnt + i);
     }
-
-    // printf("VleffEndMicroInst::execute getRegOperand done\n");
-
-    // [[maybe_unused]]uint64_t vl = *(uint64_t*)xc->getWritableRegOperand(this, 0);
-    // printf("VleffEndMicroInst::execute getWritableRegOperand done\n");
+    const Addr base_addr = xc->getRegOperand(this, this->numSrcs);
+    const uint64_t requested_vl =
+        xc->getRegOperand(this, this->numSrcs + 1);
 
     uint64_t new_vl = 0;
     for (uint8_t i = 0; i < this->numSrcs; i++) {
         new_vl += cnt[i].as<uint64_t>()[0];
     }
-    // printf("VleffEndMicroInst::execute new_vl sum done\n");
 
-    // xc->setRegOperand(this, 0, new_vl);
+    const uint32_t elem_bytes = width_EEW(machInst.width) / 8;
+    if (elem_bytes != 0 && new_vl < requested_vl) {
+        const uint32_t elems_per_micro = VLENB / elem_bytes;
+        for (uint8_t i = 1; i < this->numSrcs; ++i) {
+            const uint64_t count = cnt[i].as<uint64_t>()[0];
+            const uint64_t prev_count = cnt[i - 1].as<uint64_t>()[0];
+
+            if (count != 0 || prev_count != elems_per_micro) {
+                continue;
+            }
+
+            const Addr prev_base = base_addr + (i - 1) * VLENB;
+            const Addr page_offset = prev_base & (PageBytes - 1);
+            const Addr bytes_until_page = PageBytes - page_offset;
+            if (bytes_until_page >= VLENB || bytes_until_page == 0) {
+                continue;
+            }
+
+            const uint64_t prefix_elems = bytes_until_page / elem_bytes;
+            if (prefix_elems > 0 && prefix_elems < prev_count) {
+                new_vl -= prev_count - prefix_elems;
+            }
+            break;
+        }
+    }
+
     xc->setMiscReg(MISCREG_VL, new_vl);
     xc->setRegOperand(this, 0, new_vl);
 
-    // printf("VleffEndMicroInst::execute setRegOperand done\n");
-
     if (traceData)
         traceData->setData(new_vl);
-    // printf("VleffEndMicroInst::execute end\n");
     return NoFault;
 }
 

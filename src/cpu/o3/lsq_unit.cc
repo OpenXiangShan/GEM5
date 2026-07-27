@@ -1441,22 +1441,45 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             dynamic_cast<const RiscvISA::AddressFault *>(load_fault.get());
 
         if (vleff && addr_fault && vleff->elemSize() != 0) {
-            const Addr fault_addr = addr_fault->trap_value();
-            const Addr access_addr = request->getVaddr();
-            if (fault_addr >= access_addr) {
-                const uint32_t fault_elem_idx = vleff->firstElemIdx() +
-                    (fault_addr - access_addr) / vleff->elemSize();
-                if (fault_elem_idx > 0) {
-                    inst->getFault() = NoFault;
-                    load_fault = NoFault;
-                    if (!request->isPartialFault()) {
-                        inst->setMemAccPredicate(false);
-                        inst->completeAcc(nullptr);
-                        inst->setExecuted();
-                        inst->setSkipFollowingPipe();
-                        inst->setCanCommit();
-                        return NoFault;
+            uint32_t vl_prefix_elems = 0;
+
+            if (request->isPartialFault()) {
+                size_t translated_prefix_bytes = 0;
+                for (size_t i = 0; i < request->numReqs(); ++i) {
+                    const auto &subreq = request->req(i);
+                    if (!subreq->hasPaddr()) {
+                        break;
                     }
+                    translated_prefix_bytes += subreq->getSize();
+                }
+                vl_prefix_elems = translated_prefix_bytes / vleff->elemSize();
+            } else {
+                const Addr fault_addr = addr_fault->trap_value();
+                const Addr access_addr = request->getVaddr();
+                if (fault_addr >= access_addr) {
+                    const uint32_t fault_elem_idx = vleff->firstElemIdx() +
+                        (fault_addr - access_addr) / vleff->elemSize();
+                    if (fault_elem_idx > vleff->firstElemIdx()) {
+                        vl_prefix_elems =
+                            fault_elem_idx - vleff->firstElemIdx();
+                    }
+                }
+            }
+
+            if (vl_prefix_elems > 0) {
+                RiscvISA::VecRegContainer fault_count = {};
+                fault_count.as<uint64_t>()[0] = vl_prefix_elems;
+                inst->setRegOperand(inst->staticInst.get(), 1,
+                                    &fault_count);
+                inst->getFault() = NoFault;
+                load_fault = NoFault;
+                if (!request->isPartialFault()) {
+                    inst->setMemAccPredicate(false);
+                    inst->completeAcc(nullptr);
+                    inst->setExecuted();
+                    inst->setSkipFollowingPipe();
+                    inst->setCanCommit();
+                    return NoFault;
                 }
             }
         }
