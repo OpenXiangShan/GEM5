@@ -43,6 +43,7 @@
 
 #include "arch/generic/debugfaults.hh"
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/insts/vector.hh"
 #include "base/logging.hh"
 #include "base/str.hh"
 #include "base/trace.hh"
@@ -1431,17 +1432,40 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
         return NoFault;
     }
 
+    if (load_fault != NoFault && inst->translationCompleted() && request &&
+            inst->opClass() ==
+                enums::VectorUnitStrideFaultOnlyFirstLoad) {
+        const auto *vleff = dynamic_cast<const RiscvISA::VleffMicroInst *>(
+            inst->staticInst.get());
+        const auto *addr_fault =
+            dynamic_cast<const RiscvISA::AddressFault *>(load_fault.get());
+
+        if (vleff && addr_fault && vleff->elemSize() != 0) {
+            const Addr fault_addr = addr_fault->trap_value();
+            const Addr access_addr = request->getVaddr();
+            if (fault_addr >= access_addr) {
+                const uint32_t fault_elem_idx = vleff->firstElemIdx() +
+                    (fault_addr - access_addr) / vleff->elemSize();
+                if (fault_elem_idx > 0) {
+                    inst->getFault() = NoFault;
+                    load_fault = NoFault;
+                    if (!request->isPartialFault()) {
+                        inst->setMemAccPredicate(false);
+                        inst->completeAcc(nullptr);
+                        inst->setExecuted();
+                        inst->setSkipFollowingPipe();
+                        inst->setCanCommit();
+                        return NoFault;
+                    }
+                }
+            }
+        }
+    }
+
     if (load_fault != NoFault && inst->translationCompleted() &&
             request && request->isPartialFault()
             && !request->isComplete()) {
         assert(request->isSplit());
-        if (inst->opClass() == enums::VectorUnitStrideFaultOnlyFirstLoad) {
-            inst->setMemAccPredicate(false);
-            inst->setExecuted();
-            inst->setSkipFollowingPipe();
-            inst->setCanCommit();
-            return NoFault;
-        }
         // If we have a partial fault where the mem access is not complete yet
         // then the cache must have been blocked. This load will be re-executed
         // when the cache gets unblocked. We will handle the fault when the
