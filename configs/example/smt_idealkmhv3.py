@@ -7,28 +7,8 @@ from m5.util import addToPath
 addToPath('../')
 
 from common import Simulation
-from common import PrefetcherConfig
 from common.xiangshan import build_xiangshan_system, xiangshan_system_init
 from idealkmhv3 import setKmhV3IdealParams
-
-
-def enable_prefetch_control():
-    PrefetcherConfig.PF_CONTROL_CONFIG = {
-        "control": {
-            "enabled": True,
-            "window": 8000,
-            "admit_pct": 100,
-        },
-        "adaptive": {
-            "enabled": True,
-            "pfbad_entries": {
-                "l1d": 128,
-                "l2": 512,
-                "l2_wrapper": 512,
-            },
-        },
-    }
-    PrefetcherConfig._LOADED_PF_CONTROL_CONFIG = None
 
 
 def setSharedLSQParams(args, system):
@@ -60,7 +40,6 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
-    enable_prefetch_control()
 
     if args.dramsim3_ini is None:
         gem5_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))

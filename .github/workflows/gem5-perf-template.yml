@@ -12,10 +12,15 @@ on:
         type: string
         default: ""
         description: "Extra arguments for gem5 (e.g., --disable-mgsc). Only works with .py config files."
+      pf_control_profile:
+        required: false
+        type: string
+        default: "off"
+        description: "Prefetch control profile: off, adaptive, or default."
       benchmark_type:
         required: true
         type: string
-        description: "Benchmark type: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
+        description: "Benchmark type: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
       specific_benchmarks:
         required: false
         type: string
@@ -75,6 +80,8 @@ jobs:
       
       - name: Set benchmark configuration
         id: config
+        env:
+          PF_CONTROL_PROFILE_INPUT: ${{ inputs.pf_control_profile }}
         run: |
           case "${{ inputs.benchmark_type }}" in
               "gcc12-spec06-0.3c")
@@ -100,6 +107,14 @@ jobs:
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-gcc12-spec06-smt-1.0c" >> $GITHUB_OUTPUT
               echo "comment=run 100% coverage dual-context SMT spec06 checkpoints" >> $GITHUB_OUTPUT
+              ;;
+            "gcc12-spec06-smt-int-1.0c")
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec_1c_int.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/spec06_1c_int.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc12-spec06-smt-int-1.0c" >> $GITHUB_OUTPUT
+              echo "comment=run 100% coverage dual-context SMT SPEC06 int checkpoints" >> $GITHUB_OUTPUT
               ;;
             "gcc12-spec06-0.8c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst" >> $GITHUB_OUTPUT
@@ -158,7 +173,23 @@ jobs:
               echo "comment=run 80% coverage spec06 int rvv checkpoints" >> $GITHUB_OUTPUT
               ;;
             *)
-              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
+              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
+              exit 1
+              ;;
+          esac
+
+          case "$PF_CONTROL_PROFILE_INPUT" in
+            ""|"off")
+              echo "pf_artifact_suffix=" >> $GITHUB_OUTPUT
+              ;;
+            "adaptive")
+              echo "pf_artifact_suffix=-pf-adaptive" >> $GITHUB_OUTPUT
+              ;;
+            "default")
+              echo "pf_artifact_suffix=-pf-default" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Error: Invalid pf_control_profile '$PF_CONTROL_PROFILE_INPUT'. Must be one of: off, adaptive, default"
               exit 1
               ;;
           esac
@@ -197,6 +228,7 @@ jobs:
           BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_ARGS_INPUT: ${{ inputs.extra_args }}
+          PF_CONTROL_PROFILE_INPUT: ${{ inputs.pf_control_profile }}
           DISTRIBUTED_SERVERS_RAW: ${{ inputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER_RAW: ${{ inputs.distributed_jobs_per_server }}
         run: |
@@ -208,6 +240,11 @@ jobs:
           CONFIG_NAME=$(basename "$CONFIG_PATH_INPUT" .py)
           CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
           CONFIG_NAME=${CONFIG_NAME:-config}
+          PF_CONTROL_PROFILE="${PF_CONTROL_PROFILE_INPUT:-off}"
+          if [ "$PF_CONTROL_PROFILE" != "off" ]; then
+            PROFILE_NAME=$(printf '%s' "$PF_CONTROL_PROFILE" | tr -c 'A-Za-z0-9._-' '_')
+            CONFIG_NAME="${CONFIG_NAME}_pf_${PROFILE_NAME}"
+          fi
           TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
           DEFAULT_DISTRIBUTED_SERVERS="node020-node034,node036-node039"
           DISTRIBUTED_DISPATCH_HOST="ci-runner@172.28.9.101"
@@ -243,6 +280,7 @@ jobs:
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: $BENCHMARK_TYPE_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: $SPECIFIC_BENCHMARKS_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "pf_control_profile: $PF_CONTROL_PROFILE" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_servers_input: $DISTRIBUTED_SERVERS_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_servers: $DISTRIBUTED_SERVERS" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_server_domain: " >> "$TARGET_DIR/metadata.txt"
@@ -314,6 +352,7 @@ jobs:
           BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
+          PF_CONTROL_PROFILE_INPUT: ${{ inputs.pf_control_profile }}
           CHECKPOINT_LIST: ${{ steps.checkpoints.outputs.checkpoint_list }}
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
@@ -343,7 +382,25 @@ jobs:
 
           extra_args="$EXTRA_GEM5_ARGS_RAW"
           extra_args="$(echo "$extra_args" | xargs)"
+          extra_args="${extra_args//\$\{GEM5_HOME\}/$GEM5_HOME}"
+          extra_args="${extra_args//\$GEM5_HOME/$GEM5_HOME}"
+          pf_control_profile="${PF_CONTROL_PROFILE_INPUT:-off}"
+
+          case "$pf_control_profile" in
+            "off"|"adaptive"|"default")
+              ;;
+            *)
+              echo "Error: Invalid pf_control_profile '$pf_control_profile'. Must be one of: off, adaptive, default"
+              exit 1
+              ;;
+          esac
+          if [[ "$extra_args" == *"--pf-control-profile"* ]]; then
+            echo "Error: Do not pass --pf-control-profile through extra_args; use pf_control_profile workflow input instead."
+            exit 1
+          fi
+          extra_args="$(printf '%s --pf-control-profile=%s' "$extra_args" "$pf_control_profile" | xargs)"
           echo "Resolved extra gem5 args: $extra_args"
+          printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
 
           distributed_servers="$DISTRIBUTED_SERVERS"
           if [ -n "$distributed_servers" ]; then
@@ -461,7 +518,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.config.outputs.artifact_name }}
+          name: ${{ steps.config.outputs.artifact_name }}${{ steps.config.outputs.pf_artifact_suffix }}
           path: score.txt
           retention-days: 30
       
