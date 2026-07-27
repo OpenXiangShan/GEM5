@@ -237,6 +237,14 @@ PrefetcherForwarder::prefetchUnused(PrefetchSourceType pf_type)
 }
 
 void
+PrefetcherForwarder::prefetchUnused(Addr paddr, PrefetchSourceType pf_type)
+{
+    if (real_pf) {
+        real_pf->prefetchUnused(paddr, pf_type);
+    }
+}
+
+void
 PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type)
 {
     if (real_pf) {

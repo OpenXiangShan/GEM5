@@ -41,6 +41,7 @@
 #include <cassert>
 #include <linux/limits.h>
 #include <string>
+#include <climits>
 
 #include "arch/generic/tlb.hh"
 #include "base/logging.hh"

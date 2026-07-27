@@ -82,6 +82,26 @@ buildKey(Addr vpn, uint16_t asid, uint8_t translateMode)
            ((vpn >> PGSHFT) & (((uint64_t)1 << 46) - 1));
 }
 
+static Addr
+tlbKeyComparableVaddr(Addr vaddr)
+{
+    return ((vaddr >> PGSHFT) & ((static_cast<Addr>(1) << 46) - 1))
+           << PGSHFT;
+}
+
+static Addr
+tlbKeyComparablePageBase(Addr vaddr, unsigned log_bytes)
+{
+    const Addr normalized_vaddr = tlbKeyComparableVaddr(vaddr);
+    return (normalized_vaddr >> log_bytes) << log_bytes;
+}
+
+static Addr
+l1CompressedBlockBase(Addr vaddr)
+{
+    return tlbKeyComparablePageBase(vaddr, PGSHFT + L2TLB_BLK_OFFSET);
+}
+
 static bool
 isCompressibleLeafPte(PTE pte)
 {
@@ -347,7 +367,7 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
 {
     TlbEntry *entry = trie.lookup(buildKey(vpn, asid, translateMode));
     if (!hidden && entry && entry->isCompressed) {
-        const uint8_t sub_idx = (vpn >> PageShift) & 0x7;
+        const uint8_t sub_idx = (vpn >> PageShift) & VADDR_CHOOSE_MASK;
         if (!(entry->validIdx & (1 << sub_idx))) {
             TlbEntry *fallback_entry =
                 lookupL1CompressedFallback(vpn, asid, translateMode, entry);
@@ -720,6 +740,29 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     }
 
     if (newEntry) {
+        if (entry.isCompressed && translateMode == direct &&
+            newEntry->isCompressed) {
+            const Addr entry_base =
+                tlbKeyComparablePageBase(entry.vaddr, entry.logBytes);
+            const Addr new_entry_base =
+                tlbKeyComparablePageBase(newEntry->vaddr, newEntry->logBytes);
+            panic_if(entry_base != new_entry_base ||
+                         newEntry->logBytes != entry.logBytes,
+                     "direct L1 compressed refill matched a different block: "
+                     "vpn %#x entry_base %#x new_entry_base %#x entry_log %#x "
+                     "new_entry_log %#x\n",
+                     vpn, entry_base, new_entry_base, entry.logBytes,
+                     newEntry->logBytes);
+            panic_if((newEntry->validIdx & entry.pteIdx) != entry.pteIdx,
+                     "direct L1 compressed refill found an existing entry "
+                     "without the refill subentry: vpn %#x entry_vaddr %#x "
+                     "new_entry_vaddr %#x entry_valid %#x new_entry_valid %#x "
+                     "entry_pte_idx %#x\n",
+                     vpn, entry.vaddr, newEntry->vaddr, entry.validIdx,
+                     newEntry->validIdx, entry.pteIdx);
+            newEntry->vaddr = new_entry_base;
+        }
+
         // update PTE flags (maybe we set the dirty/writable flag)
         newEntry->pte = entry.pte;
         Addr newEntryAddr = buildKey(newEntry->vaddr, newEntry->asid, translateMode);
@@ -1326,7 +1369,9 @@ TLB::refillHintMaySatisfy(const RequestPtr &req, ThreadContext *tc,
             return false;
         Addr vaddr = VADDR_SEXT(satp.mode, req->getVaddr());
         const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
-        return entry.asid == satp.asid && covers(vaddr, entry.vaddr) &&
+        return entry.asid == satp.asid &&
+               tlbKeyComparablePageBase(vaddr, entry.logBytes) ==
+                   tlbKeyComparablePageBase(entry.vaddr, entry.logBytes) &&
                (entry.validIdx & (1 << sub_idx));
     }
 
@@ -1371,8 +1416,7 @@ TLB::lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
         return nullptr;
 
     const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
-    const Addr block_base = (vaddr >> (PageShift + L2TLB_BLK_OFFSET))
-        << (PageShift + L2TLB_BLK_OFFSET);
+    const Addr block_base = l1CompressedBlockBase(vaddr);
 
     TlbEntry *fallback = nullptr;
     for (size_t i = 0; i < size; i++) {
@@ -1381,7 +1425,9 @@ TLB::lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
             continue;
         if (!entry.isCompressed || entry.translateMode != direct)
             continue;
-        if (entry.asid != asid || entry.vaddr != block_base || entry.level != 0)
+        if (entry.asid != asid ||
+            l1CompressedBlockBase(entry.vaddr) != block_base ||
+            entry.level != 0)
             continue;
         if (!(entry.validIdx & (1 << sub_idx)))
             continue;
@@ -1400,7 +1446,8 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
         return nullptr;
 
     TlbEntry *merged_entry = nullptr;
-    const Addr block_base = entry.vaddr;
+    const Addr block_base =
+        tlbKeyComparablePageBase(entry.vaddr, entry.logBytes);
     const Addr block_limit = block_base + entry.size();
 
     auto reinsert_narrow = [this](TlbEntry &narrow_entry,
@@ -1415,8 +1462,12 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
         }
         narrow_entry.l1CompressedNarrow = true;
 
+        const Addr narrow_base =
+            tlbKeyComparablePageBase(narrow_entry.vaddr,
+                                     narrow_entry.logBytes);
+        narrow_entry.vaddr = narrow_base;
         const Addr narrow_vaddr =
-            narrow_entry.vaddr + (static_cast<Addr>(narrow_idx) << PageShift);
+            narrow_base + (static_cast<Addr>(narrow_idx) << PageShift);
         for (size_t j = 0; j < size; j++) {
             if (j == entry_idx)
                 continue;
@@ -1434,8 +1485,11 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
                 continue;
             }
 
+            const Addr other_base =
+                tlbKeyComparablePageBase(other_entry.vaddr,
+                                         other_entry.logBytes);
             Addr other_vaddr =
-                other_entry.vaddr + (static_cast<Addr>(other_idx) << PageShift);
+                other_base + (static_cast<Addr>(other_idx) << PageShift);
             if (other_vaddr == narrow_vaddr)
                 remove(j);
         }
@@ -1455,13 +1509,14 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
         if (old_entry.asid != entry.asid)
             continue;
 
-        const Addr old_base = old_entry.vaddr;
+        const Addr old_base =
+            tlbKeyComparablePageBase(old_entry.vaddr, old_entry.logBytes);
         const Addr old_limit = old_base + old_entry.size();
         if (old_limit <= block_base || old_base >= block_limit)
             continue;
 
         if (old_entry.isCompressed) {
-            if (old_entry.vaddr != block_base || old_entry.logBytes != entry.logBytes ||
+            if (old_base != block_base || old_entry.logBytes != entry.logBytes ||
                 old_entry.paddr != entry.paddr ||
                 !hasSameCompressionAttrs(old_entry.pte, entry.pte)) {
                 old_entry.validIdx &= ~entry.validIdx;
@@ -1493,6 +1548,7 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
                 if (new_valid_idx & (1 << sub_idx))
                     old_entry.ppnLow[sub_idx] = entry.ppnLow[sub_idx];
             }
+            old_entry.vaddr = block_base;
             old_entry.validIdx |= new_valid_idx;
             old_entry.pteIdx |= entry.pteIdx & old_entry.validIdx;
             old_entry.pte = entry.pte;
@@ -1542,7 +1598,9 @@ TLB::buildL1CompressedEntry(Addr vaddr, const TlbEntry &base_entry,
     if (valid_count == 0)
         return false;
 
-    const uint8_t pte_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
+    const Addr normalized_vaddr = tlbKeyComparableVaddr(vaddr);
+    const uint8_t pte_idx =
+        (normalized_vaddr >> PageShift) & VADDR_CHOOSE_MASK;
     assert(valid_idx & (1 << pte_idx));
 
     compressed_entry = base_entry;
@@ -1551,8 +1609,7 @@ TLB::buildL1CompressedEntry(Addr vaddr, const TlbEntry &base_entry,
     compressed_entry.pteIdx = 1 << pte_idx;
     compressed_entry.ppnLow = ppn_low;
     compressed_entry.paddr = base_ppn_high;
-    compressed_entry.vaddr = (vaddr >> (PageShift + L2TLB_BLK_OFFSET))
-                             << (PageShift + L2TLB_BLK_OFFSET);
+    compressed_entry.vaddr = l1CompressedBlockBase(normalized_vaddr);
     compressed_entry.logBytes = PageShift + L2TLB_BLK_OFFSET;
     compressed_entry.level = 0;
 
@@ -1570,7 +1627,9 @@ TLB::buildSingleL1CompressedEntry(Addr vaddr, const TlbEntry &base_entry,
     if (!isCompressibleLeafPte(base_entry.pte))
         return false;
 
-    const uint8_t pte_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
+    const Addr normalized_vaddr = tlbKeyComparableVaddr(vaddr);
+    const uint8_t pte_idx =
+        (normalized_vaddr >> PageShift) & VADDR_CHOOSE_MASK;
 
     compressed_entry = base_entry;
     compressed_entry.isCompressed = true;
@@ -1583,14 +1642,13 @@ TLB::buildSingleL1CompressedEntry(Addr vaddr, const TlbEntry &base_entry,
         compressed_entry.ppnLow[pte_idx] =
             base_entry.pte.ppn & VADDR_CHOOSE_MASK;
         compressed_entry.paddr = base_entry.pte.ppn >> L2TLB_BLK_OFFSET;
-        compressed_entry.vaddr = (vaddr >> (PageShift + L2TLB_BLK_OFFSET))
-                                 << (PageShift + L2TLB_BLK_OFFSET);
+        compressed_entry.vaddr = l1CompressedBlockBase(normalized_vaddr);
         compressed_entry.logBytes = PageShift + L2TLB_BLK_OFFSET;
     } else {
         compressed_entry.validIdx = (1 << l2tlbLineSize) - 1;
         compressed_entry.paddr = base_entry.paddr;
-        compressed_entry.vaddr = (vaddr >> base_entry.logBytes)
-                                 << base_entry.logBytes;
+        compressed_entry.vaddr =
+            tlbKeyComparablePageBase(normalized_vaddr, base_entry.logBytes);
         compressed_entry.logBytes = base_entry.logBytes;
     }
 
@@ -2696,21 +2754,57 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 }
 
 PrivilegeMode
-TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
+TLB::currentMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
 {
-    if (use_old_priv && mode != BaseMMU::Execute) {
-        if (mode == BaseMMU::Execute) {
-            return old_priv_ex;
-        } else {
-            return old_priv_ldst;
-        }
-    }
     STATUS status = (STATUS)tc->readMiscReg(MISCREG_STATUS);
     PrivilegeMode pmode = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
     if (mode != BaseMMU::Execute && status.mprv == 1)
         pmode = (PrivilegeMode)(RegVal)status.mpp;
     return pmode;
 }
+
+PrivilegeMode
+TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
+{
+    if (mode != BaseMMU::Execute) {
+        const int tid = tc->threadId();
+        if (tid >= 0) {
+            const auto thread_idx = static_cast<size_t>(tid);
+            if (thread_idx < oldPrivByThread.size() &&
+                oldPrivByThread[thread_idx].valid) {
+                return oldPrivByThread[thread_idx].ldst;
+            }
+        }
+    }
+    return currentMemPriv(tc, mode);
+}
+
+void
+TLB::setOldPriv(ThreadContext *tc)
+{
+    const int tid = tc->threadId();
+    assert(tid >= 0);
+    const auto thread_idx = static_cast<size_t>(tid);
+    if (oldPrivByThread.size() <= thread_idx) {
+        oldPrivByThread.resize(thread_idx + 1);
+    }
+    oldPrivByThread[thread_idx].valid = true;
+    oldPrivByThread[thread_idx].ldst = currentMemPriv(tc, BaseMMU::Read);
+}
+
+void
+TLB::useNewPriv(ThreadContext *tc)
+{
+    const int tid = tc->threadId();
+    if (tid < 0) {
+        return;
+    }
+    const auto thread_idx = static_cast<size_t>(tid);
+    if (thread_idx < oldPrivByThread.size()) {
+        oldPrivByThread[thread_idx].valid = false;
+    }
+}
+
 bool
 TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::Mode mode)
 {

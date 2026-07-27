@@ -65,6 +65,7 @@ class PrefetcherForwarder : public Base
         PrefetchSourceType evictor_source) override;
     void notifyCachelineRefill(Addr paddr, bool is_secure) override;
     void prefetchUnused(PrefetchSourceType pf_type) override;
+    void prefetchUnused(Addr paddr, PrefetchSourceType pf_type) override;
     void pfHitInMSHR(PrefetchSourceType pf_type) override;
     void pfHitInCache(PrefetchSourceType pf_type) override;
     void pfHitInWB(PrefetchSourceType pf_type) override;

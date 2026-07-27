@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <iterator>
 #include <climits>
-#include <linux/limits.h>
 #include <string>
 
 #include "base/stats/group.hh"
