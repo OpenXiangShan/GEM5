@@ -6,6 +6,8 @@ SimObject('L2ToDramSys.py', sim_objects=['L2ToDramSys'])
 SimObject('L2L3DramSys.py', sim_objects=['L2L3DramSys'])
 SimObject('L2L3DramSys3x3.py', sim_objects=['L2L3DramSys3x3'])
 SimObject('L2L3DramSys5x3.py', sim_objects=['L2L3DramSys5x3'])
+SimObject('L2L3DramSys6x4.py', sim_objects=['L2L3DramSys6x4'])
+SimObject('L2L3DramSys6x6.py', sim_objects=['L2L3DramSys6x6'])
 SimObject('L2L3DramSysM1Local1Dram.py',
           sim_objects=['L2L3DramSysM1Local1Dram'])
 
@@ -13,6 +15,8 @@ Source('L2todram.cc')
 Source('L2L3DramSys.cc')
 Source('L2L3DramSys3x3.cc')
 Source('L2L3DramSys5x3.cc')
+Source('L2L3DramSys6x4.cc')
+Source('L2L3DramSys6x6.cc')
 Source('L2L3DramSysM1Local1Dram.cc')
 
 DebugFlag('CHI')

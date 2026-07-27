@@ -208,14 +208,14 @@ def _build_xschi_dram_interleaved_ranges(base_range, dram_count):
         raise ValueError(f"dram_count must be > 0, got {dram_count}")
     if dram_count & (dram_count - 1):
         raise ValueError(
-            "CHI topology 'L2L3DramSys_5x3' requires --chi-dram-count to be a "
+            "xsCHI multi-DRAM topologies require --chi-dram-count to be a "
             f"power of 2 when dram_count > 1, got {dram_count}"
         )
 
     base_masks = list(getattr(base_range, "masks", []))
     if base_masks:
         raise ValueError(
-            "CHI topology 'L2L3DramSys_5x3' only supports a non-interleaved "
+            "xsCHI multi-DRAM topologies only support a non-interleaved "
             f"base memory range, got {base_range}"
         )
 
@@ -223,14 +223,14 @@ def _build_xschi_dram_interleaved_ranges(base_range, dram_count):
     end = int(base_range.end)
     if end <= start:
         raise ValueError(
-            "CHI topology 'L2L3DramSys_5x3' requires a valid base memory range, "
+            "xsCHI multi-DRAM topologies require a valid base memory range, "
             f"got start={start:#x}, end={end:#x}"
         )
 
     total_size = end - start
     if total_size % dram_count != 0:
         raise ValueError(
-            "CHI topology 'L2L3DramSys_5x3' requires the base memory range size "
+            "xsCHI multi-DRAM topologies require the base memory range size "
             f"to be divisible by --chi-dram-count: size={total_size}B, "
             f"dram_count={dram_count}"
         )
@@ -538,6 +538,20 @@ def config_cache(options, system):
                 if chi_ddr_read_response_padding_cycles < 0:
                     raise ValueError(
                         "--chi-ddr-read-response-padding-cycles must be >= 0")
+                dramsim3_config_file = getattr(options, 'dramsim3_ini', None)
+                if not dramsim3_config_file:
+                    dramsim3_config_file = os.path.join(
+                        root_dir,
+                        'ext/dramsim3/xiangshan_configs/'
+                        'xiangshan_DDR4_32Gb_x8_3200_8ch.ini',
+                    )
+                total_l3_mshrs = getattr(options, 'l3_mshrs', None)
+                if total_l3_mshrs is None:
+                    total_l3_mshrs = int(L3Cache.mshrs)
+                else:
+                    total_l3_mshrs = int(total_l3_mshrs)
+                    if total_l3_mshrs <= 0:
+                        raise ValueError("--l3_mshrs must be > 0")
 
                 def make_chi_port(credit_return_direction='internal',
                                   credit_release_policy='on_accept'):
@@ -689,6 +703,10 @@ def config_cache(options, system):
                             shadow_dst_bases = _parse_csv_addr_list(
                                 raw_shadow_dst_bases, "shadow-dst-bases"
                             )
+                            if len(shadow_src_bases) == 1 and shadow_count > 1:
+                                shadow_src_bases *= shadow_count
+                            if len(shadow_window_sizes) == 1 and shadow_count > 1:
+                                shadow_window_sizes *= shadow_count
 
                         if len(shadow_attach_points) != shadow_count:
                             raise ValueError(
@@ -782,7 +800,7 @@ def config_cache(options, system):
                         )
                     return attach_points
 
-                def _build_mesh_node_5x3(node_x, node_y):
+                def _build_mesh_node_grid(node_x, node_y, mesh_width, mesh_height):
                     kwargs = dict(
                         node_x=node_x,
                         node_y=node_y,
@@ -792,60 +810,200 @@ def config_cache(options, system):
                         port_local0=make_mesh_port("up"),
                         port_local1=make_mesh_port("up"),
                     )
-                    if node_x + 1 < 5:
+                    if node_x + 1 < mesh_width:
                         kwargs["port_east"] = make_mesh_port()
                     if node_x > 0:
                         kwargs["port_west"] = make_mesh_port()
-                    if node_y + 1 < 3:
+                    if node_y + 1 < mesh_height:
                         kwargs["port_north"] = make_mesh_port()
                     if node_y > 0:
                         kwargs["port_south"] = make_mesh_port()
                     return MeshNode(**kwargs)
 
-                if chi_topology == 'L2L3DramSys_5x3':
-                    l2l3_topo_cls = globals().get('L2L3DramSys5x3')
+                if chi_topology in (
+                    'L2L3DramSys_5x3',
+                    'L2L3DramSys_6x4',
+                    'L2L3DramSys_6x6',
+                ):
+                    if chi_topology == 'L2L3DramSys_5x3':
+                        topo_cls_name = 'L2L3DramSys5x3'
+                        mesh_width = 5
+                        mesh_height = 3
+                        default_rn_attach_point = "mesh0.local0"
+                        default_shadow_attach_point = "mesh14.local0"
+                        default_shadow_attach_points = [
+                            "mesh14.local0",
+                            "mesh12.local0",
+                            "mesh10.local0",
+                        ]
+                        default_hn_attach_point = "mesh6.local0"
+                        default_hn_attach_points = None
+                        default_dram_attach_point = "mesh6.local1"
+                        default_dram_attach_points = None
+                        topology_variant = (
+                            "rn_configurable_hn_m6_local0_dram_m6_local1"
+                        )
+                    elif chi_topology == 'L2L3DramSys_6x4':
+                        topo_cls_name = 'L2L3DramSys6x4'
+                        mesh_width = 6
+                        mesh_height = 4
+                        default_rn_attach_point = "mesh1.local0"
+                        default_shadow_attach_point = "mesh2.local0"
+                        default_shadow_attach_points = [
+                            "mesh2.local0",
+                            "mesh3.local0",
+                            "mesh4.local0",
+                            "mesh7.local0",
+                            "mesh8.local0",
+                            "mesh9.local0",
+                            "mesh10.local0",
+                            "mesh13.local0",
+                            "mesh14.local0",
+                            "mesh15.local0",
+                            "mesh16.local0",
+                            "mesh19.local0",
+                            "mesh20.local0",
+                            "mesh21.local0",
+                            "mesh22.local0",
+                        ]
+                        default_hn_attach_point = "mesh6.local0"
+                        default_hn_attach_points = [
+                            "mesh1.local1",
+                            "mesh2.local1",
+                            "mesh3.local1",
+                            "mesh4.local1",
+                            "mesh7.local1",
+                            "mesh8.local1",
+                            "mesh9.local1",
+                            "mesh10.local1",
+                            "mesh13.local1",
+                            "mesh14.local1",
+                            "mesh15.local1",
+                            "mesh16.local1",
+                            "mesh19.local1",
+                            "mesh20.local1",
+                            "mesh21.local1",
+                            "mesh22.local1",
+                        ]
+                        default_dram_attach_point = "mesh6.local1"
+                        default_dram_attach_points = [
+                            "mesh6.local0",
+                            "mesh12.local0",
+                            "mesh11.local0",
+                            "mesh17.local0",
+                        ]
+                        topology_variant = (
+                            "rn_m1_local0_16hn_local1_4sn_cmn700"
+                        )
+                    else:
+                        topo_cls_name = 'L2L3DramSys6x6'
+                        mesh_width = 6
+                        mesh_height = 6
+                        default_rn_attach_point = "mesh7.local0"
+                        default_shadow_attach_point = "mesh8.local0"
+                        default_shadow_attach_points = [
+                            "mesh8.local0",
+                            "mesh9.local0",
+                            "mesh10.local0",
+                            "mesh13.local0",
+                            "mesh14.local0",
+                            "mesh15.local0",
+                            "mesh16.local0",
+                            "mesh19.local0",
+                            "mesh20.local0",
+                            "mesh21.local0",
+                            "mesh22.local0",
+                            "mesh25.local0",
+                            "mesh26.local0",
+                            "mesh27.local0",
+                            "mesh28.local0",
+                        ]
+                        default_hn_attach_point = "mesh7.local1"
+                        default_hn_attach_points = [
+                            "mesh7.local1",
+                            "mesh8.local1",
+                            "mesh9.local1",
+                            "mesh10.local1",
+                            "mesh13.local1",
+                            "mesh14.local1",
+                            "mesh15.local1",
+                            "mesh16.local1",
+                            "mesh19.local1",
+                            "mesh20.local1",
+                            "mesh21.local1",
+                            "mesh22.local1",
+                            "mesh25.local1",
+                            "mesh26.local1",
+                            "mesh27.local1",
+                            "mesh28.local1",
+                        ]
+                        default_dram_attach_point = "mesh1.local0"
+                        default_dram_attach_points = [
+                            "mesh1.local0",
+                            "mesh4.local0",
+                            "mesh31.local0",
+                            "mesh34.local0",
+                        ]
+                        topology_variant = (
+                            "rn_m7_local0_16hn_local1_4sn_cmn700_6x6"
+                        )
+
+                    l2l3_topo_cls = globals().get(topo_cls_name)
                     if l2l3_topo_cls is None:
                         raise RuntimeError(
-                            "CHI topology 'L2L3DramSys_5x3' requires SimObject "
-                            "'L2L3DramSys5x3', but it is unavailable in this build. "
+                            f"CHI topology '{chi_topology}' requires SimObject "
+                            f"'{topo_cls_name}', but it is unavailable in this build. "
                             "Please rebuild gem5 with xsCHI TopoSys enabled."
                         )
 
                     shadow_cfg = _build_shadow_l2_config(
-                        default_attach_point="mesh14.local0",
-                        default_attach_points=[
-                            "mesh14.local0",
-                            "mesh12.local0",
-                            "mesh10.local0",
-                        ],
+                        default_attach_point=default_shadow_attach_point,
+                        default_attach_points=default_shadow_attach_points,
                         enable_auto_mapping_defaults=True,
                     )
                     hn_count = int(getattr(options, "chi_hn_count", 1))
                     dram_count = int(getattr(options, "chi_dram_count", 1))
+                    if default_hn_attach_points is not None:
+                        if not _cli_opt_provided("--chi-hn-count"):
+                            hn_count = len(default_hn_attach_points)
+                    if default_dram_attach_points is not None:
+                        if not _cli_opt_provided("--chi-dram-count"):
+                            dram_count = len(default_dram_attach_points)
                     if hn_count <= 0:
                         raise ValueError("--chi-hn-count must be > 0")
                     if dram_count <= 0:
                         raise ValueError("--chi-dram-count must be > 0")
 
+                    raw_rn_attach_point = getattr(
+                        options, "chi_rn_attach_point", None
+                    )
+                    if _cli_opt_provided("--chi-rn-attach-point") or (
+                        raw_rn_attach_point not in (None, "", "mesh0.local0")
+                    ):
+                        rn_attach_point = raw_rn_attach_point
+                    else:
+                        rn_attach_point = default_rn_attach_point
                     hn_attach_points = _build_attach_points(
                         getattr(options, "chi_hn_attach_points", None),
                         "--chi-hn-attach-points",
                         hn_count,
                         "HN",
-                        "mesh6.local0",
+                        default_hn_attach_point,
+                        default_attach_points=default_hn_attach_points,
                     )
                     dram_attach_points = _build_attach_points(
                         getattr(options, "chi_dram_attach_points", None),
                         "--chi-dram-attach-points",
                         dram_count,
                         "DRAM",
-                        "mesh6.local1",
+                        default_dram_attach_point,
+                        default_attach_points=default_dram_attach_points,
                     )
 
                     per_hn_l3_size, per_hn_l3_mshrs = (
                         _split_l3_resources_for_multi_hn(
                             total_l3_size=options.l3_size,
-                            total_l3_mshrs=L3Cache.mshrs,
+                            total_l3_mshrs=total_l3_mshrs,
                             hn_count=hn_count,
                             cacheline_size=system.cache_line_size,
                             l3_assoc=options.l3_assoc,
@@ -856,7 +1014,7 @@ def config_cache(options, system):
                         f"hn_count={hn_count} "
                         f"total_l3_size={options.l3_size} "
                         f"per_hn_l3_size={per_hn_l3_size}B "
-                        f"total_l3_mshrs={int(L3Cache.mshrs)} "
+                        f"total_l3_mshrs={total_l3_mshrs} "
                         f"per_hn_l3_mshrs={per_hn_l3_mshrs}"
                     )
                     per_hn_l3_size_str = f"{per_hn_l3_size}B"
@@ -919,7 +1077,7 @@ def config_cache(options, system):
 
                     if len(system.mem_ranges) != 1:
                         raise ValueError(
-                            "CHI topology 'L2L3DramSys_5x3' currently supports "
+                            f"CHI topology '{chi_topology}' currently supports "
                             "exactly one base memory range, got "
                             f"{len(system.mem_ranges)}"
                         )
@@ -941,10 +1099,7 @@ def config_cache(options, system):
                         DDRWrapper(
                             networkPort=make_chi_port("down"),
                             range=dram_ranges[i],
-                            configFile=os.path.join(
-                                root_dir,
-                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini',
-                            ),
+                            configFile=dramsim3_config_file,
                             filePath=os.path.join(root_dir, 'ext/dramsim3/DRAMsim3/'),
                             read_response_padding_cycles=(
                                 chi_ddr_read_response_padding_cycles),
@@ -953,9 +1108,13 @@ def config_cache(options, system):
                     ]
 
                     mesh_nodes = []
-                    for y in range(3):
-                        for x in range(5):
-                            mesh_nodes.append(_build_mesh_node_5x3(x, y))
+                    for y in range(mesh_height):
+                        for x in range(mesh_width):
+                            mesh_nodes.append(
+                                _build_mesh_node_grid(
+                                    x, y, mesh_width, mesh_height
+                                )
+                            )
                     mesh_kwargs = {
                         f"MeshNode{i}": mesh_nodes[i]
                         for i in range(len(mesh_nodes))
@@ -970,6 +1129,7 @@ def config_cache(options, system):
                             shadow_window_sizes=shadow_cfg["shadow_window_sizes"],
                             shadow_dst_bases=shadow_cfg["shadow_dst_bases"],
                         ),
+                        rn_attach_point=rn_attach_point,
                         HNs=hn_objs,
                         hn_attach_points=hn_attach_points,
                         dramsim3s=dram_objs,
@@ -982,14 +1142,16 @@ def config_cache(options, system):
                     system.CHIsys.ShadowRNBridges = shadow_cfg["shadow_bridges"]
                     system.CHIsys.shadow_attach_points = shadow_cfg["shadow_attach_points"]
                     system.CHIsys.mem_side_port = system.membus.cpu_side_ports
+                    mesh_summary = " ".join(
+                        f"M{i}=({i % mesh_width},{i // mesh_width})"
+                        for i in range(mesh_width * mesh_height)
+                    )
                     print(
-                        "[xsCHI][Build] mesh=5x3 "
-                        "M0=(0,0) M1=(1,0) M2=(2,0) M3=(3,0) M4=(4,0) "
-                        "M5=(0,1) M6=(1,1) M7=(2,1) M8=(3,1) M9=(4,1) "
-                        "M10=(0,2) M11=(1,2) M12=(2,2) M13=(3,2) M14=(4,2) "
-                        f"endpoints: RN@M0.local0 HN@{hn_attach_points} "
+                        f"[xsCHI][Build] mesh={mesh_width}x{mesh_height} "
+                        f"{mesh_summary} "
+                        f"endpoints: RN@{rn_attach_point} HN@{hn_attach_points} "
                         f"DRAM@{dram_attach_points} topology={chi_topology} "
-                        "variant=rn_m0_local0_hn_m6_local0_dram_m6_local1 "
+                        f"variant={topology_variant} "
                         f"shadow_enable={shadow_cfg['shadow_enable']} "
                         f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
                         f"shadow_attach={shadow_cfg['shadow_attach_points']}"
@@ -1051,10 +1213,7 @@ def config_cache(options, system):
                         dramsim3=DDRWrapper(
                             networkPort=make_chi_port("down"),
                             range=system.mem_ranges[0],
-                            configFile=os.path.join(
-                                root_dir,
-                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini',
-                            ),
+                            configFile=dramsim3_config_file,
                             filePath=os.path.join(root_dir, 'ext/dramsim3/DRAMsim3/'),
                             read_response_padding_cycles=(
                                 chi_ddr_read_response_padding_cycles),
@@ -1254,13 +1413,14 @@ def config_cache(options, system):
                     l3_cache_slice.setCacheAccessor(l3_inner_cache)
 
                     l3_inner_cache.do_fast_writeline = not options.kmh_align
+                    l3_inner_cache.mshrs = total_l3_mshrs
                     if options.ideal_cache:
                         l3_inner_cache.response_latency = 0
                         l3_inner_cache.tag_latency = 1
                         l3_inner_cache.data_latency = 1
                         l3_inner_cache.sequential_access = False
                         l3_inner_cache.writeback_clean = False
-                        l3_inner_cache.mshrs = 64
+                        l3_inner_cache.mshrs = total_l3_mshrs
                     if options.xiangshan_ecore:
                         l3_inner_cache.response_latency = 66
                         l3_inner_cache.writeback_clean = False
@@ -1287,10 +1447,7 @@ def config_cache(options, system):
                     shadow_cfg = _build_shadow_l2_config("mesh3.local0")
 
                     system.CHIsys = L2ToDramSys(
-                        configFile=os.path.join(
-                            root_dir,
-                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'
-                        ),
+                        configFile=dramsim3_config_file,
                         topology_variant=topology_variant,
                     )
                     system.CHIsys.L2Wrapper = CHI_L2(

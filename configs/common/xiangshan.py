@@ -543,6 +543,8 @@ def build_xiangshan_system(args):
             'L2L3DramSys_M1Local1Dram',
             'L2L3DramSys_3x3',
             'L2L3DramSys_5x3',
+            'L2L3DramSys_6x4',
+            'L2L3DramSys_6x6',
         )
         if args.CHI and getattr(args, 'chi_topology', 'L2ToDramSys') in l2l3_topologies:
             # L2L3DramSys owns and wires its DDRWrapper internally.
@@ -759,6 +761,8 @@ def xiangshan_system_init():
             "L2L3DramSys_M1Local1Dram",
             "L2L3DramSys_3x3",
             "L2L3DramSys_5x3",
+            "L2L3DramSys_6x4",
+            "L2L3DramSys_6x6",
         ],
         default="L2ToDramSys",
         help="Select CHI topology object when --CHI is enabled",

@@ -189,6 +189,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="MeshNode VOQ backpressure mode: "
                              "per_ingress uses per-(egress,channel,ingress) "
                              "depth, aggregate uses per-(egress,channel) sum")
+    parser.add_argument("--chi-rn-attach-point", type=str, default="mesh0.local0",
+                        help="Main xsCHI RN/L2 attach point for topologies that "
+                             "support configurable RN placement "
+                             "(e.g. mesh0.local0,mesh3.local1)")
     parser.add_argument("--chi-hn-count", type=int, default=1,
                         help="Number of CHI_L3/HN endpoints for topologies "
                              "that support multiple HNs")
@@ -238,6 +242,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--l3_size", type=str, default="16MB")
     parser.add_argument("--l3_assoc", type=int, default=16)
+    parser.add_argument("--l3_mshrs", type=int, default=None,
+                        help="Total L3 MSHR count; defaults to L3Cache.mshrs")
 
     parser.add_argument("--cacheline_size", type=int, default=64)
     parser.add_argument("--ideal-cache", action="store_true")
