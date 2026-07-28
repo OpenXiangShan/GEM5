@@ -26,13 +26,13 @@
 #include "arch/riscv/mpt_unit.hh"
 
 #include <algorithm>
-#include <limits>
 #include <map>
 #include <type_traits>
 #include <unordered_set>
 
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "base/intmath.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "cpu/thread_context.hh"
@@ -252,16 +252,26 @@ MptUnit::MptUnit(const Params &p)
                  "MPT source %u queue size must be positive\n", source);
     }
 
-    cache[0].capacity = p.cache_l0_size;
-    cache[1].capacity = p.cache_l1_size;
-    cache[2].capacity = p.cache_l2_size;
-    cache[3].capacity = p.cache_l3_size;
-    cache[SuperpageCache].capacity = p.cache_sp_size;
+    const std::array<size_t, NumLevels + 1> cache_capacities{{
+        p.cache_l0_size,
+        p.cache_l1_size,
+        p.cache_l2_size,
+        p.cache_l3_size,
+        p.cache_sp_size,
+    }};
+    const std::array<replacement_policy::Base *, NumLevels + 1>
+        replacement_policies{{
+            p.cache_l0_replacement_policy,
+            p.cache_l1_replacement_policy,
+            p.cache_l2_replacement_policy,
+            p.cache_l3_replacement_policy,
+            p.cache_sp_replacement_policy,
+        }};
     if (enableMptCache) {
         for (unsigned partition = 0; partition < cache.size(); ++partition) {
-            panic_if(cache[partition].capacity == 0,
-                     "MPT cache partition %u must contain at least one entry\n",
-                     partition);
+            configureCachePartition(cache[partition],
+                                    cache_capacities[partition],
+                                    replacement_policies[partition]);
         }
     }
 }
@@ -545,6 +555,77 @@ MptUnit::cacheKey(Addr paddr, int level, bool superpage)
     return aligned;
 }
 
+void
+MptUnit::configureCachePartition(CachePartition &partition, size_t capacity,
+                                 replacement_policy::Base *policy)
+{
+    panic_if(capacity == 0 || !isPowerOf2(capacity),
+             "MPT cache partition capacity must be a non-zero power of two "
+             "(got %zu)\n", capacity);
+    panic_if(policy == nullptr,
+             "MPT cache partition requires a replacement policy\n");
+
+    partition.capacity = capacity;
+    partition.replacementPolicy = policy;
+    partition.ways.resize(capacity);
+    partition.wayIndex.reserve(capacity);
+    for (auto &way : partition.ways) {
+        way.replacementData = policy->instantiateEntry();
+    }
+}
+
+MptUnit::CacheWay *
+MptUnit::findCacheWay(CachePartition &partition, Addr key)
+{
+    const auto found = partition.wayIndex.find(key);
+    if (found == partition.wayIndex.end()) {
+        return nullptr;
+    }
+
+    panic_if(found->second >= partition.ways.size(),
+             "MPT cache key %#lx has invalid way %zu\n", key, found->second);
+    CacheWay &way = partition.ways[found->second];
+    panic_if(!way.entry.valid || way.key != key,
+             "MPT cache key-to-way index is inconsistent for key %#lx\n",
+             key);
+    return &way;
+}
+
+const MptUnit::CacheWay *
+MptUnit::findCacheWay(const CachePartition &partition, Addr key) const
+{
+    const auto found = partition.wayIndex.find(key);
+    if (found == partition.wayIndex.end()) {
+        return nullptr;
+    }
+
+    panic_if(found->second >= partition.ways.size(),
+             "MPT cache key %#lx has invalid way %zu\n", key, found->second);
+    const CacheWay &way = partition.ways[found->second];
+    panic_if(!way.entry.valid || way.key != key,
+             "MPT cache key-to-way index is inconsistent for key %#lx\n",
+             key);
+    return &way;
+}
+
+MptUnit::CacheWay *
+MptUnit::findCacheVictim(CachePartition &partition)
+{
+    for (auto &way : partition.ways) {
+        if (!way.entry.valid) {
+            return &way;
+        }
+    }
+
+    ReplacementCandidates candidates;
+    candidates.reserve(partition.ways.size());
+    for (auto &way : partition.ways) {
+        candidates.push_back(&way);
+    }
+    return static_cast<CacheWay *>(
+        partition.replacementPolicy->getVictim(candidates));
+}
+
 MptUnit::ProbeResult
 MptUnit::probeCache(Addr paddr)
 {
@@ -557,21 +638,23 @@ MptUnit::probeCache(Addr paddr)
 
     auto consider = [&](unsigned partition, Addr key, int level) {
         auto &part = cache[partition];
-        auto it = part.entries.find(key);
-        if (it == part.entries.end() || !it->second.valid) {
+        CacheWay *way = findCacheWay(part, key);
+        if (way == nullptr) {
             return;
         }
-        part.lastUse[key] = ++part.sequence;
-        if (it->second.mpte.isLeaf()) {
+        if (part.capacity > 1) {
+            part.replacementPolicy->touch(way->replacementData);
+        }
+        if (way->entry.mpte.isLeaf()) {
             if (!leaf_hit || level > leaf_level) {
                 leaf_hit = true;
                 leaf_level = level;
-                leaf_entry = it->second;
+                leaf_entry = way->entry;
             }
         } else if (!internal_hit || level < internal_level) {
             internal_hit = true;
             internal_level = level;
-            internal_entry = it->second;
+            internal_entry = way->entry;
         }
     };
 
@@ -607,17 +690,17 @@ MptUnit::cacheCoversPrefetch(Addr paddr, int requested_level) const
 {
     for (int level = 0; level < static_cast<int>(NumLevels); ++level) {
         const auto &part = cache[level];
-        const auto entry = part.entries.find(cacheKey(paddr, level, false));
-        if (entry != part.entries.end() && entry->second.valid &&
-            (entry->second.mpte.isLeaf() || level <= requested_level)) {
+        const CacheWay *entry = findCacheWay(
+            part, cacheKey(paddr, level, false));
+        if (entry != nullptr &&
+            (entry->entry.mpte.isLeaf() || level <= requested_level)) {
             return true;
         }
 
         const auto &superpage = cache[SuperpageCache];
-        const auto leaf = superpage.entries.find(
-            cacheKey(paddr, level, true));
-        if (leaf != superpage.entries.end() && leaf->second.valid &&
-            leaf->second.mpte.isLeaf()) {
+        const CacheWay *leaf = findCacheWay(
+            superpage, cacheKey(paddr, level, true));
+        if (leaf != nullptr && leaf->entry.mpte.isLeaf()) {
             return true;
         }
     }
@@ -630,9 +713,9 @@ MptUnit::markPrefetchUseful(Addr paddr, const MPTCacheEntry &entry)
     const bool superpage = entry.mpte.isLeaf() && entry.level > 0;
     CachePartition &part = cache[superpage ? SuperpageCache : entry.level];
     const Addr key = cacheKey(paddr, entry.level, superpage);
-    auto stored = part.entries.find(key);
-    if (stored != part.entries.end() && stored->second.prefetched) {
-        stored->second.prefetched = false;
+    CacheWay *stored = findCacheWay(part, key);
+    if (stored != nullptr && stored->entry.prefetched) {
+        stored->entry.prefetched = false;
         stats.prefetchUseful++;
     }
 }
@@ -658,36 +741,42 @@ MptUnit::insertCache(int level, Addr paddr, const MPTE52 &mpte,
     entry.level = level;
     entry.log2RegionSize = log2floor(getRegionSizeForLevel(level));
 
-    auto existing = part.entries.find(key);
-    if (prefetched && existing != part.entries.end() &&
-        existing->second.valid) {
+    CacheWay *existing = findCacheWay(part, key);
+    if (prefetched && existing != nullptr) {
         return false;
     }
-    if (!prefetched && existing != part.entries.end() &&
-        existing->second.prefetched) {
+    if (!prefetched && existing != nullptr &&
+        existing->entry.prefetched) {
         stats.prefetchUnused++;
     }
-    if (existing == part.entries.end() &&
-        part.entries.size() >= part.capacity) {
-        Addr victim = 0;
-        uint64_t oldest = std::numeric_limits<uint64_t>::max();
-        for (const auto &[candidate, sequence] : part.lastUse) {
-            if (sequence < oldest) {
-                oldest = sequence;
-                victim = candidate;
-            }
+    if (existing != nullptr) {
+        existing->entry = entry;
+        if (part.capacity > 1) {
+            part.replacementPolicy->touch(existing->replacementData);
         }
-        auto victim_entry = part.entries.find(victim);
-        if (victim_entry != part.entries.end() &&
-            victim_entry->second.prefetched) {
-            stats.prefetchUnused++;
-        }
-        part.entries.erase(victim);
-        part.lastUse.erase(victim);
+        return true;
     }
 
-    part.entries[key] = entry;
-    part.lastUse[key] = ++part.sequence;
+    CacheWay *victim = findCacheVictim(part);
+    panic_if(victim == nullptr, "MPT cache replacement found no victim\n");
+    if (victim->entry.valid) {
+        if (victim->entry.prefetched) {
+            stats.prefetchUnused++;
+        }
+        const size_t erased = part.wayIndex.erase(victim->key);
+        panic_if(erased != 1,
+                 "MPT cache victim key %#lx is missing from way index\n",
+                 victim->key);
+    }
+
+    victim->key = key;
+    victim->entry = entry;
+    const size_t way = victim - part.ways.data();
+    const bool inserted = part.wayIndex.emplace(key, way).second;
+    panic_if(!inserted, "MPT cache key %#lx was inserted twice\n", key);
+    if (part.capacity > 1) {
+        part.replacementPolicy->reset(victim->replacementData);
+    }
     return true;
 }
 
@@ -695,14 +784,18 @@ void
 MptUnit::clearCache()
 {
     for (auto &partition : cache) {
-        for (const auto &[key, entry] : partition.entries) {
-            if (entry.prefetched) {
+        for (auto &way : partition.ways) {
+            if (way.entry.valid && way.entry.prefetched) {
                 stats.prefetchUnused++;
             }
+            way.key = 0;
+            way.entry = MPTCacheEntry();
+            if (partition.capacity > 1) {
+                partition.replacementPolicy->invalidate(
+                    way.replacementData);
+            }
         }
-        partition.entries.clear();
-        partition.lastUse.clear();
-        partition.sequence = 0;
+        partition.wayIndex.clear();
     }
 }
 

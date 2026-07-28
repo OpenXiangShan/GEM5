@@ -866,6 +866,8 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         pteReadMptIsNextline = false;
         pteReadMptFaultPending = false;
         pteReadMptCheckedPaddr = 0;
+        nextlineReadMptAuthorized = false;
+        nextlineReadMptAuthorizedPaddr = 0;
         mptGranularityClipped = false;
         mptOnly = false;
         mptOnlyHasEntry = false;
@@ -921,6 +923,8 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         pteReadMptIsNextline = false;
         pteReadMptFaultPending = false;
         pteReadMptCheckedPaddr = 0;
+        nextlineReadMptAuthorized = false;
+        nextlineReadMptAuthorizedPaddr = 0;
         mptGranularityClipped = false;
         mptOnly = false;
         mptOnlyHasEntry = false;
@@ -2022,20 +2026,13 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     } else if (nextline) {
         if (!walker->mptCheckIntermediatePtes && timing &&
             walker->mptUnit != nullptr && walker->mptUnit->enabled()) {
-            for (int i = 0; i < l2tlbLineSize; ++i) {
-                const PTE candidate = read->getLE_l2tlb<uint64_t>(i);
-                const bool validLeaf = candidate.v &&
-                    (candidate.r || candidate.x) &&
-                    !(!candidate.r && candidate.w);
-                if (validLeaf) {
-                    const Addr ptePaddr = read->req->getPaddr() +
-                        i * sizeof(PTE);
-                    if (startLeafPteReadMPTCheck(ptePaddr)) {
-                        return NoFault;
-                    }
-                    break;
-                }
-            }
+            panic_if(!nextlineReadMptAuthorized ||
+                         nextlineReadMptAuthorizedPaddr !=
+                             read->req->getPaddr(),
+                     "Leaf-only next-line PTW response was not authorized "
+                     "before the read: response=%#lx authorized=%#lx\n",
+                     read->req->getPaddr(),
+                     nextlineReadMptAuthorizedPaddr);
         }
         nextlineEntry.logBytes = PageShift + (nextlineLevel * LEVEL_BITS);
         nextlineEntry.vaddr &= ~((1 << nextlineEntry.logBytes) - 1);
@@ -2172,6 +2169,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     if ((read_num_pre == read_num) && (nextlineLevel == 0) && timing && openNextline &&
                         autoNextlineSign && (!entry.fromForwardPreReq) && (!entry.fromBackPreReq)) {
                         nextline = true;
+                        nextlineReadMptAuthorized = false;
+                        nextlineReadMptAuthorizedPaddr = 0;
                         nextState = Translate;
                         nextlineEntry.vaddr =
                             entry.vaddr + (l2tlbLineSize << (nextlineLevel * LEVEL_BITS + PageShift));
@@ -2977,6 +2976,8 @@ Walker::WalkerState::finishPteReadMPTFault()
 
     if (pteReadMptIsNextline) {
         pteReadMptIsNextline = false;
+        nextlineReadMptAuthorized = false;
+        nextlineReadMptAuthorizedPaddr = 0;
         state = Ready;
         nextState = Waiting;
         return true;
@@ -3005,12 +3006,21 @@ Walker::WalkerState::startPteReadMPTCheck()
         return NoFault;
     }
 
-    if (!walker->mptCheckIntermediatePtes) {
+    /*
+     * A demand walk can defer its MPT check until the returned PTE is known
+     * to be a leaf. A speculative next-line read cannot know that in advance,
+     * so authorize the complete PTE cache line before issuing the read.
+     */
+    if (!walker->mptCheckIntermediatePtes && !nextline) {
         return NoFault;
     }
 
     Addr pteReadPaddr = read->req->getPaddr();
     if (pteReadMptChecked && pteReadMptCheckedPaddr == pteReadPaddr) {
+        if (nextline) {
+            nextlineReadMptAuthorized = true;
+            nextlineReadMptAuthorizedPaddr = pteReadPaddr;
+        }
         return NoFault;
     }
 
@@ -3021,6 +3031,10 @@ Walker::WalkerState::startPteReadMPTCheck()
     pteReadMptResult = false;
     pteReadMptIsNextline = nextline;
     pteReadMptFaultPending = false;
+    if (nextline) {
+        nextlineReadMptAuthorized = false;
+        nextlineReadMptAuthorizedPaddr = 0;
+    }
     isMPTing = true;
     finishMPTing = false;
     mpt_level = 3;
@@ -3045,6 +3059,8 @@ Walker::WalkerState::startLeafPteReadMPTCheck(Addr pte_paddr)
         return false;
     }
 
+    panic_if(nextline,
+             "Next-line PTE reads must be MPT-authorized before issue\n");
     panic_if(read == nullptr || !read->isResponse() || !read->isRead(),
              "Leaf PTE MPT check requires a PTW read response\n");
     if (read->req->isMptWalk()) {
@@ -3231,6 +3247,10 @@ bool Walker::WalkerState::completeMPTWalk()
             }
             pteReadMptChecked = true;
             pteReadMptCheckedPaddr = mptCheckPaddr;
+            if (pteReadMptIsNextline) {
+                nextlineReadMptAuthorized = true;
+                nextlineReadMptAuthorizedPaddr = mptCheckPaddr;
+            }
             pteMptCheckPhase = PteMptCheckPhase::None;
             pteReadMptResult = false;
             pteReadMptIsNextline = false;

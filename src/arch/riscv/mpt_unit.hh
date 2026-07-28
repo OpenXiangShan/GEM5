@@ -37,6 +37,8 @@
 #include "arch/riscv/pagetable.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "mem/cache/replacement_policies/base.hh"
+#include "mem/cache/replacement_policies/replaceable_entry.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "params/RiscvMptUnit.hh"
@@ -213,12 +215,18 @@ class MptUnit : public ClockedObject
         {}
     };
 
+    struct CacheWay : public ReplaceableEntry
+    {
+        Addr key = 0;
+        MPTCacheEntry entry;
+    };
+
     struct CachePartition
     {
         size_t capacity = 0;
-        uint64_t sequence = 0;
-        std::unordered_map<Addr, MPTCacheEntry> entries;
-        std::unordered_map<Addr, uint64_t> lastUse;
+        replacement_policy::Base *replacementPolicy = nullptr;
+        std::vector<CacheWay> ways;
+        std::unordered_map<Addr, size_t> wayIndex;
     };
 
     struct MptStats : public statistics::Group
@@ -334,6 +342,12 @@ class MptUnit : public ClockedObject
                      bool prefetched = false);
     void markPrefetchUseful(Addr paddr, const MPTCacheEntry &entry);
     void clearCache();
+    void configureCachePartition(CachePartition &partition, size_t capacity,
+                                 replacement_policy::Base *policy);
+    CacheWay *findCacheWay(CachePartition &partition, Addr key);
+    const CacheWay *findCacheWay(const CachePartition &partition,
+                                 Addr key) const;
+    CacheWay *findCacheVictim(CachePartition &partition);
     static Addr cacheKey(Addr paddr, int level, bool superpage);
 
     bool startTargetRead(Target target);

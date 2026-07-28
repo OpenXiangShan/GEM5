@@ -544,15 +544,22 @@ TLB::autoOpenNextline()
         l2tlb = static_cast<TLB *>(nextLevel());
     }
 
-    int pre_num_c = l2tlb->AllPre;
-    int removePreUnused_c = l2tlb->RemovePreUnused;
+    const uint64_t pre_num_c = l2tlb->AllPre;
+    const uint64_t removePreUnused_c = l2tlb->RemovePreUnused;
+    const uint64_t useful_pre_num =
+        pre_num_c > removePreUnused_c ?
+        pre_num_c - removePreUnused_c : 0;
 
     bool auto_nextline = true;
-    double precision = (double)((pre_num_c - removePreUnused_c) / (pre_num_c + 1));
+    const double precision = static_cast<double>(useful_pre_num) /
+        (static_cast<double>(pre_num_c) + 1.0);
     if (isOpenAutoNextLine) {
         if (removePreUnused_c > regulationNum) {
             if (precision < nextlinePrecision) {
-                DPRINTF(autoNextline, "pre_num %d removePreUnused %d precision %f\n", pre_num_c, removePreUnused_c,
+                DPRINTF(autoNextline,
+                        "pre_num %llu removePreUnused %llu precision %f\n",
+                        static_cast<unsigned long long>(pre_num_c),
+                        static_cast<unsigned long long>(removePreUnused_c),
                         precision);
                 auto_nextline = false;
             }
@@ -1327,6 +1334,17 @@ TLB::l2TLBRemove(size_t idx, int choose)
         stats.l2tlbUsedRemove[choose]++;
     } else{
         stats.l2tlbUnusedRemove[choose]++;
+    }
+    if (choose == L_L2L0) {
+        uint64_t unused_prefetch_entries = 0;
+        for (int i = 0; i < l2tlbLineSize; ++i) {
+            const TlbEntry &entry = *(l2Tlb[choose - 1] + idx + i);
+            if (entry.isPre && !entry.preSign) {
+                ++unused_prefetch_entries;
+            }
+        }
+        stats.RemovePreUnused += unused_prefetch_entries;
+        RemovePreUnused += unused_prefetch_entries;
     }
     for (int i = 0; i < l2tlbLineSize; i++) {
         DPRINTF(TLB, "remove l2_tlb level %d idx %d idx+i %d\n", choose - 1, idx, idx + i);

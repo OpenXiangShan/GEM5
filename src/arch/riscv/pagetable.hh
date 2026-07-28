@@ -201,8 +201,8 @@ mptLevelCoversLogBytes(uint8_t level, unsigned logBytes)
 struct MPTCacheEntry
 {
     Addr tag;
-    // Region base. The unordered map address is the lookup key; this tag is
-    // kept for debug output and future set-associative mapping work.
+    // Region base. The host-side key-to-way index accelerates lookup; this tag
+    // remains part of the fixed cache way, as it would in hardware.
 
     // Cached MPTE. This contains the raw 64-bit value, including the N bit.
     MPTE52 mpte;

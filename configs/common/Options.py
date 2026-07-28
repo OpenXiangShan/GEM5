@@ -663,7 +663,9 @@ def addXiangshanCommonOptions(parser):
     parser.add_argument("--disable-mpt-cache", action="store_false",
                         dest="enable_mpt_cache",
                         help="Disable the dedicated simulated MPT cache")
-    parser.set_defaults(enable_mpt_cache_prefetch=False)
+    # Unspecified prefetching follows the MPT cache state. Since the cache is
+    # enabled by default, the effective prefetch default is enabled as well.
+    parser.set_defaults(enable_mpt_cache_prefetch=None)
     parser.add_argument("--enable-mpt-cache-prefetch", action="store_true",
                         dest="enable_mpt_cache_prefetch",
                         help="Prefetch forward adjacent MPTEs into the MPT cache")
@@ -684,7 +686,8 @@ def addXiangshanCommonOptions(parser):
     parser.add_argument("--mpt-ptw-check-mode", action="store",
                         choices=("all", "leaf"), default="all",
                         help="Select whether MPT protects every PTW PTE read "
-                             "or only leaf PTE reads")
+                             "or demand leaf PTE reads; speculative next-line "
+                             "reads are always authorized before issue")
     parser.set_defaults(enable_tlb_prefetch=True)
     parser.add_argument("--disable-tlb-prefetch", action="store_false",
                         dest="enable_tlb_prefetch",

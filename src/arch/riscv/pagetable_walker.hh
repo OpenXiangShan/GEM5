@@ -267,6 +267,8 @@ namespace RiscvISA
             bool pteReadMptIsNextline=false;
             bool pteReadMptFaultPending=false;
             Addr pteReadMptCheckedPaddr=0;
+            bool nextlineReadMptAuthorized=false;
+            Addr nextlineReadMptAuthorizedPaddr=0;
             bool isMPTing=false;
             bool finishMPTing=false;
             bool MPTresult=false;

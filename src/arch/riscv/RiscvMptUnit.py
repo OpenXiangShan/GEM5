@@ -1,6 +1,7 @@
 # -*- mode:python -*-
 
 from m5.objects.ClockedObject import ClockedObject
+from m5.objects.ReplacementPolicies import TreePLRURP
 from m5.params import *
 from m5.proxy import *
 
@@ -15,7 +16,7 @@ class RiscvMptUnit(ClockedObject):
 
     enable_mpt_cache = Param.Bool(True, "Enable the dedicated MPT cache")
     enable_cache_prefetch = Param.Bool(
-        False, "Enable adjacent-entry MPT cache prefetching"
+        True, "Enable adjacent-entry MPT cache prefetching"
     )
     prefetch_degree = Param.Unsigned(
         1, "Number of forward adjacent MPTEs to prefetch"
@@ -66,3 +67,24 @@ class RiscvMptUnit(ClockedObject):
     cache_l2_size = Param.Unsigned(32, "MPT cache L2 entries")
     cache_l3_size = Param.Unsigned(32, "MPT cache L3 entries")
     cache_sp_size = Param.Unsigned(32, "MPT cache superpage entries")
+
+    cache_l0_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.cache_l0_size),
+        "MPT cache L0 replacement policy",
+    )
+    cache_l1_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.cache_l1_size),
+        "MPT cache L1 replacement policy",
+    )
+    cache_l2_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.cache_l2_size),
+        "MPT cache L2 replacement policy",
+    )
+    cache_l3_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.cache_l3_size),
+        "MPT cache L3 replacement policy",
+    )
+    cache_sp_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.cache_sp_size),
+        "MPT cache superpage replacement policy",
+    )

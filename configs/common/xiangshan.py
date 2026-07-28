@@ -193,11 +193,13 @@ def configure_mpt_reserved_memory(args: argparse.Namespace, system) -> None:
 
 def configure_mpt_unit(args: argparse.Namespace, mmu) -> None:
     unit = mmu.mpt_unit
-    unit.enable_mpt_cache = getattr(args, "enable_mpt_cache", True)
-    enable_cache_prefetch = getattr(
-        args, "enable_mpt_cache_prefetch", False
+    enable_mpt_cache = getattr(args, "enable_mpt_cache", True)
+    unit.enable_mpt_cache = enable_mpt_cache
+    prefetch_option = getattr(args, "enable_mpt_cache_prefetch", None)
+    enable_cache_prefetch = (
+        enable_mpt_cache if prefetch_option is None else prefetch_option
     )
-    if enable_cache_prefetch and not unit.enable_mpt_cache:
+    if enable_cache_prefetch and not enable_mpt_cache:
         fatal(
             "--enable-mpt-cache-prefetch cannot be used with "
             "--disable-mpt-cache"
