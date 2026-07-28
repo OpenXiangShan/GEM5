@@ -56,6 +56,14 @@ class PrefetcherForwarder : public Base
 
     // stats
     void incrDemandMhsrMisses() override;
+    void notifyDemandAccess(Addr paddr, bool is_secure, bool miss) override;
+    void notifyCacheMissRequest(Addr paddr, bool is_secure) override;
+    void notifyDemandMshrMiss(Addr paddr, bool is_secure) override;
+    void notifyPrefetchUseful(PrefetchSourceType source) override;
+    void notifyPrefetchEvictsDemand(
+        Addr victim_paddr, bool is_secure,
+        PrefetchSourceType evictor_source) override;
+    void notifyCachelineRefill(Addr paddr, bool is_secure) override;
     void prefetchUnused(PrefetchSourceType pf_type) override;
     void prefetchUnused(Addr paddr, PrefetchSourceType pf_type) override;
     void pfHitInMSHR(PrefetchSourceType pf_type) override;

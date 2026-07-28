@@ -930,6 +930,9 @@ class Base : public ClockedObject
          * reference. */
         statistics::Scalar pfUnused;
         statistics::Vector pfUnused_srcs;
+        /** The number of cache miss requests hitting the PFBad table. */
+        statistics::Scalar pfBad;
+        statistics::Vector pfBad_srcs;
         /** The number of times a HW-prefetch is useful. */
         statistics::Scalar pfUseful;
 
@@ -999,6 +1002,40 @@ class Base : public ClockedObject
 
     virtual void recvPrefetchFromCache(const PacketPtr &pkt) {}
 
+    virtual bool admitIncomingPrefetchPacket(const PacketPtr &pkt)
+    {
+        return true;
+    }
+
+    virtual bool ownsPrefetchRequest(const PacketPtr &pkt) const
+    {
+        return pkt && pkt->req && pkt->req->requestorId() == requestorId;
+    }
+
+    virtual void recordIssuedPrefetch(PrefetchSourceType source)
+    {
+        const int source_idx = int(source);
+        if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
+            source = PrefetchSourceType::PF_NONE;
+        }
+        prefetchStats.pfIssued++;
+        prefetchStats.pfIssued_srcs[source]++;
+        issuedPrefetches += 1;
+    }
+
+    virtual void recordIssuedPrefetch(const PacketPtr &pkt)
+    {
+        PrefetchSourceType source = PrefetchSourceType::PF_NONE;
+        if (pkt && pkt->req) {
+            if (pkt->req->hasXsMetadata()) {
+                source = pkt->req->getXsMetadata().prefetchSource;
+            } else {
+                source = pkt->getPFSource();
+            }
+        }
+        recordIssuedPrefetch(source);
+    }
+
     virtual void
     prefetchUnused(PrefetchSourceType pfSource)
     {
@@ -1008,11 +1045,35 @@ class Base : public ClockedObject
 
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
 
+    virtual void recordPfBadHit(PrefetchSourceType source)
+    {
+        const int source_idx = int(source);
+        if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
+            source = PrefetchSourceType::PF_NONE;
+        }
+        prefetchStats.pfBad++;
+        prefetchStats.pfBad_srcs[source]++;
+    }
+
     virtual void
     incrDemandMhsrMisses()
     {
         prefetchStats.demandMshrMisses++;
     }
+
+    virtual void notifyDemandMshrMiss(Addr paddr, bool is_secure) {}
+
+    virtual void notifyDemandAccess(Addr paddr, bool is_secure, bool miss) {}
+
+    virtual void notifyCacheMissRequest(Addr paddr, bool is_secure) {}
+
+    virtual void notifyPrefetchUseful(PrefetchSourceType source) {}
+
+    virtual void notifyPrefetchEvictsDemand(
+        Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
+    {}
+
+    virtual void notifyCachelineRefill(Addr paddr, bool is_secure) {}
 
     virtual void
     pfHitInCache(PrefetchSourceType pf_type)

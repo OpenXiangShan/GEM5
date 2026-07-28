@@ -912,9 +912,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param allocate Whether to allocate a block or use the temp block
      * @return Pointer to the new cache block.
      */
-    CacheBlk *handleFill(PacketPtr pkt, CacheBlk *blk,
-                         PacketList &writebacks, bool allocate,
-                         bool *refill_need_data_read = nullptr);
+    CacheBlk *handleFill(
+        PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
+        PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
+        bool *refill_need_data_read = nullptr);
 
     /**
      * Allocate a new block and perform any necessary writebacks
@@ -928,8 +929,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param writebacks A list of writeback packets for the evicted blocks
      * @return the allocated block
      */
-    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks,
-                            bool *evicted_dirty = nullptr);
+    CacheBlk *allocateBlock(
+        const PacketPtr pkt, PacketList &writebacks,
+        PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
+        bool *evicted_dirty = nullptr);
     /**
      * Evict a cache block.
      *

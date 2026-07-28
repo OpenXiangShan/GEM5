@@ -60,6 +60,19 @@
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
+- 需要动态预取 A/B 时，请使用 `manual-perf.yml` 的 `pf_control_profile` 输入；不要在 `extra_args` 中手写 `--pf-control-profile`
+
+### Dynamic Prefetch Profile
+
+`manual-perf.yml` 和性能测试模板支持 `pf_control_profile`：
+
+| Profile | 语义 |
+| --- | --- |
+| `off` | 默认 base 行为，关闭内置动态预取控制 |
+| `adaptive` | 启用 CI 内置 adaptive profile，窗口为 8000 cycles，并打开 L1D/L2/L2Wrapper PFBad 表 |
+| `default` | 不套内置 profile，仅使用代码中的 `PF_CONTROL_CONFIG` 和可选的 `GEM5_PF_CONTROL_CONFIG` 覆盖 |
+
+动态预取 profile 会被模板统一追加到 gem5 config 参数。这样可以避免 manual 输入、weekly 配置和分布式 runner 之间出现参数口径不一致。
 
 ### 性能结果
 
@@ -99,7 +112,7 @@
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
-- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四）
+- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 gcc15/spec17 常规回归、gcc12 `idealkmhv3.py` base/adaptive A/B，以及 SMT SPEC06 int-only dynamic prefetch 回归
 
 ---
 
@@ -205,6 +218,9 @@ A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_tar
 
 **Q: 新增 benchmark 类型需要修改哪些文件？**
 A: 只需修改 `gem5-perf-template.yml`
+
+**Q: 如何跑动态预取性能测试？**
+A: 使用 `manual-perf.yml`，把 `pf_control_profile` 设为 `adaptive`。base 对比使用默认的 `off`。模板会拒绝通过 `extra_args` 重复传 `--pf-control-profile`，防止一个 run 里出现两个互相冲突的 profile。
 
 ---
 

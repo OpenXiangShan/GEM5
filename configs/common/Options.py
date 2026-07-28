@@ -315,6 +315,14 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="""
                         Force all hardware prefetchers to disable their
                         optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""")
+    parser.add_argument("--pf-control-profile", action="store",
+                        default="off",
+                        choices=("off", "adaptive", "default"),
+                        help="""
+                        Prefetch admission-control profile. 'off' disables
+                        built-in control/adaptive defaults, 'adaptive' enables
+                        the CI adaptive profile, and 'default' uses only
+                        PF_CONTROL_CONFIG plus GEM5_PF_CONTROL_CONFIG.""")
 
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',
