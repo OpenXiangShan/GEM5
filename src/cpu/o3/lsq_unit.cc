@@ -1314,6 +1314,14 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
     int idx = loadPipeSx[0]->size;
     loadPipeSx[0]->insts[idx] = inst;
     loadPipeSx[0]->size++;
+    // Order S0 by age so older loads have higher priority when S1 performs
+    // the bank-conflict check.
+    std::stable_sort(
+        loadPipeSx[0]->insts,
+        loadPipeSx[0]->insts + loadPipeSx[0]->size,
+        [](const DynInstPtr &lhs, const DynInstPtr &rhs) {
+            return lhs->seqNum < rhs->seqNum;
+        });
 
     const int load_pipe_id = inst->issueQue->getLoadPipeId();
     panic_if(load_pipe_id < 0,
