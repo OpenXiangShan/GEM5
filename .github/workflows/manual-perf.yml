@@ -55,7 +55,7 @@ on:
         type: choice
         default: 'off'
         options:
-          - off
+          - 'off'
           - adaptive
           - default
       extra_args:
