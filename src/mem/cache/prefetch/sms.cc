@@ -85,6 +85,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     learnedBOP->setSharedFilterContextQualified(true);
     largeBOP->filter = &this->pfBlockLRUFilter;
     smallBOP->filter = &this->pfBlockLRUFilter;
+    largeBOP->sharePCValidationConfidenceWith(*smallBOP);
     learnedBOP->filter = &this->pfBlockLRUFilter;
     if (berti) {
         berti->setSharedFilterContextQualified(true);
@@ -245,6 +246,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
 
             smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+            largeBOP->commitPCValidationConfidence();
 
             stats.bopTrainCount++;
         }

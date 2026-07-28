@@ -511,6 +511,14 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.
             prefetchStats.pfUsefulButMiss++;
+
+        if (archDBer && cache->level() == 2 &&
+                pf_source == PrefetchSourceType::HWP_BOP) {
+            const Addr pc = pkt->req->hasPC() ? pkt->req->getPC() : 0;
+            archDBer->bopValidationOutcomeTraceWrite(
+                curTick(), "useful", pkt->getAddr(), pc,
+                static_cast<int>(pf_source), pkt->isDemand(), miss);
+        }
     }
 
     // Verify this access type is observed by prefetcher

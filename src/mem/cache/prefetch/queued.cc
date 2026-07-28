@@ -1150,6 +1150,15 @@ Queued::getPacket()
     } else {
         recordIssuedPrefetch(pkt);
     }
+
+    if (archDBer && cache->level() == 2 &&
+            pkt->req->getXsMetadata().prefetchSource ==
+                PrefetchSourceType::HWP_BOP) {
+        const Addr pc = pkt->req->hasPC() ? pkt->req->getPC() : 0;
+        archDBer->bopValidationOutcomeTraceWrite(
+            curTick(), "issued", pkt->getAddr(), pc,
+             static_cast<int>(PrefetchSourceType::HWP_BOP), false, false);
+    }
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
 
     return pkt;

@@ -730,6 +730,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
+        test_sys.arch_db.dump_bop_validation_trace = args.dump_bop_validation_trace
         test_sys.arch_db.dump_stride_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
@@ -792,6 +793,51 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "Offset INT NOT NULL," \
             "Score INT NOT NULL," \
             "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE BOPValidationTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "Event TEXT NOT NULL," \
+            "BOPName TEXT NOT NULL," \
+            "TriggerPC INT NOT NULL," \
+            "TriggerAddr INT NOT NULL," \
+            "ValidationAddr INT NOT NULL," \
+            "PrefetchAddr INT NOT NULL," \
+            "BestOffset INT NOT NULL," \
+            "BestScore INT NOT NULL," \
+            "Round INT NOT NULL," \
+            "Late BOOL NOT NULL," \
+            "TriggerIsDemand BOOL NOT NULL," \
+            "TriggerCacheMiss BOOL NOT NULL," \
+            "TriggerPFSource INT NOT NULL," \
+            "TriggerPFFirstHit BOOL NOT NULL," \
+            "TriggerPFHit BOOL NOT NULL," \
+            "IssueEnabled INT NOT NULL," \
+            "ValidationEnabled INT NOT NULL," \
+            "ValidationHit INT NOT NULL," \
+            "PCConfidenceEnabled INT NOT NULL," \
+            "PCIndex INT NOT NULL," \
+            "PCTag INT NOT NULL," \
+            "PCEntryHit INT NOT NULL," \
+            "PCConfidence INT NOT NULL," \
+            "PCState INT NOT NULL," \
+            "PCSampled INT NOT NULL," \
+            "PCEpoch INT NOT NULL," \
+            "Suppressed BOOL NOT NULL," \
+            "Generated BOOL NOT NULL," \
+            "Buffered BOOL NOT NULL," \
+            "Filtered BOOL NOT NULL," \
+            "FilterPassed BOOL NOT NULL," \
+            "PCConfidenceAfter INT NOT NULL," \
+            "PCUpdateDecayed BOOL NOT NULL," \
+            "PCUpdateParticipants INT NOT NULL," \
+            "PCOffsetChanged BOOL NOT NULL," \
+            "OutcomeAddr INT NOT NULL," \
+            "OutcomePC INT NOT NULL," \
+            "OutcomePFSource INT NOT NULL," \
+            "OutcomeIsDemand BOOL NOT NULL," \
+            "OutcomeCacheMiss BOOL NOT NULL," \
             "SITE TEXT);"
             ,
             "CREATE TABLE SMSTrainTrace(" \

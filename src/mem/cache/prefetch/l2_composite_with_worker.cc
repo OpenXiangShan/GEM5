@@ -31,6 +31,7 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     cdp->pfLRUFilter = &pfLRUFilter;
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;
+    largeBOP->sharePCValidationConfidenceWith(*smallBOP);
     cmc->filter = &pfLRUFilter;
     despacitoStream->filter = &pfLRUFilter;
     cdp->parentRid = p.sys->getRequestorId(this);
@@ -40,6 +41,11 @@ void
 L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType pfSource)
 {
     Base::prefetchUnused(pfSource);
+    if (archDBer && pfSource == PrefetchSourceType::HWP_BOP) {
+        archDBer->bopValidationOutcomeTraceWrite(
+            curTick(), "unused", paddr, 0,
+            static_cast<int>(pfSource), false, false);
+    }
     if (pfSource == PrefetchSourceType::CDP) {
         cdp->recordUnusedPrefetch(paddr);
     }
@@ -73,6 +79,7 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
     if (enableBOP) {
         largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
         smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+        largeBOP->commitPCValidationConfidence();
     }
     if (enableDespacitoStream) {
         despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
