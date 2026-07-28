@@ -450,10 +450,16 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
-      recentlyloadAddr(8 * (params.DcacheSetDivNum ? params.DcacheSetDivNum : 1)),
+      recentlyloadAddr(
+          (params.DcacheBankBytes &&
+                   params.DcacheBankBytes <= cpu_ptr->cacheLineSize() ?
+               cpu_ptr->cacheLineSize() / params.DcacheBankBytes : 1) *
+          (params.DcacheSetDivNum ? params.DcacheSetDivNum : 1)),
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
+      numBank(params.DcacheBankBytes ?
+              cpu_ptr->cacheLineSize() / params.DcacheBankBytes : 0),
       sbufferEvictThreshold(params.SbufferEvictThreshold),
       sbufferEntries(params.SbufferEntries),
       storeBufferInactiveThreshold(params.storeBufferInactiveThreshold),
@@ -462,7 +468,11 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       dcacheSetBits(params.DcacheSetBits),
       dcacheSetDivNum(params.DcacheSetDivNum),
       dcacheLineBits(floorLog2(cpu_ptr->cacheLineSize())),
-      dcacheSetBankBits(params.DcacheSetBits + 3),
+      dcacheBankBytes(params.DcacheBankBytes),
+      dcacheBankOffsetBits(params.DcacheBankBytes ?
+                           floorLog2(params.DcacheBankBytes) : 0),
+      dcacheBankIndexBits(numBank ? floorLog2(numBank) : 0),
+      dcacheSetBankBits(params.DcacheSetBits + dcacheBankIndexBits),
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _enableReplayBasedMDP(params.EnableReplayBasedMDP),
@@ -496,6 +506,20 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     panic_if(dcacheSetDivNum > (1ULL << dcacheSetBits),
              "DcacheSetDivNum (%u) must be <= num_sets (2^%u)\n",
              dcacheSetDivNum, dcacheSetBits);
+    panic_if(dcacheBankBytes == 0 || !isPowerOf2(dcacheBankBytes),
+             "DcacheBankBytes must be a positive power of two (got %u)\n",
+             dcacheBankBytes);
+    panic_if(dcacheBankBytes > cpu_ptr->cacheLineSize() ||
+                 cpu_ptr->cacheLineSize() % dcacheBankBytes != 0,
+             "DcacheBankBytes (%u) must divide cache line size (%u)\n",
+             dcacheBankBytes, cpu_ptr->cacheLineSize());
+    panic_if(numBank == 0 || !isPowerOf2(numBank),
+             "Derived dcache bank count must be a positive power of two "
+             "(line size=%u, bank bytes=%u, bank count=%u)\n",
+             cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
+    DPRINTF(LSQ, "Dcache bank model: line bytes=%u, bank bytes=%u, "
+            "bank count=%u\n",
+            cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
 
     cpu->addStatGroup("lsq", &stats);
 
@@ -824,21 +848,20 @@ LSQ::willDcacheRefillTagWriteNextCycle() const
 LSQ::DcacheBankMask
 LSQ::fullDcacheBankMask() const
 {
-    DcacheBankMask mask = {};
-    std::fill(mask.begin(), mask.end(), true);
-    return mask;
+    return DcacheBankMask(numBank, true);
 }
 
 LSQ::DcacheBankMask
-LSQ::storeMaskToDcacheBanks(const std::vector<bool> &mask) const
+LSQ::storeMaskToDcacheBanks(Addr block_addr,
+                            const std::vector<bool> &mask) const
 {
-    assert(mask.size() == DcacheBankCount * 8);
-    DcacheBankMask bank_mask = {};
+    assert(mask.size() == cpu->cacheLineSize());
+    DcacheBankMask bank_mask(numBank, false);
     if (sbufferBankWriteAccurately) {
-        for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
-            bank_mask.at(bank) = std::any_of(
-                mask.begin() + 8 * bank, mask.begin() + 8 * bank + 8,
-                [](bool v) { return v; });
+        for (unsigned byte = 0; byte < mask.size(); ++byte) {
+            if (mask.at(byte)) {
+                bank_mask.at(bankNum(block_addr + byte)) = true;
+            }
         }
     } else {
         std::fill(bank_mask.begin(), bank_mask.end(), true);
@@ -860,7 +883,8 @@ LSQ::makeDcacheRefillMainPipeRequest(
     req.needTagWrite = true;
     req.needDataWrite = true;
     req.needWritebackPort = need_data_read;
-    req.readBanks = need_data_read ? fullDcacheBankMask() : DcacheBankMask{};
+    req.readBanks = need_data_read ? fullDcacheBankMask() :
+        DcacheBankMask(numBank, false);
     req.writeBanks = fullDcacheBankMask();
     req.onComplete = std::move(on_complete);
     return req;
@@ -875,20 +899,26 @@ LSQ::makeStoreBufferMainPipeRequest(
     req.addr = entry.blockVaddr;
     req.div = getDcacheDiv(entry.blockVaddr);
     req.setKey = getDcacheSetKey(entry.blockVaddr);
-    req.writeBanks = storeMaskToDcacheBanks(entry.validMask);
+    req.writeBanks = storeMaskToDcacheBanks(entry.blockVaddr, entry.validMask);
+    req.readBanks = DcacheBankMask(numBank, false);
     req.needDataWrite = dcacheBankMaskAny(req.writeBanks);
     req.needTagWrite = false;
 
-    DcacheBankMask full_write = fullDcacheBankMask();
-    for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
-        const bool bank_fully_written = std::all_of(
-            entry.validMask.begin() + 8 * bank,
-            entry.validMask.begin() + 8 * bank + 8,
-            [](bool v) { return v; });
-        full_write.at(bank) = bank_fully_written;
+    DcacheBankMask full_write(numBank, false);
+    DcacheBankMask bank_has_bytes(numBank, false);
+    DcacheBankMask bank_fully_written(numBank, true);
+    for (unsigned byte = 0; byte < entry.validMask.size(); ++byte) {
+        const unsigned bank = bankNum(entry.blockVaddr + byte);
+        bank_has_bytes.at(bank) = true;
+        bank_fully_written.at(bank) = bank_fully_written.at(bank) &&
+            entry.validMask.at(byte);
+    }
+    for (unsigned bank = 0; bank < numBank; ++bank) {
+        full_write.at(bank) = bank_has_bytes.at(bank) &&
+            bank_fully_written.at(bank);
     }
 
-    for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
+    for (unsigned bank = 0; bank < numBank; ++bank) {
         req.readBanks.at(bank) = req.writeBanks.at(bank) && !full_write.at(bank);
     }
     req.needDataRead = dcacheBankMaskAny(req.readBanks);
@@ -906,7 +936,7 @@ LSQ::markDcacheMainPipeBusyBanks()
 
     auto mark_banks = [this](const DcacheMainPipeRequest &req,
                              const DcacheBankMask &mask) {
-        for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
+        for (unsigned bank = 0; bank < numBank; ++bank) {
             if (mask.at(bank)) {
                 bankOccupied.at(req.div).at(bank) = true;
             }
@@ -936,7 +966,8 @@ bool
 LSQ::dcacheBankMaskOverlap(const DcacheBankMask &lhs,
                            const DcacheBankMask &rhs) const
 {
-    for (unsigned bank = 0; bank < DcacheBankCount; ++bank) {
+    assert(lhs.size() == numBank && rhs.size() == numBank);
+    for (unsigned bank = 0; bank < numBank; ++bank) {
         if (lhs.at(bank) && rhs.at(bank)) {
             return true;
         }
@@ -1085,9 +1116,9 @@ LSQ::getDcacheSetKey(Addr vaddr) const
 uint64_t
 LSQ::getDcacheBankSetKey(Addr vaddr) const
 {
-    // [setIndex][bankIndex][dataOffset]
-    //         ^ (cacheLineBits)   ^ (3 bits)
-    return (vaddr >> 3) & ((1ULL << dcacheSetBankBits) - 1);
+    // Vaddr: [TagBits][setIndex][bankIndex][dataOffset]
+    // BankSetKey: [setIndex][bankIndex]
+    return (getDcacheSetKey(vaddr) << dcacheBankIndexBits) | bankNum(vaddr);
 }
 
 uint64_t
@@ -1101,7 +1132,7 @@ bool
 LSQ::loadBankConflictedCheck(Addr vaddr)
 {
     bool now_bank_conflict = false;
-    const int bankIndex = bankNum(vaddr);
+    const unsigned bankIndex = bankNum(vaddr);
     const unsigned div = getDcacheDiv(vaddr);
     const uint64_t key = getDcacheDivBankSetKey(vaddr);
 

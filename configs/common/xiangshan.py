@@ -18,6 +18,7 @@ from common import CacheConfig
 from common import CpuConfig
 from common import MemConfig
 from common import ObjectList
+from common import PrefetcherConfig
 from common.Caches import *
 from common import Options
 from common.FUScheduler import *
@@ -981,6 +982,8 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+
+    PrefetcherConfig.set_pf_control_profile(args.pf_control_profile)
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)

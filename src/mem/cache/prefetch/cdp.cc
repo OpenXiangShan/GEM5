@@ -72,7 +72,7 @@ CDP::CDP(const CDPParams &p)
       byteOrder(p.sys->getGuestByteOrder()),
       cdpStats(this)
 {
-    for (int i = 0; i < PrefetchSourceType::NUM_PF_SOURCES; i++) {
+    for (int i = 0; i < NUM_PF_SOURCES; i++) {
         enable_prf_filter.push_back(false);
     }
     prefetchStatsPtr = &prefetchStats;
