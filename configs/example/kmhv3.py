@@ -112,9 +112,46 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
 
+            # Align the parameter-visible BPU structures with RTL DefaultConfig.
+            # Banked storage, history hashing, and compressed targets still
+            # require model-level alignment in the corresponding components.
+            cpu.branchPred.microtage.numPredictors = 2
+            cpu.branchPred.microtage.tableSizes = [512, 512]
+            cpu.branchPred.microtage.TTagBitSizes = [8, 8]
+            cpu.branchPred.microtage.TTagPcShifts = [1, 1]
+            cpu.branchPred.microtage.histLengths = [5, 9]
+            cpu.branchPred.microtage.numWays = 1
+            cpu.branchPred.microtage.baseTableSize = 512
+            cpu.branchPred.microtage.numBanks = 4
+
+            cpu.branchPred.ras.numEntries = 16
+            cpu.branchPred.ras.numInflightEntries = 32
+            cpu.branchPred.ras.ctrWidth = 3
+
+            cpu.branchPred.abtb.numEntries = 1024
+            cpu.branchPred.abtb.numWays = 4
+            cpu.branchPred.abtb.tagBits = 24
+            cpu.branchPred.abtb.blockSize = 64
+            cpu.branchPred.abtb.entryHalfAligned = True
+
+            cpu.branchPred.mbtb.numEntries = 8192
+            cpu.branchPred.mbtb.numWays = 4
+            cpu.branchPred.mbtb.tagBits = 16
+            cpu.branchPred.mbtb.blockSize = 32
+            cpu.branchPred.mbtb.victimCacheSize = 0
+
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=True)
+
+            cpu.branchPred.tage.numPredictors = 8
+            cpu.branchPred.tage.tableSizes = [2048] * 8
+            cpu.branchPred.tage.TTagBitSizes = [13] * 8
+            cpu.branchPred.tage.TTagPcShifts = [1] * 8
+            cpu.branchPred.tage.histLengths = [4, 9, 17, 29, 56, 109, 211, 397]
+            cpu.branchPred.tage.numWays = [2] * 8
+            cpu.branchPred.tage.numBanks = 4
+            cpu.branchPred.tage.enableBankConflict = True
 
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True
