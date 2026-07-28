@@ -385,6 +385,14 @@ Queued::getPacket()
     prefetchStats.pfIssued++;
     prefetchStats.pfIssued_srcs[pkt->req->getXsMetadata().prefetchSource]++;
     issuedPrefetches += 1;
+    if (archDBer && cache->level() == 2 &&
+            pkt->req->getXsMetadata().prefetchSource ==
+                PrefetchSourceType::HWP_BOP) {
+        const Addr pc = pkt->req->hasPC() ? pkt->req->getPC() : 0;
+        archDBer->bopValidationOutcomeTraceWrite(
+            curTick(), "issued", pkt->getAddr(), pc,
+            static_cast<int>(PrefetchSourceType::HWP_BOP), false, false);
+    }
     assert(pkt != nullptr);
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
 

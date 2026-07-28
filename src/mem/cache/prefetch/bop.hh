@@ -36,6 +36,7 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <memory>
 #include <queue>
 #include <set>
 #include <boost/compute/detail/lru_cache.hpp>
@@ -79,6 +80,21 @@ class BOP : public Queued
         const bool crossPage;
         /** Adapt Bop Offset */
         const bool enableAdaptOffset;
+        /** Revalidate the current best offset before issuing a prefetch */
+        const bool enableIssueValidation;
+        /** Grade issue validation misses with shared per-PC confidence */
+        const bool enablePCValidationConfidence;
+
+        const unsigned int pcValidationEntries;
+        const unsigned int pcValidationTagBits;
+        const unsigned int pcValidationCounterBits;
+        const unsigned int pcValidationInitial;
+        const unsigned int pcValidationMediumThreshold;
+        const unsigned int pcValidationHighThreshold;
+        const unsigned int pcValidationHitIncrement;
+        const unsigned int pcValidationMediumSamplePeriod;
+        const unsigned int pcValidationMissDecayPeriod;
+        const unsigned int pcValidationEpochBits;
 
         const int victimListSize;
         const int restoreCycle;
@@ -144,6 +160,107 @@ class BOP : public Queued
         };
 
         std::deque<DelayQueueEntry> delayQueue;
+
+        enum class PCConfidenceState : int
+        {
+            None = -1,
+            Low = 0,
+            Medium = 1,
+            High = 2
+        };
+
+        class PCValidationConfidenceTable
+        {
+          private:
+            struct Entry
+            {
+                bool valid = false;
+                Addr tag = 0;
+                uint8_t confidence = 0;
+                uint8_t epoch = 0;
+            };
+
+            struct PendingUpdate
+            {
+                bool valid = false;
+                bool offsetChanged = false;
+                bool validationHit = false;
+                Addr pc = 0;
+                Addr triggerLine = 0;
+                unsigned int index = 0;
+                Addr tag = 0;
+                unsigned int participants = 0;
+            } pending;
+
+            const unsigned int entries;
+            const unsigned int indexBits;
+            const unsigned int tagBits;
+            const Addr tagMask;
+            const unsigned int counterMax;
+            const unsigned int initialConfidence;
+            const unsigned int mediumThreshold;
+            const unsigned int highThreshold;
+            const unsigned int hitIncrement;
+            const unsigned int mediumSamplePeriod;
+            const unsigned int missDecayPeriod;
+            const unsigned int epochMask;
+
+            uint8_t currentEpoch = 0;
+            std::vector<Entry> table;
+
+            Addr foldedPC(Addr pc) const;
+            bool sample(Addr pc, Addr line, unsigned int period,
+                        Addr salt) const;
+
+          public:
+            struct LookupResult
+            {
+                unsigned int index = 0;
+                Addr tag = 0;
+                bool entryHit = false;
+                bool replaced = false;
+                bool epochReset = false;
+                unsigned int confidence = 0;
+                PCConfidenceState state = PCConfidenceState::None;
+                unsigned int epoch = 0;
+            };
+
+            struct CommitResult
+            {
+                bool hadPending = false;
+                bool hadValidation = false;
+                bool offsetChanged = false;
+                bool validationHit = false;
+                bool decayed = false;
+                Addr pc = 0;
+                Addr triggerLine = 0;
+                unsigned int index = 0;
+                Addr tag = 0;
+                unsigned int participants = 0;
+                int confidenceBefore = -1;
+                int confidenceAfter = -1;
+                unsigned int epochAfter = 0;
+            };
+
+            PCValidationConfidenceTable(
+                unsigned int entries, unsigned int tag_bits,
+                unsigned int counter_bits, unsigned int initial_confidence,
+                unsigned int medium_threshold, unsigned int high_threshold,
+                unsigned int hit_increment,
+                unsigned int medium_sample_period,
+                unsigned int miss_decay_period, unsigned int epoch_bits);
+
+            LookupResult lookup(Addr pc);
+            bool sampleMediumIssue(Addr pc, Addr line) const;
+            void submitValidation(const LookupResult &lookup, Addr pc,
+                                  Addr trigger_line, bool validation_hit);
+            void noteOffsetChange();
+            CommitResult commit();
+            bool configMatches(const PCValidationConfidenceTable &other) const;
+        };
+
+        std::shared_ptr<PCValidationConfidenceTable> pcValidationTable;
+        bool pcValidationTableShared = false;
 
         /** Event to handle the delay queue processing */
         void delayQueueEventWrapper();
@@ -215,12 +332,33 @@ class BOP : public Queued
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                               PrefetchSourceType src);
 
+        void tracePCValidationUpdate(
+            const PCValidationConfidenceTable::CommitResult &result);
+
         struct BopStats : public statistics::Group
         {
             BopStats(statistics::Group *parent);
             statistics::Distribution issuedOffsetDist;
             statistics::Scalar learnOffsetCount;
             statistics::Scalar throttledCount;
+            statistics::Scalar issueValidationChecks;
+            statistics::Scalar issueValidationHits;
+            statistics::Scalar issueValidationSuppressed;
+            statistics::Scalar pcValidationTableLookups;
+            statistics::Scalar pcValidationTableHits;
+            statistics::Scalar pcValidationTableMisses;
+            statistics::Scalar pcValidationTableReplacements;
+            statistics::Scalar pcValidationEpochResets;
+            statistics::Scalar pcValidationNoPCSuppressions;
+            statistics::Scalar pcValidationHighMissIssued;
+            statistics::Scalar pcValidationMediumMissIssued;
+            statistics::Scalar pcValidationMediumMissSuppressed;
+            statistics::Scalar pcValidationLowMissSuppressed;
+            statistics::Scalar pcValidationHitUpdates;
+            statistics::Scalar pcValidationMissDecays;
+            statistics::Scalar pcValidationMissNoDecays;
+            statistics::Scalar pcValidationOffsetEpochChanges;
+            statistics::Distribution pcValidationConfidenceDist;
         } stats;
 
     public:
@@ -241,7 +379,13 @@ class BOP : public Queued
         using Queued::calculatePrefetch;
 
         void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
-        
+
+        /** Share one physical PC confidence table with another BOP instance. */
+        void sharePCValidationConfidenceWith(BOP &other);
+
+        /** Apply the one-per-demand update merged across shared BOPs. */
+        void commitPCValidationConfidence();
+
         bool tryAddOffset(int64_t offset, bool late = false);
 };
 

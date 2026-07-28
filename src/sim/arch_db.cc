@@ -26,6 +26,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL3EvictTrace(p.dump_l3_evict_trace),
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
+    dumpBopValidationTrace(p.dump_bop_validation_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
@@ -152,6 +153,113 @@ ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offse
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   };
+}
+
+void
+ArchDBer::bopValidationTraceWrite(
+    Tick tick, const char *event, const char *bop_name,
+    Addr trigger_pc, Addr trigger_addr, Addr validation_addr, Addr pf_addr,
+    int64_t best_offset, int best_score, int round, bool late,
+    bool trigger_is_demand, bool trigger_cache_miss, int trigger_pf_source,
+    bool trigger_pf_first_hit, bool trigger_pf_hit, int issue_enabled,
+    int validation_enabled, int validation_hit, bool suppressed,
+    bool generated, bool buffered, bool filtered, bool filter_passed,
+    bool pc_confidence_enabled, int pc_index, Addr pc_tag,
+    int pc_entry_hit, int pc_confidence, int pc_state,
+    bool pc_sampled, int pc_epoch)
+{
+  if (!(dumpGlobal && dumpBopValidationTrace)) return;
+
+  sprintf(
+      memTraceSQLBuf,
+      "INSERT INTO BOPValidationTrace("
+      "Tick,Event,BOPName,TriggerPC,TriggerAddr,ValidationAddr,PrefetchAddr,"
+      "BestOffset,BestScore,Round,Late,TriggerIsDemand,TriggerCacheMiss,"
+      "TriggerPFSource,TriggerPFFirstHit,TriggerPFHit,IssueEnabled,"
+      "ValidationEnabled,ValidationHit,PCConfidenceEnabled,PCIndex,PCTag,"
+      "PCEntryHit,PCConfidence,PCState,PCSampled,PCEpoch,Suppressed,"
+      "Generated,Buffered,Filtered,FilterPassed,PCConfidenceAfter,"
+      "PCUpdateDecayed,PCUpdateParticipants,PCOffsetChanged,OutcomeAddr,"
+      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE) "
+      "VALUES(%lld,'%s','%s',%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%d,"
+      "%d,%d,%d,%d,%d,%d,%d,%d,%d,%lld,%d,%d,%d,%d,%d,%d,%d,%d,"
+      "%d,%d,%d,%d,%d,%d,%lld,%lld,%d,%d,%d,'%s');",
+      sqliteSignedInt(tick), event, bop_name,
+      sqliteSignedInt(trigger_pc), sqliteSignedInt(trigger_addr),
+      sqliteSignedInt(validation_addr), sqliteSignedInt(pf_addr),
+      sqliteSignedInt(static_cast<uint64_t>(best_offset)), best_score, round,
+      late, trigger_is_demand, trigger_cache_miss, trigger_pf_source,
+      trigger_pf_first_hit, trigger_pf_hit, issue_enabled,
+      validation_enabled, validation_hit, pc_confidence_enabled, pc_index,
+      sqliteSignedInt(pc_tag), pc_entry_hit, pc_confidence, pc_state,
+      pc_sampled, pc_epoch, suppressed, generated, buffered, filtered,
+      filter_passed, -1, 0, 0, 0, 0LL, 0LL, 0, 0, 0, "BOPValidation");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  }
+}
+
+void
+ArchDBer::bopValidationConfidenceUpdateTraceWrite(
+    Tick tick, const char *bop_name, Addr trigger_pc, unsigned int pc_index,
+    Addr pc_tag, bool validation_hit, unsigned int participants,
+    int confidence_before, int confidence_after, bool decayed,
+    bool offset_changed, unsigned int epoch_after)
+{
+  if (!(dumpGlobal && dumpBopValidationTrace)) return;
+
+  sprintf(
+      memTraceSQLBuf,
+      "INSERT INTO BOPValidationTrace("
+      "Tick,Event,BOPName,TriggerPC,TriggerAddr,ValidationAddr,PrefetchAddr,"
+      "BestOffset,BestScore,Round,Late,TriggerIsDemand,TriggerCacheMiss,"
+      "TriggerPFSource,TriggerPFFirstHit,TriggerPFHit,IssueEnabled,"
+      "ValidationEnabled,ValidationHit,PCConfidenceEnabled,PCIndex,PCTag,"
+      "PCEntryHit,PCConfidence,PCState,PCSampled,PCEpoch,Suppressed,"
+      "Generated,Buffered,Filtered,FilterPassed,PCConfidenceAfter,"
+      "PCUpdateDecayed,PCUpdateParticipants,PCOffsetChanged,OutcomeAddr,"
+      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE) "
+      "VALUES(%lld,'confidence_update','%s',%lld,0,0,0,0,0,0,0,0,"
+      "0,0,0,0,1,1,%d,1,%u,%lld,1,%d,-1,0,%u,0,0,0,0,0,%d,%d,"
+      "%u,%d,0,0,0,0,0,'%s');",
+      sqliteSignedInt(tick), bop_name, sqliteSignedInt(trigger_pc),
+      validation_hit, pc_index, sqliteSignedInt(pc_tag), confidence_before,
+      epoch_after, confidence_after, decayed, participants, offset_changed,
+      "BOPValidationConfidence");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  }
+}
+
+void
+ArchDBer::bopValidationOutcomeTraceWrite(
+    Tick tick, const char *event, Addr addr, Addr pc, int pf_source,
+    bool is_demand, bool cache_miss)
+{
+  if (!(dumpGlobal && dumpBopValidationTrace)) return;
+
+  sprintf(
+      memTraceSQLBuf,
+      "INSERT INTO BOPValidationTrace("
+      "Tick,Event,BOPName,TriggerPC,TriggerAddr,ValidationAddr,PrefetchAddr,"
+      "BestOffset,BestScore,Round,Late,TriggerIsDemand,TriggerCacheMiss,"
+      "TriggerPFSource,TriggerPFFirstHit,TriggerPFHit,IssueEnabled,"
+      "ValidationEnabled,ValidationHit,PCConfidenceEnabled,PCIndex,PCTag,"
+      "PCEntryHit,PCConfidence,PCState,PCSampled,PCEpoch,Suppressed,"
+      "Generated,Buffered,Filtered,FilterPassed,PCConfidenceAfter,"
+      "PCUpdateDecayed,PCUpdateParticipants,PCOffsetChanged,OutcomeAddr,"
+      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE) "
+      "VALUES(%lld,'%s','L2BOP',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,"
+      "-1,0,-1,0,-1,-1,-1,0,-1,0,0,0,0,0,-1,0,0,0,%lld,%lld,"
+      "%d,%d,%d,'%s');",
+      sqliteSignedInt(tick), event, sqliteSignedInt(addr), sqliteSignedInt(pc),
+      pf_source, is_demand, cache_miss, "BOPValidationOutcome");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  }
 }
 
 void

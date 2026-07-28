@@ -756,6 +756,30 @@ class BOPPrefetcher(QueuedPrefetcher):
 
     crossPage = Param.Bool(True, "Cross page prefetching")
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
+    enable_issue_validation = Param.Bool(False,
+        "Require current best offset to hit in the RR table before issuing")
+    enable_pc_validation_confidence = Param.Bool(False,
+        "Use PC-aggregated confidence to grade current-best-offset validation")
+    pc_validation_entries = Param.Unsigned(64,
+        "Number of direct-mapped PC validation-confidence entries")
+    pc_validation_tag_bits = Param.Unsigned(10,
+        "Partial PC tag bits in each validation-confidence entry")
+    pc_validation_counter_bits = Param.Unsigned(5,
+        "Bits in each PC validation-confidence counter")
+    pc_validation_initial = Param.Unsigned(16,
+        "Initial PC validation confidence for new or stale entries")
+    pc_validation_medium_threshold = Param.Unsigned(8,
+        "Minimum confidence for sampled issue on a validation miss")
+    pc_validation_high_threshold = Param.Unsigned(20,
+        "Minimum confidence for unconditional issue on a validation miss")
+    pc_validation_hit_increment = Param.Unsigned(4,
+        "Saturating confidence increment for an aggregated validation hit")
+    pc_validation_medium_sample_period = Param.Unsigned(4,
+        "Issue one in this many medium-confidence validation misses")
+    pc_validation_miss_decay_period = Param.Unsigned(4,
+        "Decay confidence on one in this many aggregated all-miss updates")
+    pc_validation_epoch_bits = Param.Unsigned(2,
+        "Lazy invalidation epoch bits for best-offset changes")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 

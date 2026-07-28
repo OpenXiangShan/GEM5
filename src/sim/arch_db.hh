@@ -59,6 +59,7 @@ class ArchDBer : public SimObject
     bool dumpL3EvictTrace;
     bool dumpL1MissTrace;
     bool dumpBopTrainTrace;
+    bool dumpBopValidationTrace;
     bool dumpSMSTrainTrace;
     bool dumpStrideTrainTrace;
     bool dumpDespacitoTrainTrace;
@@ -102,12 +103,31 @@ class ArchDBer : public SimObject
     void l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src);
 
     void bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss);
+    void bopValidationTraceWrite(
+      Tick tick, const char *event, const char *bop_name,
+      Addr trigger_pc, Addr trigger_addr, Addr validation_addr, Addr pf_addr,
+      int64_t best_offset, int best_score, int round, bool late,
+      bool trigger_is_demand, bool trigger_cache_miss, int trigger_pf_source,
+      bool trigger_pf_first_hit, bool trigger_pf_hit, int issue_enabled,
+      int validation_enabled, int validation_hit, bool suppressed,
+      bool generated, bool buffered, bool filtered, bool filter_passed,
+      bool pc_confidence_enabled, int pc_index, Addr pc_tag,
+      int pc_entry_hit, int pc_confidence, int pc_state,
+      bool pc_sampled, int pc_epoch);
+    void bopValidationConfidenceUpdateTraceWrite(
+      Tick tick, const char *bop_name, Addr trigger_pc, unsigned int pc_index,
+      Addr pc_tag, bool validation_hit, unsigned int participants,
+      int confidence_before, int confidence_after, bool decayed,
+      bool offset_changed, unsigned int epoch_after);
+    void bopValidationOutcomeTraceWrite(
+      Tick tick, const char *event, Addr addr, Addr pc, int pf_source,
+      bool is_demand, bool cache_miss);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);
     void strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train);
     void despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train);
     void dcacheWayPreTrace(Tick tick, uint64_t pc, uint64_t vaddr, int way, int is_write);
     void vaddrTrace(Tick tick, uint64_t pc, uint64_t vaddr, int hit);
-    char memTraceSQLBuf[1024];
+    char memTraceSQLBuf[4096];
 };
 
 
