@@ -497,6 +497,41 @@ DynInst::trap(const Fault &fault)
     cpu->trap(fault, threadNumber, staticInst);
 }
 
+void
+DynInst::updateVectorMemCrossCacheBlock(
+        Addr addr, unsigned size, const std::vector<bool> &byte_enable)
+{
+    if (!isVector() || !isMemRef()) {
+        return;
+    }
+
+    instFlags[VectorMemCrossCacheBlockValid] = true;
+    instFlags[VectorMemCrossCacheBlock] = false;
+
+    if (size == 0 || byte_enable.empty()) {
+        return;
+    }
+
+    const auto first_enabled = std::find(
+            byte_enable.begin(), byte_enable.end(), true);
+    if (first_enabled == byte_enable.end()) {
+        return;
+    }
+
+    const auto last_enabled = std::find(
+            byte_enable.rbegin(), byte_enable.rend(), true);
+    assert(last_enabled != byte_enable.rend());
+
+    const Addr first_addr = addr +
+        std::distance(byte_enable.begin(), first_enabled);
+    const Addr last_addr = addr +
+        size - 1 - std::distance(byte_enable.rbegin(), last_enabled);
+
+    const Addr cache_line_size = cpu ? cpu->cacheLineSize() : 64;
+    instFlags[VectorMemCrossCacheBlock] =
+        (first_addr / cache_line_size) != (last_addr / cache_line_size);
+}
+
 Fault
 DynInst::initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
                                const std::vector<bool> &byte_enable)
@@ -513,6 +548,7 @@ DynInst::initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
             }
         }
     }
+    updateVectorMemCrossCacheBlock(addr, size, byte_enable);
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* ld */ true, nullptr, size, addr, flags, nullptr, nullptr,
@@ -545,6 +581,7 @@ DynInst::writeMem(uint8_t *data, unsigned size, Addr addr,
             }
         }
     }
+    updateVectorMemCrossCacheBlock(addr, size, byte_enable);
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* st */ false, data, size, addr, flags, res, nullptr,
