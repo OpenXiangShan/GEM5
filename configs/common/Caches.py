@@ -85,7 +85,7 @@ class L1_DCache(L1Cache):
     wpu = MMRUWpu(use_virtual = True)
 
     tags = VIPTSetAssoc()
-    tags.indexing_policy = VIPTSetAssociative()
+    tags.indexing_policy = VIPTSetAssociative(use_hash_index = True)
 
     force_hit = False
 
