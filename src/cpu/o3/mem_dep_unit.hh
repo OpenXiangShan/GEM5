@@ -276,6 +276,10 @@ class MemDepUnit
 
     /** The thread id of this memory dependence unit. */
     int id;
+
+    /** Address compare shift used for commit-time false-dependency checks. */
+    unsigned depCheckShift = 0;
+
     struct MemDepUnitStats : public statistics::Group
     {
         MemDepUnitStats(statistics::Group *parent);
@@ -300,11 +304,29 @@ class MemDepUnit
         /** Number of dynamic stores mapped from PHAST store distances. */
         statistics::Scalar phastMappedStores;
 
+        /** PHAST table hits returning a valid store distance. */
+        statistics::Scalar phastTableHits;
+
+        /** PHAST hits that became effective in-flight dependencies. */
+        statistics::Scalar phastEffectivePreds;
+
+        /** PHAST hits dropped because the target store could not be located. */
+        statistics::Scalar phastDropInvalidSQDistance;
+
         /** PHAST updates from committed memory-order violations. */
         statistics::Scalar phastViolationUpdates;
 
         /** PHAST confidence updates from predicted load commit. */
         statistics::Scalar phastCommitUpdates;
+
+        /** RAW violations without any MDP prediction. */
+        statistics::Scalar mdpUnpredictedViolations;
+
+        /** RAW violations with an MDP prediction in place. */
+        statistics::Scalar mdpPredictedViolations;
+
+        /** Predicted loads that turned out not to conflict at commit. */
+        statistics::Scalar mdpFalseDepAtCommit;
     } stats;
 };
 
