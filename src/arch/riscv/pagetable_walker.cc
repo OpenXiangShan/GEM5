@@ -630,6 +630,9 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
                                  BaseMMU::Mode _mode, bool from_l2tlb, Addr asid, bool from_forward_pre_req,
                                  bool from_back_pre_req)
 {
+    if (nextlineOnly)
+        return std::make_pair(false, NoFault);
+
 
     SATP _satp = _tc->readMiscReg(MISCREG_SATP);
     bool priv_match;
@@ -907,6 +910,91 @@ Walker::WalkerState::startFunctional(Addr &addr, unsigned &logBytes,
 }
 
 Fault
+Walker::WalkerState::twoStageNextlineWalk(PacketPtr &write)
+{
+    write = nullptr;
+    const Addr nextlineBasicGpaddr = nextlineEntry.gpaddr;
+
+    for (int i = 0; i < l2tlbLineSize; i++) {
+        nextlineEntry.gpaddr =
+            (((nextlineBasicGpaddr >> (PageShift + L2TLB_BLK_OFFSET))
+              << L2TLB_BLK_OFFSET) + i)
+            << PageShift;
+        nextlineEntry.vaddr = nextlineEntry.gpaddr;
+        nextlineEntry.pte = read->getLE_l2tlb<uint64_t>(i);
+        nextlineEntry.paddr = nextlineEntry.pte.ppn;
+        nextlineEntry.index =
+            (nextlineEntry.gpaddr >> (PageShift + L2TLB_BLK_OFFSET)) &
+            walker->tlb->L2TLB_L0_MASK;
+        walker->tlb->L2TLBInsert(nextlineEntry.gpaddr, nextlineEntry, 0,
+                                 L_L2L0, i, false, gstage);
+    }
+
+    DPRINTF(PageTableWalkerTwoStage,
+            "H nextline: refill G-stage L2L0 base %#lx\n",
+            nextlineBasicGpaddr);
+    nextline = false;
+    endWalk();
+    return NoFault;
+}
+
+bool
+Walker::WalkerState::startTwoStageNextline(PacketPtr oldRead,
+                                            unsigned readSize,
+                                            Request::Flags flags)
+{
+    if (twoStageLevel != 0 || !timing || !openNextline ||
+        !autoNextlineSign || fromPre || fromBackPre)
+        return false;
+
+    const Addr nextRead = oldRead->getAddr() + readSize;
+    if ((oldRead->getAddr() >> PageShift) != (nextRead >> PageShift))
+        return false;
+
+    TlbEntry prefetchedEntry = entry;
+    prefetchedEntry.gpaddr = entry.gpaddr +
+        (l2tlbLineSize << PageShift);
+    prefetchedEntry.vaddr = prefetchedEntry.gpaddr;
+    prefetchedEntry.asid = vsatp.asid;
+    prefetchedEntry.vmid = hgatp.vmid;
+    prefetchedEntry.logBytes = PageShift;
+    prefetchedEntry.level = 0;
+    prefetchedEntry.isSquashed = false;
+    prefetchedEntry.used = false;
+    prefetchedEntry.isPre = true;
+    prefetchedEntry.fromForwardPreReq = false;
+    prefetchedEntry.fromBackPreReq = false;
+    prefetchedEntry.preSign = false;
+    prefetchedEntry.trieHandle = nullptr;
+
+    RequestPtr request = std::make_shared<Request>(
+        nextRead, readSize, flags, walker->requestorId);
+    WalkerState *nextlineState = new WalkerState(walker, nullptr, mainReq);
+    nextlineState->state = Waiting;
+    nextlineState->nextState = Translate;
+    nextlineState->timing = true;
+    nextlineState->started = true;
+    nextlineState->translateMode = twoStageMode;
+    nextlineState->nextline = true;
+    nextlineState->nextlineOnly = true;
+    nextlineState->finishDefaultTranslate = true;
+    nextlineState->nextlineEntry = prefetchedEntry;
+    if (!walker->reservePtwLevel(nextlineState, 0)) {
+        delete nextlineState;
+        return false;
+    }
+    nextlineState->read = new Packet(request, MemCmd::ReadReq);
+    nextlineState->read->allocate();
+    walker->currStates.push_back(nextlineState);
+    nextlineState->sendPackets();
+
+    DPRINTF(PageTableWalkerTwoStage,
+            "H nextline: issue G-stage L0 read %#lx for gpaddr %#lx\n",
+            nextRead, prefetchedEntry.gpaddr);
+    return true;
+}
+
+Fault
 Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
 {
     assert(state != Ready && state != Waiting);
@@ -1153,6 +1241,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             walker->tlb->insert(entry.vaddr, entry, false, allstage);
 
 
+            walker->releasePtwLevel(this);
+            startTwoStageNextline(oldRead, oldSize, flags);
             endWalk();
             return NoFault;
         } else if ((!doEndWalk) || (doLLwalk)) {
@@ -1164,6 +1254,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 entry.level = twoStageLevel;
                 entry.gpaddr = entry.vaddr;
                 walker->tlb->insert(entry.vaddr, entry, false, gstage);
+                walker->releasePtwLevel(this);
+                startTwoStageNextline(oldRead, oldSize, flags);
                 endWalk();
                 return NoFault;
             }
@@ -2144,9 +2236,9 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
     Fault fault = NoFault;
     if (translateMode == twoStageMode) {
         nextline = false;
-        autoNextlineSign = false;
+        openNextline = open_nextline;
+        autoNextlineSign = auto_open_nextline;
         preHitInPtw = false;
-        nextline = false;
         topAddr = (vsatp.ppn << PageShift) + (idx * sizeof(PTE));
         gPaddr = (vsatp.ppn << PageShift) + (idx_f * sizeof(PTE));
         if ((mainReq->get_level() != top_level) && (mainReq->getgPaddr() != 0)) {
@@ -2320,7 +2412,11 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         nextState = Ready;
         PacketPtr write = NULL;
         read = pkt;
-        if ((translateMode == twoStageMode) && (inGstage)) {
+        if ((translateMode == twoStageMode) && nextlineOnly) {
+            DPRINTF(PageTableWalker,
+                    "recvPacket in twoStageMode: G-stage nextline.\n");
+            mainFault = twoStageNextlineWalk(write);
+        } else if ((translateMode == twoStageMode) && (inGstage)) {
             DPRINTF(PageTableWalker, "recvPacket in twoStageMode: Gstage.\n");
             mainFault = twoStageStepWalk(write);
         } else if ((translateMode == twoStageMode) && (!inGstage)) {
@@ -2355,6 +2451,11 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
     if (waitingForPtwLevel)
         return false;
 
+    if (nextlineOnly && inflight == 0 && read == NULL && writes.size() == 0) {
+        state = Ready;
+        nextState = Waiting;
+        return true;
+    }
     if ((inflight == 0 && read == NULL && writes.size() == 0) && (translateMode == twoStageMode)) {
         state = Ready;
         nextState = Waiting;

@@ -184,6 +184,7 @@ namespace RiscvISA
             int translateMode;
             bool inGstage;
             bool finishGVA;
+            bool nextlineOnly;
             int gpaddrMode;
             bool finishGPA;
             bool GstageFault;
@@ -211,7 +212,7 @@ namespace RiscvISA
                 tlbSizePte(0), openNextline(false), autoNextlineSign(false),
                 finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
                 fromBackPre(false),virt(0),translateMode(0),inGstage(false),finishGVA(false),
-                gpaddrMode(0),finishGPA(false),GstageFault(false),
+                nextlineOnly(false), gpaddrMode(0),finishGPA(false),GstageFault(false),
                 tlbHit(false),tlbHitPte(0),tlbflags(Request::PHYSICAL),
                 waitingForPtwLevel(false), reservedPtwLevel(-1),
                 blockedPtwLevel(-1), blockedPtwRead(0), blockedPtwReadSize(0),
@@ -257,6 +258,10 @@ namespace RiscvISA
             Fault startTwoStageWalkFromTLBInG(Addr ppn, Addr vaddr);
 
             Fault twoStageStepWalk(PacketPtr &write);
+            Fault twoStageNextlineWalk(PacketPtr &write);
+            bool startTwoStageNextline(PacketPtr oldRead,
+                                       unsigned readSize,
+                                       Request::Flags flags);
             Fault twoStageWalk(PacketPtr &write);
             Fault stepWalk(PacketPtr &write);
             void sendPackets();
