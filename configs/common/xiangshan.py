@@ -166,8 +166,8 @@ def generate_xiangshan_dtb(system, *, cmdline: str, outdir: str = None) -> str:
     chosen = FdtNode("chosen")
     if cmdline:
         chosen.append(FdtPropertyStrings("bootargs", cmdline))
-    chosen.append(FdtPropertyStrings("stdout-path", "/soc/serial@40600000"))
-    chosen.append(FdtPropertyStrings("linux,stdout-path", "/soc/serial@40600000"))
+    chosen.append(FdtPropertyStrings("stdout-path", "/soc/serial@310b0000"))
+    chosen.append(FdtPropertyStrings("linux,stdout-path", "/soc/serial@310b0000"))
     root.append(chosen)
 
     for mem_range in system.mem_ranges:
@@ -254,14 +254,26 @@ def generate_xiangshan_dtb(system, *, cmdline: str, outdir: str = None) -> str:
     plic_node.appendCompatible(["riscv,plic0"])
     soc_node.append(plic_node)
 
-    uart = system.uartlite
-    uart_node = uart.generateBasicPioDeviceNode(
-        soc_state, "serial", uart.pio_addr, uart.pio_size
+    uart16550 = system.uart16550
+    uart16550_node = uart16550.generateBasicPioDeviceNode(
+        soc_state, "serial", uart16550.pio_addr, uart16550.pio_size
     )
-    uart_node.append(FdtPropertyWords("clock-frequency", [0]))
-    uart_node.append(FdtPropertyStrings("status", "okay"))
-    uart_node.appendCompatible(["xlnx,xps-uartlite-1.00.a"])
-    soc_node.append(uart_node)
+    uart16550_node.append(FdtPropertyWords("clock-frequency", [50000000]))
+    uart16550_node.append(FdtPropertyWords("current-speed", [115200]))
+    uart16550_node.append(FdtPropertyWords("reg-shift", [2]))
+    uart16550_node.append(FdtPropertyWords("reg-io-width", [4]))
+    uart16550_node.append(FdtPropertyStrings("status", "okay"))
+    uart16550_node.appendCompatible(["ns16550a"])
+    soc_node.append(uart16550_node)
+
+    uartlite = system.uartlite
+    uartlite_node = uartlite.generateBasicPioDeviceNode(
+        soc_state, "serial", uartlite.pio_addr, uartlite.pio_size
+    )
+    uartlite_node.append(FdtPropertyWords("clock-frequency", [0]))
+    uartlite_node.append(FdtPropertyStrings("status", "okay"))
+    uartlite_node.appendCompatible(["xlnx,xps-uartlite-1.00.a"])
+    soc_node.append(uartlite_node)
 
     root.append(soc_node)
 
