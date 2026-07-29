@@ -966,6 +966,14 @@ IEW::dispatchInsts()
         iew_info.iqCount = scheduler->getIQInsts(i);
 
         bool ldst_block = !canInsertLDSTQue(i);
+        // Preserve the exact admission decision and the state used to make
+        // it. Decode consumes this in the same CPU tick for observation only.
+        stallSig->ldstAdmissionBlocked[i] = ldst_block;
+        stallSig->lsuMemoryPressure[i] = smtHasMemoryPressure(iew_info);
+        stallSig->lqFreeEntries[i] = ldstQueue.getFreeLQEntries(i);
+        stallSig->sqFreeEntries[i] = ldstQueue.getFreeSQEntries(i);
+        stallSig->robUsedEntries[i] = rob->getThreadEntries(i);
+        stallSig->robFreeEntries[i] = rob->numFreeEntries(i);
         bool rename_block = stallSig->blockIEW[i] || ldst_block;
         // LDST queue reservation gates new rename input, but the already
         // buffered tail must still drain through per-instruction LSQ checks.

@@ -490,6 +490,12 @@ struct StallSignals
             blockDecode[i] = false;
             blockRename[i] = false;
             blockIEW[i] = false;
+            ldstAdmissionBlocked[i] = false;
+            lsuMemoryPressure[i] = false;
+            lqFreeEntries[i] = 0;
+            sqFreeEntries[i] = 0;
+            robUsedEntries[i] = 0;
+            robFreeEntries[i] = 0;
             fetchBlockReason[i] = StallReason::NoStall;
             decodeBlockReason[i] = StallReason::NoStall;
             renameBlockReason[i] = StallReason::NoStall;
@@ -501,6 +507,14 @@ struct StallSignals
     bool blockDecode[MaxThreads];// rename to decode
     bool blockRename[MaxThreads];// iew to rename (if iew is stalling, rename all threads would be stalled)
     bool blockIEW[MaxThreads];// commit to iew
+    // Same-cycle IEW snapshots for decode-side SMT pressure observation.
+    // They are diagnostic only and do not participate in backpressure.
+    bool ldstAdmissionBlocked[MaxThreads];
+    bool lsuMemoryPressure[MaxThreads];
+    unsigned lqFreeEntries[MaxThreads];
+    unsigned sqFreeEntries[MaxThreads];
+    unsigned robUsedEntries[MaxThreads];
+    unsigned robFreeEntries[MaxThreads];
     StallReason fetchBlockReason[MaxThreads];// decode to fetch root cause
     StallReason decodeBlockReason[MaxThreads];// rename to decode root cause
     StallReason renameBlockReason[MaxThreads];// iew to rename root cause

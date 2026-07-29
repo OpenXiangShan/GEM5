@@ -39,10 +39,13 @@
  */
 #include "cpu/o3/decode.hh"
 
+#include <algorithm>
+#include <iomanip>
 #include <queue>
 
 #include "arch/generic/pcstate.hh"
 #include "arch/riscv/insts/fusion.hh"
+#include "base/output.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
@@ -108,6 +111,180 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
         }
         this->fusionType.clear();
     });
+    statistics::registerDumpCallback([this]() { dumpPressureStats(); });
+    statistics::registerResetCallback([this]() { resetPressureStats(); });
+}
+
+void
+Decode::PressureMetricSummary::sample(unsigned value)
+{
+    if (samples == 0) {
+        min = value;
+        max = value;
+    } else {
+        min = std::min(min, value);
+        max = std::max(max, value);
+    }
+    ++samples;
+    sum += value;
+    ++histogram[value];
+}
+
+void
+Decode::PressureMetricSummary::reset()
+{
+    samples = 0;
+    sum = 0;
+    min = 0;
+    max = 0;
+    histogram.clear();
+}
+
+double
+Decode::PressureMetricSummary::mean() const
+{
+    return samples ? static_cast<double>(sum) / samples : 0.0;
+}
+
+unsigned
+Decode::PressureMetricSummary::percentile(unsigned percentile) const
+{
+    if (samples == 0) {
+        return 0;
+    }
+
+    const uint64_t rank = (samples * percentile + 99) / 100;
+    uint64_t accumulated = 0;
+    for (const auto &[value, count] : histogram) {
+        accumulated += count;
+        if (accumulated >= rank) {
+            return value;
+        }
+    }
+    return max;
+}
+
+bool
+Decode::isLsuBound(const DynInstPtr &inst) const
+{
+    return inst->isMemRef() || inst->isReadBarrier() ||
+           inst->isWriteBarrier() || inst->isNonSpeculative();
+}
+
+void
+Decode::samplePressure(ThreadID tid, PressureTrigger trigger)
+{
+    auto &metrics = pressureStats[tid][static_cast<size_t>(trigger)];
+    unsigned fixed_non_lsu = 0;
+    unsigned fixed_prefix_non_lsu = 0;
+    bool saw_fixed_lsu = false;
+    for (const auto &inst : fixedbuffer[tid]) {
+        if (isLsuBound(inst)) {
+            saw_fixed_lsu = true;
+        } else {
+            ++fixed_non_lsu;
+            if (!saw_fixed_lsu) {
+                ++fixed_prefix_non_lsu;
+            }
+        }
+    }
+
+    unsigned stall_thread_occupancy = 0;
+    unsigned stall_thread_non_lsu = 0;
+    for (const auto &inst : stallBuffer) {
+        if (inst->threadNumber != tid) {
+            continue;
+        }
+        ++stall_thread_occupancy;
+        if (!isLsuBound(inst)) {
+            ++stall_thread_non_lsu;
+        }
+    }
+
+    metrics[static_cast<size_t>(PressureMetric::FixedBufferOccupancy)]
+        .sample(fixedbuffer[tid].size());
+    metrics[static_cast<size_t>(PressureMetric::FixedBufferPrefixNonLsu)]
+        .sample(fixed_prefix_non_lsu);
+    metrics[static_cast<size_t>(PressureMetric::FixedBufferTotalNonLsu)]
+        .sample(fixed_non_lsu);
+    metrics[static_cast<size_t>(PressureMetric::StallBufferThreadOccupancy)]
+        .sample(stall_thread_occupancy);
+    metrics[static_cast<size_t>(PressureMetric::StallBufferThreadNonLsu)]
+        .sample(stall_thread_non_lsu);
+    metrics[static_cast<size_t>(PressureMetric::RobUsedEntries)]
+        .sample(stallSig->robUsedEntries[tid]);
+    metrics[static_cast<size_t>(PressureMetric::RobFreeEntries)]
+        .sample(stallSig->robFreeEntries[tid]);
+    metrics[static_cast<size_t>(PressureMetric::LqFreeEntries)]
+        .sample(stallSig->lqFreeEntries[tid]);
+    metrics[static_cast<size_t>(PressureMetric::SqFreeEntries)]
+        .sample(stallSig->sqFreeEntries[tid]);
+}
+
+void
+Decode::resetPressureStats()
+{
+    for (auto &thread_stats : pressureStats) {
+        for (auto &trigger_stats : thread_stats) {
+            for (auto &metric : trigger_stats) {
+                metric.reset();
+            }
+        }
+    }
+}
+
+void
+Decode::dumpPressureStats() const
+{
+    static constexpr std::array<const char *, PressureTriggerCount>
+        trigger_names = {
+            "lsq_admission_decode_blocked",
+            "memory_pressure_decode_blocked",
+            "decode_arbiter_not_selected",
+            "decode_fifo_head_backpressured",
+        };
+    static constexpr std::array<const char *, PressureMetricCount>
+        metric_names = {
+            "fixedbuffer_occupancy",
+            "fixedbuffer_prefix_non_lsu",
+            "fixedbuffer_total_non_lsu",
+            "stallbuffer_thread_occupancy",
+            "stallbuffer_thread_non_lsu",
+            "rob_used_entries",
+            "rob_free_entries",
+            "lq_free_entries",
+            "sq_free_entries",
+        };
+
+    auto output = simout.create("smt-decode-pressure.txt", false, true);
+    auto &stream = *output->stream();
+    stream << "# SMT decode pressure observation; values are sampled only at "
+              "the named trigger.\n";
+    stream << "# fixedbuffer is the current per-thread decode window; "
+              "stallbuffer is the shared fetch-to-decode FIFO.\n";
+    stream << "# prefix_non_lsu counts the contiguous non-LSU prefix, while "
+              "total_non_lsu is the bypass-capable upper bound.\n";
+    stream << "summary\ttid\ttrigger\tmetric\tsamples\tmean\tmin\tp50\tp90\tmax\n";
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        for (size_t trigger = 0; trigger < PressureTriggerCount; ++trigger) {
+            for (size_t metric = 0; metric < PressureMetricCount; ++metric) {
+                const auto &summary = pressureStats[tid][trigger][metric];
+                stream << "summary\t" << tid << '\t' << trigger_names[trigger]
+                       << '\t' << metric_names[metric] << '\t'
+                       << summary.samples << '\t' << std::fixed
+                       << std::setprecision(6) << summary.mean() << '\t'
+                       << summary.min << '\t' << summary.percentile(50) << '\t'
+                       << summary.percentile(90) << '\t' << summary.max << '\n';
+                for (const auto &[value, count] : summary.histogram) {
+                    stream << "histogram\t" << tid << '\t'
+                           << trigger_names[trigger] << '\t'
+                           << metric_names[metric] << '\t' << value << '\t'
+                           << count << '\n';
+                }
+            }
+        }
+    }
+    simout.close(output);
 }
 
 void
@@ -508,9 +685,11 @@ Decode::tick()
             stallSig->decodeBlockReason[fifoHeadTid] :
             (fifoBackpressured ? StallReason::OtherFragStall :
                                  StallReason::NoStall);
+    bool decodeRunnable[MaxThreads] = {};
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
+        decodeRunnable[i] = active;
 
         if(block){
             ++stats.smtblockedCycles[i];
@@ -541,6 +720,27 @@ Decode::tick()
         }
     }
     const ThreadID tid = active_arbiter.selected();
+
+    for (ThreadID sample_tid = 0; sample_tid < numThreads; ++sample_tid) {
+        if (stallSig->ldstAdmissionBlocked[sample_tid] &&
+            stallSig->blockDecode[sample_tid]) {
+            samplePressure(
+                sample_tid, PressureTrigger::LdstAdmissionDecodeBlocked);
+        }
+        if (stallSig->lsuMemoryPressure[sample_tid] &&
+            stallSig->blockDecode[sample_tid]) {
+            samplePressure(
+                sample_tid, PressureTrigger::MemoryPressureDecodeBlocked);
+        }
+        if (fifoBackpressured && fifoHeadTid == sample_tid) {
+            samplePressure(
+                sample_tid, PressureTrigger::FifoHeadBackpressured);
+        }
+        if (decodeRunnable[sample_tid] && sample_tid != tid) {
+            samplePressure(sample_tid, PressureTrigger::ArbiterNotSelected);
+        }
+    }
+
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         if (blocked_tid != InvalidThreadID) {

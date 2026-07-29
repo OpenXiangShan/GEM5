@@ -41,6 +41,9 @@
 #ifndef __CPU_O3_DECODE_HH__
 #define __CPU_O3_DECODE_HH__
 
+#include <array>
+#include <map>
+
 #include <boost/circular_buffer.hpp>
 
 #include "base/statistics.hh"
@@ -252,6 +255,58 @@ class Decode
     std::list<ThreadID> *activeThreads;
 
     bool enableLoadFusion;
+
+    enum class PressureTrigger
+    {
+        LdstAdmissionDecodeBlocked,
+        MemoryPressureDecodeBlocked,
+        ArbiterNotSelected,
+        FifoHeadBackpressured,
+        Count
+    };
+
+    enum class PressureMetric
+    {
+        FixedBufferOccupancy,
+        FixedBufferPrefixNonLsu,
+        FixedBufferTotalNonLsu,
+        StallBufferThreadOccupancy,
+        StallBufferThreadNonLsu,
+        RobUsedEntries,
+        RobFreeEntries,
+        LqFreeEntries,
+        SqFreeEntries,
+        Count
+    };
+
+    static constexpr size_t PressureTriggerCount =
+        static_cast<size_t>(PressureTrigger::Count);
+    static constexpr size_t PressureMetricCount =
+        static_cast<size_t>(PressureMetric::Count);
+
+    struct PressureMetricSummary
+    {
+        uint64_t samples = 0;
+        uint64_t sum = 0;
+        unsigned min = 0;
+        unsigned max = 0;
+        std::map<unsigned, uint64_t> histogram;
+
+        void sample(unsigned value);
+        void reset();
+        double mean() const;
+        unsigned percentile(unsigned percentile) const;
+    };
+
+    using PressureMetrics =
+        std::array<PressureMetricSummary, PressureMetricCount>;
+    std::array<std::array<PressureMetrics, PressureTriggerCount>, MaxThreads>
+        pressureStats;
+
+    void samplePressure(ThreadID tid, PressureTrigger trigger);
+    void resetPressureStats();
+    void dumpPressureStats() const;
+    bool isLsuBound(const DynInstPtr &inst) const;
 
     struct DecodeStats : public statistics::Group
     {

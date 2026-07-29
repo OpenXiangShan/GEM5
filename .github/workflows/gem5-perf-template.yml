@@ -433,6 +433,57 @@ jobs:
               "$SPECIFIC_BENCHMARKS_INPUT" \
               "$extra_args"
           fi
+      - name: Verify SMT decode pressure outputs
+        if: ${{ always() && startsWith(inputs.benchmark_type, 'gcc12-spec06-smt-') && steps.archive.outputs.target_dir != '' }}
+        env:
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+        run: |
+          PRESSURE_LIST="$PERF_ARCHIVE_DIR/smt-decode-pressure-files.lst"
+          SPEC_ROOT="$PERF_ARCHIVE_DIR/spec_all"
+
+          if [ ! -d "$SPEC_ROOT" ]; then
+            echo "::error::Missing performance output directory: $SPEC_ROOT"
+            exit 1
+          fi
+
+          : > "$PRESSURE_LIST"
+          SUCCESS_STATS_COUNT=0
+          PRESSURE_COUNT=0
+          while IFS= read -r -d '' stats_path; do
+            workload_dir=$(dirname "$(dirname "$stats_path")")
+            if [ -f "$workload_dir/abort" ]; then
+              continue
+            fi
+
+            SUCCESS_STATS_COUNT=$((SUCCESS_STATS_COUNT + 1))
+            pressure_path="${stats_path%/stats.txt}/smt-decode-pressure.txt"
+            if [ -f "$pressure_path" ]; then
+              printf '%s\n' "${pressure_path#"$SPEC_ROOT"/}" >> "$PRESSURE_LIST"
+              PRESSURE_COUNT=$((PRESSURE_COUNT + 1))
+            fi
+          done < <(find "$SPEC_ROOT" -type f -path '*/m5out/stats.txt' -print0)
+          sort -o "$PRESSURE_LIST" "$PRESSURE_LIST"
+          ABORTED_WORKLOAD_COUNT=$(find "$SPEC_ROOT" -mindepth 2 -maxdepth 2 \
+            -type f -name abort | wc -l)
+
+          {
+            echo "smt_decode_pressure_files: $PRESSURE_COUNT"
+            echo "smt_decode_pressure_successful_stats_files: $SUCCESS_STATS_COUNT"
+            echo "smt_decode_pressure_skipped_abort_workloads: $ABORTED_WORKLOAD_COUNT"
+            echo "smt_decode_pressure_manifest: $(basename "$PRESSURE_LIST")"
+          } >> "$PERF_ARCHIVE_DIR/metadata.txt"
+
+          {
+            echo "### SMT decode pressure outputs"
+            echo "- Files: $PRESSURE_COUNT / successful stats.txt outputs: $SUCCESS_STATS_COUNT"
+            echo "- Aborted workloads excluded: $ABORTED_WORKLOAD_COUNT"
+            echo "- Manifest: \`$PRESSURE_LIST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$SUCCESS_STATS_COUNT" -eq 0 ] || [ "$PRESSURE_COUNT" -ne "$SUCCESS_STATS_COUNT" ]; then
+            echo "::error::Expected one smt-decode-pressure.txt beside every successful m5out/stats.txt."
+            exit 1
+          fi
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
