@@ -1012,6 +1012,15 @@ TLB::demapPage(Addr vpn, uint64_t asid)
     if ((l2tlb == nullptr) && (!isStage2))
         panic("l2tlb is fault\n");
 
+    auto vaddrMatches = [vpn](const TlbEntry &entry) {
+        if (entry.isCompressed && entry.translateMode == direct) {
+            return tlbKeyComparablePageBase(vpn, entry.logBytes) ==
+                   tlbKeyComparablePageBase(entry.vaddr, entry.logBytes);
+        }
+        const Addr entry_mask = ~(entry.size() - 1);
+        return (vpn & entry_mask) == (entry.vaddr & entry_mask);
+    };
+
     if (vpn == 0 && asid == 0) {
         flushAll();
         if (!isStage2) {
@@ -1027,14 +1036,12 @@ TLB::demapPage(Addr vpn, uint64_t asid)
             for (i = 0; i < size; i++) {
                 if (!tlb[i].trieHandle)
                     continue;
-                Addr mask = ~(tlb[i].size() - 1);
-                if ((vpn & mask) == (tlb[i].vaddr & mask) &&
-                    tlb[i].asid == asid) {
+                if (vaddrMatches(tlb[i]) && tlb[i].asid == asid) {
                     remove(i);
                     continue;
                 }
                 if (tlb[i].trieHandle) {
-                    mask = ~(tlb[i].size() - 1);
+                    Addr mask = ~(tlb[i].size() - 1);
                     if ((vpn & mask) == (tlb[i].gpaddr & mask) &&
                         tlb[i].vmid == asid)
                         remove(i);
@@ -1044,8 +1051,8 @@ TLB::demapPage(Addr vpn, uint64_t asid)
         } else {
             for (i = 0; i < size; i++) {
                 if (tlb[i].trieHandle) {
-                    Addr mask = ~(tlb[i].size() - 1);
-                    if ((vpn == 0 || (vpn & mask) == (tlb[i].vaddr & mask)) && (asid == 0 || tlb[i].asid == asid))
+                    if ((vpn == 0 || vaddrMatches(tlb[i])) &&
+                        (asid == 0 || tlb[i].asid == asid))
                         remove(i);
                 }
                 if (tlb[i].trieHandle) {
