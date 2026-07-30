@@ -36,6 +36,8 @@ on:
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
+          - gcc15-spec26-0.3c
+          - gcc15-spec26-1.0c
       specific_benchmarks:
         description: 'Specific benchmarks to run (comma-separated, eg. "mcf,gcc"), leave empty to run all'
         required: false
