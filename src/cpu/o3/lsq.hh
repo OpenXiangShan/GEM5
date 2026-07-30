@@ -1166,7 +1166,7 @@ class LSQ
         return (a >> dcacheBankOffsetBits) & (numBank - 1);
     }
 
-    bool loadBankConflictedCheck(Addr vaddr);
+    bool loadBankConflictedCheck(Addr vaddr, unsigned size);
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
