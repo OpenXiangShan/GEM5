@@ -1565,6 +1565,9 @@ Fetch::sendInstructionsToDecode()
     if(tid == -1)
     {
         DPRINTF(Fetch, "All threads are stalled, no thread selected.\n");
+        for (int i = 0; i < numThreads; i++) {
+            measureFrontendBubbles(0, i);
+        }
         return;
     }
     DPRINTF(Fetch, "select Unstalled [tid:%i]\n",tid);
