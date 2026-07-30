@@ -689,6 +689,9 @@ def makeXiangshanPlatformSystem(mem_mode, mdesc=None, np=1, ruby=False,
     self.uartlite  = UartLite()
     self.uartlite.pio = self.iobus.mem_side_ports
 
+    self.uart16550 = Uart16550(enable_fifo=True)
+    self.uart16550.pio = self.iobus.mem_side_ports
+
     self.lint = Clint()
     self.lint.pio = self.iobus.mem_side_ports
     self.lint.pio_addr = 0x38000000
@@ -709,8 +712,10 @@ def makeXiangshanPlatformSystem(mem_mode, mdesc=None, np=1, ruby=False,
 
     if not ruby:
         self.bridge.ranges = [
-            AddrRange(self.uartlite.pio_addr, self.uartlite.pio_addr +
-            self.uartlite.pio_size),
+            AddrRange(self.uart16550.pio_addr,
+                      self.uart16550.pio_addr + self.uart16550.pio_size),
+            AddrRange(self.uartlite.pio_addr,
+                      self.uartlite.pio_addr + self.uartlite.pio_size),
             AddrRange(self.lint.pio_addr, self.lint.pio_addr + self.lint.pio_size),
             AddrRange(self.hartctrl.pio_addr, self.hartctrl.pio_addr + self.hartctrl.pio_size),
             AddrRange(self.mmcs.pio_addr, self.mmcs.pio_addr + self.mmcs.pio_size),
