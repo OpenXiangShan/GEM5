@@ -22,6 +22,15 @@ jobs:
       benchmark_type: "spec17-1.0c"
       pf_control_profile: "off"
 
+  align_test_spec26:
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: configs/example/kmhv3.py
+      benchmark_type: "gcc15-spec26-1.0c"
+      distributed_servers: "default"
+      distributed_jobs_per_server: 32
+      timeout_minutes: 720
+
   perf_test_spec06:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
@@ -35,6 +44,15 @@ jobs:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "spec17-1.0c"
       pf_control_profile: "off"
+
+  perf_test_spec26:
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: configs/example/idealkmhv3.py
+      benchmark_type: "gcc15-spec26-1.0c"
+      distributed_servers: "default"
+      distributed_jobs_per_server: 32
+      timeout_minutes: 720
 
   smt_test_spec06:
     uses: ./.github/workflows/gem5-perf-template.yml
