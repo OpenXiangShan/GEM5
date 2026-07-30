@@ -729,10 +729,11 @@ TraceFetch::reconcileTraceStreamToSquashTarget(ThreadID tid, Addr targetPc)
 
     panic_if(!found,
              "[Fetch][tid:%d] trace squash target PC %#llx is not in the "
-             "buffered expected stream (size=%zu, head PC=%#llx sn=%llu) and "
+             "buffered expected stream (size=%u, head PC=%#llx sn=%llu) and "
              "the trace reader could not be repositioned; continuing would "
              "silently desynchronize trace replay",
-             tid, (unsigned long long)targetPc, stream.size(),
+             tid, (unsigned long long)targetPc,
+             (unsigned)stream.size(),
              (unsigned long long)stream.front().getPC(),
              (unsigned long long)stream.front().getSeqNum());
 
@@ -746,12 +747,12 @@ TraceFetch::reconcileTraceStreamToSquashTarget(ThreadID tid, Addr targetPc)
     }
     DPRINTF(Fetch,
             "[tid:%i] Reconciled expected trace stream to squash target "
-            "PC=%#llx: dropped %zu buffered entries, new head PC=%#llx "
-            "(sn:%llu), %zu entries kept\n",
-            tid, (unsigned long long)targetPc, drop,
+            "PC=%#llx: dropped %u buffered entries, new head PC=%#llx "
+            "(sn:%llu), %u entries kept\n",
+            tid, (unsigned long long)targetPc, (unsigned)drop,
             (unsigned long long)stream.front().getPC(),
             (unsigned long long)stream.front().getSeqNum(),
-            stream.size());
+            (unsigned)stream.size());
 }
 
 bool
