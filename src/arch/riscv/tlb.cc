@@ -3039,7 +3039,7 @@ TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
             ((hgatp.mode == AddrXlateMode::SV39 || vsatp.mode == AddrXlateMode::SV39 ||
               hgatp.mode == AddrXlateMode::SV48 || vsatp.mode == AddrXlateMode::SV48) &&
              (pmode < PrivilegeMode::PRV_M))) {
-            Walker *walker = mmu->getDataWalker();
+            Walker *walker = mmu->getDataWalker(mode);
             unsigned logBytes;
             configFunctional(req, tc, mode);
             Fault fault = walker->startFunctional(
