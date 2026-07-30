@@ -6,7 +6,7 @@
 
 重点不是罗列多个 mismatch，而是说明不同模式如何组织 data TLB，以及当前 gem5 做了哪些对齐、保留了哪些近似。
 
-核心问题是：RTL 将 load 和 store 的 L1 地址翻译状态分开；修改前的 gem5 让 load 和 store 共享一个 L1 `dtb`。修改后的 gem5 保留共享模式作为默认行为，同时提供显式开关启用独立 `stb`，用于对齐 RTL 的 L1 资源所有权。
+核心问题是：RTL 将 load 和 store 的 L1 地址翻译状态分开；修改前的 gem5 让 load 和 store 共享一个 L1 `dtb`。修改后的基础 `RiscvMMU` 保留 shared 默认值，而 KMHv3 和 Ideal KMHv3 配置默认启用独立 `stb`，用于对齐 RTL 的 L1 资源所有权。
 
 ## 2. XiangShan RTL 如何处理 DTLB
 
@@ -82,9 +82,9 @@ store A -> dtb hit
 
 ## 4. 修改后的 gem5 如何提供两种模式
 
-### 4.1 默认保持一个共享 dtb
+### 4.1 基础 MMU 默认保持一个共享 dtb
 
-`src/arch/riscv/RiscvMMU.py` 增加 `enable_store_tlb` 参数，默认值为 `False`。默认模式下，load 和 store 仍然进入原来的 `dtb`：
+`src/arch/riscv/RiscvMMU.py` 增加 `enable_store_tlb` 参数，基础默认值为 `False`。未由具体 CPU 配置覆盖时，load 和 store 仍然进入原来的 `dtb`：
 
 ```text
 enable_store_tlb = false
@@ -98,12 +98,12 @@ stb   -> 不接收翻译请求
 
 `stb` 对象仍然存在于静态 SimObject 配置图中。这是因为 gem5 的端口和 SimObject 拓扑在配置阶段建立，不能在运行过程中动态增加 TLB 和 walker。但默认模式不会把 translation、flush、demap、权限切换或 CPU takeover 操作路由给 `stb`，所以它不是有效的第二套 data translation 状态。
 
-### 4.2 显式开启独立 store TLB
+### 4.2 KMHv3 默认开启独立 store TLB
 
-KMHv3 配置提供 `--enable-store-tlb`：
+KMHv3 和 Ideal KMHv3 默认启用 split 模式。需要回到历史 shared 模式做 A/B 时，可显式关闭：
 
 ```bash
-build/RISCV/gem5.opt configs/example/kmhv3.py --enable-store-tlb ...
+build/RISCV/gem5.opt configs/example/kmhv3.py --disable-store-tlb ...
 ```
 
 开启后，原来的 `dtb` 作为 load TLB，新增的 `stb` 作为 store TLB：
@@ -168,11 +168,11 @@ sendTimingReq() 被拒绝
 
 ### 4.7 配置参数同步
 
-`configs/common/xiangshan.py` 定义默认关闭的 `--enable-store-tlb`。`configs/example/kmhv3.py` 和 `configs/example/idealkmhv3.py` 将其写入每个 CPU 的 `cpu.mmu.enable_store_tlb`；只有开关开启时，才把 L1 direct compression、PTW level limit、各级并行度和 PTW miss queue size 同步应用到 `stb`。这样默认运行保持共享模式，split 模式中的 store TLB 又不会因为缺少配置而拥有与原 `dtb` 不同的资源限制。
+`configs/common/xiangshan.py` 提供 `--enable-store-tlb` 和 `--disable-store-tlb`。未显式指定时，`configs/example/kmhv3.py` 和 `configs/example/idealkmhv3.py` 默认将 `cpu.mmu.enable_store_tlb` 设为 `True`；只有 split 模式下，才把 L1 direct compression、PTW level limit、各级并行度和 PTW miss queue size 同步应用到 `stb`。基础 `RiscvMMU` 的参数默认值仍为 `False`，其他配置不会被强制切换到 split 模式。
 
 ### 4.8 对齐结果和保留的近似
 
-开启 `--enable-store-tlb` 后，gem5 对齐了 RTL 最重要的 L1 资源所有权：
+KMHv3 默认 split 模式对齐了 RTL 最重要的 L1 资源所有权：
 
 - load/store 分别拥有独立的 48-entry L1 TLB；
 - write translation 稳定路由到 `stb`；
@@ -181,7 +181,7 @@ sendTimingReq() 被拒绝
 
 但它不是 RTL 的逐周期复刻：两个 gem5 walker 仍各自拥有 walker state 和 PTW quota。因此 split 模式的定位是“修正 L1 load/store 所有权并保留主要下游约束”，不是完整复制 RTL 的全部 DTLB 控制状态。
 
-默认 shared 模式的目标不同：它优先保持历史 gem5 行为和性能基线，不宣称与 RTL 的 load/store L1 所有权对齐。
+显式使用 `--disable-store-tlb` 的 shared 模式目标不同：它优先保持历史 gem5 的共享 entry 行为，不宣称与 RTL 的 load/store L1 所有权对齐。
 
 ## 5. 分离和共享两种组织方式的优势与代价
 
@@ -226,7 +226,7 @@ store 新页可能逐出仍有用的 load entry，load 新页也可能逐出 sto
 
 ## 6. 同页 load/store 的直接对照
 
-| 阶段 | RTL | 修改前 gem5 | 修改后 gem5，默认 | 修改后 gem5，开启 split |
+| 阶段 | RTL | 修改前 gem5 | 修改后 gem5，shared | KMHv3 默认 split |
 | --- | --- | --- | --- | --- |
 | 第一次 load | `ldtlb` miss，完成后写入 `ldtlb` | `dtb` miss，完成后写入 `dtb` | `dtb` miss，完成后写入 `dtb` | `dtb` miss，完成后写入 `dtb` |
 | 随后的 store | 独立查询 `sttlb`，可能 miss/replay | 查询同一个 `dtb`，通常直接 hit | 查询同一个 `dtb`，通常直接 hit | 独立查询 `stb`，可能 miss/replay |
@@ -248,16 +248,16 @@ RTL:       load -> ldtlb
 
 修改前 gem5: load/store -> dtb
 
-修改后 gem5 默认: load/store -> dtb
+修改后 gem5 shared: load/store -> dtb
 
 修改后 gem5 split: load -> dtb
                   store -> stb
 ```
 
-修改后的 gem5 默认采用共享 `dtb`，所以未指定参数的既有命令仍保持原有容量、共享 entry 和同页复用行为。只有显式传入 `--enable-store-tlb`，才采用 load/store L1 分离。
+修改后的基础 `RiscvMMU` 默认采用共享 `dtb`；KMHv3 和 Ideal KMHv3 配置会覆盖该默认值并采用 load/store L1 分离。需要复现历史共享容量、共享 entry 和同页复用行为时，可显式传入 `--disable-store-tlb`。
 
 RTL 和开启 split 模式的 gem5 都采用 load/store L1 分离，优点是有效 L1 容量更大、mixed workload 中跨类型污染更少；缺点是同一 VPN 的 load 和 store 不能直接共享 L1 entry，store 可能再次 lookup、miss 和 replay。
 
-修改前 gem5 和修改后的默认模式更简单，优点是同页 load/store 可以直接复用一个 entry；缺点是所有 data translation 竞争一个 48-entry `dtb`，可能在分离工作集上产生更多跨类型淘汰和 miss。修改后的 split 模式修正了这个 L1 所有权问题，但仍是行为级对齐，不是 cycle-exact RTL 模型。
+修改前 gem5 和显式选择的 shared 模式更简单，优点是同页 load/store 可以直接复用一个 entry；缺点是所有 data translation 竞争一个 48-entry `dtb`，可能在分离工作集上产生更多跨类型淘汰和 miss。KMHv3 默认 split 模式修正了这个 L1 所有权问题，但仍是行为级对齐，不是 cycle-exact RTL 模型。
 
-因此，比较这些实现时应先看访问模式：工作集按 load/store 分开且较大时，RTL 和开启 split 模式的 gem5 更有优势；load/store 高频访问相同页面时，修改前 gem5 和修改后的默认模式更容易复用共享 `dtb`，RTL 和开启 split 模式的 gem5 则可能承担额外的 store-side lookup/replay。
+因此，比较这些实现时应先看访问模式：工作集按 load/store 分开且较大时，RTL 和 KMHv3 默认 split 模式更有优势；load/store 高频访问相同页面时，修改前 gem5 和显式 shared 模式更容易复用共享 `dtb`，RTL 和 split 模式则可能承担额外的 store-side miss/refill/replay。

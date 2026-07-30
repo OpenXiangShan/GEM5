@@ -31,18 +31,20 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 def setKmhV3Params(args, system):
+    # KMHv3 follows the RTL split L1 DTLB organization by default. The base
+    # RiscvMMU default remains shared for other configurations.
+    enable_store_tlb = (args.enable_store_tlb
+                        if args.enable_store_tlb is not None else True)
     for cpu in system.cpu:
 
         # fetch (idealfetch not care)
         cpu.mmu.itb.size = 96
-        # Default false preserves the original shared dtb. Enable this only
-        # for RTL-oriented load/store L1 TLB separation experiments.
-        cpu.mmu.enable_store_tlb = args.enable_store_tlb
+        cpu.mmu.enable_store_tlb = enable_store_tlb
         cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
-        if args.enable_store_tlb:
+        if enable_store_tlb:
             # Split mode gives stb the same compression and PTW constraints
             # as dtb, so the switch changes ownership rather than tuning.
             cpu.mmu.stb.enable_l1_direct_compression = args.enable_l1_direct_compression
