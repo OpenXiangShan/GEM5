@@ -2117,7 +2117,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 
 
                 walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage,
-                                           3);
+                                           1);
                 return std::make_pair(hit_type,NoFault);
             } else {
                 DPRINTF(TLB, "l1tlb miss in Gstage, set TwoStagePageTableWalk\n");
