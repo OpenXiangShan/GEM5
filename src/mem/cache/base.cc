@@ -667,6 +667,7 @@ void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
     registerDcacheMainPipeLSQ(pkt->getLSQPtr());
+    registerDcacheHashTagLSQ(pkt->getHashTagArrayLSQPtr());
 
     calReqInterval(pkt);
 
@@ -931,6 +932,30 @@ BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
 }
 
 void
+BaseCache::registerDcacheHashTagLSQ(o3::LSQ *lsq)
+{
+    if (!lsq || !lsq->hashTagArrayEnabled() || cacheLevel != 1 ||
+        isReadOnly) {
+        return;
+    }
+
+    if (std::find(dcacheHashTagLSQs.begin(), dcacheHashTagLSQs.end(), lsq) !=
+        dcacheHashTagLSQs.end()) {
+        return;
+    }
+
+    dcacheHashTagLSQs.push_back(lsq);
+    // The cache may contain blocks before the first demand packet exposes its
+    // owner. Mirror those resident tags before future refills update them.
+    tags->forEachBlk([lsq](CacheBlk &blk) {
+        if (blk.isValid()) {
+            lsq->notifyDcacheHashTagRefill(
+                blk.getSet(), blk.getWay(), blk.getTag(), blk.isSecure());
+        }
+    });
+}
+
+void
 BaseCache::holdDcacheMainPipeMSHRCredit()
 {
     ++dcacheMainPipeHeldMSHRCredits;
@@ -1058,6 +1083,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     Addr dcache_refill_addr = 0;
     bool dcache_refill_need_data_read = false;
 
+    // Keep the fill response as a fallback registration point for packet
+    // paths that do not pass through normal CPU-side cache admission.
+    registerDcacheHashTagLSQ(pkt->getHashTagArrayLSQPtr());
+
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
@@ -1095,6 +1124,15 @@ BaseCache::recvTimingResp(PacketPtr pkt)
                 PrefetchSourceType::PF_NONE,
             &dcache_refill_need_data_read);
         assert(blk != nullptr);
+        // Mirror the resident L1D tag entry only after the cache has assigned
+        // its authoritative VIPT set/way and physical tag.
+        if (cacheLevel == 1 && !isReadOnly && blk != tempBlock) {
+            for (auto *lsq : dcacheHashTagLSQs) {
+                lsq->notifyDcacheHashTagRefill(
+                    blk->getSet(), blk->getWay(), blk->getTag(),
+                    blk->isSecure());
+            }
+        }
         if (prefetcher) {
             prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
         }
@@ -2484,6 +2522,11 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     // If handling a block present in the Tags, let it do its invalidation
     // process, which will update stats and invalidate the block itself
     if (blk != tempBlock) {
+        if (cacheLevel == 1 && !isReadOnly) {
+            for (auto *lsq : dcacheHashTagLSQs) {
+                lsq->invalidateDcacheHashTag(blk->getSet(), blk->getWay());
+            }
+        }
         tags->invalidate(blk);
     } else {
         tempBlock->invalidate();

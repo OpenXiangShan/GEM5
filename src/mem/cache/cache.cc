@@ -592,6 +592,7 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     }
     PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
+    pkt->setHashTagArrayLSQPtr(cpu_pkt->getHashTagArrayLSQPtr());
 
     // if there are upstream caches that have already marked the
     // packet as having sharers (not passing writable), pass that info

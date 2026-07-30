@@ -3011,7 +3011,8 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
     if (isLoad) {
         bank_conflict = lsq->loadBankConflictedCheck(
-            data_pkt->req->getVaddr(), data_pkt->req->getSize());
+            data_pkt->req->getVaddr(), data_pkt->getAddr(),
+            data_pkt->isSecure(), data_pkt->req->getSize());
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
@@ -3064,15 +3065,20 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
             bank_conflict = true;
             ret = false;
         }
-        if (!bank_conflict && !dcachePort->sendTimingReq(data_pkt)) {
-            ret = false;
-            mshr_used = data_pkt->mshrArbFailed();
-            mshr_alias_fail = data_pkt->mshrAliasFailed();
-            hit_in_write_buffer = data_pkt->isHitInWriteBuffer();
-            tag_read_fail = data_pkt->tagReadFail;
+        if (!bank_conflict) {
+            if (lsq->hashTagArrayEnabled()) {
+                data_pkt->setHashTagArrayLSQPtr(lsq);
+            }
+            if (!dcachePort->sendTimingReq(data_pkt)) {
+                ret = false;
+                mshr_used = data_pkt->mshrArbFailed();
+                mshr_alias_fail = data_pkt->mshrAliasFailed();
+                hit_in_write_buffer = data_pkt->isHitInWriteBuffer();
+                tag_read_fail = data_pkt->tagReadFail;
 
-            if (!tag_read_fail && !mshr_used && !mshr_alias_fail && !hit_in_write_buffer) {
-                cache_got_blocked = true;
+                if (!tag_read_fail && !mshr_used && !mshr_alias_fail && !hit_in_write_buffer) {
+                    cache_got_blocked = true;
+                }
             }
         }
     }

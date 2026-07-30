@@ -573,6 +573,9 @@ class Packet : public Printable
     SenderState *senderState;
 
     o3::LSQ *lsqPtr = nullptr;
+    // This owner is carried independently from lsqPtr so cache-fill metadata
+    // can be published without changing the established LSQPtr timing.
+    o3::LSQ *hashTagArrayLSQPtr = nullptr;
 
     /**
      * Push a new sender state to the packet and make the current
@@ -830,6 +833,8 @@ class Packet : public Printable
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }
+    void setHashTagArrayLSQPtr(o3::LSQ *lsq) { hashTagArrayLSQPtr = lsq; }
+    o3::LSQ *getHashTagArrayLSQPtr() const { return hashTagArrayLSQPtr; }
 
     /**
      * QoS Value getter

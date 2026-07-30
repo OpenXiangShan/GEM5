@@ -216,6 +216,14 @@ class BaseO3CPU(BaseCPU):
         "Dcache bank interleave granularity in bytes for LSQ bank conflict model")
     DcacheSetBits = Param.Unsigned(8, "Dcache set bits for LSQ bank conflict model")
     DcacheSetDivNum = Param.Unsigned(1, "Dcache set div num for LSQ bank conflict model (power of two)")
+    EnableHashTagArray = Param.Bool(
+        False, "Enable the LSQ Hash Tag Array bank-conflict filter")
+    HashTagWidth = Param.Unsigned(
+        8, "Hash Tag Array folded tag width in bits")
+    DcacheAssoc = Param.Unsigned(
+        4, "Dcache associativity derived for the LSQ Hash Tag Array")
+    DcacheAliasBits = Param.Unsigned(
+        2, "Dcache VIPT alias-set bits derived for the LSQ Hash Tag Array")
     EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQueue if True")
     EnablePipeNukeCheck = Param.Bool(True, "Replay load if Raw violation is detected in loadPipe if True")
     EnableReplayBasedMDP = Param.Bool(True,

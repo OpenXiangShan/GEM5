@@ -672,6 +672,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     bool dcacheMainPipeEffectiveMSHRFull() const;
     bool dcacheMainPipeCanPrefetch() const;
     void registerDcacheMainPipeLSQ(o3::LSQ *lsq);
+    void registerDcacheHashTagLSQ(o3::LSQ *lsq);
     void holdDcacheMainPipeMSHRCredit();
     void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick);
     void releaseDcacheMainPipeMSHRCredit();
@@ -1669,6 +1670,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const bool forceHit;
     const bool simulateDcacheRefill;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
+    std::vector<o3::LSQ *> dcacheHashTagLSQs;
 
 public:
     /**

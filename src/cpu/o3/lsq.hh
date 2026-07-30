@@ -1166,7 +1166,9 @@ class LSQ
         return (a >> dcacheBankOffsetBits) & (numBank - 1);
     }
 
-    bool loadBankConflictedCheck(Addr vaddr, unsigned size);
+    bool loadBankConflictedCheck(Addr vaddr, Addr paddr, bool is_secure,
+                                 unsigned size);
+    bool loadBankConflictedCheckBaseline(Addr vaddr, unsigned size);
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
@@ -1287,6 +1289,7 @@ class LSQ
     bool enableLdMissReplay() const { return _enableLdMissReplay; }
     bool enablePipeNukeCheck() const { return _enablePipeNukeCheck; }
     bool enableReplayBasedMDP() const { return _enableReplayBasedMDP; }
+    bool hashTagArrayEnabled() const { return enableHashTagArray; }
     int storeWbStage() const { return _storeWbStage; }
 
   public:
@@ -1400,9 +1403,37 @@ class LSQ
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
     std::vector<std::vector<bool>> bankOccupied;
 
+    struct HashTagArrayEntry
+    {
+        bool valid = false;
+        bool secure = false;
+        uint64_t foldedTag = 0;
+    };
+
+    struct AcceptedLoadAccess
+    {
+        uint64_t bankSetKey = 0;
+        Addr paddr = 0;
+        bool secure = false;
+    };
+
+    uint64_t foldHashTag(Addr tag) const;
+    uint64_t lookupHashTagArray(Addr paddr, bool secure);
+
+    // This state is only used by the enabled path. It keeps fake-mainpipe
+    // occupancy separate from same-cycle load owners so HTA filtering can
+    // apply exclusively to load-load candidates.
+    std::vector<std::vector<bool>> mainPipeBankOccupied;
+    std::vector<std::vector<std::vector<AcceptedLoadAccess>>>
+        acceptedLoadAccesses;
+    std::vector<std::vector<HashTagArrayEntry>> hashTagArray;
+
     void notifyDcacheRefill(
         Addr addr, bool need_data_read = true,
         DcacheMainPipeCompleteCallback on_complete = {});
+    void notifyDcacheHashTagRefill(uint32_t set, uint32_t way, Addr full_tag,
+                                   bool secure);
+    void invalidateDcacheHashTag(uint32_t set, uint32_t way);
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
@@ -1457,6 +1488,11 @@ class LSQ
     const unsigned dcacheBankOffsetBits;
     const unsigned dcacheBankIndexBits;
     const unsigned dcacheSetBankBits;
+    const bool enableHashTagArray;
+    const unsigned hashTagWidth;
+    const unsigned dcacheAssoc;
+    const unsigned dcacheAliasBits;
+    const unsigned dcacheHashTagShift;
 
     bool _enableLdMissReplay;
     bool _enablePipeNukeCheck;
@@ -1512,6 +1548,15 @@ class LSQ
         statistics::Scalar dcacheMainPipeBlockedByDataConflict;
         statistics::Scalar dcacheMainPipeStoreS2IssueBlocked;
         statistics::Scalar dcacheMainPipeStoreS2MissExit;
+        statistics::Scalar hashTagArrayRefillUpdates;
+        statistics::Scalar hashTagArrayInvalidations;
+        statistics::Scalar hashTagArrayLookups;
+        statistics::Scalar hashTagArrayLookupMisses;
+        statistics::Scalar hashTagArrayLoadLoadCandidates;
+        statistics::Scalar hashTagArrayMainPipeRetainedConflicts;
+        statistics::Scalar hashTagArrayNoHitRetainedConflicts;
+        statistics::Scalar hashTagArrayWayOverlapRetainedConflicts;
+        statistics::Scalar hashTagArrayFilteredConflicts;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);

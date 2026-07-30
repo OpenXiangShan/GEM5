@@ -444,7 +444,29 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
                "Number of store buffer requests blocked when issuing from fake dcache mainpipe S2"),
       ADD_STAT(dcacheMainPipeStoreS2MissExit,
                statistics::units::Count::get(),
-               "Number of store buffer requests that miss and exit fake dcache mainpipe at S2")
+               "Number of store buffer requests that miss and exit fake dcache mainpipe at S2"),
+      ADD_STAT(hashTagArrayRefillUpdates, statistics::units::Count::get(),
+               "Number of Hash Tag Array entries updated from L1D refills"),
+      ADD_STAT(hashTagArrayInvalidations, statistics::units::Count::get(),
+               "Number of Hash Tag Array entries cleared by L1D invalidations"),
+      ADD_STAT(hashTagArrayLookups, statistics::units::Count::get(),
+               "Number of Hash Tag Array way-mask lookups"),
+      ADD_STAT(hashTagArrayLookupMisses, statistics::units::Count::get(),
+               "Number of Hash Tag Array lookups without a matching way"),
+      ADD_STAT(hashTagArrayLoadLoadCandidates, statistics::units::Count::get(),
+               "Number of load-load bank-conflict candidates checked by the Hash Tag Array"),
+      ADD_STAT(hashTagArrayMainPipeRetainedConflicts,
+               statistics::units::Count::get(),
+               "Number of Hash Tag Array checks retained by fake Dcache mainpipe occupancy"),
+      ADD_STAT(hashTagArrayNoHitRetainedConflicts,
+               statistics::units::Count::get(),
+               "Number of Hash Tag Array checks retained because a load lookup missed"),
+      ADD_STAT(hashTagArrayWayOverlapRetainedConflicts,
+               statistics::units::Count::get(),
+               "Number of load requests rejected after the first overlapping Hash Tag Array way mask"),
+      ADD_STAT(hashTagArrayFilteredConflicts,
+               statistics::units::Count::get(),
+               "Number of load requests admitted after filtering load-load bank-conflict candidates")
 {
 }
 
@@ -473,6 +495,16 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
                            floorLog2(params.DcacheBankBytes) : 0),
       dcacheBankIndexBits(numBank ? floorLog2(numBank) : 0),
       dcacheSetBankBits(params.DcacheSetBits + dcacheBankIndexBits),
+      enableHashTagArray(params.EnableHashTagArray),
+      hashTagWidth(params.HashTagWidth),
+      dcacheAssoc(params.DcacheAssoc),
+      dcacheAliasBits(params.DcacheAliasBits),
+      dcacheHashTagShift(
+          params.DcacheAliasBits <=
+                  floorLog2(cpu_ptr->cacheLineSize()) + params.DcacheSetBits ?
+              floorLog2(cpu_ptr->cacheLineSize()) + params.DcacheSetBits -
+                  params.DcacheAliasBits :
+              0),
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _enableReplayBasedMDP(params.EnableReplayBasedMDP),
@@ -517,6 +549,23 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
              "Derived dcache bank count must be a positive power of two "
              "(line size=%u, bank bytes=%u, bank count=%u)\n",
              cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
+    if (enableHashTagArray) {
+        panic_if(hashTagWidth == 0 || hashTagWidth > 64,
+                 "HashTagWidth must be in [1, 64] (got %u)\n",
+                 hashTagWidth);
+        panic_if(dcacheAssoc == 0 || dcacheAssoc > 64,
+                 "Hash Tag Array supports DcacheAssoc in [1, 64] (got %u)\n",
+                 dcacheAssoc);
+        panic_if(dcacheAliasBits > dcacheSetBits,
+                 "DcacheAliasBits (%u) must not exceed DcacheSetBits (%u)\n",
+                 dcacheAliasBits, dcacheSetBits);
+        panic_if(dcacheHashTagShift >= 64,
+                 "Hash Tag Array tag shift must be below 64 (got %u)\n",
+                 dcacheHashTagShift);
+        panic_if(dcacheSetBits >= sizeof(size_t) * 8,
+                 "DcacheSetBits (%u) cannot index the Hash Tag Array\n",
+                 dcacheSetBits);
+    }
     DPRINTF(LSQ, "Dcache bank model: line bytes=%u, bank bytes=%u, "
             "bank count=%u\n",
             cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
@@ -574,6 +623,16 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     storeBuffer.setData(store_buffer_entries);
     storeBuffer.setMaxThread(numThreads);
     bankOccupied.resize(dcacheSetDivNum, std::vector<bool>(numBank, false));
+    if (enableHashTagArray) {
+        const size_t num_sets = size_t(1) << dcacheSetBits;
+        mainPipeBankOccupied.resize(
+            dcacheSetDivNum, std::vector<bool>(numBank, false));
+        acceptedLoadAccesses.resize(
+            dcacheSetDivNum,
+            std::vector<std::vector<AcceptedLoadAccess>>(numBank));
+        hashTagArray.resize(
+            num_sets, std::vector<HashTagArrayEntry>(dcacheAssoc));
+    }
 }
 
 
@@ -705,6 +764,14 @@ LSQ::clearAddresses()
 {
     advanceDcacheMainPipe();
     markDcacheMainPipeBusyBanks();
+    if (enableHashTagArray) {
+        mainPipeBankOccupied = bankOccupied;
+        for (auto &div_accesses : acceptedLoadAccesses) {
+            for (auto &bank_accesses : div_accesses) {
+                bank_accesses.clear();
+            }
+        }
+    }
     recentlyloadAddr.clear();
 }
 
@@ -1129,7 +1196,7 @@ LSQ::getDcacheDivBankSetKey(Addr vaddr) const
 }
 
 bool
-LSQ::loadBankConflictedCheck(Addr vaddr, unsigned size)
+LSQ::loadBankConflictedCheckBaseline(Addr vaddr, unsigned size)
 {
     if (!enableBankConflictCheck || size == 0) {
         return false;
@@ -1180,6 +1247,146 @@ LSQ::loadBankConflictedCheck(Addr vaddr, unsigned size)
     return false;
 }
 
+uint64_t
+LSQ::foldHashTag(Addr tag) const
+{
+    if (hashTagWidth == 64) {
+        return tag;
+    }
+
+    const uint64_t chunk_mask = (uint64_t(1) << hashTagWidth) - 1;
+    uint64_t folded_tag = 0;
+    do {
+        folded_tag ^= tag & chunk_mask;
+        tag >>= hashTagWidth;
+    } while (tag != 0);
+
+    return folded_tag & chunk_mask;
+}
+
+uint64_t
+LSQ::lookupHashTagArray(Addr paddr, bool secure)
+{
+    ++stats.hashTagArrayLookups;
+
+    const uint64_t folded_tag = foldHashTag(paddr >> dcacheHashTagShift);
+    const uint64_t alias_count = uint64_t(1) << dcacheAliasBits;
+    const Addr alias_mask = dcacheAliasBits == 0 ? 0 :
+        ((uint64_t(1) << dcacheAliasBits) - 1) << dcacheHashTagShift;
+    uint64_t way_mask = 0;
+
+    // VIPT lookups probe all sets whose virtual alias bits may differ from
+    // the physical address. This mirrors VIPTSetAssoc::findBlock().
+    for (uint64_t alias = 0; alias < alias_count; ++alias) {
+        const Addr alias_addr = (paddr & ~alias_mask) |
+            (alias << dcacheHashTagShift);
+        const auto &ways = hashTagArray.at(getDcacheSetKey(alias_addr));
+        for (unsigned way = 0; way < dcacheAssoc; ++way) {
+            const auto &entry = ways[way];
+            if (entry.valid && entry.secure == secure &&
+                entry.foldedTag == folded_tag) {
+                way_mask |= uint64_t(1) << way;
+            }
+        }
+    }
+
+    if (way_mask == 0) {
+        ++stats.hashTagArrayLookupMisses;
+    }
+
+    return way_mask;
+}
+
+bool
+LSQ::loadBankConflictedCheck(Addr vaddr, Addr paddr, bool is_secure,
+                             unsigned size)
+{
+    if (!enableHashTagArray) {
+        return loadBankConflictedCheckBaseline(vaddr, size);
+    }
+
+    if (!enableBankConflictCheck || size == 0) {
+        return false;
+    }
+
+    struct TouchedBank
+    {
+        unsigned bankIndex;
+        unsigned div;
+        uint64_t key;
+        Addr paddr;
+        bool hashLookedUp = false;
+        uint64_t wayMask = 0;
+    };
+
+    std::vector<TouchedBank> touched_banks;
+    for (unsigned offset = 0; offset < size;) {
+        const Addr bank_vaddr = vaddr + offset;
+        touched_banks.push_back({
+            bankNum(bank_vaddr),
+            getDcacheDiv(bank_vaddr),
+            getDcacheDivBankSetKey(bank_vaddr),
+            paddr + offset,
+        });
+        const Addr offset_inc =
+            dcacheBankBytes - (bank_vaddr & (dcacheBankBytes - 1));
+        offset += offset_inc;
+    }
+
+    bool filtered_conflict = false;
+    for (auto &bank : touched_banks) {
+        // Hash Tag Array filtering is deliberately load-load only. A fake
+        // mainpipe data-array use retains the baseline conflict behavior.
+        if (mainPipeBankOccupied[bank.div][bank.bankIndex]) {
+            ++stats.hashTagArrayMainPipeRetainedConflicts;
+            return true;
+        }
+
+        bool has_load_candidate = false;
+        for (const auto &prior :
+             acceptedLoadAccesses[bank.div][bank.bankIndex]) {
+            if (prior.bankSetKey == bank.key) {
+                continue;
+            }
+
+            has_load_candidate = true;
+            ++stats.hashTagArrayLoadLoadCandidates;
+            if (!bank.hashLookedUp) {
+                bank.wayMask = lookupHashTagArray(bank.paddr, is_secure);
+                bank.hashLookedUp = true;
+            }
+            const uint64_t prior_way_mask =
+                lookupHashTagArray(prior.paddr, prior.secure);
+
+            // A missing Hash Tag Array entry cannot prove different ways, so
+            // it remains a bank conflict. Hash-width collision behavior is
+            // intentionally modeled by the folded-tag comparison above.
+            if (bank.wayMask == 0 || prior_way_mask == 0) {
+                ++stats.hashTagArrayNoHitRetainedConflicts;
+                return true;
+            }
+            if (bank.wayMask & prior_way_mask) {
+                ++stats.hashTagArrayWayOverlapRetainedConflicts;
+                return true;
+            }
+        }
+        filtered_conflict |= has_load_candidate;
+    }
+
+    // Claim only after every bank has passed. This preserves the baseline
+    // all-or-nothing behavior for multi-bank loads.
+    for (const auto &bank : touched_banks) {
+        bankOccupied[bank.div][bank.bankIndex] = true;
+        acceptedLoadAccesses[bank.div][bank.bankIndex].push_back(
+            {bank.key, bank.paddr, is_secure});
+    }
+    if (filtered_conflict) {
+        ++stats.hashTagArrayFilteredConflicts;
+    }
+
+    return false;
+}
+
 void
 LSQ::notifyDcacheRefill(
     Addr addr, bool need_data_read,
@@ -1190,6 +1397,41 @@ LSQ::notifyDcacheRefill(
             addr, need_data_read, std::move(on_complete)));
     cpu->wakeCPU();
     cpu->activityThisCycle();
+}
+
+void
+LSQ::notifyDcacheHashTagRefill(uint32_t set, uint32_t way, Addr full_tag,
+                               bool secure)
+{
+    if (!enableHashTagArray) {
+        return;
+    }
+
+    panic_if(set >= hashTagArray.size() || way >= dcacheAssoc,
+             "Hash Tag Array refill index out of range (set=%u, way=%u)\n",
+             set, way);
+    auto &entry = hashTagArray[set][way];
+    entry.valid = true;
+    entry.secure = secure;
+    entry.foldedTag = foldHashTag(full_tag);
+    ++stats.hashTagArrayRefillUpdates;
+}
+
+void
+LSQ::invalidateDcacheHashTag(uint32_t set, uint32_t way)
+{
+    if (!enableHashTagArray) {
+        return;
+    }
+
+    panic_if(set >= hashTagArray.size() || way >= dcacheAssoc,
+             "Hash Tag Array invalidation index out of range (set=%u, way=%u)\n",
+             set, way);
+    auto &entry = hashTagArray[set][way];
+    entry.valid = false;
+    entry.secure = false;
+    entry.foldedTag = 0;
+    ++stats.hashTagArrayInvalidations;
 }
 
 unsigned
@@ -1611,6 +1853,9 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     data_pkt->clearDcacheMainPipeSbufferHit();
     data_pkt->setDcacheMainPipeSbufferReq();
     data_pkt->setLSQPtr(this);
+    if (hashTagArrayEnabled()) {
+        data_pkt->setHashTagArrayLSQPtr(this);
+    }
 
     // Issue to the real classic cache only at fake S2 so StoreBuffer misses
     // cannot allocate or merge MSHRs at fake-pipe admission time.
@@ -3569,7 +3814,8 @@ LSQ::SplitDataRequest::sendPacketToCache()
                                                 bank_conflict, tag_read_fail, mshr_used,
                                                 mshr_alias_fail, hit_in_write_buffer);
         if (success) {
-            _packets[numReceivedPackets + _numOutstandingPackets]->setLSQPtr(lsqUnit()->getLsq());
+            _packets[numReceivedPackets + _numOutstandingPackets]->setLSQPtr(
+                lsqUnit()->getLsq());
             _numOutstandingPackets++;
         } else {
             break;
