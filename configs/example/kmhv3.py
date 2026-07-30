@@ -204,6 +204,11 @@ if __name__ == '__m5_main__':
     FutureClass = None
 
     args = xiangshan_system_init()
+    # This configuration is the uop-cache-enabled KMHV3 experiment preset.
+    # Override the global opt-in default before system construction so both
+    # the Python SMT guard and every CPU's hasUopCache parameter see the same
+    # enabled state.
+    args.enable_uop_cache = True
 
     # Reject the unsupported combination before checkpoint/restorer setup so
     # users receive the uop-cache diagnostic rather than an unrelated SMT

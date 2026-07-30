@@ -173,6 +173,10 @@ if __name__ == '__m5_main__':
     FutureClass = None
 
     args = xiangshan_system_init()
+    # This configuration is the uop-cache-enabled ideal KMHV3 experiment
+    # preset.  Set the option before validation and system construction so
+    # the SMT compatibility check and CPU parameter assignment stay aligned.
+    args.enable_uop_cache = True
 
     # Keep the experimental fast path single-threaded until its shared cache
     # build/stream state has a verified SMT ownership model.
