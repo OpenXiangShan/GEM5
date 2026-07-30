@@ -140,6 +140,7 @@ class TraceFetch
         uint64_t rollbackTraceIndex = 0;
         bool useTraceIndex = false;
         bool squashItself = false;
+        Addr targetPc = 0;
         const char *exitWrongPathReason = nullptr;
         const char *debugReason = nullptr;
     };
@@ -176,6 +177,7 @@ class TraceFetch
                                              InstSeqNum seqNum);
     void applyTraceRecoveryAction(ThreadID tid,
                                   const TraceRecoveryAction &action);
+    void reconcileTraceStreamToSquashTarget(ThreadID tid, Addr targetPc);
     bool rollbackTraceReaderToIndex(uint64_t index);
 
     void ensureTraceStreamFilled(ThreadID tid, size_t min_count);
