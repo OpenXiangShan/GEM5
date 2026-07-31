@@ -35,10 +35,15 @@ def setKmhV3IdealParams(args, system):
 
         # fetch
         cpu.mmu.itb.size = 96
+        # Keep one shared data TLB unless split mode is explicitly requested.
+        cpu.mmu.enable_store_tlb = args.enable_store_tlb
         #cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         #cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
+        if args.enable_store_tlb:
+            # Only an active store-side TLB needs independent walker limits.
+            setPtwLevelLimitParams(args, cpu.mmu.stb)
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4  # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu

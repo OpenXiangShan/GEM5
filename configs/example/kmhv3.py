@@ -35,10 +35,18 @@ def setKmhV3Params(args, system):
 
         # fetch (idealfetch not care)
         cpu.mmu.itb.size = 96
+        # Default false preserves the original shared dtb. Enable this only
+        # for RTL-oriented load/store L1 TLB separation experiments.
+        cpu.mmu.enable_store_tlb = args.enable_store_tlb
         cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
+        if args.enable_store_tlb:
+            # Split mode gives stb the same compression and PTW constraints
+            # as dtb, so the switch changes ownership rather than tuning.
+            cpu.mmu.stb.enable_l1_direct_compression = args.enable_l1_direct_compression
+            setPtwLevelLimitParams(args, cpu.mmu.stb)
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4

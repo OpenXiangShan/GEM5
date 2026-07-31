@@ -109,7 +109,8 @@ class BaseMMU : public SimObject
 
     virtual void flushAll();
 
-    void demapPage(Addr vaddr, uint64_t asn);
+    // Architecture-specific MMUs may own additional TLB roots (RISC-V stb).
+    virtual void demapPage(Addr vaddr, uint64_t asn);
 
     virtual Fault
     translateAtomic(const RequestPtr &req, ThreadContext *tc,

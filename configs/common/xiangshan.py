@@ -903,6 +903,12 @@ def xiangshan_system_init():
         help="Disable L1 direct one-stage TLB compression for A/B validation",
     )
     parser.add_argument(
+        "--enable-store-tlb",
+        action="store_true",
+        default=False,
+        help="Use separate load and store L1 data TLBs",
+    )
+    parser.add_argument(
         "--disable-ptw-level-limit",
         action="store_false",
         dest="enable_ptw_level_limit",

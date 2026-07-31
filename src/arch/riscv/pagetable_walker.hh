@@ -84,6 +84,9 @@ namespace RiscvISA
 
         friend class WalkerPort;
         WalkerPort port;
+        // True after any state is rejected by the shared timing port. No
+        // other state may send until the peer issues recvReqRetry().
+        bool portBlocked;
 
         // State to track each walk of the page table
         class WalkerState
@@ -450,7 +453,8 @@ namespace RiscvISA
 
         Walker(const Params &params) :
             ClockedObject(params), port(name() + ".port", this),
-            funcState(this, NULL, NULL, true), stats(this), tlb(NULL),
+            portBlocked(false), funcState(this, NULL, NULL, true),
+            stats(this), tlb(NULL),
             sys(params.system),
             pma(params.pma_checker),
             pmp(params.pmp),

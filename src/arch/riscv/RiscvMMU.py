@@ -42,6 +42,7 @@ from m5.objects.BaseMMU import BaseMMU
 from m5.objects.RiscvTLB import RiscvTLB, RiscvTLBL2
 from m5.objects.PMAChecker import PMAChecker
 from m5.objects.PMP import PMP
+from m5.objects.XBar import NoncoherentXBar
 
 class RiscvMMU(BaseMMU):
     type = 'RiscvMMU'
@@ -49,18 +50,41 @@ class RiscvMMU(BaseMMU):
     cxx_header = 'arch/riscv/mmu.hh'
 
     l2_shared = RiscvTLBL2(entry_type="unified")
+    data_walker_xbar = NoncoherentXBar(
+        frontend_latency=0, forward_latency=0, response_latency=0,
+        width=32)
 
     itb = RiscvTLB(entry_type="instruction",
     next_level=Parent.l2_shared)
     dtb = RiscvTLB(entry_type="data",
                    next_level=Parent.l2_shared, is_dtlb=True)
+    # Keep the original shared data TLB behavior by default. When enabled,
+    # writes use stb while reads continue to use dtb.
+    enable_store_tlb = Param.Bool(
+        False, "Use an independent L1 TLB for write translations")
+    # stb is always present in the SimObject graph so the walker topology is
+    # static, but it receives translation and lifecycle traffic only when
+    # enable_store_tlb is true. Both data L1 TLBs share l2_shared.
+    stb = Param.RiscvTLB(
+        RiscvTLB(entry_type="data", next_level=Parent.l2_shared,
+                 is_dtlb=True), "Store TLB")
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
 
     @classmethod
     def walkerPorts(cls):
-        return ["mmu.itb.walker.port", "mmu.dtb.walker.port"]
+        # Expose one instruction walker port and one shared downstream data
+        # port. dtb/stb connect to the XBar CPU-side ports below. The stb port
+        # stays connected in shared mode because gem5's port graph is static,
+        # but the disabled stb never generates a request.
+        return ["mmu.itb.walker.port",
+                "mmu.data_walker_xbar.mem_side_ports"]
 
     def connectWalkerPorts(self, iport, dport):
+        # Keep load/store walkers independent up to the XBar, then make their
+        # page-table memory traffic share the original data walker port. The
+        # enable_store_tlb parameter controls traffic, not port construction.
         self.itb.walker.port = iport
-        self.dtb.walker.port = dport
+        self.dtb.walker.port = self.data_walker_xbar.cpu_side_ports
+        self.stb.walker.port = self.data_walker_xbar.cpu_side_ports
+        self.data_walker_xbar.mem_side_ports = dport

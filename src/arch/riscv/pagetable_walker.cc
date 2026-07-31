@@ -499,17 +499,27 @@ Walker::WalkerPort::recvReqRetry()
 void
 Walker::recvReqRetry()
 {
-    std::list<WalkerState *>::iterator iter;
-    for (iter = currStates.begin(); iter != currStates.end(); iter++) {
-        WalkerState * walkerState = *(iter);
+    // Retry only after the port peer grants permission. Stop after the first
+    // new rejection because all states share this same port-level flag.
+    assert(portBlocked);
+    portBlocked = false;
+
+    for (auto *walkerState : currStates) {
         if (walkerState->isRetrying()) {
             walkerState->retry();
+            if (portBlocked)
+                break;
         }
     }
 }
 
 bool Walker::sendTiming(WalkerState* sendingState, PacketPtr pkt)
 {
+    // A timing request port must not send again after a rejected request until
+    // its peer issues recvReqRetry(). All states in this walker share port.
+    if (portBlocked)
+        return false;
+
     WalkerSenderState* walker_state = new WalkerSenderState(sendingState);
     DPRINTF(PageTableWalker, "Sending packet %#x with sender state: %lx\n",
             pkt->getAddr(), walker_state);
@@ -526,6 +536,7 @@ bool Walker::sendTiming(WalkerState* sendingState, PacketPtr pkt)
         // will do it again the next time we attempt to send it
         pkt->popSenderState();
         delete walker_state;
+        portBlocked = true;
         return false;
     }
 

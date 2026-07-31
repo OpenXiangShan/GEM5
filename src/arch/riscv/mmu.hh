@@ -55,10 +55,75 @@ class MMU : public BaseMMU
 {
   public:
     PMAChecker *pma;
+    // Extra store-side root. BaseMMU only owns architectural itb/dtb roots,
+    // so RISC-V must explicitly route and maintain this TLB when enabled.
+    TLB *stb;
+    // Static simulation mode. False preserves the original shared dtb;
+    // true gives write translations their own stb state.
+    const bool enableStoreTlb;
 
     MMU(const RiscvMMUParams &p)
-      : BaseMMU(p), pma(p.pma_checker)
+      : BaseMMU(p), pma(p.pma_checker), stb(p.stb),
+        enableStoreTlb(p.enable_store_tlb)
     {}
+
+    // Select the data L1 TLB in O(1). The default shared mode sends reads and
+    // writes to dtb; split mode sends writes to stb. Execute accesses bypass
+    // this helper and are routed to itb by callers.
+    BaseTLB *dataTlb(BaseMMU::Mode mode) const
+    {
+        return enableStoreTlb && mode == BaseMMU::Write ? stb : dtb;
+    }
+
+    // Keep all translation entry points on the same mode-to-TLB mapping.
+    Fault translateAtomic(const RequestPtr &req, ThreadContext *tc,
+                          BaseMMU::Mode mode) override
+    {
+        return (mode == BaseMMU::Execute ? itb : dataTlb(mode))
+            ->translateAtomic(req, tc, mode);
+    }
+
+    void translateTiming(const RequestPtr &req, ThreadContext *tc,
+                         BaseMMU::Translation *translation,
+                         BaseMMU::Mode mode) override
+    {
+        BaseTLB *tlb = mode == BaseMMU::Execute ? itb : dataTlb(mode);
+        if (functional)
+            tlb->translateFunctional(req, tc, translation, mode);
+        else
+            tlb->translateTiming(req, tc, translation, mode);
+    }
+
+    Fault translateFunctional(const RequestPtr &req, ThreadContext *tc,
+                              BaseMMU::Mode mode) override
+    {
+        return (mode == BaseMMU::Execute ? itb : dataTlb(mode))
+            ->translateFunctional(req, tc, mode);
+    }
+
+    Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
+                           BaseMMU::Mode mode) const override
+    {
+        return (mode == BaseMMU::Execute ? itb : dataTlb(mode))
+            ->finalizePhysical(req, tc, mode);
+    }
+
+    void flushAll() override
+    {
+        BaseMMU::flushAll();
+        // BaseMMU traverses only its architectural dtb/itb roots. The active
+        // store-only root must therefore be explicitly flushed in split mode.
+        if (enableStoreTlb)
+            stb->flushAll();
+    }
+
+    void demapPage(Addr vaddr, uint64_t asn) override
+    {
+        // Generic MMU invalidates itb/dtb; stb is an additional root.
+        BaseMMU::demapPage(vaddr, asn);
+        if (enableStoreTlb)
+            stb->demapPage(vaddr, asn);
+    }
 
     TranslationGenPtr
     translateFunctional(Addr start, Addr size, ThreadContext *tc,
@@ -71,13 +136,15 @@ class MMU : public BaseMMU
     PrivilegeMode
     getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
     {
-        return static_cast<TLB*>(dtb)->getMemPriv(tc, mode);
+        return static_cast<TLB*>(dataTlb(mode))->getMemPriv(tc, mode);
     }
 
     Walker *
-    getDataWalker()
+    getDataWalker(BaseMMU::Mode mode = BaseMMU::Read)
     {
-        return static_cast<TLB*>(dtb)->getWalker();
+        // Functional page walks must use the walker belonging to the data
+        // TLB selected by mode, especially for write translations.
+        return static_cast<TLB*>(dataTlb(mode))->getWalker();
     }
 
     void
@@ -86,6 +153,10 @@ class MMU : public BaseMMU
       MMU *ommu = dynamic_cast<MMU*>(old_mmu);
       BaseMMU::takeOverFrom(ommu);
       pma->takeOverFrom(ommu->pma);
+      // The dormant stb has no architectural state to preserve in shared
+      // mode. In split mode, transfer its entries and walker state as well.
+      if (enableStoreTlb)
+          stb->takeOverFrom(ommu->stb);
 
     }
 
@@ -98,12 +169,16 @@ class MMU : public BaseMMU
     void
     setOldPriv(ThreadContext *tc) override {
       static_cast<TLB*>(dtb)->setOldPriv(tc);
+      if (enableStoreTlb)
+          static_cast<TLB*>(stb)->setOldPriv(tc);
       static_cast<TLB*>(itb)->setOldPriv(tc);
     }
 
     void
     useNewPriv(ThreadContext *tc) override {
       static_cast<TLB*>(dtb)->useNewPriv(tc);
+      if (enableStoreTlb)
+          static_cast<TLB*>(stb)->useNewPriv(tc);
       static_cast<TLB*>(itb)->useNewPriv(tc);
     }
 };
