@@ -1815,8 +1815,13 @@ Fault
     if ((vd_idx < gather_vd_vregs) &&
         (vs2_idx + 1 == vs2_vregs) &&
         (gather_vstart < rVl)) {
+        // With fractional LMUL, the unused portion of the physical
+        // destination register also belongs to the tail.
+        const uint32_t gather_agnostic_elems =
+            vflmul < 1 ? vd_elems : elem_num_per_vreg;
+
         for (uint32_t gather_i = 0;
-             gather_i < elem_num_per_vreg;
+             gather_i < gather_agnostic_elems;
              ++gather_i) {
             // Tail and mask policies are properties of
             // destination elements, not the vs1 index chunk.
