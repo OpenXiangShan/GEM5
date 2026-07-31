@@ -954,6 +954,7 @@ LSQUnit::checkSnoop(PacketPtr pkt)
     assert(pkt->isInvalidate());
 
     DPRINTF(LSQUnit, "Got snoop for address %#x\n", pkt->getAddr());
+    lsq->invalidateDLB(pkt->getAddr(), pkt->isSecure(), true);
 
     for (int x = 0; x < cpu->numContexts(); x++) {
         gem5::ThreadContext *tc = cpu->getContext(x);
@@ -3010,9 +3011,15 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool cache_got_blocked = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
     if (isLoad) {
-        bank_conflict = lsq->loadBankConflictedCheck(
-            data_pkt->req->getVaddr(), data_pkt->getAddr(),
-            data_pkt->isSecure(), data_pkt->req->getSize());
+        if (!data_pkt->req->isUncacheable() &&
+            lsq->shouldBypassLoadBankConflict(data_pkt->getAddr(),
+                                              data_pkt->isSecure())) {
+            bank_conflict = false;
+        } else {
+            bank_conflict = lsq->loadBankConflictedCheck(
+                data_pkt->req->getVaddr(), data_pkt->getAddr(),
+                data_pkt->isSecure(), data_pkt->req->getSize());
+        }
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.

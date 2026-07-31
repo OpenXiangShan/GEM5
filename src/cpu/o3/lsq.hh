@@ -71,6 +71,7 @@
 #include "cpu/utils.hh"
 #include "enums/SMTLSQMode.hh"
 #include "enums/SMTQueuePolicy.hh"
+#include "mem/cache/prefetch/associative_set.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/sim_object.hh"
@@ -91,6 +92,12 @@ class LSQUnit;
 class LSQ
 {
   public:
+    class DLBEntry : public TaggedEntry
+    {
+      public:
+        DLBEntry() = default;
+    };
+
     class LSQRequest;
     class SbufferRequest;
     class StoreBufferEntry;
@@ -1169,6 +1176,9 @@ class LSQ
     bool loadBankConflictedCheck(Addr vaddr, Addr paddr, bool is_secure,
                                  unsigned size);
     bool loadBankConflictedCheckBaseline(Addr vaddr, unsigned size);
+    bool shouldBypassLoadBankConflict(Addr paddr, bool is_secure);
+    void recordLoadRespCacheline(Addr paddr, bool is_secure);
+    void invalidateDLB(Addr paddr, bool is_secure, bool from_snoop);
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
@@ -1448,6 +1458,8 @@ class LSQ
     bool willDcacheRefillTagWriteNextCycle() const;
 
   protected:
+    using DLB = AssociativeSet<DLBEntry>;
+
     /** D-cache is blocked */
     bool _cacheBlocked;
     /** The number of cache ports available each cycle (stores only). */
@@ -1479,6 +1491,7 @@ class LSQ
     ThreadID nextStoreBufferInsertTid  = 0;
 
     bool enableBankConflictCheck;
+    bool enableLSUDLB;
     bool sbufferBankWriteAccurately;
 
     const unsigned dcacheSetBits;
@@ -1557,6 +1570,15 @@ class LSQ
         statistics::Scalar hashTagArrayNoHitRetainedConflicts;
         statistics::Scalar hashTagArrayWayOverlapRetainedConflicts;
         statistics::Scalar hashTagArrayFilteredConflicts;
+        statistics::Scalar dlbBankConflictQueries;
+        statistics::Scalar dlbBankConflictHits;
+        statistics::Formula dlbBankConflictHitRate;
+        statistics::Scalar dlbRespQueries;
+        statistics::Scalar dlbRespHits;
+        statistics::Formula dlbRespHitRate;
+        statistics::Scalar dlbInsertions;
+        statistics::Scalar dlbSnoopInvalidations;
+        statistics::Scalar dlbL1EvictInvalidations;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);
@@ -1576,6 +1598,8 @@ class LSQ
     unsigned RARQEntries;
     /** Total Size of RAWQ Entries. */
     unsigned RAWQEntries;
+    const unsigned dlbEntries;
+    DLB dlb;
 
     /** Data port. */
     DcachePort dcachePort;

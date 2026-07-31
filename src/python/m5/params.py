@@ -684,6 +684,8 @@ class MemorySize(CheckedInt):
     def __init__(self, value):
         if isinstance(value, MemorySize):
             self.value = value.value
+        elif isinstance(value, NumericParamValue):
+            self.value = int(value)
         else:
             self.value = convert.toMemorySize(value)
         self._check()
@@ -696,6 +698,8 @@ class MemorySize32(CheckedInt):
     def __init__(self, value):
         if isinstance(value, MemorySize):
             self.value = value.value
+        elif isinstance(value, NumericParamValue):
+            self.value = int(value)
         else:
             self.value = convert.toMemorySize(value)
         self._check()

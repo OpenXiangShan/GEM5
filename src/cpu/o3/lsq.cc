@@ -73,10 +73,15 @@
 #include "debug/StoreBuffer.hh"
 #include "debug/TagReadFail.hh"
 #include "debug/Writeback.hh"
+#include "mem/cache/prefetch/associative_set_impl.hh"
+#include "mem/cache/replacement_policies/tree_plru_rp.hh"
+#include "mem/cache/tags/indexing_policies/set_associative.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
 #include "params/BaseO3CPU.hh"
+#include "params/SetAssociative.hh"
+#include "params/TreePLRURP.hh"
 
 namespace gem5
 {
@@ -466,8 +471,28 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
                "Number of load requests rejected after the first overlapping Hash Tag Array way mask"),
       ADD_STAT(hashTagArrayFilteredConflicts,
                statistics::units::Count::get(),
-               "Number of load requests admitted after filtering load-load bank-conflict candidates")
+               "Number of load requests admitted after filtering load-load bank-conflict candidates"),
+      ADD_STAT(dlbBankConflictQueries, statistics::units::Count::get(),
+               "Number of DLB lookups before load bank-conflict check"),
+      ADD_STAT(dlbBankConflictHits, statistics::units::Count::get(),
+               "Number of DLB hits before load bank-conflict check"),
+      ADD_STAT(dlbBankConflictHitRate, statistics::units::Ratio::get(),
+               "DLB hit rate before load bank-conflict check"),
+      ADD_STAT(dlbRespQueries, statistics::units::Count::get(),
+               "Number of DLB lookups on load recvTimingResp"),
+      ADD_STAT(dlbRespHits, statistics::units::Count::get(),
+               "Number of DLB hits on load recvTimingResp"),
+      ADD_STAT(dlbRespHitRate, statistics::units::Ratio::get(),
+               "DLB hit rate on load recvTimingResp"),
+      ADD_STAT(dlbInsertions, statistics::units::Count::get(),
+               "Number of DLB insertions on load recvTimingResp miss"),
+      ADD_STAT(dlbSnoopInvalidations, statistics::units::Count::get(),
+               "Number of DLB entries invalidated by snoops"),
+      ADD_STAT(dlbL1EvictInvalidations, statistics::units::Count::get(),
+               "Number of DLB entries invalidated by L1 Dcache evictions")
 {
+    dlbBankConflictHitRate = dlbBankConflictHits / dlbBankConflictQueries;
+    dlbRespHitRate = dlbRespHits / dlbRespQueries;
 }
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
@@ -486,6 +511,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       sbufferEntries(params.SbufferEntries),
       storeBufferInactiveThreshold(params.storeBufferInactiveThreshold),
       enableBankConflictCheck(params.BankConflictCheck),
+      enableLSUDLB(params.EnableLSUDLB),
       sbufferBankWriteAccurately(params.sbufferBankWriteAccurately),
       dcacheSetBits(params.DcacheSetBits),
       dcacheSetDivNum(params.DcacheSetDivNum),
@@ -520,6 +546,9 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       enqueueWidth(params.renameWidth),
       RARQEntries(params.RARQEntries),
       RAWQEntries(params.RAWQEntries),
+      dlbEntries(params.DLBEntries),
+      dlb(params.DLBEntries, params.DLBEntries,
+          params.dlb_indexing_policy, params.dlb_replacement_policy),
       dcachePort(this, cpu_ptr),
       numThreads(params.numThreads)
 {
@@ -569,6 +598,12 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     DPRINTF(LSQ, "Dcache bank model: line bytes=%u, bank bytes=%u, "
             "bank count=%u\n",
             cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
+    panic_if(dlbEntries == 0, "DLBEntries must be non-zero\n");
+    panic_if(dynamic_cast<replacement_policy::TreePLRU *>(
+                 params.dlb_replacement_policy) != nullptr &&
+                 (dlbEntries < 2 || !isPowerOf2(dlbEntries)),
+             "DLBEntries must be a power of two and at least 2 when using "
+             "TreePLRU (got %u)\n", dlbEntries);
 
     cpu->addStatGroup("lsq", &stats);
 
@@ -1387,6 +1422,87 @@ LSQ::loadBankConflictedCheck(Addr vaddr, Addr paddr, bool is_secure,
     return false;
 }
 
+bool
+LSQ::shouldBypassLoadBankConflict(Addr paddr, bool is_secure)
+{
+    if (!enableLSUDLB) {
+        return false;
+    }
+
+    paddr = addrBlockAlign(paddr, cpu->cacheLineSize());
+
+    ++stats.dlbBankConflictQueries;
+    DLBEntry *entry = dlb.findEntry(paddr, is_secure);
+    if (!entry) {
+        return false;
+    }
+
+    ++stats.dlbBankConflictHits;
+    dlb.accessEntry(entry);
+    DPRINTF(LSQ, "DLB hit for paddr %#x\n", paddr);
+    return true;
+}
+
+void
+LSQ::recordLoadRespCacheline(Addr paddr, bool is_secure)
+{
+    if (!enableLSUDLB) {
+        return;
+    }
+
+    paddr = addrBlockAlign(paddr, cpu->cacheLineSize());
+
+    ++stats.dlbRespQueries;
+    DLBEntry *entry = dlb.findEntry(paddr, is_secure);
+    if (entry) {
+        ++stats.dlbRespHits;
+        DPRINTF(LSQ, "DLB response hit for paddr %#x\n", paddr);
+        return;
+    }
+
+    DLBEntry *victim = nullptr;
+    for (auto &candidate : dlb) {
+        if (!candidate.isValid()) {
+            victim = &candidate;
+            break;
+        }
+    }
+
+    if (!victim) {
+        victim = dlb.findVictim(paddr);
+        DPRINTF(LSQ, "DLB replace for paddr %#x\n", paddr);
+    } else {
+        DPRINTF(LSQ, "DLB allocate for paddr %#x\n", paddr);
+    }
+
+    ++stats.dlbInsertions;
+    dlb.insertEntry(paddr, is_secure, victim);
+}
+
+void
+LSQ::invalidateDLB(Addr paddr, bool is_secure, bool from_snoop)
+{
+    if (!enableLSUDLB) {
+        return;
+    }
+
+    paddr = addrBlockAlign(paddr, cpu->cacheLineSize());
+
+    DLBEntry *entry = dlb.findEntry(paddr, is_secure);
+    if (!entry) {
+        return;
+    }
+
+    if (from_snoop) {
+        ++stats.dlbSnoopInvalidations;
+        DPRINTF(LSQ, "DLB snoop invalidate for paddr %#x\n", paddr);
+    } else {
+        ++stats.dlbL1EvictInvalidations;
+        DPRINTF(LSQ, "DLB L1 evict invalidate for paddr %#x\n", paddr);
+    }
+    dlb.invalidate(entry);
+}
+
 void
 LSQ::notifyDcacheRefill(
     Addr addr, bool need_data_read,
@@ -2087,6 +2203,11 @@ LSQ::recvTimingResp(PacketPtr pkt)
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     panic_if(!request, "Got packet back with unknown sender state\n");
 
+    if (request->isLoad() && !pkt->isError() &&
+        !pkt->req->isUncacheable()) {
+        recordLoadRespCacheline(pkt->getAddr(), pkt->isSecure());
+    }
+
     thread[request->_port.lsqID].recvTimingResp(pkt);
 
     if (pkt->isInvalidate()) {
@@ -2163,7 +2284,8 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
     DPRINTF(LSQ, "recvFunctionalCustomSignal: Resp type: %d\n", sig);
 
     LSQRequest *request = nullptr;
-    if (sig != DcacheRespType::Bus_Clear) {
+    if (sig != DcacheRespType::Bus_Clear &&
+        sig != DcacheRespType::L1_Evict) {
         // Bus_Clear event does not need request info
         request = dynamic_cast<LSQRequest*>(pkt->getPrimarySenderState());
         panic_if(!request, "Got packet back with unknown sender state\n");
@@ -2193,6 +2315,9 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
             }
         }
         panic_if(bus.size() > getLQEntries(), "elements on bus should never be greater than LQ size");
+    } else if (sig == DcacheRespType::L1_Evict) {
+        DPRINTF(LSQ, "L1_Evict, invalidate DLB addr: %#lx\n", pkt->getAddr());
+        invalidateDLB(pkt->getAddr(), pkt->isSecure(), false);
     } else {
         panic("unsupported sig %d in recvFunctionalCustomSignal\n", sig);
     }

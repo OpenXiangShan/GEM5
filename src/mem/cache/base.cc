@@ -2523,6 +2523,18 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     // process, which will update stats and invalidate the block itself
     if (blk != tempBlock) {
         if (cacheLevel == 1 && !isReadOnly) {
+            if (blk->isValid()) {
+                const Addr evict_addr = regenerateBlkAddr(blk);
+                RequestPtr req = std::make_shared<Request>(
+                    evict_addr, blkSize, 0, Request::wbRequestorId);
+                if (blk->isSecure()) {
+                    req->setFlags(Request::SECURE);
+                }
+                PacketPtr evict_sig_pkt = new Packet(req, MemCmd::CleanEvict);
+                cpuSidePort.sendCustomSignal(
+                    evict_sig_pkt, DcacheRespType::L1_Evict);
+                delete evict_sig_pkt;
+            }
             for (auto *lsq : dcacheHashTagLSQs) {
                 lsq->invalidateDcacheHashTag(blk->getSet(), blk->getWay());
             }
