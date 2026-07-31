@@ -55,6 +55,7 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/uop_cache.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -520,6 +521,44 @@ class Fetch
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
+    /**
+     * Return the decoded-instruction cache owned by Fetch.
+     *
+     * Decode uses this object to refill entries after normal-path decoding.
+     * Keeping ownership in Fetch makes lookup and I-cache-bypass policy local
+     * to the frontend while exposing refill through a narrow interface.
+     */
+    UopCache *getUopCache() { return uopCache.get(); }
+
+    /**
+     * Invalidate all decoded instructions and their memoized Fetch lookups.
+     *
+     * Translation, permission, fence.i, and executable-memory changes must
+     * use this wrapper instead of invalidating UopCache directly.  Clearing
+     * only the backing array would leave a pending FTQ block-hit decision in
+     * Fetch, which could incorrectly authorize an I-cache bypass after the
+     * architectural invalidation event.
+     */
+    void invalidateUopCache();
+
+    /** Return the normal Fetch-to-Decode queue occupancy for @p tid. */
+    size_t fetchQueueOccupancy(ThreadID tid) const
+    {
+        return tid < numThreads ? fetchQueue[tid].size() : 0;
+    }
+
+    /** Account instructions that Decode accepted through the bypass path. */
+    void recordUopCacheBypassInsts(unsigned count)
+    {
+        fetchStats.uopCacheBypassInsts += count;
+    }
+
+    /** Account a bypass instruction delayed behind older normal-path work. */
+    void recordUopCacheBypassOrderBlockedEvent()
+    {
+        fetchStats.uopCacheBypassOrderBlockedEvents++;
+    }
+
     /** Trace-driven simulation metadata accessors (used by CPU/Commit). */
     const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
     bool isTraceInstruction(InstSeqNum seqNum) const;
@@ -531,7 +570,9 @@ class Fetch
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
-            const PCStateBase &next_pc, bool trace);
+            const PCStateBase &next_pc, bool trace,
+            bool enqueueToFetchQueue = true,
+            bool uopCacheBypass = false);
 
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
@@ -572,11 +613,13 @@ class Fetch
      * @param tid The thread ID of the instruction.
      * @param pc The current program counter state (will be updated).
      * @param curMacroop The current macro-op being processed (if any).
+     * @param stall Reports a late uop-cache lookup failure so Fetch can issue
+     *              the ordinary I-cache request without consuming the PC.
      * @return true if a branch was predicted.
      */
     bool
     processSingleInstruction(ThreadID tid, PCStateBase &pc,
-                             StaticInstPtr &curMacroop);
+                             StaticInstPtr &curMacroop, StallReason &stall);
 
     /**
      * Checks if the decoder requires more memory to proceed and fetches
@@ -600,6 +643,31 @@ class Fetch
     void
     lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                          bool &predictedBranch, bool &newMacro);
+
+    /**
+     * Test whether the complete currently supplied FTQ span is resident.
+     * Requiring an all-or-nothing block hit prevents Fetch from switching
+     * between decoded instructions and I-cache bytes in the middle of one FTQ
+     * target, which would otherwise complicate PC and decoder-state recovery.
+     */
+    bool getUopCacheHit(ThreadID tid, Addr fetchAddr, int &hitWay,
+                        const UopCacheContext &context,
+                        bool countStats = true);
+
+    /**
+     * Return the decoded instruction for @p instAddr after validating the FTQ
+     * span, privilege/translation context, and unsupported macro-op cases.
+     */
+    bool getUopCacheInst(ThreadID tid, Addr instAddr, int &hitWay,
+                         const UCInstDesc *&instDesc,
+                         int *instIdx = nullptr,
+                         bool countStats = true);
+
+    /** Discard all cached lookup state for one hardware thread. */
+    void clearPendingUopCacheLookup(ThreadID tid);
+
+    /** Retain the block result but discard the per-instruction way/index. */
+    void clearPendingUopCacheInstLookup(ThreadID tid);
 
   private:
     /** Pointer to the O3CPU. */
@@ -637,6 +705,35 @@ class Fetch
 
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
+
+    /**
+     * Optional decoded-instruction cache.  When disabled, every call site is
+     * guarded before it can alter Fetch state, preserving the pre-uop-cache
+     * SMT, FTQ, redirect, and I-cache behavior exactly.
+     */
+    std::unique_ptr<UopCache> uopCache;
+
+    /**
+     * Memoized lookup state for the current FTQ target of each thread.
+     *
+     * Block validity is separate from instruction validity because one block
+     * decision is reused for all PCs in the FTQ span, while each instruction
+     * may reside in a different way.  Context is part of the key so privilege
+     * or address-space changes cannot reuse a stale decision.
+     */
+    struct PendingUopCacheLookup
+    {
+        bool blockValid = false;
+        Addr startPC = 0;
+        Addr endPC = 0;
+        bool blockHit = false;
+        UopCacheContext context;
+        bool instValid = false;
+        Addr instPC = 0;
+        int hitWay = -1;
+        int instIdx = -1;
+    };
+    PendingUopCacheLookup pendingUopCacheLookup[MaxThreads];
 
     /** PC of each thread. */
     // std::unique_ptr<PCStateBase> pc[MaxThreads];
@@ -1138,6 +1235,21 @@ class Fetch
         statistics::Scalar redirectPendingFetchSkips;
         /** Cycles where only redirect-pending FTQ heads were available to fetch. */
         statistics::Scalar redirectPendingOnlyFetchCycles;
+
+        /** FTQ spans completely supplied by the decoded-instruction cache. */
+        statistics::Scalar uopCacheHits;
+        /** FTQ spans that require the ordinary I-cache/decode path. */
+        statistics::Scalar uopCacheMisses;
+        /** Individual decoded instructions consumed on cache-hit spans. */
+        statistics::Scalar uopCacheHitInsts;
+        /** Hits routed through the normal queue because bypass is full. */
+        statistics::Scalar uopCacheBypassQueueFullEvents;
+        /** Bypass attempts held behind older normal-path instructions. */
+        statistics::Scalar uopCacheBypassOrderBlockedEvents;
+        /** Instructions actually accepted by Decode's bypass queue. */
+        statistics::Scalar uopCacheBypassInsts;
+        /** Structurally inconsistent entries invalidated during lookup. */
+        statistics::Scalar uopCachePcMismatches;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

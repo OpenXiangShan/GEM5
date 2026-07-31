@@ -584,6 +584,11 @@ decode QUADRANT {
                 0x0: fence({{
                 }}, uint64_t, IsReadBarrier, IsWriteBarrier, MemReadOp);
                 0x1: fence_i({{
+                    // A decoded-instruction cache can otherwise reuse the old
+                    // StaticInst after software has made new instruction bytes
+                    // visible.  CPU models without such a cache implement this
+                    // hook as a no-op, preserving their existing fence.i path.
+                    xc->tcBase()->getCpuPtr()->flushUopCache();
                 }}, uint64_t, IsNonSpeculative, IsSerializeAfter, No_OpClass);
             }
         }
@@ -2551,6 +2556,11 @@ decode QUADRANT {
                                         machInst);
                         }
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+                        // The page-table root may be unchanged while the PTE or
+                        // execute permission for this virtual address changes.
+                        // A context tag containing SATP alone cannot detect that
+                        // case, so discard decoded instructions with the TLB.
+                        xc->tcBase()->getCpuPtr()->flushUopCache();
                     }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
                         IsReadBarrier, IsWriteBarrier, No_OpClass);
                     0xb: sinval_vma({{
@@ -2571,6 +2581,7 @@ decode QUADRANT {
                                 machInst);
                         }
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+                        xc->tcBase()->getCpuPtr()->flushUopCache();
                     }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
                         IsReadBarrier, IsWriteBarrier, No_OpClass);
                     0xc: decode RS2 {
@@ -2630,6 +2641,7 @@ decode QUADRANT {
                                 MISCREG_VIRMODE);
                         STATUS status = xc->readMiscReg(MISCREG_STATUS);
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+                        xc->tcBase()->getCpuPtr()->flushUopCache();
 
                         if(vir){
                             panic("add priv vir code\n");

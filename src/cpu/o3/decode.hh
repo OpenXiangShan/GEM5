@@ -41,6 +41,10 @@
 #ifndef __CPU_O3_DECODE_HH__
 #define __CPU_O3_DECODE_HH__
 
+#include <deque>
+#include <limits>
+#include <string>
+
 #include <boost/circular_buffer.hpp>
 
 #include "base/statistics.hh"
@@ -137,11 +141,23 @@ class Decode
      */
     void decodeInsts(ThreadID tid);
 
+    /**
+     * Enqueue one cache-sourced DynInst into its thread's finite fast-path
+     * queue.  Fetch allocates the sequence number before this call; Decode
+     * later merges it with normal traffic without violating that order.
+     */
+    void enqueueUopCacheBypassInst(const DynInstPtr &inst);
+    /** Return whether the addressed thread has one bypass queue slot free. */
+    bool canEnqueueUopCacheBypassInst(ThreadID tid) const;
+
     void setIgnoreNextFusion(Addr pc) { ignoreFusionPC = pc; lastSetIgnoreTick = curTick(); }
 
   private:
 
     void checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur);
+    bool wouldFuseInstPair(const DynInstPtr &first,
+                           const DynInstPtr &second,
+                           bool enforceSourceBoundary) const;
 
     /** Updates overall decode status based on all of the threads' statuses. */
     void updateActivate();
@@ -150,6 +166,18 @@ class Decode
      * sorted by thread.
      */
     void moveInstsToBuffer();
+
+    /**
+     * Move cache-sourced instructions into the per-thread Decode buffer up to
+     * a normal-path sequence boundary.  Squashed/version-stale entries are
+     * consumed but never forwarded.
+     */
+    unsigned moveUopCacheBypassInstsToBuffer(
+        ThreadID tid,
+        InstSeqNum stopBeforeSeq = std::numeric_limits<InstSeqNum>::max());
+
+    /** True when an older ordinary Fetch instruction must decode first. */
+    bool uopCacheBypassOrderBlocked(const DynInstPtr &inst) const;
 
     void checkSquash();
 
@@ -216,8 +244,14 @@ class Decode
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
+    /** FIFO preserving ordinary FetchStruct bundles while Decode stalls. */
     boost::circular_buffer<DynInstPtr> stallBuffer;
+    /** Bundle sizes aligned one-for-one with groups stored in stallBuffer. */
     boost::circular_buffer<int> eachstallSize;
+    /** Per-thread fast-path queues; cross-source ordering uses seqNum. */
+    std::deque<DynInstPtr> uopCacheBypassQueue[MaxThreads];
+    /** Previous cycle tail used only for fusion-boundary diagnostics. */
+    DynInstPtr lastDecodeCycleTail[MaxThreads];
 
     /** Variable that tracks if decode has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
@@ -242,6 +276,14 @@ class Decode
     /** The width of decode, in instructions. */
     unsigned decodeWidth;
 
+    /**
+     * Per-thread bypass capacity.  It models finite fast-path buffering and
+     * never changes the capacity of the ordinary Fetch-to-Decode pipeline.
+     */
+    unsigned uopCacheBypassQueueSize;
+    /** Construction-time gate used to keep the disabled path unchanged. */
+    bool enableUopCache;
+
     /** Index of instructions being sent to rename. */
     unsigned toRenameIndex;
 
@@ -255,7 +297,7 @@ class Decode
 
     struct DecodeStats : public statistics::Group
     {
-        DecodeStats(CPU *cpu);
+        DecodeStats(CPU *cpu, unsigned num_threads);
 
         /** Stat for total number of idle cycles. */
         statistics::Scalar idleCycles;
@@ -278,6 +320,14 @@ class Decode
 
         statistics::Scalar numFusedInsts;
         statistics::Vector fusedInsts;
+        statistics::Scalar fusionPairsChecked;
+        statistics::Vector fusionPairSources;
+        statistics::Vector fusionRejectReasons;
+        statistics::Vector fusionSourceBoundaryWouldFuse;
+        statistics::Scalar fusionCycleBoundaryPairsChecked;
+        statistics::Scalar fusionCycleBoundaryWouldFuse;
+        statistics::Vector fusionSll4AddRejectReasons;
+        statistics::Vector fusionAddwByteRejectReasons;
         /** Stat for number of times decode detected a non-control instruction
          * incorrectly predicted as a branch.
          */

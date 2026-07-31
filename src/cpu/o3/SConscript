@@ -60,6 +60,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('thread_state.cc')
     Source('issue_queue.cc')
     Source('perfCCT.cc')
+    Source('uop_cache.cc')
 
     # Trace reader sources for trace-driven simulation
     Source('trace/TraceReader.cc')
@@ -93,6 +94,8 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('LoadPipeline')
     DebugFlag('StorePipeline')
     DebugFlag('TraceReader')
+    DebugFlag('UC')
+    DebugFlag('UCSquash')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',

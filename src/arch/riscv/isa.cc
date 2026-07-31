@@ -866,6 +866,9 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 }
 
                 setMiscRegNoEffect(misc_reg, val);
+                // PMP changes can revoke instruction access without changing
+                // the virtual address or SATP value used by the uop-cache tag.
+                tc->getCpuPtr()->flushUopCache();
             }
             break;
           case MISCREG_MCOUNTEREN:
@@ -893,6 +896,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 mmu->getPMP()->pmpUpdateAddr(pmp_index, val);
 
                 setMiscRegNoEffect(misc_reg, write_val);
+                tc->getCpuPtr()->flushUopCache();
             }
             break;
             case MISCREG_HVIP: {

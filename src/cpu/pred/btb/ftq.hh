@@ -50,7 +50,18 @@ public:
     inline FetchTarget& front(ThreadID tid) { return queue[tid].cap.front(); }
     inline FetchTarget& back(ThreadID tid) { return queue[tid].cap.back(); }
     inline FetchTarget& fetching(ThreadID tid) { return get(queue[tid].fetchptr, tid); }
+    // Uop-cache probes only inspect FTQ boundaries.  A const accessor makes
+    // that read-only contract explicit and prevents lookup code from
+    // accidentally changing predictor-owned state.
+    inline const FetchTarget& fetching(ThreadID tid) const { return get(queue[tid].fetchptr, tid); }
     inline FetchTarget& get(FetchTargetId targetId, ThreadID tid) {
+        assert(targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size());
+        return queue[tid].cap[targetId - queue[tid].baseTargetId];
+    }
+    // Const counterpart used by read-only frontend consumers such as decoded
+    // block lookup and diagnostics.
+    inline const FetchTarget& get(FetchTargetId targetId, ThreadID tid) const {
         assert(targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size());
         return queue[tid].cap[targetId - queue[tid].baseTargetId];
