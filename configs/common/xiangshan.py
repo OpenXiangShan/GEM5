@@ -991,14 +991,14 @@ def xiangshan_system_init():
     )
     parser.add_argument(
         "--enable-phast-mdp",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Use PHAST memory dependence prediction instead of StoreSets.",
     )
     parser.add_argument(
         "--phast-num-rows",
         type=int,
-        default=128,
+        default=64,
         help="Rows per PHAST history table.",
     )
     parser.add_argument(
