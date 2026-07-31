@@ -43,7 +43,9 @@
 #ifndef __CPU_O3_CPU_HH__
 #define __CPU_O3_CPU_HH__
 
+#include <array>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <queue>
 #include <set>
@@ -398,6 +400,30 @@ class CPU : public BaseCPU
      */
     ListIt addInst(const DynInstPtr &inst);
 
+    /**
+     * Forward a decoded instruction from Fetch to Decode's bypass queue.
+     *
+     * CPU mediates this handoff to avoid coupling the two pipeline stages
+     * directly.  Decode remains responsible for capacity and ordering.
+     */
+    void enqueueUopCacheBypassInst(const DynInstPtr &inst);
+
+    /** Return whether Decode can accept another bypass instruction for tid. */
+    bool canEnqueueUopCacheBypassInst(ThreadID tid) const;
+
+    /**
+     * Return whether inst has an older undecoded instruction from the normal
+     * Fetch path.  Decode uses this stricter predicate to prevent a bypassed
+     * instruction from overtaking work still buffered in Fetch.
+     */
+    bool hasOlderNonBypassUndecodedInst(const DynInstPtr &inst);
+
+    /**
+     * Notify the sequence tracker that an instruction reached Decode or was
+     * squashed before Decode.  Both cases remove it as an ordering obstacle.
+     */
+    void markInstDecoded(ThreadID tid, InstSeqNum seq_num);
+
     /** Function to tell the CPU that an instruction has completed. */
     void instDone(ThreadID tid, const DynInstPtr &inst);
 
@@ -416,8 +442,15 @@ class CPU : public BaseCPU
     /** Removes the instruction pointed to by the iterator. */
     ListIt squashInstIt(ListIt &instIt, ThreadID tid);
 
-    // flush fetch buffer while flushing tlb
+    /** Flush translations and any frontend state derived from them. */
     void flushTLBs() override;
+
+    /**
+     * Invalidate decoded instructions after fence.i or permission/coherence
+     * changes.  Fetch owns both the cache array and memoized lookup state, so
+     * the CPU override delegates the complete operation to that stage.
+     */
+    void flushUopCache() override;
 
     /** Cleans up all instructions on the remove list. */
     void cleanUpRemovedInsts();
@@ -465,6 +498,14 @@ class CPU : public BaseCPU
      *  being retired or squashed.
      */
     bool removeInstsThisCycle;
+
+    /**
+     * Live normal-path instructions which have not crossed Decode, ordered by
+     * sequence number for each thread.  A set gives the bypass hot path an
+     * O(1) oldest-element lookup and O(log N) updates without scanning the
+     * CPU-wide instruction list after every squash or fusion event.
+     */
+    std::array<std::set<InstSeqNum>, MaxThreads> normalUndecodedSeqs;
 
   protected:
     /** The fetch stage. */
@@ -651,6 +692,13 @@ class CPU : public BaseCPU
 
     /** Issue Width, using for intel topdown stats */
     int issueWidth; // issueWidth = decodeWidth = renameWidth!!!
+
+    /**
+     * Whether the experimental decoded-instruction path is active.
+     * Sequence-order bookkeeping is skipped entirely when false so normal O3
+     * configurations retain the pre-uop-cache host and simulated behavior.
+     */
+    const bool enableUopCache;
 
     bool enableMoveElimination; // Control flag of register move elimination
     bool enableConstantFolding; // Control flag of Constant Folding (add-immediate elimination)
