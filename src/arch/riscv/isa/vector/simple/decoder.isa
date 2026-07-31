@@ -28,7 +28,7 @@ decode QUADRANT {
                     }}, inst_flags=VectorUnitStrideMaskLoadOp);
                     0x10: VleffOp::vle8ff_v({{
                         Vd_ub[i] = Mem_vc.as<uint8_t>()[i];
-                    }}, inst_flags=VectorUnitStrideFaultOnlyFirstLoadOp);
+                    }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei8_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
@@ -67,7 +67,7 @@ decode QUADRANT {
                     }
                     0x10: VleffOp::vle16ff_v({{
                         Vd_uh[i] = Mem_vc.as<uint16_t>()[i];
-                    }}, inst_flags=VectorUnitStrideFaultOnlyFirstLoadOp);
+                    }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei16_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
@@ -106,7 +106,7 @@ decode QUADRANT {
                     }
                     0x10: VleffOp::vle32ff_v({{
                         Vd_uw[i] = Mem_vc.as<uint32_t>()[i];
-                    }}, inst_flags=VectorUnitStrideFaultOnlyFirstLoadOp);
+                    }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei32_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
@@ -145,7 +145,7 @@ decode QUADRANT {
                     }
                     0x10: VleffOp::vle64ff_v({{
                         Vd_ud[i] = Mem_vc.as<uint64_t>()[i];
-                    }}, inst_flags=VectorUnitStrideFaultOnlyFirstLoadOp);
+                    }}, inst_flags=VectorUnitStrideLoadOp);
                 }
                 0x1: VlIndexOp::vluxei64_v({{
                     Vd_vu[vdElemIdx] = Mem_vc.as<vu>()[0];
@@ -1899,22 +1899,8 @@ decode QUADRANT {
                         0x1: VectorNonSplitFormat::vfmv_s_f({{
                             auto fd = ftype_freg<et>(freg(Fs1_bits));
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
-
-                            // RVV vfmv.s.f tail-agnostic fix.
-                            //
-                            // When vl is nonzero, element 0 receives the
-                            // scalar floating-point value. All remaining
-                            // elements are tail elements.
                             if (rVl) {
                                 Vd_vu[0] = fd.v;
-
-                                if (machInst.vtype8.vta) {
-                                    for (uint32_t i = 1;
-                                         i < RiscvISA::VLENB / sizeof(Vd_vu[0]);
-                                         ++i) {
-                                        Vd_vu[i] = ~vu(0);
-                                    }
-                                }
                             }
                         }}, OPFVV, VectorMiscOp);
                     }
@@ -2178,16 +2164,6 @@ decode QUADRANT {
                             std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
                             if (rVl) {
                                 Vd_vu[0] = Rs1_vu;
-
-                                // vmv.s.x only writes element 0. The remaining
-                                // destination elements are tail elements and
-                                // follow the vta policy.
-                                if (machInst.vtype8.vta) {
-                                    std::memset(
-                                        Vd_vu + 1,
-                                        0xff,
-                                        RiscvISA::VLENB - sizeof(vu));
-                                }
                             }
                         }}, OPMVX, VectorMiscOp);
                     }

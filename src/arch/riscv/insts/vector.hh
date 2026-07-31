@@ -625,20 +625,6 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
                 memcpy(Vd + i * byte_offset, s + i * byte_offset, byte_offset);
             }
         }
-        // Fill mask destination tail bits with ones.
-        // Mask-producing instructions always treat their tail as agnostic.
-        const uint64_t rVl = xc->readMiscReg(MISCREG_VL);
-        const uint64_t vstart = xc->readMiscReg(MISCREG_VSTART);
-
-        // If vstart >= vl, no destination elements, including tail
-        // elements, may be updated.
-        if (vstart < rVl) {
-            for (uint64_t bit = rVl; bit < VLEN; ++bit) {
-                Vd[bit / 8] |= static_cast<uint8_t>(
-                    1U << (bit % 8));
-            }
-        }
-
         xc->setRegOperand(this, 0, &tmp_d0);
         if (traceData)
             traceData->setData(tmp_d0);
@@ -936,27 +922,6 @@ class Vcompress_vm : public VectorNonSplitInst
                     vs_array[i / elem_num_per_vreg].template as<Type>()
                     [i % elem_num_per_vreg];
                 vd_ptr++;
-            }
-        }
-
-        // RVV vcompress tail-agnostic fix.
-        //
-        // vd_ptr is the number of elements selected by the mask.
-        // All destination elements after vd_ptr are tail elements.
-        // For fractional LMUL, also fill the unused part of the
-        // physical destination register to match the reference model.
-        if ((rVl != 0) && machInst.vtype8.vta) {
-            const uint32_t physical_elem_count =
-                regLength * elem_num_per_vreg;
-
-            for (uint32_t i = vd_ptr;
-                 i < physical_elem_count;
-                 ++i) {
-                vd_array[
-                    i / elem_num_per_vreg
-                ].template as<Type>()[
-                    i % elem_num_per_vreg
-                ] = static_cast<Type>(-1);
             }
         }
         for (uint32_t i = 0; i < regLength; i++) {
