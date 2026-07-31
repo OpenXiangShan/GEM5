@@ -95,24 +95,6 @@ def template VConfExecute {{
     {
         auto tc = xc->tcBase();
 
-        // All vector configuration instructions are illegal when the
-        // vector context is disabled. This check must happen before
-        // writing vstart, vtype or vl, because those writes may mark
-        // the vector context Dirty.
-        STATUS status = xc->readMiscReg(MISCREG_STATUS);
-        if (status.vs == 0) {
-            return std::make_shared<IllegalInstFault>(
-                "Vector state is off", machInst);
-        }
-
-        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-            VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
-            if (vsstatus.vs == 0) {
-                return std::make_shared<IllegalInstFault>(
-                    "Vector state is off in virtual mode", machInst);
-            }
-        }
-
         %(op_decl)s;
         %(op_rd)s;
         %(code)s;

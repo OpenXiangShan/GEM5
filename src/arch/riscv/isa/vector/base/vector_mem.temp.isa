@@ -172,8 +172,6 @@ Fault
         %(memacc_code)s;
     }
 
-
-
     %(op_wb)s;
     return fault;
 }
@@ -283,19 +281,9 @@ Fault
     uint32_t eewb = eew_ / 8;
     uint32_t mem_size = %(calc_memsize_code)s;
     mem_size = vm_zero ? 0 : mem_size;
-
-    // For a fault-only-first load, the completion packet represents only
-    // the successfully translated prefix of this micro-op. A null packet
-    // means this micro-op completed zero elements after an earlier element
-    // of the architectural instruction had already succeeded.
-    %(vfof_adjust_mem_size_code)s
-
     if (pkt) {
-        // A VLEFF partial fault may return a packet representing the full
-        // split request, while only the prefix before the fault is valid
-        // architecturally.  Copy exactly the successful prefix.
-        assert(mem_size <= pkt->getSize());
-        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), mem_size);
+        memcpy(Mem.as<uint8_t>(), pkt->getPtr<uint8_t>(), pkt->getSize());
+        assert(mem_size == pkt->getSize());
     } else {
         assert(mem_size == 0);
     }
@@ -312,12 +300,6 @@ Fault
     }
 
     %(vfof_get_code)s;
-
-
-    %(agnostic_load_code)s
-
-
-
     %(op_wb)s;
     return NoFault;
 }
@@ -668,12 +650,7 @@ template<typename ElemType>
             if (vmi.microVd >= 32) {
                 break;
             }
-            // RVV indexed-load unique micro-op index fix.
-            microop =
-                new %(class_name)sMicro<ElemType>(
-                    machInst,
-                    i * nf + fn,
-                    vmi);
+            microop = new %(class_name)sMicro<ElemType>(machInst, i * fn, vmi);
             microop->setFlag(IsDelayedCommit);
             microop->setFlag(IsLoad);
 
@@ -764,33 +741,12 @@ Fault
 
     uint32_t vdElemIdx = vmi.rs % (VLENB / elem_size);
     size_t ei = vmi.rs;
-    if ((ei < rVl) && (machInst.vm || elem_mask(v0, ei))) {
+    if (machInst.vm || elem_mask(v0, ei)) {
         fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size,
                                 memAccessFlags, byte_enable);
         if (fault != NoFault)
             return fault;
         %(memacc_code)s;
-    }
-
-    // RVV indexed-load atomic agnostic fix.
-    if ((ei < rVl) &&
-        !machInst.vm &&
-        !elem_mask(v0, ei) &&
-        machInst.vtype8.vma) {
-        std::memset(
-            tmp_d0.as<uint8_t>() +
-                vdElemIdx * sizeof(vu),
-            0xff,
-            sizeof(vu));
-    } else if (
-        (rVl != 0) &&
-        (ei >= rVl) &&
-        machInst.vtype8.vta) {
-        std::memset(
-            tmp_d0.as<uint8_t>() +
-                vdElemIdx * sizeof(vu),
-            0xff,
-            sizeof(vu));
     }
 
     %(op_wb)s;
