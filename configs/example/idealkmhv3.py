@@ -34,7 +34,6 @@ def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
         # fetch
-        cpu.mmu.itb.size = 96
         #cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         #cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
         setPtwLevelLimitParams(args, cpu.mmu.itb)
