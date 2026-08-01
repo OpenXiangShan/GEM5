@@ -627,9 +627,16 @@ IssueQue::issueToFu()
 
     bool incTagRefillBlockStats = false;
 
-    // replay first
     for (; !replayQ.empty() && replayed < outports; replayed++) {
         auto& inst = replayQ.front();
+
+        // Do not let replay requests starve the older issuing requests
+        if (issueHasOlderInsts(inst)) {
+            DPRINTF(Schedule,
+                    "replay [sn:%llu] detected an older issuing request, delay this replay.\n",
+                    inst->seqNum);
+            break;
+        }
 
         if (inst->isLoad()) {
             // Loads selected here enter loadpipe S0 next cycle, so block on
@@ -669,12 +676,16 @@ IssueQue::issueToFu()
             incTagRefillBlockStats = true;
         }
 
-        if ((issued >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
-            (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad) {
+        const bool issueOccupied =
+            (issued >= outports) ||
+            (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
+            (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad;
+        if (issueOccupied) {
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
-            DPRINTF(Schedule, "[sn:%llu] issue failed due to being occupied\n", inst->seqNum);
+            DPRINTF(Schedule, "[sn:%llu] issue failed due to being occupied\n",
+                    inst->seqNum);
             continue;
         }
         if (!checkScoreboard(inst)) {
@@ -727,6 +738,24 @@ IssueQue::retryMem(const DynInstPtr& inst)
         return;
     }
     replayQ.push(inst);
+}
+
+bool
+IssueQue::issueHasOlderInsts(const DynInstPtr& replay_inst) const
+{
+    if (!replay_inst) {
+        return false;
+    }
+
+    for (int i = 0; i < toFu->size; ++i) {
+        const auto &selected = toFu->insts[i];
+        if (selected &&
+            selected->threadNumber == replay_inst->threadNumber &&
+            selected->seqNum < replay_inst->seqNum) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool

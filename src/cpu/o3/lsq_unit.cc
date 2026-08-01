@@ -419,6 +419,7 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 }
 
 LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
+    uint32_t physicalSqEntries,
     uint32_t ldPipeStages, uint32_t stPipeStages,
     uint32_t maxRARQEntries, uint32_t maxRAWQEntries, unsigned rarDequeuePerCycle,
     unsigned rawDequeuePerCycle, unsigned loadCompletionWidth, unsigned storeCompletionWidth)
@@ -434,6 +435,9 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
       storeCompletedIdx(storeQueue.head() - 1),
       loadPipe(ldPipeStages - 1, 0),
       storePipe(stPipeStages - 1, 0),
+      physicalSQEntries(physicalSqEntries),
+      virtualSQEnabled(physicalSqEntries < sqEntries),
+      addrOrDataReadyNums(0),
       storesToWB(0),
       htmStarts(0),
       htmStops(0),
@@ -658,6 +662,10 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of store replay events at the store pipe replay exit"),
       ADD_STAT(storeReplayTlbMiss, statistics::units::Count::get(),
                "Number of store TLB miss replay events at the store pipe replay exit"),
+      ADD_STAT(storeReplayPhysicalSQFull, statistics::units::Count::get(),
+               "Number of post-issue store replays caused by a full physical SQ window"),
+      ADD_STAT(storePhysicalSQReplayBlocked, statistics::units::Count::get(),
+               "Number of physical-SQ replay checks blocked by the physical SQ window"),
       ADD_STAT(loadPipeReplayAccepted, statistics::units::Count::get(),
                "Number of replayQ load requests accepted by load pipe"),
       ADD_STAT(loadPipeFastReplayAccepted, statistics::units::Count::get(),
@@ -736,6 +744,7 @@ LSQUnit::drainSanityCheck() const
         assert(!loadQueue[i].valid());
 
     assert(storesToWB == 0);
+    assert(addrOrDataReadyNums == 0);
     assert(!retryPkt);
 }
 
@@ -1301,6 +1310,27 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
 }
 
 void
+LSQUnit::storeSetReplay(const DynInstPtr& inst, LSQRequest* request)
+{
+    inst->effAddrValid(false);
+    inst->translationStarted(false);
+    inst->translationCompleted(false);
+    inst->savedRequest = nullptr;
+    storeQueue[inst->sqIdx].setRequest(nullptr);
+    if (inst->memData) {
+        delete [] inst->memData;
+        inst->memData = nullptr;
+    }
+    if (request) {
+        request->discard();
+    }
+
+    DPRINTF(StorePipeline,
+            "Store [sn:%llu] resets translation/request for physical SQ replay\n",
+            inst->seqNum);
+}
+
+void
 LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
     // S0 is the single load-pipe entry point. First issues, slow replays, and
@@ -1353,6 +1383,89 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
     stats.storePipeAccepted[idx]++;
 
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
+}
+
+bool
+LSQUnit::storeQueueWriteReady(const DynInstPtr &inst) const
+{
+    assert(inst);
+    if (!virtualSQEnabled) {
+        return true;
+    }
+
+    assert(inst->sqIdx >= 0);
+    const size_t store_idx = static_cast<size_t>(inst->sqIdx);
+    assert(storeQueue.isValidIdx(store_idx));
+    assert(store_idx >= storeQueue.head());
+    assert(physicalSQEntries <= storeQueue.capacity());
+
+    return store_idx - storeQueue.head() < physicalSQEntries;
+}
+
+void
+LSQUnit::recordAddrOrDataReady(const DynInstPtr &inst)
+{
+    assert(inst);
+    assert(inst->sqIdx >= 0);
+    auto &entry = storeQueue[inst->sqIdx];
+    assert(entry.valid());
+    assert(entry.addrReady() || entry.dataReady());
+
+    if (!entry.addrOrDataReadyCounted()) {
+        entry.addrOrDataReadyCounted(true);
+        ++addrOrDataReadyNums;
+        assert(addrOrDataReadyNums <= physicalSQEntries);
+        DPRINTF(StorePipeline,
+                "SQ addr/data ready count increments to %u: [sn:%llu] "
+                "sqIdx=%llu physical=%u\n",
+                addrOrDataReadyNums, inst->seqNum,
+                static_cast<unsigned long long>(inst->sqIdx),
+                physicalSQEntries);
+    }
+}
+
+void
+LSQUnit::recordAddrOrDataDequeue(const DynInstPtr &inst)
+{
+    assert(inst);
+    assert(inst->sqIdx >= 0);
+    auto &entry = storeQueue[inst->sqIdx];
+    assert(entry.valid());
+
+    if (entry.addrOrDataReadyCounted()) {
+        assert(addrOrDataReadyNums > 0);
+        entry.addrOrDataReadyCounted(false);
+        --addrOrDataReadyNums;
+        DPRINTF(StorePipeline,
+                "SQ addr/data ready count decrements to %u: [sn:%llu] "
+                "sqIdx=%llu\n",
+                addrOrDataReadyNums, inst->seqNum,
+                static_cast<unsigned long long>(inst->sqIdx));
+    }
+}
+
+void
+LSQUnit::recordPhysicalSQReplayBlocked(const DynInstPtr &inst)
+{
+    assert(!storeQueueWriteReady(inst));
+    ++stats.storePhysicalSQReplayBlocked;
+    DPRINTF(StorePipeline,
+            "Store [sn:%llu] waits before replay: sqIdx=%llu head=%llu "
+            "physical=%u\n",
+            inst->seqNum, static_cast<unsigned long long>(inst->sqIdx),
+            static_cast<unsigned long long>(storeQueue.head()),
+            physicalSQEntries);
+}
+
+void
+LSQUnit::recordStoreQueueReplay(const DynInstPtr &inst)
+{
+    ++stats.storeReplayPhysicalSQFull;
+    DPRINTF(StorePipeline,
+            "Store [sn:%llu] replays: sqIdx=%llu head=%llu physical=%u\n",
+            inst->seqNum, static_cast<unsigned long long>(inst->sqIdx),
+            static_cast<unsigned long long>(storeQueue.head()),
+            physicalSQEntries);
 }
 
 Fault
@@ -1853,6 +1966,15 @@ LSQUnit::storeDoWriteSQ(const DynInstPtr &inst)
 
     DPRINTF(StorePipeline, "storeDoWriteSQ: Store [sn:%lli]\n", inst->seqNum);
 
+    // If no space left in the physical SQ,
+    // then defer the STA operation, will be replayed by IQ.
+    if (!storeQueueWriteReady(inst)) {
+        inst->setPhysicalSQFullReplay();
+        storeSetReplay(inst, request);
+        return NoFault;
+    }
+    assert(storeQueueWriteReady(inst));
+
     // Check the recently completed loads to see if any match this store's
     // address.  If so, then we have a memory ordering violation.
     typename LoadQueue::iterator loadIt = inst->lqIt;
@@ -1888,6 +2010,7 @@ LSQUnit::storeDoWriteSQ(const DynInstPtr &inst)
     if (!inst->isSplitStoreAddr()) {
         inst->sqIt->setStatus(SplitStoreStatus::DataReady);
     }
+    recordAddrOrDataReady(inst);
 
     if (inst->sqIt->canForwardToLoad()) {
         stats.STDReadyFirst++;
@@ -1963,8 +2086,10 @@ LSQUnit::executeStorePipeSx()
                     case 1:
                         fault = storeDoWriteSQ(inst);
 
-                        iewStage->notifyExecuted(inst);
-                        iewStage->SquashCheckAfterExe(inst);
+                        if (!inst->needReplay()) {
+                            iewStage->notifyExecuted(inst);
+                            iewStage->SquashCheckAfterExe(inst);
+                        }
                         break;
                     case 2:
                     case 3:
@@ -1982,6 +2107,11 @@ LSQUnit::executeStorePipeSx()
                 if (inst->needTLBMissReplay()) {
                     iewStage->deferMemInst(inst);
                     stats.storeReplayTlbMiss++;
+                } else if (inst->needPhysicalSQFullReplay()) {
+                    iewStage->instQueue.deferPhysicalSQFullReplay(inst);
+                } else {
+                    panic("Unsupported store replay type for [sn:%llu]",
+                          inst->seqNum);
                 }
                 inst->endPipelining();
                 inst = nullptr;
@@ -2053,6 +2183,7 @@ LSQUnit::executeAmo(const DynInstPtr &amo_inst)
     // Make sure that a store exists.
     assert(storeQueue.size() != 0);
     assert(!amo_inst->staticInst->isSplitStoreAddr());
+    assert(storeQueueWriteReady(amo_inst));
 
     ssize_t amo_idx = amo_inst->sqIdx;
 
@@ -2094,6 +2225,12 @@ LSQUnit::executeAmo(const DynInstPtr &amo_inst)
     }
 
     assert(amo_fault == NoFault);
+
+    // AMOs materialize the address/data request directly rather than through
+    // STA/STD, but still occupy one valid SQ entry for the counter invariant.
+    storeQueue[amo_idx].setStatus(SplitStoreStatus::AddressReady);
+    storeQueue[amo_idx].setStatus(SplitStoreStatus::DataReady);
+    recordAddrOrDataReady(amo_inst);
 
     // Atomics need to set themselves as able to writeback if we haven't had a fault by here.
     storeQueue[amo_idx].canWB() = true;
@@ -2703,6 +2840,7 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         }
 
         // Clear the smart pointer to make sure it is decremented.
+        recordAddrOrDataDequeue(storeQueue.back().instruction());
         storeQueue.back().instruction()->setSquashed();
 
         // Must delete request now that it wasn't handed off to
@@ -2955,6 +3093,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
 
     if (store_idx == storeQueue.begin()) {
         do {
+            recordAddrOrDataDequeue(storeQueue.front().instruction());
             storeQueue.front().clear();
             storeQueue.pop_front();
             lastClockSQPopEntries++;

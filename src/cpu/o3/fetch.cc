@@ -144,7 +144,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
         smtLdstqHighWater =
-            (params.LQEntries + params.SQEntries) *
+            (params.LQEntries +
+             params.SQEntries * params.StoreQueueMultiple) *
             params.smtBorrowLdstqHighWaterPercent / 100;
     }
 
