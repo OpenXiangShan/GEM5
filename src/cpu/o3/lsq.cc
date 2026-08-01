@@ -47,6 +47,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <list>
 #include <string>
 #include <utility>
@@ -484,6 +485,9 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       smtLSQThreshold(params.smtLSQThreshold),
       stats(nullptr),
       LQEntries(params.LQEntries),
+      physicalSQEntries(params.SQEntries),
+      storeQueueMultiple(params.StoreQueueMultiple),
+      phySQFullCheckAtReplay(params.phySQFullCheckAtReplay),
       SQEntries(params.SQEntries),
       enqueueWidth(params.renameWidth),
       RARQEntries(params.RARQEntries),
@@ -492,6 +496,22 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       numThreads(params.numThreads)
 {
     assert(numThreads > 0 && numThreads <= MaxThreads);
+    panic_if(physicalSQEntries == 0,
+             "SQEntries must be greater than zero\n");
+    panic_if(storeQueueMultiple == 0 || !isPowerOf2(storeQueueMultiple),
+             "StoreQueueMultiple must be a non-zero power of two (got %u)\n",
+             storeQueueMultiple);
+    panic_if(physicalSQEntries >
+                 std::numeric_limits<unsigned>::max() / storeQueueMultiple,
+             "Virtual store queue capacity overflows unsigned: %u * %u\n",
+             physicalSQEntries, storeQueueMultiple);
+    panic_if(storeQueueMultiple > 1 && lsqMode == SMTLSQMode::Shared,
+             "VirtualSQ currently requires smtLSQMode=Independent\n");
+    SQEntries = physicalSQEntries * storeQueueMultiple;
+    panic_if(SQEntries < enqueueWidth,
+             "Virtual store queue capacity (%u) must be at least "
+             "renameWidth (%u)\n",
+             SQEntries, enqueueWidth);
     if (!_enableLdMissReplay && _enablePipeNukeCheck) {
         panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
     }
@@ -522,6 +542,12 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
             cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
 
     cpu->addStatGroup("lsq", &stats);
+
+    DPRINTF(LSQ, "VirtualSQ physical=%u multiple=%u virtual=%u policy=%s\n",
+            physicalSQEntries, storeQueueMultiple, SQEntries,
+            storeQueueMultiple == 1 ? "disabled" :
+            (phySQFullCheckAtReplay ? "check-at-replay" :
+                                      "unconditional-replay"));
 
     //**********************************************
     //************ Handle SMT Parameters ***********
@@ -558,7 +584,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     thread.reserve(numThreads);
     // TODO: Parameterize the load/store pipeline stages
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        thread.emplace_back(LQEntries, SQEntries,
+        thread.emplace_back(LQEntries, SQEntries, physicalSQEntries,
             params.LdPipeStages, params.StPipeStages, params.RARQEntries, params.RAWQEntries,
             params.RARDequeuePerCycle, params.RAWDequeuePerCycle, params.LoadCompletionWidth,
             params.StoreCompletionWidth);
@@ -1261,6 +1287,47 @@ LSQ::issueToStorePipe(const DynInstPtr &inst)
     ThreadID tid = inst->threadNumber;
 
     thread[tid].issueToStorePipe(inst);
+}
+
+bool
+LSQ::storeQueueWriteReady(const DynInstPtr &inst) const
+{
+    return thread[inst->threadNumber].storeQueueWriteReady(inst);
+}
+
+void
+LSQ::recordAddrOrDataReady(const DynInstPtr &inst)
+{
+    thread[inst->threadNumber].recordAddrOrDataReady(inst);
+}
+
+void
+LSQ::recordAddrOrDataDequeue(const DynInstPtr &inst)
+{
+    thread[inst->threadNumber].recordAddrOrDataDequeue(inst);
+}
+
+bool
+LSQ::phySQFullReplayReady(const DynInstPtr &inst)
+{
+    if (!inst || inst->isSquashed() || storeQueueMultiple == 1 ||
+        !phySQFullCheckAtReplay) {
+        return true;
+    }
+
+    auto &unit = thread[inst->threadNumber];
+    if (unit.storeQueueWriteReady(inst)) {
+        return true;
+    }
+
+    unit.recordPhysicalSQReplayBlocked(inst);
+    return false;
+}
+
+void
+LSQ::recordStoreQueueReplay(const DynInstPtr &inst)
+{
+    thread[inst->threadNumber].recordStoreQueueReplay(inst);
 }
 
 void

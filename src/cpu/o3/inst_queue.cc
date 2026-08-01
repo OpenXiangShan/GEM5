@@ -120,6 +120,13 @@ InstructionQueue::MdpAddrReplayLdInst::MdpAddrReplayLdInst(
 }
 
 bool
+InstructionQueue::PhysicalSQFullReplayOrder::operator()(
+    const DynInstPtr &lhs, const DynInstPtr &rhs) const
+{
+    return lhs->seqNum > rhs->seqNum;
+}
+
+bool
 InstructionQueue::hasMdpAddrReplayInsts() const
 {
     for (const auto &replay_ld_insts : mdpAddrReplayLdInsts) {
@@ -397,6 +404,9 @@ InstructionQueue::resetState()
     for (auto &replay_ld_insts : mdpAddrReplayLdInsts) {
         replay_ld_insts.clear();
     }
+    for (auto &replay_q : physicalSQFullReplayQs) {
+        replay_q = PhysicalSQFullReplayQueue();
+    }
     blockedMemInsts.clear();
     retryMemInsts.clear();
     wbOutstanding = 0;
@@ -434,6 +444,7 @@ InstructionQueue::isDrained() const
     bool drained = scheduler->isDrained() &&
                    instsToExecute.empty() &&
                    wbOutstanding == 0;
+    drained = drained && !hasPhysicalSQFullReplayInsts();
     for (ThreadID tid = 0; tid < numThreads; ++tid)
         drained = drained && memDepUnit[tid].isDrained();
 
@@ -444,6 +455,7 @@ void
 InstructionQueue::drainSanityCheck() const
 {
     assert(instsToExecute.empty());
+    assert(!hasPhysicalSQFullReplayInsts());
     for (ThreadID tid = 0; tid < numThreads; ++tid)
         memDepUnit[tid].drainSanityCheck();
 }
@@ -472,6 +484,7 @@ InstructionQueue::insert(const DynInstPtr &new_inst, int disp_seq)
     }
     // Make sure the instruction is valid
     assert(new_inst);
+    new_inst->instQueue = this;
 
     DPRINTF(IQ, "Adding instruction [sn:%llu] PC %s to the IQ.\n",
             new_inst->seqNum, new_inst->pcState());
@@ -495,6 +508,7 @@ InstructionQueue::insertNonSpec(const DynInstPtr &new_inst)
     }
 
     assert(new_inst);
+    new_inst->instQueue = this;
 
     scheduler->insertNonSpec(new_inst);
     nonSpecInsts[new_inst->seqNum] = new_inst;
@@ -629,6 +643,10 @@ InstructionQueue::scheduleReadyInsts()
 
     // See if any cache blocked instructions are able to be executed
     while ((mem_inst = getBlockedMemInstToExecute())) {
+        mem_inst->issueQue->retryMem(mem_inst);
+    }
+
+    while ((mem_inst = getPhysicalSQFullReplayInstToExecute())) {
         mem_inst->issueQue->retryMem(mem_inst);
     }
 
@@ -1106,6 +1124,68 @@ InstructionQueue::getBlockedMemInstToExecute()
         retryMemInsts.pop_front();
         return mem_inst;
     }
+}
+
+void
+InstructionQueue::deferPhysicalSQFullReplay(const DynInstPtr &inst)
+{
+    assert(inst);
+    assert(inst->needPhysicalSQFullReplay());
+    iewStage->ldstQueue.recordStoreQueueReplay(inst);
+    physicalSQFullReplayQs[inst->threadNumber].push(inst);
+    DPRINTF(Schedule,
+            "Physical SQ replay waits in dedicated IQ queue [sn:%llu] "
+            "sqIdx=%llu\n",
+            inst->seqNum, static_cast<unsigned long long>(inst->sqIdx));
+}
+
+bool
+InstructionQueue::storeQueueWriteReady(const DynInstPtr &inst) const
+{
+    return iewStage->ldstQueue.storeQueueWriteReady(inst);
+}
+
+void
+InstructionQueue::recordAddrOrDataReady(const DynInstPtr &inst)
+{
+    iewStage->ldstQueue.recordAddrOrDataReady(inst);
+}
+
+DynInstPtr
+InstructionQueue::getPhysicalSQFullReplayInstToExecute()
+{
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        auto &replay_q = physicalSQFullReplayQs[tid];
+        while (!replay_q.empty()) {
+            const auto inst = replay_q.top();
+            if (!inst || inst->isSquashed()) {
+                replay_q.pop();
+                continue;
+            }
+            if (!iewStage->ldstQueue.phySQFullReplayReady(inst)) {
+                break;
+            }
+
+            replay_q.pop();
+            DPRINTF(Schedule,
+                    "Physical SQ replay wakes from IQ queue [sn:%llu] "
+                    "sqIdx=%llu\n",
+                    inst->seqNum, static_cast<unsigned long long>(inst->sqIdx));
+            return inst;
+        }
+    }
+    return nullptr;
+}
+
+bool
+InstructionQueue::hasPhysicalSQFullReplayInsts() const
+{
+    for (const auto &replay_q : physicalSQFullReplayQs) {
+        if (!replay_q.empty()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void
