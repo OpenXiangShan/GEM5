@@ -1409,7 +1409,7 @@ Fault
                 for (uint32_t i = 0; i < micro_vlmax; i++) {
                     uint32_t ei = i + micro_vlmax * this->microIdx;
                     if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                        tmp_val = f(tmp_val, Vs2[i]).v;
+                        tmp_val = f(tmp_val, vs2[i]).v;
                     }
                 }
                 return tmp_val;
