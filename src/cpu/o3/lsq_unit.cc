@@ -457,7 +457,7 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
       stats(nullptr)
 {
     // reserve space, we want if sq will be full, sbuffer will start evicting
-    sqFullUpperLimit = sqEntries - 4;
+    sqFullUpperLimit = physicalSqEntries - 4;
 
     loadPipeSx.resize(ldPipeStages);
     storePipeSx.resize(stPipeStages);
@@ -2110,7 +2110,7 @@ LSQUnit::executeStorePipeSx()
                 } else if (inst->needPhysicalSQFullReplay()) {
                     iewStage->instQueue.deferPhysicalSQFullReplay(inst);
                 } else {
-                    panic("Unsupported store replay type for [sn:%llu]",
+                    warn("Unsupported store replay type for [sn:%llu]",
                           inst->seqNum);
                 }
                 inst->endPipelining();

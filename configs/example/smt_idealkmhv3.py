@@ -22,6 +22,7 @@ def setSharedLSQParams(args, system):
         # branchPred.ftq_size is interpreted as a shared SMT-wide FTQ pool.
         # Keep FTQ partitioned by default so one thread cannot monopolize the
         # shared target queue and starve the other thread's frontend.
+        cpu.StoreQueueMultiple = 1 # Do not support Virtual-SQ in SMT
         cpu.smtLSQMode = 'Shared'
         cpu.smtLSQPolicy = 'Dynamic'
         cpu.smtROBPolicy = 'DynamicBorrowing'
