@@ -48,7 +48,10 @@ BOP::PCValidationConfidenceTable::PCValidationConfidenceTable(
     unsigned int initial_confidence, unsigned int medium_threshold,
     unsigned int high_threshold, unsigned int hit_increment,
     unsigned int medium_sample_period, unsigned int miss_decay_period,
-    unsigned int epoch_bits)
+    unsigned int low_entry_miss_streak_threshold, unsigned int epoch_bits,
+    bool enable_global_coverage_guard,
+    unsigned int global_unused_threshold,
+    unsigned int global_min_resolved_coverage_shift)
     : entries(entries),
       indexBits(entries > 0 ? floorLog2(entries) : 0),
       tagBits(tag_bits),
@@ -62,8 +65,12 @@ BOP::PCValidationConfidenceTable::PCValidationConfidenceTable(
       hitIncrement(hit_increment),
       mediumSamplePeriod(medium_sample_period),
       missDecayPeriod(miss_decay_period),
+      lowEntryMissStreakThreshold(low_entry_miss_streak_threshold),
       epochMask(epoch_bits > 0 && epoch_bits <= 8
                     ? (1U << epoch_bits) - 1 : 0),
+      globalCoverageGuardEnabled(enable_global_coverage_guard),
+      globalUnusedThreshold(global_unused_threshold),
+      globalMinResolvedCoverageShift(global_min_resolved_coverage_shift),
       table(entries)
 {
     if (!isPowerOf2(entries)) {
@@ -86,6 +93,17 @@ BOP::PCValidationConfidenceTable::PCValidationConfidenceTable(
     if (!isPowerOf2(mediumSamplePeriod) ||
         !isPowerOf2(missDecayPeriod)) {
         fatal("BOP PC validation sample periods must be powers of two\n");
+    }
+    if (lowEntryMissStreakThreshold > 3) {
+        fatal("BOP PC validation low-entry miss-streak threshold must be "
+              "in [0, 3]\n");
+    }
+    if (globalCoverageGuardEnabled && globalUnusedThreshold > 255) {
+        fatal("BOP global coverage unused threshold must be in [0, 255]\n");
+    }
+    if (globalCoverageGuardEnabled &&
+        globalMinResolvedCoverageShift >= sizeof(unsigned int) * 8) {
+        fatal("BOP global resolved coverage shift is too large\n");
     }
 }
 
@@ -132,14 +150,17 @@ BOP::PCValidationConfidenceTable::lookup(Addr pc)
         entry.valid = true;
         entry.tag = tag;
         entry.confidence = initialConfidence;
+        entry.lowEntryMissStreak = 0;
         entry.epoch = currentEpoch;
     } else if (entry.epoch != currentEpoch) {
         entry.confidence = initialConfidence;
+        entry.lowEntryMissStreak = 0;
         entry.epoch = currentEpoch;
         result.epochReset = true;
     }
 
     result.confidence = entry.confidence;
+    result.lowEntryMissStreak = entry.lowEntryMissStreak;
     result.epoch = entry.epoch;
     if (entry.confidence >= highThreshold) {
         result.state = PCConfidenceState::High;
@@ -156,6 +177,114 @@ BOP::PCValidationConfidenceTable::sampleMediumIssue(
     Addr pc, Addr line) const
 {
     return sample(pc, line, mediumSamplePeriod, 0x9e37);
+}
+
+void
+BOP::PCValidationConfidenceTable::resetGlobalBypassPolicy()
+{
+    globalOutcomeWindowResolved = 0;
+    globalOutcomeWindowUnused = 0;
+    globalIssuedWindowIssued = 0;
+    globalUnusedEwma = GLOBAL_UNUSED_EWMA_INITIAL;
+    globalChecksSinceOutcome = 0;
+    globalBypassPCValidation = false;
+}
+
+bool
+BOP::PCValidationConfidenceTable::notePCValidationMiss()
+{
+    if (!globalCoverageGuardEnabled || !globalBypassPCValidation) {
+        return false;
+    }
+
+    globalChecksSinceOutcome++;
+    if (globalChecksSinceOutcome < GLOBAL_IDLE_RESET_CHECKS) {
+        return false;
+    }
+
+    resetGlobalBypassPolicy();
+    return true;
+}
+
+bool
+BOP::PCValidationConfidenceTable::bypassPCValidationActive() const
+{
+    return globalCoverageGuardEnabled && globalBypassPCValidation;
+}
+
+void
+BOP::PCValidationConfidenceTable::noteGlobalBOPIssued()
+{
+    if (!globalCoverageGuardEnabled) {
+        return;
+    }
+
+    globalIssuedWindowIssued++;
+}
+
+BOP::PCValidationConfidenceTable::GlobalOutcomeResult
+BOP::PCValidationConfidenceTable::noteGlobalBOPOutcome(bool useful)
+{
+    GlobalOutcomeResult result;
+    result.enabled = globalCoverageGuardEnabled;
+    if (!globalCoverageGuardEnabled) {
+        return result;
+    }
+
+    globalChecksSinceOutcome = 0;
+    globalOutcomeWindowResolved++;
+    if (!useful) {
+        globalOutcomeWindowUnused++;
+    }
+    if (globalOutcomeWindowResolved != GLOBAL_OUTCOME_WINDOW_SIZE) {
+        return result;
+    }
+
+    const unsigned int issued_window = globalIssuedWindowIssued;
+    const bool coverage_gate_enabled =
+        globalMinResolvedCoverageShift != 0;
+    const uint64_t resolved_scaled =
+        static_cast<uint64_t>(GLOBAL_OUTCOME_WINDOW_SIZE) <<
+        globalMinResolvedCoverageShift;
+    const bool resolved_coverage_good =
+        !coverage_gate_enabled || issued_window == 0 ||
+        resolved_scaled >= issued_window;
+    const unsigned int resolved_coverage_q08 = issued_window == 0 ? 255 :
+        static_cast<unsigned int>(std::min<uint64_t>(
+            255,
+            (static_cast<uint64_t>(GLOBAL_OUTCOME_WINDOW_SIZE) * 255) /
+            issued_window));
+
+    const unsigned int bucket_unused_q08 =
+        (globalOutcomeWindowUnused * 255) >> GLOBAL_OUTCOME_WINDOW_SHIFT;
+    const int delta = static_cast<int>(bucket_unused_q08) -
+                      static_cast<int>(globalUnusedEwma);
+    int step = delta / static_cast<int>(1U << GLOBAL_EWMA_SHIFT);
+    if (step == 0 && delta != 0) {
+        step = delta > 0 ? 1 : -1;
+    }
+    globalUnusedEwma = std::clamp(
+        static_cast<int>(globalUnusedEwma) + step,
+        0, 255);
+    globalOutcomeWindowResolved = 0;
+    globalOutcomeWindowUnused = 0;
+    globalIssuedWindowIssued = 0;
+
+    const bool was_bypassing = globalBypassPCValidation;
+    const bool unused_quality_good = globalUnusedEwma <= globalUnusedThreshold;
+    globalBypassPCValidation =
+        unused_quality_good && resolved_coverage_good;
+
+    result.ewmaUpdated = true;
+    result.bypassModeEntered = !was_bypassing && globalBypassPCValidation;
+    result.bypassModeExited = was_bypassing && !globalBypassPCValidation;
+    result.resolvedCoverageGood = resolved_coverage_good;
+    result.bypassBlockedByLowCoverage =
+        unused_quality_good && !resolved_coverage_good;
+    result.unusedEwma = globalUnusedEwma;
+    result.issuedWindowIssued = issued_window;
+    result.resolvedCoverageQ08 = resolved_coverage_q08;
+    return result;
 }
 
 void
@@ -205,6 +334,7 @@ BOP::PCValidationConfidenceTable::commit()
         Entry &entry = table[pending.index];
         assert(entry.valid && entry.tag == pending.tag);
         result.confidenceBefore = entry.confidence;
+        result.lowEntryMissStreakBefore = entry.lowEntryMissStreak;
 
         // A best-offset change starts a new validation regime. Preserve the
         // current-demand decision, then lazily reset entries before the next
@@ -214,15 +344,37 @@ BOP::PCValidationConfidenceTable::commit()
                 entry.confidence = std::min(
                     counterMax, static_cast<unsigned int>(entry.confidence) +
                                     hitIncrement);
+                entry.lowEntryMissStreak = 0;
             } else if (sample(pending.pc, pending.triggerLine,
                               missDecayPeriod, 0x7f4a)) {
-                entry.confidence = entry.confidence == 0
-                    ? 0 : entry.confidence - 1;
-                result.decayed = true;
+                if (lowEntryMissStreakThreshold != 0 &&
+                    entry.confidence == mediumThreshold) {
+                    entry.lowEntryMissStreak = std::min(
+                        lowEntryMissStreakThreshold,
+                        static_cast<unsigned int>(entry.lowEntryMissStreak) +
+                            1);
+                    if (entry.lowEntryMissStreak ==
+                        lowEntryMissStreakThreshold) {
+                        entry.confidence = entry.confidence == 0
+                            ? 0 : entry.confidence - 1;
+                        entry.lowEntryMissStreak = 0;
+                        result.decayed = true;
+                        result.lowEntryHysteresisTransition = true;
+                    } else {
+                        result.lowEntryHysteresisHeld = true;
+                    }
+                } else {
+                    entry.confidence = entry.confidence == 0
+                        ? 0 : entry.confidence - 1;
+                    entry.lowEntryMissStreak = 0;
+                    result.decayed = true;
+                }
             }
             result.confidenceAfter = entry.confidence;
+            result.lowEntryMissStreakAfter = entry.lowEntryMissStreak;
         } else {
             result.confidenceAfter = entry.confidence;
+            result.lowEntryMissStreakAfter = entry.lowEntryMissStreak;
         }
     }
 
@@ -246,7 +398,13 @@ BOP::PCValidationConfidenceTable::configMatches(
            hitIncrement == other.hitIncrement &&
            mediumSamplePeriod == other.mediumSamplePeriod &&
            missDecayPeriod == other.missDecayPeriod &&
-           epochMask == other.epochMask;
+           lowEntryMissStreakThreshold ==
+               other.lowEntryMissStreakThreshold &&
+           epochMask == other.epochMask &&
+           globalCoverageGuardEnabled == other.globalCoverageGuardEnabled &&
+           globalUnusedThreshold == other.globalUnusedThreshold &&
+           globalMinResolvedCoverageShift ==
+               other.globalMinResolvedCoverageShift;
 }
 
 BOP::BOP(const BOPPrefetcherParams &p)
@@ -261,6 +419,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       enableAdaptOffset(p.enable_adaptoffset),
       enableIssueValidation(p.enable_issue_validation),
       enablePCValidationConfidence(p.enable_pc_validation_confidence),
+      enableGlobalBOPCoverageGuard(p.enable_global_bop_coverage_guard),
       pcValidationEntries(p.pc_validation_entries),
       pcValidationTagBits(p.pc_validation_tag_bits),
       pcValidationCounterBits(p.pc_validation_counter_bits),
@@ -270,7 +429,12 @@ BOP::BOP(const BOPPrefetcherParams &p)
       pcValidationHitIncrement(p.pc_validation_hit_increment),
       pcValidationMediumSamplePeriod(p.pc_validation_medium_sample_period),
       pcValidationMissDecayPeriod(p.pc_validation_miss_decay_period),
+      pcValidationLowEntryMissStreakThreshold(
+          p.pc_validation_low_entry_miss_streak_threshold),
       pcValidationEpochBits(p.pc_validation_epoch_bits),
+      globalBOPUnusedThreshold(p.global_bop_unused_threshold),
+      globalBOPMinResolvedCoverageShift(
+          p.global_bop_min_resolved_coverage_shift),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
@@ -287,13 +451,19 @@ BOP::BOP(const BOPPrefetcherParams &p)
         fatal("%s: strict and PC-confidence BOP validation are mutually exclusive\n",
               name());
     }
+    if (enableGlobalBOPCoverageGuard && !enablePCValidationConfidence) {
+        fatal("%s: global BOP coverage guard requires PC validation confidence\n",
+              name());
+    }
     if (enablePCValidationConfidence) {
         pcValidationTable = std::make_shared<PCValidationConfidenceTable>(
             pcValidationEntries, pcValidationTagBits, pcValidationCounterBits,
             pcValidationInitial, pcValidationMediumThreshold,
             pcValidationHighThreshold, pcValidationHitIncrement,
             pcValidationMediumSamplePeriod, pcValidationMissDecayPeriod,
-            pcValidationEpochBits);
+            pcValidationLowEntryMissStreakThreshold,
+            pcValidationEpochBits, enableGlobalBOPCoverageGuard,
+            globalBOPUnusedThreshold, globalBOPMinResolvedCoverageShift);
     }
 
     rrLeft.resize(rrEntries);
@@ -713,9 +883,11 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     int pc_confidence = -1;
     int pc_state = static_cast<int>(PCConfidenceState::None);
     int pc_sampled = 0;
+    int pc_low_entry_miss_streak = -1;
     int pc_epoch = -1;
     int pc_index = -1;
     Addr pc_tag = 0;
+    bool bypass_mode = false;
     const bool validation_enabled =
         enableIssueValidation || enablePCValidationConfidence;
 
@@ -740,18 +912,11 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
             stats.issueValidationHits++;
         }
 
-        if (!pfi.hasPC()) {
-            // Do not merge all missing-PC accesses into the same synthetic PC
-            // entry. The conservative fallback remains strict validation.
-            if (!validation_hit) {
-                issue_prefetch = false;
-                stats.issueValidationSuppressed++;
-                stats.pcValidationNoPCSuppressions++;
-            }
-        } else {
+        if (pfi.hasPC()) {
             const auto pc_lookup = pcValidationTable->lookup(trigger_pc);
             pc_entry_hit = pc_lookup.entryHit;
             pc_confidence = pc_lookup.confidence;
+            pc_low_entry_miss_streak = pc_lookup.lowEntryMissStreak;
             pc_state = static_cast<int>(pc_lookup.state);
             pc_epoch = pc_lookup.epoch;
             pc_index = pc_lookup.index;
@@ -772,40 +937,77 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
             stats.pcValidationConfidenceDist.sample(pc_lookup.confidence);
 
             if (!validation_hit) {
-                switch (pc_lookup.state) {
-                  case PCConfidenceState::High:
-                    stats.pcValidationHighMissIssued++;
-                    break;
-                  case PCConfidenceState::Medium:
-                    pc_sampled = pcValidationTable->sampleMediumIssue(
-                        trigger_pc, addr >> lBlkSize);
-                    if (pc_sampled) {
-                        stats.pcValidationMediumMissIssued++;
-                    } else {
+                if (pcValidationTable->notePCValidationMiss()) {
+                    stats.globalBOPBypassModeIdleResets++;
+                }
+                bypass_mode = pcValidationTable->bypassPCValidationActive();
+                if (bypass_mode) {
+                    stats.globalBOPBypassModeChecks++;
+                    stats.globalBOPBypassModeIssued++;
+                    switch (pc_lookup.state) {
+                      case PCConfidenceState::High:
+                        stats.globalBOPBypassModeHighIssued++;
+                        break;
+                      case PCConfidenceState::Medium:
+                        stats.globalBOPBypassModeMediumIssued++;
+                        break;
+                      case PCConfidenceState::Low:
+                        stats.globalBOPBypassModeLowIssued++;
+                        break;
+                      case PCConfidenceState::None:
+                        panic("Missing PC validation confidence state\n");
+                        break;
+                    }
+                } else {
+                    switch (pc_lookup.state) {
+                      case PCConfidenceState::High:
+                        stats.pcValidationHighMissIssued++;
+                        break;
+                      case PCConfidenceState::Medium:
+                        pc_sampled = pcValidationTable->sampleMediumIssue(
+                            trigger_pc, addr >> lBlkSize);
+                        if (pc_sampled) {
+                            stats.pcValidationMediumMissIssued++;
+                        } else {
+                            issue_prefetch = false;
+                            stats.issueValidationSuppressed++;
+                            stats.pcValidationMediumMissSuppressed++;
+                        }
+                        break;
+                      case PCConfidenceState::Low:
                         issue_prefetch = false;
                         stats.issueValidationSuppressed++;
-                        stats.pcValidationMediumMissSuppressed++;
+                        stats.pcValidationLowMissSuppressed++;
+                        break;
+                      case PCConfidenceState::None:
+                        panic("Missing PC validation confidence state\n");
                     }
-                    break;
-                  case PCConfidenceState::Low:
-                    issue_prefetch = false;
-                    stats.issueValidationSuppressed++;
-                    stats.pcValidationLowMissSuppressed++;
-                    break;
-                  case PCConfidenceState::None:
-                    panic("Missing PC validation confidence state\n");
                 }
             }
             pcValidationTable->submitValidation(
                 pc_lookup, trigger_pc, addr >> lBlkSize, validation_hit);
+        } else if (!validation_hit) {
+            if (pcValidationTable->notePCValidationMiss()) {
+                stats.globalBOPBypassModeIdleResets++;
+            }
+            bypass_mode = pcValidationTable->bypassPCValidationActive();
+            if (bypass_mode) {
+                stats.globalBOPBypassModeChecks++;
+                stats.globalBOPBypassModeIssued++;
+                stats.globalBOPBypassModeNoPCIssued++;
+            } else {
+                issue_prefetch = false;
+                stats.issueValidationSuppressed++;
+                stats.pcValidationNoPCSuppressions++;
+            }
         }
 
         DPRINTF(BOPPrefetcher,
                 "PC validation addr %#lx offset %lld: RR %s, PC state %d, "
-                "confidence %d, issue %d\n",
+                "confidence %d, issue %d, bypass %d\n",
                 validation_addr, static_cast<long long>(bestOffset),
                 validation_hit ? "hit" : "miss", pc_state, pc_confidence,
-                issue_prefetch);
+                issue_prefetch, bypass_mode);
     }
 
     // This prefetcher is a degree 1 prefetch, so it will only generate one
@@ -820,6 +1022,10 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
         stats.issuedOffsetDist.sample(bestOffset);
         filter_passed = sendPFWithFilter(
             pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
+        if (filter_passed && enableGlobalBOPCoverageGuard) {
+            stats.globalBOPIssued++;
+            pcValidationTable->noteGlobalBOPIssued();
+        }
         filtered = !filter_passed;
         DPRINTF(BOPPrefetcher,
                 "Generated prefetch %#lx offset: %d\n",
@@ -839,7 +1045,8 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
             issuePrefetchRequests && validation_enabled && !issue_prefetch,
             generated, buffered, filtered, filter_passed,
             enablePCValidationConfidence, pc_index, pc_tag, pc_entry_hit,
-            pc_confidence, pc_state, pc_sampled, pc_epoch);
+            pc_confidence, pc_state, pc_sampled, pc_epoch,
+            pc_low_entry_miss_streak);
     }
 
     // A BOP outside a large/small composite still has well-defined behavior:
@@ -889,7 +1096,9 @@ BOP::tracePCValidationUpdate(
         curTick(), name().c_str(), result.pc, result.index, result.tag,
         result.validationHit, result.participants, result.confidenceBefore,
         result.confidenceAfter, result.decayed, result.offsetChanged,
-        result.epochAfter);
+        result.epochAfter, result.lowEntryMissStreakBefore,
+        result.lowEntryMissStreakAfter, result.lowEntryHysteresisHeld,
+        result.lowEntryHysteresisTransition);
 }
 
 void
@@ -914,8 +1123,51 @@ BOP::commitPCValidationConfidence()
         } else {
             stats.pcValidationMissNoDecays++;
         }
+        if (result.lowEntryHysteresisHeld) {
+            stats.pcValidationLowEntryHysteresisHolds++;
+        }
+        if (result.lowEntryHysteresisTransition) {
+            stats.pcValidationLowEntryHysteresisTransitions++;
+        }
     }
     tracePCValidationUpdate(result);
+}
+
+void
+BOP::notifyGlobalBOPOutcome(bool useful)
+{
+    if (!enableGlobalBOPCoverageGuard) {
+        return;
+    }
+
+    if (useful) {
+        stats.globalBOPOutcomeUseful++;
+    } else {
+        stats.globalBOPOutcomeUnused++;
+    }
+
+    const auto result = pcValidationTable->noteGlobalBOPOutcome(useful);
+    if (!result.ewmaUpdated) {
+        return;
+    }
+
+    stats.globalBOPUnusedEwmaUpdates++;
+    stats.globalBOPUnusedEwma.sample(result.unusedEwma);
+    stats.globalBOPResolvedCoverage.sample(result.resolvedCoverageQ08);
+    if (result.resolvedCoverageGood) {
+        stats.globalBOPResolvedCoverageGood++;
+    } else {
+        stats.globalBOPResolvedCoverageBad++;
+    }
+    if (result.bypassBlockedByLowCoverage) {
+        stats.globalBOPBypassBlockedLowCoverage++;
+    }
+    if (result.bypassModeEntered) {
+        stats.globalBOPBypassModeEntries++;
+    }
+    if (result.bypassModeExited) {
+        stats.globalBOPBypassModeExits++;
+    }
 }
 
 bool
@@ -991,14 +1243,63 @@ BOP::BopStats::BopStats(statistics::Group *parent)
                "Merged sampled all-miss confidence decays"),
       ADD_STAT(pcValidationMissNoDecays, statistics::units::Count::get(),
                "Merged all-miss updates without sampled decay"),
+      ADD_STAT(pcValidationLowEntryHysteresisHolds,
+               statistics::units::Count::get(),
+               "Sampled all-miss updates held at the medium-to-low boundary"),
+      ADD_STAT(pcValidationLowEntryHysteresisTransitions,
+               statistics::units::Count::get(),
+               "Medium-to-low transitions released after local miss streak"),
       ADD_STAT(pcValidationOffsetEpochChanges, statistics::units::Count::get(),
                "Shared PC validation-confidence epoch changes"),
       ADD_STAT(pcValidationConfidenceDist, statistics::units::Count::get(),
-               "PC validation confidence observed at candidate issue")
+               "PC validation confidence observed at candidate issue"),
+      ADD_STAT(globalBOPOutcomeUseful, statistics::units::Count::get(),
+               "Resolved useful BOP outcomes received by the global guard"),
+      ADD_STAT(globalBOPOutcomeUnused, statistics::units::Count::get(),
+               "Resolved unused BOP outcomes received by the global guard"),
+      ADD_STAT(globalBOPIssued, statistics::units::Count::get(),
+               "BOP prefetches admitted into the global guard issued window"),
+      ADD_STAT(globalBOPUnusedEwmaUpdates, statistics::units::Count::get(),
+               "Completed global BOP outcome windows folded into the EWMA"),
+      ADD_STAT(globalBOPResolvedCoverageGood,
+               statistics::units::Count::get(),
+               "Global BOP outcome windows with sufficient resolved coverage"),
+      ADD_STAT(globalBOPResolvedCoverageBad,
+               statistics::units::Count::get(),
+               "Global BOP outcome windows with insufficient resolved coverage"),
+      ADD_STAT(globalBOPBypassBlockedLowCoverage,
+               statistics::units::Count::get(),
+               "Healthy-unused windows blocked from bypass by low resolved coverage"),
+      ADD_STAT(globalBOPBypassModeEntries, statistics::units::Count::get(),
+               "Entries into global BOP bypass mode"),
+      ADD_STAT(globalBOPBypassModeExits, statistics::units::Count::get(),
+               "Exits from global BOP bypass mode"),
+      ADD_STAT(globalBOPBypassModeIdleResets, statistics::units::Count::get(),
+               "Global BOP bypass-mode resets after feedback inactivity"),
+      ADD_STAT(globalBOPBypassModeChecks, statistics::units::Count::get(),
+               "Validation misses observed while global bypass mode is active"),
+      ADD_STAT(globalBOPBypassModeIssued, statistics::units::Count::get(),
+               "Validation-miss prefetches issued while global bypass mode is active"),
+      ADD_STAT(globalBOPBypassModeHighIssued, statistics::units::Count::get(),
+               "High-confidence validation misses issued while global bypass mode is active"),
+      ADD_STAT(globalBOPBypassModeMediumIssued,
+               statistics::units::Count::get(),
+               "Medium-confidence validation misses issued while global bypass mode is active"),
+      ADD_STAT(globalBOPBypassModeLowIssued, statistics::units::Count::get(),
+               "Low-confidence validation misses issued while global bypass mode is active"),
+      ADD_STAT(globalBOPBypassModeNoPCIssued, statistics::units::Count::get(),
+               "No-PC validation misses issued while global bypass mode is active"),
+      ADD_STAT(globalBOPUnusedEwma, statistics::units::Count::get(),
+               "Q0.8 global BOP unused-rate EWMA after completed windows"),
+      ADD_STAT(globalBOPResolvedCoverage, statistics::units::Count::get(),
+               "Q0.8 resolved coverage for completed global BOP outcome windows")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
     pcValidationConfidenceDist.init(0, 256, 1).prereq(
         pcValidationConfidenceDist);
+    globalBOPUnusedEwma.init(0, 256, 1).prereq(globalBOPUnusedEwma);
+    globalBOPResolvedCoverage.init(0, 256, 1).prereq(
+        globalBOPResolvedCoverage);
 }
 
 } // namespace prefetch

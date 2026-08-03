@@ -1137,6 +1137,9 @@ class Base : public ClockedObject
         prefetchStats.pfBad_srcs[source]++;
     }
 
+    /** Notify a prefetcher that a prefetched block was consumed by demand. */
+    virtual void prefetchUseful(Addr paddr, PrefetchSourceType pfSource) {}
+
     virtual void
     incrDemandMhsrMisses()
     {

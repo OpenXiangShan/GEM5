@@ -502,7 +502,6 @@ def _configure_l2_composite_kmh_align(prefetcher):
     prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,
                                               enable_adaptoffset=False)
 
-
 def _configure_cdp(prefetcher, options):
     if prefetcher == NULL or not hasattr(prefetcher, 'cdp'):
         return
@@ -519,6 +518,15 @@ def _configure_cdp(prefetcher, options):
         cdp.cdp_use_sv48 = options.cdp_use_sv48
 
 
+def _configure_l2_bop_validation_defaults(prefetcher):
+    for bop in (prefetcher.bop_large, prefetcher.bop_small):
+        bop.enable_pc_validation_confidence = True
+        bop.pc_validation_entries = 128
+        bop.pc_validation_miss_decay_period = 4
+        bop.pc_validation_low_entry_miss_streak_threshold = 0
+        bop.enable_global_bop_coverage_guard = True
+        bop.global_bop_min_resolved_coverage_shift = 3
+
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
@@ -527,6 +535,8 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
         _configure_l2_composite_default(prefetcher)
 
     _configure_cdp(prefetcher, options)
+    if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
+        _configure_l2_bop_validation_defaults(prefetcher)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):

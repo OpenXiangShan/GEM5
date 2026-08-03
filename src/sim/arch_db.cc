@@ -166,7 +166,7 @@ ArchDBer::bopValidationTraceWrite(
     bool generated, bool buffered, bool filtered, bool filter_passed,
     bool pc_confidence_enabled, int pc_index, Addr pc_tag,
     int pc_entry_hit, int pc_confidence, int pc_state,
-    bool pc_sampled, int pc_epoch)
+    bool pc_sampled, int pc_epoch, int pc_low_entry_miss_streak)
 {
   if (!(dumpGlobal && dumpBopValidationTrace)) return;
 
@@ -180,10 +180,13 @@ ArchDBer::bopValidationTraceWrite(
       "PCEntryHit,PCConfidence,PCState,PCSampled,PCEpoch,Suppressed,"
       "Generated,Buffered,Filtered,FilterPassed,PCConfidenceAfter,"
       "PCUpdateDecayed,PCUpdateParticipants,PCOffsetChanged,OutcomeAddr,"
-      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE) "
+      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE,"
+      "PCLowEntryMissStreak,PCUpdateLowEntryMissStreakBefore,"
+      "PCUpdateLowEntryMissStreakAfter,PCUpdateLowEntryHysteresisHeld,"
+      "PCUpdateLowEntryHysteresisTransition) "
       "VALUES(%lld,'%s','%s',%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%d,"
       "%d,%d,%d,%d,%d,%d,%d,%d,%d,%lld,%d,%d,%d,%d,%d,%d,%d,%d,"
-      "%d,%d,%d,%d,%d,%d,%lld,%lld,%d,%d,%d,'%s');",
+      "%d,%d,%d,%d,%d,%d,%lld,%lld,%d,%d,%d,'%s',%d,%d,%d,%d,%d);",
       sqliteSignedInt(tick), event, bop_name,
       sqliteSignedInt(trigger_pc), sqliteSignedInt(trigger_addr),
       sqliteSignedInt(validation_addr), sqliteSignedInt(pf_addr),
@@ -193,7 +196,8 @@ ArchDBer::bopValidationTraceWrite(
       validation_enabled, validation_hit, pc_confidence_enabled, pc_index,
       sqliteSignedInt(pc_tag), pc_entry_hit, pc_confidence, pc_state,
       pc_sampled, pc_epoch, suppressed, generated, buffered, filtered,
-      filter_passed, -1, 0, 0, 0, 0LL, 0LL, 0, 0, 0, "BOPValidation");
+      filter_passed, -1, 0, 0, 0, 0LL, 0LL, 0, 0, 0, "BOPValidation",
+      pc_low_entry_miss_streak, -1, -1, 0, 0);
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -205,7 +209,9 @@ ArchDBer::bopValidationConfidenceUpdateTraceWrite(
     Tick tick, const char *bop_name, Addr trigger_pc, unsigned int pc_index,
     Addr pc_tag, bool validation_hit, unsigned int participants,
     int confidence_before, int confidence_after, bool decayed,
-    bool offset_changed, unsigned int epoch_after)
+    bool offset_changed, unsigned int epoch_after,
+    int low_entry_miss_streak_before, int low_entry_miss_streak_after,
+    bool low_entry_hysteresis_held, bool low_entry_hysteresis_transition)
 {
   if (!(dumpGlobal && dumpBopValidationTrace)) return;
 
@@ -219,14 +225,19 @@ ArchDBer::bopValidationConfidenceUpdateTraceWrite(
       "PCEntryHit,PCConfidence,PCState,PCSampled,PCEpoch,Suppressed,"
       "Generated,Buffered,Filtered,FilterPassed,PCConfidenceAfter,"
       "PCUpdateDecayed,PCUpdateParticipants,PCOffsetChanged,OutcomeAddr,"
-      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE) "
+      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE,"
+      "PCLowEntryMissStreak,PCUpdateLowEntryMissStreakBefore,"
+      "PCUpdateLowEntryMissStreakAfter,PCUpdateLowEntryHysteresisHeld,"
+      "PCUpdateLowEntryHysteresisTransition) "
       "VALUES(%lld,'confidence_update','%s',%lld,0,0,0,0,0,0,0,0,"
       "0,0,0,0,1,1,%d,1,%u,%lld,1,%d,-1,0,%u,0,0,0,0,0,%d,%d,"
-      "%u,%d,0,0,0,0,0,'%s');",
+      "%u,%d,0,0,0,0,0,'%s',-1,%d,%d,%d,%d);",
       sqliteSignedInt(tick), bop_name, sqliteSignedInt(trigger_pc),
       validation_hit, pc_index, sqliteSignedInt(pc_tag), confidence_before,
       epoch_after, confidence_after, decayed, participants, offset_changed,
-      "BOPValidationConfidence");
+      "BOPValidationConfidence", low_entry_miss_streak_before,
+      low_entry_miss_streak_after, low_entry_hysteresis_held,
+      low_entry_hysteresis_transition);
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -250,10 +261,13 @@ ArchDBer::bopValidationOutcomeTraceWrite(
       "PCEntryHit,PCConfidence,PCState,PCSampled,PCEpoch,Suppressed,"
       "Generated,Buffered,Filtered,FilterPassed,PCConfidenceAfter,"
       "PCUpdateDecayed,PCUpdateParticipants,PCOffsetChanged,OutcomeAddr,"
-      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE) "
+      "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE,"
+      "PCLowEntryMissStreak,PCUpdateLowEntryMissStreakBefore,"
+      "PCUpdateLowEntryMissStreakAfter,PCUpdateLowEntryHysteresisHeld,"
+      "PCUpdateLowEntryHysteresisTransition) "
       "VALUES(%lld,'%s','L2BOP',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,"
       "-1,0,-1,0,-1,-1,-1,0,-1,0,0,0,0,0,-1,0,0,0,%lld,%lld,"
-      "%d,%d,%d,'%s');",
+      "%d,%d,%d,'%s',-1,-1,-1,0,0);",
       sqliteSignedInt(tick), event, sqliteSignedInt(addr), sqliteSignedInt(pc),
       pf_source, is_demand, cache_miss, "BOPValidationOutcome");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
