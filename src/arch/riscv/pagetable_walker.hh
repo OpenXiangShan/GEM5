@@ -41,6 +41,7 @@
 
 #include <array>
 #include <deque>
+#include <list>
 #include <vector>
 
 #include "arch/generic/mmu.hh"
@@ -318,6 +319,7 @@ namespace RiscvISA
             statistics::Scalar ptwMemCount;
             statistics::Scalar ptwMemCycle;
             statistics::Formula ptwAvgMemLatency;
+            statistics::Scalar ptwMissQueueSquashed;
         } stats;
 
         struct WalkerSenderState : public Packet::SenderState
@@ -376,10 +378,13 @@ namespace RiscvISA
         std::array<unsigned, 4> ptwLevelActive;
         unsigned ptwMissQueueSize;
         std::deque<MissQueueEntry> ptwMissQueue;
-        std::deque<MissQueueEntry> ptwMissQueueWaiters;
+        std::list<MissQueueEntry> ptwMissQueueWaiters;
+        std::list<MissQueueEntry>::iterator ptwMissQueueWaiterScan;
         bool retryingPtwMissQueue;
         bool processingPtwMissQueueHint;
         bool ptwMissQueueHeadRequeued;
+        Tick squashHandleTick;
+        unsigned ptwMissQueueSquashedThisCycle;
         /** Last tick at which PTW in-flight time accounting was updated. */
         Tick lastPtwMemCycleTick;
         /** Number of PTW memory requests currently in flight. */
@@ -393,10 +398,12 @@ namespace RiscvISA
         bool ptwMissQueueHintMatch(const MissQueueEntry &entry,
                                    const TlbEntry &refill_entry,
                                    uint8_t translateMode) const;
+        void refillPtwMissQueue();
+        void cleanupSquashedPtwMisses();
+        void finishSquashedPtwMiss(MissQueueEntry entry);
+        void schedulePtwMissQueueCleanup();
       public:
         bool is_from_pre_req;
-
-        Tick squashHandleTick;
 
         // Wrapper for checking for squashes before starting a translation.
         //void startWalkWrapper();
@@ -414,6 +421,7 @@ namespace RiscvISA
 
 
         EventFunctionWrapper doL2TLBHitEvent;
+        EventFunctionWrapper cleanupPtwMissQueueEvent;
 
         // Functions for dealing with packets.
         bool recvTimingResp(PacketPtr pkt);
@@ -469,13 +477,20 @@ namespace RiscvISA
             }}),
             ptwLevelActive({{0, 0, 0, 0}}),
             ptwMissQueueSize(params.ptw_miss_queue_size),
+            ptwMissQueueWaiterScan(ptwMissQueueWaiters.end()),
             retryingPtwMissQueue(false),
             processingPtwMissQueueHint(false),
             ptwMissQueueHeadRequeued(false),
+            squashHandleTick(MaxTick),
+            ptwMissQueueSquashedThisCycle(0),
             lastPtwMemCycleTick(0),
             outstandingPtwMemReqs(0),
-            doL2TLBHitEvent([this]{dol2TLBHit();},name())
+            doL2TLBHitEvent([this]{dol2TLBHit();}, name()),
+            cleanupPtwMissQueueEvent(
+                [this]{retryPtwMissQueue();}, name())
         {
+            panic_if(enablePtwLevelLimit && numSquashable == 0,
+                     "PTW squash bandwidth must be positive\n");
         }
     };
 

@@ -89,7 +89,9 @@ Walker::WalkerStats::WalkerStats(statistics::Group *parent)
                    statistics::units::Cycle,
                    statistics::units::Count>::get(),
                "Average PTW memory latency",
-               ptwMemCycle / ptwMemCount)
+               ptwMemCycle / ptwMemCount),
+      ADD_STAT(ptwMissQueueSquashed, statistics::units::Count::get(),
+               "Squashed translations completed from the PTW miss queue")
 {
 }
 
@@ -196,6 +198,119 @@ Walker::ptwMissQueueHintMatch(const MissQueueEntry &entry,
 }
 
 void
+Walker::schedulePtwMissQueueCleanup()
+{
+    if (!cleanupPtwMissQueueEvent.scheduled())
+        schedule(cleanupPtwMissQueueEvent, nextCycle());
+}
+
+void
+Walker::finishSquashedPtwMiss(MissQueueEntry entry)
+{
+    assert(entry.translation);
+    assert(entry.translation->squashed());
+    DPRINTF(PageTableWalker,
+            "Finish squashed PTW miss vaddr %#lx from pending queue\n",
+            entry.req->getVaddr());
+    stats.ptwMissQueueSquashed++;
+
+    // finish() may delete the Translation object, so do not access entry after
+    // this callback.
+    entry.translation->finish(NoFault, entry.req, entry.tc, entry.mode);
+}
+
+void
+Walker::refillPtwMissQueue()
+{
+    while (!ptwMissQueueWaiters.empty() &&
+           ptwMissQueue.size() < ptwMissQueueSize) {
+        auto waiter = ptwMissQueueWaiters.begin();
+        if (ptwMissQueueWaiterScan == waiter)
+            ++ptwMissQueueWaiterScan;
+        ptwMissQueue.push_back(*waiter);
+        ptwMissQueueWaiters.erase(waiter);
+    }
+    if (ptwMissQueueWaiters.empty())
+        ptwMissQueueWaiterScan = ptwMissQueueWaiters.end();
+}
+
+void
+Walker::cleanupSquashedPtwMisses()
+{
+    if (!enablePtwLevelLimit)
+        return;
+
+    if (squashHandleTick != curTick()) {
+        squashHandleTick = curTick();
+        ptwMissQueueSquashedThisCycle = 0;
+    }
+
+    unsigned budget = numSquashable - ptwMissQueueSquashedThisCycle;
+    if (budget == 0) {
+        if (!ptwMissQueue.empty() || !ptwMissQueueWaiters.empty())
+            schedulePtwMissQueueCleanup();
+        return;
+    }
+
+    std::vector<MissQueueEntry> squashed;
+    std::deque<MissQueueEntry> remaining;
+    const size_t queue_entries = ptwMissQueue.size();
+    bool squash_waiting_for_budget = false;
+
+    // The active miss queue is bounded by ptwMissQueueSize, so checking every
+    // entry has a configuration-defined upper bound.
+    for (size_t i = 0; i < queue_entries; ++i) {
+        MissQueueEntry entry = ptwMissQueue.front();
+        ptwMissQueue.pop_front();
+        if (entry.translation->squashed() && budget > 0) {
+            squashed.push_back(entry);
+            --budget;
+        } else {
+            squash_waiting_for_budget |= entry.translation->squashed();
+            remaining.push_back(entry);
+        }
+    }
+    ptwMissQueue.swap(remaining);
+
+    // Waiters are intentionally unbounded because translateTiming() has no
+    // rejection path. A persistent cursor limits each cleanup to one active
+    // queue's worth of checks without changing FIFO retry order.
+    if (!ptwMissQueueWaiters.empty() && budget > 0) {
+        if (ptwMissQueueWaiterScan == ptwMissQueueWaiters.end())
+            ptwMissQueueWaiterScan = ptwMissQueueWaiters.begin();
+        const size_t waiters_to_scan =
+            std::min<size_t>(ptwMissQueueWaiters.size(), ptwMissQueueSize);
+        for (size_t i = 0;
+             i < waiters_to_scan && !ptwMissQueueWaiters.empty(); ++i) {
+            if (ptwMissQueueWaiterScan == ptwMissQueueWaiters.end())
+                ptwMissQueueWaiterScan = ptwMissQueueWaiters.begin();
+            auto waiter = ptwMissQueueWaiterScan++;
+            if (!waiter->translation->squashed())
+                continue;
+            if (budget == 0) {
+                squash_waiting_for_budget = true;
+                break;
+            }
+            squashed.push_back(*waiter);
+            ptwMissQueueWaiters.erase(waiter);
+            --budget;
+        }
+    }
+
+    ptwMissQueueSquashedThisCycle += squashed.size();
+    refillPtwMissQueue();
+
+    for (auto &entry : squashed)
+        finishSquashedPtwMiss(entry);
+
+    if (squash_waiting_for_budget ||
+        (!squashed.empty() &&
+         (!ptwMissQueue.empty() || !ptwMissQueueWaiters.empty()))) {
+        schedulePtwMissQueueCleanup();
+    }
+}
+
+void
 Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
 {
     if (translateMode != direct && translateMode != allstage)
@@ -204,11 +319,19 @@ Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
         return;
 
     if (!enablePtwLevelLimit || retryingPtwMissQueue ||
-        processingPtwMissQueueHint || ptwMissQueue.empty())
+        processingPtwMissQueueHint)
+        return;
+
+    cleanupSquashedPtwMisses();
+    if (ptwMissQueue.empty())
         return;
 
     if (translateMode == allstage) {
         MissQueueEntry mq_entry = ptwMissQueue.front();
+        if (mq_entry.translation->squashed()) {
+            schedulePtwMissQueueCleanup();
+            return;
+        }
         if (!ptwMissQueueHintMatch(mq_entry, entry, translateMode))
             return;
 
@@ -228,7 +351,10 @@ Walker::notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode)
     while (!ptwMissQueue.empty()) {
         MissQueueEntry mq_entry = ptwMissQueue.front();
         ptwMissQueue.pop_front();
-        if (ptwMissQueueHintMatch(mq_entry, entry, translateMode)) {
+        if (mq_entry.translation->squashed()) {
+            remaining.push_back(mq_entry);
+            schedulePtwMissQueueCleanup();
+        } else if (ptwMissQueueHintMatch(mq_entry, entry, translateMode)) {
             matched.push_back(mq_entry);
         } else {
             remaining.push_back(mq_entry);
@@ -254,6 +380,11 @@ Walker::enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
     if (!enablePtwLevelLimit)
         return false;
 
+    // The TLB caller marks the new translation delayed after this function
+    // returns. Complete only older queued translations synchronously here.
+    if (!front)
+        cleanupSquashedPtwMisses();
+
     MissQueueEntry entry;
     entry.tc = tc;
     entry.translation = translation;
@@ -261,7 +392,10 @@ Walker::enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
     entry.mode = mode;
 
     if (!front && ptwMissQueue.size() >= ptwMissQueueSize) {
+        const bool was_empty = ptwMissQueueWaiters.empty();
         ptwMissQueueWaiters.push_back(entry);
+        if (was_empty)
+            ptwMissQueueWaiterScan = ptwMissQueueWaiters.begin();
         DPRINTF(PageTableWalker,
                 "PTW MissQueue full, hold vaddr %#lx waiter size %u\n",
                 req->getVaddr(), ptwMissQueueWaiters.size());
@@ -286,11 +420,8 @@ Walker::retryPtwMissQueue()
     if (!enablePtwLevelLimit || retryingPtwMissQueue)
         return;
 
-    while (!ptwMissQueueWaiters.empty() &&
-           ptwMissQueue.size() < ptwMissQueueSize) {
-        ptwMissQueue.push_back(ptwMissQueueWaiters.front());
-        ptwMissQueueWaiters.pop_front();
-    }
+    cleanupSquashedPtwMisses();
+    refillPtwMissQueue();
     if (ptwMissQueue.empty())
         return;
 
@@ -300,6 +431,11 @@ Walker::retryPtwMissQueue()
         ptwMissQueueHeadRequeued = false;
         MissQueueEntry entry = ptwMissQueue.front();
         ptwMissQueue.pop_front();
+        if (entry.translation->squashed()) {
+            ptwMissQueue.push_front(entry);
+            schedulePtwMissQueueCleanup();
+            break;
+        }
         DPRINTF(PageTableWalker,
                 "Dequeue PTW miss vaddr %#lx queue size %u\n",
                 entry.req->getVaddr(), ptwMissQueue.size());
@@ -307,11 +443,7 @@ Walker::retryPtwMissQueue()
         if (ptwMissQueueHeadRequeued ||
             ptwMissQueue.size() >= size_before)
             break;
-        while (!ptwMissQueueWaiters.empty() &&
-               ptwMissQueue.size() < ptwMissQueueSize) {
-            ptwMissQueue.push_back(ptwMissQueueWaiters.front());
-            ptwMissQueueWaiters.pop_front();
-        }
+        refillPtwMissQueue();
     }
     retryingPtwMissQueue = false;
 }
