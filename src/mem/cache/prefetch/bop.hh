@@ -84,6 +84,8 @@ class BOP : public Queued
         const bool enableIssueValidation;
         /** Grade issue validation misses with shared per-PC confidence */
         const bool enablePCValidationConfidence;
+        /** Bypass PC validation when recent global BOP outcomes are healthy */
+        const bool enableGlobalBOPCoverageGuard;
 
         const unsigned int pcValidationEntries;
         const unsigned int pcValidationTagBits;
@@ -94,7 +96,10 @@ class BOP : public Queued
         const unsigned int pcValidationHitIncrement;
         const unsigned int pcValidationMediumSamplePeriod;
         const unsigned int pcValidationMissDecayPeriod;
+        const unsigned int pcValidationLowEntryMissStreakThreshold;
         const unsigned int pcValidationEpochBits;
+        const unsigned int globalBOPUnusedThreshold;
+        const unsigned int globalBOPMinResolvedCoverageShift;
 
         const int victimListSize;
         const int restoreCycle;
@@ -172,11 +177,19 @@ class BOP : public Queued
         class PCValidationConfidenceTable
         {
           private:
+            // Keep the global policy fixed so unused rate is its only knob.
+            static constexpr unsigned int GLOBAL_OUTCOME_WINDOW_SIZE = 512;
+            static constexpr unsigned int GLOBAL_OUTCOME_WINDOW_SHIFT = 9;
+            static constexpr unsigned int GLOBAL_EWMA_SHIFT = 3;
+            static constexpr unsigned int GLOBAL_IDLE_RESET_CHECKS = 4096;
+            static constexpr unsigned int GLOBAL_UNUSED_EWMA_INITIAL = 255;
+
             struct Entry
             {
                 bool valid = false;
                 Addr tag = 0;
                 uint8_t confidence = 0;
+                uint8_t lowEntryMissStreak = 0;
                 uint8_t epoch = 0;
             };
 
@@ -203,14 +216,25 @@ class BOP : public Queued
             const unsigned int hitIncrement;
             const unsigned int mediumSamplePeriod;
             const unsigned int missDecayPeriod;
+            const unsigned int lowEntryMissStreakThreshold;
             const unsigned int epochMask;
+            const bool globalCoverageGuardEnabled;
+            const unsigned int globalUnusedThreshold;
+            const unsigned int globalMinResolvedCoverageShift;
 
             uint8_t currentEpoch = 0;
             std::vector<Entry> table;
+            unsigned int globalOutcomeWindowResolved = 0;
+            unsigned int globalOutcomeWindowUnused = 0;
+            unsigned int globalIssuedWindowIssued = 0;
+            unsigned int globalUnusedEwma = GLOBAL_UNUSED_EWMA_INITIAL;
+            unsigned int globalChecksSinceOutcome = 0;
+            bool globalBypassPCValidation = false;
 
             Addr foldedPC(Addr pc) const;
             bool sample(Addr pc, Addr line, unsigned int period,
                         Addr salt) const;
+            void resetGlobalBypassPolicy();
 
           public:
             struct LookupResult
@@ -221,6 +245,7 @@ class BOP : public Queued
                 bool replaced = false;
                 bool epochReset = false;
                 unsigned int confidence = 0;
+                unsigned int lowEntryMissStreak = 0;
                 PCConfidenceState state = PCConfidenceState::None;
                 unsigned int epoch = 0;
             };
@@ -239,7 +264,24 @@ class BOP : public Queued
                 unsigned int participants = 0;
                 int confidenceBefore = -1;
                 int confidenceAfter = -1;
+                int lowEntryMissStreakBefore = -1;
+                int lowEntryMissStreakAfter = -1;
+                bool lowEntryHysteresisHeld = false;
+                bool lowEntryHysteresisTransition = false;
                 unsigned int epochAfter = 0;
+            };
+
+            struct GlobalOutcomeResult
+            {
+                bool enabled = false;
+                bool ewmaUpdated = false;
+                bool bypassModeEntered = false;
+                bool bypassModeExited = false;
+                bool resolvedCoverageGood = true;
+                bool bypassBlockedByLowCoverage = false;
+                unsigned int unusedEwma = 0;
+                unsigned int issuedWindowIssued = 0;
+                unsigned int resolvedCoverageQ08 = 255;
             };
 
             PCValidationConfidenceTable(
@@ -248,10 +290,19 @@ class BOP : public Queued
                 unsigned int medium_threshold, unsigned int high_threshold,
                 unsigned int hit_increment,
                 unsigned int medium_sample_period,
-                unsigned int miss_decay_period, unsigned int epoch_bits);
+                unsigned int miss_decay_period,
+                unsigned int low_entry_miss_streak_threshold,
+                unsigned int epoch_bits,
+                bool enable_global_coverage_guard,
+                unsigned int global_unused_threshold,
+                unsigned int global_min_resolved_coverage_shift);
 
             LookupResult lookup(Addr pc);
             bool sampleMediumIssue(Addr pc, Addr line) const;
+            bool notePCValidationMiss();
+            bool bypassPCValidationActive() const;
+            void noteGlobalBOPIssued();
+            GlobalOutcomeResult noteGlobalBOPOutcome(bool useful);
             void submitValidation(const LookupResult &lookup, Addr pc,
                                   Addr trigger_line, bool validation_hit);
             void noteOffsetChange();
@@ -357,8 +408,28 @@ class BOP : public Queued
             statistics::Scalar pcValidationHitUpdates;
             statistics::Scalar pcValidationMissDecays;
             statistics::Scalar pcValidationMissNoDecays;
+            statistics::Scalar pcValidationLowEntryHysteresisHolds;
+            statistics::Scalar pcValidationLowEntryHysteresisTransitions;
             statistics::Scalar pcValidationOffsetEpochChanges;
             statistics::Distribution pcValidationConfidenceDist;
+            statistics::Scalar globalBOPOutcomeUseful;
+            statistics::Scalar globalBOPOutcomeUnused;
+            statistics::Scalar globalBOPIssued;
+            statistics::Scalar globalBOPUnusedEwmaUpdates;
+            statistics::Scalar globalBOPResolvedCoverageGood;
+            statistics::Scalar globalBOPResolvedCoverageBad;
+            statistics::Scalar globalBOPBypassBlockedLowCoverage;
+            statistics::Scalar globalBOPBypassModeEntries;
+            statistics::Scalar globalBOPBypassModeExits;
+            statistics::Scalar globalBOPBypassModeIdleResets;
+            statistics::Scalar globalBOPBypassModeChecks;
+            statistics::Scalar globalBOPBypassModeIssued;
+            statistics::Scalar globalBOPBypassModeHighIssued;
+            statistics::Scalar globalBOPBypassModeMediumIssued;
+            statistics::Scalar globalBOPBypassModeLowIssued;
+            statistics::Scalar globalBOPBypassModeNoPCIssued;
+            statistics::Distribution globalBOPUnusedEwma;
+            statistics::Distribution globalBOPResolvedCoverage;
         } stats;
 
     public:
@@ -385,6 +456,9 @@ class BOP : public Queued
 
         /** Apply the one-per-demand update merged across shared BOPs. */
         void commitPCValidationConfidence();
+
+        /** Receive a source-only useful/unused outcome from the L2 cache. */
+        void notifyGlobalBOPOutcome(bool useful);
 
         bool tryAddOffset(int64_t offset, bool late = false);
 };

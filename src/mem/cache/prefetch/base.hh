@@ -1008,6 +1008,9 @@ class Base : public ClockedObject
 
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
 
+    /** Notify a prefetcher that a prefetched block was consumed by demand. */
+    virtual void prefetchUseful(Addr paddr, PrefetchSourceType pfSource) {}
+
     virtual void
     incrDemandMhsrMisses()
     {

@@ -113,12 +113,15 @@ class ArchDBer : public SimObject
       bool generated, bool buffered, bool filtered, bool filter_passed,
       bool pc_confidence_enabled, int pc_index, Addr pc_tag,
       int pc_entry_hit, int pc_confidence, int pc_state,
-      bool pc_sampled, int pc_epoch);
+      bool pc_sampled, int pc_epoch, int pc_low_entry_miss_streak);
     void bopValidationConfidenceUpdateTraceWrite(
       Tick tick, const char *bop_name, Addr trigger_pc, unsigned int pc_index,
       Addr pc_tag, bool validation_hit, unsigned int participants,
       int confidence_before, int confidence_after, bool decayed,
-      bool offset_changed, unsigned int epoch_after);
+      bool offset_changed, unsigned int epoch_after,
+      int low_entry_miss_streak_before, int low_entry_miss_streak_after,
+      bool low_entry_hysteresis_held,
+      bool low_entry_hysteresis_transition);
     void bopValidationOutcomeTraceWrite(
       Tick tick, const char *event, Addr addr, Addr pc, int pf_source,
       bool is_demand, bool cache_miss);

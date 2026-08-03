@@ -778,8 +778,20 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Issue one in this many medium-confidence validation misses")
     pc_validation_miss_decay_period = Param.Unsigned(4,
         "Decay confidence on one in this many aggregated all-miss updates")
+    pc_validation_low_entry_miss_streak_threshold = Param.Unsigned(0,
+        "Consecutive sampled all-miss updates required before medium enters "
+        "low; zero preserves immediate decay")
     pc_validation_epoch_bits = Param.Unsigned(2,
         "Lazy invalidation epoch bits for best-offset changes")
+    enable_global_bop_coverage_guard = Param.Bool(False,
+        "Enable a global BOP bypass mode: when recent unused EWMA is low, "
+        "bypass PC-validation suppression for all PCs; otherwise fall back "
+        "to the current PC-local gating")
+    global_bop_unused_threshold = Param.Unsigned(38,
+        "Q0.8 unused-rate EWMA threshold for entering global bypass mode")
+    global_bop_min_resolved_coverage_shift = Param.Unsigned(3,
+        "Require resolved_outcomes / issued_prefetches >= 1/(2^shift) "
+        "before global bypass mode may be active; zero disables this gate")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 

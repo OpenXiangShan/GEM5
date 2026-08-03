@@ -818,7 +818,12 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "OutcomePFSource INT NOT NULL," \
             "OutcomeIsDemand BOOL NOT NULL," \
             "OutcomeCacheMiss BOOL NOT NULL," \
-            "SITE TEXT);"
+            "SITE TEXT," \
+            "PCLowEntryMissStreak INT NOT NULL," \
+            "PCUpdateLowEntryMissStreakBefore INT NOT NULL," \
+            "PCUpdateLowEntryMissStreakAfter INT NOT NULL," \
+            "PCUpdateLowEntryHysteresisHeld BOOL NOT NULL," \
+            "PCUpdateLowEntryHysteresisTransition BOOL NOT NULL);"
             ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

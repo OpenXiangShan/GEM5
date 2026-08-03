@@ -40,8 +40,20 @@ L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType p
             curTick(), "unused", paddr, 0,
             static_cast<int>(pfSource), false, false);
     }
+    if (pfSource == PrefetchSourceType::HWP_BOP) {
+        largeBOP->notifyGlobalBOPOutcome(false);
+    }
     if (pfSource == PrefetchSourceType::CDP) {
         cdp->recordUnusedPrefetch(paddr);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::prefetchUseful(
+    Addr paddr, PrefetchSourceType pfSource)
+{
+    if (pfSource == PrefetchSourceType::HWP_BOP) {
+        largeBOP->notifyGlobalBOPOutcome(true);
     }
 }
 
