@@ -129,12 +129,21 @@ CPU::CPU(const BaseO3CPUParams &params)
       ipc_r("ipc", "", 1000, archDBer),
       cpi_r("cpi", "", 1000, archDBer),
       issueWidth(params.decodeWidth),
+      enableUopCache(params.hasUopCache),
       enableMoveElimination(params.enableMoveElimination),
       enableConstantFolding(params.enableConstantFolding),
       enableMovImmElimination(params.enableMovImmElimination),
       cpuStats(this),
       valuePred(params.valuePred)
 {
+    // The normal O3 frontend supports SMT, but the initial uop-cache bypass
+    // implementation has shared build/stream state and has not established
+    // per-thread isolation.  Reject only that experimental combination so an
+    // opt-out configuration preserves the existing FS and SE SMT behavior.
+    fatal_if(params.hasUopCache && params.numThreads > 1,
+            "The O3 uop cache does not yet support SMT; disable the uop "
+            "cache or configure a single hardware thread.");
+
     if (!params.switched_out) {
         _status = Running;
     } else {
@@ -1356,8 +1365,50 @@ CPU::ListIt
 CPU::addInst(const DynInstPtr &inst)
 {
     instList.push_back(inst);
+    auto inst_it = --instList.end();
 
-    return --(instList.end());
+    if (enableUopCache) {
+        // Track only conventional Fetch instructions: bypass peers are already
+        // visible to Decode's merge logic and must not block one another here.
+        if (!inst->isDecoded() && !inst->isUopCacheBypass()) {
+            normalUndecodedSeqs[inst->threadNumber].insert(inst->seqNum);
+        }
+    }
+
+    return inst_it;
+}
+
+void
+CPU::enqueueUopCacheBypassInst(const DynInstPtr &inst)
+{
+    // Keep ownership of the bypass queue in Decode; CPU is the rendezvous
+    // point used by Fetch so the stages do not need a direct cross-reference.
+    decode.enqueueUopCacheBypassInst(inst);
+}
+
+bool
+CPU::canEnqueueUopCacheBypassInst(ThreadID tid) const
+{
+    return decode.canEnqueueUopCacheBypassInst(tid);
+}
+
+bool
+CPU::hasOlderNonBypassUndecodedInst(const DynInstPtr &inst)
+{
+    assert(enableUopCache);
+    const ThreadID tid = inst->threadNumber;
+    const auto &undecoded = normalUndecodedSeqs[tid];
+    return !undecoded.empty() && *undecoded.begin() < inst->seqNum;
+}
+
+void
+CPU::markInstDecoded(ThreadID tid, InstSeqNum seq_num)
+{
+    if (!enableUopCache) {
+        return;
+    }
+
+    normalUndecodedSeqs[tid].erase(seq_num);
 }
 
 void
@@ -1420,6 +1471,20 @@ CPU::removeFrontInst(const DynInstPtr &inst)
 
     removeInstsThisCycle = true;
 
+    // Fusion can retire the two source instructions from instList when it
+    // creates the fused replacement.  Commit may still hold one of those
+    // DynInst objects, so make repeated removal a harmless no-op instead of
+    // dereferencing an iterator invalidated by the Decode-side fusion path.
+    if (!inst->isInInstList()) {
+        DPRINTF(O3CPU, "Skipping already unlinked instruction [tid:%i] "
+                "PC %s [sn:%lli]\n",
+                inst->threadNumber, inst->pcState(), inst->seqNum);
+        return;
+    }
+
+    // Invalidate the DynInst's iterator before erase so any later owner can
+    // detect that CPU::instList no longer contains this instruction.
+    inst->clearInstListIt();
     instList.erase(inst->getInstListIt());
 }
 
@@ -1503,10 +1568,14 @@ CPU::squashInstIt(ListIt &instIt, ThreadID tid)
 
         // Mark it as squashed.
         (*instIt)->setSquashed();
+        markInstDecoded(tid, (*instIt)->seqNum);
 
         // @todo: Formulate a consistent method for deleting
         // instructions from the instruction list
         // Remove the instruction from the list.
+        // Squash owns this erase; invalidate the saved iterator so deferred
+        // cleanup cannot attempt to erase the same DynInst a second time.
+        (*instIt)->clearInstListIt();
         instIt = instList.erase(instIt);
     }
     return --instIt;
@@ -1517,6 +1586,21 @@ CPU::flushTLBs()
 {
     BaseCPU::flushTLBs();
     fetch.flushFetchBuffer();
+
+    // A uop-cache hit bypasses instruction translation, so entries decoded
+    // under the old translation/permission state cannot survive a TLB flush.
+    flushUopCache();
+}
+
+void
+CPU::flushUopCache()
+{
+    // Fetch must clear both installed entries and its memoized FTQ lookup.
+    // Do not touch any Fetch state when the feature is disabled; this keeps
+    // fence.i and translation-flush behavior identical to the legacy O3 path.
+    if (enableUopCache) {
+        fetch.invalidateUopCache();
+    }
 }
 
 void
@@ -1529,6 +1613,8 @@ CPU::cleanUpRemovedInsts()
                 (*removeList.front())->seqNum,
                 (*removeList.front())->pcState());
 
+        // Deferred retirement is the final owner of this iterator.
+        (*removeList.front())->clearInstListIt();
         instList.erase(removeList.front());
 
         removeList.pop_front();

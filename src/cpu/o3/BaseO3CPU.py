@@ -171,6 +171,16 @@ class BaseO3CPU(BaseCPU):
     trapLatency = Param.Cycles(13, "Trap latency")
     fetchTrapLatency = Param.Cycles(1, "Fetch trap latency")
 
+    # Keep the experimental decoded-instruction cache opt-in so configurations
+    # which do not mention it retain the established O3 frontend behavior.
+    hasUopCache = Param.Bool(False, "Enable decoded uop cache in the frontend")
+    uopCacheWayNum = Param.Unsigned(4, "Number of uop cache ways")
+    uopCacheSetNum = Param.Unsigned(384, "Number of uop cache sets")
+    uopCacheMaxInstBytesPerEntry = Param.Unsigned(
+        4, "Maximum instruction bytes covered by one uop cache entry")
+    uopCacheBypassQueueSize = Param.Unsigned(
+        64, "Per-thread decoded uop-cache bypass staging capacity")
+
     backComSize = Param.Unsigned(10,
             "Time buffer size for backwards communication")
     forwardComSize = Param.Unsigned(10,

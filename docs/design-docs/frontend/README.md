@@ -14,6 +14,7 @@
 6. `ubtb_design.md`
 7. `abtb_design.md`
 8. `microtage_design.md`
+9. `uop_cache_design.md`
 
 各文档当前大致分工如下：
 
@@ -25,6 +26,7 @@
 - `ubtb_design.md`：最前级 taken-target predictor
 - `abtb_design.md`：ahead pipeline 下的较大容量早期 target predictor
 - `microtage_design.md`：放在 `S1` 的轻量方向预测器
+- `uop_cache_design.md`：O3 uop cache 的动机、实现、bypass 时序与理想化边界
 
 当前暂未单独展开的模块包括：
 

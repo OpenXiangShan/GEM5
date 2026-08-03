@@ -400,6 +400,18 @@ class BaseCPU : public ClockedObject
     virtual void flushTLBs();
 
     /**
+     * Discard CPU-model-specific decoded-instruction cache state.
+     *
+     * Most CPU models do not cache decoded instructions, so the base
+     * implementation is intentionally a no-op.  Models which bypass normal
+     * instruction translation or byte fetch on a decoded-cache hit must
+     * override this hook.  RISC-V fence.i, address-translation invalidation,
+     * and instruction-access permission changes call it to prevent stale
+     * decoded instructions from surviving an architectural invalidation.
+     */
+    virtual void flushUopCache() {}
+
+    /**
      * Determine if the CPU is switched out.
      *
      * @return True if the CPU is switched out, false otherwise.

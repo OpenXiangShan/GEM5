@@ -31,6 +31,10 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 def setKmhV3Params(args, system):
+    if args.enable_uop_cache and args.smt:
+        fatal("--enable-uop-cache currently requires a single hardware "
+              "thread; disable --smt for this experiment")
+
     for cpu in system.cpu:
 
         # fetch (idealfetch not care)
@@ -42,6 +46,11 @@ def setKmhV3Params(args, system):
         cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4
         cpu.fetchQueueSize = 64
+        cpu.hasUopCache = args.enable_uop_cache
+        # Finite per-thread buffering for decoded instructions that bypass the
+        # ordinary Fetch-to-Decode time buffer.  SMT plus uop cache is rejected
+        # by the CPU until the combined path has dedicated validation.
+        cpu.uopCacheBypassQueueSize = 64
 
         # decode
         cpu.fetchToDecodeDelay = 3
@@ -195,6 +204,13 @@ if __name__ == '__m5_main__':
     FutureClass = None
 
     args = xiangshan_system_init()
+
+    # Reject the unsupported combination before checkpoint/restorer setup so
+    # users receive the uop-cache diagnostic rather than an unrelated SMT
+    # environment error.
+    if args.enable_uop_cache and args.smt:
+        fatal("--enable-uop-cache currently requires a single hardware "
+              "thread; disable --smt for this experiment")
 
     assert not args.external_memory_system
 

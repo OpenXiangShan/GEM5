@@ -203,6 +203,9 @@ class DynInst : public ExecContext, public RefCounted
 
         // load/store pipe state end
 
+        // Bypass instructions enter Decode outside the normal time buffer, so
+        // explicit decode completion is needed for cross-path age ordering.
+        Decoded,                 /// Instruction has reached decode
         Executed,                /// Instruction has executed
         CanCommit,               /// Instruction can commit
         AtCommit,                /// Instruction has reached commit
@@ -427,6 +430,14 @@ class DynInst : public ExecContext, public RefCounted
     /** Iterator pointing to this BaseDynInst in the list of all insts. */
     ListIt instListIt;
 
+    /**
+     * Whether instListIt still refers to this instruction in CPU::instList.
+     * Bypass fusion and deferred cleanup can unlink instructions through
+     * different paths; tracking ownership prevents a second erase through a
+     * stale iterator.
+     */
+    bool linkedInInstList = false;
+
     ////////////////////// Branch Data ///////////////
     /** Predicted PC state after this instruction. */
     std::unique_ptr<PCStateBase> predPC;
@@ -438,6 +449,15 @@ class DynInst : public ExecContext, public RefCounted
     unsigned ftqId;
     /** The number of loop iteration within an fsq entry of the instruction. */
     unsigned loopIteration;
+
+    /** True when the static instruction was supplied by the uop cache. */
+    bool fetchFromUopCache = false;
+
+    /** True when this instruction used the direct Fetch-to-Decode path. */
+    bool uopCacheBypass = false;
+
+    /** Virtual fetch address used to validate the cached instruction stream. */
+    Addr uopCacheFetchAddr = 0;
 
     /** The Macroop if one exists */
     const StaticInstPtr macroop;
@@ -1054,6 +1074,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Scheduler state end */
 
+    /** Mark this instruction as no longer pending at the Decode boundary. */
+    void setDecoded() { status.set(Decoded); }
+
+    /** Return whether this instruction has crossed the Decode boundary. */
+    bool isDecoded() const { return status[Decoded]; }
+
 
     /** load/store pipe state begin */
 
@@ -1408,7 +1434,18 @@ class DynInst : public ExecContext, public RefCounted
     ListIt &getInstListIt() { return instListIt; }
 
     /** Sets iterator for this instruction in the list of all insts. */
-    void setInstListIt(ListIt _instListIt) { instListIt = _instListIt; }
+    void
+    setInstListIt(ListIt _instListIt)
+    {
+        instListIt = _instListIt;
+        linkedInInstList = true;
+    }
+
+    /** Return whether getInstListIt() is currently safe to erase. */
+    bool isInInstList() const { return linkedInInstList; }
+
+    /** Invalidate the saved instruction-list iterator after unlinking. */
+    void clearInstListIt() { linkedInInstList = false; }
 
   public:
 
@@ -1721,6 +1758,24 @@ class DynInst : public ExecContext, public RefCounted
         RiscvISA::PCState rpc = pc->as<RiscvISA::PCState>();
         return rpc.compressed() ? 2 : 4;
     }
+
+    /** Return whether Fetch obtained the decoded form from the uop cache. */
+    bool isFetchFromUopCache() const { return fetchFromUopCache; }
+
+    /** Record the origin of the decoded static instruction. */
+    void setFetchFromUopCache(bool is) { fetchFromUopCache = is; }
+
+    /** Return whether the instruction bypassed the normal Fetch queue. */
+    bool isUopCacheBypass() const { return uopCacheBypass; }
+
+    /** Record whether Decode receives this instruction via its bypass queue. */
+    void setUopCacheBypass(bool is) { uopCacheBypass = is; }
+
+    /** Save the virtual address associated with the uop-cache lookup. */
+    void setUopCacheFetchAddr(Addr pc) { uopCacheFetchAddr = pc; }
+
+    /** Return the virtual address associated with the uop-cache lookup. */
+    Addr getUopCacheFetchAddr() const { return uopCacheFetchAddr; }
 
   protected:
     SquashVersion squashVer;

@@ -31,6 +31,10 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 def setKmhV3IdealParams(args, system):
+    if args.enable_uop_cache and args.smt:
+        fatal("--enable-uop-cache currently requires a single hardware "
+              "thread; disable --smt for this experiment")
+
     for cpu in system.cpu:
 
         # fetch
@@ -42,6 +46,13 @@ def setKmhV3IdealParams(args, system):
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4  # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu
         cpu.fetchQueueSize = 64
+        cpu.hasUopCache = args.enable_uop_cache
+        cpu.uopCacheWayNum = 4
+        cpu.uopCacheSetNum = 384
+        cpu.uopCacheMaxInstBytesPerEntry = 4
+        # Keep the ideal configuration's bypass storage explicit so capacity
+        # changes remain attributable in performance experiments.
+        cpu.uopCacheBypassQueueSize = 64
 
         # decode
         cpu.fetchToDecodeDelay = 3
@@ -162,6 +173,12 @@ if __name__ == '__m5_main__':
     FutureClass = None
 
     args = xiangshan_system_init()
+
+    # Keep the experimental fast path single-threaded until its shared cache
+    # build/stream state has a verified SMT ownership model.
+    if args.enable_uop_cache and args.smt:
+        fatal("--enable-uop-cache currently requires a single hardware "
+              "thread; disable --smt for this experiment")
 
     assert not args.external_memory_system
 

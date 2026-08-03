@@ -347,6 +347,11 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--ideal-kmhv3", action= "store_true",
                         help="Use KunminghuV3 ideal params, which take priority over command-line arguments.")
 
+    parser.add_argument("--enable-uop-cache", action="store_true",
+                        default=False,
+                        help=("Enable the single-thread O3 frontend decoded "
+                              "uop cache. This option is incompatible with "
+                              "SMT until bypass arbitration is validated."))
 
     # for warmup without switching cpu
     parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
