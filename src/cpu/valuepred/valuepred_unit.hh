@@ -41,6 +41,19 @@ class VPUnit : public SimObject
     VPResult valuePredict(const VPPredictRequest &request,
             std::unique_ptr<VPPredictionRecord> &record);
 
+    // Allocate predictor state once an instruction is admitted at dispatch.
+    virtual void dispatch(const VPDispatchInfo &dispatchInfo,
+            VPPredictionRecord *record);
+
+    // Try a prediction after operands become ready but before issue selection.
+    virtual VPPredictionCandidate latePredict(
+            const VPLatePredictRequest &request,
+            VPPredictionRecord *record);
+
+    // Notify the predictor when an executed load's actual value is available.
+    virtual void valueAvailable(const VPValueAvailableInfo &valueInfo,
+            VPPredictionRecord *record);
+
     // In commit time, update value predictor
     virtual void update(const VPUpdateInfo &updateInfo,
             const VPPredictionRecord *record, const VPFeedback &feedback) = 0;

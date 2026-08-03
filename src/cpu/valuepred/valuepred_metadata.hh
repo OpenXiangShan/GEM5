@@ -142,6 +142,31 @@ class VPUpdateInfo
     ExtensionContainer<VPUpdateInfoExtension> extensions;
 };
 
+class VPDispatchInfo
+{
+  public:
+    Addr pc = 0;
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+};
+
+class VPLatePredictRequest
+{
+  public:
+    Addr pc = 0;
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+};
+
+class VPValueAvailableInfo
+{
+  public:
+    Addr pc = 0;
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+    RegVal actualValue = 0;
+};
+
 class ProducerInfoExt : public VPUpdateInfoExtension
 {
   public:

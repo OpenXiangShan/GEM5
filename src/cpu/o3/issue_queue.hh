@@ -305,6 +305,7 @@ class Scheduler : public SimObject
     };
 
     CPU* cpu;
+    IEW* iew = nullptr;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
     const int intel_fewops = 8;
@@ -371,7 +372,7 @@ class Scheduler : public SimObject
     PendingWakeEventsType specWakeEvents;
 
     Scheduler(const SchedulerParams& params);
-    void setCPU(CPU* cpu, LSQ* lsq);
+    void setCPU(CPU* cpu, LSQ* lsq, IEW* iew);
     void resetDepGraph(uint64_t numPhysRegs);
     void setAllScoreBoard(PhysRegIdPtr reg);
     void setMemDepUnit(MemDepUnit* memDepUnit) { this->memDepUnit = memDepUnit; }
@@ -379,6 +380,7 @@ class Scheduler : public SimObject
 
     void tick();
     void issueAndSelect();
+    void latePredictReadyLoads();
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
     DynInstPtr getInstByDstReg(RegIndex flatIdx, ThreadID tid,

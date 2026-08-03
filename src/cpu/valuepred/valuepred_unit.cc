@@ -36,6 +36,31 @@ VPUnit::valuePredict(const VPPredictRequest &request,
     return candidate.result;
 }
 
+void
+VPUnit::dispatch(const VPDispatchInfo &dispatchInfo,
+        VPPredictionRecord *record)
+{
+    (void)dispatchInfo;
+    (void)record;
+}
+
+VPPredictionCandidate
+VPUnit::latePredict(const VPLatePredictRequest &request,
+        VPPredictionRecord *record)
+{
+    (void)request;
+    (void)record;
+    return {};
+}
+
+void
+VPUnit::valueAvailable(const VPValueAvailableInfo &valueInfo,
+        VPPredictionRecord *record)
+{
+    (void)valueInfo;
+    (void)record;
+}
+
 VPUnit::ValuePredUnitStats::ValuePredUnitStats(VPUnit *vp)
     : statistics::Group(vp),
       ADD_STAT(VPcorrected, statistics::units::Count::get(), "number of correct vp"),

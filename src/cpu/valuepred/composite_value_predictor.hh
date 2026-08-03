@@ -66,6 +66,16 @@ class CompositeValuePredictor : public VPUnit
 
     VPPredictionCandidate predict(const VPPredictRequest &request) override;
 
+    void dispatch(const VPDispatchInfo &dispatchInfo,
+            VPPredictionRecord *record) override;
+
+    VPPredictionCandidate latePredict(
+            const VPLatePredictRequest &request,
+            VPPredictionRecord *record) override;
+
+    void valueAvailable(const VPValueAvailableInfo &valueInfo,
+            VPPredictionRecord *record) override;
+
     void update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record,
             const VPFeedback &feedback) override;
 

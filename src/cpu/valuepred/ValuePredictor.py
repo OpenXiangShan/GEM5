@@ -6,7 +6,7 @@ from m5.SimObject import *
 class ValuePredType(ScopedEnum):
     # vals will contains value predictor type
     vals = ["EStride", "VTAGE", "MemoryRenaming", "IdealConstantLVP",
-            "ExampleValuePredictor", "CompositeValuePredictor"]
+            "IdealEgDiff", "ExampleValuePredictor", "CompositeValuePredictor"]
 
 class ValuePredictor(SimObject):
     type = "ValuePredictor"
@@ -218,3 +218,13 @@ class IdealConstantLVP(ValuePredictor):
 
     satCounterBits = Param.Unsigned(9, "bits of saturating counter, initial value is 0")
     resetConfidence = Param.Bool(True, "reset confidence to 0 when mispredict")
+
+class IdealEgDiff(ValuePredictor):
+    type = "IdealEgDiff"
+    cxx_class = "gem5::valuepred::IdealEgDiff"
+    cxx_header = "cpu/valuepred/ideal_egdiff.hh"
+    abstract = False
+
+    order = Param.Unsigned(32, "Maximum dynamic load distance to poll")
+    confidenceBits = Param.Unsigned(
+        3, "Bits in each deterministic saturating confidence counter")

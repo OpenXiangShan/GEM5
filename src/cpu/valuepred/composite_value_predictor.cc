@@ -98,6 +98,92 @@ CompositeValuePredictor::predict(const VPPredictRequest &request)
 }
 
 void
+CompositeValuePredictor::dispatch(const VPDispatchInfo &dispatchInfo,
+        VPPredictionRecord *record)
+{
+    auto *compositeRecord = dynamic_cast<CompositePredictionRecord *>(record);
+    gem5_assert(compositeRecord,
+            "CompositeValuePredictor expects CompositePredictionRecord");
+    gem5_assert(compositeRecord->children.size() == predictors.size(),
+            "Composite record size mismatch");
+
+    for (size_t i = 0; i < predictors.size(); ++i) {
+        predictors[i]->dispatch(dispatchInfo,
+                compositeRecord->children[i].record.get());
+    }
+}
+
+VPPredictionCandidate
+CompositeValuePredictor::latePredict(const VPLatePredictRequest &request,
+        VPPredictionRecord *record)
+{
+    VPPredictionCandidate compositeCandidate;
+    auto *compositeRecord = dynamic_cast<CompositePredictionRecord *>(record);
+    gem5_assert(compositeRecord,
+            "CompositeValuePredictor expects CompositePredictionRecord");
+    gem5_assert(compositeRecord->children.size() == predictors.size(),
+            "Composite record size mismatch");
+
+    // A value already propagated at rename must not be replaced at issue.
+    if (compositeRecord->selectedChild != -1) {
+        return compositeCandidate;
+    }
+
+    std::vector<VPPredictionCandidate> childCandidates(predictors.size());
+    std::vector<VPChooserCandidate> chooserCandidates;
+    chooserCandidates.reserve(predictors.size());
+    for (size_t i = 0; i < predictors.size(); ++i) {
+        childCandidates[i] = predictors[i]->latePredict(request,
+                compositeRecord->children[i].record.get());
+        compositeRecord->children[i].result = childCandidates[i].result;
+        chooserCandidates.push_back({
+            .childIndex = static_cast<int>(i),
+            .predictorType = predictors[i]->getValuePredictorType(),
+            .speculative = childCandidates[i].result.speculative,
+            .value = childCandidates[i].result.value,
+            .score = childCandidates[i].score,
+        });
+    }
+
+    const int selected = arb->choose(chooserCandidates);
+    if (selected == -1) {
+        return compositeCandidate;
+    }
+
+    auto &childRecord = compositeRecord->children[selected];
+    childRecord.selected = true;
+    compositeRecord->chooserCandidates[selected] = chooserCandidates[selected];
+    compositeRecord->selectedChild = selected;
+    compositeRecord->offeredPrediction = true;
+    compositeRecord->predictedValue = childRecord.result.value;
+    compositeCandidate.result = childRecord.result;
+    compositeCandidate.score = childCandidates[selected].score;
+
+    DPRINTF(VPCOMMON,
+            "[VPComposite][late] tid=%u seq=%llu selected=%d value=%#llx\n",
+            request.tid, request.seqNo, selected,
+            static_cast<unsigned long long>(compositeCandidate.result.value));
+    return compositeCandidate;
+}
+
+void
+CompositeValuePredictor::valueAvailable(
+        const VPValueAvailableInfo &valueInfo,
+        VPPredictionRecord *record)
+{
+    auto *compositeRecord = dynamic_cast<CompositePredictionRecord *>(record);
+    gem5_assert(compositeRecord,
+            "CompositeValuePredictor expects CompositePredictionRecord");
+    gem5_assert(compositeRecord->children.size() == predictors.size(),
+            "Composite record size mismatch");
+
+    for (size_t i = 0; i < predictors.size(); ++i) {
+        predictors[i]->valueAvailable(valueInfo,
+                compositeRecord->children[i].record.get());
+    }
+}
+
+void
 CompositeValuePredictor::update(const VPUpdateInfo &updateInfo,
         const VPPredictionRecord *record, const VPFeedback &feedback)
 {

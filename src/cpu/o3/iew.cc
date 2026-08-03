@@ -66,6 +66,7 @@
 #include "debug/DecoupleBP.hh"
 #include "debug/Drain.hh"
 #include "debug/IEW.hh"
+#include "debug/IdealEgDiff.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
 #include "params/BaseO3CPU.hh"
@@ -478,6 +479,63 @@ IEW::lvpWakeDependents(const DynInstPtr &inst) {
             DPRINTF(IEW,"[sn:%llu] vp set scoreboard to true\n", inst->seqNum);
         }
     }
+}
+
+void
+IEW::tryLateValuePrediction(const DynInstPtr &inst)
+{
+    if (!valuePred || !inst->vpSupported || inst->vpApplied ||
+        !inst->vpRecord || inst->numDestRegs() != 1) {
+        return;
+    }
+
+    valuepred::VPLatePredictRequest request;
+    request.pc = inst->getPC();
+    request.seqNo = inst->seqNum;
+    request.tid = inst->threadNumber;
+    auto candidate = valuePred->latePredict(request, inst->vpRecord.get());
+    if (!candidate.result.speculative) {
+        return;
+    }
+
+    inst->vpResult = candidate.result;
+    inst->vpApplied = true;
+    inst->vpMisprediction = false;
+    inst->setRegOperand(inst->staticInst.get(), 0, inst->vpResult.value);
+    inst->popResult();
+    // Unlike a rename-time prediction, a late prediction may already have
+    // consumers in an issue queue. Wake those consumers in both recovery
+    // modes; non-selective recovery additionally exposes final readiness to
+    // consumers inserted in later cycles.
+    scheduler->specWakeUpFromVP(inst);
+    if (!enableSelectiveVPFlush) {
+        scheduler->setAllScoreBoard(inst->renamedDestIdx(0));
+    }
+    DPRINTF(IdealEgDiff,
+            "[IdealEgDiff][apply] tid=%u seq=%llu pc=%#lx predicted=%#llx\n",
+            inst->threadNumber, inst->seqNum, inst->getPC(),
+            static_cast<unsigned long long>(inst->vpResult.value));
+}
+
+void
+IEW::notifyValueAvailable(const DynInstPtr &inst, RegVal actualValue)
+{
+    if (!valuePred || !inst->vpSupported || !inst->vpRecord) {
+        return;
+    }
+
+    valuepred::VPValueAvailableInfo value_info;
+    value_info.pc = inst->getPC();
+    value_info.seqNo = inst->seqNum;
+    value_info.tid = inst->threadNumber;
+    value_info.actualValue = actualValue;
+    valuePred->valueAvailable(value_info, inst->vpRecord.get());
+    DPRINTF(IdealEgDiff,
+            "[IdealEgDiff][verify] tid=%u seq=%llu pc=%#lx actual=%#llx "
+            "applied=%d predicted=%#llx\n",
+            inst->threadNumber, inst->seqNum, inst->getPC(),
+            static_cast<unsigned long long>(actualValue), inst->vpApplied,
+            static_cast<unsigned long long>(inst->vpResult.value));
 }
 
 bool
@@ -1132,6 +1190,13 @@ IEW::dispatchInstFromRename(ThreadID tid)
             ++iewStats.dispLoadInsts;
 
             ldstQueue.insertLoad(inst);
+            if (valuePred && inst->vpSupported && inst->vpRecord) {
+                valuepred::VPDispatchInfo dispatch_info;
+                dispatch_info.pc = inst->getPC();
+                dispatch_info.seqNo = inst->seqNum;
+                dispatch_info.tid = tid;
+                valuePred->dispatch(dispatch_info, inst->vpRecord.get());
+            }
             add_to_iq = true;
             if (valuePred && inst->vpSupported && inst->vpResult.speculative) {
                 lvpWakeDependents(inst);
@@ -1289,6 +1354,15 @@ IEW::classifyInstToDispQue(ThreadID tid)
             }
             ++iewStats.dispatchedInsts[tid];
             dispQue[id].push_back(inst);
+
+            if (valuePred && inst->vpSupported && inst->canLVP() &&
+                inst->vpRecord) {
+                valuepred::VPDispatchInfo dispatch_info;
+                dispatch_info.pc = inst->getPC();
+                dispatch_info.seqNo = inst->seqNum;
+                dispatch_info.tid = tid;
+                valuePred->dispatch(dispatch_info, inst->vpRecord.get());
+            }
 
             if (!inst->isNop() && !inst->isEliminated()) {
                 scheduler->addProducer(inst);
