@@ -2810,7 +2810,7 @@ LSQ::SingleDataRequest::SingleDataRequest(
                 std::move(amo_op)) {
     port->numSingleRequest++;
     singleList.push_back(this);
-    assert(port->numSingleRequest <= 400);
+    assert(port->numSingleRequest <= 500);
 }
 
 LSQ::SingleDataRequest::~SingleDataRequest(){
