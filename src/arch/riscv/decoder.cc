@@ -28,7 +28,9 @@
  */
 
 #include "arch/riscv/decoder.hh"
+#include "arch/riscv/isa.hh"
 #include "arch/riscv/types.hh"
+#include "arch/riscv/vec_len.hh"
 #include "base/bitfield.hh"
 #include "debug/Decode.hh"
 
@@ -39,6 +41,17 @@ namespace RiscvISA
 {
 
 GenericISA::BasicDecodeCache<Decoder, ExtMachInst> Decoder::defaultCache;
+
+Decoder::Decoder(const RiscvDecoderParams &p) : InstDecoder(p, &machInst)
+{
+    auto *isa = dynamic_cast<ISA *>(p.isa);
+    // Decoder may be constructed before ISA wiring in some unit tests; keep
+    // Kunminghu default then.
+    if (isa) {
+        vlen = isa->getVecLenInBits();
+    }
+    reset();
+}
 
 void Decoder::reset()
 {
@@ -80,6 +93,10 @@ Decoder::decode(ExtMachInst mach_inst, Addr addr)
 {
     DPRINTF(Decode, "Decoding instruction 0x%08x at address %#x\n",
             mach_inst.instBits, addr);
+
+    // Publish configured VLEN so vector StaticInst constructors can capture it
+    // without changing every ISA-parser `new` call site.
+    setDecodeVecLenInBits(vlen);
 
     StaticInstPtr si = defaultCache.decode(this, mach_inst, addr);
 

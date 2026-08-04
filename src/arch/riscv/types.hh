@@ -54,11 +54,32 @@ namespace RiscvISA
 
 constexpr auto XLEN = sizeof(RegVal) * 8;
 
-constexpr unsigned NumVecElemPerVecReg = 2;
+/*
+ * Variable VLEN support (roadmap #181):
+ * - Register containers are sized to MaxVecLenInBytes so one binary can model
+ *   multiple architectural VLEN values (128/256/512).
+ * - The architectural/active VLEN is a runtime ISA parameter (default 128 for
+ *   Kunminghu). Instruction semantics must use ISA::getVecLenInBits() / the
+ *   vlen captured on vector StaticInsts — not these Max* constants.
+ * - VLEN/VLENB/NumVecElemPerVecReg below remain as *container* sizes for
+ *   storage, difftest scratch buffers, and legacy call sites that copy a whole
+ *   register container. Prefer getVecLen*() for RVV architectural width.
+ */
+constexpr unsigned MaxVecLenInBits = 512;
+constexpr unsigned MaxVecLenInBytes = MaxVecLenInBits >> 3;
+constexpr unsigned DefaultVecLenInBits = 128;
+constexpr unsigned DefaultVecElemLenInBits = 64;
+
+constexpr unsigned NumVecElemPerVecReg = MaxVecLenInBits / 64;
 using VecElem = uint64_t;
-constexpr size_t VLENB = NumVecElemPerVecReg * sizeof(VecElem);
-constexpr size_t VLEN = VLENB * 8;
+constexpr size_t VLENB = MaxVecLenInBytes;
+constexpr size_t VLEN = MaxVecLenInBits;
 constexpr uint32_t ELEN = sizeof(VecElem) * 8;
+
+static_assert(MaxVecLenInBits >= DefaultVecLenInBits,
+    "MaxVecLenInBits must cover the Kunminghu default VLEN");
+static_assert((MaxVecLenInBits & (MaxVecLenInBits - 1)) == 0,
+    "MaxVecLenInBits must be a power of 2");
 
 
 typedef uint32_t MachInst;

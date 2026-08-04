@@ -121,7 +121,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     vecSMask = exec_template_base == 'Vlm' or exec_template_base == 'Vsm'
 
     if vecWhole:
-        calc_memsize_code = 'VLENB'
+        calc_memsize_code = '(vlen >> 3)'
         is_vecWhole = 'true'
         wb_elem_mask = 'true'
     else:
@@ -325,7 +325,7 @@ def format VleOp(
 
 def format VleffOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    ea_code={{ EA = Rs1 + (vlen >> 3) * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -347,7 +347,7 @@ def format VlmOp(
 
 def format VlWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    ea_code={{ EA = Rs1 + (vlen >> 3) * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{
@@ -403,7 +403,7 @@ def format VsmOp(
 
 def format VsWholeOp(
     memacc_code,
-    ea_code={{ EA = Rs1 + VLENB * microIdx; }},
+    ea_code={{ EA = Rs1 + (vlen >> 3) * microIdx; }},
     mem_flags=[],
     inst_flags=[]
 ) {{

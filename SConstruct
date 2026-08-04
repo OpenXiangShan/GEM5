@@ -427,11 +427,13 @@ for variant_path in variant_paths:
         env.Append(CCFLAGS=['-fno-strict-aliasing'])
 
         # Enable -Wall and -Wextra and then disable the few warnings that
-        # we consistently violate
+        # we consistently violate.
+        # Note: -Wno-unused-private-field is Clang-only; do not put it in
+        # the shared GCC/Clang list or GCC 9 treats the unknown flag as error
+        # under -Werror (see xs_env clang-warning-suppress.patch history).
         env.Append(CCFLAGS=['-Wall', '-Wundef', '-Wextra',
                             '-Wno-sign-compare', '-Wno-unused-parameter',
                             '-Wno-unused-variable',
-                            '-Wno-unused-private-field',
                             '-Wno-unused-but-set-variable',
                             ])
 
@@ -535,6 +537,8 @@ for variant_path in variant_paths:
         with gem5_scons.Configure(env) as conf:
             conf.CheckCxxFlag('-Wno-c99-designator')
             conf.CheckCxxFlag('-Wno-defaulted-function-deleted')
+            # Clang-only; GCC rejects this flag under -Werror.
+            conf.CheckCxxFlag('-Wno-unused-private-field')
 
         env.Append(TCMALLOC_CCFLAGS=['-fno-builtin'])
 

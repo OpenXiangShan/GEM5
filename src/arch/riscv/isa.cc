@@ -331,14 +331,25 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
 
 
 
-ISA::ISA(const Params &p) : BaseISA(p)
+ISA::ISA(const Params &p) : BaseISA(p), vlen(p.vlen), elen(p.elen)
 {
+    fatal_if(p.vlen < p.elen,
+        "VLEN (%u) must be >= ELEN (%u)", p.vlen, p.elen);
+    fatal_if(p.vlen > MaxVecLenInBits,
+        "VLEN (%u) exceeds compiled MaxVecLenInBits (%u)",
+        p.vlen, MaxVecLenInBits);
+    inform("RVV enabled, VLEN = %u bits, ELEN = %u bits "
+           "(register container MaxVLEN = %u bits)",
+           p.vlen, p.elen, MaxVecLenInBits);
+
     _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs, sizeof(RegVal));
     _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs, sizeof(RegVal));
 
-    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs, RiscvISA::VLENB);
+    // Physical register containers are always MaxVLEN-sized; architectural
+    // width is enforced by instruction semantics via getVecLenInBytes().
+    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs, MaxVecLenInBytes);
     _regClasses.emplace_back(VecElemClass, NumVecElemPerVecReg * NumVecRegs, debug::VecRegs, sizeof(RegVal));
-    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, RiscvISA::VLENB);
+    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, MaxVecLenInBytes);
     _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs, sizeof(RegVal));
     _regClasses.emplace_back(RMiscRegClass,
                 rmisc_reg::NumRegs, debug::MiscRegs, sizeof(RegVal));
@@ -713,7 +724,9 @@ ISA::readMiscReg(int misc_reg)
         }
       case MISCREG_VLENB:
         {
-            return VLENB;
+            // Architectural VLENB CSR must reflect the configured VLEN, not the
+            // MaxVecLenInBytes container size used for physical register storage.
+            return getVecLenInBytes();
         }
         break;
       case MISCREG_VCSR:
@@ -1098,6 +1111,8 @@ ISA::serialize(CheckpointOut &cp) const
 {
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
     SERIALIZE_CONTAINER(miscRegFile);
+    SERIALIZE_SCALAR(vlen);
+    SERIALIZE_SCALAR(elen);
     SERIALIZE_SCALAR(matrixTileM);
     SERIALIZE_SCALAR(matrixTileK);
     SERIALIZE_SCALAR(matrixTileN);
@@ -1114,6 +1129,9 @@ ISA::unserialize(CheckpointIn &cp)
     UNSERIALIZE_CONTAINER(miscRegFile);
     if (miscRegFile.size() < NUM_MISCREGS)
         miscRegFile.resize(NUM_MISCREGS, 0);
+    // Older checkpoints may omit vlen/elen; keep constructor defaults then.
+    UNSERIALIZE_OPT_SCALAR(vlen);
+    UNSERIALIZE_OPT_SCALAR(elen);
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);

@@ -1898,7 +1898,8 @@ decode QUADRANT {
                         // (vm=0) of vfmv.s.f are reserved
                         0x1: VectorNonSplitFormat::vfmv_s_f({{
                             auto fd = ftype_freg<et>(freg(Fs1_bits));
-                            std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
+                            // Architectural VLEN bytes, not MaxVecLenInBytes.
+                            std::memcpy(Vd_vu, Vd_merger, (vlen >> 3));
 
                             // RVV vfmv.s.f tail-agnostic fix.
                             //
@@ -1910,7 +1911,7 @@ decode QUADRANT {
 
                                 if (machInst.vtype8.vta) {
                                     for (uint32_t i = 1;
-                                         i < RiscvISA::VLENB / sizeof(Vd_vu[0]);
+                                         i < (vlen >> 3) / sizeof(Vd_vu[0]);
                                          ++i) {
                                         Vd_vu[i] = ~vu(0);
                                     }
@@ -2175,7 +2176,7 @@ decode QUADRANT {
                         // The encodings corresponding to the masked versions
                         // (vm=0) of vmv.s.x are reserved.
                         0x1: VectorNonSplitFormat::vmv_s_x({{
-                            std::memcpy(Vd_vu, Vd_merger, RiscvISA::VLENB);
+                            std::memcpy(Vd_vu, Vd_merger, (vlen >> 3));
                             if (rVl) {
                                 Vd_vu[0] = Rs1_vu;
 

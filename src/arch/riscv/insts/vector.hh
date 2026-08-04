@@ -35,6 +35,7 @@
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/utility.hh"
+#include "arch/riscv/vec_len.hh"
 #include "base/bitfield.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
@@ -113,6 +114,8 @@ class VectorNonSplitInst : public RiscvStaticInst
     const int8_t vlmul;
     const uint32_t sew;
     const float vflmul;
+    /** Architectural VLEN captured at decode (bits). */
+    const uint32_t vlen;
     VectorNonSplitInst(const char* mnem, ExtMachInst _machInst,
                    OpClass __opClass)
         : RiscvStaticInst(mnem, _machInst, __opClass),
@@ -120,7 +123,8 @@ class VectorNonSplitInst : public RiscvStaticInst
         vsew(_machInst.vtype8.vsew),
         vlmul(vtype_vlmul(_machInst.vtype8)),
         sew( (8 << vsew) ),
-        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) )
+        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) ),
+        vlen(getDecodeVecLenInBits())
     {
         this->flags[IsVector] = true;
     }
@@ -137,6 +141,8 @@ class VectorMacroInst : public RiscvMacroInst
     const int8_t vlmul;
     const uint32_t sew;
     const float vflmul;
+    /** Architectural VLEN captured at decode (bits). */
+    const uint32_t vlen;
     VectorMacroInst(const char* mnem, ExtMachInst _machInst,
                    OpClass __opClass)
         : RiscvMacroInst(mnem, _machInst, __opClass),
@@ -144,7 +150,8 @@ class VectorMacroInst : public RiscvMacroInst
         vsew(_machInst.vtype8.vsew),
         vlmul(vtype_vlmul(_machInst.vtype8)),
         sew( (8 << vsew) ),
-        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) )
+        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) ),
+        vlen(getDecodeVecLenInBits())
     {
         this->flags[IsVector] = true;
     }
@@ -164,6 +171,8 @@ protected:
     const int8_t vlmul;
     const uint32_t sew;
     const float vflmul;
+    /** Architectural VLEN captured at decode (bits). */
+    const uint32_t vlen;
     VectorMicroInst(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
                     uint8_t _microIdx)
         : RiscvMicroInst(mnem, _machInst, __opClass),
@@ -172,7 +181,8 @@ protected:
         vsew(_machInst.vtype8.vsew),
         vlmul(vtype_vlmul(_machInst.vtype8)),
         sew( (8 << vsew) ),
-        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) )
+        vflmul( vlmul < 0 ? (1.0 / (1 << (-vlmul))) : (1 << vlmul) ),
+        vlen(getDecodeVecLenInBits())
     {
         this->flags[IsVector] = true;
     }
@@ -601,27 +611,29 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         vreg_t tmp_d0 = *(vreg_t *)xc->getWritableRegOperand(this, 0);
         auto Vd = tmp_d0.as<uint8_t>();
 
-        constexpr uint8_t elems_per_vreg = VLENB / sizeof(ElemType);
+        const uint32_t vlenb = vlen >> 3;
+        // Mask bits are packed as bytes; use byte view element count.
+        const uint32_t elems_per_vreg = vlenb / sizeof(uint8_t);
         size_t bit_cnt = elems_per_vreg;
 
         vreg_t tmp_s;
         xc->getRegOperand(this, 0, &tmp_s);
         auto s = tmp_s.as<uint8_t>();
 
-        // cp the first result and tail
-        memcpy(Vd, s, VLENB);
+        // Preserve the full physical container, then merge active mask bytes.
+        memcpy(Vd, s, MaxVecLenInBytes);
         for (uint8_t i = 1; i < this->_numSrcRegs; i++) {
             xc->getRegOperand(this, i, &tmp_s);
             s = tmp_s.as<uint8_t>();
-            if constexpr (elems_per_vreg < 8) {
-                constexpr uint8_t m = (1 << elems_per_vreg) - 1;
+            if (elems_per_vreg < 8) {
+                const uint8_t m = (1 << elems_per_vreg) - 1;
                 const uint8_t mask = m << (i * elems_per_vreg % 8);
                 // clr & ext bits
                 Vd[bit_cnt/8] ^= Vd[bit_cnt/8] & mask;
                 Vd[bit_cnt/8] |= s[bit_cnt/8] & mask;
                 bit_cnt += elems_per_vreg;
             } else {
-                constexpr uint8_t byte_offset = elems_per_vreg / 8;
+                const uint32_t byte_offset = elems_per_vreg / 8;
                 memcpy(Vd + i * byte_offset, s + i * byte_offset, byte_offset);
             }
         }
@@ -652,7 +664,7 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         for (uint8_t i = 0; i < this->_numSrcRegs; i++) {
             ss << ", " << registerName(srcRegIdx(i));
         }
-        ss << ", offset:" << VLENB / sizeof(ElemType);
+        ss << ", offset:" << (vlen >> 3);
         return ss.str();
     }
 };
@@ -904,8 +916,8 @@ class Vcompress_vm : public VectorNonSplitInst
     Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
     {
         const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
-        const int uvlmax = VLEN / sew;
-        uint32_t elem_num_per_vreg = VLEN / sew;
+        const int uvlmax = vlen / sew;
+        uint32_t elem_num_per_vreg = vlen / sew;
 
         std::vector<vreg_t> vs_array(regLength);
         std::vector<vreg_t> old_vd_array(regLength);
@@ -926,7 +938,7 @@ class Vcompress_vm : public VectorNonSplitInst
 
         for (uint32_t i = 0; i < regLength; i++) {
             vd_array[i] = *(vreg_t *)xc->getWritableRegOperand(this, i);
-            memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), VLENB);
+            memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), vlen >> 3);
         }
         uint32_t vd_ptr = 0;
         for (uint32_t i = 0; i < rVl; i++) {
@@ -1018,8 +1030,8 @@ class Vslideup_vi : public VectorNonSplitInst
     Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
     {
         const uint32_t regLength = vflmul < 1 ? 1 : vflmul;
-        const int uvlmax = VLEN / sew;
-        uint32_t elem_num_per_vreg = VLEN / sew;
+        const int uvlmax = vlen / sew;
+        uint32_t elem_num_per_vreg = vlen / sew;
 
         std::vector<vreg_t> vs_array(regLength);
         std::vector<vreg_t> old_vd_array(regLength);
@@ -1039,7 +1051,7 @@ class Vslideup_vi : public VectorNonSplitInst
 
         for (uint32_t i = 0; i < regLength; i++) {
             vd_array[i] = *(vreg_t *)xc->getWritableRegOperand(this, i);
-            memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), VLENB);
+            memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), vlen >> 3);
         }
         for (uint32_t i = 0; i < rVl; i++) {
             const uint32_t dest_ei = imm + i;

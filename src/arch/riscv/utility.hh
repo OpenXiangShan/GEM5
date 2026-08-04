@@ -172,12 +172,20 @@ vtype_SEW(const uint64_t vtype)
 * Ref: https://github.com/qemu/qemu/blob/5e9d14f2/target/riscv/cpu.h
 */
 inline uint64_t
-vtype_VLMAX(const uint64_t vtype, const bool per_reg = false)
+vtype_VLMAX(const uint64_t vtype, uint32_t vlen_bits, const bool per_reg = false)
 {
     int64_t lmul = (int64_t)sext<3>(bits(vtype, 2, 0));
     lmul = per_reg ? std::min<int64_t>(0, lmul) : lmul;
     int64_t vsew = bits(vtype, 5, 3);
-    return gem5::RiscvISA::VLEN >> (vsew + 3 - lmul);
+    return vlen_bits >> (vsew + 3 - lmul);
+}
+
+/** Backward-compatible helper: uses DefaultVecLenInBits (Kunminghu = 128).
+ * Prefer the overload that takes an explicit VLEN for configurable models. */
+inline uint64_t
+vtype_VLMAX(const uint64_t vtype, const bool per_reg = false)
+{
+    return vtype_VLMAX(vtype, DefaultVecLenInBits, per_reg);
 }
 
 inline int64_t
@@ -244,9 +252,9 @@ get_emul(uint32_t eew, uint32_t sew, float vflmul, bool is_mask_ldst)
 }
 
 inline int
-elem_gen_idx(int vd, int n, int elem_size)
+elem_gen_idx(int vd, int n, int elem_size, uint32_t vlen_bits = DefaultVecLenInBits)
 {
-    int elts_per_reg = (RiscvISA::VLEN>>3) / elem_size;
+    int elts_per_reg = (vlen_bits >> 3) / elem_size;
     vd = vd + n / elts_per_reg;
     return vd;
 }
