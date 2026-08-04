@@ -137,13 +137,14 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
     auto takenEntry = pred.getTakenEntry();
     DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.returnTarget);
 
-    if (takenEntry.isCall) {
-        Addr retAddr = takenEntry.pc + takenEntry.size;
-        push(tid, retAddr);
-    }
+    // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
     if (takenEntry.isReturn) {
         // do pop
         pop(tid);
+    }
+    if (takenEntry.isCall) {
+        Addr retAddr = takenEntry.pc + takenEntry.size;
+        push(tid, retAddr);
     }
     if (takenEntry.isCall) {
         DPRINTFR(RAS, "IsCall spec PC %lx\n", takenEntry.pc);
@@ -181,12 +182,13 @@ BTBRAS::recoverState(const FetchTarget &entry)
 
     // do push & pops on control squash
     if (entry.exeTaken) {
-        if (takenEntry.isCall) {
-            push(tid, retAddr);
-        }
+        // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
         if (takenEntry.isReturn) {
             pop(tid);
             //TOSW = (TOSR + 1) % numInflightEntries;
+        }
+        if (takenEntry.isCall) {
+            push(tid, retAddr);
         }
     }
 
@@ -218,16 +220,17 @@ BTBRAS::update(const FetchTarget &entry)
         } else
             DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
+        // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
+        if (takenEntry.isReturn) {
+            DPRINTF(RAS, "update ret entry PC %lx\n", entry.startPC);
+            pop_stack(tid);
+        }
         if (takenEntry.isCall) {
             DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
                 entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
             push_stack(tid, retAddr);
             state.BOS = inflightPtrPlus1(meta_ptr->TOSW);
-        }
-        if (takenEntry.isReturn) {
-            DPRINTF(RAS, "update ret entry PC %lx\n", entry.startPC);
-            pop_stack(tid);
         }
     }
     if (takenEntry.isCall || takenEntry.isReturn) {
@@ -465,6 +468,7 @@ BTBRAS::getTopAddrFromMetas(const FetchTarget &stream)
     return meta_ptr->target;
 }
 
+#ifndef UNIT_TEST
 void
 BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
@@ -486,6 +490,7 @@ BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         }
     }
 }
+#endif
 
 #ifndef UNIT_TEST
 BTBRAS::RASStats::RASStats(statistics::Group *parent):
