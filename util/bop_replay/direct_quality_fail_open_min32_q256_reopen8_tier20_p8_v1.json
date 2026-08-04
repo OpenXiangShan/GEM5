@@ -1,0 +1,14 @@
+{
+  "quality_entries": 256,
+  "feedback_entries": 256,
+  "horizon": 2048,
+  "observe_issue_all": true,
+  "min_samples": 32,
+  "unused_per_useful": 10,
+  "block_guard": 4,
+  "strict_unused_per_useful": 20,
+  "strict_block_guard": 4,
+  "reopen_unused_per_useful": 8,
+  "reopen_guard": 4,
+  "borderline_block_probe_period": 8
+}

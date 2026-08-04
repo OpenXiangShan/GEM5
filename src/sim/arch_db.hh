@@ -60,6 +60,7 @@ class ArchDBer : public SimObject
     bool dumpL1MissTrace;
     bool dumpBopTrainTrace;
     bool dumpBopValidationTrace;
+    bool dumpBopReplayTrace;
     bool dumpSMSTrainTrace;
     bool dumpStrideTrainTrace;
     bool dumpDespacitoTrainTrace;
@@ -69,6 +70,12 @@ class ArchDBer : public SimObject
     bool dumpLifetimeMore;
 
     sqlite3 *mem_db;
+    sqlite3_stmt *bopReplayMetaStmt;
+    sqlite3_stmt *bopReplayPhaseStmt;
+    sqlite3_stmt *bopReplayDemandStmt;
+    sqlite3_stmt *bopReplayEventStmt;
+    sqlite3_stmt *bopReplayDelayActionStmt;
+    uint64_t bopReplayPhaseId;
     char * zErrMsg;
     int rc;
     //path to save
@@ -80,6 +87,7 @@ class ArchDBer : public SimObject
 
     void save_db();
   public:
+    ~ArchDBer() override;
     void execmd(std::string cmd);
 
     DBTraceManager *addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields);
@@ -125,6 +133,56 @@ class ArchDBer : public SimObject
     void bopValidationOutcomeTraceWrite(
       Tick tick, const char *event, Addr addr, Addr pc, int pf_source,
       bool is_demand, bool cache_miss);
+    void bopReplayMetaTraceWrite(
+      const char *bop_name, unsigned int block_size, unsigned int score_max,
+      unsigned int round_max, unsigned int bad_score, unsigned int rr_entries,
+      unsigned int tag_bits, bool delay_queue_enabled,
+      unsigned int delay_queue_size, unsigned int delay_ticks, bool cross_page,
+      bool adapt_offset, bool issue_validation, bool pc_validation_confidence,
+      bool pc_validation_producer_consumer,
+      bool global_coverage_guard, unsigned int pc_validation_entries,
+      unsigned int pc_validation_tag_bits,
+      unsigned int pc_validation_counter_bits,
+      unsigned int pc_validation_initial,
+      unsigned int pc_validation_medium_threshold,
+      unsigned int pc_validation_high_threshold,
+      unsigned int pc_validation_hit_increment,
+      unsigned int pc_validation_medium_sample_period,
+      unsigned int pc_validation_miss_decay_period,
+      unsigned int pc_validation_low_entry_miss_streak_threshold,
+      unsigned int pc_validation_epoch_bits,
+      unsigned int pc_validation_offset_context_slots,
+      unsigned int global_bop_unused_threshold,
+      unsigned int global_bop_min_resolved_coverage_shift,
+      bool negative_offsets_enable, bool auto_learning,
+      unsigned int victim_offsets_list_size, unsigned int restore_cycle,
+      Tick clock_period_ticks,
+      const std::string &offsets);
+    void bopReplayPhaseTraceWrite(
+      uint64_t phase_id, const char *phase_name, Tick start_tick);
+    void bopReplayDemandTraceWrite(
+      uint64_t access_seq, Tick tick, Addr addr, Addr pc, bool has_pc,
+      bool cache_miss, int prefetch_source, bool pf_first_hit, bool pf_hit);
+    void bopReplayEventTraceWrite(
+      uint64_t access_seq, uint64_t replay_order, Tick tick,
+      const char *bop_name, const char *bop_kind,
+      Addr trigger_addr, Addr trigger_pc, bool trigger_has_pc,
+      bool trigger_is_demand, bool trigger_is_read, bool trigger_cache_miss,
+      int trigger_pf_source, bool trigger_pf_first_hit, bool trigger_pf_hit,
+      bool late, int64_t best_offset_before, int64_t best_offset_after,
+      unsigned int best_score, unsigned int round, bool best_offset_changed,
+      bool issue_enabled, bool validation_enabled, int validation_hit,
+      bool pc_confidence_enabled, int pc_index, Addr pc_tag,
+      int pc_entry_hit, int pc_confidence, int pc_state, bool pc_sampled,
+      int pc_low_entry_miss_streak, int pc_epoch, bool global_bypass_active,
+      bool policy_suppressed, bool raw_candidate_valid,
+      Addr raw_candidate_addr, bool policy_candidate_valid,
+      Addr policy_candidate_addr, Addr validation_addr, Addr prefetch_addr,
+      bool online_generated, bool online_buffered, bool online_filtered,
+      bool online_filter_passed);
+    void bopReplayDelayActionTraceWrite(
+      const char *bop_name, uint64_t replay_order, const char *action,
+      Tick tick, Addr addr, Tick process_tick, unsigned int queue_size_after);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);
     void strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train);
     void despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train);

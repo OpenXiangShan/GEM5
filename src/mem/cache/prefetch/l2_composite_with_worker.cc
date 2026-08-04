@@ -32,6 +32,7 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;
     largeBOP->sharePCValidationConfidenceWith(*smallBOP);
+    largeBOP->shareDirectQualityGateWith(*smallBOP);
     cmc->filter = &pfLRUFilter;
     despacitoStream->filter = &pfLRUFilter;
     cdp->parentRid = p.sys->getRequestorId(this);
@@ -48,6 +49,7 @@ L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType p
     }
     if (pfSource == PrefetchSourceType::HWP_BOP) {
         largeBOP->notifyGlobalBOPOutcome(false);
+        largeBOP->notifyDirectQualityOutcome(paddr, false);
     }
     if (pfSource == PrefetchSourceType::CDP) {
         cdp->recordUnusedPrefetch(paddr);
@@ -60,6 +62,7 @@ L2CompositeWithWorkerPrefetcher::prefetchUseful(
 {
     if (pfSource == PrefetchSourceType::HWP_BOP) {
         largeBOP->notifyGlobalBOPOutcome(true);
+        largeBOP->notifyDirectQualityOutcome(paddr, true);
     }
 }
 
@@ -89,8 +92,12 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
         cdp->calculatePrefetch(pfi, addresses);
     }
     if (enableBOP) {
-        largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-        smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+        largeBOP->calculatePrefetch(
+            pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
+            activeBOPReplayEventId);
+        smallBOP->calculatePrefetch(
+            pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
+            activeBOPReplayEventId);
         largeBOP->commitPCValidationConfidence();
     }
     if (enableDespacitoStream) {
@@ -121,8 +128,22 @@ L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 void
 L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
+    if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite())
+        largeBOP->notifyDirectQualityDemand();
+    if (archDBer && archDBer->dumpBopReplayTrace) {
+        activeBOPReplayEventId = ++nextBOPReplayEventId;
+        if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite()) {
+            const Addr pc = pfi.hasPC() ? pfi.getPC() : 0;
+            archDBer->bopReplayDemandTraceWrite(
+                activeBOPReplayEventId, curTick(), blockAddress(pfi.getAddr()),
+                pc, pfi.hasPC(), pfi.isCacheMiss(),
+                static_cast<int>(pfi.getXsMetadata().prefetchSource),
+                pfi.isPfFirstHit(), pfi.isPfHit());
+        }
+    }
     WorkerPrefetcher::notify(pkt, pfi);
     Queued::notify(pkt, pfi);
+    activeBOPReplayEventId = 0;
 }
 
 void

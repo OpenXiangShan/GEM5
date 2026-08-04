@@ -14,6 +14,28 @@ sqliteSignedInt(uint64_t value)
     return static_cast<long long>(static_cast<int64_t>(value));
 }
 
+void
+prepareStatement(sqlite3 *db, sqlite3_stmt **statement, const char *sql,
+                 const char *name)
+{
+    const int result = sqlite3_prepare_v2(db, sql, -1, statement, nullptr);
+    fatal_if(result != SQLITE_OK, "Failed to prepare %s: %s\n", name,
+             sqlite3_errmsg(db));
+}
+
+void
+stepAndReset(sqlite3 *db, sqlite3_stmt *statement, const char *name)
+{
+    const int step_result = sqlite3_step(statement);
+    fatal_if(step_result != SQLITE_DONE, "Failed to write %s: %s\n", name,
+             sqlite3_errmsg(db));
+
+    const int reset_result = sqlite3_reset(statement);
+    fatal_if(reset_result != SQLITE_OK, "Failed to reset %s: %s\n", name,
+             sqlite3_errmsg(db));
+    sqlite3_clear_bindings(statement);
+}
+
 } // anonymous namespace
 
 ArchDBer::ArchDBer(const Params &p)
@@ -27,13 +49,17 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
     dumpBopValidationTrace(p.dump_bop_validation_trace),
+    dumpBopReplayTrace(p.dump_bop_replay_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     dumpVaddrTrace(p.dump_vaddr_trace),
     dumpLifetime(p.dump_lifetime),
-    mem_db(nullptr), zErrMsg(nullptr),rc(0),
+    mem_db(nullptr), bopReplayMetaStmt(nullptr), bopReplayPhaseStmt(nullptr),
+    bopReplayDemandStmt(nullptr), bopReplayEventStmt(nullptr),
+    bopReplayDelayActionStmt(nullptr),
+    bopReplayPhaseId(0), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
   int rc = sqlite3_open(":memory:", &mem_db);
@@ -48,7 +74,77 @@ ArchDBer::ArchDBer(const Params &p)
   for (const auto &s : p.table_cmds) {
     create_table(s);
   }
+  if (dumpBopReplayTrace) {
+    prepareStatement(
+        mem_db, &bopReplayMetaStmt,
+        "INSERT OR IGNORE INTO BOPReplayMeta("
+        "SchemaVersion,BOPName,BlockSize,ScoreMax,RoundMax,BadScore,"
+        "RREntries,TagBits,DelayQueueEnabled,DelayQueueSize,DelayTicks,"
+        "CrossPage,AdaptOffset,IssueValidation,PCValidationConfidence,"
+        "PCValidationProducerConsumer,GlobalCoverageGuard,"
+        "PCValidationEntries,PCValidationTagBits,"
+        "PCValidationCounterBits,PCValidationInitial,"
+        "PCValidationMediumThreshold,PCValidationHighThreshold,"
+        "PCValidationHitIncrement,PCValidationMediumSamplePeriod,"
+        "PCValidationMissDecayPeriod,PCValidationLowEntryMissStreakThreshold,"
+        "PCValidationEpochBits,PCValidationOffsetContextSlots,"
+        "GlobalBOPUnusedThreshold,"
+        "GlobalBOPMinResolvedCoverageShift,NegativeOffsetsEnabled,"
+        "AutoLearning,VictimOffsetsListSize,RestoreCycle,"
+        "ClockPeriodTicks,Offsets) "
+        "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,"
+        "?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,"
+        "?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37);",
+        "BOPReplayMeta insert");
+    prepareStatement(
+        mem_db, &bopReplayPhaseStmt,
+        "INSERT OR IGNORE INTO BOPReplayPhase(PhaseId,PhaseName,StartTick) "
+        "VALUES(?,?,?);",
+        "BOPReplayPhase insert");
+    prepareStatement(
+        mem_db, &bopReplayDemandStmt,
+        "INSERT INTO L2DemandTrace("
+        "AccessSeq,PhaseId,Tick,Addr,PC,HasPC,CacheMiss,PrefetchSource,"
+        "PfFirstHit,PfHit) VALUES(?,?,?,?,?,?,?,?,?,?);",
+        "L2DemandTrace insert");
+    prepareStatement(
+        mem_db, &bopReplayEventStmt,
+        "INSERT INTO BOPReplayEvent("
+        "AccessSeq,BOPName,BOPKind,ReplayOrder,PhaseId,Tick,TriggerAddr,TriggerPC,"
+        "TriggerHasPC,"
+        "TriggerIsDemand,TriggerIsRead,TriggerCacheMiss,TriggerPFSource,"
+        "TriggerPFFirstHit,TriggerPFHit,Late,BestOffsetBefore,"
+        "BestOffsetAfter,BestScore,Round,BestOffsetChanged,IssueEnabled,"
+        "ValidationEnabled,ValidationHit,PCConfidenceEnabled,PCIndex,PCTag,"
+        "PCEntryHit,PCConfidence,PCState,PCSampled,PCLowEntryMissStreak,"
+        "PCEpoch,GlobalBypassActive,PolicySuppressed,RawCandidateValid,"
+        "RawCandidateAddr,PolicyCandidateValid,PolicyCandidateAddr,"
+        "ValidationAddr,PrefetchAddr,OnlineGenerated,OnlineBuffered,"
+        "OnlineFiltered,OnlineFilterPassed) "
+        "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,"
+        "?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,"
+        "?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,"
+        "?37,?38,?39,?40,?41,?42,?43,?44,?45);",
+        "BOPReplayEvent insert");
+    prepareStatement(
+        mem_db, &bopReplayDelayActionStmt,
+        "INSERT INTO BOPReplayDelayAction("
+        "BOPName,ReplayOrder,Action,Tick,Addr,ProcessTick,QueueSizeAfter) "
+        "VALUES(?,?,?,?,?,?,?);",
+        "BOPReplayDelayAction insert");
+    bopReplayPhaseTraceWrite(0, "trace_start", curTick());
+  }
   registerExitCallback([this](){ save_db(); });
+}
+
+ArchDBer::~ArchDBer()
+{
+  sqlite3_finalize(bopReplayMetaStmt);
+  sqlite3_finalize(bopReplayPhaseStmt);
+  sqlite3_finalize(bopReplayDemandStmt);
+  sqlite3_finalize(bopReplayEventStmt);
+  sqlite3_finalize(bopReplayDelayActionStmt);
+  sqlite3_close(mem_db);
 }
 
 static int callback(void *NotUsed, int argc, char **argv, char **azColName){
@@ -64,6 +160,10 @@ void ArchDBer::create_table(const std::string &sql) {
 
 void ArchDBer::start_recording() {
   dumpGlobal = true;
+  if (dumpBopReplayTrace && bopReplayPhaseId == 0) {
+    bopReplayPhaseId = 1;
+    bopReplayPhaseTraceWrite(bopReplayPhaseId, "stable", curTick());
+  }
 }
 
 void ArchDBer::save_db() {
@@ -274,6 +374,274 @@ ArchDBer::bopValidationOutcomeTraceWrite(
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   }
+}
+
+void
+ArchDBer::bopReplayMetaTraceWrite(
+    const char *bop_name, unsigned int block_size, unsigned int score_max,
+    unsigned int round_max, unsigned int bad_score, unsigned int rr_entries,
+    unsigned int tag_bits, bool delay_queue_enabled,
+    unsigned int delay_queue_size, unsigned int delay_ticks, bool cross_page,
+    bool adapt_offset, bool issue_validation, bool pc_validation_confidence,
+    bool pc_validation_producer_consumer,
+    bool global_coverage_guard, unsigned int pc_validation_entries,
+    unsigned int pc_validation_tag_bits,
+    unsigned int pc_validation_counter_bits,
+    unsigned int pc_validation_initial,
+    unsigned int pc_validation_medium_threshold,
+    unsigned int pc_validation_high_threshold,
+    unsigned int pc_validation_hit_increment,
+    unsigned int pc_validation_medium_sample_period,
+    unsigned int pc_validation_miss_decay_period,
+    unsigned int pc_validation_low_entry_miss_streak_threshold,
+    unsigned int pc_validation_epoch_bits,
+    unsigned int pc_validation_offset_context_slots,
+    unsigned int global_bop_unused_threshold,
+    unsigned int global_bop_min_resolved_coverage_shift,
+    bool negative_offsets_enable, bool auto_learning,
+    unsigned int victim_offsets_list_size, unsigned int restore_cycle,
+    Tick clock_period_ticks,
+    const std::string &offsets)
+{
+  if (!(dumpGlobal && dumpBopReplayTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK, "Failed to bind BOPReplayMeta: %s\n",
+             sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, 5));
+  bind(sqlite3_bind_text(bopReplayMetaStmt, column++, bop_name, -1,
+                         SQLITE_TRANSIENT));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, block_size));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, score_max));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, round_max));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, bad_score));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, rr_entries));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, tag_bits));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, delay_queue_enabled));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, delay_queue_size));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, delay_ticks));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, cross_page));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, adapt_offset));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, issue_validation));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_confidence));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_producer_consumer));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, global_coverage_guard));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, pc_validation_entries));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, pc_validation_tag_bits));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_counter_bits));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, pc_validation_initial));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_medium_threshold));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_high_threshold));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_hit_increment));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_medium_sample_period));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_miss_decay_period));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_low_entry_miss_streak_threshold));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, pc_validation_epoch_bits));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         pc_validation_offset_context_slots));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         global_bop_unused_threshold));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         global_bop_min_resolved_coverage_shift));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, negative_offsets_enable));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, auto_learning));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, victim_offsets_list_size));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, restore_cycle));
+  bind(sqlite3_bind_int64(bopReplayMetaStmt, column++,
+                          sqliteSignedInt(clock_period_ticks)));
+  bind(sqlite3_bind_text(bopReplayMetaStmt, column++, offsets.c_str(), -1,
+                         SQLITE_TRANSIENT));
+  stepAndReset(mem_db, bopReplayMetaStmt, "BOPReplayMeta");
+}
+
+void
+ArchDBer::bopReplayPhaseTraceWrite(
+    uint64_t phase_id, const char *phase_name, Tick start_tick)
+{
+  if (!dumpBopReplayTrace) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK, "Failed to bind BOPReplayPhase: %s\n",
+             sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int64(bopReplayPhaseStmt, column++,
+                          sqliteSignedInt(phase_id)));
+  bind(sqlite3_bind_text(bopReplayPhaseStmt, column++, phase_name, -1,
+                         SQLITE_TRANSIENT));
+  bind(sqlite3_bind_int64(bopReplayPhaseStmt, column++,
+                          sqliteSignedInt(start_tick)));
+  stepAndReset(mem_db, bopReplayPhaseStmt, "BOPReplayPhase");
+}
+
+void
+ArchDBer::bopReplayDemandTraceWrite(
+    uint64_t access_seq, Tick tick, Addr addr, Addr pc, bool has_pc,
+    bool cache_miss, int prefetch_source, bool pf_first_hit, bool pf_hit)
+{
+  if (!(dumpGlobal && dumpBopReplayTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK, "Failed to bind L2DemandTrace: %s\n",
+             sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int64(bopReplayDemandStmt, column++,
+                          sqliteSignedInt(access_seq)));
+  bind(sqlite3_bind_int64(bopReplayDemandStmt, column++,
+                          sqliteSignedInt(bopReplayPhaseId)));
+  bind(sqlite3_bind_int64(bopReplayDemandStmt, column++,
+                          sqliteSignedInt(tick)));
+  bind(sqlite3_bind_int64(bopReplayDemandStmt, column++,
+                          sqliteSignedInt(addr)));
+  bind(sqlite3_bind_int64(bopReplayDemandStmt, column++, sqliteSignedInt(pc)));
+  bind(sqlite3_bind_int(bopReplayDemandStmt, column++, has_pc));
+  bind(sqlite3_bind_int(bopReplayDemandStmt, column++, cache_miss));
+  bind(sqlite3_bind_int(bopReplayDemandStmt, column++, prefetch_source));
+  bind(sqlite3_bind_int(bopReplayDemandStmt, column++, pf_first_hit));
+  bind(sqlite3_bind_int(bopReplayDemandStmt, column++, pf_hit));
+  stepAndReset(mem_db, bopReplayDemandStmt, "L2DemandTrace");
+}
+
+void
+ArchDBer::bopReplayEventTraceWrite(
+    uint64_t access_seq, uint64_t replay_order, Tick tick,
+    const char *bop_name, const char *bop_kind,
+    Addr trigger_addr, Addr trigger_pc, bool trigger_has_pc,
+    bool trigger_is_demand, bool trigger_is_read, bool trigger_cache_miss,
+    int trigger_pf_source, bool trigger_pf_first_hit, bool trigger_pf_hit,
+    bool late, int64_t best_offset_before, int64_t best_offset_after,
+    unsigned int best_score, unsigned int round, bool best_offset_changed,
+    bool issue_enabled, bool validation_enabled, int validation_hit,
+    bool pc_confidence_enabled, int pc_index, Addr pc_tag,
+    int pc_entry_hit, int pc_confidence, int pc_state, bool pc_sampled,
+    int pc_low_entry_miss_streak, int pc_epoch, bool global_bypass_active,
+    bool policy_suppressed, bool raw_candidate_valid,
+    Addr raw_candidate_addr, bool policy_candidate_valid,
+    Addr policy_candidate_addr, Addr validation_addr, Addr prefetch_addr,
+    bool online_generated, bool online_buffered, bool online_filtered,
+    bool online_filter_passed)
+{
+  if (!(dumpGlobal && dumpBopReplayTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK, "Failed to bind BOPReplayEvent: %s\n",
+             sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(access_seq)));
+  bind(sqlite3_bind_text(bopReplayEventStmt, column++, bop_name, -1,
+                         SQLITE_TRANSIENT));
+  bind(sqlite3_bind_text(bopReplayEventStmt, column++, bop_kind, -1,
+                         SQLITE_TRANSIENT));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(replay_order)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(bopReplayPhaseId)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(tick)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(trigger_addr)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(trigger_pc)));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, trigger_has_pc));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, trigger_is_demand));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, trigger_is_read));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, trigger_cache_miss));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, trigger_pf_source));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, trigger_pf_first_hit));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, trigger_pf_hit));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, late));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(best_offset_before)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(best_offset_after)));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, best_score));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, round));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, best_offset_changed));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, issue_enabled));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, validation_enabled));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, validation_hit));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++,
+                         pc_confidence_enabled));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, pc_index));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(pc_tag)));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, pc_entry_hit));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, pc_confidence));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, pc_state));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, pc_sampled));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++,
+                         pc_low_entry_miss_streak));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, pc_epoch));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, global_bypass_active));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, policy_suppressed));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, raw_candidate_valid));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(raw_candidate_addr)));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++,
+                         policy_candidate_valid));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                         sqliteSignedInt(policy_candidate_addr)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(validation_addr)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(prefetch_addr)));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, online_generated));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, online_buffered));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, online_filtered));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, online_filter_passed));
+  stepAndReset(mem_db, bopReplayEventStmt, "BOPReplayEvent");
+}
+
+void
+ArchDBer::bopReplayDelayActionTraceWrite(
+    const char *bop_name, uint64_t replay_order, const char *action,
+    Tick tick, Addr addr, Tick process_tick, unsigned int queue_size_after)
+{
+  if (!(dumpGlobal && dumpBopReplayTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK,
+             "Failed to bind BOPReplayDelayAction: %s\n", sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_text(bopReplayDelayActionStmt, column++, bop_name, -1,
+                         SQLITE_TRANSIENT));
+  bind(sqlite3_bind_int64(bopReplayDelayActionStmt, column++,
+                          sqliteSignedInt(replay_order)));
+  bind(sqlite3_bind_text(bopReplayDelayActionStmt, column++, action, -1,
+                         SQLITE_TRANSIENT));
+  bind(sqlite3_bind_int64(bopReplayDelayActionStmt, column++,
+                          sqliteSignedInt(tick)));
+  bind(sqlite3_bind_int64(bopReplayDelayActionStmt, column++,
+                          sqliteSignedInt(addr)));
+  bind(sqlite3_bind_int64(bopReplayDelayActionStmt, column++,
+                          sqliteSignedInt(process_tick)));
+  bind(sqlite3_bind_int(bopReplayDelayActionStmt, column++, queue_size_after));
+  stepAndReset(mem_db, bopReplayDelayActionStmt, "BOPReplayDelayAction");
 }
 
 void

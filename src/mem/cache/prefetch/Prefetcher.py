@@ -826,6 +826,8 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Require current best offset to hit in the RR table before issuing")
     enable_pc_validation_confidence = Param.Bool(False,
         "Use PC-aggregated confidence to grade current-best-offset validation")
+    enable_pc_validation_producer_consumer = Param.Bool(False,
+        "Credit RR hits to producer PCs and gate cross-PC consumers")
     pc_validation_entries = Param.Unsigned(64,
         "Number of direct-mapped PC validation-confidence entries")
     pc_validation_tag_bits = Param.Unsigned(10,
@@ -848,7 +850,9 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Consecutive sampled all-miss updates required before medium enters "
         "low; zero preserves immediate decay")
     pc_validation_epoch_bits = Param.Unsigned(2,
-        "Lazy invalidation epoch bits for best-offset changes")
+        "Deprecated epoch width retained for legacy trace replay metadata")
+    pc_validation_offset_context_slots = Param.Unsigned(2,
+        "Recent best-offset confidence contexts retained in each PC-kind entry")
     enable_global_bop_coverage_guard = Param.Bool(False,
         "Enable a global BOP bypass mode: when recent unused EWMA is low, "
         "bypass PC-validation suppression for all PCs; otherwise fall back "
@@ -858,6 +862,42 @@ class BOPPrefetcher(QueuedPrefetcher):
     global_bop_min_resolved_coverage_shift = Param.Unsigned(3,
         "Require resolved_outcomes / issued_prefetches >= 1/(2^shift) "
         "before global bypass mode may be active; zero disables this gate")
+    enable_direct_quality_gate = Param.Bool(False,
+        "Enable the bounded online Tier20/P8 direct-quality gate")
+    direct_quality_entries = Param.Unsigned(256,
+        "Direct-quality PC table entries")
+    direct_quality_ways = Param.Unsigned(4,
+        "Direct-quality PC table associativity")
+    direct_quality_feedback_entries = Param.Unsigned(256,
+        "Direct-quality feedback table entries")
+    direct_quality_feedback_ways = Param.Unsigned(4,
+        "Direct-quality feedback table associativity")
+    direct_quality_horizon = Param.Unsigned(2048,
+        "Demand-age horizon for online direct-quality feedback")
+    direct_quality_min_samples = Param.Unsigned(32,
+        "Minimum sampled outcomes before direct-quality state transition")
+    direct_quality_observe_sample_period = Param.Unsigned(16,
+        "OBSERVE candidate sampling period")
+    direct_quality_open_sample_period = Param.Unsigned(16,
+        "OPEN candidate sampling period")
+    direct_quality_block_probe_period = Param.Unsigned(64,
+        "Strict BLOCK probe period")
+    direct_quality_borderline_block_probe_period = Param.Unsigned(8,
+        "Borderline BLOCK probe period")
+    direct_quality_unused_per_useful = Param.Unsigned(10,
+        "Unused samples allowed per useful sample")
+    direct_quality_block_guard = Param.Unsigned(4,
+        "Additional unused samples required to enter BLOCK")
+    direct_quality_strict_unused_per_useful = Param.Unsigned(20,
+        "Strict BLOCK classification ratio")
+    direct_quality_strict_block_guard = Param.Unsigned(4,
+        "Strict BLOCK guard")
+    direct_quality_reopen_unused_per_useful = Param.Unsigned(10,
+        "Unused/useful ratio required for reopen")
+    direct_quality_reopen_guard = Param.Unsigned(4,
+        "Reopen guard")
+    direct_quality_reopen_probe_period = Param.Unsigned(64,
+        "BLOCK reopen probe period")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 

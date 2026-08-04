@@ -36,13 +36,19 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <queue>
 #include <set>
+#include <string>
+#include <vector>
+
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
 #include "base/statistics.hh"
+#include "mem/cache/prefetch/direct_quality_gate.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 
@@ -80,12 +86,18 @@ class BOP : public Queued
         const bool crossPage;
         /** Adapt Bop Offset */
         const bool enableAdaptOffset;
+        const bool negativeOffsetsEnable;
+        const bool autoLearning;
         /** Revalidate the current best offset before issuing a prefetch */
         const bool enableIssueValidation;
         /** Grade issue validation misses with shared per-PC confidence */
         const bool enablePCValidationConfidence;
+        /** Attribute RR hits to producers and gate cross-PC consumers */
+        const bool enablePCValidationProducerConsumer;
         /** Bypass PC validation when recent global BOP outcomes are healthy */
         const bool enableGlobalBOPCoverageGuard;
+        /** Optional online Tier20/P8 direct-quality gate. */
+        const bool enableDirectQualityGate;
 
         const unsigned int pcValidationEntries;
         const unsigned int pcValidationTagBits;
@@ -98,8 +110,11 @@ class BOP : public Queued
         const unsigned int pcValidationMissDecayPeriod;
         const unsigned int pcValidationLowEntryMissStreakThreshold;
         const unsigned int pcValidationEpochBits;
+        const unsigned int pcValidationOffsetContextSlots;
         const unsigned int globalBOPUnusedThreshold;
         const unsigned int globalBOPMinResolvedCoverageShift;
+
+        const DirectQualityGate::Config directQualityConfig;
 
         const int victimListSize;
         const int restoreCycle;
@@ -107,13 +122,35 @@ class BOP : public Queued
         bool victimRestoreScheduled = false;
         Event *restore_event;
 
+        /**
+         * Compressed PC-table identity carried by an RR entry. The key uses
+         * the same set and partial tag already used by PC validation, so RR
+         * ownership does not require a full architectural PC.
+         */
+        struct PCValidationKey
+        {
+            bool valid = false;
+            unsigned int set = 0;
+            Addr tag = 0;
+
+            bool operator==(const PCValidationKey &other) const
+            {
+                return valid == other.valid && set == other.set &&
+                       tag == other.tag;
+            }
+        };
+
         struct RREntryDebug
         {
             Addr fullAddr;
             Addr hashAddr;
+            PCValidationKey owner;
 
-            RREntryDebug(Addr full_addr, Addr hash_addr) : fullAddr(full_addr), hashAddr(hash_addr) {}
-            RREntryDebug() : fullAddr(0), hashAddr(0) {}
+            RREntryDebug(Addr full_addr, Addr hash_addr,
+                         PCValidationKey owner_key)
+                : fullAddr(full_addr), hashAddr(hash_addr), owner(owner_key)
+            {}
+            RREntryDebug() : fullAddr(0), hashAddr(0), owner() {}
         };
 
         std::vector<RREntryDebug> rrLeft;
@@ -174,6 +211,19 @@ class BOP : public Queued
             High = 2
         };
 
+        enum class PCValidationKind : uint8_t
+        {
+            Generic = 0,
+            Large = 1,
+            Small = 2
+        };
+
+        static constexpr unsigned int PC_VALIDATION_KIND_COUNT = 3;
+        static constexpr unsigned int PC_VALIDATION_ASSOCIATIVITY = 4;
+
+        static unsigned int pcValidationKindIndex(PCValidationKind kind);
+        static const char *pcValidationKindName(PCValidationKind kind);
+
         class PCValidationConfidenceTable
         {
           private:
@@ -183,30 +233,45 @@ class BOP : public Queued
             static constexpr unsigned int GLOBAL_EWMA_SHIFT = 3;
             static constexpr unsigned int GLOBAL_IDLE_RESET_CHECKS = 4096;
             static constexpr unsigned int GLOBAL_UNUSED_EWMA_INITIAL = 255;
+            static constexpr unsigned int
+                PC_VALIDATION_MAX_OFFSET_CONTEXT_SLOTS = 4;
+
+            struct OffsetContext
+            {
+                bool valid = false;
+                int64_t offset = 0;
+                uint8_t confidence = 0;
+                uint8_t lowEntryMissStreak = 0;
+            };
 
             struct Entry
             {
                 bool valid = false;
                 Addr tag = 0;
-                uint8_t confidence = 0;
-                uint8_t lowEntryMissStreak = 0;
-                uint8_t epoch = 0;
+                std::array<OffsetContext,
+                           PC_VALIDATION_MAX_OFFSET_CONTEXT_SLOTS> contexts;
+                uint8_t contextPLRU = 0;
             };
 
             struct PendingUpdate
             {
                 bool valid = false;
-                bool offsetChanged = false;
                 bool validationHit = false;
+                PCValidationKind kind = PCValidationKind::Generic;
                 Addr pc = 0;
                 Addr triggerLine = 0;
                 unsigned int index = 0;
+                unsigned int set = 0;
+                unsigned int way = 0;
+                unsigned int contextWay = 0;
                 Addr tag = 0;
+                int64_t offset = 0;
                 unsigned int participants = 0;
-            } pending;
+            };
 
             const unsigned int entries;
-            const unsigned int indexBits;
+            const unsigned int sets;
+            const unsigned int setBits;
             const unsigned int tagBits;
             const Addr tagMask;
             const unsigned int counterMax;
@@ -217,13 +282,18 @@ class BOP : public Queued
             const unsigned int mediumSamplePeriod;
             const unsigned int missDecayPeriod;
             const unsigned int lowEntryMissStreakThreshold;
-            const unsigned int epochMask;
+            const unsigned int offsetContextSlots;
             const bool globalCoverageGuardEnabled;
             const unsigned int globalUnusedThreshold;
             const unsigned int globalMinResolvedCoverageShift;
 
-            uint8_t currentEpoch = 0;
+            static constexpr unsigned int
+                PC_VALIDATION_MAX_PENDING_UPDATES_PER_KIND = 2;
+            std::array<std::array<PendingUpdate,
+                                  PC_VALIDATION_MAX_PENDING_UPDATES_PER_KIND>,
+                       PC_VALIDATION_KIND_COUNT> pending = {};
             std::vector<Entry> table;
+            std::vector<uint8_t> plruState;
             unsigned int globalOutcomeWindowResolved = 0;
             unsigned int globalOutcomeWindowUnused = 0;
             unsigned int globalIssuedWindowIssued = 0;
@@ -232,35 +302,52 @@ class BOP : public Queued
             bool globalBypassPCValidation = false;
 
             Addr foldedPC(Addr pc) const;
-            bool sample(Addr pc, Addr line, unsigned int period,
-                        Addr salt) const;
+            Addr signature(Addr pc, PCValidationKind kind) const;
+            bool sample(Addr pc, PCValidationKind kind, int64_t offset,
+                        Addr line,
+                        unsigned int period, Addr salt) const;
+            Entry &entryAt(unsigned int set, unsigned int way);
+            const Entry &entryAt(unsigned int set, unsigned int way) const;
+            unsigned int plruVictim(unsigned int set) const;
+            void touchPLRU(unsigned int set, unsigned int way);
+            unsigned int contextVictim(const Entry &entry) const;
+            void touchContext(Entry &entry, unsigned int context_way);
             void resetGlobalBypassPolicy();
 
           public:
             struct LookupResult
             {
                 unsigned int index = 0;
+                unsigned int set = 0;
+                unsigned int way = 0;
+                unsigned int contextWay = 0;
                 Addr tag = 0;
+                PCValidationKind kind = PCValidationKind::Generic;
                 bool entryHit = false;
                 bool replaced = false;
-                bool epochReset = false;
+                bool contextHit = false;
+                bool contextReplaced = false;
+                int64_t offset = 0;
                 unsigned int confidence = 0;
                 unsigned int lowEntryMissStreak = 0;
                 PCConfidenceState state = PCConfidenceState::None;
-                unsigned int epoch = 0;
             };
 
             struct CommitResult
             {
                 bool hadPending = false;
                 bool hadValidation = false;
-                bool offsetChanged = false;
                 bool validationHit = false;
                 bool decayed = false;
+                PCValidationKind kind = PCValidationKind::Generic;
                 Addr pc = 0;
                 Addr triggerLine = 0;
                 unsigned int index = 0;
+                unsigned int set = 0;
+                unsigned int way = 0;
+                unsigned int contextWay = 0;
                 Addr tag = 0;
+                int64_t offset = 0;
                 unsigned int participants = 0;
                 int confidenceBefore = -1;
                 int confidenceAfter = -1;
@@ -268,9 +355,12 @@ class BOP : public Queued
                 int lowEntryMissStreakAfter = -1;
                 bool lowEntryHysteresisHeld = false;
                 bool lowEntryHysteresisTransition = false;
-                unsigned int epochAfter = 0;
             };
 
+          private:
+            CommitResult commitOne(PendingUpdate &update);
+
+          public:
             struct GlobalOutcomeResult
             {
                 bool enabled = false;
@@ -292,26 +382,38 @@ class BOP : public Queued
                 unsigned int medium_sample_period,
                 unsigned int miss_decay_period,
                 unsigned int low_entry_miss_streak_threshold,
-                unsigned int epoch_bits,
+                unsigned int offset_context_slots,
                 bool enable_global_coverage_guard,
                 unsigned int global_unused_threshold,
                 unsigned int global_min_resolved_coverage_shift);
 
-            LookupResult lookup(Addr pc);
-            bool sampleMediumIssue(Addr pc, Addr line) const;
+            LookupResult lookup(Addr pc, PCValidationKind kind,
+                                int64_t offset);
+            PCValidationKey keyForPC(Addr pc, PCValidationKind kind) const;
+            LookupResult lookup(const PCValidationKey &key,
+                                PCValidationKind kind, int64_t offset);
+            bool sampleMediumIssue(Addr pc, PCValidationKind kind,
+                                   int64_t offset,
+                                   Addr line) const;
             bool notePCValidationMiss();
             bool bypassPCValidationActive() const;
             void noteGlobalBOPIssued();
             GlobalOutcomeResult noteGlobalBOPOutcome(bool useful);
             void submitValidation(const LookupResult &lookup, Addr pc,
                                   Addr trigger_line, bool validation_hit);
-            void noteOffsetChange();
-            CommitResult commit();
+            std::vector<CommitResult> commit();
             bool configMatches(const PCValidationConfidenceTable &other) const;
         };
 
         std::shared_ptr<PCValidationConfidenceTable> pcValidationTable;
         bool pcValidationTableShared = false;
+        std::shared_ptr<DirectQualityGate> directQualityGate;
+        PCValidationKind pcValidationKind = PCValidationKind::Generic;
+        std::string pcValidationGenericName;
+        std::string pcValidationLargeName;
+        std::string pcValidationSmallName;
+        bool replayMetaWritten = false;
+        uint64_t replayOrder = 0;
 
         /** Event to handle the delay queue processing */
         void delayQueueEventWrapper();
@@ -348,6 +450,9 @@ class BOP : public Queued
          */
         void insertIntoRR(Addr full_addr, Addr tag, unsigned int way);
 
+        void insertIntoRR(Addr full_addr, Addr tag,
+                          PCValidationKey owner_key, unsigned int way);
+
         /** Insert the specified address into the RR table
          *  @param rr_entry: rr_entry to insert
          *  @param way: RR table to which the address will be inserted
@@ -359,7 +464,14 @@ class BOP : public Queued
          *  @param addr: full address to insert
          *  @param tag: hashed address to insert
          */
-        void insertIntoDelayQueue(Addr full_addr, Addr tag);
+        void insertIntoDelayQueue(Addr full_addr, Addr tag,
+                                  PCValidationKey owner_key,
+                                  uint64_t replay_order = 0);
+
+        void writeBOPReplayDelayAction(const char *action,
+                                       uint64_t replay_order, Addr addr,
+                                       Tick process_tick,
+                                       unsigned int queue_size_after);
 
         /** Reset all the scores from the offset list */
         void resetScores();
@@ -383,6 +495,7 @@ class BOP : public Queued
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                               PrefetchSourceType src);
 
+        const char *pcValidationTraceName(PCValidationKind kind) const;
         void tracePCValidationUpdate(
             const PCValidationConfidenceTable::CommitResult &result);
 
@@ -399,6 +512,9 @@ class BOP : public Queued
             statistics::Scalar pcValidationTableHits;
             statistics::Scalar pcValidationTableMisses;
             statistics::Scalar pcValidationTableReplacements;
+            statistics::Scalar pcValidationOffsetContextHits;
+            statistics::Scalar pcValidationOffsetContextMisses;
+            statistics::Scalar pcValidationOffsetContextReplacements;
             statistics::Scalar pcValidationEpochResets;
             statistics::Scalar pcValidationNoPCSuppressions;
             statistics::Scalar pcValidationHighMissIssued;
@@ -411,6 +527,12 @@ class BOP : public Queued
             statistics::Scalar pcValidationLowEntryHysteresisHolds;
             statistics::Scalar pcValidationLowEntryHysteresisTransitions;
             statistics::Scalar pcValidationOffsetEpochChanges;
+            statistics::Scalar rrOwnerValidHits;
+            statistics::Scalar rrOwnerInvalidHits;
+            statistics::Scalar rrOwnerSamePCHits;
+            statistics::Scalar rrOwnerCrossPCHits;
+            statistics::Scalar pcValidationProducerHitUpdates;
+            statistics::Scalar pcValidationConsumerMissUpdates;
             statistics::Distribution pcValidationConfidenceDist;
             statistics::Scalar globalBOPOutcomeUseful;
             statistics::Scalar globalBOPOutcomeUnused;
@@ -430,6 +552,15 @@ class BOP : public Queued
             statistics::Scalar globalBOPBypassModeNoPCIssued;
             statistics::Distribution globalBOPUnusedEwma;
             statistics::Distribution globalBOPResolvedCoverage;
+            statistics::Scalar directQualityIssued;
+            statistics::Scalar directQualitySuppressed;
+            statistics::Scalar directQualitySampled;
+            statistics::Scalar directQualityUseful;
+            statistics::Scalar directQualityUnused;
+            statistics::Scalar directQualityFeedbackConflicts;
+            statistics::Scalar directQualityFeedbackExpiries;
+            statistics::Scalar directQualityOrphanOutcomes;
+            statistics::Scalar directQualityStateTransitions;
         } stats;
 
     public:
@@ -449,16 +580,28 @@ class BOP : public Queued
 
         using Queued::calculatePrefetch;
 
-        void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
+        void calculatePrefetch(const PrefetchInfo &pfi,
+                               std::vector<AddrPriority> &addresses,
+                               bool late, uint64_t replay_event_id = 0);
+
+        /** Record this BOP configuration once when replay tracing is enabled. */
+        void writeBOPReplayMeta();
 
         /** Share one physical PC confidence table with another BOP instance. */
         void sharePCValidationConfidenceWith(BOP &other);
+
+        /** Share one bounded direct-quality ledger across Large and Small BOP. */
+        void shareDirectQualityGateWith(BOP &other);
 
         /** Apply the one-per-demand update merged across shared BOPs. */
         void commitPCValidationConfidence();
 
         /** Receive a source-only useful/unused outcome from the L2 cache. */
         void notifyGlobalBOPOutcome(bool useful);
+
+        /** Online direct-quality outcome and demand-age hooks. */
+        void notifyDirectQualityOutcome(Addr paddr, bool useful);
+        void notifyDirectQualityDemand();
 
         bool tryAddOffset(int64_t offset, bool late = false);
 };

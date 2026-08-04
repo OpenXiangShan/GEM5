@@ -232,6 +232,14 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="dump BOP validation decisions and outcomes")
+    parser.add_argument("--dump-bop-replay-trace",
+                        action="store_true",
+                        default=False,
+                        help="dump pre-filter BOP replay events and L2 demands")
+    parser.add_argument("--enable-bop-direct-quality-gate",
+                        action="store_true",
+                        default=False,
+                        help="enable the online Tier20/P8 BOP direct-quality gate")
     parser.add_argument("--enable-rolling",
                         default=False,
                         help="enable rolling perfcnt "

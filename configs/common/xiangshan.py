@@ -697,6 +697,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             cpu.enable_riscv_vector = True
 
     # config arch db
+    if args.dump_bop_replay_trace and not args.enable_arch_db:
+        raise RuntimeError("--dump-bop-replay-trace requires --enable-arch-db")
+
     if args.enable_arch_db:
         perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
         perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
@@ -731,6 +734,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_bop_validation_trace = args.dump_bop_validation_trace
+        test_sys.arch_db.dump_bop_replay_trace = args.dump_bop_replay_trace
         test_sys.arch_db.dump_stride_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
@@ -844,6 +848,120 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "PCUpdateLowEntryMissStreakAfter INT NOT NULL," \
             "PCUpdateLowEntryHysteresisHeld BOOL NOT NULL," \
             "PCUpdateLowEntryHysteresisTransition BOOL NOT NULL);"
+            ,
+            "CREATE TABLE BOPReplayMeta(" \
+            "SchemaVersion INT NOT NULL," \
+            "BOPName TEXT PRIMARY KEY," \
+            "BlockSize INT NOT NULL," \
+            "ScoreMax INT NOT NULL," \
+            "RoundMax INT NOT NULL," \
+            "BadScore INT NOT NULL," \
+            "RREntries INT NOT NULL," \
+            "TagBits INT NOT NULL," \
+            "DelayQueueEnabled BOOL NOT NULL," \
+            "DelayQueueSize INT NOT NULL," \
+            "DelayTicks INT NOT NULL," \
+            "CrossPage BOOL NOT NULL," \
+            "AdaptOffset BOOL NOT NULL," \
+            "IssueValidation BOOL NOT NULL," \
+            "PCValidationConfidence BOOL NOT NULL," \
+            "PCValidationProducerConsumer BOOL NOT NULL," \
+            "GlobalCoverageGuard BOOL NOT NULL," \
+            "PCValidationEntries INT NOT NULL," \
+            "PCValidationTagBits INT NOT NULL," \
+            "PCValidationCounterBits INT NOT NULL," \
+            "PCValidationInitial INT NOT NULL," \
+            "PCValidationMediumThreshold INT NOT NULL," \
+            "PCValidationHighThreshold INT NOT NULL," \
+            "PCValidationHitIncrement INT NOT NULL," \
+            "PCValidationMediumSamplePeriod INT NOT NULL," \
+            "PCValidationMissDecayPeriod INT NOT NULL," \
+            "PCValidationLowEntryMissStreakThreshold INT NOT NULL," \
+            "PCValidationEpochBits INT NOT NULL," \
+            "PCValidationOffsetContextSlots INT NOT NULL," \
+            "GlobalBOPUnusedThreshold INT NOT NULL," \
+            "GlobalBOPMinResolvedCoverageShift INT NOT NULL," \
+            "NegativeOffsetsEnabled BOOL NOT NULL," \
+            "AutoLearning BOOL NOT NULL," \
+            "VictimOffsetsListSize INT NOT NULL," \
+            "RestoreCycle INT NOT NULL," \
+            "ClockPeriodTicks INT NOT NULL," \
+            "Offsets TEXT NOT NULL);"
+            ,
+            "CREATE TABLE BOPReplayPhase(" \
+            "PhaseId INT PRIMARY KEY," \
+            "PhaseName TEXT NOT NULL UNIQUE," \
+            "StartTick INT NOT NULL);"
+            ,
+            "CREATE TABLE L2DemandTrace(" \
+            "AccessSeq INT PRIMARY KEY," \
+            "PhaseId INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "Addr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "HasPC BOOL NOT NULL," \
+            "CacheMiss BOOL NOT NULL," \
+            "PrefetchSource INT NOT NULL," \
+            "PfFirstHit BOOL NOT NULL," \
+            "PfHit BOOL NOT NULL);"
+            ,
+            "CREATE TABLE BOPReplayEvent(" \
+            "AccessSeq INT NOT NULL," \
+            "BOPName TEXT NOT NULL," \
+            "BOPKind TEXT NOT NULL," \
+            "ReplayOrder INT NOT NULL," \
+            "PhaseId INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "TriggerAddr INT NOT NULL," \
+            "TriggerPC INT NOT NULL," \
+            "TriggerHasPC BOOL NOT NULL," \
+            "TriggerIsDemand BOOL NOT NULL," \
+            "TriggerIsRead BOOL NOT NULL," \
+            "TriggerCacheMiss BOOL NOT NULL," \
+            "TriggerPFSource INT NOT NULL," \
+            "TriggerPFFirstHit BOOL NOT NULL," \
+            "TriggerPFHit BOOL NOT NULL," \
+            "Late BOOL NOT NULL," \
+            "BestOffsetBefore INT NOT NULL," \
+            "BestOffsetAfter INT NOT NULL," \
+            "BestScore INT NOT NULL," \
+            "Round INT NOT NULL," \
+            "BestOffsetChanged BOOL NOT NULL," \
+            "IssueEnabled BOOL NOT NULL," \
+            "ValidationEnabled BOOL NOT NULL," \
+            "ValidationHit INT NOT NULL," \
+            "PCConfidenceEnabled BOOL NOT NULL," \
+            "PCIndex INT NOT NULL," \
+            "PCTag INT NOT NULL," \
+            "PCEntryHit INT NOT NULL," \
+            "PCConfidence INT NOT NULL," \
+            "PCState INT NOT NULL," \
+            "PCSampled BOOL NOT NULL," \
+            "PCLowEntryMissStreak INT NOT NULL," \
+            "PCEpoch INT NOT NULL," \
+            "GlobalBypassActive BOOL NOT NULL," \
+            "PolicySuppressed BOOL NOT NULL," \
+            "RawCandidateValid BOOL NOT NULL," \
+            "RawCandidateAddr INT NOT NULL," \
+            "PolicyCandidateValid BOOL NOT NULL," \
+            "PolicyCandidateAddr INT NOT NULL," \
+            "ValidationAddr INT NOT NULL," \
+            "PrefetchAddr INT NOT NULL," \
+            "OnlineGenerated BOOL NOT NULL," \
+            "OnlineBuffered BOOL NOT NULL," \
+            "OnlineFiltered BOOL NOT NULL," \
+            "OnlineFilterPassed BOOL NOT NULL," \
+            "PRIMARY KEY(AccessSeq, BOPName));"
+            ,
+            "CREATE TABLE BOPReplayDelayAction(" \
+            "BOPName TEXT NOT NULL," \
+            "ReplayOrder INT NOT NULL," \
+            "Action TEXT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "Addr INT NOT NULL," \
+            "ProcessTick INT NOT NULL," \
+            "QueueSizeAfter INT NOT NULL," \
+            "PRIMARY KEY(BOPName, ReplayOrder));"
             ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
