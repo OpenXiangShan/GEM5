@@ -82,17 +82,16 @@ def setKmhV3IdealParams(args, system):
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
 
-        # value predictor
-        cpu.valuePred = CompositeValuePredictor(
-                            predictors=[
-                                # IdealConstantLVP(),
-                                # VTAGE(),
-                                # ExampleValuePredictor()
-                                # EStride(logMaxConfidence=13, thresholdPercent=0.35),
-                                IdealEgDiff(order=32, confidenceBits=6),
-                            ],
-                            arb=CVPFixedPriorityArb()
-                        )
+        # # value predictor
+        # cpu.valuePred = CompositeValuePredictor(
+        #                     predictors=[
+        #                         # IdealConstantLVP(),
+        #                         # VTAGE(),
+        #                         IdealEgDiff(order=32, confidenceBits=6),
+        #                         # EStride(logMaxConfidence=13, thresholdPercent=0.35),
+        #                     ],
+        #                     arb=CVPFixedPriorityArb()
+        #                 )
 
         # lsq
         cpu.LQEntries = 120
