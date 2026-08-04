@@ -97,11 +97,41 @@ def _configure_l2_composite_kmh_align(prefetcher):
 def _configure_l2_bop_validation_defaults(prefetcher):
     for bop in (prefetcher.bop_large, prefetcher.bop_small):
         bop.enable_pc_validation_confidence = True
+        bop.enable_pc_validation_producer_consumer = True
         bop.pc_validation_entries = 128
+        bop.pc_validation_offset_context_slots = 2
         bop.pc_validation_miss_decay_period = 4
         bop.pc_validation_low_entry_miss_streak_threshold = 0
         bop.enable_global_bop_coverage_guard = True
         bop.global_bop_min_resolved_coverage_shift = 3
+
+def _configure_l2_bop_direct_quality(prefetcher, options):
+    if not getattr(options, 'enable_bop_direct_quality_gate', False):
+        return
+    for bop in (prefetcher.bop_large, prefetcher.bop_small):
+        bop.enable_direct_quality_gate = True
+        # Tier20/P8 is intentionally evaluated independently from native P/C.
+        bop.enable_issue_validation = False
+        bop.enable_pc_validation_confidence = False
+        bop.enable_pc_validation_producer_consumer = False
+        bop.enable_global_bop_coverage_guard = False
+        bop.direct_quality_entries = 256
+        bop.direct_quality_ways = 4
+        bop.direct_quality_feedback_entries = 256
+        bop.direct_quality_feedback_ways = 4
+        bop.direct_quality_horizon = 2048
+        bop.direct_quality_min_samples = 32
+        bop.direct_quality_observe_sample_period = 16
+        bop.direct_quality_open_sample_period = 16
+        bop.direct_quality_block_probe_period = 64
+        bop.direct_quality_borderline_block_probe_period = 8
+        bop.direct_quality_unused_per_useful = 10
+        bop.direct_quality_block_guard = 4
+        bop.direct_quality_strict_unused_per_useful = 20
+        bop.direct_quality_strict_block_guard = 4
+        bop.direct_quality_reopen_unused_per_useful = 10
+        bop.direct_quality_reopen_guard = 4
+        bop.direct_quality_reopen_probe_period = 64
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
@@ -112,6 +142,7 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
 
     if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_bop_validation_defaults(prefetcher)
+        _configure_l2_bop_direct_quality(prefetcher, options)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):

@@ -1,0 +1,8 @@
+{
+  "borderline_block_probe_period": 8,
+  "min_samples": 32,
+  "observe_issue_all": true,
+  "quality_entries": 256,
+  "reopen_unused_per_useful": 10,
+  "strict_unused_per_useful": 20
+}

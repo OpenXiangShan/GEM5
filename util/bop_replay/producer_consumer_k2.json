@@ -1,0 +1,5 @@
+{
+  "pc_validation_entries": 128,
+  "pc_validation_offset_context_slots": 2,
+  "pc_validation_producer_consumer": true
+}

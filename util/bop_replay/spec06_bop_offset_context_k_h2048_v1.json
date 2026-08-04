@@ -1,0 +1,10 @@
+{
+  "name": "spec06-bop-offset-context-k-h2048-v1",
+  "horizons": [2048],
+  "points": [
+    {"name": "legacy_epoch", "overrides": {"pc_validation_offset_context_slots": 0}},
+    {"name": "offset_context_k1", "overrides": {"pc_validation_offset_context_slots": 1}},
+    {"name": "offset_context_k2", "overrides": {"pc_validation_offset_context_slots": 2}},
+    {"name": "offset_context_k4", "overrides": {"pc_validation_offset_context_slots": 4}}
+  ]
+}

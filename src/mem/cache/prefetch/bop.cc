@@ -29,6 +29,7 @@
 #include "mem/cache/prefetch/bop.hh"
 
 #include <algorithm>
+#include <sstream>
 
 #include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
@@ -43,17 +44,51 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+unsigned int
+BOP::pcValidationKindIndex(PCValidationKind kind)
+{
+    switch (kind) {
+      case PCValidationKind::Generic:
+        return 0;
+      case PCValidationKind::Large:
+        return 1;
+      case PCValidationKind::Small:
+        return 2;
+    }
+    panic("Invalid BOP PC validation kind\n");
+    return 0;
+}
+
+const char *
+BOP::pcValidationKindName(PCValidationKind kind)
+{
+    switch (kind) {
+      case PCValidationKind::Generic:
+        return "generic";
+      case PCValidationKind::Large:
+        return "large";
+      case PCValidationKind::Small:
+        return "small";
+    }
+    panic("Invalid BOP PC validation kind\n");
+    return "invalid";
+}
+
 BOP::PCValidationConfidenceTable::PCValidationConfidenceTable(
     unsigned int entries, unsigned int tag_bits, unsigned int counter_bits,
     unsigned int initial_confidence, unsigned int medium_threshold,
     unsigned int high_threshold, unsigned int hit_increment,
     unsigned int medium_sample_period, unsigned int miss_decay_period,
-    unsigned int low_entry_miss_streak_threshold, unsigned int epoch_bits,
+    unsigned int low_entry_miss_streak_threshold,
+    unsigned int offset_context_slots,
     bool enable_global_coverage_guard,
     unsigned int global_unused_threshold,
     unsigned int global_min_resolved_coverage_shift)
     : entries(entries),
-      indexBits(entries > 0 ? floorLog2(entries) : 0),
+      sets(entries >= PC_VALIDATION_ASSOCIATIVITY
+               ? entries / PC_VALIDATION_ASSOCIATIVITY : 0),
+      setBits(entries >= PC_VALIDATION_ASSOCIATIVITY
+                  ? floorLog2(entries / PC_VALIDATION_ASSOCIATIVITY) : 0),
       tagBits(tag_bits),
       tagMask(tag_bits > 0 && tag_bits < sizeof(Addr) * 8
                   ? (static_cast<Addr>(1) << tag_bits) - 1 : 0),
@@ -66,15 +101,19 @@ BOP::PCValidationConfidenceTable::PCValidationConfidenceTable(
       mediumSamplePeriod(medium_sample_period),
       missDecayPeriod(miss_decay_period),
       lowEntryMissStreakThreshold(low_entry_miss_streak_threshold),
-      epochMask(epoch_bits > 0 && epoch_bits <= 8
-                    ? (1U << epoch_bits) - 1 : 0),
+      offsetContextSlots(offset_context_slots),
       globalCoverageGuardEnabled(enable_global_coverage_guard),
       globalUnusedThreshold(global_unused_threshold),
       globalMinResolvedCoverageShift(global_min_resolved_coverage_shift),
-      table(entries)
+      table(entries),
+      plruState(sets)
 {
     if (!isPowerOf2(entries)) {
         fatal("BOP PC validation entries must be a power of two\n");
+    }
+    if (entries < PC_VALIDATION_ASSOCIATIVITY) {
+        fatal("BOP PC validation entries must be at least %u for %u-way PLRU\n",
+              PC_VALIDATION_ASSOCIATIVITY, PC_VALIDATION_ASSOCIATIVITY);
     }
     if (tagBits == 0 || tagBits >= sizeof(Addr) * 8) {
         fatal("BOP PC validation tag bits must be in [1, %zu)\n",
@@ -83,8 +122,11 @@ BOP::PCValidationConfidenceTable::PCValidationConfidenceTable(
     if (counter_bits == 0 || counter_bits > 8) {
         fatal("BOP PC validation counter bits must be in [1, 8]\n");
     }
-    if (epoch_bits == 0 || epoch_bits > 8) {
-        fatal("BOP PC validation epoch bits must be in [1, 8]\n");
+    if (offsetContextSlots == 0 || offsetContextSlots >
+            PC_VALIDATION_MAX_OFFSET_CONTEXT_SLOTS ||
+        !isPowerOf2(offsetContextSlots)) {
+        fatal("BOP PC validation offset context slots must be a power of two "
+              "in [1, %u]\n", PC_VALIDATION_MAX_OFFSET_CONTEXT_SLOTS);
     }
     if (initialConfidence > counterMax ||
         mediumThreshold > highThreshold || highThreshold > counterMax) {
@@ -119,52 +161,254 @@ BOP::PCValidationConfidenceTable::foldedPC(Addr pc) const
     return signature;
 }
 
+Addr
+BOP::PCValidationConfidenceTable::signature(
+    Addr pc, PCValidationKind kind) const
+{
+    Addr sig = foldedPC(pc);
+    sig ^= static_cast<Addr>(pcValidationKindIndex(kind)) *
+           0x9e3779b97f4a7c15ULL;
+    sig ^= sig >> 11;
+    sig ^= sig >> 23;
+    return sig;
+}
+
+BOP::PCValidationConfidenceTable::Entry &
+BOP::PCValidationConfidenceTable::entryAt(
+    unsigned int set, unsigned int way)
+{
+    assert(set < sets);
+    assert(way < PC_VALIDATION_ASSOCIATIVITY);
+    return table[set * PC_VALIDATION_ASSOCIATIVITY + way];
+}
+
+const BOP::PCValidationConfidenceTable::Entry &
+BOP::PCValidationConfidenceTable::entryAt(
+    unsigned int set, unsigned int way) const
+{
+    assert(set < sets);
+    assert(way < PC_VALIDATION_ASSOCIATIVITY);
+    return table[set * PC_VALIDATION_ASSOCIATIVITY + way];
+}
+
+unsigned int
+BOP::PCValidationConfidenceTable::plruVictim(unsigned int set) const
+{
+    assert(set < sets);
+    const uint8_t state = plruState[set] & 0x7;
+    if ((state & 0x1) == 0) {
+        return (state & 0x2) == 0 ? 0 : 1;
+    }
+    return (state & 0x4) == 0 ? 2 : 3;
+}
+
+void
+BOP::PCValidationConfidenceTable::touchPLRU(
+    unsigned int set, unsigned int way)
+{
+    assert(set < sets);
+    assert(way < PC_VALIDATION_ASSOCIATIVITY);
+
+    uint8_t &state = plruState[set];
+    switch (way) {
+      case 0:
+        state |= 0x1;
+        state |= 0x2;
+        break;
+      case 1:
+        state |= 0x1;
+        state &= ~0x2;
+        break;
+      case 2:
+        state &= ~0x1;
+        state |= 0x4;
+        break;
+      case 3:
+        state &= ~0x1;
+        state &= ~0x4;
+        break;
+      default:
+        panic("Invalid BOP PC validation PLRU way\n");
+    }
+}
+
+unsigned int
+BOP::PCValidationConfidenceTable::contextVictim(const Entry &entry) const
+{
+    switch (offsetContextSlots) {
+      case 1:
+        return 0;
+      case 2:
+        return entry.contextPLRU & 0x1;
+      case 4:
+        if ((entry.contextPLRU & 0x1) == 0) {
+            return (entry.contextPLRU & 0x2) == 0 ? 0 : 1;
+        }
+        return (entry.contextPLRU & 0x4) == 0 ? 2 : 3;
+      default:
+        panic("Invalid BOP PC validation offset context slot count\n");
+    }
+}
+
+void
+BOP::PCValidationConfidenceTable::touchContext(
+    Entry &entry, unsigned int context_way)
+{
+    assert(context_way < offsetContextSlots);
+    if (offsetContextSlots == 1) {
+        return;
+    }
+    if (offsetContextSlots == 2) {
+        entry.contextPLRU = context_way == 0 ? 1 : 0;
+        return;
+    }
+
+    switch (context_way) {
+      case 0:
+        entry.contextPLRU |= 0x1;
+        entry.contextPLRU |= 0x2;
+        break;
+      case 1:
+        entry.contextPLRU |= 0x1;
+        entry.contextPLRU &= ~0x2;
+        break;
+      case 2:
+        entry.contextPLRU &= ~0x1;
+        entry.contextPLRU |= 0x4;
+        break;
+      case 3:
+        entry.contextPLRU &= ~0x1;
+        entry.contextPLRU &= ~0x4;
+        break;
+      default:
+        panic("Invalid BOP PC validation offset context way\n");
+    }
+}
+
 bool
 BOP::PCValidationConfidenceTable::sample(
-    Addr pc, Addr line, unsigned int period, Addr salt) const
+    Addr pc, PCValidationKind kind, int64_t offset, Addr line,
+    unsigned int period,
+    Addr salt) const
 {
     assert(isPowerOf2(period));
 
-    Addr signature = foldedPC(pc) ^ line ^ salt ^ currentEpoch;
-    signature ^= signature >> 9;
-    signature ^= signature >> 17;
-    signature ^= signature >> 29;
-    return (signature & (period - 1)) == 0;
+    Addr sig = signature(pc, kind) ^ line ^ salt;
+    sig ^= static_cast<Addr>(offset) * 0x9e3779b97f4a7c15ULL;
+    sig ^= sig >> 9;
+    sig ^= sig >> 17;
+    sig ^= sig >> 29;
+    return (sig & (period - 1)) == 0;
 }
 
 BOP::PCValidationConfidenceTable::LookupResult
-BOP::PCValidationConfidenceTable::lookup(Addr pc)
+BOP::PCValidationConfidenceTable::lookup(
+    Addr pc, PCValidationKind kind, int64_t offset)
 {
-    const Addr signature = foldedPC(pc);
-    const unsigned int index = signature & (entries - 1);
-    const Addr tag = (signature >> indexBits) & tagMask;
-    Entry &entry = table[index];
+    return lookup(keyForPC(pc, kind), kind, offset);
+}
 
+BOP::PCValidationKey
+BOP::PCValidationConfidenceTable::keyForPC(
+    Addr pc, PCValidationKind kind) const
+{
+    const Addr sig = signature(pc, kind);
+    PCValidationKey key;
+    key.valid = true;
+    key.set = sig & (sets - 1);
+    key.tag = (sig >> setBits) & tagMask;
+    return key;
+}
+
+BOP::PCValidationConfidenceTable::LookupResult
+BOP::PCValidationConfidenceTable::lookup(
+    const PCValidationKey &key, PCValidationKind kind, int64_t offset)
+{
+    assert(key.valid);
+    assert(key.set < sets);
+    const unsigned int set = key.set;
+    const Addr tag = key.tag;
     LookupResult result;
-    result.index = index;
+    result.set = set;
     result.tag = tag;
-    result.entryHit = entry.valid && entry.tag == tag;
-    result.replaced = entry.valid && !result.entryHit;
+    result.kind = kind;
+    result.offset = offset;
 
-    if (!result.entryHit) {
-        entry.valid = true;
-        entry.tag = tag;
-        entry.confidence = initialConfidence;
-        entry.lowEntryMissStreak = 0;
-        entry.epoch = currentEpoch;
-    } else if (entry.epoch != currentEpoch) {
-        entry.confidence = initialConfidence;
-        entry.lowEntryMissStreak = 0;
-        entry.epoch = currentEpoch;
-        result.epochReset = true;
+    unsigned int way = PC_VALIDATION_ASSOCIATIVITY;
+    for (unsigned int candidate = 0;
+         candidate < PC_VALIDATION_ASSOCIATIVITY; candidate++) {
+        Entry &entry = entryAt(set, candidate);
+        if (entry.valid && entry.tag == tag) {
+            way = candidate;
+            result.entryHit = true;
+            break;
+        }
     }
 
-    result.confidence = entry.confidence;
-    result.lowEntryMissStreak = entry.lowEntryMissStreak;
-    result.epoch = entry.epoch;
-    if (entry.confidence >= highThreshold) {
+    if (!result.entryHit) {
+        for (unsigned int candidate = 0;
+             candidate < PC_VALIDATION_ASSOCIATIVITY; candidate++) {
+            if (!entryAt(set, candidate).valid) {
+                way = candidate;
+                break;
+            }
+        }
+        if (way == PC_VALIDATION_ASSOCIATIVITY) {
+            way = plruVictim(set);
+        }
+    }
+
+    result.way = way;
+    result.index = set * PC_VALIDATION_ASSOCIATIVITY + way;
+    Entry &entry = entryAt(set, way);
+    result.replaced = !result.entryHit && entry.valid;
+
+    if (!result.entryHit) {
+        entry = Entry();
+        entry.valid = true;
+        entry.tag = tag;
+    }
+    touchPLRU(set, way);
+
+    unsigned int context_way = offsetContextSlots;
+    for (unsigned int candidate = 0; candidate < offsetContextSlots;
+         candidate++) {
+        const OffsetContext &context = entry.contexts[candidate];
+        if (context.valid && context.offset == offset) {
+            context_way = candidate;
+            result.contextHit = true;
+            break;
+        }
+    }
+    if (context_way == offsetContextSlots) {
+        for (unsigned int candidate = 0; candidate < offsetContextSlots;
+             candidate++) {
+            if (!entry.contexts[candidate].valid) {
+                context_way = candidate;
+                break;
+            }
+        }
+        if (context_way == offsetContextSlots) {
+            context_way = contextVictim(entry);
+        }
+    }
+
+    OffsetContext &context = entry.contexts[context_way];
+    result.contextWay = context_way;
+    result.contextReplaced = !result.contextHit && context.valid;
+    if (!result.contextHit) {
+        context.valid = true;
+        context.offset = offset;
+        context.confidence = initialConfidence;
+        context.lowEntryMissStreak = 0;
+    }
+    touchContext(entry, context_way);
+
+    result.confidence = context.confidence;
+    result.lowEntryMissStreak = context.lowEntryMissStreak;
+    if (context.confidence >= highThreshold) {
         result.state = PCConfidenceState::High;
-    } else if (entry.confidence >= mediumThreshold) {
+    } else if (context.confidence >= mediumThreshold) {
         result.state = PCConfidenceState::Medium;
     } else {
         result.state = PCConfidenceState::Low;
@@ -174,9 +418,9 @@ BOP::PCValidationConfidenceTable::lookup(Addr pc)
 
 bool
 BOP::PCValidationConfidenceTable::sampleMediumIssue(
-    Addr pc, Addr line) const
+    Addr pc, PCValidationKind kind, int64_t offset, Addr line) const
 {
-    return sample(pc, line, mediumSamplePeriod, 0x9e37);
+    return sample(pc, kind, offset, line, mediumSamplePeriod, 0x9e37);
 }
 
 void
@@ -292,98 +536,126 @@ BOP::PCValidationConfidenceTable::submitValidation(
     const LookupResult &lookup, Addr pc, Addr trigger_line,
     bool validation_hit)
 {
-    if (!pending.valid) {
-        pending.valid = true;
-        pending.pc = pc;
-        pending.triggerLine = trigger_line;
-        pending.index = lookup.index;
-        pending.tag = lookup.tag;
-    } else if (pending.index != lookup.index || pending.tag != lookup.tag ||
-               pending.pc != pc) {
-        panic("BOP PC validation shared table was not committed per demand\n");
+    auto &updates = pending[pcValidationKindIndex(lookup.kind)];
+    PendingUpdate *free_update = nullptr;
+    for (PendingUpdate &candidate : updates) {
+        if (!candidate.valid) {
+            if (!free_update) {
+                free_update = &candidate;
+            }
+            continue;
+        }
+        if (candidate.index == lookup.index && candidate.tag == lookup.tag &&
+            candidate.contextWay == lookup.contextWay &&
+            candidate.offset == lookup.offset && candidate.kind == lookup.kind) {
+            candidate.validationHit = candidate.validationHit || validation_hit;
+            candidate.participants++;
+            return;
+        }
     }
 
-    pending.validationHit = pending.validationHit || validation_hit;
-    pending.participants++;
-}
+    if (!free_update) {
+        panic("BOP PC validation exceeded per-demand update capacity\n");
+    }
 
-void
-BOP::PCValidationConfidenceTable::noteOffsetChange()
-{
-    pending.offsetChanged = true;
+    PendingUpdate &update = *free_update;
+    if (!update.valid) {
+        update.valid = true;
+        update.kind = lookup.kind;
+        update.pc = pc;
+        update.triggerLine = trigger_line;
+        update.index = lookup.index;
+        update.set = lookup.set;
+        update.way = lookup.way;
+        update.contextWay = lookup.contextWay;
+        update.tag = lookup.tag;
+        update.offset = lookup.offset;
+    }
+    update.validationHit = validation_hit;
+    update.participants++;
 }
 
 BOP::PCValidationConfidenceTable::CommitResult
-BOP::PCValidationConfidenceTable::commit()
+BOP::PCValidationConfidenceTable::commitOne(PendingUpdate &update)
 {
     CommitResult result;
-    if (!pending.valid && !pending.offsetChanged) {
+    result.kind = update.kind;
+    if (!update.valid) {
         return result;
     }
 
     result.hadPending = true;
-    result.hadValidation = pending.participants != 0;
-    result.offsetChanged = pending.offsetChanged;
-    result.validationHit = pending.validationHit;
-    result.pc = pending.pc;
-    result.triggerLine = pending.triggerLine;
-    result.index = pending.index;
-    result.tag = pending.tag;
-    result.participants = pending.participants;
+    result.hadValidation = update.participants != 0;
+    result.validationHit = update.validationHit;
+    result.pc = update.pc;
+    result.triggerLine = update.triggerLine;
+    result.index = update.index;
+    result.set = update.set;
+    result.way = update.way;
+    result.contextWay = update.contextWay;
+    result.tag = update.tag;
+    result.offset = update.offset;
+    result.participants = update.participants;
     if (result.hadValidation) {
-        Entry &entry = table[pending.index];
-        assert(entry.valid && entry.tag == pending.tag);
-        result.confidenceBefore = entry.confidence;
-        result.lowEntryMissStreakBefore = entry.lowEntryMissStreak;
+        Entry &entry = table[update.index];
+        assert(entry.valid && entry.tag == update.tag);
+        OffsetContext &context = entry.contexts[update.contextWay];
+        assert(context.valid && context.offset == update.offset);
+        result.confidenceBefore = context.confidence;
+        result.lowEntryMissStreakBefore = context.lowEntryMissStreak;
 
-        // A best-offset change starts a new validation regime. Preserve the
-        // current-demand decision, then lazily reset entries before the next
-        // demand instead of applying evidence tied to the old regime.
-        if (!pending.offsetChanged) {
-            if (pending.validationHit) {
-                entry.confidence = std::min(
-                    counterMax, static_cast<unsigned int>(entry.confidence) +
-                                    hitIncrement);
-                entry.lowEntryMissStreak = 0;
-            } else if (sample(pending.pc, pending.triggerLine,
-                              missDecayPeriod, 0x7f4a)) {
-                if (lowEntryMissStreakThreshold != 0 &&
-                    entry.confidence == mediumThreshold) {
-                    entry.lowEntryMissStreak = std::min(
-                        lowEntryMissStreakThreshold,
-                        static_cast<unsigned int>(entry.lowEntryMissStreak) +
-                            1);
-                    if (entry.lowEntryMissStreak ==
-                        lowEntryMissStreakThreshold) {
-                        entry.confidence = entry.confidence == 0
-                            ? 0 : entry.confidence - 1;
-                        entry.lowEntryMissStreak = 0;
-                        result.decayed = true;
-                        result.lowEntryHysteresisTransition = true;
-                    } else {
-                        result.lowEntryHysteresisHeld = true;
-                    }
-                } else {
-                    entry.confidence = entry.confidence == 0
-                        ? 0 : entry.confidence - 1;
-                    entry.lowEntryMissStreak = 0;
+        if (update.validationHit) {
+            context.confidence = std::min(
+                counterMax, static_cast<unsigned int>(context.confidence) +
+                                hitIncrement);
+            context.lowEntryMissStreak = 0;
+        } else if (sample(update.pc, update.kind, update.offset,
+                          update.triggerLine, missDecayPeriod, 0x7f4a)) {
+            if (lowEntryMissStreakThreshold != 0 &&
+                context.confidence == mediumThreshold) {
+                context.lowEntryMissStreak = std::min(
+                    lowEntryMissStreakThreshold,
+                    static_cast<unsigned int>(context.lowEntryMissStreak) + 1);
+                if (context.lowEntryMissStreak ==
+                    lowEntryMissStreakThreshold) {
+                    context.confidence = context.confidence == 0
+                        ? 0 : context.confidence - 1;
+                    context.lowEntryMissStreak = 0;
                     result.decayed = true;
+                    result.lowEntryHysteresisTransition = true;
+                } else {
+                    result.lowEntryHysteresisHeld = true;
                 }
+            } else {
+                context.confidence = context.confidence == 0
+                    ? 0 : context.confidence - 1;
+                context.lowEntryMissStreak = 0;
+                result.decayed = true;
             }
-            result.confidenceAfter = entry.confidence;
-            result.lowEntryMissStreakAfter = entry.lowEntryMissStreak;
-        } else {
-            result.confidenceAfter = entry.confidence;
-            result.lowEntryMissStreakAfter = entry.lowEntryMissStreak;
+        }
+        result.confidenceAfter = context.confidence;
+        result.lowEntryMissStreakAfter = context.lowEntryMissStreak;
+    }
+
+    update = PendingUpdate();
+    return result;
+}
+
+std::vector<BOP::PCValidationConfidenceTable::CommitResult>
+BOP::PCValidationConfidenceTable::commit()
+{
+    std::vector<CommitResult> results;
+    results.reserve(PC_VALIDATION_KIND_COUNT *
+                    PC_VALIDATION_MAX_PENDING_UPDATES_PER_KIND);
+    for (auto &updates : pending) {
+        for (PendingUpdate &update : updates) {
+            CommitResult result = commitOne(update);
+            if (result.hadPending) {
+                results.push_back(result);
+            }
         }
     }
-
-    if (pending.offsetChanged) {
-        currentEpoch = (currentEpoch + 1) & epochMask;
-    }
-    result.epochAfter = currentEpoch;
-    pending = PendingUpdate();
-    return result;
+    return results;
 }
 
 bool
@@ -400,7 +672,7 @@ BOP::PCValidationConfidenceTable::configMatches(
            missDecayPeriod == other.missDecayPeriod &&
            lowEntryMissStreakThreshold ==
                other.lowEntryMissStreakThreshold &&
-           epochMask == other.epochMask &&
+           offsetContextSlots == other.offsetContextSlots &&
            globalCoverageGuardEnabled == other.globalCoverageGuardEnabled &&
            globalUnusedThreshold == other.globalUnusedThreshold &&
            globalMinResolvedCoverageShift ==
@@ -417,9 +689,14 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       crossPage(p.crossPage),
       enableAdaptOffset(p.enable_adaptoffset),
+      negativeOffsetsEnable(p.negative_offsets_enable),
+      autoLearning(p.autoLearning),
       enableIssueValidation(p.enable_issue_validation),
       enablePCValidationConfidence(p.enable_pc_validation_confidence),
+      enablePCValidationProducerConsumer(
+          p.enable_pc_validation_producer_consumer),
       enableGlobalBOPCoverageGuard(p.enable_global_bop_coverage_guard),
+      enableDirectQualityGate(p.enable_direct_quality_gate),
       pcValidationEntries(p.pc_validation_entries),
       pcValidationTagBits(p.pc_validation_tag_bits),
       pcValidationCounterBits(p.pc_validation_counter_bits),
@@ -432,6 +709,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
       pcValidationLowEntryMissStreakThreshold(
           p.pc_validation_low_entry_miss_streak_threshold),
       pcValidationEpochBits(p.pc_validation_epoch_bits),
+      pcValidationOffsetContextSlots(
+          p.pc_validation_offset_context_slots),
       globalBOPUnusedThreshold(p.global_bop_unused_threshold),
       globalBOPMinResolvedCoverageShift(
           p.global_bop_min_resolved_coverage_shift),
@@ -441,6 +720,35 @@ BOP::BOP(const BOPPrefetcherParams &p)
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
       bestScore(0), round(0), stats(this)
 {
+    pcValidationGenericName = name();
+    pcValidationLargeName = name();
+    pcValidationSmallName = name();
+
+    if (enableDirectQualityGate) {
+        DirectQualityGate::Config config;
+        config.qualityEntries = p.direct_quality_entries;
+        config.qualityWays = p.direct_quality_ways;
+        config.qualityTagBits = p.pc_validation_tag_bits;
+        config.feedbackEntries = p.direct_quality_feedback_entries;
+        config.feedbackWays = p.direct_quality_feedback_ways;
+        config.horizon = p.direct_quality_horizon;
+        config.minSamples = p.direct_quality_min_samples;
+        config.observeSamplePeriod = p.direct_quality_observe_sample_period;
+        config.openSamplePeriod = p.direct_quality_open_sample_period;
+        config.blockProbePeriod = p.direct_quality_block_probe_period;
+        config.borderlineBlockProbePeriod =
+            p.direct_quality_borderline_block_probe_period;
+        config.unusedPerUseful = p.direct_quality_unused_per_useful;
+        config.blockGuard = p.direct_quality_block_guard;
+        config.strictUnusedPerUseful =
+            p.direct_quality_strict_unused_per_useful;
+        config.strictBlockGuard = p.direct_quality_strict_block_guard;
+        config.reopenUnusedPerUseful = p.direct_quality_reopen_unused_per_useful;
+        config.reopenGuard = p.direct_quality_reopen_guard;
+        config.reopenProbePeriod = p.direct_quality_reopen_probe_period;
+        directQualityGate = std::make_shared<DirectQualityGate>(config);
+    }
+
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
     }
@@ -455,6 +763,11 @@ BOP::BOP(const BOPPrefetcherParams &p)
         fatal("%s: global BOP coverage guard requires PC validation confidence\n",
               name());
     }
+    if (enablePCValidationProducerConsumer &&
+        !enablePCValidationConfidence) {
+        fatal("%s: BOP producer/consumer validation requires PC confidence\n",
+              name());
+    }
     if (enablePCValidationConfidence) {
         pcValidationTable = std::make_shared<PCValidationConfidenceTable>(
             pcValidationEntries, pcValidationTagBits, pcValidationCounterBits,
@@ -462,7 +775,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
             pcValidationHighThreshold, pcValidationHitIncrement,
             pcValidationMediumSamplePeriod, pcValidationMissDecayPeriod,
             pcValidationLowEntryMissStreakThreshold,
-            pcValidationEpochBits, enableGlobalBOPCoverageGuard,
+            pcValidationOffsetContextSlots, enableGlobalBOPCoverageGuard,
             globalBOPUnusedThreshold, globalBOPMinResolvedCoverageShift);
     }
 
@@ -514,6 +827,13 @@ BOP::delayQueueEventWrapper()
     if (!delayQueue.empty() &&
             delayQueue.front().processTick <= curTick())
     {
+        const auto &entry = delayQueue.front();
+        const uint64_t replay_order =
+            (archDBer && archDBer->dumpBopReplayTrace && archDBer->dumpGlobal)
+            ? ++replayOrder : 0;
+        writeBOPReplayDelayAction("dequeue_to_rr", replay_order,
+                                  entry.rrEntry.fullAddr, entry.processTick,
+                                  delayQueue.size() - 1);
         insertIntoRR(delayQueue.front().rrEntry, RRWay::Left);
         delayQueue.pop_front();
     }
@@ -524,6 +844,41 @@ BOP::delayQueueEventWrapper()
     } else if (!delayQueue.empty()) {
         schedule(delayQueueEvent, delayQueue.front().processTick);
     }
+}
+
+void
+BOP::writeBOPReplayMeta()
+{
+    if (replayMetaWritten || !archDBer || !archDBer->dumpBopReplayTrace ||
+        !archDBer->dumpGlobal) {
+        return;
+    }
+
+    std::ostringstream offsets;
+    for (size_t index = 0; index < originOffsets.size(); ++index) {
+        if (index != 0) {
+            offsets << ',';
+        }
+        offsets << originOffsets[index];
+    }
+
+    archDBer->bopReplayMetaTraceWrite(
+        name().c_str(), blkSize, scoreMax, roundMax, badScore, rrEntries,
+        floorLog2(tagMask + 1), delayQueueEnabled, delayQueueSize, delayTicks,
+        crossPage, enableAdaptOffset, enableIssueValidation,
+        enablePCValidationConfidence, enablePCValidationProducerConsumer,
+        enableGlobalBOPCoverageGuard,
+        pcValidationEntries, pcValidationTagBits, pcValidationCounterBits,
+        pcValidationInitial, pcValidationMediumThreshold,
+        pcValidationHighThreshold, pcValidationHitIncrement,
+        pcValidationMediumSamplePeriod, pcValidationMissDecayPeriod,
+        pcValidationLowEntryMissStreakThreshold, pcValidationEpochBits,
+        pcValidationOffsetContextSlots,
+        globalBOPUnusedThreshold, globalBOPMinResolvedCoverageShift,
+        negativeOffsetsEnable, autoLearning, victimListSize, restoreCycle,
+        clockPeriod(),
+        offsets.str());
+    replayMetaWritten = true;
 }
 
 unsigned int
@@ -558,7 +913,14 @@ BOP::hash(Addr addr, unsigned int way) const
 void
 BOP::insertIntoRR(Addr full_addr, Addr tag, unsigned int way)
 {
-    insertIntoRR(RREntryDebug(full_addr, tag), way);
+    insertIntoRR(full_addr, tag, PCValidationKey(), way);
+}
+
+void
+BOP::insertIntoRR(Addr full_addr, Addr tag, PCValidationKey owner_key,
+                  unsigned int way)
+{
+    insertIntoRR(RREntryDebug(full_addr, tag, owner_key), way);
 }
 
 void
@@ -575,9 +937,27 @@ BOP::insertIntoRR(RREntryDebug rr_entry, unsigned int way)
 }
 
 void
-BOP::insertIntoDelayQueue(Addr full_addr, Addr tag)
+BOP::writeBOPReplayDelayAction(const char *action, uint64_t replay_order,
+                                Addr addr, Tick process_tick,
+                                unsigned int queue_size_after)
+{
+    if (replay_order == 0 || !archDBer || !archDBer->dumpBopReplayTrace ||
+        !archDBer->dumpGlobal) {
+        return;
+    }
+    archDBer->bopReplayDelayActionTraceWrite(
+        name().c_str(), replay_order, action, curTick(), addr, process_tick,
+        queue_size_after);
+}
+
+void
+BOP::insertIntoDelayQueue(Addr full_addr, Addr tag,
+                           PCValidationKey owner_key,
+                           uint64_t replay_order)
 {
     if (delayQueue.size() == delayQueueSize) {
+        writeBOPReplayDelayAction("drop_full", replay_order, full_addr,
+                                  curTick() + delayTicks, delayQueue.size());
         return;
     }
 
@@ -585,7 +965,10 @@ BOP::insertIntoDelayQueue(Addr full_addr, Addr tag)
     // it after the specified delay cycles
     Tick process_tick = curTick() + delayTicks;
 
-    delayQueue.push_back(DelayQueueEntry({full_addr, tag}, process_tick));
+    delayQueue.push_back(
+        DelayQueueEntry({full_addr, tag, owner_key}, process_tick));
+    writeBOPReplayDelayAction("enqueue", replay_order, full_addr, process_tick,
+                              delayQueue.size());
 
     if (!delayQueueEvent.scheduled()) {
         schedule(delayQueueEvent, process_tick);
@@ -845,23 +1228,40 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 
 void
 BOP::calculatePrefetch(const PrefetchInfo &pfi,
-        std::vector<AddrPriority> &addresses, bool late)
+        std::vector<AddrPriority> &addresses, bool late,
+        uint64_t replay_event_id)
 {
     Addr addr = blockAddress(pfi.getAddr());
     Addr tag_x = tag(addr);
     const Addr trigger_pc = pfi.hasPC() ? pfi.getPC() : 0;
     const bool trigger_is_demand =
         pfi.trigger_info.pkt && pfi.trigger_info.pkt->isDemand();
+    const bool trigger_is_read =
+        pfi.trigger_info.pkt && pfi.trigger_info.pkt->isRead() &&
+        !pfi.trigger_info.pkt->isWrite();
     const int trigger_pf_source =
         static_cast<int>(pfi.getXsMetadata().prefetchSource);
+    const bool replay_tracing = replay_event_id != 0 && archDBer &&
+        archDBer->dumpBopReplayTrace && archDBer->dumpGlobal;
+    const uint64_t replay_order = replay_tracing ? ++replayOrder : 0;
+
+    if (replay_tracing) {
+        writeBOPReplayMeta();
+    }
 
     DPRINTF(BOPPrefetcher,
             "Train prefetcher with addr %#lx tag %#lx\n", addr, tag_x);
 
+    PCValidationKey rr_owner;
+    if (enablePCValidationProducerConsumer && pfi.hasPC() &&
+        trigger_is_demand && trigger_is_read) {
+        rr_owner = pcValidationTable->keyForPC(
+            trigger_pc, pcValidationKind);
+    }
     if (delayQueueEnabled) {
-        insertIntoDelayQueue(addr, tag_x);
+        insertIntoDelayQueue(addr, tag_x, rr_owner, replay_order);
     } else {
-        insertIntoRR(addr, tag_x, RRWay::Left);
+        insertIntoRR(addr, tag_x, rr_owner, RRWay::Left);
     }
 
     // Go through the nth offset and update the score, the best score and the
@@ -869,9 +1269,6 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     const int64_t previous_best_offset = bestOffset;
     bestOffsetLearning(addr, late, pfi);
     const bool best_offset_changed = bestOffset != previous_best_offset;
-    if (enablePCValidationConfidence && best_offset_changed) {
-        pcValidationTable->noteOffsetChange();
-    }
 
     const Addr validation_addr = bestOffset != 0
         ? addr - (static_cast<Addr>(bestOffset) << lBlkSize) : 0;
@@ -888,6 +1285,8 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     int pc_index = -1;
     Addr pc_tag = 0;
     bool bypass_mode = false;
+    DirectQualityGate::Decision direct_quality_decision;
+    bool direct_quality_candidate = false;
     const bool validation_enabled =
         enableIssueValidation || enablePCValidationConfidence;
 
@@ -906,86 +1305,152 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 static_cast<long long>(bestOffset), validation_hit ? "hit" : "miss");
     } else if (issue_prefetch && enablePCValidationConfidence) {
         assert(bestOffset != 0);
-        validation_hit = testRR(validation_addr).first;
+        const auto [rr_hit, rr_entry] = testRR(validation_addr);
+        validation_hit = rr_hit;
         stats.issueValidationChecks++;
         if (validation_hit) {
             stats.issueValidationHits++;
         }
 
-        if (pfi.hasPC()) {
-            const auto pc_lookup = pcValidationTable->lookup(trigger_pc);
-            pc_entry_hit = pc_lookup.entryHit;
-            pc_confidence = pc_lookup.confidence;
-            pc_low_entry_miss_streak = pc_lookup.lowEntryMissStreak;
-            pc_state = static_cast<int>(pc_lookup.state);
-            pc_epoch = pc_lookup.epoch;
-            pc_index = pc_lookup.index;
-            pc_tag = pc_lookup.tag;
-
+        const auto account_lookup = [&](const auto &lookup) {
             stats.pcValidationTableLookups++;
-            if (pc_lookup.entryHit) {
+            if (lookup.entryHit) {
                 stats.pcValidationTableHits++;
             } else {
                 stats.pcValidationTableMisses++;
             }
-            if (pc_lookup.replaced) {
+            if (lookup.replaced) {
                 stats.pcValidationTableReplacements++;
             }
-            if (pc_lookup.epochReset) {
-                stats.pcValidationEpochResets++;
+            if (lookup.contextHit) {
+                stats.pcValidationOffsetContextHits++;
+            } else {
+                stats.pcValidationOffsetContextMisses++;
             }
-            stats.pcValidationConfidenceDist.sample(pc_lookup.confidence);
-
-            if (!validation_hit) {
-                if (pcValidationTable->notePCValidationMiss()) {
-                    stats.globalBOPBypassModeIdleResets++;
+            if (lookup.contextReplaced) {
+                stats.pcValidationOffsetContextReplacements++;
+            }
+        };
+        const auto set_current_lookup = [&](const auto &lookup) {
+            pc_entry_hit = lookup.entryHit;
+            pc_confidence = lookup.confidence;
+            pc_low_entry_miss_streak = lookup.lowEntryMissStreak;
+            pc_state = static_cast<int>(lookup.state);
+            pc_index = lookup.index;
+            pc_tag = lookup.tag;
+            account_lookup(lookup);
+            stats.pcValidationConfidenceDist.sample(lookup.confidence);
+        };
+        const auto apply_consumer_admission = [&](const auto &lookup) {
+            if (pcValidationTable->notePCValidationMiss()) {
+                stats.globalBOPBypassModeIdleResets++;
+            }
+            bypass_mode = pcValidationTable->bypassPCValidationActive();
+            if (bypass_mode) {
+                stats.globalBOPBypassModeChecks++;
+                stats.globalBOPBypassModeIssued++;
+                switch (lookup.state) {
+                  case PCConfidenceState::High:
+                    stats.globalBOPBypassModeHighIssued++;
+                    break;
+                  case PCConfidenceState::Medium:
+                    stats.globalBOPBypassModeMediumIssued++;
+                    break;
+                  case PCConfidenceState::Low:
+                    stats.globalBOPBypassModeLowIssued++;
+                    break;
+                  case PCConfidenceState::None:
+                    panic("Missing PC validation confidence state\n");
                 }
-                bypass_mode = pcValidationTable->bypassPCValidationActive();
-                if (bypass_mode) {
-                    stats.globalBOPBypassModeChecks++;
-                    stats.globalBOPBypassModeIssued++;
-                    switch (pc_lookup.state) {
-                      case PCConfidenceState::High:
-                        stats.globalBOPBypassModeHighIssued++;
-                        break;
-                      case PCConfidenceState::Medium:
-                        stats.globalBOPBypassModeMediumIssued++;
-                        break;
-                      case PCConfidenceState::Low:
-                        stats.globalBOPBypassModeLowIssued++;
-                        break;
-                      case PCConfidenceState::None:
-                        panic("Missing PC validation confidence state\n");
-                        break;
-                    }
-                } else {
-                    switch (pc_lookup.state) {
-                      case PCConfidenceState::High:
-                        stats.pcValidationHighMissIssued++;
-                        break;
-                      case PCConfidenceState::Medium:
-                        pc_sampled = pcValidationTable->sampleMediumIssue(
-                            trigger_pc, addr >> lBlkSize);
-                        if (pc_sampled) {
-                            stats.pcValidationMediumMissIssued++;
-                        } else {
-                            issue_prefetch = false;
-                            stats.issueValidationSuppressed++;
-                            stats.pcValidationMediumMissSuppressed++;
-                        }
-                        break;
-                      case PCConfidenceState::Low:
+            } else {
+                switch (lookup.state) {
+                  case PCConfidenceState::High:
+                    stats.pcValidationHighMissIssued++;
+                    break;
+                  case PCConfidenceState::Medium:
+                    pc_sampled = pcValidationTable->sampleMediumIssue(
+                        trigger_pc, pcValidationKind, bestOffset,
+                        addr >> lBlkSize);
+                    if (pc_sampled) {
+                        stats.pcValidationMediumMissIssued++;
+                    } else {
                         issue_prefetch = false;
                         stats.issueValidationSuppressed++;
-                        stats.pcValidationLowMissSuppressed++;
-                        break;
-                      case PCConfidenceState::None:
-                        panic("Missing PC validation confidence state\n");
+                        stats.pcValidationMediumMissSuppressed++;
                     }
+                    break;
+                  case PCConfidenceState::Low:
+                    issue_prefetch = false;
+                    stats.issueValidationSuppressed++;
+                    stats.pcValidationLowMissSuppressed++;
+                    break;
+                  case PCConfidenceState::None:
+                    panic("Missing PC validation confidence state\n");
                 }
+            }
+        };
+
+        if (enablePCValidationProducerConsumer && validation_hit) {
+            if (!rr_entry.owner.valid) {
+                // Preserve the raw RR-hit admission, but never attribute a
+                // value-initialized/tag-alias entry to the current PC.
+                stats.rrOwnerInvalidHits++;
+            } else {
+                stats.rrOwnerValidHits++;
+                if (pfi.hasPC()) {
+                    const PCValidationKey current_key =
+                        pcValidationTable->keyForPC(
+                            trigger_pc, pcValidationKind);
+                    if (rr_entry.owner == current_key) {
+                        stats.rrOwnerSamePCHits++;
+                        const auto current_lookup = pcValidationTable->lookup(
+                            current_key, pcValidationKind, bestOffset);
+                        set_current_lookup(current_lookup);
+                        pcValidationTable->submitValidation(
+                            current_lookup, trigger_pc, addr >> lBlkSize,
+                            true);
+                        stats.pcValidationProducerHitUpdates++;
+                    } else {
+                        stats.rrOwnerCrossPCHits++;
+                        const auto current_lookup = pcValidationTable->lookup(
+                            current_key, pcValidationKind, bestOffset);
+                        set_current_lookup(current_lookup);
+                        apply_consumer_admission(current_lookup);
+                        pcValidationTable->submitValidation(
+                            current_lookup, trigger_pc, addr >> lBlkSize,
+                            false);
+                        stats.pcValidationConsumerMissUpdates++;
+
+                        const auto owner_lookup = pcValidationTable->lookup(
+                            rr_entry.owner, pcValidationKind, bestOffset);
+                        account_lookup(owner_lookup);
+                        pcValidationTable->submitValidation(
+                            owner_lookup, 0, addr >> lBlkSize, true);
+                        stats.pcValidationProducerHitUpdates++;
+                    }
+                } else {
+                    const auto owner_lookup = pcValidationTable->lookup(
+                        rr_entry.owner, pcValidationKind, bestOffset);
+                    account_lookup(owner_lookup);
+                    pcValidationTable->submitValidation(
+                        owner_lookup, 0, addr >> lBlkSize, true);
+                    stats.pcValidationProducerHitUpdates++;
+                }
+            }
+        } else if (pfi.hasPC()) {
+            const auto pc_lookup =
+                pcValidationTable->lookup(
+                    trigger_pc, pcValidationKind, bestOffset);
+            set_current_lookup(pc_lookup);
+
+            if (!validation_hit) {
+                apply_consumer_admission(pc_lookup);
             }
             pcValidationTable->submitValidation(
                 pc_lookup, trigger_pc, addr >> lBlkSize, validation_hit);
+            if (!validation_hit && enablePCValidationProducerConsumer) {
+                stats.pcValidationConsumerMissUpdates++;
+            }
         } else if (!validation_hit) {
             if (pcValidationTable->notePCValidationMiss()) {
                 stats.globalBOPBypassModeIdleResets++;
@@ -1010,18 +1475,40 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 issue_prefetch, bypass_mode);
     }
 
+    if (issue_prefetch && enableDirectQualityGate && directQualityGate) {
+        direct_quality_candidate = true;
+        direct_quality_decision = directQualityGate->admit(
+            trigger_pc, static_cast<uint8_t>(pcValidationKind),
+            prefetch_addr);
+        if (!direct_quality_decision.allowed)
+            issue_prefetch = false;
+        stats.directQualityIssued = directQualityGate->issued();
+        stats.directQualitySuppressed = directQualityGate->suppressed();
+        stats.directQualitySampled = directQualityGate->sampled();
+    }
+
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access.
     bool generated = false;
     bool buffered = false;
     bool filtered = false;
     bool filter_passed = false;
+    const bool raw_candidate_valid = issuePrefetchRequests && bestOffset != 0;
+    const bool policy_candidate_valid = issue_prefetch && bestOffset != 0;
+    const bool policy_suppressed = raw_candidate_valid && !policy_candidate_valid;
+
     if (issue_prefetch) {
         generated = true;
         buffered = samePage(pfi.getAddr(), prefetch_addr) || crossPage;
         stats.issuedOffsetDist.sample(bestOffset);
         filter_passed = sendPFWithFilter(
             pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
+        if (filter_passed && direct_quality_candidate && directQualityGate) {
+            directQualityGate->recordIssued(
+                blockAddress(prefetch_addr), trigger_pc,
+                static_cast<uint8_t>(pcValidationKind),
+                direct_quality_decision);
+        }
         if (filter_passed && enableGlobalBOPCoverageGuard) {
             stats.globalBOPIssued++;
             pcValidationTable->noteGlobalBOPIssued();
@@ -1033,6 +1520,23 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     } else if (!issuePrefetchRequests) {
         stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
+    }
+
+    if (replay_event_id != 0 && archDBer) {
+        archDBer->bopReplayEventTraceWrite(
+            replay_event_id, replay_order, curTick(), name().c_str(),
+            pcValidationKindName(pcValidationKind), addr, trigger_pc,
+            pfi.hasPC(), trigger_is_demand, trigger_is_read, pfi.isCacheMiss(),
+            trigger_pf_source, pfi.isPfFirstHit(), pfi.isPfHit(), late,
+            previous_best_offset, bestOffset, bestScore, round,
+            best_offset_changed, issuePrefetchRequests, validation_enabled,
+            validation_hit, enablePCValidationConfidence, pc_index, pc_tag,
+            pc_entry_hit, pc_confidence, pc_state, pc_sampled,
+            pc_low_entry_miss_streak, pc_epoch, bypass_mode, policy_suppressed,
+            raw_candidate_valid,
+            raw_candidate_valid ? prefetch_addr : 0, policy_candidate_valid,
+            policy_candidate_valid ? prefetch_addr : 0, validation_addr,
+            prefetch_addr, generated, buffered, filtered, filter_passed);
     }
 
     if (archDBer) {
@@ -1072,6 +1576,11 @@ BOP::sharePCValidationConfidenceWith(BOP &other)
         fatal("%s and %s must agree on PC validation confidence enablement\n",
               name(), other.name());
     }
+    if (enablePCValidationProducerConsumer !=
+        other.enablePCValidationProducerConsumer) {
+        fatal("%s and %s must agree on BOP producer/consumer validation\n",
+              name(), other.name());
+    }
     if (!enablePCValidationConfidence) {
         return;
     }
@@ -1082,6 +1591,38 @@ BOP::sharePCValidationConfidenceWith(BOP &other)
     other.pcValidationTable = pcValidationTable;
     pcValidationTableShared = true;
     other.pcValidationTableShared = true;
+    pcValidationKind = PCValidationKind::Large;
+    other.pcValidationKind = PCValidationKind::Small;
+    pcValidationLargeName = name();
+    pcValidationSmallName = other.name();
+    other.pcValidationLargeName = pcValidationLargeName;
+    other.pcValidationSmallName = pcValidationSmallName;
+}
+
+void
+BOP::shareDirectQualityGateWith(BOP &other)
+{
+    if (enableDirectQualityGate != other.enableDirectQualityGate) {
+        fatal("%s and %s must agree on direct-quality gate enablement\n",
+              name(), other.name());
+    }
+    if (!enableDirectQualityGate)
+        return;
+    other.directQualityGate = directQualityGate;
+}
+
+const char *
+BOP::pcValidationTraceName(PCValidationKind kind) const
+{
+    switch (kind) {
+      case PCValidationKind::Generic:
+        return pcValidationGenericName.c_str();
+      case PCValidationKind::Large:
+        return pcValidationLargeName.c_str();
+      case PCValidationKind::Small:
+        return pcValidationSmallName.c_str();
+    }
+    return pcValidationKindName(kind);
 }
 
 void
@@ -1093,10 +1634,11 @@ BOP::tracePCValidationUpdate(
     }
 
     archDBer->bopValidationConfidenceUpdateTraceWrite(
-        curTick(), name().c_str(), result.pc, result.index, result.tag,
+        curTick(), pcValidationTraceName(result.kind), result.pc, result.index,
+        result.tag,
         result.validationHit, result.participants, result.confidenceBefore,
-        result.confidenceAfter, result.decayed, result.offsetChanged,
-        result.epochAfter, result.lowEntryMissStreakBefore,
+        result.confidenceAfter, result.decayed, false, 0,
+        result.lowEntryMissStreakBefore,
         result.lowEntryMissStreakAfter, result.lowEntryHysteresisHeld,
         result.lowEntryHysteresisTransition);
 }
@@ -1108,29 +1650,28 @@ BOP::commitPCValidationConfidence()
         return;
     }
 
-    const auto result = pcValidationTable->commit();
-    if (!result.hadPending) {
+    const auto results = pcValidationTable->commit();
+    if (results.empty()) {
         return;
     }
-    if (result.offsetChanged) {
-        stats.pcValidationOffsetEpochChanges++;
+    for (const auto &result : results) {
+        if (result.hadValidation) {
+            if (result.validationHit) {
+                stats.pcValidationHitUpdates++;
+            } else if (result.decayed) {
+                stats.pcValidationMissDecays++;
+            } else {
+                stats.pcValidationMissNoDecays++;
+            }
+            if (result.lowEntryHysteresisHeld) {
+                stats.pcValidationLowEntryHysteresisHolds++;
+            }
+            if (result.lowEntryHysteresisTransition) {
+                stats.pcValidationLowEntryHysteresisTransitions++;
+            }
+        }
+        tracePCValidationUpdate(result);
     }
-    if (result.hadValidation && !result.offsetChanged) {
-        if (result.validationHit) {
-            stats.pcValidationHitUpdates++;
-        } else if (result.decayed) {
-            stats.pcValidationMissDecays++;
-        } else {
-            stats.pcValidationMissNoDecays++;
-        }
-        if (result.lowEntryHysteresisHeld) {
-            stats.pcValidationLowEntryHysteresisHolds++;
-        }
-        if (result.lowEntryHysteresisTransition) {
-            stats.pcValidationLowEntryHysteresisTransitions++;
-        }
-    }
-    tracePCValidationUpdate(result);
 }
 
 void
@@ -1168,6 +1709,37 @@ BOP::notifyGlobalBOPOutcome(bool useful)
     if (result.bypassModeExited) {
         stats.globalBOPBypassModeExits++;
     }
+}
+
+void
+BOP::notifyDirectQualityOutcome(Addr paddr, bool useful)
+{
+    if (!enableDirectQualityGate || !directQualityGate)
+        return;
+    directQualityGate->resolve(blockAddress(paddr), useful);
+    stats.directQualityUseful = directQualityGate->useful();
+    stats.directQualityUnused = directQualityGate->unused();
+    stats.directQualityFeedbackConflicts =
+        directQualityGate->feedbackConflicts();
+    stats.directQualityFeedbackExpiries = directQualityGate->feedbackExpiries();
+    stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();
+    stats.directQualityStateTransitions = directQualityGate->stateTransitions();
+}
+
+void
+BOP::notifyDirectQualityDemand()
+{
+    if (!enableDirectQualityGate || !directQualityGate)
+        return;
+    directQualityGate->advanceDemand();
+    stats.directQualityUseful = directQualityGate->useful();
+    stats.directQualityUnused = directQualityGate->unused();
+    stats.directQualityFeedbackConflicts =
+        directQualityGate->feedbackConflicts();
+    stats.directQualityFeedbackExpiries =
+        directQualityGate->feedbackExpiries();
+    stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();
+    stats.directQualityStateTransitions = directQualityGate->stateTransitions();
 }
 
 bool
@@ -1224,8 +1796,15 @@ BOP::BopStats::BopStats(statistics::Group *parent)
                "Number of PC validation-confidence misses"),
       ADD_STAT(pcValidationTableReplacements, statistics::units::Count::get(),
                "Number of valid PC validation-confidence entries replaced"),
+      ADD_STAT(pcValidationOffsetContextHits, statistics::units::Count::get(),
+               "Number of per-PC offset confidence-context hits"),
+      ADD_STAT(pcValidationOffsetContextMisses, statistics::units::Count::get(),
+               "Number of per-PC offset confidence-context misses"),
+      ADD_STAT(pcValidationOffsetContextReplacements,
+               statistics::units::Count::get(),
+               "Number of valid per-PC offset confidence contexts replaced"),
       ADD_STAT(pcValidationEpochResets, statistics::units::Count::get(),
-               "Number of lazy PC validation-confidence epoch resets"),
+               "Deprecated: epoch resets are disabled for offset contexts"),
       ADD_STAT(pcValidationNoPCSuppressions, statistics::units::Count::get(),
                "Validation misses suppressed because the trigger has no PC"),
       ADD_STAT(pcValidationHighMissIssued, statistics::units::Count::get(),
@@ -1237,11 +1816,11 @@ BOP::BopStats::BopStats(statistics::Group *parent)
       ADD_STAT(pcValidationLowMissSuppressed, statistics::units::Count::get(),
                "Validation misses suppressed at low PC confidence"),
       ADD_STAT(pcValidationHitUpdates, statistics::units::Count::get(),
-               "Merged shared-PC validation-hit confidence updates"),
+               "Committed PC-kind validation-hit confidence updates"),
       ADD_STAT(pcValidationMissDecays, statistics::units::Count::get(),
-               "Merged sampled all-miss confidence decays"),
+               "Committed sampled validation-miss confidence decays"),
       ADD_STAT(pcValidationMissNoDecays, statistics::units::Count::get(),
-               "Merged all-miss updates without sampled decay"),
+               "Committed validation-miss updates without sampled decay"),
       ADD_STAT(pcValidationLowEntryHysteresisHolds,
                statistics::units::Count::get(),
                "Sampled all-miss updates held at the medium-to-low boundary"),
@@ -1249,7 +1828,19 @@ BOP::BopStats::BopStats(statistics::Group *parent)
                statistics::units::Count::get(),
                "Medium-to-low transitions released after local miss streak"),
       ADD_STAT(pcValidationOffsetEpochChanges, statistics::units::Count::get(),
-               "Shared PC validation-confidence epoch changes"),
+               "Deprecated: offset contexts replace epoch changes"),
+      ADD_STAT(rrOwnerValidHits, statistics::units::Count::get(),
+               "RR hits with a valid producer-owner key"),
+      ADD_STAT(rrOwnerInvalidHits, statistics::units::Count::get(),
+               "RR hits whose producer-owner key is unavailable"),
+      ADD_STAT(rrOwnerSamePCHits, statistics::units::Count::get(),
+               "RR hits whose producer key matches the current PC key"),
+      ADD_STAT(rrOwnerCrossPCHits, statistics::units::Count::get(),
+               "RR hits whose producer key differs from the current PC key"),
+      ADD_STAT(pcValidationProducerHitUpdates, statistics::units::Count::get(),
+               "Producer-owned RR-hit updates submitted to the PC table"),
+      ADD_STAT(pcValidationConsumerMissUpdates, statistics::units::Count::get(),
+               "Current-consumer weak-miss updates submitted to the PC table"),
       ADD_STAT(pcValidationConfidenceDist, statistics::units::Count::get(),
                "PC validation confidence observed at candidate issue"),
       ADD_STAT(globalBOPOutcomeUseful, statistics::units::Count::get(),
@@ -1291,7 +1882,25 @@ BOP::BopStats::BopStats(statistics::Group *parent)
       ADD_STAT(globalBOPUnusedEwma, statistics::units::Count::get(),
                "Q0.8 global BOP unused-rate EWMA after completed windows"),
       ADD_STAT(globalBOPResolvedCoverage, statistics::units::Count::get(),
-               "Q0.8 resolved coverage for completed global BOP outcome windows")
+               "Q0.8 resolved coverage for completed global BOP outcome windows"),
+      ADD_STAT(directQualityIssued, statistics::units::Count::get(),
+               "Online direct-quality admitted candidates"),
+      ADD_STAT(directQualitySuppressed, statistics::units::Count::get(),
+               "Online direct-quality suppressed candidates"),
+      ADD_STAT(directQualitySampled, statistics::units::Count::get(),
+               "Online direct-quality sampled candidates"),
+      ADD_STAT(directQualityUseful, statistics::units::Count::get(),
+               "Online direct-quality useful outcomes"),
+      ADD_STAT(directQualityUnused, statistics::units::Count::get(),
+               "Online direct-quality unused outcomes"),
+      ADD_STAT(directQualityFeedbackConflicts, statistics::units::Count::get(),
+               "Online direct-quality feedback conflicts"),
+      ADD_STAT(directQualityFeedbackExpiries, statistics::units::Count::get(),
+               "Online direct-quality feedback expiries"),
+      ADD_STAT(directQualityOrphanOutcomes, statistics::units::Count::get(),
+               "Online direct-quality orphan outcomes"),
+      ADD_STAT(directQualityStateTransitions, statistics::units::Count::get(),
+               "Online direct-quality state transitions")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
     pcValidationConfidenceDist.init(0, 256, 1).prereq(

@@ -1,6 +1,7 @@
 #ifndef __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 #define __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 
+#include <cstdint>
 #include <vector>
 
 #include "mem/cache/prefetch/bop.hh"
@@ -62,6 +63,8 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     const bool enableDespacitoStream;
 
     bool offloadLowAccuracy = true;
+    uint64_t nextBOPReplayEventId = 0;
+    uint64_t activeBOPReplayEventId = 0;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");

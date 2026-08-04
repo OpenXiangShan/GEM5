@@ -1,0 +1,70 @@
+{
+  "name": "p_c_confidence_no_conflict_age2048_v1",
+  "horizon": 2048,
+  "no_conflict_max_insert_age": 2048,
+  "raw_pc_accuracy_threshold": 0.1,
+  "base_controller_overrides": {
+    "global_coverage_guard": true,
+    "global_bop_min_resolved_coverage_shift": 3,
+    "global_bop_unused_threshold": 38,
+    "pc_validation_counter_bits": 5,
+    "pc_validation_entries": 128,
+    "pc_validation_high_threshold": 20,
+    "pc_validation_initial": 16,
+    "pc_validation_medium_sample_period": 4,
+    "pc_validation_medium_threshold": 8,
+    "pc_validation_offset_context_slots": 2,
+    "pc_validation_producer_consumer": true,
+    "pc_validation_tag_bits": 10
+  },
+  "profiles": [
+    {
+      "name": "baseline",
+      "overrides": {
+        "pc_validation_hit_increment": 4,
+        "pc_validation_low_entry_miss_streak_threshold": 0,
+        "pc_validation_miss_decay_period": 4
+      }
+    },
+    {
+      "name": "strong_reward",
+      "overrides": {
+        "pc_validation_hit_increment": 8,
+        "pc_validation_low_entry_miss_streak_threshold": 0,
+        "pc_validation_miss_decay_period": 4
+      }
+    },
+    {
+      "name": "slow_decay",
+      "overrides": {
+        "pc_validation_hit_increment": 4,
+        "pc_validation_low_entry_miss_streak_threshold": 0,
+        "pc_validation_miss_decay_period": 8
+      }
+    },
+    {
+      "name": "medium_hysteresis",
+      "overrides": {
+        "pc_validation_hit_increment": 4,
+        "pc_validation_low_entry_miss_streak_threshold": 4,
+        "pc_validation_miss_decay_period": 4
+      }
+    },
+    {
+      "name": "reward_plus_decay",
+      "overrides": {
+        "pc_validation_hit_increment": 8,
+        "pc_validation_low_entry_miss_streak_threshold": 0,
+        "pc_validation_miss_decay_period": 8
+      }
+    },
+    {
+      "name": "reward_plus_hysteresis",
+      "overrides": {
+        "pc_validation_hit_increment": 8,
+        "pc_validation_low_entry_miss_streak_threshold": 4,
+        "pc_validation_miss_decay_period": 4
+      }
+    }
+  ]
+}

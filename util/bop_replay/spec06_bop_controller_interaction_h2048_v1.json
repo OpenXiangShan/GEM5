@@ -1,0 +1,16 @@
+{
+  "name": "spec06-bop-controller-interaction-h2048-v1",
+  "horizons": [2048],
+  "points": [
+    {"name": "baseline", "overrides": {}},
+    {"name": "entries512_high16_decay4", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 16, "pc_validation_miss_decay_period": 4}},
+    {"name": "entries512_high16_decay2", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 16, "pc_validation_miss_decay_period": 2}},
+    {"name": "entries512_high16_decay8", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 16, "pc_validation_miss_decay_period": 8}},
+    {"name": "entries512_high18_decay4", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 18, "pc_validation_miss_decay_period": 4}},
+    {"name": "entries512_high18_decay2", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 18, "pc_validation_miss_decay_period": 2}},
+    {"name": "entries512_high18_decay8", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 18, "pc_validation_miss_decay_period": 8}},
+    {"name": "entries512_high20_decay4", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 20, "pc_validation_miss_decay_period": 4}},
+    {"name": "entries512_high20_decay2", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 20, "pc_validation_miss_decay_period": 2}},
+    {"name": "entries512_high20_decay8", "overrides": {"global_bop_unused_threshold": 38, "pc_validation_entries": 512, "pc_validation_high_threshold": 20, "pc_validation_miss_decay_period": 8}}
+  ]
+}

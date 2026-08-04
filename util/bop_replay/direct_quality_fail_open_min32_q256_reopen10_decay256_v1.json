@@ -1,0 +1,7 @@
+{
+  "decay_period": 256,
+  "min_samples": 32,
+  "observe_issue_all": true,
+  "quality_entries": 256,
+  "reopen_unused_per_useful": 10
+}

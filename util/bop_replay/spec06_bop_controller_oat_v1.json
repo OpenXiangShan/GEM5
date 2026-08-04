@@ -1,0 +1,21 @@
+{
+  "name": "spec06-bop-controller-oat-v1",
+  "horizons": [512, 2048],
+  "points": [
+    {"name": "baseline", "overrides": {}},
+    {"name": "pc_entries_256", "overrides": {"pc_validation_entries": 256}},
+    {"name": "pc_entries_512", "overrides": {"pc_validation_entries": 512}},
+    {"name": "pc_initial_12", "overrides": {"pc_validation_initial": 12}},
+    {"name": "pc_initial_20", "overrides": {"pc_validation_initial": 20}},
+    {"name": "pc_medium_threshold_6", "overrides": {"pc_validation_medium_threshold": 6}},
+    {"name": "pc_medium_threshold_10", "overrides": {"pc_validation_medium_threshold": 10}},
+    {"name": "pc_high_threshold_16", "overrides": {"pc_validation_high_threshold": 16}},
+    {"name": "pc_high_threshold_24", "overrides": {"pc_validation_high_threshold": 24}},
+    {"name": "pc_medium_period_2", "overrides": {"pc_validation_medium_sample_period": 2}},
+    {"name": "pc_medium_period_8", "overrides": {"pc_validation_medium_sample_period": 8}},
+    {"name": "pc_miss_decay_2", "overrides": {"pc_validation_miss_decay_period": 2}},
+    {"name": "pc_miss_decay_8", "overrides": {"pc_validation_miss_decay_period": 8}},
+    {"name": "global_unused_96", "overrides": {"global_bop_unused_threshold": 96}},
+    {"name": "global_unused_160", "overrides": {"global_bop_unused_threshold": 160}}
+  ]
+}
