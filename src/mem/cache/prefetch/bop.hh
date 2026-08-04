@@ -36,9 +36,14 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <queue>
 #include <set>
+#include <string>
+#include <vector>
+
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
@@ -174,6 +179,19 @@ class BOP : public Queued
             High = 2
         };
 
+        enum class PCValidationKind : uint8_t
+        {
+            Generic = 0,
+            Large = 1,
+            Small = 2
+        };
+
+        static constexpr unsigned int PC_VALIDATION_KIND_COUNT = 3;
+        static constexpr unsigned int PC_VALIDATION_ASSOCIATIVITY = 4;
+
+        static unsigned int pcValidationKindIndex(PCValidationKind kind);
+        static const char *pcValidationKindName(PCValidationKind kind);
+
         class PCValidationConfidenceTable
         {
           private:
@@ -198,15 +216,19 @@ class BOP : public Queued
                 bool valid = false;
                 bool offsetChanged = false;
                 bool validationHit = false;
+                PCValidationKind kind = PCValidationKind::Generic;
                 Addr pc = 0;
                 Addr triggerLine = 0;
                 unsigned int index = 0;
+                unsigned int set = 0;
+                unsigned int way = 0;
                 Addr tag = 0;
                 unsigned int participants = 0;
-            } pending;
+            };
 
             const unsigned int entries;
-            const unsigned int indexBits;
+            const unsigned int sets;
+            const unsigned int setBits;
             const unsigned int tagBits;
             const Addr tagMask;
             const unsigned int counterMax;
@@ -222,8 +244,10 @@ class BOP : public Queued
             const unsigned int globalUnusedThreshold;
             const unsigned int globalMinResolvedCoverageShift;
 
-            uint8_t currentEpoch = 0;
+            std::array<uint8_t, PC_VALIDATION_KIND_COUNT> currentEpoch = {};
+            std::array<PendingUpdate, PC_VALIDATION_KIND_COUNT> pending = {};
             std::vector<Entry> table;
+            std::vector<uint8_t> plruState;
             unsigned int globalOutcomeWindowResolved = 0;
             unsigned int globalOutcomeWindowUnused = 0;
             unsigned int globalIssuedWindowIssued = 0;
@@ -232,15 +256,23 @@ class BOP : public Queued
             bool globalBypassPCValidation = false;
 
             Addr foldedPC(Addr pc) const;
-            bool sample(Addr pc, Addr line, unsigned int period,
-                        Addr salt) const;
+            Addr signature(Addr pc, PCValidationKind kind) const;
+            bool sample(Addr pc, PCValidationKind kind, Addr line,
+                        unsigned int period, Addr salt) const;
+            Entry &entryAt(unsigned int set, unsigned int way);
+            const Entry &entryAt(unsigned int set, unsigned int way) const;
+            unsigned int plruVictim(unsigned int set) const;
+            void touchPLRU(unsigned int set, unsigned int way);
             void resetGlobalBypassPolicy();
 
           public:
             struct LookupResult
             {
                 unsigned int index = 0;
+                unsigned int set = 0;
+                unsigned int way = 0;
                 Addr tag = 0;
+                PCValidationKind kind = PCValidationKind::Generic;
                 bool entryHit = false;
                 bool replaced = false;
                 bool epochReset = false;
@@ -257,9 +289,12 @@ class BOP : public Queued
                 bool offsetChanged = false;
                 bool validationHit = false;
                 bool decayed = false;
+                PCValidationKind kind = PCValidationKind::Generic;
                 Addr pc = 0;
                 Addr triggerLine = 0;
                 unsigned int index = 0;
+                unsigned int set = 0;
+                unsigned int way = 0;
                 Addr tag = 0;
                 unsigned int participants = 0;
                 int confidenceBefore = -1;
@@ -271,6 +306,10 @@ class BOP : public Queued
                 unsigned int epochAfter = 0;
             };
 
+          private:
+            CommitResult commitOne(PendingUpdate &update);
+
+          public:
             struct GlobalOutcomeResult
             {
                 bool enabled = false;
@@ -297,21 +336,26 @@ class BOP : public Queued
                 unsigned int global_unused_threshold,
                 unsigned int global_min_resolved_coverage_shift);
 
-            LookupResult lookup(Addr pc);
-            bool sampleMediumIssue(Addr pc, Addr line) const;
+            LookupResult lookup(Addr pc, PCValidationKind kind);
+            bool sampleMediumIssue(Addr pc, PCValidationKind kind,
+                                   Addr line) const;
             bool notePCValidationMiss();
             bool bypassPCValidationActive() const;
             void noteGlobalBOPIssued();
             GlobalOutcomeResult noteGlobalBOPOutcome(bool useful);
             void submitValidation(const LookupResult &lookup, Addr pc,
                                   Addr trigger_line, bool validation_hit);
-            void noteOffsetChange();
-            CommitResult commit();
+            void noteOffsetChange(PCValidationKind kind);
+            std::vector<CommitResult> commit();
             bool configMatches(const PCValidationConfidenceTable &other) const;
         };
 
         std::shared_ptr<PCValidationConfidenceTable> pcValidationTable;
         bool pcValidationTableShared = false;
+        PCValidationKind pcValidationKind = PCValidationKind::Generic;
+        std::string pcValidationGenericName;
+        std::string pcValidationLargeName;
+        std::string pcValidationSmallName;
 
         /** Event to handle the delay queue processing */
         void delayQueueEventWrapper();
@@ -383,6 +427,7 @@ class BOP : public Queued
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                               PrefetchSourceType src);
 
+        const char *pcValidationTraceName(PCValidationKind kind) const;
         void tracePCValidationUpdate(
             const PCValidationConfidenceTable::CommitResult &result);
 
