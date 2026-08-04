@@ -9,19 +9,43 @@ on:
 
 jobs:
   paralel_cpt_test:
-    # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
-    runs-on: [self-hosted, open]  # 所有open*的机器上运行
+    # gem5.cfg 使用的切片 ck_path 位于小机房
+    runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Running test checkpoints
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/build-dramsim
+
       - name: Build GEM5 opt
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-      - name: Check wrf checkpoint
+
+      - name: Run paralel autotest script
         shell: bash
         run: |
+          python3 .github/workflows/autotest/script/autotest.py \
+            -f .github/workflows/autotest/gem5.cfg
+
+  paralel_cpt_h_test:
+    # H/V checkpoint 测试
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    name: XS-GEM5 - Running h test checkpoints
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/build-dramsim
+
+      - name: Build GEM5 opt
+        run: |
+          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+
+      - name: Verify H NEMU reference
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REF="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"
           WRF_CPT="/nfs/home/share/jiaxiaoyu/checkpoint_move/h_v_checkpoint_1203/checkpoint_scripts/checkpoint_scripts/archive/spec06_gcc15.0.0_rv64gcbv_base_intFppOff_for_H_V_sv39_NEMU_archgroup_2025-01-23-14-46/checkpoint-0-0-0/wrf/6348/_6348_0.173583_.zstd"
 
           echo "===== runner information ====="
@@ -29,16 +53,45 @@ jobs:
           echo "pwd: $(pwd)"
           id
 
-          echo "===== checkpoint information ====="
-          ls -lh "$WRF_CPT" || true
-          stat "$WRF_CPT" || true
-          namei -l "$WRF_CPT" || true
+          echo "===== H NEMU reference ====="
+          test -f "$REF"
+          test -r "$REF"
 
-          if test -r "$WRF_CPT"; then
-            echo "WRF_CPT_READABLE=YES"
+          ls -lh "$REF"
+          stat "$REF"
+          file "$REF"
+          sha256sum "$REF"
+
+          echo "===== expected SHA256 ====="
+          echo "6f9c40f0bcf9b61bb8feccaa3a1216b67d29daf3dfd713f551cb174dea56df14"
+
+          echo "===== recorded NEMU commit ====="
+          cat "${REF}.commit" || true
+
+          echo "===== recorded NEMU config ====="
+          cat "${REF}.config" || true
+
+          echo "===== dynamic dependencies ====="
+          if ldd "$REF" | grep -i "not found"; then
+            echo "ERROR: H NEMU reference has missing libraries"
+            exit 1
           else
-            echo "WRF_CPT_READABLE=NO"
+            echo "No missing shared libraries"
           fi
+
+          echo "===== exported Difftest symbols ====="
+          nm -D "$REF" |
+            grep -E 'difftest_(init|exec|regcpy)' |
+            head -30
+
+          echo "===== WRF checkpoint ====="
+          test -f "$WRF_CPT"
+          test -r "$WRF_CPT"
+
+          ls -lh "$WRF_CPT"
+          stat "$WRF_CPT"
+
+          echo "WRF_CPT_READABLE=YES"
 
       - name: Run paralel h autotest script
         shell: bash
@@ -46,47 +99,65 @@ jobs:
           python3 .github/workflows/autotest/script/autotest.py \
             -f .github/workflows/autotest/gem5-h.cfg
 
-      - name: Dump wrf failure logs
+      - name: Dump H failure details
         if: ${{ failure() }}
         shell: bash
         run: |
-          echo "===== important errors ====="
-          grep -RniE \
-            'fatal|panic|difftest|mismatch|assert|segmentation|killed|failed to open|no such file|error' \
-            ./log_root_h \
-            2>/dev/null || true
+          set -uo pipefail
 
-          echo "===== wrf detailed logs ====="
-          while IFS= read -r -d '' file; do
+          dump_case() {
+            local case_dir="$1"
+
             echo
-            echo "========== $file =========="
-            tail -n 500 "$file" || true
-          done < <(
-            find ./log_root_h \
-              -path '*wrf*6348*' \
-              -type f \
-              \( \
-                -name 'taskerr.txt' -o \
-                -name 'taskout.txt' -o \
-                -name 'other.txt' -o \
-                -name 'gem5.log' \
-              \) \
-              -print0 2>/dev/null
-          )
-  
-  paralel_cpt_h_test:
-    # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
-    runs-on: [self-hosted, open]  # 所有open*的机器上运行
-    continue-on-error: false
-    name: XS-GEM5 - Running h test checkpoints
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/build-dramsim
-      - name: Build GEM5 opt
-        run: |
-          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-      - name: Run paralel h autotest script
-        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5-h.cfg
+            echo "=================================================="
+            echo "CASE DIRECTORY: $case_dir"
+            echo "=================================================="
+
+            if [[ ! -d "$case_dir" ]]; then
+              echo "Directory does not exist: $case_dir"
+              return 0
+            fi
+
+            while IFS= read -r -d '' file; do
+              echo
+              echo "--------------------------------------------------"
+              echo "FILE: $file"
+              echo "--------------------------------------------------"
+              tail -n 500 "$file" || true
+            done < <(
+              find "$case_dir" \
+                -type f \
+                \( \
+                  -name 'taskerr.txt' -o \
+                  -name 'taskout.txt' -o \
+                  -name 'other.txt' -o \
+                  -name 'gem5.log' -o \
+                  -name 'launcher.log' -o \
+                  -name 'simerr' -o \
+                  -name 'simout' -o \
+                  -name 'stdout' -o \
+                  -name 'stderr' \
+                \) \
+                -print0 2>/dev/null
+            )
+          }
+
+          dump_case \
+            "./log_root_h/rungem5/checkpoint-0-0-0/astar_biglakes"
+
+          dump_case \
+            "./log_root_h/rungem5/checkpoint-0-0-0/wrf"
+
+          echo
+          echo "=================================================="
+          echo "FIRST IMPORTANT ERRORS ACROSS ALL H TESTS"
+          echo "=================================================="
+
+          grep -RniE \
+            'fatal|panic|difftest|mismatch|assert|segmentation|undefined symbol|dlopen|cannot open shared object|failed to open|no such file|error' \
+            ./log_root_h/rungem5 \
+            2>/dev/null |
+            head -n 1000 || true
 
   valgrind_memory_check:
     runs-on: [self-hosted, open]
