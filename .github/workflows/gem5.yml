@@ -19,8 +19,60 @@ jobs:
       - name: Build GEM5 opt
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-      - name: Run paralel autotest script
-        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
+      - name: Check wrf checkpoint
+        shell: bash
+        run: |
+          WRF_CPT="/nfs/home/share/jiaxiaoyu/checkpoint_move/h_v_checkpoint_1203/checkpoint_scripts/checkpoint_scripts/archive/spec06_gcc15.0.0_rv64gcbv_base_intFppOff_for_H_V_sv39_NEMU_archgroup_2025-01-23-14-46/checkpoint-0-0-0/wrf/6348/_6348_0.173583_.zstd"
+
+          echo "===== runner information ====="
+          echo "hostname: $(hostname)"
+          echo "pwd: $(pwd)"
+          id
+
+          echo "===== checkpoint information ====="
+          ls -lh "$WRF_CPT" || true
+          stat "$WRF_CPT" || true
+          namei -l "$WRF_CPT" || true
+
+          if test -r "$WRF_CPT"; then
+            echo "WRF_CPT_READABLE=YES"
+          else
+            echo "WRF_CPT_READABLE=NO"
+          fi
+
+      - name: Run paralel h autotest script
+        shell: bash
+        run: |
+          python3 .github/workflows/autotest/script/autotest.py \
+            -f .github/workflows/autotest/gem5-h.cfg
+
+      - name: Dump wrf failure logs
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          echo "===== important errors ====="
+          grep -RniE \
+            'fatal|panic|difftest|mismatch|assert|segmentation|killed|failed to open|no such file|error' \
+            ./log_root_h \
+            2>/dev/null || true
+
+          echo "===== wrf detailed logs ====="
+          while IFS= read -r -d '' file; do
+            echo
+            echo "========== $file =========="
+            tail -n 500 "$file" || true
+          done < <(
+            find ./log_root_h \
+              -path '*wrf*6348*' \
+              -type f \
+              \( \
+                -name 'taskerr.txt' -o \
+                -name 'taskout.txt' -o \
+                -name 'other.txt' -o \
+                -name 'gem5.log' \
+              \) \
+              -print0 2>/dev/null
+          )
   
   paralel_cpt_h_test:
     # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
