@@ -400,7 +400,7 @@ class LSQUnit
     bool storeBufferEmpty(ThreadID tid) { return lsq->storeBufferEmpty(tid); }
     bool storeBufferSQWillFull() const
     {
-        return storeQueue.size() > sqFullUpperLimit;
+        return addrOrDataReadyNums > sqFullUpperLimit;
     }
     void recordStoreBufferBlockedByCache() { ++stats.blockedByCache; }
 
