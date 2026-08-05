@@ -28,7 +28,7 @@ jobs:
             -f .github/workflows/autotest/gem5.cfg
 
   paralel_cpt_h_test:
-    # H/V checkpoint 测试
+    # 在 open runner 上构建并发布 H/V NEMU reference，然后运行 H checkpoint
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Running h test checkpoints
@@ -40,41 +40,40 @@ jobs:
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
 
-      - name: Build H NEMU reference on runner
+      - name: Build and publish H NEMU reference
         shell: bash
         run: |
           set -euo pipefail
 
           NEMU_COMMIT="3a217a17a96ff3782b16ec8886f499dd5814ebbd"
           NEMU_DIR="$RUNNER_TEMP/NEMU-h-reference"
-          LOCAL_REF="$NEMU_DIR/build/riscv64-nemu-interpreter-so"
+
+          REF_DIR="/nfs/home/share/gem5_ci/ref/normal"
+          REF="$REF_DIR/riscv64-nemu-interpreter-h-so"
 
           echo "===== runner information ====="
-          echo "hostname: $(hostname)"
-          echo "pwd: $(pwd)"
+          hostname
           id
+          findmnt -T "$REF_DIR" || true
+          ls -ld "$REF_DIR"
 
           echo "===== clone NEMU ====="
           rm -rf "$NEMU_DIR"
 
           git clone \
-            --filter=blob:none \
             https://github.com/OpenXiangShan/NEMU.git \
             "$NEMU_DIR"
 
           git -C "$NEMU_DIR" checkout "$NEMU_COMMIT"
           git -C "$NEMU_DIR" submodule update --init --recursive
 
-          echo "===== NEMU version ====="
-          git -C "$NEMU_DIR" status --short --branch
-          git -C "$NEMU_DIR" log -1 --oneline
-
           cd "$NEMU_DIR"
           export NEMU_HOME="$NEMU_DIR"
 
-          echo "===== generate GEM5 reference config ====="
+          echo "===== generate config ====="
           make riscv64-gem5-ref_defconfig
 
+          # 保证需要打开的配置存在且为 y
           set_config_y() {
             local option="$1"
 
@@ -86,6 +85,7 @@ jobs:
             printf 'CONFIG_%s=y\n' "$option" >> .config
           }
 
+          # 保证需要关闭的配置为 not set
           set_config_n() {
             local option="$1"
 
@@ -106,7 +106,7 @@ jobs:
           set_config_n RV_SSTC
           set_config_n RVV_AGNOSTIC
 
-          echo "===== requested configuration ====="
+          echo "===== requested NEMU config ====="
           grep -E \
             'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II|CONFIG_SHARE=|CONFIG_SHARE_REF=|CONFIG_DIFFTEST_REF_FOR_GEM5=' \
             .config
@@ -122,95 +122,103 @@ jobs:
           grep -qx 'CONFIG_SHARE_REF=y' .config
           grep -qx 'CONFIG_DIFFTEST_REF_FOR_GEM5=y' .config
 
-          echo "===== build NEMU reference ====="
+          echo "===== build NEMU ====="
           JOBS="$(nproc)"
-
           if [[ "$JOBS" -gt 100 ]]; then
             JOBS=100
           fi
 
+          rm -rf build
           make -j"$JOBS"
 
-          echo "===== generated reference ====="
-          test -f "$LOCAL_REF"
-          test -r "$LOCAL_REF"
+          SRC="$NEMU_DIR/build/riscv64-nemu-interpreter-so"
 
-          ls -lh "$LOCAL_REF"
-          file "$LOCAL_REF"
-          sha256sum "$LOCAL_REF"
+          test -r "$SRC"
 
-          echo "===== final normalized configuration ====="
+          echo "===== built NEMU reference ====="
+          ls -lh "$SRC"
+          file "$SRC"
+          sha256sum "$SRC"
+
+          echo "===== publish to open-runner share ====="
+          WRITE_TEST="$REF_DIR/.h-ref-write-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          touch "$WRITE_TEST"
+          rm -f "$WRITE_TEST"
+
+          TMP_REF="$REF_DIR/.riscv64-nemu-interpreter-h-so.${GITHUB_RUN_ID}.tmp"
+
+          install -m 0755 "$SRC" "$TMP_REF"
+          mv -f "$TMP_REF" "$REF"
+
+          install -m 0644 \
+            "$NEMU_DIR/.config" \
+            "${REF}.config"
+
+          git -C "$NEMU_DIR" rev-parse HEAD \
+            > "${REF}.commit"
+
+          sha256sum "$REF" \
+            > "${REF}.sha256"
+
+          echo "===== published H reference ====="
+          ls -lh "$REF"
+          file "$REF"
+          sha256sum "$SRC" "$REF"
+
+          echo "===== recorded commit ====="
+          cat "${REF}.commit"
+
+          echo "===== recorded config ====="
           grep -E \
-            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II|CONFIG_SHARE=|CONFIG_SHARE_REF=|CONFIG_DIFFTEST_REF_FOR_GEM5=' \
-            .config
+            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
+            "${REF}.config"
 
-          grep -qx 'CONFIG_RVH=y' .config
-          grep -qx 'CONFIG_RVV=y' .config
-          grep -qx 'CONFIG_GUIDED_EXEC=y' .config
-          grep -qx 'CONFIG_GUIDED_TVAL=y' .config
-          grep -qx 'CONFIG_TVAL_EX_II=y' .config
-          grep -qx '# CONFIG_RV_SSTC is not set' .config
-          grep -qx '# CONFIG_RVV_AGNOSTIC is not set' .config
-
-          echo "===== dynamic dependencies ====="
-          if ldd "$LOCAL_REF" | grep -i 'not found'; then
-            echo "ERROR: NEMU reference has missing libraries"
+          echo "===== dependency check ====="
+          if ldd "$REF" | grep -i 'not found'; then
+            echo "ERROR: missing dynamic dependency"
             exit 1
-          else
-            echo "No missing shared libraries"
           fi
 
-          echo "===== exported Difftest symbols ====="
-          nm -D "$LOCAL_REF" |
+          echo "===== Difftest symbols ====="
+          nm -D "$REF" |
             grep -E 'difftest_(init|exec|regcpy)' |
-            sed -n '1,30p'
+            head -30
 
-          echo "===== patch gem5-h.cfg ====="
+          echo "===== patch this runner's gem5-h.cfg ====="
           cd "$GITHUB_WORKSPACE"
 
-          python3 - "$LOCAL_REF" <<'PYCFG'
+          python3 - "$REF" <<'PYCFG'
           import re
           import sys
           from pathlib import Path
 
-          local_ref = sys.argv[1]
-          cfg_path = Path(
-              ".github/workflows/autotest/gem5-h.cfg"
-          )
-
-          text = cfg_path.read_text(encoding="utf-8")
+          reference = sys.argv[1]
+          path = Path(".github/workflows/autotest/gem5-h.cfg")
+          text = path.read_text(encoding="utf-8")
 
           text, h_count = re.subn(
               r'export GCBH_REF_SO="[^"]+"',
-              f'export GCBH_REF_SO="{local_ref}"',
+              f'export GCBH_REF_SO="{reference}"',
               text,
           )
 
           text, v_count = re.subn(
               r'export GCBV_REF_SO="[^"]+"',
-              f'export GCBV_REF_SO="{local_ref}"',
+              f'export GCBV_REF_SO="{reference}"',
               text,
           )
 
-          if h_count != 1:
+          if h_count != 1 or v_count != 1:
               raise SystemExit(
-                  f"ERROR: expected one GCBH_REF_SO, found {h_count}"
+                  f"Unexpected ref counts: H={h_count}, V={v_count}"
               )
 
-          if v_count != 1:
-              raise SystemExit(
-                  f"ERROR: expected one GCBV_REF_SO, found {v_count}"
-              )
-
-          cfg_path.write_text(text, encoding="utf-8")
+          path.write_text(text, encoding="utf-8")
           PYCFG
 
-          echo "===== patched H reference variables ====="
           grep -n -B2 -A3 \
             'GCBH_REF_SO\|GCBV_REF_SO' \
-            .github/workflows/autotest/gem5-h.cfg
-
-          grep -Fq "$LOCAL_REF" \
             .github/workflows/autotest/gem5-h.cfg
 
       - name: Run paralel h autotest script
@@ -225,59 +233,44 @@ jobs:
         run: |
           set -uo pipefail
 
-          dump_case() {
-            local case_dir="$1"
-
+          for case_dir in \
+            "./log_root_h/rungem5/checkpoint-0-0-0/astar_biglakes" \
+            "./log_root_h/rungem5/checkpoint-0-0-0/wrf"
+          do
             echo
             echo "=================================================="
-            echo "CASE DIRECTORY: $case_dir"
+            echo "CASE: $case_dir"
             echo "=================================================="
 
             if [[ ! -d "$case_dir" ]]; then
-              echo "Directory does not exist: $case_dir"
-              return 0
+              echo "Directory not found"
+              continue
             fi
 
-            while IFS= read -r -d '' file; do
-              echo
-              echo "--------------------------------------------------"
-              echo "FILE: $file"
-              echo "--------------------------------------------------"
-              tail -n 500 "$file" || true
-            done < <(
-              find "$case_dir" \
-                -type f \
-                \( \
-                  -name 'taskerr.txt' -o \
-                  -name 'taskout.txt' -o \
-                  -name 'other.txt' -o \
-                  -name 'gem5.log' -o \
-                  -name 'launcher.log' -o \
-                  -name 'simerr' -o \
-                  -name 'simout' -o \
-                  -name 'stdout' -o \
-                  -name 'stderr' \
-                \) \
-                -print0 2>/dev/null
-            )
-          }
+            find "$case_dir" \
+              -type f \
+              \( \
+                -name 'taskerr.txt' -o \
+                -name 'taskout.txt' -o \
+                -name 'other.txt' -o \
+                -name 'gem5.log' -o \
+                -name 'simerr' -o \
+                -name 'simout' \
+              \) \
+              -print \
+              -exec sh -c '
+                echo "---------- $1 ----------"
+                tail -n 500 "$1" || true
+              ' sh {} \;
+          done
 
-          dump_case \
-            "./log_root_h/rungem5/checkpoint-0-0-0/astar_biglakes"
-
-          dump_case \
-            "./log_root_h/rungem5/checkpoint-0-0-0/wrf"
-
-          echo
-          echo "=================================================="
-          echo "FIRST IMPORTANT ERRORS ACROSS ALL H TESTS"
-          echo "=================================================="
+          echo "===== important errors across H tests ====="
 
           grep -RniE \
-            'fatal|panic|difftest|mismatch|assert|segmentation|undefined symbol|dlopen|cannot open shared object|failed to open|no such file|error' \
+            'fatal|panic|difftest|mismatch|assert|segmentation|undefined symbol|dlopen|cannot open shared object|error' \
             ./log_root_h/rungem5 \
             2>/dev/null |
-            head -n 1000 || true
+            head -1000 || true
 
   valgrind_memory_check:
     runs-on: [self-hosted, open]
