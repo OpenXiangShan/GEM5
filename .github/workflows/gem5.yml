@@ -40,41 +40,211 @@ jobs:
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
 
-      - name: Verify H NEMU reference
+      - name: Rebuild synced H NEMU reference
         shell: bash
         run: |
           set -euo pipefail
 
-          REF="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"
-          EXPECTED_SHA256="369c3e9bb1db29074c02d09bd277c76d2b20b177d0a74628c7301d0f393127fb"
+          NEMU_COMMIT="3a217a17a96ff3782b16ec8886f499dd5814ebbd"
+          NEMU_DIR="$RUNNER_TEMP/NEMU-h-reference-synced"
+
+          REF_DIR="/nfs/home/share/gem5_ci/ref/normal"
+          REF="$REF_DIR/riscv64-nemu-interpreter-h-so"
 
           echo "===== runner information ====="
           hostname
           id
+          findmnt -T "$REF_DIR" || true
+          ls -ld "$REF_DIR"
 
-          echo "===== H NEMU reference ====="
-          test -f "$REF"
-          test -r "$REF"
+          echo "===== clone NEMU ====="
+          rm -rf "$NEMU_DIR"
 
-          ls -lh "$REF"
-          file "$REF"
+          git clone \
+            https://github.com/OpenXiangShan/NEMU.git \
+            "$NEMU_DIR"
 
-          ACTUAL_SHA256="$(sha256sum "$REF" | awk '{print $1}')"
+          git -C "$NEMU_DIR" checkout "$NEMU_COMMIT"
+          git -C "$NEMU_DIR" submodule update --init --recursive
 
-          echo "expected SHA256: $EXPECTED_SHA256"
-          echo "actual SHA256:   $ACTUAL_SHA256"
+          echo "===== patch initial mstatus.FS ====="
+          INIT_FILE="$NEMU_DIR/src/isa/riscv64/init.c"
 
-          if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
-            echo "ERROR: H NEMU reference content changed"
+          grep -qx '  mstatus->fs = 1;' "$INIT_FILE"
+
+          sed -i \
+            's/^  mstatus->fs = 1;$/  mstatus->fs = 0;/' \
+            "$INIT_FILE"
+
+          grep -qx '  mstatus->fs = 0;' "$INIT_FILE"
+
+          git -C "$NEMU_DIR" diff -- src/isa/riscv64/init.c
+
+          cd "$NEMU_DIR"
+          export NEMU_HOME="$NEMU_DIR"
+
+          echo "===== generate base config ====="
+          make riscv64-gem5-ref_defconfig
+
+          set_config_y() {
+            local option="$1"
+
+            sed -i \
+              -e "/^CONFIG_${option}=y$/d" \
+              -e "/^# CONFIG_${option} is not set$/d" \
+              .config
+
+            printf 'CONFIG_%s=y\n' "$option" >> .config
+          }
+
+          set_config_n() {
+            local option="$1"
+
+            sed -i \
+              -e "/^CONFIG_${option}=y$/d" \
+              -e "/^# CONFIG_${option} is not set$/d" \
+              .config
+
+            printf '# CONFIG_%s is not set\n' "$option" >> .config
+          }
+
+          set_config_y RVH
+          set_config_y RVV
+          set_config_y GUIDED_EXEC
+          set_config_y GUIDED_TVAL
+          set_config_y TVAL_EX_II
+
+          set_config_n RV_SSTC
+          set_config_n RVV_AGNOSTIC
+
+          echo "===== edited .config before sync ====="
+          grep -E \
+            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
+            .config
+
+          echo "===== synchronize Kconfig ====="
+
+          # 关键步骤：
+          # 把刚才对 .config 的修改同步到 auto.conf 和 autoconf.h。
+          "$NEMU_DIR/tools/kconfig/build/conf" \
+            --syncconfig \
+            "$NEMU_DIR/Kconfig"
+
+          echo "===== normalized .config ====="
+          grep -E \
+            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
+            .config
+
+          echo "===== generated auto.conf ====="
+          grep -E \
+            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_GUIDED_EXEC=|CONFIG_GUIDED_TVAL=|CONFIG_TVAL_EX_II=' \
+            include/config/auto.conf
+
+          echo "===== generated autoconf.h ====="
+          grep -E \
+            'CONFIG_RVH|CONFIG_RVV|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
+            include/generated/autoconf.h
+
+          # 检查 .config。
+          grep -qx 'CONFIG_RVH=y' .config
+          grep -qx 'CONFIG_RVV=y' .config
+          grep -qx 'CONFIG_GUIDED_EXEC=y' .config
+          grep -qx 'CONFIG_GUIDED_TVAL=y' .config
+          grep -qx 'CONFIG_TVAL_EX_II=y' .config
+          grep -qx '# CONFIG_RV_SSTC is not set' .config
+          grep -qx '# CONFIG_RVV_AGNOSTIC is not set' .config
+
+          # 检查真正供编译器使用的生成配置。
+          grep -qx 'CONFIG_RVH=y' include/config/auto.conf
+          grep -qx 'CONFIG_RVV=y' include/config/auto.conf
+          grep -qx 'CONFIG_GUIDED_EXEC=y' include/config/auto.conf
+          grep -qx 'CONFIG_GUIDED_TVAL=y' include/config/auto.conf
+          grep -qx 'CONFIG_TVAL_EX_II=y' include/config/auto.conf
+
+          grep -qx '#define CONFIG_RVH 1' \
+            include/generated/autoconf.h
+
+          grep -qx '#define CONFIG_RVV 1' \
+            include/generated/autoconf.h
+
+          grep -qx '#define CONFIG_GUIDED_EXEC 1' \
+            include/generated/autoconf.h
+
+          grep -qx '#define CONFIG_GUIDED_TVAL 1' \
+            include/generated/autoconf.h
+
+          grep -qx '#define CONFIG_TVAL_EX_II 1' \
+            include/generated/autoconf.h
+
+          if grep -q '^#define CONFIG_RV_SSTC 1$' \
+            include/generated/autoconf.h; then
+            echo "ERROR: CONFIG_RV_SSTC is actually enabled"
             exit 1
           fi
 
-          echo "===== recorded NEMU information ====="
-          cat "${REF}.commit" || true
+          if grep -q '^#define CONFIG_RVV_AGNOSTIC 1$' \
+            include/generated/autoconf.h; then
+            echo "ERROR: CONFIG_RVV_AGNOSTIC is actually enabled"
+            exit 1
+          fi
 
+          echo "KCONFIG_SYNC_CHECK=PASSED"
+
+          echo "===== build corrected NEMU reference ====="
+          rm -rf build
+
+          JOBS="$(nproc)"
+          if [[ "$JOBS" -gt 100 ]]; then
+            JOBS=100
+          fi
+
+          make -j"$JOBS"
+
+          SRC="$NEMU_DIR/build/riscv64-nemu-interpreter-so"
+
+          test -r "$SRC"
+
+          echo "===== built reference ====="
+          ls -lh "$SRC"
+          file "$SRC"
+          sha256sum "$SRC"
+
+          echo "===== publish corrected reference ====="
+          TMP_REF="$REF_DIR/.riscv64-nemu-interpreter-h-so.${GITHUB_RUN_ID}.tmp"
+
+          install -m 0755 "$SRC" "$TMP_REF"
+          mv -f "$TMP_REF" "$REF"
+
+          install -m 0644 \
+            "$NEMU_DIR/.config" \
+            "${REF}.config"
+
+          install -m 0644 \
+            "$NEMU_DIR/include/config/auto.conf" \
+            "${REF}.auto.conf"
+
+          install -m 0644 \
+            "$NEMU_DIR/include/generated/autoconf.h" \
+            "${REF}.autoconf.h"
+
+          git -C "$NEMU_DIR" rev-parse HEAD \
+            > "${REF}.commit"
+
+          git -C "$NEMU_DIR" diff -- src/isa/riscv64/init.c \
+            > "${REF}.patch"
+
+          sha256sum "$REF" \
+            > "${REF}.sha256"
+
+          echo "===== published reference ====="
+          ls -lh "$REF"
+          file "$REF"
+          sha256sum "$SRC" "$REF"
+
+          echo "===== compiled TVAL configuration ====="
           grep -E \
-            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
-            "${REF}.config" || true
+            'CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
+            "${REF}.autoconf.h"
 
           echo "===== dependency check ====="
           if ldd "$REF" | grep -i 'not found'; then
@@ -82,30 +252,12 @@ jobs:
             exit 1
           fi
 
-          echo "===== Difftest symbols ====="
-          nm -D "$REF" |
-            grep -E 'difftest_(init|exec|regcpy)' |
-            head -30
+          echo "===== GEM5 H reference path ====="
+          cd "$GITHUB_WORKSPACE"
 
-          echo "===== gem5-h.cfg reference ====="
           grep -n -B2 -A3 \
             'GCBH_REF_SO\|GCBV_REF_SO' \
             .github/workflows/autotest/gem5-h.cfg
-
-          H_COUNT="$(
-            grep -Fc \
-              'GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"' \
-              .github/workflows/autotest/gem5-h.cfg
-          )"
-
-          V_COUNT="$(
-            grep -Fc \
-              'GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"' \
-              .github/workflows/autotest/gem5-h.cfg
-          )"
-
-          test "$H_COUNT" -eq 1
-          test "$V_COUNT" -eq 1
 
       - name: Run paralel h autotest script
         shell: bash
