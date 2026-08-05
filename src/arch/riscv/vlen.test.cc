@@ -39,7 +39,7 @@ namespace
 {
 
 VTYPE
-makeVtype(uint8_t vsew, uint8_t vlmul)
+make_vtype(uint8_t vsew, uint8_t vlmul)
 {
     VTYPE vtype = 0;
     vtype.vsew = vsew;
@@ -58,19 +58,19 @@ TEST(RiscvVlenTest, MaxContainerCoversSupportedVlens)
 TEST(RiscvVlenTest, GetVlmaxScalesWithVlen)
 {
     // SEW=8 (vsew=0), LMUL=1 (vlmul=0)
-    EXPECT_EQ(getVlmax(makeVtype(0, 0), 128), 16u);
-    EXPECT_EQ(getVlmax(makeVtype(0, 0), 256), 32u);
-    EXPECT_EQ(getVlmax(makeVtype(0, 0), 512), 64u);
+    EXPECT_EQ(getVlmax(make_vtype(0, 0), 128), 16u);
+    EXPECT_EQ(getVlmax(make_vtype(0, 0), 256), 32u);
+    EXPECT_EQ(getVlmax(make_vtype(0, 0), 512), 64u);
 
     // SEW=64 (vsew=3), LMUL=2 (vlmul=1)
-    EXPECT_EQ(getVlmax(makeVtype(3, 1), 128), 4u);
-    EXPECT_EQ(getVlmax(makeVtype(3, 1), 256), 8u);
-    EXPECT_EQ(getVlmax(makeVtype(3, 1), 512), 16u);
+    EXPECT_EQ(getVlmax(make_vtype(3, 1), 128), 4u);
+    EXPECT_EQ(getVlmax(make_vtype(3, 1), 256), 8u);
+    EXPECT_EQ(getVlmax(make_vtype(3, 1), 512), 16u);
 
     // SEW=16 (vsew=1), LMUL=1/8 (vlmul=5)
-    EXPECT_EQ(getVlmax(makeVtype(1, 5), 128), 1u);
-    EXPECT_EQ(getVlmax(makeVtype(1, 5), 256), 2u);
-    EXPECT_EQ(getVlmax(makeVtype(1, 5), 512), 4u);
+    EXPECT_EQ(getVlmax(make_vtype(1, 5), 128), 1u);
+    EXPECT_EQ(getVlmax(make_vtype(1, 5), 256), 2u);
+    EXPECT_EQ(getVlmax(make_vtype(1, 5), 512), 4u);
 }
 
 TEST(RiscvVlenTest, VtypeVlmaxMatchesGetVlmax)
@@ -78,7 +78,7 @@ TEST(RiscvVlenTest, VtypeVlmaxMatchesGetVlmax)
     for (uint32_t vlen : {128u, 256u, 512u}) {
         for (uint8_t vsew = 0; vsew < 4; ++vsew) {
             for (uint8_t vlmul : {0, 1, 2, 3, 5, 6, 7}) {
-                VTYPE vtype = makeVtype(vsew, vlmul);
+                VTYPE vtype = make_vtype(vsew, vlmul);
                 EXPECT_EQ(getVlmax(vtype, vlen),
                           vtype_VLMAX(vtype, vlen));
             }

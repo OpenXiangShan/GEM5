@@ -20,9 +20,10 @@ cd "$ROOT"
 GEM5="${GEM5:-./build/RISCV/gem5.opt}"
 GTEST="${GTEST:-./build/RISCV/arch/riscv/vlen.test.opt}"
 
-echo "===== 1) Python VLMAX / config / matrix ====="
+echo "===== 1) Python VLMAX / config / matrix / negative proofs ====="
 python3 util/xs_scripts/rvv_vlen/test_rvv_vlen.py
 python3 util/xs_scripts/rvv_vlen/test_rvv_vlen_config.py
+python3 util/xs_scripts/rvv_vlen/test_elem_gen_idx_negative.py
 python3 util/xs_scripts/rvv_vlen/test_matrix.py \
   ${BIN_DIR:+--bin-dir "$BIN_DIR"}
 python3 configs/example/xiangshan_rvv_vlen_smoke.py --standalone --rvv-vlen=256

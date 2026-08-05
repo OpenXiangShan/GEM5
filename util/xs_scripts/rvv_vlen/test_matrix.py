@@ -133,7 +133,7 @@ def main(argv=None) -> int:
 
     matrix = build_matrix()
     print(f"# XS-GEM5 RVV VLEN matrix: {len(matrix)} cases "
-          f"({len(UPSTREAM_RESOURCES)} resources × {len(XS_VLENS)} VLENs)")
+          f"({len(UPSTREAM_RESOURCES)} resources x {len(XS_VLENS)} VLENs)")
     print("# Adapted from upstream gem5 SE rvv_intrinsic_tests "
           "(VLEN capped to 128/256/512).")
     print()

@@ -45,8 +45,15 @@ for v in 128 256 512; do
   expect_e64=$((v / 64))
   grep -E "rvv-vlen-check: vlenb=${expect_vlenb} vlen=${v} vlmax_e8_m1=${expect_vlenb} vlmax_e64_m1=${expect_e64}" \
     "$out/run.log"
-  # Functional mem path (vlseg) must also pass; CSR-only checks are insufficient.
+  # Functional mem paths must also pass; CSR-only checks are insufficient.
   grep -F "rvv-vlen-check: vlseg PASS" "$out/run.log"
+  grep -F "rvv-vlen-check: vsseg PASS" "$out/run.log"
+  grep -F "rvv-vlen-check: vlse PASS" "$out/run.log"
+  grep -F "rvv-vlen-check: vluxei PASS" "$out/run.log"
+  grep -F "rvv-vlen-check: vle_m2 PASS" "$out/run.log"
+  grep -F "rvv-vlen-check: vl1re PASS" "$out/run.log"
+  grep -F "rvv-vlen-check: vslide PASS" "$out/run.log"
+  grep -F "rvv-vlen-check: vmseq_m2 PASS" "$out/run.log"
   grep -F "rvv-vlen-check: PASS" "$out/run.log"
   echo "PASS_vlen_$v"
 done

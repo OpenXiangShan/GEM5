@@ -1142,6 +1142,8 @@ ISA::unserialize(CheckpointIn &cp)
     fatal_if(vlen < DefaultVecLenInBits || (vlen & (vlen - 1)) != 0,
         "Unserialized VLEN (%u) must be a power of two in [%u, %u]",
         vlen, DefaultVecLenInBits, MaxVecLenInBits);
+    fatal_if(elen < 8 || elen > 64 || (elen & (elen - 1)) != 0,
+        "Unserialized ELEN (%u) must be a power of two in [8, 64]", elen);
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);

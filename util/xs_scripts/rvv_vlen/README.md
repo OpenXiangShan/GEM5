@@ -44,18 +44,27 @@ GEM5_RESOURCE_DIR=util/xs_scripts/rvv_vlen/gem5-resource-cache \
 
 ### XS AM functional check（推荐）
 
-上游 `rvv-*` 是 Linux SE ELF，**不能**直接给 `--raw-cpt`。用 AM 自检程序验证
-真实 `vlenb` / `vsetvli` VLMAX：
+上游 `rvv-*` 是 Linux SE ELF，**不能**直接给 `--raw-cpt`。用 AM 自检程序验证：
+
+- CSR：`vlenb` / `vsetvli` VLMAX
+- 访存：`vlseg` / `vsseg` / `vlse` / `vluxei` / `vle m2` / `vl1re`
+- 算术：`vslidedown` / `vmseq`+LMUL2（mask merge）
 
 ```bash
 export AM_HOME=/path/to/nexus-am
-# Ubuntu 交叉工具链：
 make -C util/xs_scripts/rvv_vlen/am/rvv-vlen-check \
   ARCH=riscv64-xs LINUX_GNU_TOOLCHAIN=1
 
 ./util/xs_scripts/rvv_vlen/run_am_vlen_check.sh
-# Expect for each VLEN:
-#   rvv-vlen-check: vlenb=VLEN/8 ... PASS
+# Expect for each VLEN in {128,256,512}:
+#   vlseg / vsseg / vlse / vluxei / vle_m2 / vl1re / vslide / vmseq_m2 PASS
+#   rvv-vlen-check: PASS
+```
+
+离线负向证明（证明“缺 vlen 参数时测试会失败”）：
+
+```bash
+python3 util/xs_scripts/rvv_vlen/test_elem_gen_idx_negative.py
 ```
 
 ### Upstream SE reference matrix (12 × {128,256,512} = 36)
