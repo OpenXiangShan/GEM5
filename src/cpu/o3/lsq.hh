@@ -1495,16 +1495,16 @@ class LSQ
 
     struct LSQStats : public statistics::Group
     {
-        LSQStats(statistics::Group *parent);
+        LSQStats(statistics::Group *parent, unsigned num_threads);
 
         /** Per-cycle occupancy samples for the aggregated LSQ structures. */
         statistics::Average lqAvgEntryNum;
         statistics::Average sqAvgEntryNum;
         statistics::Average sbufferAvgEntryNum;
-        /** Per-cycle full signals based on whether a full enqueue bundle fits. */
-        statistics::Scalar lqFullCycles;
-        statistics::Scalar sqFullCycles;
-        statistics::Scalar lsqFullCycles;
+        /** Per-thread full signals based on whether an enqueue bundle fits. */
+        statistics::Vector lqFullCycles;
+        statistics::Vector sqFullCycles;
+        statistics::Vector lsqFullCycles;
         statistics::Scalar sbufferFullCycles;
         statistics::Scalar sbufferEvictDuetoFlush;
         statistics::Scalar sbufferEvictDuetoFull;

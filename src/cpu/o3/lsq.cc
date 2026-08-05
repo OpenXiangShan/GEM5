@@ -382,7 +382,7 @@ LSQ::StoreBuffer::release(StoreBufferEntry *entry)
     }
 }
 
-LSQ::LSQStats::LSQStats(statistics::Group *parent)
+LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
     : statistics::Group(parent),
       ADD_STAT(lqAvgEntryNum, statistics::units::Count::get(),
                "Average number of entries in load queue"),
@@ -391,11 +391,14 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
       ADD_STAT(sbufferAvgEntryNum, statistics::units::Count::get(),
                "Average number of valid entries in store buffer"),
       ADD_STAT(lqFullCycles, statistics::units::Cycle::get(),
-               "Cycles that LQ cannot accept a full enqueue bundle"),
+               "Per-thread cycles that LQ cannot accept a full enqueue "
+               "bundle"),
       ADD_STAT(sqFullCycles, statistics::units::Cycle::get(),
-               "Cycles that SQ cannot accept a full enqueue bundle"),
+               "Per-thread cycles that SQ cannot accept a full enqueue "
+               "bundle"),
       ADD_STAT(lsqFullCycles, statistics::units::Cycle::get(),
-               "Cycles that LSQ cannot accept a full enqueue bundle"),
+               "Per-thread cycles that LSQ cannot accept a full enqueue "
+               "bundle"),
       ADD_STAT(sbufferFullCycles, statistics::units::Cycle::get(),
                "Number of cycles that store buffer is physically full"),
       ADD_STAT(sbufferEvictDuetoFlush, statistics::units::Count::get(), ""),
@@ -447,6 +450,15 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
                statistics::units::Count::get(),
                "Number of store buffer requests that miss and exit fake dcache mainpipe at S2")
 {
+    lqFullCycles.init(num_threads);
+    sqFullCycles.init(num_threads);
+    lsqFullCycles.init(num_threads);
+    for (ThreadID tid = 0; tid < num_threads; ++tid) {
+        const std::string thread_name = csprintf("thread%d", tid);
+        lqFullCycles.subname(tid, thread_name);
+        sqFullCycles.subname(tid, thread_name);
+        lsqFullCycles.subname(tid, thread_name);
+    }
 }
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
@@ -483,7 +495,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       lsqMode(params.smtLSQMode),
       lsqPolicy(params.smtLSQPolicy),
       smtLSQThreshold(params.smtLSQThreshold),
-      stats(nullptr),
+      stats(nullptr, params.numThreads),
       LQEntries(params.LQEntries),
       physicalSQEntries(params.SQEntries),
       storeQueueMultiple(params.StoreQueueMultiple),
@@ -687,18 +699,23 @@ LSQ::tick()
     std::list<ThreadID>::iterator end = activeThreads->end();
     unsigned lq_entry_num = 0;
     unsigned sq_entry_num = 0;
-    bool lq_full = false;
-    bool sq_full = false;
-
     while (threads != end) {
         ThreadID tid = *threads++;
         lq_entry_num += thread[tid].numLoads();
         sq_entry_num += thread[tid].numStores();
-        // TODO: this per-thread OR is an approximation for SMT/shared-LSQ
-        // configurations. With multiple active threads it may not match the
-        // aggregate free-entry condition seen by rename/dispatch.
-        lq_full = lq_full || thread[tid].numFreeLoadEntries() < enqueueWidth;
-        sq_full = sq_full || thread[tid].numFreeStoreEntries() < enqueueWidth;
+        const bool thread_lq_full =
+            logicalFreeLoadEntries(tid) < enqueueWidth;
+        const bool thread_sq_full =
+            logicalFreeStoreEntries(tid) < enqueueWidth;
+        if (thread_lq_full) {
+            ++stats.lqFullCycles[tid];
+        }
+        if (thread_sq_full) {
+            ++stats.sqFullCycles[tid];
+        }
+        if (thread_lq_full || thread_sq_full) {
+            ++stats.lsqFullCycles[tid];
+        }
         thread[tid].tick();
     }
 
@@ -712,16 +729,6 @@ LSQ::tick()
     stats.sbufferAvgEntryNum = storeBuffer.size();
     if (storeBuffer.full()) {
         ++stats.sbufferFullCycles;
-    }
-
-    if (lq_full) {
-        ++stats.lqFullCycles;
-    }
-    if (sq_full) {
-        ++stats.sqFullCycles;
-    }
-    if (lq_full || sq_full) {
-        ++stats.lsqFullCycles;
     }
 
 }
