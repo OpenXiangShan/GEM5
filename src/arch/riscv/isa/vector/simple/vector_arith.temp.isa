@@ -2430,7 +2430,7 @@ template<typename ElemType>
             vmi.rs = i * elem_num_per_vreg;
             vmi.re = (i+1) * elem_num_per_vreg;
             vmi.microVd = VD + i;
-            vmi.microVs2 = elem_gen_idx(VS2 + i, off, sew/8);
+            vmi.microVs2 = elem_gen_idx(VS2 + i, off, sew/8, vlen);
             if (vmi.microVs2 >= 32) {
                 vmi.microVs2 = 31;
             }

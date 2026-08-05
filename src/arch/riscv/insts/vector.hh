@@ -611,16 +611,19 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         vreg_t tmp_d0 = *(vreg_t *)xc->getWritableRegOperand(this, 0);
         auto Vd = tmp_d0.as<uint8_t>();
 
+        // Mask bits are element-indexed (1 bit / element). Each micro-op
+        // covers one architectural VLEN of *elements* at the current SEW
+        // (ElemType), not VLEN bytes. Using uint8_t here was a regression
+        // vs the old VLENB/sizeof(ElemType) formula.
         const uint32_t vlenb = vlen >> 3;
-        // Mask bits are packed as bytes; use byte view element count.
-        const uint32_t elems_per_vreg = vlenb / sizeof(uint8_t);
+        const uint32_t elems_per_vreg = vlenb / sizeof(ElemType);
         size_t bit_cnt = elems_per_vreg;
 
         vreg_t tmp_s;
         xc->getRegOperand(this, 0, &tmp_s);
         auto s = tmp_s.as<uint8_t>();
 
-        // Preserve the full physical container, then merge active mask bytes.
+        // Preserve the full physical container, then merge active mask bits.
         memcpy(Vd, s, MaxVecLenInBytes);
         for (uint8_t i = 1; i < this->_numSrcRegs; i++) {
             xc->getRegOperand(this, i, &tmp_s);
@@ -664,7 +667,7 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         for (uint8_t i = 0; i < this->_numSrcRegs; i++) {
             ss << ", " << registerName(srcRegIdx(i));
         }
-        ss << ", offset:" << (vlen >> 3);
+        ss << ", offset:" << ((vlen >> 3) / sizeof(ElemType));
         return ss.str();
     }
 };

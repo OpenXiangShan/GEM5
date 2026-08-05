@@ -1554,7 +1554,7 @@ decode QUADRANT {
                 }}, OPIVX, VectorMiscOp);
                 0x0f: VectorSlideDownFormat::vslidedown_vx({{
                     uint32_t offset_ = Rs1_vu;
-                    if (elem_gen_idx(machInst.vs2, vmi.rs + offset_, sew/8) == vmi.microVs2) {
+                    if (elem_gen_idx(machInst.vs2, vmi.rs + offset_, sew/8, vlen) == vmi.microVs2) {
                         uint32_t offset = offset_ % elem_num_per_vreg;
                         uint32_t ei = vmi.rs;
                         // set front segment

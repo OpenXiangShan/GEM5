@@ -42,11 +42,11 @@ XS-GEM5 does not support SE / obtain_resource workloads, so this file:
 Usage
 -----
   # Print the adapted matrix (no gem5 required)
-  python3 tests/gem5/rvv_vlen/test_matrix.py
+  python3 util/xs_scripts/rvv_vlen/test_matrix.py
 
   # When local AM/Linux binaries are available, point --bin-dir at them and
   # optionally --gem5 / --config to emit runnable command lines.
-  python3 tests/gem5/rvv_vlen/test_matrix.py \
+  python3 util/xs_scripts/rvv_vlen/test_matrix.py \
       --bin-dir /path/to/rvv-bins \
       --gem5 ./build/RISCV/gem5.opt \
       --config configs/example/kmhv3.py

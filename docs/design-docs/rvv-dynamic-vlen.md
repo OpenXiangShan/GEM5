@@ -82,7 +82,8 @@ scons build/RISCV/gem5.opt --linker=gold -j$(nproc)
 | GTest `vlen.test.opt`（4 cases） | PASS |
 | kmhv3 短仿真 × VLEN∈{128,256,512}（microbench cpt） | PASS，`config.ini` 中 `vlen=` 正确 |
 | 上游 SE `rvv-*` × 3 VLEN（36 cases，参考二进制） | PASS |
-| AM `rvv-vlen-check` × VLEN∈{128,256,512}（XS `--raw-cpt`） | PASS（vlenb/VLMAX 与配置一致） |
+| AM `rvv-vlen-check` × VLEN∈{128,256,512}（XS `--raw-cpt`） | PASS（vlenb/VLMAX + `vlseg2e8` 寄存器拆分） |
+| GTest / Python `elem_gen_idx` 回归 | PASS（VLEN=256 时 index16 必须仍在 vd） |
 | XS FS 上直接跑上游 Linux `rvv-*` ELF | 不做（需 AM/FS 封装；SE ELF ≠ raw-cpt） |
 
 详见 `util/xs_scripts/rvv_vlen/README.md`、`run_all_tests.sh`、`run_am_vlen_check.sh`。

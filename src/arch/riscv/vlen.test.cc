@@ -93,4 +93,36 @@ TEST(RiscvVlenTest, VecRegContainerUsesMaxWidth)
     EXPECT_EQ(sizeof(RiscvISA::VecRegContainer), MaxVecLenInBytes);
 }
 
+TEST(RiscvVlenTest, ElemGenIdxUsesArchitecturalVlen)
+{
+    // e8: elems/reg = vlen/8. Index 16 must stay in vd when VLEN>=256, but
+    // wraps to vd+1 under the historical DefaultVecLenInBits=128 assumption.
+    EXPECT_EQ(elem_gen_idx(0, 16, 1, 128), 1);
+    EXPECT_EQ(elem_gen_idx(0, 16, 1, 256), 0);
+    EXPECT_EQ(elem_gen_idx(0, 16, 1, 512), 0);
+
+    EXPECT_EQ(elem_gen_idx(0, 32, 1, 256), 1);
+    EXPECT_EQ(elem_gen_idx(0, 32, 1, 512), 0);
+    EXPECT_EQ(elem_gen_idx(4, 40, 1, 256), 5);
+
+    // e64: elems/reg = vlen/64.
+    EXPECT_EQ(elem_gen_idx(0, 2, 8, 128), 1);
+    EXPECT_EQ(elem_gen_idx(0, 2, 8, 256), 0);
+    EXPECT_EQ(elem_gen_idx(0, 4, 8, 256), 1);
+}
+
+TEST(RiscvVlenTest, MaskMergeElemsPerVregFormula)
+{
+    // Mirror VMaskMergeMicroInst: elems_per_vreg = (vlen/8) / sizeof(Elem).
+    // Regression guard for the uint8_t-only mistake (always vlenb).
+    auto elems = [](uint32_t vlen_bits, size_t elem_bytes) {
+        return (vlen_bits >> 3) / elem_bytes;
+    };
+    EXPECT_EQ(elems(128, 1), 16u);  // e8
+    EXPECT_EQ(elems(128, 8), 2u);   // e64
+    EXPECT_EQ(elems(256, 8), 4u);
+    EXPECT_EQ(elems(512, 2), 32u);  // e16
+    EXPECT_NE(elems(256, 8), elems(256, 1));
+}
+
 } // namespace

@@ -12,9 +12,11 @@ def upgrader(cpt):
 
     Upstream gem5 uses MaxVecLenInBytes = 8192 (65536-bit MaxVLEN).
     XS-GEM5 uses MaxVecLenInBytes = 64 (512-bit MaxVLEN) to keep O3 PRF
-    memory reasonable. Only use this upgrader when importing *upstream*
-    checkpoints that already contain RVV state; XiangShan RVGCpt format is
-    separate and not handled here.
+    memory reasonable.
+
+    Checkpoint format stores regs.vector as whitespace-separated bytes.
+    We expand/truncate to 40 regs * 64 bytes = 2560 bytes (dummy fill 0),
+    matching the upstream upgrader's "always MaxVecLen container" policy.
     """
 
     import re
@@ -23,22 +25,26 @@ def upgrader(cpt):
     xs_max_vec_bytes = 40 * 64
 
     for sec in cpt.sections():
-        # Match legacy gem5 vector register sections.
-        if not re.search(r"\.xc\.thread_context$", sec) and not re.search(
-            r"\.thread$", sec
-        ):
-            # Keep scanning; some old dumps store vectors under misc keys.
-            pass
+        res = re.search(r"(.*processor.*\.core.*)\.xc.*", sec)
+        if not res:
+            # Also accept bare ".thread_context" / ".thread" sections used by
+            # some older dumps.
+            if not re.search(r"\.xc\.thread_context$", sec) and not re.search(
+                r"\.thread$", sec
+            ):
+                continue
 
-        if cpt.has_option(sec, "regs.vector"):
-            # Expand/truncate to XS max container footprint.
-            # Actual content layout is opaque hex/blob in gem5 checkpoints.
-            val = cpt.get(sec, "regs.vector")
-            # Leave a marker comment in-process; real resize depends on
-            # gem5 checkpoint serializer format and should be validated
-            # before production use.
-            cpt.set(sec, "regs.vector.note",
-                    f"xs-dyn-vlen expect {xs_max_vec_bytes} bytes; "
-                    f"raw_len={len(val)}")
+        if not cpt.has_option(sec, "regs.vector"):
+            continue
 
-    # No hard failure: this is a best-effort adapter for experiments.
+        mr = cpt.get(sec, "regs.vector").split()
+        if len(mr) == xs_max_vec_bytes:
+            continue
+
+        # Why rewrite: VecRegContainer is always MaxVecLenInBytes wide.
+        # Truncate oversized upstream blobs; zero-pad undersized ones.
+        if len(mr) > xs_max_vec_bytes:
+            mr = mr[:xs_max_vec_bytes]
+        else:
+            mr = mr + ["0"] * (xs_max_vec_bytes - len(mr))
+        cpt.set(sec, "regs.vector", " ".join(mr))

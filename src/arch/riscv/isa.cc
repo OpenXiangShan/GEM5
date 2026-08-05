@@ -1132,6 +1132,16 @@ ISA::unserialize(CheckpointIn &cp)
     // Older checkpoints may omit vlen/elen; keep constructor defaults then.
     UNSERIALIZE_OPT_SCALAR(vlen);
     UNSERIALIZE_OPT_SCALAR(elen);
+    // Re-validate after restore: a corrupt / hand-edited checkpoint must not
+    // silently run with an illegal (vlen, elen) pair.
+    fatal_if(vlen < elen,
+        "Unserialized VLEN (%u) must be >= ELEN (%u)", vlen, elen);
+    fatal_if(vlen > MaxVecLenInBits,
+        "Unserialized VLEN (%u) exceeds compiled MaxVecLenInBits (%u)",
+        vlen, MaxVecLenInBits);
+    fatal_if(vlen < DefaultVecLenInBits || (vlen & (vlen - 1)) != 0,
+        "Unserialized VLEN (%u) must be a power of two in [%u, %u]",
+        vlen, DefaultVecLenInBits, MaxVecLenInBits);
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);

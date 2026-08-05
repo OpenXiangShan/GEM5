@@ -81,7 +81,7 @@ def template VleConstructor {{
                 vmi.rs = i;
                 vmi.re = i+1;
                 vmi.fn = fn;
-                vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
+                vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8, vlen);
                 vmi.offset = (i*nf+fn) * eew / 8;
                 microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
 
@@ -501,8 +501,12 @@ Fault
     %(op_rd)s;
     %(ea_code)s;
 
-    Fault fault = readMemAtomicLE(xc, traceData, EA,
-                                  *(vreg_t::Container*)(&Mem), memAccessFlags);
+    // Architectural whole-register width, not MaxVecLenInBytes. Reading the
+    // full physical container would over-fetch when VLEN < MaxVLEN.
+    const uint32_t mem_size = vlen >> 3;
+    const std::vector<bool> byte_enable(mem_size, true);
+    Fault fault = xc->readMem(EA, Mem.as<uint8_t>(), mem_size, memAccessFlags,
+                              byte_enable);
     if (fault != NoFault)
         return fault;
 
@@ -538,7 +542,7 @@ def template VlStrideConstructor {{
             vmi.rs = i;
             vmi.re = i+1;
             vmi.fn = fn;
-            vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8);
+            vmi.microVd = elem_gen_idx(VD + fn * emul, i, eew/8, vlen);
             vmi.offset = fn * eew / 8;
             microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
             microop->setDelayedCommit();
@@ -660,8 +664,8 @@ template<typename ElemType>
             vmi.fn = fn;
             vmi.rs = i;
             vmi.re = i+1;
-            vmi.microVd = elem_gen_idx(VD + fn * flmul, i, sew/8);
-            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
+            vmi.microVd = elem_gen_idx(VD + fn * flmul, i, sew/8, vlen);
+            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8, vlen);
             vmi.offset = fn * sew / 8;
             if (vmi.microVd >= 32) {
                 break;
@@ -832,7 +836,7 @@ def template VseConstructor {{
                 vmi.rs = i;
                 vmi.re = i+1;
                 vmi.fn = fn;
-                vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
+                vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8, vlen);
                 vmi.offset = (i*nf+fn) * eew / 8;
                 microop = new %(class_name)sMicro(_machInst, i*(fn+1), vmi);
                 microop->resetOpClass(VectorSegUnitStrideStoreOp);
@@ -1300,7 +1304,7 @@ def template VsStrideConstructor {{
             vmi.rs = i;
             vmi.re = i+1;
             vmi.fn = fn;
-            vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8);
+            vmi.microVs3 = elem_gen_idx(VS3 + fn * emul, i, eew/8, vlen);
             vmi.offset = fn * eew / 8;
             microop = new %(class_name)sMicro(_machInst, i*fn, vmi);
             microop->setDelayedCommit();
@@ -1373,8 +1377,8 @@ template<typename ElemType>
             vmi.fn = fn;
             vmi.rs = i;
             vmi.re = i+1;
-            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8);
-            vmi.microVs3 = elem_gen_idx(VS3 + fn * flmul, i, sew / 8);
+            vmi.microVs2 = elem_gen_idx(VS2, i, eew / 8, vlen);
+            vmi.microVs3 = elem_gen_idx(VS3 + fn * flmul, i, sew / 8, vlen);
             vmi.offset = fn * sew / 8;
             if (vmi.microVs2 >= 32 || vmi.microVs3 >= 32) {
                 break;

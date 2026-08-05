@@ -9,7 +9,7 @@ can run without linking gem5. Keep them in sync with
 src/arch/riscv/utility.hh::{getVlmax,vtype_VLMAX}.
 
 Run:
-  python3 tests/test_rvv_vlen.py
+  python3 util/xs_scripts/rvv_vlen/test_rvv_vlen.py
 """
 
 from __future__ import annotations
@@ -102,6 +102,36 @@ class TestVlenConfigContract(unittest.TestCase):
         max_vlen_bits = 512
         for vlen in (128, 256, 512):
             self.assertLessEqual(vlen, max_vlen_bits)
+
+
+def elem_gen_idx(vd: int, n: int, elem_size: int, vlen_bits: int) -> int:
+    """Mirror of RiscvISA::elem_gen_idx — must take architectural VLEN."""
+    elts_per_reg = (vlen_bits >> 3) // elem_size
+    return vd + n // elts_per_reg
+
+
+class TestElemGenIdx(unittest.TestCase):
+    """
+    Regression for decode-time register splitting.
+
+    These cases would have caught the bug where call sites omitted vlen and
+    silently used DefaultVecLenInBits=128 under VLEN=256/512.
+    """
+
+    def test_e8_index16_stays_in_vd_for_vlen256(self):
+        self.assertEqual(elem_gen_idx(0, 16, 1, 128), 1)
+        self.assertEqual(elem_gen_idx(0, 16, 1, 256), 0)
+        self.assertEqual(elem_gen_idx(0, 16, 1, 512), 0)
+
+    def test_e8_crosses_at_elts_per_reg(self):
+        self.assertEqual(elem_gen_idx(0, 32, 1, 256), 1)
+        self.assertEqual(elem_gen_idx(0, 32, 1, 512), 0)
+        self.assertEqual(elem_gen_idx(4, 40, 1, 256), 5)
+
+    def test_e64(self):
+        self.assertEqual(elem_gen_idx(0, 2, 8, 128), 1)
+        self.assertEqual(elem_gen_idx(0, 2, 8, 256), 0)
+        self.assertEqual(elem_gen_idx(0, 4, 8, 256), 1)
 
 
 if __name__ == "__main__":

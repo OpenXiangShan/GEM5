@@ -33,6 +33,7 @@ test -f "$BIN"
 for v in 128 256 512; do
   out="$ROOT/util/xs_scripts/rvv_vlen/m5out-am-vlen-$v"
   rm -rf "$out"
+  mkdir -p "$out"
   echo "===== kmhv3 --rvv-vlen=$v + rvv-vlen-check ====="
   "$GEM5" -d "$out" configs/example/kmhv3.py \
     --raw-cpt --generic-rv-cpt="$BIN" \
@@ -44,6 +45,8 @@ for v in 128 256 512; do
   expect_e64=$((v / 64))
   grep -E "rvv-vlen-check: vlenb=${expect_vlenb} vlen=${v} vlmax_e8_m1=${expect_vlenb} vlmax_e64_m1=${expect_e64}" \
     "$out/run.log"
+  # Functional mem path (vlseg) must also pass; CSR-only checks are insufficient.
+  grep -F "rvv-vlen-check: vlseg PASS" "$out/run.log"
   grep -F "rvv-vlen-check: PASS" "$out/run.log"
   echo "PASS_vlen_$v"
 done

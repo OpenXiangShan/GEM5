@@ -52,6 +52,7 @@
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
 #include "arch/riscv/regs/vector.hh"
+#include "base/logging.hh"
 #include "base/types.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
@@ -251,10 +252,23 @@ get_emul(uint32_t eew, uint32_t sew, float vflmul, bool is_mask_ldst)
     return emul;
 }
 
+/**
+ * Map element index `n` to the architectural vector register that holds it.
+ *
+ * Why `vlen_bits` is required (no default): with MaxVecLenInBits > active VLEN,
+ * using DefaultVecLenInBits / MaxVecLenInBits here silently mis-splits LMUL /
+ * segment / indexed / slide micro-ops. Call sites must pass the decode-time
+ * architectural `vlen` captured on the StaticInst.
+ */
 inline int
-elem_gen_idx(int vd, int n, int elem_size, uint32_t vlen_bits = DefaultVecLenInBits)
+elem_gen_idx(int vd, int n, int elem_size, uint32_t vlen_bits)
 {
+    panic_if(elem_size == 0, "elem_gen_idx: elem_size must be > 0");
+    panic_if(vlen_bits < 8, "elem_gen_idx: vlen_bits=%u too small", vlen_bits);
     int elts_per_reg = (vlen_bits >> 3) / elem_size;
+    panic_if(elts_per_reg <= 0,
+        "elem_gen_idx: elts_per_reg=0 (vlen_bits=%u elem_size=%d)",
+        vlen_bits, elem_size);
     vd = vd + n / elts_per_reg;
     return vd;
 }
