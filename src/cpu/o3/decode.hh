@@ -146,6 +146,9 @@ class Decode
     /** Updates overall decode status based on all of the threads' statuses. */
     void updateActivate();
 
+    /** Measure decode bubbles (unutilized decode slots) for performance analysis */
+    void measureDecodeBubbles(unsigned insts_decoded, ThreadID tid);
+
     /** Separates instructions from fetch into individual lists of instructions
      * sorted by thread.
      */
@@ -216,8 +219,11 @@ class Decode
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
-    boost::circular_buffer<DynInstPtr> stallBuffer;
-    boost::circular_buffer<int> eachstallSize;
+    /** Per-thread stall buffers to avoid contention in SMT mode.
+     * Each thread has its own FIFO queue for backpressure isolation.
+     */
+    boost::circular_buffer<DynInstPtr> stallBuffer[MaxThreads];
+    boost::circular_buffer<int> eachstallSize[MaxThreads];
 
     /** Variable that tracks if decode has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
@@ -290,6 +296,20 @@ class Decode
         statistics::Scalar mispredictedByPC;
         /** stat for total number of instructions that mispredicted due to npc. */
         statistics::Scalar mispredictedByNPC;
+        
+        // Decode bubbles statistics (analogous to fetchBubbles)
+        /** Unutilized decode pipeline slots while there is no backend-stall */
+        statistics::Scalar decodeBubbles;
+        /** Cycles that decode 0 instructions while there is no backend-stall */
+        statistics::Scalar decodeBubbles_max;
+        /** Per-thread decode bubbles for SMT analysis */
+        statistics::Vector smtDecodeBubbles;
+        /** Per-thread max decode bubbles for SMT analysis */
+        statistics::Vector smtDecodeBubbles_max;
+        /** Distribution of decoded instructions per cycle */
+        //statistics::Distribution decodedInstsDist;
+        /** Decode efficiency: actual decoded insts vs ideal width */
+        statistics::Formula decodeEfficiency;
     } stats;
 
     std::vector<StallReason> decodeStalls;
