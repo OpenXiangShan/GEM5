@@ -2,13 +2,16 @@
 
 ## 目标
 
-本实验比较五种降低 O3 load-pipe Dcache BankConflict 的策略，并记录 LSQ 内部
+本实验比较五类降低 O3 load-pipe Dcache BankConflict 的策略，并增加 DLB 容量
+敏感性实验，同时记录 LSQ 内部
 Hash Tag Array (HTA) 与 Data-Line Buffer (DLB) 的建模边界。所有结果均使用
 `gcc15-spec06-1.0c`、`kmhv3.py`、base vector 和 prefetch profile `off`。前四个
-点使用提交 `968a679e696b5b85d147e73079b78c2e420486dc`；DLB 点使用随后集成
-DLB 的提交 `38457bc541ea7f36173be181d6521e13f3a04a74`。DLB 的目标配置是
-**8B baseline + DLB**，因此它直接与 8B baseline 比较；两点仍来自不同提交，
-不能视为严格的同提交 SPEC A/B。
+点使用提交 `968a679e696b5b85d147e73079b78c2e420486dc`；DLB16 点使用随后集成
+DLB 的提交 `38457bc541ea7f36173be181d6521e13f3a04a74`，DLB4/8 容量点使用
+`6107b226c5488fe34fcbf3027c53792fba088e6b`。后两个提交之间只修改了本文档，
+没有模拟源码或配置差异，因此 DLB4/8/16 是同一实现的容量对比。DLB 的目标几何
+都是 **8B baseline + DLB**，可直接与 8B baseline 比较；baseline 与 DLB 仍来自
+不同源码提交，不能视为严格的同提交 SPEC A/B。
 
 | 策略 | `EnableLSUDLB` | `DLBEntries` | `EnableHashTagArray` | `DcacheBankBytes` | `DcacheSetDivNum` | `HashTagWidth` |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -16,7 +19,9 @@ DLB 的提交 `38457bc541ea7f36173be181d6521e13f3a04a74`。DLB 的目标配置�
 | bank-2B | false | - | false | 2 | 1 | 8 |
 | bank-4B-set-div2 | false | - | false | 4 | 2 | 8 |
 | hash-tag-array | false | - | true | 8 | 1 | 8 |
-| dlb-8B | true | 16 | false | 8 | 1 | 8 |
+| DLB4 | true | 4 | false | 8 | 1 | 8 |
+| DLB8 | true | 8 | false | 8 | 1 | 8 |
+| DLB16 | true | 16 | false | 8 | 1 | 8 |
 
 ## 模型与边界
 
@@ -52,7 +57,7 @@ BankConflict 配置的行为不变。
 
 对可缓存 load，DLB lookup 位于 `loadBankConflictedCheck()` 之前。hit 会跳过整个
 bank-admission check，包括 multi-bank 与 fake Dcache mainpipe 路径；miss 则原样
-进入现有的 HTA/multi-bank 逻辑。本次 `dlb-8B` 实验关闭 HTA，未评估 DLB+HTA
+进入现有的 HTA/multi-bank 逻辑。本次 DLB4/8/16 实验都关闭 HTA，未评估 DLB+HTA
 叠加。只有无 error 的可缓存 load timing response 会填充 DLB；uncacheable 请求既
 不会填充，也不能利用既有 entry 绕过检查。snoop 和 writable L1D 的有效 block
 invalidation 都会删除对应 entry，后者从共同的 `BaseCache::invalidateBlock()`
@@ -102,15 +107,16 @@ invalidation；SPEC 中
 
 ## CI 与统计口径
 
-五个 `manual-perf` run 使用分支 `lsq-hash-tag-array-bank-conflict`：baseline
+七个 `manual-perf` run 使用分支 `lsq-hash-tag-array-bank-conflict`：baseline
 `30528903086`、bank-2B `30528903002`、bank-4B-set-div2 `30528902992`、
-hash-tag-array `30528902988`，以及 dlb-8B `30682056716`。每组目标为完整 1.0
-coverage：55 个 workload、1,112 个 checkpoint slices，且 SPEC score 表包含 29 个
-benchmark 行。
+hash-tag-array `30528902988`、DLB16 `30682056716`、DLB8 `30888458490` 和
+DLB4 `30888582453`。每组目标为完整 1.0 coverage：55 个 workload、1,112 个
+checkpoint slices，且 SPEC score 表包含 29 个 benchmark 行。
 
-五个 CI 均已成功完成。每组都有 1,112 个 `stats.txt`、两段闭合的 final-stat
-统计、零 abort 文件和完整 `score.txt`。DLB archive 还逐项核对了 1,112 个
-`completed` marker、1,112 个 stats 文件以及 29/29 score coverage：
+七个 CI 均已成功完成。每组都有 1,112 个 `stats.txt`、两段闭合的 final-stat
+统计、零 abort 文件和完整 `score.txt`。三个 DLB archive 还逐项核对了 1,112 个
+`completed` marker、1,112 个 stats、1,112 个 `config.ini` 以及 29/29 score
+coverage；每个配置都匹配对应容量、DLB on、8B/SetDiv1、HTA off：
 
 | 策略 | commit | CI run | 归档 | 最终 stats | abort | coverage |
 | --- | --- | --- | --- | ---: | ---: | ---: |
@@ -118,7 +124,9 @@ benchmark 行。
 | bank-2B | `968a679e69` | [30528903002](https://github.com/OpenXiangShan/GEM5/actions/runs/30528903002) | `20260730_172230_968a679e_kmhv3_run787` | 1,112 | 0 | 1.0 |
 | bank-4B-set-div2 | `968a679e69` | [30528902992](https://github.com/OpenXiangShan/GEM5/actions/runs/30528902992) | `20260730_202441_968a679e69_kmhv3_run786` | 1,112 | 0 | 1.0 |
 | hash-tag-array | `968a679e69` | [30528902988](https://github.com/OpenXiangShan/GEM5/actions/runs/30528902988) | `20260730_192119_968a679e69_kmhv3_run785` | 1,112 | 0 | 1.0 |
-| dlb-8B | `38457bc541` | [30682056716](https://github.com/OpenXiangShan/GEM5/actions/runs/30682056716) | `20260801_113545_38457bc541_kmhv3_run805` | 1,112 | 0 | 1.0 |
+| DLB16 | `38457bc541` | [30682056716](https://github.com/OpenXiangShan/GEM5/actions/runs/30682056716) | `20260801_113545_38457bc541_kmhv3_run805` | 1,112 | 0 | 1.0 |
+| DLB8 | `6107b226c5` | [30888458490](https://github.com/OpenXiangShan/GEM5/actions/runs/30888458490) | `20260804_154310_6107b226c5_kmhv3_run813` | 1,112 | 0 | 1.0 |
+| DLB4 | `6107b226c5` | [30888582453](https://github.com/OpenXiangShan/GEM5/actions/runs/30888582453) | `20260804_155135_6107b226c_kmhv3_run814` | 1,112 | 0 | 1.0 |
 
 总体性能和 benchmark score 直接采用 CI 生成的 `score.txt`。BankConflict 指标
 从每个 slice 的最后一个 `Begin/End Simulation Statistics` 段读取：
@@ -146,7 +154,7 @@ hit/query 分别做同一套 full-program weighting，再计算 `sum(hits) / sum
 完整最终 stats 按上节公式计算；括号内相对 baseline。score/IPC 越高越好，后两项
 越低越好。
 
-| 指标 | baseline | bank-2B | bank-4B-set-div2 | hash-tag-array | dlb-8B |
+| 指标 | baseline | bank-2B | bank-4B-set-div2 | hash-tag-array | DLB16 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Int score/GHz | 18.323022 | 18.358653 (+0.194%) | 18.535303 (+1.159%) | 18.369998 (+0.256%) | 18.532213 (+1.142%) |
 | FP score/GHz | 20.711228 | 20.736236 (+0.121%) | 21.234550 (+2.527%) | 20.878611 (+0.808%) | 21.063425 (+1.701%) |
@@ -155,17 +163,17 @@ hit/query 分别做同一套 full-program weighting，再计算 `sum(hits) / sum
 | `bankConflictTimes` / KInst | 29.688664 | 28.055004 (-5.503%) | 12.578901 (-57.631%) | 22.985245 (-22.579%) | 10.574008 (-64.384%) |
 | `BankConflictReplay` / KInst | 29.745104 | 28.118988 (-5.467%) | 12.630646 (-57.537%) | 23.063932 (-22.461%) | 10.669186 (-64.131%) |
 
-按总体 score 排名是：bank-4B-set-div2 > dlb-8B > hash-tag-array > bank-2B > baseline。
+按总体 score 排名是：bank-4B-set-div2 > DLB16 > hash-tag-array > bank-2B > baseline。
 在本次 GEM5 性能口径下，`DcacheBankBytes=4` 且 `DcacheSetDivNum=2` 的组合同时
-带来最高 overall score；DLB-8B 在保持 8B bank geometry 的同时带来最大的
+带来最高 overall score；DLB16 在保持 8B bank geometry 的同时带来最大的
 BankConflict replay 降幅。
 
-### DLB-8B 相对 baseline 的增量
+### DLB16 相对 baseline 的增量
 
 下表直接描述 8B baseline 加 DLB 的增量；两者分别来自 `968a679e69` 和
 `38457bc541`，因此仍需保留跨提交 caveat，不能把它当作严格同提交因果证明。
 
-| 指标 | baseline (8B) | dlb-8B | DLB 相对 baseline |
+| 指标 | baseline (8B) | DLB16 | DLB 相对 baseline |
 | --- | ---: | ---: | ---: |
 | Int score/GHz | 18.323022 | 18.532213 | +1.142% |
 | FP score/GHz | 20.711228 | 21.063425 | +1.701% |
@@ -173,6 +181,35 @@ BankConflict replay 降幅。
 | Dynamic-instruction weighted IPC | 6.674857 | 6.779958 | +1.575% |
 | `bankConflictTimes` / KInst | 29.688664 | 10.574008 | -64.384% |
 | `BankConflictReplay` / KInst | 29.745104 | 10.669186 | -64.131% |
+
+### DLB 容量敏感性
+
+DLB4/8/16 保持 `kmhv3.py`、完整 `gcc15-spec06-1.0c`、base vector、prefetch off、
+DLB on、8B/SetDiv1 和 HTA off 不变，只改变 `DLBEntries`。下表括号内是相对 8B
+baseline 的变化：
+
+| 指标 | DLB4 | DLB8 | DLB16 |
+| --- | ---: | ---: | ---: |
+| Int score/GHz | 18.483442 (+0.876%) | 18.518234 (+1.065%) | 18.532213 (+1.142%) |
+| FP score/GHz | 20.939716 (+1.103%) | 20.990950 (+1.351%) | 21.063425 (+1.701%) |
+| Overall score/GHz | 19.886035 (+1.009%) | 19.930046 (+1.232%) | 19.976591 (+1.469%) |
+| Dynamic-instruction weighted IPC | 6.746309 (+1.070%) | 6.761272 (+1.295%) | 6.779958 (+1.575%) |
+| `bankConflictTimes` / KInst | 16.313788 (-45.050%) | 13.429472 (-54.766%) | 10.574008 (-64.384%) |
+| `BankConflictReplay` / KInst | 16.402570 (-44.856%) | 13.527011 (-54.524%) | 10.669186 (-64.131%) |
+
+容量增加带来单调但有限的性能收益。相对 DLB16，DLB8 的 overall score/IPC 分别
+低 0.233%/0.276%，BankConflict replay 高 26.786%；DLB4 分别低
+0.453%/0.496%，replay 高 53.738%。DLB16 在全部 55 个 input 上都比 DLB4 和
+DLB8 replay 更少，但 cycles 只在 48/55（相对 DLB4）和 46/55（相对 DLB8）更少，
+再次说明 replay 数量不是 critical-path 权重。
+
+从三位小数的 benchmark score 看，DLB4 相对 DLB16 的主要回退是
+`cactusADM` (-3.193%)、`gamess` (-2.067%)、`wrf` (-0.927%)、`soplex`
+(-0.778%)、`h264ref` (-0.739%) 和 `povray` (-0.739%)；DLB8 相对 DLB16 的主要
+回退是 `cactusADM` (-1.603%)、`gamess` (-1.304%)、`mcf` (-0.581%)、`wrf`
+(-0.489%)、`dealII` (-0.383%) 和 `milc` (-0.376%)。少数 benchmark 并不单调，
+例如 DLB8 相对 DLB16 的 `omnetpp` 和 `perlbench` 分别高 0.623% 和 0.575%；因此
+容量结论采用完整 suite score，而不把单个 benchmark 的方向外推到全局。
 
 ### Benchmark 变化
 
@@ -185,7 +222,7 @@ CI 原始高精度值。
 | bank-2B | wrf +0.828%, h264ref +0.774%, omnetpp +0.670% | bzip2 -0.181%, milc -0.041%, soplex -0.039% |
 | bank-4B-set-div2 | cactusADM +12.871%, gamess +10.494%, tonto +3.843%, wrf +3.595%, h264ref +3.040% | GemsFDTD -0.229%；其余最小变化项为正 |
 | hash-tag-array | cactusADM +3.860%, gamess +1.887%, tonto +1.630%, h264ref +1.612%, wrf +1.349% | perlbench -0.713%, bzip2 -0.447%, gcc -0.213% |
-| dlb-8B（相对 8B baseline） | cactusADM +7.109%, h264ref +4.104%, gamess +4.083%, povray +2.866%, wrf +2.514% | GemsFDTD -0.390%；其余最小变化项为正 |
+| DLB16（相对 8B baseline） | cactusADM +7.109%, h264ref +4.104%, gamess +4.083%, povray +2.866%, wrf +2.514% | GemsFDTD -0.390%；其余最小变化项为正 |
 
 BankConflict 的输入级变化也显示三种策略的覆盖范围不同：bank-2B 在
 `bzip2_html` 从 14.182 降至 7.648 /KInst (-46.075%)，但 `mcf` 反而从 61.563
@@ -201,6 +238,45 @@ profile-weighted rate；suite 级结论以表中的 full-program instruction wei
 `cactusADM` (+7.109%)、`h264ref` (+4.104%)、`gamess` (+4.083%)、`povray`
 (+2.866%) 和 `wrf` (+2.514%)，`GemsFDTD` 为 -0.390%。这些变化支持 DLB bypass
 覆盖了多个高冲突 input，但并不单独证明性能因果关系。
+
+### 为什么 DLB16 replay 更低但性能低于 bank-4B-set-div2
+
+DLB16 的 suite `BankConflictReplay` 比 bank-4B-set-div2 低 15.529%，但 cycles/KInst
+高 0.621%，overall score 低 0.480%。关键相关指标如下，百分比是 DLB16 相对
+bank-4B-set-div2：
+
+| 指标 | bank-4B-set-div2 | DLB16 | DLB16 相对变化 |
+| --- | ---: | ---: | ---: |
+| Overall score/GHz | 20.072955 | 19.976591 | -0.480% |
+| Dynamic-instruction weighted IPC | 6.822081 | 6.779958 | -0.617% |
+| cycles / KInst | 146.582840 | 147.493531 | +0.621% |
+| `BankConflictReplay` / KInst | 12.630646 | 10.669186 | -15.529% |
+| `sbufferDcacheReqBlockedByMainPipe` / KInst | 2.452080 | 4.090174 | +66.804% |
+| `dcacheMainPipeBlockedByDataConflict` / KInst | 1.524912 | 3.772536 | +147.394% |
+| execution stall cycles / KInst | 120.403265 | 121.785381 | +1.148% |
+| store-memory stall cycles / KInst | 35.662461 | 36.343859 | +1.911% |
+| `LoadL1Bound` dispatch stall / KInst | 52.154268 | 53.760763 | +3.080% |
+
+这些 stall counters 与 cycles 来自同一组运行，是机制解释的相关证据，不是可相加的
+score 分解；没有逐项关闭 mainpipe 资源的干预实验，不能把表中任一项单独声明为全部
+score gap 的因果贡献。
+
+两种机制减少的不是同一组资源冲突。DLB 只在 load 发包前查询已经由 load response
+学习到的 cache-line tag；hit 时跳过 load 侧 `loadBankConflictedCheck()`，但不改变
+store/refill 自身在 fake Dcache mainpipe 中的 bank、div、S1 read 或 S4 write 资源。
+4B+SetDiv2 则把 64B line 的 timing bank 从 8 个变为 16 个，并把 set div 从 1 变为
+2；这组 bank/div 匹配同时用于 load 占用、store write mask、refill 和 S1/S4 data-array
+冲突。因此它不仅影响最终 load replay，还减少了表中可见的 store/refill mainpipe
+阻塞。这里是 GEM5 timing-model 资源变化，不包含真实硬件面积或时序代价。
+
+收益的 workload 局部性也不同。DLB16 在 47/55 个 input 上 replay 少于
+bank-4B-set-div2，但 bank-4B-set-div2 仍在 28/55 个 input 上 cycles 更少；其中 21 个
+input 同时满足“DLB16 replay 更少、bank-4B-set-div2 更快”。例如 `lbm` 的 DLB16
+replay 比 bank-4B-set-div2 低 84.397%，cycles 却高 0.174%。suite score 差距主要
+来自 FP：bank-4B-set-div2 相对 DLB16 的 Int/FP/overall score 分别高
+0.017%/0.812%/0.482%，其中 `gamess` 和 `cactusADM` 分别高 6.160% 和 5.379%；
+在 `cactusADM` 以及三个 `gamess` input 上，bank-4B-set-div2 的 replay 也都更低。
+因此 DLB16 在其他 input 上消除的更多 replay 没有同等落在决定 score 的关键路径上。
 
 ### HTA 计数器
 
@@ -231,22 +307,25 @@ DLB-on 的 count 类计数器为 suite 级 per-KInst；两个 hit rate 由同一
 dynamic-instruction weighting 下的 raw hit/query 相除，而不是对逐 slice Formula
 求平均：
 
-| 计数器 | 值 | 单位 |
-| --- | ---: | --- |
-| `dlbBankConflictQueries` | 141.127393 | / KInst |
-| `dlbBankConflictHits` | 96.226598 | / KInst |
-| `dlbBankConflictHitRate` | 68.184% | % |
-| `dlbRespQueries` | 126.015934 | / KInst |
-| `dlbRespHits` | 103.044809 | / KInst |
-| `dlbRespHitRate` | 81.771% | % |
-| `dlbInsertions` | 22.971125 | / KInst |
-| `dlbSnoopInvalidations` | 0.000000 | / KInst |
-| `dlbL1EvictInvalidations` | 0.294707 | / KInst |
+| 计数器 | DLB4 | DLB8 | DLB16 | 单位 |
+| --- | ---: | ---: | ---: | --- |
+| `dlbBankConflictQueries` | 146.806621 | 143.988282 | 141.127393 | / KInst |
+| `dlbBankConflictHits` | 66.678809 | 83.411962 | 96.226598 | / KInst |
+| `dlbBankConflictHitRate` | 45.419% | 57.930% | 68.184% | % |
+| `dlbRespQueries` | 126.027035 | 126.031001 | 126.015934 | / KInst |
+| `dlbRespHits` | 76.116972 | 91.447206 | 103.044809 | / KInst |
+| `dlbRespHitRate` | 60.397% | 72.559% | 81.771% | % |
+| `dlbInsertions` | 49.910063 | 34.583795 | 22.971125 | / KInst |
+| `dlbSnoopInvalidations` | 0.000000 | 0.000000 | 0.000000 | / KInst |
+| `dlbL1EvictInvalidations` | 0.092574 | 0.208777 | 0.294707 | / KInst |
 
-Bank-check hit 是 DLB 实际覆盖的 bypass 次数；response hit 只表示 response-side
-查询命中，且不会更新 TreePLRU；insertion 记录 response-side 的分配/替换事件，
-但不区分首次分配和替换。没有 occupancy 或 replacement 计数，不能据此量化容量
-压力。两个 invalidation 计数审计 stale-entry 防护；本次 8B SPEC 的
+容量增加时 response query 基本不变，而 bank-check/response hit rate 单调上升，
+insertion rate 单调下降，和更少的 response miss 相符。不过
+response hit 只表示 response-side 查询命中，且不会更新 TreePLRU；insertion 也不区分
+首次分配和替换。没有 occupancy 或 replacement counter，不能从上表独立量化容量
+压力。Bank-check hit 才是 DLB 实际覆盖的 bypass 次数。
+
+两个 invalidation 计数审计 stale-entry 防护；三个 SPEC 点的
 `dlbSnoopInvalidations=0` 只表示没有命中 DLB entry 的 snoop 删除。上述计数都不是
 replay 降幅的加法分解：一次 hit 可能本来不冲突，而被绕过的 check 也包含
 fake-mainpipe 资源。
@@ -255,12 +334,18 @@ fake-mainpipe 资源。
 
 - 在五个 GEM5 性能配置中，bank-4B-set-div2 仍是 overall score 最佳点：+1.958%。
   它同时改动了 bank byte 和 set div，本实验不能把收益严格拆分给两个参数中的任一个。
-- DLB-8B 相对 8B baseline 的直接结果是 overall score +1.469%、BankConflict replay
+- DLB16 相对 8B baseline 的直接结果是 overall score +1.469%、BankConflict replay
   -64.131%；IPC 提升 1.575%。这是保持 `DcacheBankBytes=8`、`SetDiv=1` 的
   baseline-plus-DLB 比较，但仍有 `968a679e69` 与 `38457bc541` 的提交差异。
+- DLB4/8/16 的 overall score 相对 baseline 分别为 +1.009%、+1.232% 和 +1.469%，
+  bank-check hit rate 分别为 45.419%、57.930% 和 68.184%。增大容量有稳定收益，但
+  DLB8 的 overall score 只比 DLB16 低 0.233%。
+- DLB16 虽然比 bank-4B-set-div2 少 15.529% BankConflict replay，overall score 仍低
+  0.480%。bank-4B-set-div2 同时降低 store/refill mainpipe 冲突，并在 `gamess`、
+  `cactusADM` 等高贡献 FP benchmark 上更快；suite replay 总量不能替代关键路径分析。
 - HTA 在不改变 8B/SetDiv=1 基线银行组织时，将 overall score 提升 0.579%，
   BankConflict replay 降低 22.461%。这说明只过滤 load-load 的不同-way 候选已能
-  带来可观收益，但低于 DLB-8B 和改变 bank/set 组织的策略。
+  带来可观收益，但低于 DLB16 和改变 bank/set 组织的策略。
 - 2B bank 的总体收益只有 +0.151%，其 suite 级 BankConflict replay 仅降低
   5.467%。因此在当前模型和 workload 集中，单独减小 `DcacheBankBytes` 的收益较小。
 - 这份比较不包含 Dcache bank/set 变化的面积、能耗、时序或 RTL 实现成本。HTA 结果
@@ -274,8 +359,13 @@ fake-mainpipe 资源。
 - HTA 实现提交：`968a679e69` (`cpu-o3: Add LSQ hash tag array filter`)
 - DLB 实现提交：`c366282060` (`cpu-o3: Add LSQ DLB bank-conflict bypass`)
 - CI branch：`lsq-hash-tag-array-bank-conflict`
-- DLB CI/archive：run `30682056716` / `20260801_113545_38457bc541_kmhv3_run805`，
-  `EnableLSUDLB=true`、`DLBEntries=16`、`DcacheBankBytes=8`、
-  `DcacheSetDivNum=1`、`EnableHashTagArray=false`
+- DLB16 CI/archive：run `30682056716` /
+  `20260801_113545_38457bc541_kmhv3_run805`
+- DLB8 CI/archive：run `30888458490` /
+  `20260804_154310_6107b226c5_kmhv3_run813`
+- DLB4 CI/archive：run `30888582453` /
+  `20260804_155135_6107b226c_kmhv3_run814`
+- 三个 DLB 点：`EnableLSUDLB=true`、`DcacheBankBytes=8`、
+  `DcacheSetDivNum=1`、`EnableHashTagArray=false`，`DLBEntries` 分别为 16/8/4
 - 结果归档根目录：`/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-1.0c/`
 - profile JSON：`/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json`
