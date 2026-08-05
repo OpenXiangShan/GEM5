@@ -67,6 +67,20 @@ jobs:
           git -C "$NEMU_DIR" checkout "$NEMU_COMMIT"
           git -C "$NEMU_DIR" submodule update --init --recursive
 
+          echo "===== patch NEMU initial mstatus.FS ====="
+          INIT_FILE="$NEMU_DIR/src/isa/riscv64/init.c"
+
+          grep -n -C2 'mstatus->fs' "$INIT_FILE"
+
+          grep -qx '  mstatus->fs = 1;' "$INIT_FILE"
+
+          sed -i             's/^  mstatus->fs = 1;$/  mstatus->fs = 0;/'             "$INIT_FILE"
+
+          grep -qx '  mstatus->fs = 0;' "$INIT_FILE"
+
+          echo "===== patched NEMU source ====="
+          git -C "$NEMU_DIR" diff -- src/isa/riscv64/init.c
+
           cd "$NEMU_DIR"
           export NEMU_HOME="$NEMU_DIR"
 
