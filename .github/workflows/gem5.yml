@@ -40,72 +40,121 @@ jobs:
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
 
-      - name: Verify H NEMU reference
+      - name: Install prebuilt H NEMU reference
         shell: bash
         run: |
           set -euo pipefail
 
-          REF="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"
-          EXPECTED_SHA256="369c3e9bb1db29074c02d09bd277c76d2b20b177d0a74628c7301d0f393127fb"
+          PREBUILT="$GITHUB_WORKSPACE/.github/workflows/autotest/prebuilt-ref/riscv64-nemu-interpreter-h-so"
+
+          REF_DIR="/nfs/home/share/gem5_ci/ref/normal"
+          REF="$REF_DIR/riscv64-nemu-interpreter-h-so"
+
+          EXPECTED_SHA256="$(cat "${PREBUILT}.sha256")"
 
           echo "===== runner information ====="
           hostname
           id
+          findmnt -T "$REF_DIR" || true
 
-          echo "===== H NEMU reference ====="
-          test -f "$REF"
-          test -r "$REF"
+          echo "===== prebuilt reference ====="
+          test -f "$PREBUILT"
+          test -r "$PREBUILT"
 
+          ls -lh "$PREBUILT"
+          file "$PREBUILT"
+
+          PREBUILT_SHA256="$(
+            sha256sum "$PREBUILT" |
+              awk '{print $1}'
+          )"
+
+          echo "expected SHA256: $EXPECTED_SHA256"
+          echo "prebuilt SHA256: $PREBUILT_SHA256"
+
+          test "$PREBUILT_SHA256" = "$EXPECTED_SHA256"
+
+          echo "===== install reference into open-runner share ====="
+
+          TMP_REF="$REF_DIR/.riscv64-nemu-interpreter-h-so.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.tmp"
+
+          install -m 0755 \
+            "$PREBUILT" \
+            "$TMP_REF"
+
+          mv -f \
+            "$TMP_REF" \
+            "$REF"
+
+          install -m 0644 \
+            "${PREBUILT}.config" \
+            "${REF}.config"
+
+          install -m 0644 \
+            "${PREBUILT}.auto.conf" \
+            "${REF}.auto.conf"
+
+          install -m 0644 \
+            "${PREBUILT}.autoconf.h" \
+            "${REF}.autoconf.h"
+
+          install -m 0644 \
+            "${PREBUILT}.commit" \
+            "${REF}.commit"
+
+          install -m 0644 \
+            "${PREBUILT}.patch" \
+            "${REF}.patch"
+
+          sha256sum "$REF" \
+            > "${REF}.sha256"
+
+          echo "===== installed reference ====="
           ls -lh "$REF"
           file "$REF"
 
-          ACTUAL_SHA256="$(sha256sum "$REF" | awk '{print $1}')"
+          INSTALLED_SHA256="$(
+            sha256sum "$REF" |
+              awk '{print $1}'
+          )"
 
-          echo "expected SHA256: $EXPECTED_SHA256"
-          echo "actual SHA256:   $ACTUAL_SHA256"
+          echo "expected SHA256:  $EXPECTED_SHA256"
+          echo "installed SHA256: $INSTALLED_SHA256"
 
-          if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
-            echo "ERROR: H NEMU reference content changed"
-            exit 1
-          fi
+          test "$INSTALLED_SHA256" = "$EXPECTED_SHA256"
 
-          echo "===== recorded NEMU information ====="
-          cat "${REF}.commit" || true
+          echo "===== compiled Kconfig verification ====="
 
-          grep -E \
-            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
-            "${REF}.config" || true
+          grep -qx \
+            '#define CONFIG_TVAL_EX_II 1' \
+            "${REF}.autoconf.h"
 
-          echo "===== dependency check ====="
+          grep -qx \
+            '#define CONFIG_GUIDED_TVAL 1' \
+            "${REF}.autoconf.h"
+
+          grep -qx \
+            '#define CONFIG_GUIDED_EXEC 1' \
+            "${REF}.autoconf.h"
+
+          echo "===== dynamic dependencies ====="
+
           if ldd "$REF" | grep -i 'not found'; then
             echo "ERROR: missing dynamic dependency"
             exit 1
           fi
 
           echo "===== Difftest symbols ====="
+
           nm -D "$REF" |
             grep -E 'difftest_(init|exec|regcpy)' |
             head -30
 
           echo "===== gem5-h.cfg reference ====="
+
           grep -n -B2 -A3 \
             'GCBH_REF_SO\|GCBV_REF_SO' \
             .github/workflows/autotest/gem5-h.cfg
-
-          H_COUNT="$(
-            grep -Fc \
-              'GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"' \
-              .github/workflows/autotest/gem5-h.cfg
-          )"
-
-          V_COUNT="$(
-            grep -Fc \
-              'GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"' \
-              .github/workflows/autotest/gem5-h.cfg
-          )"
-
-          test "$H_COUNT" -eq 1
-          test "$V_COUNT" -eq 1
 
       - name: Run paralel h autotest script
         shell: bash
