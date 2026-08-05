@@ -1505,7 +1505,7 @@ class LSQ
         statistics::Vector lqFullCycles;
         statistics::Vector sqFullCycles;
         statistics::Vector lsqFullCycles;
-        statistics::Scalar sbufferFullCycles;
+        statistics::Vector sbufferFullCycles;
         statistics::Scalar sbufferEvictDuetoFlush;
         statistics::Scalar sbufferEvictDuetoFull;
         statistics::Scalar sbufferEvictDuetoSQFull;

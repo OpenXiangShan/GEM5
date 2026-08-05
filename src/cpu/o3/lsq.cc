@@ -400,7 +400,7 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Per-thread cycles that LSQ cannot accept a full enqueue "
                "bundle"),
       ADD_STAT(sbufferFullCycles, statistics::units::Cycle::get(),
-               "Number of cycles that store buffer is physically full"),
+               "Per-thread cycles that store buffer cannot accept an entry"),
       ADD_STAT(sbufferEvictDuetoFlush, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoFull, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoSQFull, statistics::units::Count::get(), ""),
@@ -453,11 +453,13 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
     lqFullCycles.init(num_threads);
     sqFullCycles.init(num_threads);
     lsqFullCycles.init(num_threads);
+    sbufferFullCycles.init(num_threads);
     for (ThreadID tid = 0; tid < num_threads; ++tid) {
         const std::string thread_name = csprintf("thread%d", tid);
         lqFullCycles.subname(tid, thread_name);
         sqFullCycles.subname(tid, thread_name);
         lsqFullCycles.subname(tid, thread_name);
+        sbufferFullCycles.subname(tid, thread_name);
     }
 }
 
@@ -727,8 +729,10 @@ LSQ::tick()
 
     // Sample current store buffer occupancy once per cycle.
     stats.sbufferAvgEntryNum = storeBuffer.size();
-    if (storeBuffer.full()) {
-        ++stats.sbufferFullCycles;
+    for (ThreadID tid : *activeThreads) {
+        if (storeBuffer.full(tid) || storeBuffer.full()) {
+            ++stats.sbufferFullCycles[tid];
+        }
     }
 
 }
