@@ -28,7 +28,7 @@ jobs:
             -f .github/workflows/autotest/gem5.cfg
 
   paralel_cpt_h_test:
-    # 在 open runner 上构建并发布 H/V NEMU reference，然后运行 H checkpoint
+    # 使用 open runner 可见的固定 H/V NEMU reference
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Running h test checkpoints
@@ -40,153 +40,41 @@ jobs:
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
 
-      - name: Build and publish H NEMU reference
+      - name: Verify H NEMU reference
         shell: bash
         run: |
           set -euo pipefail
 
-          NEMU_COMMIT="3a217a17a96ff3782b16ec8886f499dd5814ebbd"
-          NEMU_DIR="$RUNNER_TEMP/NEMU-h-reference"
-
-          REF_DIR="/nfs/home/share/gem5_ci/ref/normal"
-          REF="$REF_DIR/riscv64-nemu-interpreter-h-so"
+          REF="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"
+          EXPECTED_SHA256="369c3e9bb1db29074c02d09bd277c76d2b20b177d0a74628c7301d0f393127fb"
 
           echo "===== runner information ====="
           hostname
           id
-          findmnt -T "$REF_DIR" || true
-          ls -ld "$REF_DIR"
 
-          echo "===== clone NEMU ====="
-          rm -rf "$NEMU_DIR"
+          echo "===== H NEMU reference ====="
+          test -f "$REF"
+          test -r "$REF"
 
-          git clone \
-            https://github.com/OpenXiangShan/NEMU.git \
-            "$NEMU_DIR"
-
-          git -C "$NEMU_DIR" checkout "$NEMU_COMMIT"
-          git -C "$NEMU_DIR" submodule update --init --recursive
-
-          echo "===== patch NEMU initial mstatus.FS ====="
-          INIT_FILE="$NEMU_DIR/src/isa/riscv64/init.c"
-
-          grep -n -C2 'mstatus->fs' "$INIT_FILE"
-
-          grep -qx '  mstatus->fs = 1;' "$INIT_FILE"
-
-          sed -i             's/^  mstatus->fs = 1;$/  mstatus->fs = 0;/'             "$INIT_FILE"
-
-          grep -qx '  mstatus->fs = 0;' "$INIT_FILE"
-
-          echo "===== patched NEMU source ====="
-          git -C "$NEMU_DIR" diff -- src/isa/riscv64/init.c
-
-          cd "$NEMU_DIR"
-          export NEMU_HOME="$NEMU_DIR"
-
-          echo "===== generate config ====="
-          make riscv64-gem5-ref_defconfig
-
-          # 保证需要打开的配置存在且为 y
-          set_config_y() {
-            local option="$1"
-
-            sed -i \
-              -e "/^CONFIG_${option}=y$/d" \
-              -e "/^# CONFIG_${option} is not set$/d" \
-              .config
-
-            printf 'CONFIG_%s=y\n' "$option" >> .config
-          }
-
-          # 保证需要关闭的配置为 not set
-          set_config_n() {
-            local option="$1"
-
-            sed -i \
-              -e "/^CONFIG_${option}=y$/d" \
-              -e "/^# CONFIG_${option} is not set$/d" \
-              .config
-
-            printf '# CONFIG_%s is not set\n' "$option" >> .config
-          }
-
-          set_config_y RVH
-          set_config_y RVV
-          set_config_y GUIDED_EXEC
-          set_config_y GUIDED_TVAL
-          set_config_y TVAL_EX_II
-
-          set_config_n RV_SSTC
-          set_config_n RVV_AGNOSTIC
-
-          echo "===== requested NEMU config ====="
-          grep -E \
-            'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II|CONFIG_SHARE=|CONFIG_SHARE_REF=|CONFIG_DIFFTEST_REF_FOR_GEM5=' \
-            .config
-
-          grep -qx 'CONFIG_RVH=y' .config
-          grep -qx 'CONFIG_RVV=y' .config
-          grep -qx 'CONFIG_GUIDED_EXEC=y' .config
-          grep -qx 'CONFIG_GUIDED_TVAL=y' .config
-          grep -qx 'CONFIG_TVAL_EX_II=y' .config
-          grep -qx '# CONFIG_RV_SSTC is not set' .config
-          grep -qx '# CONFIG_RVV_AGNOSTIC is not set' .config
-          grep -qx 'CONFIG_SHARE=y' .config
-          grep -qx 'CONFIG_SHARE_REF=y' .config
-          grep -qx 'CONFIG_DIFFTEST_REF_FOR_GEM5=y' .config
-
-          echo "===== build NEMU ====="
-          JOBS="$(nproc)"
-          if [[ "$JOBS" -gt 100 ]]; then
-            JOBS=100
-          fi
-
-          rm -rf build
-          make -j"$JOBS"
-
-          SRC="$NEMU_DIR/build/riscv64-nemu-interpreter-so"
-
-          test -r "$SRC"
-
-          echo "===== built NEMU reference ====="
-          ls -lh "$SRC"
-          file "$SRC"
-          sha256sum "$SRC"
-
-          echo "===== publish to open-runner share ====="
-          WRITE_TEST="$REF_DIR/.h-ref-write-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-
-          touch "$WRITE_TEST"
-          rm -f "$WRITE_TEST"
-
-          TMP_REF="$REF_DIR/.riscv64-nemu-interpreter-h-so.${GITHUB_RUN_ID}.tmp"
-
-          install -m 0755 "$SRC" "$TMP_REF"
-          mv -f "$TMP_REF" "$REF"
-
-          install -m 0644 \
-            "$NEMU_DIR/.config" \
-            "${REF}.config"
-
-          git -C "$NEMU_DIR" rev-parse HEAD \
-            > "${REF}.commit"
-
-          sha256sum "$REF" \
-            > "${REF}.sha256"
-
-          echo "===== published H reference ====="
           ls -lh "$REF"
           file "$REF"
-          sha256sum "$SRC" "$REF"
 
-          echo "===== recorded commit ====="
-          cat "${REF}.commit"
+          ACTUAL_SHA256="$(sha256sum "$REF" | awk '{print $1}')"
 
-          echo "===== recorded config ====="
+          echo "expected SHA256: $EXPECTED_SHA256"
+          echo "actual SHA256:   $ACTUAL_SHA256"
+
+          if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
+            echo "ERROR: H NEMU reference content changed"
+            exit 1
+          fi
+
+          echo "===== recorded NEMU information ====="
+          cat "${REF}.commit" || true
+
           grep -E \
             'CONFIG_RVH=|CONFIG_RVV=|CONFIG_RV_SSTC|CONFIG_RVV_AGNOSTIC|CONFIG_GUIDED_EXEC|CONFIG_GUIDED_TVAL|CONFIG_TVAL_EX_II' \
-            "${REF}.config"
+            "${REF}.config" || true
 
           echo "===== dependency check ====="
           if ldd "$REF" | grep -i 'not found'; then
@@ -199,41 +87,25 @@ jobs:
             grep -E 'difftest_(init|exec|regcpy)' |
             head -30
 
-          echo "===== patch this runner's gem5-h.cfg ====="
-          cd "$GITHUB_WORKSPACE"
-
-          python3 - "$REF" <<'PYCFG'
-          import re
-          import sys
-          from pathlib import Path
-
-          reference = sys.argv[1]
-          path = Path(".github/workflows/autotest/gem5-h.cfg")
-          text = path.read_text(encoding="utf-8")
-
-          text, h_count = re.subn(
-              r'export GCBH_REF_SO="[^"]+"',
-              f'export GCBH_REF_SO="{reference}"',
-              text,
-          )
-
-          text, v_count = re.subn(
-              r'export GCBV_REF_SO="[^"]+"',
-              f'export GCBV_REF_SO="{reference}"',
-              text,
-          )
-
-          if h_count != 1 or v_count != 1:
-              raise SystemExit(
-                  f"Unexpected ref counts: H={h_count}, V={v_count}"
-              )
-
-          path.write_text(text, encoding="utf-8")
-          PYCFG
-
+          echo "===== gem5-h.cfg reference ====="
           grep -n -B2 -A3 \
             'GCBH_REF_SO\|GCBV_REF_SO' \
             .github/workflows/autotest/gem5-h.cfg
+
+          H_COUNT="$(
+            grep -Fc \
+              'GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"' \
+              .github/workflows/autotest/gem5-h.cfg
+          )"
+
+          V_COUNT="$(
+            grep -Fc \
+              'GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"' \
+              .github/workflows/autotest/gem5-h.cfg
+          )"
+
+          test "$H_COUNT" -eq 1
+          test "$V_COUNT" -eq 1
 
       - name: Run paralel h autotest script
         shell: bash
