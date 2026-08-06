@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_IEW_HH__
 #define __CPU_O3_IEW_HH__
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -359,6 +360,15 @@ class IEW
     /** Sorts instructions coming from rename into lists separated by thread. */
     void moveInstsToBuffer();
 
+    /** Returns whether a thread has pending or in-flight IEW work. */
+    bool threadHasStageWork(ThreadID tid);
+
+    /** Marks that IEW observed real work for the thread this cycle. */
+    void recordThreadWork(ThreadID tid);
+
+    /** Marks that IEW observed squashing for the thread this cycle. */
+    void recordThreadSquash(ThreadID tid);
+
   public:
     /** Ticks IEW stage, causing Dispatch, the IQ, the LSQ, Execute, and
      * Writeback to run for one cycle.
@@ -451,6 +461,12 @@ class IEW
   private:
     /** Records if there is a fetch redirect on this cycle for each thread. */
     bool fetchRedirect[MaxThreads];
+
+    /** Per-thread work observed during the current IEW tick. */
+    std::array<bool, MaxThreads> cycleThreadWork{};
+
+    /** Per-thread squash observed during the current IEW tick. */
+    std::array<bool, MaxThreads> cycleThreadSquash{};
 
     /** Records if the queues have been changed (inserted or issued insts),
      * so that IEW knows to broadcast the updated amount of free entries.

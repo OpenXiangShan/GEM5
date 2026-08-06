@@ -549,6 +549,8 @@ IEW::takeOverFrom()
 void
 IEW::squash(ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] Squashing all instructions.\n", tid);
 
     for (auto& dp : dispQue) {
@@ -580,6 +582,8 @@ IEW::squash(ThreadID tid)
 void
 IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] [sn:%llu] Squashing from a specific instruction,"
             " PC: %s "
             "\n", tid, inst->seqNum, inst->pcState() );
@@ -614,6 +618,8 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 void
 IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] Memory violation, squashing violator and younger "
             "insts, PC: %s [sn:%llu].\n", tid, inst->pcState(), inst->seqNum);
     // Need to include inst->seqNum in the following comparison to cover the
@@ -651,6 +657,8 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
 void
 IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] value prediction error, squashing violator and younger "
             "insts, PC: %s [sn:%llu].\n",
             tid, inst->pcState(), inst->seqNum);
@@ -862,6 +870,7 @@ IEW::checkSquash()
         }
 
         if (fromCommit->commitInfo[i].robSquashing) {
+            recordThreadSquash(i);
             DPRINTF(IEW, "[tid:%i] ROB is still squashing.\n", i);
 
             wroteToTimeBuffer = true;
@@ -947,6 +956,50 @@ IEW::setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos)
     DPRINTF(IEW, "[tid:%i] [sn:%llu] ageCtr=%llu at dispatch pos %d.\n",
             inst->threadNumber, inst->seqNum,
             static_cast<unsigned long long>(inst->ageCtr), dispatch_pos);
+}
+
+bool
+IEW::threadHasStageWork(ThreadID tid)
+{
+    if (!fixedbuffer[tid].empty() || scheduler->getIQInsts(tid) != 0 ||
+        ldstQueue.getCount(tid) != 0) {
+        return true;
+    }
+
+    for (const auto &queue : dispQue) {
+        for (const auto &inst : queue) {
+            if (inst->threadNumber == tid) {
+                return true;
+            }
+        }
+    }
+
+    for (int i = 0; i < fromIssue->size; ++i) {
+        if (fromIssue->insts[i] && fromIssue->insts[i]->threadNumber == tid) {
+            return true;
+        }
+    }
+
+    for (int i = 0; i < MaxWidth; ++i) {
+        if (toCommit->insts[i] && toCommit->insts[i]->threadNumber == tid) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void
+IEW::recordThreadWork(ThreadID tid)
+{
+    cycleThreadWork[tid] = true;
+}
+
+void
+IEW::recordThreadSquash(ThreadID tid)
+{
+    cycleThreadSquash[tid] = true;
+    recordThreadWork(tid);
 }
 
 void
@@ -1858,6 +1911,8 @@ IEW::tick()
 
     wroteToTimeBuffer = false;
     updatedQueues = false;
+    cycleThreadWork.fill(false);
+    cycleThreadSquash.fill(false);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         toFetch->iewInfo[tid].redirectPending = false;
         toFetch->iewInfo[tid].resolvedCFIs.clear();
@@ -1869,32 +1924,12 @@ IEW::tick()
     // dispatch
     moveInstsToBuffer();
 
-    std::vector<bool> had_thread_work(numThreads, false);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        had_thread_work[tid] = !fixedbuffer[tid].empty() ||
-            scheduler->getIQInsts(tid) != 0 || ldstQueue.getCount(tid) != 0;
-    }
-    for (const auto &queue : dispQue) {
-        for (const auto &inst : queue) {
-            had_thread_work[inst->threadNumber] = true;
-        }
+        cycleThreadWork[tid] = threadHasStageWork(tid);
     }
 
     checkSquash();
     dispatchInsts();
-
-    // Classify every thread once per cycle, with squash taking precedence.
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        const bool squashing = fromCommit->commitInfo[tid].squash ||
-            fromCommit->commitInfo[tid].robSquashing;
-        if (squashing) {
-            ++iewStats.squashCycles[tid];
-        } else if (stallSig->blockRename[tid]) {
-            ++iewStats.blockCycles[tid];
-        } else if (!had_thread_work[tid]) {
-            ++iewStats.idleCycles[tid];
-        }
-    }
 
     for (int i = 0;i < dispatchStalls.size();i++) {
         iewStats.dispatchStallReason[dispatchStalls[i]]++;
@@ -1936,6 +1971,7 @@ IEW::tick()
         if (fromCommit->commitInfo[tid].doneMemSeqNum != 0 &&
             !fromCommit->commitInfo[tid].squash &&
             !fromCommit->commitInfo[tid].robSquashing) {
+            recordThreadWork(tid);
 
             // Marks some of the entries in the store queue as canWB and
             // they will be moved to the store buffer when appropriate.
@@ -1947,6 +1983,7 @@ IEW::tick()
         if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
             !fromCommit->commitInfo[tid].squash &&
             !fromCommit->commitInfo[tid].robSquashing) {
+            recordThreadWork(tid);
 
             ldstQueue.commitLoads(fromCommit->commitInfo[tid].doneSeqNum,tid);
             updateLSQNextCycle = true;
@@ -1955,6 +1992,7 @@ IEW::tick()
         }
 
         if (fromCommit->commitInfo[tid].nonSpecSeqNum != 0) {
+            recordThreadWork(tid);
 
             //DPRINTF(IEW,"NonspecInst from thread %i",tid);
             if (fromCommit->commitInfo[tid].strictlyOrdered) {
@@ -1969,6 +2007,20 @@ IEW::tick()
 
         if (broadcast_free_entries) {
             wroteToTimeBuffer = true;
+        }
+    }
+
+    // Classify every thread once per cycle, using work and squash observed
+    // across the entire tick rather than only the pre-execute snapshot.
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        cycleThreadWork[tid] = cycleThreadWork[tid] || threadHasStageWork(tid);
+
+        if (cycleThreadSquash[tid]) {
+            ++iewStats.squashCycles[tid];
+        } else if (stallSig->blockRename[tid]) {
+            ++iewStats.blockCycles[tid];
+        } else if (!cycleThreadWork[tid]) {
+            ++iewStats.idleCycles[tid];
         }
     }
 
