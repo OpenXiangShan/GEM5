@@ -26,6 +26,14 @@ def setSharedLSQParams(args, system):
         cpu.smtLSQMode = 'Shared'
         cpu.smtLSQPolicy = 'Dynamic'
         cpu.smtROBPolicy = 'DynamicBorrowing'
+        cpu.smtIQPolicy = args.smt_iq_policy
+        for iq in cpu.scheduler.IQs:
+            if iq.name.startswith("int"):
+                iq.smtIQWatermark = args.smt_iq_watermark_int
+            elif iq.name.startswith("fp") or iq.name.startswith("vec"):
+                iq.smtIQWatermark = args.smt_iq_watermark_fp
+            else:
+                iq.smtIQWatermark = args.smt_iq_watermark_mem
         cpu.branchPred.smtFTQMode = 'Shared'
         cpu.branchPred.smtFTQPolicy = 'Partitioned'
 

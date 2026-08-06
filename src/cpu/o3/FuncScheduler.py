@@ -87,6 +87,7 @@ class IssueQue(SimObject):
     vectorSplitUnits = Param.Unsigned(2, "Number of independent vector split units")
     oports = VectorParam.IssuePort("")
     sel = Param.BaseSelector(BaseSelector(), "Selector for this IQ")
+    smtIQWatermark = Param.Int(0, "SMT IQ Watermark per thread")
 
 class Scheduler(SimObject):
     type = 'Scheduler'

@@ -990,6 +990,31 @@ def xiangshan_system_init():
               "RAT-checkpoint recovery-cost model.",
     )
 
+    parser.add_argument(
+        "--smt-iq-policy",
+        type=str,
+        default="Dynamic",
+        help="SMT IQ partitioning policy (Dynamic/Watermark)",
+    )
+    parser.add_argument(
+        "--smt-iq-watermark-int",
+        type=int,
+        default=0,
+        help="SMT IQ Watermark for intIQ (min entries reserved per thread)",
+    )
+    parser.add_argument(
+        "--smt-iq-watermark-mem",
+        type=int,
+        default=0,
+        help="SMT IQ Watermark for memIQ (min entries reserved per thread)",
+    )
+    parser.add_argument(
+        "--smt-iq-watermark-fp",
+        type=int,
+        default=0,
+        help="SMT IQ Watermark for fpIQ/vecIQ (min entries reserved per thread)",
+    )
+
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
