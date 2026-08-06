@@ -435,6 +435,8 @@ class IEW
   public:
 
     Scheduler* getScheduler() { return scheduler; }
+    const Scheduler* getScheduler() const { return scheduler; }
+    bool hasFreeIssueQueueEntries(unsigned entries) const;
     /** Instruction queue. */
     InstructionQueue instQueue;
 

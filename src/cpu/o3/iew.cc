@@ -923,6 +923,12 @@ IEW::canInsertLDSTQue(ThreadID tid)
     return false;
 }
 
+bool
+IEW::hasFreeIssueQueueEntries(unsigned entries) const
+{
+    return scheduler->freeEntries() >= entries;
+}
+
 void
 IEW::setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos)
 {
@@ -966,6 +972,7 @@ IEW::dispatchInsts()
         iew_info.iqCount = scheduler->getIQInsts(i);
 
         bool ldst_block = !canInsertLDSTQue(i);
+        stallSig->ldstAdmissionBlocked[i] = ldst_block;
         bool rename_block = stallSig->blockIEW[i] || ldst_block;
         // LDST queue reservation gates new rename input, but the already
         // buffered tail must still drain through per-instruction LSQ checks.

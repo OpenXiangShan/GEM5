@@ -615,6 +615,45 @@ CPU::tick()
     tryDrain();
 }
 
+bool
+CPU::canAdvanceNonLsuPrefix(
+    ThreadID tid, const std::vector<DynInstPtr> &insts) const
+{
+    unsigned rob_demand = 0;
+    unsigned iq_demand = 0;
+    std::vector<unsigned> rat_demand(RMiscRegClass + 1, 0);
+
+    for (const auto &inst : insts) {
+        if (inst->isSquashed()) {
+            continue;
+        }
+
+        ++rob_demand;
+        // Count every surviving instruction conservatively. IEW retains the
+        // final per-queue readiness check when the instruction arrives.
+        ++iq_demand;
+        for (int reg_class = 0; reg_class <= RMiscRegClass; ++reg_class) {
+            rat_demand[reg_class] +=
+                inst->numDestRegs(static_cast<RegClassType>(reg_class));
+        }
+    }
+
+    if (!rob.canAllocate(tid, rob_demand) ||
+        !iew.hasFreeIssueQueueEntries(iq_demand)) {
+        return false;
+    }
+
+    for (int reg_class = 0; reg_class <= RMiscRegClass; ++reg_class) {
+        if (rat_demand[reg_class] >
+            renameMap[tid].numFreeEntries(
+                static_cast<RegClassType>(reg_class))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void
 CPU::init()
 {
