@@ -39,6 +39,7 @@
  */
 #include "cpu/o3/decode.hh"
 
+#include <algorithm>
 #include <queue>
 
 #include "arch/generic/pcstate.hh"
@@ -573,6 +574,35 @@ Decode::checkSquash()
     }
 }
 
+bool
+Decode::isLsuBound(const DynInstPtr &inst) const
+{
+    return inst->isMemRef() || inst->isReadBarrier() ||
+           inst->isWriteBarrier() || inst->isNonSpeculative();
+}
+
+unsigned
+Decode::lsuBypassPrefixLength(ThreadID tid) const
+{
+    if (numThreads <= 1 || tid != 0 ||
+        !stallSig->blockDecode[tid] ||
+        !stallSig->ldstAdmissionBlocked[tid] ||
+        stallSig->blockIEW[tid]) {
+        return 0;
+    }
+
+    std::vector<DynInstPtr> prefix;
+    for (const auto &inst : fixedbuffer[tid]) {
+        if (isLsuBound(inst)) {
+            break;
+        }
+        prefix.push_back(inst);
+    }
+
+    return prefix.empty() || !cpu->canAdvanceNonLsuPrefix(tid, prefix) ?
+        0 : prefix.size();
+}
+
 void
 Decode::tick()
 {
@@ -596,31 +626,32 @@ Decode::tick()
             stallSig->fetchBlockReason[tid];
     };
     const auto fetchFeedbackReserve =
-        numThreads > 1 ? decodeToFetchDelay + 1 : decodeToFetchDelay + 1;
-    
-    // Per-thread FIFO backpressure judgment
-    // Each thread's stallBuffer is independent, so we check per-thread
-    std::vector<bool> thread_fifo_bp(numThreads, false);
-    std::vector<StallReason> thread_fifo_block_reason(numThreads, StallReason::NoStall);
-    
-    for (ThreadID tid = 0; tid < numThreads; tid++) {
-        if (!stallBuffer[tid].empty()) {
-            thread_fifo_bp[tid] = 
-                eachstallSize[tid].size() + fetchFeedbackReserve >=
-                eachstallSize[tid].capacity();
-            
-            if (thread_fifo_bp[tid] && stallSig->blockDecode[tid]) {
-                thread_fifo_block_reason[tid] = stallSig->decodeBlockReason[tid];
-            } else if (thread_fifo_bp[tid]) {
-                thread_fifo_block_reason[tid] = StallReason::OtherFragStall;
-            }
-        }
-    }
-    
-    // Per-thread backpressure application
+        numThreads > 1 ? fetchToDecodeDelay : decodeToFetchDelay + 1;
+    const bool fifoBackpressured =
+        !stallBuffer.empty() &&
+        eachstallSize.size() + fetchFeedbackReserve >=
+            eachstallSize.capacity();
+    const ThreadID fifoHeadTid =
+        !stallBuffer.empty() ? stallBuffer.front()->threadNumber : InvalidThreadID;
+    const StallReason fifoBlockReason =
+        (fifoBackpressured && fifoHeadTid != InvalidThreadID &&
+         stallSig->blockDecode[fifoHeadTid]) ?
+            stallSig->decodeBlockReason[fifoHeadTid] :
+            (fifoBackpressured ? StallReason::OtherFragStall :
+                                 StallReason::NoStall);
+    unsigned lsu_bypass_prefix[MaxThreads] = {};
+    std::vector<ThreadID> active_tids;
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
-        bool active = !block && !fixedbuffer[i].empty();
+        lsu_bypass_prefix[i] = lsuBypassPrefixLength(i);
+        if (lsu_bypass_prefix[i] != 0) {
+            DPRINTF(Decode,
+                    "[tid:%i] Bypassing LSU admission block for %u non-LSU "
+                    "instructions.\n",
+                    i, lsu_bypass_prefix[i]);
+        }
+        bool active = (!block || lsu_bypass_prefix[i] != 0) &&
+                      !fixedbuffer[i].empty();
 
         if(block){
             ++stats.smtblockedCycles[i];
@@ -642,6 +673,7 @@ Decode::tick()
                 StallReason::NoStall;
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
+            active_tids.push_back(i);
             const auto freeze = active_arbiter.observe(
                 i, smtBorrowPriority(fromIEW->iewInfo[i]));
             if (freeze.previousActive != InvalidThreadID) {
@@ -654,7 +686,16 @@ Decode::tick()
             blocked_tid = i;
         }
     }
-    const ThreadID tid = active_arbiter.selected();
+    ThreadID tid = active_arbiter.selected();
+    // A blocked LSU thread owns the ordered prefix in its decode buffer. Let
+    // it consume that prefix first, then use any remaining channel slots for
+    // another active SMT thread.
+    for (const ThreadID candidate : active_tids) {
+        if (lsu_bypass_prefix[candidate] != 0) {
+            tid = candidate;
+            break;
+        }
+    }
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         // Measure decode bubbles for all blocked threads (0 instructions decoded)
@@ -672,7 +713,40 @@ Decode::tick()
     }
     DPRINTF(Decode,"Processing [tid:%i]\n",tid);
 
-    decodeInsts(tid);
+    std::vector<ThreadID> decoded_tids;
+    auto decode_thread = [&](ThreadID decode_tid) {
+        if (toRenameIndex >= decodeWidth) {
+            return;
+        }
+        const unsigned remaining_width = decodeWidth - toRenameIndex;
+        const unsigned thread_limit = lsu_bypass_prefix[decode_tid] == 0 ?
+            decodeWidth : lsu_bypass_prefix[decode_tid];
+        decodeInsts(decode_tid, std::min(remaining_width, thread_limit));
+        decoded_tids.push_back(decode_tid);
+    };
+
+    decode_thread(tid);
+    for (const ThreadID candidate : active_tids) {
+        if (candidate != tid && toRenameIndex < decodeWidth) {
+            decode_thread(candidate);
+        }
+    }
+
+    // Each thread may leave a different tail in the fixedbuffer. Preserve
+    // per-thread fetch feedback when both threads contributed this cycle.
+    for (const ThreadID decoded_tid : decoded_tids) {
+        if (!fixedbuffer[decoded_tid].empty()) {
+            stallSig->blockFetch[decoded_tid] = true;
+            if (stallSig->fetchBlockReason[decoded_tid] == StallReason::NoStall) {
+                stallSig->fetchBlockReason[decoded_tid] =
+                    stallSig->blockDecode[decoded_tid] ?
+                        stallSig->decodeBlockReason[decoded_tid] :
+                        StallReason::OtherFragStall;
+            }
+            toFetch->decodeInfo[decoded_tid].blockReason =
+                stallSig->fetchBlockReason[decoded_tid];
+        }
+    }
     ++stats.runCycles;
     
     // Measure decode bubbles before updating stall signals
@@ -689,8 +763,10 @@ Decode::tick()
             }
         }
     }
-    stallSig->fetchBlockReason[tid] =
-        stallSig->blockFetch[tid] ? blockReason : StallReason::NoStall;
+    if (stallSig->blockFetch[tid] &&
+        stallSig->fetchBlockReason[tid] == StallReason::NoStall) {
+        stallSig->fetchBlockReason[tid] = blockReason;
+    }
     toFetch->decodeInfo[tid].blockReason = stallSig->fetchBlockReason[tid];
     updateActivate();
 
@@ -724,7 +800,7 @@ Decode::tick()
 }
 
 void
-Decode::decodeInsts(ThreadID tid)
+Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 {
     // Instructions can come either from the skid buffer or the list of
     // instructions coming from fetch, depending on decode's status.
@@ -764,7 +840,9 @@ Decode::decodeInsts(ThreadID tid)
     }
 
     std::vector<DynInstPtr> fusionInst;
-    while (insts_available > 0 && toRenameIndex < decodeWidth) {
+    unsigned processed_insts = 0;
+    while (insts_available > 0 && toRenameIndex < decodeWidth &&
+           processed_insts < max_insts) {
         assert(!insts_to_decode.empty());
         if (vec_decode_limit && insts_to_decode.front()->isVector()) {
             break;
@@ -773,6 +851,7 @@ Decode::decodeInsts(ThreadID tid)
         DynInstPtr inst = std::move(insts_to_decode.front());
 
         insts_to_decode.pop_front();
+        ++processed_insts;
 
         DPRINTF(Decode, "[tid:%i] Processing instruction [sn:%lli] with "
                 "PC %s\n", tid, inst->seqNum, inst->pcState());

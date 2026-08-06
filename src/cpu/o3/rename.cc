@@ -382,9 +382,19 @@ Rename::tick()
         toDecode->renameInfo[tid].blockReason =
             stallSig->decodeBlockReason[tid];
     };
+    unsigned lsu_bypass_prefix[MaxThreads] = {};
     for (int i = 0; i < numThreads; i++) {
-        bool can_rename = canRename(i);
-        bool block = stallSig->blockRename[i] || !can_rename;
+        lsu_bypass_prefix[i] = lsuBypassPrefixLength(i);
+        bool bypassing_lsu_admission = lsu_bypass_prefix[i] != 0;
+        if (bypassing_lsu_admission) {
+            DPRINTF(Rename,
+                    "[tid:%i] Bypassing LSU admission block for %u non-LSU "
+                    "instructions.\n",
+                    i, lsu_bypass_prefix[i]);
+        }
+        bool can_rename = bypassing_lsu_admission || canRename(i);
+        bool block = (stallSig->blockRename[i] &&
+                      !bypassing_lsu_admission) || !can_rename;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockRename[i]) {
@@ -445,7 +455,10 @@ Rename::tick()
     }
     DPRINTF(Rename, "Processing [tid:%i]\n", tid);
 
-    renameInsts(tid);
+    renameInsts(tid,
+                lsu_bypass_prefix[tid] == 0 ? fixedbuffer[tid].size() :
+                                              lsu_bypass_prefix[tid],
+                lsu_bypass_prefix[tid] != 0);
     if (stallSig->blockRename[tid]) {
         setAllStalls(stallSig->renameBlockReason[tid]);
         stats.smtStallEvents[stallSig->renameBlockReason[tid]].sample(tid);
@@ -562,8 +575,38 @@ Rename::canRename(ThreadID tid)
     return true;
 }
 
+bool
+Rename::isLsuBound(const DynInstPtr &inst) const
+{
+    return inst->isMemRef() || inst->isReadBarrier() ||
+           inst->isWriteBarrier() || inst->isNonSpeculative();
+}
+
+unsigned
+Rename::lsuBypassPrefixLength(ThreadID tid) const
+{
+    if (numThreads <= 1 || tid != 0 ||
+        !stallSig->blockRename[tid] ||
+        !stallSig->ldstAdmissionBlocked[tid] ||
+        stallSig->blockIEW[tid]) {
+        return 0;
+    }
+
+    std::vector<DynInstPtr> prefix;
+    for (const auto &inst : fixedbuffer[tid]) {
+        if (isLsuBound(inst)) {
+            break;
+        }
+        prefix.push_back(inst);
+    }
+
+    return prefix.empty() || !cpu->canAdvanceNonLsuPrefix(tid, prefix) ?
+        0 : prefix.size();
+}
+
 void
-Rename::renameInsts(ThreadID tid)
+Rename::renameInsts(ThreadID tid, unsigned max_insts,
+                    bool bypassing_lsu_admission)
 {
     // Instructions can be either in the skid buffer or the queue of
     // instructions coming from decode, depending on the status.
@@ -576,13 +619,15 @@ Rename::renameInsts(ThreadID tid)
     std::queue<StallReason> rename_stalls;
 
     StallReason breakRename = StallReason::NoStall;
-    while (insts_available > 0) {
+    unsigned processed_insts = 0;
+    while (insts_available > 0 && processed_insts < max_insts) {
 
         assert(!insts_to_rename.empty());
 
         DynInstPtr inst = insts_to_rename.front();
 
         insts_to_rename.pop_front();
+        ++processed_insts;
 
         if (inst->isSquashed()) {
             DPRINTF(Rename, "[sn:%llu] instruction  with PC %s is squashed, skipping.\n",
@@ -637,6 +682,14 @@ Rename::renameInsts(ThreadID tid)
     // If so then block.
     if (!fixedbuffer[tid].empty()) {
         stallSig->blockDecode[tid] = true;
+        if (bypassing_lsu_admission) {
+            breakRename = stallSig->renameBlockReason[tid];
+            if (breakRename == StallReason::NoStall) {
+                breakRename = StallReason::OtherStall;
+            }
+            stallSig->decodeBlockReason[tid] = breakRename;
+            toDecode->renameInfo[tid].blockReason = breakRename;
+        }
         if (breakRename == StallReason::NoStall) {
             breakRename = checkRenameStallFromIEW(tid);
             if (breakRename == StallReason::NoStall) {
@@ -685,10 +738,9 @@ Rename::moveInstsToBuffer()
     if (insts_from_decode == 0) {
         return;
     }
-    ThreadID tid = fromDecode->insts[0]->threadNumber;
     for (int i = 0; i < insts_from_decode; ++i) {
         const DynInstPtr &inst = fromDecode->insts[i];
-        assert(inst->threadNumber == tid);
+        ThreadID tid = inst->threadNumber;
         if (localSquashVer[tid].largerThan(inst->getVersion())) {
             inst->setSquashed();
         } else {

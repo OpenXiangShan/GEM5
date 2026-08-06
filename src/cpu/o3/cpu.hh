@@ -434,6 +434,13 @@ class CPU : public BaseCPU
     uint32_t getIQInsts() { return iew.getIQInsts(); }
 
     /**
+     * Return whether a bounded non-LSU prefix can enter the backend without
+     * exceeding ROB, issue-queue, or physical-register capacity.
+     */
+    bool canAdvanceNonLsuPrefix(
+        ThreadID tid, const std::vector<DynInstPtr> &insts) const;
+
+    /**
      * Return the oldest in-flight instruction sequence number.
      * If there are no in-flight instructions, returns the maximum value
      * of InstSeqNum to indicate no lower bound (safe for cleanup).

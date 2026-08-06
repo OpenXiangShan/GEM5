@@ -2094,6 +2094,16 @@ Scheduler::getIQInsts(ThreadID tid)
     return total;
 }
 
+unsigned
+Scheduler::freeEntries() const
+{
+    unsigned total = 0;
+    for (const auto *iq : issueQues) {
+        total += iq->emptyEntries();
+    }
+    return total;
+}
+
 
 void
 Scheduler::setMainRdpOpt(bool enable)

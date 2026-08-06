@@ -135,7 +135,7 @@ class Decode
      * fetch, so this function mostly checks if PC-relative branches are
      * correct.
      */
-    void decodeInsts(ThreadID tid);
+    void decodeInsts(ThreadID tid, unsigned max_insts);
 
     void setIgnoreNextFusion(Addr pc) { ignoreFusionPC = pc; lastSetIgnoreTick = curTick(); }
 
@@ -155,6 +155,14 @@ class Decode
     void moveInstsToBuffer();
 
     void checkSquash();
+
+    bool isLsuBound(const DynInstPtr &inst) const;
+
+    /**
+     * Return the contiguous non-LSU prefix that may bypass an LSU admission
+     * block for SMT thread 0. Zero means the normal block must be respected.
+     */
+    unsigned lsuBypassPrefixLength(ThreadID tid) const;
 
     /** Checks all stall signals, and returns if any are true. */
     bool checkStall(ThreadID tid) const;

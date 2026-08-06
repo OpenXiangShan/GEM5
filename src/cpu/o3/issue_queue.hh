@@ -432,6 +432,7 @@ class Scheduler : public SimObject
     void doSquash(SquashInfo squashInfo);
     uint32_t getIQInsts();
     uint32_t getIQInsts(ThreadID tid);
+    unsigned freeEntries() const;
 
     SchedulerStats& getStats() { return stats; }
 };

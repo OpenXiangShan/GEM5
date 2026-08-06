@@ -490,6 +490,7 @@ struct StallSignals
             blockDecode[i] = false;
             blockRename[i] = false;
             blockIEW[i] = false;
+            ldstAdmissionBlocked[i] = false;
             fetchBlockReason[i] = StallReason::NoStall;
             decodeBlockReason[i] = StallReason::NoStall;
             renameBlockReason[i] = StallReason::NoStall;
@@ -501,6 +502,9 @@ struct StallSignals
     bool blockDecode[MaxThreads];// rename to decode
     bool blockRename[MaxThreads];// iew to rename (if iew is stalling, rename all threads would be stalled)
     bool blockIEW[MaxThreads];// commit to iew
+    // IEW could not reserve its normal rename-width LQ/SQ admission window.
+    // Rename and Decode use this to bypass only a non-LSU prefix.
+    bool ldstAdmissionBlocked[MaxThreads];
     StallReason fetchBlockReason[MaxThreads];// decode to fetch root cause
     StallReason decodeBlockReason[MaxThreads];// rename to decode root cause
     StallReason renameBlockReason[MaxThreads];// iew to rename root cause

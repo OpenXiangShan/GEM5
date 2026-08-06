@@ -219,10 +219,14 @@ class Rename
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
      */
-    void renameInsts(ThreadID tid);
+    void renameInsts(ThreadID tid, unsigned max_insts,
+                     bool bypassing_lsu_admission);
 
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
     bool canRename(ThreadID tid);
+
+    bool isLsuBound(const DynInstPtr &inst) const;
+    unsigned lsuBypassPrefixLength(ThreadID tid) const;
 
     void releasePhysRegs();
 
