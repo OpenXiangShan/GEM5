@@ -35,6 +35,7 @@ class XsStreamPrefetcher : public Queued
     int badPreNum;
     bool enableAutoDepth;
     bool enableL3StreamPre;
+    const unsigned l2Depth;
     const int l2Ratio = 2;
     const int l3Ratio = 3;
     const int DEPTHRIGHT = 1 << 9;
