@@ -498,12 +498,12 @@ class IEW
     {
         IEWStats(CPU *cpu);
 
-        /** Stat for total number of idle cycles. */
-        statistics::Scalar idleCycles;
-        /** Stat for total number of squashing cycles. */
-        statistics::Scalar squashCycles;
-        /** Stat for total number of blocking cycles. */
-        statistics::Scalar blockCycles;
+        /** Stat for number of idle cycles per thread. */
+        statistics::Vector idleCycles;
+        /** Stat for number of squashing cycles per thread. */
+        statistics::Vector squashCycles;
+        /** Stat for number of blocking cycles per thread. */
+        statistics::Vector blockCycles;
         /** Stat for total number of unblocking cycles. */
         statistics::Scalar unblockCycles;
         /** Stat for total number of instructions dispatched. */

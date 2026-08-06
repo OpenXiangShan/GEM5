@@ -159,11 +159,11 @@ IEW::regProbePoints()
 IEW::IEWStats::IEWStats(CPU *cpu)
     : statistics::Group(cpu, "iew"),
     ADD_STAT(idleCycles, statistics::units::Cycle::get(),
-             "Number of cycles IEW is idle"),
+             "Number of cycles IEW is idle per thread"),
     ADD_STAT(squashCycles, statistics::units::Cycle::get(),
-             "Number of cycles IEW is squashing"),
+             "Number of cycles IEW is squashing per thread"),
     ADD_STAT(blockCycles, statistics::units::Cycle::get(),
-             "Number of cycles IEW is blocking"),
+             "Number of cycles IEW is blocking per thread"),
     ADD_STAT(unblockCycles, statistics::units::Cycle::get(),
              "Number of cycles IEW is unblocking"),
     ADD_STAT(dispatchedInsts, statistics::units::Count::get(),
@@ -219,6 +219,18 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
              "Number of dispatch stall reasons each tick (Total)")
 {
+    idleCycles
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    squashCycles
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    blockCycles
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
     instsToCommit
         .init(cpu->numThreads)
         .flags(statistics::total);
@@ -1856,8 +1868,33 @@ IEW::tick()
 
     // dispatch
     moveInstsToBuffer();
+
+    std::vector<bool> had_thread_work(numThreads, false);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        had_thread_work[tid] = !fixedbuffer[tid].empty() ||
+            scheduler->getIQInsts(tid) != 0 || ldstQueue.getCount(tid) != 0;
+    }
+    for (const auto &queue : dispQue) {
+        for (const auto &inst : queue) {
+            had_thread_work[inst->threadNumber] = true;
+        }
+    }
+
     checkSquash();
     dispatchInsts();
+
+    // Classify every thread once per cycle, with squash taking precedence.
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        const bool squashing = fromCommit->commitInfo[tid].squash ||
+            fromCommit->commitInfo[tid].robSquashing;
+        if (squashing) {
+            ++iewStats.squashCycles[tid];
+        } else if (stallSig->blockRename[tid]) {
+            ++iewStats.blockCycles[tid];
+        } else if (!had_thread_work[tid]) {
+            ++iewStats.idleCycles[tid];
+        }
+    }
 
     for (int i = 0;i < dispatchStalls.size();i++) {
         iewStats.dispatchStallReason[dispatchStalls[i]]++;
