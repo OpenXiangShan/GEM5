@@ -117,7 +117,8 @@ def setKmhV3Params(args, system):
             # require model-level alignment in the corresponding components.
             cpu.branchPred.microtage.numPredictors = 2
             cpu.branchPred.microtage.tableSizes = [512, 512]
-            cpu.branchPred.microtage.TTagBitSizes = [8, 8]
+            # RTL MicroTAGE uses a 5-bit tag in table0 and 8 bits in table1.
+            cpu.branchPred.microtage.TTagBitSizes = [5, 8]
             cpu.branchPred.microtage.TTagPcShifts = [1, 1]
             cpu.branchPred.microtage.histLengths = [5, 9]
             cpu.branchPred.microtage.numWays = 1
@@ -165,6 +166,38 @@ def setKmhV3Params(args, system):
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
+            # Match the RTL SC table set: BW/G/P/IMLI/Bias.  Gem5's local
+            # history table is not present in the RTL implementation.
+            cpu.branchPred.mgsc.bwTableNum = 2
+            cpu.branchPred.mgsc.bwHistLen = [4, 8]
+            cpu.branchPred.mgsc.bwTableIdxWidth = 11
+            cpu.branchPred.mgsc.lTableNum = 0
+            cpu.branchPred.mgsc.lHistLen = []
+            cpu.branchPred.mgsc.lTableIdxWidth = 11
+            cpu.branchPred.mgsc.iTableNum = 1
+            cpu.branchPred.mgsc.iHistLen = [8]
+            cpu.branchPred.mgsc.iTableIdxWidth = 11
+            cpu.branchPred.mgsc.gTableNum = 2
+            cpu.branchPred.mgsc.gHistLen = [8, 16]
+            cpu.branchPred.mgsc.gTableIdxWidth = 11
+            cpu.branchPred.mgsc.pTableNum = 2
+            cpu.branchPred.mgsc.pHistLen = [8, 16]
+            cpu.branchPred.mgsc.pTableIdxWidth = 11
+            cpu.branchPred.mgsc.biasTableNum = 1
+            # 128 sets x 2 banks x 8 ways x 4 TAGE-bias variants.
+            cpu.branchPred.mgsc.biasTableIdxWidth = 13
+            cpu.branchPred.mgsc.scCountersWidth = 6
+            cpu.branchPred.mgsc.thresholdTablelogSize = 6
+            cpu.branchPred.mgsc.updateThresholdWidth = 13
+            cpu.branchPred.mgsc.numCtrsPerLine = 8
+            cpu.branchPred.mgsc.enableBwTable = True
+            cpu.branchPred.mgsc.enableLTable = False
+            cpu.branchPred.mgsc.enableITable = True
+            cpu.branchPred.mgsc.enableGTable = True
+            cpu.branchPred.mgsc.enablePTable = True
+            cpu.branchPred.mgsc.enableBiasTable = True
+            cpu.branchPred.mgsc.enablePCThreshold = False
+            cpu.branchPred.mgsc.rtlCompat = True
             cpu.branchPred.ras.enabled = True
 
             if getattr(args, 'standalone_sc', False):

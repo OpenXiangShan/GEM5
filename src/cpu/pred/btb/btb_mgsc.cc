@@ -134,6 +134,7 @@ BTBMGSC::initStorage()
     biasWeightTable.resize(weightTableSize);
 
     pUpdateThreshold.resize(pow2(thresholdTablelogSize));
+    rtlThresholds.assign(numCtrsPerLine, rtlCompat ? 1130 : 35 * 8);
 }
 
 #ifdef UNIT_TEST
@@ -182,6 +183,7 @@ BTBMGSC::BTBMGSC()
       enablePTable(true),
       enableBiasTable(true),
       enablePCThreshold(false),
+      rtlCompat(false),
       focusBranchPC(0),
       mgscStats()
 {
@@ -227,12 +229,15 @@ BTBMGSC::BTBMGSC(const Params &p)
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
       enablePCThreshold(p.enablePCThreshold),
+      rtlCompat(p.rtlCompat),
       focusBranchPC(p.focusBranchPC),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
     initStorage();
-    updateThreshold = 35 * 8;
+    // RTL starts its 13-bit threshold counter at 1130.  Gem5 keeps the
+    // historical 35*8 default for its native MGSC mode.
+    updateThreshold = rtlCompat ? 1130 : 35 * 8;
 
     hasDB = true;
     dbName = std::string("mgsc");
@@ -455,27 +460,33 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     int bw_percsum = enableBwTable ? calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc) : 0;
     int bw_weight = findWeight(bwWeightTable, btb_entry.pc, asidHash);
-    int bw_scaled_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
+    int bw_scaled_percsum = rtlCompat ? bw_percsum
+                                      : calculateScaledPercsum(bw_weight, bw_percsum);
 
     int l_percsum = enableLTable ? calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc) : 0;
     int l_weight = findWeight(lWeightTable, btb_entry.pc, asidHash);
-    int l_scaled_percsum = calculateScaledPercsum(l_weight, l_percsum);
+    int l_scaled_percsum = rtlCompat ? l_percsum
+                                     : calculateScaledPercsum(l_weight, l_percsum);
 
     int i_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc) : 0;
     int i_weight = findWeight(iWeightTable, btb_entry.pc, asidHash);
-    int i_scaled_percsum = calculateScaledPercsum(i_weight, i_percsum);
+    int i_scaled_percsum = rtlCompat ? i_percsum
+                                     : calculateScaledPercsum(i_weight, i_percsum);
 
     int g_percsum = enableGTable ? calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc) : 0;
     int g_weight = findWeight(gWeightTable, btb_entry.pc, asidHash);
-    int g_scaled_percsum = calculateScaledPercsum(g_weight, g_percsum);
+    int g_scaled_percsum = rtlCompat ? g_percsum
+                                     : calculateScaledPercsum(g_weight, g_percsum);
 
     int p_percsum = enablePTable ? calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc) : 0;
     int p_weight = findWeight(pWeightTable, btb_entry.pc, asidHash);
-    int p_scaled_percsum = calculateScaledPercsum(p_weight, p_percsum);
+    int p_scaled_percsum = rtlCompat ? p_percsum
+                                     : calculateScaledPercsum(p_weight, p_percsum);
 
     int bias_percsum = enableBiasTable ? calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc) : 0;
     int bias_weight = findWeight(biasWeightTable, btb_entry.pc, asidHash);
-    int bias_scaled_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
+    int bias_scaled_percsum = rtlCompat ? bias_percsum
+                                        : calculateScaledPercsum(bias_weight, bias_percsum);
 
     // Calculate total sum of all weighted percsums
     int total_sum = bw_scaled_percsum + l_scaled_percsum + i_scaled_percsum + g_scaled_percsum + p_scaled_percsum +
@@ -486,7 +497,11 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int p_update_thres =
         enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc, asidHash) : 0;
 
-    int total_thres = (updateThreshold / 8) + p_update_thres;
+    const auto thresholdLane = (btb_entry.pc >> (instShiftAmt + 1)) &
+        (numCtrsPerLine - 1);
+    const int thresholdBase = rtlCompat ? rtlThresholds[thresholdLane]
+                                        : updateThreshold;
+    int total_thres = (thresholdBase / 8) + p_update_thres;
     // Threshold is used as a confidence gate; avoid negative values which
     // effectively disable the gate (abs(sum) > negative is almost always true).
     total_thres = std::max(total_thres, 0);
@@ -515,12 +530,18 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // DPRINTF(MGSC, "path tag_index: %d, path_percsum: %d, total_sum: %d\n", pIndex[0], p_percsum, total_sum);
 
     // Calculate weight scale differences
-    bool bw_weight_scale_diff = calculateWeightScaleDiff(total_sum, bw_scaled_percsum, bw_percsum);
-    bool l_weight_scale_diff = calculateWeightScaleDiff(total_sum, l_scaled_percsum, l_percsum);
-    bool i_weight_scale_diff = calculateWeightScaleDiff(total_sum, i_scaled_percsum, i_percsum);
-    bool g_weight_scale_diff = calculateWeightScaleDiff(total_sum, g_scaled_percsum, g_percsum);
-    bool p_weight_scale_diff = calculateWeightScaleDiff(total_sum, p_scaled_percsum, p_percsum);
-    bool bias_weight_scale_diff = calculateWeightScaleDiff(total_sum, bias_scaled_percsum, bias_percsum);
+    bool bw_weight_scale_diff = rtlCompat ? false
+                                          : calculateWeightScaleDiff(total_sum, bw_scaled_percsum, bw_percsum);
+    bool l_weight_scale_diff = rtlCompat ? false
+                                         : calculateWeightScaleDiff(total_sum, l_scaled_percsum, l_percsum);
+    bool i_weight_scale_diff = rtlCompat ? false
+                                         : calculateWeightScaleDiff(total_sum, i_scaled_percsum, i_percsum);
+    bool g_weight_scale_diff = rtlCompat ? false
+                                         : calculateWeightScaleDiff(total_sum, g_scaled_percsum, g_percsum);
+    bool p_weight_scale_diff = rtlCompat ? false
+                                         : calculateWeightScaleDiff(total_sum, p_scaled_percsum, p_percsum);
+    bool bias_weight_scale_diff = rtlCompat ? false
+                                            : calculateWeightScaleDiff(total_sum, bias_scaled_percsum, bias_percsum);
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
@@ -732,13 +753,10 @@ BTBMGSC::updatePCThresholdTable(Addr pc, uint8_t asidHash, bool update_direction
 }
 
 /**
- * Update the global threshold table and allocate new entry if needed
+ * Update threshold state and allocate a native entry if needed
  *
- * This function handles the global threshold table (updateThreshold) which is
- * structured differently than other threshold tables:
- * - It's a one-dimensional array of entries
- * - It stores a global threshold value that applies across many branches
- * - It's updated when TAGE and SC predictions disagree
+ * Native Gem5 uses one global threshold. In RTL compatibility mode this
+ * updates the threshold lane selected by the branch position instead.
  *
  * @param pc PC to match against for finding the right entry
  * @param update_condition Whether to update the counter (typically when TAGE and SC disagree)
@@ -747,10 +765,23 @@ BTBMGSC::updatePCThresholdTable(Addr pc, uint8_t asidHash, bool update_direction
 void
 BTBMGSC::updateGlobalThreshold(Addr pc, bool update_direction)
 {
+    if (rtlCompat) {
+        const auto thresholdLane = (pc >> (instShiftAmt + 1)) &
+            (numCtrsPerLine - 1);
+        auto &threshold = rtlThresholds[thresholdLane];
+        updateCounter(update_direction, updateThresholdWidth, threshold);
+        // RTL derives these bounds from eight enabled components (two each
+        // for path/global/BW, plus IMLI and Bias).
+        constexpr int rtlMinThreshold = (8 + 5) << 6;
+        constexpr int rtlMaxThreshold = (8 * 63) << 4;
+        threshold = std::clamp<int16_t>(threshold, rtlMinThreshold,
+                                        rtlMaxThreshold);
+        return;
+    }
     updateCounter(update_direction, updateThresholdWidth, updateThreshold);
-    // Keep global threshold non-negative; negative thresholds make SC gating
-    // degenerate and can cause overuse of SC.
     if (updateThreshold < 0) {
+        // Keep the native Gem5 threshold non-negative; negative thresholds
+        // make SC gating degenerate and can cause overuse of SC.
         updateThreshold = 0;
     }
 }
@@ -894,8 +925,14 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
     }
 #endif
 
-        // Only update tables if prediction was wrong or confidence was low
-    if (sc_pred_taken != actual_taken || abs(total_sum) < (total_thres / 2)) {
+    // RTL trains when SC is wrong or its confidence is below the TAGE-bucket
+    // threshold.  Native Gem5 MGSC historically used a fixed half-threshold.
+    const int effective_gate = pred.tage_conf_high ? (total_thres / 2)
+        : (pred.tage_conf_mid ? (total_thres / 4) : (total_thres / 8));
+    const bool need_update = sc_pred_taken != actual_taken ||
+        (rtlCompat ? (std::abs(total_sum) <= effective_gate)
+                   : (std::abs(total_sum) < (total_thres / 2)));
+    if (need_update) {
         // get weight table index from startPC
         Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth,
                                          stream.asidHash);

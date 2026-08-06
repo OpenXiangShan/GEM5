@@ -369,6 +369,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enablePTable;
     bool enableBiasTable;
     bool enablePCThreshold;
+    // Select arithmetic, threshold, and update rules matching RTL SC.
+    bool rtlCompat;
     Addr focusBranchPC;
 
     struct ThreadHistoryState
@@ -414,6 +416,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // thres table
     std::vector<int16_t> pUpdateThreshold;  // pc-indexed threshold table
+    // RTL keeps one threshold counter per SC way.  In compatibility mode the
+    // Gem5 lane selected by the branch position is used as the way surrogate.
+    std::vector<int16_t> rtlThresholds;
     int16_t updateThreshold;                // global threshold table
 
     // Instruction shift amount
