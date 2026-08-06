@@ -61,6 +61,28 @@ VPUnit::valueAvailable(const VPValueAvailableInfo &valueInfo,
     (void)record;
 }
 
+void
+VPUnit::predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
+        VPPredictionRecord *record)
+{
+    (void)appliedInfo;
+    (void)record;
+}
+
+void
+VPUnit::valueMispredicted(const VPMispredictionInfo &mispInfo,
+        VPPredictionRecord *record)
+{
+    (void)mispInfo;
+    (void)record;
+}
+
+void
+VPUnit::commitInstruction(const VPCommitInfo &commitInfo)
+{
+    (void)commitInfo;
+}
+
 VPUnit::ValuePredUnitStats::ValuePredUnitStats(VPUnit *vp)
     : statistics::Group(vp),
       ADD_STAT(VPcorrected, statistics::units::Count::get(), "number of correct vp"),

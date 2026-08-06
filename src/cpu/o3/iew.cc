@@ -65,8 +65,8 @@
 #include "debug/Counters.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/Drain.hh"
+#include "debug/EgDiff.hh"
 #include "debug/IEW.hh"
-#include "debug/IdealEgDiff.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
 #include "params/BaseO3CPU.hh"
@@ -493,6 +493,7 @@ IEW::tryLateValuePrediction(const DynInstPtr &inst)
     request.pc = inst->getPC();
     request.seqNo = inst->seqNum;
     request.tid = inst->threadNumber;
+    request.cycle = static_cast<uint64_t>(cpu->curCycle());
     auto candidate = valuePred->latePredict(request, inst->vpRecord.get());
     if (!candidate.result.speculative) {
         return;
@@ -511,10 +512,28 @@ IEW::tryLateValuePrediction(const DynInstPtr &inst)
     if (!enableSelectiveVPFlush) {
         scheduler->setAllScoreBoard(inst->renamedDestIdx(0));
     }
-    DPRINTF(IdealEgDiff,
-            "[IdealEgDiff][apply] tid=%u seq=%llu pc=%#lx predicted=%#llx\n",
+    notifyPredictionApplied(inst);
+    DPRINTF(EgDiff,
+            "[EgDiff][apply] tid=%u seq=%llu pc=%#lx predicted=%#llx\n",
             inst->threadNumber, inst->seqNum, inst->getPC(),
             static_cast<unsigned long long>(inst->vpResult.value));
+}
+
+void
+IEW::notifyPredictionApplied(const DynInstPtr &inst)
+{
+    if (!valuePred || !inst->vpSupported || !inst->vpRecord ||
+        !inst->vpApplied) {
+        return;
+    }
+
+    valuepred::VPPredictionAppliedInfo applied_info;
+    applied_info.pc = inst->getPC();
+    applied_info.seqNo = inst->seqNum;
+    applied_info.tid = inst->threadNumber;
+    applied_info.value = inst->vpResult.value;
+    applied_info.cycle = static_cast<uint64_t>(cpu->curCycle());
+    valuePred->predictionApplied(applied_info, inst->vpRecord.get());
 }
 
 void
@@ -529,13 +548,29 @@ IEW::notifyValueAvailable(const DynInstPtr &inst, RegVal actualValue)
     value_info.seqNo = inst->seqNum;
     value_info.tid = inst->threadNumber;
     value_info.actualValue = actualValue;
+    value_info.cycle = static_cast<uint64_t>(cpu->curCycle());
     valuePred->valueAvailable(value_info, inst->vpRecord.get());
-    DPRINTF(IdealEgDiff,
-            "[IdealEgDiff][verify] tid=%u seq=%llu pc=%#lx actual=%#llx "
+    DPRINTF(EgDiff,
+            "[EgDiff][verify] tid=%u seq=%llu pc=%#lx actual=%#llx "
             "applied=%d predicted=%#llx\n",
             inst->threadNumber, inst->seqNum, inst->getPC(),
             static_cast<unsigned long long>(actualValue), inst->vpApplied,
             static_cast<unsigned long long>(inst->vpResult.value));
+}
+
+void
+IEW::notifyValueMispredicted(const DynInstPtr &inst)
+{
+    if (!valuePred || !inst->vpSupported || !inst->vpRecord) {
+        return;
+    }
+
+    valuepred::VPMispredictionInfo misp_info;
+    misp_info.pc = inst->getPC();
+    misp_info.seqNo = inst->seqNum;
+    misp_info.tid = inst->threadNumber;
+    misp_info.cycle = static_cast<uint64_t>(cpu->curCycle());
+    valuePred->valueMispredicted(misp_info, inst->vpRecord.get());
 }
 
 bool
@@ -1195,7 +1230,11 @@ IEW::dispatchInstFromRename(ThreadID tid)
                 dispatch_info.pc = inst->getPC();
                 dispatch_info.seqNo = inst->seqNum;
                 dispatch_info.tid = tid;
+                dispatch_info.cycle = static_cast<uint64_t>(cpu->curCycle());
                 valuePred->dispatch(dispatch_info, inst->vpRecord.get());
+                if (inst->vpApplied) {
+                    notifyPredictionApplied(inst);
+                }
             }
             add_to_iq = true;
             if (valuePred && inst->vpSupported && inst->vpResult.speculative) {
@@ -1361,7 +1400,11 @@ IEW::classifyInstToDispQue(ThreadID tid)
                 dispatch_info.pc = inst->getPC();
                 dispatch_info.seqNo = inst->seqNum;
                 dispatch_info.tid = tid;
+                dispatch_info.cycle = static_cast<uint64_t>(cpu->curCycle());
                 valuePred->dispatch(dispatch_info, inst->vpRecord.get());
+                if (inst->vpApplied) {
+                    notifyPredictionApplied(inst);
+                }
             }
 
             if (!inst->isNop() && !inst->isEliminated()) {

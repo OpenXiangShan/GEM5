@@ -14,7 +14,7 @@ SimObject('ValuePredictor.py',
             'CompositeValuePredictor',
             'MemoryRenaming',
             'IdealConstantLVP',
-            'IdealEgDiff'
+            'EgDiff'
           ],
           enums=['ValuePredType'])
 
@@ -26,14 +26,14 @@ Source('vtage.cc')
 Source('example_value_predictor.cc')
 Source('memory_renaming.cc')
 Source('ideal_constant_lvp.cc')
-Source('ideal_egdiff.cc')
+Source('egdiff.cc')
 
 DebugFlag('VPCOMMON')
 DebugFlag('EStride')
 DebugFlag('VTAGE')
 DebugFlag('MemoryRenaming')
-DebugFlag('IdealEgDiff')
+DebugFlag('EgDiff')
 
 
 CompoundFlag('VP', ['VPCOMMON', 'EStride', 'VTAGE', 'MemoryRenaming',
-                    'IdealEgDiff'])
+                    'EgDiff'])

@@ -76,6 +76,14 @@ class CompositeValuePredictor : public VPUnit
     void valueAvailable(const VPValueAvailableInfo &valueInfo,
             VPPredictionRecord *record) override;
 
+    void predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
+            VPPredictionRecord *record) override;
+
+    void valueMispredicted(const VPMispredictionInfo &mispInfo,
+            VPPredictionRecord *record) override;
+
+    void commitInstruction(const VPCommitInfo &commitInfo) override;
+
     void update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record,
             const VPFeedback &feedback) override;
 

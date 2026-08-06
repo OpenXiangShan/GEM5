@@ -184,6 +184,51 @@ CompositeValuePredictor::valueAvailable(
 }
 
 void
+CompositeValuePredictor::predictionApplied(
+        const VPPredictionAppliedInfo &appliedInfo,
+        VPPredictionRecord *record)
+{
+    auto *compositeRecord = dynamic_cast<CompositePredictionRecord *>(record);
+    gem5_assert(compositeRecord,
+            "CompositeValuePredictor expects CompositePredictionRecord");
+    gem5_assert(compositeRecord->children.size() == predictors.size(),
+            "Composite record size mismatch");
+
+    for (size_t i = 0; i < predictors.size(); ++i) {
+        auto child_info = appliedInfo;
+        child_info.producedByReceiver =
+            compositeRecord->selectedChild == static_cast<int>(i);
+        predictors[i]->predictionApplied(child_info,
+                compositeRecord->children[i].record.get());
+    }
+}
+
+void
+CompositeValuePredictor::valueMispredicted(
+        const VPMispredictionInfo &mispInfo,
+        VPPredictionRecord *record)
+{
+    auto *compositeRecord = dynamic_cast<CompositePredictionRecord *>(record);
+    gem5_assert(compositeRecord,
+            "CompositeValuePredictor expects CompositePredictionRecord");
+    gem5_assert(compositeRecord->children.size() == predictors.size(),
+            "Composite record size mismatch");
+
+    for (size_t i = 0; i < predictors.size(); ++i) {
+        predictors[i]->valueMispredicted(mispInfo,
+                compositeRecord->children[i].record.get());
+    }
+}
+
+void
+CompositeValuePredictor::commitInstruction(const VPCommitInfo &commitInfo)
+{
+    for (auto *predictor : predictors) {
+        predictor->commitInstruction(commitInfo);
+    }
+}
+
+void
 CompositeValuePredictor::update(const VPUpdateInfo &updateInfo,
         const VPPredictionRecord *record, const VPFeedback &feedback)
 {

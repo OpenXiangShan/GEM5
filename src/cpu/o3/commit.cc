@@ -2063,6 +2063,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         }
     }
 
+    if (valuePred) {
+        valuepred::VPCommitInfo commit_info;
+        commit_info.seqNo = head_inst->seqNum;
+        commit_info.tid = tid;
+        valuePred->commitInstruction(commit_info);
+    }
+
     if (head_inst->isLoad()) {
         head_inst->clearProducerStorePC();
     }

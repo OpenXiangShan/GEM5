@@ -148,6 +148,7 @@ class VPDispatchInfo
     Addr pc = 0;
     uint64_t seqNo = 0;
     ThreadID tid = 0;
+    uint64_t cycle = 0;
 };
 
 class VPLatePredictRequest
@@ -156,6 +157,7 @@ class VPLatePredictRequest
     Addr pc = 0;
     uint64_t seqNo = 0;
     ThreadID tid = 0;
+    uint64_t cycle = 0;
 };
 
 class VPValueAvailableInfo
@@ -165,6 +167,34 @@ class VPValueAvailableInfo
     uint64_t seqNo = 0;
     ThreadID tid = 0;
     RegVal actualValue = 0;
+    uint64_t cycle = 0;
+};
+
+class VPPredictionAppliedInfo
+{
+  public:
+    Addr pc = 0;
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+    RegVal value = 0;
+    uint64_t cycle = 0;
+    bool producedByReceiver = true;
+};
+
+class VPMispredictionInfo
+{
+  public:
+    Addr pc = 0;
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+    uint64_t cycle = 0;
+};
+
+class VPCommitInfo
+{
+  public:
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
 };
 
 class ProducerInfoExt : public VPUpdateInfoExtension

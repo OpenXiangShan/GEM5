@@ -23,7 +23,7 @@
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
-#include "debug/IdealEgDiff.hh"
+#include "debug/EgDiff.hh"
 #include "debug/Schedule.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
@@ -1455,7 +1455,7 @@ Scheduler::latePredictReadyLoads()
     std::vector<DynInstPtr> candidates;
     for (auto *iq : issueQues) {
         for (const auto &inst : iq->instList) {
-            if (!inst || !inst->inReadyQ() || !inst->canLVP() ||
+            if (!inst || !inst->canLVP() ||
                 inst->vpApplied || inst->isScheduled() || inst->isIssued() ||
                 inst->isSquashed()) {
                 continue;
@@ -1919,9 +1919,10 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
                     inst->vpResult.value, inst->pcState().instAddr());
             inst->vpMisprediction = true;
             inst->vpResult.speculative = false;
+            iew->notifyValueMispredicted(inst);
         }
-        DPRINTF(IdealEgDiff,
-                "[IdealEgDiff][verify-result] tid=%u seq=%llu pc=%#lx "
+        DPRINTF(EgDiff,
+                "[EgDiff][verify-result] tid=%u seq=%llu pc=%#lx "
                 "actual=%#llx applied=%d predicted=%#llx mispred=%d\n",
                 inst->threadNumber, inst->seqNum,
                 inst->pcState().instAddr(),
@@ -1930,8 +1931,8 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
                 static_cast<unsigned long long>(inst->vpResult.value),
                 inst->vpMisprediction);
     } else if (inst->canLVP()) {
-        DPRINTF(IdealEgDiff,
-                "[IdealEgDiff][value-skip-squashed] tid=%u seq=%llu "
+        DPRINTF(EgDiff,
+                "[EgDiff][value-skip-squashed] tid=%u seq=%llu "
                 "pc=%#lx\n",
                 inst->threadNumber, inst->seqNum,
                 inst->pcState().instAddr());
