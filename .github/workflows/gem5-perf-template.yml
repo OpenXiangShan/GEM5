@@ -39,6 +39,11 @@ on:
         required: false
         type: string
         description: "Specific commit SHA to checkout (takes precedence)"
+      allow_external_pr_head:
+        required: false
+        type: boolean
+        default: false
+        description: "Allow pull_request_target callers to checkout an external fork PR head"
       timeout_minutes:
         required: false
         type: number
@@ -68,7 +73,8 @@ jobs:
       - name: Reject untrusted PR head checkout
         if: |
           github.event_name == 'pull_request_target' &&
-          github.event.pull_request.head.repo.full_name != github.repository
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          inputs.allow_external_pr_head != true
         run: |
           echo "::error::Refusing to checkout an external fork PR head under pull_request_target."
           exit 1

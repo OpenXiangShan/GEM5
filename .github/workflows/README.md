@@ -58,7 +58,7 @@
 
 - 添加 `perf` / `perf-align` 标签会在对应性能 workflow 中触发测试，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
-- Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
+- `perf` / `perf-align` 标签只允许同仓库 PR；`rvv` 标签显式允许目标为 `xs-dev` 的外部 fork PR
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
 - 需要动态预取 A/B 时，请使用 `manual-perf.yml` 的 `pf_control_profile` 输入；不要在 `extra_args` 中手写 `--pf-control-profile`
 
@@ -213,8 +213,8 @@ A: 性能测试耗时长，会拖慢 PR 审查。现在改为按需触发，既�
 **Q: 如何触发性能测试？**
 A: 在 PR 上添加 `perf` 或 `perf-align` 标签；需要自定义配置时使用 `manual-perf.yml`。
 
-**Q: 为什么外部 fork PR 加标签不会触发性能测试？**
-A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
+**Q: 外部 fork PR 可以通过标签触发哪些性能测试？**
+A: `rvv` 标签允许外部 fork PR 触发测试；`perf` 和 `perf-align` 仍只允许同仓库 PR。RVV 流程会在 self-hosted runner 上 checkout 并执行 fork PR 代码，因此这是一个显式的安全例外。
 
 **Q: 新增 benchmark 类型需要修改哪些文件？**
 A: 只需修改 `gem5-perf-template.yml`

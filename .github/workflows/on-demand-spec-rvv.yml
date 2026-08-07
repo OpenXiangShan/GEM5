@@ -21,8 +21,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request_target' &&
        github.event.label.name == 'rvv' &&
-       github.event.pull_request.base.ref == 'xs-dev' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.base.ref == 'xs-dev')
     
     outputs:
       benchmark_type: ${{ steps.setup.outputs.benchmark }}
@@ -50,3 +49,5 @@ jobs:
       benchmark_type: ${{ needs.trigger.outputs.benchmark_type }}
       vector_type: ${{ needs.trigger.outputs.vector_type }}
       pr_sha: ${{ needs.trigger.outputs.pr_sha }}
+      # RVV label testing intentionally permits fork PR code on the self-hosted runner.
+      allow_external_pr_head: true
