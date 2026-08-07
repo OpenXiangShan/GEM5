@@ -1,18 +1,4 @@
-# -*- mode:python -*-
-
-# Copyright (c) 2017 ARM Limited
-# All rights reserved.
-#
-# The license below extends only to copyright in the software and shall
-# not be construed as granting a license to any other intellectual
-# property including but not limited to intellectual property relating
-# to a hardware implementation of the functionality of the software
-# licensed hereunder.  You may use the software subject to the license
-# terms below provided that you ensure that this notice is replicated
-# unmodified and in its entirety in all distributions of the software,
-# modified or unmodified, in source code or in binary form.
-#
-# Copyright (c) 2006 The Regents of The University of Michigan
+# Copyright (c) 2026 Beijing Institute of Open Source Chip
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -38,24 +24,24 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Import('*')
+from m5.params import *
 
-if env['CONF']['TARGET_ISA'] == 'null':
-    Return()
 
-SimObject('Serial.py', sim_objects=['SerialDevice', 'SerialNullDevice'])
-SimObject('Terminal.py', sim_objects=['Terminal'], enums=['TerminalDump'])
-SimObject('Uart.py', sim_objects=[
-    'Uart', 'SimpleUart', 'Uart8250', 'UartLite', 'Uart16550'])
-
-Source('serial.cc')
-Source('simple.cc')
-Source('terminal.cc')
-Source('uart.cc')
-Source('uart8250.cc')
-Source('uartlite.cc')
-Source('uart16550.cc')
-
-DebugFlag('Terminal')
-DebugFlag('TerminalVerbose')
-DebugFlag('Uart')
+class PrefetchSourceType(Enum):
+    vals = [
+        "PF_NONE",
+        "SStream",
+        "SStride",
+        "SPht",
+        "HWP_BOP",
+        "SPP",
+        "CMC",
+        "IPCP",
+        "IPCP_CS",
+        "IPCP_CPLX",
+        "Berti",
+        "StoreStream",
+        "CDP",
+        "SOpt",
+        "DespacitoStream",
+    ]

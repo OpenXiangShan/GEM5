@@ -3,9 +3,11 @@
 
 #include <cstdint>
 #include <list>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
 #include <boost/dynamic_bitset/dynamic_bitset.hpp>
@@ -233,6 +235,7 @@ class IssueQue : public SimObject
     void addIfReady(const DynInstPtr& inst);
     void cancel(const DynInstPtr& inst);
     void processVectorReadyQ();
+    bool issueHasOlderInsts(const DynInstPtr& replay_inst) const;
 
   public:
     inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
@@ -258,6 +261,7 @@ class IssueQue : public SimObject
     void markMemDepDone(const DynInstPtr& inst);
     /** move the mem inst to readyQ, and try it again. */
     void retryMem(const DynInstPtr& inst);
+
     bool idle();
 
     void doCommit(const InstSeqNum inst, ThreadID tid);

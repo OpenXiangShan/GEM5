@@ -52,6 +52,7 @@
 #include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/utility.hh"
 #include "base/cprintf.hh"
 #include "base/loader/symtab.hh"
 #include "base/logging.hh"
@@ -1020,13 +1021,55 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             readGem5Regs(tid);
             uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
             uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
+            uint8_t* nemu_byte = (uint8_t*)&(diffAllStates->referenceRegFile.vr[0]);
+            uint8_t* gem5_byte = (uint8_t*)&(diffAllStates->gem5RegFile.vr[0]);
+            const uint64_t vtype = diffAllStates->referenceRegFile.vtype;
+            const uint64_t vl = diffAllStates->referenceRegFile.vl;
+            const bool tail_agnostic = bits(vtype, 6);
+            const uint32_t sew_bytes = 1 << bits(vtype, 5, 3);
+            const uint32_t regs_per_group = RiscvISA::vtype_regs_per_group(vtype);
+            const uint32_t elems_per_reg = RiscvISA::VLENB / sew_bytes;
+            const uint32_t vlmax = RiscvISA::vtype_VLMAX(vtype);
+            auto is_tail_agnostic_byte = [&](int byte_idx) {
+                if (!tail_agnostic || vl >= vlmax)
+                    return false;
+                const int reg_idx = byte_idx / RiscvISA::VLENB;
+                const int byte_in_reg = byte_idx % RiscvISA::VLENB;
+                auto reg_is_in_group = [&](const RegId &reg) {
+                    if (!reg.isVecReg())
+                        return false;
+                    const int vec_reg = reg.index();
+                    const int group_base = vec_reg & ~(regs_per_group - 1);
+                    if (reg_idx < group_base ||
+                        reg_idx >= group_base + regs_per_group)
+                        return false;
+                    const uint32_t elem_idx =
+                        (reg_idx - group_base) * elems_per_reg +
+                        byte_in_reg / sew_bytes;
+                    return elem_idx >= vl;
+                };
+                for (int dest_idx = 0; dest_idx < diffInfo.inst->numDestRegs();
+                     dest_idx++) {
+                    if (reg_is_in_group(diffInfo.inst->destRegIdx(dest_idx)))
+                        return true;
+                }
+                for (int src_idx = 0; src_idx < diffInfo.inst->numSrcRegs();
+                     src_idx++) {
+                    if (reg_is_in_group(diffInfo.inst->srcRegIdx(src_idx)))
+                        return true;
+                }
+                return false;
+            };
             bool maybe_error = false;
             int error_idx = 0;
-            for (int i=0; i < RiscvISA::NumVecElemPerVecReg * 32; i++) {
-                if (nemu_val[i] != gem5_val[i]) {
-                    // diff_at = ValueDiff;
+            for (int i = 0; i < RiscvISA::VLENB * 32; i++) {
+                if (nemu_byte[i] != gem5_byte[i] &&
+                    is_tail_agnostic_byte(i))
+                    continue;
+                if (nemu_byte[i] != gem5_byte[i]) {
                     maybe_error = true;
-                    error_idx = (i >> 1) * 2;
+                    error_idx = (i / RiscvISA::VLENB) *
+                                RiscvISA::NumVecElemPerVecReg;
                     break;
                 }
             }

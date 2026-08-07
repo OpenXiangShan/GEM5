@@ -92,10 +92,13 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     // forward pipeline window; fetch is backpressured before full to absorb
     // both the decode->fetch feedback delay and the request already issued in
     // the current cycle before decode computes backpressure.
+    // In SMT mode, each thread has its own stall buffer for isolation.
     const auto stallGroupDepth = fetchToDecodeDelay + 1;
-    stallBuffer = boost::circular_buffer<DynInstPtr>(
+    for (int i=0; i<numThreads; i++) {
+        stallBuffer[i] = boost::circular_buffer<DynInstPtr>(
         decodeWidth * stallGroupDepth);
-    eachstallSize = boost::circular_buffer<int>(stallGroupDepth);
+        eachstallSize[i] = boost::circular_buffer<int>(stallGroupDepth);
+    }
 
 
     decodeStalls.resize(decodeWidth, StallReason::NoStall);
@@ -170,8 +173,23 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(mispredictedByPC, statistics::units::Count::get(),
                "Number of instructions that mispredicted due to pc"),
       ADD_STAT(mispredictedByNPC, statistics::units::Count::get(),
-               "Number of instructions that mispredicted due to npc")
+               "Number of instructions that mispredicted due to npc"),
+      // Decode bubbles statistics
+      ADD_STAT(decodeBubbles, statistics::units::Count::get(),
+               "Unutilized decode pipeline slots while there is no backend-stall"),
+      ADD_STAT(decodeBubbles_max, statistics::units::Count::get(),
+               "Cycles that decode 0 instructions while there is no backend-stall"),
+      ADD_STAT(smtDecodeBubbles, statistics::units::Count::get(),
+               "Per-thread decode bubbles for SMT analysis"),
+      ADD_STAT(smtDecodeBubbles_max, statistics::units::Count::get(),
+               "Per-thread max decode bubbles for SMT analysis"),
+    //   ADD_STAT(decodedInstsDist, statistics::units::Count::get(),
+    //            "Distribution of decoded instructions per cycle"),
+      ADD_STAT(decodeEfficiency, statistics::units::Ratio::get(),
+               "Decode efficiency: actual decoded insts vs ideal width")
 {
+    // Get decodeWidth using helper function to work around protected member access
+
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
     runCycles.prereq(runCycles);
@@ -195,6 +213,24 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     smtnotactiveCycles
             .init(4)
             .flags(statistics::total);          
+
+    // Initialize decode bubbles statistics
+    decodeBubbles
+            .prereq(decodeBubbles);
+    decodeBubbles_max
+            .prereq(decodeBubbles_max);
+    smtDecodeBubbles
+            .init(4)
+            .flags(statistics::total);
+    smtDecodeBubbles_max
+            .init(4)
+            .flags(statistics::total);
+    // decodedInstsDist
+    //         .init(0, cpu->issueWidth, 1)  // min=0, max=decodeWidth, bucket=1
+    //         .flags(statistics::nozero);
+
+    // Initialize decodeEfficiency formula
+    decodeEfficiency = decodedInsts / (cpu->baseStats.numCycles * cpu->issueWidth);
 }
 
 void
@@ -312,14 +348,15 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 
     fixedbuffer[tid].clear();
 
-    auto delIt = stallBuffer.begin();
-    for (auto it0 = eachstallSize.begin(); it0 != eachstallSize.end();) {
+    // Clear per-thread stallBuffer for the squashed thread
+    auto delIt = stallBuffer[tid].begin();
+    for (auto it0 = eachstallSize[tid].begin(); it0 != eachstallSize[tid].end();) {
         int size = *it0;
         auto start_it = delIt;
         auto end_it = start_it + size;
         if ((*start_it)->threadNumber == tid) {
-            delIt = stallBuffer.erase(start_it, end_it);
-            it0 = eachstallSize.erase(it0);
+            delIt = stallBuffer[tid].erase(start_it, end_it);
+            it0 = eachstallSize[tid].erase(it0);
         }
         else {
             delIt = end_it;
@@ -338,14 +375,15 @@ Decode::squash(ThreadID tid)
 
     fixedbuffer[tid].clear();
 
-    auto delIt = stallBuffer.begin();
-    for (auto it0 = eachstallSize.begin(); it0 != eachstallSize.end();) {
+    // Clear per-thread stallBuffer for the squashed thread
+    auto delIt = stallBuffer[tid].begin();
+    for (auto it0 = eachstallSize[tid].begin(); it0 != eachstallSize[tid].end();) {
         int size = *it0;
         auto start_it = delIt;
         auto end_it = start_it + size;
         if ((*start_it)->threadNumber == tid) {
-            delIt = stallBuffer.erase(start_it, end_it);
-            it0 = eachstallSize.erase(it0);
+            delIt = stallBuffer[tid].erase(start_it, end_it);
+            it0 = eachstallSize[tid].erase(it0);
         }
         else {
             delIt = end_it;
@@ -354,6 +392,40 @@ Decode::squash(ThreadID tid)
     }
 
     return 0;
+}
+
+void
+Decode::measureDecodeBubbles(unsigned insts_decoded, ThreadID tid)
+{
+    // Analogous to Fetch::measureFrontendBubbles
+    // Count unutilized decode slots when backend is not stalled
+    // For N-wide decode, if decode supplies 0 instructions:
+    // - decodeBubbles += N (count total empty slots)
+    // - decodeBubbles_max += 1 (count occurrence of all slots being empty)
+
+    // Check if backend (rename/issue) is not stalled for this thread
+    bool backend_not_stalled = !stallSig->blockDecode[tid] &&
+                               !fromCommit->commitInfo[tid].robSquashing;
+
+    if (backend_not_stalled) {
+        // Backend not stalled, count bubbles
+        int unused_slots = decodeWidth - insts_decoded;
+        if (unused_slots > 0) {
+            // Has empty slots
+            stats.decodeBubbles += unused_slots;
+            stats.smtDecodeBubbles[tid] += unused_slots;
+
+            if (unused_slots == decodeWidth) {
+                // All slots empty, insts_decoded == 0
+                stats.decodeBubbles_max++;
+                stats.smtDecodeBubbles_max[tid]++;
+            }
+        }
+
+        // Sample distribution of decoded instructions
+        assert(insts_decoded <= decodeWidth);
+        // stats.decodedInstsDist.sample(insts_decoded);
+    }
 }
 
 void
@@ -397,28 +469,28 @@ Decode::updateActivate()
 void
 Decode::moveInstsToBuffer()
 {
-    auto tryMoveHeadGroupToFixedBuffer = [&]() -> bool {
-        if (stallBuffer.empty()) {
+    // Helper lambda: try to move head group from a specific thread's stallBuffer
+    auto tryMoveHeadGroupFromThread = [&](ThreadID tid) -> bool {
+        if (stallBuffer[tid].empty()) {
             return false;
         }
 
         // stallbuffer moves to fixedbuffer in strict FIFO order.
-        ThreadID tid = stallBuffer.front()->threadNumber;
         if (!fixedbuffer[tid].empty()) {
             return false;
         }
 
-        int insts_from_stall = eachstallSize.front();
-        eachstallSize.pop_front();
+        int insts_from_stall = eachstallSize[tid].front();
+        eachstallSize[tid].pop_front();
         for (int i = 0; i < insts_from_stall; ++i) {
-            const DynInstPtr &inst = stallBuffer.front();
+            const DynInstPtr &inst = stallBuffer[tid].front();
             assert(tid == inst->threadNumber);
             if (localSquashVer[tid].largerThan(inst->getVersion())) {
                 inst->setSquashed();
             }
             assert(!fixedbuffer[inst->threadNumber].full());
             fixedbuffer[inst->threadNumber].push_back(inst);
-            stallBuffer.pop_front();
+            stallBuffer[tid].pop_front();
         }
 
         return true;
@@ -427,32 +499,61 @@ Decode::moveInstsToBuffer()
     // Model one stage advance before latching the next cycle's input so a
     // full stall buffer can still accept a new fetch bundle when its head
     // group moves forward in the same cycle.
-    const bool moved_group = tryMoveHeadGroupToFixedBuffer();
+    // In SMT mode, we check all threads independently rather than strict FIFO
+    // to maximize decode utilization
+    std::vector<bool> thread_moved(numThreads, false);
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        thread_moved[tid] = tryMoveHeadGroupFromThread(tid);
+    }
 
     // do not support mixed thread instructions in one fetch group
     int insts_from_fetch = fromFetch->size;
     if (insts_from_fetch != 0) {
         ThreadID tid = fromFetch->insts[0]->threadNumber;
 
-        // move to stallbuffer
-        panic_if(eachstallSize.full(), "Decode stallbuffer overflow, has %d stalls\n", eachstallSize.size() + 1);
-        eachstallSize.push_back(insts_from_fetch);
+        // move to this thread's stallbuffer
+        panic_if(eachstallSize[tid].full(),
+                 "Decode stallbuffer[%d] overflow, has %d stalls\n",
+                 tid, eachstallSize[tid].size() + 1);
+        eachstallSize[tid].push_back(insts_from_fetch);
         for (int i = 0; i < insts_from_fetch; i++) {
-            stallBuffer.push_back(fromFetch->insts[i]);
+            stallBuffer[tid].push_back(fromFetch->insts[i]);
         }
     }
 
-    DPRINTF(Decode, "Decode stall buffer has %d stalls\n",
-            eachstallSize.size());
+    // Debug output - show per-thread stall buffer status
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        DPRINTF(Decode, "[tid:%d] stallBuffer=%zu elems, eachstallSize=%zu groups, fixedbuffer=%zu elems, moved=%d\n",
+                tid, stallBuffer[tid].size(), eachstallSize[tid].size(),
+                fixedbuffer[tid].size(), thread_moved[tid]);
+    }
 
-    if (stallBuffer.empty()) {
+    // Check if all threads' stallBuffers are empty
+    bool all_empty = true;
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        if (!stallBuffer[tid].empty()) {
+            all_empty = false;
+            break;
+        }
+    }
+
+    if (all_empty) {
         return;
     }
 
-    // If nothing advanced before latching new input, allow the current head
-    // (possibly the just-arrived group) to fill an empty stage this cycle.
-    if (!moved_group) {
-        tryMoveHeadGroupToFixedBuffer();
+    // Second attempt: if any thread didn't move before accepting new fetch,
+    // try again for those threads that didn't move
+    // This allows newly arrived instructions to potentially move directly to fixedbuffer
+    // if their thread's fixedbuffer is empty
+    // Note: We only retry threads that had instructions in stallBuffer but couldn't move
+    // The thread did not move and its stallBuffer was initially non-empty.
+    // Newly arrived instructions will be handled in the next cycle
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        // Only retry if this thread had instructions but couldn't move them
+        // Don't process newly arrived instructions here - they'll be handled next cycle
+        if (!thread_moved[tid] && !stallBuffer[tid].empty()) {
+            tryMoveHeadGroupFromThread(tid);
+        }
     }
 }
 
@@ -495,19 +596,28 @@ Decode::tick()
             stallSig->fetchBlockReason[tid];
     };
     const auto fetchFeedbackReserve =
-        numThreads > 1 ? fetchToDecodeDelay : decodeToFetchDelay + 1;
-    const bool fifoBackpressured =
-        !stallBuffer.empty() &&
-        eachstallSize.size() + fetchFeedbackReserve >=
-            eachstallSize.capacity();
-    const ThreadID fifoHeadTid =
-        !stallBuffer.empty() ? stallBuffer.front()->threadNumber : InvalidThreadID;
-    const StallReason fifoBlockReason =
-        (fifoBackpressured && fifoHeadTid != InvalidThreadID &&
-         stallSig->blockDecode[fifoHeadTid]) ?
-            stallSig->decodeBlockReason[fifoHeadTid] :
-            (fifoBackpressured ? StallReason::OtherFragStall :
-                                 StallReason::NoStall);
+        numThreads > 1 ? decodeToFetchDelay + 1 : decodeToFetchDelay + 1;
+
+    // Per-thread FIFO backpressure judgment
+    // Each thread's stallBuffer is independent, so we check per-thread
+    std::vector<bool> thread_fifo_bp(numThreads, false);
+    std::vector<StallReason> thread_fifo_block_reason(numThreads, StallReason::NoStall);
+
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        if (!stallBuffer[tid].empty()) {
+            thread_fifo_bp[tid] =
+                eachstallSize[tid].size() + fetchFeedbackReserve >=
+                eachstallSize[tid].capacity();
+
+            if (thread_fifo_bp[tid] && stallSig->blockDecode[tid]) {
+                thread_fifo_block_reason[tid] = stallSig->decodeBlockReason[tid];
+            } else if (thread_fifo_bp[tid]) {
+                thread_fifo_block_reason[tid] = StallReason::OtherFragStall;
+            }
+        }
+    }
+
+    // Per-thread backpressure application
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
@@ -521,10 +631,14 @@ Decode::tick()
             ++stats.smtnotactiveCycles[i];
         }
 
-        stallSig->blockFetch[i] = block || fifoBackpressured;
+        // Apply per-thread FIFO backpressure
+        bool this_thread_fifo_bp = thread_fifo_bp[i];
+
+        stallSig->blockFetch[i] = block || this_thread_fifo_bp;
         stallSig->fetchBlockReason[i] =
             stallSig->blockFetch[i] ?
-                (block ? stallSig->decodeBlockReason[i] : fifoBlockReason) :
+                (block ? stallSig->decodeBlockReason[i] :
+                 thread_fifo_block_reason[i]) :
                 StallReason::NoStall;
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
@@ -543,6 +657,11 @@ Decode::tick()
     const ThreadID tid = active_arbiter.selected();
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
+        // Measure decode bubbles for all blocked threads (0 instructions decoded)
+        for (int i = 0; i < numThreads; i++) {
+            measureDecodeBubbles(0, i);
+        }
+
         if (blocked_tid != InvalidThreadID) {
             setAllStalls(stallSig->fetchBlockReason[blocked_tid]);
             blockReason = stallSig->fetchBlockReason[blocked_tid];
@@ -555,6 +674,10 @@ Decode::tick()
 
     decodeInsts(tid);
     ++stats.runCycles;
+
+    // Measure decode bubbles before updating stall signals
+    measureDecodeBubbles(toRenameIndex, tid);
+
     if (stallSig->blockDecode[tid]) {
         setAllStalls(stallSig->decodeBlockReason[tid]);
     } else if (toRenameIndex > 0 && decodeStalls[0] == StallReason::NoStall) {

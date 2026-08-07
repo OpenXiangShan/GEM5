@@ -187,6 +187,8 @@ class LSQUnit
 
         bool _dataReady = false;
 
+        bool _addrOrDataReadyCounted = false;
+
         bool _staFinish = false;
 
         bool _stdFinish = false;
@@ -207,9 +209,19 @@ class LSQUnit
             LSQEntry::clear();
             _canWB = _completed = _committed = _isAllZeros = false;
             _addrReady = _dataReady = _staFinish = _stdFinish = false;
+            _addrOrDataReadyCounted = false;
         }
 
         void setStatus(SplitStoreStatus status);
+
+        bool addrOrDataReadyCounted() const
+        {
+            return _addrOrDataReadyCounted;
+        }
+        void addrOrDataReadyCounted(bool counted)
+        {
+            _addrOrDataReadyCounted = counted;
+        }
 
         bool addrReady() const { return _addrReady; }
         bool dataReady() const { return _dataReady; }
@@ -268,6 +280,7 @@ class LSQUnit
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */
     LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
+      uint32_t physicalSqEntries,
       uint32_t ldPipeStages, uint32_t stPipeStages, uint32_t maxRARQEntries, uint32_t maxRAWQEntries,
       unsigned rarDequeuePerCycle, unsigned rawDequeuePerCycle,
       unsigned loadCompletionWidth, unsigned storeCompletionWidth);
@@ -276,7 +289,9 @@ class LSQUnit
      * contructor is deleted explicitly. However, STL vector requires
      * a valid copy constructor for the base type at compile time.
      */
-    LSQUnit(const LSQUnit &l) : maxRARQEntries(0), maxRAWQEntries(0),
+    LSQUnit(const LSQUnit &l) : physicalSQEntries(0),
+        virtualSQEnabled(false), addrOrDataReadyNums(0),
+        maxRARQEntries(0), maxRAWQEntries(0),
         rarDequeuePerCycle(0), rawDequeuePerCycle(0), loadCompletionWidth(0),
         storeCompletionWidth(0), stats(nullptr)
     {
@@ -325,6 +340,9 @@ class LSQUnit
      */
     void loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow);
 
+    /** Drop a completed store translation before a physical-SQ replay. */
+    void storeSetReplay(const DynInstPtr& inst, LSQRequest* request);
+
     /** Check if an incoming invalidate hits in the lsq on a load
      * that might have issued out of order wrt another load beacuse
      * of the intermediate invalidate.
@@ -343,6 +361,21 @@ class LSQUnit
 
     /** Iq issues a store to store pipeline. */
     void issueToStorePipe(const DynInstPtr &inst);
+
+    /** physical SQ window check based on monotonic queue indices. */
+    bool storeQueueWriteReady(const DynInstPtr &inst) const;
+
+    /** Record the first address/data-ready transition for an SQ entry. */
+    void recordAddrOrDataReady(const DynInstPtr &inst);
+
+    /** Decrement the address/data-ready count when an SQ entry is removed. */
+    void recordAddrOrDataDequeue(const DynInstPtr &inst);
+
+    /** Account for a physical-SQ-full replay waiting for its window. */
+    void recordPhysicalSQReplayBlocked(const DynInstPtr &inst);
+
+    /** Account for a post-issue physical SQ replay. */
+    void recordStoreQueueReplay(const DynInstPtr &inst);
 
     /** Commits the head load. */
     void commitLoad();
@@ -367,7 +400,7 @@ class LSQUnit
     bool storeBufferEmpty(ThreadID tid) { return lsq->storeBufferEmpty(tid); }
     bool storeBufferSQWillFull() const
     {
-        return storeQueue.size() > sqFullUpperLimit;
+        return addrOrDataReadyNums > sqFullUpperLimit;
     }
     void recordStoreBufferBlockedByCache() { ++stats.blockedByCache; }
 
@@ -711,6 +744,13 @@ class LSQUnit
      */
     unsigned depCheckShift;
 
+    /** Number of maximum physical SQ entries that can hold address/data. */
+    const unsigned physicalSQEntries;
+    /** VirtualSQ replay is meaningful only when logical capacity is larger. */
+    const bool virtualSQEnabled;
+    /** Number of SQ entries with a valid address or data state. */
+    unsigned addrOrDataReadyNums;
+
     /** Should loads be checked for dependency issues */
     bool checkLoads;
 
@@ -916,6 +956,8 @@ class LSQUnit
         /** Store replay counters recorded at the replay exit. */
         statistics::Scalar storeReplayTotal;
         statistics::Scalar storeReplayTlbMiss;
+        statistics::Scalar storeReplayPhysicalSQFull;
+        statistics::Scalar storePhysicalSQReplayBlocked;
         statistics::Vector loadPipeReplayAccepted;
         statistics::Vector loadPipeFastReplayAccepted;
         statistics::Vector loadReplayEvents;

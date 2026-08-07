@@ -474,6 +474,7 @@ DynInstPtr DynInst::createStoreDataUop()
     stduop->setPredTaken(this->readPredTaken());
     stduop->setTid(this->threadNumber);
     stduop->setThreadState(this->thread);
+    stduop->instQueue = this->instQueue;
 
     // The store-data uop's only source is the original store's data source.
     // For RISC-V stores, src0 is the address base and src1 is the data value.

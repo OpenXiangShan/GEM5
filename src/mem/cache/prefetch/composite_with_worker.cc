@@ -48,6 +48,13 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
 
         bool can_cross_page = (tlb != nullptr);
         if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
+            if (shouldPfControlAdmitLocally(
+                    addr_prio.pfahead, addr_prio.pfahead_host) &&
+                !admitPfControlCandidate(addr_prio.pfSource)) {
+                continue;
+            }
+            addr_prio.pfSource =
+                sanitizePfControlSourceType(addr_prio.pfSource);
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
             statsQueued.pfIdentified++;
