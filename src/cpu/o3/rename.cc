@@ -69,6 +69,10 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       renameWidth(params.renameWidth),
       releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
+      pregBackendBackpressureDonorEnabled(
+          params.smtPregBackendBackpressureDonor),
+      pregBackendBackpressureDonorHoldCycles(
+          params.smtPregBackendBackpressureDonorHoldCycles),
       stats(_cpu, this),
       valuePred(params.valuePred),
       enableSelectiveVPFlush(params.enableSelectiveVPFlush)
@@ -125,6 +129,8 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
                "Number of times rename has blocked due to SQ full"),
       ADD_STAT(fullRegistersEvents, statistics::units::Count::get(),
                "Number of times there has been no free registers"),
+      ADD_STAT(perThreadPregFullEvents, statistics::units::Count::get(),
+               "Number of times a thread hit per-thread Preg quota while global free list has regs"),
       ADD_STAT(renamedOperands, statistics::units::Count::get(),
                "Number of destination operands rename has renamed"),
       ADD_STAT(lookups, statistics::units::Count::get(),
@@ -155,6 +161,10 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
                "count of stall events"),
       ADD_STAT(smtStallEvents, statistics::units::Count::get(),
                "Number of events the Rename has stalled per thread"),
+      ADD_STAT(pregDonorCycles, statistics::units::Cycle::get(),
+               "Per-thread cycles as a Preg borrowing donor"),
+      ADD_STAT(pregBackendDonorCycles, statistics::units::Cycle::get(),
+               "Per-thread cycles as a Preg donor due to ROB-full backpressure"),
       ADD_STAT(assignedRatSnapshot, statistics::units::Count::get(),
                "Number of RAT checkpoints taken"),
       ADD_STAT(committedRatSnapshot, statistics::units::Count::get(),
@@ -195,7 +205,10 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
 
     renamedInsts.init(cpu->numThreads).flags(statistics::total);
     fullRegistersEvents.init(cpu->numThreads).flags(statistics::total);
-    
+    perThreadPregFullEvents.init(cpu->numThreads).flags(statistics::total);
+    pregDonorCycles.init(cpu->numThreads).flags(statistics::total);
+    pregBackendDonorCycles.init(cpu->numThreads).flags(statistics::total);
+
     stallEvents.init(StallEventCount).flags(statistics::total);
     smtStallEvents
         .init(StallEventCount,0,cpu->numThreads-1,1)
@@ -373,6 +386,27 @@ Rename::tick()
 
     releasePhysRegs();
 
+    // Establish this cycle's Preg SMT-DynamicBorrowing donor eligibility for
+    // every thread up front, before any thread's canRename() consumes it via
+    // UnifiedFreeList::borrowingLimit() -- avoids the result depending on
+    // which thread happens to be processed first in the loop below.
+    for (int i = 0; i < numThreads; i++) {
+        bool backendQuotaFull = pregBackendBackpressureDonorEnabled &&
+                                 hasBackendQuotaFullStall(i);
+        if (backendQuotaFull) {
+            pregBackendDonorCycles[i] = pregBackendBackpressureDonorHoldCycles;
+        } else if (pregBackendDonorCycles[i] > 0) {
+            --pregBackendDonorCycles[i];
+        }
+        bool backendBackpressureDonor = pregBackendDonorCycles[i] > 0;
+        bool isDonor = !hasPregDemand(i) || backendBackpressureDonor;
+        freeList->setBorrowingDonor(i, isDonor);
+        if (isDonor)
+            ++stats.pregDonorCycles[i];
+        if (backendBackpressureDonor)
+            ++stats.pregBackendDonorCycles[i];
+    }
+
     // check threads stall & status
     ThreadID blocked_tid = InvalidThreadID;
     SmtActiveThreadArbiter active_arbiter;
@@ -382,6 +416,7 @@ Rename::tick()
         toDecode->renameInfo[tid].blockReason =
             stallSig->decodeBlockReason[tid];
     };
+    regFullThisCycle = false;
     for (int i = 0; i < numThreads; i++) {
         bool can_rename = canRename(i);
         bool block = stallSig->blockRename[i] || !can_rename;
@@ -394,7 +429,16 @@ Rename::tick()
             if (block_reason == StallReason::NoStall) {
                 block_reason = StallReason::RegFull;
                 ++stats.fullRegistersEvents[i];
-                stats.stallEvents[RegFull]++;
+                regFullThisCycle = true;
+                // Check if this is per-thread quota exhaustion
+                // (global free list has regs but thread hit its limit)
+                for (int rc = 0; rc <= RMiscRegClass; rc++) {
+                    if (freeList->isPerThreadExhausted(
+                            (RegClassType)rc, i, renameWidth)) {
+                        ++stats.perThreadPregFullEvents[i];
+                        break;
+                    }
+                }
             }
         }
 
@@ -431,6 +475,8 @@ Rename::tick()
             blocked_tid = i;
         }
     }
+    if (regFullThisCycle)
+        stats.stallEvents[RegFull]++;
     const ThreadID tid = active_arbiter.selected();
 
     if (tid == InvalidThreadID) {
@@ -562,6 +608,33 @@ Rename::canRename(ThreadID tid)
     return true;
 }
 
+bool
+Rename::hasPregDemand(ThreadID tid) const
+{
+    for (const auto &inst : fixedbuffer[tid]) {
+        if (inst->isSquashed()) {
+            continue;
+        }
+        for (int j = 0; j < RMiscRegClass + 1; j++) {
+            if (inst->numDestRegs((RegClassType)j) > 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool
+Rename::hasBackendQuotaFullStall(ThreadID tid)
+{
+    switch (checkRenameStallFromIEW(tid)) {
+      case StallReason::ROBFull:
+        return true;
+      default:
+        return false;
+    }
+}
+
 void
 Rename::renameInsts(ThreadID tid)
 {
@@ -642,8 +715,17 @@ Rename::renameInsts(ThreadID tid)
             if (breakRename == StallReason::NoStall) {
                 breakRename = StallReason::RegFull;
                 ++stats.fullRegistersEvents[tid];
-                stats.stallEvents[RegFull]++;
-                // stats.smtStallEvents[RegFull].sample(tid);
+                if (!regFullThisCycle) {
+                    stats.stallEvents[RegFull]++;
+                    regFullThisCycle = true;
+                }
+                for (int rc = 0; rc <= RMiscRegClass; rc++) {
+                    if (freeList->isPerThreadExhausted(
+                            (RegClassType)rc, tid, renameWidth)) {
+                        ++stats.perThreadPregFullEvents[tid];
+                        break;
+                    }
+                }
             }
         }
         blockReason = breakRename;
@@ -749,7 +831,7 @@ Rename::updateActivate()
 }
 
 void
-Rename::tryFreePReg(PhysRegIdPtr preg)
+Rename::tryFreePReg(PhysRegIdPtr preg, ThreadID tid)
 {
     const auto preg_idx = preg->flatIndex();
     if (preg->getRef() == 0 || preg->classValue() == InvalidRegClass) {
@@ -761,7 +843,7 @@ Rename::tryFreePReg(PhysRegIdPtr preg)
         // Put the renamed physical register back on the free list.
         DPRINTF(Rename, "Really free up p%i on squash with ref=%i\n", preg_idx,
                 preg->getRef());
-        freeList->addReg(preg);
+        freeList->addReg(preg, tid);
     } else {
         DPRINTF(Rename, "Not to free up p%i on squash for ref=%i\n",
                 preg->flatIndex(), preg->getRef());
@@ -802,7 +884,7 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
             // previous physical register that it was renamed to.
             renameMap[tid]->setEntry(hb_it->archReg, hb_it->prevPhysReg);
             if (hb_it->newPhysReg.PhyReg() != hb_it->prevPhysReg.PhyReg()) {
-                tryFreePReg(hb_it->newPhysReg.PhyReg());
+                tryFreePReg(hb_it->newPhysReg.PhyReg(), tid);
             }
         }
 
@@ -925,7 +1007,7 @@ Rename::removeFromHistory(InstSeqNum inst_seq_num, ThreadID tid)
         // can be recognized because the new mapping is the same as
         // the old one.
         if (hb_it->newPhysReg.PhyReg() != hb_it->prevPhysReg.PhyReg()) {
-            tryFreePReg(hb_it->prevPhysReg.PhyReg());
+            tryFreePReg(hb_it->prevPhysReg.PhyReg(), tid);
         }
 
         ++stats.committedMaps;

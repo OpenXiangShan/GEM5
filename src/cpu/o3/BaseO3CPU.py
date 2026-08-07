@@ -272,6 +272,20 @@ class BaseO3CPU(BaseCPU):
         8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
     smtBorrowDonorReserveEntries = Param.Unsigned(
         8, "Minimum ROB entries reserved for a borrowing donor to resume")
+    smtPregPolicy = Param.SMTQueuePolicy('Dynamic',
+                                         "SMT Preg (physical register) Sharing Policy")
+    smtPregFixedBase = Param.Unsigned(0,
+        "Fixed per-thread base quota for DynamicBorrowing (0 = numPhysRegs/activeThreads)")
+    smtPregBorrowDonorReserveRegs = Param.Unsigned(
+        8, "Minimum physical registers reserved for a borrowing donor to resume")
+    smtPregBackendBackpressureDonor = Param.Bool(True,
+        "Also treat a thread as a Preg borrowing donor when it is stalled "
+        "on ROB/dispatch-queue-bandwidth backpressure (a resource other "
+        "than Preg itself); when false, only actual Preg demand this "
+        "cycle drives donor status")
+    smtPregBackendBackpressureDonorHoldCycles = Param.Unsigned(
+        8, "Cycles to keep a backend-backpressure-triggered Preg donor "
+           "marking held after the triggering condition clears")
     smtBorrowBaseReserveEntries = Param.Unsigned(
         80, "Minimum ROB entries reserved for a borrowing base to resume")
 
