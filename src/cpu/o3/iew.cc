@@ -889,11 +889,9 @@ IEW::moveInstsToBuffer()
         DPRINTF(IEW, "No instructions from rename to move to buffer.\n");
         return;
     }
-    ThreadID tid = fromRename->insts[0]->threadNumber;
-    assert(fixedbuffer[tid].empty());
     for (int i = 0; i < insts_from_rename; ++i) {
         const DynInstPtr &inst = fromRename->insts[i];
-        assert(inst->threadNumber == tid);
+        ThreadID tid = inst->threadNumber;
         if (localSquashVer[tid].largerThan(inst->getVersion())) {
             inst->setSquashed();
         } else {
@@ -1116,7 +1114,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
     int disp_seq = -1;
 
     scheduler->lookahead(insts_to_dispatch);
-    while (!insts_to_dispatch.empty()) {
+    while (!insts_to_dispatch.empty() && dispatched < renameWidth) {
         bool add_to_iq = false;
         auto &inst = insts_to_dispatch.front();
         disp_seq++;
@@ -1313,7 +1311,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
     std::queue<StallReason> dispatch_stalls;
     StallReason breakDispatch = StallReason::NoStall;
     unsigned dispatched = 0;
-    while (!insts_to_dispatch.empty()) {
+    while (!insts_to_dispatch.empty() && dispatched < renameWidth) {
         auto& inst = insts_to_dispatch.front();
         int ins = cpu->cpuStats.committedInsts.total();
         if (cpu->hasHintDownStream() && ins % 10000 == 1) {
