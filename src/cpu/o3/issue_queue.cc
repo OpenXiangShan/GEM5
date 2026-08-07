@@ -629,6 +629,7 @@ IssueQue::issueToFu()
 
     for (; !replayQ.empty() && replayed < outports; replayed++) {
         auto& inst = replayQ.front();
+        scheduler->noteIssueCandidate(inst->threadNumber);
 
         // Do not let replay requests starve the older issuing requests
         if (issueHasOlderInsts(inst)) {
@@ -668,6 +669,7 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
+        scheduler->noteIssueCandidate(inst->threadNumber);
         // Loads selected here enter loadpipe S0 next cycle, so block on
         // the mainpipe tag-write state predicted for that admission point.
         bool blockLoad = inst->isLoad() &&
@@ -1228,8 +1230,50 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
       ADD_STAT(memstall_l2miss,
                "Cycles with no uops executed and at least X in-flight load that has missed the L2-cache"),
       ADD_STAT(memstall_l3miss,
-               "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache")
+               "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache"),
+      ADD_STAT(smtIssueStateCycles, statistics::units::Cycle::get(),
+               "joint per-thread issue state sampled once per physical cycle"),
+      ADD_STAT(zeroIssueCycles, statistics::units::Cycle::get(),
+               "physical cycles in which no thread issued an instruction"),
+      ADD_STAT(noIssueOutstandingMissMaskCycles,
+               statistics::units::Cycle::get(),
+               "per-level thread mask with no issue progress and a tracked "
+               "outstanding demand load at or beyond that cache miss depth")
 {
+}
+
+void
+Scheduler::SchedulerStats::init(unsigned)
+{
+    static constexpr std::array<const char *, 5> state_names = {
+        "NoIqWork", "ControlBlocked", "Waiting", "EligibleNoIssue",
+        "Issued"
+    };
+    static constexpr std::array<const char *, 3> level_names = {
+        "L1Miss", "L2Miss", "L3Miss"
+    };
+    static constexpr std::array<const char *, 4> mask_names = {
+        "None", "Tid0", "Tid1", "Both"
+    };
+
+    smtIssueStateCycles.init(state_names.size(), state_names.size())
+        .flags(statistics::nozero);
+    for (unsigned state = 0; state < state_names.size(); ++state) {
+        smtIssueStateCycles.subname(state, state_names[state]);
+        smtIssueStateCycles.ysubname(state, state_names[state]);
+    }
+
+    static_assert(NumTrackedMissLevels == level_names.size());
+    noIssueOutstandingMissMaskCycles
+        .init(NumTrackedMissLevels, mask_names.size())
+        .flags(statistics::nozero);
+    for (unsigned level = 0; level < level_names.size(); ++level) {
+        noIssueOutstandingMissMaskCycles.subname(
+            level, level_names[level]);
+    }
+    for (unsigned mask = 0; mask < mask_names.size(); ++mask) {
+        noIssueOutstandingMissMaskCycles.ysubname(mask, mask_names[mask]);
+    }
 }
 
 bool
@@ -1394,6 +1438,7 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
 {
     this->cpu = cpu;
     this->lsq = lsq;
+    stats.init(cpu->numThreads);
     for (auto it : issueQues) {
         it->setCPU(cpu);
         it->selector->setparent(this, it);
@@ -1425,6 +1470,7 @@ Scheduler::addToFU(const DynInstPtr& inst)
     inst->issueTick = curTick() - inst->fetchTick;
 #endif
     inst->clearCancel();
+    issueProgressThisCycle[inst->threadNumber] = true;
     DPRINTF(Schedule, "%s [sn:%llu] add to FUs\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     instsToFu.push_back(inst);
 }
@@ -1440,8 +1486,70 @@ Scheduler::tick()
 }
 
 void
+Scheduler::noteIssueCandidate(ThreadID tid)
+{
+    assert(tid < MaxThreads);
+    issueCandidateThisCycle[tid] = true;
+}
+
+void
+Scheduler::sampleSmtIssueStates(
+    const std::array<bool, MaxThreads> &control_blocked)
+{
+    // The joint state and thread mask dimensions are intentionally dual-hart.
+    // Leave them disabled for wider SMT configurations instead of producing a
+    // truncated or out-of-range mask.
+    if (cpu->numThreads > 2) {
+        return;
+    }
+
+    std::array<SmtIssueState, MaxThreads> state;
+    state.fill(SmtIssueState::NoIqWork);
+
+    bool any_progress = false;
+    for (ThreadID tid = 0; tid < cpu->numThreads; ++tid) {
+        if (issueProgressThisCycle[tid]) {
+            state[tid] = SmtIssueState::Issued;
+            any_progress = true;
+        } else if (control_blocked[tid]) {
+            state[tid] = SmtIssueState::ControlBlocked;
+        } else if (issueCandidateThisCycle[tid]) {
+            state[tid] = SmtIssueState::EligibleNoIssue;
+        } else if (getIQInsts(tid) > 0) {
+            state[tid] = SmtIssueState::Waiting;
+        }
+    }
+
+    stats.smtIssueStateCycles[static_cast<unsigned>(state[0])]
+                                  [static_cast<unsigned>(state[1])]++;
+    if (!any_progress) {
+        stats.zeroIssueCycles++;
+    }
+
+    std::array<unsigned, MaxThreads> max_miss_depth = {};
+    for (ThreadID tid = 0; tid < cpu->numThreads; ++tid) {
+        if (!issueProgressThisCycle[tid]) {
+            max_miss_depth[tid] = lsq->maxInflightLoadDepth(tid);
+        }
+    }
+    for (unsigned level = 1; level <= NumTrackedMissLevels; ++level) {
+        unsigned mask = 0;
+        for (ThreadID tid = 0; tid < cpu->numThreads; ++tid) {
+            if (!issueProgressThisCycle[tid] &&
+                max_miss_depth[tid] >= level) {
+                mask |= 1U << tid;
+            }
+        }
+        stats.noIssueOutstandingMissMaskCycles[level - 1][mask]++;
+    }
+}
+
+void
 Scheduler::issueAndSelect()
 {
+    issueCandidateThisCycle.fill(false);
+    issueProgressThisCycle.fill(false);
+
     // must wait for all insts was issued
     for (auto it : issueQues) {
         it->selectInst();

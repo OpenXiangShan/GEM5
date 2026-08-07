@@ -191,7 +191,8 @@ class ROB
 //    bool isHeadReady();
 
     /** Is the oldest group of instructions across a particular thread ready. */
-    bool isHeadGroupReady(ThreadID tid);
+    bool isHeadGroupReady(ThreadID tid,
+                          DynInstPtr *blocking_inst = nullptr);
 
     InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 

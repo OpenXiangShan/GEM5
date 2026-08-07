@@ -1935,6 +1935,13 @@ IEW::tick()
         }
     }
 
+    std::array<bool, MaxThreads> control_blocked = {};
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        control_blocked[tid] = fromCommit->commitInfo[tid].squash ||
+            fromCommit->commitInfo[tid].robSquashing;
+    }
+    scheduler->sampleSmtIssueStates(control_blocked);
+
     DPRINTF(IEW,"LQ has %i free entries. SQ has %i free entries.\n",
             ldstQueue.numFreeLoadEntries(), ldstQueue.numFreeStoreEntries());
 

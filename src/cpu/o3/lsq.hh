@@ -424,6 +424,9 @@ class LSQ
         /** Remove the request from the in-flight load tracker if present. */
         void detachInflightLoad();
 
+        /** Add the request to the in-flight load tracker once. */
+        void attachInflightLoad();
+
         bool squashed() const override;
 
 
@@ -562,13 +565,15 @@ class LSQ
          * Test if there is any in-flight translation or mem access request
          */
         bool
-        isAnyOutstandingRequest()
+        isAnyOutstandingRequest() const
         {
             return numInTranslationFragments > 0 ||
                 _numOutstandingPackets > 0 ||
                 (flags.isSet(Flag::WritebackScheduled) &&
                  !flags.isSet(Flag::WritebackDone));
         }
+
+        unsigned maxRequestDepth() const;
 
         /**
          * Test if the LSQRequest has been released, i.e. self-owned.
@@ -986,6 +991,9 @@ class LSQ
     int numLoads(ThreadID tid) const;
 
     int anyInflightLoadsNotComplete();
+
+    /** Maximum cache-miss depth among tracked outstanding loads of a tid. */
+    unsigned maxInflightLoadDepth(ThreadID tid) const;
 
     bool anyStoreNotExecute();
 

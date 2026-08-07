@@ -326,7 +326,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(smtStateHoldCycle, statistics::units::Count::get(),
                "SMT base/donor state holding cycle distribution"),
       ADD_STAT(smtROBEntriesWhileStateChange, statistics::units::Count::get(),
-               "SMT ROB thread used/rest entries distribution while state change")
+               "SMT ROB thread used/rest entries distribution while state change"),
+      ADD_STAT(smtCommitStateCycles, statistics::units::Cycle::get(),
+               "joint per-thread commit state sampled once per physical cycle"),
+      ADD_STAT(zeroCommitCycles, statistics::units::Cycle::get(),
+               "physical cycles in which no thread committed an instruction")
 {
     using namespace statistics;
 
@@ -470,6 +474,19 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     smtROBEntriesWhileStateChange.subname(1, "BaseToDonor_rest");
     smtROBEntriesWhileStateChange.subname(2, "DonorToBase_used");
     smtROBEntriesWhileStateChange.subname(3, "DonorToBase_rest");
+
+    static constexpr std::array<const char *, 7> commit_state_names = {
+        "RobEmpty", "ControlOrMaintenance", "LoadWait",
+        "StoreOrAtomicWait", "OtherWait", "HeadReadyNoCommit",
+        "Committed"
+    };
+    smtCommitStateCycles
+        .init(commit_state_names.size(), commit_state_names.size())
+        .flags(statistics::nozero);
+    for (unsigned state = 0; state < commit_state_names.size(); ++state) {
+        smtCommitStateCycles.subname(state, commit_state_names[state]);
+        smtCommitStateCycles.ysubname(state, commit_state_names[state]);
+    }
 }
 
 void
@@ -914,6 +931,83 @@ Commit::hasExecutedYoungerInst(ThreadID tid, InstSeqNum seq_num) const
     return false;
 }
 
+Commit::SmtCommitState
+Commit::classifyCommitBlocker(const DynInstPtr &inst) const
+{
+    if (!inst) {
+        return SmtCommitState::OtherWait;
+    }
+    if (inst->isLoad()) {
+        return SmtCommitState::LoadWait;
+    }
+    if (inst->isStore() || inst->isAtomic()) {
+        return SmtCommitState::StoreOrAtomicWait;
+    }
+    return SmtCommitState::OtherWait;
+}
+
+void
+Commit::resetSmtCommitStates()
+{
+    smtCommitStateThisCycle.fill(SmtCommitState::RobEmpty);
+    for (ThreadID tid : *activeThreads) {
+        if (rob->isEmpty(tid)) {
+            continue;
+        }
+        if (commitStatus[tid] != Running && commitStatus[tid] != Idle &&
+            commitStatus[tid] != FetchTrapPending) {
+            smtCommitStateThisCycle[tid] =
+                SmtCommitState::ControlOrMaintenance;
+        } else {
+            smtCommitStateThisCycle[tid] = SmtCommitState::OtherWait;
+        }
+    }
+}
+
+void
+Commit::sampleSmtCommitStates()
+{
+    // The joint state matrix is intentionally dual-hart.  Do not expose a
+    // misleading first-two-thread projection for wider SMT configurations.
+    if (numThreads > 2) {
+        return;
+    }
+
+    // Threads that never reached commitInsts() still need an explicit final
+    // state.  Only classify HeadReadyNoCommit when the head group is ready but
+    // this cycle produced no commit attempt or progress for that thread.
+    for (ThreadID tid : *activeThreads) {
+        if (smtCommitStateThisCycle[tid] != SmtCommitState::OtherWait ||
+            rob->isEmpty(tid) ||
+            (commitStatus[tid] != Running && commitStatus[tid] != Idle &&
+             commitStatus[tid] != FetchTrapPending)) {
+            continue;
+        }
+
+        DynInstPtr blocking_inst;
+        if (rob->isHeadGroupReady(tid, &blocking_inst)) {
+            smtCommitStateThisCycle[tid] =
+                SmtCommitState::HeadReadyNoCommit;
+        } else {
+            smtCommitStateThisCycle[tid] =
+                classifyCommitBlocker(blocking_inst);
+        }
+    }
+
+    stats.smtCommitStateCycles
+        [static_cast<unsigned>(smtCommitStateThisCycle[0])]
+        [static_cast<unsigned>(smtCommitStateThisCycle[1])]++;
+
+    bool any_committed = false;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        any_committed |=
+            smtCommitStateThisCycle[tid] == SmtCommitState::Committed;
+    }
+    if (!any_committed) {
+        stats.zeroCommitCycles++;
+    }
+}
+
 void
 Commit::tick()
 {
@@ -922,6 +1016,8 @@ Commit::tick()
 
     if (activeThreads->empty())
         return;
+
+    resetSmtCommitStates();
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -956,6 +1052,7 @@ Commit::tick()
     commit();
 
     markCompletedInsts();
+    sampleSmtCommitStates();
 
     threads = activeThreads->begin();
 
@@ -1335,8 +1432,14 @@ Commit::commitInsts()
             }
 
             head_inst = rob->readHeadInst(commit_thread);
+            DynInstPtr blocking_inst;
 
-            if (!rob->isHeadGroupReady(commit_thread)) {
+            if (!rob->isHeadGroupReady(commit_thread, &blocking_inst)) {
+                if (smtCommitStateThisCycle[commit_thread] !=
+                    SmtCommitState::Committed) {
+                    smtCommitStateThisCycle[commit_thread] =
+                        classifyCommitBlocker(blocking_inst);
+                }
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
@@ -1347,6 +1450,12 @@ Commit::commitInsts()
                         head_inst->seqNum, seqnum);
                 }
                 break;
+            }
+
+            if (smtCommitStateThisCycle[commit_thread] !=
+                SmtCommitState::Committed) {
+                smtCommitStateThisCycle[commit_thread] =
+                    SmtCommitState::HeadReadyNoCommit;
             }
 
             ThreadID tid = head_inst->threadNumber;
@@ -1367,6 +1476,11 @@ Commit::commitInsts()
                 rob->drainSquashedHead(commit_thread);
 
                 ++stats.commitSquashedInsts;
+                if (smtCommitStateThisCycle[commit_thread] !=
+                    SmtCommitState::Committed) {
+                    smtCommitStateThisCycle[commit_thread] =
+                        SmtCommitState::ControlOrMaintenance;
+                }
                 // Notify potential listeners that this instruction is squashed
                 ppSquash->notify(head_inst);
 
@@ -1381,6 +1495,8 @@ Commit::commitInsts()
                                                 num_committed_per_thread[tid]);
 
                 if (commit_success) {
+                    smtCommitStateThisCycle[tid] =
+                        SmtCommitState::Committed;
                     cpu->perfCCT->updateInstPos(head_inst->seqNum,
                                                 PerfRecord::AtCommit);
                     auto res = head_inst->getResult();
@@ -1678,6 +1794,11 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
+                    if (smtCommitStateThisCycle[tid] !=
+                        SmtCommitState::Committed) {
+                        smtCommitStateThisCycle[tid] =
+                            SmtCommitState::ControlOrMaintenance;
+                    }
                     DPRINTF(Commit, "Unable to commit head instruction PC:%s "
                             "[tid:%i] [sn:%llu].\n",
                             head_inst->pcState(), tid ,head_inst->seqNum);

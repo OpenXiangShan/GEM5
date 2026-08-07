@@ -41,6 +41,7 @@
 #ifndef __CPU_O3_COMMIT_HH__
 #define __CPU_O3_COMMIT_HH__
 
+#include <array>
 #include <cstdint>
 #include <list>
 #include <map>
@@ -168,6 +169,18 @@ class Commit
         SquashAfterPending, //< Committing instructions before a squash.
     };
 
+    enum class SmtCommitState : unsigned
+    {
+        RobEmpty,
+        ControlOrMaintenance,
+        LoadWait,
+        StoreOrAtomicWait,
+        OtherWait,
+        HeadReadyNoCommit,
+        Committed,
+        NumStates
+    };
+
   private:
     /** Overall commit status. */
     CommitStatus _status;
@@ -176,6 +189,7 @@ class Commit
     std::set<uint64_t> faultNum;
     /** Per-thread status. */
     ThreadStatus commitStatus[MaxThreads];
+    std::array<SmtCommitState, MaxThreads> smtCommitStateThisCycle = {};
 
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
@@ -370,6 +384,9 @@ class Commit
 
     /** Commits as many instructions as possible. */
     void commitInsts();
+    SmtCommitState classifyCommitBlocker(const DynInstPtr &inst) const;
+    void resetSmtCommitStates();
+    void sampleSmtCommitStates();
     bool hasExecutedYoungerInst(ThreadID tid, InstSeqNum seq_num) const;
     void updateMstatusSd(ThreadID tid);
 
@@ -655,6 +672,8 @@ class Commit
         statistics::Vector ROBBorrowingStateChange;
         statistics::VectorDistribution smtStateHoldCycle;
         statistics::VectorDistribution smtROBEntriesWhileStateChange;
+        statistics::Vector2d smtCommitStateCycles;
+        statistics::Scalar zeroCommitCycles;
     } stats;
 
     bool ismispred[MaxThreads] = {false};
