@@ -940,6 +940,96 @@ BaseCPU::csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint
         diff_at = ValueDiff;
 }
 
+namespace
+{
+
+constexpr int NumVecRegs = 32;
+
+bool
+isTailAgnosticVectorByte(const StaticInst &inst, size_t byte_idx,
+                         uint64_t vtype, uint64_t vl)
+{
+    const bool tail_agnostic = bits(vtype, 6);
+    const uint64_t vlmax = RiscvISA::vtype_VLMAX(vtype);
+    if (!tail_agnostic || vl >= vlmax) {
+        return false;
+    }
+
+    const size_t reg_idx = byte_idx / RiscvISA::VLENB;
+    const size_t byte_in_reg = byte_idx % RiscvISA::VLENB;
+    const size_t sew_bytes = 1 << bits(vtype, 5, 3);
+    const size_t regs_per_group =
+        RiscvISA::vtype_regs_per_group(vtype);
+    const size_t elems_per_reg = RiscvISA::VLENB / sew_bytes;
+
+    const auto is_tail_of_reg_group = [&](const RegId &reg) {
+        if (!reg.isVecReg()) {
+            return false;
+        }
+
+        const size_t vec_reg = reg.index();
+        const size_t group_base = vec_reg & ~(regs_per_group - 1);
+        if (reg_idx < group_base ||
+            reg_idx >= group_base + regs_per_group) {
+            return false;
+        }
+
+        const size_t elem_idx =
+            (reg_idx - group_base) * elems_per_reg +
+            byte_in_reg / sew_bytes;
+        return elem_idx >= vl;
+    };
+
+    for (int i = 0; i < inst.numDestRegs(); ++i) {
+        if (is_tail_of_reg_group(inst.destRegIdx(i))) {
+            return true;
+        }
+    }
+    for (int i = 0; i < inst.numSrcRegs(); ++i) {
+        if (is_tail_of_reg_group(inst.srcRegIdx(i))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int
+findVectorRegisterMismatch(const StaticInst &inst,
+                           const riscv64_CPU_regfile &ref_reg_file,
+                           const riscv64_CPU_regfile &gem5_reg_file,
+                           uint64_t vtype, uint64_t vl)
+{
+    constexpr size_t VecRegFileBytes = RiscvISA::VLENB * NumVecRegs;
+
+    for (size_t byte_idx = 0; byte_idx < VecRegFileBytes; ++byte_idx) {
+        const size_t reg_idx = byte_idx / RiscvISA::VLENB;
+        const size_t byte_in_reg = byte_idx % RiscvISA::VLENB;
+        if (ref_reg_file.vr[reg_idx]._8[byte_in_reg] ==
+            gem5_reg_file.vr[reg_idx]._8[byte_in_reg]) {
+            continue;
+        }
+        if (!isTailAgnosticVectorByte(inst, byte_idx, vtype, vl)) {
+            return reg_idx;
+        }
+    }
+    return -1;
+}
+
+std::string
+formatVectorRegister(const riscv64_CPU_regfile &reg_file, int reg_idx)
+{
+    std::string value;
+
+    for (int elem = RiscvISA::NumVecElemPerVecReg - 1; elem >= 0; --elem) {
+        if (!value.empty()) {
+            value += "_";
+        }
+        value += csprintf("%016lx", reg_file.vr[reg_idx]._64[elem]);
+    }
+    return value;
+}
+
+} // anonymous namespace
 
 
 std::pair<int, bool>
@@ -1031,129 +1121,59 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     if (enableRVV) {
         if (diffInfo.inst->isVector()) {
             readGem5Regs(tid);
-            uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
-            uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
-            uint8_t* nemu_byte = (uint8_t*)&(diffAllStates->referenceRegFile.vr[0]);
-            uint8_t* gem5_byte = (uint8_t*)&(diffAllStates->gem5RegFile.vr[0]);
-            const uint64_t vtype = diffAllStates->referenceRegFile.vtype;
-            const uint64_t vl = diffAllStates->referenceRegFile.vl;
-            const bool tail_agnostic = bits(vtype, 6);
-            const uint32_t sew_bytes = 1 << bits(vtype, 5, 3);
-            const uint32_t regs_per_group = RiscvISA::vtype_regs_per_group(vtype);
-            const uint32_t elems_per_reg = RiscvISA::VLENB / sew_bytes;
-            const uint32_t vlmax = RiscvISA::vtype_VLMAX(vtype);
-            auto is_tail_agnostic_byte = [&](int byte_idx) {
-                if (!tail_agnostic || vl >= vlmax)
-                    return false;
-                const int reg_idx = byte_idx / RiscvISA::VLENB;
-                const int byte_in_reg = byte_idx % RiscvISA::VLENB;
-                auto reg_is_in_group = [&](const RegId &reg) {
-                    if (!reg.isVecReg())
-                        return false;
-                    const int vec_reg = reg.index();
-                    const int group_base = vec_reg & ~(regs_per_group - 1);
-                    if (reg_idx < group_base ||
-                        reg_idx >= group_base + regs_per_group)
-                        return false;
-                    const uint32_t elem_idx =
-                        (reg_idx - group_base) * elems_per_reg +
-                        byte_in_reg / sew_bytes;
-                    return elem_idx >= vl;
-                };
-                for (int dest_idx = 0; dest_idx < diffInfo.inst->numDestRegs();
-                     dest_idx++) {
-                    if (reg_is_in_group(diffInfo.inst->destRegIdx(dest_idx)))
-                        return true;
-                }
-                for (int src_idx = 0; src_idx < diffInfo.inst->numSrcRegs();
-                     src_idx++) {
-                    if (reg_is_in_group(diffInfo.inst->srcRegIdx(src_idx)))
-                        return true;
-                }
-                return false;
-            };
-            bool maybe_error = false;
-            int error_idx = 0;
-            for (int i = 0; i < RiscvISA::VLENB * 32; i++) {
-                if (nemu_byte[i] != gem5_byte[i] &&
-                    is_tail_agnostic_byte(i))
-                    continue;
-                if (nemu_byte[i] != gem5_byte[i]) {
-                    maybe_error = true;
-                    error_idx = (i / RiscvISA::VLENB) *
-                                RiscvISA::NumVecElemPerVecReg;
-                    break;
-                }
-            }
+            const int mismatch_reg = findVectorRegisterMismatch(
+                *diffInfo.inst, diffAllStates->referenceRegFile,
+                diffAllStates->gem5RegFile,
+                diffAllStates->referenceRegFile.vtype,
+                diffAllStates->referenceRegFile.vl);
 
-            if (maybe_error) {
-                std::string gem5_val_, nemu_val_;
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
-                    if (j != 0) {
-                        gem5_val_+="_";
-                    }
-                }
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
-                    if (j != 0) {
-                        nemu_val_ += "_";
-                    }
-                }
+            if (mismatch_reg >= 0) {
                 warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
-                    (error_idx>>1), nemu_val_, gem5_val_);
+                     mismatch_reg,
+                     formatVectorRegister(diffAllStates->referenceRegFile,
+                                          mismatch_reg),
+                     formatVectorRegister(diffAllStates->gem5RegFile,
+                                          mismatch_reg));
                 diff_at = ValueDiff;
             }
         }
 
-        // vtype
-        uint64_t gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VTYPE, tid);
-        diffAllStates->gem5RegFile.vtype = gem5_val;
-        uint64_t ref_val = diffAllStates->referenceRegFile.vtype;
-        // unable highest digit comparison of vtype because the older version of NEMU (used by GCBH) did not support it well.
-        if (gem5_val % (1ULL<<63) != ref_val % (1ULL<<63)) {
+        const auto diff_vector_csr =
+            [&](int misc_reg, uint64_t &gem5_value, uint64_t ref_value,
+                const char *name, uint64_t mask = ~uint64_t{0}) {
+            gem5_value = readMiscReg(misc_reg, tid);
+            if ((gem5_value & mask) == (ref_value & mask)) {
+                return;
+            }
             warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vtype", ref_val, gem5_val);
+                 "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                 name, ref_value, gem5_value);
             if (!diff_at) {
                 diff_at = ValueDiff;
             }
-        }
+        };
 
-        // vstart now do not diff
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTART, tid);
-        diffAllStates->gem5RegFile.vstart = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vstart;
+        // Older NEMU versions do not reliably expose the VILL bit.
+        diff_vector_csr(RiscvISA::MISCREG_VTYPE,
+                        diffAllStates->gem5RegFile.vtype,
+                        diffAllStates->referenceRegFile.vtype, "vtype",
+                        ~(1ULL << 63));
 
-        // vxsat
-        diffAllStates->gem5RegFile.vxsat = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXSAT, tid);
-        // vxrm
-        diffAllStates->gem5RegFile.vxrm = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXRM, tid);
-        // vcsr
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VCSR, tid);
-        diffAllStates->gem5RegFile.vcsr = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vcsr;
-        if (gem5_val != ref_val) {
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vcsr", ref_val, gem5_val);
-            if (!diff_at) {
-                diff_at = ValueDiff;
-            }
-        }
+        // These fields are captured for mismatch reporting but are not
+        // compared independently.
+        diffAllStates->gem5RegFile.vstart =
+            readMiscReg(RiscvISA::MISCREG_VSTART, tid);
+        diffAllStates->gem5RegFile.vxsat =
+            readMiscReg(RiscvISA::MISCREG_VXSAT, tid);
+        diffAllStates->gem5RegFile.vxrm =
+            readMiscReg(RiscvISA::MISCREG_VXRM, tid);
 
-        // vl
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VL, tid);
-        diffAllStates->gem5RegFile.vl = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vl;
-        if (gem5_val != ref_val) {
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vl", ref_val, gem5_val);
-            if (!diff_at) {
-                diff_at = ValueDiff;
-            }
-        }
+        diff_vector_csr(RiscvISA::MISCREG_VCSR,
+                        diffAllStates->gem5RegFile.vcsr,
+                        diffAllStates->referenceRegFile.vcsr, "vcsr");
+        diff_vector_csr(RiscvISA::MISCREG_VL,
+                        diffAllStates->gem5RegFile.vl,
+                        diffAllStates->referenceRegFile.vl, "vl");
     }
 
     // always check some CSR regs
