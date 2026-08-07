@@ -42,6 +42,7 @@
 #define __CPU_O3_COMMIT_HH__
 
 #include <cstdint>
+#include <deque>
 #include <list>
 #include <map>
 #include <queue>
@@ -177,7 +178,7 @@ class Commit
     /** Per-thread status. */
     ThreadStatus commitStatus[MaxThreads];
 
-    boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
+    std::deque<DynInstPtr> fixedbuffer[MaxThreads];
 
     StallSignals* stallSig;
 

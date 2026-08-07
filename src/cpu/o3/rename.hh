@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_RENAME_HH__
 #define __CPU_O3_RENAME_HH__
 
+#include <deque>
 #include <list>
 #include <utility>
 
@@ -213,14 +214,22 @@ class Rename
     void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
 
   private:
+    struct RenameThreadResult
+    {
+        unsigned renamed = 0;
+        StallReason stallReason = StallReason::NoStall;
+        StallReason blockReason = StallReason::NoStall;
+        bool hasTail = false;
+    };
+
     /** Reset this pipeline stage */
     void resetStage();
 
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
      */
-    void renameInsts(ThreadID tid, unsigned max_insts,
-                     bool bypassing_lsu_admission);
+    RenameThreadResult renameInsts(ThreadID tid, unsigned max_insts,
+                                   bool bypassing_lsu_admission);
 
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
     bool canRename(ThreadID tid);
@@ -351,6 +360,11 @@ class Rename
 
     /** Queue of all instructions coming from decode this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
+
+    /** Per-thread spill queue for decode bundles that arrive while rename is
+     * still draining an older buffered tail.
+     */
+    std::deque<DynInstPtr> spillBuffer[MaxThreads];
 
     /** Rename map interface. */
     UnifiedRenameMap *renameMap[MaxThreads];

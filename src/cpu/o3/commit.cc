@@ -194,7 +194,6 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         traceCommitIndex[tid] = 0;
         committedTargetId[tid] = 1;
         committedLoopIter[tid] = 0;
-        fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
     }
     interrupt = NoFault;
 
@@ -625,8 +624,13 @@ Commit::isDrained() const
      * makes debugging easier since CPU handover and restoring from a
      * checkpoint with a different CPU should have the same timing.
      */
-    return rob->isEmpty() &&
-        interrupt == NoFault;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!fixedbuffer[tid].empty()) {
+            return false;
+        }
+    }
+
+    return rob->isEmpty() && interrupt == NoFault;
 }
 
 void
@@ -2081,12 +2085,9 @@ Commit::moveInstsToBuffer()
     DPRINTF(Commit, "Getting instructions from Rename stage.\n");
     int insts_from_rename = fromRename->size;
     if (insts_from_rename != 0) {
-        // move to buffer
-        ThreadID tid = fromRename->insts[0]->threadNumber;
-        assert(fixedbuffer[tid].empty());
         for (int i = 0; i < insts_from_rename; ++i) {
             const DynInstPtr &inst = fromRename->insts[i];
-            assert(inst->threadNumber == tid);
+            ThreadID tid = inst->threadNumber;
             if (!inst->isSquashed()) {
                 fixedbuffer[tid].push_back(inst);
             }
@@ -2119,8 +2120,11 @@ Commit::moveInstsToBuffer()
         stallSig->iewBlockReason[tid] = StallReason::OtherFragStall;
     };
     for (int i = 0; i < numThreads; i++) {
-        bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
-        bool block = !rob->canAllocate(i, fixedbuffer[i].size()) || robblock;
+        bool robblock = commitStatus[i] == ROBSquashing ||
+                        commitStatus[i] == TrapPending;
+        const unsigned allocation =
+            std::min<unsigned>(fixedbuffer[i].size(), renameWidth);
+        bool block = !rob->canAllocate(i, allocation) || robblock;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (robblock) {
@@ -2159,7 +2163,8 @@ Commit::moveInstsToBuffer()
     }
 
     // Read any renamed instructions and place them into the ROB.
-    int insts_to_process = fixedbuffer[tid].size();
+    const unsigned insts_to_process =
+        std::min<unsigned>(fixedbuffer[tid].size(), renameWidth);
     for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
         const DynInstPtr &inst = fixedbuffer[tid].front();
         if (!inst->isSquashed() &&
