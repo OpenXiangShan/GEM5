@@ -48,17 +48,17 @@ class ISA;
  * later execute() paths do not need to re-query the ISA object, and so we avoid
  * rewriting every `new Foo(machInst)` call site in the ISA parser templates.
  *
- * Constraint: all harts in one gem5 process should share the same VLEN (true
- * for current XiangShan configs). Mixing VLEN values with a shared decode cache
- * would be incorrect.
+ * Constraint: all harts in one gem5 process must share the same VLEN because
+ * Decoder::defaultCache is process-wide. setDecodeVecLenInBits() / ISA ctor
+ * latch the first observed VLEN and fatal on a mismatch.
  */
-inline thread_local uint32_t decodeVecLenInBits = DefaultVecLenInBits;
+extern thread_local uint32_t decodeVecLenInBits;
 
-inline void
-setDecodeVecLenInBits(uint32_t bits)
-{
-    decodeVecLenInBits = bits;
-}
+/** Latch process-wide VLEN (ISA construction) and publish decode-time VLEN. */
+void setDecodeVecLenInBits(uint32_t bits);
+
+/** Register the process-wide architectural VLEN (called from ISA ctor). */
+void registerProcessVecLenInBits(uint32_t bits);
 
 inline uint32_t
 getDecodeVecLenInBits()
@@ -70,6 +70,17 @@ inline uint32_t
 getDecodeVecLenInBytes()
 {
     return decodeVecLenInBits >> 3;
+}
+
+/**
+ * Mask-producing micro-ops cover one architectural VLEN of *elements* at the
+ * current SEW. Shared by VMaskMergeMicroInst and unit tests so a SEW-blind
+ * regression cannot leave the formula test green.
+ */
+inline uint32_t
+maskElemsPerVreg(uint32_t vlen_bits, size_t elem_bytes)
+{
+    return (vlen_bits >> 3) / elem_bytes;
 }
 
 /** Resolve architectural VLEN from an ExecContext (preferred in execute()). */

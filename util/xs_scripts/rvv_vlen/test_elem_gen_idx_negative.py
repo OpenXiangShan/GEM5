@@ -49,7 +49,7 @@ class TestNegativeElemGenIdx(unittest.TestCase):
             self.assertEqual(out1, expect1, f"vlen={vlen}")
 
     def test_default128_fails_when_arch_is_256(self):
-        out0, out1 = simulate_vlseg2e8(256, False)
+        out0, _ = simulate_vlseg2e8(256, False)
         # Index 16 must be wrong under default-128 split.
         self.assertNotEqual(out0[16], 0xA0 + 32)
         self.assertEqual(out0[16], 0)  # never written into v0[16]

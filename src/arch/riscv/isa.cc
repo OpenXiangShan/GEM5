@@ -35,6 +35,7 @@
 #include <sstream>
 
 #include "arch/riscv/interrupts.hh"
+#include "arch/riscv/vec_len.hh"
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/pagetable.hh"
 #include "arch/riscv/pmp.hh"
@@ -338,6 +339,8 @@ ISA::ISA(const Params &p) : BaseISA(p), vlen(p.vlen), elen(p.elen)
     fatal_if(p.vlen > MaxVecLenInBits,
         "VLEN (%u) exceeds compiled MaxVecLenInBits (%u)",
         p.vlen, MaxVecLenInBits);
+    // Reject mixed VLEN across harts early (shared decode cache invariant).
+    registerProcessVecLenInBits(p.vlen);
     inform("RVV enabled, VLEN = %u bits, ELEN = %u bits "
            "(register container MaxVLEN = %u bits)",
            p.vlen, p.elen, MaxVecLenInBits);

@@ -31,6 +31,7 @@
 #include "arch/riscv/regs/vector.hh"
 #include "arch/riscv/types.hh"
 #include "arch/riscv/utility.hh"
+#include "arch/riscv/vec_len.hh"
 
 using namespace gem5;
 using namespace gem5::RiscvISA;
@@ -113,16 +114,13 @@ TEST(RiscvVlenTest, ElemGenIdxUsesArchitecturalVlen)
 
 TEST(RiscvVlenTest, MaskMergeElemsPerVregFormula)
 {
-    // Mirror VMaskMergeMicroInst: elems_per_vreg = (vlen/8) / sizeof(Elem).
-    // Regression guard for the uint8_t-only mistake (always vlenb).
-    auto elems = [](uint32_t vlen_bits, size_t elem_bytes) {
-        return (vlen_bits >> 3) / elem_bytes;
-    };
-    EXPECT_EQ(elems(128, 1), 16u);  // e8
-    EXPECT_EQ(elems(128, 8), 2u);   // e64
-    EXPECT_EQ(elems(256, 8), 4u);
-    EXPECT_EQ(elems(512, 2), 32u);  // e16
-    EXPECT_NE(elems(256, 8), elems(256, 1));
+    // Call the production helper used by VMaskMergeMicroInst (not a local
+    // lambda), so a SEW-blind edit in vector.hh fails this test too.
+    EXPECT_EQ(maskElemsPerVreg(128, 1), 16u);  // e8
+    EXPECT_EQ(maskElemsPerVreg(128, 8), 2u);   // e64
+    EXPECT_EQ(maskElemsPerVreg(256, 8), 4u);
+    EXPECT_EQ(maskElemsPerVreg(512, 2), 32u);  // e16
+    EXPECT_NE(maskElemsPerVreg(256, 8), maskElemsPerVreg(256, 1));
 }
 
 } // namespace

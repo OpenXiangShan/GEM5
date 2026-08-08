@@ -29,12 +29,52 @@
 #include "arch/riscv/vec_len.hh"
 
 #include "arch/riscv/isa.hh"
+#include "base/logging.hh"
 #include "cpu/thread_context.hh"
 
 namespace gem5
 {
 namespace RiscvISA
 {
+
+thread_local uint32_t decodeVecLenInBits = DefaultVecLenInBits;
+
+namespace
+{
+
+// 0 means "unset". Shared decode cache keys only on ExtMachInst, so a second
+// architectural VLEN in the same process would reuse StaticInsts built for the
+// first VLEN. Latch once and reject mismatches.
+uint32_t processVecLenInBits = 0;
+
+void
+latch_process_vlen(uint32_t bits)
+{
+    if (processVecLenInBits == 0) {
+        processVecLenInBits = bits;
+        return;
+    }
+    fatal_if(processVecLenInBits != bits,
+        "Mixed RVV VLEN in one gem5 process is unsupported with the shared "
+        "decode cache (process VLEN=%u, new VLEN=%u). Use a single "
+        "--rvv-vlen for all harts, or clear/key the decode cache by VLEN.",
+        processVecLenInBits, bits);
+}
+
+} // namespace
+
+void
+registerProcessVecLenInBits(uint32_t bits)
+{
+    latch_process_vlen(bits);
+}
+
+void
+setDecodeVecLenInBits(uint32_t bits)
+{
+    latch_process_vlen(bits);
+    decodeVecLenInBits = bits;
+}
 
 uint32_t
 curVecLenInBits(ExecContext *xc)
