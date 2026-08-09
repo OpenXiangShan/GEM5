@@ -945,9 +945,39 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
     // operands, and redirect them to the right physical register.
     for (int src_idx = 0; src_idx < num_src_regs; src_idx++) {
         const RegId& src_reg = inst->srcRegIdx(src_idx);
+        const RegId flat_reg = tc->flattenRegId(src_reg);
         VirtRegId renamed_reg;
 
-        renamed_reg = map->lookup(tc->flattenRegId(src_reg));
+        if (flat_reg.classValue() >= IntRegClass &&
+            flat_reg.classValue() <= RMiscRegClass) {
+            const size_t map_size = tc->getIsaPtr()
+                                        ->regClasses()
+                                        .at(flat_reg.classValue())
+                                        .numRegs();
+            panic_if(flat_reg.index() >= map_size,
+                "Rename source register out of range:\n"
+                "  tick=%llu\n"
+                "  tid=%u\n"
+                "  seqNum=%llu\n"
+                "  pc=%#lx\n"
+                "  inst=%s\n"
+                "  src_idx=%d/%u\n"
+                "  originalReg=%s{%u}\n"
+                "  flattenedReg=%s{%u}\n"
+                "  mapSize=%zu\n"
+                "  squashed=%d\n"
+                "  macroop=%d microop=%d firstMicroop=%d lastMicroop=%d\n",
+                static_cast<unsigned long long>(curTick()), tid,
+                static_cast<unsigned long long>(inst->seqNum),
+                inst->pcState().instAddr(),
+                inst->staticInst->disassemble(inst->pcState().instAddr()),
+                src_idx, num_src_regs, src_reg.className(), src_reg.index(),
+                flat_reg.className(), flat_reg.index(), map_size,
+                inst->isSquashed(), inst->isMacroop(), inst->isMicroop(),
+                inst->isFirstMicroop(), inst->isLastMicroop());
+        }
+
+        renamed_reg = map->lookup(flat_reg);
         switch (src_reg.classValue()) {
           case InvalidRegClass:
             break;

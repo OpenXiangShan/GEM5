@@ -37,11 +37,14 @@ class EgDiff : public VPUnit
     {
         unsigned distance;
         RegVal diff;
+        Addr basePc;
         uint8_t fpc = 0;
         uint64_t randomState;
 
-        Entry(unsigned distance, RegVal diff, uint64_t random_state)
-            : distance(distance), diff(diff), randomState(random_state)
+        Entry(unsigned distance, RegVal diff, Addr base_pc,
+                uint64_t random_state)
+            : distance(distance), diff(diff), basePc(base_pc),
+              randomState(random_state)
         {
         }
     };
@@ -72,6 +75,7 @@ class EgDiff : public VPUnit
         bool requestReady = false;
         bool requestDelivered = false;
         uint64_t baseOrdinal = 0;
+        Addr expectedBasePc = 0;
         unsigned predictionDistance = 0;
         RegVal predictionDiff = 0;
         uint64_t readyCycle = 0;
@@ -147,6 +151,8 @@ class EgDiff : public VPUnit
         statistics::Scalar squashedSlots;
         statistics::Scalar cancelledRequests;
         statistics::Scalar staleValueCallbacks;
+        statistics::Scalar basePcMismatches;
+        statistics::Scalar basePcMismatchSuppressions;
         statistics::Scalar tableEntries;
         statistics::Scalar tableConflicts;
         statistics::Scalar tableReplacements;
