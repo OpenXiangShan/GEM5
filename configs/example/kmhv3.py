@@ -96,7 +96,7 @@ def setKmhV3Params(args, system):
         # lsq
         cpu.LQEntries = 120
         cpu.SQEntries = 64
-        cpu.StoreQueueMultiple = 2
+        cpu.StoreQueueMultiple = 1
         cpu.RARQEntries = 96
         cpu.RAWQEntries = 56
         cpu.LoadCompletionWidth = 8
