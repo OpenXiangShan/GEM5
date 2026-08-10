@@ -87,7 +87,7 @@ def setKmhV3Params(args, system):
         cpu.robWalkPolicy = args.rob_walk_policy
 
         # lsu
-        cpu.StoreWbStage = 4
+        cpu.StoreWbStage = 2
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
