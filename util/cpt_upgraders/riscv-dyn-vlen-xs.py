@@ -26,26 +26,28 @@ def upgrader(cpt):
     xs_bytes_per_reg = 64
     xs_max_vec_bytes = num_vec_regs * xs_bytes_per_reg
 
-    def resize_regs_vector(mr):
+    def resize_regs_vector(mr, sec):
         """Return a 40*64-byte token list, resizing each register in place."""
         if len(mr) == xs_max_vec_bytes:
             return mr
 
-        if len(mr) % num_vec_regs == 0:
-            old_bpr = len(mr) // num_vec_regs
-            out = []
-            for r in range(num_vec_regs):
-                chunk = mr[r * old_bpr:(r + 1) * old_bpr]
-                if len(chunk) >= xs_bytes_per_reg:
-                    out.extend(chunk[:xs_bytes_per_reg])
-                else:
-                    out.extend(chunk + ["0"] * (xs_bytes_per_reg - len(chunk)))
-            return out
+        # Why reject: a length not divisible by 40 has no register boundaries.
+        # Flat pad/truncate would silently corrupt restored vector state.
+        if len(mr) % num_vec_regs != 0:
+            raise ValueError(
+                f"{sec}: regs.vector length {len(mr)} is not divisible by "
+                f"{num_vec_regs}; refuse to upgrade an unsupported layout"
+            )
 
-        # Degenerate / unknown layout: pad or truncate the flat blob.
-        if len(mr) > xs_max_vec_bytes:
-            return mr[:xs_max_vec_bytes]
-        return mr + ["0"] * (xs_max_vec_bytes - len(mr))
+        old_bpr = len(mr) // num_vec_regs
+        out = []
+        for r in range(num_vec_regs):
+            chunk = mr[r * old_bpr:(r + 1) * old_bpr]
+            if len(chunk) >= xs_bytes_per_reg:
+                out.extend(chunk[:xs_bytes_per_reg])
+            else:
+                out.extend(chunk + ["0"] * (xs_bytes_per_reg - len(chunk)))
+        return out
 
     def parent_isa_section(sec):
         # Prefer upstream-style "...processor...core....xc..." naming, then
@@ -66,16 +68,15 @@ def upgrader(cpt):
         if not re.search(r"\.xc", sec) and not re.search(r"\.thread$", sec):
             continue
 
+        # Require a verified RISC-V ISA sibling. Do not upgrade bare `.thread`
+        # (or other) sections when isaName cannot be confirmed.
         isa_sec = parent_isa_section(sec)
-        if isa_sec and cpt.has_section(isa_sec):
-            if cpt.get(isa_sec, "isaName", fallback="") != "riscv":
-                continue
-        elif isa_sec:
-            # No sibling ISA section: only convert clearly named XC contexts.
-            if not re.search(r"\.xc", sec):
-                continue
+        if not isa_sec or not cpt.has_section(isa_sec):
+            continue
+        if cpt.get(isa_sec, "isaName", fallback="") != "riscv":
+            continue
 
         mr = cpt.get(sec, "regs.vector").split()
-        new_mr = resize_regs_vector(mr)
+        new_mr = resize_regs_vector(mr, sec)
         if new_mr != mr:
             cpt.set(sec, "regs.vector", " ".join(new_mr))
