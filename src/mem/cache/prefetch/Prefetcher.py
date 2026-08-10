@@ -738,6 +738,8 @@ class BOPPrefetcher(QueuedPrefetcher):
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
     bad_score = Param.Unsigned(12, "Score at which the HWP is disabled")
     rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
+    rr_eviction_validation_entries = Param.Unsigned(0,
+        "Number of RR eviction victims kept for validation backup")
     tag_bits = Param.Unsigned(24, "Bits used to store the tag")
     negative_offsets_enable = Param.Bool(False,
                 "Initialize the offsets list also with negative values \
@@ -787,6 +789,9 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Enable a global BOP bypass mode: when recent unused EWMA is low, "
         "bypass PC-validation suppression for all PCs; otherwise fall back "
         "to the current PC-local gating")
+    enable_validation_shadow_trace = Param.Bool(False,
+        "Trace RR validation hit/miss diagnostics without using them to "
+        "suppress prefetch issue")
     global_bop_unused_threshold = Param.Unsigned(38,
         "Q0.8 unused-rate EWMA threshold for entering global bypass mode")
     global_bop_min_resolved_coverage_shift = Param.Unsigned(3,

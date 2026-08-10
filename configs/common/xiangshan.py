@@ -823,7 +823,31 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "PCUpdateLowEntryMissStreakBefore INT NOT NULL," \
             "PCUpdateLowEntryMissStreakAfter INT NOT NULL," \
             "PCUpdateLowEntryHysteresisHeld BOOL NOT NULL," \
-            "PCUpdateLowEntryHysteresisTransition BOOL NOT NULL);"
+            "PCUpdateLowEntryHysteresisTransition BOOL NOT NULL," \
+            "ValidationProbeEnabled BOOL NOT NULL," \
+            "ValidationRRIndex INT NOT NULL," \
+            "ValidationRRExpectedTag INT NOT NULL," \
+            "ValidationRRReason INT NOT NULL," \
+            "ValidationRRHit BOOL NOT NULL," \
+            "ValidationRRHitWay INT NOT NULL," \
+            "ValidationDelayQueuePresent BOOL NOT NULL," \
+            "ValidationDelayQueuePosition INT NOT NULL," \
+            "ValidationDelayQueueProcessTick INT NOT NULL," \
+            "ValidationDelayQueueOccupancy INT NOT NULL," \
+            "ValidationDelayQueueFull BOOL NOT NULL," \
+            "ValidationLeftSlotValid BOOL NOT NULL," \
+            "ValidationLeftSlotFullAddr INT NOT NULL," \
+            "ValidationLeftSlotTag INT NOT NULL," \
+            "ValidationRightSlotValid BOOL NOT NULL," \
+            "ValidationRightSlotFullAddr INT NOT NULL," \
+            "ValidationRightSlotTag INT NOT NULL," \
+            "GlobalTraceEnabled BOOL NOT NULL," \
+            "GlobalTraceBypassActive BOOL NOT NULL," \
+            "GlobalTraceUnusedEwma INT NOT NULL," \
+            "GlobalTraceOutcomeWindowResolved INT NOT NULL," \
+            "GlobalTraceOutcomeWindowUnused INT NOT NULL," \
+            "GlobalTraceIssuedWindowIssued INT NOT NULL," \
+            "GlobalTraceChecksSinceOutcome INT NOT NULL);"
             ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

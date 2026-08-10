@@ -327,7 +327,7 @@ BOP::PCValidationConfidenceTable::resetGlobalBypassPolicy()
     globalIssuedWindowIssued = 0;
     globalUnusedEwma = GLOBAL_UNUSED_EWMA_INITIAL;
     globalChecksSinceOutcome = 0;
-    globalBypassPCValidation = false;
+    globalBypassPCValidation = true;
 }
 
 bool
@@ -350,6 +350,20 @@ bool
 BOP::PCValidationConfidenceTable::bypassPCValidationActive() const
 {
     return globalCoverageGuardEnabled && globalBypassPCValidation;
+}
+
+BOP::PCValidationConfidenceTable::GlobalTraceState
+BOP::PCValidationConfidenceTable::traceState() const
+{
+    GlobalTraceState state;
+    state.enabled = globalCoverageGuardEnabled;
+    state.bypassActive = bypassPCValidationActive();
+    state.unusedEwma = globalUnusedEwma;
+    state.outcomeWindowResolved = globalOutcomeWindowResolved;
+    state.outcomeWindowUnused = globalOutcomeWindowUnused;
+    state.issuedWindowIssued = globalIssuedWindowIssued;
+    state.checksSinceOutcome = globalChecksSinceOutcome;
+    return state;
 }
 
 void
@@ -576,6 +590,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     : Queued(p),
       scoreMax(p.score_max), roundMax(p.round_max),
       badScore(p.bad_score), rrEntries(p.rr_size),
+      rrEvictionValidationEntries(p.rr_eviction_validation_entries),
       tagMask((1 << p.tag_bits) - 1),
       delayQueueEnabled(p.delay_queue_enable),
       delayQueueSize(p.delay_queue_size),
@@ -585,6 +600,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       enableIssueValidation(p.enable_issue_validation),
       enablePCValidationConfidence(p.enable_pc_validation_confidence),
       enableGlobalBOPCoverageGuard(p.enable_global_bop_coverage_guard),
+      enableValidationShadowTrace(p.enable_validation_shadow_trace),
       pcValidationEntries(p.pc_validation_entries),
       pcValidationTagBits(p.pc_validation_tag_bits),
       pcValidationCounterBits(p.pc_validation_counter_bits),
@@ -733,21 +749,73 @@ BOP::insertIntoRR(Addr full_addr, Addr tag, unsigned int way)
 void
 BOP::insertIntoRR(RREntryDebug rr_entry, unsigned int way)
 {
+    auto insert_into_table = [this, &rr_entry](std::vector<RREntryDebug> &table,
+                                               unsigned int index) {
+        auto &slot = table[index];
+        if (slot.valid && slot.fullAddr != rr_entry.fullAddr) {
+            recordRREviction(slot);
+        }
+        slot = rr_entry;
+    };
+
     switch (way) {
         case RRWay::Left:
-            rrLeft[hash(rr_entry.fullAddr, RRWay::Left)] = rr_entry;
+            insert_into_table(rrLeft, hash(rr_entry.fullAddr, RRWay::Left));
             break;
         case RRWay::Right:
-            rrRight[hash(rr_entry.fullAddr, RRWay::Right)] = rr_entry;
+            insert_into_table(rrRight, hash(rr_entry.fullAddr, RRWay::Right));
             break;
     }
 }
 
 void
+BOP::recordRREviction(const RREntryDebug &rr_entry)
+{
+    if (rrEvictionValidationEntries == 0 || !rr_entry.valid) {
+        return;
+    }
+
+    auto it = rrEvictionValidationCounts.find(rr_entry.fullAddr);
+    if (it != rrEvictionValidationCounts.end() && it->second > 0) {
+        stats.rrEvictionValidationDuplicateInserts++;
+    }
+
+    rrEvictionValidationQueue.push_back(rr_entry);
+    rrEvictionValidationCounts[rr_entry.fullAddr]++;
+    stats.rrEvictionValidationInserted++;
+
+    if (rrEvictionValidationQueue.size() > rrEvictionValidationEntries) {
+        const auto evicted = rrEvictionValidationQueue.front();
+        rrEvictionValidationQueue.pop_front();
+
+        auto evicted_it = rrEvictionValidationCounts.find(evicted.fullAddr);
+        if (evicted_it != rrEvictionValidationCounts.end()) {
+            if (evicted_it->second <= 1) {
+                rrEvictionValidationCounts.erase(evicted_it);
+            } else {
+                evicted_it->second--;
+            }
+        }
+        stats.rrEvictionValidationDropped++;
+    }
+}
+
+bool
+BOP::testRREvictionValidation(Addr full_addr) const
+{
+    if (rrEvictionValidationEntries == 0) {
+        return false;
+    }
+
+    const auto it = rrEvictionValidationCounts.find(full_addr);
+    return it != rrEvictionValidationCounts.end() && it->second > 0;
+}
+
+bool
 BOP::insertIntoDelayQueue(Addr full_addr, Addr tag)
 {
     if (delayQueue.size() == delayQueueSize) {
-        return;
+        return false;
     }
 
     // Add the address to the delay queue and schedule an event to process
@@ -759,6 +827,7 @@ BOP::insertIntoDelayQueue(Addr full_addr, Addr tag)
     if (!delayQueueEvent.scheduled()) {
         schedule(delayQueueEvent, process_tick);
     }
+    return true;
 }
 
 void
@@ -799,6 +868,65 @@ BOP::testRR(Addr addr) const
     }
 
     return std::make_pair(false, RREntryDebug());
+}
+
+BOP::ValidationProbeResult
+BOP::probeValidation(Addr validation_addr,
+                     bool include_rr_eviction_validation)
+{
+    ValidationProbeResult result;
+    result.probed = true;
+    result.rrIndex = hash(validation_addr, RRWay::Left);
+    result.rrExpectedTag = tag(validation_addr);
+    result.delayQueueOccupancy = delayQueue.size();
+    result.delayQueueFull = delayQueue.size() == delayQueueSize;
+
+    const auto delay_it = std::find_if(
+        delayQueue.begin(), delayQueue.end(),
+        [validation_addr](const DelayQueueEntry &entry) {
+            return entry.rrEntry.fullAddr == validation_addr;
+        });
+    if (delay_it != delayQueue.end()) {
+        result.delayQueuePresent = true;
+        result.delayQueuePosition = std::distance(delayQueue.begin(), delay_it);
+        result.delayQueueProcessTick = static_cast<int64_t>(delay_it->processTick);
+        result.rrReason = 2;
+    }
+
+    const unsigned idx_l = hash(validation_addr, RRWay::Left);
+    const unsigned idx_r = hash(validation_addr, RRWay::Right);
+    const auto &left = rrLeft[idx_l];
+    const auto &right = rrRight[idx_r];
+    result.leftSlotValid = left.valid;
+    result.leftSlotFullAddr = left.fullAddr;
+    result.leftSlotTag = left.hashAddr;
+    result.rightSlotValid = right.valid;
+    result.rightSlotFullAddr = right.fullAddr;
+    result.rightSlotTag = right.hashAddr;
+
+    if (left.valid && left.hashAddr == result.rrExpectedTag) {
+        result.validationHit = true;
+        result.rrHitWay = RRWay::Left;
+        result.rrReason = 1;
+    } else if (right.valid && right.hashAddr == result.rrExpectedTag) {
+        result.validationHit = true;
+        result.rrHitWay = RRWay::Right;
+        result.rrReason = 1;
+    } else if (include_rr_eviction_validation &&
+               rrEvictionValidationEntries > 0) {
+        stats.rrEvictionValidationLookups++;
+        if (testRREvictionValidation(validation_addr)) {
+            stats.rrEvictionValidationHits++;
+            result.validationHit = true;
+            result.rrReason = 5;
+        } else if (!result.delayQueuePresent) {
+            result.rrReason = (!left.valid && !right.valid) ? 3 : 4;
+        }
+    } else if (!result.delayQueuePresent) {
+        result.rrReason = (!left.valid && !right.valid) ? 3 : 4;
+    }
+
+    return result;
 }
 
 bool
@@ -1059,10 +1187,14 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     bool bypass_mode = false;
     const bool validation_enabled =
         enableIssueValidation || enablePCValidationConfidence;
+    ValidationProbeResult validation_probe;
+    const bool shadow_validation_enabled =
+        enableValidationShadowTrace && !validation_enabled;
 
     if (issue_prefetch && enableIssueValidation) {
         assert(bestOffset != 0);
-        validation_hit = testRR(validation_addr).first;
+        validation_probe = probeValidation(validation_addr, false);
+        validation_hit = validation_probe.validationHit;
 
         stats.issueValidationChecks++;
         if (validation_hit) {
@@ -1075,7 +1207,8 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 static_cast<long long>(bestOffset), validation_hit ? "hit" : "miss");
     } else if (issue_prefetch && enablePCValidationConfidence) {
         assert(bestOffset != 0);
-        validation_hit = testRR(validation_addr).first;
+        validation_probe = probeValidation(validation_addr, true);
+        validation_hit = validation_probe.validationHit;
         stats.issueValidationChecks++;
         if (validation_hit) {
             stats.issueValidationHits++;
@@ -1180,6 +1313,11 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 issue_prefetch, bypass_mode);
     }
 
+    if (issue_prefetch && shadow_validation_enabled && bestOffset != 0) {
+        validation_probe = probeValidation(validation_addr, true);
+        validation_hit = validation_probe.validationHit;
+    }
+
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access.
     bool generated = false;
@@ -1206,17 +1344,39 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     }
 
     if (archDBer) {
+        const auto global_trace = enableGlobalBOPCoverageGuard &&
+            enablePCValidationConfidence ?
+            pcValidationTable->traceState() :
+            PCValidationConfidenceTable::GlobalTraceState();
         archDBer->bopValidationTraceWrite(
             curTick(), "candidate", name().c_str(), trigger_pc, addr,
             validation_addr, prefetch_addr, bestOffset, bestScore, round, late,
             trigger_is_demand, pfi.isCacheMiss(), trigger_pf_source,
             pfi.isPfFirstHit(), pfi.isPfHit(), issuePrefetchRequests,
-            validation_enabled, validation_hit,
+            validation_enabled || shadow_validation_enabled, validation_hit,
             issuePrefetchRequests && validation_enabled && !issue_prefetch,
             generated, buffered, filtered, filter_passed,
             enablePCValidationConfidence, pc_index, pc_tag, pc_entry_hit,
             pc_confidence, pc_state, pc_sampled, pc_epoch,
-            pc_low_entry_miss_streak);
+            pc_low_entry_miss_streak,
+            validation_probe.probed, validation_probe.rrIndex,
+            validation_probe.rrExpectedTag, validation_probe.rrReason,
+            validation_probe.validationHit, validation_probe.rrHitWay,
+            validation_probe.delayQueuePresent,
+            validation_probe.delayQueuePosition,
+            validation_probe.delayQueueProcessTick,
+            validation_probe.delayQueueOccupancy,
+            validation_probe.delayQueueFull,
+            validation_probe.leftSlotValid,
+            validation_probe.leftSlotFullAddr,
+            validation_probe.leftSlotTag,
+            validation_probe.rightSlotValid,
+            validation_probe.rightSlotFullAddr,
+            validation_probe.rightSlotTag,
+            global_trace.enabled, global_trace.bypassActive,
+            global_trace.unusedEwma, global_trace.outcomeWindowResolved,
+            global_trace.outcomeWindowUnused, global_trace.issuedWindowIssued,
+            global_trace.checksSinceOutcome);
     }
 
     // A BOP outside a large/small composite still has well-defined behavior:
@@ -1406,9 +1566,20 @@ BOP::BopStats::BopStats(statistics::Group *parent)
       ADD_STAT(issueValidationChecks, statistics::units::Count::get(),
                "Number of current-best-offset issue validation checks"),
       ADD_STAT(issueValidationHits, statistics::units::Count::get(),
-               "Number of current-best-offset issue validation RR hits"),
+               "Number of current-best-offset validation hits"),
       ADD_STAT(issueValidationSuppressed, statistics::units::Count::get(),
                "Number of BOP prefetches suppressed by issue validation"),
+      ADD_STAT(rrEvictionValidationInserted, statistics::units::Count::get(),
+               "Number of RR entries copied into the eviction victim table"),
+      ADD_STAT(rrEvictionValidationDropped, statistics::units::Count::get(),
+               "Number of RR eviction victim entries dropped from FIFO"),
+      ADD_STAT(rrEvictionValidationDuplicateInserts,
+               statistics::units::Count::get(),
+               "Number of RR eviction victim addresses inserted more than once"),
+      ADD_STAT(rrEvictionValidationLookups, statistics::units::Count::get(),
+               "Number of RR eviction victim table lookups"),
+      ADD_STAT(rrEvictionValidationHits, statistics::units::Count::get(),
+               "Number of RR eviction victim table hits"),
       ADD_STAT(pcValidationTableLookups, statistics::units::Count::get(),
                "Number of PC validation-confidence table lookups"),
       ADD_STAT(pcValidationTableHits, statistics::units::Count::get(),

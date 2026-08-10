@@ -38,10 +38,12 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <queue>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -76,6 +78,7 @@ class BOP : public Queued
         const unsigned int badScore;
         /** Recent requests table parameteres */
         const unsigned int rrEntries;
+        const unsigned int rrEvictionValidationEntries;
         const unsigned int tagMask;
         /** Delay queue parameters */
         const bool         delayQueueEnabled;
@@ -91,6 +94,8 @@ class BOP : public Queued
         const bool enablePCValidationConfidence;
         /** Bypass PC validation when recent global BOP outcomes are healthy */
         const bool enableGlobalBOPCoverageGuard;
+        /** Compute RR diagnostics even when PC-confidence suppression is off */
+        const bool enableValidationShadowTrace;
 
         const unsigned int pcValidationEntries;
         const unsigned int pcValidationTagBits;
@@ -114,15 +119,19 @@ class BOP : public Queued
 
         struct RREntryDebug
         {
+            bool valid;
             Addr fullAddr;
             Addr hashAddr;
 
-            RREntryDebug(Addr full_addr, Addr hash_addr) : fullAddr(full_addr), hashAddr(hash_addr) {}
-            RREntryDebug() : fullAddr(0), hashAddr(0) {}
+            RREntryDebug(Addr full_addr, Addr hash_addr)
+                : valid(true), fullAddr(full_addr), hashAddr(hash_addr) {}
+            RREntryDebug() : valid(false), fullAddr(0), hashAddr(0) {}
         };
 
         std::vector<RREntryDebug> rrLeft;
         std::vector<RREntryDebug> rrRight;
+        std::deque<RREntryDebug> rrEvictionValidationQueue;
+        std::unordered_map<Addr, unsigned int> rrEvictionValidationCounts;
 
         /** Structure to save the offset and the score */
         // typedef std::pair<int16_t, uint8_t> OffsetListEntry;
@@ -170,6 +179,27 @@ class BOP : public Queued
         };
 
         std::deque<DelayQueueEntry> delayQueue;
+
+        struct ValidationProbeResult
+        {
+            bool probed = false;
+            bool validationHit = false;
+            unsigned int rrIndex = 0;
+            Addr rrExpectedTag = 0;
+            int rrHitWay = -1;
+            int rrReason = 0;
+            bool delayQueuePresent = false;
+            unsigned int delayQueuePosition = 0;
+            int64_t delayQueueProcessTick = -1;
+            bool delayQueueFull = false;
+            unsigned int delayQueueOccupancy = 0;
+            bool leftSlotValid = false;
+            Addr leftSlotFullAddr = 0;
+            Addr leftSlotTag = 0;
+            bool rightSlotValid = false;
+            Addr rightSlotFullAddr = 0;
+            Addr rightSlotTag = 0;
+        };
 
         enum class PCConfidenceState : int
         {
@@ -323,6 +353,17 @@ class BOP : public Queued
                 unsigned int resolvedCoverageQ08 = 255;
             };
 
+            struct GlobalTraceState
+            {
+                bool enabled = false;
+                bool bypassActive = false;
+                unsigned int unusedEwma = GLOBAL_UNUSED_EWMA_INITIAL;
+                unsigned int outcomeWindowResolved = 0;
+                unsigned int outcomeWindowUnused = 0;
+                unsigned int issuedWindowIssued = 0;
+                unsigned int checksSinceOutcome = 0;
+            };
+
             PCValidationConfidenceTable(
                 unsigned int entries, unsigned int tag_bits,
                 unsigned int counter_bits, unsigned int initial_confidence,
@@ -343,6 +384,7 @@ class BOP : public Queued
             bool bypassPCValidationActive() const;
             void noteGlobalBOPIssued();
             GlobalOutcomeResult noteGlobalBOPOutcome(bool useful);
+            GlobalTraceState traceState() const;
             void submitValidation(const LookupResult &lookup, Addr pc,
                                   Addr trigger_line, bool validation_hit);
             void noteOffsetChange(PCValidationKind kind);
@@ -397,13 +439,15 @@ class BOP : public Queued
          *  @param way: RR table to which the address will be inserted
          */
         void insertIntoRR(RREntryDebug rr_entry, unsigned int way);
+        void recordRREviction(const RREntryDebug &rr_entry);
+        bool testRREvictionValidation(Addr full_addr) const;
 
         /** Insert the specified address into the delay queue. This will
          *  trigger an event after the delay cycles pass
          *  @param addr: full address to insert
          *  @param tag: hashed address to insert
          */
-        void insertIntoDelayQueue(Addr full_addr, Addr tag);
+        bool insertIntoDelayQueue(Addr full_addr, Addr tag);
 
         /** Reset all the scores from the offset list */
         void resetScores();
@@ -417,6 +461,8 @@ class BOP : public Queued
         /** Test if @X-O is hitting in the RR table to update the
             offset score */
         std::pair<bool, RREntryDebug> testRR(Addr tag) const;
+        ValidationProbeResult probeValidation(
+            Addr validation_addr, bool include_rr_eviction_validation);
 
         /** Learning phase of the BOP. Update the intermediate values of the
             round and update the best offset if found */
@@ -440,6 +486,11 @@ class BOP : public Queued
             statistics::Scalar issueValidationChecks;
             statistics::Scalar issueValidationHits;
             statistics::Scalar issueValidationSuppressed;
+            statistics::Scalar rrEvictionValidationInserted;
+            statistics::Scalar rrEvictionValidationDropped;
+            statistics::Scalar rrEvictionValidationDuplicateInserts;
+            statistics::Scalar rrEvictionValidationLookups;
+            statistics::Scalar rrEvictionValidationHits;
             statistics::Scalar pcValidationTableLookups;
             statistics::Scalar pcValidationTableHits;
             statistics::Scalar pcValidationTableMisses;

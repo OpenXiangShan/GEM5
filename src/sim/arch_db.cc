@@ -166,7 +166,25 @@ ArchDBer::bopValidationTraceWrite(
     bool generated, bool buffered, bool filtered, bool filter_passed,
     bool pc_confidence_enabled, int pc_index, Addr pc_tag,
     int pc_entry_hit, int pc_confidence, int pc_state,
-    bool pc_sampled, int pc_epoch, int pc_low_entry_miss_streak)
+    bool pc_sampled, int pc_epoch, int pc_low_entry_miss_streak,
+    bool validation_probe_enabled, unsigned int validation_rr_index,
+    Addr validation_rr_expected_tag, int validation_rr_reason,
+    bool validation_rr_hit, int validation_rr_hit_way,
+    bool validation_delay_queue_present,
+    unsigned int validation_delay_queue_position,
+    int64_t validation_delay_queue_process_tick,
+    unsigned int validation_delay_queue_occupancy,
+    bool validation_delay_queue_full,
+    bool validation_left_slot_valid, Addr validation_left_slot_full_addr,
+    Addr validation_left_slot_tag,
+    bool validation_right_slot_valid, Addr validation_right_slot_full_addr,
+    Addr validation_right_slot_tag,
+    bool global_trace_enabled, bool global_trace_bypass_active,
+    unsigned int global_trace_unused_ewma,
+    unsigned int global_trace_outcome_window_resolved,
+    unsigned int global_trace_outcome_window_unused,
+    unsigned int global_trace_issued_window_issued,
+    unsigned int global_trace_checks_since_outcome)
 {
   if (!(dumpGlobal && dumpBopValidationTrace)) return;
 
@@ -183,10 +201,22 @@ ArchDBer::bopValidationTraceWrite(
       "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE,"
       "PCLowEntryMissStreak,PCUpdateLowEntryMissStreakBefore,"
       "PCUpdateLowEntryMissStreakAfter,PCUpdateLowEntryHysteresisHeld,"
-      "PCUpdateLowEntryHysteresisTransition) "
+      "PCUpdateLowEntryHysteresisTransition,ValidationProbeEnabled,"
+      "ValidationRRIndex,ValidationRRExpectedTag,ValidationRRReason,"
+      "ValidationRRHit,ValidationRRHitWay,ValidationDelayQueuePresent,"
+      "ValidationDelayQueuePosition,ValidationDelayQueueProcessTick,"
+      "ValidationDelayQueueOccupancy,ValidationDelayQueueFull,"
+      "ValidationLeftSlotValid,ValidationLeftSlotFullAddr,"
+      "ValidationLeftSlotTag,ValidationRightSlotValid,"
+      "ValidationRightSlotFullAddr,ValidationRightSlotTag,"
+      "GlobalTraceEnabled,GlobalTraceBypassActive,GlobalTraceUnusedEwma,"
+      "GlobalTraceOutcomeWindowResolved,GlobalTraceOutcomeWindowUnused,"
+      "GlobalTraceIssuedWindowIssued,GlobalTraceChecksSinceOutcome) "
       "VALUES(%lld,'%s','%s',%lld,%lld,%lld,%lld,%lld,%d,%d,%d,%d,"
       "%d,%d,%d,%d,%d,%d,%d,%d,%d,%lld,%d,%d,%d,%d,%d,%d,%d,%d,"
-      "%d,%d,%d,%d,%d,%d,%lld,%lld,%d,%d,%d,'%s',%d,%d,%d,%d,%d);",
+      "%d,%d,%d,%d,%d,%d,%lld,%lld,%d,%d,%d,'%s',%d,%d,%d,%d,%d,"
+      "%d,%u,%lld,%d,%d,%d,%d,%u,%lld,%u,%d,%d,%lld,%lld,%d,%lld,"
+      "%lld,%d,%d,%u,%u,%u,%u,%u);",
       sqliteSignedInt(tick), event, bop_name,
       sqliteSignedInt(trigger_pc), sqliteSignedInt(trigger_addr),
       sqliteSignedInt(validation_addr), sqliteSignedInt(pf_addr),
@@ -197,7 +227,23 @@ ArchDBer::bopValidationTraceWrite(
       sqliteSignedInt(pc_tag), pc_entry_hit, pc_confidence, pc_state,
       pc_sampled, pc_epoch, suppressed, generated, buffered, filtered,
       filter_passed, -1, 0, 0, 0, 0LL, 0LL, 0, 0, 0, "BOPValidation",
-      pc_low_entry_miss_streak, -1, -1, 0, 0);
+      pc_low_entry_miss_streak, -1, -1, 0, 0,
+      validation_probe_enabled, validation_rr_index,
+      sqliteSignedInt(validation_rr_expected_tag), validation_rr_reason,
+      validation_rr_hit, validation_rr_hit_way,
+      validation_delay_queue_present, validation_delay_queue_position,
+      sqliteSignedInt(static_cast<uint64_t>(
+          validation_delay_queue_process_tick)),
+      validation_delay_queue_occupancy, validation_delay_queue_full,
+      validation_left_slot_valid, sqliteSignedInt(validation_left_slot_full_addr),
+      sqliteSignedInt(validation_left_slot_tag), validation_right_slot_valid,
+      sqliteSignedInt(validation_right_slot_full_addr),
+      sqliteSignedInt(validation_right_slot_tag), global_trace_enabled,
+      global_trace_bypass_active, global_trace_unused_ewma,
+      global_trace_outcome_window_resolved,
+      global_trace_outcome_window_unused,
+      global_trace_issued_window_issued,
+      global_trace_checks_since_outcome);
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -228,10 +274,21 @@ ArchDBer::bopValidationConfidenceUpdateTraceWrite(
       "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE,"
       "PCLowEntryMissStreak,PCUpdateLowEntryMissStreakBefore,"
       "PCUpdateLowEntryMissStreakAfter,PCUpdateLowEntryHysteresisHeld,"
-      "PCUpdateLowEntryHysteresisTransition) "
+      "PCUpdateLowEntryHysteresisTransition,ValidationProbeEnabled,"
+      "ValidationRRIndex,ValidationRRExpectedTag,ValidationRRReason,"
+      "ValidationRRHit,ValidationRRHitWay,ValidationDelayQueuePresent,"
+      "ValidationDelayQueuePosition,ValidationDelayQueueProcessTick,"
+      "ValidationDelayQueueOccupancy,ValidationDelayQueueFull,"
+      "ValidationLeftSlotValid,ValidationLeftSlotFullAddr,"
+      "ValidationLeftSlotTag,ValidationRightSlotValid,"
+      "ValidationRightSlotFullAddr,ValidationRightSlotTag,"
+      "GlobalTraceEnabled,GlobalTraceBypassActive,GlobalTraceUnusedEwma,"
+      "GlobalTraceOutcomeWindowResolved,GlobalTraceOutcomeWindowUnused,"
+      "GlobalTraceIssuedWindowIssued,GlobalTraceChecksSinceOutcome) "
       "VALUES(%lld,'confidence_update','%s',%lld,0,0,0,0,0,0,0,0,"
       "0,0,0,0,1,1,%d,1,%u,%lld,1,%d,-1,0,%u,0,0,0,0,0,%d,%d,"
-      "%u,%d,0,0,0,0,0,'%s',-1,%d,%d,%d,%d);",
+      "%u,%d,0,0,0,0,0,'%s',-1,%d,%d,%d,%d,"
+      "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);",
       sqliteSignedInt(tick), bop_name, sqliteSignedInt(trigger_pc),
       validation_hit, pc_index, sqliteSignedInt(pc_tag), confidence_before,
       epoch_after, confidence_after, decayed, participants, offset_changed,
@@ -264,10 +321,21 @@ ArchDBer::bopValidationOutcomeTraceWrite(
       "OutcomePC,OutcomePFSource,OutcomeIsDemand,OutcomeCacheMiss,SITE,"
       "PCLowEntryMissStreak,PCUpdateLowEntryMissStreakBefore,"
       "PCUpdateLowEntryMissStreakAfter,PCUpdateLowEntryHysteresisHeld,"
-      "PCUpdateLowEntryHysteresisTransition) "
+      "PCUpdateLowEntryHysteresisTransition,ValidationProbeEnabled,"
+      "ValidationRRIndex,ValidationRRExpectedTag,ValidationRRReason,"
+      "ValidationRRHit,ValidationRRHitWay,ValidationDelayQueuePresent,"
+      "ValidationDelayQueuePosition,ValidationDelayQueueProcessTick,"
+      "ValidationDelayQueueOccupancy,ValidationDelayQueueFull,"
+      "ValidationLeftSlotValid,ValidationLeftSlotFullAddr,"
+      "ValidationLeftSlotTag,ValidationRightSlotValid,"
+      "ValidationRightSlotFullAddr,ValidationRightSlotTag,"
+      "GlobalTraceEnabled,GlobalTraceBypassActive,GlobalTraceUnusedEwma,"
+      "GlobalTraceOutcomeWindowResolved,GlobalTraceOutcomeWindowUnused,"
+      "GlobalTraceIssuedWindowIssued,GlobalTraceChecksSinceOutcome) "
       "VALUES(%lld,'%s','L2BOP',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,"
       "-1,0,-1,0,-1,-1,-1,0,-1,0,0,0,0,0,-1,0,0,0,%lld,%lld,"
-      "%d,%d,%d,'%s',-1,-1,-1,0,0);",
+      "%d,%d,%d,'%s',-1,-1,-1,0,0,"
+      "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);",
       sqliteSignedInt(tick), event, sqliteSignedInt(addr), sqliteSignedInt(pc),
       pf_source, is_demand, cache_miss, "BOPValidationOutcome");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
