@@ -16,6 +16,7 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       badPreNum(0),
       enableAutoDepth(p.enable_auto_depth),
       enableL3StreamPre(p.enable_l3_stream_pre),
+      l2Depth(p.xs_stream_l2_depth),
       stream_array(p.xs_stream_entries, p.xs_stream_entries, p.xs_stream_indexing_policy,
                    p.xs_stream_replacement_policy, STREAMEntry()),
       streamBlkFilter(pfFilterSize)
@@ -55,8 +56,9 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
     if (in_active_page) {
         Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
         sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type, L1BLKDEGREE, 1, entry);
-        Addr pf_stream_l2 =
-            decr ? block_addr - (depth << l2Ratio) * blkSize : block_addr + (depth << l2Ratio) * blkSize;
+        const auto l2_depth = l2Depth ? l2Depth : (depth << l2Ratio);
+        Addr pf_stream_l2 = decr ? block_addr - l2_depth * blkSize :
+                                   block_addr + l2_depth * blkSize;
         sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type, L2BLKDEGREE, 2, entry);
         if (enableL3StreamPre) {
             Addr pf_stream_l3 =
