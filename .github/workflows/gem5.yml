@@ -9,32 +9,186 @@ on:
 
 jobs:
   paralel_cpt_test:
-    # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
-    runs-on: [self-hosted, open]  # 所有open*的机器上运行
+    # gem5.cfg 使用的切片 ck_path 位于小机房
+    runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Running test checkpoints
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/build-dramsim
+
       - name: Build GEM5 opt
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+
       - name: Run paralel autotest script
-        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
-  
+        shell: bash
+        run: |
+          python3 .github/workflows/autotest/script/autotest.py \
+            -f .github/workflows/autotest/gem5.cfg
+
+      - name: Dump normal checkpoint failure details
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          for case_dir in \
+            "./log_root/rungem5/take_cpt/namd_100000000_0.003233" \
+            "./log_root/rungem5/take_cpt/mcf_17520000000_0.126350"
+          do
+            echo
+            echo "=================================================="
+            echo "CASE: $case_dir"
+            echo "=================================================="
+
+            if [[ ! -d "$case_dir" ]]; then
+              echo "Directory not found"
+              continue
+            fi
+
+            find "$case_dir" \
+              -type f \
+              \( \
+                -name 'taskerr.txt' -o \
+                -name 'taskout.txt' -o \
+                -name 'other.txt' -o \
+                -name 'gem5.log' -o \
+                -name 'simerr' -o \
+                -name 'simout' \
+              \) \
+              -print \
+              -exec sh -c '
+                echo "---------- $1 ----------"
+                tail -n 1000 "$1" || true
+              ' sh {} \;
+          done
+
+          echo
+          echo "===== important errors ====="
+
+          grep -RniE \
+            'fatal|panic|difftest|mismatch|assert|segmentation|killed|out of memory|timeout|cannot open|no such file|error' \
+            ./log_root/rungem5/take_cpt \
+            2>/dev/null |
+            head -2000 || true
+
   paralel_cpt_h_test:
-    # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
-    runs-on: [self-hosted, open]  # 所有open*的机器上运行
+    # 使用 open runner 可见的固定 H/V NEMU reference
+    runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Running h test checkpoints
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/build-dramsim
+
       - name: Build GEM5 opt
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+
+      - name: Verify H NEMU reference
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REF="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"
+          EXPECTED_SHA256="03b47cc49c0c15605805ab04ab7edd74805fe2fa892715027ec44944c169dd6e"
+
+          echo "===== runner information ====="
+          hostname
+          id
+          findmnt -T "$REF" || true
+
+          echo "===== fixed H NEMU reference ====="
+          test -f "$REF"
+          test -r "$REF"
+
+          ls -lh "$REF"
+          file "$REF"
+
+          ACTUAL_SHA256="$(sha256sum "$REF" | awk '{print $1}')"
+
+          echo "expected SHA256: $EXPECTED_SHA256"
+          echo "actual SHA256:   $ACTUAL_SHA256"
+
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+
+          echo "===== compiled configuration ====="
+          grep -qx '#define CONFIG_TVAL_EX_II 1' \
+            "${REF}.autoconf.h"
+
+          grep -qx '#define CONFIG_GUIDED_TVAL 1' \
+            "${REF}.autoconf.h"
+
+          grep -qx '#define CONFIG_GUIDED_EXEC 1' \
+            "${REF}.autoconf.h"
+
+          echo "===== dependency check ====="
+          if ldd "$REF" | grep -i 'not found'; then
+            echo "ERROR: missing dynamic dependency"
+            exit 1
+          fi
+
+          echo "===== Difftest symbols ====="
+          nm -D "$REF" |
+            grep -E 'difftest_(init|exec|regcpy)' |
+            head -30
+
+          echo "===== gem5-h.cfg reference ====="
+          grep -n -B2 -A3 \
+            'GCBH_REF_SO\|GCBV_REF_SO' \
+            .github/workflows/autotest/gem5-h.cfg
+
       - name: Run paralel h autotest script
-        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5-h.cfg
+        shell: bash
+        run: |
+          python3 .github/workflows/autotest/script/autotest.py \
+            -f .github/workflows/autotest/gem5-h.cfg
+
+      - name: Dump H failure details
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          for case_dir in \
+            "./log_root_h/rungem5/checkpoint-0-0-0/astar_biglakes" \
+            "./log_root_h/rungem5/checkpoint-0-0-0/wrf"
+          do
+            echo
+            echo "=================================================="
+            echo "CASE: $case_dir"
+            echo "=================================================="
+
+            if [[ ! -d "$case_dir" ]]; then
+              echo "Directory not found"
+              continue
+            fi
+
+            find "$case_dir" \
+              -type f \
+              \( \
+                -name 'taskerr.txt' -o \
+                -name 'taskout.txt' -o \
+                -name 'other.txt' -o \
+                -name 'gem5.log' -o \
+                -name 'simerr' -o \
+                -name 'simout' \
+              \) \
+              -print \
+              -exec sh -c '
+                echo "---------- $1 ----------"
+                tail -n 500 "$1" || true
+              ' sh {} \;
+          done
+
+          echo "===== important errors across H tests ====="
+
+          grep -RniE \
+            'fatal|panic|difftest|mismatch|assert|segmentation|undefined symbol|dlopen|cannot open shared object|error' \
+            ./log_root_h/rungem5 \
+            2>/dev/null |
+            head -1000 || true
 
   valgrind_memory_check:
     runs-on: [self-hosted, open]
@@ -63,7 +217,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
           export GCBV_RESTORER="/nfs/home/share/gem5_ci/tools/gcbv-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_v

@@ -3313,12 +3313,27 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     bool cacheHit = LSQRequest::_inst->getCpuPtr()->ticksToCycles(curTick() - pkt->sendTick) <= 1;
     // Dump inst num, request addr, and packet addr
     if (debug::LSQ) {
-        char buffer[8];
-        std::memcpy(buffer, pkt->getPtr<char>(), pkt->getSize());
-        DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
-                    "isLLSC: %d, isUncache: %d, isCachehit: %d, data: %d\n",
-                    pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
-                    mainReq()->isUncacheable(), cacheHit, *((uint64_t*)buffer));
+        uint64_t firstWord = 0;
+        const size_t copySize =
+            std::min<size_t>(pkt->getSize(), sizeof(firstWord));
+
+        std::memcpy(
+            &firstWord,
+            pkt->getPtr<uint8_t>(),
+            copySize);
+
+        DPRINTF(LSQ,
+                "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, "
+                "size: %u, isLoad: %d, isLLSC: %d, isUncache: %d, "
+                "isCachehit: %d, firstData: %#llx\n",
+                pkt->req->getReqInstSeqNum(),
+                pkt->getAddr(),
+                pkt->getSize(),
+                isLoad(),
+                mainReq()->isLLSC(),
+                mainReq()->isUncacheable(),
+                cacheHit,
+                static_cast<unsigned long long>(firstWord));
     }
 
     if (isLoad()) {
@@ -3615,11 +3630,35 @@ LSQ::SplitDataRequest::sendPacketToCache()
     bool mshr_alias_fail = false;
     bool hit_in_write_buffer = false;
     while (numReceivedPackets + _numOutstandingPackets < _packets.size()) {
-        bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(numReceivedPackets + _numOutstandingPackets),
-                                                bank_conflict, tag_read_fail, mshr_used,
-                                                mshr_alias_fail, hit_in_write_buffer);
+        const size_t pkt_idx =
+            numReceivedPackets + _numOutstandingPackets;
+        PacketPtr pkt = _packets.at(pkt_idx);
+
+        bool success = lsqUnit()->trySendPacket(
+            isLoad(), pkt,
+            bank_conflict, tag_read_fail, mshr_used,
+            mshr_alias_fail, hit_in_write_buffer);
+
+        DPRINTF(LSQ,
+                "Split send observe [sn:%llu] idx:%llu addr:%#lx "
+                "success:%d bankConflict:%d tagReadFail:%d "
+                "mshrUsed:%d mshrAliasFail:%d writeBuffer:%d "
+                "received:%llu outstanding:%llu total:%llu\n",
+                _inst->seqNum,
+                static_cast<unsigned long long>(pkt_idx),
+                pkt->getAddr(),
+                success,
+                bank_conflict,
+                tag_read_fail,
+                mshr_used,
+                mshr_alias_fail,
+                hit_in_write_buffer,
+                static_cast<unsigned long long>(numReceivedPackets),
+                static_cast<unsigned long long>(_numOutstandingPackets),
+                static_cast<unsigned long long>(_packets.size()));
+
         if (success) {
-            _packets[numReceivedPackets + _numOutstandingPackets]->setLSQPtr(lsqUnit()->getLsq());
+            pkt->setLSQPtr(lsqUnit()->getLsq());
             _numOutstandingPackets++;
         } else {
             break;
