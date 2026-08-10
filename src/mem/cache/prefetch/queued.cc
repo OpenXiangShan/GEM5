@@ -85,7 +85,11 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
 
     req->setFlags(Request::PREFETCH);
-    req->setXsMetadata(Request::XsMetadata(pf_src, prf_depth));
+    Request::XsMetadata xs_metadata(pf_src, prf_depth);
+    if (pfInfo.hasPC()) {
+        xs_metadata.setPrefetchTriggerPC(pfInfo.getPC());
+    }
+    req->setXsMetadata(xs_metadata);
     DPRINTFR(HWPrefetch, "Create prefetch request for paddr %lx from prefetcher %i\n", paddr, pf_src);
 
     if (pfInfo.isSecure()) {
@@ -569,7 +573,11 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
     translation_req->setFlags(Request::PF_EXCLUSIVE);
     translation_req->setPFSource(pf_src);
     translation_req->setPFDepth(pf_depth);
-    translation_req->setXsMetadata(Request::XsMetadata(pf_src, pf_depth));
+    Request::XsMetadata xs_metadata(pf_src, pf_depth);
+    if (pfi.hasPC()) {
+        xs_metadata.setPrefetchTriggerPC(pfi.getPC());
+    }
+    translation_req->setXsMetadata(xs_metadata);
     DPRINTF(HWPrefetch, "Create prefetch request for vaddr %lx from prefetcher %i\n", addr, pf_src);
     assert(translation_req->hasXsMetadata());
     return translation_req;

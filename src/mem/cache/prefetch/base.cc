@@ -283,6 +283,25 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     ADD_STAT(pfUsefulButMiss, statistics::units::Count::get(),
         "number of hit on prefetch but cache block is not in an usable "
         "state"),
+    ADD_STAT(bopUsefulWithProducerPC, statistics::units::Count::get(),
+        "number of useful BOP prefetches with a valid producer request PC"),
+    ADD_STAT(bopUsefulSamePC, statistics::units::Count::get(),
+        "number of useful BOP prefetches consumed by the producer request PC"),
+    ADD_STAT(bopUsefulCrossPC, statistics::units::Count::get(),
+        "number of useful BOP prefetches consumed by a different request PC"),
+    ADD_STAT(bopUsefulUnknownProducerPC, statistics::units::Count::get(),
+        "number of useful BOP prefetches missing the producer request PC"),
+    ADD_STAT(bopUsefulUnknownConsumerPC, statistics::units::Count::get(),
+        "number of useful BOP prefetches missing the consumer request PC"),
+    ADD_STAT(bopUsefulClassified, statistics::units::Count::get(),
+        "number of useful BOP prefetches classified by producer and "
+        "consumer request PC"),
+    ADD_STAT(bopUsefulCrossPCRatio, statistics::units::Count::get(),
+        "fraction of classified useful BOP prefetches consumed by a "
+        "different request PC"),
+    ADD_STAT(bopUsefulSamePCRatio, statistics::units::Count::get(),
+        "fraction of classified useful BOP prefetches consumed by the "
+        "producer request PC"),
     ADD_STAT(accuracy, statistics::units::Count::get(),
         "accuracy of the prefetcher"),
     ADD_STAT(coverage, statistics::units::Count::get(),
@@ -335,6 +354,9 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     coverage = pfUseful / (pfUseful + demandMshrMisses);
 
     pfLate = pfHitInCache + pfHitInMSHR + pfHitInWB;
+    bopUsefulClassified = bopUsefulSamePC + bopUsefulCrossPC;
+    bopUsefulCrossPCRatio = bopUsefulCrossPC / bopUsefulClassified;
+    bopUsefulSamePCRatio = bopUsefulSamePC / bopUsefulClassified;
 }
 
 bool
@@ -468,9 +490,30 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
         usefulPrefetches += 1;
         prefetchStats.pfUseful++;
-        PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+        const Request::XsMetadata blk_xs_metadata =
+            cache->getHitBlkXsMetadata(pkt);
+        PrefetchSourceType pf_source = blk_xs_metadata.prefetchSource;
         prefetchStats.pfUseful_srcs[pf_source]++;
         prefetchUseful(pkt->getAddr(), pf_source);
+        if (pf_source == PrefetchSourceType::HWP_BOP) {
+            if (!blk_xs_metadata.prefetchTriggerPCValid) {
+                prefetchStats.bopUsefulUnknownProducerPC++;
+            } else {
+                prefetchStats.bopUsefulWithProducerPC++;
+                if (!pkt->req->hasPC()) {
+                    prefetchStats.bopUsefulUnknownConsumerPC++;
+                } else {
+                    const Addr producer_pc =
+                        blk_xs_metadata.prefetchTriggerPC;
+                    const Addr consumer_pc = pkt->req->getPC();
+                    if (producer_pc == consumer_pc) {
+                        prefetchStats.bopUsefulSamePC++;
+                    } else {
+                        prefetchStats.bopUsefulCrossPC++;
+                    }
+                }
+            }
+        }
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.

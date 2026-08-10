@@ -383,35 +383,54 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+        bool prefetchTriggerPCValid;
+        Addr prefetchTriggerPC;
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            prefetchTriggerPCValid(false),
+            prefetchTriggerPC(0) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            prefetchTriggerPCValid(false),
+            prefetchTriggerPC(0) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            prefetchTriggerPCValid(false),
+            prefetchTriggerPC(0) {}
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(pfDepth) {}
+            prefetchDepth(pfDepth),
+            prefetchTriggerPCValid(false),
+            prefetchTriggerPC(0) {}
+
+        void setPrefetchTriggerPC(Addr pc)
+        {
+            prefetchTriggerPCValid = true;
+            prefetchTriggerPC = pc;
+        }
 
         void invalidate() {
             validXsMetadata = false;
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
+            prefetchDepth = 0;
+            prefetchTriggerPCValid = false;
+            prefetchTriggerPC = 0;
         }
     } XsMetadata;
 

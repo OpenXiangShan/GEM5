@@ -96,12 +96,12 @@ def _configure_l2_composite_kmh_align(prefetcher):
 
 def _configure_l2_bop_validation_defaults(prefetcher):
     for bop in (prefetcher.bop_large, prefetcher.bop_small):
-        bop.enable_pc_validation_confidence = True
+        bop.enable_pc_validation_confidence = False
         bop.pc_validation_entries = 128
-        bop.rr_eviction_validation_entries = 16384
+        bop.rr_eviction_validation_entries = 0
         bop.pc_validation_miss_decay_period = 4
         bop.pc_validation_low_entry_miss_streak_threshold = 0
-        bop.enable_global_bop_coverage_guard = True
+        bop.enable_global_bop_coverage_guard = False
         bop.global_bop_min_resolved_coverage_shift = 3
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):

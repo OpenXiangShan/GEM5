@@ -941,6 +941,22 @@ class Base : public ClockedObject
         /** The number of times there is a hit on prefetch but cache block
          * is not in an usable state */
         statistics::Scalar pfUsefulButMiss;
+        /** The number of useful BOP prefetches with a valid producer PC. */
+        statistics::Scalar bopUsefulWithProducerPC;
+        /** The number of useful BOP prefetches consumed by the producer PC. */
+        statistics::Scalar bopUsefulSamePC;
+        /** The number of useful BOP prefetches consumed by a different PC. */
+        statistics::Scalar bopUsefulCrossPC;
+        /** Useful BOP prefetches whose producer request PC was unavailable. */
+        statistics::Scalar bopUsefulUnknownProducerPC;
+        /** Useful BOP prefetches whose consumer demand PC was unavailable. */
+        statistics::Scalar bopUsefulUnknownConsumerPC;
+        /** Classified useful BOP prefetches. */
+        statistics::Formula bopUsefulClassified;
+        /** Fraction of classified useful BOP prefetches consumed by another PC. */
+        statistics::Formula bopUsefulCrossPCRatio;
+        /** Fraction of classified useful BOP prefetches consumed by the same PC. */
+        statistics::Formula bopUsefulSamePCRatio;
         statistics::Formula accuracy;
         statistics::Formula coverage;
 
