@@ -117,6 +117,8 @@ class DDRWrapper :  public memory::AbstractMemory
     void sendResponse();
     void scheduleSendResponseRetry();
     void handleCreditUnblock(Flit::CHI_CHN_TYPE channel);
+    void dumpOutstandingReadState(const char *reason, Addr focusAddr = 0) const;
+    void scanAgedReadTracks(const char *where);
 
     /**
      * Event to schedule sending of responses
