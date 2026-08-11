@@ -244,6 +244,8 @@ class DynInst : public ExecContext, public RefCounted
         IsStrictlyOrdered,
         ReqMade,
         MemOpDone,
+        VectorMemCrossCacheBlock,
+        VectorMemCrossCacheBlockValid,
         HtmFromTransaction,
         IsEmptyMov,
         IsConstantFolded,
@@ -517,6 +519,16 @@ class DynInst : public ExecContext, public RefCounted
     bool memOpDone() const { return instFlags[MemOpDone]; }
     void memOpDone(bool f) { instFlags[MemOpDone] = f; }
 
+    bool vectorMemCrossCacheBlock() const
+    {
+        return instFlags[VectorMemCrossCacheBlock];
+    }
+
+    bool vectorMemCrossCacheBlockValid() const
+    {
+        return instFlags[VectorMemCrossCacheBlockValid];
+    }
+
     bool notAnInst() const { return instFlags[NotAnInst]; }
     void setNotAnInst() { instFlags[NotAnInst] = true; }
 
@@ -535,6 +547,9 @@ class DynInst : public ExecContext, public RefCounted
     {
         cpu->demapPage(vaddr, asn);
     }
+
+    void updateVectorMemCrossCacheBlock(
+            Addr addr, unsigned size, const std::vector<bool> &byte_enable);
 
     Fault initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
             const std::vector<bool> &byte_enable) override;
