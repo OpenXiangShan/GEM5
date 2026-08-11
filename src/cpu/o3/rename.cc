@@ -450,12 +450,17 @@ Rename::tick()
         setAllStalls(stallSig->renameBlockReason[tid]);
         stats.smtStallEvents[stallSig->renameBlockReason[tid]].sample(tid);
     } else if (toIEW->size > 0 && renameStalls[0] == StallReason::NoStall) {
-        for (int i = 0; i < renameStalls.size(); i++) {
+        const size_t shared_stall_slots = std::min(
+            renameStalls.size(), fromDecode->decodeStallReason.size());
+        for (int i = 0; i < shared_stall_slots; i++) {
             if (i < toIEW->size) {
                 renameStalls.at(i) = StallReason::NoStall;
             } else {
                 renameStalls.at(i) = fromDecode->decodeStallReason.at(i);
             }
+        }
+        for (int i = shared_stall_slots; i < renameStalls.size(); i++) {
+            renameStalls.at(i) = StallReason::NoStall;
         }
     }
 
