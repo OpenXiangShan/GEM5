@@ -227,9 +227,35 @@ class EgDiff(ValuePredictor):
 
     order = Param.Unsigned(32, "Maximum dynamic load distance to poll")
     fpcSeed = Param.Unsigned(1, "Seed for reproducible per-entry FPC streams")
+    tableEntries = Param.Unsigned(4096, "Direct-indexed prediction-table entries")
+    tagBits = Param.Unsigned(14, "Prediction-table PC tag width")
+    usefulBits = Param.Unsigned(2, "Prediction-table usefulness width")
+    allocationProbabilityDenominator = Param.Unsigned(
+        16, "Allocate a missing entry with probability 1/N")
+    tickBits = Param.Unsigned(10, "Global usefulness-aging TICK width")
+    # Fixed delays only; table/GVQ/writeback ports, banks, bandwidth, and
+    # contention are not modeled.
     normalPredictionLatency = Param.Unsigned(
         3, "Cycles from dispatch to an ordinary prediction")
     deferredPredictionLatency = Param.Unsigned(
         2, "Cycles from base availability to a deferred prediction")
     lastMispWindow = Param.Unsigned(
         1024, "Committed instructions suppressed after a value misprediction")
+
+    # # Functional-test defaults.
+    # order = Param.Unsigned(1, "Maximum dynamic load distance to poll")
+    # fpcSeed = Param.Unsigned(1, "Seed for reproducible per-entry FPC streams")
+    # tableEntries = Param.Unsigned(4096, "Direct-indexed prediction-table entries")
+    # tagBits = Param.Unsigned(14, "Prediction-table PC tag width")
+    # usefulBits = Param.Unsigned(2, "Prediction-table usefulness width")
+    # allocationProbabilityDenominator = Param.Unsigned(
+    #     1, "Allocate every eligible missing entry for functional testing")
+    # tickBits = Param.Unsigned(10, "Global usefulness-aging TICK width")
+    # # Fixed delays only; table/GVQ/writeback ports, banks, bandwidth, and
+    # # contention are not modeled.
+    # normalPredictionLatency = Param.Unsigned(
+    #     3, "Cycles from dispatch to an ordinary prediction")
+    # deferredPredictionLatency = Param.Unsigned(
+    #     1, "Cycles from base availability to a deferred prediction")
+    # lastMispWindow = Param.Unsigned(
+    #     32, "Committed instructions suppressed after a value misprediction")

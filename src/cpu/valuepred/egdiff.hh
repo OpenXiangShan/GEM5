@@ -1,9 +1,9 @@
 #ifndef __CPU_VALUEPRED_EGDIFF_HH__
 #define __CPU_VALUEPRED_EGDIFF_HH__
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
-#include <unordered_map>
 #include <vector>
 
 #include "base/statistics.hh"
@@ -35,18 +35,14 @@ class EgDiff : public VPUnit
 
     struct Entry
     {
-        unsigned distance;
-        RegVal diff;
-        Addr basePc;
+        bool valid = false;
+        uint64_t tag = 0;
+        uint8_t usefulness = 0;
+        unsigned distance = 0;
+        RegVal diff = 0;
+        Addr basePc = 0;
         uint8_t fpc = 0;
-        uint64_t randomState;
-
-        Entry(unsigned distance, RegVal diff, Addr base_pc,
-                uint64_t random_state)
-            : distance(distance), diff(diff), basePc(base_pc),
-              randomState(random_state)
-        {
-        }
+        uint64_t randomState = 1;
     };
 
     enum class ValueSource : uint8_t
@@ -84,7 +80,11 @@ class EgDiff : public VPUnit
     struct ThreadState
     {
         uint64_t nextOrdinal = 0;
-        std::unordered_map<Addr, Entry> table;
+        /*
+         * This unified exact history has no explicit capacity; it does not
+         * model the paper's separate 32-entry speculative and non-speculative
+         * GVQs.
+         */
         std::map<uint64_t, HistoryEntry> history;
     };
 
@@ -97,12 +97,20 @@ class EgDiff : public VPUnit
 
     const unsigned order;
     const uint64_t fpcSeed;
+    const unsigned tableEntryCount;
+    const unsigned tagBits;
+    const unsigned usefulBits;
+    const unsigned allocationProbabilityDenominator;
+    const unsigned tickBits;
     const uint64_t normalPredictionLatency;
     const uint64_t deferredPredictionLatency;
     const uint64_t lastMispWindow;
     std::vector<ThreadState> states;
+    std::vector<Entry> table;
     std::vector<LastMispActivation> lastMispActivations;
     uint64_t maxHistoryEntriesSeen = 0;
+    uint64_t agingTick = 0;
+    uint64_t allocationRandomState = 1;
 
     EgDiffPredictionRecord *getRecord(VPPredictionRecord *record) const;
     const EgDiffPredictionRecord *getRecord(
@@ -110,7 +118,15 @@ class EgDiff : public VPUnit
     HistoryEntry *findHistory(ThreadState &state, uint64_t ordinal);
     const HistoryEntry *findHistory(
             const ThreadState &state, uint64_t ordinal) const;
+    static uint64_t mix64(uint64_t value);
     uint64_t initialRandomState(ThreadID tid, Addr pc) const;
+    uint64_t initialAllocationRandomState() const;
+    static uint64_t nextRandom(uint64_t &state);
+    std::size_t tableIndex(ThreadID tid, Addr pc) const;
+    uint64_t tableTag(ThreadID tid, Addr pc) const;
+    uint8_t maxUsefulness() const;
+    bool shouldAllocate();
+    void advanceAgingTick();
     bool advanceFpc(Entry &entry);
     void makeSpecValueAvailable(ThreadState &state, ThreadID tid,
             HistoryEntry &base, RegVal value, ValueSource source,
@@ -157,6 +173,16 @@ class EgDiff : public VPUnit
         statistics::Scalar tableConflicts;
         statistics::Scalar tableReplacements;
         statistics::Scalar tableEvictions;
+        statistics::Scalar allocations;
+        statistics::Scalar allocationAttempts;
+        statistics::Scalar allocationSkips;
+        statistics::Scalar allocationProbabilitySkips;
+        statistics::Scalar allocationUsefulnessSkips;
+        statistics::Scalar usefulnessIncrements;
+        statistics::Scalar usefulnessResets;
+        statistics::Scalar usefulnessDecrements;
+        statistics::Scalar usefulnessAgingPasses;
+        statistics::Scalar agingTicks;
         statistics::Scalar historyCapacityDrops;
         statistics::Scalar historyEntries;
         statistics::Scalar maxHistoryEntries;

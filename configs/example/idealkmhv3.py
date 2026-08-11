@@ -86,7 +86,7 @@ def setKmhV3IdealParams(args, system):
                             predictors=[
                                 # IdealConstantLVP(),
                                 # VTAGE(),
-                                EgDiff(order=32),
+                                EgDiff(),
                                 # EStride(logMaxConfidence=13, thresholdPercent=0.35),
 
                             ],

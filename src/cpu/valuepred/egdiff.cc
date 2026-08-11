@@ -1,8 +1,6 @@
 #include "cpu/valuepred/egdiff.hh"
 
 #include <algorithm>
-#include <tuple>
-#include <utility>
 
 #include "base/logging.hh"
 #include "base/stats/units.hh"
@@ -74,15 +72,35 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
       ADD_STAT(basePcMismatchSuppressions, statistics::units::Count::get(),
                "Predictions suppressed because their base PC mismatched"),
       ADD_STAT(tableEntries, statistics::units::Count::get(),
-               "Exact-PC prediction-table entries"),
+                "Valid finite prediction-table entries"),
       ADD_STAT(tableConflicts, statistics::units::Count::get(),
-               "Table conflicts; always zero for the exact table"),
+                "Valid indexed entries with a mismatching PC tag"),
       ADD_STAT(tableReplacements, statistics::units::Count::get(),
-               "Table replacements; always zero for the unbounded table"),
+                "Valid zero-usefulness entries replaced by another PC"),
       ADD_STAT(tableEvictions, statistics::units::Count::get(),
-               "Table evictions; always zero for the unbounded table"),
+                "Valid prediction-table entries evicted by replacement"),
+      ADD_STAT(allocations, statistics::units::Count::get(),
+                "Prediction-table entries allocated successfully"),
+      ADD_STAT(allocationAttempts, statistics::units::Count::get(),
+                "Prediction-table allocations subjected to probability"),
+      ADD_STAT(allocationSkips, statistics::units::Count::get(),
+                "Eligible allocation attempts rejected after base validation"),
+      ADD_STAT(allocationProbabilitySkips, statistics::units::Count::get(),
+                "Prediction-table allocations rejected by probability"),
+      ADD_STAT(allocationUsefulnessSkips, statistics::units::Count::get(),
+                "Allocations blocked by non-zero victim usefulness"),
+      ADD_STAT(usefulnessIncrements, statistics::units::Count::get(),
+                "Matching updates incrementing entry usefulness"),
+      ADD_STAT(usefulnessResets, statistics::units::Count::get(),
+                "Mismatching updates resetting non-zero usefulness"),
+      ADD_STAT(usefulnessDecrements, statistics::units::Count::get(),
+                "Entries decremented by global usefulness aging"),
+      ADD_STAT(usefulnessAgingPasses, statistics::units::Count::get(),
+                "Full-table usefulness aging passes"),
+      ADD_STAT(agingTicks, statistics::units::Count::get(),
+                "Committed EgDiff load updates advancing global TICK"),
       ADD_STAT(historyCapacityDrops, statistics::units::Count::get(),
-               "History capacity drops; always zero for exact history"),
+                "History capacity drops; always zero for exact history"),
       ADD_STAT(historyEntries, statistics::units::Count::get(),
                "Current global-history entries across all threads"),
       ADD_STAT(maxHistoryEntries, statistics::units::Count::get(),
@@ -94,18 +112,34 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
 
 EgDiff::EgDiff(const Params &params)
     : VPUnit(params), order(params.order), fpcSeed(params.fpcSeed),
+      tableEntryCount(params.tableEntries), tagBits(params.tagBits),
+      usefulBits(params.usefulBits),
+      allocationProbabilityDenominator(
+          params.allocationProbabilityDenominator),
+      tickBits(params.tickBits),
       normalPredictionLatency(params.normalPredictionLatency),
       deferredPredictionLatency(params.deferredPredictionLatency),
       lastMispWindow(params.lastMispWindow), states(params.numThreads),
-      egdiffStats(this)
+      table(tableEntryCount), egdiffStats(this)
 {
     fatal_if(order == 0, "EgDiff order must be non-zero");
+    fatal_if(tableEntryCount == 0,
+             "EgDiff prediction table must have at least one entry");
+    fatal_if(tagBits == 0 || tagBits > 64,
+             "EgDiff tag width must be in [1, 64]");
+    fatal_if(usefulBits == 0 || usefulBits > 8,
+             "EgDiff usefulness width must be in [1, 8]");
+    fatal_if(allocationProbabilityDenominator == 0,
+             "EgDiff allocation probability denominator must be non-zero");
+    fatal_if(tickBits == 0 || tickBits > 63,
+             "EgDiff TICK width must be in [1, 63]");
     fatal_if(normalPredictionLatency == 0,
              "EgDiff normal prediction latency must be non-zero");
     fatal_if(deferredPredictionLatency == 0,
              "EgDiff deferred prediction latency must be non-zero");
     fatal_if(lastMispWindow == 0,
              "EgDiff last-misprediction window must be non-zero");
+    allocationRandomState = initialAllocationRandomState();
 }
 
 EgDiffPredictionRecord *
@@ -139,14 +173,96 @@ EgDiff::findHistory(const ThreadState &state, uint64_t ordinal) const
 }
 
 uint64_t
-EgDiff::initialRandomState(ThreadID tid, Addr pc) const
+EgDiff::mix64(uint64_t value)
 {
-    uint64_t value = fpcSeed ^ (static_cast<uint64_t>(tid) << 56) ^ pc;
     value += 0x9e3779b97f4a7c15ULL;
     value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
     value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
     value ^= value >> 31;
     return value ? value : 1;
+}
+
+uint64_t
+EgDiff::initialRandomState(ThreadID tid, Addr pc) const
+{
+    return mix64(fpcSeed ^ (static_cast<uint64_t>(tid) << 56) ^ pc);
+}
+
+uint64_t
+EgDiff::initialAllocationRandomState() const
+{
+    return mix64(fpcSeed ^ 0xd1b54a32d192ed03ULL);
+}
+
+uint64_t
+EgDiff::nextRandom(uint64_t &state)
+{
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    return state * 0x2545f4914f6cdd1dULL;
+}
+
+std::size_t
+EgDiff::tableIndex(ThreadID tid, Addr pc) const
+{
+    const uint64_t key = pc ^ (static_cast<uint64_t>(tid) << 56);
+    return mix64(key ^ 0x243f6a8885a308d3ULL) % tableEntryCount;
+}
+
+uint64_t
+EgDiff::tableTag(ThreadID tid, Addr pc) const
+{
+    const uint64_t key = pc ^ (static_cast<uint64_t>(tid) << 56);
+    const uint64_t tag = mix64(key ^ 0x13198a2e03707344ULL);
+    return tagBits == 64 ? tag : tag & ((1ULL << tagBits) - 1);
+}
+
+uint8_t
+EgDiff::maxUsefulness() const
+{
+    return usefulBits == 8 ? 0xff : (1U << usefulBits) - 1;
+}
+
+bool
+EgDiff::shouldAllocate()
+{
+    return nextRandom(allocationRandomState) %
+        allocationProbabilityDenominator == 0;
+}
+
+void
+EgDiff::advanceAgingTick()
+{
+    /*
+     * The paper only specifies that a global 10-bit TICK periodically
+     * decrements all usefulness counters. It does not define which event
+     * advances TICK or the exact aging interval.
+     *
+     * This implementation advances TICK once per committed EgDiff load
+     * update. With the default 10-bit width, a full-table aging pass is
+     * therefore performed every 1024 committed EgDiff load updates. This is
+     * a deterministic implementation choice, not a timing rule stated
+     * explicitly by the paper.
+     */
+    egdiffStats.agingTicks++;
+    agingTick = (agingTick + 1) & ((1ULL << tickBits) - 1);
+    if (agingTick != 0) {
+        return;
+    }
+
+    uint64_t decrements = 0;
+    for (auto &entry : table) {
+        if (entry.valid && entry.usefulness > 0) {
+            entry.usefulness--;
+            decrements++;
+        }
+    }
+    egdiffStats.usefulnessAgingPasses++;
+    egdiffStats.usefulnessDecrements += decrements;
+    DPRINTF(EgDiff,
+            "[EgDiff][usefulness-aging] tickBits=%u decrements=%llu\n",
+            tickBits, decrements);
 }
 
 bool
@@ -161,11 +277,7 @@ EgDiff::advanceFpc(Entry &entry)
         return true;
     }
 
-    entry.randomState ^= entry.randomState >> 12;
-    entry.randomState ^= entry.randomState << 25;
-    entry.randomState ^= entry.randomState >> 27;
-    const uint64_t sample =
-        entry.randomState * 0x2545f4914f6cdd1dULL;
+    const uint64_t sample = nextRandom(entry.randomState);
     const bool advance = entry.fpc <= 2 ?
         ((sample & 3) == 0) : ((sample & 7) == 0);
     if (advance) {
@@ -191,6 +303,11 @@ void
 EgDiff::wakeDeferred(ThreadState &state, ThreadID tid,
         HistoryEntry &base, uint64_t cycle)
 {
+    /*
+     * Unlike the paper's single Wake index per base entry, this model scans
+     * the full history and wakes every matching deferred request, with no
+     * binding or fanout limit.
+     */
     for (auto &[ordinal, target] : state.history) {
         if (!target.requestPending || target.baseOrdinal != base.ordinal) {
             continue;
@@ -246,9 +363,8 @@ void
 EgDiff::updateTableEntryStats()
 {
     uint64_t entries = 0;
-    for (const auto &state : states) {
-        entries += state.table.size();
-    }
+    entries = std::count_if(table.begin(), table.end(),
+            [](const Entry &entry) { return entry.valid; });
     egdiffStats.tableEntries = entries;
 }
 
@@ -321,12 +437,11 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
             "ordinal=%llu\n",
             info.cycle, info.tid, info.seqNo, info.pc, ordinal);
 
-    auto table_it = state.table.find(info.pc);
-    if (table_it == state.table.end()) {
+    const auto &entry = table[tableIndex(info.tid, info.pc)];
+    if (!entry.valid || entry.tag != tableTag(info.tid, info.pc)) {
         egdiffStats.noEntry++;
         return;
     }
-    const auto &entry = table_it->second;
     if (entry.fpc != MaxFpc) {
         egdiffStats.confidenceSuppressions++;
         return;
@@ -587,6 +702,11 @@ EgDiff::update(const VPUpdateInfo &info,
     auto *target = findHistory(state, egdiff_record->loadOrdinal);
     gem5_assert(target && target->seqNo == info.seqNo,
             "EgDiff commit does not match its global-history slot");
+    /*
+     * Commit updates the entry in place; no separate speculative-to-
+     * non-speculative GVQ transfer, transfer latency, or transfer port is
+     * modeled.
+     */
     target->actualValue = info.actualValue;
     target->actualValid = true;
     target->specValue = info.actualValue;
@@ -611,26 +731,67 @@ EgDiff::update(const VPUpdateInfo &info,
                 static_cast<unsigned long long>(distance_one_diff));
     }
 
-    auto table_it = state.table.find(info.pc);
-    if (table_it == state.table.end()) {
+    advanceAgingTick();
+    const std::size_t index = tableIndex(info.tid, info.pc);
+    auto &entry = table[index];
+    const uint64_t tag = tableTag(info.tid, info.pc);
+    if (!entry.valid || entry.tag != tag) {
+        const bool conflict = entry.valid;
+        if (conflict) {
+            egdiffStats.tableConflicts++;
+        }
         if (target->ordinal >= order) {
             const auto *base = findHistory(state, target->ordinal - order);
             if (base && base->committed && base->actualValid) {
-                const RegVal diff = info.actualValue - base->actualValue;
-                state.table.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(info.pc),
-                        std::forward_as_tuple(order, diff, base->pc,
-                            initialRandomState(info.tid, info.pc)));
-                updateTableEntryStats();
-                DPRINTF(EgDiff,
-                        "[EgDiff][allocate] tid=%u seq=%llu pc=%#lx "
-                        "basePc=%#lx distance=%u diff=%#llx fpc=0\n",
-                        info.tid, info.seqNo, info.pc, base->pc, order,
-                        static_cast<unsigned long long>(diff));
+                egdiffStats.allocationAttempts++;
+                if (!shouldAllocate()) {
+                    egdiffStats.allocationSkips++;
+                    egdiffStats.allocationProbabilitySkips++;
+                    DPRINTF(EgDiff,
+                            "[EgDiff][allocate-skip] tid=%u seq=%llu "
+                            "pc=%#lx index=%zu reason=probability\n",
+                            info.tid, info.seqNo, info.pc,
+                            index);
+                } else if (conflict && entry.usefulness != 0) {
+                    egdiffStats.allocationSkips++;
+                    egdiffStats.allocationUsefulnessSkips++;
+                    DPRINTF(EgDiff,
+                            "[EgDiff][allocate-skip] tid=%u seq=%llu "
+                            "pc=%#lx index=%zu victimTag=%#llx "
+                            "victimUseful=%u reason=usefulness\n",
+                            info.tid, info.seqNo, info.pc,
+                            index,
+                            static_cast<unsigned long long>(entry.tag),
+                            static_cast<unsigned>(entry.usefulness));
+                } else {
+                    if (conflict) {
+                        egdiffStats.tableReplacements++;
+                        egdiffStats.tableEvictions++;
+                    }
+                    const RegVal diff = info.actualValue - base->actualValue;
+                    entry = Entry{};
+                    entry.valid = true;
+                    entry.tag = tag;
+                    entry.distance = order;
+                    entry.diff = diff;
+                    entry.basePc = base->pc;
+                    entry.randomState =
+                        initialRandomState(info.tid, info.pc);
+                    egdiffStats.allocations++;
+                    updateTableEntryStats();
+                    DPRINTF(EgDiff,
+                            "[EgDiff][allocate] tid=%u seq=%llu pc=%#lx "
+                            "index=%zu tag=%#llx basePc=%#lx distance=%u "
+                            "diff=%#llx fpc=0 useful=0 replacement=%d\n",
+                            info.tid, info.seqNo, info.pc,
+                            index,
+                            static_cast<unsigned long long>(tag), base->pc,
+                            order, static_cast<unsigned long long>(diff),
+                            conflict);
+                }
             }
         }
     } else {
-        auto &entry = table_it->second;
         if (target->ordinal >= entry.distance) {
             const auto *base = findHistory(
                     state, target->ordinal - entry.distance);
@@ -638,6 +799,7 @@ EgDiff::update(const VPUpdateInfo &info,
                 const RegVal actual_diff =
                     info.actualValue - base->actualValue;
                 const uint8_t old_fpc = entry.fpc;
+                const uint8_t old_usefulness = entry.usefulness;
                 if (actual_diff == entry.diff) {
                     egdiffStats.diffMatches++;
                     if (egdiff_record->skipFpcAdvanceAtCommit) {
@@ -647,15 +809,21 @@ EgDiff::update(const VPUpdateInfo &info,
                     } else if (old_fpc != MaxFpc) {
                         egdiffStats.fpcHolds++;
                     }
+                    if (entry.usefulness < maxUsefulness()) {
+                        entry.usefulness++;
+                        egdiffStats.usefulnessIncrements++;
+                    }
                     DPRINTF(EgDiff,
                             "[EgDiff][train-match] tid=%u seq=%llu pc=%#lx "
                             "basePc=%#lx distance=%u diff=%#llx "
-                            "fpc=%u->%u\n",
+                            "fpc=%u->%u useful=%u->%u\n",
                             info.tid, info.seqNo, info.pc, base->pc,
                             entry.distance,
                             static_cast<unsigned long long>(entry.diff),
                             static_cast<unsigned>(old_fpc),
-                            static_cast<unsigned>(entry.fpc));
+                            static_cast<unsigned>(entry.fpc),
+                            static_cast<unsigned>(old_usefulness),
+                            static_cast<unsigned>(entry.usefulness));
                 } else {
                     egdiffStats.diffMismatches++;
                     const unsigned old_distance = entry.distance;
@@ -670,6 +838,10 @@ EgDiff::update(const VPUpdateInfo &info,
                                 new_base->actualValid,
                             "EgDiff polling requires a committed actual base");
                     entry.fpc = 0;
+                    if (entry.usefulness != 0) {
+                        egdiffStats.usefulnessResets++;
+                    }
+                    entry.usefulness = 0;
                     entry.distance = new_distance;
                     entry.diff = info.actualValue - new_base->actualValue;
                     entry.basePc = new_base->pc;
@@ -678,14 +850,15 @@ EgDiff::update(const VPUpdateInfo &info,
                             "[EgDiff][train-mismatch] tid=%u seq=%llu pc=%#lx "
                             "oldDistance=%u oldDiff=%#llx actualDiff=%#llx "
                             "newBasePc=%#lx newDistance=%u newDiff=%#llx "
-                            "fpc=%u->0\n",
+                            "fpc=%u->0 useful=%u->0\n",
                             info.tid, info.seqNo, info.pc,
                             old_distance,
                             static_cast<unsigned long long>(old_diff),
                             static_cast<unsigned long long>(actual_diff),
                             new_base->pc, entry.distance,
                             static_cast<unsigned long long>(entry.diff),
-                            static_cast<unsigned>(old_fpc));
+                            static_cast<unsigned>(old_fpc),
+                            static_cast<unsigned>(old_usefulness));
                 }
             }
         }
