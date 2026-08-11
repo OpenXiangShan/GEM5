@@ -40,7 +40,8 @@ class CMCPrefetcher : public Queued
             RecordEntry(Addr p, Addr a, bool s, ContextID context_id)
                 : pc(p), addr(a), is_secure(s), contextId(context_id) {}
             RecordEntry()
-                : addr(0), is_secure(true), contextId(InvalidContextID)
+                : pc(0), addr(0), is_secure(true),
+                  contextId(InvalidContextID)
             {}
     };
     class Recorder
@@ -55,7 +56,7 @@ class CMCPrefetcher : public Queued
 
             bool train_entry(Addr, bool, bool*);
             void reset();
-            static constexpr int nrEntry = 12;
+            static constexpr int NR_ENTRY = 12;
         private:
     };
 

@@ -79,26 +79,43 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(learnedBOP);
     assert(isPowerOf2(regionSize));
 
-
+    setSharedFilterContextQualified(true);
+    largeBOP->setSharedFilterContextQualified(true);
+    smallBOP->setSharedFilterContextQualified(true);
+    learnedBOP->setSharedFilterContextQualified(true);
     largeBOP->filter = &this->pfBlockLRUFilter;
     smallBOP->filter = &this->pfBlockLRUFilter;
     learnedBOP->filter = &this->pfBlockLRUFilter;
-    if (berti)
+    if (berti) {
+        berti->setSharedFilterContextQualified(true);
         berti->filter = &this->pfBlockLRUFilter;
+    }
     if (Sstride) {
+        Sstride->setSharedFilterContextQualified(true);
         Sstride->filter = &this->pfBlockLRUFilter;
         Sstride->filterL2 = &this->pfPageLRUFilterL2;
     }
 
-    if (cmc)
+    if (cmc) {
+        cmc->setSharedFilterContextQualified(true);
         cmc->filter = &this->pfBlockLRUFilter;
+    }
 
-    if (ipcp)
+    if (ipcp) {
+        ipcp->setSharedFilterContextQualified(true);
         ipcp->rrf = &this->pfBlockLRUFilter;
-    if (Opt)
+    }
+    if (Opt) {
+        Opt->setSharedFilterContextQualified(true);
         Opt->filter = &this->pfBlockLRUFilter;
-    if (Xsstream)
+    }
+    if (spp) {
+        spp->setSharedFilterContextQualified(true);
+    }
+    if (Xsstream) {
+        Xsstream->setSharedFilterContextQualified(true);
         Xsstream->filter = &this->pfBlockLRUFilter;
+    }
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
@@ -372,10 +389,12 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         forward = false;
     }
 
-    entry = act.findVictim(contextKey(region_addr, context_id));
+    bool victim_secure = false;
+    entry = act.findVictim(
+        contextKey(region_addr, context_id), &victim_secure);
 
     re_act_entry = re_act.findEntry(
-        contextKey(entry->regionAddr, entry->contextId), entry->isSecure());
+        contextKey(entry->regionAddr, entry->contextId), victim_secure);
     if (re_act_entry) {
         re_act_mode = true;
         stats.actMNum++;
@@ -387,7 +406,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         re_act_entry->pc = entry->pc;
         re_act_entry->regionAddr = entry->regionAddr;
         re_act_entry->contextId = entry->contextId;
-        re_act_entry->_setSecure(entry->isSecure());
+        re_act_entry->_setSecure(victim_secure);
         re_act.insertEntry(
             contextKey(re_act_entry->regionAddr, re_act_entry->contextId),
             re_act_entry->isSecure(), re_act_entry);
@@ -677,10 +696,8 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
 {
     // Count generated prefetch
     prefetchStats.pfGenerated++;
-    ContextID context_id = pfi.hasContextId() ?
-        pfi.contextId() : InvalidContextID;
-    Addr page_key = contextKey(regionAddress(addr), context_id);
-    Addr block_key = contextKey(addr, context_id);
+    Addr page_key = sharedFilterKey(pfi, regionAddress(addr));
+    Addr block_key = sharedFilterKey(pfi, addr);
 
     if (ahead_level < 2 && pfPageLRUFilter.contains(page_key)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));

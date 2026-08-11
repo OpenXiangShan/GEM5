@@ -127,8 +127,6 @@ void
 XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                      int prio, PrefetchSourceType src, int pf_degree, int ahead_level, STREAMEntry *entry)
 {
-    ContextID context_id = pfi.hasContextId() ?
-        pfi.contextId() : InvalidContextID;
     uint64_t region_bit = 0;
     for (int i = 0; i < pf_degree; i++) {
         Addr pf_addr = addr + i * blkSize;
@@ -137,7 +135,7 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
         // Count generated prefetch
         prefetchStats.pfGenerated++;
 
-        Addr filter_key = contextKey(pf_addr, context_id);
+        Addr filter_key = sharedFilterKey(pfi, pf_addr);
         if (filter->contains(filter_key)) {
             DPRINTF(XsStreamPrefetcher, "Skip recently prefetched: %lx\n", pf_addr);
             // Count filtered prefetch

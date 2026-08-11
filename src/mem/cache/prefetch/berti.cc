@@ -288,9 +288,7 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
     // buffered prefetch
     InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
 
-    ContextID context_id = pfi.hasContextId() ?
-        pfi.contextId() : InvalidContextID;
-    Addr filter_key = contextKey(addr, context_id);
+    Addr filter_key = sharedFilterKey(pfi, addr);
     if (filter->contains(filter_key)) {
         DPRINTF(BertiPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;

@@ -888,6 +888,18 @@ class Base : public ClockedObject
     /** Use Virtual Addresses for prefetching */
     const bool useVirtualAddresses;
 
+    /** Qualify keys inserted into a parent-owned shared filter. */
+    bool sharedFilterContextQualified{false};
+
+    Addr
+    sharedFilterKey(const PrefetchInfo &pfi, Addr addr) const
+    {
+        ContextID context_id = pfi.hasContextId() ?
+            pfi.contextId() : InvalidContextID;
+        return sharedFilterContextQualified ?
+            contextKey(addr, context_id) : addr;
+    }
+
     /**
      * Determine if this access should be observed
      * @param pkt The memory request causing the event
@@ -987,6 +999,12 @@ class Base : public ClockedObject
     virtual ~Base() = default;
 
     virtual void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size);
+
+    void
+    setSharedFilterContextQualified(bool enabled)
+    {
+        sharedFilterContextQualified = enabled;
+    }
 
     /**
      * Notify prefetcher of cache access (may be any access or just

@@ -302,9 +302,7 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
 {
     // Count generated prefetch
     prefetchStats.pfGenerated++;
-    ContextID context_id = pfi.hasContextId() ?
-        pfi.contextId() : InvalidContextID;
-    Addr filter_key = contextKey(addr, context_id);
+    Addr filter_key = sharedFilterKey(pfi, addr);
     pfi.setTriggerInfo_PFsrc(src);
     if (ahead_level > 1){
         stridestream_pfFilter_l2l3->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);

@@ -172,7 +172,7 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
                 pc, block_addr);
         // printf("=== Storage hit, trigger addr: %lx\n", block_addr);
         match_entry->refcnt++;
-        int priority = Recorder::nrEntry;
+        int priority = Recorder::NR_ENTRY;
         uint32_t id = match_entry->id;
         StorageEntry entry_copy(*match_entry);
         entry_copy.trigger =
@@ -335,7 +335,7 @@ CMCPrefetcher::Recorder::train_entry(
 
     assert(!entry_empty());
     // enqueue entry
-    if (index >= nrEntry) {
+    if (index >= NR_ENTRY) {
         // entry full
         entries.push_back(addr);
         index++;
@@ -354,9 +354,7 @@ CMCPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<
     // Count generated prefetch
     prefetchStats.pfGenerated++;
 
-    ContextID context_id = pfi.hasContextId() ?
-        pfi.contextId() : InvalidContextID;
-    Addr filter_key = contextKey(addr, context_id);
+    Addr filter_key = sharedFilterKey(pfi, addr);
     if (filter->contains(filter_key)) {
         DPRINTF(CMCPrefetcher, "Skip recently prefetched: %lx\n", addr);
         // Count filtered prefetch
@@ -403,12 +401,12 @@ CMCPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
             sendIDX_PTR++;
             if (sendingEntry.trigger) {
                 addresses.push_back(AddrPriority(addr,
-                    Recorder::nrEntry - sendIDX_PTR + 1,
+                    Recorder::NR_ENTRY - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC,
                     *(sendingEntry.trigger)));
             } else {
                 addresses.push_back(AddrPriority(addr,
-                    Recorder::nrEntry - sendIDX_PTR + 1,
+                    Recorder::NR_ENTRY - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC));
             }
             statsCMC.queuedCandidatesSent++;
@@ -431,12 +429,12 @@ CMCPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
             sendIDX_PTR++;
             if (sendingEntry.trigger) {
                 addresses.push_back(AddrPriority(addr,
-                    Recorder::nrEntry - sendIDX_PTR + 1,
+                    Recorder::NR_ENTRY - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC,
                     *(sendingEntry.trigger)));
             } else {
                 addresses.push_back(AddrPriority(addr,
-                    Recorder::nrEntry - sendIDX_PTR + 1,
+                    Recorder::NR_ENTRY - sendIDX_PTR + 1,
                     PrefetchSourceType::CMC));
             }
             statsCMC.queuedCandidatesSent++;
