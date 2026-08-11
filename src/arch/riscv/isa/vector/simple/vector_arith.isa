@@ -1241,10 +1241,25 @@ def format VectorReduceIntFormat(code, category, *flags) {{
 }};
 
 def format VectorReduceFloatFormat(code, category, *flags) {{
-    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
-                        flags)
+    unordered_reduction = (
+        "true" if name == "vfredusum_vs" else "false"
+    )
+
+    iop = InstObjParams(
+        name,
+        Name,
+        'VectorArithMacroInst',
+        {
+            'code': code,
+            'unordered_reduction': unordered_reduction,
+        },
+        flags)
+
     inst_name, inst_suffix = name.split("_", maxsplit=1)
-    dest_reg_id = "RegId(VecRegClass, VecTempReg0)"
+    if name == "vfredusum_vs":
+        dest_reg_id = "RegId(VecRegClass, VecTempReg0 + _microIdx)"
+    else:
+        dest_reg_id = "RegId(VecRegClass, VecTempReg0)"
     src1_reg_id = "RegId(VecRegClass, _machInst.vs1)"
     src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx)"
     old_dest_reg_id = "RegId(VecRegClass, _machInst.vd)"
@@ -1253,7 +1268,8 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcWrapper(src2_reg_id)
     # Old vd is required for reduction chaining and tail-undisturbed
     # We always need old rd as src vreg
-    set_src_reg_idx += """
+    if name != "vfredusum_vs":
+        set_src_reg_idx += """
         // Carry the ordered-reduction accumulator through a renamed
         // internal vector temporary register.
         if (_microIdx != 0) {
@@ -1262,7 +1278,7 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
                 _numSrcRegs++,
                 RegId(VecRegClass, VecTempReg0));
         }
-    """
+        """
     set_src_reg_idx += setSrcVL()
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
@@ -1281,7 +1297,8 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
          'set_src_reg_idx': set_src_reg_idx,
          'vm_decl_rd': vm_decl_rd,
          'type_def': type_def,
-         'copy_old_vd': copyOldVd(2)},
+         'copy_old_vd': copyOldVd(2),
+         'unordered_reduction': unordered_reduction},
         flags)
 
     # Because of the use of templates, we had to put all parts in header to
@@ -1372,7 +1389,7 @@ def format VectorIntVxsatFormat(code, category, *flags) {{
     set_src_reg_idx += setSrcVm()
     vm_decl_rd = vmDeclAndReadData()
 
-    code = maskCondWrapper(code)
+    code = regularAgnosticWrapper(code)
     code = eiDeclarePrefix(code)
     code = loopWrapper(code)
 
