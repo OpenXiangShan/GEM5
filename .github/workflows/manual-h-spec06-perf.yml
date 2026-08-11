@@ -80,13 +80,14 @@ jobs:
 
   h_perf_test:
     needs: setup
-    uses: ./.github/workflows/gem5-h-spec06-perf-template.yml
+    uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: ${{ needs.setup.outputs.config_path }}
-      coverage_type: ${{ github.event.inputs.coverage_type }}
+      benchmark_type: ${{ github.event.inputs.coverage_type }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       pf_control_profile: ${{ github.event.inputs.pf_control_profile }}
       extra_args: ${{ github.event.inputs.extra_args }}
+      check_result: true
       distributed_servers: ${{ github.event.inputs.distributed_servers }}
       distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
