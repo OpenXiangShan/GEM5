@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1100" viewBox="0 0 1900 1100">
+  <defs>
+    <style>
+      .title { font: 700 42px Arial, sans-serif; fill: #0d1b2a; }
+      .subtitle { font: 22px Arial, sans-serif; fill: #607083; }
+      .panel-title { font: 700 28px Arial, sans-serif; fill: #0d1b2a; }
+      .panel-sub { font: 17px Arial, sans-serif; fill: #607083; }
+      .tile { fill: #f8fafc; stroke: #b7c4d4; stroke-width: 2; rx: 12; }
+      .tile-rn { fill: #eef6ff; stroke: #2f73b7; stroke-width: 3; rx: 12; }
+      .tile-hn { fill: #fff7e7; stroke: #d88900; stroke-width: 3; rx: 12; }
+      .tile-dram { fill: #fffdf0; stroke: #d88900; stroke-width: 3; rx: 12; }
+      .tile-shadow { fill: #f2efff; stroke: #7056c8; stroke-width: 3; rx: 12; }
+      .tile-mixed { fill: #fff3d8; stroke: #d88900; stroke-width: 3; rx: 12; }
+      .mesh-label { font: 700 16px Arial, sans-serif; fill: #263447; }
+      .port { font: 12px Consolas, monospace; fill: #607083; }
+      .badge-text { font: 700 15px Arial, sans-serif; fill: white; }
+      .legend { font: 17px Arial, sans-serif; fill: #415063; }
+      .note { font: 15px Arial, sans-serif; fill: #607083; }
+      .badge-r { fill: #2f73b7; }
+      .badge-h { fill: #d88900; }
+      .badge-d { fill: #e8a400; }
+      .badge-s { fill: #7056c8; }
+      .badge-lite { opacity: 0.18; }
+    </style>
+  </defs>
+  <rect width="1900" height="1100" fill="#ffffff"/>
+  <text x="46" y="60" class="title">xsCHI Topology Attachment Layout</text>
+  <text x="46" y="94" class="subtitle">5x3 and 6x6 mesh endpoint placement for RN, HN, DRAM/SN, and ShadowRN</text>
+  <line x1="46" y1="126" x2="1854" y2="126" stroke="#d9e1ec" stroke-width="2"/>
+
+  <g transform="translate(58 154)">
+    <circle cx="0" cy="0" r="13" class="badge-r"/><text x="0" y="5" text-anchor="middle" class="badge-text">R</text><text x="24" y="6" class="legend">main RN</text>
+    <circle cx="160" cy="0" r="13" class="badge-h"/><text x="160" y="5" text-anchor="middle" class="badge-text">H</text><text x="184" y="6" class="legend">HN / CHI_L3</text>
+    <circle cx="365" cy="0" r="13" class="badge-d"/><text x="365" y="5" text-anchor="middle" class="badge-text">D</text><text x="389" y="6" class="legend">DRAM / SN</text>
+    <circle cx="560" cy="0" r="13" class="badge-s"/><text x="560" y="5" text-anchor="middle" class="badge-text">S</text><text x="584" y="6" class="legend">ShadowRN</text>
+    <text x="795" y="6" class="legend">badges show local0/local1 endpoint use</text>
+  </g>
+
+  <g transform="translate(58 230)">
+    <text x="0" y="0" class="panel-title">L2L3DramSys_5x3</text>
+    <text x="0" y="32" class="panel-sub">configurable 5 columns x 3 rows mesh</text>
+    <g transform="translate(0 70)">
+      <g id="grid5">
+        <rect x="0" y="0" width="122" height="96" class="tile-rn"/><text x="14" y="28" class="mesh-label">mesh0</text><text x="14" y="54" class="port">local0</text><circle cx="97" cy="27" r="17" class="badge-r"/><text x="97" y="33" text-anchor="middle" class="badge-text">R</text>
+        <rect x="142" y="0" width="122" height="96" class="tile-hn"/><text x="156" y="28" class="mesh-label">mesh1</text><text x="156" y="54" class="port">HN ex.</text><circle cx="239" cy="27" r="17" class="badge-h badge-lite"/><text x="239" y="33" text-anchor="middle" class="badge-text">H</text>
+        <rect x="284" y="0" width="122" height="96" class="tile-hn"/><text x="298" y="28" class="mesh-label">mesh2</text><text x="298" y="54" class="port">HN ex.</text><circle cx="381" cy="27" r="17" class="badge-h badge-lite"/><text x="381" y="33" text-anchor="middle" class="badge-text">H</text>
+        <rect x="426" y="0" width="122" height="96" class="tile-hn"/><text x="440" y="28" class="mesh-label">mesh3</text><text x="440" y="54" class="port">HN ex.</text><circle cx="523" cy="27" r="17" class="badge-h badge-lite"/><text x="523" y="33" text-anchor="middle" class="badge-text">H</text>
+        <rect x="568" y="0" width="122" height="96" class="tile-shadow"/><text x="582" y="28" class="mesh-label">mesh4</text><text x="582" y="54" class="port">local0</text><circle cx="665" cy="27" r="17" class="badge-s"/><text x="665" y="33" text-anchor="middle" class="badge-text">S</text>
+
+        <rect x="0" y="116" width="122" height="96" class="tile-dram"/><text x="14" y="144" class="mesh-label">mesh5</text><text x="14" y="170" class="port">DRAM ex.</text><circle cx="97" cy="143" r="17" class="badge-d"/><text x="97" y="149" text-anchor="middle" class="badge-text">D</text>
+        <rect x="142" y="116" width="122" height="96" class="tile-mixed"/><text x="156" y="144" class="mesh-label">mesh6</text><text x="156" y="170" class="port">local0/1</text><circle cx="225" cy="139" r="15" class="badge-h"/><text x="225" y="145" text-anchor="middle" class="badge-text">H</text><circle cx="250" cy="164" r="15" class="badge-d"/><text x="250" y="170" text-anchor="middle" class="badge-text">D</text>
+        <rect x="284" y="116" width="122" height="96" class="tile-hn"/><text x="298" y="144" class="mesh-label">mesh7</text><text x="298" y="170" class="port">HN ex.</text><circle cx="381" cy="143" r="17" class="badge-h badge-lite"/><text x="381" y="149" text-anchor="middle" class="badge-text">H</text>
+        <rect x="426" y="116" width="122" height="96" class="tile-hn"/><text x="440" y="144" class="mesh-label">mesh8</text><text x="440" y="170" class="port">HN ex.</text><circle cx="523" cy="143" r="17" class="badge-h badge-lite"/><text x="523" y="149" text-anchor="middle" class="badge-text">H</text>
+        <rect x="568" y="116" width="122" height="96" class="tile-dram"/><text x="582" y="144" class="mesh-label">mesh9</text><text x="582" y="170" class="port">DRAM ex.</text><circle cx="665" cy="143" r="17" class="badge-d"/><text x="665" y="149" text-anchor="middle" class="badge-text">D</text>
+
+        <rect x="0" y="232" width="122" height="96" class="tile-shadow"/><text x="14" y="260" class="mesh-label">mesh10</text><text x="14" y="286" class="port">local0</text><circle cx="97" cy="259" r="17" class="badge-s"/><text x="97" y="265" text-anchor="middle" class="badge-text">S</text>
+        <rect x="142" y="232" width="122" height="96" class="tile-hn"/><text x="156" y="260" class="mesh-label">mesh11</text><text x="156" y="286" class="port">HN ex.</text><circle cx="239" cy="259" r="17" class="badge-h badge-lite"/><text x="239" y="265" text-anchor="middle" class="badge-text">H</text>
+        <rect x="284" y="232" width="122" height="96" class="tile-hn"/><text x="298" y="260" class="mesh-label">mesh12</text><text x="298" y="286" class="port">HN ex.</text><circle cx="381" cy="259" r="17" class="badge-h badge-lite"/><text x="381" y="265" text-anchor="middle" class="badge-text">H</text>
+        <rect x="426" y="232" width="122" height="96" class="tile"/><text x="440" y="260" class="mesh-label">mesh13</text><text x="440" y="286" class="port">transit</text>
+        <rect x="568" y="232" width="122" height="96" class="tile-shadow"/><text x="582" y="260" class="mesh-label">mesh14</text><text x="582" y="286" class="port">local0</text><circle cx="665" cy="259" r="17" class="badge-s"/><text x="665" y="265" text-anchor="middle" class="badge-text">S</text>
+      </g>
+    </g>
+    <text x="0" y="455" class="note">Default: RN mesh0.local0, HN mesh6.local0, DRAM mesh6.local1. Example: 8 HNs and 2 DRAMs are shown with lighter H badges.</text>
+  </g>
+
+  <g transform="translate(935 230)">
+    <text x="0" y="0" class="panel-title">L2L3DramSys_6x6</text>
+    <text x="0" y="32" class="panel-sub">CMN700-like center HNs with corner-side DRAM/SN endpoints</text>
+    <g transform="translate(0 70)">
+      <g>
+        <rect x="0" y="0" width="104" height="80" class="tile"/><text x="12" y="27" class="mesh-label">m0</text>
+        <rect x="122" y="0" width="104" height="80" class="tile-dram"/><text x="134" y="27" class="mesh-label">m1</text><circle cx="199" cy="26" r="15" class="badge-d"/><text x="199" y="31" text-anchor="middle" class="badge-text">D</text>
+        <rect x="244" y="0" width="104" height="80" class="tile"/><text x="256" y="27" class="mesh-label">m2</text>
+        <rect x="366" y="0" width="104" height="80" class="tile"/><text x="378" y="27" class="mesh-label">m3</text>
+        <rect x="488" y="0" width="104" height="80" class="tile-dram"/><text x="500" y="27" class="mesh-label">m4</text><circle cx="565" cy="26" r="15" class="badge-d"/><text x="565" y="31" text-anchor="middle" class="badge-text">D</text>
+        <rect x="610" y="0" width="104" height="80" class="tile"/><text x="622" y="27" class="mesh-label">m5</text>
+
+        <rect x="0" y="98" width="104" height="80" class="tile"/><text x="12" y="125" class="mesh-label">m6</text>
+        <rect x="122" y="98" width="104" height="80" class="tile-rn"/><text x="134" y="125" class="mesh-label">m7</text><circle cx="183" cy="119" r="14" class="badge-r"/><text x="183" y="124" text-anchor="middle" class="badge-text">R</text><circle cx="207" cy="144" r="14" class="badge-h"/><text x="207" y="149" text-anchor="middle" class="badge-text">H</text>
+        <rect x="244" y="98" width="104" height="80" class="tile-hn"/><text x="256" y="125" class="mesh-label">m8</text><circle cx="321" cy="119" r="14" class="badge-h"/><text x="321" y="124" text-anchor="middle" class="badge-text">H</text><circle cx="296" cy="144" r="14" class="badge-s"/><text x="296" y="149" text-anchor="middle" class="badge-text">S</text>
+        <rect x="366" y="98" width="104" height="80" class="tile-hn"/><text x="378" y="125" class="mesh-label">m9</text><circle cx="443" cy="119" r="14" class="badge-h"/><text x="443" y="124" text-anchor="middle" class="badge-text">H</text><circle cx="418" cy="144" r="14" class="badge-s"/><text x="418" y="149" text-anchor="middle" class="badge-text">S</text>
+        <rect x="488" y="98" width="104" height="80" class="tile-hn"/><text x="500" y="125" class="mesh-label">m10</text><circle cx="565" cy="119" r="14" class="badge-h"/><text x="565" y="124" text-anchor="middle" class="badge-text">H</text><circle cx="538" cy="144" r="14" class="badge-s"/><text x="538" y="149" text-anchor="middle" class="badge-text">S</text>
+        <rect x="610" y="98" width="104" height="80" class="tile"/><text x="622" y="125" class="mesh-label">m11</text>
+
+        <rect x="0" y="196" width="104" height="80" class="tile"/><text x="12" y="223" class="mesh-label">m12</text>
+        <rect x="122" y="196" width="104" height="80" class="tile-hn"/><text x="134" y="223" class="mesh-label">m13</text><circle cx="199" cy="222" r="14" class="badge-h"/><text x="199" y="227" text-anchor="middle" class="badge-text">H</text><circle cx="174" cy="247" r="14" class="badge-s"/><text x="174" y="252" text-anchor="middle" class="badge-text">S</text>
+        <rect x="244" y="196" width="104" height="80" class="tile-hn"/><text x="256" y="223" class="mesh-label">m14</text><circle cx="321" cy="222" r="14" class="badge-h"/><text x="321" y="227" text-anchor="middle" class="badge-text">H</text><circle cx="296" cy="247" r="14" class="badge-s"/><text x="296" y="252" text-anchor="middle" class="badge-text">S</text>
+        <rect x="366" y="196" width="104" height="80" class="tile-hn"/><text x="378" y="223" class="mesh-label">m15</text><circle cx="443" cy="222" r="14" class="badge-h"/><text x="443" y="227" text-anchor="middle" class="badge-text">H</text><circle cx="418" cy="247" r="14" class="badge-s"/><text x="418" y="252" text-anchor="middle" class="badge-text">S</text>
+        <rect x="488" y="196" width="104" height="80" class="tile-hn"/><text x="500" y="223" class="mesh-label">m16</text><circle cx="565" cy="222" r="14" class="badge-h"/><text x="565" y="227" text-anchor="middle" class="badge-text">H</text><circle cx="538" cy="247" r="14" class="badge-s"/><text x="538" y="252" text-anchor="middle" class="badge-text">S</text>
+        <rect x="610" y="196" width="104" height="80" class="tile"/><text x="622" y="223" class="mesh-label">m17</text>
+
+        <rect x="0" y="294" width="104" height="80" class="tile"/><text x="12" y="321" class="mesh-label">m18</text>
+        <rect x="122" y="294" width="104" height="80" class="tile-hn"/><text x="134" y="321" class="mesh-label">m19</text><circle cx="199" cy="320" r="14" class="badge-h"/><text x="199" y="325" text-anchor="middle" class="badge-text">H</text><circle cx="174" cy="345" r="14" class="badge-s"/><text x="174" y="350" text-anchor="middle" class="badge-text">S</text>
+        <rect x="244" y="294" width="104" height="80" class="tile-hn"/><text x="256" y="321" class="mesh-label">m20</text><circle cx="321" cy="320" r="14" class="badge-h"/><text x="321" y="325" text-anchor="middle" class="badge-text">H</text><circle cx="296" cy="345" r="14" class="badge-s"/><text x="296" y="350" text-anchor="middle" class="badge-text">S</text>
+        <rect x="366" y="294" width="104" height="80" class="tile-hn"/><text x="378" y="321" class="mesh-label">m21</text><circle cx="443" cy="320" r="14" class="badge-h"/><text x="443" y="325" text-anchor="middle" class="badge-text">H</text><circle cx="418" cy="345" r="14" class="badge-s"/><text x="418" y="350" text-anchor="middle" class="badge-text">S</text>
+        <rect x="488" y="294" width="104" height="80" class="tile-hn"/><text x="500" y="321" class="mesh-label">m22</text><circle cx="565" cy="320" r="14" class="badge-h"/><text x="565" y="325" text-anchor="middle" class="badge-text">H</text><circle cx="538" cy="345" r="14" class="badge-s"/><text x="538" y="350" text-anchor="middle" class="badge-text">S</text>
+        <rect x="610" y="294" width="104" height="80" class="tile"/><text x="622" y="321" class="mesh-label">m23</text>
+
+        <rect x="0" y="392" width="104" height="80" class="tile"/><text x="12" y="419" class="mesh-label">m24</text>
+        <rect x="122" y="392" width="104" height="80" class="tile-hn"/><text x="134" y="419" class="mesh-label">m25</text><circle cx="199" cy="418" r="14" class="badge-h"/><text x="199" y="423" text-anchor="middle" class="badge-text">H</text><circle cx="174" cy="443" r="14" class="badge-s"/><text x="174" y="448" text-anchor="middle" class="badge-text">S</text>
+        <rect x="244" y="392" width="104" height="80" class="tile-hn"/><text x="256" y="419" class="mesh-label">m26</text><circle cx="321" cy="418" r="14" class="badge-h"/><text x="321" y="423" text-anchor="middle" class="badge-text">H</text><circle cx="296" cy="443" r="14" class="badge-s"/><text x="296" y="448" text-anchor="middle" class="badge-text">S</text>
+        <rect x="366" y="392" width="104" height="80" class="tile-hn"/><text x="378" y="419" class="mesh-label">m27</text><circle cx="443" cy="418" r="14" class="badge-h"/><text x="443" y="423" text-anchor="middle" class="badge-text">H</text><circle cx="418" cy="443" r="14" class="badge-s"/><text x="418" y="448" text-anchor="middle" class="badge-text">S</text>
+        <rect x="488" y="392" width="104" height="80" class="tile-hn"/><text x="500" y="419" class="mesh-label">m28</text><circle cx="565" cy="418" r="14" class="badge-h"/><text x="565" y="423" text-anchor="middle" class="badge-text">H</text><circle cx="538" cy="443" r="14" class="badge-s"/><text x="538" y="448" text-anchor="middle" class="badge-text">S</text>
+        <rect x="610" y="392" width="104" height="80" class="tile"/><text x="622" y="419" class="mesh-label">m29</text>
+
+        <rect x="0" y="490" width="104" height="80" class="tile"/><text x="12" y="517" class="mesh-label">m30</text>
+        <rect x="122" y="490" width="104" height="80" class="tile-dram"/><text x="134" y="517" class="mesh-label">m31</text><circle cx="199" cy="516" r="15" class="badge-d"/><text x="199" y="521" text-anchor="middle" class="badge-text">D</text>
+        <rect x="244" y="490" width="104" height="80" class="tile"/><text x="256" y="517" class="mesh-label">m32</text>
+        <rect x="366" y="490" width="104" height="80" class="tile"/><text x="378" y="517" class="mesh-label">m33</text>
+        <rect x="488" y="490" width="104" height="80" class="tile-dram"/><text x="500" y="517" class="mesh-label">m34</text><circle cx="565" cy="516" r="15" class="badge-d"/><text x="565" y="521" text-anchor="middle" class="badge-text">D</text>
+        <rect x="610" y="490" width="104" height="80" class="tile"/><text x="622" y="517" class="mesh-label">m35</text>
+      </g>
+    </g>
+    <text x="0" y="685" class="note">6x6 default: RN at mesh7.local0; HNs occupy center local1 endpoints; DRAM/SN endpoints sit near the four outer sides.</text>
+  </g>
+
+  <text x="950" y="1048" text-anchor="middle" class="note">Figure: xsCHI TopoSys maps endpoint roles onto MeshNode local ports; row-major mesh indices are shown for CLI attach-point readability.</text>
+</svg>

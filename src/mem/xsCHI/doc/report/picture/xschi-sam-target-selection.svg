@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900">
+  <defs>
+    <marker id="arrow-blue" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2f73b7"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2e8b57"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#d88900"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#7056c8"/>
+    </marker>
+    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#0d1b2a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 42px Arial, sans-serif; fill: #0d1b2a; }
+      .subtitle { font: 22px Arial, sans-serif; fill: #607083; }
+      .legend { font: 17px Arial, sans-serif; fill: #607083; }
+      .box-title { font: 700 24px Arial, sans-serif; fill: #0d1b2a; }
+      .box-sub { font: 17px Arial, sans-serif; fill: #607083; }
+      .mono { font: 700 15px "SFMono-Regular", Consolas, monospace; fill: #233143; }
+      .small { font: 14px Arial, sans-serif; fill: #607083; }
+      .blue-box { fill: #eef6ff; stroke: #2f73b7; stroke-width: 3; }
+      .green-box { fill: #ecfaf2; stroke: #2e8b57; stroke-width: 3; }
+      .orange-box { fill: #fff7e7; stroke: #d88900; stroke-width: 3; }
+      .purple-box { fill: #f2efff; stroke: #7056c8; stroke-width: 3; }
+      .gray-box { fill: #f5f7fa; stroke: #8794a5; stroke-width: 2.5; }
+      .arrow-blue { stroke: #2f73b7; stroke-width: 3.2; fill: none; marker-end: url(#arrow-blue); }
+      .arrow-green { stroke: #2e8b57; stroke-width: 3.2; fill: none; marker-end: url(#arrow-green); }
+      .arrow-orange { stroke: #d88900; stroke-width: 3.2; fill: none; marker-end: url(#arrow-orange); }
+      .arrow-purple { stroke: #7056c8; stroke-width: 3.2; fill: none; stroke-dasharray: 8 7; marker-end: url(#arrow-purple); }
+      .legend-line-blue { stroke: #2f73b7; stroke-width: 3; fill: none; }
+      .legend-line-green { stroke: #2e8b57; stroke-width: 3; fill: none; }
+      .legend-line-orange { stroke: #d88900; stroke-width: 3; fill: none; }
+      .legend-line-purple { stroke: #7056c8; stroke-width: 3; fill: none; }
+      .line-gray { stroke: #aeb8c6; stroke-width: 2.5; fill: none; stroke-dasharray: 7 7; }
+      .hn { fill: #ffffff; stroke: #a8bfd9; stroke-width: 1.5; }
+      .hn-hot { fill: #dbeeff; stroke: #2f73b7; stroke-width: 2.5; }
+      .dram { fill: #fff7e7; stroke: #d88900; stroke-width: 2.5; }
+      .chip { fill: #ffffff; stroke: #96c8ad; stroke-width: 1.7; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="900" fill="#ffffff"/>
+  <text x="48" y="62" class="title">SAM and Target Selection</text>
+  <text x="48" y="96" class="subtitle">RN-to-HN and HN-to-SN mapping with XOR select bits, NodeID output, and optional ShadowRN remap</text>
+  <line x1="48" y1="128" x2="1752" y2="128" stroke="#d9e1ec" stroke-width="2"/>
+
+  <g transform="translate(62 164)">
+    <line x1="0" y1="0" x2="56" y2="0" class="legend-line-blue"/>
+    <text x="92" y="6" class="legend">physical address flow</text>
+    <line x1="340" y1="0" x2="396" y2="0" class="legend-line-purple"/>
+    <text x="432" y="6" class="legend">optional shadow remap</text>
+    <line x1="725" y1="0" x2="781" y2="0" class="legend-line-green"/>
+    <text x="817" y="6" class="legend">XOR hash / select bits</text>
+    <line x1="1122" y1="0" x2="1178" y2="0" class="legend-line-orange"/>
+    <text x="1214" y="6" class="legend">selected target NodeID</text>
+  </g>
+
+  <g filter="url(#soft-shadow)">
+    <rect x="58" y="264" width="255" height="165" rx="14" class="blue-box"/>
+    <text x="186" y="320" text-anchor="middle" class="box-title">RN Request</text>
+    <text x="186" y="358" text-anchor="middle" class="mono">PA = A</text>
+    <text x="186" y="392" text-anchor="middle" class="box-sub">from CHI_L2 / CHIBridge</text>
+
+    <rect x="58" y="575" width="345" height="180" rx="14" class="purple-box"/>
+    <text x="230" y="628" text-anchor="middle" class="box-title">ShadowRN Remap</text>
+    <text x="230" y="666" text-anchor="middle" class="mono">A' = dst_base + (A - src_base)</text>
+    <text x="230" y="702" text-anchor="middle" class="box-sub">applies only inside shadow window</text>
+    <text x="230" y="734" text-anchor="middle" class="small">remapped address re-enters normal SAM rules</text>
+
+    <rect x="500" y="230" width="455" height="245" rx="16" class="green-box"/>
+    <text x="728" y="285" text-anchor="middle" class="box-title">RN SystemAddressMap</text>
+    <text x="728" y="322" text-anchor="middle" class="box-sub">choose Home Node target</text>
+    <text x="555" y="370" class="mono">1. target_count must be power-of-two</text>
+    <text x="555" y="404" class="mono">2. select = xor_groups(PA[6:51])</text>
+    <text x="555" y="438" class="mono">3. HN = hn_targets[select]</text>
+
+    <rect x="500" y="548" width="455" height="245" rx="16" class="green-box"/>
+    <text x="728" y="603" text-anchor="middle" class="box-title">HN SystemAddressMap</text>
+    <text x="728" y="640" text-anchor="middle" class="box-sub">choose SN / DRAM target</text>
+    <text x="555" y="688" class="mono">same XOR function for DRAM select</text>
+    <text x="555" y="722" class="mono">DRAM ranges use matching masks</text>
+    <text x="555" y="756" class="mono">SN = dram_targets[select]</text>
+
+    <rect x="1095" y="215" width="325" height="280" rx="16" class="blue-box"/>
+    <text x="1258" y="270" text-anchor="middle" class="box-title">HN NodeID Space</text>
+    <text x="1258" y="306" text-anchor="middle" class="box-sub">NodeID encodes mesh coordinate + local port</text>
+    <g transform="translate(1155 340)">
+      <rect x="0" y="0" width="46" height="38" rx="6" class="hn"/><text x="23" y="25" text-anchor="middle" class="small">HN0</text>
+      <rect x="55" y="0" width="46" height="38" rx="6" class="hn"/><text x="78" y="25" text-anchor="middle" class="small">HN1</text>
+      <rect x="110" y="0" width="46" height="38" rx="6" class="hn-hot"/><text x="133" y="25" text-anchor="middle" class="small">HN2</text>
+      <rect x="165" y="0" width="46" height="38" rx="6" class="hn"/><text x="188" y="25" text-anchor="middle" class="small">HN3</text>
+      <rect x="0" y="48" width="46" height="38" rx="6" class="hn"/><text x="23" y="73" text-anchor="middle" class="small">HN4</text>
+      <rect x="55" y="48" width="46" height="38" rx="6" class="hn"/><text x="78" y="73" text-anchor="middle" class="small">HN5</text>
+      <rect x="110" y="48" width="46" height="38" rx="6" class="hn"/><text x="133" y="73" text-anchor="middle" class="small">HN6</text>
+      <rect x="165" y="48" width="46" height="38" rx="6" class="hn"/><text x="188" y="73" text-anchor="middle" class="small">HN7</text>
+      <rect x="0" y="96" width="46" height="38" rx="6" class="hn"/><text x="23" y="121" text-anchor="middle" class="small">...</text>
+      <rect x="55" y="96" width="46" height="38" rx="6" class="hn"/><text x="78" y="121" text-anchor="middle" class="small">...</text>
+      <rect x="110" y="96" width="46" height="38" rx="6" class="hn"/><text x="133" y="121" text-anchor="middle" class="small">...</text>
+      <rect x="165" y="96" width="46" height="38" rx="6" class="hn"/><text x="188" y="121" text-anchor="middle" class="small">HN15</text>
+    </g>
+
+    <rect x="1095" y="592" width="325" height="205" rx="16" class="orange-box"/>
+    <text x="1258" y="645" text-anchor="middle" class="box-title">SN / DRAM Targets</text>
+    <text x="1258" y="681" text-anchor="middle" class="box-sub">interleaved ranges match HN SAM</text>
+    <g transform="translate(1138 704)">
+      <rect x="0" y="0" width="105" height="46" rx="8" class="dram"/><text x="52" y="30" text-anchor="middle" class="small">DRAM0</text>
+      <rect x="123" y="0" width="105" height="46" rx="8" class="dram"/><text x="176" y="30" text-anchor="middle" class="small">DRAM1</text>
+      <rect x="0" y="58" width="105" height="46" rx="8" class="dram"/><text x="52" y="88" text-anchor="middle" class="small">DRAM2</text>
+      <rect x="123" y="58" width="105" height="46" rx="8" class="dram"/><text x="176" y="88" text-anchor="middle" class="small">DRAM3</text>
+    </g>
+
+    <rect x="1505" y="284" width="235" height="150" rx="14" class="gray-box"/>
+    <text x="1622" y="338" text-anchor="middle" class="box-title">Route Key</text>
+    <text x="1622" y="378" text-anchor="middle" class="mono">target NodeID</text>
+    <text x="1622" y="410" text-anchor="middle" class="box-sub">used by MeshNode XY routing</text>
+
+    <rect x="1505" y="612" width="235" height="150" rx="14" class="gray-box"/>
+    <text x="1622" y="666" text-anchor="middle" class="box-title">DRAM Range</text>
+    <text x="1622" y="706" text-anchor="middle" class="mono">AddrRange mask</text>
+    <text x="1622" y="738" text-anchor="middle" class="box-sub">same select-bit policy</text>
+  </g>
+
+  <path d="M313 346 H500" class="arrow-blue"/>
+  <text x="386" y="331" class="mono">A</text>
+  <path d="M186 429 V546 Q186 575 215 575" class="arrow-purple"/>
+  <text x="205" y="505" class="mono">mirror</text>
+  <path d="M403 665 H465 Q500 665 500 470" class="arrow-purple"/>
+  <text x="424" y="648" class="mono">A'</text>
+
+  <path d="M955 352 H1095" class="arrow-orange"/>
+  <text x="984" y="334" class="mono">HN NodeID</text>
+  <path d="M1258 495 V592" class="arrow-blue"/>
+  <text x="1278" y="548" class="mono">HN local request</text>
+  <path d="M955 670 H1095" class="arrow-orange"/>
+  <text x="984" y="652" class="mono">SN NodeID</text>
+  <path d="M1420 355 H1505" class="arrow-orange"/>
+  <path d="M1420 688 H1505" class="arrow-orange"/>
+
+  <path d="M728 475 V548" class="line-gray"/>
+  <text x="748" y="521" class="small">selected HN performs second-level mapping</text>
+
+  <g transform="translate(518 820)">
+    <rect x="0" y="0" width="810" height="42" rx="10" fill="#f5f7fa" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="405" y="27" text-anchor="middle" class="small">Invariant: every selected target is converted to a NodeID before flits enter the MeshNode network.</text>
+  </g>
+</svg>

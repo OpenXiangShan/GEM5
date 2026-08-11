@@ -8,19 +8,23 @@ for var in GCBV_REF_SO GCB_RESTORER gem5_home; do
 done
 
 $gem5 $gem5_home/configs/example/xiangshanCHI.py --generic-rv-cpt=$1 \
+  --mem-size=16GB \
   --dramsim3-ini="$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_32Gb_x8_3200_8ch.ini" \
   --bp-type=DecoupledBPUWithBTB \
   --shadow-l2-enable \
-  --shadow-l2-count=1 \
-  --shadow-attach-points=mesh14.local0 \
+  --shadow-l2-count=7 \
+  --shadow-attach-points=mesh8.local0,mesh9.local0,mesh10.local0,mesh25.local0,mesh26.local0,mesh27.local0,mesh28.local0 \
   --shadow-src-bases=0x80000000 \
   --shadow-window-sizes=0x80000000 \
-  --shadow-dst-bases=0x100000000 \
-  --chi-topology=L2L3DramSys_5x3 \
-  --chi-hn-count=8 \
-  --chi-hn-attach-points=mesh1.local0,mesh2.local0,mesh3.local0,mesh6.local0,mesh7.local0,mesh8.local0,mesh11.local0,mesh12.local0 \
-  --chi-dram-count=2 \
-  --chi-dram-attach-points=mesh5.local0,mesh9.local0 \
+  --shadow-dst-bases=0x100000000,0x180000000,0x200000000,0x280000000,0x300000000,0x380000000,0x400000000 \
+  --chi-topology=L2L3DramSys_6x6 \
+  --chi-rn-attach-point=mesh7.local0 \
+  --chi-hn-count=16 \
+  --chi-hn-attach-points=mesh7.local1,mesh8.local1,mesh9.local1,mesh10.local1,mesh13.local1,mesh14.local1,mesh15.local1,mesh16.local1,mesh19.local1,mesh20.local1,mesh21.local1,mesh22.local1,mesh25.local1,mesh26.local1,mesh27.local1,mesh28.local1 \
+  --chi-dram-count=4 \
+  --chi-dram-attach-points=mesh1.local0,mesh4.local0,mesh31.local0,mesh34.local0 \
+  --l3_size=64MB \
+  --l3_mshrs=256 \
   --chi-credit-model=cmn700_rtl \
   --chi-rxbuf-num=3 \
   --chi-skid-depth=1 \
