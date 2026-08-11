@@ -664,12 +664,17 @@ MemDepUnit::violation(InstSeqNum store_seq_num, Addr store_pc,
             violating_load->pcState().instAddr(), store_pc, store_seq_num);
 
     if (enablePHASTMDP) {
+        if (violating_load->memDepInfo.violationTrained ||
+            violating_load->memDepInfo.storeQueueDistance < 0) {
+            return;
+        }
         phastPred.violation(violating_load->pcState().instAddr(),
                 violating_load->seqNum, store_seq_num, store_pc,
                 violating_load->memDepInfo.storeQueueDistance,
                 violating_load->memDepInfo.predicted,
                 violating_load->memDepInfo.predBranchHistLength,
                 violating_load->memDepInfo.predictorHash, branchHistory);
+        violating_load->memDepInfo.violationTrained = true;
         ++stats.phastViolationUpdates;
     } else {
         depPred.violation(store_pc, violating_load->pcState().instAddr());

@@ -497,6 +497,9 @@ class DynInst : public ExecContext, public RefCounted
 
         /** True when this load received a valid PHAST prediction. */
         bool predicted = false;
+
+        /** True after the RAW violation has trained PHAST once. */
+        bool violationTrained = false;
     } memDepInfo;
 
     /** Predicted producing stores (for replay-based MDP). */

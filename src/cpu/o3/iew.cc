@@ -1649,10 +1649,16 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             fetchRedirect[tid] = true;
 
             // Tell the instruction queue that a violation has occured.
-            if (enableStoreSetTrain && !instQueue.usesPHAST(tid)) {
+            if (instQueue.usesPHAST(tid)) {
+                auto &mdp_history = cpu->getDecode()->getBranchHistory(tid);
+                instQueue.violation(inst->seqNum, inst->pcState().instAddr(),
+                                    violator, mdp_history);
+            } else if (enableStoreSetTrain) {
+                auto &mdp_history =
+                    cpu->getCommit()->getBranchHistory(tid);
                 instQueue.violation(inst->seqNum,
                     inst->pcState().instAddr(), violator,
-                    cpu->getCommit()->getBranchHistory(tid));
+                    mdp_history);
             }
             violator->setProducerStorePC(inst->pcState().instAddr());
 

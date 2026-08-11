@@ -1370,6 +1370,7 @@ Commit::commitInsts()
 
                 if (head_inst->isLoad() &&
                     head_inst->memDepInfo.violatingStoreSeqNum &&
+                    !head_inst->memDepInfo.violationTrained &&
                     iewStage->instQueue.usesPHAST(tid)) {
                     iewStage->instQueue.violation(
                         head_inst->memDepInfo.violatingStoreSeqNum,
