@@ -97,19 +97,26 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
             entry->bitVec |= region_bit_accessed;
             entry->cnt += 1;
         }
+        entry->hysteresis = true;
         return entry;
     }
-    entry = stream_array.findVictim(0);
-
     in_active_page = (entry_plus_active || entry_min_active);
     decr = entry_plus != nullptr;
-    entry->tag = regionHashTag(vaddr_tag_num);
-    entry->decrMode = decr;
-    entry->bitVec = 1UL << vaddr_offset;
-    entry->cnt = 1;
-    entry->active = in_active_page;
-    stream_array.insertEntry(regionHashTag(vaddr_tag_num), secure, entry);
-    return entry;
+    // replace
+    entry = stream_array.findVictim(0);
+    if (entry->hysteresis){
+        entry->hysteresis = false;
+        stream_array.insertEntry(entry->tag, entry->isSecure(), entry, false);
+    } else {
+        entry->tag = regionHashTag(vaddr_tag_num);
+        entry->decrMode = decr;
+        entry->bitVec = 1UL << vaddr_offset;
+        entry->cnt = 1;
+        entry->active = in_active_page;
+        entry->hysteresis = false;
+        stream_array.insertEntry(regionHashTag(vaddr_tag_num), secure, entry);
+    }
+    return nullptr;
 }
 
 void

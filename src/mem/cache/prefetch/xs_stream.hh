@@ -84,6 +84,7 @@ class XsStreamPrefetcher : public Queued
         bool active;
         int cnt;
         bool decrMode;
+        bool hysteresis = false;
         STREAMEntry() : TaggedEntry(), tag(0), bitVec(0), active(false), cnt(0), decrMode(false) {}
     };
     AssociativeSet<STREAMEntry> stream_array;
