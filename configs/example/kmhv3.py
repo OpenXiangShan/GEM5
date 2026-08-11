@@ -50,7 +50,8 @@ def setKmhV3Params(args, system):
         cpu.enableConstantFolding = False
 
         # rename
-        cpu.renameWidth = 8
+        #cpu.renameWidth = 8
+        cpu.renameWidth = 10
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
         cpu.enable_storeSet_train = True

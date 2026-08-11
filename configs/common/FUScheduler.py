@@ -216,6 +216,14 @@ class KMHV3Scheduler(Scheduler):
             IssuePort(fu=[IntALU(), IntDiv(), IntMisc()],
                       rp=[IntRD(10, 0), IntRD(11, 1)])
         ]),
+        IssueQue(name='intIQ6', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult()],
+                      rp=[IntRD(12, 0), IntRD(13, 1)]),
+        ]),
+        IssueQue(name='intIQ7', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult()],
+                      rp=[IntRD(14, 0), IntRD(15, 1)]),
+        ]),
     ]
     __memIQs = [
         IssueQue(name='ld0', inports=2, size=16, oports=[
