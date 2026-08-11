@@ -186,6 +186,34 @@ PrefetcherForwarder::prefetchUnused(Addr paddr, PrefetchSourceType pf_type)
 }
 
 void
+PrefetcherForwarder::recordPrefetchIssue(const PacketPtr &pkt)
+{
+    if (real_pf) {
+        real_pf->recordPrefetchIssue(pkt);
+    }
+}
+
+void
+PrefetcherForwarder::recordPrefetchUseful(
+    Addr paddr, bool is_secure, PrefetchSourceType pf_type,
+    Addr consumer_pc)
+{
+    if (real_pf) {
+        real_pf->recordPrefetchUseful(
+            paddr, is_secure, pf_type, consumer_pc);
+    }
+}
+
+void
+PrefetcherForwarder::recordPrefetchUnused(
+    Addr paddr, bool is_secure, PrefetchSourceType pf_type)
+{
+    if (real_pf) {
+        real_pf->recordPrefetchUnused(paddr, is_secure, pf_type);
+    }
+}
+
+void
 PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type)
 {
     if (real_pf) {

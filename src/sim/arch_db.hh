@@ -125,6 +125,12 @@ class ArchDBer : public SimObject
     void bopValidationOutcomeTraceWrite(
       Tick tick, const char *event, Addr addr, Addr pc, int pf_source,
       bool is_demand, bool cache_miss);
+    void bopValidationLiveRecordTraceWrite(
+      Tick tick, const char *event, Addr line_addr, bool secure,
+      const char *attempt_bop_name, const char *attempt_kind, Addr attempt_pc,
+      const char *owner_bop_name, const char *owner_kind, Addr owner_pc,
+      Addr first_consumer_pc, bool consumed, bool found, bool created,
+      bool duplicate_issue);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);
     void strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train);
     void despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train);

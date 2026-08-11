@@ -999,6 +999,18 @@ class Base : public ClockedObject
 
     virtual void recvPrefetchFromCache(const PacketPtr &pkt) {}
 
+    /** Record that a prefetched line has become live in cache. */
+    virtual void recordPrefetchIssue(const PacketPtr &pkt) {}
+
+    /** Record the first demand consumer of a live prefetched line. */
+    virtual void recordPrefetchUseful(
+        Addr paddr, bool is_secure, PrefetchSourceType pfSource,
+        Addr consumer_pc) {}
+
+    /** Record the eventual eviction of a live prefetched line. */
+    virtual void recordPrefetchUnused(
+        Addr paddr, bool is_secure, PrefetchSourceType pfSource) {}
+
     virtual void
     prefetchUnused(PrefetchSourceType pfSource)
     {

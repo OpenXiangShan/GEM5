@@ -42,6 +42,7 @@
 #include <queue>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -89,6 +90,8 @@ class BOP : public Queued
         const bool enableIssueValidation;
         /** Grade issue validation misses with shared per-PC confidence */
         const bool enablePCValidationConfidence;
+        /** Train PC confidence from actual producer-owned useful/unused outcomes */
+        const bool enablePCValidationUsefulnessFeedback;
         /** Bypass PC validation when recent global BOP outcomes are healthy */
         const bool enableGlobalBOPCoverageGuard;
 
@@ -191,6 +194,7 @@ class BOP : public Queued
 
         static unsigned int pcValidationKindIndex(PCValidationKind kind);
         static const char *pcValidationKindName(PCValidationKind kind);
+        static PCValidationKind pcValidationKindFromIndex(unsigned int kind);
 
         class PCValidationConfidenceTable
         {
@@ -226,6 +230,17 @@ class BOP : public Queued
                 unsigned int participants = 0;
             };
 
+            struct LiveRecordEntry
+            {
+                Addr line = 0;
+                bool secure = false;
+                bool consumed = false;
+                Addr ownerPc = 0;
+                Addr firstConsumerPc = 0;
+                unsigned int ownerEpoch = 0;
+                PCValidationKind ownerKind = PCValidationKind::Generic;
+            };
+
             const unsigned int entries;
             const unsigned int sets;
             const unsigned int setBits;
@@ -254,9 +269,11 @@ class BOP : public Queued
             unsigned int globalUnusedEwma = GLOBAL_UNUSED_EWMA_INITIAL;
             unsigned int globalChecksSinceOutcome = 0;
             bool globalBypassPCValidation = false;
+            std::unordered_map<Addr, LiveRecordEntry> liveRecords;
 
             Addr foldedPC(Addr pc) const;
             Addr signature(Addr pc, PCValidationKind kind) const;
+            Addr liveRecordKey(Addr line, bool secure) const;
             bool sample(Addr pc, PCValidationKind kind, Addr line,
                         unsigned int period, Addr salt) const;
             Entry &entryAt(unsigned int set, unsigned int way);
@@ -323,6 +340,33 @@ class BOP : public Queued
                 unsigned int resolvedCoverageQ08 = 255;
             };
 
+            struct LiveRecordResult
+            {
+                bool valid = false;
+                bool found = false;
+                bool created = false;
+                bool duplicateIssue = false;
+                bool firstConsume = false;
+                bool consumed = false;
+                bool secure = false;
+                Addr line = 0;
+                Addr attemptPc = 0;
+                Addr ownerPc = 0;
+                Addr firstConsumerPc = 0;
+                unsigned int ownerEpoch = 0;
+                PCValidationKind attemptKind = PCValidationKind::Generic;
+                PCValidationKind ownerKind = PCValidationKind::Generic;
+            };
+
+            struct UsefulnessUpdateResult
+            {
+                bool applied = false;
+                bool skippedByEpoch = false;
+                bool useful = false;
+                LookupResult lookup;
+                CommitResult commit;
+            };
+
             PCValidationConfidenceTable(
                 unsigned int entries, unsigned int tag_bits,
                 unsigned int counter_bits, unsigned int initial_confidence,
@@ -341,8 +385,19 @@ class BOP : public Queued
                                    Addr line) const;
             bool notePCValidationMiss();
             bool bypassPCValidationActive() const;
+            unsigned int currentEpochFor(PCValidationKind kind) const;
             void noteGlobalBOPIssued();
             GlobalOutcomeResult noteGlobalBOPOutcome(bool useful);
+            LiveRecordResult noteLiveRecordIssue(
+                Addr line, bool secure, Addr producer_pc,
+                PCValidationKind kind, unsigned int producer_epoch);
+            LiveRecordResult noteLiveRecordUseful(
+                Addr line, bool secure, Addr consumer_pc);
+            LiveRecordResult noteLiveRecordUnused(
+                Addr line, bool secure);
+            UsefulnessUpdateResult submitUsefulnessOutcome(
+                Addr pc, PCValidationKind kind, Addr trigger_line,
+                unsigned int producer_epoch, bool useful);
             void submitValidation(const LookupResult &lookup, Addr pc,
                                   Addr trigger_line, bool validation_hit);
             void noteOffsetChange(PCValidationKind kind);
@@ -428,8 +483,13 @@ class BOP : public Queued
                               PrefetchSourceType src);
 
         const char *pcValidationTraceName(PCValidationKind kind) const;
+        void accountPCValidationUpdate(
+            const PCValidationConfidenceTable::CommitResult &result);
         void tracePCValidationUpdate(
             const PCValidationConfidenceTable::CommitResult &result);
+        void traceLiveRecordEvent(
+            const char *event,
+            const PCValidationConfidenceTable::LiveRecordResult &result) const;
 
         struct BopStats : public statistics::Group
         {
@@ -456,6 +516,16 @@ class BOP : public Queued
             statistics::Scalar pcValidationLowEntryHysteresisHolds;
             statistics::Scalar pcValidationLowEntryHysteresisTransitions;
             statistics::Scalar pcValidationOffsetEpochChanges;
+            statistics::Scalar pcValidationProducerUsefulUpdates;
+            statistics::Scalar pcValidationProducerUnusedUpdates;
+            statistics::Scalar pcValidationProducerOutcomeSkippedEpoch;
+            statistics::Scalar pcValidationLiveRecordIssues;
+            statistics::Scalar pcValidationLiveRecordDuplicateIssues;
+            statistics::Scalar pcValidationLiveRecordConsumes;
+            statistics::Scalar pcValidationLiveRecordConsumeMissing;
+            statistics::Scalar pcValidationLiveRecordEvictUnused;
+            statistics::Scalar pcValidationLiveRecordEvictConsumed;
+            statistics::Scalar pcValidationLiveRecordEvictMissing;
             statistics::Distribution pcValidationConfidenceDist;
             statistics::Scalar globalBOPOutcomeUseful;
             statistics::Scalar globalBOPOutcomeUnused;
@@ -504,6 +574,18 @@ class BOP : public Queued
 
         /** Receive a source-only useful/unused outcome from the L2 cache. */
         void notifyGlobalBOPOutcome(bool useful);
+
+        /** Record the live owner of a BOP-prefetched line when it fills. */
+        void recordPrefetchIssue(const PacketPtr &pkt) override;
+
+        /** Record the first demand consumer of a live BOP-prefetched line. */
+        void recordPrefetchUseful(Addr paddr, bool is_secure,
+                                  PrefetchSourceType pfSource,
+                                  Addr consumer_pc) override;
+
+        /** Record eviction/removal of a live BOP-prefetched line. */
+        void recordPrefetchUnused(Addr paddr, bool is_secure,
+                                  PrefetchSourceType pfSource) override;
 
         bool tryAddOffset(int64_t offset, bool late = false);
 };

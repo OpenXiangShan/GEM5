@@ -471,6 +471,8 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
         prefetchStats.pfUseful_srcs[pf_source]++;
         prefetchUseful(pkt->getAddr(), pf_source);
+        recordPrefetchUseful(pkt->getAddr(), pkt->isSecure(), pf_source,
+                             pkt->req->hasPC() ? pkt->req->getPC() : 0);
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.

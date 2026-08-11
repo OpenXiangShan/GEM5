@@ -760,6 +760,9 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Require current best offset to hit in the RR table before issuing")
     enable_pc_validation_confidence = Param.Bool(False,
         "Use PC-aggregated confidence to grade current-best-offset validation")
+    pc_validation_usefulness_feedback = Param.Bool(False,
+        "Train PC validation confidence from actual BOP prefetch consumption "
+        "attributed to the producer PC, instead of RR validation hit/miss")
     pc_validation_entries = Param.Unsigned(64,
         "Number of direct-mapped PC validation-confidence entries")
     pc_validation_tag_bits = Param.Unsigned(10,

@@ -987,6 +987,9 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
     if (blk && !from_core && from_pref) {
         blk->setPrefetched();
         blk->setXsMetadata(pkt->req->getXsMetadata());
+        if (prefetcher) {
+            prefetcher->recordPrefetchIssue(pkt);
+        }
         DPRINTF(Cache, "Marking block as prefetched from prefetcher %i\n", blk->getXsMetadata().prefetchSource);
         stats.pfOnlyFill++;  // Pure prefetch fill (no demand merge)
     } else if (blk && from_core && from_pref) {

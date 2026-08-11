@@ -277,6 +277,35 @@ ArchDBer::bopValidationOutcomeTraceWrite(
 }
 
 void
+ArchDBer::bopValidationLiveRecordTraceWrite(
+    Tick tick, const char *event, Addr line_addr, bool secure,
+    const char *attempt_bop_name, const char *attempt_kind, Addr attempt_pc,
+    const char *owner_bop_name, const char *owner_kind, Addr owner_pc,
+    Addr first_consumer_pc, bool consumed, bool found, bool created,
+    bool duplicate_issue)
+{
+  if (!(dumpGlobal && dumpBopValidationTrace)) return;
+
+  sprintf(
+      memTraceSQLBuf,
+      "INSERT INTO BOPLiveRecordTrace("
+      "Tick,Event,LineAddr,Secure,AttemptBOPName,AttemptKind,AttemptPC,"
+      "OwnerBOPName,OwnerKind,OwnerPC,FirstConsumerPC,Consumed,Found,"
+      "Created,DuplicateIssue,SITE) "
+      "VALUES(%lld,'%s',%lld,%d,'%s','%s',%lld,'%s','%s',%lld,%lld,"
+      "%d,%d,%d,%d,'%s');",
+      sqliteSignedInt(tick), event, sqliteSignedInt(line_addr), secure,
+      attempt_bop_name, attempt_kind, sqliteSignedInt(attempt_pc),
+      owner_bop_name, owner_kind, sqliteSignedInt(owner_pc),
+      sqliteSignedInt(first_consumer_pc), consumed, found, created,
+      duplicate_issue, "BOPLiveRecord");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  }
+}
+
+void
 ArchDBer::smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss)
 {
   bool dump_me = dumpGlobal && dumpSMSTrainTrace;

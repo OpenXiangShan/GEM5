@@ -97,6 +97,7 @@ def _configure_l2_composite_kmh_align(prefetcher):
 def _configure_l2_bop_validation_defaults(prefetcher):
     for bop in (prefetcher.bop_large, prefetcher.bop_small):
         bop.enable_pc_validation_confidence = True
+        bop.pc_validation_usefulness_feedback = True
         bop.pc_validation_entries = 128
         bop.pc_validation_miss_decay_period = 4
         bop.pc_validation_low_entry_miss_streak_threshold = 0

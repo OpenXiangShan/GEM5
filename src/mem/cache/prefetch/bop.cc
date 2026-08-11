@@ -73,6 +73,21 @@ BOP::pcValidationKindName(PCValidationKind kind)
     return "invalid";
 }
 
+BOP::PCValidationKind
+BOP::pcValidationKindFromIndex(unsigned int kind)
+{
+    switch (kind) {
+      case 0:
+        return PCValidationKind::Generic;
+      case 1:
+        return PCValidationKind::Large;
+      case 2:
+        return PCValidationKind::Small;
+    }
+    panic("Invalid BOP PC validation kind index %u\n", kind);
+    return PCValidationKind::Generic;
+}
+
 BOP::PCValidationConfidenceTable::PCValidationConfidenceTable(
     unsigned int entries, unsigned int tag_bits, unsigned int counter_bits,
     unsigned int initial_confidence, unsigned int medium_threshold,
@@ -167,6 +182,15 @@ BOP::PCValidationConfidenceTable::signature(
     sig ^= sig >> 11;
     sig ^= sig >> 23;
     return sig;
+}
+
+Addr
+BOP::PCValidationConfidenceTable::liveRecordKey(
+    Addr line, bool secure) const
+{
+    // Cache block addresses are aligned, so bit 0 is free for secure-space
+    // disambiguation without changing the visible line address in the trace.
+    return line | static_cast<Addr>(secure);
 }
 
 BOP::PCValidationConfidenceTable::Entry &
@@ -319,6 +343,100 @@ BOP::PCValidationConfidenceTable::sampleMediumIssue(
     return sample(pc, kind, line, mediumSamplePeriod, 0x9e37);
 }
 
+BOP::PCValidationConfidenceTable::LiveRecordResult
+BOP::PCValidationConfidenceTable::noteLiveRecordIssue(
+    Addr line, bool secure, Addr producer_pc, PCValidationKind kind,
+    unsigned int producer_epoch)
+{
+    LiveRecordResult result;
+    result.valid = true;
+    result.secure = secure;
+    result.line = line;
+    result.attemptPc = producer_pc;
+    result.attemptKind = kind;
+
+    const Addr key = liveRecordKey(line, secure);
+    auto it = liveRecords.find(key);
+    if (it == liveRecords.end()) {
+        LiveRecordEntry entry;
+        entry.line = line;
+        entry.secure = secure;
+        entry.ownerPc = producer_pc;
+        entry.ownerKind = kind;
+        entry.ownerEpoch = producer_epoch & epochMask;
+        auto inserted = liveRecords.emplace(key, entry);
+        it = inserted.first;
+        result.created = true;
+    } else {
+        result.duplicateIssue = true;
+    }
+
+    result.found = true;
+    result.consumed = it->second.consumed;
+    result.ownerPc = it->second.ownerPc;
+    result.firstConsumerPc = it->second.firstConsumerPc;
+    result.ownerEpoch = it->second.ownerEpoch;
+    result.ownerKind = it->second.ownerKind;
+    return result;
+}
+
+BOP::PCValidationConfidenceTable::LiveRecordResult
+BOP::PCValidationConfidenceTable::noteLiveRecordUseful(
+    Addr line, bool secure, Addr consumer_pc)
+{
+    LiveRecordResult result;
+    result.valid = true;
+    result.secure = secure;
+    result.line = line;
+    result.attemptPc = consumer_pc;
+
+    const Addr key = liveRecordKey(line, secure);
+    auto it = liveRecords.find(key);
+    if (it == liveRecords.end()) {
+        return result;
+    }
+
+    LiveRecordEntry &entry = it->second;
+    result.found = true;
+    if (!entry.consumed) {
+        entry.consumed = true;
+        entry.firstConsumerPc = consumer_pc;
+        result.firstConsume = true;
+    }
+
+    result.consumed = entry.consumed;
+    result.ownerPc = entry.ownerPc;
+    result.firstConsumerPc = entry.firstConsumerPc;
+    result.ownerEpoch = entry.ownerEpoch;
+    result.ownerKind = entry.ownerKind;
+    return result;
+}
+
+BOP::PCValidationConfidenceTable::LiveRecordResult
+BOP::PCValidationConfidenceTable::noteLiveRecordUnused(
+    Addr line, bool secure)
+{
+    LiveRecordResult result;
+    result.valid = true;
+    result.secure = secure;
+    result.line = line;
+
+    const Addr key = liveRecordKey(line, secure);
+    auto it = liveRecords.find(key);
+    if (it == liveRecords.end()) {
+        return result;
+    }
+
+    result.found = true;
+    result.consumed = it->second.consumed;
+    result.ownerPc = it->second.ownerPc;
+    result.firstConsumerPc = it->second.firstConsumerPc;
+    result.ownerEpoch = it->second.ownerEpoch;
+    result.ownerKind = it->second.ownerKind;
+    liveRecords.erase(it);
+    return result;
+}
+
 void
 BOP::PCValidationConfidenceTable::resetGlobalBypassPolicy()
 {
@@ -350,6 +468,13 @@ bool
 BOP::PCValidationConfidenceTable::bypassPCValidationActive() const
 {
     return globalCoverageGuardEnabled && globalBypassPCValidation;
+}
+
+unsigned int
+BOP::PCValidationConfidenceTable::currentEpochFor(
+    PCValidationKind kind) const
+{
+    return currentEpoch[pcValidationKindIndex(kind)];
 }
 
 void
@@ -424,6 +549,79 @@ BOP::PCValidationConfidenceTable::noteGlobalBOPOutcome(bool useful)
     result.unusedEwma = globalUnusedEwma;
     result.issuedWindowIssued = issued_window;
     result.resolvedCoverageQ08 = resolved_coverage_q08;
+    return result;
+}
+
+BOP::PCValidationConfidenceTable::UsefulnessUpdateResult
+BOP::PCValidationConfidenceTable::submitUsefulnessOutcome(
+    Addr pc, PCValidationKind kind, Addr trigger_line,
+    unsigned int producer_epoch, bool useful)
+{
+    UsefulnessUpdateResult result;
+    result.useful = useful;
+    result.commit.kind = kind;
+    result.commit.validationHit = useful;
+
+    if (pc == 0) {
+        return result;
+    }
+
+    const unsigned int kind_index = pcValidationKindIndex(kind);
+    if ((producer_epoch & epochMask) != currentEpoch[kind_index]) {
+        result.skippedByEpoch = true;
+        return result;
+    }
+
+    result.lookup = lookup(pc, kind);
+    result.applied = true;
+
+    CommitResult &commit = result.commit;
+    commit.hadPending = true;
+    commit.hadValidation = true;
+    commit.pc = pc;
+    commit.triggerLine = trigger_line;
+    commit.index = result.lookup.index;
+    commit.set = result.lookup.set;
+    commit.way = result.lookup.way;
+    commit.tag = result.lookup.tag;
+    commit.participants = 1;
+
+    Entry &entry = table[result.lookup.index];
+    assert(entry.valid && entry.tag == result.lookup.tag);
+    commit.confidenceBefore = entry.confidence;
+    commit.lowEntryMissStreakBefore = entry.lowEntryMissStreak;
+
+    if (useful) {
+        entry.confidence = std::min(
+            counterMax, static_cast<unsigned int>(entry.confidence) +
+                            hitIncrement);
+        entry.lowEntryMissStreak = 0;
+    } else if (sample(pc, kind, trigger_line, missDecayPeriod, 0x7f4a)) {
+        if (lowEntryMissStreakThreshold != 0 &&
+            entry.confidence == mediumThreshold) {
+            entry.lowEntryMissStreak = std::min(
+                lowEntryMissStreakThreshold,
+                static_cast<unsigned int>(entry.lowEntryMissStreak) + 1);
+            if (entry.lowEntryMissStreak == lowEntryMissStreakThreshold) {
+                entry.confidence = entry.confidence == 0
+                    ? 0 : entry.confidence - 1;
+                entry.lowEntryMissStreak = 0;
+                commit.decayed = true;
+                commit.lowEntryHysteresisTransition = true;
+            } else {
+                commit.lowEntryHysteresisHeld = true;
+            }
+        } else {
+            entry.confidence = entry.confidence == 0
+                ? 0 : entry.confidence - 1;
+            entry.lowEntryMissStreak = 0;
+            commit.decayed = true;
+        }
+    }
+
+    commit.confidenceAfter = entry.confidence;
+    commit.lowEntryMissStreakAfter = entry.lowEntryMissStreak;
+    commit.epochAfter = currentEpoch[kind_index];
     return result;
 }
 
@@ -584,6 +782,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
       enableAdaptOffset(p.enable_adaptoffset),
       enableIssueValidation(p.enable_issue_validation),
       enablePCValidationConfidence(p.enable_pc_validation_confidence),
+      enablePCValidationUsefulnessFeedback(
+          p.pc_validation_usefulness_feedback),
       enableGlobalBOPCoverageGuard(p.enable_global_bop_coverage_guard),
       pcValidationEntries(p.pc_validation_entries),
       pcValidationTagBits(p.pc_validation_tag_bits),
@@ -622,6 +822,11 @@ BOP::BOP(const BOPPrefetcherParams &p)
     }
     if (enableGlobalBOPCoverageGuard && !enablePCValidationConfidence) {
         fatal("%s: global BOP coverage guard requires PC validation confidence\n",
+              name());
+    }
+    if (enablePCValidationUsefulnessFeedback &&
+        !enablePCValidationConfidence) {
+        fatal("%s: producer-usefulness feedback requires PC validation confidence\n",
               name());
     }
     if (enablePCValidationConfidence) {
@@ -1154,8 +1359,10 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                     }
                 }
             }
-            pcValidationTable->submitValidation(
-                pc_lookup, trigger_pc, addr >> lBlkSize, validation_hit);
+            if (!enablePCValidationUsefulnessFeedback) {
+                pcValidationTable->submitValidation(
+                    pc_lookup, trigger_pc, addr >> lBlkSize, validation_hit);
+            }
         } else if (!validation_hit) {
             if (pcValidationTable->notePCValidationMiss()) {
                 stats.globalBOPBypassModeIdleResets++;
@@ -1242,6 +1449,11 @@ BOP::sharePCValidationConfidenceWith(BOP &other)
         fatal("%s and %s must agree on PC validation confidence enablement\n",
               name(), other.name());
     }
+    if (enablePCValidationUsefulnessFeedback !=
+        other.enablePCValidationUsefulnessFeedback) {
+        fatal("%s and %s must agree on PC validation usefulness feedback\n",
+              name(), other.name());
+    }
     if (!enablePCValidationConfidence) {
         return;
     }
@@ -1293,6 +1505,59 @@ BOP::tracePCValidationUpdate(
 }
 
 void
+BOP::traceLiveRecordEvent(
+    const char *event,
+    const PCValidationConfidenceTable::LiveRecordResult &result) const
+{
+    if (!archDBer || !archDBer->dumpBopValidationTrace || !result.valid) {
+        return;
+    }
+
+    const bool is_issue_event =
+        std::string(event) == "issue" ||
+        std::string(event) == "issue_duplicate";
+    const char *attempt_bop_name = is_issue_event
+        ? pcValidationTraceName(result.attemptKind) : "none";
+    const char *attempt_kind_name = is_issue_event
+        ? pcValidationKindName(result.attemptKind) : "none";
+    const char *owner_bop_name = result.found
+        ? pcValidationTraceName(result.ownerKind) : "none";
+    const char *owner_kind_name = result.found
+        ? pcValidationKindName(result.ownerKind) : "none";
+
+    archDBer->bopValidationLiveRecordTraceWrite(
+        curTick(), event, result.line, result.secure,
+        attempt_bop_name, attempt_kind_name, result.attemptPc,
+        owner_bop_name, owner_kind_name, result.ownerPc,
+        result.firstConsumerPc, result.consumed, result.found,
+        result.created, result.duplicateIssue);
+}
+
+void
+BOP::accountPCValidationUpdate(
+    const PCValidationConfidenceTable::CommitResult &result)
+{
+    if (result.offsetChanged) {
+        stats.pcValidationOffsetEpochChanges++;
+    }
+    if (result.hadValidation && !result.offsetChanged) {
+        if (result.validationHit) {
+            stats.pcValidationHitUpdates++;
+        } else if (result.decayed) {
+            stats.pcValidationMissDecays++;
+        } else {
+            stats.pcValidationMissNoDecays++;
+        }
+        if (result.lowEntryHysteresisHeld) {
+            stats.pcValidationLowEntryHysteresisHolds++;
+        }
+        if (result.lowEntryHysteresisTransition) {
+            stats.pcValidationLowEntryHysteresisTransitions++;
+        }
+    }
+}
+
+void
 BOP::commitPCValidationConfidence()
 {
     if (!enablePCValidationConfidence) {
@@ -1304,24 +1569,7 @@ BOP::commitPCValidationConfidence()
         return;
     }
     for (const auto &result : results) {
-        if (result.offsetChanged) {
-            stats.pcValidationOffsetEpochChanges++;
-        }
-        if (result.hadValidation && !result.offsetChanged) {
-            if (result.validationHit) {
-                stats.pcValidationHitUpdates++;
-            } else if (result.decayed) {
-                stats.pcValidationMissDecays++;
-            } else {
-                stats.pcValidationMissNoDecays++;
-            }
-            if (result.lowEntryHysteresisHeld) {
-                stats.pcValidationLowEntryHysteresisHolds++;
-            }
-            if (result.lowEntryHysteresisTransition) {
-                stats.pcValidationLowEntryHysteresisTransitions++;
-            }
-        }
+        accountPCValidationUpdate(result);
         tracePCValidationUpdate(result);
     }
 }
@@ -1363,6 +1611,132 @@ BOP::notifyGlobalBOPOutcome(bool useful)
     }
 }
 
+void
+BOP::recordPrefetchIssue(const PacketPtr &pkt)
+{
+    if (!enablePCValidationConfidence || !pcValidationTable ||
+        !pkt || !pkt->req->hasXsMetadata()) {
+        return;
+    }
+
+    const Request::XsMetadata meta = pkt->req->getXsMetadata();
+    if (meta.prefetchSource != PrefetchSourceType::HWP_BOP) {
+        return;
+    }
+
+    const Addr producer_pc = pkt->req->hasPC() ? pkt->req->getPC() : 0;
+    const auto kind = pcValidationKindFromIndex(meta.bopValidationKind);
+    const auto result = pcValidationTable->noteLiveRecordIssue(
+        blockAddress(pkt->getAddr()), pkt->isSecure(), producer_pc, kind,
+        meta.bopValidationEpoch);
+
+    if (result.duplicateIssue) {
+        stats.pcValidationLiveRecordDuplicateIssues++;
+    } else {
+        stats.pcValidationLiveRecordIssues++;
+    }
+    traceLiveRecordEvent(
+        result.duplicateIssue ? "issue_duplicate" : "issue", result);
+}
+
+void
+BOP::recordPrefetchUseful(
+    Addr paddr, bool is_secure, PrefetchSourceType pfSource,
+    Addr consumer_pc)
+{
+    if (!enablePCValidationConfidence || !pcValidationTable ||
+        pfSource != PrefetchSourceType::HWP_BOP) {
+        return;
+    }
+
+    const auto result = pcValidationTable->noteLiveRecordUseful(
+        blockAddress(paddr), is_secure, consumer_pc);
+    if (result.found) {
+        stats.pcValidationLiveRecordConsumes++;
+    } else {
+        stats.pcValidationLiveRecordConsumeMissing++;
+    }
+    if (enablePCValidationUsefulnessFeedback && result.found &&
+        result.firstConsume) {
+        auto update = pcValidationTable->submitUsefulnessOutcome(
+            result.ownerPc, result.ownerKind, result.line >> lBlkSize,
+            result.ownerEpoch, true);
+        if (update.skippedByEpoch) {
+            stats.pcValidationProducerOutcomeSkippedEpoch++;
+        }
+        if (update.applied) {
+            stats.pcValidationTableLookups++;
+            if (update.lookup.entryHit) {
+                stats.pcValidationTableHits++;
+            } else {
+                stats.pcValidationTableMisses++;
+            }
+            if (update.lookup.replaced) {
+                stats.pcValidationTableReplacements++;
+            }
+            if (update.lookup.epochReset) {
+                stats.pcValidationEpochResets++;
+            }
+            stats.pcValidationProducerUsefulUpdates++;
+            accountPCValidationUpdate(update.commit);
+            tracePCValidationUpdate(update.commit);
+        }
+    }
+    traceLiveRecordEvent(result.found ? "consume" : "consume_missing",
+                         result);
+}
+
+void
+BOP::recordPrefetchUnused(
+    Addr paddr, bool is_secure, PrefetchSourceType pfSource)
+{
+    if (!enablePCValidationConfidence || !pcValidationTable ||
+        pfSource != PrefetchSourceType::HWP_BOP) {
+        return;
+    }
+
+    const auto result = pcValidationTable->noteLiveRecordUnused(
+        blockAddress(paddr), is_secure);
+    const char *event = "evict_missing";
+    if (result.found) {
+        event = result.consumed ? "evict_consumed" : "evict_unused";
+        if (result.consumed) {
+            stats.pcValidationLiveRecordEvictConsumed++;
+        } else {
+            stats.pcValidationLiveRecordEvictUnused++;
+        }
+    } else {
+        stats.pcValidationLiveRecordEvictMissing++;
+    }
+    if (enablePCValidationUsefulnessFeedback && result.found &&
+        !result.consumed) {
+        auto update = pcValidationTable->submitUsefulnessOutcome(
+            result.ownerPc, result.ownerKind, result.line >> lBlkSize,
+            result.ownerEpoch, false);
+        if (update.skippedByEpoch) {
+            stats.pcValidationProducerOutcomeSkippedEpoch++;
+        }
+        if (update.applied) {
+            stats.pcValidationTableLookups++;
+            if (update.lookup.entryHit) {
+                stats.pcValidationTableHits++;
+            } else {
+                stats.pcValidationTableMisses++;
+            }
+            if (update.lookup.replaced) {
+                stats.pcValidationTableReplacements++;
+            }
+            if (update.lookup.epochReset) {
+                stats.pcValidationEpochResets++;
+            }
+            stats.pcValidationProducerUnusedUpdates++;
+            accountPCValidationUpdate(update.commit);
+            tracePCValidationUpdate(update.commit);
+        }
+    }
+    traceLiveRecordEvent(event, result);
+}
+
 bool
 BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                       PrefetchSourceType src)
@@ -1378,7 +1752,12 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
-    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+    const uint8_t validation_epoch = pcValidationTable
+        ? pcValidationTable->currentEpochFor(pcValidationKind) : 0;
+    AddrPriority buffered_pf(addr, prio, src, pfi.trigger_info);
+    buffered_pf.bopValidationKind = pcValidationKindIndex(pcValidationKind);
+    buffered_pf.bopValidationEpoch = validation_epoch;
+    InsertPFRequestToBuffer(buffered_pf);
     if (filter->contains(addr)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
         // Count filtered prefetch
@@ -1387,7 +1766,10 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     } else {
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
+        AddrPriority pf(addr, prio, src);
+        pf.bopValidationKind = pcValidationKindIndex(pcValidationKind);
+        pf.bopValidationEpoch = validation_epoch;
+        addresses.push_back(pf);
         return true;
     }
 }
@@ -1443,6 +1825,34 @@ BOP::BopStats::BopStats(statistics::Group *parent)
                "Medium-to-low transitions released after local miss streak"),
       ADD_STAT(pcValidationOffsetEpochChanges, statistics::units::Count::get(),
                "PC-kind validation-confidence epoch changes"),
+      ADD_STAT(pcValidationProducerUsefulUpdates,
+               statistics::units::Count::get(),
+               "Producer-owned useful outcomes applied to PC confidence"),
+      ADD_STAT(pcValidationProducerUnusedUpdates,
+               statistics::units::Count::get(),
+               "Producer-owned unused outcomes applied to PC confidence"),
+      ADD_STAT(pcValidationProducerOutcomeSkippedEpoch,
+               statistics::units::Count::get(),
+               "Producer-owned outcomes skipped because their BOP epoch is stale"),
+      ADD_STAT(pcValidationLiveRecordIssues, statistics::units::Count::get(),
+               "New BOP live records created on prefetched-line fill"),
+      ADD_STAT(pcValidationLiveRecordDuplicateIssues,
+               statistics::units::Count::get(),
+               "Duplicate BOP live-record issues that kept the original owner"),
+      ADD_STAT(pcValidationLiveRecordConsumes, statistics::units::Count::get(),
+               "BOP live records consumed by a demand access"),
+      ADD_STAT(pcValidationLiveRecordConsumeMissing,
+               statistics::units::Count::get(),
+               "Demand useful events with no matching BOP live record"),
+      ADD_STAT(pcValidationLiveRecordEvictUnused,
+               statistics::units::Count::get(),
+               "BOP live records evicted before demand consumption"),
+      ADD_STAT(pcValidationLiveRecordEvictConsumed,
+               statistics::units::Count::get(),
+               "Consumed BOP live records removed from the cache"),
+      ADD_STAT(pcValidationLiveRecordEvictMissing,
+               statistics::units::Count::get(),
+               "BOP unused events with no matching live record"),
       ADD_STAT(pcValidationConfidenceDist, statistics::units::Count::get(),
                "PC validation confidence observed at candidate issue"),
       ADD_STAT(globalBOPOutcomeUseful, statistics::units::Count::get(),

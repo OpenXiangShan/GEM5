@@ -825,6 +825,25 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "PCUpdateLowEntryHysteresisHeld BOOL NOT NULL," \
             "PCUpdateLowEntryHysteresisTransition BOOL NOT NULL);"
             ,
+            "CREATE TABLE BOPLiveRecordTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "Event TEXT NOT NULL," \
+            "LineAddr INT NOT NULL," \
+            "Secure BOOL NOT NULL," \
+            "AttemptBOPName TEXT NOT NULL," \
+            "AttemptKind TEXT NOT NULL," \
+            "AttemptPC INT NOT NULL," \
+            "OwnerBOPName TEXT NOT NULL," \
+            "OwnerKind TEXT NOT NULL," \
+            "OwnerPC INT NOT NULL," \
+            "FirstConsumerPC INT NOT NULL," \
+            "Consumed BOOL NOT NULL," \
+            "Found BOOL NOT NULL," \
+            "Created BOOL NOT NULL," \
+            "DuplicateIssue BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \

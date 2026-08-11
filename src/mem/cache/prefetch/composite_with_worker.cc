@@ -49,7 +49,9 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
         bool can_cross_page = (tlb != nullptr);
         if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
-            new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
+            new_pfi.setXsMetadata(Request::XsMetadata(
+                addr_prio.pfSource, addr_prio.depth,
+                addr_prio.bopValidationKind, addr_prio.bopValidationEpoch));
             statsQueued.pfIdentified++;
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, inserting into prefetch queue.\n", new_pfi.getAddr());
             // Create and insert the request

@@ -2409,9 +2409,17 @@ BaseCache::invalidateBlock(CacheBlk *blk)
             prefetcher->sendCustomInfoToDownStream();
         }
     }
-    // If block is still marked as prefetched, then it hasn't been used
-    if (blk->wasPrefetched()) {
-        prefetcher->prefetchUnused(regenerateBlkAddr(blk), blk->getXsMetadata().prefetchSource);
+    // If block is still marked as prefetched, then it hasn't been used.
+    // Live-record removal also needs consumed prefetched blocks, whose
+    // wasPrefetched bit was cleared on the first demand hit.
+    if (prefetcher && blk->wasPrefetched()) {
+        prefetcher->prefetchUnused(regenerateBlkAddr(blk),
+                                   blk->getXsMetadata().prefetchSource);
+    }
+    if (prefetcher && blk->wasEverPrefetched()) {
+        prefetcher->recordPrefetchUnused(regenerateBlkAddr(blk),
+                                         blk->isSecure(),
+                                         blk->getXsMetadata().prefetchSource);
     }
 
     // Notify that the data contents for this address are no longer present

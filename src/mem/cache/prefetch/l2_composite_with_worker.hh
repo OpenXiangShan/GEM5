@@ -29,6 +29,12 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
 
     void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) override;
     void prefetchUseful(Addr paddr, PrefetchSourceType pfSource) override;
+    void recordPrefetchIssue(const PacketPtr &pkt) override;
+    void recordPrefetchUseful(Addr paddr, bool is_secure,
+                              PrefetchSourceType pfSource,
+                              Addr consumer_pc) override;
+    void recordPrefetchUnused(Addr paddr, bool is_secure,
+                              PrefetchSourceType pfSource) override;
 
     void addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp) override;
 

@@ -58,6 +58,12 @@ class PrefetcherForwarder : public Base
     void incrDemandMhsrMisses() override;
     void prefetchUnused(PrefetchSourceType pf_type) override;
     void prefetchUnused(Addr paddr, PrefetchSourceType pf_type) override;
+    void recordPrefetchIssue(const PacketPtr &pkt) override;
+    void recordPrefetchUseful(Addr paddr, bool is_secure,
+                              PrefetchSourceType pf_type,
+                              Addr consumer_pc) override;
+    void recordPrefetchUnused(Addr paddr, bool is_secure,
+                              PrefetchSourceType pf_type) override;
     void pfHitInMSHR(PrefetchSourceType pf_type) override;
     void pfHitInCache(PrefetchSourceType pf_type) override;
     void pfHitInWB(PrefetchSourceType pf_type) override;

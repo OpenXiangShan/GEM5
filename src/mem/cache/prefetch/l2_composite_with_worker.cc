@@ -58,6 +58,39 @@ L2CompositeWithWorkerPrefetcher::prefetchUseful(
 }
 
 void
+L2CompositeWithWorkerPrefetcher::recordPrefetchIssue(const PacketPtr &pkt)
+{
+    if (!enableBOP || !pkt || !pkt->req->hasXsMetadata()) {
+        return;
+    }
+
+    const Request::XsMetadata meta = pkt->req->getXsMetadata();
+    if (meta.prefetchSource == PrefetchSourceType::HWP_BOP) {
+        largeBOP->recordPrefetchIssue(pkt);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::recordPrefetchUseful(
+    Addr paddr, bool is_secure, PrefetchSourceType pfSource,
+    Addr consumer_pc)
+{
+    if (enableBOP && pfSource == PrefetchSourceType::HWP_BOP) {
+        largeBOP->recordPrefetchUseful(
+            paddr, is_secure, pfSource, consumer_pc);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::recordPrefetchUnused(
+    Addr paddr, bool is_secure, PrefetchSourceType pfSource)
+{
+    if (enableBOP && pfSource == PrefetchSourceType::HWP_BOP) {
+        largeBOP->recordPrefetchUnused(paddr, is_secure, pfSource);
+    }
+}
+
+void
 L2CompositeWithWorkerPrefetcher::addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp)
 {
     if (&queue == &pfq) {

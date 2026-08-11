@@ -68,6 +68,8 @@ class Queued : public Base
         int32_t priority;
         bool isVA;
         bool isBOP;
+        uint8_t bopValidationKind = 0;
+        uint8_t bopValidationEpoch = 0;
         int pfahead_host = 0; // which level should process pfahead (e.g 2 is l2...)
         bool pfahead = false;
         int depth=0;
