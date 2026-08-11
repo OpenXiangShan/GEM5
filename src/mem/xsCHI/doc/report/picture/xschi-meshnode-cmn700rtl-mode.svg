@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900">
+  <defs>
+    <marker id="arrow-blue" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2f73b7"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2e8b57"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#d88900"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#cc3d3d"/>
+    </marker>
+    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#0d1b2a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 42px Arial, sans-serif; fill: #0d1b2a; }
+      .subtitle { font: 22px Arial, sans-serif; fill: #607083; }
+      .legend { font: 17px Arial, sans-serif; fill: #607083; }
+      .box-title { font: 700 24px Arial, sans-serif; fill: #0d1b2a; }
+      .box-sub { font: 17px Arial, sans-serif; fill: #607083; }
+      .mono { font: 700 15px "SFMono-Regular", Consolas, monospace; fill: #233143; }
+      .small { font: 14px Arial, sans-serif; fill: #607083; }
+      .blue-box { fill: #eef6ff; stroke: #2f73b7; stroke-width: 3; }
+      .green-box { fill: #ecfaf2; stroke: #2e8b57; stroke-width: 3; }
+      .orange-box { fill: #fff7e7; stroke: #d88900; stroke-width: 3; }
+      .red-box { fill: #fff1f1; stroke: #cc3d3d; stroke-width: 3; }
+      .gray-box { fill: #f5f7fa; stroke: #8794a5; stroke-width: 2.5; }
+      .arrow-blue { stroke: #2f73b7; stroke-width: 3.2; fill: none; marker-end: url(#arrow-blue); }
+      .arrow-green { stroke: #2e8b57; stroke-width: 3.2; fill: none; marker-end: url(#arrow-green); }
+      .arrow-orange { stroke: #d88900; stroke-width: 3.2; fill: none; marker-end: url(#arrow-orange); }
+      .arrow-red { stroke: #cc3d3d; stroke-width: 3.2; fill: none; marker-end: url(#arrow-red); }
+      .dash-green { stroke: #2e8b57; stroke-width: 3.2; fill: none; stroke-dasharray: 8 7; marker-end: url(#arrow-green); }
+      .dash-red { stroke: #cc3d3d; stroke-width: 3.2; fill: none; stroke-dasharray: 8 7; marker-end: url(#arrow-red); }
+      .legend-line-blue { stroke: #2f73b7; stroke-width: 3; fill: none; }
+      .legend-line-green { stroke: #2e8b57; stroke-width: 3; fill: none; }
+      .legend-line-orange { stroke: #d88900; stroke-width: 3; fill: none; }
+      .legend-line-red { stroke: #cc3d3d; stroke-width: 3; fill: none; }
+      .slot { fill: #ffffff; stroke: #96b7d9; stroke-width: 1.5; }
+      .slot-fill { fill: #dbeeff; stroke: #2f73b7; stroke-width: 2; }
+      .slot-green { fill: #dff4e7; stroke: #2e8b57; stroke-width: 2; }
+      .slot-wait { fill: #fff8e8; stroke: #d88900; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="900" fill="#ffffff"/>
+  <text x="48" y="62" class="title">cmn700_rtl MeshNode Queue / Credit Mode</text>
+  <text x="48" y="96" class="subtitle">RTL-style admission path: RXBUF + skid/staging + MeshNode IB, with explicit credit-return latency</text>
+  <line x1="48" y1="128" x2="1752" y2="128" stroke="#d9e1ec" stroke-width="2"/>
+
+  <g transform="translate(62 164)">
+    <line x1="0" y1="0" x2="56" y2="0" class="legend-line-blue"/>
+    <text x="92" y="6" class="legend">flit admission</text>
+    <line x1="300" y1="0" x2="356" y2="0" class="legend-line-green"/>
+    <text x="392" y="6" class="legend">credit release / return</text>
+    <line x1="690" y1="0" x2="746" y2="0" class="legend-line-orange"/>
+    <text x="782" y="6" class="legend">egress grant</text>
+    <line x1="1048" y1="0" x2="1104" y2="0" class="legend-line-red"/>
+    <text x="1140" y="6" class="legend">admission / credit stall</text>
+  </g>
+
+  <g filter="url(#soft-shadow)">
+    <rect x="1250" y="38" width="500" height="66" rx="14" class="green-box"/>
+    <text x="1500" y="66" text-anchor="middle" class="mono">--chi-credit-model=cmn700_rtl</text>
+    <text x="1500" y="91" text-anchor="middle" class="small">enable RTL-style queue admission and credit timing</text>
+
+    <rect x="52" y="300" width="230" height="150" rx="14" class="gray-box"/>
+    <text x="167" y="352" text-anchor="middle" class="box-title">Upstream Port</text>
+    <text x="167" y="389" text-anchor="middle" class="box-sub">neighbor or endpoint</text>
+    <text x="167" y="421" text-anchor="middle" class="mono">credit-visible send</text>
+
+    <rect x="352" y="240" width="320" height="250" rx="16" class="blue-box"/>
+    <text x="512" y="291" text-anchor="middle" class="box-title">CHIPort RXBUF</text>
+    <text x="512" y="325" text-anchor="middle" class="box-sub">receive buffer credit window</text>
+    <g transform="translate(414 354)">
+      <rect x="0" y="0" width="54" height="46" rx="7" class="slot-fill"/><text x="27" y="30" text-anchor="middle" class="small">0</text>
+      <rect x="68" y="0" width="54" height="46" rx="7" class="slot-fill"/><text x="95" y="30" text-anchor="middle" class="small">1</text>
+      <rect x="136" y="0" width="54" height="46" rx="7" class="slot"/><text x="163" y="30" text-anchor="middle" class="small">2</text>
+    </g>
+    <text x="512" y="437" text-anchor="middle" class="mono">--chi-rxbuf-num</text>
+    <text x="512" y="465" text-anchor="middle" class="small">default model uses a 3-entry window</text>
+
+    <rect x="742" y="240" width="310" height="250" rx="16" class="green-box"/>
+    <text x="897" y="291" text-anchor="middle" class="box-title">Skid / Staging</text>
+    <text x="897" y="325" text-anchor="middle" class="box-sub">endpoint-side holding slots</text>
+    <g transform="translate(815 354)">
+      <rect x="0" y="0" width="70" height="46" rx="8" class="slot-green"/><text x="35" y="30" text-anchor="middle" class="small">skid</text>
+      <rect x="92" y="0" width="70" height="46" rx="8" class="slot"/><text x="127" y="30" text-anchor="middle" class="small">free</text>
+    </g>
+    <text x="897" y="437" text-anchor="middle" class="mono">--chi-skid-depth</text>
+    <text x="897" y="465" text-anchor="middle" class="small">absorbs transient RXBUF drain timing</text>
+
+    <rect x="1122" y="240" width="310" height="250" rx="16" class="green-box"/>
+    <text x="1277" y="291" text-anchor="middle" class="box-title">MeshNode IB</text>
+    <text x="1277" y="325" text-anchor="middle" class="box-sub">input-side admission buffer</text>
+    <g transform="translate(1195 354)">
+      <rect x="0" y="0" width="70" height="46" rx="8" class="slot-green"/><text x="35" y="30" text-anchor="middle" class="small">IB0</text>
+      <rect x="92" y="0" width="70" height="46" rx="8" class="slot-wait"/><text x="127" y="30" text-anchor="middle" class="small">IB1</text>
+    </g>
+    <text x="1277" y="437" text-anchor="middle" class="mono">--chi-ib-depth</text>
+    <text x="1277" y="465" text-anchor="middle" class="small">effective backpressure source</text>
+
+    <rect x="1510" y="280" width="240" height="170" rx="14" class="orange-box"/>
+    <text x="1630" y="333" text-anchor="middle" class="box-title">Route + RR</text>
+    <text x="1630" y="368" text-anchor="middle" class="box-sub">XY egress selection</text>
+    <text x="1630" y="401" text-anchor="middle" class="mono">one flit / cycle</text>
+
+    <rect x="72" y="650" width="420" height="142" rx="14" class="green-box"/>
+    <text x="282" y="688" text-anchor="middle" class="box-title">Mode Constraint</text>
+    <text x="282" y="723" text-anchor="middle" class="mono">rxbuf_num == skid_depth + ib_depth</text>
+    <text x="282" y="755" text-anchor="middle" class="small">invalid combinations should be rejected early</text>
+
+    <rect x="532" y="650" width="360" height="142" rx="14" class="green-box"/>
+    <text x="712" y="688" text-anchor="middle" class="box-title">Credit Release</text>
+    <text x="712" y="722" text-anchor="middle" class="small">drained RXBUF / skid / IB entry</text>
+    <text x="712" y="754" text-anchor="middle" class="mono">return after latency</text>
+
+    <rect x="932" y="650" width="390" height="142" rx="14" class="green-box"/>
+    <text x="1127" y="688" text-anchor="middle" class="box-title">Admission Queue</text>
+    <text x="1127" y="722" text-anchor="middle" class="mono">RXBUF + skid + IB</text>
+    <text x="1127" y="749" text-anchor="middle" class="small">local queue occupancy</text>
+    <text x="1127" y="776" text-anchor="middle" class="small">drives upstream backpressure</text>
+
+    <rect x="1362" y="650" width="360" height="142" rx="14" class="red-box"/>
+    <text x="1542" y="688" text-anchor="middle" class="box-title">Stall Conditions</text>
+    <text x="1542" y="722" text-anchor="middle" class="small">no RXBUF / skid / IB slot</text>
+    <text x="1542" y="754" text-anchor="middle" class="small">or no output-link credit</text>
+  </g>
+
+  <path d="M282 375 H352" class="arrow-blue"/>
+  <text x="317" y="358" text-anchor="middle" class="small">send</text>
+  <path d="M672 375 H742" class="arrow-blue"/>
+  <text x="707" y="358" text-anchor="middle" class="small">drain</text>
+  <path d="M1052 375 H1122" class="arrow-blue"/>
+  <text x="1087" y="358" text-anchor="middle" class="small">admit</text>
+  <path d="M1432 375 H1510" class="arrow-blue"/>
+  <text x="1471" y="358" text-anchor="middle" class="small">route</text>
+  <path d="M1750 365 H1780" class="arrow-orange"/>
+  <text x="1630" y="476" text-anchor="middle" class="small">checks downstream</text>
+  <text x="1630" y="496" text-anchor="middle" class="small">credit before send</text>
+
+  <path d="M512 490 V650" class="dash-green"/>
+  <path d="M897 490 C897 560 812 578 760 650" class="dash-green"/>
+  <path d="M1277 490 C1277 582 892 582 808 650" class="dash-green"/>
+  <path d="M532 721 C396 721 342 610 220 450" class="dash-green"/>
+  <text x="398" y="622" text-anchor="middle" class="mono">credit return latency</text>
+
+  <path d="M1277 490 C1355 555 1475 575 1542 650" class="dash-red"/>
+  <path d="M1630 450 C1665 535 1608 590 1542 650" class="dash-red"/>
+  <text x="1450" y="575" text-anchor="middle" class="small">stall source</text>
+</svg>

@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900">
+  <defs>
+    <marker id="arrow-blue" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2f73b7"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2e8b57"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#d88900"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="11" markerHeight="8" refX="10.5" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#7056c8"/>
+    </marker>
+    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#0d1b2a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 42px Arial, sans-serif; fill: #0d1b2a; }
+      .subtitle { font: 22px Arial, sans-serif; fill: #607083; }
+      .legend { font: 17px Arial, sans-serif; fill: #607083; }
+      .box-title { font: 700 24px Arial, sans-serif; fill: #0d1b2a; }
+      .box-sub { font: 17px Arial, sans-serif; fill: #607083; }
+      .mono { font: 700 15px "SFMono-Regular", Consolas, monospace; fill: #233143; }
+      .small { font: 14px Arial, sans-serif; fill: #607083; }
+      .blue-box { fill: #eef6ff; stroke: #2f73b7; stroke-width: 3; }
+      .bridge-box { fill: #e8f7f7; stroke: #1f8f99; stroke-width: 3; }
+      .orange-box { fill: #fff7e7; stroke: #d88900; stroke-width: 3; }
+      .green-box { fill: #ecfaf2; stroke: #2e8b57; stroke-width: 3; }
+      .purple-box { fill: #f2efff; stroke: #7056c8; stroke-width: 3; }
+      .arrow-blue { stroke: #2f73b7; stroke-width: 3.2; fill: none; marker-end: url(#arrow-blue); }
+      .arrow-green { stroke: #2e8b57; stroke-width: 3.2; fill: none; marker-end: url(#arrow-green); }
+      .arrow-orange { stroke: #d88900; stroke-width: 3.2; fill: none; marker-end: url(#arrow-orange); }
+      .arrow-purple { stroke: #7056c8; stroke-width: 3.2; fill: none; stroke-dasharray: 8 7; marker-end: url(#arrow-purple); }
+      .legend-line-blue { stroke: #2f73b7; stroke-width: 3; fill: none; }
+      .legend-line-green { stroke: #2e8b57; stroke-width: 3; fill: none; }
+      .legend-line-orange { stroke: #d88900; stroke-width: 3; fill: none; }
+      .legend-line-purple { stroke: #7056c8; stroke-width: 3; fill: none; }
+      .mesh-cell { fill: #ffffff; stroke: #a8bfd9; stroke-width: 1.5; rx: 7; }
+      .mesh-hot { fill: #dbeeff; stroke: #2f73b7; stroke-width: 2; rx: 7; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="900" fill="#ffffff"/>
+  <text x="48" y="62" class="title">xsCHI Top-level Architecture</text>
+  <text x="48" y="96" class="subtitle">CPU/cache requests through RN, MeshNode network, HN/L3, and DDRWrapper/DRAMSim3</text>
+  <line x1="48" y1="128" x2="1752" y2="128" stroke="#d9e1ec" stroke-width="2"/>
+
+  <g transform="translate(62 164)">
+    <line x1="0" y1="0" x2="56" y2="0" class="legend-line-blue"/>
+    <text x="92" y="6" class="legend">request injection</text>
+    <line x1="300" y1="0" x2="356" y2="0" class="legend-line-orange"/>
+    <text x="392" y="6" class="legend">downstream memory request</text>
+    <line x1="690" y1="0" x2="746" y2="0" class="legend-line-green"/>
+    <text x="782" y="6" class="legend">data / response return</text>
+    <line x1="1088" y1="0" x2="1144" y2="0" class="legend-line-purple"/>
+    <text x="1180" y="6" class="legend">ShadowRN copy + replay</text>
+  </g>
+
+  <g filter="url(#soft-shadow)">
+    <rect x="52" y="294" width="220" height="210" rx="14" class="blue-box"/>
+    <text x="162" y="350" text-anchor="middle" class="box-title">CPU / L1</text>
+    <text x="162" y="387" text-anchor="middle" class="box-sub">timing request</text>
+    <text x="162" y="425" text-anchor="middle" class="mono">gem5 Packet</text>
+
+    <rect x="336" y="294" width="245" height="210" rx="14" class="bridge-box"/>
+    <text x="458" y="344" text-anchor="middle" class="box-title">CHI_L2</text>
+    <text x="458" y="374" text-anchor="middle" class="box-title">RNBridge</text>
+    <text x="458" y="414" text-anchor="middle" class="mono">Packet -&gt; Request</text>
+    <text x="458" y="448" text-anchor="middle" class="box-sub">CPU response owner</text>
+
+    <rect x="646" y="294" width="245" height="210" rx="14" class="bridge-box"/>
+    <text x="768" y="350" text-anchor="middle" class="box-title">CHIBridge</text>
+    <text x="768" y="388" text-anchor="middle" class="mono">Request -&gt; Flit</text>
+    <text x="768" y="424" text-anchor="middle" class="box-sub">TxnID / response</text>
+    <text x="768" y="456" text-anchor="middle" class="box-sub">COMPACK tracking</text>
+
+    <rect x="956" y="244" width="380" height="310" rx="16" class="purple-box"/>
+    <text x="1146" y="294" text-anchor="middle" class="box-title">MeshNode Network</text>
+    <text x="1146" y="328" text-anchor="middle" class="box-sub">XY routing + queue / credit model</text>
+    <g transform="translate(1028 354)">
+      <rect x="0" y="0" width="62" height="48" class="mesh-hot"/>
+      <rect x="72" y="0" width="62" height="48" class="mesh-cell"/>
+      <rect x="144" y="0" width="62" height="48" class="mesh-cell"/>
+      <rect x="0" y="58" width="62" height="48" class="mesh-cell"/>
+      <rect x="72" y="58" width="62" height="48" class="mesh-hot"/>
+      <rect x="144" y="58" width="62" height="48" class="mesh-cell"/>
+      <rect x="0" y="116" width="62" height="48" class="mesh-cell"/>
+      <rect x="72" y="116" width="62" height="48" class="mesh-cell"/>
+      <rect x="144" y="116" width="62" height="48" class="mesh-hot"/>
+      <text x="220" y="28" class="mono">VOQ / IB</text>
+      <text x="220" y="72" class="mono">RR arbit.</text>
+      <text x="220" y="116" class="mono">credit BP</text>
+      <text x="220" y="158" class="mono">XY route</text>
+    </g>
+
+    <rect x="1450" y="294" width="250" height="210" rx="14" class="orange-box"/>
+    <text x="1575" y="344" text-anchor="middle" class="box-title">CHI_L3 / HN</text>
+    <text x="1575" y="384" text-anchor="middle" class="box-sub">L3 cache wrapper</text>
+    <text x="1575" y="418" text-anchor="middle" class="mono">HN SAM</text>
+    <text x="1575" y="452" text-anchor="middle" class="box-sub">multi-HN target</text>
+
+    <rect x="1050" y="650" width="260" height="140" rx="14" class="green-box"/>
+    <text x="1180" y="695" text-anchor="middle" class="box-title">DDRWrapper</text>
+    <text x="1180" y="725" text-anchor="middle" class="box-title">DRAMSim3</text>
+    <text x="1180" y="762" text-anchor="middle" class="mono">COMPDATA / DBID</text>
+  </g>
+
+  <path d="M272 399 L336 399" class="arrow-blue"/>
+  <path d="M581 399 L646 399" class="arrow-blue"/>
+  <path d="M891 399 L956 399" class="arrow-blue"/>
+  <path d="M1336 399 L1450 399" class="arrow-orange"/>
+  <text x="1393" y="386" text-anchor="middle" class="small">RN req to HN</text>
+  <path d="M1450 430 L1336 430" class="arrow-orange"/>
+  <text x="1393" y="420" text-anchor="middle" class="small">HN-&gt;SN req</text>
+  <path d="M1110 554 L1110 650" class="arrow-orange"/>
+  <text x="1058" y="612" text-anchor="middle" class="small">SN request</text>
+  <text x="1058" y="632" text-anchor="middle" class="small">via mesh</text>
+  <path d="M1225 650 L1225 554" class="arrow-green"/>
+  <text x="1292" y="602" text-anchor="middle" class="small">DDR data</text>
+  <text x="1292" y="622" text-anchor="middle" class="small">return</text>
+  <path d="M1336 465 L1450 465" class="arrow-green"/>
+  <text x="1393" y="455" text-anchor="middle" class="small">data to HN</text>
+  <path d="M1450 498 L1336 498" class="arrow-green"/>
+  <text x="1393" y="520" text-anchor="middle" class="small">HN response</text>
+  <path d="M956 488 L891 488" class="arrow-green"/>
+  <text x="923" y="520" text-anchor="middle" class="small">mesh return</text>
+  <path d="M646 488 L581 488" class="arrow-green"/>
+  <text x="614" y="520" text-anchor="middle" class="small">callback to CHI_L2</text>
+  <path d="M336 488 L272 488" class="arrow-green"/>
+  <text x="304" y="520" text-anchor="middle" class="small">CPU timing resp</text>
+
+  <g filter="url(#soft-shadow)">
+    <rect x="616" y="630" width="305" height="138" rx="14" class="bridge-box"/>
+    <text x="768" y="678" text-anchor="middle" class="box-title">ShadowRNBridges</text>
+    <text x="768" y="711" text-anchor="middle" class="box-sub">copies CHI_L2 request</text>
+    <text x="768" y="738" text-anchor="middle" class="box-sub">then applies address remap</text>
+    <text x="768" y="760" text-anchor="middle" class="mono">A' = dst + (A - src)</text>
+  </g>
+  <path d="M458 504 C525 585 640 608 716 630" class="arrow-purple"/>
+  <text x="606" y="566" text-anchor="middle" class="mono">copy CHI_L2 Request</text>
+  <path d="M890 630 C922 608 946 582 956 554" class="arrow-purple"/>
+  <text x="820" y="612" text-anchor="middle" class="small">shadow inject</text>
+
+  <text x="900" y="848" text-anchor="middle" class="small">Figure: HN sends DDR/SN requests through MeshNode; HN responses return through MeshNode to CHIBridge, then CHI_L2 completes the CPU packet.</text>
+</svg>
