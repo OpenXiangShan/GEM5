@@ -45,15 +45,18 @@ def setKmhV3Params(args, system):
 
         # decode
         cpu.fetchToDecodeDelay = 3
-        cpu.decodeWidth = 8
+        #cpu.decodeWidth = 8
+        cpu.decodeWidth = 10
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
 
         # rename
         #cpu.renameWidth = 8
         cpu.renameWidth = 10
-        cpu.numPhysIntRegs = 224
-        cpu.numPhysFloatRegs = 256
+        #cpu.numPhysIntRegs = 224
+        cpu.numPhysIntRegs = 272
+        #cpu.numPhysFloatRegs = 256
+        cpu.numPhysFloatRegs = 320
         cpu.enable_storeSet_train = True
 
         # dispatch
@@ -79,11 +82,11 @@ def setKmhV3Params(args, system):
         cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
 
         # rob
-        cpu.commitWidth = 8
-        cpu.squashWidth = 8
-        cpu.phyregReleaseWidth = 8
+        cpu.commitWidth = 10
+        cpu.squashWidth = 10
+        cpu.phyregReleaseWidth = 10
         cpu.RobCompressPolicy = 'none'
-        cpu.numROBEntries = 352
+        cpu.numROBEntries = 512
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.robWalkPolicy = args.rob_walk_policy
 

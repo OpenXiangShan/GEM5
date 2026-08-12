@@ -12,14 +12,14 @@ maxTotalRFPorts = (1 << 6) - 1
 # smaller value get higher priority
 def IntRD(id, p):
     # [7:6] [5:2] [1:0]
-    assert id < 16
+    assert id < 18
     assert p < 4
     ret = (0 << 6) | (id << 2) | (p)
     return ret
 
 def FpRD(id, p):
     # [7:6] [5:2] [1:0]
-    assert id < 16
+    assert id < 18
     assert p < 4
     ret = (1 << 6) | (id << 2) | (p)
     return ret
@@ -235,6 +235,9 @@ class KMHV3Scheduler(Scheduler):
         IssueQue(name='ld2', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
                       rp=[IntRD(11, 0)])]),
+        IssueQue(name='ld3', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(16, 0)])]),
         IssueQue(name='sta0', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
                       rp=[IntRD(6, 1)])]),
@@ -266,6 +269,14 @@ class KMHV3Scheduler(Scheduler):
         IssueQue(name='fpIQ3', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MAC()],
                       rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
+        ]),
+        IssueQue(name='fpIQ4', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()],
+                      rp=[FpRD(12,0), FpRD(13,0), FpRD(14,0)])
+        ]),
+        IssueQue(name='fpIQ5', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()],
+                      rp=[FpRD(15,0), FpRD(16,0), FpRD(17,0)])
         ]),
         IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
             IssuePort(fu=[SIMD_Unit()]),
