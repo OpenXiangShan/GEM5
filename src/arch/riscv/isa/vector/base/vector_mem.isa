@@ -100,16 +100,20 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
         vfof_adjust_mem_size_code = '''
         if (pkt) {
             // fault_elem_idx was calculated during initiateAcc relative
-            // to this micro-op's EA.  It is the successful prefix length.
+            // to this micro-op's EA. It is the successful prefix length.
             mem_size = std::min<uint32_t>(
                 mem_size,
                 static_cast<uint32_t>(*fault_elem_idx * eewb));
-        } else {
+            *fault_elem_idx = mem_size / eewb;
+        } else if (!vm_zero) {
             // A later micro-op whose first local element faults contributes
             // zero elements to the fault-only-first result.
             mem_size = 0;
+            *fault_elem_idx = 0;
         }
-        *fault_elem_idx = mem_size / eewb;
+        // If vm_zero is true, no memory access was needed because every
+        // element in this micro-op was masked off. Preserve fault_elem_idx
+        // from initiateAcc: those architectural elements did not fault.
         '''
 
     vecWhole = base_type == 'VlWhole' or base_type == 'VsWhole'
@@ -193,13 +197,20 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     //
     // Do this only after every index has been consumed, avoiding
     // corruption when vd overlaps the index register group.
-    if ((machInst.nf == 0) &&
-        this->isLastMicroop() &&
+    const size_t indexed_vlmax =
+        static_cast<size_t>(elem_num_per_vreg * vflmul);
+
+    const bool physical_tail_ready =
+        (machInst.nf == 0)
+            ? this->isLastMicroop()
+            : (vmi.re == indexed_vlmax);
+
+    if (physical_tail_ready &&
         (rVl != 0) &&
         (vflmul < 1) &&
         machInst.vtype8.vta) {
         const size_t physical_tail_begin =
-            vmi.re * agnostic_elem_bytes;
+            indexed_vlmax * agnostic_elem_bytes;
 
         if (physical_tail_begin < VLENB) {
             std::memset(

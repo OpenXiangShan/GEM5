@@ -1042,14 +1042,37 @@ class Vslideup_vi : public VectorNonSplitInst
             memcpy(vd_array[i].as<uint8_t>(), old_vd_array[i].as<uint8_t>(), VLENB);
         }
         for (uint32_t i = 0; i < rVl; i++) {
-            if (imm + i >= rVl) {
+            const uint32_t dest_ei = imm + i;
+
+            if (dest_ei >= rVl) {
                 break;
             }
-            if (vm_bit || elem_mask(vm.as<uint8_t>(), imm + i)){
-              vd_array[(imm + i) / elem_num_per_vreg].template as<Type>()
-                  [(imm + i) % elem_num_per_vreg] =
-                  vs_array[i / elem_num_per_vreg].template as<Type>()
-                  [i % elem_num_per_vreg];
+
+            auto &dest_elem =
+                vd_array[dest_ei / elem_num_per_vreg].template as<Type>()
+                    [dest_ei % elem_num_per_vreg];
+
+            if (vm_bit || elem_mask(vm.as<uint8_t>(), dest_ei)) {
+                dest_elem =
+                    vs_array[i / elem_num_per_vreg].template as<Type>()
+                        [i % elem_num_per_vreg];
+            } else if (machInst.vtype8.vma) {
+                dest_elem = ~Type(0);
+            }
+        }
+
+        // For fractional LMUL, VLMAX occupies only part of the physical
+        // destination register. The unused portion is also treated as tail.
+        const uint32_t agnostic_elems =
+            vflmul < 1 ? elem_num_per_vreg
+                       : regLength * elem_num_per_vreg;
+
+        if ((rVl != 0) && machInst.vtype8.vta) {
+            for (uint32_t dest_ei = rVl;
+                 dest_ei < agnostic_elems;
+                 ++dest_ei) {
+                vd_array[dest_ei / elem_num_per_vreg].template as<Type>()
+                    [dest_ei % elem_num_per_vreg] = ~Type(0);
             }
         }
         for (uint32_t i = 0; i < regLength; i++) {
