@@ -6,9 +6,9 @@
 #include "cpu/o3/phast.hh"
 
 #include <algorithm>
-#include <cassert>
 
 #include "base/intmath.hh"
+#include "base/logging.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -31,27 +31,57 @@ hash_combine(uint64_t seed, uint64_t value)
 void
 PHAST::init(const BaseO3CPUParams &params)
 {
-    assert(isPowerOf2(params.phast_num_rows));
+    fatal_if(params.phast_num_rows == 0 ||
+                 !isPowerOf2(params.phast_num_rows),
+             "PHAST rows per table must be a non-zero power of two.\n");
+    fatal_if(params.phast_associativity == 0,
+             "PHAST table associativity must be non-zero.\n");
+    fatal_if(params.phast_max_counter == 0,
+             "PHAST confidence counter maximum must be non-zero.\n");
+    fatal_if(params.phast_counter_threshold == 0 ||
+                 params.phast_counter_threshold > params.phast_max_counter,
+             "PHAST confidence threshold must be in [1, max counter].\n");
+    fatal_if(params.phast_tag_bits >= 64,
+             "PHAST tag bits must be less than 64.\n");
+    fatal_if(params.phast_selected_target_bits > 64,
+             "PHAST selected target bits must be at most 64.\n");
+    fatal_if(params.phast_history_lengths.empty(),
+             "PHAST must have at least one history table.\n");
+
+    for (unsigned i = 1; i < params.phast_history_lengths.size(); ++i) {
+        fatal_if(params.phast_history_lengths[i - 1] >=
+                     params.phast_history_lengths[i],
+                 "PHAST history lengths must be strictly increasing.\n");
+    }
 
     depCheckShift = params.LSQDepCheckShift;
-    SQEntries = params.SQEntries;
+    // PHAST stores distances in the virtual store queue used by MemDepUnit.
+    SQEntries = params.SQEntries * params.StoreQueueMultiple;
 
     unsigned set_bits = 0;
-    while ((1u << set_bits) < params.phast_num_rows) {
+    while ((1ULL << set_bits) < params.phast_num_rows) {
         ++set_bits;
     }
 
-    selectedTargetBits = 5;
+    selectedTargetBits = params.phast_selected_target_bits;
     selectedTargetMask = (selectedTargetBits == 64)
         ? ~0ULL
         : ((1ULL << selectedTargetBits) - 1);
 
-    historySizes = {0, 2, 4, 6, 8, 12, 16, 32};
+    historySizes = params.phast_history_lengths;
+    const unsigned second_target_max_distance =
+        params.phast_second_target_max_distance == 0
+            ? SQEntries / 2
+            : params.phast_second_target_max_distance;
     paths.clear();
     paths.resize(historySizes.size());
     for (auto &path : paths) {
         path.init(set_bits, params.phast_associativity,
-                  params.phast_tag_bits, params.phast_max_counter);
+                  params.phast_tag_bits, params.phast_max_counter,
+                  params.phast_counter_threshold,
+                  params.phast_counter_increment,
+                  params.phast_counter_decrement,
+                  second_target_max_distance);
     }
 }
 
@@ -164,8 +194,7 @@ PHAST::violation(Addr load_pc, InstSeqNum load_seq_num,
     }
 
     if (store_queue_distance >= 0) {
-        paths[actual_index].update(load_pc, actual_hash, store_queue_distance,
-                                   SQEntries);
+        paths[actual_index].update(load_pc, actual_hash, store_queue_distance);
     }
 }
 
@@ -203,12 +232,20 @@ PHAST::commit(Addr load_pc, Addr load_addr, unsigned load_size,
 
 int
 PHAST::SimplBlockCache::init(uint32_t set_bits, uint32_t _associativity,
-                            uint32_t tag_bits, uint32_t max_counter_value)
+                            uint32_t tag_bits, uint32_t max_counter_value,
+                            uint32_t counter_threshold,
+                            uint32_t counter_increment,
+                            uint32_t counter_decrement,
+                            unsigned second_target_max_distance)
 {
     setBits = set_bits;
     tagBits = tag_bits;
     associativity = _associativity;
     maxCounterValue = max_counter_value;
+    counterThreshold = counter_threshold;
+    counterIncrement = counter_increment;
+    counterDecrement = counter_decrement;
+    secondTargetMaxDistance = second_target_max_distance;
     lruCounter = 0;
 
     cache.clear();
@@ -310,7 +347,7 @@ std::pair<std::ptrdiff_t, std::ptrdiff_t>
 PHAST::SimplBlockCache::predict(Addr pc, uint64_t history) const
 {
     const auto *entry = findEntry(pc, history);
-    if (entry == nullptr || entry->counter == 0 ||
+    if (entry == nullptr || entry->counter < counterThreshold ||
         (entry->distances.first < 0 && entry->distances.second < 0)) {
         return {-1, -1};
     }
@@ -320,7 +357,7 @@ PHAST::SimplBlockCache::predict(Addr pc, uint64_t history) const
 
 void
 PHAST::SimplBlockCache::update(Addr pc, uint64_t history,
-                               std::ptrdiff_t distance, unsigned SQEntries)
+                               std::ptrdiff_t distance)
 {
     if (distance < 0) {
         return;
@@ -336,8 +373,9 @@ PHAST::SimplBlockCache::update(Addr pc, uint64_t history,
         entry->counter = maxCounterValue;
     } else if (entry->distances.second < 0 &&
                entry->distances.first != distance &&
-               distance < static_cast<std::ptrdiff_t>(SQEntries / 2) &&
-               entry->distances.first < static_cast<std::ptrdiff_t>(SQEntries / 2)) {
+               distance < static_cast<std::ptrdiff_t>(secondTargetMaxDistance) &&
+               entry->distances.first <
+                   static_cast<std::ptrdiff_t>(secondTargetMaxDistance)) {
         entry->distances.second = distance;
         entry->counter = maxCounterValue;
     } else {
@@ -358,9 +396,13 @@ PHAST::SimplBlockCache::updateCommit(Addr pc, uint64_t history,
     }
 
     if (prediction_wrong) {
-        --entry->counter;
-    } else {
+        entry->counter = entry->counter > counterDecrement
+            ? entry->counter - counterDecrement
+            : 0;
+    } else if (counterIncrement == 0) {
         entry->counter = maxCounterValue;
+    } else {
+        entry->counter = std::min(maxCounterValue, entry->counter + counterIncrement);
     }
 
     updateLRU(entry);

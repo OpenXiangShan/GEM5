@@ -185,16 +185,11 @@ load 如果确实拿到了有效 PHAST 预测，并且后来 commit 时可以验
 
 ## 5. 参数和默认值
 
-### 5.1 运行时开关
+### 5.1 配置入口
 
-在 `configs/common/xiangshan.py` 和 `configs/example/kmhv3.py` 里，PHAST 的入口是：
-
-- `--enable-phast-mdp`
-- `--no-enable-phast-mdp`
-- `--phast-num-rows`
-- `--phast-associativity`
-- `--phast-tag-bits`
-- `--phast-max-counter`
+PHAST 参数定义在 `src/cpu/o3/BaseO3CPU.py`。配置脚本可以直接给 CPU
+SimObject 赋值；当前 `kmhv3.py` 固定关闭 PHAST，`idealkmhv3.py` 固定开启
+PHAST，均使用 `BaseO3CPU` 中的表参数默认值。
 
 ### 5.2 默认值
 
@@ -207,12 +202,17 @@ load 如果确实拿到了有效 PHAST 预测，并且后来 commit 时可以验
 | `phast_associativity` | `4` | 组相联路数 |
 | `phast_tag_bits` | `16` | tag 位宽 |
 | `phast_max_counter` | `16` | confidence counter 上限 |
+| `phast_counter_threshold` | `1` | 发出 PHAST 预测所需的最小 confidence |
+| `phast_counter_increment` | `0` | 正确预测后的置信度增量；`0` 保持原有的直接恢复上限语义 |
+| `phast_counter_decrement` | `1` | 错误预测后的置信度减量 |
+| `phast_selected_target_bits` | `5` | 参与 path hash 的 target 地址低位数 |
+| `phast_history_lengths` | `[0, 2, 4, 6, 8, 12, 16, 32]` | 每张 path table 对应的 branch history 长度，必须从 `0` 开始且严格递增 |
+| `phast_second_target_max_distance` | `0` | 第二个 store distance 的排他上限；`0` 表示虚拟 SQ 容量的一半 |
 
 ### 5.3 当前需要注意的脚本
 
-`configs/example/kmhv3.py` 和 `configs/example/idealkmhv3.py` 已经把 PHAST 参数接到 CPU 上。
-
-如果以后改用其它入口脚本，要确认它也把这些参数传到了 CPU，否则即使命令行有参数，模拟里也可能仍然是 `EnablePHASTMDP=true` 这套默认值，或者被脚本覆盖成别的值。
+如果其它入口脚本覆盖了 PHAST 参数，要确认其值被赋给每个 CPU 的对应
+SimObject 属性；否则会继续使用 `BaseO3CPU.py` 的默认值。
 
 ## 6. 计数器口径
 

@@ -53,11 +53,7 @@ def setKmhV3IdealParams(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
-        cpu.EnablePHASTMDP = args.enable_phast_mdp
-        cpu.phast_num_rows = args.phast_num_rows
-        cpu.phast_associativity = args.phast_associativity
-        cpu.phast_tag_bits = args.phast_tag_bits
-        cpu.phast_max_counter = args.phast_max_counter
+        cpu.EnablePHASTMDP = True
 
         # dispatch
         cpu.enableDispatchStage = False

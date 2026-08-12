@@ -218,6 +218,21 @@ class BaseO3CPU(BaseCPU):
     phast_associativity = Param.Unsigned(4, "PHAST table associativity")
     phast_tag_bits = Param.Unsigned(16, "PHAST tag bits")
     phast_max_counter = Param.Unsigned(16, "PHAST confidence counter max")
+    phast_counter_threshold = Param.Unsigned(
+        1, "Minimum PHAST confidence required to issue a prediction")
+    phast_counter_increment = Param.Unsigned(
+        0,
+        "PHAST confidence increment after a correct prediction; 0 restores max confidence")
+    phast_counter_decrement = Param.Unsigned(
+        1, "PHAST confidence decrement after an incorrect prediction")
+    phast_selected_target_bits = Param.Unsigned(
+        5, "Target-address bits included in the PHAST path hash")
+    phast_history_lengths = VectorParam.Unsigned(
+        [0, 2, 4, 6, 8, 12, 16, 32],
+        "Branch-history lengths for PHAST path tables, shortest to longest")
+    phast_second_target_max_distance = Param.Unsigned(
+        0,
+        "Exclusive maximum SQ distance for a PHAST second target; 0 uses half of the virtual SQ capacity")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")

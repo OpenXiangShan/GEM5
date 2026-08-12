@@ -79,6 +79,10 @@ class PHAST
         uint32_t associativity = 0;
         uint64_t lruCounter = 0;
         uint32_t maxCounterValue = 0;
+        uint32_t counterThreshold = 0;
+        uint32_t counterIncrement = 0;
+        uint32_t counterDecrement = 0;
+        unsigned secondTargetMaxDistance = 0;
         std::vector<std::vector<Entry>> cache;
 
         uint64_t xorFold(uint64_t pc, uint64_t history, unsigned size) const;
@@ -91,11 +95,13 @@ class PHAST
 
       public:
         int init(uint32_t set_bits, uint32_t _associativity, uint32_t tag_bits,
-                 uint32_t max_counter_value);
+                 uint32_t max_counter_value, uint32_t counter_threshold,
+                 uint32_t counter_increment,
+                 uint32_t counter_decrement,
+                 unsigned second_target_max_distance);
         std::pair<std::ptrdiff_t, std::ptrdiff_t> predict(Addr pc,
                                                           uint64_t history) const;
-        void update(Addr pc, uint64_t history, std::ptrdiff_t distance,
-                    unsigned SQEntries);
+        void update(Addr pc, uint64_t history, std::ptrdiff_t distance);
         void updateCommit(Addr pc, uint64_t history, bool prediction_wrong);
         void clear();
 
