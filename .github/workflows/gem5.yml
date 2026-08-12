@@ -3,18 +3,30 @@ name: gem5 Full Test (Tier 2 - Post-Merge)
 on:
   push:
     branches: [ xs-dev ]
-  # Removed pull_request trigger - moved to pr-quick-check.yml (Tier 1)
-  # can be triggered manually
+  # Run the full functional suite before merge when the `regression` label is added.
+  pull_request_target:
+    types: [labeled]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   paralel_cpt_test:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     # gem5.cfg 使用的切片 ck_path 位于小机房
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Running test checkpoints
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
 
       - name: Build GEM5 opt
@@ -74,12 +86,19 @@ jobs:
             head -2000 || true
 
   paralel_cpt_h_test:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     # 使用 open runner 可见的固定 H/V NEMU reference
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Running h test checkpoints
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
 
       - name: Build GEM5 opt
@@ -191,11 +210,18 @@ jobs:
             head -1000 || true
 
   valgrind_memory_check:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Check memory corruption
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 debug
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.debug --linker=gold -j64
@@ -207,11 +233,18 @@ jobs:
 
 
   new_sim_script_test_gcbv:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Test new simulation script on RV64GCBV
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
@@ -225,11 +258,18 @@ jobs:
           bash ../kmh_6wide_vector.sh /nfs/home/share/gem5_ci/checkpoints/gcbv_test.zstd
 
   new_sim_script_test_gcb_multi_core:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Test Multi-core + RV64GCB
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - name: Build GEM5 opt
         run: |
           CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
@@ -244,11 +284,18 @@ jobs:
 
 
   test_fix_l2tlb_bugs:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Test fix L2TLB bugs
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -261,11 +308,18 @@ jobs:
           bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/l2tlb_test.zstd
 
   new_sim_script_test_gcbh:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Test new simulation script on RV64GCBH
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -279,12 +333,19 @@ jobs:
           bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
 
   raw_linux_boot_test:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, open]
     continue-on-error: false
     timeout-minutes: 30
     name: XS-GEM5 - Boot raw Linux
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: |

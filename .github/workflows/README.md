@@ -93,12 +93,16 @@
 
 **目标**: 确保 `xs-dev` 分支永远健康、可发布
 
-**触发**: PR 合入 `xs-dev` 分支后自动运行
+**触发**:
+- PR 合入 `xs-dev` 分支后自动运行
+- 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签，合入前按 PR head commit 运行
 
 ### 包含的测试 Workflows
 
 #### 1. `gem5.yml` - 功能回归测试
 8个并行 jobs（遵循DRY原则，排除已在 Tier 1 运行的测试）
+
+维护者可以在 PR 上添加 `regression` 标签，提前运行与合入后相同的完整功能回归。为避免 `pull_request_target` 执行外部代码，该入口仅接受目标分支为 `xs-dev` 的同仓库 PR。
 
 **已移除**（避免重复）:
 - ~~`unit_tests`~~ → 在 `pr-quick-check.yml`
@@ -163,9 +167,10 @@ git push origin xs-dev
 
 1. 检查 Tier 1 快速检查结果
 2. 对于性能敏感的 PR，添加 `perf` 或 `perf-align` 标签
-3. 审查代码和性能影响
-4. 合入后监控 Tier 2 测试
-5. 如发现失败，立即回滚
+3. 对于可能影响 gem5 功能回归的 PR，添加 `regression` 标签
+4. 审查代码和性能影响
+5. 合入后监控 Tier 2 测试
+6. 如发现失败，立即回滚
 
 ---
 
@@ -197,7 +202,7 @@ python actions_gem5.py --token <github-token> --always-on
 
 - `.github/workflows/pr-quick-check.yml` - Tier 1
 - `.github/workflows/gem5-perf-template.yml` - 性能测试模板
-- `.github/workflows/gem5.yml` - Tier 2 功能测试
+- `.github/workflows/gem5.yml` - `xs-dev` 合入后或 `regression` 标签触发的完整功能回归
 - `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` / `perf` 标签默认性能测试
 - `.github/workflows/gem5-align-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
 - `.github/workflows/on-demand-spec-rvv.yml` - `rvv` 标签 RVV 性能测试
@@ -212,6 +217,9 @@ A: 性能测试耗时长，会拖慢 PR 审查。现在改为按需触发，既�
 
 **Q: 如何触发性能测试？**
 A: 在 PR 上添加 `perf` 或 `perf-align` 标签；需要自定义配置时使用 `manual-perf.yml`。
+
+**Q: 如何在合入前运行完整的 gem5 功能回归？**
+A: 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签。workflow 会按标签创建时的 PR head commit 运行，外部 fork PR 不会触发。
 
 **Q: 为什么外部 fork PR 加标签不会触发性能测试？**
 A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
