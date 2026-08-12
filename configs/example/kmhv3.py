@@ -91,7 +91,7 @@ def setKmhV3Params(args, system):
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
-        cpu.sbufferBankWriteAccurately = False
+        cpu.sbufferBankWriteAccurately = True
 
         # lsq
         cpu.LQEntries = 120
@@ -141,9 +141,9 @@ def setKmhV3Params(args, system):
         if args.caches:
             cpu.icache.size = '64kB'
             cpu.dcache.size = '64kB'
-            cpu.dcache.tag_load_read_ports = 3
+            cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
-            cpu.dcache.do_fast_writeline = False
+            cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
@@ -154,7 +154,7 @@ def setKmhV3Params(args, system):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 4
                 system.l2_caches[i].wpu = NULL
-                system.l2_caches[i].do_fast_writeline = False
+                system.l2_caches[i].do_fast_writeline = True
                 system.l2_caches[i].prefetch_can_offload = False
                 # Configure XSDRRIP replacement policy (DRRIP mode)
                 # L2: 2MB, 8-way, 64B line → 4096 sets
@@ -167,7 +167,7 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
-                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
+                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
@@ -179,15 +179,15 @@ def setKmhV3Params(args, system):
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
             # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
-            # system.tol2bus_list[i].layer_bandwidth_configs = [
-            #     LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
-            #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
-            # ]
+            system.tol2bus_list[i].layer_bandwidth_configs = [
+                LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
+                LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
+            ]
 
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 64
-        system.l3.do_fast_writeline = False
+        system.l3.do_fast_writeline = True
         system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
 
