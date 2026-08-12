@@ -688,14 +688,10 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     RAWQueueLatency
         .init(0, 500, 20)
         .flags(statistics::nozero);
-    // TODO: load-pipe PMU vectors currently assume exactly three load pipes.
-    // Extend the vector sizing and IssueQue loadPipeId mapping together if the
-    // model grows more load pipes; the replay pipe counters below share this
-    // same assumption.
     loadPipeAccepted
-        .init(3)
+        .init(MaxLoadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < MaxLoadPipeCount; i++) {
         loadPipeAccepted.subname(i, csprintf("pipe%d", i));
     }
     storePipeAccepted
@@ -705,15 +701,15 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
         storePipeAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadPipeReplayAccepted
-        .init(3)
+        .init(MaxLoadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < MaxLoadPipeCount; i++) {
         loadPipeReplayAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadPipeFastReplayAccepted
-        .init(3)
+        .init(MaxLoadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < MaxLoadPipeCount; i++) {
         loadPipeFastReplayAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadReplayEvents

@@ -710,7 +710,9 @@ class LSQUnit
     /** Points to the last position of continuously completed instructions from the beginning in storeQueue */
     size_t storeCompletedIdx;
 
-    const static int MaxPipeWidth = 4;
+    const static int MaxPipeWidth = 5;
+    /** Number of dedicated load issue queues represented by load-pipe PMU stats. */
+    const static int MaxLoadPipeCount = 4;
 
     /** Struct that defines the information passed through Load Pipeline. */
     struct LoadPipeStruct

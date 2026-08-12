@@ -217,6 +217,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
         loadPipeId = 1;
     } else if (iqname == "ld2" || iqname == "load2") {
         loadPipeId = 2;
+    } else if (iqname == "ld3" || iqname == "load3") {
+        loadPipeId = 3;
     }
 
     toIssue = inflightIssues.getWire(0);
