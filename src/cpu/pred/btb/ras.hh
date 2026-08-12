@@ -11,13 +11,6 @@
     #include "cpu/pred/btb/test/test_dprintf.hh"
     #include "cpu/pred/btb/timed_base_pred.hh"
 
-    // Test mode type definitions
-    namespace gem5 {
-        namespace o3 {
-            class DynInst;
-        }
-    }
-    using DynInstPtr = std::shared_ptr<gem5::o3::DynInst>;
 #else
     // Production mode includes
     #include "cpu/pred/btb/timed_base_pred.hh"
@@ -102,10 +95,8 @@ namespace btb_pred {
 
         void update(const FetchTarget &entry) override;
 
-        // commitBranch method - override only in production mode
-#ifdef UNIT_TEST
-        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst);
-#else
+        // RAS prediction statistics require a concrete DynInst in production.
+#ifndef UNIT_TEST
         void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 #endif
 

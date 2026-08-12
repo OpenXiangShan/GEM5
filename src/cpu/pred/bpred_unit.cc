@@ -216,7 +216,15 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             predict_record.RASIndex = RAS[tid].topIdx();
             set(predict_record.RASTarget, ras_top);
 
+            // A branch that is both return and call (e.g. jalr with
+            // distinct link registers) must consume the old RAS entry
+            // before recording its new call return address.
             RAS[tid].pop();
+            if (inst->isCall()) {
+                RAS[tid].push(pc);
+                predict_record.pushedRAS = true;
+                predict_record.wasCall = true;
+            }
 
             DPRINTF(Branch, "[tid:%i] [sn:%llu] Instruction %s is a return, "
                     "RAS predicted target: %s, RAS index: %i\n",
