@@ -989,6 +989,12 @@ def xiangshan_system_init():
         help="ROB misprediction-recovery walk policy. NaiveCpt enables the "
               "RAT-checkpoint recovery-cost model.",
     )
+    parser.add_argument(
+        "--enable-vp",
+        action="store_true",
+        default=False,
+        help="Enable the configured value predictor",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
