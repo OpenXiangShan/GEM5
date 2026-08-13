@@ -151,7 +151,7 @@ jobs:
             "h-spec06-0.5c")
               echo "execution_mode=h" >> $GITHUB_OUTPUT
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/checkpoint_move/h_v_checkpoint_1203/checkpoint_scripts/checkpoint_scripts/archive/spec06_gcc15.0.0_rv64gcbv_base_intFppOff_for_H_V_sv39_NEMU_archgroup_2025-01-23-14-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c_h_profile_insts.json" >> $GITHUB_OUTPUT
               echo "h_selection_json=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c_h_profile_insts.json" >> $GITHUB_OUTPUT
@@ -166,7 +166,7 @@ jobs:
             "h-spec06-1.0c")
               echo "execution_mode=h" >> $GITHUB_OUTPUT
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/checkpoint_move/h_v_checkpoint_1203/checkpoint_scripts/checkpoint_scripts/archive/spec06_gcc15.0.0_rv64gcbv_base_intFppOff_for_H_V_sv39_NEMU_archgroup_2025-01-23-14-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c_h_profile_insts.json" >> $GITHUB_OUTPUT
               echo "h_selection_json=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c_h_profile_insts.json" >> $GITHUB_OUTPUT
