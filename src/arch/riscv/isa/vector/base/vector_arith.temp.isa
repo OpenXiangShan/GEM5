@@ -861,7 +861,7 @@ Fault
     //
     // When vl is zero, no destination elements may be updated.
     if (rVl != 0) {
-        for (uint32_t bit = rVl; bit < VLEN; ++bit) {
+        for (uint32_t bit = rVl; bit < vlen; ++bit) {
             Vd[bit / 8] |= static_cast<uint8_t>(
                 1U << (bit % 8));
         }
@@ -1554,7 +1554,7 @@ Fault
         assert(numReduceRegs >= 1);
         assert(numReduceRegs <= 8);
 
-        const uint32_t elems_per_reg = VLEN / sew;
+        const uint32_t elems_per_reg = vlen / sew;
 
         // Start from old vd so vl=0 and vta=0 preserve the old value.
         RiscvISAInst::VecRegContainer tmp_old;
@@ -1842,7 +1842,7 @@ Fault
                 : negative_zero;
 
         const uint32_t elems_per_reg =
-            VLEN / sew;
+            vlen / sew;
 
         for (uint32_t i = 0;
              i < elems_per_reg;
@@ -1963,7 +1963,7 @@ Fault
             std::memset(
                 reinterpret_cast<uint8_t *>(Vd) + sizeof(Vd[0]),
                 0xff,
-                VLEN / 8 - sizeof(Vd[0]));
+                (vlen >> 3) - sizeof(Vd[0]));
         }
     }
 

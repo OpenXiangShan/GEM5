@@ -646,7 +646,7 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         // If vstart >= vl, no destination elements, including tail
         // elements, may be updated.
         if (vstart < rVl) {
-            for (uint64_t bit = rVl; bit < VLEN; ++bit) {
+            for (uint64_t bit = rVl; bit < vlen; ++bit) {
                 Vd[bit / 8] |= static_cast<uint8_t>(
                     1U << (bit % 8));
             }
