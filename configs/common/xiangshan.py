@@ -989,6 +989,23 @@ def xiangshan_system_init():
         help="ROB misprediction-recovery walk policy. NaiveCpt enables the "
               "RAT-checkpoint recovery-cost model.",
     )
+    parser.add_argument(
+        "--phast-mdp-profile",
+        type=str,
+        default="",
+        choices=[
+            "",
+            "storeset",
+            "phast-default",
+            "trial-0409",
+            "trial-0139",
+            "trial-0266",
+        ],
+        help=(
+            "Named PHAST MDP comparison profile. idealkmhv3.py applies the "
+            "profile after its normal ideal-core settings."
+        ),
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

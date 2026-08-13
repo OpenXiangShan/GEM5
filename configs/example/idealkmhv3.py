@@ -30,6 +30,87 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_level3_limit = args.ptw_level3_limit
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
+
+_PHAST_MDP_PROFILES = {
+    "phast-default": {
+        "EnablePHASTMDP": True,
+        "enable_storeSet_train": True,
+        "phast_num_rows": 64,
+        "phast_associativity": 4,
+        "phast_tag_bits": 16,
+        "phast_max_counter": 16,
+        "phast_counter_threshold": 1,
+        "phast_counter_increment": 0,
+        "phast_counter_decrement": 1,
+        "phast_selected_target_bits": 5,
+        "phast_history_lengths": [0, 2, 4, 6, 8, 12, 16, 32],
+        "phast_second_target_max_distance": 0,
+    },
+    "trial-0409": {
+        "EnablePHASTMDP": True,
+        "enable_storeSet_train": True,
+        "phast_num_rows": 128,
+        "phast_associativity": 4,
+        "phast_tag_bits": 17,
+        "phast_max_counter": 31,
+        "phast_counter_threshold": 20,
+        "phast_counter_increment": 23,
+        "phast_counter_decrement": 15,
+        "phast_selected_target_bits": 7,
+        "phast_history_lengths": [0, 2, 3, 8, 12, 17, 30, 66],
+        "phast_second_target_max_distance": 16,
+    },
+    "trial-0139": {
+        "EnablePHASTMDP": True,
+        "enable_storeSet_train": True,
+        "phast_num_rows": 128,
+        "phast_associativity": 4,
+        "phast_tag_bits": 15,
+        "phast_max_counter": 26,
+        "phast_counter_threshold": 26,
+        "phast_counter_increment": 8,
+        "phast_counter_decrement": 1,
+        "phast_selected_target_bits": 7,
+        "phast_history_lengths": [0, 2, 4, 7, 12, 31, 44, 78, 84],
+        "phast_second_target_max_distance": 32,
+    },
+    "trial-0266": {
+        "EnablePHASTMDP": True,
+        "enable_storeSet_train": True,
+        "phast_num_rows": 256,
+        "phast_associativity": 4,
+        "phast_tag_bits": 15,
+        "phast_max_counter": 26,
+        "phast_counter_threshold": 2,
+        "phast_counter_increment": 8,
+        "phast_counter_decrement": 1,
+        "phast_selected_target_bits": 7,
+        "phast_history_lengths": [0, 15, 19, 50, 78, 84],
+        "phast_second_target_max_distance": 32,
+    },
+}
+
+
+def applyPhastMdpProfile(args, system):
+    """Apply a reproducible PHAST MDP comparison profile to every CPU."""
+
+    profile = args.phast_mdp_profile
+    if not profile:
+        return
+    if profile == "storeset":
+        for cpu in system.cpu:
+            cpu.EnablePHASTMDP = False
+            cpu.enable_storeSet_train = True
+        print("Applied PHAST MDP profile: storeset")
+        return
+
+    values = _PHAST_MDP_PROFILES[profile]
+    for cpu in system.cpu:
+        for param_name, value in values.items():
+            setattr(cpu, param_name, value)
+    print("Applied PHAST MDP profile: " + profile)
+
+
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -177,6 +258,7 @@ if __name__ == '__m5_main__':
     test_sys = build_xiangshan_system(args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3IdealParams(args, test_sys)
+    applyPhastMdpProfile(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
     if maybe_handle_solver_runtime(root, args):
