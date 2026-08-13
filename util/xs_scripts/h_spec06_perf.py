@@ -198,8 +198,6 @@ def command_run(args: argparse.Namespace) -> int:
     if args.require_idle_cpus:
         command.extend(["--require-idle-cpus", str(args.require_idle_cpus)])
         command.extend(["--idle-probe-mode", args.idle_probe_mode])
-    if args.dispatch_host:
-        command.extend(["--dispatch-host", args.dispatch_host])
     for ssh_option in args.ssh_option:
         command.extend(["--ssh-option", ssh_option])
     command.extend([
@@ -479,7 +477,6 @@ def make_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--require-idle-cpus", type=int, default=0)
     run_parser.add_argument("--idle-probe-mode", default="physical",
                             choices=("physical", "logical"))
-    run_parser.add_argument("--dispatch-host", default="")
     run_parser.add_argument("--ssh-option", action="append", default=[])
     run_parser.add_argument("--launch-retries", type=int, default=2)
     run_parser.add_argument("--launch-retry-delay", type=float, default=20.0)

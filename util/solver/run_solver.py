@@ -235,7 +235,6 @@ def build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--distributed-server-domain", default="")
     parser.add_argument("--distributed-ssh-config", default="")
     parser.add_argument("--distributed-ssh-user", default="")
-    parser.add_argument("--distributed-dispatch-host", default="")
     parser.add_argument(
         "--distributed-ssh-option",
         action="append",
@@ -568,7 +567,6 @@ def main() -> int:
             server_domain=args.distributed_server_domain,
             ssh_config=args.distributed_ssh_config,
             ssh_user=args.distributed_ssh_user,
-            dispatch_host=args.distributed_dispatch_host,
             ssh_options=tuple(args.distributed_ssh_option or []),
         )
         execution_mode = "distributed" if distributed_config.enabled() else "local"
@@ -598,7 +596,6 @@ def main() -> int:
             "distributed_require_idle_cpus": args.distributed_require_idle_cpus,
             "distributed_idle_probe_mode": args.distributed_idle_probe_mode,
             "distributed_idle_cpu_threshold": args.distributed_idle_cpu_threshold,
-            "distributed_dispatch_host": args.distributed_dispatch_host,
             "dry_run": args.dry_run,
             "stop_reason": None,
             "partial_summary": False,

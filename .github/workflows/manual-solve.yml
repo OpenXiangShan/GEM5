@@ -228,7 +228,6 @@ jobs:
             --max-parallel-workloads "${{ github.event.inputs.max_parallel_workloads }}"
             --distributed-servers "${{ github.event.inputs.distributed_servers }}"
             --distributed-jobs-per-server "${{ github.event.inputs.distributed_jobs_per_server }}"
-            --distributed-dispatch-host "ci-runner@172.28.9.101"
             --distributed-ssh-option StrictHostKeyChecking=accept-new
             --distributed-ssh-option UserKnownHostsFile="${{ needs.setup.outputs.run_dir }}/known_hosts"
             --distributed-ssh-option ConnectTimeout=10
