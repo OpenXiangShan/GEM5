@@ -3,7 +3,7 @@ name: gem5 SMT SPEC2006 Performance Test(0.3c)
 on:
   # Run after every commit merged into the main development branch.
   push:
-    branches: [ xs-dev ]
+    branches: [ xs-dev, ci-test-remove-dispatch-host-pr1041 ]
   schedule:
     # Run every Tuesday at 23:59 UTC+8 (15:59 UTC)
     - cron: '59 15 * * 2'
