@@ -60,7 +60,7 @@
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
-- `idealkmhv3.py` 和 `smt_idealkmhv3.py` 在未显式传参时会默认启用 `--enable-dynamic-pf=True`
+- `idealkmhv3.py` 默认关闭动态预取；`smt_idealkmhv3.py` 保持当前默认行为
 - 需要手动切换动态预取时，请在 `manual-perf.yml` 的 `extra_args` 中直接写 `--enable-dynamic-pf=True|False`
 
 ### Dynamic Prefetch Toggle
@@ -72,7 +72,7 @@
 | `False` | 显式关闭动态预取控制 |
 | `True` | 显式启用动态预取控制，窗口为 8000 cycles，并打开 L1D/L2/L2Wrapper PFBad 表 |
 
-如果 `extra_args` 没有显式传 `--enable-dynamic-pf`，`idealkmhv3.py` 和 `smt_idealkmhv3.py` 会默认补成 `True`。因此要做 base 对比时，请显式传 `--enable-dynamic-pf=False`。
+如果 `extra_args` 没有显式传 `--enable-dynamic-pf`，`idealkmhv3.py` 会默认保持关闭。SMT 配置保持现有默认行为不变。
 
 ### 性能结果
 
@@ -228,7 +228,7 @@ A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_tar
 A: 只需修改 `gem5-perf-template.yml`
 
 **Q: 如何跑动态预取性能测试？**
-A: 使用 `manual-perf.yml`，在 `extra_args` 里直接传 `--enable-dynamic-pf=True`。base 对比请显式传 `--enable-dynamic-pf=False`。`idealkmhv3.py` 和 `smt_idealkmhv3.py` 的默认值现在是 True。
+A: 使用 `manual-perf.yml`，在 `extra_args` 里直接传 `--enable-dynamic-pf=True`。base 对比请显式传 `--enable-dynamic-pf=False`。`idealkmhv3.py` 默认关闭动态预取，SMT 配置保持当前默认行为不变。
 
 ---
 

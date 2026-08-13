@@ -164,8 +164,6 @@ if __name__ == '__m5_main__':
 
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
-    if args.enable_dynamic_pf is None:
-        args.enable_dynamic_pf = True
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
