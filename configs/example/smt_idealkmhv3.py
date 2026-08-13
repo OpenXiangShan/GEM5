@@ -38,6 +38,8 @@ if __name__ == '__m5_main__':
     assert not args.external_memory_system
 
     args.smt = True
+    if args.enable_dynamic_pf is None:
+        args.enable_dynamic_pf = True
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'

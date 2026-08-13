@@ -1,12 +1,8 @@
-import argparse
 import sys
 
-import m5
-from m5.defines import buildEnv
 from m5.objects import *
 from m5.objects.ValuePredictor import *
-from m5.util import addToPath, fatal, warn
-from m5.util.fdthelper import *
+from m5.util import addToPath
 
 addToPath('../')
 addToPath('../../')
@@ -29,6 +25,7 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_level2_limit = args.ptw_level2_limit
     tlb.walker.ptw_level3_limit = args.ptw_level3_limit
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
+
 
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
@@ -167,6 +164,8 @@ if __name__ == '__m5_main__':
 
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
+    if args.enable_dynamic_pf is None:
+        args.enable_dynamic_pf = True
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
