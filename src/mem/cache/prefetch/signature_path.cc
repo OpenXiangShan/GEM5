@@ -374,12 +374,13 @@ SignaturePath::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<
                                 boost::compute::detail::lru_cache<Addr, Addr> &filter)
 {
     InsertPFRequestToBuffer(AddrPriority(addr, prio, PrefetchSourceType::SPP, pfi.trigger_info));
-    if (filter.contains(addr)) {
+    Addr filter_key = sharedFilterKey(pfi, addr);
+    if (filter.contains(filter_key)) {
         DPRINTF(SPP, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(SPP, "Send pf: %lx\n", addr);
-        filter.insert(addr, 0);
+        filter.insert(filter_key, 0);
         addresses.push_back(AddrPriority(addr, prio, PrefetchSourceType::SPP));
         return true;
     }

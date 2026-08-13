@@ -22,6 +22,12 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream)
 {
+    setSharedFilterContextQualified(true);
+    cdp->setSharedFilterContextQualified(true);
+    largeBOP->setSharedFilterContextQualified(true);
+    smallBOP->setSharedFilterContextQualified(true);
+    cmc->setSharedFilterContextQualified(true);
+    despacitoStream->setSharedFilterContextQualified(true);
     cdp->pfLRUFilter = &pfLRUFilter;
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;

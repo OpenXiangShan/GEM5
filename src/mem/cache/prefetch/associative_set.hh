@@ -94,9 +94,10 @@ class AssociativeSet
     /**
      * Find a victim to be replaced
      * @param addr key to select the possible victim
+     * @param victim_secure optional destination for the victim security state
      * @result entry to be victimized
      */
-    Entry* findVictim(Addr addr);
+    Entry* findVictim(Addr addr, bool *victim_secure = nullptr);
 
     /**
      * Find the set of entries that could be replaced given

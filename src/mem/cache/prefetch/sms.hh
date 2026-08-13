@@ -64,6 +64,7 @@ class XSCompositePrefetcher : public Queued
       public:
         Addr pc;
         Addr regionAddr;
+        ContextID contextId;
         uint64_t regionBits;
         bool inBackwardMode;
         uint8_t accessCount;
@@ -75,6 +76,7 @@ class XSCompositePrefetcher : public Queued
             : TaggedEntry(),
               pc(~(0UL)),
               regionAddr(0),
+              contextId(InvalidContextID),
               regionBits(0),
               inBackwardMode(false),
               accessCount(0),
@@ -99,7 +101,11 @@ class XSCompositePrefetcher : public Queued
       public:
         Addr pc;
         Addr regionAddr;
-        ReACTEntry() : TaggedEntry(), pc(0), regionAddr(0) {}
+        ContextID contextId;
+        ReACTEntry()
+            : TaggedEntry(), pc(0), regionAddr(0),
+              contextId(InvalidContextID)
+        {}
         void _setSecure(bool is_secure) {
             if (is_secure) TaggedEntry::setSecure();
         }
@@ -120,9 +126,11 @@ class XSCompositePrefetcher : public Queued
       public:
         std::vector<SatCounter8> hist;
         Addr pc;
+        ContextID contextId;
         bool decr_mode;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
-            : TaggedEntry(), hist(sz, conf), decr_mode(false)
+            : TaggedEntry(), hist(sz, conf),
+              contextId(InvalidContextID), decr_mode(false)
         {
         }
     };

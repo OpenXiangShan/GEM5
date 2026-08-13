@@ -56,6 +56,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/cache_probe_arg.hh"
+#include "mem/cache/prefetch/context_key.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "sim/arch_db.hh"
@@ -887,6 +888,18 @@ class Base : public ClockedObject
     /** Use Virtual Addresses for prefetching */
     const bool useVirtualAddresses;
 
+    /** Qualify keys inserted into a parent-owned shared filter. */
+    bool sharedFilterContextQualified{false};
+
+    Addr
+    sharedFilterKey(const PrefetchInfo &pfi, Addr addr) const
+    {
+        ContextID context_id = pfi.hasContextId() ?
+            pfi.contextId() : InvalidContextID;
+        return sharedFilterContextQualified ?
+            contextKey(addr, context_id) : addr;
+    }
+
     /**
      * Determine if this access should be observed
      * @param pkt The memory request causing the event
@@ -963,6 +976,9 @@ class Base : public ClockedObject
         /** The number of prefetch requests filtered before issuing. */
         statistics::Scalar pfFiltered;
 
+        /** Same-VA requests retained because they belong to other contexts. */
+        statistics::Scalar trainFilterContextAliases;
+
         /** The number of times a HW-prefetch is late
          * (hit in cache, MSHR, WB). */
         statistics::Formula pfLate;
@@ -983,6 +999,12 @@ class Base : public ClockedObject
     virtual ~Base() = default;
 
     virtual void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size);
+
+    void
+    setSharedFilterContextQualified(bool enabled)
+    {
+        sharedFilterContextQualified = enabled;
+    }
 
     /**
      * Notify prefetcher of cache access (may be any access or just

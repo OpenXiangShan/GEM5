@@ -229,12 +229,13 @@ OptPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<
     }
     InsertPFRequestToBuffer(pf_req);
     // origin prefetch
-    if (filter->contains(addr)) {
+    Addr filter_key = sharedFilterKey(pfi, addr);
+    if (filter->contains(filter_key)) {
         DPRINTF(OptPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(OptPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(filter_key, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
         if (ahead_level > 1) {
             assert(ahead_level == 2 || ahead_level == 3);

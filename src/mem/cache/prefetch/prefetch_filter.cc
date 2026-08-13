@@ -23,7 +23,9 @@ PrefetchFilter::Stats::Stats(statistics::Group *parent, const std::string &name)
     ADD_STAT(l2Issued, statistics::units::Count::get(), "GetPFAddrL2 issued"),
     ADD_STAT(l3Calls, statistics::units::Count::get(), "GetPFAddrL3 calls"),
     ADD_STAT(l3Issued, statistics::units::Count::get(), "GetPFAddrL3 issued"),
-    ADD_STAT(hashcollisionCount, statistics::units::Count::get(), "PrefetchFilter hash collision count")
+    ADD_STAT(hashcollisionCount, statistics::units::Count::get(), "PrefetchFilter hash collision count"),
+    ADD_STAT(contextAliasCount, statistics::units::Count::get(),
+             "same virtual regions retained for different ContextIDs")
 {
 
 }
@@ -379,16 +381,39 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
                        const TriggerInfo *trigger)
 {
     stats.insertCount++;
-    Addr tag = regionHashTag(region_addr);
-    Entry *e = table.findEntry(tag, is_secure);
-    DPRINTF(HWPrefetch, "Insert called: region=%#lx tag=%#lx bits=%#lx level=%lu,name=%s\n",
-            region_addr, tag, region_bits, PFlevel, table_name.c_str());
-    if (e) {
-        if (e->region_addr != region_addr) {
-            DPRINTF(HWPrefetch, "Warning: Insert called with existing entry but different region_addr. existing=%#lx new=%#lx\n",
-                    e->region_addr, region_addr);
-            stats.hashcollisionCount++;
+    ContextID context_id = InvalidContextID;
+    if (trigger && trigger->pfi_old &&
+        trigger->pfi_old->hasContextId()) {
+        context_id = trigger->pfi_old->contextId();
+    }
+
+    for (const auto &entry : table) {
+        if (entry.isValid() && entry.region_addr == region_addr &&
+            entry.contextId != context_id) {
+            stats.contextAliasCount++;
+            break;
         }
+    }
+
+    Addr tag = contextKey(regionHashTag(region_addr), context_id);
+    Entry *e = table.findEntry(tag, is_secure);
+    DPRINTF(HWPrefetch,
+            "Insert called: region=%#lx tag=%#lx ctx=%d bits=%#lx "
+            "level=%lu,name=%s\n",
+            region_addr, tag, context_id, region_bits, PFlevel,
+            table_name.c_str());
+    if (e) {
+        if (e->region_addr != region_addr ||
+            e->contextId != context_id) {
+            DPRINTF(HWPrefetch,
+                    "Warning: PrefetchFilter tag collision. "
+                    "existing=(%#lx,ctx=%d) new=(%#lx,ctx=%d)\n",
+                    e->region_addr, e->contextId, region_addr, context_id);
+            stats.hashcollisionCount++;
+            e = nullptr;
+        }
+    }
+    if (e) {
         storeTriggersForBits(*e, region_bits, trigger);
         e->region_bits |= region_bits;
         table.accessEntry(e);
@@ -413,6 +438,7 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
     victim->decr_mode = decr_mode;
     victim->_setSecure(is_secure);
     victim->PFlevel = PFlevel;
+    victim->contextId = context_id;
     ensureTriggerStorage(*victim);
     for (auto &slot : victim->bitTriggers) {
         slot.reset();
