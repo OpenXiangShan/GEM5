@@ -265,7 +265,6 @@ jobs:
           CONFIG_NAME=${CONFIG_NAME:-config}
           TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
           DEFAULT_DISTRIBUTED_SERVERS="node020-node034,node036-node039"
-          DISTRIBUTED_DISPATCH_HOST="ci-runner@172.28.9.101"
           DISTRIBUTED_SERVERS_INPUT="$DISTRIBUTED_SERVERS_RAW"
           DISTRIBUTED_SERVERS=$(echo "$DISTRIBUTED_SERVERS_INPUT" | xargs)
           if [ "$DISTRIBUTED_SERVERS" = "default" ]; then
@@ -286,7 +285,6 @@ jobs:
             echo "distributed_servers=$DISTRIBUTED_SERVERS"
             echo "distributed_require_idle_cpus=$DISTRIBUTED_REQUIRE_IDLE_CPUS"
             echo "distributed_idle_probe_mode=$DISTRIBUTED_IDLE_PROBE_MODE"
-            echo "distributed_dispatch_host=$DISTRIBUTED_DISPATCH_HOST"
           } >> "$GITHUB_OUTPUT"
 
           echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
@@ -307,7 +305,6 @@ jobs:
           echo "distributed_idle_cpu_threshold: 30" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_ssh_config: " >> "$TARGET_DIR/metadata.txt"
           echo "distributed_ssh_user: " >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_dispatch_host: $DISTRIBUTED_DISPATCH_HOST" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_launch_retries: 3" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_launch_retry_delay: 30" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_launch_interval: 0.5" >> "$TARGET_DIR/metadata.txt"
@@ -387,7 +384,6 @@ jobs:
           DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
           DISTRIBUTED_REQUIRE_IDLE_CPUS: ${{ steps.archive.outputs.distributed_require_idle_cpus }}
           DISTRIBUTED_IDLE_PROBE_MODE: ${{ steps.archive.outputs.distributed_idle_probe_mode }}
-          DISTRIBUTED_DISPATCH_HOST: ${{ steps.archive.outputs.distributed_dispatch_host }}
           EXECUTION_MODE: ${{ steps.config.outputs.execution_mode }}
           H_REF_SO: ${{ steps.config.outputs.h_ref_so }}
           H_RESTORER: ${{ steps.config.outputs.h_restorer }}
@@ -452,7 +448,6 @@ jobs:
               runner_args+=(
                 --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS"
                 --idle-probe-mode "$DISTRIBUTED_IDLE_PROBE_MODE"
-                --dispatch-host "$DISTRIBUTED_DISPATCH_HOST"
                 --launch-retries 3
                 --launch-retry-delay 30
                 --launch-interval 0.5
@@ -474,7 +469,6 @@ jobs:
               --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
               --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \
               --idle-probe-mode "$DISTRIBUTED_IDLE_PROBE_MODE" \
-              --dispatch-host "$DISTRIBUTED_DISPATCH_HOST" \
               --launch-retries 3 \
               --launch-retry-delay 30 \
               --launch-interval 0.5 \

@@ -27,7 +27,6 @@ class DistributedExecutionConfig:
     server_domain: str = ""
     ssh_config: str = ""
     ssh_user: str = ""
-    dispatch_host: str = ""
     ssh_options: tuple[str, ...] = ()
     poll_interval: float = 5.0
     load_probe_interval: float = 15.0
@@ -301,7 +300,6 @@ class DistributedWorkloadScheduler:
             "require_idle_cpus": self.require_idle_cpus,
             "idle_probe_mode": self.config.idle_probe_mode,
             "idle_cpu_threshold": self.config.idle_cpu_threshold,
-            "dispatch_host": self.config.dispatch_host,
         }
 
     def _refresh_server_capacity(self, server: _ServerState, *, force: bool = False) -> None:
@@ -324,7 +322,6 @@ class DistributedWorkloadScheduler:
             ssh_config=self.config.ssh_config,
             ssh_options=list(self.config.ssh_options),
             ssh_user=self.config.ssh_user,
-            dispatch_host=self.config.dispatch_host,
             timeout=self.config.load_probe_timeout,
         )
         server.idle_cpus = idle_cpus
@@ -403,13 +400,6 @@ class DistributedWorkloadScheduler:
                     "ServerAliveCountMax=576",
                 ],
             )
-            if self.config.dispatch_host:
-                ssh_cmd = dist.wrap_with_dispatch_host(
-                    ssh_cmd=ssh_cmd,
-                    dispatch_host=self.config.dispatch_host,
-                    ssh_config=self.config.ssh_config,
-                    ssh_options=list(self.config.ssh_options),
-                )
             proc = subprocess.Popen(
                 ssh_cmd,
                 stdout=subprocess.PIPE,
