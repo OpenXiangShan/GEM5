@@ -1698,7 +1698,7 @@ Fault
     xc->getRegOperand(this, 1, &tmp_old);
     auto OldVd = tmp_old.as<vu>();
 
-    for (uint32_t i = 0; i < VLEN / sew; ++i) {
+    for (uint32_t i = 0; i < vlen / sew; ++i) {
         Vd[i] = OldVd[i];
     }
 
@@ -1714,7 +1714,7 @@ Fault
         Vd[0] = Acc[0];
 
         if (machInst.vtype8.vta) {
-            for (uint32_t i = 1; i < VLEN / sew; ++i) {
+            for (uint32_t i = 1; i < vlen / sew; ++i) {
                 Vd[i] = ~vu(0);
             }
         }
@@ -2318,7 +2318,7 @@ Fault
         std::memset(
             reinterpret_cast<uint8_t *>(Vd) + sizeof(Vd[0]),
             0xff,
-            VLEN / 8 - sizeof(Vd[0]));
+            (vlen >> 3) - sizeof(Vd[0]));
     }
 
     %(op_wb)s;

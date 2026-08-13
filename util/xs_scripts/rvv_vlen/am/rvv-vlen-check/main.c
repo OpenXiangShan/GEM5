@@ -328,11 +328,20 @@ static int check_vl1re(uint64_t vlenb)
 
 /*
  * H) vslidedown — constructor uses elem_gen_idx(VS2+i, off, sew/8, vlen).
- * Slide by 1 within a single register; result[i] = src[i+1], last = 0.
+ *
+ * RVV vslidedown.vi offset=1 (e8,m1): for each active i < vl
+ *   vd[i] = (i+1 < VLMAX) ? vs2[i+1] : 0
+ *
+ * Why load at VLMAX first: with vl < VLMAX, slide's last active lane
+ * reads vs2[vl]. If that lane was only a load tail under ta, gem5 may
+ * legally hold 0xff there — that is not a slide bug. Load the full
+ * architectural register, then shrink vl for the slide so VLEN=512
+ * still exercises vl < VLMAX (expect src[vl], not 0 / 0xff).
  */
 static int check_vslide(uint64_t vlenb)
 {
-    const uint64_t vl_elems = vlenb < 32 ? vlenb : 32;
+    const uint64_t vlmax = vlenb; /* e8, m1 */
+    const uint64_t vl_elems = vlmax < 32 ? vlmax : 32;
     uint8_t src[64];
     uint8_t out[64];
     uint64_t i;
@@ -343,32 +352,36 @@ static int check_vslide(uint64_t vlenb)
         out[i] = 0x5A;
 
     clear_vregs(vlenb);
+    /* Fill vs2 over VLMAX so slide source indices are defined. */
     asm volatile(
         "vsetvli zero, %1, e8, m1, ta, ma\n\t"
         "vle8.v v2, (%0)\n\t"
-        "vslidedown.vi v0, v2, 1\n\t"
         :
-        : "r"(src), "r"(vl_elems)
+        : "r"(src), "r"(vlmax)
         : "memory");
+    /* Slide (and store) at vl_elems — may be < VLMAX on VLEN=512. */
     asm volatile(
         "vsetvli zero, %1, e8, m1, ta, ma\n\t"
+        "vslidedown.vi v0, v2, 1\n\t"
         "vse8.v v0, (%0)\n\t"
         :
         : "r"(out), "r"(vl_elems)
         : "memory");
 
-    for (i = 0; i + 1 < vl_elems; i++) {
-        if (out[i] != src[i + 1]) {
-            printf("FAIL: vslide i=%lu got=0x%02x expect=0x%02x\n",
-                   (unsigned long)i, out[i], src[i + 1]);
+    for (i = 0; i < vl_elems; i++) {
+        /* Spec: dest[i] = (i+OFFSET < VLMAX) ? src[i+OFFSET] : 0 */
+        const uint8_t expect =
+            (i + 1 < vlmax) ? src[i + 1] : (uint8_t)0;
+        if (out[i] != expect) {
+            printf("FAIL: vslide i=%lu got=0x%02x expect=0x%02x "
+                   "(vl=%lu vlmax=%lu)\n",
+                   (unsigned long)i, out[i], expect,
+                   (unsigned long)vl_elems, (unsigned long)vlmax);
             return 0;
         }
     }
-    if (out[vl_elems - 1] != 0) {
-        printf("FAIL: vslide tail expect 0 got 0x%02x\n", out[vl_elems - 1]);
-        return 0;
-    }
-    printf("rvv-vlen-check: vslide PASS (vl=%lu)\n", (unsigned long)vl_elems);
+    printf("rvv-vlen-check: vslide PASS (vl=%lu vlmax=%lu)\n",
+           (unsigned long)vl_elems, (unsigned long)vlmax);
     return 1;
 }
 

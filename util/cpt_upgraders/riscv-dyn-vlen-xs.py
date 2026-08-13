@@ -40,6 +40,16 @@ def upgrader(cpt):
             )
 
         old_bpr = len(mr) // num_vec_regs
+        # Only documented container widths: XS MaxVLEN=64B/reg, upstream=8192B/reg.
+        # Reject other register-aligned sizes (e.g. old_bpr==1) to avoid silently
+        # inventing a valid-looking MaxVLEN blob from corrupted input.
+        allowed_legacy_bpr = {xs_bytes_per_reg, 8192}
+        if old_bpr not in allowed_legacy_bpr:
+            raise ValueError(
+                f"{sec}: unsupported regs.vector bytes-per-register "
+                f"{old_bpr}; expected one of {sorted(allowed_legacy_bpr)}"
+            )
+
         out = []
         for r in range(num_vec_regs):
             chunk = mr[r * old_bpr:(r + 1) * old_bpr]

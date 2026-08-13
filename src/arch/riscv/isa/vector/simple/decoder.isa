@@ -2187,7 +2187,7 @@ decode QUADRANT {
                                     std::memset(
                                         Vd_vu + 1,
                                         0xff,
-                                        RiscvISA::VLENB - sizeof(vu));
+                                        (vlen >> 3) - sizeof(vu));
                                 }
                             }
                         }}, OPMVX, VectorMiscOp);

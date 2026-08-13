@@ -162,7 +162,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     const size_t agnostic_vd_elem =
         vmi.rs % elem_num_per_vreg;
     const size_t agnostic_elem_bytes =
-        VLENB / elem_num_per_vreg;
+        (vlen >> 3) / elem_num_per_vreg;
 
     auto agnostic_vd_bytes =
         tmp_d0.as<uint8_t>();
@@ -225,7 +225,7 @@ def VMemBase(name, Name, ea_code, memacc_code, mem_flags, inst_flags,
     // Fill RVV tail-agnostic and mask-agnostic load elements with ones.
     const size_t reg_elem_base =
         (vmi.rs / elem_num_per_vreg) * elem_num_per_vreg;
-    const size_t elem_bytes = VLENB / elem_num_per_vreg;
+    const size_t elem_bytes = (vlen >> 3) / elem_num_per_vreg;
     auto vd_bytes =
         tmp_d0.as<uint8_t>();
 
