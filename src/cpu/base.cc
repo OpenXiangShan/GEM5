@@ -43,8 +43,7 @@
 
 #include "cpu/base.hh"
 
-#include <algorithm>
-#include <array>
+#include <cstring>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -934,287 +933,14 @@ namespace
 
 constexpr int NumVecRegs = 32;
 
-struct VectorDestinationLayout
-{
-    size_t first_reg = 0;
-    size_t num_regs = 0;
-    size_t elem_bytes = 1;
-    size_t active_elems = 0;
-    size_t capacity_elems = 0;
-    size_t field_count = 1;
-    bool has_tail = false;
-    bool mask_destination = false;
-};
-
-bool
-hasMnemonicPrefix(const StaticInst &inst, const char *prefix)
-{
-    return std::string(inst.getMnemonic()).rfind(prefix, 0) == 0;
-}
-
-bool
-isWholeVectorDestination(const StaticInst &inst)
-{
-    return hasMnemonicPrefix(inst, "vl1re") ||
-           hasMnemonicPrefix(inst, "vl2re") ||
-           hasMnemonicPrefix(inst, "vl4re") ||
-           hasMnemonicPrefix(inst, "vl8re") ||
-           hasMnemonicPrefix(inst, "vmv1r") ||
-           hasMnemonicPrefix(inst, "vmv2r") ||
-           hasMnemonicPrefix(inst, "vmv4r") ||
-           hasMnemonicPrefix(inst, "vmv8r");
-}
-
-bool
-isMaskDestination(const StaticInst &inst)
-{
-    return hasMnemonicPrefix(inst, "vmadc") ||
-           hasMnemonicPrefix(inst, "vmsbc") ||
-           hasMnemonicPrefix(inst, "vmseq") ||
-           hasMnemonicPrefix(inst, "vmsne") ||
-           hasMnemonicPrefix(inst, "vmslt") ||
-           hasMnemonicPrefix(inst, "vmsle") ||
-           hasMnemonicPrefix(inst, "vmsgt") ||
-           hasMnemonicPrefix(inst, "vmand") ||
-           hasMnemonicPrefix(inst, "vmnand") ||
-           hasMnemonicPrefix(inst, "vmandn") ||
-           hasMnemonicPrefix(inst, "vmxor") ||
-           hasMnemonicPrefix(inst, "vmor") ||
-           hasMnemonicPrefix(inst, "vmnor") ||
-           hasMnemonicPrefix(inst, "vmorn") ||
-           hasMnemonicPrefix(inst, "vmxnor") ||
-           hasMnemonicPrefix(inst, "vmsbf") ||
-           hasMnemonicPrefix(inst, "vmsif") ||
-           hasMnemonicPrefix(inst, "vmsof") ||
-           hasMnemonicPrefix(inst, "vmf") ||
-           hasMnemonicPrefix(inst, "vlm") ||
-           hasMnemonicPrefix(inst, "vmask_mv");
-}
-
-bool
-isSingleElementVectorDestination(const StaticInst &inst)
-{
-    return hasMnemonicPrefix(inst, "vmv_s_x") ||
-           hasMnemonicPrefix(inst, "vfmv_s_f") ||
-           hasMnemonicPrefix(inst, "vred") ||
-           hasMnemonicPrefix(inst, "vwred") ||
-           hasMnemonicPrefix(inst, "vfred") ||
-           hasMnemonicPrefix(inst, "vfwred");
-}
-
-bool
-isIndexedVectorLoad(const StaticInst &inst)
-{
-    return hasMnemonicPrefix(inst, "vluxei") ||
-           hasMnemonicPrefix(inst, "vloxei");
-}
-
-bool
-isVectorCompress(const StaticInst &inst)
-{
-    return hasMnemonicPrefix(inst, "vcompress") ||
-           hasMnemonicPrefix(inst, "Vcompress");
-}
-
-size_t
-wholeVectorRegisterCount(const StaticInst &inst)
-{
-    if (hasMnemonicPrefix(inst, "vl8re") ||
-        hasMnemonicPrefix(inst, "vmv8r")) {
-        return 8;
-    }
-    if (hasMnemonicPrefix(inst, "vl4re") ||
-        hasMnemonicPrefix(inst, "vmv4r")) {
-        return 4;
-    }
-    if (hasMnemonicPrefix(inst, "vl2re") ||
-        hasMnemonicPrefix(inst, "vmv2r")) {
-        return 2;
-    }
-    return 1;
-}
-
-VectorDestinationLayout
-getVectorDestinationLayout(const StaticInst &inst, uint64_t vtype,
-                           uint64_t vl)
-{
-    const auto &riscv_inst =
-        dynamic_cast<const RiscvISA::RiscvStaticInst &>(inst);
-    const auto mach_inst = riscv_inst.machInst;
-    VectorDestinationLayout layout;
-    layout.first_reg = mach_inst.vd;
-
-    if (isWholeVectorDestination(inst)) {
-        layout.num_regs = wholeVectorRegisterCount(inst);
-        layout.elem_bytes = 1;
-        layout.capacity_elems = layout.num_regs * RiscvISA::VLENB;
-        layout.active_elems = layout.capacity_elems;
-        return layout;
-    }
-
-    const size_t sew_bytes = size_t{1} << bits(vtype, 5, 3);
-    const auto vlmul = RiscvISA::vtype_vlmul(vtype);
-    size_t dest_elem_bytes = sew_bytes;
-    int64_t dest_lmul = vlmul;
-
-    const bool is_vector_load =
-        inst.isLoad() || hasMnemonicPrefix(inst, "VleffEnd");
-    if (is_vector_load && !isIndexedVectorLoad(inst)) {
-        const size_t eew_bytes = RiscvISA::width_EEW(mach_inst.width) / 8;
-        dest_elem_bytes = eew_bytes;
-        const auto vflmul = RiscvISA::getVflmul(bits(vtype, 2, 0));
-        layout.num_regs = RiscvISA::get_emul(
-            eew_bytes * 8, sew_bytes, vflmul, false);
-    } else if (hasMnemonicPrefix(inst, "vw") ||
-               hasMnemonicPrefix(inst, "vfw")) {
-        dest_elem_bytes *= 2;
-        ++dest_lmul;
-    }
-
-    if (!is_vector_load || isIndexedVectorLoad(inst)) {
-        layout.num_regs = size_t{1} << std::max<int64_t>(0, dest_lmul);
-        if (is_vector_load) {
-            layout.field_count = mach_inst.nf + 1;
-            layout.num_regs *= layout.field_count;
-        }
-    } else {
-        layout.field_count = mach_inst.nf + 1;
-        layout.num_regs *= layout.field_count;
-    }
-    layout.num_regs = std::min(layout.num_regs,
-                               size_t{NumVecRegs} - layout.first_reg);
-    layout.elem_bytes = dest_elem_bytes;
-    layout.capacity_elems =
-        layout.num_regs * RiscvISA::VLENB / layout.elem_bytes;
-
-    if (isMaskDestination(inst)) {
-        layout.num_regs = 1;
-        layout.elem_bytes = 1;
-        layout.capacity_elems = RiscvISA::VLENB;
-        layout.active_elems = std::min<uint64_t>(vl, RiscvISA::VLEN);
-        layout.has_tail = true;
-        layout.mask_destination = true;
-    } else if (isSingleElementVectorDestination(inst)) {
-        layout.num_regs = 1;
-        layout.capacity_elems = RiscvISA::VLENB / layout.elem_bytes;
-        layout.active_elems = vl == 0 ? 0 : 1;
-        layout.has_tail = bits(vtype, 6);
-    } else {
-        layout.active_elems = std::min<uint64_t>(vl, layout.capacity_elems);
-        layout.has_tail = bits(vtype, 6);
-    }
-    return layout;
-}
-
-std::array<uint8_t, RiscvISA::VLENB * NumVecRegs>
-getVectorAgnosticBits(const StaticInst &inst,
-                      const riscv64_CPU_regfile &gem5_reg_file,
-                      uint64_t vtype, uint64_t vl)
-{
-    std::array<uint8_t, RiscvISA::VLENB * NumVecRegs> mask{};
-    bool has_vector_dest = hasMnemonicPrefix(inst, "VleffEnd");
-    for (int i = 0; i < inst.numDestRegs(); ++i) {
-        if (inst.destRegIdx(i).isVecReg() &&
-            inst.destRegIdx(i).index() < NumVecRegs) {
-            has_vector_dest = true;
-            break;
-        }
-    }
-    if (!has_vector_dest) {
-        return mask;
-    }
-
-    auto layout = getVectorDestinationLayout(inst, vtype, vl);
-    const size_t group_begin = layout.first_reg * RiscvISA::VLENB;
-    const size_t group_bytes = layout.num_regs * RiscvISA::VLENB;
-
-    if (layout.mask_destination) {
-        for (size_t bit = layout.active_elems;
-             bit < RiscvISA::VLEN; ++bit) {
-            mask[group_begin + bit / 8] |= uint8_t{1} << (bit % 8);
-        }
-        const auto &mach_inst =
-            dynamic_cast<const RiscvISA::RiscvStaticInst &>(inst).machInst;
-        if (!mach_inst.vm && bits(vtype, 7)) {
-            const auto *v0 = reinterpret_cast<const uint8_t *>(
-                &gem5_reg_file.vr[0]);
-            for (size_t bit = 0; bit < layout.active_elems; ++bit) {
-                if (!(v0[bit / 8] & (uint8_t{1} << (bit % 8)))) {
-                    mask[group_begin + bit / 8] |=
-                        uint8_t{1} << (bit % 8);
-                }
-            }
-        }
-        return mask;
-    }
-
-    const size_t field_bytes = group_bytes / layout.field_count;
-    if (isVectorCompress(inst)) {
-        const auto &mach_inst =
-            dynamic_cast<const RiscvISA::RiscvStaticInst &>(inst).machInst;
-        const auto *selection = reinterpret_cast<const uint8_t *>(
-            &gem5_reg_file.vr[mach_inst.vs1]);
-        layout.active_elems = 0;
-        for (size_t elem = 0; elem < vl; ++elem) {
-            layout.active_elems +=
-                bool(selection[elem / 8] & (uint8_t{1} << (elem % 8)));
-        }
-    }
-    const size_t active_bytes = std::min(
-        field_bytes, layout.active_elems * layout.elem_bytes);
-    if (layout.has_tail) {
-        for (size_t field = 0; field < layout.field_count; ++field) {
-            const size_t field_begin = group_begin + field * field_bytes;
-            std::fill(mask.begin() + field_begin + active_bytes,
-                      mask.begin() + field_begin + field_bytes, 0xff);
-        }
-    }
-
-    const auto &mach_inst =
-        dynamic_cast<const RiscvISA::RiscvStaticInst &>(inst).machInst;
-    if (!mach_inst.vm && bits(vtype, 7)) {
-        const auto *v0 = reinterpret_cast<const uint8_t *>(
-            &gem5_reg_file.vr[0]);
-        for (size_t field = 0; field < layout.field_count; ++field) {
-            const size_t field_begin = group_begin + field * field_bytes;
-            for (size_t elem = 0; elem < layout.active_elems; ++elem) {
-                if (v0[elem / 8] & (uint8_t{1} << (elem % 8))) {
-                    continue;
-                }
-                std::fill_n(mask.begin() + field_begin +
-                                elem * layout.elem_bytes,
-                            layout.elem_bytes, 0xff);
-            }
-        }
-    }
-    return mask;
-}
-
 int
-findVectorRegisterMismatch(
-    riscv64_CPU_regfile &ref_reg_file,
-    const riscv64_CPU_regfile &gem5_reg_file,
-    const std::array<uint8_t, RiscvISA::VLENB * NumVecRegs> &agnostic_bits,
-    bool &reference_updated)
+findVectorRegisterMismatch(const riscv64_CPU_regfile &ref_reg_file,
+                           const riscv64_CPU_regfile &gem5_reg_file)
 {
-    auto *ref_bytes = reinterpret_cast<uint8_t *>(&ref_reg_file.vr[0]);
-    const auto *gem5_bytes =
-        reinterpret_cast<const uint8_t *>(&gem5_reg_file.vr[0]);
-
-    for (size_t byte_idx = 0; byte_idx < agnostic_bits.size(); ++byte_idx) {
-        const uint8_t diff = ref_bytes[byte_idx] ^ gem5_bytes[byte_idx];
-        if ((diff & ~agnostic_bits[byte_idx]) != 0) {
-            return byte_idx / RiscvISA::VLENB;
-        }
-    }
-
-    for (size_t byte_idx = 0; byte_idx < agnostic_bits.size(); ++byte_idx) {
-        const uint8_t diff = ref_bytes[byte_idx] ^ gem5_bytes[byte_idx];
-        if ((diff & agnostic_bits[byte_idx]) != 0) {
-            ref_bytes[byte_idx] =
-                (ref_bytes[byte_idx] & ~agnostic_bits[byte_idx]) |
-                (gem5_bytes[byte_idx] & agnostic_bits[byte_idx]);
-            reference_updated = true;
+    for (int reg = 0; reg < NumVecRegs; ++reg) {
+        if (std::memcmp(&ref_reg_file.vr[reg], &gem5_reg_file.vr[reg],
+                        RiscvISA::VLENB) != 0) {
+            return reg;
         }
     }
     return -1;
@@ -1326,22 +1052,9 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     if (enableRVV) {
         if (diffInfo.inst->isVector()) {
             readGem5Regs(tid);
-            const auto agnostic_bits = getVectorAgnosticBits(
-                *diffInfo.inst, diffAllStates->gem5RegFile,
-                diffAllStates->referenceRegFile.vtype,
-                diffAllStates->referenceRegFile.vl);
-            bool reference_updated = false;
             const int mismatch_reg = findVectorRegisterMismatch(
                 diffAllStates->referenceRegFile,
-                diffAllStates->gem5RegFile,
-                agnostic_bits, reference_updated);
-
-            if (reference_updated) {
-                // Keep both models aligned once an architecturally
-                // unspecified value has been accepted.
-                diffAllStates->proxy->regcpy(
-                    &diffAllStates->referenceRegFile, DUT_TO_REF);
-            }
+                diffAllStates->gem5RegFile);
 
             if (mismatch_reg >= 0) {
                 warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
@@ -1375,10 +1088,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         diffAllStates->referenceRegFile.vtype, "vtype",
                         ~(1ULL << 63));
 
-        // These fields are captured for mismatch reporting but are not
-        // compared independently.
-        diffAllStates->gem5RegFile.vstart =
-            readMiscReg(RiscvISA::MISCREG_VSTART, tid);
+        diff_vector_csr(RiscvISA::MISCREG_VSTART,
+                        diffAllStates->gem5RegFile.vstart,
+                        diffAllStates->referenceRegFile.vstart, "vstart");
+
+        // VCSR already contains VXSAT and VXRM; retain their individual
+        // values for state reporting.
         diffAllStates->gem5RegFile.vxsat =
             readMiscReg(RiscvISA::MISCREG_VXSAT, tid);
         diffAllStates->gem5RegFile.vxrm =
