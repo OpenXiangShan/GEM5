@@ -98,6 +98,7 @@ class ListPlatform(argparse.Action):
         ObjectList.platform_list.print()
         sys.exit(0)
 
+
 # Add the very basic options that work also in the case of the no ISA
 # being used, and consequently no CPUs, but rather various types of
 # testers and traffic generators.
@@ -315,14 +316,6 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="""
                         Force all hardware prefetchers to disable their
                         optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""")
-    parser.add_argument("--pf-control-profile", action="store",
-                        default="off",
-                        choices=("off", "adaptive", "default"),
-                        help="""
-                        Prefetch admission-control profile. 'off' disables
-                        built-in control/adaptive defaults, 'adaptive' enables
-                        the CI adaptive profile, and 'default' uses only
-                        PF_CONTROL_CONFIG plus GEM5_PF_CONTROL_CONFIG.""")
 
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',
@@ -653,6 +646,13 @@ def addXiangshanCommonOptions(parser):
                         default=None, help="The path of mmc img")
     parser.add_argument("--mmc-cptbin", action="store",
                         type=str, default=None, help="The path of mmc cptbin")
+    parser.add_argument(
+        "--enable-dynamic-pf",
+        type=str,
+        choices=("True", "False"),
+        default=None,
+        metavar="{True,False}",
+        help="Enable dynamic prefetch control (True/False).")
 
     # Difftest option
     parser.set_defaults(enable_difftest=None)

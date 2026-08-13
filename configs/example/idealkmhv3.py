@@ -1,12 +1,8 @@
-import argparse
 import sys
 
-import m5
-from m5.defines import buildEnv
 from m5.objects import *
 from m5.objects.ValuePredictor import *
-from m5.util import addToPath, fatal, warn
-from m5.util.fdthelper import *
+from m5.util import addToPath
 
 addToPath('../')
 addToPath('../../')
@@ -29,6 +25,7 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_level2_limit = args.ptw_level2_limit
     tlb.walker.ptw_level3_limit = args.ptw_level3_limit
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
+
 
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:

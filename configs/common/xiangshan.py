@@ -839,6 +839,11 @@ def build_xiangshan_system(args):
     np = args.num_cpus
     assert buildEnv['TARGET_ISA'] == "riscv"
 
+    enable_dynamic_pf = getattr(args, 'enable_dynamic_pf', False)
+    PrefetcherConfig.set_enable_dynamic_pf(
+        enable_dynamic_pf is True or enable_dynamic_pf == "True"
+    )
+
     TestCPUClass = get_xiangshan_cpu_class(args)
     ruby = bool(hasattr(args, 'ruby') and args.ruby)
     num_threads = np * (2 if getattr(args, 'smt', False) else 1)
@@ -994,8 +999,6 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
-
-    PrefetcherConfig.set_pf_control_profile(args.pf_control_profile)
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)

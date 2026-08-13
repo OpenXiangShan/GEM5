@@ -13,14 +13,12 @@ jobs:
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "gcc15-spec06-1.0c"
-      pf_control_profile: "off"
 
   align_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "spec17-1.0c"
-      pf_control_profile: "off"
 
   align_test_spec26:
     uses: ./.github/workflows/gem5-perf-template.yml
@@ -36,14 +34,12 @@ jobs:
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "gcc15-spec06-1.0c"
-      pf_control_profile: "off"
 
   perf_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "spec17-1.0c"
-      pf_control_profile: "off"
 
   perf_test_spec26:
     uses: ./.github/workflows/gem5-perf-template.yml
@@ -59,35 +55,14 @@ jobs:
     with:
       config_path: configs/example/smt_idealkmhv3.py
       benchmark_type: "gcc12-spec06-smt-1.0c"
-      pf_control_profile: "off"
       distributed_servers: "default"
       distributed_jobs_per_server: 32
       check_result: false
       timeout_minutes: 720
-
-  smt_dynpf_int_test_spec06:
-    uses: ./.github/workflows/gem5-perf-template.yml
-    with:
-      config_path: configs/example/smt_idealkmhv3.py
-      benchmark_type: "gcc12-spec06-smt-int-1.0c"
-      pf_control_profile: "adaptive"
-      distributed_servers: "default"
-      distributed_jobs_per_server: 32
-      check_result: false
-      timeout_minutes: 720
-
-  perf_test_spec06_gcc12_base:
-    uses: ./.github/workflows/gem5-perf-template.yml
-    with:
-      config_path: configs/example/idealkmhv3.py
-      benchmark_type: "gcc12-spec06-1.0c"
-      pf_control_profile: "off"
-      extra_args: "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini"
 
   perf_test_spec06_gcc12_dynpf:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "gcc12-spec06-1.0c"
-      pf_control_profile: "adaptive"
-      extra_args: "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini"
+      extra_args: "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini --enable-dynamic-pf=True"

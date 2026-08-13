@@ -46,7 +46,6 @@ PF_SOURCE_BY_NAME.update({
 })
 
 PF_CONTROL_CONFIG_ENV = "GEM5_PF_CONTROL_CONFIG"
-PF_CONTROL_PROFILE_NAMES = ("off", "adaptive", "default")
 
 # Central Python-only configuration for prefetch admission control.
 # Batch scripts may point GEM5_PF_CONTROL_CONFIG at a Python file defining
@@ -84,34 +83,55 @@ PF_CONTROL_CONFIG = {
 }
 
 _LOADED_PF_CONTROL_CONFIG = None
-_PF_CONTROL_PROFILE = "off"
 
-PF_CONTROL_PROFILE_CONFIGS = {
-    "off": {
-        "control": {
-            "enabled": False,
-        },
-        "adaptive": {
-            "enabled": False,
-        },
+_ENABLE_DYNAMIC_PF = False
+
+_DYNAMIC_PF_DISABLED_CONFIG = {
+    "control": {
+        "enabled": False,
     },
     "adaptive": {
-        "control": {
-            "enabled": True,
-            "window": 8000,
-            "admit_pct": 100,
-        },
-        "adaptive": {
-            "enabled": True,
-            "pfbad_entries": {
-                "l1d": 128,
-                "l2": 512,
-                "l2_wrapper": 512,
-            },
+        "enabled": False,
+    },
+}
+
+_DYNAMIC_PF_ENABLED_CONFIG = {
+    "control": {
+        "enabled": True,
+        "window": 8000,
+        "admit_pct": 100,
+    },
+    "adaptive": {
+        "enabled": True,
+        "pfbad_entries": {
+            "l1d": 128,
+            "l2": 512,
+            "l2_wrapper": 512,
         },
     },
-    "default": {},
 }
+
+
+def _apply_dynamic_pf_config(config):
+    if _ENABLE_DYNAMIC_PF:
+        _deep_update_dict(config, _DYNAMIC_PF_ENABLED_CONFIG)
+    else:
+        _deep_update_dict(config, _DYNAMIC_PF_DISABLED_CONFIG)
+
+
+def _finalize_dynamic_pf_config(config):
+    control = config.setdefault("control", {})
+    adaptive = config.setdefault("adaptive", {})
+    control["enabled"] = _ENABLE_DYNAMIC_PF
+    adaptive["enabled"] = _ENABLE_DYNAMIC_PF
+
+
+def set_enable_dynamic_pf(enabled):
+    global _ENABLE_DYNAMIC_PF
+    global _LOADED_PF_CONTROL_CONFIG
+
+    _ENABLE_DYNAMIC_PF = bool(enabled)
+    _LOADED_PF_CONTROL_CONFIG = None
 
 
 def _get_hwp(hwp_option):
@@ -129,31 +149,13 @@ def _deep_update_dict(base, override):
             base[key] = value
 
 
-def set_pf_control_profile(profile):
-    global _PF_CONTROL_PROFILE
-    global _LOADED_PF_CONTROL_CONFIG
-
-    profile = str(profile).strip().lower()
-    if profile not in PF_CONTROL_PROFILE_NAMES:
-        valid = ", ".join(PF_CONTROL_PROFILE_NAMES)
-        fatal(f"Invalid prefetch control profile {profile!r}; valid: {valid}")
-
-    _PF_CONTROL_PROFILE = profile
-    _LOADED_PF_CONTROL_CONFIG = None
-
-
-def _apply_pf_control_profile(config):
-    profile_config = PF_CONTROL_PROFILE_CONFIGS[_PF_CONTROL_PROFILE]
-    _deep_update_dict(config, profile_config)
-
-
 def _load_pf_control_config():
     global _LOADED_PF_CONTROL_CONFIG
     if _LOADED_PF_CONTROL_CONFIG is not None:
         return _LOADED_PF_CONTROL_CONFIG
 
     config = copy.deepcopy(PF_CONTROL_CONFIG)
-    _apply_pf_control_profile(config)
+    _apply_dynamic_pf_config(config)
 
     config_path = os.environ.get(PF_CONTROL_CONFIG_ENV, "").strip()
     if config_path:
@@ -169,6 +171,7 @@ def _load_pf_control_config():
             )
         _deep_update_dict(config, override)
 
+    _finalize_dynamic_pf_config(config)
     _LOADED_PF_CONTROL_CONFIG = config
     return config
 
