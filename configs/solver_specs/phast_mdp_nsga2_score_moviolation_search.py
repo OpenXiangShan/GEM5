@@ -120,9 +120,14 @@ class PHASTMDPNsga2ScoreMemViolationSearch(SolveSpec):
     objectives = [
         Maximize.score_txt("Estimated overall score per GHz"),
         Minimize.stats("system.cpu.iew.memOrderViolationEvents"),
+        Minimize.stats("system.cpu.MemDepUnit__0.mdpFalseDepAtCommit"),
     ]
 
-    stop = Stop(max_trials=4000, no_improve_trials=20, timeout_hours=18)
+    # Run until the trial budget or wall-clock budget is exhausted. In a
+    # multi-objective search, no_improve_trials measures Pareto-frontier
+    # changes rather than raw metric changes, so it can stop while every
+    # trial's metric values are still different.
+    stop = Stop(max_trials=4000, timeout_hours=7)
 
     @classmethod
     def apply_trial(cls, root, trial) -> None:
