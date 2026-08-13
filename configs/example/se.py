@@ -282,6 +282,18 @@ for i in range(np):
             ObjectList.indirect_bp_list.get(args.indirect_bp_type)
         system.cpu[i].branchPred.indirectBranchPred = indirectBPClass()
 
+# Wire --rvv-vlen/--rvv-elen before createThreads (same contract as kmhv3 FS).
+if buildEnv['TARGET_ISA'] == 'riscv':
+    from common.RiscvVectorConfig import configure_riscv_vector_isa
+    configure_riscv_vector_isa(args, system.cpu)
+    # Docs/smoke (se_matrix_smoke) pass --enable-riscv-vector; apply it to
+    # each CPU so SE matches the FS path that sets cpu.enable_riscv_vector.
+    if getattr(args, 'enable_riscv_vector', False):
+        system.enable_riscv_vector = True
+        for cpu in system.cpu:
+            cpu.enable_riscv_vector = True
+
+for i in range(np):
     system.cpu[i].createThreads()
 
 def setKmhV3IdealParams(args, system):

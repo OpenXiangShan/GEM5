@@ -403,9 +403,11 @@ void ISA::clear()
         // Xiangshan assume machine boots with FS off
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
     } else {
-        // SE assumes process starts with FS on
+        // SE assumes process starts with FP and Vector usable: userland RVV
+        // ELFs (e.g. upstream rvv-memcpy) touch vtype/vl without firmware
+        // to set mstatus.VS. Mirror the existing FS-on SE policy for VS.
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
-                                    (1ULL << FS_OFFSET);
+                                    (1ULL << FS_OFFSET) | (1ULL << VS_OFFSET);
     }
     if (FullSystem) {
         miscRegFile[MISCREG_MCOUNTEREN] = 0;

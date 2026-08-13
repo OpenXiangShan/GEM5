@@ -23,32 +23,8 @@ from common.Caches import *
 from common import Options
 from common.FUScheduler import *
 from m5.objects import PerfRecord
-
-
-def _configure_riscv_vector_isa(args, cpus):
-    """Attach RiscvISA objects with the requested VLEN/ELEN before createThreads.
-
-    Why: gem5 forbids mutating VectorParamValue after construction, so VLEN must
-    be set when constructing RiscvISA. Decoder reads VLEN from this ISA object.
-    """
-    vlen = int(getattr(args, 'rvv_vlen', 128))
-    elen = int(getattr(args, 'rvv_elen', 64))
-    if vlen < elen:
-        fatal(f"Invalid RVV config: VLEN ({vlen}) < ELEN ({elen})")
-    if getattr(args, 'enable_difftest', False) and vlen != 128:
-        fatal(
-            f"--enable-difftest currently requires --rvv-vlen=128 "
-            f"(stock NEMU ABI); got {vlen}"
-        )
-    for cpu in cpus:
-        nthreads = int(cpu.numThreads) if hasattr(cpu, 'numThreads') else 1
-        if getattr(args, 'smt', False):
-            nthreads = max(nthreads, 2)
-        cpu.isa = [
-            RiscvISA(vlen=vlen, elen=elen) for _ in range(nthreads)
-        ]
-        print(f"Configured RiscvISA VLEN={vlen} ELEN={elen} "
-              f"for {nthreads} thread(s) on {type(cpu)}")
+from common.RiscvVectorConfig import configure_riscv_vector_isa as \
+    _configure_riscv_vector_isa
 
 
 class XiangshanCore(RiscvO3CPU):
