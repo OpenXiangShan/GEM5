@@ -1,0 +1,94 @@
+name: Manual H SPEC06 Performance Test
+
+run-name: ${{ format('{0} - {1} - {2}{3} - pf:{4} - {5}', github.event.inputs.note || 'Manual H SPEC06 Performance Test', github.event.inputs.coverage_type, github.event.inputs.configuration, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.pf_control_profile || 'off', github.event.inputs.branch || github.ref_name) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Title prefix for this manual H performance run'
+        required: false
+        type: string
+        default: 'Manual H SPEC06 Performance Test'
+      configuration:
+        description: 'Choose Kunminghu configuration'
+        required: true
+        type: choice
+        default: 'idealkmhv3.py'
+        options:
+          - 'kmhv2.py'
+          - 'kmhv3.py'
+          - 'idealkmhv3.py'
+      coverage_type:
+        description: 'H SPEC06 checkpoint coverage type'
+        required: true
+        type: choice
+        default: 'h-spec06-1.0c'
+        options:
+          - 'h-spec06-0.5c'
+          - 'h-spec06-1.0c'
+      specific_benchmarks:
+        description: 'Specific benchmarks to run (comma-separated, for example "mcf,gcc"); leave empty to run the selected coverage set'
+        required: false
+        type: string
+        default: ''
+      pf_control_profile:
+        description: 'Prefetch control profile'
+        required: false
+        type: choice
+        default: 'off'
+        options:
+          - 'off'
+          - adaptive
+          - default
+      extra_args:
+        description: 'Extra gem5 args. H checkpoint, NEMU ref, restorer, maxinst and DRAMSim3 arguments are fixed by this workflow.'
+        required: false
+        type: string
+        default: ''
+      distributed_servers:
+        description: 'Optional distributed server list. Use default for node020-node034,node036-node039; leave empty for the local H runner.'
+        required: false
+        type: string
+        default: ''
+      distributed_jobs_per_server:
+        description: 'Distributed jobs per server'
+        required: false
+        type: number
+        default: 32
+      branch:
+        description: 'Branch, tag or full SHA to test (leave empty for the selected workflow branch)'
+        required: false
+        type: string
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      config_path: ${{ steps.resolve.outputs.config_path }}
+      pr_sha: ${{ steps.resolve.outputs.pr_sha }}
+    steps:
+      - name: Resolve parameters
+        id: resolve
+        run: |
+          echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ github.event.inputs.branch }}" ]; then
+            echo "pr_sha=${{ github.event.inputs.branch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pr_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  h_perf_test:
+    needs: setup
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: ${{ needs.setup.outputs.config_path }}
+      benchmark_type: ${{ github.event.inputs.coverage_type }}
+      specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
+      pf_control_profile: ${{ github.event.inputs.pf_control_profile }}
+      extra_args: ${{ github.event.inputs.extra_args }}
+      check_result: true
+      distributed_servers: ${{ github.event.inputs.distributed_servers }}
+      distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}
+      pr_sha: ${{ needs.setup.outputs.pr_sha }}
+      timeout_minutes: 720
