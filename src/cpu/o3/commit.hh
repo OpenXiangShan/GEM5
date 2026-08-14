@@ -475,6 +475,12 @@ class Commit
      */
     DynInstPtr squashAfterInst[MaxThreads];
 
+    /**
+     * Cause of the in-progress squash. Latched because the ROB walk spans
+     * several cycles and TrapPending precedes the squash by one.
+     */
+    SquashCause curSquashCause[MaxThreads];
+
     /** Priority List used for Commit Policy */
     std::list<ThreadID> priority_list;
 
