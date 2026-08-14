@@ -8,15 +8,9 @@ This file defines the collaboration rules and workflow entry points for this rep
 
 ## Planning
 
-If a task involves complex feature development, long-running debugging, performance or behavior alignment, larger refactors, or analysis that spans multiple turns, first create or update an ExecPlan according to [PLANS.md](PLANS.md) before continuing.
-
-Typical cases that should use an ExecPlan include:
-
-- gem5 / RTL behavior alignment
-- Frontend / BPU / FTQ / redirect / flush investigations
-- Performance regression analysis
-- Refactors that cross multiple modules
-- New features that need to be landed in stages
+For complex or ambiguous tasks, make a concise plan before editing and keep it
+updated during the task. Do not create a separate plan file unless explicitly
+requested or the work needs to span multiple sessions or contributors.
 
 ## Repository Map
 
@@ -26,7 +20,7 @@ Start with these directories first:
 - `configs/`: runtime configurations, especially `configs/example/kmhv3.py`
 - `tests/`: test entry points
 - `util/`: helper scripts and tools
-- `docs/`: documentation, including architecture and execution plans
+- `docs/`: architecture, design, and other project documentation
   - `docs/design-docs/frontend/`: design-oriented Kunminghu v3 frontend/BPU notes; prefer this directory for design motivation, constraints, and tradeoffs
 
 For a higher-level map of the codebase, see [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -104,5 +98,4 @@ If full validation cannot be completed in the current environment, explicitly st
 
 ## Related Documents
 
-- [PLANS.md](PLANS.md): ExecPlan rules for complex tasks
 - [ARCHITECTURE.md](ARCHITECTURE.md): high-level architecture map of the repository
