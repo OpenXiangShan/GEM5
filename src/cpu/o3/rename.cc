@@ -414,7 +414,7 @@ Rename::tick()
                 i, stallSig->blockRename[i], can_rename, block, active);
 
         // if rename has no insts, no need to block decode, even if rename is blocked for other reasons
-        stallSig->blockDecode[i] = block && !fixedbuffer[i].empty();
+        stallSig->blockDecode[i] = block ;
         stallSig->decodeBlockReason[i] =
             stallSig->blockDecode[i] ? block_reason : StallReason::NoStall;
         toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];

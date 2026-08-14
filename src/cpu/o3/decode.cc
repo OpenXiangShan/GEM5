@@ -634,7 +634,8 @@ Decode::tick()
         // Apply per-thread FIFO backpressure
         bool this_thread_fifo_bp = thread_fifo_bp[i];
         
-        stallSig->blockFetch[i] = block || this_thread_fifo_bp;
+        //stallSig->blockFetch[i] = block || this_thread_fifo_bp;
+        stallSig->blockFetch[i] = this_thread_fifo_bp;
         stallSig->fetchBlockReason[i] =
             stallSig->blockFetch[i] ?
                 (block ? stallSig->decodeBlockReason[i] : 
@@ -644,12 +645,6 @@ Decode::tick()
         if (active) {
             const auto freeze = active_arbiter.observe(
                 i, smtBorrowPriority(fromIEW->iewInfo[i]));
-            if (freeze.previousActive != InvalidThreadID) {
-                freezeActiveThread(freeze.previousActive);
-            }
-            if (freeze.freezeCurrent) {
-                freezeActiveThread(i);
-            }
         } else if (block && blocked_tid == InvalidThreadID) {
             blocked_tid = i;
         }
@@ -943,14 +938,6 @@ Decode::decodeInsts(ThreadID tid)
     }
     for (auto &fused_inst : fusionInst) {
         toRename->insts[toRename->size++] = fused_inst;
-    }
-
-    if (insts_available) {
-        // current cycle insts was not all processed, need to block fetch in next cycle
-        stallSig->blockFetch[tid] = true;
-        if (breakDecode == StallReason::NoStall) {
-            breakDecode = StallReason::OtherFragStall;
-        }
     }
 
     // this stage is totally stalled, set all decode stalls
