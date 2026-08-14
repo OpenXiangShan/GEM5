@@ -174,6 +174,11 @@ def config_aligned_l2(options, system, l2_cache_class):
             assert(int(inner_cache.mshrs) % num_l2_slices == 0)
             inner_cache.mshrs = int(inner_cache.mshrs) // num_l2_slices
 
+            print("Using bigger L2:")
+            print(f"{inner_cache.size / 1024}KB {inner_cache.mshrs}MSHR ->", end=" ")
+            print(f"{inner_cache.size * options.l2_factor / 1024}KB {inner_cache.mshrs * options.l2_factor}MSHR")
+            inner_cache.mshrs *= options.l2_factor
+            inner_cache.size *= options.l2_factor
 
             inner_cache.do_fast_writeline = not options.kmh_align
             if options.ideal_cache:

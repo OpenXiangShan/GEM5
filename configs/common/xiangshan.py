@@ -962,6 +962,12 @@ def xiangshan_system_init():
         default=32,
     )
 
+    parser.add_argument(
+        "--l2-factor",
+        type=int,
+        default=1,
+    )
+
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
