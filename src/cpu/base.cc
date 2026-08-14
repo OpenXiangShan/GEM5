@@ -1100,9 +1100,10 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         diffAllStates->referenceRegFile.vtype, "vtype",
                         ~(1ULL << 63));
 
-        diff_vector_csr(RiscvISA::MISCREG_VSTART,
-                        diffAllStates->gem5RegFile.vstart,
-                        diffAllStates->referenceRegFile.vstart, "vstart");
+        // vstart is not compared because asynchronous traps may legally be
+        // taken at different vector instruction boundaries by the two models.
+        diffAllStates->gem5RegFile.vstart =
+            readMiscReg(RiscvISA::MISCREG_VSTART, tid);
 
         // VCSR already contains VXSAT and VXRM; retain their individual
         // values for state reporting.
