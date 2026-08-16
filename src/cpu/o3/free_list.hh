@@ -148,11 +148,10 @@ class UnifiedFreeList
     /** SMT resource sharing policy for the Preg free lists. */
     SMTQueuePolicy pregPolicy;
 
-    /** Minimum registers a donor thread keeps for restarting after a stall.
-     *  (Phase 1: donor[] is always false, so this is currently unused; kept
-     *  so the borrowingLimit() formula does not need to change in Phase 3.)
-     */
-    const unsigned donorReserveRegs;
+    /** Percentage (0-100) of per-thread fair share that a donor thread
+     *  reserves.  donorQuota(type) = numPhysRegs[type] / activeThreadCount
+     *  * donorReservePercent / 100.  Automatically scales with thread count. */
+    const unsigned donorReservePercent;
 
     /** Fixed per-thread base quota override (0 = use numPhysRegs/activeThreads). */
     const unsigned fixedBase;
@@ -176,8 +175,9 @@ class UnifiedFreeList
      *  which thread holds which register. */
     unsigned threadUsed[MaxThreads][RMiscRegClass + 1] = {};
 
-    /** Whether a thread may donate unused headroom this cycle. Phase 1:
-     *  always false (see donorReserveRegs above). */
+    /** Whether a thread may donate unused headroom this cycle.  Set by
+     *  Rename::tick() every cycle via setBorrowingDonor() before any
+     *  thread's canRename() is evaluated. */
     bool donor[MaxThreads] = {};
 
     unsigned activeThreadCount() const;
@@ -188,9 +188,9 @@ class UnifiedFreeList
     /** Reduced reserve quota used for a donor thread. */
     unsigned donorQuota(RegClassType type) const;
 
-    /** Self-contained DynamicBorrowing limit:
-     *  total - sum_other max(used(other), reserve(other)).
-     *  See myDocs/Preg/Preg_SMT_Partition_Design.md section 4.3/6. */
+    /** Self-contained DynamicBorrowing limit for the given thread:
+     *  numPhysRegs[type] - sum_active_other(max(used[other], reserve[other])).
+     *  Only counts active threads to avoid deadlocking single-thread runs. */
     unsigned borrowingLimit(RegClassType type, ThreadID tid) const;
 
   public:
@@ -212,8 +212,8 @@ class UnifiedFreeList
         activeThreads = at_ptr;
     }
 
-    /** Marks/unmarks a thread as a borrowing donor (Phase 3 hook; not
-     *  currently invoked anywhere). */
+    /** Marks/unmarks a thread as a borrowing donor.  Called by
+     *  Rename::tick() every cycle for all threads before rename begins. */
     void
     setBorrowingDonor(ThreadID tid, bool val)
     {
@@ -262,8 +262,21 @@ class UnifiedFreeList
     void
     addReg(PhysRegIdPtr freed_reg, ThreadID tid)
     {
+        assert(tid < MaxThreads &&
+               threadUsed[tid][freed_reg->classValue()] > 0);
         threadUsed[tid][freed_reg->classValue()]--;
         freeLists[freed_reg->classValue()].addReg(freed_reg);
+    }
+
+    /** Resets per-thread occupancy accounting on thread removal.
+     *  Called from CPU::removeThread() after the thread's mappings have
+     *  been released. */
+    void
+    resetThreadUsed(ThreadID tid)
+    {
+        for (int i = 0; i <= RMiscRegClass; i++)
+            threadUsed[tid][i] = 0;
+        donor[tid] = false;
     }
 
     /** Checks if there are any free registers of type type. */

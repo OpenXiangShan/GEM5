@@ -276,8 +276,9 @@ class BaseO3CPU(BaseCPU):
                                          "SMT Preg (physical register) Sharing Policy")
     smtPregFixedBase = Param.Unsigned(0,
         "Fixed per-thread base quota for DynamicBorrowing (0 = numPhysRegs/activeThreads)")
-    smtPregBorrowDonorReserveRegs = Param.Unsigned(
-        8, "Minimum physical registers reserved for a borrowing donor to resume")
+    smtPregDonorReservePercent = Param.Unsigned(
+        43, "Percentage (0-100) of per-thread fair share reserved for a "
+            "donor thread.  donorQuota = numPhysRegs/activeThreads * pct/100")
     smtPregBackendBackpressureDonor = Param.Bool(True,
         "Also treat a thread as a Preg borrowing donor when it is stalled "
         "on ROB/dispatch-queue-bandwidth backpressure (a resource other "

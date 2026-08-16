@@ -864,6 +864,10 @@ CPU::removeThread(ThreadID tid)
     assert(iew.ldstQueue.getCount(tid) == 0);
     assert(commit.rob->isEmpty(tid));
 
+    // Reset per-thread Preg occupancy accounting so a reinserted tid
+    // does not carry stale quota usage.
+    freeList.resetThreadUsed(tid);
+
     // Reset ROB/IQ/LSQ Entries
 
     // Commented out for now.  This should be possible to do by

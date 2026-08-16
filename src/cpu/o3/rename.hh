@@ -297,7 +297,7 @@ class Rename
 
     /** Hold-cycle countdown for the backend-backpressure-triggered Preg
      *  donor marking (see hasBackendQuotaFullStall()/smtPregBackendBackpressureDonor). */
-    unsigned pregBackendDonorCycles[MaxThreads] = {};
+    unsigned pregBackendDonorHoldRemaining[MaxThreads] = {};
 
     void tryFreePReg(PhysRegIdPtr phys_reg, ThreadID tid);
     /** RAT checkpoint records, per thread: sequence numbers of in-flight

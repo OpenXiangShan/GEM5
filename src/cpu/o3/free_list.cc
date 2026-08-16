@@ -48,7 +48,7 @@ UnifiedFreeList::UnifiedFreeList(const std::string &_my_name,
                                  const BaseO3CPUParams &params)
     : _name(_my_name), regFile(_regFile),
       pregPolicy(params.smtPregPolicy),
-      donorReserveRegs(params.smtPregBorrowDonorReserveRegs),
+      donorReservePercent(params.smtPregDonorReservePercent),
       fixedBase(params.smtPregFixedBase),
       numThreads(params.numThreads)
 {
@@ -114,26 +114,25 @@ UnifiedFreeList::base(RegClassType type) const
 unsigned
 UnifiedFreeList::donorQuota(RegClassType type) const
 {
-    return std::min(base(type), donorReserveRegs);
+    unsigned fairShare = numPhysRegs[type] / activeThreadCount();
+    return fairShare * donorReservePercent / 100;
 }
 
 unsigned
 UnifiedFreeList::borrowingLimit(RegClassType type, ThreadID tid) const
 {
     unsigned reserved = 0;
-    for (ThreadID other = 0; other < numThreads; ++other) {
-        if (other == tid) {
-            continue;
+    if (activeThreads && !activeThreads->empty()) {
+        for (ThreadID other : *activeThreads) {
+            if (other == tid)
+                continue;
+            const unsigned reserve =
+                donor[other] ? donorQuota(type) : base(type);
+            reserved += std::max(threadUsed[other][type], reserve);
         }
-        const unsigned reserve =
-            donor[other] ? donorQuota(type) : base(type);
-        const unsigned used = threadUsed[other][type];
-        reserved += std::max(used, reserve);
     }
-
-    if (reserved >= numPhysRegs[type]) {
+    if (reserved >= numPhysRegs[type])
         return 0;
-    }
     return numPhysRegs[type] - reserved;
 }
 

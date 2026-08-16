@@ -394,11 +394,11 @@ Rename::tick()
         bool backendQuotaFull = pregBackendBackpressureDonorEnabled &&
                                  hasBackendQuotaFullStall(i);
         if (backendQuotaFull) {
-            pregBackendDonorCycles[i] = pregBackendBackpressureDonorHoldCycles;
-        } else if (pregBackendDonorCycles[i] > 0) {
-            --pregBackendDonorCycles[i];
+            pregBackendDonorHoldRemaining[i] = pregBackendBackpressureDonorHoldCycles;
+        } else if (pregBackendDonorHoldRemaining[i] > 0) {
+            --pregBackendDonorHoldRemaining[i];
         }
-        bool backendBackpressureDonor = pregBackendDonorCycles[i] > 0;
+        bool backendBackpressureDonor = backendQuotaFull || pregBackendDonorHoldRemaining[i] > 0;
         bool isDonor = !hasPregDemand(i) || backendBackpressureDonor;
         freeList->setBorrowingDonor(i, isDonor);
         if (isDonor)
@@ -629,6 +629,9 @@ Rename::hasBackendQuotaFullStall(ThreadID tid)
 {
     switch (checkRenameStallFromIEW(tid)) {
       case StallReason::ROBFull:
+      case StallReason::MemDQBandwidth:
+      case StallReason::IntDQBandwidth:
+      case StallReason::FVDQBandwidth:
         return true;
       default:
         return false;
