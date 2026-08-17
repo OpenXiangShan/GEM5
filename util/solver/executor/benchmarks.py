@@ -24,6 +24,7 @@ class BenchmarkConfig:
     checkpoint_root: str
     cluster_config: str
     score_script: str
+    difftest_ref_so: str | None = None
 
 
 _BENCHMARKS = {
@@ -95,6 +96,10 @@ _BENCHMARKS = {
         ),
         cluster_config=str(TAGE_SENSITIVE_GCC15_SPEC06_0_3C_260604_MANIFEST),
         score_script="gem5-score-ci.sh",
+        difftest_ref_so=(
+            "/nfs/home/share/gem5_ci/ref/normal/"
+            "riscv64-nemu-notama-tvalref-so"
+        ),
     ),
     "gcc15-spec06-0.8c": BenchmarkConfig(
         benchmark_type="gcc15-spec06-0.8c",

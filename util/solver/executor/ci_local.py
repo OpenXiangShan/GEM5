@@ -181,11 +181,18 @@ class CiLocalParallelExecutor(BaseExecutor):
         sanitized = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in stem)
         return sanitized.strip("._-") or "custom_bin"
 
-    def _base_env(self) -> dict[str, str]:
+    def _base_env(self, problem: ParsedProblem | None = None) -> dict[str, str]:
         env = os.environ.copy()
         env.setdefault("GEM5_HOME", str(self.repo_root))
         env.setdefault("GEM5_BUILD_TYPE", self.build_type)
-        env.setdefault("GCBV_REF_SO", DEFAULT_GCBV_REF_SO)
+        if problem is not None and not problem.uses_custom_bin_mode():
+            ref_so = resolve_benchmark(problem.benchmark_type).difftest_ref_so
+            if ref_so is not None:
+                env["GCBV_REF_SO"] = ref_so
+            else:
+                env.setdefault("GCBV_REF_SO", DEFAULT_GCBV_REF_SO)
+        else:
+            env.setdefault("GCBV_REF_SO", DEFAULT_GCBV_REF_SO)
         env.setdefault("M5_OVERRIDE_PY_SOURCE", "true")
         return env
 
@@ -222,7 +229,7 @@ class CiLocalParallelExecutor(BaseExecutor):
                 cmd,
                 check=True,
                 cwd=self.repo_root,
-                env=self._base_env(),
+                env=self._base_env(problem),
                 stdout=handle,
                 stderr=subprocess.STDOUT,
             )
@@ -331,7 +338,7 @@ class CiLocalParallelExecutor(BaseExecutor):
                 completed = self._run_command(
                     cmd,
                     cwd=workload_dir,
-                    env=self._base_env(),
+                    env=self._base_env(problem),
                     stdout_handle=handle,
                     timeout=timeout_seconds,
                 )
@@ -698,7 +705,7 @@ class CiLocalParallelExecutor(BaseExecutor):
                         checkpoint=checkpoint,
                         work_dir=workload_dir,
                         command=command,
-                        env=self._base_env(),
+                        env=self._base_env(problem),
                     )
                 )
 
