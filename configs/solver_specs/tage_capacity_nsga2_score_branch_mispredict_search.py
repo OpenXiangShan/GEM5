@@ -241,8 +241,8 @@ def _set_param(root, target, value):
 
 class TageCapacityNsga2ScoreBranchMispredictSearch(SolveSpec):
     config_path = "configs/example/kmhv3.py"
-    benchmark_type = "gcc15-spec06-0.3c"
-    specific_benchmarks = "sjeng,gobmk,astar"
+    benchmark_type = "gcc15-spec06-tage-sensitive-0.3c-260604"
+    specific_benchmarks = ""
     extra_args = ""
     solver_name = "nsga2"
     summary_top_n = 16
@@ -256,7 +256,7 @@ class TageCapacityNsga2ScoreBranchMispredictSearch(SolveSpec):
         Maximize.score_txt("Estimated Int score per GHz"),
         Minimize.stats("system.cpu.iew.branchMispredicts"),
     ]
-    stop = Stop(max_trials=4000, timeout_hours=30)
+    stop = Stop(max_trials=4000, timeout_hours=48)
 
     @classmethod
     def apply_trial(cls, root, trial) -> None:

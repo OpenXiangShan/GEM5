@@ -5,6 +5,18 @@ from pathlib import Path
 import subprocess
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+TAGE_SENSITIVE_GCC15_SPEC06_0_3C_260604_MANIFEST = (
+    REPO_ROOT
+    / "configs/solver_specs/tage_capacity_nsga2_sensitive_gcc15_spec06_0.3c_260604.json"
+)
+TAGE_SENSITIVE_GCC15_SPEC06_0_3C_260604_LIST = (
+    TAGE_SENSITIVE_GCC15_SPEC06_0_3C_260604_MANIFEST.with_name(
+        f"{TAGE_SENSITIVE_GCC15_SPEC06_0_3C_260604_MANIFEST.stem}.lst"
+    )
+)
+
+
 @dataclass(frozen=True)
 class BenchmarkConfig:
     benchmark_type: str
@@ -72,6 +84,16 @@ _BENCHMARKS = {
         checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/gcc15/spec06_0.3c.lst",
         checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/checkpoint-0-0-0",
         cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/gcc15/gcc15-spec06-0.3.json",
+        score_script="gem5-score-ci.sh",
+    ),
+    "gcc15-spec06-tage-sensitive-0.3c-260604": BenchmarkConfig(
+        benchmark_type="gcc15-spec06-tage-sensitive-0.3c-260604",
+        checkpoint_list=str(TAGE_SENSITIVE_GCC15_SPEC06_0_3C_260604_LIST),
+        checkpoint_root=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec06_gcc15_rv64gcb_base_260604/checkpoint"
+        ),
+        cluster_config=str(TAGE_SENSITIVE_GCC15_SPEC06_0_3C_260604_MANIFEST),
         score_script="gem5-score-ci.sh",
     ),
     "gcc15-spec06-0.8c": BenchmarkConfig(
