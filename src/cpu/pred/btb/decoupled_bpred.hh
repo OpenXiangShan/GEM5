@@ -77,6 +77,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     CPU *cpu;
     ThreadID nextPredictTid = 0;
+    const unsigned numPredictingThreads;
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
@@ -168,7 +169,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     bool isThreadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
-    ThreadID scheduleThread();
+    std::vector<ThreadID> scheduleThreads();
 
     void processNewPrediction(ThreadID tid);
     void prepareTwoTakenTraining(ThreadID tid);
@@ -326,6 +327,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar scheduleIneligibleThreadSkips;
         statistics::Scalar scheduleNoEligibleThread;
         statistics::Scalar redirectPendingPredictionSkips;
+        statistics::Distribution predictionsStartedPerCycle;
+        statistics::Vector predictionsStartedByThread;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -336,7 +339,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
 
-        DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
+        DBPBTBStats(statistics::Group* parent, unsigned numStages,
+                    unsigned fsqSize, unsigned maxInstsNum,
+                    unsigned numThreads);
     } dbpBtbStats;
 
   public:

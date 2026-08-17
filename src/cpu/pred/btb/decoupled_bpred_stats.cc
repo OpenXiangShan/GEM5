@@ -439,7 +439,8 @@ classifyBranchImpl(const InstPtr &inst)
 } // anonymous namespace
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
-    statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum):
+    statistics::Group* parent, unsigned numStages, unsigned fsqSize,
+    unsigned maxInstsNum, unsigned numThreads):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -498,6 +499,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "round-robin BPU scheduler found no thread eligible to start a new prediction"),
     ADD_STAT(redirectPendingPredictionSkips, statistics::units::Count::get(),
     "round-robin BPU scheduler skipped prediction because a redirect was pending"),
+    ADD_STAT(predictionsStartedPerCycle, statistics::units::Count::get(),
+    "number of distinct SMT thread predictions started in one cycle"),
+    ADD_STAT(predictionsStartedByThread, statistics::units::Count::get(),
+    "number of predictions started for each SMT thread"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
@@ -518,6 +523,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
     s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
     branchClassCounts.init(NumBranchClasses);
+    predictionsStartedPerCycle.init(0, numThreads, 1);
+    predictionsStartedByThread.init(numThreads);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
     for (int i = 0; i < NumS1SourceBuckets; ++i) {
