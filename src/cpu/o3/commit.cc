@@ -737,6 +737,11 @@ Commit::generateTrapEvent(ThreadID tid, Fault inst_fault)
 {
     DPRINTF(Commit, "Generating trap event for [tid:%i]\n", tid);
 
+    // TrapPending already blocks dispatch; latch Trap here so both the
+    // instruction-fault and interrupt paths attribute those slots correctly
+    // before squashFromTrap() runs.
+    curSquashCause[tid] = SquashCause::Trap;
+
     EventFunctionWrapper *trap = new EventFunctionWrapper(
         [this, tid]{ processTrapEvent(tid); },
         "Trap", true, Event::CPU_Tick_Pri);
@@ -1909,8 +1914,6 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         thread[tid]->noSquashFromTC = false;
 
         commitStatus[tid] = TrapPending;
-        // Blocks dispatch a cycle before squashFromTrap runs.
-        curSquashCause[tid] = SquashCause::Trap;
 
         DPRINTF(
             Commit,
