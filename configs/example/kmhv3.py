@@ -172,9 +172,9 @@ def setKmhV3Params(args, system):
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
-            system.tol2bus_list[i].forward_latency = 3  # 3->0
-            system.tol2bus_list[i].response_latency = 3  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
+            system.tol2bus_list[i].forward_latency = 0
+            system.tol2bus_list[i].response_latency = 0
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
