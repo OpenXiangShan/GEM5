@@ -518,12 +518,6 @@ Decode::tick()
     // check threads stall & status
     ThreadID blocked_tid = InvalidThreadID;
     SmtActiveThreadArbiter active_arbiter;
-    auto freezeActiveThread = [this](ThreadID tid) {
-        stallSig->blockFetch[tid] = true;
-        stallSig->fetchBlockReason[tid] = StallReason::OtherFragStall;
-        toFetch->decodeInfo[tid].blockReason =
-            stallSig->fetchBlockReason[tid];
-    };
     const auto fetchFeedbackReserve =
         numThreads > 1 ? fetchToDecodeDelay : decodeToFetchDelay + 1;
     const bool fifoBackpressured =
@@ -569,14 +563,7 @@ Decode::tick()
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
             active_tids.push_back(i);
-            const auto freeze = active_arbiter.observe(
-                i, smtBorrowPriority(fromIEW->iewInfo[i]));
-            if (freeze.previousActive != InvalidThreadID) {
-                freezeActiveThread(freeze.previousActive);
-            }
-            if (freeze.freezeCurrent) {
-                freezeActiveThread(i);
-            }
+            active_arbiter.observe(i, smtBorrowPriority(fromIEW->iewInfo[i]));
         } else if (block && blocked_tid == InvalidThreadID) {
             blocked_tid = i;
         }
@@ -603,7 +590,6 @@ Decode::tick()
     }
     DPRINTF(Decode,"Processing [tid:%i]\n",tid);
 
-    std::vector<ThreadID> decoded_tids;
     auto decode_thread = [&](ThreadID decode_tid) {
         if (toRenameIndex >= decodeWidth) {
             return;
@@ -612,7 +598,6 @@ Decode::tick()
         const unsigned thread_limit = lsu_bypass_prefix[decode_tid] == 0 ?
             decodeWidth : lsu_bypass_prefix[decode_tid];
         decodeInsts(decode_tid, std::min(remaining_width, thread_limit));
-        decoded_tids.push_back(decode_tid);
     };
 
     decode_thread(tid);
@@ -622,20 +607,20 @@ Decode::tick()
         }
     }
 
-    // Each thread may leave a different tail in the fixedbuffer. Preserve
-    // per-thread fetch feedback when both threads contributed this cycle.
-    for (const ThreadID decoded_tid : decoded_tids) {
-        if (!fixedbuffer[decoded_tid].empty()) {
-            stallSig->blockFetch[decoded_tid] = true;
-            if (stallSig->fetchBlockReason[decoded_tid] == StallReason::NoStall) {
-                stallSig->fetchBlockReason[decoded_tid] =
-                    stallSig->blockDecode[decoded_tid] ?
-                        stallSig->decodeBlockReason[decoded_tid] :
-                        StallReason::OtherFragStall;
+    // Mixed-thread arbitration does not freeze either thread. Only an actual
+    // per-thread tail, downstream resource stall, or FIFO pressure blocks
+    // Fetch for the next cycle.
+    for (ThreadID decode_tid = 0; decode_tid < numThreads; ++decode_tid) {
+        if (!fixedbuffer[decode_tid].empty()) {
+            stallSig->blockFetch[decode_tid] = true;
+            if (stallSig->fetchBlockReason[decode_tid] ==
+                StallReason::NoStall) {
+                stallSig->fetchBlockReason[decode_tid] =
+                    StallReason::OtherFragStall;
             }
-            toFetch->decodeInfo[decoded_tid].blockReason =
-                stallSig->fetchBlockReason[decoded_tid];
         }
+        toFetch->decodeInfo[decode_tid].blockReason =
+            stallSig->fetchBlockReason[decode_tid];
     }
     ++stats.runCycles;
     if (stallSig->blockDecode[tid]) {
