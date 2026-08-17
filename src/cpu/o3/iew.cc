@@ -45,6 +45,7 @@
 
 #include "cpu/o3/iew.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <queue>
 
@@ -947,7 +948,7 @@ IEW::canInsertLDSTQue(ThreadID tid)
 void
 IEW::setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos)
 {
-    constexpr uint64_t dispatchAgeScale = 8;
+    const uint64_t dispatchAgeScale = std::max<uint64_t>(8, renameWidth);
 
     assert(dispatch_pos >= 0);
     assert(dispatch_pos < static_cast<int>(dispatchAgeScale));
