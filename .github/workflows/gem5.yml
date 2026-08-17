@@ -149,7 +149,7 @@ jobs:
     timeout-minutes: 180
     name: XS-GEM5 - Check memory errors and leaks
     env:
-      MEMORY_CHECK_OUTPUT_DIR: ${{ runner.temp }}/gem5-valgrind-${{ github.run_id }}-${{ github.run_attempt }}
+      MEMORY_CHECK_OUTPUT_DIR: ${{ github.workspace }}/valgrind-test-${{ github.run_id }}-${{ github.run_attempt }}
       MEMORY_CHECK_MAXINSTS: 100000
     steps:
       - uses: actions/checkout@v7
