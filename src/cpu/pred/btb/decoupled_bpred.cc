@@ -88,8 +88,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
 {
-    panic_if(numPredictingThreads == 0 || numPredictingThreads > numThreads,
-             "smtNumPredictingThreads (%u) must be in [1, numThreads (%u)]",
+    panic_if(numPredictingThreads == 0 ||
+             numPredictingThreads > numThreads ||
+             numPredictingThreads > 2,
+             "smtNumPredictingThreads (%u) must be in [1, min(2, "
+             "numThreads (%u))]",
              numPredictingThreads, numThreads);
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
