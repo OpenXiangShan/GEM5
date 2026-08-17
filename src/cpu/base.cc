@@ -928,7 +928,57 @@ BaseCPU::csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint
         diff_at = ValueDiff;
 }
 
+void
+BaseCPU::readGem5Csrs(ThreadID tid)
+{
+    auto &regs = diffAllStates[tid]->gem5RegFile;
 
+    regs.mode = readMiscRegNoEffect(RiscvISA::MISCREG_PRV, tid);
+    regs.mstatus = readMiscRegNoEffect(RiscvISA::MISCREG_STATUS, tid);
+    regs.sstatus = regs.mstatus & RiscvISA::NEMU_SSTATUS_RMASK;
+    regs.mepc = readMiscReg(RiscvISA::MISCREG_MEPC, tid);
+    regs.sepc = readMiscReg(RiscvISA::MISCREG_SEPC, tid);
+    regs.mtval = readMiscRegNoEffect(RiscvISA::MISCREG_MTVAL, tid);
+    regs.stval = readMiscRegNoEffect(RiscvISA::MISCREG_STVAL, tid);
+    regs.mtvec = readMiscReg(RiscvISA::MISCREG_MTVEC, tid);
+    regs.stvec = readMiscReg(RiscvISA::MISCREG_STVEC, tid);
+    regs.mcause = readMiscRegNoEffect(RiscvISA::MISCREG_MCAUSE, tid);
+    regs.scause = readMiscRegNoEffect(RiscvISA::MISCREG_SCAUSE, tid);
+    regs.satp = readMiscRegNoEffect(RiscvISA::MISCREG_SATP, tid);
+    regs.mip = readMiscReg(RiscvISA::MISCREG_IP, tid);
+    regs.mie = readMiscReg(RiscvISA::MISCREG_IE, tid);
+    regs.mscratch = readMiscReg(RiscvISA::MISCREG_MSCRATCH, tid);
+    regs.sscratch = readMiscReg(RiscvISA::MISCREG_SSCRATCH, tid);
+    regs.mideleg = readMiscReg(RiscvISA::MISCREG_MIDELEG, tid);
+    regs.medeleg = readMiscReg(RiscvISA::MISCREG_MEDELEG, tid);
+
+    regs.v = readMiscReg(RiscvISA::MISCREG_VIRMODE, tid);
+    regs.mtval2 = readMiscReg(RiscvISA::MISCREG_MTVAL2, tid);
+    regs.mtinst = readMiscReg(RiscvISA::MISCREG_MTINST, tid);
+    regs.hstatus = readMiscRegNoEffect(RiscvISA::MISCREG_HSTATUS, tid);
+    regs.hideleg = readMiscRegNoEffect(RiscvISA::MISCREG_HIDELEG, tid);
+    regs.hedeleg = readMiscReg(RiscvISA::MISCREG_HEDELEG, tid);
+    regs.hcounteren = readMiscRegNoEffect(
+        RiscvISA::MISCREG_HCOUNTEREN, tid);
+    regs.htval = readMiscReg(RiscvISA::MISCREG_HTVAL, tid);
+    regs.htinst = readMiscReg(RiscvISA::MISCREG_HTINST, tid);
+    regs.hgatp = readMiscReg(RiscvISA::MISCREG_HGATP, tid);
+    regs.vsstatus = readMiscReg(RiscvISA::MISCREG_VSSTATUS, tid);
+    regs.vstvec = readMiscReg(RiscvISA::MISCREG_VSTVEC, tid);
+    regs.vsepc = readMiscReg(RiscvISA::MISCREG_VSEPC, tid);
+    regs.vscause = readMiscReg(RiscvISA::MISCREG_VSCAUSE, tid);
+    regs.vstval = readMiscReg(RiscvISA::MISCREG_VSTVAL, tid);
+    regs.vsatp = readMiscReg(RiscvISA::MISCREG_VSATP, tid);
+    regs.vsscratch = readMiscReg(RiscvISA::MISCREG_VSSCRATCH, tid);
+
+    regs.vstart = readMiscReg(RiscvISA::MISCREG_VSTART, tid);
+    regs.vxsat = readMiscReg(RiscvISA::MISCREG_VXSAT, tid);
+    regs.vxrm = readMiscReg(RiscvISA::MISCREG_VXRM, tid);
+    regs.vcsr = readMiscReg(RiscvISA::MISCREG_VCSR, tid);
+    regs.vl = readMiscReg(RiscvISA::MISCREG_VL, tid);
+    regs.vtype = readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
+    regs.vlenb = readMiscReg(RiscvISA::MISCREG_VLENB, tid);
+}
 
 std::pair<int, bool>
 BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)

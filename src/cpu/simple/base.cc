@@ -528,6 +528,13 @@ BaseSimpleCPU::readGem5Regs(ThreadID tid)
         diffAllStates->gem5RegFile[i + 32] =
             threadContexts[tid]->getReg(RegId(FloatRegClass, i));
     }
+    // Refresh the difftest CSR snapshot from GEM5's live architectural
+    // state. Without this step, CSR fields in gem5RegFile may retain values
+    // previously copied from NEMU during REF_TO_DUT. Sending those stale
+    // values back during DUT_TO_REF can hide the DUT's real state and cause
+    // an immediate mismatch, for example when GEM5 has mstatus.FS=Off while
+    // NEMU initializes it to Initial.
+    readGem5Csrs(tid);
 }
 
 void

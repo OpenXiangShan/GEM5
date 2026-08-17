@@ -1744,6 +1744,7 @@ CPU::readGem5Regs(ThreadID tid)
         diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, tid);
         readArchVecReg(i, (uint64_t*)&diffAllStates->gem5RegFile.vr[i], tid);
     }
+    readGem5Csrs(tid);
 }
 
 RegVal
