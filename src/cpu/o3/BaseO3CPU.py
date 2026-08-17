@@ -249,6 +249,9 @@ class BaseO3CPU(BaseCPU):
     phyregReleaseWidth = Param.Unsigned(6, "Physical register dealloc width")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
+    smtNumFetchTargetThreads = Param.Unsigned(
+        1, "Maximum number of distinct SMT threads starting an FTQ fetch "
+           "per cycle")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
     smtLSQMode = Param.SMTLSQMode('Independent',
                                   "SMT LSQ mode: per-thread independent or shared quota")

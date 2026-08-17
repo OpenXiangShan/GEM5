@@ -405,8 +405,9 @@ class Fetch
      * Send a pipelined I-cache access request for the next FTQ entry.
      * @param tid Thread ID
      * @param pc_state The PC state of the current instruction.
+     * @return true if the request group was started, false if it was blocked.
      */
-    void sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
+    bool sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
 
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
@@ -547,7 +548,9 @@ class Fetch
      * @return true if frontend is ready for fetch, false otherwise
      */
     bool checkDecoupledFrontend(ThreadID tid);
-    ThreadID getEligibleFetchTargetTid();
+    ThreadID getEligibleFetchTargetTid(
+        const std::array<bool, MaxThreads> &excluded,
+        bool record_redirect_skips);
     void clearRedirectPending(ThreadID tid);
 
     /** Prepare fetch address and handle status transitions.
@@ -961,6 +964,9 @@ class Fetch
     /** Number of threads that are actively fetching. */
     ThreadID numFetchingThreads;
 
+    /** Maximum number of threads that may start an FTQ fetch each cycle. */
+    const unsigned numFetchTargetThreads;
+
     /** Thread ID being fetched. */
     ThreadID threadFetched;
 
@@ -1138,6 +1144,16 @@ class Fetch
         statistics::Scalar redirectPendingFetchSkips;
         /** Cycles where only redirect-pending FTQ heads were available to fetch. */
         statistics::Scalar redirectPendingOnlyFetchCycles;
+        /** Number of FTQ fetch groups started in one cycle. */
+        statistics::Distribution fetchTargetsStartedPerCycle;
+        /** Number of FTQ fetch groups started for each SMT thread. */
+        statistics::Vector fetchTargetsStartedByThread;
+        /** Number of cache-line requests created by FTQ fetches per cycle. */
+        statistics::Distribution fetchLineRequestsCreatedPerCycle;
+        /** Selected FTQ heads whose thread state could not start a fetch. */
+        statistics::Scalar fetchTargetThreadNotReady;
+        /** Prepared FTQ heads whose cache request could not be started. */
+        statistics::Scalar fetchTargetRequestBlocked;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */
