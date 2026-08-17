@@ -978,8 +978,9 @@ class Fetch
     /** Instruction port. Note that it has to appear after the fetch stage. */
     IcachePort icachePort;
 
-    /** Event used to delay fault generation of translation faults */
-    FinishTranslationEvent finishTranslationEvent;
+    /** Per-thread events used to delay translation fault generation. */
+    std::vector<std::unique_ptr<FinishTranslationEvent>>
+        finishTranslationEvents;
 
     // NOTE: This Fetch implementation is decoupled+BTB-only; no coupled mode.
 

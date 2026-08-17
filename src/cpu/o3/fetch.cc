@@ -107,7 +107,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numFetchingThreads(params.smtNumFetchingThreads),
       numFetchTargetThreads(params.smtNumFetchTargetThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this),
+      finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
 {
     if (numThreads > MaxThreads)
@@ -119,12 +119,20 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
     panic_if(numFetchTargetThreads == 0 ||
-             numFetchTargetThreads > numThreads,
-             "smtNumFetchTargetThreads (%u) must be in [1, numThreads (%u)]",
+             numFetchTargetThreads > numThreads ||
+             numFetchTargetThreads > 2,
+             "smtNumFetchTargetThreads (%u) must be in [1, min(2, "
+             "numThreads (%u))]",
              numFetchTargetThreads, numThreads);
     panic_if(numFetchTargetThreads > 1 && numFetchingThreads > 1,
              "smtNumFetchTargetThreads and smtNumFetchingThreads cannot both "
              "exceed one because fetch() would be invoked multiple times");
+
+    finishTranslationEvents.reserve(numThreads);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        finishTranslationEvents.emplace_back(
+            std::make_unique<FinishTranslationEvent>(this));
+    }
 
     smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     // IEW reports an early redirect before the formal Commit squash reaches
@@ -845,7 +853,9 @@ Fetch::isDrained() const
      * cycle if the finish translation event is scheduled, so make
      * sure that's not the case.
      */
-    return !finishTranslationEvent.scheduled();
+    return std::none_of(
+        finishTranslationEvents.begin(), finishTranslationEvents.end(),
+        [](const auto &event) { return event->scheduled(); });
 }
 
 void
@@ -1116,15 +1126,18 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 
     // Don't send an instruction to decode if we can't handle it.
     if (!(numInst < fetchWidth) || !(fetchQueue[tid].size() < fetchQueueSize)) {
-        if (finishTranslationEvent.scheduled() && finishTranslationEvent.getReq() != mem_req) {
-            DPRINTF(FetchFault, "fault, finishTranslationEvent.getReq().addr=%#lx, mem_req.addr=%#lx\n",
-                    finishTranslationEvent.getReq()->getVaddr(), mem_req->getVaddr());
+        auto &finish_event = *finishTranslationEvents[tid];
+        if (finish_event.scheduled() && finish_event.getReq() != mem_req) {
+            DPRINTF(FetchFault,
+                    "fault, finish_event.getReq().addr=%#lx, "
+                    "mem_req.addr=%#lx\n",
+                    finish_event.getReq()->getVaddr(), mem_req->getVaddr());
             return;
         }
-        assert(!finishTranslationEvent.scheduled());
-        finishTranslationEvent.setFault(fault);
-        finishTranslationEvent.setReq(mem_req);
-        cpu->schedule(finishTranslationEvent, cpu->clockEdge(Cycles(1)));
+        assert(!finish_event.scheduled());
+        finish_event.setFault(fault);
+        finish_event.setReq(mem_req);
+        cpu->schedule(finish_event, cpu->clockEdge(Cycles(1)));
         return;
     }
 
