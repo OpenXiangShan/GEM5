@@ -100,13 +100,16 @@
 ### 包含的测试 Workflows
 
 #### 1. `gem5.yml` - 功能回归测试
-8个并行 jobs（遵循DRY原则，排除已在 Tier 1 运行的测试）
+5 个并行 jobs（遵循 DRY 原则，排除已在 Tier 1 运行的测试）
 
 维护者可以在 PR 上添加 `regression` 标签，提前运行与合入后相同的完整功能回归。为避免 `pull_request_target` 执行外部代码，该入口仅接受目标分支为 `xs-dev` 的同仓库 PR。
 
 **已移除**（避免重复）:
 - ~~`unit_tests`~~ → 在 `pr-quick-check.yml`
 - ~~`difftest_check`~~ → 在 `pr-quick-check.yml`
+- ~~legacy GC/GCB checkpoint suite~~ → 覆盖陈旧且失败定位成本高
+- ~~standalone RV64GCBV checkpoint smoke~~ → 已有 vector micro-tests 和 RVV checkpoint 性能回归
+- ~~L2TLB checkpoint regression~~ → 长期未发现测试本体失败
 
 #### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
 默认跑 `gcc15-spec06-1.0c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
