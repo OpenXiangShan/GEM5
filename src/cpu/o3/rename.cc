@@ -386,13 +386,8 @@ Rename::tick()
     ThreadID blocked_tid = InvalidThreadID;
     SmtActiveThreadArbiter active_arbiter;
     std::vector<ThreadID> active_tids;
-    bool had_buffered_rename[MaxThreads] = {};
-    auto freezeActiveThread = [this](ThreadID tid) {
-        stallSig->blockDecode[tid] = true;
-        stallSig->decodeBlockReason[tid] = StallReason::OtherFragStall;
-        toDecode->renameInfo[tid].blockReason =
-            stallSig->decodeBlockReason[tid];
-    };
+    bool resource_blocked[MaxThreads] = {};
+    StallReason resource_block_reason[MaxThreads] = {};
     unsigned lsu_bypass_prefix[MaxThreads] = {};
     for (int i = 0; i < numThreads; i++) {
         lsu_bypass_prefix[i] = lsuBypassPrefixLength(i);
@@ -406,8 +401,7 @@ Rename::tick()
         bool can_rename = bypassing_lsu_admission || canRename(i);
         bool block = (stallSig->blockRename[i] &&
                       !bypassing_lsu_admission) || !can_rename;
-        had_buffered_rename[i] = !fixedbuffer[i].empty();
-        bool active = !block && had_buffered_rename[i];
+        bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockRename[i]) {
             block_reason = stallSig->renameBlockReason[i];
@@ -435,25 +429,15 @@ Rename::tick()
         DPRINTF(Rename, "[tid:%i] blockRename: %i, canRename: %i, block: %i, active: %i\n",
                 i, stallSig->blockRename[i], can_rename, block, active);
 
-        // Mixed-thread rename keeps a per-thread tail across cycles. Hold
-        // Decode for any thread that entered this cycle with buffered rename
-        // work so we never refill the same thread mid-cycle.
-        stallSig->blockDecode[i] = had_buffered_rename[i];
+        resource_blocked[i] = block;
+        resource_block_reason[i] = block_reason;
+        stallSig->blockDecode[i] = block;
         stallSig->decodeBlockReason[i] =
-            stallSig->blockDecode[i] ?
-                (block ? block_reason : StallReason::OtherFragStall) :
-                StallReason::NoStall;
+            block ? block_reason : StallReason::NoStall;
         toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];
         if (active) {
             active_tids.push_back(i);
-            const auto freeze = active_arbiter.observe(
-                i, smtBorrowPriority(fromIEW->iewInfo[i]));
-            if (freeze.previousActive != InvalidThreadID) {
-                freezeActiveThread(freeze.previousActive);
-            }
-            if (freeze.freezeCurrent) {
-                freezeActiveThread(i);
-            }
+            active_arbiter.observe(i, smtBorrowPriority(fromIEW->iewInfo[i]));
         } else if (stallSig->blockDecode[i] && blocked_tid == InvalidThreadID) {
             blocked_tid = i;
         }
@@ -479,6 +463,7 @@ Rename::tick()
     DPRINTF(Rename, "Processing [tid:%i]\n", tid);
 
     RenameThreadResult thread_results[MaxThreads];
+    bool renamed_this_cycle[MaxThreads] = {};
     std::vector<ThreadID> renamed_tids;
     auto rename_thread = [&](ThreadID rename_tid) {
         if (toIEW->size >= renameWidth) {
@@ -490,6 +475,7 @@ Rename::tick()
         thread_results[rename_tid] = renameInsts(
             rename_tid, std::min(remaining_width, thread_limit),
             lsu_bypass_prefix[rename_tid] != 0);
+        renamed_this_cycle[rename_tid] = true;
         renamed_tids.push_back(rename_tid);
     };
 
@@ -500,29 +486,25 @@ Rename::tick()
         }
     }
 
-    for (const ThreadID renamed_tid : renamed_tids) {
-        const auto &result = thread_results[renamed_tid];
-        stallSig->blockDecode[renamed_tid] =
-            had_buffered_rename[renamed_tid] || result.hasTail;
-        stallSig->decodeBlockReason[renamed_tid] =
-            stallSig->blockDecode[renamed_tid] ?
-                (result.hasTail ? result.blockReason :
-                                  StallReason::OtherFragStall) :
-                StallReason::NoStall;
-        toDecode->renameInfo[renamed_tid].blockReason =
-            stallSig->decodeBlockReason[renamed_tid];
-    }
+    // Recompute feedback from post-rename state. Merely having entered the
+    // cycle with buffered work is not a reason to freeze Decode.
+    for (ThreadID rename_tid = 0; rename_tid < numThreads; ++rename_tid) {
+        const bool has_tail = !fixedbuffer[rename_tid].empty() ||
+                              !spillBuffer[rename_tid].empty();
+        stallSig->blockDecode[rename_tid] =
+            has_tail || resource_blocked[rename_tid];
 
-    for (const ThreadID candidate : active_tids) {
-        if (std::find(renamed_tids.begin(), renamed_tids.end(), candidate) !=
-            renamed_tids.end()) {
-            continue;
+        StallReason reason = StallReason::NoStall;
+        if (resource_blocked[rename_tid]) {
+            reason = resource_block_reason[rename_tid];
+        } else if (renamed_this_cycle[rename_tid] &&
+                   thread_results[rename_tid].hasTail) {
+            reason = thread_results[rename_tid].blockReason;
+        } else if (has_tail) {
+            reason = StallReason::OtherFragStall;
         }
-
-        stallSig->blockDecode[candidate] = true;
-        stallSig->decodeBlockReason[candidate] = StallReason::OtherFragStall;
-        toDecode->renameInfo[candidate].blockReason =
-            stallSig->decodeBlockReason[candidate];
+        stallSig->decodeBlockReason[rename_tid] = reason;
+        toDecode->renameInfo[rename_tid].blockReason = reason;
     }
 
     StallReason aggregate_stall = StallReason::NoStall;
@@ -770,6 +752,9 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts,
             if (breakRename == StallReason::NoStall) {
                 breakRename = StallReason::OtherStall;
             }
+        } else if (processed_insts >= max_insts ||
+                   toIEWIndex >= renameWidth) {
+            breakRename = StallReason::OtherFragStall;
         }
         if (breakRename == StallReason::NoStall) {
             breakRename = checkRenameStallFromIEW(tid);
