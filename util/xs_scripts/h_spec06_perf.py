@@ -26,7 +26,6 @@ FIXED_H_ARGUMENTS = (
     "--maxinsts",
     "--mem-type",
     "--dramsim3-ini",
-    "--pf-control-profile",
 )
 
 SPEC06_INT = [
@@ -177,7 +176,6 @@ def command_run(args: argparse.Namespace) -> int:
         f"--difftest-ref-so={args.ref_so}",
         f"--maxinsts={args.maxinsts}",
         f"--dramsim3-ini={args.dram_ini}",
-        f"--pf-control-profile={args.pf_control_profile}",
     ]
     gem5_args = shlex.join([*shlex.split(extra_args), *fixed_args])
     runner = Path(__file__).with_name("distributed_sim.py")
@@ -491,8 +489,6 @@ def make_parser() -> argparse.ArgumentParser:
                             default=Path(os.environ.get("GCBH_RESTORER", "")))
     run_parser.add_argument("--maxinsts", type=int, default=40_000_000)
     run_parser.add_argument("--dram-ini", type=Path, required=True)
-    run_parser.add_argument("--pf-control-profile", default="off",
-                            choices=("off", "adaptive", "default"))
     run_parser.add_argument("--extra-args", default="")
     run_parser.add_argument("--max-tasks", type=int, default=0)
     run_parser.set_defaults(handler=command_run)

@@ -85,7 +85,7 @@
 
 - 只在需要时运行，节省资源
 - 支持多种 benchmark 类型
-- 添加新 benchmark 类型只需修改 template
+- 添加新 benchmark 类型只需修改 `util/ci/perf_benchmarks.json`
 
 ---
 
@@ -100,13 +100,18 @@
 ### 包含的测试 Workflows
 
 #### 1. `gem5.yml` - 功能回归测试
-8个并行 jobs（遵循DRY原则，排除已在 Tier 1 运行的测试）
+5 个并行 jobs（遵循 DRY 原则，排除已在 Tier 1 运行的测试）
 
 维护者可以在 PR 上添加 `regression` 标签，提前运行与合入后相同的完整功能回归。为避免 `pull_request_target` 执行外部代码，该入口仅接受目标分支为 `xs-dev` 的同仓库 PR。
 
 **已移除**（避免重复）:
 - ~~`unit_tests`~~ → 在 `pr-quick-check.yml`
 - ~~`difftest_check`~~ → 在 `pr-quick-check.yml`
+- ~~legacy GC/GCB checkpoint suite~~ → 覆盖陈旧且失败定位成本高
+- ~~standalone RV64GCBV checkpoint smoke~~ → 已有 vector micro-tests 和 RVV checkpoint 性能回归
+- ~~L2TLB checkpoint regression~~ → 长期未发现测试本体失败
+
+内存检查会先用可控目标程序对 Valgrind wrapper 做硬门禁自测，再运行 CoreMark 真实扫描。当前 gem5 基线仍有已确认的 Memcheck error 和 definite leak，因此 CoreMark 步骤暂时为 observe-only；失败会在 summary 中告警并上传完整日志，待基线问题清零或完成窄 suppression 后再恢复硬门禁。
 
 #### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
 默认跑 `gcc15-spec06-1.0c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
@@ -202,6 +207,8 @@ python actions_gem5.py --token <github-token> --always-on
 
 - `.github/workflows/pr-quick-check.yml` - Tier 1
 - `.github/workflows/gem5-perf-template.yml` - 性能测试模板
+- `util/ci/perf_benchmarks.json` - benchmark profile 与 checkpoint 资源注册表
+- `util/ci/perf_ci.py` - 性能测试准备、运行、评分与归档实现
 - `.github/workflows/gem5.yml` - `xs-dev` 合入后或 `regression` 标签触发的完整功能回归
 - `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` / `perf` 标签默认性能测试
 - `.github/workflows/gem5-align-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
@@ -225,7 +232,7 @@ A: 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签。w
 A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
 
 **Q: 新增 benchmark 类型需要修改哪些文件？**
-A: 只需修改 `gem5-perf-template.yml`
+A: 在 `util/ci/perf_benchmarks.json` 新增 profile，并运行 `tests/pyunit/util/pyunit_perf_ci_check.py`。workflow 模板不需要增加分支。
 
 **Q: 如何跑动态预取性能测试？**
 A: 使用 `manual-perf.yml`，在 `extra_args` 里直接传 `--enable-dynamic-pf=True`。base 对比请显式传 `--enable-dynamic-pf=False`。`idealkmhv3.py` 默认关闭动态预取，SMT 配置保持当前默认行为不变。

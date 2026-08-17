@@ -1,11 +1,17 @@
 name: 'Build DRAMSim3'
 description: 'Build DRAMSim3 from local cache to avoid network issues'
+inputs:
+  gem5-root:
+    description: 'Path to the gem5 source tree'
+    required: false
+    default: '.'
 runs:
   using: "composite"
   steps:
     - name: Build DRAMSim (cached)
       shell: bash
       run: |
+        cd "${{ inputs.gem5-root }}"
         export GEM5_HOME=$(pwd)
         cd ext/dramsim3
         # 使用本地缓存避免网络IO

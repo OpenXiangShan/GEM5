@@ -1,6 +1,6 @@
 name: Manual H SPEC06 Performance Test
 
-run-name: ${{ format('{0} - {1} - {2}{3} - pf:{4} - {5}', github.event.inputs.note || 'Manual H SPEC06 Performance Test', github.event.inputs.coverage_type, github.event.inputs.configuration, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.pf_control_profile || 'off', github.event.inputs.branch || github.ref_name) }}
+run-name: ${{ format('{0} - {1} - {2}{3} - {4}', github.event.inputs.note || 'Manual H SPEC06 Performance Test', github.event.inputs.coverage_type, github.event.inputs.configuration, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name) }}
 
 on:
   workflow_dispatch:
@@ -32,15 +32,6 @@ on:
         required: false
         type: string
         default: ''
-      pf_control_profile:
-        description: 'Prefetch control profile'
-        required: false
-        type: choice
-        default: 'off'
-        options:
-          - 'off'
-          - adaptive
-          - default
       extra_args:
         description: 'Extra gem5 args. H checkpoint, NEMU ref, restorer, maxinst and DRAMSim3 arguments are fixed by this workflow.'
         required: false
@@ -85,7 +76,6 @@ jobs:
       config_path: ${{ needs.setup.outputs.config_path }}
       benchmark_type: ${{ github.event.inputs.coverage_type }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
-      pf_control_profile: ${{ github.event.inputs.pf_control_profile }}
       extra_args: ${{ github.event.inputs.extra_args }}
       check_result: true
       distributed_servers: ${{ github.event.inputs.distributed_servers }}

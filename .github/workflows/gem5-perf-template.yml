@@ -6,34 +6,35 @@ on:
       config_path:
         required: true
         type: string
-        description: "gem5 config file path (relative to repo root), e.g. configs/example/idealkmhv3.py"
+        description: "gem5 config file path relative to the repository root"
       extra_args:
         required: false
         type: string
         default: ""
-        description: "Extra arguments for gem5 (e.g., --disable-mgsc). Only works with .py config files."
+        description: "Extra arguments for the gem5 config"
       benchmark_type:
         required: true
         type: string
-        description: "Benchmark type: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, h-spec06-0.5c, h-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
+        description: "Benchmark profile from util/ci/perf_benchmarks.json"
       specific_benchmarks:
         required: false
         type: string
         default: ""
-        description: "Comma-separated benchmark filters. Empty means run all workloads in checkpoint list."
+        description: "Comma-separated benchmark filters"
       vector_type:
         required: false
         type: string
-        description: "Benchmark type: base, simple"
+        default: ""
+        description: "Vector decode strategy: empty, base, or simple"
       check_result:
         required: false
         type: boolean
-        description: "Whether to check result (failed ckpts)"
         default: true
+        description: "Fail when a checkpoint writes an abort marker"
       pr_sha:
         required: false
         type: string
-        description: "Specific commit SHA to checkout (takes precedence)"
+        description: "Commit SHA, branch, or tag to checkout"
       timeout_minutes:
         required: false
         type: number
@@ -43,12 +44,12 @@ on:
         required: false
         type: string
         default: ""
-        description: "Optional distributed runner server list. Empty keeps using parallel_sim.sh; 'default' uses the shared SMT node pool."
+        description: "Server list, default pool, or empty for local execution"
       distributed_jobs_per_server:
         required: false
         type: number
         default: 32
-        description: "Maximum concurrent gem5 jobs per distributed server."
+        description: "Maximum concurrent gem5 jobs per distributed server"
 
 permissions:
   contents: read
@@ -68,548 +69,84 @@ jobs:
           echo "::error::Refusing to checkout an external fork PR head under pull_request_target."
           exit 1
 
-      - uses: actions/checkout@v7
+      - name: Checkout CI control code
+        uses: actions/checkout@v7
+        with:
+          path: ci-control
+          persist-credentials: false
+
+      - name: Checkout tested gem5 revision
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.pr_sha || github.sha }}
+          path: gem5-src
           persist-credentials: false
-      
-      - name: Set benchmark configuration
-        id: config
-        run: |
-          case "${{ inputs.benchmark_type }}" in
-              "gcc12-spec06-0.3c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c_int.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc12-spec06-0.3c" >> $GITHUB_OUTPUT
-              echo "comment=run 30% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc12-spec06-smt-0.3c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc12-spec06-smt-0.3c" >> $GITHUB_OUTPUT
-              echo "comment=run 30% coverage dual-context SMT spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc12-spec06-smt-1.0c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc12-spec06-smt-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage dual-context SMT spec06 checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc12-spec06-smt-int-1.0c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec_1c_int.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/spec06_1c_int.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc12-spec06-smt-int-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage dual-context SMT SPEC06 int checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc12-spec06-0.8c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc12-spec06-0.8c" >> $GITHUB_OUTPUT
-              echo "comment=run 80% coverage spec06 checkpoints, 500+ checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc12-spec06-1.0c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc12-spec06-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage spec06 checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc15-spec06-0.3c")
-              echo "checkpoint_list_source_json=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc15-spec06-0.3c" >> $GITHUB_OUTPUT
-              echo "comment=run 30% coverage gcc15 spec06 checkpoints from spec06_gcc15_rv64gcb_base_260604" >> $GITHUB_OUTPUT
-              ;;
-            "gcc15-spec06-1.0c")
-              echo "checkpoint_list=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/checkpoint.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc15-spec06-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage gcc15 spec06 checkpoints from spec06_gcc15_rv64gcb_base_260604" >> $GITHUB_OUTPUT
-              ;;
-            "h-spec06-0.5c")
-              echo "execution_mode=h" >> $GITHUB_OUTPUT
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c_h_profile_insts.json" >> $GITHUB_OUTPUT
-              echo "h_selection_json=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c_h_profile_insts.json" >> $GITHUB_OUTPUT
-              echo "h_expected_checkpoints=257" >> $GITHUB_OUTPUT
-              echo "h_label=H SPEC06 0.5c" >> $GITHUB_OUTPUT
-              echo "h_ref_so=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-v2026.07.r5-gem5-ref-fs0-so" >> $GITHUB_OUTPUT
-              echo "h_restorer=/nfs/home/share/gem5_ci/tools/gcpt.bin" >> $GITHUB_OUTPUT
-              echo "h_maxinsts=40000000" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-h-spec06-0.5c" >> $GITHUB_OUTPUT
-              echo "comment=run 50% coverage H SPEC06 checkpoints with FS0 NEMU, GCPT restore, DRAMsim3 and 40M maxinsts" >> $GITHUB_OUTPUT
-              ;;
-            "h-spec06-1.0c")
-              echo "execution_mode=h" >> $GITHUB_OUTPUT
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c_h_profile_insts.json" >> $GITHUB_OUTPUT
-              echo "h_selection_json=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c_h_profile_insts.json" >> $GITHUB_OUTPUT
-              echo "h_expected_checkpoints=1089" >> $GITHUB_OUTPUT
-              echo "h_label=H SPEC06 1.0c" >> $GITHUB_OUTPUT
-              echo "h_ref_so=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-v2026.07.r5-gem5-ref-fs0-so" >> $GITHUB_OUTPUT
-              echo "h_restorer=/nfs/home/share/gem5_ci/tools/gcpt.bin" >> $GITHUB_OUTPUT
-              echo "h_maxinsts=40000000" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-h-spec06-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage H SPEC06 checkpoints with FS0 NEMU, GCPT restore, DRAMsim3 and 40M maxinsts" >> $GITHUB_OUTPUT
-              ;;
-            "spec17-1.0c")
-              echo "checkpoint_list=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci-17.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-spec17-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage spec17 checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "spec06-rvv-1.0c")
-              echo "checkpoint_list=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-spec06-1.0c-with-rvv-extension" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage spec06 rvv checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "spec06int-rvv-0.8c")
-              echo "checkpoint_list=/nfs/home/share/zhenhao/runnable_tests.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/zhenhao/runnable_tests.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-spec06int-0.8c-with-rvv-extension" >> $GITHUB_OUTPUT
-              echo "comment=run 80% coverage spec06 int rvv checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            "gcc15-spec26-0.3c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/spec26_0.3c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec26_rate_gcc15_rv64gcb_260718/checkpoint" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci-26.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc15-spec26-0.3c" >> $GITHUB_OUTPUT
-              echo "comment=run 30% coverage SPEC CPU2026 checkpoints plus 722.palm_r/201821 regression" >> $GITHUB_OUTPUT
-              ;;
-            "gcc15-spec26-1.0c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/spec26_1.0c.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec26_rate_gcc15_rv64gcb_260718/checkpoint" >> $GITHUB_OUTPUT
-              echo "score_script=gem5-score-ci-26.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/checkpoints_all.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-gcc15-spec26-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage SPEC CPU2026 checkpoints" >> $GITHUB_OUTPUT
-              ;;
-            *)
-              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, h-spec06-0.5c, h-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
-              exit 1
-              ;;
-          esac
 
-      - uses: ./.github/actions/build-dramsim
-      - name: Build GEM5 fast
-        run: |
-          export GEM5_HOME=$(pwd)
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
-          if [[ "${{ inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
-            export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
-            export GCB_MULTI_CORE_RESTORER=""
-          fi
-          case "${{ inputs.vector_type }}" in
-            "base")
-              # use pgo profile to build gem5
-              bash util/pgo/basic_pgo_new.sh
-              ;;
-            "simple")
-              # use pgo profile to build gem5, use simple vector decode strategy in scons
-              bash util/pgo/basic_pgo_new_vector.sh
-              ;;
-            "")
-              # use pgo profile to build gem5
-              bash util/pgo/basic_pgo_new.sh
-              ;;
-            *)
-              echo "Error: Invalid vector_type '${{ inputs.vector_type }}'. Must be one of: base, simple"
-              exit 1
-              ;;
-          esac
-
-      - name: Prepare performance archive
-        id: archive
+      - name: Prepare performance run
+        id: prepare
         env:
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
           BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_ARGS_INPUT: ${{ inputs.extra_args }}
-          DISTRIBUTED_SERVERS_RAW: ${{ inputs.distributed_servers }}
-          DISTRIBUTED_JOBS_PER_SERVER_RAW: ${{ inputs.distributed_jobs_per_server }}
+          DISTRIBUTED_SERVERS_INPUT: ${{ inputs.distributed_servers }}
+          DISTRIBUTED_JOBS_PER_SERVER_INPUT: ${{ inputs.distributed_jobs_per_server }}
         run: |
-          ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
-          BENCHMARK_DIR="${ARCHIVE_ROOT}/${BENCHMARK_TYPE_INPUT}"
-          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-          COMMIT_SHORT=$(git rev-parse --short HEAD)
-          RUN_NUMBER="${{ github.run_number }}"
-          CONFIG_NAME=$(basename "$CONFIG_PATH_INPUT" .py)
-          CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
-          CONFIG_NAME=${CONFIG_NAME:-config}
-          TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
-          DEFAULT_DISTRIBUTED_SERVERS="node020-node034,node036-node039"
-          DISTRIBUTED_SERVERS_INPUT="$DISTRIBUTED_SERVERS_RAW"
-          DISTRIBUTED_SERVERS=$(echo "$DISTRIBUTED_SERVERS_INPUT" | xargs)
-          if [ "$DISTRIBUTED_SERVERS" = "default" ]; then
-            DISTRIBUTED_SERVERS="$DEFAULT_DISTRIBUTED_SERVERS"
-          fi
-          DISTRIBUTED_REQUIRE_IDLE_CPUS="$DISTRIBUTED_JOBS_PER_SERVER_RAW"
-          DISTRIBUTED_IDLE_PROBE_MODE="physical"
+          python3 "$GITHUB_WORKSPACE/ci-control/util/ci/perf_ci.py" \
+            --repo-root "$GITHUB_WORKSPACE/gem5-src" prepare \
+            --config-path="$CONFIG_PATH_INPUT" \
+            --benchmark-type="$BENCHMARK_TYPE_INPUT" \
+            --specific-benchmarks="$SPECIFIC_BENCHMARKS_INPUT" \
+            --extra-args="$EXTRA_ARGS_INPUT" \
+            --distributed-servers="$DISTRIBUTED_SERVERS_INPUT" \
+            --distributed-jobs-per-server="$DISTRIBUTED_JOBS_PER_SERVER_INPUT" \
+            --archive-root=/nfs/home/share/gem5_ci/performance_data \
+            --run-number="$GITHUB_RUN_NUMBER" \
+            --run-id="$GITHUB_RUN_ID" \
+            --github-ref="$GITHUB_REF"
 
-          mkdir -p "$TARGET_DIR"
+      - uses: ./ci-control/.github/actions/build-dramsim
+        with:
+          gem5-root: ${{ github.workspace }}/gem5-src
 
-          {
-            echo "benchmark_dir=$BENCHMARK_DIR"
-            echo "target_dir=$TARGET_DIR"
-            echo "timestamp=$TIMESTAMP"
-            echo "commit_short=$COMMIT_SHORT"
-            echo "config_name=$CONFIG_NAME"
-            echo "run_number=$RUN_NUMBER"
-            echo "distributed_servers=$DISTRIBUTED_SERVERS"
-            echo "distributed_require_idle_cpus=$DISTRIBUTED_REQUIRE_IDLE_CPUS"
-            echo "distributed_idle_probe_mode=$DISTRIBUTED_IDLE_PROBE_MODE"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
-          echo "commit: $(git rev-parse HEAD)" >> "$TARGET_DIR/metadata.txt"
-          echo "commit_short: $COMMIT_SHORT" >> "$TARGET_DIR/metadata.txt"
-          echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
-          echo "config_path: $CONFIG_PATH_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "config_name: $CONFIG_NAME" >> "$TARGET_DIR/metadata.txt"
-          echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
-          echo "benchmark_type: $BENCHMARK_TYPE_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "specific_benchmarks: $SPECIFIC_BENCHMARKS_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_servers_input: $DISTRIBUTED_SERVERS_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_servers: $DISTRIBUTED_SERVERS" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_server_domain: " >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_jobs_per_server: $DISTRIBUTED_JOBS_PER_SERVER_RAW" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_require_idle_cpus: $DISTRIBUTED_REQUIRE_IDLE_CPUS" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_idle_probe_mode: $DISTRIBUTED_IDLE_PROBE_MODE" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_idle_cpu_threshold: 30" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_ssh_config: " >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_ssh_user: " >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_launch_retries: 3" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_launch_retry_delay: 30" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_launch_interval: 0.5" >> "$TARGET_DIR/metadata.txt"
-          printf 'extra_args: %s\n' "$EXTRA_ARGS_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
-
-          {
-            echo "### Live archive output"
-            echo "- Path: \`$TARGET_DIR\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Prepare checkpoint list
-        id: checkpoints
+      - name: Build GEM5 fast
         env:
-          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+          VECTOR_TYPE_INPUT: ${{ inputs.vector_type }}
         run: |
-          mkdir -p "$PERF_ARCHIVE_DIR"
+          python3 "$GITHUB_WORKSPACE/ci-control/util/ci/perf_ci.py" \
+            --repo-root "$GITHUB_WORKSPACE/gem5-src" build \
+            --manifest="${{ steps.prepare.outputs.manifest }}" \
+            --vector-type="$VECTOR_TYPE_INPUT"
 
-          CHECKPOINT_LIST="${{ steps.config.outputs.checkpoint_list }}"
-          CHECKPOINT_LIST_SOURCE_JSON="${{ steps.config.outputs.checkpoint_list_source_json }}"
-
-          if [ -n "$CHECKPOINT_LIST_SOURCE_JSON" ]; then
-            if [[ "$CHECKPOINT_LIST_SOURCE_JSON" == /* ]]; then
-              SOURCE_JSON="$CHECKPOINT_LIST_SOURCE_JSON"
-            else
-              SOURCE_JSON="$GITHUB_WORKSPACE/$CHECKPOINT_LIST_SOURCE_JSON"
-            fi
-            GENERATED_LIST="$PERF_ARCHIVE_DIR/checkpoint_selection.lst"
-            python3 - "$SOURCE_JSON" "$GENERATED_LIST" <<'PY'
-          import json
-          import sys
-
-          source_path, list_path = sys.argv[1:3]
-
-          with open(source_path) as source_file:
-              source = json.load(source_file)
-
-          list_lines = []
-
-          for benchmark, metadata in source.items():
-              point_items = list(metadata.get("points", {}).items())
-
-              for point, _weight in point_items:
-                  list_lines.append(
-                      f"{benchmark}_{point} {benchmark}/{point} 0 0 20 20\n"
-                  )
-
-          with open(list_path, "w") as output_list:
-              output_list.writelines(list_lines)
-          PY
-            CHECKPOINT_LIST="$GENERATED_LIST"
-          fi
-
-          if [ "${{ steps.config.outputs.execution_mode }}" = "h" ]; then
-            EXPECTED_CHECKPOINTS="${{ steps.config.outputs.h_expected_checkpoints }}"
-            test "$(wc -l < "$CHECKPOINT_LIST")" -eq "$EXPECTED_CHECKPOINTS"
-            cp "$CHECKPOINT_LIST" "$PERF_ARCHIVE_DIR/checkpoint_selection.lst"
-            CHECKPOINT_LIST="$PERF_ARCHIVE_DIR/checkpoint_selection.lst"
-          fi
-
-          echo "checkpoint_list=$CHECKPOINT_LIST" >> "$GITHUB_OUTPUT"
-
-      - name: XS-GEM5 - Run performance test
-        # ${{ steps.config.outputs.comment }}
-        env:
-          GCBV_REF_SO: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
-          GEM5_HOME: ${{ github.workspace }}
-          GEM5_BUILD_TYPE: fast
-          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
-          CONFIG_PATH_INPUT: ${{ inputs.config_path }}
-          BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
-          SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
-          EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
-          CHECKPOINT_LIST: ${{ steps.checkpoints.outputs.checkpoint_list }}
-          CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
-          DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
-          DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
-          DISTRIBUTED_REQUIRE_IDLE_CPUS: ${{ steps.archive.outputs.distributed_require_idle_cpus }}
-          DISTRIBUTED_IDLE_PROBE_MODE: ${{ steps.archive.outputs.distributed_idle_probe_mode }}
-          EXECUTION_MODE: ${{ steps.config.outputs.execution_mode }}
-          H_REF_SO: ${{ steps.config.outputs.h_ref_so }}
-          H_RESTORER: ${{ steps.config.outputs.h_restorer }}
-          H_MAXINSTS: ${{ steps.config.outputs.h_maxinsts }}
+      - name: Run performance test
         run: |
-          mkdir -p "$PERF_ARCHIVE_DIR"
-          cd "$PERF_ARCHIVE_DIR"
+          python3 "$GITHUB_WORKSPACE/ci-control/util/ci/perf_ci.py" \
+            --repo-root "$GITHUB_WORKSPACE/gem5-src" run \
+            --manifest="${{ steps.prepare.outputs.manifest }}"
 
-          CONFIG_PATH="$CONFIG_PATH_INPUT"
-          if [[ "$CONFIG_PATH" == /* ]]; then
-            echo "Error: config_path must be repo-root-relative, got absolute path: '$CONFIG_PATH'"
-            exit 1
-          fi
-          if [[ "$CONFIG_PATH" != *.py ]]; then
-            echo "Error: config_path must be a .py gem5 config file path, got: '$CONFIG_PATH'"
-            exit 1
-          fi
-
-          CONFIG_PATH="$GEM5_HOME/$CONFIG_PATH"
-          if [[ "$BENCHMARK_TYPE_INPUT" == gcc12-spec06-smt-* ]]; then
-            export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
-            export GCB_MULTI_CORE_RESTORER=""
-          fi
-
-          extra_args="$EXTRA_GEM5_ARGS_RAW"
-          extra_args="$(echo "$extra_args" | xargs)"
-          extra_args="${extra_args//\$\{GEM5_HOME\}/$GEM5_HOME}"
-          extra_args="${extra_args//\$GEM5_HOME/$GEM5_HOME}"
-          echo "Resolved extra gem5 args: $extra_args"
-          printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-
-          if [ "$EXECUTION_MODE" = "h" ]; then
-            set -euo pipefail
-            test -r "$H_REF_SO"
-            test -r "$H_RESTORER"
-            test -d "$CHECKPOINT_ROOT_NODE"
-            {
-              echo "execution_mode: h"
-              echo "h_ref_so: $H_REF_SO"
-              echo "h_restorer: $H_RESTORER"
-              echo "h_maxinsts: $H_MAXINSTS"
-            } >> "$PERF_ARCHIVE_DIR/metadata.txt"
-
-            runner_args=(
-              --config "$CONFIG_PATH"
-              --checkpoint-list "$CHECKPOINT_LIST"
-              --checkpoint-root "$CHECKPOINT_ROOT_NODE"
-              --tag spec_all
-              --benchmarks "$SPECIFIC_BENCHMARKS_INPUT"
-              --servers "${DISTRIBUTED_SERVERS:-local}"
-              --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER"
-              --gem5-home "$GEM5_HOME"
-              --build-type "$GEM5_BUILD_TYPE"
-              --ref-so "$H_REF_SO"
-              --restorer "$H_RESTORER"
-              --maxinsts "$H_MAXINSTS"
-              --dram-ini "$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
-              --pf-control-profile "$pf_control_profile"
-              --extra-args "$EXTRA_GEM5_ARGS_RAW"
-            )
-            if [ -n "$DISTRIBUTED_SERVERS" ]; then
-              runner_args+=(
-                --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS"
-                --idle-probe-mode "$DISTRIBUTED_IDLE_PROBE_MODE"
-                --launch-retries 3
-                --launch-retry-delay 30
-                --launch-interval 0.5
-                --ssh-option StrictHostKeyChecking=accept-new
-                --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts"
-                --ssh-option ConnectTimeout=10
-              )
-            fi
-            python3 "$GEM5_HOME/util/xs_scripts/h_spec06_perf.py" run "${runner_args[@]}" \
-              | tee -a "$PERF_ARCHIVE_DIR/runner.log"
-            exit 0
-          fi
-
-          distributed_servers="$DISTRIBUTED_SERVERS"
-          if [ -n "$distributed_servers" ]; then
-            echo "Using distributed gem5 runner on servers: $distributed_servers"
-            python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
-              --servers "$distributed_servers" \
-              --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
-              --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \
-              --idle-probe-mode "$DISTRIBUTED_IDLE_PROBE_MODE" \
-              --launch-retries 3 \
-              --launch-retry-delay 30 \
-              --launch-interval 0.5 \
-              --ssh-option StrictHostKeyChecking=accept-new \
-              --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
-              --ssh-option ConnectTimeout=10 \
-              --build-type "$GEM5_BUILD_TYPE" \
-              "$(realpath "$CONFIG_PATH")" \
-              "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" \
-              spec_all \
-              "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
-          else
-            echo "Using local parallel_sim.sh runner"
-            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-              "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" \
-              spec_all \
-              "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
-          fi
-      - name: Setup gem5_data_proc environment
+      - name: Score and check performance result
         run: |
-          # 使用本地数据处理仓库，避免GitHub网络问题
-          cd $GITHUB_WORKSPACE
-          cp -r /nfs/home/share/gem5_ci/gem5_data_proc .
-      - name: Check performance test result
-        env:
-          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
-          EXECUTION_MODE: ${{ steps.config.outputs.execution_mode }}
-          H_SELECTION_JSON: ${{ steps.config.outputs.h_selection_json }}
-          H_LABEL: ${{ steps.config.outputs.h_label }}
-          SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
+          python3 "$GITHUB_WORKSPACE/ci-control/util/ci/perf_ci.py" \
+            --repo-root "$GITHUB_WORKSPACE/gem5-src" score \
+            --manifest="${{ steps.prepare.outputs.manifest }}" \
+            --check-result="${{ inputs.check_result }}"
+
+      - name: Finalize performance archive
+        if: ${{ always() && steps.prepare.outputs.manifest != '' }}
         run: |
-          # 添加yanyue的 Python 包路径, 包含pandas等
-          export PYTHONPATH=$GITHUB_WORKSPACE/gem5_data_proc:/nfs/home/yanyue/.local/lib/python3.12/site-packages:$PYTHONPATH
-          # 每次run 会进入新的shell, 需要重新设置GEM5_HOME
-          export GEM5_HOME=$GITHUB_WORKSPACE
+          python3 "$GITHUB_WORKSPACE/ci-control/util/ci/perf_ci.py" \
+            --repo-root "$GITHUB_WORKSPACE/gem5-src" finalize \
+            --manifest="${{ steps.prepare.outputs.manifest }}"
 
-          if [ "$EXECUTION_MODE" = "h" ]; then
-            H_SCORE_DIR="$PERF_ARCHIVE_DIR/h_score"
-            H_STATUS_DIR="$H_SCORE_DIR/h_status"
-            if [[ "$H_SELECTION_JSON" == /* ]]; then
-              H_SELECTION_PATH="$H_SELECTION_JSON"
-            else
-              H_SELECTION_PATH="$GEM5_HOME/$H_SELECTION_JSON"
-            fi
-            python3 "$GEM5_HOME/util/xs_scripts/h_spec06_perf.py" score \
-              --json "$H_SELECTION_PATH" \
-              --result-dir "$PERF_ARCHIVE_DIR/spec_all" \
-              --out-dir "$H_STATUS_DIR" \
-              --benchmarks "$SPECIFIC_BENCHMARKS_INPUT" \
-              --label "$H_LABEL"
-          fi
-
-          cd $GITHUB_WORKSPACE/gem5_data_proc
-          CLUSTER_CONFIG="${{ steps.config.outputs.cluster_config }}"
-          if [[ "$CLUSTER_CONFIG" != /* ]]; then
-            CLUSTER_CONFIG="$GEM5_HOME/$CLUSTER_CONFIG"
-          fi
-          # 使用已有的数据spec_all生成测试报告
-          bash example-scripts/${{ steps.config.outputs.score_script }} \
-            "$PERF_ARCHIVE_DIR/spec_all" \
-            "$CLUSTER_CONFIG" \
-            > $GITHUB_WORKSPACE/score.txt
-          cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
-          # 提取最后42行score信息
-          echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 42 $GITHUB_WORKSPACE/score.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          # 提取关键指标
-          FINAL_SCORE=$(grep "Estimated Int score per GHz:" $GITHUB_WORKSPACE/score.txt | awk '{print $NF}')
-          echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
-          echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
-
-          if [ "$EXECUTION_MODE" = "h" ]; then
-            python3 "$GEM5_HOME/util/xs_scripts/h_spec06_perf.py" validate \
-              --summary "$PERF_ARCHIVE_DIR/h_score/h_status/summary.json"
-          fi
-          
-          # 最后检查是否存在abort文件， 如果存在，打出前10个错误名字
-          ABORT_COUNT=$(find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" | wc -l)
-          if [ "$ABORT_COUNT" -gt 0 ]; then
-            echo "### :x: Test Failures Detected!" >> $GITHUB_STEP_SUMMARY
-            echo "Failed test count: $ABORT_COUNT" >> $GITHUB_STEP_SUMMARY
-            echo "First 10 failed tests:" >> $GITHUB_STEP_SUMMARY
-            find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" |
-              sed 's|.*/\([^/]*\)/abort|\1|' |
-              head -n 10 |
-              while read -r line; do
-                echo "- $line" >> $GITHUB_STEP_SUMMARY
-              done
-              if [ "${{ inputs.check_result }}" == "true" ]; then
-                exit 1
-              fi
-          fi
-      - name: Archive performance data
-        if: ${{ always() && steps.archive.outputs.target_dir != '' }}
-        run: |
-          BENCHMARK_DIR="${{ steps.archive.outputs.benchmark_dir }}"
-          TARGET_DIR="${{ steps.archive.outputs.target_dir }}"
-
-          echo "Performance data already written to $TARGET_DIR"
-          
-          # Also save score.txt for quick reference
-          if [ -f "$GITHUB_WORKSPACE/score.txt" ]; then
-            cp "$GITHUB_WORKSPACE/score.txt" "$TARGET_DIR/"
-          fi
-          
-          # Auto cleanup: keep only last 200 runs for this benchmark type
-          if [ -d "$BENCHMARK_DIR" ] && [ $(ls -1 "$BENCHMARK_DIR" 2>/dev/null | wc -l) -gt 200 ]; then
-            echo "Cleaning up old performance data, keeping last 200 runs"
-            # Use absolute paths to avoid accidental deletion if cd fails
-            ls -1t "$BENCHMARK_DIR" | tail -n +201 | while read -r old_run; do
-              if [ -n "$old_run" ] && [ -d "$BENCHMARK_DIR/$old_run" ]; then
-                rm -rf "$BENCHMARK_DIR/$old_run"
-                echo "Deleted: $BENCHMARK_DIR/$old_run"
-              fi
-            done
-            echo "Cleanup completed"
-          fi
-          
-          echo "Performance data archived successfully"
-          ARCHIVE_SIZE=$(du -sh "$TARGET_DIR/spec_all" 2>/dev/null | cut -f1 || echo "missing")
-          echo "Archive size: ${ARCHIVE_SIZE}"
-          {
-            echo "### Archive output"
-            echo "- Path: \`$TARGET_DIR\`"
-            echo "- Size: ${ARCHIVE_SIZE}"
-          } >> $GITHUB_STEP_SUMMARY
       - name: Upload score artifact
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.config.outputs.artifact_name }}${{ steps.config.outputs.pf_artifact_suffix }}
+          name: ${{ steps.prepare.outputs.artifact_name }}
           path: |
-            score.txt
-            ${{ steps.archive.outputs.target_dir }}/h_score
+            ${{ steps.prepare.outputs.target_dir }}/score.txt
+            ${{ steps.prepare.outputs.target_dir }}/score-error.log
+            ${{ steps.prepare.outputs.target_dir }}/h_score
           if-no-files-found: warn
           retention-days: 30
-      
