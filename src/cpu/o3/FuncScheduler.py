@@ -84,7 +84,8 @@ class IssueQue(SimObject):
     size = Param.Int(16, "")
     inports = Param.Int(2, "")
     scheduleToExecDelay = Param.Cycles(2, "")
-    vectorSplitUnits = Param.Unsigned(2, "Number of independent vector split units")
+    vectorSplitUnits = Param.Unsigned(
+        2, "Number of independent vector load/store split units per direction")
     oports = VectorParam.IssuePort("")
     sel = Param.BaseSelector(BaseSelector(), "Selector for this IQ")
 
