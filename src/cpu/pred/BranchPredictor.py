@@ -1200,6 +1200,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
     smtFTQPolicy = Param.SMTFTQPolicy('Partitioned',
                                       "SMT shared FTQ allocation policy")
     smtFTQThreshold = Param.Int(100, "SMT FTQ Threshold Sharing Parameter")
+    smtNumPredictingThreads = Param.Unsigned(
+        1, "Maximum number of distinct SMT threads predicted per cycle")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
 

@@ -47,6 +47,7 @@ DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     : BPredUnit(p),
 
+      numPredictingThreads(p.smtNumPredictingThreads),
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
@@ -67,8 +68,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
-      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
+      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
 {
+    panic_if(numPredictingThreads == 0 || numPredictingThreads > numThreads,
+             "smtNumPredictingThreads (%u) must be in [1, numThreads (%u)]",
+             numPredictingThreads, numThreads);
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
              smtFTQThreshold > ftqEntries,
@@ -247,9 +251,12 @@ DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
            !ftqFull(tid);
 }
 
-ThreadID
-DecoupledBPUWithBTB::scheduleThread()
+std::vector<ThreadID>
+DecoupledBPUWithBTB::scheduleThreads()
 {
+    std::vector<ThreadID> scheduled;
+    scheduled.reserve(numPredictingThreads);
+
     for (ThreadID offset = 0; offset < numThreads; ++offset) {
         const ThreadID tid = (nextPredictTid + offset) % numThreads;
 
@@ -265,12 +272,19 @@ DecoupledBPUWithBTB::scheduleThread()
             continue;
         }
 
-        nextPredictTid = (tid + 1) % numThreads;
-        return tid;
+        scheduled.push_back(tid);
+        if (scheduled.size() == numPredictingThreads) {
+            break;
+        }
     }
 
-    dbpBtbStats.scheduleNoEligibleThread++;
-    return InvalidThreadID;
+    if (scheduled.empty()) {
+        dbpBtbStats.scheduleNoEligibleThread++;
+    } else {
+        nextPredictTid = (scheduled.back() + 1) % numThreads;
+    }
+
+    return scheduled;
 }
 
 
@@ -279,7 +293,7 @@ DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
-    ThreadID curTid = scheduleThread();
+    const auto scheduledTids = scheduleThreads();
     bool anyActiveThread = false;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         if (isThreadActive(tid)) {
@@ -292,12 +306,8 @@ DecoupledBPUWithBTB::tick()
     }
 
     // On squash, reset state if there was a valid prediction.
-    bool squashOccurred = false;
     for (int tid = 0; tid < numThreads; tid++) {
         if (threads[tid].squashing) {
-            if (tid == curTid) {
-                squashOccurred = true;
-            }
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
             threads[tid].nextPredictionAfterSquash = true;
@@ -307,20 +317,19 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
-    if (squashOccurred) {
-        DPRINTF(Override, "Squash occurred for current thread, skip predict.\n");
-        return;
-    }
-
-    if (curTid != InvalidThreadID) {
-        if (threads[curTid].blockPredictionPending) {
+    unsigned predictionsStarted = 0;
+    for (const ThreadID tid : scheduledTids) {
+        if (threads[tid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
-            threads[curTid].blockPredictionPending = false;
+            threads[tid].blockPredictionPending = false;
         } else {
-            requestNewPrediction(curTid);
+            requestNewPrediction(tid);
+            predictionsStarted++;
+            dbpBtbStats.predictionsStartedByThread[tid]++;
         }
     }
+    dbpBtbStats.predictionsStartedPerCycle.sample(predictionsStarted);
 
     for (int tid = 0; tid < numThreads; tid++) {
         processNewPrediction(tid);
