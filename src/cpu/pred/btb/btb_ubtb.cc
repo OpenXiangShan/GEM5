@@ -94,7 +94,7 @@ boolBucket(bool value)
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
       lastPred(),
-      meta(),
+      threadMeta(),
       ubtb(),
       mruList(),
       numEntries(p.numEntries),
@@ -118,6 +118,8 @@ UBTB::UBTB(const Params &p)
 
     hasDB = true;
     dbName = "ubtb";
+
+    threadMeta.resize(o3::MaxThreads);
 }
 
 
@@ -183,10 +185,12 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
 {
-    meta = std::make_shared<UBTBMeta>();
+    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
+    assert(tid < threadMeta.size());
+    threadMeta[tid] = std::make_shared<UBTBMeta>();
     const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     auto it = lookup(startAddr, asidHash);
-    auto& entry = meta->hit_entry;
+    auto& entry = threadMeta[tid]->hit_entry;
     entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
 
     PredStatistics(entry, startAddr);
@@ -204,9 +208,9 @@ UBTB::refreshPredictionMeta(Addr startAddr,
                             FullBTBPrediction &pred)
 {
     (void)history;
-    (void)pred;
-
-    meta = std::make_shared<UBTBMeta>();
+    assert(pred.tid < threadMeta.size());
+    threadMeta[pred.tid] = std::make_shared<UBTBMeta>();
+    auto &meta = threadMeta[pred.tid];
     meta->hit_entry = lookupNoSideEffect(startAddr);
 }
 
