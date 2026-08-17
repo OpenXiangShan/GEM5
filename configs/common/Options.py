@@ -321,9 +321,21 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         default='3GHz',
                         help="Clock for blocks running at CPU speed")
 
-    parser.add_argument("-I", "--maxinsts", action="store", type=int,
+    # Default 40M matches typical checkpoint slices. Cold-boot raw binaries
+    # (OpenSBI + Linux hello) often need far more; config_xiangshan_inputs()
+    # raises this automatically for --raw-cpt unless the user overrides -I.
+    # Track whether -I was on the CLI so an explicit `-I 40000000` is not
+    # treated as "unspecified default" and silently bumped.
+    class _StoreMaxinsts(argparse.Action):
+        def __call__(self, parser, namespace, values, option_string=None):
+            setattr(namespace, self.dest, values)
+            setattr(namespace, "maxinsts_user_set", True)
+
+    parser.set_defaults(maxinsts_user_set=False)
+    parser.add_argument("-I", "--maxinsts", action=_StoreMaxinsts, type=int,
                         default=40*10**6, help="""Total number of instructions to
-                                            simulate (default: run forever)""")
+                                            simulate (default: 40M; raised for
+                                            --raw-cpt full-system boots)""")
 
     parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
             help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
