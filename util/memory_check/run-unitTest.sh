@@ -1,20 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-gem5_home=$(pwd)
-log_file=$gem5_home/valgrind.out
+set -euo pipefail
 
-# cmd to test
-# e.g. ./run-unitTest.sh ./build/RISCV/cpu/pred/btb/test/btb.test.debug --gtest_filter=BTBTest.ConditionalCounter
-# use all args
-run_cmd="$@"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-valgrind --tool=memcheck \
-    --track-origins=yes \
-    --show-leak-kinds=all \
-    --leak-check=full \
-    --log-file=$log_file \
-    -s \
-    --suppressions=$gem5_home/util/valgrind-suppressions \
-    $run_cmd
-
-python3 $gem5_home/util/memory_check/check-memory-error.py $log_file
+# Example: ./run-unitTest.sh ./build/RISCV/unittests.debug --gtest_filter=Foo.Bar
+exec "$script_dir/run-with-valgrind.sh" "$@"
