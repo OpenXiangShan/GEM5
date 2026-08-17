@@ -207,6 +207,33 @@ TEST_F(BTBTest, EmptyPrediction) {
     }
 }
 
+// Interleaved SMT predictions must retain each thread's metadata until the
+// corresponding FetchTarget is created.
+TEST_F(BTBTest, PredictionMetadataIsPerThread) {
+    boost::dynamic_bitset<> history(8, 0);
+    std::vector<FullBTBPrediction> thread0Preds(4);
+    std::vector<FullBTBPrediction> thread1Preds(4);
+
+    for (auto &pred : thread0Preds) {
+        pred.tid = 0;
+    }
+    for (auto &pred : thread1Preds) {
+        pred.tid = 1;
+    }
+
+    mbtb->putPCHistory(0x1000, history, thread0Preds);
+    auto thread0Meta = mbtb->getPredictionMeta(0);
+    ASSERT_NE(thread0Meta, nullptr);
+
+    mbtb->putPCHistory(0x2000, history, thread1Preds);
+    auto thread1Meta = mbtb->getPredictionMeta(1);
+    ASSERT_NE(thread1Meta, nullptr);
+
+    EXPECT_NE(thread0Meta, thread1Meta);
+    EXPECT_EQ(mbtb->getPredictionMeta(0), thread0Meta);
+    EXPECT_EQ(mbtb->getPredictionMeta(1), thread1Meta);
+}
+
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]

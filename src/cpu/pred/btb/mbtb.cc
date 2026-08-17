@@ -142,6 +142,8 @@ MBTB::MBTB(const Params &p)
         entry.tick = 0;
     }
 
+    threadMeta.resize(o3::MaxThreads);
+
     DPRINTF(BTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, "
         "idxMask %#lx, tagMask %#lx, victimCacheSize %d\n",
         numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask, victimCacheSize);
@@ -286,9 +288,12 @@ void
 MBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                    std::vector<FullBTBPrediction>& stagePreds)
 {
+    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
+    assert(tid < threadMeta.size());
+
     // Save current BTB entries
     for (auto e: entries) {
-        meta->hit_entries.push_back(BTBEntry(e));
+        threadMeta[tid]->hit_entries.push_back(BTBEntry(e));
     }
 }
 
@@ -297,10 +302,12 @@ MBTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullBTBPrediction> &stagePreds)
 {
-    meta = std::make_shared<BTBMeta>();
+    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
+    assert(tid < threadMeta.size());
+    threadMeta[tid] = std::make_shared<BTBMeta>();
     const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr, asidHash, meta);
+    auto find_entries = lookup(startAddr, asidHash, threadMeta[tid]);
 
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
@@ -315,8 +322,10 @@ MBTB::putPCHistory(Addr startAddr,
 std::shared_ptr<void>
 MBTB::getPredictionMeta(ThreadID tid)
 {
-    (void)tid;
-    return meta;
+    if (tid >= threadMeta.size()) {
+        return nullptr;
+    }
+    return threadMeta[tid];
 }
 
 /**

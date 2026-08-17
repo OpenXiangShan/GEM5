@@ -433,7 +433,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         if (pred_taken_entry.valid) {
             if (pred_taken_entry.isReturn) {
                 finalPred.s3Source = ras->getComponentIdx();
-            } else if (pred_taken_entry.isIndirect && ittage->tageHit()) {
+            } else if (pred_taken_entry.isIndirect && ittage->tageHit(tid)) {
                 finalPred.s3Source = ittage->getComponentIdx();
             }else if (pred_taken_entry.isCond) {
                 finalPred.s3Source = tage->getComponentIdx();

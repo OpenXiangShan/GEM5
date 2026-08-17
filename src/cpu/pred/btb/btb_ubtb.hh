@@ -46,11 +46,13 @@
 #define __CPU_PRED_BTB_UBTB_HH__
 
 #include <queue>
+#include <vector>
 
 #include "arch/generic/pcstate.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "debug/UBTB.hh"
@@ -150,7 +152,10 @@ class UBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override
     {
-        return meta;
+        if (tid >= threadMeta.size()) {
+            return nullptr;
+        }
+        return threadMeta[tid];
     }
 
     void reset();
@@ -200,7 +205,7 @@ class UBTB : public TimedBaseBTBPredictor
             hit_entry = TickedUBTBEntry();
         }
     };
-    std::shared_ptr<UBTBMeta> meta;
+    std::vector<std::shared_ptr<UBTBMeta>> threadMeta;
 
     // helper methods
     /*

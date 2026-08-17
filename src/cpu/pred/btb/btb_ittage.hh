@@ -286,7 +286,7 @@ public:
     bool debugFlag = false;
 
     void recoverFoldedHist(const bitset& history);
-    bool tageHit();
+    bool tageHit(ThreadID tid);
 
     // void checkFoldedHist(const bitset& history);
 };
