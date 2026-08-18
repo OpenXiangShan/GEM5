@@ -1142,7 +1142,7 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
     StallReason breakDispatch = StallReason::NoStall;
 
     unsigned dispatched = 0;
-    int disp_seq = static_cast<int>(dispatch_offset) - 1;
+    int disp_seq = -1;
 
     scheduler->lookahead(insts_to_dispatch);
     while (!insts_to_dispatch.empty() && dispatched < max_insts) {
