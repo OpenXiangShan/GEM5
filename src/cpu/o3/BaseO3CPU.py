@@ -214,6 +214,10 @@ class BaseO3CPU(BaseCPU):
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
     EnablePHASTMDP = Param.Bool(True,
         "Use PHAST memory dependence prediction instead of StoreSets")
+    mdp_violation_timing = Param.String(
+        "atResolve",
+        "When to recover from and train a detected MDP RAW violation: "
+        "atResolve or atCommit")
     phast_num_rows = Param.Unsigned(64, "PHAST rows per history table")
     phast_associativity = Param.Unsigned(4, "PHAST table associativity")
     phast_tag_bits = Param.Unsigned(16, "PHAST tag bits")

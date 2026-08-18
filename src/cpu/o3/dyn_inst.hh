@@ -501,6 +501,9 @@ class DynInst : public ExecContext, public RefCounted
         /** True after the RAW violation has been counted once. */
         bool violationCounted = false;
 
+        /** True when a RAW violation is deferred until Commit. */
+        bool violationPending = false;
+
         /** True after the RAW violation has trained PHAST once. */
         bool violationTrained = false;
     } memDepInfo;

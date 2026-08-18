@@ -374,6 +374,13 @@ class Commit
     bool hasExecutedYoungerInst(ThreadID tid, InstSeqNum seq_num) const;
     void updateMstatusSd(ThreadID tid);
 
+    /** Handle a deferred RAW MDP violation at the ROB head. */
+    bool handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid);
+
+    /** Append a resolved control-flow outcome to committed history. */
+    void updateCommittedBranchHistory(ThreadID tid,
+                                      const DynInstPtr &inst);
+
     /** Tries to commit the head ROB instruction passed in.
      * @param head_inst The instruction to be committed.
      */
@@ -494,6 +501,12 @@ class Commit
     const Cycles renameToROBDelay;
 
     const Cycles fetchToCommitDelay;
+
+    /** Defer RAW MDP recovery/training until the violating load is at Commit. */
+    const bool mdpViolationAtCommit;
+
+    /** Whether StoreSet training is enabled for non-PHAST configurations. */
+    const bool enableStoreSetTrain;
 
     /** Rename width, in instructions.  Used so ROB knows how many
      *  instructions to get from the rename instruction queue.
@@ -651,6 +664,8 @@ class Commit
         statistics::Vector squashDueToBranch;
         statistics::Vector squashDueToOrderViolation;
         statistics::Vector squashDueToValuePrediction;
+        /** Number of Commit-triggered RAW MDP recoveries. */
+        statistics::Scalar mdpViolationSquashes;
         statistics::Vector squashDueToTrap;
         statistics::Vector squashDueToTC;
         statistics::Vector squashDueToSquashAfter;

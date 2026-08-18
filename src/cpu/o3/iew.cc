@@ -96,6 +96,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       enableStoreSetTrain(params.enable_storeSet_train),
+      mdpViolationAtCommit(params.mdp_violation_timing == "atCommit"),
       numThreads(params.numThreads),
       iewStats(cpu)
 {
@@ -103,6 +104,12 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("wbWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              wbWidth, static_cast<int>(MaxWidth));
+
+    if (params.mdp_violation_timing != "atResolve" &&
+        params.mdp_violation_timing != "atCommit") {
+        fatal("mdp_violation_timing must be atResolve or atCommit, got %s\n",
+              params.mdp_violation_timing.c_str());
+    }
 
     _status = Active;
     exeStatus = Running;
@@ -182,6 +189,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of times the LSQ has become full, causing a stall"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
+    ADD_STAT(mdpViolationDeferred, statistics::units::Count::get(),
+             "RAW MDP violations deferred until Commit"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
              "Number of branches that were predicted taken incorrectly"),
     ADD_STAT(predictedNotTakenIncorrect, statistics::units::Count::get(),
@@ -1646,24 +1655,51 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
                     violator->pcState(), violator->seqNum,
                     inst->pcState(), inst->seqNum, inst->physEffAddr);
 
-            fetchRedirect[tid] = true;
-
-            // Tell the instruction queue that a violation has occured.
-            if (instQueue.usesPHAST(tid)) {
-                auto &mdp_history = cpu->getDecode()->getBranchHistory(tid);
-                instQueue.violation(inst->seqNum, inst->pcState().instAddr(),
-                                    violator, mdp_history);
-            } else if (enableStoreSetTrain) {
-                auto &mdp_history =
-                    cpu->getCommit()->getBranchHistory(tid);
-                instQueue.violation(inst->seqNum,
-                    inst->pcState().instAddr(), violator,
-                    mdp_history);
-            }
             violator->setProducerStorePC(inst->pcState().instAddr());
 
-            // Squash.
-            squashDueToMemOrder(violator, tid);
+            const bool raw_mdp_violation =
+                (inst->isStore() || inst->isAtomic()) &&
+                // Once a load has a deferred RAW violation, keep all
+                // subsequent producer observations on the deferred path.
+                // The first producer remains the training target captured by
+                // LSQUnit::checkViolations().
+                (violator->memDepInfo.violationPending ||
+                 violator->memDepInfo.violatingStoreSeqNum == inst->seqNum);
+            if (mdpViolationAtCommit && raw_mdp_violation) {
+                if (!violator->memDepInfo.violationPending) {
+                    // Preserve the first concrete producer observed before
+                    // Commit.  The load may overlap multiple younger stores
+                    // while recovery is deferred, but the original model
+                    // trains on the first violation that triggers recovery.
+                    violator->memDepInfo.violationPending = true;
+                    ++iewStats.mdpViolationDeferred;
+                }
+                DPRINTF(IEW,
+                        "Deferring RAW MDP violation to Commit: load PC %s "
+                        "[sn:%llu], store PC %s [sn:%llu].\n",
+                        violator->pcState(), violator->seqNum,
+                        inst->pcState(), inst->seqNum);
+            } else {
+                fetchRedirect[tid] = true;
+
+                // Tell the instruction queue that a violation has occured.
+                if (instQueue.usesPHAST(tid)) {
+                    auto &mdp_history =
+                        cpu->getDecode()->getBranchHistory(tid);
+                    instQueue.violation(inst->seqNum,
+                                        inst->pcState().instAddr(),
+                                        violator, mdp_history);
+                } else if (enableStoreSetTrain) {
+                    auto &mdp_history =
+                        cpu->getCommit()->getBranchHistory(tid);
+                    instQueue.violation(inst->seqNum,
+                                        inst->pcState().instAddr(),
+                                        violator, mdp_history);
+                }
+
+                // Squash.
+                squashDueToMemOrder(violator, tid);
+            }
 
             ++iewStats.memOrderViolationEvents;
         }
@@ -1983,8 +2019,9 @@ IEW::tick()
         DPRINTF(IEW,"Commit processing [tid:%i]\n",tid);
 
         if (fromCommit->commitInfo[tid].doneMemSeqNum != 0 &&
-            !fromCommit->commitInfo[tid].squash &&
-            !fromCommit->commitInfo[tid].robSquashing) {
+            (fromCommit->commitInfo[tid].isDeferedMDPSquash ||
+              (!fromCommit->commitInfo[tid].squash &&
+               !fromCommit->commitInfo[tid].robSquashing))) {
             recordThreadWork(tid);
 
             // Marks some of the entries in the store queue as canWB and

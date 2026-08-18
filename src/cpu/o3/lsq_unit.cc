@@ -1262,8 +1262,10 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                 "[sn:%lli] at address %#x\n",
                                 inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
                         memDepViolator = ld_inst;
-                        if (iewStage->instQueue.usesPHAST(
-                                ld_inst->threadNumber)) {
+                        // Preserve the concrete RAW target for both MDP
+                        // implementations. PHAST additionally consumes the
+                        // SQ distance and path metadata captured at issue.
+                        if (!ld_inst->memDepInfo.violationPending) {
                             ld_inst->memDepInfo.violatingStoreSeqNum =
                                 inst->seqNum;
                             ld_inst->memDepInfo.violatingStorePC =
@@ -2750,6 +2752,10 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
             DPRINTF(HtmCpu, ">> htmStarts (%d) : htmStops-- (%d)\n",
               htmStarts, htmStops);
         }
+
+        // A deferred MDP violation only applies while this dynamic load
+        // remains on the architecturally valid path.
+        loadQueue.back().instruction()->memDepInfo.violationPending = false;
 
         // Clear the smart pointer to make sure it is decremented.
         loadQueue.back().instruction()->setSquashed();
