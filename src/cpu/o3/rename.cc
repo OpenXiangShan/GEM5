@@ -649,7 +649,7 @@ Rename::isLsuBound(const DynInstPtr &inst) const
 unsigned
 Rename::lsuBypassPrefixLength(ThreadID tid) const
 {
-    if (numThreads <= 1 || tid != 0 ||
+    if (numThreads <= 1 ||
         !stallSig->blockRename[tid] ||
         !stallSig->ldstAdmissionBlocked[tid] ||
         stallSig->blockIEW[tid]) {

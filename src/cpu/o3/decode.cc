@@ -584,7 +584,7 @@ Decode::isLsuBound(const DynInstPtr &inst) const
 unsigned
 Decode::lsuBypassPrefixLength(ThreadID tid) const
 {
-    if (numThreads <= 1 || tid != 0 ||
+    if (numThreads <= 1 ||
         !stallSig->blockDecode[tid] ||
         !stallSig->ldstAdmissionBlocked[tid] ||
         stallSig->blockIEW[tid]) {
@@ -621,18 +621,20 @@ Decode::tick()
     SmtActiveThreadArbiter active_arbiter;
     const auto fetchFeedbackReserve =
         numThreads > 1 ? fetchToDecodeDelay : decodeToFetchDelay + 1;
-    const bool fifoBackpressured =
-        !stallBuffer.empty() &&
-        eachstallSize.size() + fetchFeedbackReserve >=
-            eachstallSize.capacity();
-    const ThreadID fifoHeadTid =
-        !stallBuffer.empty() ? stallBuffer.front()->threadNumber : InvalidThreadID;
-    const StallReason fifoBlockReason =
-        (fifoBackpressured && fifoHeadTid != InvalidThreadID &&
-         stallSig->blockDecode[fifoHeadTid]) ?
-            stallSig->decodeBlockReason[fifoHeadTid] :
-            (fifoBackpressured ? StallReason::OtherFragStall :
-                                 StallReason::NoStall);
+    bool fifoBackpressured[MaxThreads] = {};
+    StallReason fifoBlockReason[MaxThreads] = {};
+    for (ThreadID fifo_tid = 0; fifo_tid < numThreads; ++fifo_tid) {
+        fifoBackpressured[fifo_tid] =
+            !stallBuffer[fifo_tid].empty() &&
+            eachstallSize[fifo_tid].size() + fetchFeedbackReserve >=
+                eachstallSize[fifo_tid].capacity();
+        fifoBlockReason[fifo_tid] =
+            (fifoBackpressured[fifo_tid] &&
+             stallSig->blockDecode[fifo_tid]) ?
+                stallSig->decodeBlockReason[fifo_tid] :
+                (fifoBackpressured[fifo_tid] ? StallReason::OtherFragStall :
+                                               StallReason::NoStall);
+    }
     unsigned lsu_bypass_prefix[MaxThreads] = {};
     std::vector<ThreadID> active_tids;
     for (int i = 0; i < numThreads; i++) {
@@ -657,13 +659,13 @@ Decode::tick()
         }
 
         // Apply per-thread FIFO backpressure
-        bool this_thread_fifo_bp = thread_fifo_bp[i];
-        
+        bool this_thread_fifo_bp = fifoBackpressured[i];
+
         stallSig->blockFetch[i] = block || this_thread_fifo_bp;
         stallSig->fetchBlockReason[i] =
             stallSig->blockFetch[i] ?
                 (block ? stallSig->decodeBlockReason[i] : 
-                 thread_fifo_block_reason[i]) :
+                 fifoBlockReason[i]) :
                 StallReason::NoStall;
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {

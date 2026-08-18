@@ -160,7 +160,7 @@ class Decode
 
     /**
      * Return the contiguous non-LSU prefix that may bypass an LSU admission
-     * block for SMT thread 0. Zero means the normal block must be respected.
+     * block. Zero means the normal block must be respected.
      */
     unsigned lsuBypassPrefixLength(ThreadID tid) const;
 

@@ -330,14 +330,18 @@ class IEW
     void dispatchInsts();
     void setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos);
 
-    void dispatchInstFromRename(ThreadID tid);
+    unsigned dispatchInstFromRename(ThreadID tid, unsigned max_insts,
+                                    unsigned dispatch_offset,
+                                    bool bypassing_lsu_admission);
 
     /** dispatchQueue is the buffer between rename and iq
      *  first, dispatch the inst from DispatchQueue to IQ
      *  second, receive new inst from rename, store it to DQ
      */
     void dispatchInstFromDispQue();
-    void classifyInstToDispQue(ThreadID tid);
+    unsigned classifyInstToDispQue(ThreadID tid, unsigned max_insts,
+                                   unsigned dispatch_offset,
+                                   bool bypassing_lsu_admission);
 
     /** Executes instructions. In the case of memory operations, it informs the
      * LSQ to execute the instructions. Also handles any redirects that occur
