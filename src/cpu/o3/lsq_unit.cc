@@ -3155,7 +3155,8 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool cache_got_blocked = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
     if (isLoad) {
-        bank_conflict = lsq->loadBankConflictedCheck(data_pkt->req->getVaddr());
+        bank_conflict = lsq->loadBankConflictedCheck(
+            data_pkt->req->getVaddr(), data_pkt->req->getSize());
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.

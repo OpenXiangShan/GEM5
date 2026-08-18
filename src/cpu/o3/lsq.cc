@@ -1166,27 +1166,55 @@ LSQ::getDcacheDivBankSetKey(Addr vaddr) const
 }
 
 bool
-LSQ::loadBankConflictedCheck(Addr vaddr)
+LSQ::loadBankConflictedCheck(Addr vaddr, unsigned size)
 {
-    bool now_bank_conflict = false;
-    const unsigned bankIndex = bankNum(vaddr);
-    const unsigned div = getDcacheDiv(vaddr);
-    const uint64_t key = getDcacheDivBankSetKey(vaddr);
+    if (!enableBankConflictCheck || size == 0) {
+        return false;
+    }
 
-    if (enableBankConflictCheck) {
-        if (recentlyloadAddr.contains(key)) {
-            recentlyloadAddr.get(key);
-            return false;
-        }
-        if (bankOccupied[div][bankIndex]) {
-            now_bank_conflict = true;
+    struct TouchedBank
+    {
+        unsigned bankIndex;
+        unsigned div;
+        uint64_t key;
+        bool recentlyAccessed;
+    };
 
-        } else {
-            bankOccupied[div][bankIndex] = true;
-            recentlyloadAddr.insert(key, {});
+    // Collect all banks will be touched by the load request.
+    // Eg. Bank size = 2B, load size = 8B, address = 0x0, will touch bank 0,1,2,3.
+    std::vector<TouchedBank> touched_banks;
+    for (unsigned offset = 0; offset < size;) {
+        const Addr bank_vaddr = vaddr + offset;
+        touched_banks.push_back({
+            bankNum(bank_vaddr),
+            getDcacheDiv(bank_vaddr),
+            getDcacheDivBankSetKey(bank_vaddr),
+            false
+        });
+        // Take care of misaligned situation.
+        Addr offsetInc = dcacheBankBytes - (bank_vaddr & (dcacheBankBytes - 1));
+        offset += offsetInc;
+    }
+
+    // Probe every target bank before claiming any of them. A failed
+    // multi-bank load will not update bankOccupied and recentlyloadAddr.
+    for (auto &bank : touched_banks) {
+        bank.recentlyAccessed = recentlyloadAddr.contains(bank.key);
+        if (!bank.recentlyAccessed &&
+            bankOccupied[bank.div][bank.bankIndex]) {
+            return true;
         }
     }
-    return now_bank_conflict;
+
+    // Occupy the banks and insert new keys to recentlyloadAddr.
+    for (const auto &bank : touched_banks) {
+        bankOccupied[bank.div][bank.bankIndex] = true;
+        if (!bank.recentlyAccessed) {
+            recentlyloadAddr.insert(bank.key, {});
+        }
+    }
+
+    return false;
 }
 
 void
