@@ -418,6 +418,15 @@ class IEW
     /** Enable selective VP flush path */
     bool enableSelectiveVPFlush;
 
+    /** Skip late VP apply when physical SQ used*denom >= cap*numer. */
+    unsigned vpThrottlePhySQNumer;
+    unsigned vpThrottlePhySQDenom;
+
+    /** Rising-edge FPC clear / over-threshold FPC hold. */
+    unsigned vpFpcClearPhySQNumer;
+    unsigned vpFpcClearPhySQDenom;
+    bool prevPhySQOverFpcClear = false;
+
   private:
     /** CPU pointer. */
     CPU *cpu;
@@ -524,6 +533,8 @@ class IEW
         statistics::Scalar iqFullEvents;
         /** Stat for number of times the LSQ becomes full. */
         statistics::Scalar lsqFullEvents;
+        /** Late VP applies skipped because the physical SQ window is full. */
+        statistics::Scalar vpPhySQFullSuppressions;
         /** Stat for total number of memory ordering violation events. */
         statistics::Scalar memOrderViolationEvents;
         /** Stat for total number of incorrect predicted taken branches. */

@@ -83,6 +83,11 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       issueToExecQueue(params.backComSize, params.forwardComSize),
       valuePred(params.valuePred),
       enableSelectiveVPFlush(params.enableSelectiveVPFlush),
+      vpThrottlePhySQNumer(params.vpThrottlePhySQNumer),
+      vpThrottlePhySQDenom(params.vpThrottlePhySQDenom),
+      vpFpcClearPhySQNumer(params.vpFpcClearPhySQNumer),
+      vpFpcClearPhySQDenom(params.vpFpcClearPhySQDenom),
+      prevPhySQOverFpcClear(false),
       cpu(_cpu),
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
@@ -181,6 +186,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of times the IQ has become full, causing a stall"),
     ADD_STAT(lsqFullEvents, statistics::units::Count::get(),
              "Number of times the LSQ has become full, causing a stall"),
+    ADD_STAT(vpPhySQFullSuppressions, statistics::units::Count::get(),
+             "Late VP applies skipped because the physical SQ window is full"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
@@ -487,6 +494,25 @@ IEW::tryLateValuePrediction(const DynInstPtr &inst)
     if (!valuePred || !inst->vpSupported || inst->vpApplied ||
         !inst->vpRecord || inst->numDestRegs() != 1) {
         return;
+    }
+
+    if (vpThrottlePhySQNumer > 0 && vpThrottlePhySQDenom > 0) {
+        const unsigned phy_used =
+            ldstQueue.physicalStoreQueueUsed(inst->threadNumber);
+        const unsigned phy_cap =
+            ldstQueue.physicalStoreQueueEntries(inst->threadNumber);
+        if (phy_cap > 0 &&
+            phy_used * vpThrottlePhySQDenom >=
+                phy_cap * vpThrottlePhySQNumer) {
+            ++iewStats.vpPhySQFullSuppressions;
+            DPRINTF(EgDiff,
+                    "[EgDiff][phy-sq-throttle] tid=%u seq=%llu pc=%#lx "
+                    "phyUsed=%u phyCap=%u thresh=%u/%u\n",
+                    inst->threadNumber, inst->seqNum, inst->getPC(),
+                    phy_used, phy_cap, vpThrottlePhySQNumer,
+                    vpThrottlePhySQDenom);
+            return;
+        }
     }
 
     valuepred::VPLatePredictRequest request;
@@ -1970,6 +1996,25 @@ IEW::tick()
 
     scheduler->tick();
     ldstQueue.tick();
+
+    if (valuePred && vpFpcClearPhySQNumer > 0 && vpFpcClearPhySQDenom > 0) {
+        bool over = false;
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            const unsigned phy_used = ldstQueue.physicalStoreQueueUsed(tid);
+            const unsigned phy_cap = ldstQueue.physicalStoreQueueEntries(tid);
+            if (phy_cap > 0 &&
+                phy_used * vpFpcClearPhySQDenom >=
+                    phy_cap * vpFpcClearPhySQNumer) {
+                over = true;
+                break;
+            }
+        }
+        if (over && !prevPhySQOverFpcClear) {
+            valuePred->onPhySQThrottleRise();
+        }
+        valuePred->setPhySQThrottleHold(over);
+        prevPhySQOverFpcClear = over;
+    }
 
     // dispatch
     moveInstsToBuffer();

@@ -995,6 +995,35 @@ def xiangshan_system_init():
         default=False,
         help="Enable the configured value predictor",
     )
+    parser.add_argument(
+        "--vp-type",
+        type=str,
+        default="vtage",
+        choices=["vtage", "egdiff"],
+        help="Value predictor used when --enable-vp is set "
+             "(default: vtage).",
+    )
+    parser.add_argument(
+        "--vp-throttle-phy-sq",
+        type=str,
+        default=None,
+        help="Skip late VP apply when physical SQ occupancy reaches N/D "
+             "(e.g. 1/2, 3/4, 1/1).",
+    )
+    parser.add_argument(
+        "--vp-throttle-phy-sq-full",
+        action="store_true",
+        default=False,
+        help="Alias for --vp-throttle-phy-sq=1/1.",
+    )
+    parser.add_argument(
+        "--vp-fpc-clear-phy-sq",
+        type=str,
+        default=None,
+        help="On a rising physical-SQ occupancy edge at N/D, clear EgDiff "
+             "table FPC and hold FPC advances while occupancy stays over "
+             "the threshold (e.g. 1/2, 3/4, 1/1).",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

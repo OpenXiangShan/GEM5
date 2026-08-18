@@ -57,6 +57,12 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
                "Probabilistic FPC forward transitions"),
       ADD_STAT(fpcHolds, statistics::units::Count::get(),
                "Matching updates that did not advance the FPC"),
+      ADD_STAT(fpcTableClears, statistics::units::Count::get(),
+               "Physical-SQ rising-edge sweeps that cleared table FPC"),
+      ADD_STAT(fpcEntriesCleared, statistics::units::Count::get(),
+               "Valid table entries whose FPC was cleared on a rising edge"),
+      ADD_STAT(fpcHoldByPhySQ, statistics::units::Count::get(),
+               "Matching updates that held FPC because physical SQ was over threshold"),
       ADD_STAT(pollingDistanceChanges, statistics::units::Count::get(),
                "Distance changes made by polling"),
       ADD_STAT(lastMispActivations, statistics::units::Count::get(),
@@ -265,9 +271,36 @@ EgDiff::advanceAgingTick()
             tickBits, decrements);
 }
 
+void
+EgDiff::onPhySQThrottleRise()
+{
+    unsigned cleared = 0;
+    for (auto &entry : table) {
+        if (entry.valid && entry.fpc != 0) {
+            entry.fpc = 0;
+            ++cleared;
+        }
+    }
+    ++egdiffStats.fpcTableClears;
+    egdiffStats.fpcEntriesCleared += cleared;
+}
+
+void
+EgDiff::setPhySQThrottleHold(bool hold)
+{
+    phySQHoldAdvance = hold;
+}
+
 bool
 EgDiff::advanceFpc(Entry &entry)
 {
+    if (phySQHoldAdvance) {
+        if (entry.fpc != MaxFpc) {
+            ++egdiffStats.fpcHoldByPhySQ;
+        }
+        return false;
+    }
+
     if (entry.fpc == MaxFpc) {
         return false;
     }

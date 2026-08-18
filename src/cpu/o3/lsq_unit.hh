@@ -402,6 +402,12 @@ class LSQUnit
     {
         return addrOrDataReadyNums > sqFullUpperLimit;
     }
+    unsigned physicalStoreQueueEntries() const { return physicalSQEntries; }
+    unsigned physicalStoreQueueUsed() const { return addrOrDataReadyNums; }
+    bool physicalStoreQueueFull() const
+    {
+        return addrOrDataReadyNums >= physicalSQEntries;
+    }
     void recordStoreBufferBlockedByCache() { ++stats.blockedByCache; }
 
     /** Completes the data access that has been returned from the

@@ -1379,16 +1379,23 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
 
         const uint64_t committedThreadInsts = thread[tid]->numInst;
 
-        if (this->nextDumpInstCount && !dump_done
+        if (this->nextDumpInstCount
                 && committedThreadInsts >= this->nextDumpInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");
             statistics::schedStatEvent(true, true, curTick(), 0);
             scheduleInstStop(tid,0,"Will trigger stat dump and reset");
-            dump_done = true;
 
-            /*if (this->repeatDumpInstCount) {
+            if (this->repeatDumpInstCount) {
                 this->nextDumpInstCount += this->repeatDumpInstCount;
-            };*/
+                const uint64_t maxInsts = params().max_insts_any_thread;
+                // Leave the final interval for the exit dump so it is not
+                // an empty block stacked on maxinsts.
+                if (maxInsts && this->nextDumpInstCount >= maxInsts) {
+                    this->nextDumpInstCount = 0;
+                }
+            } else {
+                dump_done = true;
+            }
         }
 
         // Check for instruction-count-based events.

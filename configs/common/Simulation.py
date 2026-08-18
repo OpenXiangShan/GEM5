@@ -516,6 +516,8 @@ def run(options, root, testsys, cpu_class):
         for i in range(np):
             if options.warmup_insts_no_switch != None:
                 testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
+            if getattr(options, 'repeat_dump_insts', None):
+                testsys.cpu[i].repeatDumpInstCount = options.repeat_dump_insts
 
     if options.repeat_switch:
         switch_class = getCPUClass(options.cpu_type)[0]
@@ -580,6 +582,9 @@ def run(options, root, testsys, cpu_class):
                 switch_cpus_1[i].decoder = testsys.cpu[i].decoder
                 switch_cpus[i].warmupInstCount = options.warmup_insts_no_switch
                 switch_cpus_1[i].warmupInstCount = options.warmup_insts_no_switch
+                if getattr(options, 'repeat_dump_insts', None):
+                    switch_cpus[i].repeatDumpInstCount = options.repeat_dump_insts
+                    switch_cpus_1[i].repeatDumpInstCount = options.repeat_dump_insts
                 switch_cpus[i].branchPred = testsys.cpu[i].branchPred
                 switch_cpus_1[i].branchPred = testsys.cpu[i].branchPred
 
@@ -818,6 +823,8 @@ def run_vanilla(options, root, testsys, cpu_class):
     for i in range(np):
         if options.warmup_insts_no_switch != None:
             testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
+        if getattr(options, 'repeat_dump_insts', None):
+            testsys.cpu[i].repeatDumpInstCount = options.repeat_dump_insts
 
     checkpoint_dir = None
     root.apply_config(options.param)

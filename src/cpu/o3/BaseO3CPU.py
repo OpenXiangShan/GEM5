@@ -290,6 +290,16 @@ class BaseO3CPU(BaseCPU):
     valuePred = Param.ValuePredictor(NULL, "valuepred unit")
     enableSelectiveVPFlush = Param.Bool(False,
         "Enable selective rollback for value prediction misprediction")
+    vpThrottlePhySQNumer = Param.Unsigned(0,
+        "Skip late VP apply when physical SQ used*denom >= cap*numer "
+        "(0 disables)")
+    vpThrottlePhySQDenom = Param.Unsigned(1,
+        "Denominator for physical-SQ late-VP throttle fraction")
+    vpFpcClearPhySQNumer = Param.Unsigned(0,
+        "On a rising physical-SQ occupancy edge at numer/denom, clear "
+        "EgDiff table FPC (0 disables)")
+    vpFpcClearPhySQDenom = Param.Unsigned(1,
+        "Denominator for physical-SQ FPC-clear occupancy fraction")
 
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 

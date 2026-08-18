@@ -316,6 +316,22 @@ CompositeValuePredictor::squash(ThreadID tid, const uint64_t seq_no)
     }
 }
 
+void
+CompositeValuePredictor::onPhySQThrottleRise()
+{
+    for (auto *predictor : predictors) {
+        predictor->onPhySQThrottleRise();
+    }
+}
+
+void
+CompositeValuePredictor::setPhySQThrottleHold(bool hold)
+{
+    for (auto *predictor : predictors) {
+        predictor->setPhySQThrottleHold(hold);
+    }
+}
+
 } // namespace valuepred
 
 } // namespace gem5

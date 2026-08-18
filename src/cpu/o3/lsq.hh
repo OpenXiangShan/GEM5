@@ -913,6 +913,11 @@ class LSQ
     /** Whether a store uop may update its physical SQ window. */
     bool storeQueueWriteReady(const DynInstPtr &inst) const;
 
+    /** Physical SQ window occupancy for a thread. */
+    unsigned physicalStoreQueueEntries(ThreadID tid) const;
+    unsigned physicalStoreQueueUsed(ThreadID tid) const;
+    bool physicalStoreQueueFull(ThreadID tid) const;
+
     /** Record the first address/data-ready transition for an SQ entry. */
     void recordAddrOrDataReady(const DynInstPtr &inst);
 

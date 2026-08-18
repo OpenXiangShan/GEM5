@@ -353,6 +353,10 @@ def addCommonOptions(parser, configure_xiangshan=False):
         default=20*10**6,
         help="Warmup period in total instructions, reset stats without switch")
 
+    parser.add_argument("--repeat-dump-insts", action="store", type=int,
+        default=0,
+        help="Dump and reset stats every N committed instructions after warmup")
+
     parser.add_argument(
         "--stats-root", action="append", default=[],
         help="If given, dump only stats of objects under the given SimObject. "

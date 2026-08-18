@@ -83,16 +83,42 @@ def setKmhV3IdealParams(args, system):
 
         # value predictor
         if args.enable_vp:
+            vp_type = getattr(args, "vp_type", "vtage")
+            if vp_type == "egdiff":
+                predictors = [EgDiff()]
+            elif vp_type == "vtage":
+                predictors = [VTAGE()]
+            else:
+                fatal("unsupported --vp-type: %s" % vp_type)
             cpu.valuePred = CompositeValuePredictor(
-                                predictors=[
-                                    # IdealConstantLVP(),
-                                    VTAGE(),
-                                    # EgDiff(),
-                                    # EStride(logMaxConfidence=13, thresholdPercent=0.35),
-
-                                ],
+                                predictors=predictors,
                                 arb=CVPFixedPriorityArb()
                             )
+            frac = getattr(args, "vp_throttle_phy_sq", None)
+            if getattr(args, "vp_throttle_phy_sq_full", False) and not frac:
+                frac = "1/1"
+            if frac:
+                parts = str(frac).split("/")
+                if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+                    fatal("invalid --vp-throttle-phy-sq: %s (expected N/D)" % frac)
+                numer = int(parts[0])
+                denom = int(parts[1])
+                if numer <= 0 or denom <= 0 or numer > denom:
+                    fatal("invalid --vp-throttle-phy-sq: %s" % frac)
+                cpu.vpThrottlePhySQNumer = numer
+                cpu.vpThrottlePhySQDenom = denom
+            clear_frac = getattr(args, "vp_fpc_clear_phy_sq", None)
+            if clear_frac:
+                parts = str(clear_frac).split("/")
+                if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+                    fatal("invalid --vp-fpc-clear-phy-sq: %s (expected N/D)" %
+                          clear_frac)
+                numer = int(parts[0])
+                denom = int(parts[1])
+                if numer <= 0 or denom <= 0 or numer > denom:
+                    fatal("invalid --vp-fpc-clear-phy-sq: %s" % clear_frac)
+                cpu.vpFpcClearPhySQNumer = numer
+                cpu.vpFpcClearPhySQDenom = denom
 
         # lsq
         cpu.LQEntries = 120

@@ -1295,6 +1295,24 @@ LSQ::storeQueueWriteReady(const DynInstPtr &inst) const
     return thread[inst->threadNumber].storeQueueWriteReady(inst);
 }
 
+unsigned
+LSQ::physicalStoreQueueEntries(ThreadID tid) const
+{
+    return thread[tid].physicalStoreQueueEntries();
+}
+
+unsigned
+LSQ::physicalStoreQueueUsed(ThreadID tid) const
+{
+    return thread[tid].physicalStoreQueueUsed();
+}
+
+bool
+LSQ::physicalStoreQueueFull(ThreadID tid) const
+{
+    return thread[tid].physicalStoreQueueFull();
+}
+
 void
 LSQ::recordAddrOrDataReady(const DynInstPtr &inst)
 {
