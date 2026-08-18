@@ -285,10 +285,9 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    // 1. Request new prediction if FSQ not full and we are idle.
-    // If UDP marks off-path, stall branch prediction.
-    if (!threads[curTid].validprediction && !ftqFull(curTid) &&
-        !prefetchFilteredByUDP(curTid)) {
+    // 1. Request new prediction if FSQ not full and we are idle. UDP only
+    // filters instruction prefetch requests; demand fetch still needs targets.
+    if (!threads[curTid].validprediction && !ftqFull(curTid)) {
         if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
@@ -317,7 +316,7 @@ bool
 DecoupledBPUWithBTB::prefetchFilteredByUDP(ThreadID tid) const
 {
     if (enableUdp) {
-        // if confidence < 0, consider BP as off-path, stop prefetching
+        // If confidence < 0, treat the prefetch candidate as off-path.
         return threads[tid].udpConfidence < 0;
     } else {
         return false;
