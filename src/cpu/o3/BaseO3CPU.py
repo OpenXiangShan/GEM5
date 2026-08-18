@@ -183,8 +183,8 @@ class BaseO3CPU(BaseCPU):
     phySQFullCheckAtReplay = Param.Bool(True,
         "Wait for physical store queue space before starting a full-SQ replay")
 
-    LdPipeStages = Param.Unsigned(4, "Number of load pipeline stages")
-    StPipeStages = Param.Unsigned(5, "Number of store pipeline stages")
+    LdPipeStages = Param.Unsigned(4, "Number of stages in the load pipeline")
+    StPipeStages = Param.Unsigned(5, "Number of stages in the store pipeline")
 
     RARQEntries = Param.Unsigned(72, "Number of RAR queue entries")
     RAWQEntries = Param.Unsigned(32, "Number of RAW queue entries")

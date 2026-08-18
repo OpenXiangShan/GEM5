@@ -210,17 +210,6 @@ IssueQue::IssueQue(const IssueQueParams& params)
     panic_if(vectorSplitUnits == 0,
              "%s: vectorSplitUnits must be greater than 0\n", iqname);
 
-    // TODO: keep this in sync with the current load IQ naming convention.
-    // This should become an explicit IssueQue parameter when the config grows
-    // more load pipes or renames the queues.
-    if (iqname == "ld0" || iqname == "load0") {
-        loadPipeId = 0;
-    } else if (iqname == "ld1" || iqname == "load1") {
-        loadPipeId = 1;
-    } else if (iqname == "ld2" || iqname == "load2") {
-        loadPipeId = 2;
-    }
-
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
     if (outports > 8) {
@@ -1340,10 +1329,47 @@ Scheduler::Scheduler(const SchedulerParams& params)
     std::vector<int> wrRfportChecker(MAXVAL_TYPEPORTID, 0);
     int maxRdTypePortId = 0;
     int maxWrTypePortId = 0;
+    int nextLoadPipeId = 0;
     for (int i = 0; i < issueQues.size(); i++) {
         issueQues[i]->setIQID(i);
         issueQues[i]->scheduler = this;
         combinedFus += issueQues[i]->outports;
+
+        unsigned iq_load_ports = 0;
+        unsigned iq_store_ports = 0;
+        for (const auto& opbits : issueQues[i]->portFuDescs) {
+            bool is_load = false;
+            bool is_store = opbits.test(StoreDataOp);
+            for (int op = static_cast<int>(MemReadOp);
+                 op <= static_cast<int>(VectorWholeRegisterLoadOp); ++op) {
+                if (opbits.test(op)) {
+                    is_load = true;
+                    break;
+                }
+            }
+            for (int op = static_cast<int>(MemWriteOp);
+                 op <= static_cast<int>(VectorWholeRegisterStoreOp); ++op) {
+                if (opbits.test(op)) {
+                    is_store = true;
+                    break;
+                }
+            }
+            if (is_load) {
+                ++iq_load_ports;
+            }
+            if (is_store) {
+                ++iq_store_ports;
+            }
+        }
+        panic_if(iq_load_ports != static_cast<unsigned>(issueQues[i]->numLoadPipe),
+                 "%s: derived load ports (%u) != IssueQue load pipes (%d)\n",
+                 issueQues[i]->getName(), iq_load_ports,
+                 issueQues[i]->numLoadPipe);
+        if (iq_load_ports > 0) {
+            issueQues[i]->loadPipeId = nextLoadPipeId++;
+        }
+        loadPipeCount += iq_load_ports;
+        storePipeCount += iq_store_ports;
         panic_if(issueQues[i]->fuDescs.size() == 0, "Empty config IssueQue: " + issueQues[i]->getName());
         for (auto fu : issueQues[i]->fuDescs) {
             for (auto op : fu->opDescList) {
@@ -1376,6 +1402,8 @@ Scheduler::Scheduler(const SchedulerParams& params)
             }
         }
     }
+    DPRINTF(Schedule, "Derived LSQ pipes from scheduler: load=%u store=%u\n",
+            loadPipeCount, storePipeCount);
     maxRdTypePortId += 1;
     maxWrTypePortId += 1;
     assert(maxRdTypePortId <= MAXVAL_TYPEPORTID);

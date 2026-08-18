@@ -422,7 +422,9 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
     uint32_t physicalSqEntries,
     uint32_t ldPipeStages, uint32_t stPipeStages,
     uint32_t maxRARQEntries, uint32_t maxRAWQEntries, unsigned rarDequeuePerCycle,
-    unsigned rawDequeuePerCycle, unsigned loadCompletionWidth, unsigned storeCompletionWidth)
+    unsigned rawDequeuePerCycle, unsigned loadCompletionWidth,
+    unsigned storeCompletionWidth, unsigned loadPipeCount,
+    unsigned storePipeCount)
     : numSBufferRequest(0),
       numSingleRequest(0),
       numSplitRequest(0),
@@ -433,6 +435,8 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
       loadCompletedIdx(loadQueue.head() - 1),
       // Use head-1 as a sentinel: no completed entry yet; advance must verify head.
       storeCompletedIdx(storeQueue.head() - 1),
+      loadPipeCount(loadPipeCount),
+      storePipeCount(storePipeCount),
       loadPipe(ldPipeStages - 1, 0),
       storePipe(stPipeStages - 1, 0),
       physicalSQEntries(physicalSqEntries),
@@ -454,8 +458,14 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
       rawDequeuePerCycle(rawDequeuePerCycle),
       loadCompletionWidth(loadCompletionWidth),
       storeCompletionWidth(storeCompletionWidth),
-      stats(nullptr)
+      stats(nullptr, loadPipeCount ? loadPipeCount : 1,
+            storePipeCount ? storePipeCount : 1)
 {
+    fatal_if(loadPipeCount == 0,
+             "Scheduler must provide at least one load pipe\n");
+    fatal_if(storePipeCount == 0,
+             "Scheduler must provide at least one store pipe\n");
+
     // reserve space, we want if sq will be full, sbuffer will start evicting
     sqFullUpperLimit = sqEntries - 4;
 
@@ -577,7 +587,9 @@ LSQUnit::name() const
     }
 }
 
-LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
+LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent,
+                                    unsigned loadPipeCount,
+                                    unsigned storePipeCount)
     : statistics::Group(parent),
       ADD_STAT(forwLoads, statistics::units::Count::get(),
                "Number of loads that had data forwarded from stores"),
@@ -688,32 +700,28 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     RAWQueueLatency
         .init(0, 500, 20)
         .flags(statistics::nozero);
-    // TODO: load-pipe PMU vectors currently assume exactly three load pipes.
-    // Extend the vector sizing and IssueQue loadPipeId mapping together if the
-    // model grows more load pipes; the replay pipe counters below share this
-    // same assumption.
     loadPipeAccepted
-        .init(3)
+        .init(loadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < loadPipeCount; i++) {
         loadPipeAccepted.subname(i, csprintf("pipe%d", i));
     }
     storePipeAccepted
-        .init(MaxPipeWidth)
+        .init(storePipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < MaxPipeWidth; i++) {
+    for (unsigned i = 0; i < storePipeCount; i++) {
         storePipeAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadPipeReplayAccepted
-        .init(3)
+        .init(loadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < loadPipeCount; i++) {
         loadPipeReplayAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadPipeFastReplayAccepted
-        .init(3)
+        .init(loadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < loadPipeCount; i++) {
         loadPipeFastReplayAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadReplayEvents
@@ -1339,31 +1347,35 @@ LSQUnit::storeSetReplay(const DynInstPtr& inst, LSQRequest* request)
 void
 LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
-    // S0 is the single load-pipe entry point. First issues, slow replays, and
+    // S0 is shared by all load issue sources. First issues, slow replays, and
     // fast replays all enter here; LoadPipeSource records which path fed the
     // pipe for RTL-aligned stats.
-    assert(loadPipeSx[0]->size < MaxPipeWidth);
+    panic_if(loadPipeSx[0]->size >= loadPipeCount,
+             "load pipe S0 exceeds configured pipe count (%u)\n",
+             loadPipeCount);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
     inst->setSkipRawCheck();
 
-    int idx = loadPipeSx[0]->size;
-    loadPipeSx[0]->insts[idx] = inst;
-    loadPipeSx[0]->size++;
+    loadPipeSx[0]->insts.push_back(inst);
+    loadPipeSx[0]->size = static_cast<int>(loadPipeSx[0]->insts.size());
     // Order S0 by age so older loads have higher priority when S1 performs
     // the bank-conflict check.
     std::stable_sort(
-        loadPipeSx[0]->insts,
-        loadPipeSx[0]->insts + loadPipeSx[0]->size,
+        loadPipeSx[0]->insts.begin(),
+        loadPipeSx[0]->insts.end(),
         [](const DynInstPtr &lhs, const DynInstPtr &rhs) {
             return lhs->seqNum < rhs->seqNum;
         });
 
     const int load_pipe_id = inst->issueQue->getLoadPipeId();
-    panic_if(load_pipe_id < 0,
-        "Per-load-pipe PMU stats require dedicated load IQ naming; "
-        "unsupported issue queue %s for load [sn:%llu]\n",
-        inst->issueQue->getName().c_str(), inst->seqNum);
+    panic_if(load_pipe_id < 0 ||
+                 static_cast<unsigned>(load_pipe_id) >= loadPipeCount,
+        "Per-load-pipe PMU stats require a scheduler-assigned load pipe ID; "
+        "unsupported or out-of-range issue queue %s for load [sn:%llu] "
+        "(id=%d, count=%u)\n",
+        inst->issueQue->getName().c_str(), inst->seqNum, load_pipe_id,
+        loadPipeCount);
     stats.loadPipeAccepted[load_pipe_id]++;
     const auto load_pipe_source = inst->getLoadPipeSource();
     if (load_pipe_source == DynInst::LoadPipeSource::ReplayQueue) {
@@ -1378,14 +1390,16 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 void
 LSQUnit::issueToStorePipe(const DynInstPtr &inst)
 {
-    // push to storePipeS0
-    assert(storePipeSx[0]->size < MaxPipeWidth);
+    // S0 is shared by all store issue sources in the current cycle.
+    panic_if(storePipeSx[0]->size >= storePipeCount,
+             "store pipe S0 exceeds scheduler-derived pipe count (%u)\n",
+             storePipeCount);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
 
-    int idx = storePipeSx[0]->size;
-    storePipeSx[0]->insts[idx] = inst;
-    storePipeSx[0]->size++;
+    const int idx = storePipeSx[0]->size;
+    storePipeSx[0]->insts.push_back(inst);
+    storePipeSx[0]->size = static_cast<int>(storePipeSx[0]->insts.size());
     stats.storePipeAccepted[idx]++;
 
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);

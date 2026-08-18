@@ -334,6 +334,10 @@ class Scheduler : public SimObject
     bool old_disp = false;
     const int intRegfileBanks;
 
+    /** Load/store pipe counts derived from scheduler issue ports. */
+    unsigned loadPipeCount = 0;
+    unsigned storePipeCount = 0;
+
     struct SchedulerStats : public statistics::Group
     {
         SchedulerStats(statistics::Group* parent);
@@ -394,6 +398,8 @@ class Scheduler : public SimObject
     PendingWakeEventsType specWakeEvents;
 
     Scheduler(const SchedulerParams& params);
+    unsigned getLoadPipeCount() const { return loadPipeCount; }
+    unsigned getStorePipeCount() const { return storePipeCount; }
     void setCPU(CPU* cpu, LSQ* lsq);
     void resetDepGraph(uint64_t numPhysRegs);
     void setAllScoreBoard(PhysRegIdPtr reg);
