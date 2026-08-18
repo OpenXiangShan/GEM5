@@ -53,6 +53,10 @@ class PHAST
                 const std::pair<unsigned, unsigned> &store_sizes,
                 unsigned path_index, uint64_t predictor_hash);
 
+    /** Lower confidence after a predicted SQ distance has no producer. */
+    void invalidSQDistance(Addr load_pc, unsigned path_index,
+                           uint64_t predictor_hash);
+
     void squash(InstSeqNum, ThreadID) {}
     void issued(Addr, InstSeqNum, bool) {}
     void insertStore(Addr, InstSeqNum, ThreadID) {}

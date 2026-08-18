@@ -140,6 +140,8 @@ MemDepUnit::MemDepUnitStats::MemDepUnitStats(statistics::Group *parent)
                "Number of PHAST hits that mapped to an in-flight store."),
       ADD_STAT(phastDropInvalidSQDistance, statistics::units::Count::get(),
                "Number of PHAST hits dropped because the target store could not be located."),
+      ADD_STAT(phastInvalidSQDistanceFeedback, statistics::units::Count::get(),
+               "Number of PHAST confidence updates after an SQ distance mapping failure."),
       ADD_STAT(phastViolationUpdates, statistics::units::Count::get(),
                "Number of PHAST violation-driven updates."),
       ADD_STAT(phastCommitUpdates, statistics::units::Count::get(),
@@ -245,28 +247,37 @@ MemDepUnit::insert(const DynInstPtr &inst, const BranchHistory &branchHistory)
     bool mdp_pred = false;
     bool strict_wait = false;
     bool phast_table_hit = false;
+    bool phast_sq_mapping_failed = false;
     PHASTPredictionResult phast_pred;
 
+    auto markPHASTMappingFailure = [&]() {
+        phast_sq_mapping_failed = true;
+        return false;
+    };
+
     auto mapDistanceToStore = [&](std::ptrdiff_t distance) {
-        if (distance < 0 || inst->sqIt._cq == nullptr) {
+        if (distance < 0) {
             return false;
+        }
+        if (inst->sqIt._cq == nullptr) {
+            return markPHASTMappingFailure();
         }
 
         const auto offset = static_cast<std::ptrdiff_t>(distance + 1);
         if (inst->sqIt.idx() < inst->sqIt._cq->head() +
                                    static_cast<size_t>(offset)) {
-            return false;
+            return markPHASTMappingFailure();
         }
 
         auto sq_it = inst->sqIt - offset;
         if (!sq_it.dereferenceable() || !sq_it->valid() ||
             !sq_it->instruction()) {
-            return false;
+            return markPHASTMappingFailure();
         }
 
         const auto &store_inst = sq_it->instruction();
         if (store_inst->seqNum >= inst->seqNum) {
-            return false;
+            return markPHASTMappingFailure();
         }
 
         if (std::find(producing_stores.begin(), producing_stores.end(),
@@ -337,6 +348,14 @@ MemDepUnit::insert(const DynInstPtr &inst, const BranchHistory &branchHistory)
             store_entries.push_back((*hash_it).second);
             DPRINTF(MemDepUnit, "Producer found\n");
         }
+    }
+
+    if (enablePHASTMDP && phast_table_hit &&
+        (phast_sq_mapping_failed || store_entries.empty())) {
+        phastPred.invalidSQDistance(inst->pcState().instAddr(),
+                                    phast_pred.predBranchHistLength,
+                                    phast_pred.predictorHash);
+        ++stats.phastInvalidSQDistanceFeedback;
     }
 
     const bool concrete_prediction = inst->isLoad() && mdp_pred &&
