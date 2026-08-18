@@ -313,6 +313,9 @@ class MemDepUnit
         /** PHAST hits dropped because the target store could not be located. */
         statistics::Scalar phastDropInvalidSQDistance;
 
+        /** PHAST confidence updates after a distance-to-store mapping failure. */
+        statistics::Scalar phastInvalidSQDistanceFeedback;
+
         /** PHAST updates from committed memory-order violations. */
         statistics::Scalar phastViolationUpdates;
 

@@ -230,6 +230,17 @@ PHAST::commit(Addr load_pc, Addr load_addr, unsigned load_size,
     paths[path_index].updateCommit(load_pc, predictor_hash, misprediction);
 }
 
+void
+PHAST::invalidSQDistance(Addr load_pc, unsigned path_index,
+                         uint64_t predictor_hash)
+{
+    if (path_index >= paths.size()) {
+        return;
+    }
+
+    paths[path_index].updateCommit(load_pc, predictor_hash, true);
+}
+
 int
 PHAST::SimplBlockCache::init(uint32_t set_bits, uint32_t _associativity,
                             uint32_t tag_bits, uint32_t max_counter_value,
