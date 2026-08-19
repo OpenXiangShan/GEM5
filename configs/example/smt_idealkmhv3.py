@@ -40,11 +40,14 @@ def setDualFrontendProbeParams(system):
         cpu.smtNumFetchTargetThreads = 2
         cpu.icache.tag_load_read_ports = 4
 
-        # Keep the first probe on the S3 plus resolve/commit training path.
-        # AheadBTB and MicroTAGE multi-request behavior is left for follow-up.
+        # Keep early-predictor training on the existing resolve/commit path.
+        # Their per-thread ahead state is preserved while the shared tables
+        # are treated as ideal dual-read resources for this upper-bound probe.
         cpu.branchPred.ubtb.usingS3Pred = False
-        cpu.branchPred.abtb.enabled = False
-        cpu.branchPred.microtage.enabled = False
+        cpu.branchPred.abtb.enabled = True
+        cpu.branchPred.abtb.usingS3Pred = False
+        cpu.branchPred.microtage.enabled = True
+        cpu.branchPred.microtage.usingS3Pred = False
 
 
 if __name__ == '__m5_main__':
