@@ -932,6 +932,10 @@ class Base : public ClockedObject
     {
         StatGroup(statistics::Group *parent);
         statistics::Scalar demandMshrMisses;
+        /** Prefetches dequeued from this prefetcher's local queue. */
+        statistics::Scalar pfDequeued;
+        statistics::Vector pfDequeued_srcs;
+        /** Prefetches that reached this prefetcher's cache issue boundary. */
         statistics::Scalar pfIssued;
         statistics::Vector pfIssued_srcs;
 
@@ -984,12 +988,19 @@ class Base : public ClockedObject
         statistics::Formula pfLate;
     } prefetchStats;
 
-    /** Total prefetches issued */
+    /** Total local prefetch dequeues used for runtime feedback. */
     uint64_t issuedPrefetches;
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
     uint64_t streamlatenum;
+
+    /**
+     * A forwarder owns the cache-side issue boundary for this prefetcher.
+     * This is set by PrefetcherForwarder::setRealPrefetcher(), rather than
+     * by a user-visible configuration parameter.
+     */
+    bool issueStatsAtForwarder{false};
 
     /** Registered tlb for address translations */
     BaseTLB * tlb;
@@ -1034,18 +1045,30 @@ class Base : public ClockedObject
         return pkt && pkt->req && pkt->req->requestorId() == requestorId;
     }
 
-    virtual void recordIssuedPrefetch(PrefetchSourceType source)
+    void
+    setIssueStatsAtForwarder()
+    {
+        issueStatsAtForwarder = true;
+    }
+
+    bool
+    issueStatsAreAtForwarder() const
+    {
+        return issueStatsAtForwarder;
+    }
+
+    virtual void recordPrefetchDequeued(PrefetchSourceType source)
     {
         const int source_idx = int(source);
         if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
             source = PrefetchSourceType::PF_NONE;
         }
-        prefetchStats.pfIssued++;
-        prefetchStats.pfIssued_srcs[source]++;
+        prefetchStats.pfDequeued++;
+        prefetchStats.pfDequeued_srcs[source]++;
         issuedPrefetches += 1;
     }
 
-    virtual void recordIssuedPrefetch(const PacketPtr &pkt)
+    virtual void recordPrefetchDequeued(const PacketPtr &pkt)
     {
         PrefetchSourceType source = PrefetchSourceType::PF_NONE;
         if (pkt && pkt->req) {
@@ -1055,7 +1078,42 @@ class Base : public ClockedObject
                 source = pkt->getPFSource();
             }
         }
-        recordIssuedPrefetch(source);
+        recordPrefetchDequeued(source);
+    }
+
+    virtual void recordIssuedPrefetchStats(PrefetchSourceType source)
+    {
+        const int source_idx = int(source);
+        if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
+            source = PrefetchSourceType::PF_NONE;
+        }
+        prefetchStats.pfIssued++;
+        prefetchStats.pfIssued_srcs[source]++;
+    }
+
+    virtual void recordIssuedPrefetchStats(const PacketPtr &pkt)
+    {
+        PrefetchSourceType source = PrefetchSourceType::PF_NONE;
+        if (pkt && pkt->req) {
+            if (pkt->req->hasXsMetadata()) {
+                source = pkt->req->getXsMetadata().prefetchSource;
+            } else {
+                source = pkt->getPFSource();
+            }
+        }
+        recordIssuedPrefetchStats(source);
+    }
+
+    virtual void recordIssuedPrefetch(PrefetchSourceType source)
+    {
+        recordPrefetchDequeued(source);
+        recordIssuedPrefetchStats(source);
+    }
+
+    virtual void recordIssuedPrefetch(const PacketPtr &pkt)
+    {
+        recordPrefetchDequeued(pkt);
+        recordIssuedPrefetchStats(pkt);
     }
 
     virtual void

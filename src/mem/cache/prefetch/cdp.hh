@@ -456,9 +456,9 @@ class CDP : public Queued
     float getCdpTrueAccuracy() const
     {
         float trueAccuracy = 1;
-        if (prefetchStatsPtr->pfIssued_srcs[PrefetchSourceType::CDP].value() > 100) {
+        if (prefetchStatsPtr->pfDequeued_srcs[PrefetchSourceType::CDP].value() > 100) {
             trueAccuracy = (prefetchStatsPtr->pfUseful_srcs[PrefetchSourceType::CDP].value() * 1.0) /
-                            (prefetchStatsPtr->pfIssued_srcs[PrefetchSourceType::CDP].value());
+                            (prefetchStatsPtr->pfDequeued_srcs[PrefetchSourceType::CDP].value());
         }
         return trueAccuracy;
     }
