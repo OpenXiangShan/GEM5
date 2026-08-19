@@ -50,6 +50,28 @@ def setDualFrontendProbeParams(system):
         cpu.branchPred.microtage.usingS3Pred = False
 
 
+def setTidPartitionedPredictorParams(system):
+    for cpu in system.cpu:
+        # RTL-oriented capacity model: large predictor tables are split into
+        # two disjoint tid-owned halves. Prediction remains ideal dual-ported,
+        # and resolve/commit training keeps the existing timing model.
+        for predictor in (
+            cpu.branchPred.abtb,
+            cpu.branchPred.microtage,
+            cpu.branchPred.mbtb,
+            cpu.branchPred.tage,
+            cpu.branchPred.ittage,
+            cpu.branchPred.mgsc,
+        ):
+            predictor.smtTidPartitioned = True
+
+        # The RTL implementation can afford to duplicate the small uBTB.
+        # Double the physical model before splitting it so each thread keeps
+        # the original 32-entry capacity.
+        cpu.branchPred.ubtb.numEntries = 64
+        cpu.branchPred.ubtb.smtTidPartitioned = True
+
+
 if __name__ == '__m5_main__':
     FutureClass = None
 
@@ -76,6 +98,7 @@ if __name__ == '__m5_main__':
     test_sys = build_xiangshan_system(args)
     setSharedLSQParams(args, test_sys)
     setDualFrontendProbeParams(test_sys)
+    setTidPartitionedPredictorParams(test_sys)
 
     root = Root(full_system=True, system=test_sys)
 
