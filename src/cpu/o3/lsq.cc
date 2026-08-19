@@ -452,6 +452,10 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Cycles that use all configured LSQ load ports"),
       ADD_STAT(cacheStorePortFullCycles, statistics::units::Cycle::get(),
                "Cycles that use all configured LSQ store ports"),
+      ADD_STAT(dcacheArbTurnByThread, statistics::units::Count::get(),
+               "Dcache arbitration priority turns received by each SMT thread"),
+      ADD_STAT(dcacheArbContentionCycles, statistics::units::Cycle::get(),
+               "Cycles with simultaneous Dcache candidates from SMT threads"),
       ADD_STAT(dcacheReqAttemptsByThread, statistics::units::Count::get(),
                "Dcache send attempts by thread"),
       ADD_STAT(dcacheReqGrantsByThread, statistics::units::Count::get(),
@@ -533,6 +537,7 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
     dcacheReqGateBlockedByThread.init(num_threads);
     dcacheReqPortQuotaBlockedByThread.init(num_threads);
     dcacheReqBankConflictByThread.init(num_threads);
+    dcacheArbTurnByThread.init(num_threads);
     dcacheSoftTagReadFailByThread.init(num_threads);
     dcacheSoftMshrArbFailByThread.init(num_threads);
     dcacheSoftMshrAliasFailByThread.init(num_threads);
@@ -575,6 +580,7 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
         dcacheReqGateBlockedByThread.subname(tid, thread_name);
         dcacheReqPortQuotaBlockedByThread.subname(tid, thread_name);
         dcacheReqBankConflictByThread.subname(tid, thread_name);
+        dcacheArbTurnByThread.subname(tid, thread_name);
         dcacheSoftTagReadFailByThread.subname(tid, thread_name);
         dcacheSoftMshrArbFailByThread.subname(tid, thread_name);
         dcacheSoftMshrAliasFailByThread.subname(tid, thread_name);
@@ -801,6 +807,7 @@ void
 LSQ::takeOverFrom()
 {
     usedStorePorts = 0;
+    nextDcacheArbTid = 0;
     clearDcacheBlocked();
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -829,6 +836,14 @@ LSQ::tick()
 
     usedLoadPorts = 0;
     usedStorePorts = 0;
+
+    if (!activeThreads->empty()) {
+        auto it = std::find(activeThreads->begin(), activeThreads->end(),
+                            nextDcacheArbTid);
+        if (it == activeThreads->end()) {
+            nextDcacheArbTid = activeThreads->front();
+        }
+    }
     // tick lsq_unit
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -1573,14 +1588,55 @@ LSQ::recordStoreQueueReplay(const DynInstPtr &inst)
 void
 LSQ::executePipeSx()
 {
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
-        thread[tid].executePipeSx();
+    if (activeThreads->empty()) {
+        return;
     }
+
+    unsigned load_candidates = 0;
+    for (ThreadID tid : *activeThreads) {
+        if (thread[tid].hasDcacheLoadCandidate()) {
+            ++load_candidates;
+        }
+    }
+
+    // Keep the normal LSQ pipeline order unless both SMT threads can reach
+    // D-cache admission this cycle. The rotating order is only needed when
+    // the shared load-port arbiter has a real contention to resolve.
+    const bool dcache_contention = load_candidates > 1;
+    if (dcache_contention) {
+        ++stats.dcacheArbContentionCycles;
+    }
+
+    if (!dcache_contention) {
+        for (ThreadID tid : *activeThreads) {
+            thread[tid].executePipeSx();
+        }
+        return;
+    }
+
+    auto start = std::find(activeThreads->begin(), activeThreads->end(),
+                           nextDcacheArbTid);
+    if (start == activeThreads->end()) {
+        start = activeThreads->begin();
+    }
+
+    auto it = start;
+    ++stats.dcacheArbTurnByThread[*start];
+    do {
+        const ThreadID tid = *it;
+        thread[tid].executePipeSx();
+        ++it;
+        if (it == activeThreads->end()) {
+            it = activeThreads->begin();
+        }
+    } while (it != start);
+
+    // The next cycle starts after the thread that had first arbitration turn.
+    ++start;
+    if (start == activeThreads->end()) {
+        start = activeThreads->begin();
+    }
+    nextDcacheArbTid = *start;
 }
 
 Fault
@@ -1610,11 +1666,29 @@ LSQ::processWriteback()
     // before sbuffer sendpackets
     clearAddresses();
 
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-    while (threads != end) {
-        ThreadID tid = *threads++;
-        thread[tid].writebackBlockedStore(); // amo
+    unsigned blocked_store_threads = 0;
+    for (ThreadID tid : *activeThreads) {
+        blocked_store_threads += thread[tid].hasBlockedStore();
+    }
+
+    if (blocked_store_threads > 1) {
+        auto start = std::find(activeThreads->begin(), activeThreads->end(),
+                               nextDcacheArbTid);
+        if (start == activeThreads->end()) {
+            start = activeThreads->begin();
+        }
+        auto threads = start;
+        do {
+            thread[*threads].writebackBlockedStore(); // amo
+            ++threads;
+            if (threads == activeThreads->end()) {
+                threads = activeThreads->begin();
+            }
+        } while (threads != start);
+    } else {
+        for (ThreadID tid : *activeThreads) {
+            thread[tid].writebackBlockedStore(); // amo
+        }
     }
 
     storeBufferWriteback();

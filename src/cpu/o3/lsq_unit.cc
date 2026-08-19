@@ -866,6 +866,32 @@ LSQUnit::currentLoadRequest(const DynInstPtr &inst)
                                       : nullptr;
 }
 
+bool
+LSQUnit::hasDcacheLoadCandidate()
+{
+    if (loadPipeSx.size() <= 1) {
+        return false;
+    }
+
+    const auto &stage = loadPipeSx[1];
+    for (int i = 0; i < stage->size; ++i) {
+        const auto &inst = stage->insts[i];
+        if (!inst || inst->isSquashed() || inst->needReplay() ||
+            inst->replayOrSkipFollowingPipe() || inst->lqIdx < 0) {
+            continue;
+        }
+
+        auto *request = loadQueue[inst->lqIdx].request();
+        if (request && request->isTranslationComplete() &&
+            request->isMemAccessRequired() && inst->readPredicate() &&
+            inst->readMemAccPredicate() && !inst->hasPendingCacheReq()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 LSQUnit::LSQRequest *
 LSQUnit::currentStoreRequest(const DynInstPtr &inst)
 {
@@ -3168,10 +3194,7 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool ret = true;
     bool cache_got_blocked = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
-    if (isLoad) {
-        bank_conflict = lsq->loadBankConflictedCheck(
-            data_pkt->req->getVaddr(), data_pkt->req->getSize());
-    }
+    bank_conflict = false;
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
     data_pkt->sendTick = curTick();
@@ -3225,6 +3248,13 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool port_attempted = false;
 
     if (!cache_gate_blocked && !port_quota_blocked) {
+        // Reserve banks only after this request has won the per-cycle port
+        // admission. Requests rejected by the port quota must not create a
+        // bank conflict for another SMT thread in the same cycle.
+        if (isLoad) {
+            bank_conflict = lsq->loadBankConflictedCheck(
+                data_pkt->req->getVaddr(), data_pkt->req->getSize());
+        }
         if (bank_conflict) {
             ++stats.bankConflictTimes;
             if (!isLoad) {

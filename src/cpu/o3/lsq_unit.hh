@@ -518,6 +518,9 @@ class LSQUnit
         return t;
     }
 
+    /** Whether the current load S1 stage may issue a D-cache request. */
+    bool hasDcacheLoadCandidate();
+
     /** Returns whether this LSQ unit is waiting for a blocked store retry. */
     bool hasBlockedStore() const { return isStoreBlocked; }
 

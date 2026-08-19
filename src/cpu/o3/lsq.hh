@@ -1479,6 +1479,8 @@ class LSQ
     std::deque<StoreBufferEntry *> sbufferMainPipeReplayQ;
     ThreadID nextStoreBufferOffloadTid = InvalidThreadID;
     ThreadID nextStoreBufferInsertTid  = 0;
+    /** First SMT LSQ unit visited by the per-cycle D-cache arbiter. */
+    ThreadID nextDcacheArbTid = 0;
 
     bool enableBankConflictCheck;
     bool sbufferBankWriteAccurately;
@@ -1544,6 +1546,8 @@ class LSQ
         statistics::Vector dcacheSoftWriteBufferFailByThread;
         statistics::Scalar cacheLoadPortFullCycles;
         statistics::Scalar cacheStorePortFullCycles;
+        statistics::Vector dcacheArbTurnByThread;
+        statistics::Scalar dcacheArbContentionCycles;
         statistics::Vector dcacheReqAttemptsByThread;
         statistics::Vector dcacheReqGrantsByThread;
         statistics::Vector dcacheReqSendFailsByThread;
