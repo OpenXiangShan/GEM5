@@ -2017,11 +2017,21 @@ Fetch::getEligibleFetchTargetTid(
     eligible.fill(true);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         eligible[tid] = !redirectPending[tid] && !excluded[tid];
+        if (fetchStatus[tid] == Idle || fetchStatus[tid] == Blocked ||
+            fetchStatus[tid] == TrapPending ||
+            fetchStatus[tid] == WaitingCache) {
+            eligible[tid] = false;
+        }
     }
 
     unsigned skipped = 0;
-    ThreadID tid = dbpbtb->getTargetTid(
-        eligible, record_redirect_skips ? &skipped : nullptr);
+    std::array<unsigned, MaxThreads> fetch_queue_sizes;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        fetch_queue_sizes[tid] = fetchQueue[tid].size();
+    }
+    ThreadID tid = dbpbtb->getTargetTidByFetchQueueSize(
+        eligible, record_redirect_skips ? &skipped : nullptr,
+        fetch_queue_sizes);
     if (record_redirect_skips && skipped) {
         fetchStats.redirectPendingFetchSkips += skipped;
         DPRINTF(Fetch, "Skipped %u FTQ heads while backend redirect is pending\n",
