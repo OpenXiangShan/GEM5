@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_TAGE_HH__
 #define __CPU_PRED_BTB_TAGE_HH__
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -195,10 +196,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
                     CondTakens& results, ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
-    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0) const;
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
+                      ThreadID tid = 0) const;
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0) const;
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist,
+                      uint8_t asidHash = 0, ThreadID tid = 0) const;
 
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
@@ -283,6 +286,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
     int usefulResetCnt{0};
+    std::array<int, MaxThreads> usefulResetCntByThread{};
 
     // Check if a tag matches
     bool matchTag(Addr expected, Addr found) const;
@@ -496,6 +500,7 @@ private:
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
+                                 ThreadID tid,
                                  AllocationTraceInfo &allocInfo);
 
 

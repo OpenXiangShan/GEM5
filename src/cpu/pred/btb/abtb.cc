@@ -437,7 +437,7 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash,
     }
     auto &state = threadState(tid);
     state.currentLookupIndexValid = false;
-    Addr btb_idx = getIndex(block_pc, asidHash, indexPhrHash);
+    Addr btb_idx = getIndex(block_pc, asidHash, tid, indexPhrHash);
     auto btb_set = btb[btb_idx];
     assert(btb_idx < numSets);
     // AheadBTB always uses ahead-pipelined implementation:
@@ -835,7 +835,7 @@ AheadBTB::update(const FetchTarget &stream)
         // Before the ahead pipeline fills, retain the legacy PC-only fallback.
         Addr btb_idx = meta->lookupIndexValid
             ? meta->lookupIndex
-            : getIndex(previousPC, stream.asidHash);
+            : getIndex(previousPC, stream.asidHash, stream.tid);
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
         updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
     }

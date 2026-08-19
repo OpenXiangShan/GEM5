@@ -249,11 +249,13 @@ class AheadBTB : public TimedBaseBTBPredictor
         return folded & mask(AbtbHashBits);
     }
 
-    inline Addr getIndex(Addr instPC, uint8_t asidHash,
+    inline Addr getIndex(Addr instPC, uint8_t asidHash, ThreadID tid = 0,
                          Addr phrHash = 0) const {
         Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
         baseIndex ^= phrHash & idxMask;
-        return xorAsidHashIntoIndex(baseIndex, floorLog2(numSets), asidHash);
+        Addr index = xorAsidHashIntoIndex(
+            baseIndex, floorLog2(numSets), asidHash);
+        return partitionIndex(index, numSets, tid);
     }
 
     /** Returns the tag bits of a given address.

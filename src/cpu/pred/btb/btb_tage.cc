@@ -183,7 +183,10 @@ tageStats(this, p.numPredictors, p.numBanks)
             auto &state = threadHistory[tid];
             state.tagFoldedHist.emplace_back((int)histLengths[i], (int)tableTagBits[i], 16, historyType);
             state.altTagFoldedHist.emplace_back((int)histLengths[i], (int)tableTagBits[i] - 1, 16, historyType);
-            state.indexFoldedHist.emplace_back((int)histLengths[i], (int)tableIndexBits[i], 16, historyType);
+            state.indexFoldedHist.emplace_back(
+                (int)histLengths[i],
+                (int)partitionIndexBits(tableIndexBits[i]), 16,
+                historyType);
         }
     }
     usefulResetCnt = 0;
@@ -317,8 +320,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get(), asidHash)
-                          : getTageIndex(startPC, i, state.indexFoldedHist[i].get(), asidHash);
+        Addr index = predMeta ? getTageIndex(
+            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
+                              : getTageIndex(
+            startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(),
                             position, asidHash)
@@ -782,7 +787,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
+                                 ThreadID tid,
                                  AllocationTraceInfo &allocInfo) {
+    int &resetCnt = usesTidPartitionedStorage() ?
+        usefulResetCntByThread[tid] : usefulResetCnt;
     // Match RTL victim priority:
     // 1) invalid way
     // 2) weak and not-useful way
@@ -792,7 +800,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get(), asidHash);
+        Addr newIndex = getTageIndex(
+            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position, asidHash);
 
@@ -845,20 +854,22 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocInfo.victimPC = victim.pc;
             set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
-            usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+            resetCnt = resetCnt <= 0 ? 0 : resetCnt - 1;
             return true;
         }
         tageStats.updateAllocFailure++;
-        usefulResetCnt++;
+        resetCnt++;
     }
 
-    if (usefulResetCnt >= 256) {
-        usefulResetCnt = 0;
+    if (resetCnt >= 256) {
+        resetCnt = 0;
         tageStats.updateResetU++;
         DPRINTF(TAGE, "reset useful bit of all entries\n");
         for (auto &table : tageTable) {
-            for (auto &set : table) {
-                for (auto &way : set) {
+            const unsigned begin = partitionBegin(table.size(), tid);
+            const unsigned end = partitionEnd(table.size(), tid);
+            for (unsigned index = begin; index < end; ++index) {
+                for (auto &way : table[index]) {
                     way.useful = false;
                 }
             }
@@ -995,6 +1006,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             }
             handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
                                      start_table, predMeta, stream.asidHash,
+                                     stream.tid,
                                      allocInfo);
         }
 
@@ -1109,7 +1121,7 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
     unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
-    pcShift += tableIndexBits[t] - 1;   // since tableIndexBits = log(2048) = 11, RTL is 10
+    pcShift += partitionIndexBits(tableIndexBits[t]) - 1;
     Addr pcBits = (pc >> pcShift) & mask;
 
     // Extract and prepare folded history bits
@@ -1132,22 +1144,26 @@ BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash) const
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash) const
+BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
+                      uint8_t asidHash, ThreadID tid) const
 {
-    // Create mask for tableIndexBits[t] to limit result size
-    Addr mask = (1ULL << tableIndexBits[t]) - 1;
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
+    Addr mask = (1ULL << localIndexBits) - 1;
 
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return xorAsidHashIntoIndex(pcBits ^ foldedBits, tableIndexBits[t], asidHash) % tableSizes[t];
+    Addr localIndex = xorAsidHashIntoIndex(
+        pcBits ^ foldedBits, localIndexBits, asidHash);
+    return partitionIndex(localIndex, tableSizes[t], tid);
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash) const
+BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash, ThreadID tid) const
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
+    return getTageIndex(pc, t, historyState(tid).indexFoldedHist[t].get(),
+                        asidHash, tid);
 }
 
 bool

@@ -268,11 +268,11 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Calculate MGSC history index with folded history
     Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
-                      uint8_t asidHash = 0);
+                      uint8_t asidHash = 0, ThreadID tid = 0);
 
     // Calculate MGSC bias index
     Addr getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1,
-                      uint8_t asidHash = 0);
+                      uint8_t asidHash = 0, ThreadID tid = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
