@@ -241,7 +241,8 @@ class UnifiedFreeList
     void
     addRegs(InputIt first, InputIt last)
     {
-        std::for_each(first, last, [this](auto &reg) { addReg(&reg); });
+        std::for_each(first, last,
+                      [this](auto &reg) { this->addReg(&reg); });
     }
 
     /** Adds a register back to the free list, without per-thread
