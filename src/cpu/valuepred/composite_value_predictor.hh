@@ -90,8 +90,8 @@ class CompositeValuePredictor : public VPUnit
     void specUpdate(const VPSpecUpdateInfo &specUpdateInfo) override;
 
     void squash(ThreadID tid, const uint64_t seq_no) override;
-    void onPhySQThrottleRise() override;
-    void setPhySQThrottleHold(bool hold) override;
+    void onVirtSQThrottleRise() override;
+    void setVirtSQThrottleHold(bool hold) override;
 
     ValuePredType getValuePredictorType() override
     {

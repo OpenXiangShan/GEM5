@@ -1313,6 +1313,18 @@ LSQ::physicalStoreQueueFull(ThreadID tid) const
     return thread[tid].physicalStoreQueueFull();
 }
 
+unsigned
+LSQ::virtualStoreQueueEntries(ThreadID tid) const
+{
+    return thread[tid].virtualStoreQueueEntries();
+}
+
+unsigned
+LSQ::virtualStoreQueueUsed(ThreadID tid) const
+{
+    return thread[tid].virtualStoreQueueUsed();
+}
+
 void
 LSQ::recordAddrOrDataReady(const DynInstPtr &inst)
 {

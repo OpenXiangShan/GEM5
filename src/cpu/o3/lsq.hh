@@ -918,6 +918,10 @@ class LSQ
     unsigned physicalStoreQueueUsed(ThreadID tid) const;
     bool physicalStoreQueueFull(ThreadID tid) const;
 
+    /** Virtual SQ occupancy for a thread. */
+    unsigned virtualStoreQueueEntries(ThreadID tid) const;
+    unsigned virtualStoreQueueUsed(ThreadID tid) const;
+
     /** Record the first address/data-ready transition for an SQ entry. */
     void recordAddrOrDataReady(const DynInstPtr &inst);
 

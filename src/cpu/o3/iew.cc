@@ -83,11 +83,11 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       issueToExecQueue(params.backComSize, params.forwardComSize),
       valuePred(params.valuePred),
       enableSelectiveVPFlush(params.enableSelectiveVPFlush),
-      vpThrottlePhySQNumer(params.vpThrottlePhySQNumer),
-      vpThrottlePhySQDenom(params.vpThrottlePhySQDenom),
-      vpFpcClearPhySQNumer(params.vpFpcClearPhySQNumer),
-      vpFpcClearPhySQDenom(params.vpFpcClearPhySQDenom),
-      prevPhySQOverFpcClear(false),
+      vpThrottleVirtSQNumer(params.vpThrottleVirtSQNumer),
+      vpThrottleVirtSQDenom(params.vpThrottleVirtSQDenom),
+      vpFpcClearVirtSQNumer(params.vpFpcClearVirtSQNumer),
+      vpFpcClearVirtSQDenom(params.vpFpcClearVirtSQDenom),
+      prevVirtSQOverFpcClear(false),
       cpu(_cpu),
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
@@ -186,8 +186,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of times the IQ has become full, causing a stall"),
     ADD_STAT(lsqFullEvents, statistics::units::Count::get(),
              "Number of times the LSQ has become full, causing a stall"),
-    ADD_STAT(vpPhySQFullSuppressions, statistics::units::Count::get(),
-             "Late VP applies skipped because the physical SQ window is full"),
+    ADD_STAT(vpVirtSQFullSuppressions, statistics::units::Count::get(),
+             "Late VP applies skipped because virtual SQ exceeds its threshold"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
@@ -496,21 +496,21 @@ IEW::tryLateValuePrediction(const DynInstPtr &inst)
         return;
     }
 
-    if (vpThrottlePhySQNumer > 0 && vpThrottlePhySQDenom > 0) {
-        const unsigned phy_used =
-            ldstQueue.physicalStoreQueueUsed(inst->threadNumber);
-        const unsigned phy_cap =
-            ldstQueue.physicalStoreQueueEntries(inst->threadNumber);
-        if (phy_cap > 0 &&
-            phy_used * vpThrottlePhySQDenom >=
-                phy_cap * vpThrottlePhySQNumer) {
-            ++iewStats.vpPhySQFullSuppressions;
+    if (vpThrottleVirtSQNumer > 0 && vpThrottleVirtSQDenom > 0) {
+        const unsigned virt_used =
+            ldstQueue.virtualStoreQueueUsed(inst->threadNumber);
+        const unsigned virt_cap =
+            ldstQueue.virtualStoreQueueEntries(inst->threadNumber);
+        if (virt_cap > 0 &&
+            virt_used * vpThrottleVirtSQDenom >=
+                virt_cap * vpThrottleVirtSQNumer) {
+            ++iewStats.vpVirtSQFullSuppressions;
             DPRINTF(EgDiff,
-                    "[EgDiff][phy-sq-throttle] tid=%u seq=%llu pc=%#lx "
-                    "phyUsed=%u phyCap=%u thresh=%u/%u\n",
+                    "[EgDiff][virt-sq-throttle] tid=%u seq=%llu pc=%#lx "
+                    "virtUsed=%u virtCap=%u thresh=%u/%u\n",
                     inst->threadNumber, inst->seqNum, inst->getPC(),
-                    phy_used, phy_cap, vpThrottlePhySQNumer,
-                    vpThrottlePhySQDenom);
+                    virt_used, virt_cap, vpThrottleVirtSQNumer,
+                    vpThrottleVirtSQDenom);
             return;
         }
     }
@@ -1997,23 +1997,24 @@ IEW::tick()
     scheduler->tick();
     ldstQueue.tick();
 
-    if (valuePred && vpFpcClearPhySQNumer > 0 && vpFpcClearPhySQDenom > 0) {
+    if (valuePred && vpFpcClearVirtSQNumer > 0 &&
+        vpFpcClearVirtSQDenom > 0) {
         bool over = false;
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            const unsigned phy_used = ldstQueue.physicalStoreQueueUsed(tid);
-            const unsigned phy_cap = ldstQueue.physicalStoreQueueEntries(tid);
-            if (phy_cap > 0 &&
-                phy_used * vpFpcClearPhySQDenom >=
-                    phy_cap * vpFpcClearPhySQNumer) {
+            const unsigned virt_used = ldstQueue.virtualStoreQueueUsed(tid);
+            const unsigned virt_cap = ldstQueue.virtualStoreQueueEntries(tid);
+            if (virt_cap > 0 &&
+                virt_used * vpFpcClearVirtSQDenom >=
+                    virt_cap * vpFpcClearVirtSQNumer) {
                 over = true;
                 break;
             }
         }
-        if (over && !prevPhySQOverFpcClear) {
-            valuePred->onPhySQThrottleRise();
+        if (over && !prevVirtSQOverFpcClear) {
+            valuePred->onVirtSQThrottleRise();
         }
-        valuePred->setPhySQThrottleHold(over);
-        prevPhySQOverFpcClear = over;
+        valuePred->setVirtSQThrottleHold(over);
+        prevVirtSQOverFpcClear = over;
     }
 
     // dispatch

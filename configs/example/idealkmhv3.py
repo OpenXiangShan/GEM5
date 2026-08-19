@@ -94,31 +94,31 @@ def setKmhV3IdealParams(args, system):
                                 predictors=predictors,
                                 arb=CVPFixedPriorityArb()
                             )
-            frac = getattr(args, "vp_throttle_phy_sq", None)
-            if getattr(args, "vp_throttle_phy_sq_full", False) and not frac:
+            frac = getattr(args, "vp_throttle_virt_sq", None)
+            if getattr(args, "vp_throttle_virt_sq_full", False) and not frac:
                 frac = "1/1"
             if frac:
                 parts = str(frac).split("/")
                 if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
-                    fatal("invalid --vp-throttle-phy-sq: %s (expected N/D)" % frac)
+                    fatal("invalid --vp-throttle-virt-sq: %s (expected N/D)" % frac)
                 numer = int(parts[0])
                 denom = int(parts[1])
                 if numer <= 0 or denom <= 0 or numer > denom:
-                    fatal("invalid --vp-throttle-phy-sq: %s" % frac)
-                cpu.vpThrottlePhySQNumer = numer
-                cpu.vpThrottlePhySQDenom = denom
-            clear_frac = getattr(args, "vp_fpc_clear_phy_sq", None)
+                    fatal("invalid --vp-throttle-virt-sq: %s" % frac)
+                cpu.vpThrottleVirtSQNumer = numer
+                cpu.vpThrottleVirtSQDenom = denom
+            clear_frac = getattr(args, "vp_fpc_clear_virt_sq", None)
             if clear_frac:
                 parts = str(clear_frac).split("/")
                 if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
-                    fatal("invalid --vp-fpc-clear-phy-sq: %s (expected N/D)" %
+                    fatal("invalid --vp-fpc-clear-virt-sq: %s (expected N/D)" %
                           clear_frac)
                 numer = int(parts[0])
                 denom = int(parts[1])
                 if numer <= 0 or denom <= 0 or numer > denom:
-                    fatal("invalid --vp-fpc-clear-phy-sq: %s" % clear_frac)
-                cpu.vpFpcClearPhySQNumer = numer
-                cpu.vpFpcClearPhySQDenom = denom
+                    fatal("invalid --vp-fpc-clear-virt-sq: %s" % clear_frac)
+                cpu.vpFpcClearVirtSQNumer = numer
+                cpu.vpFpcClearVirtSQDenom = denom
 
         # lsq
         cpu.LQEntries = 120

@@ -317,18 +317,18 @@ CompositeValuePredictor::squash(ThreadID tid, const uint64_t seq_no)
 }
 
 void
-CompositeValuePredictor::onPhySQThrottleRise()
+CompositeValuePredictor::onVirtSQThrottleRise()
 {
     for (auto *predictor : predictors) {
-        predictor->onPhySQThrottleRise();
+        predictor->onVirtSQThrottleRise();
     }
 }
 
 void
-CompositeValuePredictor::setPhySQThrottleHold(bool hold)
+CompositeValuePredictor::setVirtSQThrottleHold(bool hold)
 {
     for (auto *predictor : predictors) {
-        predictor->setPhySQThrottleHold(hold);
+        predictor->setVirtSQThrottleHold(hold);
     }
 }
 

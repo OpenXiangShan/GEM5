@@ -408,6 +408,11 @@ class LSQUnit
     {
         return addrOrDataReadyNums >= physicalSQEntries;
     }
+    unsigned virtualStoreQueueEntries() const
+    {
+        return storeQueue.capacity();
+    }
+    unsigned virtualStoreQueueUsed() const { return storeQueue.size(); }
     void recordStoreBufferBlockedByCache() { ++stats.blockedByCache; }
 
     /** Completes the data access that has been returned from the

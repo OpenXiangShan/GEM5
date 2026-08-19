@@ -58,11 +58,11 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
       ADD_STAT(fpcHolds, statistics::units::Count::get(),
                "Matching updates that did not advance the FPC"),
       ADD_STAT(fpcTableClears, statistics::units::Count::get(),
-               "Physical-SQ rising-edge sweeps that cleared table FPC"),
+               "Virtual-SQ rising-edge sweeps that cleared table FPC"),
       ADD_STAT(fpcEntriesCleared, statistics::units::Count::get(),
                "Valid table entries whose FPC was cleared on a rising edge"),
-      ADD_STAT(fpcHoldByPhySQ, statistics::units::Count::get(),
-               "Matching updates that held FPC because physical SQ was over threshold"),
+      ADD_STAT(fpcHoldByVirtSQ, statistics::units::Count::get(),
+               "Matching updates that held FPC because virtual SQ was over threshold"),
       ADD_STAT(pollingDistanceChanges, statistics::units::Count::get(),
                "Distance changes made by polling"),
       ADD_STAT(lastMispActivations, statistics::units::Count::get(),
@@ -272,7 +272,7 @@ EgDiff::advanceAgingTick()
 }
 
 void
-EgDiff::onPhySQThrottleRise()
+EgDiff::onVirtSQThrottleRise()
 {
     unsigned cleared = 0;
     for (auto &entry : table) {
@@ -286,17 +286,17 @@ EgDiff::onPhySQThrottleRise()
 }
 
 void
-EgDiff::setPhySQThrottleHold(bool hold)
+EgDiff::setVirtSQThrottleHold(bool hold)
 {
-    phySQHoldAdvance = hold;
+    virtSQHoldAdvance = hold;
 }
 
 bool
 EgDiff::advanceFpc(Entry &entry)
 {
-    if (phySQHoldAdvance) {
+    if (virtSQHoldAdvance) {
         if (entry.fpc != MaxFpc) {
-            ++egdiffStats.fpcHoldByPhySQ;
+            ++egdiffStats.fpcHoldByVirtSQ;
         }
         return false;
     }

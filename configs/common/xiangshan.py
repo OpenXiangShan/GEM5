@@ -1004,23 +1004,23 @@ def xiangshan_system_init():
              "(default: vtage).",
     )
     parser.add_argument(
-        "--vp-throttle-phy-sq",
+        "--vp-throttle-virt-sq",
         type=str,
         default=None,
-        help="Skip late VP apply when physical SQ occupancy reaches N/D "
+        help="Skip late VP apply when virtual SQ occupancy reaches N/D "
              "(e.g. 1/2, 3/4, 1/1).",
     )
     parser.add_argument(
-        "--vp-throttle-phy-sq-full",
+        "--vp-throttle-virt-sq-full",
         action="store_true",
         default=False,
-        help="Alias for --vp-throttle-phy-sq=1/1.",
+        help="Alias for --vp-throttle-virt-sq=1/1.",
     )
     parser.add_argument(
-        "--vp-fpc-clear-phy-sq",
+        "--vp-fpc-clear-virt-sq",
         type=str,
         default=None,
-        help="On a rising physical-SQ occupancy edge at N/D, clear EgDiff "
+        help="On a rising virtual-SQ occupancy edge at N/D, clear EgDiff "
              "table FPC and hold FPC advances while occupancy stays over "
              "the threshold (e.g. 1/2, 3/4, 1/1).",
     )

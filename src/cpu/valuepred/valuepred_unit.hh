@@ -79,8 +79,8 @@ class VPUnit : public SimObject
     virtual ValuePredType getValuePredictorType() = 0;
 
     // Occupancy-triggered FPC policy. Default is a no-op.
-    virtual void onPhySQThrottleRise() {}
-    virtual void setPhySQThrottleHold(bool hold) { (void)hold; }
+    virtual void onVirtSQThrottleRise() {}
+    virtual void setVirtSQThrottleHold(bool hold) { (void)hold; }
 
   public:
     struct ValuePredUnitStats : public statistics::Group

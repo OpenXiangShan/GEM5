@@ -111,7 +111,7 @@ class EgDiff : public VPUnit
     uint64_t maxHistoryEntriesSeen = 0;
     uint64_t agingTick = 0;
     uint64_t allocationRandomState = 1;
-    bool phySQHoldAdvance = false;
+    bool virtSQHoldAdvance = false;
 
     EgDiffPredictionRecord *getRecord(VPPredictionRecord *record) const;
     const EgDiffPredictionRecord *getRecord(
@@ -165,7 +165,7 @@ class EgDiff : public VPUnit
         statistics::Scalar fpcHolds;
         statistics::Scalar fpcTableClears;
         statistics::Scalar fpcEntriesCleared;
-        statistics::Scalar fpcHoldByPhySQ;
+        statistics::Scalar fpcHoldByVirtSQ;
         statistics::Scalar pollingDistanceChanges;
         statistics::Scalar lastMispActivations;
         statistics::Scalar squashedSlots;
@@ -218,8 +218,8 @@ class EgDiff : public VPUnit
             const VPFeedback &feedback) override;
     void specUpdate(const VPSpecUpdateInfo &specUpdateInfo) override;
     void squash(ThreadID tid, const uint64_t seq_no) override;
-    void onPhySQThrottleRise() override;
-    void setPhySQThrottleHold(bool hold) override;
+    void onVirtSQThrottleRise() override;
+    void setVirtSQThrottleHold(bool hold) override;
 
     ValuePredType getValuePredictorType() override
     {
