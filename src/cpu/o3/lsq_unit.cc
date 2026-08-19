@@ -3175,6 +3175,12 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
     data_pkt->sendTick = curTick();
+    // These flags describe the current cache attempt. A replayed packet may
+    // carry flags from an earlier soft rejection.
+    data_pkt->tagReadFail = false;
+    data_pkt->clearMshrArbFailed();
+    data_pkt->clearMshrAliasFailed();
+    data_pkt->clearHitInWriteBuffer();
     PacketPtr pkt = data_pkt;
 
     auto inst = dynamic_cast<LSQRequest *>(data_pkt->senderState)->instruction();
@@ -3213,7 +3219,12 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         }
     }
 
-    if (!lsq->cacheBlocked() && lsq->cachePortAvailable(isLoad)) {
+    const bool cache_gate_blocked = lsq->cacheBlocked();
+    const bool port_quota_blocked =
+        !cache_gate_blocked && !lsq->cachePortAvailable(isLoad);
+    bool port_attempted = false;
+
+    if (!cache_gate_blocked && !port_quota_blocked) {
         if (bank_conflict) {
             ++stats.bankConflictTimes;
             if (!isLoad) {
@@ -3223,15 +3234,19 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
             bank_conflict = true;
             ret = false;
         }
-        if (!bank_conflict && !dcachePort->sendTimingReq(data_pkt)) {
-            ret = false;
-            mshr_used = data_pkt->mshrArbFailed();
-            mshr_alias_fail = data_pkt->mshrAliasFailed();
-            hit_in_write_buffer = data_pkt->isHitInWriteBuffer();
-            tag_read_fail = data_pkt->tagReadFail;
+        if (!bank_conflict) {
+            port_attempted = true;
+            if (!dcachePort->sendTimingReq(data_pkt)) {
+                ret = false;
+                mshr_used = data_pkt->mshrArbFailed();
+                mshr_alias_fail = data_pkt->mshrAliasFailed();
+                hit_in_write_buffer = data_pkt->isHitInWriteBuffer();
+                tag_read_fail = data_pkt->tagReadFail;
 
-            if (!tag_read_fail && !mshr_used && !mshr_alias_fail && !hit_in_write_buffer) {
-                cache_got_blocked = true;
+                if (!tag_read_fail && !mshr_used && !mshr_alias_fail &&
+                    !hit_in_write_buffer) {
+                    cache_got_blocked = true;
+                }
             }
         }
     }
@@ -3247,7 +3262,10 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         request->packetSent();
     } else {
         if (cache_got_blocked) {
-            lsq->cacheBlocked(true);
+            lsq->setDcacheBlocked(
+                request->instruction()->threadNumber,
+                isLoad ? LSQ::DcacheBlockSource::LoadSendRetry :
+                         LSQ::DcacheBlockSource::StoreSendRetry);
             ++stats.blockedByCache;
         }
         if (!isLoad) {
@@ -3256,6 +3274,11 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         }
         request->packetNotSent();
     }
+    lsq->recordDcacheReqAttempt(
+        request->instruction()->threadNumber, port_attempted, ret,
+        cache_got_blocked, cache_gate_blocked, port_quota_blocked,
+        bank_conflict, tag_read_fail, mshr_used, mshr_alias_fail,
+        hit_in_write_buffer);
     DPRINTF(LSQUnit,
             "Memory request (pkt: %s) from inst [sn:%llu] was"
             " %ssent (cache is blocked: %d, cache_got_blocked: %d, bank conflict: %d, tag_read_fail: %d,"
@@ -3391,13 +3414,15 @@ LSQUnit::updateCompletedIdx()
     stats.RAWQueueAvgEntryNum = RAWQueue.size();
 }
 
-void
+bool
 LSQUnit::recvRetry()
 {
-    if (isStoreBlocked) {
-        DPRINTF(LSQUnit, "Receiving retry: blocked store\n");
-        writebackBlockedStore();
+    if (!isStoreBlocked) {
+        return false;
     }
+
+    DPRINTF(LSQUnit, "Receiving retry: blocked store\n");
+    return !writebackBlockedStore();
 }
 
 void

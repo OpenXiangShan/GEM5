@@ -1288,14 +1288,31 @@ class LSQ
     unsigned logicalFreeRAREntries(ThreadID tid) const;
     unsigned logicalFreeRAWEntries(ThreadID tid) const;
 
-    /** Is D-cache blocked? */
+    enum class DcacheBlockSource : uint8_t
+    {
+        None,
+        LoadSendRetry,
+        StoreSendRetry,
+        StoreBufferSendRetry,
+        NumSources
+    };
+
+    /** Is the shared D-cache RequestPort waiting for a hard retry? */
     bool cacheBlocked() const;
-    /** Set D-cache blocked status */
-    void cacheBlocked(bool v);
+    DcacheBlockSource cacheBlockedSource() const { return _cacheBlockedSource; }
+    ThreadID cacheBlockedOwner() const { return _cacheBlockedOwner; }
+    void setDcacheBlocked(ThreadID tid, DcacheBlockSource source);
+    void clearDcacheBlocked();
     /** Is any store port available to use? */
     bool cachePortAvailable(bool is_load) const;
     /** Another store port is in use */
     void cachePortBusy(bool is_load);
+
+    void recordDcacheReqAttempt(ThreadID tid, bool attempted, bool success,
+                                bool cache_blocked, bool gate_blocked,
+                                bool port_quota_blocked, bool bank_conflict,
+                                bool tag_read_fail, bool mshr_used,
+                                bool mshr_alias_fail, bool hit_in_write_buffer);
 
     RequestPort &getDataPort() { return dcachePort; }
 
@@ -1432,8 +1449,9 @@ class LSQ
     bool willDcacheRefillTagWriteNextCycle() const;
 
   protected:
-    /** D-cache is blocked */
-    bool _cacheBlocked;
+    /** Hard retry state for the shared physical D-cache RequestPort. */
+    DcacheBlockSource _cacheBlockedSource;
+    ThreadID _cacheBlockedOwner;
     /** The number of cache ports available each cycle (stores only). */
     int cacheStorePorts;
     /** The number of used cache ports in this cycle by stores. */
@@ -1506,6 +1524,33 @@ class LSQ
         statistics::Vector sqFullCycles;
         statistics::Vector lsqFullCycles;
         statistics::Vector sbufferFullCycles;
+        statistics::Scalar dcachePortRetryCallbacks;
+        statistics::Scalar dcachePortRetryCallbacksNoBlockedStore;
+        statistics::Scalar dcachePortRetryStoreWakeups;
+        statistics::Scalar dcachePortRetryStoreSuccess;
+        statistics::Vector dcachePortRetryStoreWakeupsByThread;
+        statistics::Vector dcachePortRetryStoreSuccessByThread;
+        statistics::Vector dcachePortRetryStoreFailByThread;
+        statistics::Scalar cacheBlockedSetEvents;
+        statistics::Scalar cacheBlockedClearEvents;
+        statistics::Scalar cacheBlockedCycles;
+        statistics::Vector dcacheHardRetrySetsBySource;
+        statistics::Vector dcacheHardRetryCyclesBySource;
+        statistics::Vector dcacheHardRetryGateBlockedCrossThread;
+        statistics::Vector dcacheHardRetryGateBlockedSameThread;
+        statistics::Vector dcacheSoftTagReadFailByThread;
+        statistics::Vector dcacheSoftMshrArbFailByThread;
+        statistics::Vector dcacheSoftMshrAliasFailByThread;
+        statistics::Vector dcacheSoftWriteBufferFailByThread;
+        statistics::Scalar cacheLoadPortFullCycles;
+        statistics::Scalar cacheStorePortFullCycles;
+        statistics::Vector dcacheReqAttemptsByThread;
+        statistics::Vector dcacheReqGrantsByThread;
+        statistics::Vector dcacheReqSendFailsByThread;
+        statistics::Vector dcacheReqCacheBlockedByThread;
+        statistics::Vector dcacheReqGateBlockedByThread;
+        statistics::Vector dcacheReqPortQuotaBlockedByThread;
+        statistics::Vector dcacheReqBankConflictByThread;
         statistics::Scalar sbufferEvictDuetoFlush;
         statistics::Scalar sbufferEvictDuetoFull;
         statistics::Scalar sbufferEvictDuetoSQFull;

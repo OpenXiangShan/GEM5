@@ -518,8 +518,11 @@ class LSQUnit
         return t;
     }
 
-    /** Handles doing the retry. */
-    void recvRetry();
+    /** Returns whether this LSQ unit is waiting for a blocked store retry. */
+    bool hasBlockedStore() const { return isStoreBlocked; }
+
+    /** Handles doing the retry and returns whether the store was sent. */
+    bool recvRetry();
 
     unsigned int cacheLineSize();
 

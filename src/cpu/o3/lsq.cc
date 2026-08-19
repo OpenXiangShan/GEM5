@@ -402,6 +402,74 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "bundle"),
       ADD_STAT(sbufferFullCycles, statistics::units::Cycle::get(),
                "Per-thread cycles that store buffer cannot accept an entry"),
+      ADD_STAT(dcachePortRetryCallbacks, statistics::units::Count::get(),
+               "Shared dcache port retry callbacks"),
+      ADD_STAT(dcachePortRetryCallbacksNoBlockedStore,
+               statistics::units::Count::get(),
+               "Retry callbacks with no blocked LSQ store"),
+      ADD_STAT(dcachePortRetryStoreWakeups, statistics::units::Count::get(),
+               "Blocked LSQ stores considered at a dcache retry callback"),
+      ADD_STAT(dcachePortRetryStoreSuccess, statistics::units::Count::get(),
+               "Blocked LSQ stores successfully retried"),
+      ADD_STAT(dcachePortRetryStoreWakeupsByThread,
+               statistics::units::Count::get(),
+               "Blocked LSQ stores considered at retry by thread"),
+      ADD_STAT(dcachePortRetryStoreSuccessByThread,
+               statistics::units::Count::get(),
+               "Blocked LSQ stores successfully retried by thread"),
+      ADD_STAT(dcachePortRetryStoreFailByThread,
+               statistics::units::Count::get(),
+               "Blocked LSQ stores that failed again at retry by thread"),
+      ADD_STAT(cacheBlockedSetEvents, statistics::units::Count::get(),
+               "Transitions into the LSQ-wide cache-blocked state"),
+      ADD_STAT(cacheBlockedClearEvents, statistics::units::Count::get(),
+               "Transitions out of the LSQ-wide cache-blocked state"),
+      ADD_STAT(cacheBlockedCycles, statistics::units::Cycle::get(),
+               "Cycles spent in the LSQ-wide cache-blocked state"),
+      ADD_STAT(dcacheHardRetrySetsBySource, statistics::units::Count::get(),
+               "Hard dcache retry events by source"),
+      ADD_STAT(dcacheHardRetryCyclesBySource, statistics::units::Cycle::get(),
+               "Cycles spent in hard dcache retry by source"),
+      ADD_STAT(dcacheHardRetryGateBlockedCrossThread,
+               statistics::units::Count::get(),
+               "Requests blocked by a hard retry owned by another thread"),
+      ADD_STAT(dcacheHardRetryGateBlockedSameThread,
+               statistics::units::Count::get(),
+               "Requests blocked by a hard retry owned by the same thread"),
+      ADD_STAT(dcacheSoftTagReadFailByThread,
+               statistics::units::Count::get(),
+               "Dcache tag-read soft rejections by thread"),
+      ADD_STAT(dcacheSoftMshrArbFailByThread,
+               statistics::units::Count::get(),
+               "Dcache MSHR arbitration soft rejections by thread"),
+      ADD_STAT(dcacheSoftMshrAliasFailByThread,
+               statistics::units::Count::get(),
+               "Dcache MSHR alias soft rejections by thread"),
+      ADD_STAT(dcacheSoftWriteBufferFailByThread,
+               statistics::units::Count::get(),
+               "Dcache write-buffer soft rejections by thread"),
+      ADD_STAT(cacheLoadPortFullCycles, statistics::units::Cycle::get(),
+               "Cycles that use all configured LSQ load ports"),
+      ADD_STAT(cacheStorePortFullCycles, statistics::units::Cycle::get(),
+               "Cycles that use all configured LSQ store ports"),
+      ADD_STAT(dcacheReqAttemptsByThread, statistics::units::Count::get(),
+               "Dcache send attempts by thread"),
+      ADD_STAT(dcacheReqGrantsByThread, statistics::units::Count::get(),
+               "Successful dcache port grants by thread"),
+      ADD_STAT(dcacheReqSendFailsByThread, statistics::units::Count::get(),
+               "Dcache send failures by thread"),
+      ADD_STAT(dcacheReqCacheBlockedByThread,
+               statistics::units::Count::get(),
+               "Dcache send failures that set cache-blocked by thread"),
+      ADD_STAT(dcacheReqGateBlockedByThread,
+               statistics::units::Count::get(),
+               "Requests stopped by the LSQ-wide cache-blocked gate"),
+      ADD_STAT(dcacheReqPortQuotaBlockedByThread,
+               statistics::units::Count::get(),
+               "Requests stopped by the per-cycle LSQ port quota"),
+      ADD_STAT(dcacheReqBankConflictByThread,
+               statistics::units::Count::get(),
+               "Requests stopped by a D-cache bank conflict"),
       ADD_STAT(sbufferEvictDuetoFlush, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoFull, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoSQFull, statistics::units::Count::get(), ""),
@@ -455,12 +523,62 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
     sqFullCycles.init(num_threads);
     lsqFullCycles.init(num_threads);
     sbufferFullCycles.init(num_threads);
+    dcachePortRetryStoreWakeupsByThread.init(num_threads);
+    dcachePortRetryStoreSuccessByThread.init(num_threads);
+    dcachePortRetryStoreFailByThread.init(num_threads);
+    dcacheReqAttemptsByThread.init(num_threads);
+    dcacheReqGrantsByThread.init(num_threads);
+    dcacheReqSendFailsByThread.init(num_threads);
+    dcacheReqCacheBlockedByThread.init(num_threads);
+    dcacheReqGateBlockedByThread.init(num_threads);
+    dcacheReqPortQuotaBlockedByThread.init(num_threads);
+    dcacheReqBankConflictByThread.init(num_threads);
+    dcacheSoftTagReadFailByThread.init(num_threads);
+    dcacheSoftMshrArbFailByThread.init(num_threads);
+    dcacheSoftMshrAliasFailByThread.init(num_threads);
+    dcacheSoftWriteBufferFailByThread.init(num_threads);
+    dcacheHardRetrySetsBySource.init(
+        static_cast<unsigned>(DcacheBlockSource::NumSources));
+    dcacheHardRetryCyclesBySource.init(
+        static_cast<unsigned>(DcacheBlockSource::NumSources));
+    dcacheHardRetryGateBlockedCrossThread.init(
+        static_cast<unsigned>(DcacheBlockSource::NumSources));
+    dcacheHardRetryGateBlockedSameThread.init(
+        static_cast<unsigned>(DcacheBlockSource::NumSources));
+    const char *const retry_source_names[] = {
+        "none", "load_send_retry", "store_send_retry",
+        "store_buffer_send_retry"};
+    for (unsigned source = 0;
+         source < static_cast<unsigned>(DcacheBlockSource::NumSources);
+         ++source) {
+        dcacheHardRetrySetsBySource.subname(source, retry_source_names[source]);
+        dcacheHardRetryCyclesBySource.subname(source,
+                                              retry_source_names[source]);
+        dcacheHardRetryGateBlockedCrossThread.subname(
+            source, retry_source_names[source]);
+        dcacheHardRetryGateBlockedSameThread.subname(
+            source, retry_source_names[source]);
+    }
     for (ThreadID tid = 0; tid < num_threads; ++tid) {
         const std::string thread_name = csprintf("thread%d", tid);
         lqFullCycles.subname(tid, thread_name);
         sqFullCycles.subname(tid, thread_name);
         lsqFullCycles.subname(tid, thread_name);
         sbufferFullCycles.subname(tid, thread_name);
+        dcachePortRetryStoreWakeupsByThread.subname(tid, thread_name);
+        dcachePortRetryStoreSuccessByThread.subname(tid, thread_name);
+        dcachePortRetryStoreFailByThread.subname(tid, thread_name);
+        dcacheReqAttemptsByThread.subname(tid, thread_name);
+        dcacheReqGrantsByThread.subname(tid, thread_name);
+        dcacheReqSendFailsByThread.subname(tid, thread_name);
+        dcacheReqCacheBlockedByThread.subname(tid, thread_name);
+        dcacheReqGateBlockedByThread.subname(tid, thread_name);
+        dcacheReqPortQuotaBlockedByThread.subname(tid, thread_name);
+        dcacheReqBankConflictByThread.subname(tid, thread_name);
+        dcacheSoftTagReadFailByThread.subname(tid, thread_name);
+        dcacheSoftMshrArbFailByThread.subname(tid, thread_name);
+        dcacheSoftMshrAliasFailByThread.subname(tid, thread_name);
+        dcacheSoftWriteBufferFailByThread.subname(tid, thread_name);
     }
 }
 
@@ -471,7 +589,8 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
                    params.DcacheBankBytes <= cpu_ptr->cacheLineSize() ?
                cpu_ptr->cacheLineSize() / params.DcacheBankBytes : 1) *
           (params.DcacheSetDivNum ? params.DcacheSetDivNum : 1)),
-      _cacheBlocked(false),
+      _cacheBlockedSource(DcacheBlockSource::None),
+      _cacheBlockedOwner(InvalidThreadID),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
       numBank(params.DcacheBankBytes ?
@@ -682,7 +801,7 @@ void
 LSQ::takeOverFrom()
 {
     usedStorePorts = 0;
-    _cacheBlocked = false;
+    clearDcacheBlocked();
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread[tid].takeOverFrom();
@@ -692,8 +811,20 @@ LSQ::takeOverFrom()
 void
 LSQ::tick()
 {
+    if (cacheBlocked()) {
+        ++stats.cacheBlockedCycles;
+        ++stats.dcacheHardRetryCyclesBySource[
+            static_cast<unsigned>(_cacheBlockedSource)];
+    }
+    if (usedLoadPorts == cacheLoadPorts) {
+        ++stats.cacheLoadPortFullCycles;
+    }
+    if (usedStorePorts == cacheStorePorts) {
+        ++stats.cacheStorePortFullCycles;
+    }
+
     // Re-issue loads which got blocked on the per-cycle load ports limit.
-    if (usedLoadPorts == cacheLoadPorts && !_cacheBlocked)
+    if (usedLoadPorts == cacheLoadPorts && !cacheBlocked())
         iewStage->cacheUnblocked();
 
     usedLoadPorts = 0;
@@ -1258,13 +1389,32 @@ LSQ::getAndResetLastSQPopEntries(ThreadID tid)
 bool
 LSQ::cacheBlocked() const
 {
-    return _cacheBlocked;
+    return _cacheBlockedSource != DcacheBlockSource::None;
 }
 
 void
-LSQ::cacheBlocked(bool v)
+LSQ::setDcacheBlocked(ThreadID tid, DcacheBlockSource source)
 {
-    _cacheBlocked = v;
+    assert(source != DcacheBlockSource::None);
+    if (!cacheBlocked()) {
+        ++stats.cacheBlockedSetEvents;
+        ++stats.dcacheHardRetrySetsBySource[static_cast<unsigned>(source)];
+    } else {
+        assert(_cacheBlockedSource == source);
+        assert(_cacheBlockedOwner == tid);
+    }
+    _cacheBlockedSource = source;
+    _cacheBlockedOwner = tid;
+}
+
+void
+LSQ::clearDcacheBlocked()
+{
+    if (cacheBlocked()) {
+        ++stats.cacheBlockedClearEvents;
+    }
+    _cacheBlockedSource = DcacheBlockSource::None;
+    _cacheBlockedOwner = InvalidThreadID;
 }
 
 bool
@@ -1287,6 +1437,55 @@ LSQ::cachePortBusy(bool is_load)
         usedLoadPorts++;
     } else {
         usedStorePorts++;
+    }
+}
+
+void
+LSQ::recordDcacheReqAttempt(ThreadID tid, bool attempted, bool success,
+                            bool cache_blocked, bool gate_blocked,
+                            bool port_quota_blocked, bool bank_conflict,
+                            bool tag_read_fail, bool mshr_used,
+                            bool mshr_alias_fail, bool hit_in_write_buffer)
+{
+    assert(tid < numThreads);
+    if (attempted) {
+        ++stats.dcacheReqAttemptsByThread[tid];
+        if (success) {
+            ++stats.dcacheReqGrantsByThread[tid];
+        } else {
+            ++stats.dcacheReqSendFailsByThread[tid];
+        }
+    }
+    if (cache_blocked) {
+        ++stats.dcacheReqCacheBlockedByThread[tid];
+    }
+    if (gate_blocked) {
+        ++stats.dcacheReqGateBlockedByThread[tid];
+        if (cacheBlockedOwner() == tid) {
+            ++stats.dcacheHardRetryGateBlockedSameThread[
+                static_cast<unsigned>(cacheBlockedSource())];
+        } else {
+            ++stats.dcacheHardRetryGateBlockedCrossThread[
+                static_cast<unsigned>(cacheBlockedSource())];
+        }
+    }
+    if (port_quota_blocked) {
+        ++stats.dcacheReqPortQuotaBlockedByThread[tid];
+    }
+    if (bank_conflict) {
+        ++stats.dcacheReqBankConflictByThread[tid];
+    }
+    if (tag_read_fail) {
+        ++stats.dcacheSoftTagReadFailByThread[tid];
+    }
+    if (mshr_used) {
+        ++stats.dcacheSoftMshrArbFailByThread[tid];
+    }
+    if (mshr_alias_fail) {
+        ++stats.dcacheSoftMshrAliasFailByThread[tid];
+    }
+    if (hit_in_write_buffer) {
+        ++stats.dcacheSoftWriteBufferFailByThread[tid];
     }
 }
 
@@ -1679,6 +1878,11 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
 {
     DcacheMainPipeS2Result result = DcacheMainPipeS2Result::GoToS3;
     bool cache_got_blocked = false;
+    bool tag_read_fail = false;
+    bool mshr_used = false;
+    bool mshr_alias_fail = false;
+    bool hit_in_write_buffer = false;
+    bool port_granted = false;
 
     auto request = dynamic_cast<SbufferRequest *>(data_pkt->senderState);
     assert(request);
@@ -1691,13 +1895,29 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     data_pkt->clearDcacheMainPipeSbufferHit();
     data_pkt->setDcacheMainPipeSbufferReq();
     data_pkt->setLSQPtr(this);
+    data_pkt->tagReadFail = false;
+    data_pkt->clearMshrArbFailed();
+    data_pkt->clearMshrAliasFailed();
+    data_pkt->clearHitInWriteBuffer();
 
     // Issue to the real classic cache only at fake S2 so StoreBuffer misses
     // cannot allocate or merge MSHRs at fake-pipe admission time.
-    if (!cacheBlocked() && cachePortAvailable(false)) {
+    const bool cache_gate_blocked = cacheBlocked();
+    const bool port_quota_blocked =
+        !cache_gate_blocked && !cachePortAvailable(false);
+    bool port_attempted = false;
+    if (!cache_gate_blocked && !port_quota_blocked) {
+        port_attempted = true;
         if (!dcachePort.sendTimingReq(data_pkt)) {
             result = DcacheMainPipeS2Result::Blocked;
-            cache_got_blocked = true;
+            tag_read_fail = data_pkt->tagReadFail;
+            mshr_used = data_pkt->mshrArbFailed();
+            mshr_alias_fail = data_pkt->mshrAliasFailed();
+            hit_in_write_buffer = data_pkt->isHitInWriteBuffer();
+            cache_got_blocked = !tag_read_fail && !mshr_used &&
+                                !mshr_alias_fail && !hit_in_write_buffer;
+        } else {
+            port_granted = true;
         }
     } else {
         result = DcacheMainPipeS2Result::Blocked;
@@ -1728,11 +1948,19 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
             sbufferMainPipeReplayQ.push_back(entry);
         }
         if (cache_got_blocked) {
-            cacheBlocked(true);
+            setDcacheBlocked(
+                request->sbuffer_entry->tid,
+                DcacheBlockSource::StoreBufferSendRetry);
 
             request->_port.recordStoreBufferBlockedByCache();
         }
     }
+
+    recordDcacheReqAttempt(request->sbuffer_entry->tid, port_attempted,
+                           port_granted,
+                           cache_got_blocked, cache_gate_blocked,
+                           port_quota_blocked, false, tag_read_fail,
+                           mshr_used, mshr_alias_fail, hit_in_write_buffer);
 
     return result;
 }
@@ -1899,15 +2127,33 @@ LSQ::setLastRetiredHtmUid(ThreadID tid, uint64_t htmUid)
 void
 LSQ::recvReqRetry()
 {
+    ++stats.dcachePortRetryCallbacks;
+    bool has_blocked_store = false;
+    for (ThreadID tid : *activeThreads) {
+        has_blocked_store |= thread[tid].hasBlockedStore();
+    }
+    if (!has_blocked_store) {
+        ++stats.dcachePortRetryCallbacksNoBlockedStore;
+    }
+
     iewStage->cacheUnblocked();
-    cacheBlocked(false);
+    clearDcacheBlocked();
 
     if (!retryReplayStoreBuffer()) {
         retryBlockedStoreBuffer();
     }
 
     for (ThreadID tid : *activeThreads) {
-        thread[tid].recvRetry();
+        if (thread[tid].hasBlockedStore()) {
+            ++stats.dcachePortRetryStoreWakeups;
+            ++stats.dcachePortRetryStoreWakeupsByThread[tid];
+            if (thread[tid].recvRetry()) {
+                ++stats.dcachePortRetryStoreSuccess;
+                ++stats.dcachePortRetryStoreSuccessByThread[tid];
+            } else {
+                ++stats.dcachePortRetryStoreFailByThread[tid];
+            }
+        }
     }
 }
 
