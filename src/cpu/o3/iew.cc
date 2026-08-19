@@ -331,6 +331,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::Atomic,"Atomic"},
         {StallReason::ResumeUnblock, "ResumeUnblock"},
         {StallReason::CommitSquash, "CommitSquash"},
+        {StallReason::ControlRecovery, "ControlRecovery"},
+        {StallReason::MemVioRecovery, "MemVioRecovery"},
+        {StallReason::VPRecovery, "VPRecovery"},
+        {StallReason::TrapRecovery, "TrapRecovery"},
         {StallReason::ROBFull, "ROBFull"},
         {StallReason::RegFull, "RegFull"},
         {StallReason::OtherStall, "OtherStall"},
@@ -867,7 +871,8 @@ IEW::checkSquash()
             fetchRedirect[i] = false;
             iewStats.stallEvents[ROBWalk]++;
             iewStats.smtStallEvents[ROBWalk].sample(i);
-            setAllStalls(StallReason::CommitSquash);
+            setAllStalls(
+                squashCauseToStallReason(fromCommit->commitInfo[i].squashCause));
         }
 
         if (fromCommit->commitInfo[i].robSquashing) {
@@ -877,7 +882,8 @@ IEW::checkSquash()
             wroteToTimeBuffer = true;
             iewStats.stallEvents[ROBWalk]++;
             iewStats.smtStallEvents[ROBWalk].sample(i);
-            setAllStalls(StallReason::CommitSquash);
+            setAllStalls(
+                squashCauseToStallReason(fromCommit->commitInfo[i].squashCause));
         }
     }
 }
@@ -2324,8 +2330,6 @@ IEW::checkDispatchStall(ThreadID tid, int dq_stall, const DynInstPtr &dispatch_i
             }
         }
     }
-
-    return StallReason::OtherStall;
 }
 
 StallReason
