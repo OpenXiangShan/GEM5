@@ -224,6 +224,19 @@ class Rename
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
     bool canRename(ThreadID tid);
 
+    /** Whether any non-squashed, buffered instruction for this thread still
+     *  needs a new physical register this cycle. Used to decide whether the
+     *  thread is a Preg SMT-DynamicBorrowing donor candidate (see
+     *  UnifiedFreeList::setBorrowingDonor()). */
+    bool hasPregDemand(ThreadID tid) const;
+
+    /** Whether this thread is currently stalled on a per-thread backend
+     *  queue running out of quota (ROB full, or dispatch-queue bandwidth
+     *  full) -- i.e. a resource other than Preg itself. Deliberately
+     *  excludes RegFull, since that IS Preg being the bottleneck. Used as
+     *  an additional Preg donor trigger alongside hasPregDemand(). */
+    bool hasBackendQuotaFullStall(ThreadID tid);
+
     void releasePhysRegs();
 
     /** Separates instructions from decode into individual lists of instructions
@@ -282,6 +295,11 @@ class Rename
 
     InstSeqNum releaseSeq[MaxThreads] = {};
 
+    /** Hold-cycle countdown for the backend-backpressure-triggered Preg
+     *  donor marking (see hasBackendQuotaFullStall()/smtPregBackendBackpressureDonor). */
+    unsigned pregBackendDonorHoldRemaining[MaxThreads] = {};
+
+    void tryFreePReg(PhysRegIdPtr phys_reg, ThreadID tid);
     /** RAT checkpoint records, per thread: sequence numbers of in-flight
      *  control-flow instructions that currently own a checkpoint. Newest at
      *  front, oldest at back (strictly descending by sequence number). */
@@ -315,8 +333,6 @@ class Rename
     void squashSnapshot(InstSeqNum squash_seq_num, ThreadID tid);
     /** Whether the instruction may carry a checkpoint. */
     bool suitableForRatSnapshot(const DynInstPtr &inst);
-
-    void tryFreePReg(PhysRegIdPtr phys_reg);
 
     /** Pointer to CPU. */
     CPU *cpu;
@@ -398,6 +414,15 @@ class Rename
     /** The number of threads active in rename. */
     ThreadID numThreads;
 
+    /** Whether a thread stalled on ROB/dispatch-queue-bandwidth backpressure
+     *  (a resource other than Preg itself) should also be treated as a Preg
+     *  borrowing donor. When false, only hasPregDemand() drives donor status. */
+    const bool pregBackendBackpressureDonorEnabled;
+
+    /** Cycles to keep a backend-backpressure-triggered Preg donor marking
+     *  held after the triggering condition clears. */
+    const unsigned pregBackendBackpressureDonorHoldCycles;
+
     /** Enum to record the source of a structure full stall.  Can come from
      * either ROB, IQ, LSQ, and it is priortized in that order.
      */
@@ -455,6 +480,9 @@ class Rename
         /** Stat for total number of times that rename runs out of free
          *  registers to use to rename. */
         statistics::Vector fullRegistersEvents;
+        /** Stat for per-thread Preg exhaustion: thread hits its quota limit
+         *  (Partitioned/DynamicBorrowing) while global free list still has regs. */
+        statistics::Vector perThreadPregFullEvents;
         /** Stat for total number of renamed destination registers. */
         statistics::Scalar renamedOperands;
         /** Stat for total number of source register rename lookups. */
@@ -482,6 +510,10 @@ class Rename
 
         statistics::VectorDistribution smtStallEvents;
 
+        /** Per-thread cycles where the thread was a Preg borrowing donor. */
+        statistics::Vector pregDonorCycles;
+        /** Per-thread cycles where ROB-full backpressure triggered donor. */
+        statistics::Vector pregBackendDonorCycles;
         statistics::Scalar assignedRatSnapshot;
         statistics::Scalar committedRatSnapshot;
         statistics::Scalar squashedRatSnapshot;
@@ -492,6 +524,10 @@ class Rename
     std::vector<StallReason> renameStalls;
 
     StallReason blockReason{NoStall};
+
+    /** Set within tick() when any thread stalls on RegFull this cycle;
+     *  used to avoid double-incrementing stallEvents[RegFull]. */
+    bool regFullThisCycle{false};
 
     void setAllStalls(StallReason renameStall);
 

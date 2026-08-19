@@ -105,7 +105,7 @@ CPU::CPU(const BaseO3CPUParams &params)
               params.numPhysRMiscRegs,
               params.isa[0]->regClasses()),
 
-      freeList(name() + ".freelist", &regFile),
+      freeList(name() + ".freelist", &regFile, params),
 
       rob(this, params),
 
@@ -165,6 +165,7 @@ CPU::CPU(const BaseO3CPUParams &params)
     rename.setActiveThreads(&activeThreads);
     iew.setActiveThreads(&activeThreads);
     commit.setActiveThreads(&activeThreads);
+    freeList.setActiveThreads(&activeThreads);
 
     // Give each of the stages the time buffer they will use.
     fetch.setTimeBuffer(&timeBuffer);
@@ -242,8 +243,8 @@ CPU::CPU(const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         isa[tid] = dynamic_cast<TheISA::ISA *>(params.isa[tid]);
         warn("Setting isa ptr of cpu to %p", isa[tid]);
-        commitRenameMap[tid].init(regClasses, &regFile, &freeList);
-        renameMap[tid].init(regClasses, &regFile, &freeList);
+        commitRenameMap[tid].init(regClasses, &regFile, &freeList, tid);
+        renameMap[tid].init(regClasses, &regFile, &freeList, tid);
     }
 
     // Initialize rename map to assign physical registers to the
@@ -256,7 +257,7 @@ CPU::CPU(const BaseO3CPUParams &params)
                 // Note that we can't use the rename() method because we don't
                 // want special treatment for the zero register at this point
                 RegId rid = RegId(type, ridx);
-                PhysRegIdPtr phys_reg = freeList.getReg(type);
+                PhysRegIdPtr phys_reg = freeList.getReg(type, tid);
                 renameMap[tid].setEntry(rid, VirtRegId(phys_reg));
                 commitRenameMap[tid].setEntry(rid, VirtRegId(phys_reg));
             }
@@ -643,6 +644,7 @@ CPU::startup()
     iew.startupStage();
     rename.startupStage();
     commit.startupStage();
+    freeList.resetEntries();
 }
 
 void
@@ -807,7 +809,7 @@ CPU::insertThread(ThreadID tid)
     for (auto type = (RegClassType)0; type <= RMiscRegClass;
             type = (RegClassType)(type + 1)) {
         for (RegIndex idx = 0; idx < regClasses.at(type).numRegs(); idx++) {
-            PhysRegIdPtr phys_reg = freeList.getReg(type);
+            PhysRegIdPtr phys_reg = freeList.getReg(type, tid);
             renameMap[tid].setEntry(RegId(type, idx), VirtRegId(phys_reg));
             scoreboard.setReg(phys_reg);
         }
@@ -825,6 +827,7 @@ CPU::insertThread(ThreadID tid)
 
     //Reset ROB/IQ/LSQ Entries
     commit.rob->resetEntries();
+    freeList.resetEntries();
 }
 
 void
@@ -860,6 +863,10 @@ CPU::removeThread(ThreadID tid)
 
     assert(iew.ldstQueue.getCount(tid) == 0);
     assert(commit.rob->isEmpty(tid));
+
+    // Reset per-thread Preg occupancy accounting so a reinserted tid
+    // does not carry stale quota usage.
+    freeList.resetThreadUsed(tid);
 
     // Reset ROB/IQ/LSQ Entries
 
