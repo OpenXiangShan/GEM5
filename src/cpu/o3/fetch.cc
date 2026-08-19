@@ -1977,10 +1977,19 @@ Fetch::getEligibleFetchTargetTid()
     eligible.fill(true);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         eligible[tid] = !redirectPending[tid];
+        if (fetchStatus[tid] == Idle || fetchStatus[tid] == Blocked ||
+            fetchStatus[tid] == TrapPending || fetchStatus[tid] == WaitingCache) {
+            eligible[tid] = false;
+        }
     }
 
     unsigned skipped = 0;
-    ThreadID tid = dbpbtb->getTargetTid(eligible, &skipped);
+    // Use fetch-queue-aware scheduling: prioritize threads with fewer queue entries
+    std::array<unsigned, MaxThreads> fetchQueueSizes;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        fetchQueueSizes[tid] = fetchQueue[tid].size();
+    }
+    ThreadID tid = dbpbtb->getTargetTidByFetchQueueSize(eligible, &skipped, fetchQueueSizes);
     if (skipped) {
         fetchStats.redirectPendingFetchSkips += skipped;
         DPRINTF(Fetch, "Skipped %u FTQ heads while backend redirect is pending\n",
@@ -2040,7 +2049,7 @@ Fetch::fetch(bool &status_change)
     std::list<ThreadID>::iterator end = activeThreads->end();
     while (threadit != end) {
         ThreadID tid = *threadit++;
-    performInstructionFetch(tid);
+        performInstructionFetch(tid);
     }
     auto tid = getEligibleFetchTargetTid();
     if (tid == InvalidThreadID) {
