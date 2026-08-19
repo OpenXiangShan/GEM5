@@ -105,6 +105,7 @@ def setKmhV3IdealParams(args, system):
         cpu.SbufferEntries = 16
         cpu.SbufferEvictThreshold = 8
         cpu.store_prefetch_train = False
+        cpu.mdp_violation_timing = 'atCommit'
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
