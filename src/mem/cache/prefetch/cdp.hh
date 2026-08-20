@@ -80,8 +80,20 @@ class CDP : public Queued
     bool useDynamicDegree;
     float accuracyThreshold;
     bool useAccuracyDependentAlignment;
+    bool useSv48;
     float throttle_aggressiveness;
     bool enable_thro;
+
+    static constexpr unsigned CdpVpnKeyShift = 21;
+
+    unsigned cdpVaddrBits() const
+    {
+        return useSv48 ? 48 : 39;
+    }
+
+    Addr cdpVpnKey(Addr addr) const;
+    bool cdpHighBitsAreZero(Addr addr) const;
+
     /** Byte order used to access the cache */
     /** Update the RR right table after a prefetch fill */
     class SubVpnEntry
@@ -93,8 +105,7 @@ class CDP : public Queued
         bool exist;
         bool hot;
       public:
-        uint64_t debug_vpn1{0};
-        uint64_t debug_vpn2{0};
+        Addr debug_vpn_key{0};
         SubVpnEntry(uint64_t _rstPeriod)
             : refCnt(0),
               prevRefCnt(0),
@@ -102,7 +113,7 @@ class CDP : public Queued
               exist(false),
               hot(false)
         {}
-        void init(uint64_t _debug_vpn1, uint64_t _debug_vpn2, bool pf_hit_cdp)
+        void init(Addr _debug_vpn_key, bool pf_hit_cdp)
         {
             if (pf_hit_cdp) {
                 refCnt = 4;
@@ -112,8 +123,7 @@ class CDP : public Queued
             prevRefCnt = 0;
             hot = false;
             exist = true;
-            debug_vpn1 = _debug_vpn1;
-            debug_vpn2 = _debug_vpn2;
+            debug_vpn_key = _debug_vpn_key;
         }
         void discard()
         {
@@ -121,8 +131,7 @@ class CDP : public Queued
             prevRefCnt = 0;
             hot = false;
             exist = false;
-            debug_vpn1 = 0;
-            debug_vpn2 = 0;
+            debug_vpn_key = 0;
         }
         void access(bool pf_hit_cdp)
         {
@@ -194,11 +203,11 @@ class CDP : public Queued
                 subEntries[i].discard();
             }
         }
-        void init(uint64_t vpn1, uint64_t vpn2, bool pf_hit_cdp)
+        void init(Addr vpn_key, bool pf_hit_cdp)
         {
-            uint64_t sub_idx = ((vpn2 << 9) | vpn1) & ((1UL << subEntryBits) - 1);
+            uint64_t sub_idx = vpn_key & ((1UL << subEntryBits) - 1);
             assert(sub_idx < subEntryNum);
-            subEntries[sub_idx].init(vpn1, vpn2, pf_hit_cdp);
+            subEntries[sub_idx].init(vpn_key, pf_hit_cdp);
         }
         void access(uint64_t idx, bool pf_hit_cdp)
         {
@@ -219,8 +228,7 @@ class CDP : public Queued
         bool getExist(uint64_t idx) { return subEntries[idx].getExist(); }
         bool getHot(uint64_t idx) { return subEntries[idx].getHot(); }
         u_int64_t getPrefRefCnt(uint64_t idx) { return subEntries[idx].getPrefRefCnt(); }
-        u_int64_t getDebugVpn1(uint64_t idx) { return subEntries[idx].debug_vpn1; }
-        u_int64_t getDebugVpn2(uint64_t idx) { return subEntries[idx].debug_vpn2; }
+        Addr getDebugVpnKey(uint64_t idx) { return subEntries[idx].debug_vpn_key; }
         std::string name() { return std::string("VpnEntry"); }
     };
 
@@ -246,27 +254,25 @@ class CDP : public Queued
                 assert(_subEntryNum % 2 == 0 && _subEntryNum < 512);
                 _subEntryBits = ceil(log2(_subEntryNum));
             }
-            void add(int vpn2, int vpn1, bool pf_hit_cdp)
+            void add(Addr vpn_key, bool pf_hit_cdp)
             {
                 _resetCounter++;
-                Addr cat_addr = (vpn2 << 9) | vpn1;
-                uint64_t sub_idx = cat_addr & ((1UL << _subEntryBits) - 1);
+                uint64_t sub_idx = vpn_key & ((1UL << _subEntryBits) - 1);
                 assert(sub_idx < _subEntryNum);
-                // mask lower bits
-                cat_addr = cat_addr >> _subEntryBits;
-                Entry *entry = table.findEntry(cat_addr, true);
+                Addr main_key = vpn_key >> _subEntryBits;
+                Entry *entry = table.findEntry(main_key, true);
                 if (entry) {
                     table.accessEntry(entry);
                     if (entry->getExist(sub_idx)) {
                         entry->access(sub_idx, pf_hit_cdp);
                     } else {
-                        entry->init(vpn1, vpn2, pf_hit_cdp);
+                        entry->init(vpn_key, pf_hit_cdp);
                     }
                 } else {
-                    entry = table.findVictim(cat_addr);
+                    entry = table.findVictim(main_key);
                     entry->discard();
-                    entry->init(vpn1, vpn2, pf_hit_cdp);
-                    table.insertEntry(cat_addr, true, entry);
+                    entry->init(vpn_key, pf_hit_cdp);
+                    table.insertEntry(main_key, true, entry);
                 }
             }
             void resetConfidence(float throttle_aggressiveness, bool enable_thro, bool low_conf)
@@ -283,13 +289,12 @@ class CDP : public Queued
                 _resetCounter = 0;
                 showHotVpns();
             }
-            bool search(int vpn2, int vpn1) const
+            bool search(Addr vpn_key) const
             {
-                Addr cat_addr = (vpn2 << 9) | vpn1;
-                uint64_t sub_idx = cat_addr & ((1UL << _subEntryBits) - 1);
+                uint64_t sub_idx = vpn_key & ((1UL << _subEntryBits) - 1);
                 assert(sub_idx < _subEntryNum);
-                cat_addr = cat_addr >> _subEntryBits;
-                Entry *entry = table.findEntry(cat_addr, true);
+                Addr main_key = vpn_key >> _subEntryBits;
+                Entry *entry = table.findEntry(main_key, true);
                 if (entry) {
                     if (entry->getExist(sub_idx)) {
                         return entry->getHot(sub_idx);
@@ -301,13 +306,12 @@ class CDP : public Queued
                 }
                 return false;
             }
-            void update(int vpn2, int vpn1, bool enable_thro, bool low_conf)
+            void update(Addr vpn_key, bool enable_thro, bool low_conf)
             {
-                Addr cat_addr = (vpn2 << 9) | vpn1;
-                uint64_t sub_idx = cat_addr & ((1UL << _subEntryBits) - 1);
+                uint64_t sub_idx = vpn_key & ((1UL << _subEntryBits) - 1);
                 assert(sub_idx < _subEntryNum);
-                cat_addr = cat_addr >> _subEntryBits;
-                Entry *entry = table.findEntry(cat_addr, true);
+                Addr main_key = vpn_key >> _subEntryBits;
+                Entry *entry = table.findEntry(main_key, true);
                 if (entry && enable_thro) {
                     if (entry->getExist(sub_idx)) {
                         entry->decr(sub_idx, low_conf);
@@ -325,8 +329,8 @@ class CDP : public Queued
                             for (int i = 0; i < _subEntryNum; i++) {
                                 if (it->getExist(i) && it->getPrefRefCnt(i) > 0) {
                                     valid_cnt++;
-                                    DPRINTFN("Table entry(%#llx, %#llx): %#llx\n",\
-                                    it->getDebugVpn2(i), it->getDebugVpn1(i), it->getPrefRefCnt(i));
+                                    DPRINTFN("Table entry(%#llx): %#llx\n",\
+                                    it->getDebugVpnKey(i), it->getPrefRefCnt(i));
                                 }
                             }
                         }
@@ -521,15 +525,11 @@ class CDP : public Queued
         for (int of = 0; of < 8; of++) {
             test_addr = addrs[of];
             int align_bit = BITS(test_addr, 1, 0);
-            int filter_bit = BITS(test_addr, 5, 0);
-            int page_offset, vpn0, vpn1, vpn2, check_bit;
-            check_bit = BITS(test_addr, 63, 39);
-            vpn2 = BITS(test_addr, 38, 30);
-            vpn1 = BITS(test_addr, 29, 21);
-            vpn0 = BITS(test_addr, 20, 12);
-            page_offset = BITS(test_addr, 11, 0);
+            int vpn0 = BITS(test_addr, 20, 12);
             bool flag = true;
-            if ((check_bit != 0) || (!vpnTable.search(vpn2, vpn1)) || (vpn0 == 0) || (align_bit != 0)) {
+            if (!cdpHighBitsAreZero(test_addr) ||
+                !vpnTable.search(cdpVpnKey(test_addr)) ||
+                vpn0 == 0 || align_bit != 0) {
                 flag = false;
             }
             Addr test_addr2 = Addr(test_addr);
