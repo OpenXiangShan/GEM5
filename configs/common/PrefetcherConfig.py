@@ -502,12 +502,29 @@ def _configure_l2_composite_kmh_align(prefetcher):
     prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,
                                               enable_adaptoffset=False)
 
+
+def _configure_cdp(prefetcher, options):
+    if prefetcher == NULL or not hasattr(prefetcher, 'cdp'):
+        return
+
+    cdp = prefetcher.cdp
+    if hasattr(options, 'cdp_use_dynamic_degree'):
+        cdp.use_dynamic_degree = options.cdp_use_dynamic_degree
+    if hasattr(options, 'cdp_accuracy_threshold'):
+        cdp.accuracy_threshold = options.cdp_accuracy_threshold
+    if hasattr(options, 'cdp_use_accuracy_dependent_alignment'):
+        cdp.use_accuracy_dependent_alignment = (
+            options.cdp_use_accuracy_dependent_alignment)
+
+
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
         _configure_l2_composite_kmh_align(prefetcher)
     elif prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_composite_default(prefetcher)
+
+    _configure_cdp(prefetcher, options)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
