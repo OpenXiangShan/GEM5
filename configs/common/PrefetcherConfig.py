@@ -515,6 +515,8 @@ def _configure_cdp(prefetcher, options):
     if hasattr(options, 'cdp_use_accuracy_dependent_alignment'):
         cdp.use_accuracy_dependent_alignment = (
             options.cdp_use_accuracy_dependent_alignment)
+    if hasattr(options, 'cdp_use_sv48'):
+        cdp.cdp_use_sv48 = options.cdp_use_sv48
 
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):

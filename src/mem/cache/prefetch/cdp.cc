@@ -61,6 +61,7 @@ CDP::CDP(const CDPParams &p)
       useDynamicDegree(p.use_dynamic_degree),
       accuracyThreshold(p.accuracy_threshold),
       useAccuracyDependentAlignment(p.use_accuracy_dependent_alignment),
+      useSv48(p.cdp_use_sv48),
       throttle_aggressiveness(p.throttle_aggressiveness),
       enable_thro(false),
       vpnTable(p.vpn_assoc, p.vpn_entries, p.vpn_indexing_policy,
@@ -96,6 +97,21 @@ CDP::shouldIssueDegreeExtension(float accuracy) const
     }
 
     return accuracy > accuracyThreshold;
+}
+
+Addr
+CDP::cdpVpnKey(Addr addr) const
+{
+    const unsigned vpn_key_bits = cdpVaddrBits() - CdpVpnKeyShift;
+    const Addr vpn_key_mask = (Addr(1) << vpn_key_bits) - 1;
+
+    return (addr >> CdpVpnKeyShift) & vpn_key_mask;
+}
+
+bool
+CDP::cdpHighBitsAreZero(Addr addr) const
+{
+    return (addr >> cdpVaddrBits()) == 0;
 }
 
 CDP::CDPStats::CDPStats(statistics::Group *parent)
@@ -141,7 +157,6 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
 {
     Addr addr = pfi.getAddr();
     bool miss = pfi.isCacheMiss();
-    int page_offset, vpn0, vpn1, vpn2;
     PrefetchSourceType pf_source = pfi.getXsMetadata().prefetchSource;
     int pf_depth = pfi.getXsMetadata().prefetchDepth;
     bool is_l1_prefetch =
@@ -182,15 +197,12 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
                             CDP::notifyFill(const PacketPtr &pkt)\n");
             }
             for (Addr pt_addr : scanPointer(addr, addrs)) {
-                vpn2 = BITS(pt_addr, 38, 30);
-                vpn1 = BITS(pt_addr, 29, 21);
-                vpnTable.update(vpn2, vpn1, enable_thro, isLowConfidence());
+                vpnTable.update(cdpVpnKey(pt_addr), enable_thro, isLowConfidence());
                 sendPFWithFilter(pfi, blockAddress(pt_addr), addresses, 30, PrefetchSourceType::CDP, 1);
                 for (int i = 1; i < degree; i++) {
                     if (shouldIssueDegreeExtension(getCdpTrueAccuracy())) {
                         Addr next_pf_addr = blockAddress(pt_addr) + (i * 0x40);
-                        vpnTable.update(BITS(next_pf_addr, 38, 30), BITS(next_pf_addr, 29, 21),
-                                        enable_thro, isLowConfidence());
+                        vpnTable.update(cdpVpnKey(next_pf_addr), enable_thro, isLowConfidence());
                         sendPFWithFilter(pfi, next_pf_addr, addresses, 1, PrefetchSourceType::CDP, 1);
                     }
                 }
@@ -294,17 +306,11 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
                     align_bit = BITS(test_addr, 11, 0);
                 }
             }
-            int filter_bit = BITS(test_addr, 5, 0);
-            int page_offset, vpn0, vpn1, vpn1_addr, vpn2, vpn2_addr, check_bit;
-            check_bit = BITS(test_addr, 63, 39);
-            vpn2 = BITS(test_addr, 38, 30);
-            vpn2_addr = BITS(pkt->req->getVaddr(), 38, 30);
-            vpn1 = BITS(test_addr, 29, 21);
-            vpn1_addr = BITS(pkt->req->getVaddr(), 29, 21);
-            vpn0 = BITS(test_addr, 20, 12);
-            page_offset = BITS(test_addr, 11, 0);
+            int vpn0 = BITS(test_addr, 20, 12);
+            Addr vpn_key = cdpVpnKey(test_addr);
             bool flag = true;
-            if ((check_bit != 0) || (vpn0 == 0) || (align_bit != 0) || (!vpnTable.search(vpn2, vpn1))) {
+            if (!cdpHighBitsAreZero(test_addr) || vpn0 == 0 ||
+                align_bit != 0 || !vpnTable.search(vpn_key)) {
                 flag = false;
             }
             Addr test_addr2 = Addr(test_addr);
@@ -319,14 +325,13 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
                 } else {
                     next_depth = pf_depth + 1;
                 }
-                vpnTable.update(vpn2, vpn1, enable_thro, isLowConfidence());
+                vpnTable.update(vpn_key, enable_thro, isLowConfidence());
                 sendPFWithFilter(pkt, blockAddress(test_addr2), addresses, 29 + next_depth, PrefetchSourceType::CDP,
                                  next_depth);
                 for (int i = 1; i < degree; i++) {
                     if (shouldIssueDegreeExtension(trueAccuracy)) {
                         Addr next_pf_addr = blockAddress(test_addr2) + (i * 0x40);
-                        vpnTable.update(BITS(next_pf_addr, 38, 30), BITS(next_pf_addr, 29, 21),
-                                        enable_thro, isLowConfidence());
+                        vpnTable.update(cdpVpnKey(next_pf_addr), enable_thro, isLowConfidence());
                         sendPFWithFilter(pkt, next_pf_addr, addresses, 1, PrefetchSourceType::CDP,
                                      next_depth);
                     }
@@ -406,15 +411,13 @@ CDP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
 void
 CDP::addToVpnTable(Addr addr, bool pf_hit_cdp)
 {
-    int page_offset, vpn0, vpn1, vpn2;
-    vpn2 = BITS(addr, 38, 30);
-    vpn1 = BITS(addr, 29, 21);
-    vpn0 = BITS(addr, 20, 12);
-    page_offset = BITS(addr, 11, 0);
-    vpnTable.add(vpn2, vpn1, pf_hit_cdp);
+    Addr vpn_key = cdpVpnKey(addr);
+    int vpn0 = BITS(addr, 20, 12);
+    int page_offset = BITS(addr, 11, 0);
+    vpnTable.add(vpn_key, pf_hit_cdp);
     vpnTable.resetConfidence(throttle_aggressiveness, enable_thro, isLowConfidence());
-    DPRINTF(CDPdebug, "Sv39, ADDR:%#llx, vpn2:%#llx, vpn1:%#llx, vpn0:%#llx, page offset:%#llx\n", addr, Addr(vpn2),
-            Addr(vpn1), Addr(vpn0), Addr(page_offset));
+    DPRINTF(CDPdebug, "Sv%u, ADDR:%#llx, vpn key:%#llx, vpn0:%#llx, page offset:%#llx\n",
+            cdpVaddrBits(), addr, vpn_key, Addr(vpn0), Addr(page_offset));
 }
 
 void
