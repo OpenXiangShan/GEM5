@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         description: "Benchmark type: base, simple"
+      gcbv_ref_so:
+        required: false
+        type: string
+        default: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+        description: "Path to the GCBV reference model shared object."
       check_result:
         required: false
         type: boolean
@@ -174,10 +179,10 @@ jobs:
               echo "comment=run 100% coverage spec06 rvv checkpoints" >> $GITHUB_OUTPUT
               ;;
             "spec06int-rvv-0.8c")
-              echo "checkpoint_list=/nfs/home/share/zhenhao/runnable_tests.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_list=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint_0.8c_int.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/share/zhenhao/runnable_tests.json" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster_0.8c_int.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-spec06int-0.8c-with-rvv-extension" >> $GITHUB_OUTPUT
               echo "comment=run 80% coverage spec06 int rvv checkpoints" >> $GITHUB_OUTPUT
               ;;
@@ -216,7 +221,7 @@ jobs:
       - name: Build GEM5 fast
         run: |
           export GEM5_HOME=$(pwd)
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          export GCBV_REF_SO="${{ inputs.gcbv_ref_so }}"
           if [[ "${{ inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
             export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
             export GCB_MULTI_CORE_RESTORER=""
@@ -358,7 +363,7 @@ jobs:
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
-          GCBV_REF_SO: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          GCBV_REF_SO: ${{ inputs.gcbv_ref_so }}
           GEM5_HOME: ${{ github.workspace }}
           GEM5_BUILD_TYPE: fast
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
