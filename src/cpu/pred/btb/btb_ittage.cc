@@ -246,6 +246,72 @@ BTBITTAGE::getPredictionMeta(ThreadID tid) {
 }
 
 void
+BTBITTAGE::refreshPredictionMeta(Addr stream_start,
+                                 const bitset &history,
+                                 FullBTBPrediction &pred)
+{
+    (void)history;
+    auto &state = historyState(pred.tid);
+
+    threadMeta[pred.tid] = std::make_shared<TageMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->tagFoldedHist = state.tagFoldedHist;
+    meta->altTagFoldedHist = state.altTagFoldedHist;
+    meta->indexFoldedHist = state.indexFoldedHist;
+
+    lookupEntries.clear();
+    lookupIndices.clear();
+    lookupTags.clear();
+    bitset useful_mask(numPredictors, false);
+    for (int i = 0; i < numPredictors; ++i) {
+        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get(), pred.asidHash);
+        Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
+                              state.altTagFoldedHist[i].get(), pred.asidHash);
+        auto &entry = tageTable[i][index];
+        lookupEntries.push_back(entry);
+        lookupIndices.push_back(index);
+        lookupTags.push_back(tag);
+        useful_mask[i] = entry.useful;
+    }
+    meta->usefulMask = std::move(useful_mask);
+
+    for (const auto &btb_entry : pred.btbEntries) {
+        if (!(btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid)) {
+            continue;
+        }
+
+        bool provided = false;
+        bool alt_provided = false;
+        TageTableInfo main_info, alt_info;
+
+        for (int i = numPredictors - 1; i >= 0; --i) {
+            auto &way = lookupEntries[i];
+            bool match = way.valid && lookupTags[i] == way.tag &&
+                btb_entry.pc == way.pc;
+            if (match) {
+                if (!provided) {
+                    main_info = TageTableInfo(true, way, i, lookupIndices[i],
+                                              lookupTags[i]);
+                    provided = true;
+                } else if (!alt_provided) {
+                    alt_info = TageTableInfo(true, way, i, lookupIndices[i],
+                                             lookupTags[i]);
+                    alt_provided = true;
+                    break;
+                }
+            }
+        }
+
+        bool main_weak = main_info.entry.counter == 0;
+        bool use_alt_provider = main_weak && alt_provided;
+        bool use_base = !provided || (provided && main_weak && !alt_provided);
+        bool use_alt = use_alt_provider || use_base;
+        meta->preds[btb_entry.pc] = TagePrediction(
+            btb_entry.pc, main_info, alt_info, use_alt, main_info.entry.target);
+    }
+}
+
+void
 BTBITTAGE::update(const FetchTarget &stream)
 {
     if (debugPC == stream.startPC || debugPC2 == stream.startPC) {

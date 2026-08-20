@@ -229,6 +229,33 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
     return processed_entries;
 }
 
+std::vector<MBTB::TickedBTBEntry>
+MBTB::processEntriesNoSideEffect(const std::vector<TickedBTBEntry>& entries,
+                                 Addr startAddr) const
+{
+    auto processed_entries = entries;
+
+    std::sort(processed_entries.begin(), processed_entries.end(),
+             [](const BTBEntry &a, const BTBEntry &b) {
+                 return a.pc < b.pc;
+             });
+
+    auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
+                           [startAddr](const BTBEntry &e) {
+                               return e.pc < startAddr;
+                           });
+    processed_entries.erase(it, processed_entries.end());
+
+    Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
+    it = std::remove_if(processed_entries.begin(), processed_entries.end(),
+                        [mbtb_end](const BTBEntry &e) {
+                            return e.pc >= mbtb_end;
+                        });
+    processed_entries.erase(it, processed_entries.end());
+
+    return processed_entries;
+}
+
 /**
  * Fill predictions for each pipeline stage:
  * 1. Copy BTB entries
@@ -312,11 +339,41 @@ MBTB::putPCHistory(Addr startAddr,
     updatePredictionMeta(processed_entries, stagePreds);
 }
 
+std::vector<BTBEntry>
+MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, uint8_t asidHash) const
+{
+    auto found_entries = lookupNoSideEffect(startAddr, asidHash);
+    auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
+
+    std::vector<BTBEntry> entries;
+    entries.reserve(processed_entries.size());
+    for (const auto &entry : processed_entries) {
+        entries.emplace_back(entry);
+    }
+    return entries;
+}
+
 std::shared_ptr<void>
 MBTB::getPredictionMeta(ThreadID tid)
 {
     (void)tid;
     return meta;
+}
+
+void
+MBTB::refreshPredictionMeta(Addr startAddr,
+                            const boost::dynamic_bitset<> &history,
+                            FullBTBPrediction &pred)
+{
+    (void)history;
+    (void)pred;
+
+    meta = std::make_shared<BTBMeta>();
+    auto found_entries = lookupNoSideEffect(startAddr);
+    auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
+    for (const auto &entry : processed_entries) {
+        meta->hit_entries.push_back(BTBEntry(entry));
+    }
 }
 
 /**
@@ -349,6 +406,33 @@ MBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
             res.push_back(way);
             way.tick = curTick(); // Update timestamp for MRU
             std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+        }
+    }
+    return res;
+}
+
+std::vector<MBTB::TickedBTBEntry>
+MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, uint8_t asidHash) const
+{
+    std::vector<TickedBTBEntry> res;
+    if (block_pc & 0x1) {
+        return res;
+    }
+
+    int sram_id = getSRAMId(block_pc);
+    const auto& target_sram = (sram_id == 0) ? sram0 : sram1;
+
+    Addr btb_idx = getIndex(block_pc, asidHash);
+    const auto& btb_set = target_sram[btb_idx];
+    assert(btb_idx < numSets);
+
+    Addr current_tag = getTag(block_pc, asidHash);
+    DPRINTF(BTB, "BTB no-side-effect lookup for SRAM%d index 0x%lx tag %#lx\n",
+        sram_id, btb_idx, current_tag);
+
+    for (const auto &way : btb_set) {
+        if (way.valid && way.tag == current_tag) {
+            res.push_back(way);
         }
     }
     return res;
@@ -390,6 +474,33 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
 
     DPRINTF(BTB, "MBTB: Half-aligned lookup results:\n");
     // dumpTickedBTBEntries(res);
+    return res;
+}
+
+std::vector<MBTB::TickedBTBEntry>
+MBTB::lookupNoSideEffect(Addr block_pc, uint8_t asidHash) const
+{
+    std::vector<TickedBTBEntry> res;
+    if (block_pc & 0x1) {
+        return res;
+    }
+
+    Addr alignedPC = block_pc & ~(blockSize - 1);
+    res = lookupSingleBlockNoSideEffect(alignedPC, asidHash);
+    auto nextBlockRes =
+        lookupSingleBlockNoSideEffect(alignedPC + blockSize, asidHash);
+    res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
+
+    if (victimCacheSize > 0) {
+        auto victimResults = lookupVictimCacheNoSideEffect(block_pc, asidHash);
+        res.insert(res.end(), victimResults.begin(), victimResults.end());
+    }
+
+    std::sort(res.begin(), res.end(),
+             [](const TickedBTBEntry &a, const TickedBTBEntry &b) {
+                 return a.pc < b.pc;
+             });
+
     return res;
 }
 
@@ -731,6 +842,29 @@ MBTB::lookupVictimCache(Addr block_pc, uint8_t asidHash)
                 DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.pc);
                 // refresh LRU timestamp on hit
                 entry.tick = curTick();
+            }
+        }
+    }
+
+    return results;
+}
+
+std::vector<MBTB::TickedBTBEntry>
+MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, uint8_t asidHash) const
+{
+    std::vector<TickedBTBEntry> results;
+    Addr alignedPC = block_pc & ~(blockSize - 1);
+
+    for (const auto &entry : victimCache) {
+        if (!entry.valid) {
+            continue;
+        }
+
+        Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
+        if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
+            Addr current_tag = getTag(entry.pc, asidHash);
+            if (entry.tag == current_tag) {
+                results.push_back(entry);
             }
         }
     }

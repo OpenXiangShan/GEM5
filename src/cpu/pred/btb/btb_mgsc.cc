@@ -622,6 +622,42 @@ BTBMGSC::getPredictionMeta(ThreadID tid)
     return threadMeta[tid];
 }
 
+void
+BTBMGSC::refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred)
+{
+    (void)history;
+
+    if (!isEnabled()) {
+        return;
+    }
+
+    auto &state = historyState(pred.tid);
+    threadMeta[pred.tid] = std::make_shared<MgscMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->indexBwFoldedHist = state.indexBwFoldedHist;
+    meta->indexLFoldedHist = state.indexLFoldedHist;
+    meta->indexIFoldedHist = state.indexIFoldedHist;
+    meta->indexGFoldedHist = state.indexGFoldedHist;
+    meta->indexPFoldedHist = state.indexPFoldedHist;
+
+    for (const auto &btb_entry : pred.btbEntries) {
+        if (!(btb_entry.isCond && btb_entry.valid)) {
+            continue;
+        }
+
+        auto tage_info = pred.tageInfoForMgscs.find(btb_entry.pc);
+        if (tage_info == pred.tageInfoForMgscs.end()) {
+            continue;
+        }
+
+        meta->preds[btb_entry.pc] =
+            generateSinglePrediction(btb_entry, startAddr, tage_info->second,
+                                     pred.tid, pred.asidHash);
+    }
+}
+
 /**
  * @brief Prepare BTB entries for update by filtering and processing
  *

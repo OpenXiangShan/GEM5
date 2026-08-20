@@ -198,6 +198,18 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
     lastPred.hit_entry = it;
 }
 
+void
+UBTB::refreshPredictionMeta(Addr startAddr,
+                            const boost::dynamic_bitset<> &history,
+                            FullBTBPrediction &pred)
+{
+    (void)history;
+    (void)pred;
+
+    meta = std::make_shared<UBTBMeta>();
+    meta->hit_entry = lookupNoSideEffect(startAddr);
+}
+
 UBTB::UBTBIter
 UBTB::lookup(Addr startAddr, uint8_t asidHash)
 {
@@ -234,6 +246,22 @@ UBTB::lookup(Addr startAddr, uint8_t asidHash)
     }
 
     return it;
+}
+
+UBTB::TickedUBTBEntry
+UBTB::lookupNoSideEffect(Addr startAddr) const
+{
+    if (startAddr & 0x1) {
+        return TickedUBTBEntry();
+    }
+
+    Addr current_tag = getTag(startAddr, 0);
+    auto it = std::find_if(ubtb.begin(), ubtb.end(),
+                           [current_tag](const TickedUBTBEntry &way) {
+                               return way.valid && way.tag == current_tag;
+                           });
+
+    return it != ubtb.end() ? *it : TickedUBTBEntry();
 }
 
 

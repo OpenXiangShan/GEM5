@@ -126,6 +126,18 @@ BTBRAS::getPredictionMeta(ThreadID tid)
 }
 
 void
+BTBRAS::refreshPredictionMeta(Addr startAddr,
+                              const boost::dynamic_bitset<> &history,
+                              FullBTBPrediction &pred)
+{
+    (void)startAddr;
+    (void)history;
+    auto &state = threadStates[pred.tid];
+    state.meta = std::make_shared<RASMeta>();
+    getTop_meta(pred.tid);
+}
+
+void
 BTBRAS::specUpdateState(FullBTBPrediction &pred)
 {
     const ThreadID tid = pred.tid;

@@ -65,6 +65,9 @@ class TimedBaseBTBPredictor: public SimObject
     {
         return nullptr;
     }
+    virtual void refreshPredictionMeta(Addr startAddr,
+                                       const boost::dynamic_bitset<> &history,
+                                       FullBTBPrediction &pred) {}
 
     virtual void specUpdateGHist(const boost::dynamic_bitset<> &history,
                                 FullBTBPrediction &pred,

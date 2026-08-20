@@ -292,6 +292,12 @@ struct LFSR64
 
 using FetchTargetId = uint64_t;
 
+enum class PairPhase : uint8_t
+{
+    Even = 0,
+    Odd = 1
+};
+
 // {branch pc -> istaken} maps
 using CondTakens = std::vector<std::pair<Addr, bool>>;
 // {branch pc -> target pc} maps
@@ -363,10 +369,11 @@ struct FetchTarget
     Addr squashPC;         // pc of the squash inst
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
+    PairPhase pairPhase;   // PairTAGE logical phase of this block start
 
     // prediction metas
     // FIXME: use vec
-    std::array<std::shared_ptr<void>, 8> predMetas; // each component has a meta, TODO
+    std::array<std::shared_ptr<void>, 9> predMetas; // each component has a meta, TODO
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History
@@ -400,6 +407,7 @@ struct FetchTarget
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),
          predSource(0),
+         pairPhase(PairPhase::Even),
          predTick(0),
          history(),
          phistory(),
@@ -556,6 +564,7 @@ struct FullBTBPrediction
         returnTarget(0),
         tageInfoForMgscs(),
         predSource(0),
+        overrideReason(OverrideReason::NO_OVERRIDE),
         predTick(0),
         s1Source(-1),
         s3Source(-1) {}
