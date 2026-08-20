@@ -1014,6 +1014,13 @@ isVectorCompress(const StaticInst &inst)
     return hasMnemonicPrefix(inst, {"vcompress", "Vcompress"});
 }
 
+bool
+usesV0AsData(const StaticInst &inst)
+{
+    return hasMnemonicPrefix(inst, {"vmerge", "vfmerge", "vadc", "vmadc",
+                                    "vsbc", "vmsbc"});
+}
+
 size_t
 wholeVectorRegisterCount(const StaticInst &inst)
 {
@@ -1121,7 +1128,7 @@ getVectorAgnosticBits(const StaticInst &inst,
              bit < RiscvISA::VLEN; ++bit) {
             mask[group_begin + bit / 8] |= uint8_t{1} << (bit % 8);
         }
-        if (!mach_inst.vm && bits(vtype, 7)) {
+        if (!mach_inst.vm && !usesV0AsData(inst) && bits(vtype, 7)) {
             const auto *v0 = reinterpret_cast<const uint8_t *>(
                 &gem5_reg_file.vr[0]);
             for (size_t bit = 0; bit < layout.active_elems; ++bit) {
@@ -1154,7 +1161,7 @@ getVectorAgnosticBits(const StaticInst &inst,
         }
     }
 
-    if (!mach_inst.vm && bits(vtype, 7)) {
+    if (!mach_inst.vm && !usesV0AsData(inst) && bits(vtype, 7)) {
         const auto *v0 = reinterpret_cast<const uint8_t *>(
             &gem5_reg_file.vr[0]);
         for (size_t field = 0; field < layout.field_count; ++field) {
