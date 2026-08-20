@@ -119,7 +119,11 @@ L2CompositeWithWorkerPrefetcher::pfHitNotify(float accuracy, PrefetchSourceType 
         cdp->pfHitNotify(accuracy, pf_source, pkt, addressGenBuffer);
     }
 
-    if (addressGenBuffer.size()) {
+    if (usePFBuffer) {
+        if (cdp->hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
+            schedule(PFReqSendEvent, nextCycle());
+        }
+    } else if (addressGenBuffer.size()) {
         assert(pkt->req->hasVaddr());
         postNotifyInsert(pkt, addressGenBuffer);
     }
@@ -145,7 +149,11 @@ L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
         cdp->notifyFill(pkt, addressGenBuffer);
     }
 
-    if (addressGenBuffer.size()) {
+    if (usePFBuffer) {
+        if (cdp->hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
+            schedule(PFReqSendEvent, nextCycle());
+        }
+    } else if (addressGenBuffer.size()) {
         assert(pkt->req->hasVaddr());
         postNotifyInsert(pkt, addressGenBuffer);
     }
