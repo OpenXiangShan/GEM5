@@ -77,6 +77,9 @@ class CDP : public Queued
     bool enableCoordinate;
     int depth_threshold;
     int degree;
+    bool useDynamicDegree;
+    float accuracyThreshold;
+    bool useAccuracyDependentAlignment;
     float throttle_aggressiveness;
     bool enable_thro;
     /** Byte order used to access the cache */
@@ -418,6 +421,8 @@ class CDP : public Queued
         int prio, PrefetchSourceType pfSource, int pf_depth);
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
         int prio, PrefetchSourceType pfSource, int pf_depth);
+
+    bool shouldIssueDegreeExtension(float accuracy) const;
 
     CDP(const CDPParams &p);
 

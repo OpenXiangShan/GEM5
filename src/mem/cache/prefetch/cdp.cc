@@ -58,6 +58,9 @@ CDP::CDP(const CDPParams &p)
       enableCoordinate(p.enable_coordinate),
       depth_threshold(1),
       degree(3),
+      useDynamicDegree(p.use_dynamic_degree),
+      accuracyThreshold(p.accuracy_threshold),
+      useAccuracyDependentAlignment(p.use_accuracy_dependent_alignment),
       throttle_aggressiveness(p.throttle_aggressiveness),
       enable_thro(false),
       vpnTable(p.vpn_assoc, p.vpn_entries, p.vpn_indexing_policy,
@@ -72,6 +75,9 @@ CDP::CDP(const CDPParams &p)
       byteOrder(p.sys->getGuestByteOrder()),
       cdpStats(this)
 {
+    fatal_if(accuracyThreshold < 0.0 || accuracyThreshold > 1.0,
+             "CDP accuracy_threshold must be in [0, 1]");
+
     for (int i = 0; i < NUM_PF_SOURCES; i++) {
         enable_prf_filter.push_back(false);
     }
@@ -80,6 +86,16 @@ CDP::CDP(const CDPParams &p)
     // filterEntryGranularity should be power of 2, and greater than cache block size
     assert((p.filter_entry_granularity % 2) == 0 && p.filter_entry_granularity >= 64);
     assert(filterRegionBlks % 2 == 0);
+}
+
+bool
+CDP::shouldIssueDegreeExtension(float accuracy) const
+{
+    if (!useDynamicDegree) {
+        return true;
+    }
+
+    return accuracy > accuracyThreshold;
 }
 
 CDP::CDPStats::CDPStats(statistics::Group *parent)
@@ -171,7 +187,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
                 vpnTable.update(vpn2, vpn1, enable_thro, isLowConfidence());
                 sendPFWithFilter(pfi, blockAddress(pt_addr), addresses, 30, PrefetchSourceType::CDP, 1);
                 for (int i = 1; i < degree; i++) {
-                    if (getCdpTrueAccuracy() > 0.05) {
+                    if (shouldIssueDegreeExtension(getCdpTrueAccuracy())) {
                         Addr next_pf_addr = blockAddress(pt_addr) + (i * 0x40);
                         vpnTable.update(BITS(next_pf_addr, 38, 30), BITS(next_pf_addr, 29, 21),
                                         enable_thro, isLowConfidence());
@@ -271,10 +287,12 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
         for (int of = 0; of < max_offset; of++) {
             test_addr = addrs[of];
             int align_bit = BITS(test_addr, 1, 0);
-            if (trueAccuracy < 0.05) {
-                align_bit = BITS(test_addr, 10, 0);
-            } else if (trueAccuracy < 0.01) {
-                align_bit = BITS(test_addr, 11, 0);
+            if (useAccuracyDependentAlignment) {
+                if (trueAccuracy < 0.05) {
+                    align_bit = BITS(test_addr, 10, 0);
+                } else if (trueAccuracy < 0.01) {
+                    align_bit = BITS(test_addr, 11, 0);
+                }
             }
             int filter_bit = BITS(test_addr, 5, 0);
             int page_offset, vpn0, vpn1, vpn1_addr, vpn2, vpn2_addr, check_bit;
@@ -305,7 +323,7 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
                 sendPFWithFilter(pkt, blockAddress(test_addr2), addresses, 29 + next_depth, PrefetchSourceType::CDP,
                                  next_depth);
                 for (int i = 1; i < degree; i++) {
-                    if (trueAccuracy > 0.05) {
+                    if (shouldIssueDegreeExtension(trueAccuracy)) {
                         Addr next_pf_addr = blockAddress(test_addr2) + (i * 0x40);
                         vpnTable.update(BITS(next_pf_addr, 38, 30), BITS(next_pf_addr, 29, 21),
                                         enable_thro, isLowConfidence());
