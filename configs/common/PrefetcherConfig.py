@@ -493,7 +493,7 @@ def _configure_l2_composite_default(prefetcher):
 
 def _configure_l2_composite_kmh_align(prefetcher):
     # RTL-aligned L2CompositeWithWorker profile.
-    prefetcher.enable_cmc = True
+    prefetcher.enable_cmc = False
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = False
     prefetcher.enable_despacito_stream = False
