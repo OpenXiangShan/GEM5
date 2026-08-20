@@ -254,10 +254,14 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
   : statistics::Group(parent),
     ADD_STAT(demandMshrMisses, statistics::units::Count::get(),
         "demands not covered by prefetchs"),
+    ADD_STAT(pfDequeued, statistics::units::Count::get(),
+        "number of prefetches dequeued from the local prefetch queue"),
+    ADD_STAT(pfDequeued_srcs, statistics::units::Count::get(),
+        "number of prefetches dequeued from the local prefetch queue"),
     ADD_STAT(pfIssued, statistics::units::Count::get(),
-        "number of hwpf issued"),
+        "number of prefetches reaching the cache issue boundary"),
     ADD_STAT(pfIssued_srcs, statistics::units::Count::get(),
-        "number of hwpf issued"),
+        "number of prefetches reaching the cache issue boundary"),
     ADD_STAT(pfOffloaded, statistics::units::Count::get(),
         "number of hwpf issued"),
     ADD_STAT(pfaheadOffloaded, statistics::units::Count::get(),
@@ -309,6 +313,9 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
 {
     using namespace statistics;
 
+    pfDequeued_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero);
     pfIssued_srcs
         .init(NUM_PF_SOURCES)
         .flags(total | nozero);
@@ -340,6 +347,7 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
 
     for (unsigned source = 0; source < NUM_PF_SOURCES; ++source) {
         const auto source_name = prefetchSourceTypeName(source);
+        pfDequeued_srcs.subname(source, source_name);
         pfIssued_srcs.subname(source, source_name);
         pfUnused_srcs.subname(source, source_name);
         pfBad_srcs.subname(source, source_name);
@@ -457,7 +465,8 @@ Base::nofityHitToDownStream(const PacketPtr &pkt)
 {
     // allow non-demand notify for downstream
     PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
-    float acc = (prefetchStats.pfUseful_srcs[pf_source].value()) / (prefetchStats.pfIssued_srcs[pf_source].value());
+    float acc = (prefetchStats.pfUseful_srcs[pf_source].value()) /
+        (prefetchStats.pfDequeued_srcs[pf_source].value());
     DPRINTF(HWPrefetch, "Notify data read resp pkt to down stream prefetch, especially for CDP\n");
     hintDownStream->pfHitNotify(acc, pf_source, pkt);
 }

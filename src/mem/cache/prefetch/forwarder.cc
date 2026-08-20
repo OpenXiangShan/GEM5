@@ -147,8 +147,8 @@ PrefetcherForwarder::getPacket()
     }
     PacketPtr pkt = prefetch_queue.front();
     prefetch_queue.pop();
-    if (real_pf && !real_pf->ownsPrefetchRequest(pkt)) {
-        real_pf->recordIssuedPrefetch(pkt);
+    if (real_pf) {
+        real_pf->recordIssuedPrefetchStats(pkt);
     }
     return pkt;
 }

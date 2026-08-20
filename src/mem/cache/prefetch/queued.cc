@@ -1145,7 +1145,11 @@ Queued::getPacket()
     pfq.pop_front();
 
     assert(pkt != nullptr);
-    recordIssuedPrefetch(pkt);
+    if (issueStatsAreAtForwarder()) {
+        recordPrefetchDequeued(pkt);
+    } else {
+        recordIssuedPrefetch(pkt);
+    }
     DPRINTF(HWPrefetch, "Generating prefetch for %#x.\n", pkt->getAddr());
 
     return pkt;

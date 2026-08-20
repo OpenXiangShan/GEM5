@@ -85,9 +85,10 @@ L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     if (offloadLowAccuracy) {
         auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
         float cdp_ratio =
-            (prefetchStats.pfIssued_srcs[PrefetchSourceType::CDP].value()) / (prefetchStats.pfIssued.total());
+            (prefetchStats.pfDequeued_srcs[PrefetchSourceType::CDP].value()) /
+            (prefetchStats.pfDequeued.value());
         float acc = (prefetchStats.pfUseful_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value()) /
-                    (prefetchStats.pfIssued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
+                    (prefetchStats.pfDequeued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
 
         if (hasHintDownStream() && cdp_ratio > 0.5 && acc < 0.5) {
             hintDownStream->rxHint(dpp);
