@@ -23,9 +23,10 @@
   容量只是此图的 area proxy，不是本次 NSGA-II 目标；红点不能被称为 solver 的
   score/mispredict 前沿。图像已核对为当前仓库
   `tage-capacity-8table-t2t4-dse-2d-20260821.png` 的同一文件。
-- 新搜索固定为 8 张 active TAGE 表，使用 35 个受 TAGE 参数影响的 0.3c slice，
-  比上一次的 22 个 `astar,gobmk,sjeng` slice 多出 13 个
-  `bzip2,gcc,h264ref,perlbench` slice。T2--T4 被设为至少占逻辑容量 50%，
+- 新搜索固定为 8 张 active TAGE 表，使用 35 个受 TAGE 参数影响的 0.3c slice。
+  相比上一轮的 22 个 slice，数量增加 13；`gobmk` 仍为 14 个，但 `astar/sjeng`
+  的构成从 `4/4` 重选为 `5/3`，所以这不是旧 22 个 slice 的严格追加。在此基础上
+  引入了 13 个 `bzip2,gcc,h264ref,perlbench` slice。T2--T4 被设为至少占逻辑容量 50%，
   并获得更高的采样和局部变异优先级；这是一项搜索先验，不是 T2--T4 因果有效的
   证明。
 
@@ -49,7 +50,8 @@ execute-stage 分支错误预测计数；不改编译器、二进制、OS 或运
 相对 [前一轮报告](tage_capacity_nsga2_dse_20260814.md)，这轮变化如下：
 
 1. active table 数从可变空间收缩为固定 8 张表。
-2. workload 从 22 个 `astar,gobmk,sjeng` slice 扩展到 35 个 slice。
+2. workload 由 22 个 `astar,gobmk,sjeng` slice 重选并扩展为 35 个 slice；
+   `astar/sjeng` 构成也由 `4/4` 变为 `5/3`。
 3. 总逻辑容量区间改为 baseline 的 80%--130%，并将 T2--T4 合计容量限制为至少
    50%。
 4. T2--T4 的 sets 可从 `2^7` 到 `2^13`，其余表为 `2^6` 到 `2^11`；变异中 65%
@@ -158,9 +160,10 @@ system.cpu[0].branchPred.tage.numWays
 overlay 可以只覆盖这四个参数，不会改变其他 KMHv3 配置。所有下面 vector 的顺序
 均为 T0 到 T7，且 `numPredictors=8`。
 
-除了三个正式帕累托点，下表加入两个容量-分数投影上的候选。它们不在 solver 的
-score/mispredict 前沿，却在不增大容量的约束下仍优于 baseline，适合作为 1.0c
-泛化验证的低成本对照点。
+除了三个正式帕累托点，下表加入四个容量-分数投影上的候选。C1/C2 用于较小容量的
+对照；C3/C4 则在 70--75 KiB 内按 solver score 排名第 1/2，分别测试该区间的性能
+上界和最接近默认容量的选择。它们不在 solver 的 score/mispredict 前沿，不能被称为
+正式帕累托点。
 
 | 候选 / 用途 | `numPredictors` | `tableSizes` | `TTagBitSizes` | `numWays` | 容量 / T2--T4 share |
 | --- | ---: | --- | --- | --- | --- |
@@ -169,10 +172,13 @@ score/mispredict 前沿，却在不增大容量的约束下仍优于 baseline，
 | P3 `trial_0505`，错误预测极值 | 8 | `[1024, 256, 4096, 4096, 2048, 2048, 256, 512]` | `[15, 11, 8, 11, 17, 18, 14, 13]` | `[2, 1, 4, 3, 4, 2, 1, 1]` | 90.719 KiB / 79.37% |
 | C1 `trial_0584`，低于 baseline 容量的最高 score | 8 | `[128, 1024, 4096, 2048, 512, 1024, 256, 1024]` | `[15, 10, 8, 20, 13, 19, 14, 17]` | `[8, 1, 3, 2, 8, 5, 1, 3]` | 69.219 KiB / 59.23% |
 | C2 `trial_0808`，更低容量且 score/mispredict 均改善 | 8 | `[256, 1024, 2048, 2048, 2048, 1024, 512, 512]` | `[15, 13, 13, 17, 18, 15, 15, 13]` | `[5, 1, 4, 2, 3, 5, 1, 2]` | 67.625 KiB / 68.39% |
+| C3 `trial_0335`，70--75 KiB score #1 | 8 | `[128, 1024, 2048, 2048, 1024, 1024, 512, 1024]` | `[15, 13, 19, 8, 13, 18, 15, 17]` | `[8, 1, 4, 1, 8, 5, 1, 3]` | 73.875 KiB / 61.25% |
+| C4 `trial_0166`，最接近默认、同区间 score #2 | 8 | `[256, 256, 2048, 4096, 2048, 2048, 1024, 2048]` | `[15, 18, 16, 11, 18, 11, 13, 13]` | `[2, 3, 2, 3, 3, 2, 2, 1]` | 72.156 KiB / 71.72% |
 
 相对 solver baseline，C1 的 score 为 `+0.1432%`、错误预测为 `-1.0607%`，容量
-为 `-3.8628%`；C2 的对应变化为 `+0.1111%`、`-1.6314%` 和 `-6.0764%`。它们的
-选择原因是容量-性能取舍，不应误写成正式二目标帕累托结论。
+为 `-3.8628%`；C2 的对应变化为 `+0.1111%`、`-1.6314%` 和 `-6.0764%`。C3/C4 的
+score 分别为 `+0.3027%` 和 `+0.2878%`，错误预测分别为 `-1.5309%` 和 `-1.4715%`；
+它们的选择原因是容量-性能取舍，不应误写成正式二目标帕累托结论。
 
 用于命令行或 `manual-perf.yml` 的单个候选 overlay 形式如下，其中方括号中的值由
 上表对应行替换：
@@ -235,6 +241,10 @@ point 子集都与从
 `spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json` 导出的 whitelist
 完全匹配；每个 workload 内先归一化 SimPoint 权重，再按 profile 的 instruction
 count 聚合多个输入。
+
+对五个已完成候选，各 archive 的 `astar_biglakes_8418/m5out/config.ini` 还逐一
+核对了 `numPredictors`、`tableSizes`、`TTagBitSizes` 与 `numWays` 四个生效字段，
+均与上表对应行一致；这比仅从 `metadata.txt` 读取请求的 `extra_args` 更强。
 
 | 标签 | Trial | Actions run | Archive | 归档/Actions 状态 |
 | --- | --- | --- | --- | --- |
@@ -338,7 +348,9 @@ gh workflow run manual-perf.yml \
 
 两条 run 完成后，仍按 baseline 对应的 35 workload / 697 point whitelist 重聚合，并
 要求运行 archive 对 12 个实际 benchmark 有 697 `stats.txt` 和 `completed`、零
-`running`/`abort`、非空 `score.txt`，才将 C3/C4 加入上面的实测表。
+`running`/`abort`、非空 `score.txt`。在加入实测表前，还必须从每条 run 的一个完成
+切片 `m5out/config.ini` 核对四个 TAGE 字段与“求解结果到 gem5 参数的映射”中 C3/C4
+对应行完全一致；仅有 `metadata.txt` 的请求参数不足以证明最终 SimObject 配置。
 
 ## 边界与复现
 
@@ -367,8 +379,9 @@ gh workflow run manual-perf.yml \
   ```
 - 本节的 P1--P3/C1--C4 覆盖图由
   [`generate_tage_capacity_8table_t2t4_selection_figure.py`](generate_tage_capacity_8table_t2t4_selection_figure.py)
-  生成。它复用上述 artifact 审计，并额外要求全部七个选择标签指向唯一的实际 trial；
-  无 `matplotlib` 时可运行：
+  生成。它复用上述 artifact 审计，并额外验证 P1--P3 恰为正式 score/branch
+  Pareto 集、C1--C4 位于容量-分数投影、C3/C4 是 70--75 KiB 中的 score #1/#2；无
+  `matplotlib` 时可运行：
 
   ```bash
   python3 docs/Gem5_Docs/frontend/generate_tage_capacity_8table_t2t4_selection_figure.py \

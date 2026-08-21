@@ -10,6 +10,7 @@ from pathlib import Path
 
 BASELINE_CAPACITY_BITS = 589_824
 SCORE_COLUMN = "max:score_txt:Estimated Int score per GHz"
+BRANCH_MISPREDICT_COLUMN = "min:stats:system.cpu.iew.branchMispredicts"
 EXPECTED_VALID_TRIALS = 830
 EXPECTED_AREA_SCORE_FRONTIER = 18
 
@@ -23,6 +24,7 @@ class Trial:
     trial_id: str
     is_baseline: bool
     score: float
+    branch_mispredicts: float
     capacity_bits: int
 
     @property
@@ -55,6 +57,7 @@ def read_trials(artifact_dir: Path) -> list[Trial]:
                     trial_id=row["trial_id"],
                     is_baseline=is_baseline,
                     score=float(row[SCORE_COLUMN]),
+                    branch_mispredicts=float(row[BRANCH_MISPREDICT_COLUMN]),
                     capacity_bits=(
                         BASELINE_CAPACITY_BITS
                         if is_baseline

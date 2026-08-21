@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the solver DSE plot with GCC15 SPEC06 1.0c regression selections."""
+"""Render 0.3c solver DSE points selected for GCC15 SPEC06 1.0c regression."""
 
 import argparse
 from dataclasses import dataclass
@@ -18,6 +18,12 @@ from generate_tage_capacity_8table_t2t4_dse_figures import (
 
 TEAL = "#0f766e"
 AMBER = "#b45309"
+EXPECTED_SCORE_BRANCH_PARETO = frozenset(
+    {"trial_0271", "trial_0505", "trial_0748"}
+)
+NEAR_BASELINE_MIN_KIB = 70.0
+NEAR_BASELINE_MAX_KIB = 75.0
+NEAR_BASELINE_SCORE_RANKS = {"C3": 0, "C4": 1}
 
 
 @dataclass(frozen=True)
@@ -44,7 +50,11 @@ SELECTIONS = (
 
 def selected_trials(trials: list[Trial]) -> list[tuple[Selection, Trial]]:
     by_id = {trial.trial_id: trial for trial in trials}
-    missing = [selection.trial_id for selection in SELECTIONS if selection.trial_id not in by_id]
+    missing = [
+        selection.trial_id
+        for selection in SELECTIONS
+        if selection.trial_id not in by_id
+    ]
     if missing:
         raise ValueError(f"selected trials missing from artifact: {missing}")
     if len({selection.label for selection in SELECTIONS}) != len(SELECTIONS):
@@ -54,15 +64,84 @@ def selected_trials(trials: list[Trial]) -> list[tuple[Selection, Trial]]:
     return [(selection, by_id[selection.trial_id]) for selection in SELECTIONS]
 
 
-def plot(trials: list[Trial], output_path: Path) -> None:
+def score_branch_pareto(trials: list[Trial]) -> set[str]:
+    return {
+        candidate.trial_id
+        for candidate in trials
+        if not any(
+            other is not candidate
+            and other.score >= candidate.score
+            and other.branch_mispredicts <= candidate.branch_mispredicts
+            and (
+                other.score > candidate.score
+                or other.branch_mispredicts < candidate.branch_mispredicts
+            )
+            for other in trials
+        )
+    }
+
+
+def validate_selection(trials: list[Trial]) -> list[tuple[Selection, Trial]]:
+    selections = selected_trials(trials)
+    selected_by_label = {selection.label: trial for selection, trial in selections}
+    formal_pareto = score_branch_pareto(trials)
+    if formal_pareto != EXPECTED_SCORE_BRANCH_PARETO:
+        raise ValueError(
+            "score/branch Pareto differs from audited artifact: "
+            f"{sorted(formal_pareto)}"
+        )
+    selected_pareto = {
+        trial.trial_id
+        for selection, trial in selections
+        if selection.category == "pareto"
+    }
+    if selected_pareto != formal_pareto:
+        raise ValueError("P labels do not match the formal score/branch Pareto set")
+
+    area_score = area_score_frontier(trials)
+    if len(area_score) != EXPECTED_AREA_SCORE_FRONTIER:
+        raise ValueError("capacity-score frontier differs from audited artifact")
+    area_score_ids = {trial.trial_id for trial in area_score}
+    capacity_selection_ids = {
+        trial.trial_id
+        for selection, trial in selections
+        if selection.category == "capacity"
+    }
+    if not capacity_selection_ids <= area_score_ids:
+        raise ValueError("C labels must be on the capacity-score projection")
+
+    near_baseline = sorted(
+        (
+            trial
+            for trial in trials
+            if not trial.is_baseline
+            and NEAR_BASELINE_MIN_KIB <= trial.capacity_kib <= NEAR_BASELINE_MAX_KIB
+        ),
+        key=lambda trial: (-trial.score, trial.trial_id),
+    )
+    for label, expected_rank in NEAR_BASELINE_SCORE_RANKS.items():
+        if (
+            len(near_baseline) <= expected_rank
+            or near_baseline[expected_rank].trial_id
+            != selected_by_label[label].trial_id
+        ):
+            raise ValueError(
+                f"{label} is not score rank #{expected_rank + 1} in the "
+                f"{NEAR_BASELINE_MIN_KIB:g}--{NEAR_BASELINE_MAX_KIB:g} KiB band"
+            )
+    return selections
+
+
+def plot(
+    trials: list[Trial],
+    selections: list[tuple[Selection, Trial]],
+    output_path: Path,
+) -> None:
     import matplotlib.pyplot as plt
 
     baseline = next(trial for trial in trials if trial.is_baseline)
     candidates = [trial for trial in trials if not trial.is_baseline]
     frontier = area_score_frontier(trials)
-    if len(frontier) != EXPECTED_AREA_SCORE_FRONTIER:
-        raise ValueError("capacity-score frontier differs from audited artifact")
-    selections = selected_trials(trials)
 
     fig, ax = plt.subplots(figsize=(14.8, 8.7), layout="constrained")
     fig.patch.set_facecolor("white")
@@ -164,12 +243,15 @@ def plot(trials: list[Trial], output_path: Path) -> None:
         zorder=10,
     )
     ax.set_title(
-        "KMHv3 TAGE Capacity DSE: Selected GCC15 SPEC06 1.0c Regression Points",
+        "KMHv3 TAGE 0.3c DSE: Points Selected for GCC15 SPEC06 1.0c Regression",
         fontsize=18,
         pad=14,
     )
     ax.set_xlabel("TAGE logical capacity / area proxy (KiB, lower is better)", fontsize=12.5)
-    ax.set_ylabel("Estimated Int score per GHz (higher is better)", fontsize=12.5)
+    ax.set_ylabel(
+        "0.3c solver Estimated Int score per GHz (higher is better)",
+        fontsize=12.5,
+    )
     ax.set_xlim(56.5, 94.5)
     ax.set_ylim(26.32, 27.39)
     ax.legend(loc="lower right", frameon=True, framealpha=0.97, edgecolor="#cbd1d8")
@@ -199,10 +281,7 @@ def main() -> None:
     args = parser.parse_args()
 
     trials = read_trials(args.artifact_dir)
-    frontier = area_score_frontier(trials)
-    if len(frontier) != EXPECTED_AREA_SCORE_FRONTIER:
-        raise ValueError("capacity-score frontier differs from audited artifact")
-    selections = selected_trials(trials)
+    selections = validate_selection(trials)
     if args.verify_only:
         labels = ", ".join(
             f"{selection.label}={trial.trial_id}"
@@ -210,10 +289,10 @@ def main() -> None:
         )
         print(
             f"audited {len(trials)} valid trials; "
-            f"area-score frontier: {len(frontier)}; selections: {labels}"
+            f"area-score frontier: {EXPECTED_AREA_SCORE_FRONTIER}; selections: {labels}"
         )
         return
-    plot(trials, args.output)
+    plot(trials, selections, args.output)
     print(f"output={args.output}")
 
 
