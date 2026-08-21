@@ -50,7 +50,7 @@ on:
         type: string
         default: "4"
       distributed_servers:
-        description: "Optional distributed server list. Empty runs only on the current CI runner; default uses node020-node034,node036-node039."
+        description: "Optional distributed server list. Empty runs only on the current CI runner; default uses node020-node029,node033-node034,node036-node039."
         required: false
         type: string
         default: ""

@@ -13,7 +13,7 @@ from typing import Callable
 import util.xs_scripts.distributed_sim as dist
 
 
-DEFAULT_DISTRIBUTED_SERVERS = "node020-node034,node036-node039"
+DEFAULT_DISTRIBUTED_SERVERS = "node020-node029,node033-node034,node036-node039"
 DEFAULT_IDLE_CPU_THRESHOLD = 30.0
 
 
