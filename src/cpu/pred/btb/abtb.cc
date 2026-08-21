@@ -831,7 +831,11 @@ AheadBTB::update(const FetchTarget &stream)
             DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
             return;
         }
-        Addr btb_idx = getIndex(previousPC, stream.asidHash);  // use last pc to get idx
+        // Reuse the set accessed during prediction, including its PHR hash.
+        // Before the ahead pipeline fills, retain the legacy PC-only fallback.
+        Addr btb_idx = meta->lookupIndexValid
+            ? meta->lookupIndex
+            : getIndex(previousPC, stream.asidHash);
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
         updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
     }
