@@ -190,22 +190,155 @@ score/mispredict 前沿，却在不增大容量的约束下仍优于 baseline，
 
 ## 选择建议与 GCC15 SPEC06 1.0c 验证
 
-建议用不超过 5 个候选的完整 `gcc15-spec06-1.0c` CI 检查泛化性，且按用户要求不
-创建新的 baseline run：
+### 选点图和标签
 
-1. `trial_0748`：35-slice score 极值，检验最直接的性能候选。
-2. `trial_0271`：正式前沿的中间错误预测取舍。
-3. `trial_0505`：正式前沿的最低错误预测极值。
-4. `trial_0584`：容量比默认小 3.86% 而在 solver workload 上仍同时改善的候选。
-5. `trial_0808`：容量比默认小 6.08% 的更激进容量节省候选。
+下图沿用 solver artifact 的完整 829 个候选、默认 `trial_0001` 以及 18 点
+capacity-minimize/score-maximize 投影。横轴和纵轴仍是 solver 的 GCC15 SPEC06
+0.3c 口径，**不是** 1.0c 跑分；彩色 P/C 标记只说明哪些点被选择进入或准备进入
+1.0c 回归，不构成新的 Pareto 定义。
 
-五个 run 必须固定 `kmhv3.py`、`gcc15-spec06-1.0c`、空 benchmark filter（全套）、
-`vector_type=base`、`distributed_servers=default`、32 jobs/server 和同一
-`c4069f1464a9ac507d20794d93fab0a50db266f4` implementation SHA；workflow 定义从
-`tage-capacity-nsga2-dse` ref 读取，而 `branch` input 传该完整 SHA。唯一变量是
-上述四个 TAGE 参数。由于不运行新的 same-SHA baseline，完成后可以验证候选是否
-正常运行并比较候选之间的全套结果，但不应把与旧 run 的差异误归因于本次 parameter
-overlay。
+![Selected TAGE capacity DSE regression points](/docs/Gem5_Docs/images/tage-capacity-8table-t2t4-selected-spec06-1c-20260821.png)
+
+- `P1`--`P3`：正式 solver 目标（最大 score、最小
+  `system.cpu.iew.branchMispredicts`）的三点 Pareto 集。
+- `C1`--`C4`：容量/验证选择。它们可处于面积-分数投影上，但不等同于正式两目标
+  Pareto 点。
+- `C3` 和 `C4` 是新增的 70--75 KiB 近默认容量候选；图上标出的是 solver 证据，
+  其 1.0c SPECint 结果在新的 CI 完成前未知。
+
+| 标签 | Trial | 逻辑容量 | 相对 72 KiB 默认 | Solver score / delta | Solver branch-mispredict / delta | 选择理由与 1.0c 状态 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| P1 | `trial_0748` | 82.125 KiB | +14.0625% | 27.336190 / +0.7126% | 123998.872 / -3.3688% | score 极值；已完成 |
+| P2 | `trial_0271` | 88.250 KiB | +22.5694% | 27.322477 / +0.6621% | 123880.997 / -3.4606% | 正式前沿中间取舍；已完成 |
+| P3 | `trial_0505` | 90.719 KiB | +25.9983% | 27.210634 / +0.2501% | 123642.123 / -3.6468% | 正式前沿的 branch 极值；已完成 |
+| C1 | `trial_0584` | 69.219 KiB | -3.8628% | 27.181631 / +0.1432% | 126960.641 / -1.0607% | 小容量对照；已完成 |
+| C2 | `trial_0808` | 67.625 KiB | -6.0764% | 27.172910 / +0.1111% | 126228.257 / -1.6314% | 更激进小容量对照；已完成 |
+| C3 | `trial_0335` | 73.875 KiB | +2.6042% | 27.224924 / +0.3027% | 126357.292 / -1.5309% | 70--75 KiB 的 score #1；待跑 SPECint |
+| C4 | `trial_0166` | 72.156 KiB | +0.2170% | 27.220893 / +0.2878% | 126433.430 / -1.4715% | 最接近默认、同区间 score #2；待跑 SPECint |
+
+`C3` 与 `C4` 均被 P1/P2 在正式 solver 两目标上支配，因此不能升级为 P4/P5；
+新增它们的目的，是区分接近默认容量时的性能泛化，而不是寻找第二条前沿。
+
+### 已完成的 1.0c 结果
+
+用户指定 [run 31990034028](https://github.com/OpenXiangShan/GEM5/actions/runs/31990034028)
+作为 baseline。其归档为 `20260817_111028_c599c3370_kmhv3_run870`，使用
+`kmhv3.py`、`base`、默认节点池、32 jobs/server、无 TAGE overlay，且只包含
+`perlbench,bzip2,gcc,mcf,gobmk,hmmer,sjeng,libquantum,h264ref,omnetpp,astar,xalancbmk`
+12 个 SPECint benchmark。该 archive 的硬门槛为 697 `stats.txt`、697
+`completed`、零 `running`/`abort` 和非空 `score.txt`。
+
+五个原始候选均以完整 `gcc15-spec06-1.0c`（空 filter）运行，实际模型 checkout
+均由 `metadata.txt` 复核为 `c4069f1464a9ac507d20794d93fab0a50db266f4`。分析时只
+从其完整归档提取 baseline 所覆盖的 12 个 benchmark。每个候选的 35 workload / 697
+point 子集都与从
+`spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json` 导出的 whitelist
+完全匹配；每个 workload 内先归一化 SimPoint 权重，再按 profile 的 instruction
+count 聚合多个输入。
+
+| 标签 | Trial | Actions run | Archive | 归档/Actions 状态 |
+| --- | --- | --- | --- | --- |
+| P1 | `trial_0748` | [32451374323](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374323) | `20260821_134457_c4069f14_kmhv3_run937` | 1112/1112/0/0/score；Actions cleanup 后 NFS stale-handle failure |
+| P2 | `trial_0271` | [32451374106](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374106) | `20260821_134429_c4069f146_kmhv3_run936` | 1112/1112/0/0/score；Actions cleanup 后 NFS stale-handle failure |
+| P3 | `trial_0505` | [32451374465](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374465) | `20260821_134430_c4069f14_kmhv3_run940` | 1112/1112/0/0/score；Actions cleanup 后 NFS stale-handle failure |
+| C1 | `trial_0584` | [32451374328](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374328) | `20260821_134521_c4069f1464_kmhv3_run938` | 1112/1112/0/0/score；Actions cleanup 后 NFS stale-handle failure |
+| C2 | `trial_0808` | [32451374438](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374438) | `20260821_135048_c4069f1464_kmhv3_run939` | 1112/1112/0/0/score；Actions success |
+
+表中的 `1112/1112/0/0/score` 依次为 `stats.txt`、`completed`、`running`、`abort`
+和非空 `score.txt` 的验收结果。前四条 Actions 的 failure 发生在模拟和 score 生成后
+的 NFS 清理；完整 archive 仍满足数据门槛，不能把它误写成性能失败。C2 的 Actions
+所有 simulation、data processing、archive 和 upload 步骤均成功。Actions 页的
+`headSha=d67bde...` 只是 workflow dispatch revision；实际模型版本以 archive metadata
+的 `c4069f...` 为准。
+
+下表仅报告 12 benchmark 的 SPECint 几何均值。`branchMispredicts` 从每个
+`stats.txt` 的最后一个 ROI block 读取，先按 SimPoint/输入权重聚合；表中跨 benchmark
+求和与 MPKI 因而是诊断量，不是 SPEC 官方 aggregate。
+
+| 标签 | SPECint score / GHz | 相对 baseline | Final-ROI branchMispredicts | 诊断 branch MPKI | MPKI 相对 baseline |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baseline `run870` | 18.689004 | +0.000000% | 1736380.363 | 7.234918 | +0.000000% |
+| P1 `trial_0748` | **18.797498** | **+0.580524%** | 1671706.072 | 6.965442 | -3.724661% |
+| P2 `trial_0271` | 18.758323 | +0.370909% | 1703895.553 | 7.099565 | -1.870833% |
+| P3 `trial_0505` | 18.777698 | +0.474580% | **1670709.998** | **6.961292** | **-3.782027%** |
+| C1 `trial_0584` | 18.687556 | -0.007749% | 1728281.519 | 7.201173 | -0.466421% |
+| C2 `trial_0808` | 18.712569 | +0.126090% | 1720013.144 | 7.166721 | -0.942606% |
+
+| Benchmark score delta vs baseline | P1 | P2 | P3 | C1 | C2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| perlbench | -0.563637% | -0.582761% | -1.757445% | -0.579445% | -0.988988% |
+| bzip2 | +0.227919% | +0.290104% | +0.575293% | -0.716433% | +0.186383% |
+| gcc | -0.044013% | -0.173122% | -0.647416% | -0.704764% | -0.370017% |
+| mcf | +0.180304% | **+1.671596%** | +0.219687% | +0.463387% | +0.956537% |
+| gobmk | +2.399588% | +1.201293% | **+3.862373%** | +0.523240% | +0.686673% |
+| hmmer | +0.005806% | -0.007894% | -0.010321% | -0.006611% | +0.002709% |
+| sjeng | +1.092785% | +0.747830% | **+1.363768%** | +0.422215% | +0.497727% |
+| libquantum | -0.056072% | -0.045629% | -0.126056% | -0.048094% | -0.007526% |
+| h264ref | +0.042751% | +0.025601% | -0.077234% | -0.071419% | -0.016000% |
+| omnetpp | +0.697463% | +0.208798% | -0.153970% | +0.489420% | +0.276692% |
+| astar | **+2.977682%** | +1.090307% | +2.757067% | +0.224656% | +0.401254% |
+| xalancbmk | +0.067800% | +0.048730% | -0.184973% | -0.077548% | -0.098172% |
+
+结论应按这套 SPECint 数据而不是 solver 0.3c score 作出：
+
+1. P1 是当前首选性能点：它给出最高的 SPECint `+0.580524%`，同时 branch MPKI
+   降 `3.724661%`。P1 在 `astar`、`gobmk` 和 `omnetpp` 的收益抵消了较温和的
+   `perlbench` 回退。
+2. P3 的 branch MPKI 比 P1 再低 `0.004150`，但总 score 低于 P1，且对
+   `perlbench`（`-1.757445%`）和 `gcc`（`-0.647416%`）的回退更明显；它仅适合
+   branch-mispredict 优先的取舍。P2 在 `mcf` 上的收益最大，但总体仍落后 P1。
+3. C2 以 `-6.0764%` 容量换取 `+0.126090%` SPECint score，适合作为面积敏感备选；
+   C1 虽少 `3.8628%` 容量，但 score 为 `-0.007749%`，不应作为性能推荐点。
+4. C3/C4 尚未有 1.0c 数据。C3 测试该容量带内的 score 极值，C4 将默认容量只增加
+   `0.2170%`；二者的价值是补齐近默认容量区间，不预设其会重复 solver 的收益。
+
+本段 baseline 的模型 SHA 是 `c599c33709229410ba37088aa766a1a8f2e7f5ac`，而五个
+候选为 `c4069f1464a9ac507d20794d93fab0a50db266f4`，因此上述百分比是跨 SHA 对比，
+不能宣称严格的 TAGE-only A/B。已检查这两个 SHA 的 `src/`、
+`configs/example/kmhv3.py` 与 `.github/workflows/manual-perf.yml` 无差异；差异在
+solver/workflow、solver checkpoint 选择和文档，仍需在解释中保留这一边界。
+
+### C3/C4 的 SPECint CI 合同
+
+新 CI 保持 `kmhv3.py`、`gcc15-spec06-1.0c`、`base`、默认节点池、32 jobs/server
+和模型 SHA `c4069f1464a9ac507d20794d93fab0a50db266f4`；只把
+`specific_benchmarks` 固定为 baseline 的 12 个 SPECint benchmark，并替换四个 TAGE
+overlay。`--ref` 选择已推送的 workflow 定义，`branch` input 固定实际模型 checkout。
+两个 dispatch 需在明确确认后执行：
+
+```bash
+gh workflow run manual-perf.yml \
+  --repo OpenXiangShan/GEM5 \
+  --ref tage-capacity-nsga2-dse \
+  -f note=TAGE-C3-specint-1.0c \
+  -f configuration=kmhv3.py \
+  -f benchmark_type=gcc15-spec06-1.0c \
+  -f specific_benchmarks=perlbench,bzip2,gcc,mcf,gobmk,hmmer,sjeng,libquantum,h264ref,omnetpp,astar,xalancbmk \
+  -f vector_type=base \
+  -f branch=c4069f1464a9ac507d20794d93fab0a50db266f4 \
+  -f distributed_servers=default \
+  -f distributed_jobs_per_server=32 \
+  -f extra_args='-P system.cpu[0].branchPred.tage.numPredictors=8 -P system.cpu[0].branchPred.tage.tableSizes=[128,1024,2048,2048,1024,1024,512,1024] -P system.cpu[0].branchPred.tage.TTagBitSizes=[15,13,19,8,13,18,15,17] -P system.cpu[0].branchPred.tage.numWays=[8,1,4,1,8,5,1,3]'
+```
+
+```bash
+gh workflow run manual-perf.yml \
+  --repo OpenXiangShan/GEM5 \
+  --ref tage-capacity-nsga2-dse \
+  -f note=TAGE-C4-specint-1.0c \
+  -f configuration=kmhv3.py \
+  -f benchmark_type=gcc15-spec06-1.0c \
+  -f specific_benchmarks=perlbench,bzip2,gcc,mcf,gobmk,hmmer,sjeng,libquantum,h264ref,omnetpp,astar,xalancbmk \
+  -f vector_type=base \
+  -f branch=c4069f1464a9ac507d20794d93fab0a50db266f4 \
+  -f distributed_servers=default \
+  -f distributed_jobs_per_server=32 \
+  -f extra_args='-P system.cpu[0].branchPred.tage.numPredictors=8 -P system.cpu[0].branchPred.tage.tableSizes=[256,256,2048,4096,2048,2048,1024,2048] -P system.cpu[0].branchPred.tage.TTagBitSizes=[15,18,16,11,18,11,13,13] -P system.cpu[0].branchPred.tage.numWays=[2,3,2,3,3,2,2,1]'
+```
+
+两条 run 完成后，仍按 baseline 对应的 35 workload / 697 point whitelist 重聚合，并
+要求运行 archive 对 12 个实际 benchmark 有 697 `stats.txt` 和 `completed`、零
+`running`/`abort`、非空 `score.txt`，才将 C3/C4 加入上面的实测表。
 
 ## 边界与复现
 
@@ -229,6 +362,16 @@ overlay。
 
   ```bash
   python3 docs/Gem5_Docs/frontend/generate_tage_capacity_8table_t2t4_dse_figures.py \
+    /path/to/solver-run-32253821540 \
+    --verify-only
+  ```
+- 本节的 P1--P3/C1--C4 覆盖图由
+  [`generate_tage_capacity_8table_t2t4_selection_figure.py`](generate_tage_capacity_8table_t2t4_selection_figure.py)
+  生成。它复用上述 artifact 审计，并额外要求全部七个选择标签指向唯一的实际 trial；
+  无 `matplotlib` 时可运行：
+
+  ```bash
+  python3 docs/Gem5_Docs/frontend/generate_tage_capacity_8table_t2t4_selection_figure.py \
     /path/to/solver-run-32253821540 \
     --verify-only
   ```
