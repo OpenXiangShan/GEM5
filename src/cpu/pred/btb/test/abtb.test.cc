@@ -2,7 +2,6 @@
 #include <gtest/gtest.h>
 
 #include "cpu/pred/btb/abtb.hh"
-#include "cpu/pred/btb/mbtb.hh"
 
 namespace gem5
 {
@@ -61,8 +60,11 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
     abtb->recoverState(stream);
 }
 
-void updateBTB(FetchTarget &stream, AheadBTB *abtb, MBTB *mbtb) {
-    mbtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
+void updateABTB(FetchTarget &stream, AheadBTB *abtb) {
+    // ABTB and MBTB use different metadata types.  In UNIT_TEST builds both
+    // components use index 0, so do not ask MBTB to read ABTB's metadata here.
+    stream.updateNewBTBEntry = BTBEntry(stream.exeBranchInfo);
+    stream.updateIsOldEntry = false;
     abtb->update(stream);
 }
 
@@ -78,12 +80,10 @@ protected:
         // AheadBTB never uses half-aligned mode
 
         bigAbtb = new AheadBTB(1024, 20, 1, 0);
-        mbtb = new MBTB (2048, 20, 4, 1);  // 2 sram, 4 way each, total 8 ways
     }
 
     AheadBTB* abtb;
     AheadBTB* bigAbtb;
-    MBTB* mbtb; // for getAndsetNewentry
 };
 
 TEST_F(ABTBTest, BasicPredictionUpdateCycle){
@@ -109,8 +109,8 @@ TEST_F(ABTBTest, BasicPredictionUpdateCycle){
     resolveStream(stream_A, true, brPC_A, target_A, true);
     resolveStream(stream_B, true, brPC_B, target_B, true);
     // update BTB with branch information
-    updateBTB(stream_A, abtb, mbtb);
-    updateBTB(stream_B, abtb, mbtb);
+    updateABTB(stream_A, abtb);
+    updateABTB(stream_B, abtb);
 
     // ---------------- testing phase ----------------
     // make predictions and check if BTB is updated correctly
@@ -154,8 +154,8 @@ TEST_F(ABTBTest, AliasAvoidance){
     resolveStream(stream_B, true, brPC_B, target_B, true);
     // update BTB with branch information
     // now aBTB ought to have a entry, indexed by startPC_A, tagged with startPC_B
-    updateBTB(stream_A, bigAbtb, mbtb);
-    updateBTB(stream_B, bigAbtb, mbtb);
+    updateABTB(stream_A, bigAbtb);
+    updateABTB(stream_B, bigAbtb);
 
     // ---------------- testing phase ----------------
     // when we've arrived at Fetch Block C, aBTB shouldn't return the entry trained with Fetch Block B
@@ -180,7 +180,7 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
     auto stream_t0 = createStream(t0StartPC, pred_t0, &twoThreadAbtb);
     stream_t0.previousPCs.push(t0PrevPC);
     resolveStream(stream_t0, true, t0BrPC, t0Target, true);
-    updateBTB(stream_t0, &twoThreadAbtb, mbtb);
+    updateABTB(stream_t0, &twoThreadAbtb);
 
     clearAheadPipeline(&twoThreadAbtb, 0);
     clearAheadPipeline(&twoThreadAbtb, 1);
