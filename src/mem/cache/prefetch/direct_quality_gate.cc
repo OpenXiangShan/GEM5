@@ -139,8 +139,11 @@ DirectQualityGate::allocateFeedback(unsigned set)
 {
     const unsigned way = feedbackVictim(set);
     auto &entry = feedback[set * cfg.feedbackWays + way];
-    if (entry.valid)
+    if (entry.valid) {
         ++feedbackConflictCount;
+        ++feedbackReplacementCount;
+        retireUnknown(entry, false);
+    }
     entry = FeedbackEntry();
     entry.valid = true;
     return way;
@@ -162,6 +165,7 @@ DirectQualityGate::admit(Addr pc, uint8_t kind, Addr line)
     Decision decision;
     decision.set = set;
     decision.way = way;
+    decision.generation = entry.generation;
     decision.state = entry.state;
     if (entry.state == State::Block) {
         const unsigned period = (entry.unused >= cfg.strictUnusedPerUseful *
@@ -182,11 +186,24 @@ DirectQualityGate::admit(Addr pc, uint8_t kind, Addr line)
 }
 
 void
-DirectQualityGate::recordIssued(Addr line, Addr pc, uint8_t kind,
-                                 const Decision &decision)
+DirectQualityGate::recordIssued(Addr line, uint8_t kind, unsigned quality_set,
+                                 unsigned quality_way,
+                                 uint8_t quality_generation)
 {
-    if (!decision.sampled)
+    if (quality_set >= qualitySets || quality_way >= cfg.qualityWays) {
+        ++feedbackTokenDropCount;
+        ++unknownDropCount;
         return;
+    }
+
+    auto &quality_entry = quality[quality_set * cfg.qualityWays + quality_way];
+    if (!quality_entry.valid || quality_entry.generation != quality_generation ||
+        quality_entry.kind != kind) {
+        ++feedbackTokenDropCount;
+        ++unknownDropCount;
+        return;
+    }
+
     const unsigned set = feedbackSetFor(line);
     unsigned way = findFeedback(set, line);
     if (way != cfg.feedbackWays) {
@@ -200,14 +217,23 @@ DirectQualityGate::recordIssued(Addr line, Addr pc, uint8_t kind,
     auto &entry = feedback[set * cfg.feedbackWays + way];
     entry.valid = true;
     entry.line = line;
-    entry.qualitySet = decision.set;
-    entry.qualityWay = decision.way;
-    entry.generation = quality[decision.set * cfg.qualityWays + decision.way].generation;
+    entry.qualitySet = quality_set;
+    entry.qualityWay = quality_way;
+    entry.generation = quality_generation;
     entry.kind = kind;
     entry.issueAge = demandAge;
-    ++quality[decision.set * cfg.qualityWays + decision.way].sampled;
+    ++quality_entry.sampled;
     ++sampledCount;
-    (void)pc;
+}
+
+void
+DirectQualityGate::retireUnknown(FeedbackEntry &entry, bool expiry)
+{
+    assert(entry.valid);
+    entry.valid = false;
+    ++unknownDropCount;
+    if (expiry)
+        ++feedbackExpiryCount;
 }
 
 void
@@ -254,12 +280,7 @@ DirectQualityGate::resolve(Addr line, bool isUseful)
     }
     auto &fb = feedback[set * cfg.feedbackWays + way];
     if (demandAge - fb.issueAge >= cfg.horizon) {
-        const unsigned qbase = fb.qualitySet * cfg.qualityWays;
-        auto &entry = quality[qbase + fb.qualityWay];
-        if (entry.valid && entry.generation == fb.generation)
-            applyOutcome(entry, false);
-        fb.valid = false;
-        ++feedbackExpiryCount;
+        retireUnknown(fb, true);
         result.expired = true;
         return result;
     }
@@ -267,7 +288,7 @@ DirectQualityGate::resolve(Addr line, bool isUseful)
     auto &entry = quality[qbase + fb.qualityWay];
     if (!entry.valid || entry.generation != fb.generation ||
         entry.kind != fb.kind) {
-        fb.valid = false;
+        retireUnknown(fb, false);
         ++orphanOutcomeCount;
         result.conflict = true;
         return result;
@@ -290,15 +311,7 @@ DirectQualityGate::advanceDemand()
             auto &fb = feedback[base + way];
             if (!fb.valid || demandAge - fb.issueAge < cfg.horizon)
                 continue;
-
-            auto &entry = quality[fb.qualitySet * cfg.qualityWays +
-                                  fb.qualityWay];
-            if (entry.valid && entry.generation == fb.generation &&
-                entry.kind == fb.kind) {
-                applyOutcome(entry, false);
-            }
-            fb.valid = false;
-            ++feedbackExpiryCount;
+            retireUnknown(fb, true);
         }
     }
 }

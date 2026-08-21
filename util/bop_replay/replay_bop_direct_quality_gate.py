@@ -894,7 +894,7 @@ class SampledFeedbackTable:
             _, candidate_id, index = heapq.heappop(self.expiry_heap)
             entry = self.entries[index]
             if entry.valid and entry.candidate_id == candidate_id:
-                self._invalidate(index, "feedback_unused", "unused")
+                self._invalidate(index, "feedback_expired_without_label")
 
         line = self._line(addr)
         pending = self.by_line.get(line)

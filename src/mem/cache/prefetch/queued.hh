@@ -73,6 +73,11 @@ class Queued : public Base
         int depth=0;
         PrefetchSourceType pfSource;
         PFTriggerInfo pf_trigger_info{};
+        bool directQualityTokenValid = false;
+        uint16_t directQualitySet = 0;
+        uint8_t directQualityWay = 0;
+        uint8_t directQualityGeneration = 0;
+        uint8_t directQualityKind = 0;
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
             panic("PrefetchCmd: no source specified");
@@ -88,6 +93,16 @@ class Queued : public Base
         PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src, bool va, bool bop)
             : addr(a), priority(p), isVA(va), isBOP(bop), pfSource(src)
         {
+        }
+
+        void setDirectQualityToken(unsigned set, unsigned way,
+                                   uint8_t generation, uint8_t kind)
+        {
+            directQualityTokenValid = true;
+            directQualitySet = set;
+            directQualityWay = way;
+            directQualityGeneration = generation;
+            directQualityKind = kind;
         }
     };
     // using AddrPriority = std::pair<Addr, int32_t>;
