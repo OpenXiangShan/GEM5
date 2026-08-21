@@ -473,11 +473,16 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         else:
             bp_db_switches = []
 
-        print("Bp support for udp: ", args.enable_udp)
+        if args.enable_udp:
+            print("IPrefetch: UDP enabled")
+            print(f"  useUdpInitConfidence: {args.udp_init_conf is not None}")
+            print(f"  udpInitConfidence: {args.udp_init_conf}")
 
         test_sys.cpu[i].branchPred = DecoupledBPUWithBTB(
             bpDBSwitches=bp_db_switches,
-            enableUdp=args.enable_udp
+            enableUdp=args.enable_udp,
+            useUdpInitConfidence=args.udp_init_conf is not None,
+            udpInitConfidence=args.udp_init_conf if args.udp_init_conf is not None else 0,
         )
         test_sys.cpu[i].branchPred.isDumpMisspredPC = True
 
@@ -942,12 +947,7 @@ def xiangshan_system_init():
         default=False,
     )
     parser.add_argument(
-        "--enable-pdip",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
-        "--enable-udp",
+        "--disable-dp",
         action="store_true",
         default=False,
     )
@@ -961,6 +961,21 @@ def xiangshan_system_init():
         type=int,
         default=32,
     )
+    parser.add_argument(
+        "--enable-udp",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--udp-init-conf",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--enable-pdip",
+        action="store_true",
+        default=False,
+    )
 
     parser.add_argument(
         "--l2-factor",
@@ -972,6 +987,9 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+
+    if args.disable_dp:
+        args.l1d_hwp_type = None
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
