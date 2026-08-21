@@ -162,11 +162,6 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     bool lastPredHasEntries(ThreadID tid) const;
 
-    /** Returns whether the last AheadBTB prediction produced any native hit
-     *  entries before mixing with uBTB stage-0 output.
-     */
-    bool lastPredHasEntries(ThreadID tid) const;
-
     void recoverState(const FetchTarget &entry);
 
 #ifndef UNIT_TEST
