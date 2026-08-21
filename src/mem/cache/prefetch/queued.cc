@@ -140,7 +140,10 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     req->setFlags(Request::PREFETCH);
     const PrefetchSourceType safe_pf_src =
         owner->sanitizePfControlSourceType(pf_src);
-    req->setXsMetadata(Request::XsMetadata(safe_pf_src, prf_depth));
+    Request::XsMetadata metadata = pfInfo.getXsMetadata();
+    metadata.prefetchSource = safe_pf_src;
+    metadata.prefetchDepth = prf_depth;
+    req->setXsMetadata(metadata);
     DPRINTFR(HWPrefetch, "Create prefetch request for paddr %lx from prefetcher %i\n", paddr, safe_pf_src);
 
     if (pfInfo.isSecure()) {
@@ -1034,7 +1037,14 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             addr_prio.pfSource =
                 sanitizePfControlSourceType(addr_prio.pfSource);
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
-            new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
+            Request::XsMetadata metadata(addr_prio.pfSource, addr_prio.depth);
+            if (addr_prio.directQualityTokenValid) {
+                metadata.setDirectQualityToken(
+                    addr_prio.directQualitySet, addr_prio.directQualityWay,
+                    addr_prio.directQualityGeneration,
+                    addr_prio.directQualityKind);
+            }
+            new_pfi.setXsMetadata(metadata);
             statsQueued.pfIdentified++;
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
@@ -1089,7 +1099,14 @@ Queued::PFSendEventWrapper()
             addr_prio.pfSource =
                 sanitizePfControlSourceType(addr_prio.pfSource);
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
-            new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
+            Request::XsMetadata metadata(addr_prio.pfSource, addr_prio.depth);
+            if (addr_prio.directQualityTokenValid) {
+                metadata.setDirectQualityToken(
+                    addr_prio.directQualitySet, addr_prio.directQualityWay,
+                    addr_prio.directQualityGeneration,
+                    addr_prio.directQualityKind);
+            }
+            new_pfi.setXsMetadata(metadata);
             statsQueued.pfIdentified++;
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
@@ -1471,7 +1488,7 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
     translation_req->setFlags(Request::PF_EXCLUSIVE);
     translation_req->setPFSource(pf_src);
     translation_req->setPFDepth(pf_depth);
-    translation_req->setXsMetadata(Request::XsMetadata(pf_src, pf_depth));
+    translation_req->setXsMetadata(pfi.getXsMetadata());
     DPRINTF(HWPrefetch, "Create prefetch request for vaddr %lx from prefetcher %i\n", addr, pf_src);
     assert(translation_req->hasXsMetadata());
     return translation_req;

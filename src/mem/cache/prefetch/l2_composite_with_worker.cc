@@ -66,6 +66,24 @@ L2CompositeWithWorkerPrefetcher::prefetchUseful(
     }
 }
 
+PacketPtr
+L2CompositeWithWorkerPrefetcher::getPacket()
+{
+    PacketPtr pkt = Queued::getPacket();
+    if (!pkt || !pkt->req->hasXsMetadata())
+        return pkt;
+
+    const auto metadata = pkt->req->getXsMetadata();
+    if (metadata.prefetchSource == PrefetchSourceType::HWP_BOP &&
+        metadata.directQualityTokenValid) {
+        largeBOP->notifyDirectQualityIssued(
+            pkt->getAddr(), metadata.directQualityKind,
+            metadata.directQualitySet, metadata.directQualityWay,
+            metadata.directQualityGeneration);
+    }
+    return pkt;
+}
+
 void
 L2CompositeWithWorkerPrefetcher::addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp)
 {

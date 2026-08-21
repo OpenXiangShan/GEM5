@@ -56,7 +56,14 @@ CompositeWithWorkerPrefetcher::postNotifyInsert(const PacketPtr &trigger_pkt, st
             addr_prio.pfSource =
                 sanitizePfControlSourceType(addr_prio.pfSource);
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
-            new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
+            Request::XsMetadata metadata(addr_prio.pfSource, addr_prio.depth);
+            if (addr_prio.directQualityTokenValid) {
+                metadata.setDirectQualityToken(
+                    addr_prio.directQualitySet, addr_prio.directQualityWay,
+                    addr_prio.directQualityGeneration,
+                    addr_prio.directQualityKind);
+            }
+            new_pfi.setXsMetadata(metadata);
             statsQueued.pfIdentified++;
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, inserting into prefetch queue.\n", new_pfi.getAddr());
             // Create and insert the request

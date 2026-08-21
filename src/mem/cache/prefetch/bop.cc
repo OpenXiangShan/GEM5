@@ -1502,13 +1502,9 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
         buffered = samePage(pfi.getAddr(), prefetch_addr) || crossPage;
         stats.issuedOffsetDist.sample(bestOffset);
         filter_passed = sendPFWithFilter(
-            pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
-        if (filter_passed && direct_quality_candidate && directQualityGate) {
-            directQualityGate->recordIssued(
-                blockAddress(prefetch_addr), trigger_pc,
-                static_cast<uint8_t>(pcValidationKind),
-                direct_quality_decision);
-        }
+            pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP,
+            direct_quality_candidate && direct_quality_decision.sampled ?
+                &direct_quality_decision : nullptr);
         if (filter_passed && enableGlobalBOPCoverageGuard) {
             stats.globalBOPIssued++;
             pcValidationTable->noteGlobalBOPIssued();
@@ -1712,18 +1708,44 @@ BOP::notifyGlobalBOPOutcome(bool useful)
 }
 
 void
+BOP::updateDirectQualityStats()
+{
+    stats.directQualityIssued = directQualityGate->issued();
+    stats.directQualitySuppressed = directQualityGate->suppressed();
+    stats.directQualitySampled = directQualityGate->sampled();
+    stats.directQualityUseful = directQualityGate->useful();
+    stats.directQualityUnused = directQualityGate->unused();
+    stats.directQualityFeedbackConflicts =
+        directQualityGate->feedbackConflicts();
+    stats.directQualityFeedbackReplacements =
+        directQualityGate->feedbackReplacements();
+    stats.directQualityFeedbackExpiries = directQualityGate->feedbackExpiries();
+    stats.directQualityUnknownDrops = directQualityGate->unknownDrops();
+    stats.directQualityFeedbackTokenDrops =
+        directQualityGate->feedbackTokenDrops();
+    stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();
+    stats.directQualityStateTransitions = directQualityGate->stateTransitions();
+}
+
+void
+BOP::notifyDirectQualityIssued(Addr paddr, uint8_t kind, unsigned quality_set,
+                                unsigned quality_way,
+                                uint8_t quality_generation)
+{
+    if (!enableDirectQualityGate || !directQualityGate)
+        return;
+    directQualityGate->recordIssued(blockAddress(paddr), kind, quality_set,
+                                    quality_way, quality_generation);
+    updateDirectQualityStats();
+}
+
+void
 BOP::notifyDirectQualityOutcome(Addr paddr, bool useful)
 {
     if (!enableDirectQualityGate || !directQualityGate)
         return;
     directQualityGate->resolve(blockAddress(paddr), useful);
-    stats.directQualityUseful = directQualityGate->useful();
-    stats.directQualityUnused = directQualityGate->unused();
-    stats.directQualityFeedbackConflicts =
-        directQualityGate->feedbackConflicts();
-    stats.directQualityFeedbackExpiries = directQualityGate->feedbackExpiries();
-    stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();
-    stats.directQualityStateTransitions = directQualityGate->stateTransitions();
+    updateDirectQualityStats();
 }
 
 void
@@ -1732,19 +1754,14 @@ BOP::notifyDirectQualityDemand()
     if (!enableDirectQualityGate || !directQualityGate)
         return;
     directQualityGate->advanceDemand();
-    stats.directQualityUseful = directQualityGate->useful();
-    stats.directQualityUnused = directQualityGate->unused();
-    stats.directQualityFeedbackConflicts =
-        directQualityGate->feedbackConflicts();
-    stats.directQualityFeedbackExpiries =
-        directQualityGate->feedbackExpiries();
-    stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();
-    stats.directQualityStateTransitions = directQualityGate->stateTransitions();
+    updateDirectQualityStats();
 }
 
 bool
-BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                      PrefetchSourceType src)
+BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr,
+                      std::vector<AddrPriority> &addresses, int prio,
+                      PrefetchSourceType src,
+                      const DirectQualityGate::Decision *decision)
 {
     // Count generated prefetch
     prefetchStats.pfGenerated++;
@@ -1757,7 +1774,13 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
-    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+    AddrPriority buffered_command(addr, prio, src, pfi.trigger_info);
+    if (decision) {
+        buffered_command.setDirectQualityToken(
+            decision->set, decision->way, decision->generation,
+            static_cast<uint8_t>(pcValidationKind));
+    }
+    InsertPFRequestToBuffer(buffered_command);
     Addr filter_key = sharedFilterKey(pfi, addr);
     if (filter->contains(filter_key)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
@@ -1767,7 +1790,13 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     } else {
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(filter_key, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
+        AddrPriority queued_command(addr, prio, src, pfi.trigger_info);
+        if (decision) {
+            queued_command.setDirectQualityToken(
+                decision->set, decision->way, decision->generation,
+                static_cast<uint8_t>(pcValidationKind));
+        }
+        addresses.push_back(queued_command);
         return true;
     }
 }
@@ -1893,11 +1922,18 @@ BOP::BopStats::BopStats(statistics::Group *parent)
       ADD_STAT(directQualityUseful, statistics::units::Count::get(),
                "Online direct-quality useful outcomes"),
       ADD_STAT(directQualityUnused, statistics::units::Count::get(),
-               "Online direct-quality unused outcomes"),
+               "Online direct-quality resolved unused outcomes"),
       ADD_STAT(directQualityFeedbackConflicts, statistics::units::Count::get(),
-               "Online direct-quality feedback conflicts"),
+               "Online direct-quality feedback-table replacements"),
+      ADD_STAT(directQualityFeedbackReplacements,
+               statistics::units::Count::get(),
+               "Online direct-quality feedback-table replacements"),
       ADD_STAT(directQualityFeedbackExpiries, statistics::units::Count::get(),
-               "Online direct-quality feedback expiries"),
+               "Online direct-quality feedback expiry drops"),
+      ADD_STAT(directQualityUnknownDrops, statistics::units::Count::get(),
+               "Online direct-quality censored feedback drops"),
+      ADD_STAT(directQualityFeedbackTokenDrops, statistics::units::Count::get(),
+               "Online direct-quality stale-token feedback drops"),
       ADD_STAT(directQualityOrphanOutcomes, statistics::units::Count::get(),
                "Online direct-quality orphan outcomes"),
       ADD_STAT(directQualityStateTransitions, statistics::units::Count::get(),

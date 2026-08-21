@@ -391,36 +391,62 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+        // BOP direct-quality ownership captured at candidate admission and
+        // carried with the queued prefetch until its actual issue point.
+        bool directQualityTokenValid;
+        uint16_t directQualitySet;
+        uint8_t directQualityWay;
+        uint8_t directQualityGeneration;
+        uint8_t directQualityKind;
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0) {}
+            prefetchDepth(0), directQualityTokenValid(false),
+            directQualitySet(0), directQualityWay(0),
+            directQualityGeneration(0), directQualityKind(0) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0), directQualityTokenValid(false),
+            directQualitySet(0), directQualityWay(0),
+            directQualityGeneration(0), directQualityKind(0) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0), directQualityTokenValid(false),
+            directQualitySet(0), directQualityWay(0),
+            directQualityGeneration(0), directQualityKind(0) {}
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(pfDepth) {}
+            prefetchDepth(pfDepth), directQualityTokenValid(false),
+            directQualitySet(0), directQualityWay(0),
+            directQualityGeneration(0), directQualityKind(0) {}
+
+        void setDirectQualityToken(unsigned set, unsigned way,
+                                   uint8_t generation, uint8_t kind)
+        {
+            directQualityTokenValid = true;
+            directQualitySet = set;
+            directQualityWay = way;
+            directQualityGeneration = generation;
+            directQualityKind = kind;
+        }
 
         void invalidate() {
             validXsMetadata = false;
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
             prefetchDepth = 0;
+            directQualityTokenValid = false;
         }
     } XsMetadata;
 

@@ -7,6 +7,14 @@ namespace gem5
 namespace prefetch
 {
 
+void
+recordIssued(DirectQualityGate &gate, Addr line,
+             const DirectQualityGate::Decision &decision, uint8_t kind)
+{
+    gate.recordIssued(line, kind, decision.set, decision.way,
+                      decision.generation);
+}
+
 DirectQualityGate::Config
 testConfig()
 {
@@ -32,16 +40,16 @@ TEST(DirectQualityGate, BlocksAtTenToOneAndReopens)
 {
     DirectQualityGate gate(testConfig());
     auto decision = gate.admit(0x1000, 1, 0x2000);
-    gate.recordIssued(0x2000, 0x1000, 1, decision);
+    recordIssued(gate, 0x2000, decision, 1);
     gate.resolve(0x2000, false);
     decision = gate.admit(0x1000, 1, 0x2040);
-    gate.recordIssued(0x2040, 0x1000, 1, decision);
+    recordIssued(gate, 0x2040, decision, 1);
     gate.resolve(0x2040, false);
     EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Block);
     for (unsigned i = 0; i < 8; ++i) {
         decision = gate.admit(0x1000, 1, 0x2080 + i * 64);
         if (decision.allowed) {
-            gate.recordIssued(0x2080 + i * 64, 0x1000, 1, decision);
+            recordIssued(gate, 0x2080 + i * 64, decision, 1);
             gate.resolve(0x2080 + i * 64, true);
         }
     }
@@ -53,8 +61,8 @@ TEST(DirectQualityGate, SeparatesKindsAndDropsFeedbackConflicts)
     DirectQualityGate gate(testConfig());
     auto large = gate.admit(0x1000, 1, 0x3000);
     auto small = gate.admit(0x1000, 2, 0x3000);
-    gate.recordIssued(0x3000, 0x1000, 1, large);
-    gate.recordIssued(0x3000, 0x1000, 2, small);
+    recordIssued(gate, 0x3000, large, 1);
+    recordIssued(gate, 0x3000, small, 2);
     EXPECT_EQ(gate.feedbackConflicts(), 0U);
     EXPECT_TRUE(gate.resolve(0x3000, true).resolved);
     EXPECT_TRUE(gate.resolve(0x3000, true).conflict);
@@ -66,12 +74,30 @@ TEST(DirectQualityGate, ExpiresAndProtectsReplacedGeneration)
     config.horizon = 2;
     DirectQualityGate gate(config);
     auto decision = gate.admit(0x1000, 1, 0x4000);
-    gate.recordIssued(0x4000, 0x1000, 1, decision);
+    recordIssued(gate, 0x4000, decision, 1);
     gate.advanceDemand();
     gate.advanceDemand();
     EXPECT_EQ(gate.feedbackExpiries(), 1U);
-    EXPECT_EQ(gate.unused(), 1U);
+    EXPECT_EQ(gate.unknownDrops(), 1U);
+    EXPECT_EQ(gate.unused(), 0U);
     EXPECT_TRUE(gate.resolve(0x4000, true).conflict);
+}
+
+TEST(DirectQualityGate, RejectsQueuedTokenAfterQualityReplacement)
+{
+    auto config = testConfig();
+    config.qualityEntries = 1;
+    config.qualityWays = 1;
+    DirectQualityGate gate(config);
+
+    const auto old_decision = gate.admit(0x1000, 1, 0x5000);
+    gate.admit(0x1040, 1, 0x5040);
+    recordIssued(gate, 0x5000, old_decision, 1);
+
+    EXPECT_EQ(gate.sampled(), 0U);
+    EXPECT_EQ(gate.feedbackTokenDrops(), 1U);
+    EXPECT_EQ(gate.unknownDrops(), 1U);
+    EXPECT_TRUE(gate.resolve(0x5000, true).conflict);
 }
 
 } // namespace prefetch

@@ -492,12 +492,15 @@ class BOP : public Queued
 
         unsigned missCount{0};
 
-        bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                              PrefetchSourceType src);
+        bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr,
+                              std::vector<AddrPriority> &addresses, int prio,
+                              PrefetchSourceType src,
+                              const DirectQualityGate::Decision *decision);
 
         const char *pcValidationTraceName(PCValidationKind kind) const;
         void tracePCValidationUpdate(
             const PCValidationConfidenceTable::CommitResult &result);
+        void updateDirectQualityStats();
 
         struct BopStats : public statistics::Group
         {
@@ -558,7 +561,10 @@ class BOP : public Queued
             statistics::Scalar directQualityUseful;
             statistics::Scalar directQualityUnused;
             statistics::Scalar directQualityFeedbackConflicts;
+            statistics::Scalar directQualityFeedbackReplacements;
             statistics::Scalar directQualityFeedbackExpiries;
+            statistics::Scalar directQualityUnknownDrops;
+            statistics::Scalar directQualityFeedbackTokenDrops;
             statistics::Scalar directQualityOrphanOutcomes;
             statistics::Scalar directQualityStateTransitions;
         } stats;
@@ -600,6 +606,10 @@ class BOP : public Queued
         void notifyGlobalBOPOutcome(bool useful);
 
         /** Online direct-quality outcome and demand-age hooks. */
+        void notifyDirectQualityIssued(Addr paddr, uint8_t kind,
+                                       unsigned quality_set,
+                                       unsigned quality_way,
+                                       uint8_t quality_generation);
         void notifyDirectQualityOutcome(Addr paddr, bool useful);
         void notifyDirectQualityDemand();
 

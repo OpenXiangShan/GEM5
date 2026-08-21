@@ -474,16 +474,21 @@ class SampledFeedbackTableTest(unittest.TestCase):
         self.assertEqual(resolved, [(1, "useful")])
         self.assertEqual(table.report()["feedback_coalesced"], 1)
 
-    def test_expired_sample_becomes_unused(self):
+    def test_expired_sample_is_dropped_without_negative_update(self):
         resolved: list[tuple[int, str]] = []
+        dropped: list[int] = []
         table = SampledFeedbackTable(
             config(horizon=2),
             lambda entry, status: resolved.append((entry.candidate_id, status)),
-            lambda entry: None,
+            lambda entry: dropped.append(entry.candidate_id),
         )
         table.insert(0x1000, 0, 1, 0, 1)
         table.observe_demand(0x2000, 3)
-        self.assertEqual(resolved, [(1, "unused")])
+        self.assertEqual(resolved, [])
+        self.assertEqual(dropped, [1])
+        self.assertEqual(
+            table.report()["feedback_expired_without_label"], 1,
+        )
 
 
 class QualityAccumulatorTest(unittest.TestCase):

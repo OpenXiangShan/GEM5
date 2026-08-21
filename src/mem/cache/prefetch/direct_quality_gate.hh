@@ -51,6 +51,7 @@ class DirectQualityGate
         State state = State::Observe;
         unsigned set = 0;
         unsigned way = 0;
+        uint8_t generation = 0;
     };
 
     struct Outcome
@@ -66,7 +67,13 @@ class DirectQualityGate
     explicit DirectQualityGate(const Config &config);
 
     Decision admit(Addr pc, uint8_t kind, Addr line);
-    void recordIssued(Addr line, Addr pc, uint8_t kind, const Decision &decision);
+    /**
+     * Register a sampled request only after it reaches the real BOP issue
+     * point.  The token was captured at candidate admission and protects a
+     * newly allocated PC-kind entry from stale queued requests.
+     */
+    void recordIssued(Addr line, uint8_t kind, unsigned quality_set,
+                      unsigned quality_way, uint8_t quality_generation);
     Outcome resolve(Addr line, bool useful);
     void advanceDemand();
 
@@ -77,7 +84,10 @@ class DirectQualityGate
     uint64_t useful() const { return usefulCount; }
     uint64_t unused() const { return unusedCount; }
     uint64_t feedbackConflicts() const { return feedbackConflictCount; }
+    uint64_t feedbackReplacements() const { return feedbackReplacementCount; }
     uint64_t feedbackExpiries() const { return feedbackExpiryCount; }
+    uint64_t unknownDrops() const { return unknownDropCount; }
+    uint64_t feedbackTokenDrops() const { return feedbackTokenDropCount; }
     uint64_t orphanOutcomes() const { return orphanOutcomeCount; }
     uint64_t stateTransitions() const { return stateTransitionCount; }
 
@@ -126,7 +136,10 @@ class DirectQualityGate
     uint64_t usefulCount = 0;
     uint64_t unusedCount = 0;
     uint64_t feedbackConflictCount = 0;
+    uint64_t feedbackReplacementCount = 0;
     uint64_t feedbackExpiryCount = 0;
+    uint64_t unknownDropCount = 0;
+    uint64_t feedbackTokenDropCount = 0;
     uint64_t orphanOutcomeCount = 0;
     uint64_t stateTransitionCount = 0;
 
@@ -141,6 +154,7 @@ class DirectQualityGate
     unsigned qualityVictim(unsigned set) const;
     unsigned feedbackVictim(unsigned set) const;
     void applyOutcome(QualityEntry &entry, bool useful);
+    void retireUnknown(FeedbackEntry &entry, bool expiry);
 };
 
 } // namespace prefetch
