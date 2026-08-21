@@ -162,7 +162,7 @@ overlay 可以只覆盖这四个参数，不会改变其他 KMHv3 配置。所�
 
 除了三个正式帕累托点，下表加入四个容量-分数投影上的候选。C1/C2 用于较小容量的
 对照；C3/C4 则在 70--75 KiB 内按 solver score 排名第 1/2，分别测试该区间的性能
-上界和最接近默认容量的选择。它们不在 solver 的 score/mispredict 前沿，不能被称为
+上界和次高 score 的近默认容量选择。它们不在 solver 的 score/mispredict 前沿，不能被称为
 正式帕累托点。
 
 | 候选 / 用途 | `numPredictors` | `tableSizes` | `TTagBitSizes` | `numWays` | 容量 / T2--T4 share |
@@ -173,7 +173,7 @@ overlay 可以只覆盖这四个参数，不会改变其他 KMHv3 配置。所�
 | C1 `trial_0584`，低于 baseline 容量的最高 score | 8 | `[128, 1024, 4096, 2048, 512, 1024, 256, 1024]` | `[15, 10, 8, 20, 13, 19, 14, 17]` | `[8, 1, 3, 2, 8, 5, 1, 3]` | 69.219 KiB / 59.23% |
 | C2 `trial_0808`，更低容量且 score/mispredict 均改善 | 8 | `[256, 1024, 2048, 2048, 2048, 1024, 512, 512]` | `[15, 13, 13, 17, 18, 15, 15, 13]` | `[5, 1, 4, 2, 3, 5, 1, 2]` | 67.625 KiB / 68.39% |
 | C3 `trial_0335`，70--75 KiB score #1 | 8 | `[128, 1024, 2048, 2048, 1024, 1024, 512, 1024]` | `[15, 13, 19, 8, 13, 18, 15, 17]` | `[8, 1, 4, 1, 8, 5, 1, 3]` | 73.875 KiB / 61.25% |
-| C4 `trial_0166`，最接近默认、同区间 score #2 | 8 | `[256, 256, 2048, 4096, 2048, 2048, 1024, 2048]` | `[15, 18, 16, 11, 18, 11, 13, 13]` | `[2, 3, 2, 3, 3, 2, 2, 1]` | 72.156 KiB / 71.72% |
+| C4 `trial_0166`，近默认容量、同区间 score #2 | 8 | `[256, 256, 2048, 4096, 2048, 2048, 1024, 2048]` | `[15, 18, 16, 11, 18, 11, 13, 13]` | `[2, 3, 2, 3, 3, 2, 2, 1]` | 72.156 KiB / 71.72% |
 
 相对 solver baseline，C1 的 score 为 `+0.1432%`、错误预测为 `-1.0607%`，容量
 为 `-3.8628%`；C2 的对应变化为 `+0.1111%`、`-1.6314%` 和 `-6.0764%`。C3/C4 的
@@ -210,7 +210,7 @@ capacity-minimize/score-maximize 投影。横轴和纵轴仍是 solver 的 GCC15
 - `C1`--`C4`：容量/验证选择。它们可处于面积-分数投影上，但不等同于正式两目标
   Pareto 点。
 - `C3` 和 `C4` 是新增的 70--75 KiB 近默认容量候选；图上标出的是 solver 证据，
-  其 1.0c SPECint 结果在新的 CI 完成前未知。
+  其完成后的 1.0c SPECint 结果见下文，不能由 0.3c solver score 预先替代。
 
 | 标签 | Trial | 逻辑容量 | 相对 72 KiB 默认 | Solver score / delta | Solver branch-mispredict / delta | 选择理由与 1.0c 状态 |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -219,8 +219,8 @@ capacity-minimize/score-maximize 投影。横轴和纵轴仍是 solver 的 GCC15
 | P3 | `trial_0505` | 90.719 KiB | +25.9983% | 27.210634 / +0.2501% | 123642.123 / -3.6468% | 正式前沿的 branch 极值；已完成 |
 | C1 | `trial_0584` | 69.219 KiB | -3.8628% | 27.181631 / +0.1432% | 126960.641 / -1.0607% | 小容量对照；已完成 |
 | C2 | `trial_0808` | 67.625 KiB | -6.0764% | 27.172910 / +0.1111% | 126228.257 / -1.6314% | 更激进小容量对照；已完成 |
-| C3 | `trial_0335` | 73.875 KiB | +2.6042% | 27.224924 / +0.3027% | 126357.292 / -1.5309% | 70--75 KiB 的 score #1；待跑 SPECint |
-| C4 | `trial_0166` | 72.156 KiB | +0.2170% | 27.220893 / +0.2878% | 126433.430 / -1.4715% | 最接近默认、同区间 score #2；待跑 SPECint |
+| C3 | `trial_0335` | 73.875 KiB | +2.6042% | 27.224924 / +0.3027% | 126357.292 / -1.5309% | 70--75 KiB 的 solver score #1；SPECint 已完成 |
+| C4 | `trial_0166` | 72.156 KiB | +0.2170% | 27.220893 / +0.2878% | 126433.430 / -1.4715% | 近默认容量、同区间 solver score #2；SPECint 已完成 |
 
 `C3` 与 `C4` 均被 P1/P2 在正式 solver 两目标上支配，因此不能升级为 P4/P5；
 新增它们的目的，是区分接近默认容量时的性能泛化，而不是寻找第二条前沿。
@@ -236,15 +236,16 @@ capacity-minimize/score-maximize 投影。横轴和纵轴仍是 solver 的 GCC15
 
 五个原始候选均以完整 `gcc15-spec06-1.0c`（空 filter）运行，实际模型 checkout
 均由 `metadata.txt` 复核为 `c4069f1464a9ac507d20794d93fab0a50db266f4`。分析时只
-从其完整归档提取 baseline 所覆盖的 12 个 benchmark。每个候选的 35 workload / 697
-point 子集都与从
-`spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json` 导出的 whitelist
-完全匹配；每个 workload 内先归一化 SimPoint 权重，再按 profile 的 instruction
-count 聚合多个输入。
+从其完整归档提取 baseline 所覆盖的 12 个 benchmark。C3/C4 则从一开始就固定该 12
+benchmark filter；其 archive 恰为 35 workload / 697 point。所有候选均使用从
+`spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json` 导出的同一 whitelist；
+每个 workload 内先归一化 SimPoint 权重，再按 profile 的 instruction count 聚合多个输入。
 
-对五个已完成候选，各 archive 的 `astar_biglakes_8418/m5out/config.ini` 还逐一
+对五个原始候选，各 archive 的 `astar_biglakes_8418/m5out/config.ini` 还逐一
 核对了 `numPredictors`、`tableSizes`、`TTagBitSizes` 与 `numWays` 四个生效字段，
-均与上表对应行一致；这比仅从 `metadata.txt` 读取请求的 `extra_args` 更强。
+均与上表对应行一致。对 C3/C4，四个字段在各自 **697/697** 个完成切片的
+`config.ini` 中均与对应 vector 一致，因而不仅证明了请求参数，也证明了实际
+SimObject 生效配置。
 
 | 标签 | Trial | Actions run | Archive | 归档/Actions 状态 |
 | --- | --- | --- | --- | --- |
@@ -253,12 +254,14 @@ count 聚合多个输入。
 | P3 | `trial_0505` | [32451374465](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374465) | `20260821_134430_c4069f14_kmhv3_run940` | 1112/1112/0/0/score；Actions cleanup 后 NFS stale-handle failure |
 | C1 | `trial_0584` | [32451374328](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374328) | `20260821_134521_c4069f1464_kmhv3_run938` | 1112/1112/0/0/score；Actions cleanup 后 NFS stale-handle failure |
 | C2 | `trial_0808` | [32451374438](https://github.com/OpenXiangShan/GEM5/actions/runs/32451374438) | `20260821_135048_c4069f1464_kmhv3_run939` | 1112/1112/0/0/score；Actions success |
+| C3 | `trial_0335` | [32470774364](https://github.com/OpenXiangShan/GEM5/actions/runs/32470774364) | `20260821_181136_c4069f1464_kmhv3_run941` | 697/697/0/0/score；Actions success |
+| C4 | `trial_0166` | [32470806417](https://github.com/OpenXiangShan/GEM5/actions/runs/32470806417) | `20260821_181213_c4069f146_kmhv3_run942` | 697/697/0/0/score；Actions success |
 
-表中的 `1112/1112/0/0/score` 依次为 `stats.txt`、`completed`、`running`、`abort`
-和非空 `score.txt` 的验收结果。前四条 Actions 的 failure 发生在模拟和 score 生成后
-的 NFS 清理；完整 archive 仍满足数据门槛，不能把它误写成性能失败。C2 的 Actions
-所有 simulation、data processing、archive 和 upload 步骤均成功。Actions 页的
-`headSha=d67bde...` 只是 workflow dispatch revision；实际模型版本以 archive metadata
+表中的 `1112/1112/0/0/score` 或 `697/697/0/0/score` 依次为 `stats.txt`、
+`completed`、`running`、`abort` 和非空 `score.txt` 的验收结果。前四条 Actions 的
+failure 发生在模拟和 score 生成后的 NFS 清理；完整 archive 仍满足数据门槛，不能把它
+误写成性能失败。C2--C4 的 simulation、data processing、archive 和 upload 步骤均成功。
+Actions 页的 `headSha` 只是 workflow dispatch revision；实际模型版本以 archive metadata
 的 `c4069f...` 为准。
 
 下表仅报告 12 benchmark 的 SPECint 几何均值。`branchMispredicts` 从每个
@@ -273,21 +276,23 @@ count 聚合多个输入。
 | P3 `trial_0505` | 18.777698 | +0.474580% | **1670709.998** | **6.961292** | **-3.782027%** |
 | C1 `trial_0584` | 18.687556 | -0.007749% | 1728281.519 | 7.201173 | -0.466421% |
 | C2 `trial_0808` | 18.712569 | +0.126090% | 1720013.144 | 7.166721 | -0.942606% |
+| C3 `trial_0335` | 18.649524 | -0.211248% | 1745897.566 | 7.274573 | +0.548105% |
+| C4 `trial_0166` | 18.731938 | +0.229726% | 1703931.410 | 7.099714 | -1.868768% |
 
-| Benchmark score delta vs baseline | P1 | P2 | P3 | C1 | C2 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| perlbench | -0.563637% | -0.582761% | -1.757445% | -0.579445% | -0.988988% |
-| bzip2 | +0.227919% | +0.290104% | +0.575293% | -0.716433% | +0.186383% |
-| gcc | -0.044013% | -0.173122% | -0.647416% | -0.704764% | -0.370017% |
-| mcf | +0.180304% | **+1.671596%** | +0.219687% | +0.463387% | +0.956537% |
-| gobmk | +2.399588% | +1.201293% | **+3.862373%** | +0.523240% | +0.686673% |
-| hmmer | +0.005806% | -0.007894% | -0.010321% | -0.006611% | +0.002709% |
-| sjeng | +1.092785% | +0.747830% | **+1.363768%** | +0.422215% | +0.497727% |
-| libquantum | -0.056072% | -0.045629% | -0.126056% | -0.048094% | -0.007526% |
-| h264ref | +0.042751% | +0.025601% | -0.077234% | -0.071419% | -0.016000% |
-| omnetpp | +0.697463% | +0.208798% | -0.153970% | +0.489420% | +0.276692% |
-| astar | **+2.977682%** | +1.090307% | +2.757067% | +0.224656% | +0.401254% |
-| xalancbmk | +0.067800% | +0.048730% | -0.184973% | -0.077548% | -0.098172% |
+| Benchmark score delta vs baseline | P1 | P2 | P3 | C1 | C2 | C3 | C4 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| perlbench | -0.563637% | -0.582761% | -1.757445% | -0.579445% | -0.988988% | -0.466827% | -0.448661% |
+| bzip2 | +0.227919% | +0.290104% | +0.575293% | -0.716433% | +0.186383% | -0.573954% | -0.467142% |
+| gcc | -0.044013% | -0.173122% | -0.647416% | -0.704764% | -0.370017% | -0.529080% | -0.691955% |
+| mcf | +0.180304% | **+1.671596%** | +0.219687% | +0.463387% | +0.956537% | +0.536624% | +0.313606% |
+| gobmk | +2.399588% | +1.201293% | **+3.862373%** | +0.523240% | +0.686673% | -0.233420% | +0.431592% |
+| hmmer | +0.005806% | -0.007894% | -0.010321% | -0.006611% | +0.002709% | -0.007825% | -0.003184% |
+| sjeng | +1.092785% | +0.747830% | +1.363768% | +0.422215% | +0.497727% | +0.184532% | +0.677033% |
+| libquantum | -0.056072% | -0.045629% | -0.126056% | -0.048094% | -0.007526% | -0.048679% | -0.065103% |
+| h264ref | +0.042751% | +0.025601% | -0.077234% | -0.071419% | -0.016000% | -0.035151% | -0.021346% |
+| omnetpp | +0.697463% | +0.208798% | -0.153970% | +0.489420% | +0.276692% | -0.300046% | +0.504587% |
+| astar | **+2.977682%** | +1.090307% | +2.757067% | +0.224656% | +0.401254% | -0.966684% | +2.579510% |
+| xalancbmk | +0.067800% | +0.048730% | -0.184973% | -0.077548% | -0.098172% | -0.085911% | -0.013171% |
 
 结论应按这套 SPECint 数据而不是 solver 0.3c score 作出：
 
@@ -299,22 +304,35 @@ count 聚合多个输入。
    branch-mispredict 优先的取舍。P2 在 `mcf` 上的收益最大，但总体仍落后 P1。
 3. C2 以 `-6.0764%` 容量换取 `+0.126090%` SPECint score，适合作为面积敏感备选；
    C1 虽少 `3.8628%` 容量，但 score 为 `-0.007749%`，不应作为性能推荐点。
-4. C3/C4 尚未有 1.0c 数据。C3 测试该容量带内的 score 极值，C4 将默认容量只增加
-   `0.2170%`；二者的价值是补齐近默认容量区间，不预设其会重复 solver 的收益。
+4. C4 是近默认容量的有效备选：容量仅比 72 KiB 默认高 `+0.2170%`，SPECint 为
+   `+0.229726%`、branch MPKI 为 `-1.868768%`。其 `astar`（`+2.579510%`）、
+   `sjeng`（`+0.677033%`）和 `omnetpp`（`+0.504587%`）的收益抵消了 `gcc`
+   （`-0.691955%`）等回退；它不替代 P1/P2/P3 的 score 选择，但可作为容量几乎不变
+   时的折中。
+5. C3 是反例：虽然是 70--75 KiB band 内 solver score #1，完整 SPECint 却为
+   `-0.211248%`，branch MPKI 也升 `+0.548105%`；`astar` 的 `-0.966684%` 回退尤其
+   明显。因此不推荐 C3，且 C3/C4 的分叉说明 0.3c solver score 不能取代 1.0c 回归。
 
-本段 baseline 的模型 SHA 是 `c599c33709229410ba37088aa766a1a8f2e7f5ac`，而五个
-候选为 `c4069f1464a9ac507d20794d93fab0a50db266f4`，因此上述百分比是跨 SHA 对比，
-不能宣称严格的 TAGE-only A/B。已检查这两个 SHA 的 `src/`、
-`configs/example/kmhv3.py` 与 `.github/workflows/manual-perf.yml` 无差异；差异在
-solver/workflow、solver checkpoint 选择和文档，仍需在解释中保留这一边界。
+本段 baseline 的模型 SHA 是 `c599c33709229410ba37088aa766a1a8f2e7f5ac`，七个候选
+均为 `c4069f1464a9ac507d20794d93fab0a50db266f4`，因此上述百分比仍是跨 SHA 对比，
+不能宣称严格的 TAGE-only A/B。baseline SHA 是 candidate SHA 的祖先，且
+`git diff c599..c406 -- src configs/example/kmhv3.py .github/workflows/manual-perf.yml`
+为空：运行时模型、KMHv3 配置与 `manual-perf` 路径一致。两 SHA 之间仍有 solver spec、
+`manual-solve`、文档和 solver utility 变化，故需保留该溯源边界。
 
-### C3/C4 的 SPECint CI 合同
+### C3/C4 的 SPECint CI 执行与准入
 
 新 CI 保持 `kmhv3.py`、`gcc15-spec06-1.0c`、`base`、默认节点池、32 jobs/server
 和模型 SHA `c4069f1464a9ac507d20794d93fab0a50db266f4`；只把
 `specific_benchmarks` 固定为 baseline 的 12 个 SPECint benchmark，并替换四个 TAGE
-overlay。`--ref` 选择已推送的 workflow 定义，`branch` input 固定实际模型 checkout。
-两个 dispatch 需在明确确认后执行：
+overlay。`--ref` 选择 workflow 定义，`branch` input 固定实际模型 checkout。下列为
+已经执行的 dispatch 历史记录，不是可在 branch 前移后直接复用的精确复跑命令。两条
+run 的 workflow `headSha` 均为
+`9390f9b03bd1895f0b5e87cb296393d3315daa13`；`--ref tage-capacity-nsga2-dse` 是当时
+解析到该 SHA 的可变 branch ref。精确复跑须使用指向该 commit 的不可变 tag，并先核对
+该 commit 的
+[`.github/workflows/manual-perf.yml`](https://github.com/OpenXiangShan/GEM5/blob/9390f9b03bd1895f0b5e87cb296393d3315daa13/.github/workflows/manual-perf.yml)
+内容：
 
 ```bash
 gh workflow run manual-perf.yml \
@@ -346,11 +364,11 @@ gh workflow run manual-perf.yml \
   -f extra_args='-P system.cpu[0].branchPred.tage.numPredictors=8 -P system.cpu[0].branchPred.tage.tableSizes=[256,256,2048,4096,2048,2048,1024,2048] -P system.cpu[0].branchPred.tage.TTagBitSizes=[15,18,16,11,18,11,13,13] -P system.cpu[0].branchPred.tage.numWays=[2,3,2,3,3,2,2,1]'
 ```
 
-两条 run 完成后，仍按 baseline 对应的 35 workload / 697 point whitelist 重聚合，并
-要求运行 archive 对 12 个实际 benchmark 有 697 `stats.txt` 和 `completed`、零
-`running`/`abort`、非空 `score.txt`。在加入实测表前，还必须从每条 run 的一个完成
-切片 `m5out/config.ini` 核对四个 TAGE 字段与“求解结果到 gem5 参数的映射”中 C3/C4
-对应行完全一致；仅有 `metadata.txt` 的请求参数不足以证明最终 SimObject 配置。
+两条 run 均以 Actions success 结束，且已按 baseline 对应的 35 workload / 697 point
+whitelist 重聚合。C3 和 C4 各自都有 697 `stats.txt` 与 `completed`、零
+`running`/`abort`、非空 `score.txt`。各自全部 697 个完成切片的 `m5out/config.ini`
+四项 TAGE 字段也都与“求解结果到 gem5 参数的映射”中对应行完全一致；仅有
+`metadata.txt` 的请求参数不足以证明最终 SimObject 配置。
 
 ## 边界与复现
 
@@ -380,8 +398,15 @@ gh workflow run manual-perf.yml \
 - 本节的 P1--P3/C1--C4 覆盖图由
   [`generate_tage_capacity_8table_t2t4_selection_figure.py`](generate_tage_capacity_8table_t2t4_selection_figure.py)
   生成。它复用上述 artifact 审计，并额外验证 P1--P3 恰为正式 score/branch
-  Pareto 集、C1--C4 位于容量-分数投影、C3/C4 是 70--75 KiB 中的 score #1/#2；无
-  `matplotlib` 时可运行：
+  Pareto 集、C1--C4 位于容量-分数投影、C3/C4 是 70--75 KiB 中的 score #1/#2：
+
+  ```bash
+  python3 docs/Gem5_Docs/frontend/generate_tage_capacity_8table_t2t4_selection_figure.py \
+    /path/to/solver-run-32253821540 \
+    --output docs/Gem5_Docs/images/tage-capacity-8table-t2t4-selected-spec06-1c-20260821.png
+  ```
+
+  无 `matplotlib` 时可运行：
 
   ```bash
   python3 docs/Gem5_Docs/frontend/generate_tage_capacity_8table_t2t4_selection_figure.py \
