@@ -374,7 +374,9 @@ CDP::sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority>
     PrefetchInfo pfi(pkt, pkt->req->getVaddr(), false);
     pfi.setTriggerInfo(pkt);
 
-    InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
+    AddrPriority buffered_addr(addr, prio, pfSource, pfi.trigger_info);
+    buffered_addr.depth = pf_depth;
+    InsertPFRequestToBuffer(buffered_addr);
     Addr filter_key = sharedFilterKey(pfi, addr);
     if (pfLRUFilter->contains(filter_key)) {
         return false;
@@ -393,7 +395,9 @@ bool
 CDP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
     int prio, PrefetchSourceType pfSource, int pf_depth)
 {
-    InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
+    AddrPriority buffered_addr(addr, prio, pfSource, pfi.trigger_info);
+    buffered_addr.depth = pf_depth;
+    InsertPFRequestToBuffer(buffered_addr);
     Addr filter_key = sharedFilterKey(pfi, addr);
     if (pfLRUFilter->contains(filter_key)) {
         return false;
