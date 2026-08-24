@@ -211,7 +211,8 @@ UBTB::refreshPredictionMeta(Addr startAddr,
     assert(pred.tid < threadMeta.size());
     threadMeta[pred.tid] = std::make_shared<UBTBMeta>();
     auto &meta = threadMeta[pred.tid];
-    meta->hit_entry = lookupNoSideEffect(startAddr);
+    meta->hit_entry = lookupNoSideEffect(
+        startAddr, pred.tid, pred.asidHash);
 }
 
 UBTB::UBTBIter
@@ -254,19 +255,27 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash)
 }
 
 UBTB::TickedUBTBEntry
-UBTB::lookupNoSideEffect(Addr startAddr) const
+UBTB::lookupNoSideEffect(Addr startAddr, ThreadID tid,
+                         uint8_t asidHash) const
 {
     if (startAddr & 0x1) {
         return TickedUBTBEntry();
     }
 
-    Addr current_tag = getTag(startAddr, 0);
-    auto it = std::find_if(ubtb.begin(), ubtb.end(),
-                           [current_tag](const TickedUBTBEntry &way) {
-                               return way.valid && way.tag == current_tag;
+    Addr current_tag = getTag(startAddr, asidHash);
+    Addr block_end = (startAddr + predictWidth) &
+        ~mask(floorLog2(predictWidth) - 1);
+    auto range_begin = ubtb.begin() + partitionBegin(numEntries, tid);
+    auto range_end = ubtb.begin() + partitionEnd(numEntries, tid);
+    auto it = std::find_if(range_begin, range_end,
+                           [current_tag, startAddr, block_end]
+                           (const TickedUBTBEntry &way) {
+                               return way.valid && way.tag == current_tag &&
+                                      way.pc >= startAddr &&
+                                      way.pc < block_end;
                            });
 
-    return it != ubtb.end() ? *it : TickedUBTBEntry();
+    return it != range_end ? *it : TickedUBTBEntry();
 }
 
 

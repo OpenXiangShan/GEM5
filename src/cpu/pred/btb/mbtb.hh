@@ -148,7 +148,7 @@ class MBTB : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::vector<BTBEntry> getPredictedEntriesNoSideEffect(
-        Addr startAddr, uint8_t asidHash = 0) const;
+        Addr startAddr, ThreadID tid, uint8_t asidHash) const;
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
@@ -219,7 +219,7 @@ class MBTB : public TimedBaseBTBPredictor
      *  @return Returns the index into the BTB.
      */
     inline Addr getIndex(Addr instPC, uint8_t asidHash,
-                         ThreadID tid = 0) const {
+                         ThreadID tid) const {
         Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
         Addr index = xorAsidHashIntoIndex(
             baseIndex, floorLog2(numSets), asidHash);
@@ -358,7 +358,7 @@ class MBTB : public TimedBaseBTBPredictor
                                        uint8_t asidHash,
                                        std::shared_ptr<BTBMeta> meta);
     std::vector<TickedBTBEntry> lookupNoSideEffect(
-        Addr block_pc, uint8_t asidHash = 0) const;
+        Addr block_pc, ThreadID tid, uint8_t asidHash) const;
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
@@ -370,7 +370,7 @@ class MBTB : public TimedBaseBTBPredictor
     /** Victim cache operations */
     std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc, uint8_t asidHash);
     std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(
-        Addr block_pc, uint8_t asidHash) const;
+        Addr block_pc, ThreadID tid, uint8_t asidHash) const;
     std::vector<TickedBTBEntry> lookupVictimCacheNoSideEffect(
         Addr block_pc, uint8_t asidHash) const;
     void insertVictimCache(const TickedBTBEntry& evicted_entry);

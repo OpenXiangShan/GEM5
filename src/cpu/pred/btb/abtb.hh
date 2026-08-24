@@ -249,7 +249,7 @@ class AheadBTB : public TimedBaseBTBPredictor
         return folded & mask(AbtbHashBits);
     }
 
-    inline Addr getIndex(Addr instPC, uint8_t asidHash, ThreadID tid = 0,
+    inline Addr getIndex(Addr instPC, uint8_t asidHash, ThreadID tid,
                          Addr phrHash = 0) const {
         Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
         baseIndex ^= phrHash & idxMask;
@@ -265,7 +265,9 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Returns the tag bits.
      */
     inline Addr getTag(Addr instPC, uint8_t asidHash) const {
-        Addr baseTag = (instPC >> tagShiftAmt) & tagMask;
+        const unsigned shift = tagShiftAmt -
+            (usesTidPartitionedStorage() ? 1 : 0);
+        Addr baseTag = (instPC >> shift) & tagMask;
         return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
 
@@ -426,7 +428,9 @@ class AheadBTB : public TimedBaseBTBPredictor
     std::vector<TickedBTBEntry> lookup(Addr block_pc, ThreadID tid,
                                        uint8_t asidHash,
                                        Addr indexPhrHash);
-    std::vector<TickedBTBEntry> lookupNoSideEffect(Addr block_pc) const;
+    std::vector<TickedBTBEntry> lookupNoSideEffect(
+        Addr block_pc, ThreadID tid, uint8_t asidHash,
+        Addr indexPhrHash) const;
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
@@ -435,7 +439,9 @@ class AheadBTB : public TimedBaseBTBPredictor
     std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, ThreadID tid,
                                                   uint8_t asidHash,
                                                   Addr indexPhrHash);
-    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(Addr block_pc) const;
+    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(
+        Addr block_pc, ThreadID tid, uint8_t asidHash,
+        Addr indexPhrHash) const;
 
     /** The BTB structure:
      *  - Organized as numSets sets

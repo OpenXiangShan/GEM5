@@ -47,6 +47,10 @@ class TimedBaseBTBPredictor: public SimObject
 #ifdef UNIT_TEST
     TimedBaseBTBPredictor();
     void setNumDelay(unsigned delay) { numDelay = delay; }
+    void setSmtTidPartitioned(bool partitioned)
+    {
+        smtTidPartitioned = partitioned;
+    }
 #else
     typedef TimedBaseBTBPredictorParams Params;
 

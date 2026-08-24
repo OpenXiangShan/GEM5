@@ -244,7 +244,8 @@ class UBTB : public TimedBaseBTBPredictor
      * @return Iterator to the matching entry if found, or ubtb.end() if not found
      */
     UBTBIter lookup(Addr startAddr, ThreadID tid, uint8_t asidHash);
-    TickedUBTBEntry lookupNoSideEffect(Addr startAddr) const;
+    TickedUBTBEntry lookupNoSideEffect(Addr startAddr, ThreadID tid,
+                                       uint8_t asidHash) const;
 
     /** helper method called by putPCHistory: Check uBTB entry pc range and update statistics
      * @param entry The uBTB entry to check

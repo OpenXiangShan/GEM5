@@ -350,9 +350,10 @@ MBTB::putPCHistory(Addr startAddr,
 }
 
 std::vector<BTBEntry>
-MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, uint8_t asidHash) const
+MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, ThreadID tid,
+                                      uint8_t asidHash) const
 {
-    auto found_entries = lookupNoSideEffect(startAddr, asidHash);
+    auto found_entries = lookupNoSideEffect(startAddr, tid, asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
 
     std::vector<BTBEntry> entries;
@@ -381,7 +382,8 @@ MBTB::refreshPredictionMeta(Addr startAddr,
     assert(pred.tid < threadMeta.size());
     threadMeta[pred.tid] = std::make_shared<BTBMeta>();
     auto &meta = threadMeta[pred.tid];
-    auto found_entries = lookupNoSideEffect(startAddr);
+    auto found_entries = lookupNoSideEffect(
+        startAddr, pred.tid, pred.asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
     for (const auto &entry : processed_entries) {
         meta->hit_entries.push_back(BTBEntry(entry));
@@ -424,7 +426,8 @@ MBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, uint8_t asidHash) const
+MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, ThreadID tid,
+                                    uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -434,7 +437,7 @@ MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, uint8_t asidHash) const
     int sram_id = getSRAMId(block_pc);
     const auto& target_sram = (sram_id == 0) ? sram0 : sram1;
 
-    Addr btb_idx = getIndex(block_pc, asidHash);
+    Addr btb_idx = getIndex(block_pc, asidHash, tid);
     const auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
 
@@ -491,7 +494,8 @@ MBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash,
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupNoSideEffect(Addr block_pc, uint8_t asidHash) const
+MBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
+                         uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -499,9 +503,10 @@ MBTB::lookupNoSideEffect(Addr block_pc, uint8_t asidHash) const
     }
 
     Addr alignedPC = block_pc & ~(blockSize - 1);
-    res = lookupSingleBlockNoSideEffect(alignedPC, asidHash);
+    res = lookupSingleBlockNoSideEffect(alignedPC, tid, asidHash);
     auto nextBlockRes =
-        lookupSingleBlockNoSideEffect(alignedPC + blockSize, asidHash);
+        lookupSingleBlockNoSideEffect(
+            alignedPC + blockSize, tid, asidHash);
     res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
     if (victimCacheSize > 0) {

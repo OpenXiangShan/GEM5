@@ -266,7 +266,9 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
     lookupTags.clear();
     bitset useful_mask(numPredictors, false);
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get(), pred.asidHash);
+        Addr index = getTageIndex(
+            stream_start, i, state.indexFoldedHist[i].get(),
+            pred.asidHash, pred.tid);
         Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
                               state.altTagFoldedHist[i].get(), pred.asidHash);
         auto &entry = tageTable[i][index];
