@@ -1,7 +1,6 @@
 import sys
 
 from m5.objects import *
-from m5.objects.ValuePredictor import *
 from m5.util import addToPath
 
 addToPath('../')
@@ -79,14 +78,7 @@ def setKmhV3IdealParams(args, system):
         cpu.DcacheSetDivNum = 2
 
         # value predictor
-        cpu.valuePred = CompositeValuePredictor(
-                            predictors=[
-                                IdealConstantLVP(),
-                                # ExampleValuePredictor(),
-                                # EStride(logMaxConfidence=13, thresholdPercent=0.35)
-                            ],
-                            arb=CVPConfidenceArb(counterBits=6)
-                        )
+        cpu.valuePred = NULL
 
         # lsq
         cpu.LQEntries = 120
