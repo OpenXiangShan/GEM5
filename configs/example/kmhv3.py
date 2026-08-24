@@ -5,6 +5,7 @@ import sys
 import m5
 from m5.defines import buildEnv
 from m5.objects import *
+from m5.objects.ValuePredictor import *
 from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
@@ -92,6 +93,16 @@ def setKmhV3Params(args, system):
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
+
+        # value predictor
+        cpu.valuePred = CompositeValuePredictor(
+                            predictors=[
+                                IdealConstantLVP(),
+                                # ExampleValuePredictor(),
+                                # EStride(logMaxConfidence=13, thresholdPercent=0.35)
+                            ],
+                            arb=CVPConfidenceArb(counterBits=6)
+                        )
 
         # lsq
         cpu.LQEntries = 120
