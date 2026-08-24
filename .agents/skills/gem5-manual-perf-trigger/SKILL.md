@@ -5,220 +5,118 @@ description: 用于在本地通过 `gh` 远程触发 OpenXiangShan/GEM5 的 `man
 
 # GEM5 Manual Perf Trigger
 
-## 概述
+## 原则
 
-这个 skill 用于安全、可追溯地触发远端 GitHub Actions `manual-perf.yml`。核心目标不是只把命令发出去，而是先确认本地触发条件，再确认输入参数，再在触发后检查 run 是否真的正常创建。
+`manual-perf.yml` 会持续变化，workflow 文件本身才是输入项、默认值和 choice 选项的事实来源。不要把这份 skill 中的历史选项当成固定接口。
 
-当前约束：
+区分两类请求：
 
-- 已确认 `manual-perf.yml` 在本仓库上可通过 `gh workflow run` 触发。
-- 已实际走通的配置只有 `kmhv3.py`。
-- 其他配置虽然在 workflow 的 `inputs` 中存在，但当前没有实际跑通记录，触发前必须明确提醒用户这一点。
+- 用户只要求校验或组装命令：只做只读检查并返回命令。
+- 用户明确要求触发：完成必要预检后直接触发，不再重复索要一次确认；触发后必须回查 run。
 
-## 工作流
+## 1. 读取目标 ref 的 workflow
 
-### 第 1 步：检查本地触发能力
-
-优先检查 `gh` 是否可用：
+先确定仓库和目标 ref，再读取本地及远端版本：
 
 ```bash
-gh --version
+sed -n '1,180p' .github/workflows/manual-perf.yml
+gh workflow view manual-perf.yml \
+  --repo OpenXiangShan/GEM5 \
+  --ref <workflow-ref> \
+  --yaml
 ```
 
-如果 `gh` 不可用：
+以实际触发 ref 上的 `workflow_dispatch.inputs` 为准。当前常见字段包括：
 
-- 明确提示用户先安装 `gh`。
-- 或者提供 GitHub REST API `workflow_dispatch` 的 `curl` 方案。
-- 但必须同时说明：`curl` 触发流程在当前仓库协作里未实际走通过，只能作为备选方案，可靠性不如 `gh` 已验证路径。
-
-不要在 `gh` 缺失时直接假设 `curl` 方案可用并继续执行。
-
-### 第 2 步：检查认证状态
-
-检查 `gh` 是否已登录：
-
-```bash
-gh auth status
-```
-
-如果未登录，或者 token 无效：
-
-- 提示用户先执行 `gh auth login`
-- 或者提示用户配置具备 `repo`、`workflow` 权限的 token
-
-说明要点：
-
-- 使用 `gh workflow run` 时，推荐优先走 `gh auth login`
-- 如果未来改走 REST API，则需要用户自行准备 token
-
-### 第 3 步：读取 workflow 输入项
-
-在触发前，读取并核对 `.github/workflows/manual-perf.yml` 的 `workflow_dispatch.inputs`。
-
-当前已知关键输入项：
-
+- `note`
 - `configuration`
 - `benchmark_type`
 - `specific_benchmarks`
 - `vector_type`
+- `extra_args`
+- `distributed_servers`
+- `distributed_jobs_per_server`
 - `branch`
 
-当前已验证存在的配置选项：
+这只是字段示例，不替代读取 workflow。若目标 ref 尚未 push，远端无法使用该版本的 workflow。
 
-- `kmhv2.py`
-- `kmhv3.py`
-- `idealkmhv3.py`
+特别检查 workflow 内的派生逻辑。例如当前 SMT benchmark 类型会强制选择 `smt_idealkmhv3.py`，此时用户传入的普通 `configuration` 不决定最终配置；报告中应把这一点说清楚。
 
-但必须提醒用户：
+## 2. 校验环境和参数
 
-- `manual-perf` 已实际走通的是 `kmhv3.py`
-- 其他配置目前只是 workflow 中支持，暂未在本技能流程里实际验证
+检查：
 
-### 第 4 步：向用户确认触发参数
+```bash
+gh --version
+gh auth status
+git rev-parse --abbrev-ref HEAD
+git remote -v
+```
 
-在真正触发前，必须向用户确认以下信息：
+沙箱中的 `gh auth status` 可能与正常 shell 不同；认证异常时先在正常 shell 复核，不要仅凭一次沙箱结果断言 token 已失效。
 
-- 配置文件：如 `kmhv3.py`
-- benchmark 类型：如 `gcc12-spec06-1.0c`
-- 是否只跑指定 benchmark：如 `mcf,omnetpp`
-- 目标分支、tag 或 SHA：通常是当前分支
-- `vector_type`：默认 `base`
+参数规则：
 
-如果用户没有给全：
+- `--ref` 决定使用哪个远端 ref 上的 workflow 文件。
+- `branch` 决定 workflow 实际测试的 branch、tag 或 SHA；留空时通常使用 dispatch ref 的 SHA，具体看目标 workflow。
+- choice/required/default 均从目标 workflow 读取。
+- `specific_benchmarks` 为空通常表示跑所选集合的全部 benchmark。
+- `extra_args` 必须作为单个 `-f` 参数传递，避免 shell 拆词。
+- 不补猜用户没有表达的 workload 子集；可安全采用 workflow 明示的默认值。
 
-- 主动补问缺失项
-- 不要私自猜测 benchmark 集合
+触发前给出一段简短摘要：workflow ref、被测 ref、配置、benchmark 集合、子集以及额外参数。若这些信息会导致明显不同的实验，且无法从请求或 workflow 默认值确定，再向用户补问。
 
-如果用户要触发非 `kmhv3.py` 配置：
+## 3. 组装和触发
 
-- 必须先提示“当前只有 `kmhv3.py` 经过实际触发验证，其他配置暂未在此流程中验证”
-
-### 第 5 步：先展示命令，再执行
-
-触发前先把准备执行的命令原样展示给用户，得到确认后再执行。
-
-标准命令模板：
+标准形式：
 
 ```bash
 gh workflow run manual-perf.yml \
   --repo OpenXiangShan/GEM5 \
-  --ref <branch> \
+  --ref <workflow-ref> \
   -f configuration=<configuration> \
   -f benchmark_type=<benchmark_type> \
   -f specific_benchmarks=<specific_benchmarks> \
   -f vector_type=<vector_type> \
-  -f branch=<branch>
+  -f 'extra_args=<extra_args>' \
+  -f distributed_servers=<servers> \
+  -f distributed_jobs_per_server=<jobs> \
+  -f branch=<tested-ref>
 ```
 
-说明：
+只传需要覆盖的字段即可；让 workflow defaults 处理其余字段。不要因为旧 skill 没列出某个新选项就拒绝它，只要目标 workflow 明确支持。
 
-- `--ref` 使用要触发的远端分支
-- `branch` input 也通常填写同一个分支
-- `specific_benchmarks` 可为空；为空表示按 workflow 跑该集合全部 benchmark
+## 4. 找到并检查新 run
 
-### 第 6 步：触发后回查 run
-
-只拿到 “Created workflow_dispatch event” 不够。触发成功后必须继续检查：
-
-1. 返回的 run 链接是否存在
-2. `gh run view <run-id>` 是否能正常读取
-3. run 是否进入了正常状态，例如 `queued`、`in_progress`，而不是立刻 `failure` 或不存在
-
-建议的检查方式：
+`gh workflow run` 通常不直接返回 run ID。记录触发时间，然后从 workflow-dispatch runs 中匹配目标 head branch、创建时间和 run 名称：
 
 ```bash
-gh run view <run-id> --repo OpenXiangShan/GEM5
+gh run list \
+  --repo OpenXiangShan/GEM5 \
+  --workflow manual-perf.yml \
+  --event workflow_dispatch \
+  --limit 20 \
+  --json databaseId,createdAt,status,conclusion,url,name,displayTitle,headBranch,headSha
 ```
 
-必要时可继续查看：
+定位后读取：
 
 ```bash
-gh run view <run-id> --repo OpenXiangShan/GEM5 --json status,conclusion,url,name,headBranch,headSha
+gh run view <run-id> \
+  --repo OpenXiangShan/GEM5 \
+  --json status,conclusion,url,name,headBranch,headSha
 ```
 
-如果 run 创建失败、找不到、或立刻异常终止：
-
-- 不要简单说“已触发”
-- 要明确说明触发异常，并给出当前检查到的状态
-
-## 输出要求
-
-执行本 skill 时，回复应遵守以下格式约束：
-
-- 先说明当前准备做什么
-- 如果缺少 `gh` 或认证，先阻断并提示用户处理
-- 触发前先展示完整命令
-- 明确提醒：`manual-perf` 当前实际走通过的是 `kmhv3.py`，其他配置暂未实际验证
-- 触发后提供 run 链接
-- 触发后追加 run 状态检查结果，而不是只给链接
+至少报告 URL、run ID、head、`status` 和 `conclusion`。`queued` 或 `in_progress` 只表示已创建并开始排队/执行，不等于通过。若用户只要求触发且无需持续盯守，确认 run 存在后停止轮询。
 
 ## 失败处理
 
-### `gh` 未安装
+- `gh` 缺失：说明需要安装 GitHub CLI；不要静默改用未校验的 REST 脚本。
+- 认证失败：提示在正常 shell 复核 `gh auth status`。
+- 目标 ref 不存在：要求先 push 或改用已有 ref。
+- 输入不被接受：重新读取该 ref 的 workflow，核对字段名、choice 和类型。
+- 找不到新 run：检查 workflow ref、触发时间、head branch 和 token 的 Actions 权限；不要声称已经成功触发。
 
-给出两条路径：
+## 输出要求
 
-1. 安装 `gh` 后再触发
-2. 使用 REST API `workflow_dispatch`
-
-但必须注明：
-
-- REST API `curl` 路径当前未在本流程中实际走通过
-- 它是备选，不是首选
-
-### `gh` 已安装但未登录
-
-提示：
-
-```bash
-gh auth login
-gh auth status
-```
-
-### workflow 输入不完整
-
-阻断执行，向用户补问：
-
-- 配置文件
-- benchmark 类型
-- benchmark 子集
-- 分支
-
-### 触发后找不到 run
-
-优先检查：
-
-- 仓库名是否正确
-- 分支是否已 push 到远端
-- workflow 文件名是否正确
-- token 是否具备 `workflow` 权限
-
-## 示例
-
-### 示例 1：只跑 `mcf,omnetpp`
-
-用户意图：
-
-- 配置：`kmhv3.py`
-- benchmark：`gcc12-spec06-1.0c`
-- 仅跑：`mcf,omnetpp`
-- 分支：`turbo-pfalign-dualPort-l2Bank-nopf`
-
-先展示命令：
-
-```bash
-gh workflow run manual-perf.yml \
-  --repo OpenXiangShan/GEM5 \
-  --ref turbo-pfalign-dualPort-l2Bank-nopf \
-  -f configuration=kmhv3.py \
-  -f benchmark_type=gcc12-spec06-1.0c \
-  -f specific_benchmarks=mcf,omnetpp \
-  -f vector_type=base \
-  -f branch=turbo-pfalign-dualPort-l2Bank-nopf
-```
-
-触发后再检查 run 状态，并返回链接与状态。
-
-## 资源
-
-当前 skill 不依赖额外 `scripts/`、`references/`、`assets/`。
+清楚区分：准备触发、dispatch 已提交、run 已创建、run 已完成。没有最终 `conclusion=success` 时，不写“CI 已通过”。

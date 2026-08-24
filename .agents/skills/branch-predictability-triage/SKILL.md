@@ -71,12 +71,24 @@ description: "用于分析分支 PC 对应的 ELF / 函数 / 源码语义，并�
 - 先说明该地址大概率不属于 benchmark 主体
 - 如果没有对应 runtime ELF，只能停在“非 benchmark 代码”这一层
 
-## 仓库内常见路径
+## 环境路径
+
+外部 checkpoint、ELF 和源码通常不在 GEM5 仓库内。按下面顺序解析，使用前先检查路径
+是否存在：
+
+1. 用户显式给出的路径。
+2. 环境变量：`CHECKPOINT_PROFILE_ROOT`、`SPEC06_SOURCE_ROOT`。
+3. 本机已知默认路径。
+
+个人 home 下的路径可以作为本机默认值，但不能当作所有环境都成立的前提。
+
+## 本机常见路径
 
 ### 新 profile
 
-- checkpoint 根目录：`/nfs/home/share/checkpoints_profiles/<profile>/checkpoint-0-0-0`
-- ELF 目录：`/nfs/home/share/checkpoints_profiles/<profile>/elf`
+- profile 根目录：`${CHECKPOINT_PROFILE_ROOT:-/nfs/home/share/checkpoints_profiles}`
+- checkpoint 目录：`<profile-root>/<profile>/checkpoint-0-0-0`
+- ELF 目录：`<profile-root>/<profile>/elf`
 
 常见映射：
 
@@ -104,7 +116,7 @@ description: "用于分析分支 PC 对应的 ELF / 函数 / 源码语义，并�
 
 常见 SPEC2006 源码路径：
 
-- `/nfs/home/yanyue/tools/cpu2006_analyze/benchspec/CPU2006`
+- `${SPEC06_SOURCE_ROOT:-/nfs/home/yanyue/tools/cpu2006_analyze/benchspec/CPU2006}`
 
 例如：
 
@@ -197,7 +209,8 @@ llvm-objdump -d --line-numbers --source \
 示例：
 
 ```bash
-rg -n '^.*\\bpush_slidE\\b\\s*\\(' /nfs/home/yanyue/tools/cpu2006_analyze/benchspec/CPU2006/458.sjeng/src/*.c
+SPEC06_SOURCE_ROOT=${SPEC06_SOURCE_ROOT:-/nfs/home/yanyue/tools/cpu2006_analyze/benchspec/CPU2006}
+rg -n '^.*\\bpush_slidE\\b\\s*\\(' "$SPEC06_SOURCE_ROOT"/458.sjeng/src/*.c
 ```
 
 这一步的目标不是强行制造“精确某一行”，而是定位到：

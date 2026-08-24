@@ -14,8 +14,7 @@ description: "仅做 BPU 计数器提取与批量汇总（机器可读 JSON/CSV�
 - 只提取原始 counter，不做公式推导。
 - 配置文件只写 counter 名称。
 - 目录结构不做强约束，递归扫描 `stats.txt`。
-- 如果发现某些分支预测错误特别高，还可以看`stats.txt` 同目录的`topMispredictsByBranch.csv`, 记录了哪些分支被错误预测很多。
-- 必要时候可以使用 `--enable-bp-db tage` 来打开tage 的trace db 分析。
+- 不解析 `topMispredictsByBranch.csv` 或 `bp.db`；需要分支级归因时改用对应分析 skill。
 
 ## 入口脚本
 - `.agents/skills/frontend-pmu-analysis/scripts/analyze_bpu_counters.py`

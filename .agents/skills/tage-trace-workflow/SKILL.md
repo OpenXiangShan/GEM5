@@ -13,7 +13,15 @@ description: 用于编译 XiangShan RTL trace 版 emu、运行 RTL/gem5 的 TAGE
 
 ## 1. RTL 编译
 
-在 XiangShan 目录下使用：
+先固定 RTL checkout；显式路径优先，下面的个人 home 只作本机 fallback：
+
+```bash
+export XIANGSHAN_HOME="${XIANGSHAN_HOME:-/nfs/home/yanyue/workspace/xs-env/XiangShan}"
+git -C "$XIANGSHAN_HOME" rev-parse HEAD
+cd "$XIANGSHAN_HOME"
+```
+
+然后使用当前 trace 配置：
 
 ```bash
 make clean
@@ -24,14 +32,14 @@ make emu \
   WITH_CONSTANTIN=1 \
   WITH_CHISELDB=1 \
   WITH_ROLLINGDB=1 \
-  CONFIG=CHIFrontendDebugConfig \
+  CONFIG=FrontendDebugConfig \
   -j64
 ```
 
 编完先做两个 sanity check：
 
 ```bash
-rg -n "CHIFrontendDebugConfig" build/time.log
+rg -n "FrontendDebugConfig" build/time.log
 rg -n "CondTrace_0_write|BpuPredictionTrace_write|microTageTrace_write" build/chisel_db.cpp
 ```
 
@@ -61,10 +69,11 @@ rg -n "CondTrace_0_write|BpuPredictionTrace_write|microTageTrace_write" build/ch
 
 ## 3. gem5 运行
 
-`kmhv3.py` 需要 diff 环境变量：
+`kmhv3.py` 需要 diff 环境变量。保留调用者已有设置，否则使用 CI 常见默认值：
 
 ```bash
-export GCBV_REF_SO=/nfs/home/yanyue/tools/gem5-tools/ref-h/riscv64-nemu-interpreter-so
+export GCBV_REF_SO="${GCBV_REF_SO:-/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so}"
+test -f "$GCBV_REF_SO"
 ```
 
 示例：
@@ -90,9 +99,11 @@ export GCBV_REF_SO=/nfs/home/yanyue/tools/gem5-tools/ref-h/riscv64-nemu-interpre
 先看计数器，再看 trace：
 
 1. gem5 `stats.txt` 中的
-   `allocateNeeded / allocateSkipHighestProvider / resolveBranchHasProvider / resolveBranchUseProvider / resolveBranchHasAlt / resolveBranchUseAltTable / resolveBranchUseBaseTable / mispredictBranch*`
+   `updateAllocSuccess / updateAllocFailure / updateAllocFailureNoValidTable / updateResetU / resolveBranchHasProvider / resolveBranchUseProvider / resolveBranchHasAlt / resolveBranchUseAltTable / resolveBranchUseBaseTable / mispredictBranch*`
 2. RTL `CondTrace_*` 聚出来的同口径总量
 3. 再看热点 branch 的 `provider/alt/useAlt/alloc`
+
+统计名会随 gem5 commit 变化；以上是当前 checkout 的名字，分析历史归档时要回到对应 commit 确认递增语义。
 
 注意两个口径坑：
 
@@ -102,19 +113,25 @@ export GCBV_REF_SO=/nfs/home/yanyue/tools/gem5-tools/ref-h/riscv64-nemu-interpre
 ## 5. 脚本
 
 - RTL 聚合：
-  `[scripts/aggregate_rtl_condtrace.py](scripts/aggregate_rtl_condtrace.py)`
+  [scripts/aggregate_rtl_condtrace.py](scripts/aggregate_rtl_condtrace.py)
 - gem5/RTL 对拍：
-  `[scripts/compare_gem5_rtl_tage.py](scripts/compare_gem5_rtl_tage.py)`
+  [scripts/compare_gem5_rtl_tage.py](scripts/compare_gem5_rtl_tage.py)
 - 热点 branch 画像对拍：
-  `[scripts/compare_branch_profiles.py](scripts/compare_branch_profiles.py)`
+  [scripts/compare_branch_profiles.py](scripts/compare_branch_profiles.py)
 - 单个 branch 的顶层事件序列粗对拍：
-  `[scripts/compare_branch_event_sequences.py](scripts/compare_branch_event_sequences.py)`
+  [scripts/compare_branch_event_sequences.py](scripts/compare_branch_event_sequences.py)
 - 高表 alloc 生命周期分析：
-  `[scripts/analyze_alloc_lifecycle.py](scripts/analyze_alloc_lifecycle.py)`
+  [scripts/analyze_alloc_lifecycle.py](scripts/analyze_alloc_lifecycle.py)
 - prediction-time PHR contributor 归类：
-  `[scripts/analyze_phist_contributor.py](scripts/analyze_phist_contributor.py)`
+  [scripts/analyze_phist_contributor.py](scripts/analyze_phist_contributor.py)
 - RTL `BpuTrainTrace` 的 `self / sibling / none` block-level 贡献者归类：
-  `[scripts/analyze_rtl_train_contributor.py](scripts/analyze_rtl_train_contributor.py)`
+  [scripts/analyze_rtl_train_contributor.py](scripts/analyze_rtl_train_contributor.py)
+- gem5 `BPTRACE` 上下文窗口分析：
+  [scripts/analyze_bptrace_context.py](scripts/analyze_bptrace_context.py)
+- bucket 结果稳定性比较：
+  [scripts/analyze_bucket_stability.py](scripts/analyze_bucket_stability.py)
+- path-history bucket 聚合：
+  [scripts/analyze_phistory_buckets.py](scripts/analyze_phistory_buckets.py)
 
 常用命令：
 
@@ -126,6 +143,6 @@ python3 .agents/skills/tage-trace-workflow/scripts/compare_gem5_rtl_tage.py \
   --gem5-stats /tmp/debug/coremark_200k_basic/stats.txt \
   --gem5-bpdb /tmp/debug/coremark_200k_basic/bp.db \
   --gem5-top-branch-csv /tmp/debug/coremark_200k_basic/topMispredictsByBranch.csv \
-  --rtl-db /nfs/home/yanyue/workspace/xs-env/XiangShan/build/2026-03-25-13-31-09.db \
+  --rtl-db /path/to/rtl.db \
   --top 12
 ```

@@ -40,6 +40,14 @@ python3 .agents/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
   --skip-run
 ```
 
+## 路径解析
+
+- GEM5 仓库：优先使用 `GEM5_HOME`，其次从当前目录和脚本位置向上查找 `SConstruct` 与 `configs/example/kmhv3.py`。
+- MGSC 测试：优先使用 `AM_HOME`；未设置时才采用本机默认 `/nfs/home/yanyue/tools/nexus-am`。
+- 所有路径都可用 `--gem5-bin`、`--config`、`--cpt-dir` 和 `--src-dir` 显式覆盖。
+
+个人 home 路径只是方便本机使用的 fallback，不是跨机器前提。脚本会在创建运行任务前检查 checkpoint 目录、gem5 binary 和配置文件。
+
 ## 工作流
 
 1) **基线 + 单表隔离 profile**
@@ -84,3 +92,4 @@ python3 .agents/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
 ## 参考资料
 
 - 关于面向 G/IMLI 的微测试模式，参见 `references/test-patterns.md`。
+- `scripts/mgsc_trace_report.py` 可用于对已有 `bp.db` 做更细的 branch/run 级门限与表贡献报告；它不负责重跑 gem5。

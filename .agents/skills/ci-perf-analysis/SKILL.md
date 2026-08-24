@@ -7,143 +7,97 @@ description: 用于从 GitHub Actions 的 gem5 性能 CI 中定位 summary、sco
 
 ## 概览
 
-这个 skill 只做一条固定链路：
+这个 skill 处理以下链路：
 
-1. 用 `gh` 从 CI run 找到 summary 对应的 `score.txt` 和归档目录。
-2. 用本地 `gem5_data_proc/run.py` 把 `spec_all/` 处理成 `csv`、`weighted.csv`、`score.csv`。
-3. 对比 benchmark 级收益，并在需要时继续下钻到 `stats.txt` 或其他归档结果。
+1. 从 CI run 的所有 jobs 中定位真实性能归档目录和 `score.txt`。
+2. 用本地 `gem5_data_proc/run.py` 生成 CSV、weighted CSV 和 score CSV。
+3. 对比 benchmark 级变化；必要时再下钻 `stats.txt`。
 
-## 快速开始
+## 1. 定位归档
 
-### 1. 先拿 summary 和归档目录
-
-优先使用 bundled script：
+优先使用仓库内脚本：
 
 ```bash
 python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py \
   https://github.com/OpenXiangShan/GEM5/actions/runs/<run_id>
 ```
 
-输出会包含：
+脚本会遍历 run 的 jobs，并兼容当前和旧版 workflow 的归档日志格式。输出包括：
 
+- `job_id` 和 `job_name`
 - `archive_path`
-- `spec_all` 目录
-- `score.txt` 的最后 42 行
+- `spec_all`
+- 本地可访问时的 `score.txt` 尾部
 
-这和 workflow 在 GitHub summary 里展示的内容一致，因为 CI 本身就是把 `score.txt` 的最后 42 行写进 step summary。
+不要默认取第一个 job，也不要从日志中的示例文本推断归档位置。
 
-### 2. 优先使用本地 `gem5_data_proc`
+非默认仓库可使用 `--repo <owner/repo>`。
 
-默认优先使用：
+## 2. 选择 gem5_data_proc
+
+路径优先级：
+
+1. 用户明确给出的路径
+2. 环境变量 `GEM5_DATA_PROC_HOME`
+3. 本机常见默认值 `/nfs/home/yanyue/workspace/gem5_data_proc`
 
 ```bash
-/nfs/home/yanyue/workspace/gem5_data_proc
+export GEM5_DATA_PROC_HOME="${GEM5_DATA_PROC_HOME:-/nfs/home/yanyue/workspace/gem5_data_proc}"
+test -f "$GEM5_DATA_PROC_HOME/run.py"
 ```
 
-如果用户本地没有，再执行：
+若以上路径均不可用，先说明缺失并征得用户同意，再安装或 clone；不要把个人 home 路径当成所有机器的前提。
+
+## 3. 处理归档
+
+始终使用步骤 1 返回的完整 `<archive_path>`，不要手写固定的 benchmark 套件目录：
 
 ```bash
-git clone https://github.com/jensen-yan/gem5_data_proc
-# 设置环境变量 
-export $GEM5_DATA_PROC_HOME=xxx
-```
-
-
-### 3. 用 `gem5_data_proc` 处理整个归档
-
-```bash
-cd $GEM5_DATA_PROC_HOME
-python3 run.py /nfs/home/share/gem5_ci/performance_data/spec06-0.3c/<archive_dir> \
+python3 "$GEM5_DATA_PROC_HOME/run.py" <archive_path> \
   --out-dir /tmp/gem5_proc_runA \
   --tag runA
 ```
 
-关键输出：
+常用输出：
 
-- `<tag>.csv`：point 级或 benchmark 聚合后的原始统计
-- `<tag>-weighted.csv`：按权重聚合后的 benchmark 统计
-- `<tag>-score.csv`：最终 score/time/coverage
+- `<tag>.csv`：原始 point 或 benchmark 聚合结果
+- `<tag>-weighted.csv`：按权重聚合的 benchmark 统计
+- `<tag>-score.csv`：score、time 和 coverage
 
-### 4. 对比两个 run
+若 `run.py` 在个别 point 上报数据处理异常，但已生成 `score.txt` 或部分 CSV，要明确标注数据缺口；不要把部分输出说成完整成功。
 
-最常见的是比较两次 CI：
+## 4. 比较两个 run
 
 ```bash
 python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py <runA>
 python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py <runB>
 
-cd $GEM5_DATA_PROC_HOME
-python3 run.py <archiveA> --out-dir /tmp/gem5_proc_A --tag A
-python3 run.py <archiveB> --out-dir /tmp/gem5_proc_B --tag B
+python3 "$GEM5_DATA_PROC_HOME/run.py" <archiveA> \
+  --out-dir /tmp/gem5_proc_A --tag A
+python3 "$GEM5_DATA_PROC_HOME/run.py" <archiveB> \
+  --out-dir /tmp/gem5_proc_B --tag B
 ```
 
-然后用短 Python 片段读取两个 `*-score.csv` / `*-weighted.csv` 做对比。优先关注：
+分析顺序：
 
-- 总 score 变化
-- benchmark 级 `time` / `score` 变化
-- 用户关心的 stats 指标变化
+1. 固定 commit、workflow、配置和 workload 口径。
+2. 比较总 score、time 和 coverage。
+3. 按 benchmark 的 score/time delta 排序。
+4. 从 weighted CSV 查看前端、后端、内存和分支等指标。
+5. 只对重点 benchmark 下钻 `<archive_path>/spec_all/<slice>/m5out/stats.txt`。
 
-## 下钻分析
+## 输出要求
 
-### 1. 看 benchmark 级收益
+回答优先给出：
 
-- 对两个归档分别运行 `run.py`
-- 比较 `*-score.csv` 里的 `time` 和 `score`
-- 按 `score_delta_pct` 或 `time_delta_pct` 排序
+1. run、commit、配置和 workload 差异
+2. 总分变化
+3. 主要收益和回退 benchmark
+4. 相关 stats 证据
+5. 根因判断与未决风险
 
-### 2. 看 stats 指标变化
-
-- 先看 `*-weighted.csv` 里的通用统计
-- 如果用户已经给出重点指标，直接围绕这些指标对比
-- 如果用户没有指定，优先从 `time`、`cpi`、前端、后端、内存、分支等大类里挑变化最明显的项
-- 归因时优先描述“哪些 stats 在变”，再解释这些变化更像支持哪类根因
-
-### 3. 需要时再读归档里的其他文件
-
-- `stats.txt`：看原始统计，位置在
-    /nfs/home/share/gem5_ci/performance_data/spec06-0.3c/<archive_dir>/<spec_bmk>/m5out/stats.txt
-- `score.txt`：对照 summary
-- 其他 CSV 或日志：按用户问题决定是否下钻
-
-## 常用命令
-
-### 已知 run URL，直接拿 archive path
-
-```bash
-python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py <run_url_or_id>
-```
-
-### 已知 archive path，直接处理
-
-```bash
-cd $GEM5_DATA_PROC_HOME
-python3 run.py <archive_dir> --out-dir /tmp/gem5_proc --tag run
-```
-
-## 输出组织建议
-
-回答这类问题时，优先按下面的顺序组织：
-
-1. commit / run / workflow / 配置差异
-2. summary 里的总分变化
-3. benchmark 级主要收益和回退项
-4. 相关 stats 指标变化
-5. 对根因的判断
-
-结论要尽量区分：
-
-- “哪个 benchmark 涨了”
-- “哪些 stats 在变”
-- “这些 stats 更像支持哪类根因”
+区分事实、推断和数据缺口。尤其不要把“run 已创建”写成“性能 CI 已通过”。
 
 ## 资源
 
-### scripts/
-
-- `ci_perf_info.py`
-  - 输入 run URL 或 run id
-  - 输出 archive path、spec_all 路径和 `score.txt` tail
-
-### references/
-
-当前不需要额外参考文件。后续如果这套流程扩展到更多 workflow 或更多统计口径，再新增参考文档。
+- `scripts/ci_perf_info.py`：从 run URL 或 ID 定位归档路径并打印 score 尾部。

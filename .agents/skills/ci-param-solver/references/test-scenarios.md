@@ -3,6 +3,15 @@
 技能可以被发现后，在新的 Codex 会话中使用以下提示词。除非提示词明确授权触发 CI，
 否则所有测试都应离线完成。
 
+## 目录
+
+- 场景 1：信息不足
+- 场景 2：信息互相矛盾
+- 场景 3：完整的内建 BOP 请求
+- 场景 4：完整的自定义工作负载 BOP 请求
+- 场景 5：正确描述 CDP 预取器参数求解
+- 离线自动检查
+
 ## 场景 1：信息不足
 
 提示词：
@@ -164,6 +173,7 @@ $ci-param-solver 请生成一个 CDP 预取器参数求解 spec，只生成并�
 
 ```bash
 python3 .agents/skills/ci-param-solver/scripts/self_test.py
-python3 /nfs/home/lixin/.codex/skills/.system/skill-creator/scripts/quick_validate.py \
-  .agents/skills/ci-param-solver
 ```
+
+如当前 agent 提供 Agent Skills validator，再用该 validator 检查
+`.agents/skills/ci-param-solver`；不要依赖某个用户 home 下的 validator 路径。
