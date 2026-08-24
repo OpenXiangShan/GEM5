@@ -461,15 +461,20 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     bool is_update = pht_entry != nullptr;
     if (pht_entry && early_update) {
         if (region_offset_now > act_entry->regionOffset) {
-            assert ((region_offset_now - act_entry->regionOffset + regionBlks - 2) > 14);
-            assert ((region_offset_now - act_entry->regionOffset + regionBlks - 2) <= 30);
-            pht_entry->hist[region_offset_now - act_entry->regionOffset + regionBlks - 2] += 2;
+            const Addr hist_idx = region_offset_now -
+                act_entry->regionOffset + regionBlks - 2;
+            assert(hist_idx >= regionBlks - 1);
+            assert(hist_idx < 2 * (regionBlks - 1));
+            pht_entry->hist[hist_idx] += 2;
             act_entry->hasIncreasedPht = true;
         }
         if (region_offset_now < act_entry->regionOffset) {
-            assert(regionBlks - 1 >= (act_entry->regionOffset - region_offset_now));
-            assert((regionBlks - 1 - (act_entry->regionOffset - region_offset_now)) <= 14);
-            pht_entry->hist[regionBlks - 1 - (act_entry->regionOffset - region_offset_now)] += 2;
+            const Addr offset_delta =
+                act_entry->regionOffset - region_offset_now;
+            assert(offset_delta <= regionBlks - 1);
+            const Addr hist_idx = regionBlks - 1 - offset_delta;
+            assert(hist_idx < regionBlks - 1);
+            pht_entry->hist[hist_idx] += 2;
             act_entry->hasIncreasedPht = true;
         }
         return;
