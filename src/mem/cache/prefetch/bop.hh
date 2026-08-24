@@ -36,6 +36,7 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <array>
 #include <queue>
 #include <set>
 #include <boost/compute/detail/lru_cache.hpp>
@@ -68,6 +69,9 @@ class BOP : public Queued
         const unsigned int scoreMax;
         const unsigned int roundMax;
         const unsigned int badScore;
+        /** Number of offset candidates evaluated for each training access. */
+        const unsigned int offsetsPerAccess;
+        static constexpr unsigned int MaxOffsetsPerAccess = 4;
         /** Recent requests table parameteres */
         const unsigned int rrEntries;
         const unsigned int tagMask;
@@ -206,8 +210,9 @@ class BOP : public Queued
             offset score */
         std::pair<bool, RREntryDebug> testRR(Addr tag) const;
 
-        /** Learning phase of the BOP. Update the intermediate values of the
-            round and update the best offset if found */
+        /** Learning phase of the BOP. Evaluate a fixed-width group of offsets
+            using the same RR-table state, then commit their state updates in
+            offset-list order. */
         bool bestOffsetLearning(Addr hashed_addr, bool late, const PrefetchInfo &pfi);
 
         unsigned missCount{0};
@@ -221,6 +226,11 @@ class BOP : public Queued
             statistics::Distribution issuedOffsetDist;
             statistics::Scalar learnOffsetCount;
             statistics::Scalar throttledCount;
+            statistics::Scalar trainBatches;
+            statistics::Scalar trainLookups;
+            statistics::Scalar trainHits;
+            statistics::Scalar trainRounds;
+            statistics::Scalar trainPhaseCompletions;
         } stats;
 
     public:

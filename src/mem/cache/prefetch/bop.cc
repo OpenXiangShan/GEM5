@@ -44,7 +44,8 @@ namespace prefetch
 BOP::BOP(const BOPPrefetcherParams &p)
     : Queued(p),
       scoreMax(p.score_max), roundMax(p.round_max),
-      badScore(p.bad_score), rrEntries(p.rr_size),
+      badScore(p.bad_score), offsetsPerAccess(p.offsets_per_access),
+      rrEntries(p.rr_size),
       tagMask((1 << p.tag_bits) - 1),
       delayQueueEnabled(p.delay_queue_enable),
       delayQueueSize(p.delay_queue_size),
@@ -62,6 +63,10 @@ BOP::BOP(const BOPPrefetcherParams &p)
     }
     if (!isPowerOf2(blkSize)) {
         fatal("%s: cache line size is not power of 2\n", name());
+    }
+    if (offsetsPerAccess == 0 || offsetsPerAccess > MaxOffsetsPerAccess) {
+        fatal("%s: offsets_per_access must be in [1, %u], got %u\n",
+              name(), MaxOffsetsPerAccess, offsetsPerAccess);
     }
 
     rrLeft.resize(rrEntries);
@@ -346,99 +351,126 @@ bool
 BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 {
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
-    Addr offset = offsetsListIterator->calcOffset();
-    Addr lookup_addr = x - (offset << lBlkSize);
-    DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n", __FUNCTION__, offset, lookup_addr);
-    // There was a hit in the RR table, increment the score for this offset
-    auto [exist, rr_entry] = testRR(lookup_addr);
-    if (exist) {
-        if (archDBer) {
-            archDBer->bopTrainTraceWrite(curTick(), rr_entry.fullAddr, pfi.getAddr(), offset,
-                                        offsetsListIterator->score + 1, pfi.isCacheMiss());
-        }
+    struct TrainingLookup
+    {
+        const OffsetListEntry *entry;
+        Addr offset;
+        bool hit;
+        RREntryDebug rrEntry;
+    };
 
-        DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", x);
-        offsetsListIterator->score++;
-        if (enableAdaptOffset) {
-            if (offsetsListIterator->score >= round / 2) {
-                if (late) {
-                    offsetsListIterator->late += 2;
-                } else {
-                    offsetsListIterator->late--;
-                }
+    // Query all selected offsets before changing learning state. This models
+    // parallel RR reads while preserving the original offset-list update order.
+    std::array<TrainingLookup, MaxOffsetsPerAccess> lookups;
+    const unsigned int lookup_count = std::min<unsigned int>(
+        offsetsPerAccess, offsetsList.size());
+    auto lookup_it = offsetsListIterator;
+    for (unsigned int i = 0; i < lookup_count; ++i) {
+        const Addr offset = lookup_it->calcOffset();
+        const Addr lookup_addr = x - (offset << lBlkSize);
+        auto [hit, rr_entry] = testRR(lookup_addr);
+        lookups[i] = {&*lookup_it, offset, hit, rr_entry};
+        DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n",
+                __FUNCTION__, offset, lookup_addr);
 
-                auto best_it = getBestOffsetIter();
-                bool update_depth = false;
-                if (offsetsListIterator->late > (uint8_t)42) {
-                    offsetsListIterator->depth++;
-                    update_depth = true;
-                }
-                if (offsetsListIterator->late < (uint8_t)4) {
-                    offsetsListIterator->depth = std::max(1, offsetsListIterator->depth - 1);
-                    update_depth = true;
-                }
-
-                if (update_depth) {
-                    if (best_it == offsetsListIterator) {
-                        bestOffset = best_it->calcOffset();
-                    }
-                    DPRINTF(BOPPrefetcher, "Late saturates %u, offset updated to %d * %d\n",
-                            (uint8_t)offsetsListIterator->late, offsetsListIterator->offset,
-                            offsetsListIterator->depth);
-                    offsetsListIterator->late.reset();
-                }
-            }
-        }
-
-        DPRINTF(BOPPrefetcher, "Offset %d score: %i, late: %i, depth: %i, late sat: %u\n", offsetsListIterator->offset,
-                offsetsListIterator->score, late, offsetsListIterator->depth, (uint8_t)offsetsListIterator->late);
-        if (offsetsListIterator->score > bestScore) {
-            bestoffsetsListIterator = offsetsListIterator;
-            bestScore = (*offsetsListIterator).score;
-            phaseBestOffset = offsetsListIterator->calcOffset();
-            DPRINTF(BOPPrefetcher, "New best score is %lu, phase best offset is %lu\n", bestScore, phaseBestOffset);
+        ++lookup_it;
+        if (lookup_it == offsetsList.end()) {
+            lookup_it = offsetsList.begin();
         }
     }
 
-    offsetsListIterator++;
+    stats.trainBatches++;
+    stats.trainLookups += lookup_count;
 
-    // All the offsets in the list were visited meaning that a learning
-    // phase finished. Check if
-    if (offsetsListIterator == offsetsList.end()) {
+    bool phase_completed = false;
+    for (unsigned int i = 0; i < lookup_count; ++i) {
+        const auto &lookup = lookups[i];
+        assert(&*offsetsListIterator == lookup.entry);
+
+        if (lookup.hit) {
+            stats.trainHits++;
+            if (archDBer) {
+                archDBer->bopTrainTraceWrite(curTick(), lookup.rrEntry.fullAddr,
+                    pfi.getAddr(), lookup.offset,
+                    offsetsListIterator->score + 1, pfi.isCacheMiss());
+            }
+
+            DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", x);
+            offsetsListIterator->score++;
+            if (enableAdaptOffset) {
+                if (offsetsListIterator->score >= round / 2) {
+                    if (late) {
+                        offsetsListIterator->late += 2;
+                    } else {
+                        offsetsListIterator->late--;
+                    }
+
+                    auto best_it = getBestOffsetIter();
+                    bool update_depth = false;
+                    if (offsetsListIterator->late > (uint8_t)42) {
+                        offsetsListIterator->depth++;
+                        update_depth = true;
+                    }
+                    if (offsetsListIterator->late < (uint8_t)4) {
+                        offsetsListIterator->depth = std::max(1, offsetsListIterator->depth - 1);
+                        update_depth = true;
+                    }
+
+                    if (update_depth) {
+                        if (best_it == offsetsListIterator) {
+                            bestOffset = best_it->calcOffset();
+                        }
+                        DPRINTF(BOPPrefetcher, "Late saturates %u, offset updated to %d * %d\n",
+                                (uint8_t)offsetsListIterator->late, offsetsListIterator->offset,
+                                offsetsListIterator->depth);
+                        offsetsListIterator->late.reset();
+                    }
+                }
+            }
+
+            DPRINTF(BOPPrefetcher, "Offset %d score: %i, late: %i, depth: %i, late sat: %u\n",
+                    offsetsListIterator->offset, offsetsListIterator->score, late,
+                    offsetsListIterator->depth, (uint8_t)offsetsListIterator->late);
+            if (offsetsListIterator->score > bestScore) {
+                bestoffsetsListIterator = offsetsListIterator;
+                bestScore = (*offsetsListIterator).score;
+                phaseBestOffset = offsetsListIterator->calcOffset();
+                DPRINTF(BOPPrefetcher, "New best score is %lu, phase best offset is %lu\n",
+                        bestScore, phaseBestOffset);
+            }
+        }
+
+        ++offsetsListIterator;
+        if (offsetsListIterator != offsetsList.end()) {
+            continue;
+        }
+
         offsetsListIterator = offsetsList.begin();
-        round++;
+        ++round;
+        stats.trainRounds++;
 
-        // Check if the best offset must be updated if:
-        // (1) One of the scores equals SCORE_MAX
-        // (2) The number of rounds equals ROUND_MAX
+        // Check if the best offset must be updated if one score reaches
+        // SCORE_MAX or all offsets have been visited ROUND_MAX times.
         if ((bestScore >= scoreMax) || (round == roundMax)) {
             DPRINTF(BOPPrefetcher, "update new score: %d round: %d phase best offset: %d\n",
                     bestScore, round, phaseBestOffset);
 
-            if (bestScore > badScore) {
-                issuePrefetchRequests = true;
-                DPRINTF(BOPPrefetcher, "Enable prefetch\n");
-            } else {
-                issuePrefetchRequests = false;
-                DPRINTF(BOPPrefetcher, "Disable prefetch\n");
-            }
+            issuePrefetchRequests = bestScore > badScore;
+            DPRINTF(BOPPrefetcher, "%s prefetch\n",
+                    issuePrefetchRequests ? "Enable" : "Disable");
 
             bestOffset = phaseBestOffset;
             round = 0;
             bestScore = 0;
             phaseBestOffset = 0;
             resetScores();
-            //issuePrefetchRequests = true;
-            return true;
-         } // here temporarily disable early stop, to align with RTL
-        // else if ((round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
-        //     DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
-        //     DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
-        //     issuePrefetchRequests = false;
-        // }
+            stats.trainPhaseCompletions++;
+            phase_completed = true;
+        }
     }
+
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
-    return false;
+    return phase_completed;
 }
 
 void
@@ -524,7 +556,13 @@ BOP::BopStats::BopStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
       ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
-      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches")
+      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches"),
+      ADD_STAT(trainBatches, statistics::units::Count::get(), "Number of BOP training accesses"),
+      ADD_STAT(trainLookups, statistics::units::Count::get(), "Number of RR lookups during BOP training"),
+      ADD_STAT(trainHits, statistics::units::Count::get(), "Number of RR hits during BOP training"),
+      ADD_STAT(trainRounds, statistics::units::Count::get(), "Number of completed BOP training rounds"),
+      ADD_STAT(trainPhaseCompletions, statistics::units::Count::get(),
+               "Number of BOP learning phase completions")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
 }
