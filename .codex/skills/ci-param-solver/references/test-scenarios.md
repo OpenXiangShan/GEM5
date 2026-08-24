@@ -46,7 +46,7 @@ specific_benchmarks=mcf，solver_kind=bayes，max_parallel_trials=0；现在触�
 $ci-param-solver 使用现有
 configs/solver_specs/l2_vbop_bop_large_nsga2_score_search.py:
 L2VbopBopLargeNsga2ScoreSearch。
-configuration=kmhv3.py；benchmark_type=gcc15-spec06-0.3c；
+configuration=kmhv3.py；benchmark_type=spec06-rva23-novec-gcc16-0.3c；
 specific_benchmarks=mcf,omnetpp,xalancbmk；solver_kind=nsga2；
 max_trials=4000；max_parallel_trials=16；max_parallel_workloads=10；
 distributed_servers=default；distributed_jobs_per_server=0；
@@ -135,7 +135,7 @@ $ci-param-solver 请生成一个 CDP 预取器参数求解 spec，只生成并�
   system.l2_wrappers.prefetcher.cdp.cdpStats.inserted。
 
 五、工作负载和停止条件
-- benchmark_type=gcc15-spec06-0.3c。
+- benchmark_type=spec06-rva23-novec-gcc16-0.3c。
 - specific_benchmarks=mcf,omnetpp,xalancbmk。
 - 使用 nsga2；最多 1000 个 trial，连续 20 个 trial 无提升时停止，最长 20 小时。
 

@@ -112,7 +112,7 @@ from util.solver.spec import (
 
 class VTAGEIPCSearch(SolveSpec):
     config_path = "configs/example/idealkmhv3.py"
-    benchmark_type = "gcc15-spec06-0.3c"
+    benchmark_type = "spec06-rva23-novec-gcc16-0.3c"
     specific_benchmarks = ""
     extra_args = ""
     solver_name = "random"
@@ -222,7 +222,7 @@ objective = Maximize.stats("system.cpu.ipc")
 - executor 实际会优先从 `workload_dir/stats.txt` 取
 - 若不存在，会回退到 `workload_dir/m5out/stats.txt`
 - 如果是 `custom_bin` 模式（即 `benchmark_type = "custom_bin"`）：对该 trial 下所有 workload 的该指标做算术平均
-- 如果是普通 benchmark set 模式（例如 `gcc15-spec06-0.3c`）：不会再直接对 workload 等权平均，而是调用 `gem5_data_proc` 先按 slice / input 做加权，得到每个 benchmark 的 weighted metric，再在 benchmark 间做聚合
+- 如果是普通 benchmark set 模式（例如 `spec06-rva23-novec-gcc16-0.3c`）：不会再直接对 workload 等权平均，而是调用 `gem5_data_proc` 先按 slice / input 做加权，得到每个 benchmark 的 weighted metric，再在 benchmark 间做聚合
 - benchmark 间默认聚合是算术平均；如果你想改成几何平均，可以写：
 
 ```python
