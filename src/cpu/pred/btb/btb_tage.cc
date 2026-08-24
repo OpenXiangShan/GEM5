@@ -800,11 +800,47 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         const unsigned ways = getNumWays(ti);
 
+        unsigned selected_table = ti;
+        Addr selected_index = newIndex;
+        Addr selected_tag = newTag;
         int selected_way = -1;
         for (unsigned way = 0; way < ways; ++way) {
             if (!set[way].valid) {
                 selected_way = way;
                 break;
+            }
+        }
+
+        // When every way in the current set is disposable, prefer an empty
+        // way in the immediately longer-history table over replacing one.
+        if (selected_way == -1 && ti + 1 < numPredictors) {
+            bool all_not_useful = true;
+            for (unsigned way = 0; way < ways; ++way) {
+                if (set[way].useful) {
+                    all_not_useful = false;
+                    break;
+                }
+            }
+
+            if (all_not_useful) {
+                const unsigned next_table = ti + 1;
+                Addr next_index = getTageIndex(startPC, next_table,
+                    meta->indexFoldedHist[next_table].get(), asidHash);
+                Addr next_tag = getTageTag(startPC, next_table,
+                    meta->tagFoldedHist[next_table].get(),
+                    meta->altTagFoldedHist[next_table].get(), position,
+                    asidHash);
+                auto &next_set = tageTable[next_table][next_index];
+
+                for (unsigned way = 0; way < getNumWays(next_table); ++way) {
+                    if (!next_set[way].valid) {
+                        selected_table = next_table;
+                        selected_index = next_index;
+                        selected_tag = next_tag;
+                        selected_way = way;
+                        break;
+                    }
+                }
             }
         }
 
@@ -830,20 +866,21 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         if (selected_way != -1) {
             short newCounter = actual_taken ? 0 : -1;
-            auto &victim = set[selected_way];
+            auto &victim = tageTable[selected_table][selected_index][selected_way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                    ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
+                    selected_table, selected_index, selected_way, selected_tag,
+                    position, newCounter, entry.pc);
             allocInfo.success = true;
-            allocInfo.table = ti;
-            allocInfo.index = newIndex;
+            allocInfo.table = selected_table;
+            allocInfo.index = selected_index;
             allocInfo.way = selected_way;
-            allocInfo.tag = newTag;
+            allocInfo.tag = selected_tag;
             allocInfo.victimValid = victim.valid;
             allocInfo.victimTag = victim.tag;
             allocInfo.victimCounter = victim.counter;
             allocInfo.victimUseful = victim.useful;
             allocInfo.victimPC = victim.pc;
-            set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            victim = TageEntry(selected_tag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;

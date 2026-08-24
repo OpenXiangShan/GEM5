@@ -469,6 +469,21 @@ public:
         uint64_t victimPC = 0;
     };
 
+#ifdef UNIT_TEST
+    bool testHandleNewEntryAllocation(const Addr &startPC,
+                                      const BTBEntry &entry,
+                                      bool actual_taken,
+                                      unsigned start_table,
+                                      std::shared_ptr<TageMeta> meta,
+                                      uint8_t asidHash,
+                                      AllocationTraceInfo &allocInfo)
+    {
+        return handleNewEntryAllocation(startPC, entry, actual_taken,
+                                        start_table, meta, asidHash,
+                                        allocInfo);
+    }
+#endif
+
 private:
 
     // Helper method to generate prediction for a single BTB entry
