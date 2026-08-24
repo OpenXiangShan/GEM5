@@ -2061,8 +2061,8 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
         status_change = true;
         return true;
     } else if (canFetchInstructions(tid)) {
-        // If the decoder needs bytes, performInstructionFetch() will issue an
-        // I-cache request via sendNextCacheRequest().
+        // If the decoder needs bytes, keep this thread eligible for the
+        // FTQ-to-I-cache request phase that follows instruction decoding.
         if (!macroop[tid] && !threads[tid].valid) {
             return true;
         } else if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {

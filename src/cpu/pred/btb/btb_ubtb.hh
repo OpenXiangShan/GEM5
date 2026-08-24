@@ -194,7 +194,7 @@ class UBTB : public TimedBaseBTBPredictor
             // Default constructor - will be assigned proper value later
         }
     };
-    LastPred lastPred;
+    std::vector<LastPred> lastPred;
 
     /** this struct holds the metadata for uBTB,
      * note that unlike other predictors, the ubtb meta serves only statistical purpose

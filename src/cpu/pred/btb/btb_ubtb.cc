@@ -93,7 +93,7 @@ boolBucket(bool value)
 
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
-      lastPred(),
+      lastPred(o3::MaxThreads),
       threadMeta(),
       ubtb(),
       mruList(),
@@ -199,7 +199,7 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
     fillStagePredictions(entry, stagePreds);
 
     // Update metadata for later stages
-    lastPred.hit_entry = it;
+    lastPred[tid].hit_entry = it;
 }
 
 void
@@ -298,7 +298,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         ubtbStats.s3UpdateMisses++;
     }
     auto startAddr = s3Pred.bbStart;
-    UBTBIter oldEntryIter = lastPred.hit_entry;
+    UBTBIter oldEntryIter = lastPred[s3Pred.tid].hit_entry;
     takenEntry.source = getComponentIdx();
     updateNewEntry(oldEntryIter, takenEntry, startAddr, s3Pred.asidHash);
 

@@ -94,6 +94,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
              "smtNumPredictingThreads (%u) must be in [1, min(2, "
              "numThreads (%u))]",
              numPredictingThreads, numThreads);
+    panic_if(numPredictingThreads > 1 && pairtage->isEnabled(),
+             "PairTAGE does not yet support concurrent SMT predictions; "
+             "disable PairTAGE or set smtNumPredictingThreads to one");
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
              smtFTQThreshold > ftqEntries,
