@@ -7,7 +7,7 @@ This script helps answer:
 3) For improved branches, does MGSCTRACE indicate SC is fixing TAGE mistakes?
 
 Typical usage:
-  python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
+  python3 .agents/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
     --outdir debug/sc_table_probe \
     --profiles off,l_only,g_only,i_only,full \
     --max-workers 4

@@ -119,10 +119,10 @@ export GCBV_REF_SO=/nfs/home/yanyue/tools/gem5-tools/ref-h/riscv64-nemu-interpre
 常用命令：
 
 ```bash
-python3 docs/codex-skills/tage-trace-workflow/scripts/aggregate_rtl_condtrace.py \
+python3 .agents/skills/tage-trace-workflow/scripts/aggregate_rtl_condtrace.py \
   --rtl-db /path/to/rtl.db --top 12
 
-python3 docs/codex-skills/tage-trace-workflow/scripts/compare_gem5_rtl_tage.py \
+python3 .agents/skills/tage-trace-workflow/scripts/compare_gem5_rtl_tage.py \
   --gem5-stats /tmp/debug/coremark_200k_basic/stats.txt \
   --gem5-bpdb /tmp/debug/coremark_200k_basic/bp.db \
   --gem5-top-branch-csv /tmp/debug/coremark_200k_basic/topMispredictsByBranch.csv \

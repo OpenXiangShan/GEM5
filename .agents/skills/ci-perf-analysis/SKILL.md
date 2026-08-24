@@ -20,7 +20,7 @@ description: 用于从 GitHub Actions 的 gem5 性能 CI 中定位 summary、sco
 优先使用 bundled script：
 
 ```bash
-python3 .codex/skills/ci-perf-analysis/scripts/ci_perf_info.py \
+python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py \
   https://github.com/OpenXiangShan/GEM5/actions/runs/<run_id>
 ```
 
@@ -69,8 +69,8 @@ python3 run.py /nfs/home/share/gem5_ci/performance_data/spec06-0.3c/<archive_dir
 最常见的是比较两次 CI：
 
 ```bash
-python3 .codex/skills/ci-perf-analysis/scripts/ci_perf_info.py <runA>
-python3 .codex/skills/ci-perf-analysis/scripts/ci_perf_info.py <runB>
+python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py <runA>
+python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py <runB>
 
 cd $GEM5_DATA_PROC_HOME
 python3 run.py <archiveA> --out-dir /tmp/gem5_proc_A --tag A
@@ -110,7 +110,7 @@ python3 run.py <archiveB> --out-dir /tmp/gem5_proc_B --tag B
 ### 已知 run URL，直接拿 archive path
 
 ```bash
-python3 .codex/skills/ci-perf-analysis/scripts/ci_perf_info.py <run_url_or_id>
+python3 .agents/skills/ci-perf-analysis/scripts/ci_perf_info.py <run_url_or_id>
 ```
 
 ### 已知 archive path，直接处理

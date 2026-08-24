@@ -226,7 +226,7 @@ gh workflow view manual-solve.yml --repo OpenXiangShan/GEM5 --ref <branch-or-tag
 先用 `--dry-run` 只打印命令并检查输入，再在用户授权后加 `--yes` 实际触发：
 
 ```bash
-python3 .codex/skills/ci-param-solver/scripts/solver_ci_dispatch.py dispatch \
+python3 .agents/skills/ci-param-solver/scripts/solver_ci_dispatch.py dispatch \
   --repo OpenXiangShan/GEM5 \
   --workflow manual-solve.yml \
   --branch <branch-or-sha> \

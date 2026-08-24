@@ -14,20 +14,20 @@ description: "仅负责批量运行 gem5 checkpoint（1次或2次）。不做任
 - 只产出运行目录、`stats.txt`、`gem5.stdout`、`gem5.stderr`。
 
 ## 入口脚本
-- `.codex/skills/run-cpt-regression/scripts/run_cpt_back.py`
+- `.agents/skills/run-cpt-regression/scripts/run_cpt_back.py`
 
 ## 典型用法
 批量跑（默认 ref+opt）：
 
 ```bash
-python3 .codex/skills/run-cpt-regression/scripts/run_cpt_back.py \
+python3 .agents/skills/run-cpt-regression/scripts/run_cpt_back.py \
   --debug-dir /tmp/debug/tage-new8
 ```
 
 仅跑 opt（跳过 ref）：
 
 ```bash
-python3 .codex/skills/run-cpt-regression/scripts/run_cpt_back.py \
+python3 .agents/skills/run-cpt-regression/scripts/run_cpt_back.py \
   --debug-dir /tmp/debug/tage-new8 \
   --skip-ref
 ```
@@ -35,7 +35,7 @@ python3 .codex/skills/run-cpt-regression/scripts/run_cpt_back.py \
 仅跑指定切片：
 
 ```bash
-python3 .codex/skills/run-cpt-regression/scripts/run_cpt_back.py \
+python3 .agents/skills/run-cpt-regression/scripts/run_cpt_back.py \
   --debug-dir /tmp/debug/tage-new8 \
   --slices 2fetch coremark10
 ```

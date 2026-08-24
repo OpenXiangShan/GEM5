@@ -18,21 +18,21 @@ description: "仅做 BPU 计数器提取与批量汇总（机器可读 JSON/CSV�
 - 必要时候可以使用 `--enable-bp-db tage` 来打开tage 的trace db 分析。
 
 ## 入口脚本
-- `.codex/skills/frontend-pmu-analysis/scripts/analyze_bpu_counters.py`
+- `.agents/skills/frontend-pmu-analysis/scripts/analyze_bpu_counters.py`
 
 ## 默认配置
-- `.codex/skills/frontend-pmu-analysis/configs/bpu_counters.txt`
+- `.agents/skills/frontend-pmu-analysis/configs/bpu_counters.txt`
 
 ## 用法
 ```bash
-python3 .codex/skills/frontend-pmu-analysis/scripts/analyze_bpu_counters.py \
+python3 .agents/skills/frontend-pmu-analysis/scripts/analyze_bpu_counters.py \
   --debug-dir /tmp/debug/tage-new8
 ```
 
 指定自定义计数器文件：
 
 ```bash
-python3 .codex/skills/frontend-pmu-analysis/scripts/analyze_bpu_counters.py \
+python3 .agents/skills/frontend-pmu-analysis/scripts/analyze_bpu_counters.py \
   --debug-dir /tmp/debug/tage-new8 \
   --counters-file /path/to/my_counters.txt
 ```

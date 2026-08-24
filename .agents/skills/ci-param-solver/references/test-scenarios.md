@@ -163,7 +163,7 @@ $ci-param-solver 请生成一个 CDP 预取器参数求解 spec，只生成并�
 ## 离线自动检查
 
 ```bash
-python3 .codex/skills/ci-param-solver/scripts/self_test.py
+python3 .agents/skills/ci-param-solver/scripts/self_test.py
 python3 /nfs/home/lixin/.codex/skills/.system/skill-creator/scripts/quick_validate.py \
-  .codex/skills/ci-param-solver
+  .agents/skills/ci-param-solver
 ```

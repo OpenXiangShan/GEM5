@@ -17,7 +17,7 @@ description: 分析香山 MGSC/SC 在前端微测试上的效果。适用于以�
 
 1) 对所有 `mgsc_test` 二进制执行 probe：
 ```bash
-python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
+python3 .agents/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
   --outdir debug/sc_table_probe \
   --profiles off,l_only,g_only,i_only,full \
   --max-workers 4
@@ -25,7 +25,7 @@ python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
 
 2) 快速检查单个 case：
 ```bash
-python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
+python3 .agents/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
   --outdir debug/sc_table_probe_smoke \
   --tests fp_sc_alias_pair \
   --profiles off,g_only,i_only \
@@ -34,7 +34,7 @@ python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
 
 3) 仅重建报告（不重新运行 gem5）：
 ```bash
-python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
+python3 .agents/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
   --outdir debug/sc_table_probe \
   --profiles off,l_only,g_only,i_only,full \
   --skip-run
