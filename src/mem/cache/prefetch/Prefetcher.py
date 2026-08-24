@@ -619,6 +619,22 @@ class CDP(QueuedPrefetcher):
         "How many blks a region can track")
     filter_entry_granularity = Param.Unsigned(4096,
         "How many bytes a blk in a region can track")
+    use_dynamic_degree = Param.Bool(
+        True,
+        "Enable accuracy-based CDP degree control"
+    )
+    accuracy_threshold = Param.Float(
+        0.05,
+        "Accuracy threshold for CDP degree extensions"
+    )
+    use_accuracy_dependent_alignment = Param.Bool(
+        True,
+        "Use the legacy accuracy-dependent pointer alignment"
+    )
+    cdp_use_sv48 = Param.Bool(
+        False,
+        "Use Sv48 virtual-address recognition for CDP"
+    )
     throttle_aggressiveness = Param.Float(2.0,
         "A parameter to control the aggressiveness of throttling")
 

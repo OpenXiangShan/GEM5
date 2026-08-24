@@ -203,6 +203,10 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
+    args.cdp_use_dynamic_degree = False
+    args.cdp_accuracy_threshold = 0.05
+    args.cdp_use_accuracy_dependent_alignment = False
+    args.cdp_use_sv48 = True
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
