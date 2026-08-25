@@ -53,6 +53,11 @@ public:
                targetId < queue[tid].baseTargetId + queue[tid].cap.size());
         return queue[tid].cap[targetId - queue[tid].baseTargetId];
     }
+    inline const FetchTarget& get(FetchTargetId targetId, ThreadID tid) const {
+        assert(targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size());
+        return queue[tid].cap[targetId - queue[tid].baseTargetId];
+    }
     inline bool hasTarget(FetchTargetId targetId, ThreadID tid) const {
         return targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size();

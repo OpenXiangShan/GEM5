@@ -40,7 +40,18 @@ DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
-    ftq.fetching(tid).fetchInstNum = fetched_inst_num;
+    auto &target = ftq.fetching(tid);
+    target.fetchInstNum = fetched_inst_num;
+    if (enableUdp) {
+        threads[tid].udpConfidence = std::min(
+            udpInitConfidence,
+            threads[tid].udpConfidence + target.udpConfidenceDelta);
+        DPRINTF(DecoupleBP,
+                "UDP confidence refunded by %d to %d after consuming FSQ "
+                "entry %#lx\n",
+                target.udpConfidenceDelta, threads[tid].udpConfidence,
+                target.startPC);
+    }
     ftq.finishTarget(tid);
 }
 
@@ -315,12 +326,24 @@ DecoupledBPUWithBTB::tick()
 bool
 DecoupledBPUWithBTB::prefetchFilteredByUDP(ThreadID tid) const
 {
-    if (enableUdp) {
-        // If confidence < 0, treat the prefetch candidate as off-path.
-        return threads[tid].udpConfidence < 0;
-    } else {
+    if (!enableUdp) {
         return false;
     }
+
+    const FetchTargetId fetch_id = ftq.fetchId(tid);
+    const FetchTargetId candidate_id = std::max(prefetchID[tid], fetch_id);
+    if (!ftq.hasTarget(candidate_id, tid)) {
+        return false;
+    }
+
+    int candidate_confidence = udpInitConfidence;
+    for (FetchTargetId id = fetch_id; id < candidate_id; ++id) {
+        candidate_confidence -= ftq.get(id, tid).udpConfidenceDelta;
+    }
+
+    // An entry's prediction selects its successor, so only earlier entries
+    // contribute uncertainty to this candidate.
+    return candidate_confidence < 0;
 }
 
 bool
@@ -368,6 +391,10 @@ DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, PrefetchFailReason &fai
         return false;
     }
 
+    if (prefetchID[tid] < fetchID) {
+        prefetchID[tid] = fetchID;
+    }
+
     if (prefetchTooFar(tid)) {
         failReason = PrefetchFailReason::TOO_FAR;
         return false;
@@ -376,10 +403,6 @@ DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, PrefetchFailReason &fai
     if (prefetchFilteredByUDP(tid)) {
         failReason = PrefetchFailReason::UDP_FILTERED;
         return false;
-    }
-
-    if (prefetchID[tid] < fetchID) {
-        prefetchID[tid] = fetchID;
     }
 
     if (ftq.hasTarget(prefetchID[tid], tid)) {
@@ -629,14 +652,13 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     printTarget(entry);
     dbpBtbStats.fsqEntryEnqueued++;
 
-    // UDP: Decrease confidence
+    // UDP: Account for uncertainty while this entry is ahead of demand fetch.
     if (enableUdp) {
-        auto &finalPred = threads[tid].finalPred;
-        int decrement = finalPred.getUdpConfidenceDelta();
-        threads[tid].udpConfidence -= decrement;
+        threads[tid].udpConfidence -= entry.udpConfidenceDelta;
         DPRINTF(DecoupleBP,
                 "UDP confidence decreased by %d to %d for FSQ entry %#lx\n",
-                decrement, threads[tid].udpConfidence, entry.startPC);
+                entry.udpConfidenceDelta, threads[tid].udpConfidence,
+                entry.startPC);
     }
 }
 
@@ -672,6 +694,14 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     fsqFlushFlag[tid] = true;
     // Set squashing state
     threads[tid].squashing = true;
+
+    // A redirect discards all outstanding path uncertainty, including when
+    // its target has already left the queue.
+    if (enableUdp) {
+        threads[tid].udpConfidence = udpInitConfidence;
+        DPRINTF(DecoupleBP, "UDP confidence reset to %d on squash\n",
+                threads[tid].udpConfidence);
+    }
 
     // Find the target being squashed
     if (!ftq.hasTarget(target_id, tid)) {
@@ -710,14 +740,6 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Clear predictions for next cycle
     clearPreds(tid);
-
-    // UDP: recover confidence on squash
-    if (enableUdp) {
-        threads[tid].udpConfidence = udpInitConfidence;
-        DPRINTF(DecoupleBP,
-                "UDP confidence reset to %d on squash for FSQ entry %#lx\n",
-                threads[tid].udpConfidence, target.startPC);
-    }
 
     // Update PC and target ID
     threads[tid].s0PC = redirect_pc;
@@ -1035,6 +1057,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
+    entry.udpConfidenceDelta = finalPred.getUdpConfidenceDelta();
 
     entry.s1Source = finalPred.s1Source;
     entry.s3Source = finalPred.s3Source;

@@ -389,6 +389,7 @@ struct FetchTarget
     // for profiling
     int fetchInstNum;
     int commitInstNum;
+    int udpConfidenceDelta;
 
     int s1Source; // which stage the prediction comes from
     int s3Source; // which stage the prediction comes from
@@ -418,6 +419,7 @@ struct FetchTarget
          lhistory(),
          fetchInstNum(0),
          commitInstNum(0),
+         udpConfidenceDelta(0),
          s1Source(-1),
          s3Source(-1)
    {
@@ -556,10 +558,12 @@ struct FullBTBPrediction
 
     int getUdpConfidenceDelta() const {
         int delta = 0;
+        bool hasValid = false;
         for (const auto &entry : btbEntries) {
             if (!entry.valid) {
                 continue;
             }
+            hasValid = true;
 
             if (entry.isCond) {
                 const auto &pc = entry.pc;
@@ -580,6 +584,9 @@ struct FullBTBPrediction
             } else if (entry.isUncond()) {
                 break;
             }
+        }
+        if (!hasValid) {
+            delta += 4;
         }
 
         return delta;
