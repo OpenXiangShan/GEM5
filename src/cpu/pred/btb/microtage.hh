@@ -125,9 +125,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
-    void refreshPredictionMeta(Addr startAddr,
-                               const boost::dynamic_bitset<> &history,
-                               FullBTBPrediction &pred) override;
 
     // Speculatively update path folded histories.
     void specUpdatePHist(const boost::dynamic_bitset<> &history,
@@ -145,6 +142,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void doResolveUpdate(const FetchTarget &entry) override;
     // Train MicroTAGE from the final-stage teacher prediction instead of commit-time truth.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
+    void setAbtbComponentIdx(int idx) { abtbComponentIdx = idx; }
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
@@ -356,6 +354,7 @@ public:
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
+        std::vector<BTBEntry> abtbEntries;
         bool aheadIndexFoldedHistValid;
         std::vector<PathFoldedHist> aheadIndexFoldedHist;
         bitset history;     // for viewing
@@ -396,6 +395,13 @@ public:
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
     // Build the reachable conditional prefix for S3 teacher update.
     std::vector<BTBEntry> prepareS3UpdateEntries(const FullBTBPrediction &s3Pred);
+    std::vector<BTBEntry> prepareS3UpdateEntriesFromAbtbMeta(
+        const std::vector<BTBEntry> &abtbEntries,
+        FullBTBPrediction &s3Pred,
+        CondTakens &teacherCondTakens);
+    std::vector<BTBEntry> getAbtbConditionalEntries(
+        const std::vector<BTBEntry> &btbEntries) const;
+    bool isAbtbEntry(const BTBEntry &entry) const;
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
@@ -419,6 +425,7 @@ public:
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
 
+    int abtbComponentIdx{-1};
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
     ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);

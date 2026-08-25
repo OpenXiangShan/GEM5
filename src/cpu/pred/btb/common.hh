@@ -553,7 +553,6 @@ struct FullBTBPrediction
     //only use for countering the source of the prediction
     int s1Source;
     int s3Source;
-
     FullBTBPrediction() :
         tid(0),
         asidHash(0),

@@ -369,11 +369,28 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     }
     threadMeta[tid]->history = history;
 
+    if (getDelay() < stagePreds.size()) {
+        threadMeta[tid]->abtbEntries =
+            getAbtbConditionalEntries(stagePreds[getDelay()].btbEntries);
+    }
+
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
-        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens,
+        auto abtb_entries = getAbtbConditionalEntries(stage_pred.btbEntries);
+        if (abtb_entries.empty()) {
+            continue;
+        }
+        for (const auto &entry : abtb_entries) {
+            stage_pred.condTakens.erase(
+                std::remove_if(stage_pred.condTakens.begin(),
+                               stage_pred.condTakens.end(),
+                               [&entry](const auto &taken) {
+                                   return taken.first == entry.pc;
+                               }),
+                stage_pred.condTakens.end());
+        }
+        lookupHelper(startPC, abtb_entries, stage_pred.condTakens,
                      tid, asidHash);
     }
 
@@ -385,34 +402,6 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
         return nullptr;
     }
     return threadMeta[tid];
-}
-
-void
-MicroTAGE::refreshPredictionMeta(Addr startPC,
-                                 const bitset &history,
-                                 FullBTBPrediction &pred)
-{
-    auto &state = historyState(pred.tid);
-    threadMeta[pred.tid] = std::make_shared<TageMeta>();
-    auto &meta = threadMeta[pred.tid];
-    meta->tagFoldedHist = state.tagFoldedHist;
-    meta->altTagFoldedHist = state.altTagFoldedHist;
-    meta->indexFoldedHist = state.indexFoldedHist;
-    meta->aheadIndexFoldedHistValid = !state.aheadIndexFoldedHist.empty();
-    if (meta->aheadIndexFoldedHistValid) {
-        meta->aheadIndexFoldedHist = state.aheadIndexFoldedHist.front();
-    } else {
-        meta->aheadIndexFoldedHist.clear();
-    }
-    meta->history = history;
-
-    for (const auto &btb_entry : pred.btbEntries) {
-        if (!(btb_entry.isCond && btb_entry.valid)) {
-            continue;
-        }
-        meta->preds[btb_entry.pc] = generateSinglePrediction(
-            btb_entry, startPC, nullptr, pred.tid, pred.asidHash);
-    }
 }
 
 /**
@@ -480,6 +469,61 @@ MicroTAGE::prepareS3UpdateEntries(const FullBTBPrediction &s3Pred)
             break;
         }
     }
+    return entries;
+}
+
+bool
+MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
+{
+#ifdef UNIT_TEST
+    if (abtbComponentIdx < 0) {
+        return true;
+    }
+#endif
+    return abtbComponentIdx >= 0 && entry.source == abtbComponentIdx;
+}
+
+std::vector<BTBEntry>
+MicroTAGE::getAbtbConditionalEntries(const std::vector<BTBEntry> &btbEntries) const
+{
+    std::vector<BTBEntry> entries;
+    for (const auto &entry : btbEntries) {
+        if (entry.valid && entry.isCond && isAbtbEntry(entry)) {
+            entries.push_back(entry);
+        }
+    }
+    return entries;
+}
+
+std::vector<BTBEntry>
+MicroTAGE::prepareS3UpdateEntriesFromAbtbMeta(
+    const std::vector<BTBEntry> &abtbEntries,
+    FullBTBPrediction &s3Pred,
+    CondTakens &teacherCondTakens)
+{
+    std::vector<BTBEntry> entries;
+    auto taken_entry = s3Pred.getTakenEntry();
+
+    for (const auto &entry : abtbEntries) {
+        if (!entry.valid || !entry.isCond) {
+            continue;
+        }
+
+        if (taken_entry.valid && entry.pc > taken_entry.pc) {
+            break;
+        }
+
+        const bool actual_taken =
+            taken_entry.valid && taken_entry.isCond &&
+            entry.pc == taken_entry.pc;
+        entries.push_back(entry);
+        teacherCondTakens.push_back({entry.pc, actual_taken});
+
+        if (taken_entry.valid && entry.pc == taken_entry.pc) {
+            break;
+        }
+    }
+
     return entries;
 }
 
@@ -906,9 +950,11 @@ MicroTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     const Addr startAddr = s3Pred.bbStart;
     // Only train the conditional prefix that remains reachable under the
     // final-stage teacher prediction for this fetch block.
-    auto entries_to_update = prepareS3UpdateEntries(s3Pred);
+    CondTakens teacher_cond_takens;
+    auto entries_to_update = prepareS3UpdateEntriesFromAbtbMeta(
+        predMeta->abtbEntries, s3Pred, teacher_cond_takens);
     trainEntries(entries_to_update, predMeta, startAddr, tid, s3Pred.asidHash,
-                 TrainingMode::S3Update, nullptr, &s3Pred.condTakens);
+                 TrainingMode::S3Update, nullptr, &teacher_cond_takens);
 }
 
 void

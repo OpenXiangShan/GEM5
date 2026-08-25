@@ -121,6 +121,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
             }
         }
     }
+    if (microtage->isEnabled()) {
+        microtage->setAbtbComponentIdx(abtb->isEnabled() ?
+                                       abtb->getComponentIdx() : -1);
+    }
     if (bpDBSwitches.size() > 0) {
         warn("bpDBSwitches contains unknown switches\n");
         printf("unknown switches: ");
@@ -515,20 +519,19 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         overrideReason = reason;
     }
 
-    // update ubtb/abtb using final S3 prediction
-    if (!predsOfEachStage[numStages - 1].btbEntries.empty()) {
-        if (ubtb->isEnabled()) {
-            ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-        }
-        if (abtb->isEnabled() && !ftq.empty(tid)) {
-            auto previous_block_startpc = ftq.back(tid).startPC;
-            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], previous_block_startpc);
-        } else if (abtb->isEnabled()) {
-            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], 0);
-        }
-        if (microtage->isEnabled()) {
-            microtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-        }
+    // Match RTL fastTrain: every valid S3 prediction is broadcast to the S1
+    // predictors, even when the final result is fallthrough.
+    if (ubtb->isEnabled()) {
+        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+    }
+    if (abtb->isEnabled() && !ftq.empty(tid)) {
+        auto previous_block_startpc = ftq.back(tid).startPC;
+        abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], previous_block_startpc);
+    } else if (abtb->isEnabled()) {
+        abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], 0);
+    }
+    if (microtage->isEnabled()) {
+        microtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
     }
 
     // 4. Record override bubbles and update statistics
