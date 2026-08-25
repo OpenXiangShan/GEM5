@@ -78,14 +78,6 @@ def setKmhV3IdealParams(args, system):
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
 
-        # Keep replay-based MDP active and train its StoreSet independently.
-        # Spec-STLF uses full SQ forwarding for training and does not consume
-        # the MDP producer scope in this configuration.
-        cpu.EnableReplayBasedMDP = True
-        cpu.enable_storeSet_train = True
-        cpu.EnableSpecStoreFwd = True
-        cpu.EnableSpecStoreFwdNoMdp = True
-
         # value predictor
         cpu.valuePred = CompositeValuePredictor(
                             predictors=[
