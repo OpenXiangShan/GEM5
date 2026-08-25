@@ -243,8 +243,9 @@ class UBTB : public TimedBaseBTBPredictor
      * @param startAddr The FB start address to look up
      * @return Iterator to the matching entry if found, or ubtb.end() if not found
      */
-    UBTBIter lookup(Addr startAddr, uint8_t asidHash);
-    TickedUBTBEntry lookupNoSideEffect(Addr startAddr) const;
+    UBTBIter lookup(Addr startAddr, ThreadID tid, uint8_t asidHash);
+    TickedUBTBEntry lookupNoSideEffect(Addr startAddr, ThreadID tid,
+                                       uint8_t asidHash) const;
 
     /** helper method called by putPCHistory: Check uBTB entry pc range and update statistics
      * @param entry The uBTB entry to check
@@ -269,7 +270,20 @@ class UBTB : public TimedBaseBTBPredictor
 
     //using the FB final taken branch to update uBTB
     void updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
-                        const Addr startAddr, uint8_t asidHash);
+                        const Addr startAddr, ThreadID tid,
+                        uint8_t asidHash);
+
+    std::pair<UBTBIter, UBTBIter> threadRange(ThreadID tid)
+    {
+        if (!usesTidPartitionedStorage()) {
+            return {ubtb.begin(), ubtb.end()};
+        }
+        assert(numEntries >= 2 && numEntries % 2 == 0);
+        assert(tid < 2);
+        const auto entriesPerThread = numEntries / 2;
+        auto begin = ubtb.begin() + tid * entriesPerThread;
+        return {begin, begin + entriesPerThread};
+    }
 
 
     /** The uBTB structure:

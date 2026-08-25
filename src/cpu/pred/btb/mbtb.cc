@@ -97,6 +97,9 @@ MBTB::MBTB(const Params &p)
     if (!isPowerOf2(numEntries)) {
         fatal("BTB entries is not a power of 2!");
     }
+    if (usesTidPartitionedStorage() && victimCacheSize != 0) {
+        fatal("tid-partitioned mBTB requires its shared victim cache to be disabled");
+    }
 
     // Initialize dual SRAM BTB structure and MRU tracking
     sram0.resize(numSets);
@@ -334,7 +337,7 @@ MBTB::putPCHistory(Addr startAddr,
     threadMeta[tid] = std::make_shared<BTBMeta>();
     const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr, asidHash, threadMeta[tid]);
+    auto find_entries = lookup(startAddr, tid, asidHash, threadMeta[tid]);
 
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
@@ -347,9 +350,10 @@ MBTB::putPCHistory(Addr startAddr,
 }
 
 std::vector<BTBEntry>
-MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, uint8_t asidHash) const
+MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, ThreadID tid,
+                                      uint8_t asidHash) const
 {
-    auto found_entries = lookupNoSideEffect(startAddr, asidHash);
+    auto found_entries = lookupNoSideEffect(startAddr, tid, asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
 
     std::vector<BTBEntry> entries;
@@ -378,7 +382,8 @@ MBTB::refreshPredictionMeta(Addr startAddr,
     assert(pred.tid < threadMeta.size());
     threadMeta[pred.tid] = std::make_shared<BTBMeta>();
     auto &meta = threadMeta[pred.tid];
-    auto found_entries = lookupNoSideEffect(startAddr);
+    auto found_entries = lookupNoSideEffect(
+        startAddr, pred.tid, pred.asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
     for (const auto &entry : processed_entries) {
         meta->hit_entries.push_back(BTBEntry(entry));
@@ -391,7 +396,7 @@ MBTB::refreshPredictionMeta(Addr startAddr,
  * @return Vector of matching BTB entries
  */
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
+MBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -402,7 +407,7 @@ MBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
-    Addr btb_idx = getIndex(block_pc, asidHash);
+    Addr btb_idx = getIndex(block_pc, asidHash, tid);
     auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
 
@@ -421,7 +426,8 @@ MBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, uint8_t asidHash) const
+MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, ThreadID tid,
+                                    uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -431,7 +437,7 @@ MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, uint8_t asidHash) const
     int sram_id = getSRAMId(block_pc);
     const auto& target_sram = (sram_id == 0) ? sram0 : sram1;
 
-    Addr btb_idx = getIndex(block_pc, asidHash);
+    Addr btb_idx = getIndex(block_pc, asidHash, tid);
     const auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
 
@@ -448,7 +454,8 @@ MBTB::lookupSingleBlockNoSideEffect(Addr block_pc, uint8_t asidHash) const
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
+MBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash,
+             std::shared_ptr<BTBMeta> meta)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -459,9 +466,9 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
     // Calculate 32B aligned address
     Addr alignedPC = block_pc & ~(blockSize - 1);
     // Lookup first 32B block
-    res = lookupSingleBlock(alignedPC, asidHash);
+    res = lookupSingleBlock(alignedPC, tid, asidHash);
     // Lookup next 32B block
-    auto nextBlockRes = lookupSingleBlock(alignedPC + blockSize, asidHash);
+    auto nextBlockRes = lookupSingleBlock(alignedPC + blockSize, tid, asidHash);
     // Merge results
     res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
@@ -487,7 +494,8 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupNoSideEffect(Addr block_pc, uint8_t asidHash) const
+MBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
+                         uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -495,9 +503,10 @@ MBTB::lookupNoSideEffect(Addr block_pc, uint8_t asidHash) const
     }
 
     Addr alignedPC = block_pc & ~(blockSize - 1);
-    res = lookupSingleBlockNoSideEffect(alignedPC, asidHash);
+    res = lookupSingleBlockNoSideEffect(alignedPC, tid, asidHash);
     auto nextBlockRes =
-        lookupSingleBlockNoSideEffect(alignedPC + blockSize, asidHash);
+        lookupSingleBlockNoSideEffect(
+            alignedPC + blockSize, tid, asidHash);
     res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
     if (victimCacheSize > 0) {
@@ -618,7 +627,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
     // Calculate index and tag for this entry
-    Addr btb_idx = getIndex(entry.pc, stream.asidHash);
+    Addr btb_idx = getIndex(entry.pc, stream.asidHash, stream.tid);
 
     // Look for matching entry in the target SRAM
     bool found = false;

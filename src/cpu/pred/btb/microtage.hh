@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_MICROTAGE_HH__
 #define __CPU_PRED_BTB_MICROTAGE_HH__
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -163,10 +164,12 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       CondTakens& results, ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
-    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
+                      ThreadID tid = 0);
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist,
+                      uint8_t asidHash = 0, ThreadID tid = 0);
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
@@ -225,6 +228,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
     int usefulResetCnt{0};
+    std::array<int, MaxThreads> usefulResetCntByThread{};
 
     // Instruction shift amount
     unsigned instShiftAmt {1};
@@ -423,7 +427,8 @@ public:
                                  TrainingMode mode,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
-                                 uint64_t &allocated_way);
+                                 uint64_t &allocated_way,
+                                 ThreadID tid = 0);
 
     int abtbComponentIdx{-1};
     std::vector<std::shared_ptr<TageMeta>> threadMeta;

@@ -976,6 +976,9 @@ class TimedBaseBTBPredictor(SimObject):
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
     resolvedUpdate = Param.Bool(False, "Enable resolved update, no need to wait until commit")
     enabled = Param.Bool(True, "Enable this predictor component")
+    smtTidPartitioned = Param.Bool(
+        False,
+        "Partition predictor storage equally by tid in SMT mode")
 
 class MBTB(TimedBaseBTBPredictor):
     type = 'MBTB'

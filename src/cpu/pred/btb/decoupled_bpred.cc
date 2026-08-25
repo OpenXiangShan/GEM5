@@ -827,7 +827,8 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
     const Addr startPC = thread.s0PC;
     const uint8_t asidHash = thread.finalPred.asidHash;
     auto &btbEntries = thread.twoTakenBTBEntries;
-    btbEntries = mbtb->getPredictedEntriesNoSideEffect(startPC, asidHash);
+    btbEntries = mbtb->getPredictedEntriesNoSideEffect(
+        startPC, tid, asidHash);
 
     CondTakens condTakens;
     condTakens.reserve(btbEntries.size());

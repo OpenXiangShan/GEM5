@@ -61,7 +61,8 @@ ittageStats(this, p.numPredictors)
             state.altTagFoldedHist.emplace_back(
                 (int)histLengths[i], (int)tableTagBits[i] - 1, (int)16);
             state.indexFoldedHist.emplace_back(
-                (int)histLengths[i], (int)tableIndexBits[i], (int)16);
+                (int)histLengths[i],
+                (int)partitionIndexBits(tableIndexBits[i]), (int)16);
         }
     }
     // useAlt.resize(128);
@@ -214,7 +215,8 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     // all btb entries should use the same lookup result
     // but each btb entry can use prediction from different tables
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get(), asidHash);
+        Addr index = getTageIndex(
+            stream_start, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
                               state.altTagFoldedHist[i].get(), asidHash);
         auto &entry = tageTable[i][index];
@@ -264,7 +266,9 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
     lookupTags.clear();
     bitset useful_mask(numPredictors, false);
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get(), pred.asidHash);
+        Addr index = getTageIndex(
+            stream_start, i, state.indexFoldedHist[i].get(),
+            pred.asidHash, pred.tid);
         Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
                               state.altTagFoldedHist[i].get(), pred.asidHash);
         auto &entry = tageTable[i][index];
@@ -314,6 +318,8 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
 void
 BTBITTAGE::update(const FetchTarget &stream)
 {
+    int &resetCnt = usesTidPartitionedStorage() ?
+        usefulResetCntByThread[stream.tid] : usefulResetCnt;
     if (debugPC == stream.startPC || debugPC2 == stream.startPC) {
         debugFlag = true;
     }
@@ -420,27 +426,31 @@ BTBITTAGE::update(const FetchTarget &stream)
         bool canAllocate = num_tables_can_allocate > 0;
         if (needToAllocate) {
             if (canAllocate) {
-                usefulResetCnt -= 1;
-                if (usefulResetCnt <= 0) {
-                    usefulResetCnt = 0;
+                resetCnt -= 1;
+                if (resetCnt <= 0) {
+                    resetCnt = 0;
                 }
-                DPRINTF(ITTAGE, "can allocate, usefulResetCnt %d\n", usefulResetCnt);
+                DPRINTF(ITTAGE, "can allocate, usefulResetCnt %d\n", resetCnt);
             } else {
-                usefulResetCnt += 1;
-                if (usefulResetCnt >= 256) {
-                    usefulResetCnt = 256;
+                resetCnt += 1;
+                if (resetCnt >= 256) {
+                    resetCnt = 256;
                 }
-                DPRINTF(ITTAGE, "can not allocate, usefulResetCnt %d\n", usefulResetCnt);
+                DPRINTF(ITTAGE, "can not allocate, usefulResetCnt %d\n", resetCnt);
             }
-            if (usefulResetCnt == 256) {
+            if (resetCnt == 256) {
                 DPRINTF(ITTAGE, "reset useful bit of all entries\n");
                 for (auto &table : tageTable) {
-                    for (auto &entry : table) {
-                        entry.useful = 0;
+                    const unsigned begin = partitionBegin(
+                        table.size(), stream.tid);
+                    const unsigned end = partitionEnd(
+                        table.size(), stream.tid);
+                    for (unsigned index = begin; index < end; ++index) {
+                        table[index].useful = 0;
                     }
                 }
                 ittageStats.updateResetU++;
-                usefulResetCnt = 0;
+                resetCnt = 0;
             }
         }
 
@@ -471,7 +481,9 @@ BTBITTAGE::update(const FetchTarget &stream)
                 unsigned startTable = main_found ? main_info.table + 1 : 0;
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
-                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get(), stream.asidHash);
+                    Addr newIndex = getTageIndex(
+                        startAddr, ti, updateIndexFoldedHist[ti].get(),
+                        stream.asidHash, stream.tid);
                     Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(),
                                              updateAltTagFoldedHist[ti].get(), stream.asidHash);
                     assert(newIndex < tageTable[ti].size());
@@ -533,20 +545,24 @@ BTBITTAGE::getTageTag(Addr pc, int t, uint8_t asidHash)
 }
 
 Addr
-BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
+BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
+                        uint8_t asidHash, ThreadID tid)
 {
-    // Create mask for tableIndexBits[t]
-    uint64_t mask = ((1ULL << tableIndexBits[t]) - 1);
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
+    uint64_t mask = ((1ULL << localIndexBits) - 1);
 
     // Extract lower bits of PC and XOR with folded history
     uint64_t pcBits = (pc >> floorLog2(blockSize));
-    return xorAsidHashIntoIndex((pcBits ^ foldedHist) & mask, tableIndexBits[t], asidHash);
+    Addr localIndex = xorAsidHashIntoIndex(
+        (pcBits ^ foldedHist) & mask, localIndexBits, asidHash);
+    return partitionIndex(localIndex, tableSizes[t], tid);
 }
 
 Addr
-BTBITTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
+BTBITTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash, ThreadID tid)
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
+    return getTageIndex(pc, t, historyState(tid).indexFoldedHist[t].get(),
+                        asidHash, tid);
 }
 
 bool

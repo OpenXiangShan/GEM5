@@ -124,7 +124,8 @@ MicroTAGE::MicroTAGE(const Params& p)
             state.altTagFoldedHist.emplace_back(
                 (int)histLengths[i], (int)tableTagBits[i] - 1, 16);
             state.indexFoldedHist.emplace_back(
-                (int)histLengths[i], (int)tableIndexBits[i], 16);
+                (int)histLengths[i],
+                (int)partitionIndexBits(tableIndexBits[i]), 16);
         }
     }
     usefulResetCnt = 0;
@@ -230,9 +231,10 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(startPC, i,
-                            predMeta->indexFoldedHist[i].get(), asidHash)
-                          : getTageIndex(startPC, i, state.indexFoldedHist[i].get(), asidHash);
+        Addr index = predMeta ? getTageIndex(
+            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
+                              : getTageIndex(
+            startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(),
                             position, asidHash)
@@ -740,7 +742,10 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  TrainingMode mode,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
-                                 uint64_t &allocated_way) {
+                                 uint64_t &allocated_way,
+                                 ThreadID tid) {
+    int &resetCnt = usesTidPartitionedStorage() ?
+        usefulResetCntByThread[tid] : usefulResetCnt;
     // Simple set-associative allocation (no LFSR, no per-way table gating):
     // - For each table from start_table upward, check the set at computed index.
     // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
@@ -779,8 +784,8 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti,
-            meta->indexFoldedHist[ti].get(), asidHash);
+        Addr newIndex = getTageIndex(
+            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(),
             position, asidHash);
@@ -800,7 +805,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                 allocated_table = ti;
                 allocated_index = newIndex;
                 allocated_way = way;
-                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                resetCnt = resetCnt <= 0 ? 0 : resetCnt - 1;
                 return true;
             }
         }
@@ -818,16 +823,18 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
 
         count_alloc_failure();
-        usefulResetCnt++;
+        resetCnt++;
     }
 
-    if (usefulResetCnt >= 256) {
-        usefulResetCnt = 0;
+    if (resetCnt >= 256) {
+        resetCnt = 0;
         count_reset_u();
         DPRINTF(UTAGE, "reset useful bit of all entries\n");
         for (auto &table : tageTable) {
-            for (auto &set : table) {
-                for (auto &way : set) {
+            const unsigned begin = partitionBegin(table.size(), tid);
+            const unsigned end = partitionEnd(table.size(), tid);
+            for (unsigned index = begin; index < end; ++index) {
+                for (auto &way : table[index]) {
                     way.useful = false;
                 }
             }
@@ -1034,7 +1041,7 @@ MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
         handleNewEntryAllocation(startPC, btb_entry, actual_taken,
                                  start_table, predMeta, asidHash, mode,
                                  allocated_table, allocated_index,
-                                 allocated_way);
+                                 allocated_way, tid);
 
 #ifndef UNIT_TEST
         // Optional per-entry miss tracing is only kept for the resolved update path.
@@ -1142,22 +1149,26 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
 }
 
 Addr
-MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
+MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
+                        uint8_t asidHash, ThreadID tid)
 {
-    // Create mask for tableIndexBits[t] to limit result size
-    Addr mask = (1ULL << tableIndexBits[t]) - 1;
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
+    Addr mask = (1ULL << localIndexBits) - 1;
 
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return xorAsidHashIntoIndex(pcBits ^ foldedBits, tableIndexBits[t], asidHash);
+    Addr localIndex = xorAsidHashIntoIndex(
+        pcBits ^ foldedBits, localIndexBits, asidHash);
+    return partitionIndex(localIndex, tableSizes[t], tid);
 }
 
 Addr
-MicroTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
+MicroTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash, ThreadID tid)
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
+    return getTageIndex(pc, t, historyState(tid).indexFoldedHist[t].get(),
+                        asidHash, tid);
 }
 
 bool

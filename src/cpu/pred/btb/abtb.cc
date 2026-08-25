@@ -412,10 +412,11 @@ AheadBTB::refreshPredictionMeta(Addr startAddr,
                                 const boost::dynamic_bitset<> &history,
                                 FullBTBPrediction &pred)
 {
-    (void)history;
     auto &state = threadState(pred.tid);
     state.meta = std::make_shared<BTBMeta>();
-    auto found_entries = lookupNoSideEffect(startAddr);
+    const Addr indexPhrHash = foldAbtbPhrHash(history);
+    auto found_entries = lookupNoSideEffect(
+        startAddr, pred.tid, pred.asidHash, indexPhrHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
     for (const auto &entry : processed_entries) {
         state.meta->hit_entries.push_back(BTBEntry(entry));
@@ -437,7 +438,7 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash,
     }
     auto &state = threadState(tid);
     state.currentLookupIndexValid = false;
-    Addr btb_idx = getIndex(block_pc, asidHash, indexPhrHash);
+    Addr btb_idx = getIndex(block_pc, asidHash, tid, indexPhrHash);
     auto btb_set = btb[btb_idx];
     assert(btb_idx < numSets);
     // AheadBTB always uses ahead-pipelined implementation:
@@ -490,22 +491,24 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash,
 }
 
 std::vector<AheadBTB::TickedBTBEntry>
-AheadBTB::lookupSingleBlockNoSideEffect(Addr block_pc) const
+AheadBTB::lookupSingleBlockNoSideEffect(Addr block_pc, ThreadID tid,
+                                        uint8_t asidHash,
+                                        Addr indexPhrHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
         return res;
     }
 
-    Addr btb_idx = getIndex(block_pc, 0);
+    Addr btb_idx = getIndex(block_pc, asidHash, tid, indexPhrHash);
     auto btb_set = btb[btb_idx];
     assert(btb_idx < numSets);
 
-    const auto &state = threadState(0);
+    const auto &state = threadState(tid);
     auto queued_sets = state.aheadReadBtbEntries;
     queued_sets.push(std::make_tuple(block_pc, btb_idx, btb_set));
 
-    Addr tag_curStartpc = getTag(block_pc, 0);
+    Addr tag_curStartpc = getTag(block_pc, asidHash);
     BTBSet set;
     if (queued_sets.size() >= aheadPipelinedStages + 1) {
         assert(queued_sets.size() == aheadPipelinedStages + 1);
@@ -538,14 +541,17 @@ AheadBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash,
 }
 
 std::vector<AheadBTB::TickedBTBEntry>
-AheadBTB::lookupNoSideEffect(Addr block_pc) const
+AheadBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
+                             uint8_t asidHash,
+                             Addr indexPhrHash) const
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
         return res;
     }
 
-    return lookupSingleBlockNoSideEffect(block_pc);
+    return lookupSingleBlockNoSideEffect(
+        block_pc, tid, asidHash, indexPhrHash);
 }
 
 
@@ -835,7 +841,7 @@ AheadBTB::update(const FetchTarget &stream)
         // Before the ahead pipeline fills, retain the legacy PC-only fallback.
         Addr btb_idx = meta->lookupIndexValid
             ? meta->lookupIndex
-            : getIndex(previousPC, stream.asidHash);
+            : getIndex(previousPC, stream.asidHash, stream.tid);
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
         updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
     }
