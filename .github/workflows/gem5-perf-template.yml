@@ -15,7 +15,7 @@ on:
       benchmark_type:
         required: true
         type: string
-        description: "Benchmark type: spec06-rva23-novec-gcc16-0.3c, spec06-rva23-novec-gcc16-1.0c, gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, h-spec06-0.5c, h-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
+        description: "Benchmark type: spec06-rva23-novec-gcc16-0.3c, spec06-rva23-novec-gcc16-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, h-spec06-0.5c, h-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
       specific_benchmarks:
         required: false
         type: string
@@ -146,6 +146,22 @@ jobs:
               echo "artifact_name=performance-score-spec06-rva23-novec-gcc16-1.0c" >> $GITHUB_OUTPUT
               echo "comment=run 100% coverage gcc16 rva23-novec SPEC06 checkpoints" >> $GITHUB_OUTPUT
               ;;
+            "gcc15-spec06-0.3c")
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/gcc15_260604/spec06_0.3c.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc15-spec06-0.3c" >> $GITHUB_OUTPUT
+              echo "comment=run legacy 30% coverage gcc15 SPEC06 checkpoints from spec06_gcc15_rv64gcb_base_260604" >> $GITHUB_OUTPUT
+              ;;
+            "gcc15-spec06-1.0c")
+              echo "checkpoint_list=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/checkpoint.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc15-spec06-1.0c" >> $GITHUB_OUTPUT
+              echo "comment=run legacy 100% coverage gcc15 SPEC06 checkpoints from spec06_gcc15_rv64gcb_base_260604" >> $GITHUB_OUTPUT
+              ;;
             "h-spec06-0.5c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0" >> $GITHUB_OUTPUT
@@ -203,7 +219,7 @@ jobs:
               echo "comment=run 100% coverage SPEC CPU2026 checkpoints" >> $GITHUB_OUTPUT
               ;;
             *)
-              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: spec06-rva23-novec-gcc16-0.3c, spec06-rva23-novec-gcc16-1.0c, gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, h-spec06-0.5c, h-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
+              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: spec06-rva23-novec-gcc16-0.3c, spec06-rva23-novec-gcc16-1.0c, gcc15-spec06-0.3c, gcc15-spec06-1.0c, gcc12-spec06-0.3c, gcc12-spec06-smt-0.3c, gcc12-spec06-smt-1.0c, gcc12-spec06-smt-int-1.0c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, h-spec06-0.5c, h-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c, gcc15-spec26-0.3c, gcc15-spec26-1.0c"
               exit 1
               ;;
           esac

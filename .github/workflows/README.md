@@ -60,6 +60,7 @@
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
+- `manual-perf.yml` 和 `manual-solve.yml` 暂时保留 GCC15 SPEC06 选项供历史实验续跑；自动任务和默认选项使用 GCC16 RVA23 no-vector 切片
 - `idealkmhv3.py` 默认关闭动态预取；`smt_idealkmhv3.py` 保持当前默认行为
 - 需要手动切换动态预取时，请在 `manual-perf.yml` 的 `extra_args` 中直接写 `--enable-dynamic-pf=True|False`
 
