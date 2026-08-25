@@ -699,6 +699,16 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     # config arch db
     if args.dump_bop_replay_trace and not args.enable_arch_db:
         raise RuntimeError("--dump-bop-replay-trace requires --enable-arch-db")
+    if args.dump_bop_direct_quality_trace and not args.enable_arch_db:
+        raise RuntimeError(
+            "--dump-bop-direct-quality-trace requires --enable-arch-db")
+    if args.dump_bop_direct_quality_trace and not args.enable_bop_direct_quality_gate:
+        raise RuntimeError(
+            "--dump-bop-direct-quality-trace requires "
+            "--enable-bop-direct-quality-gate")
+    if args.dump_bop_direct_quality_trace and not args.arch_db_fromstart:
+        raise RuntimeError(
+            "--dump-bop-direct-quality-trace requires --arch-db-fromstart")
 
     if args.enable_arch_db:
         perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -735,6 +745,8 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_bop_validation_trace = args.dump_bop_validation_trace
         test_sys.arch_db.dump_bop_replay_trace = args.dump_bop_replay_trace
+        test_sys.arch_db.dump_bop_direct_quality_trace = \
+            args.dump_bop_direct_quality_trace
         test_sys.arch_db.dump_stride_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
@@ -962,6 +974,34 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "ProcessTick INT NOT NULL," \
             "QueueSizeAfter INT NOT NULL," \
             "PRIMARY KEY(BOPName, ReplayOrder));"
+            ,
+            "CREATE TABLE BOPDirectQualityMeta(" \
+            "SchemaVersion INT PRIMARY KEY," \
+            "Horizon INT NOT NULL," \
+            "FeedbackEntries INT NOT NULL," \
+            "FeedbackWays INT NOT NULL);"
+            ,
+            "CREATE TABLE BOPDirectQualityIssue(" \
+            "EventSequence INT PRIMARY KEY," \
+            "FeedbackId INT NOT NULL UNIQUE," \
+            "IssueDemandSequence INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "Line INT NOT NULL," \
+            "Kind INT NOT NULL);"
+            ,
+            "CREATE TABLE BOPDirectQualityDemand(" \
+            "EventSequence INT PRIMARY KEY," \
+            "DemandSequence INT NOT NULL UNIQUE," \
+            "Tick INT NOT NULL," \
+            "Line INT NOT NULL);"
+            ,
+            "CREATE TABLE BOPDirectQualityOutcome(" \
+            "EventSequence INT PRIMARY KEY," \
+            "FeedbackId INT NOT NULL UNIQUE," \
+            "ResolveDemandSequence INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "Line INT NOT NULL," \
+            "Outcome TEXT NOT NULL);"
             ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

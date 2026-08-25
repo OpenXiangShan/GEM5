@@ -50,6 +50,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpBopTrainTrace(p.dump_bop_train_trace),
     dumpBopValidationTrace(p.dump_bop_validation_trace),
     dumpBopReplayTrace(p.dump_bop_replay_trace),
+    dumpBopDirectQualityTrace(p.dump_bop_direct_quality_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
@@ -59,6 +60,8 @@ ArchDBer::ArchDBer(const Params &p)
     mem_db(nullptr), bopReplayMetaStmt(nullptr), bopReplayPhaseStmt(nullptr),
     bopReplayDemandStmt(nullptr), bopReplayEventStmt(nullptr),
     bopReplayDelayActionStmt(nullptr),
+    bopDirectQualityMetaStmt(nullptr), bopDirectQualityIssueStmt(nullptr),
+    bopDirectQualityDemandStmt(nullptr), bopDirectQualityOutcomeStmt(nullptr),
     bopReplayPhaseId(0), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
@@ -134,6 +137,31 @@ ArchDBer::ArchDBer(const Params &p)
         "BOPReplayDelayAction insert");
     bopReplayPhaseTraceWrite(0, "trace_start", curTick());
   }
+  if (dumpBopDirectQualityTrace) {
+    prepareStatement(
+        mem_db, &bopDirectQualityMetaStmt,
+        "INSERT OR IGNORE INTO BOPDirectQualityMeta("
+        "SchemaVersion,Horizon,FeedbackEntries,FeedbackWays) "
+        "VALUES(1,?1,?2,?3);",
+        "BOPDirectQualityMeta insert");
+    prepareStatement(
+        mem_db, &bopDirectQualityIssueStmt,
+        "INSERT INTO BOPDirectQualityIssue("
+        "EventSequence,FeedbackId,IssueDemandSequence,Tick,Line,Kind) "
+        "VALUES(?,?,?,?,?,?);",
+        "BOPDirectQualityIssue insert");
+    prepareStatement(
+        mem_db, &bopDirectQualityDemandStmt,
+        "INSERT INTO BOPDirectQualityDemand("
+        "EventSequence,DemandSequence,Tick,Line) VALUES(?,?,?,?);",
+        "BOPDirectQualityDemand insert");
+    prepareStatement(
+        mem_db, &bopDirectQualityOutcomeStmt,
+        "INSERT INTO BOPDirectQualityOutcome("
+        "EventSequence,FeedbackId,ResolveDemandSequence,Tick,Line,Outcome) "
+        "VALUES(?,?,?,?,?,?);",
+        "BOPDirectQualityOutcome insert");
+  }
   registerExitCallback([this](){ save_db(); });
 }
 
@@ -144,6 +172,10 @@ ArchDBer::~ArchDBer()
   sqlite3_finalize(bopReplayDemandStmt);
   sqlite3_finalize(bopReplayEventStmt);
   sqlite3_finalize(bopReplayDelayActionStmt);
+  sqlite3_finalize(bopDirectQualityMetaStmt);
+  sqlite3_finalize(bopDirectQualityIssueStmt);
+  sqlite3_finalize(bopDirectQualityDemandStmt);
+  sqlite3_finalize(bopDirectQualityOutcomeStmt);
   sqlite3_close(mem_db);
 }
 
@@ -642,6 +674,109 @@ ArchDBer::bopReplayDelayActionTraceWrite(
                           sqliteSignedInt(process_tick)));
   bind(sqlite3_bind_int(bopReplayDelayActionStmt, column++, queue_size_after));
   stepAndReset(mem_db, bopReplayDelayActionStmt, "BOPReplayDelayAction");
+}
+
+void
+ArchDBer::bopDirectQualityMetaTraceWrite(
+    unsigned int horizon, unsigned int feedback_entries,
+    unsigned int feedback_ways)
+{
+  if (!(dumpGlobal && dumpBopDirectQualityTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK,
+             "Failed to bind BOPDirectQualityMeta: %s\n", sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, horizon));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, feedback_entries));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, feedback_ways));
+  stepAndReset(mem_db, bopDirectQualityMetaStmt, "BOPDirectQualityMeta");
+}
+
+void
+ArchDBer::bopDirectQualityIssueTraceWrite(
+    Tick tick, uint64_t event_sequence, uint64_t feedback_id,
+    uint64_t issue_demand_sequence, Addr line, uint8_t kind)
+{
+  if (!(dumpGlobal && dumpBopDirectQualityTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK,
+             "Failed to bind BOPDirectQualityIssue: %s\n", sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
+                          sqliteSignedInt(event_sequence)));
+  bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
+                          sqliteSignedInt(feedback_id)));
+  bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
+                          sqliteSignedInt(issue_demand_sequence)));
+  bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
+                          sqliteSignedInt(tick)));
+  bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
+                          sqliteSignedInt(line)));
+  bind(sqlite3_bind_int(bopDirectQualityIssueStmt, column++, kind));
+  stepAndReset(mem_db, bopDirectQualityIssueStmt, "BOPDirectQualityIssue");
+}
+
+void
+ArchDBer::bopDirectQualityDemandTraceWrite(
+    Tick tick, uint64_t event_sequence, uint64_t demand_sequence, Addr line)
+{
+  if (!(dumpGlobal && dumpBopDirectQualityTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK,
+             "Failed to bind BOPDirectQualityDemand: %s\n", sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int64(bopDirectQualityDemandStmt, column++,
+                          sqliteSignedInt(event_sequence)));
+  bind(sqlite3_bind_int64(bopDirectQualityDemandStmt, column++,
+                          sqliteSignedInt(demand_sequence)));
+  bind(sqlite3_bind_int64(bopDirectQualityDemandStmt, column++,
+                          sqliteSignedInt(tick)));
+  bind(sqlite3_bind_int64(bopDirectQualityDemandStmt, column++,
+                          sqliteSignedInt(line)));
+  stepAndReset(mem_db, bopDirectQualityDemandStmt, "BOPDirectQualityDemand");
+}
+
+void
+ArchDBer::bopDirectQualityOutcomeTraceWrite(
+    Tick tick, uint64_t event_sequence, uint64_t feedback_id,
+    uint64_t resolve_demand_sequence, Addr line, const char *outcome)
+{
+  if (!(dumpGlobal && dumpBopDirectQualityTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK,
+             "Failed to bind BOPDirectQualityOutcome: %s\n",
+             sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int64(bopDirectQualityOutcomeStmt, column++,
+                          sqliteSignedInt(event_sequence)));
+  bind(sqlite3_bind_int64(bopDirectQualityOutcomeStmt, column++,
+                          sqliteSignedInt(feedback_id)));
+  bind(sqlite3_bind_int64(bopDirectQualityOutcomeStmt, column++,
+                          sqliteSignedInt(resolve_demand_sequence)));
+  bind(sqlite3_bind_int64(bopDirectQualityOutcomeStmt, column++,
+                          sqliteSignedInt(tick)));
+  bind(sqlite3_bind_int64(bopDirectQualityOutcomeStmt, column++,
+                          sqliteSignedInt(line)));
+  bind(sqlite3_bind_text(bopDirectQualityOutcomeStmt, column++, outcome, -1,
+                         SQLITE_TRANSIENT));
+  stepAndReset(mem_db, bopDirectQualityOutcomeStmt,
+               "BOPDirectQualityOutcome");
 }
 
 void

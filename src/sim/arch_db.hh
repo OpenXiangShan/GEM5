@@ -61,6 +61,7 @@ class ArchDBer : public SimObject
     bool dumpBopTrainTrace;
     bool dumpBopValidationTrace;
     bool dumpBopReplayTrace;
+    bool dumpBopDirectQualityTrace;
     bool dumpSMSTrainTrace;
     bool dumpStrideTrainTrace;
     bool dumpDespacitoTrainTrace;
@@ -75,6 +76,10 @@ class ArchDBer : public SimObject
     sqlite3_stmt *bopReplayDemandStmt;
     sqlite3_stmt *bopReplayEventStmt;
     sqlite3_stmt *bopReplayDelayActionStmt;
+    sqlite3_stmt *bopDirectQualityMetaStmt;
+    sqlite3_stmt *bopDirectQualityIssueStmt;
+    sqlite3_stmt *bopDirectQualityDemandStmt;
+    sqlite3_stmt *bopDirectQualityOutcomeStmt;
     uint64_t bopReplayPhaseId;
     char * zErrMsg;
     int rc;
@@ -183,6 +188,18 @@ class ArchDBer : public SimObject
     void bopReplayDelayActionTraceWrite(
       const char *bop_name, uint64_t replay_order, const char *action,
       Tick tick, Addr addr, Tick process_tick, unsigned int queue_size_after);
+    void bopDirectQualityMetaTraceWrite(
+      unsigned int horizon, unsigned int feedback_entries,
+      unsigned int feedback_ways);
+    void bopDirectQualityIssueTraceWrite(
+      Tick tick, uint64_t event_sequence, uint64_t feedback_id,
+      uint64_t issue_demand_sequence, Addr line, uint8_t kind);
+    void bopDirectQualityDemandTraceWrite(
+      Tick tick, uint64_t event_sequence, uint64_t demand_sequence,
+      Addr line);
+    void bopDirectQualityOutcomeTraceWrite(
+      Tick tick, uint64_t event_sequence, uint64_t feedback_id,
+      uint64_t resolve_demand_sequence, Addr line, const char *outcome);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);
     void strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train);
     void despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train);

@@ -563,10 +563,15 @@ class BOP : public Queued
             statistics::Scalar directQualityFeedbackConflicts;
             statistics::Scalar directQualityFeedbackReplacements;
             statistics::Scalar directQualityFeedbackExpiries;
+            statistics::Scalar directQualityFeedbackExpiryUnused;
             statistics::Scalar directQualityUnknownDrops;
             statistics::Scalar directQualityFeedbackTokenDrops;
             statistics::Scalar directQualityOrphanOutcomes;
             statistics::Scalar directQualityStateTransitions;
+            statistics::Scalar directQualityBlockToRecoverTransitions;
+            statistics::Scalar directQualityRecoverToOpenTransitions;
+            statistics::Scalar directQualityRecoverToBlockTransitions;
+            statistics::Scalar directQualityPeakOutstanding;
         } stats;
 
     public:
@@ -599,19 +604,21 @@ class BOP : public Queued
         /** Share one bounded direct-quality ledger across Large and Small BOP. */
         void shareDirectQualityGateWith(BOP &other);
 
+        /** Attach optional physical direct-quality trace observation. */
+        void setDirectQualityTraceSink(DirectQualityGate::TraceSink *sink);
+
         /** Apply the one-per-demand update merged across shared BOPs. */
         void commitPCValidationConfidence();
 
         /** Receive a source-only useful/unused outcome from the L2 cache. */
         void notifyGlobalBOPOutcome(bool useful);
 
-        /** Online direct-quality outcome and demand-age hooks. */
+        /** Online direct-quality physical-issue and L2-demand hooks. */
         void notifyDirectQualityIssued(Addr paddr, uint8_t kind,
                                        unsigned quality_set,
                                        unsigned quality_way,
                                        uint8_t quality_generation);
-        void notifyDirectQualityOutcome(Addr paddr, bool useful);
-        void notifyDirectQualityDemand();
+        void notifyDirectQualityDemand(Addr paddr);
 
         bool tryAddOffset(int64_t offset, bool late = false);
 };

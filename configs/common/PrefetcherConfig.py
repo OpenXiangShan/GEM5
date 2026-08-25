@@ -541,8 +541,10 @@ def _configure_l2_bop_direct_quality(prefetcher, options):
         bop.enable_global_bop_coverage_guard = False
         bop.direct_quality_entries = 256
         bop.direct_quality_ways = 4
-        bop.direct_quality_feedback_entries = 256
-        bop.direct_quality_feedback_ways = 4
+        bop.direct_quality_feedback_entries = \
+            options.bop_direct_quality_feedback_entries
+        bop.direct_quality_feedback_ways = \
+            options.bop_direct_quality_feedback_ways
         bop.direct_quality_horizon = 2048
         bop.direct_quality_min_samples = 32
         bop.direct_quality_observe_sample_period = 16
@@ -556,6 +558,8 @@ def _configure_l2_bop_direct_quality(prefetcher, options):
         bop.direct_quality_reopen_unused_per_useful = 10
         bop.direct_quality_reopen_guard = 4
         bop.direct_quality_reopen_probe_period = 64
+        bop.direct_quality_reopen_confirm_samples = \
+            options.bop_direct_quality_reopen_confirm_samples
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:

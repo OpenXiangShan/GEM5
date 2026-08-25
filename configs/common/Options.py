@@ -236,10 +236,29 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="dump pre-filter BOP replay events and L2 demands")
+    parser.add_argument("--dump-bop-direct-quality-trace",
+                        action="store_true",
+                        default=False,
+                        help="dump physical BOP direct-quality issue/demand trace")
     parser.add_argument("--enable-bop-direct-quality-gate",
                         action="store_true",
                         default=False,
                         help="enable the online Tier20/P8 BOP direct-quality gate")
+    parser.add_argument("--bop-direct-quality-feedback-entries",
+                        action="store",
+                        type=int,
+                        default=4096,
+                        help="online BOP direct-quality feedback-table entries")
+    parser.add_argument("--bop-direct-quality-feedback-ways",
+                        action="store",
+                        type=int,
+                        default=16,
+                        help="online BOP direct-quality feedback-table ways")
+    parser.add_argument("--bop-direct-quality-reopen-confirm-samples",
+                        action="store",
+                        type=int,
+                        default=0,
+                        help="direct-quality samples required before RECOVER opens")
     parser.add_argument("--enable-rolling",
                         default=False,
                         help="enable rolling perfcnt "

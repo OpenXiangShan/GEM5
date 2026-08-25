@@ -18,7 +18,8 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
+class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher,
+                                        private DirectQualityGate::TraceSink
 {
   public:
     L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p);
@@ -68,6 +69,18 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     bool offloadLowAccuracy = true;
     uint64_t nextBOPReplayEventId = 0;
     uint64_t activeBOPReplayEventId = 0;
+
+    void directQualityTraceConfig(
+        const DirectQualityGate::Config &config) override;
+    void directQualityTraceIssue(
+        uint64_t event_sequence, uint64_t feedback_id,
+        uint64_t issue_demand_sequence, Addr line, uint8_t kind) override;
+    void directQualityTraceDemand(
+        uint64_t event_sequence, uint64_t demand_sequence, Addr line) override;
+    void directQualityTraceOutcome(
+        uint64_t event_sequence, uint64_t feedback_id,
+        uint64_t resolve_demand_sequence, Addr line,
+        DirectQualityGate::TraceOutcome outcome) override;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");
