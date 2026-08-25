@@ -968,7 +968,7 @@ IssueQue::selectInst()
                 continue;
             }
 
-            int lat = scheduler->getCorrectedOpLat(inst);
+            uint32_t lat = scheduler->getCorrectedOpLat(inst);
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
@@ -1755,7 +1755,9 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
     }
 
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
-        int oplat = getCorrectedOpLat(inst);
+        uint32_t oplat = getCorrectedOpLat(inst);
+        panic_if(oplat == 0, "[sn:%d] opClass:%d lat:%d\n",
+            inst->seqNum, (int)(inst->opClass()), oplat);
         int wakeDelay = oplat - 1;
         assert(oplat < 64);
         int diff = std::abs(from_issue_queue->getIssueStages() - to->getIssueStages());
@@ -1893,7 +1895,7 @@ Scheduler::useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
     auto& t_inst = std::get<0>(wrRfPortOccupancy[typePortId]);
     auto& t_pri = std::get<1>(wrRfPortOccupancy[typePortId]);
     auto& t_lat = std::get<2>(wrRfPortOccupancy[typePortId]);
-    int lat = getCorrectedOpLat(inst);
+    uint32_t lat = getCorrectedOpLat(inst);
 
     if (t_inst) {
         if ((t_lat == lat) && (t_pri < pri)) {  // smaller is higher priority

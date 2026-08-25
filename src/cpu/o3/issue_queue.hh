@@ -357,7 +357,7 @@ class Scheduler : public SimObject
     };
     using IQGroup = std::vector<IssueQue*>;
 
-    std::vector<int> opExecTimeTable;
+    std::vector<uint32_t> opExecTimeTable;
     std::vector<bool> opPipelined;
     std::vector<IQGroup> dispTable;
     std::vector<IssueQue*> issueQues;
@@ -377,7 +377,7 @@ class Scheduler : public SimObject
     using OccupancyType = std::vector<std::pair<DynInstPtr, int>>;
     std::vector<OccupancyType> rdRfPortOccupancy;
     // typePortId : [inst : priority : time]
-    std::vector<std::tuple<DynInstPtr, int, int>> wrRfPortOccupancy;
+    std::vector<std::tuple<DynInstPtr, int, uint32_t>> wrRfPortOccupancy;
 
     struct NullStruct {};
 
