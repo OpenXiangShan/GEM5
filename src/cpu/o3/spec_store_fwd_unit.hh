@@ -57,6 +57,14 @@ class LSQUnit;
 class SpecStoreFwdUnit
 {
   public:
+    enum class AttemptResult
+    {
+        Miss,
+        WaitingData,
+        Forwarded,
+        CorrectedFail,
+    };
+
     SpecStoreFwdUnit() = default;
 
     void init(LSQUnit *lsq_unit, bool enable, size_t table_size,
@@ -70,17 +78,19 @@ class SpecStoreFwdUnit
      * @param wait_store_idxs SQ indices of predicted producing stores whose
      *                        addresses are not ready (candidate set).
      */
-    bool trySpecStoreFwd(const DynInstPtr &load_inst, LSQ::LSQRequest *request,
-                         const std::vector<size_t> &wait_store_idxs);
+    AttemptResult trySpecStoreFwd(
+        const DynInstPtr &load_inst, LSQ::LSQRequest *request,
+        const std::vector<size_t> &wait_store_idxs);
 
     /**
      * Try speculative forwarding without an MDP producing-store candidate set.
      *
      * In all-load mode this ignores StoreSet metadata, checks the single store
-     * at the predictor's predicted distance, and attempts to forward from it
-     * if it has data-ready but addr-not-ready.
+     * at the predictor's predicted distance, and either forwards data or waits
+     * for that store's data without requiring its address to be ready.
      */
-    bool trySpecStoreFwd(const DynInstPtr &load_inst, LSQ::LSQRequest *request);
+    AttemptResult trySpecStoreFwd(
+        const DynInstPtr &load_inst, LSQ::LSQRequest *request);
 
     void checkSpecStoreFwdMispred(const DynInstPtr &store_inst);
 
@@ -88,13 +98,24 @@ class SpecStoreFwdUnit
 
     void commitStore(size_t store_idx);
 
-    void resetSpecFwdInfo(const DynInstPtr &inst);
-    void resetPredictorMeta(const DynInstPtr &load_inst);
+    void beginLoadAttempt(const DynInstPtr &inst);
+    void cancelLoadAttempt(const DynInstPtr &inst);
+    void markSqConfirmed(const DynInstPtr &inst);
+    void markSqCorrected(const DynInstPtr &inst);
+    void markSpecWonOverSq(const DynInstPtr &inst);
+    void markAddrValidationFail(const DynInstPtr &inst);
+
+    bool hasPrediction(const DynInstPtr &inst) const;
+    InstSeqNum predictedStoreSeq(const DynInstPtr &inst) const;
 
   private:
-    /** Return true when an older address-ready SQ store overlaps the load. */
-    bool hasAddrReadyStoreDependency(
-        const DynInstPtr &load_inst, LSQ::LSQRequest *request) const;
+    AttemptResult tryCandidate(const DynInstPtr &load_inst,
+                               LSQ::LSQRequest *request, size_t store_idx,
+                               uint16_t distance, uint16_t shift,
+                               bool saved_prediction);
+    void clearCurrentForward(const DynInstPtr &inst);
+    void clearPrediction(const DynInstPtr &inst);
+    void resetPredictorMeta(const DynInstPtr &load_inst);
 
     LSQUnit *lsqUnit = nullptr;
     bool allowNoMdp_ = false;

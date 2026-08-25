@@ -66,6 +66,7 @@
 #include "debug/IEW.hh"
 #include "debug/LSQUnit.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/SPECFwd.hh"
 #include "debug/StoreBuffer.hh"
 #include "debug/StorePipeline.hh"
 #include "mem/packet.hh"
@@ -130,9 +131,7 @@ LSQUnit::checkStoreLoadForwardingRange(typename StoreQueue::iterator store_it,
 
         // Check if store data is ready for forwarding
         if (store_it->instruction()->isSplitStoreAddr() && !store_it->canForwardToLoad()) {
-            // Store data not ready, need to set STLF replay flag for load
-            load_inst->setSTLFReplay();
-            return AddrRangeCoverage::NoAddrRangeCoverage;
+            return AddrRangeCoverage::DataNotReady;
         } else {
             // Store can forward to load
             // For split stores, always return partial coverage to ensure proper handling
@@ -700,6 +699,19 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent,
                "Total committed loads counted for Spec-STLF coverage"),
       ADD_STAT(specStoreFwdMdpWaitLoads, statistics::units::Count::get(),
                "Total committed non-strict MDP-wait loads (addr not ready)"),
+      ADD_STAT(specStoreFwdMdpWaitSuccess, statistics::units::Count::get(),
+               "Successful Spec-STLF predictions among MDP-wait loads"),
+      ADD_STAT(specStoreFwdDataWait, statistics::units::Count::get(),
+               "Committed Spec-STLF attempts that waited for source data"),
+      ADD_STAT(specStoreFwdSqSameEntry, statistics::units::Count::get(),
+               "Committed Spec-STLF attempts confirmed by the same SQ entry"),
+      ADD_STAT(specStoreFwdSpecWinsSq, statistics::units::Count::get(),
+               "Committed Spec-STLF attempts that beat an older SQ conflict"),
+      ADD_STAT(specStoreFwdSqCorrectsSpec, statistics::units::Count::get(),
+               "Committed Spec-STLF failures corrected by SQ arbitration"),
+      ADD_STAT(specStoreFwdAddrValidationFail,
+               statistics::units::Count::get(),
+               "Spec-STLF failures caused by address or offset validation"),
       ADD_STAT(specStoreFwdAccuracy, statistics::units::Ratio::get(),
                "Spec-STLF accuracy = success / predicted",
                specStoreFwdSuccess / specStoreFwdPredicted),
@@ -707,8 +719,9 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent,
                "Spec-STLF coverage (all loads) = success / totalLoads",
                specStoreFwdSuccess / specStoreFwdTotalLoads),
       ADD_STAT(specStoreFwdMdpWaitCoverage, statistics::units::Ratio::get(),
-               "Spec-STLF coverage (MDP wait loads) = success / mdpWaitLoads",
-               specStoreFwdSuccess / specStoreFwdMdpWaitLoads),
+               "Spec-STLF coverage (MDP wait loads) = MDP-wait success / "
+               "mdpWaitLoads",
+               specStoreFwdMdpWaitSuccess / specStoreFwdMdpWaitLoads),
       ADD_STAT(loadReplayEvents, statistics::units::Count::get(),
                "event distribution of load replay"),
       ADD_STAT(loadReplayEventsFromIssueQueue, statistics::units::Count::get(),
@@ -945,12 +958,13 @@ LSQUnit::pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_
 
     if (lsq->enablePipeNukeCheck() && load_need_check && store_need_check) {
         if (load_eff_addr1 <= store_eff_addr2 && store_eff_addr1 <= load_eff_addr2) {
-            if (load_inst->specStoreFwd && (load_inst->stlfStoreSeqNum == store_inst->seqNum)) {
-                // if load is speculatively forwarded from this store, do not nuke
-                return false;
-            } else {
-                return true;
+            if (specStoreFwdUnit.hasPrediction(load_inst)) {
+                // A same-age or older store cannot override the predicted
+                // source. A younger conflicting store still owns replay.
+                return store_inst->seqNum >
+                    specStoreFwdUnit.predictedStoreSeq(load_inst);
             }
+            return true;
         }
     }
     return false;
@@ -1340,13 +1354,25 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                             break;
                         }
 
-                        // If the load had speculatively forwarded from this store,
-                        // we can assume that the load will get the correct data
-                        // after `checkSpecStoreFwdMispred`.
-                        if (ld_inst->specStoreFwd && (ld_inst->stlfStoreSeqNum == inst->seqNum)) {
-                            DPRINTF(LSQUnit, "Load [sn:%lli] had speculatively forwarded "
-                                    "from store [sn:%lli], ignoring violation\n",
-                                    ld_inst->seqNum, inst->seqNum);
+                        // The predicted source is validated before the generic
+                        // RAW check. A failed source validation already records
+                        // this squash; same-age and older stores cannot override
+                        // the selected source.
+                        if (ld_inst->specStoreFwdState ==
+                            SpecStoreFwdState::AddrValidationFail) {
+                            done_checking_load = true;
+                            break;
+                        }
+                        if (specStoreFwdUnit.hasPrediction(ld_inst) &&
+                            inst->seqNum <=
+                                specStoreFwdUnit.predictedStoreSeq(ld_inst)) {
+                            DPRINTF(LSQUnit,
+                                    "Load [sn:%lli] Spec-STLF source [sn:%lli] "
+                                    "ignores store [sn:%lli] by age\n",
+                                    ld_inst->seqNum,
+                                    specStoreFwdUnit.predictedStoreSeq(ld_inst),
+                                    inst->seqNum);
+                            done_checking_load = true;
                             break;
                         }
 
@@ -1359,11 +1385,19 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                 "[sn:%lli] at address %#x\n",
                                 inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
                         memDepViolator = ld_inst;
-                        const bool spec_store_fwd = ld_inst->specStoreFwd;
+                        const bool spec_store_fwd =
+                            specStoreFwdUnit.hasPrediction(ld_inst);
                         if (spec_store_fwd) {
-                            specStoreFwdUnit.resetPredictorMeta(ld_inst);
-                            specStoreFwdUnit.resetSpecFwdInfo(ld_inst);
-                            memDepViolationCause = ViolationCause::WrongDependence;
+                            specStoreFwdUnit.markAddrValidationFail(ld_inst);
+                            const ssize_t store_idx = inst->sqIdx;
+                            if (store_idx >= 0 && storeQueue.isValidIdx(
+                                    static_cast<size_t>(store_idx)) &&
+                                storeQueue[store_idx].valid()) {
+                                storeQueue[store_idx]
+                                    .specStoreFwdMispreds()++;
+                            }
+                            memDepViolationCause =
+                                ViolationCause::SpecStoreFwd;
                         } else {
                             memDepViolationCause = ViolationCause::MemOrder;
                         }
@@ -1416,7 +1450,7 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
     // Replay cancels the current execution attempt. Clear transient
     // forwarding/prediction metadata so commit-time training/stats reflect
     // the final successful attempt.
-    specStoreFwdUnit.resetSpecFwdInfo(inst);
+    specStoreFwdUnit.cancelLoadAttempt(inst);
 
     // clear request in loadQueue
     loadQueue[inst->lqIdx].setRequest(nullptr);
@@ -1628,15 +1662,51 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
 
     // New memory access attempt: clear transient forwarding/prediction info.
     // This needs to happen before the nuke check (which consults specStoreFwd).
-    specStoreFwdUnit.resetSpecFwdInfo(inst);
+    specStoreFwdUnit.beginLoadAttempt(inst);
 
-    // A store in S1 may already have its address even though addrReady has not
-    // reached the SQ entry yet. Resolve that same-cycle RAW case before
-    // Spec-STLF so an address-ready dependency always uses normal replay/STLF.
+    SpecStoreFwdUnit::AttemptResult spec_fwd_result =
+        SpecStoreFwdUnit::AttemptResult::Miss;
+    std::vector<InstSeqNum> mdp_wait_stores;
+    std::vector<size_t> mdp_wait_store_idxs;
+
+    // Spec-STLF is an aggressive result layered above MDP. A hit selects its
+    // dynamic SQ source before either the address-wait policy or SQ arbitration.
+    if (request && request->isTranslationComplete() &&
+        request->isMemAccessRequired() && load_fault == NoFault &&
+        request->isNormalLd() && !inst->strictlyOrdered() &&
+        !request->mainReq()->isLLSC() &&
+        !request->mainReq()->isLocalAccess()) {
+        if (lsq->enableReplayBasedMDP() && !inst->mdpPredStrictWait &&
+            !inst->mdpProducingStores.empty()) {
+            collectMdpWaitStores(
+                inst, mdp_wait_stores, mdp_wait_store_idxs);
+            if (!mdp_wait_stores.empty()) {
+                // Keep the counterfactual MDP wait sticky even when Spec-STLF
+                // overrides it, so coverage has a consistent denominator.
+                inst->mdpNonStrictWait = true;
+            }
+        }
+
+        if (specStoreFwdUnit.allowNoMdp()) {
+            spec_fwd_result = specStoreFwdUnit.trySpecStoreFwd(inst, request);
+        } else if (!mdp_wait_stores.empty()) {
+            spec_fwd_result = specStoreFwdUnit.trySpecStoreFwd(
+                inst, request, mdp_wait_store_idxs);
+        }
+    }
+
+    // S1 has the newest address information. Apply the same source-age rule as
+    // the SQ scan: only a store younger than the predicted source may replay.
     if (inst->effAddrValid()) {
         for (int i = 0; i < storePipeSx[1]->size; i++) {
             auto& store_inst = storePipeSx[1]->insts[i];
             if (pipeLineNukeCheck(inst, store_inst)) {
+                if (specStoreFwdUnit.hasPrediction(inst)) {
+                    specStoreFwdUnit.markSqCorrected(inst);
+                    if (request) {
+                        request->SQforwardPackets.clear();
+                    }
+                }
                 DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
                 ++stats.pipeRawNukeReplay;
                 inst->setProducerStorePC(store_inst->pcState().instAddr());
@@ -1646,33 +1716,16 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
         }
     }
 
-    // Try Spec-STLF only after ruling out already-known store dependencies.
-    // read() still runs after a hit to handle the rest of the normal LSQ path.
-    if (request && request->isTranslationComplete() &&
-        request->isMemAccessRequired() && load_fault == NoFault &&
-        request->isNormalLd() && !inst->strictlyOrdered() &&
-        !request->mainReq()->isLLSC() &&
-        !request->mainReq()->isLocalAccess()) {
-
-        if (specStoreFwdUnit.allowNoMdp()) {
-            // All-load mode deliberately ignores StoreSet scope. The table's
-            // distance directly selects the candidate SQ entry.
-            specStoreFwdUnit.trySpecStoreFwd(inst, request);
-        } else if (lsq->enableReplayBasedMDP() &&
-                   !inst->mdpPredStrictWait &&
-                   !inst->mdpProducingStores.empty()) {
-            std::vector<InstSeqNum> wait_stores;
-            std::vector<size_t> wait_store_idxs;
-            collectMdpWaitStores(inst, wait_stores, wait_store_idxs);
-
-            if (!wait_stores.empty()) {
-                // Sticky for commit-time coverage accounting.
-                inst->mdpNonStrictWait = true;
-
-                specStoreFwdUnit.trySpecStoreFwd(
-                    inst, request, wait_store_idxs);
-            }
-        }
+    if (spec_fwd_result == SpecStoreFwdUnit::AttemptResult::WaitingData) {
+        stats.forwardSTDNotReady++;
+        inst->setSTLFReplay();
+        iewStage->stlfFailLdReplay(
+            inst, specStoreFwdUnit.predictedStoreSeq(inst));
+        loadSetReplay(inst, request, true);
+        DPRINTF(LoadPipeline,
+                "Load [sn:%llu] Spec-STLF waits in LRQ for store data\n",
+                inst->seqNum);
+        return NoFault;
     }
 
     // normal inst cache access
@@ -3748,7 +3801,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // here means "try this load again after the named store address condition
     // becomes true", not that a real address overlap has been found.
     // If Spec-STLF already hit, skip MDP addr replay checks.
-    if (!load_inst->specStoreFwd &&
+    if (load_inst->specStoreFwdState == SpecStoreFwdState::None &&
         lsq->enableReplayBasedMDP() && request->isNormalLd() &&
         (load_inst->mdpPredStrictWait || !load_inst->mdpProducingStores.empty()) &&
         !request->mainReq()->isLLSC()) {
@@ -3873,7 +3926,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             !(store_it->request()->mainReq() &&
               store_it->request()->mainReq()->isCacheMaintenance())) {
             if (!store_it->instruction()->effAddrValid()) {
-                assert(load_inst->specStoreFwd);
                 continue;
             }
 
@@ -3897,14 +3949,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                             auto sub_coverage =
                                 checkStoreLoadForwardingRange(
                                     store_it, request, load_inst, i, j);
-                            if (sub_coverage == AddrRangeCoverage::NoAddrRangeCoverage &&
-                                load_inst->needSTLFReplay()) {
-                                // Handle STLF (Store-to-Load Forwarding) failure
-                                stats.forwardSTDNotReady++;
-                                iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
-                                loadSetReplay(load_inst, request, true);
-                                DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
-                                return NoFault;
+                            if (sub_coverage ==
+                                AddrRangeCoverage::DataNotReady) {
+                                coverage = sub_coverage;
+                                break;
                             }
                             if (sub_coverage != AddrRangeCoverage::NoAddrRangeCoverage) {
                                 coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
@@ -3916,14 +3964,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         auto sub_coverage =
                             checkStoreLoadForwardingRange(
                                 store_it, request, load_inst, i, -1);
-                        if (sub_coverage == AddrRangeCoverage::NoAddrRangeCoverage &&
-                            load_inst->needSTLFReplay()) {
-                            // Handle STLF (Store-to-Load Forwarding) failure
-                            stats.forwardSTDNotReady++;
-                            iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
-                            loadSetReplay(load_inst, request, true);
-                            DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
-                            return NoFault;
+                        if (sub_coverage ==
+                            AddrRangeCoverage::DataNotReady) {
+                            coverage = sub_coverage;
+                            break;
                         }
                         if (sub_coverage != AddrRangeCoverage::NoAddrRangeCoverage) {
                             coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
@@ -3944,14 +3988,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         auto sub_coverage =
                             checkStoreLoadForwardingRange(
                                 store_it, request, load_inst, -1, j);
-                        if (sub_coverage == AddrRangeCoverage::NoAddrRangeCoverage &&
-                            load_inst->needSTLFReplay()) {
-                            // Handle STLF (Store-to-Load Forwarding) failure
-                            stats.forwardSTDNotReady++;
-                            iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
-                            loadSetReplay(load_inst, request, true);
-                            DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
-                            return NoFault;
+                        if (sub_coverage ==
+                            AddrRangeCoverage::DataNotReady) {
+                            coverage = sub_coverage;
+                            break;
                         }
                         if (sub_coverage != AddrRangeCoverage::NoAddrRangeCoverage) {
                             coverage = sub_coverage;
@@ -3961,33 +4001,53 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 } else {
                     // Case 2b: Neither load nor store is split (original case)
                     coverage = checkStoreLoadForwardingRange(store_it, request, load_inst, -1, -1);
-                    if (coverage == AddrRangeCoverage::NoAddrRangeCoverage &&
-                        load_inst->needSTLFReplay()) {
-                        // Handle STLF (Store-to-Load Forwarding) failure
-                        stats.forwardSTDNotReady++;
-                        iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
-                        loadSetReplay(load_inst, request, true);
-                        DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
-                        return NoFault;
-                    }
                 }
+            }
+
+            if (coverage != AddrRangeCoverage::NoAddrRangeCoverage &&
+                specStoreFwdUnit.hasPrediction(load_inst)) {
+                const auto sq_result =
+                    coverage == AddrRangeCoverage::FullAddrRangeCoverage ?
+                    SpecStoreFwdSqResult::FullForward :
+                    SpecStoreFwdSqResult::Conflict;
+                const auto decision = selectSpecStoreFwdSource(
+                    true, specStoreFwdUnit.predictedStoreSeq(load_inst),
+                    sq_result, store_it->instruction()->seqNum);
+
+                if (decision == SpecStoreFwdDecision::KeepSpec) {
+                    specStoreFwdUnit.markSpecWonOverSq(load_inst);
+                    DPRINTF(SPECFwd,
+                            "Spec-STLF load[sn:%llu] source[sn:%llu] beats "
+                            "older SQ store[sn:%llu]\n",
+                            load_inst->seqNum,
+                            specStoreFwdUnit.predictedStoreSeq(load_inst),
+                            store_it->instruction()->seqNum);
+                    return NoFault;
+                }
+
+                request->SQforwardPackets.clear();
+                if (decision == SpecStoreFwdDecision::ConfirmWithSq) {
+                    specStoreFwdUnit.markSqConfirmed(load_inst);
+                } else {
+                    specStoreFwdUnit.markSqCorrected(load_inst);
+                }
+            }
+
+            if (coverage == AddrRangeCoverage::DataNotReady) {
+                load_inst->setSTLFReplay();
+                stats.forwardSTDNotReady++;
+                iewStage->stlfFailLdReplay(
+                    load_inst, store_it->instruction()->seqNum);
+                loadSetReplay(load_inst, request, true);
+                DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n",
+                        load_inst->seqNum);
+                return NoFault;
             }
 
             if (coverage == AddrRangeCoverage::FullAddrRangeCoverage) {
                 // The older store fully covers the load bytes.  Keep the
                 // forwarded byte list on the request; loadDoRecvData() will
                 // turn this into the final writeback packet.
-                const bool had_spec_fwd = load_inst->specStoreFwd;
-                const InstSeqNum spec_store_seq = load_inst->stlfStoreSeqNum;
-                const bool override_spec =
-                    had_spec_fwd &&
-                    (store_it->instruction()->seqNum > spec_store_seq);
-                if (override_spec) {
-                    load_inst->specStoreFwd = false;
-                }
-                if (request && had_spec_fwd) {
-                    request->SQforwardPackets.clear();
-                }
                 // Get shift amount for offset into the store's data.
                 int shift_amt = request->mainReq()->getPaddr() -
                     store_it->instruction()->physEffAddr;
@@ -4045,9 +4105,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // come from memory.  This model handles that by replaying the
                 // load later rather than mixing a partial store forward with a
                 // new cache request in the same attempt.
-                if (load_inst->specStoreFwd) {
-                    specStoreFwdUnit.resetSpecFwdInfo(load_inst);
-                }
                 // If it's already been written back, then don't worry about
                 // stalling on it.
                 if (store_it->completed()) {

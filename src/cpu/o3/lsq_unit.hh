@@ -281,7 +281,8 @@ class LSQUnit
     {
         PartialAddrRangeCoverage, /* Two ranges partly overlap */
         FullAddrRangeCoverage, /* One range fully covers another */
-        NoAddrRangeCoverage /* Two ranges are disjoint */
+        NoAddrRangeCoverage, /* Two ranges are disjoint */
+        DataNotReady /* Full coverage, but forwarding data is unavailable */
     };
 
   public:
@@ -1003,6 +1004,12 @@ class LSQUnit
         statistics::Scalar specStoreFwdTrainEvents;
         statistics::Scalar specStoreFwdTotalLoads;
         statistics::Scalar specStoreFwdMdpWaitLoads;
+        statistics::Scalar specStoreFwdMdpWaitSuccess;
+        statistics::Scalar specStoreFwdDataWait;
+        statistics::Scalar specStoreFwdSqSameEntry;
+        statistics::Scalar specStoreFwdSpecWinsSq;
+        statistics::Scalar specStoreFwdSqCorrectsSpec;
+        statistics::Scalar specStoreFwdAddrValidationFail;
         statistics::Formula specStoreFwdAccuracy;
         statistics::Formula specStoreFwdAllLoadCoverage;
         statistics::Formula specStoreFwdMdpWaitCoverage;

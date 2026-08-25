@@ -65,6 +65,7 @@
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/lsq_unit.hh"
 #include "cpu/o3/replay_events.hh"
+#include "cpu/o3/spec_store_fwd_types.hh"
 #include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
@@ -480,22 +481,34 @@ class DynInst : public ExecContext, public RefCounted
 
     /**
      * Sticky flag: this load has ever encountered a non-strict replay-based MDP
-     * wait (i.e. it had at least one predicted producing store with addr not
-     * ready in LSQUnit::read()).
+     * wait condition (i.e. it had at least one predicted producing store with
+     * an address not ready when the load attempted to issue).
      *
      * Used for commit-time coverage stats to avoid counting wrong-path loads.
      */
     bool mdpNonStrictWait = false;
 
     /**
-     * Speculative store-to-load forwarding (Spec-STLF) was used by this load.
-     * When set, the load has taken its value from a predicted store before the
-     * store address was ready. A later mismatch must squash from the load.
+     * Speculative store-to-load forwarding (Spec-STLF) currently supplies this
+     * load's value. The predicted source remains tracked separately until all
+     * older store addresses that can override it have been checked.
      *
      * Commit-time accounting counts this as a successful prediction if the
      * load commits.
      */
     bool specStoreFwd = false;
+
+    /** Dynamic prediction source, kept separate from final STLF training. */
+    SpecStoreFwdState specStoreFwdState = SpecStoreFwdState::None;
+    InstSeqNum specStoreFwdStoreSeqNum = 0;
+    uint16_t specStoreFwdDistance = 0;
+    uint16_t specStoreFwdShiftAmt = 0;
+
+    /** Commit-safe classification bits for a single dynamic prediction. */
+    bool specStoreFwdDataWaited = false;
+    bool specStoreFwdSameEntry = false;
+    bool specStoreFwdWonOverSq = false;
+    bool specStoreFwdSqCorrected = false;
 
     /**
      * Store-to-load forwarding metadata for full-range forwarding from the SQ.

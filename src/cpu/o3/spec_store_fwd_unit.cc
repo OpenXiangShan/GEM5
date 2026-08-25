@@ -28,8 +28,6 @@
 
 #include "cpu/o3/spec_store_fwd_unit.hh"
 
-#include <algorithm>
-
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/lsq_unit.hh"
@@ -43,48 +41,6 @@ namespace gem5
 namespace o3
 {
 
-bool
-SpecStoreFwdUnit::hasAddrReadyStoreDependency(
-    const DynInstPtr &load_inst, LSQ::LSQRequest *request) const
-{
-    if (!lsqUnit || !load_inst || !request || !request->isNormalLd()) {
-        return false;
-    }
-
-    const Addr load_start = request->mainReq()->getPaddr();
-    const Addr load_end = load_start + request->mainReq()->getSize();
-    auto store_it = load_inst->sqIt;
-
-    // Match read()'s outstanding-SQ window. Any known-address overlap must go
-    // through normal forwarding/replay handling instead of Spec-STLF.
-    while (lsqUnit->storeWBIt.dereferenceable() &&
-           store_it != lsqUnit->storeWBIt) {
-        --store_it;
-        if (!store_it->valid() || !store_it->instruction() ||
-            store_it->completed() || !store_it->addrReady() ||
-            store_it->size() == 0) {
-            continue;
-        }
-
-        const auto &store_inst = store_it->instruction();
-        if (store_inst->seqNum >= load_inst->seqNum) {
-            continue;
-        }
-
-        const Addr store_start = store_inst->physEffAddr;
-        const Addr store_end = store_start + store_it->size();
-        if (load_start < store_end && store_start < load_end) {
-            DPRINTF(SPECFwd,
-                    "Reject Spec-STLF: load[sn:%llu] overlaps "
-                    "address-ready store[sn:%llu]\n",
-                    load_inst->seqNum, store_inst->seqNum);
-            return true;
-        }
-    }
-
-    return false;
-}
-
 void
 SpecStoreFwdUnit::init(LSQUnit *lsq_unit, bool enable, size_t table_size,
                        unsigned ctr_bits, bool allow_no_mdp)
@@ -94,163 +50,192 @@ SpecStoreFwdUnit::init(LSQUnit *lsq_unit, bool enable, size_t table_size,
     pred.init(enable, table_size, ctr_bits);
 }
 
-bool
-SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
-                                  LSQ::LSQRequest *request,
-                                  const std::vector<size_t> &wait_store_idxs)
+SpecStoreFwdUnit::AttemptResult
+SpecStoreFwdUnit::trySpecStoreFwd(
+    const DynInstPtr &load_inst, LSQ::LSQRequest *request,
+    const std::vector<size_t> &wait_store_idxs)
 {
-    DPRINTF(SPECFwd,
-            "Try Spec-STLF at trySpecStoreFwd: load[sn:%llu] PC %#lx\n",
-            load_inst->seqNum, load_inst->pcState().instAddr());
-    if (!lsqUnit || !pred.ready()) {
-        return false;
-    }
-    if (!request || !request->isNormalLd()) {
-        return false;
-    }
-    if (hasAddrReadyStoreDependency(load_inst, request)) {
-        return false;
-    }
-    if (wait_store_idxs.empty()) {
-        return false;
+    if (!lsqUnit || !pred.ready() || !request || !request->isNormalLd()) {
+        return AttemptResult::Miss;
     }
 
-    const Addr ld_pc = load_inst->pcState().instAddr();
-    const auto pred_meta = pred.predict(ld_pc);
+    if (load_inst->specStoreFwdState == SpecStoreFwdState::WaitingData) {
+        const size_t boundary = load_inst->sqIt.idx();
+        const auto distance = load_inst->specStoreFwdDistance;
+        if (boundary < distance) {
+            markSqCorrected(load_inst);
+            return AttemptResult::CorrectedFail;
+        }
+        return tryCandidate(load_inst, request, boundary - distance, distance,
+                            load_inst->specStoreFwdShiftAmt, true);
+    }
+    if (load_inst->specStoreFwdState != SpecStoreFwdState::None ||
+        wait_store_idxs.empty()) {
+        return AttemptResult::Miss;
+    }
+
+    const auto pred_meta = pred.predict(load_inst->pcState().instAddr());
     if (!pred_meta) {
-        return false;
+        return AttemptResult::Miss;
     }
 
-    const uint16_t pred_distance = pred_meta->first;
-    const uint16_t pred_shift = pred_meta->second;
-    const unsigned load_size = request->mainReq()->getSize();
-
-    const size_t ld_sq_boundary = load_inst->sqIt.idx();
-
-    for (const auto st_idx : wait_store_idxs) {
-        DPRINTF(SPECFwd,
-                "try waiting stores, st:%ld\n",
-                st_idx);
-        if (!lsqUnit->storeQueue.isValidIdx(st_idx)) {
+    const size_t boundary = load_inst->sqIt.idx();
+    for (const auto store_idx : wait_store_idxs) {
+        if (boundary <= store_idx) {
             continue;
         }
-        const auto st_it = lsqUnit->storeQueue.getIterator(st_idx);
-        if (!st_it->valid() || !st_it->instruction()) {
-            continue;
+        const auto distance = static_cast<uint16_t>(boundary - store_idx);
+        if (distance == pred_meta->first) {
+            return tryCandidate(load_inst, request, store_idx, distance,
+                                pred_meta->second, false);
         }
-
-        const auto &st_inst = st_it->instruction();
-        if (st_inst->seqNum >= load_inst->seqNum) {
-            continue;
-        }
-        // The address-unknown SQ state does not carry enough information to
-        // validate a dynamic vector mask or a store-conditional outcome.
-        // Such stores cannot safely provide speculative bytes.
-        if (st_inst->isVector() || st_inst->isAtomic() ||
-            st_inst->isStoreConditional()) {
-            continue;
-        }
-        DPRINTF(SPECFwd,
-                "try Spec FWD: load[sn:%llu] PC %#lx, try store[sn:%llu] "
-                "(pred distance=%u, real distance=%u, shift=%u, storeSize=%u, loadSize=%u, "
-                "loadAddr=%llx, storeAddr=%llx, storeAddrValid=%u, storeDataValid=%u)\n",
-                load_inst->seqNum, ld_pc, st_inst->seqNum, pred_distance,
-                static_cast<uint16_t>(ld_sq_boundary - st_it.idx()),
-                pred_shift, static_cast<unsigned>(st_inst->operWid() / 8), load_size,
-                load_inst->physEffAddr, st_inst->physEffAddr,
-                st_it->addrReady(), st_it->dataReady());
-        // Only speculate when store data is ready but address is not.
-        if (st_it->addrReady() || !st_it->dataReady()) {
-            continue;
-        }
-
-        if (ld_sq_boundary <= st_it.idx()) {
-            continue;
-        }
-        const uint16_t distance = static_cast<uint16_t>(
-            ld_sq_boundary - st_it.idx());
-        if (distance != pred_distance) {
-            continue;
-        }
-
-        const int32_t st_op_wid = st_inst->operWid();
-        if (st_op_wid <= 0) {
-            continue;
-        }
-        const unsigned store_size = static_cast<unsigned>(st_op_wid / 8);
-
-        if (pred_shift >= store_size) {
-            continue;
-        }
-        if (load_size > (store_size - pred_shift)) {
-            continue;
-        }
-
-        // Allocate memory if this is the first time a load is issued.
-        if (!load_inst->memData) {
-            load_inst->memData = new uint8_t[load_size];
-        }
-
-        request->SQforwardPackets.clear();
-        for (unsigned i = 0; i < load_size; i++) {
-            const uint8_t byte =
-                static_cast<uint8_t>(st_it->data()[pred_shift + i]);
-            request->SQforwardPackets.push_back(
-                LSQ::LSQRequest::FWDPacket{
-                    static_cast<int>(i),
-                    byte
-                });
-        }
-
-        // Record forwarding meta for training and failure recovery.
-        load_inst->specStoreFwd = true;
-        load_inst->stlfFromStoreQueue = true;
-        load_inst->stlfStoreSeqNum = st_inst->seqNum;
-        load_inst->stlfDistance = distance;
-        load_inst->stlfShiftAmt = pred_shift;
-
-        load_inst->setFullForward();
-        ++lsqUnit->stats.forwLoads;
-
-        DPRINTF(SPECFwd,
-                "Spec-STLF: load[sn:%llu] PC %#lx forward from store[sn:%llu] "
-                "(pred distance=%u, shift=%u, size=%u)\n",
-                load_inst->seqNum, ld_pc, st_inst->seqNum, pred_distance,
-                pred_shift, load_size);
-        return true;
     }
-
-    return false;
+    return AttemptResult::Miss;
 }
 
-bool
+SpecStoreFwdUnit::AttemptResult
 SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
                                   LSQ::LSQRequest *request)
 {
-    if (!allowNoMdp_) {
-        return false;
-    }
-    if (!lsqUnit || !pred.ready()) {
-        return false;
-    }
-    if (!request || !request->isNormalLd()) {
-        return false;
+    if (!allowNoMdp_ || !lsqUnit || !pred.ready() || !request ||
+        !request->isNormalLd()) {
+        return AttemptResult::Miss;
     }
 
-    const Addr ld_pc = load_inst->pcState().instAddr();
-    const auto pred_meta = pred.predict(ld_pc);
+    if (load_inst->specStoreFwdState == SpecStoreFwdState::WaitingData) {
+        const size_t boundary = load_inst->sqIt.idx();
+        const auto distance = load_inst->specStoreFwdDistance;
+        if (boundary < distance) {
+            markSqCorrected(load_inst);
+            return AttemptResult::CorrectedFail;
+        }
+        return tryCandidate(load_inst, request, boundary - distance, distance,
+                            load_inst->specStoreFwdShiftAmt, true);
+    }
+    if (load_inst->specStoreFwdState != SpecStoreFwdState::None) {
+        return AttemptResult::Miss;
+    }
+
+    const auto pred_meta = pred.predict(load_inst->pcState().instAddr());
     if (!pred_meta) {
-        return false;
+        return AttemptResult::Miss;
     }
 
-    const uint16_t pred_distance = pred_meta->first;
-    const size_t ld_sq_boundary = load_inst->sqIt.idx();
-    if (ld_sq_boundary < pred_distance) {
-        return false;
+    const size_t boundary = load_inst->sqIt.idx();
+    if (boundary < pred_meta->first) {
+        return AttemptResult::Miss;
+    }
+    return tryCandidate(load_inst, request, boundary - pred_meta->first,
+                        pred_meta->first, pred_meta->second, false);
+}
+
+SpecStoreFwdUnit::AttemptResult
+SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
+                               LSQ::LSQRequest *request, size_t store_idx,
+                               uint16_t distance, uint16_t shift,
+                               bool saved_prediction)
+{
+    if (!lsqUnit->storeQueue.isValidIdx(store_idx)) {
+        if (saved_prediction) {
+            markSqCorrected(load_inst);
+            return AttemptResult::CorrectedFail;
+        }
+        return AttemptResult::Miss;
     }
 
-    const size_t st_idx = ld_sq_boundary - pred_distance;
-    return trySpecStoreFwd(load_inst, request, std::vector<size_t>{st_idx});
+    const auto store_it = lsqUnit->storeQueue.getIterator(store_idx);
+    if (!store_it->valid() || !store_it->instruction()) {
+        if (saved_prediction) {
+            markSqCorrected(load_inst);
+            return AttemptResult::CorrectedFail;
+        }
+        return AttemptResult::Miss;
+    }
+
+    const auto &store_inst = store_it->instruction();
+    const bool invalid_source =
+        store_inst->seqNum >= load_inst->seqNum ||
+        (saved_prediction &&
+         store_inst->seqNum != load_inst->specStoreFwdStoreSeqNum) ||
+        store_inst->isVector() || store_inst->isAtomic() ||
+        store_inst->isStoreConditional();
+    const auto *store_request = store_it->request();
+    const bool masked = store_request && store_request->mainReq() &&
+        store_request->mainReq()->isMasked();
+    if (invalid_source || masked) {
+        if (saved_prediction) {
+            markSqCorrected(load_inst);
+            return AttemptResult::CorrectedFail;
+        }
+        return AttemptResult::Miss;
+    }
+
+    const int32_t store_width = store_inst->operWid();
+    if (store_width <= 0) {
+        return AttemptResult::Miss;
+    }
+    const unsigned store_size = static_cast<unsigned>(store_width / 8);
+    const unsigned load_size = request->mainReq()->getSize();
+    if (shift >= store_size || load_size > store_size - shift) {
+        return AttemptResult::Miss;
+    }
+
+    if (!saved_prediction) {
+        load_inst->specStoreFwdStoreSeqNum = store_inst->seqNum;
+        load_inst->specStoreFwdDistance = distance;
+        load_inst->specStoreFwdShiftAmt = shift;
+    }
+
+    if (store_it->addrReady()) {
+        const int64_t actual_shift =
+            static_cast<int64_t>(load_inst->physEffAddr) -
+            static_cast<int64_t>(store_inst->physEffAddr);
+        if (actual_shift < 0 || actual_shift != shift ||
+            load_size > store_size - static_cast<unsigned>(actual_shift)) {
+            markSqCorrected(load_inst);
+            return AttemptResult::CorrectedFail;
+        }
+    }
+
+    if (!store_it->dataReady()) {
+        load_inst->specStoreFwdState = SpecStoreFwdState::WaitingData;
+        load_inst->specStoreFwdDataWaited = true;
+        DPRINTF(SPECFwd,
+                "Spec-STLF load[sn:%llu] waits for store[sn:%llu] data\n",
+                load_inst->seqNum, store_inst->seqNum);
+        return AttemptResult::WaitingData;
+    }
+
+    if (!load_inst->memData) {
+        load_inst->memData = new uint8_t[load_size];
+    }
+
+    request->SQforwardPackets.clear();
+    for (unsigned i = 0; i < load_size; ++i) {
+        const uint8_t byte = store_it->isAllZeros() ? 0 :
+            static_cast<uint8_t>(store_it->data()[shift + i]);
+        request->SQforwardPackets.push_back(
+            LSQ::LSQRequest::FWDPacket{static_cast<int>(i), byte});
+    }
+
+    load_inst->specStoreFwd = true;
+    load_inst->specStoreFwdState = store_it->addrReady() ?
+        SpecStoreFwdState::SqConfirmed :
+        SpecStoreFwdState::PendingValidation;
+    load_inst->stlfFromStoreQueue = true;
+    load_inst->stlfStoreSeqNum = store_inst->seqNum;
+    load_inst->stlfDistance = distance;
+    load_inst->stlfShiftAmt = shift;
+    load_inst->setFullForward();
+    ++lsqUnit->stats.forwLoads;
+
+    DPRINTF(SPECFwd,
+            "Spec-STLF load[sn:%llu] PC %#lx forwards from store[sn:%llu] "
+            "(distance=%u shift=%u size=%u addrReady=%u)\n",
+            load_inst->seqNum, load_inst->pcState().instAddr(),
+            store_inst->seqNum, distance, shift, load_size,
+            store_it->addrReady());
+    return AttemptResult::Forwarded;
 }
 
 void
@@ -285,14 +270,21 @@ SpecStoreFwdUnit::checkSpecStoreFwdMispred(const DynInstPtr &store_inst)
             continue;
         }
         const auto &ld_inst = it->instruction();
-        if (!ld_inst || ld_inst->isSquashed() || !ld_inst->specStoreFwd ||
-            !ld_inst->stlfFromStoreQueue) {
-            continue;
-        }
-        if (ld_inst->stlfStoreSeqNum != store_inst->seqNum) {
+        if (!ld_inst || ld_inst->isSquashed() ||
+            (ld_inst->specStoreFwdState !=
+                 SpecStoreFwdState::PendingValidation &&
+             ld_inst->specStoreFwdState !=
+                 SpecStoreFwdState::SqConfirmed)) {
             continue;
         }
         if (!ld_inst->effAddrValid()) {
+            continue;
+        }
+
+        // This scan only validates the predicted source. Other stores must go
+        // through checkViolations(), whose load iterator enforces program age
+        // and prevents a younger store from squashing an already retired load.
+        if (ld_inst->specStoreFwdStoreSeqNum != store_inst->seqNum) {
             continue;
         }
 
@@ -300,19 +292,18 @@ SpecStoreFwdUnit::checkSpecStoreFwdMispred(const DynInstPtr &store_inst)
         const int64_t actual_shift =
             static_cast<int64_t>(ld_inst->physEffAddr) -
             static_cast<int64_t>(store_paddr);
-
-        const bool mispred =
-            actual_shift < 0 ||
-            actual_shift != static_cast<int64_t>(ld_inst->stlfShiftAmt) ||
-            (load_size >
-             (store_size - static_cast<unsigned>(actual_shift)));
-
+        const bool shift_in_range = actual_shift >= 0 &&
+            static_cast<uint64_t>(actual_shift) <= store_size;
+        const bool mispred = !shift_in_range ||
+            actual_shift != ld_inst->specStoreFwdShiftAmt ||
+            (shift_in_range &&
+             load_size > store_size - static_cast<unsigned>(actual_shift));
         if (!mispred) {
+            ld_inst->specStoreFwdState = SpecStoreFwdState::SqConfirmed;
             continue;
         }
 
-        // Failure recovery: reset predictor meta for this load PC.
-        resetPredictorMeta(ld_inst);
+        markAddrValidationFail(ld_inst);
 
         mispreds++;
         if (!oldest_mispred || ld_inst->seqNum < oldest_mispred->seqNum) {
@@ -355,44 +346,47 @@ SpecStoreFwdUnit::commitLoad(const DynInstPtr &inst)
         }
     }
 
-    if (inst->specStoreFwd) {
+    const bool success =
+        inst->specStoreFwdState == SpecStoreFwdState::PendingValidation ||
+        inst->specStoreFwdState == SpecStoreFwdState::SqConfirmed;
+    const bool fail =
+        inst->specStoreFwdState == SpecStoreFwdState::SqCorrectedFail;
+    if (success || fail) {
         lsqUnit->stats.specStoreFwdPredicted++;
-        lsqUnit->stats.specStoreFwdSuccess++;
     }
-    // DPRINTF(SPECFwd,
-    //         "Spec-STLF commit: load[sn:%llu] predicted=%u, inst->mdpPredStrictWait=%u, "
-    //         "!inst->mdpProducingStores.empty()=%u, inst->stlfFromStoreQueue=%u, inst->fullForward()=%u\n",
-    //         inst->seqNum, inst->specStoreFwd ? 1 : 0, inst->mdpPredStrictWait,
-    //         !inst->mdpProducingStores.empty() ? 1 : 0, inst->stlfFromStoreQueue,
-    //         inst->fullForward() ? 1 : 0);
-
-    // Training is commit-time to avoid wrong-path effects.
-    //
-    // Default: only train when the actual forwarding store is one of the
-    // predicted producing stores (i.e. within the replay-based MDP scope).
-    //
-    // When allowNoMdp_ is enabled: ignore MDP scope and train on any committed
-    // full STLF from the store queue.
-    if ((allowNoMdp_ || !inst->mdpPredStrictWait) &&
-        inst->stlfFromStoreQueue && inst->fullForward()) {
-        const bool in_mdp_scope =
-            !inst->mdpProducingStores.empty() &&
-            (std::find(inst->mdpProducingStores.begin(),
-                       inst->mdpProducingStores.end(),
-                       inst->stlfStoreSeqNum) != inst->mdpProducingStores.end());
-        if (allowNoMdp_ || in_mdp_scope) {
-            pred.train(inst->pcState().instAddr(), inst->stlfDistance,
-                       inst->stlfShiftAmt);
-            if (pred.ready()) {
-                lsqUnit->stats.specStoreFwdTrainEvents++;
-            }
-            DPRINTF(SPECFwd,
-                    "Spec-STLF train: load[sn:%llu] at PC 0x%llx, "
-                    "inst->stlfDistance=%u, inst->stlfShiftAmt=%u, "
-                    "in_mdp_scope=%u\n",
-                    inst->seqNum, inst->pcState().instAddr(), inst->stlfDistance,
-                    inst->stlfShiftAmt, in_mdp_scope ? 1 : 0);
+    if (success) {
+        lsqUnit->stats.specStoreFwdSuccess++;
+        if (inst->mdpNonStrictWait) {
+            lsqUnit->stats.specStoreFwdMdpWaitSuccess++;
         }
+    }
+    if (fail) {
+        lsqUnit->stats.specStoreFwdFail++;
+    }
+    if (inst->specStoreFwdDataWaited) {
+        lsqUnit->stats.specStoreFwdDataWait++;
+    }
+    if (inst->specStoreFwdSameEntry) {
+        lsqUnit->stats.specStoreFwdSqSameEntry++;
+    }
+    if (inst->specStoreFwdWonOverSq) {
+        lsqUnit->stats.specStoreFwdSpecWinsSq++;
+    }
+    if (inst->specStoreFwdSqCorrected) {
+        lsqUnit->stats.specStoreFwdSqCorrectsSpec++;
+    }
+    // Predictor training is independent of MDP and only observes committed
+    // full forwarding from the live store queue.
+    if (inst->stlfFromStoreQueue && inst->fullForward()) {
+        pred.train(inst->pcState().instAddr(), inst->stlfDistance,
+                   inst->stlfShiftAmt);
+        if (pred.ready()) {
+            lsqUnit->stats.specStoreFwdTrainEvents++;
+        }
+        DPRINTF(SPECFwd,
+                "Spec-STLF train load[sn:%llu] PC %#lx distance=%u shift=%u\n",
+                inst->seqNum, inst->pcState().instAddr(), inst->stlfDistance,
+                inst->stlfShiftAmt);
     }
 }
 
@@ -416,22 +410,112 @@ SpecStoreFwdUnit::commitStore(size_t store_idx)
     // can be counted at commit time.
     lsqUnit->stats.specStoreFwdPredicted += entry.specStoreFwdMispreds();
     lsqUnit->stats.specStoreFwdFail += entry.specStoreFwdMispreds();
+    lsqUnit->stats.specStoreFwdAddrValidationFail +=
+        entry.specStoreFwdMispreds();
     entry.specStoreFwdMispreds() = 0;
 }
 
 void
-SpecStoreFwdUnit::resetSpecFwdInfo(const DynInstPtr &inst)
+SpecStoreFwdUnit::clearCurrentForward(const DynInstPtr &inst)
 {
-    if (!lsqUnit || !inst || !pred.enabled()) {
+    if (!inst) {
         return;
     }
-
-    // Reset the speculative forwarding information for this instruction.
     inst->specStoreFwd = false;
     inst->stlfFromStoreQueue = false;
     inst->stlfStoreSeqNum = 0;
     inst->stlfDistance = 0;
     inst->stlfShiftAmt = 0;
+}
+
+void
+SpecStoreFwdUnit::clearPrediction(const DynInstPtr &inst)
+{
+    if (!inst) {
+        return;
+    }
+    inst->specStoreFwdState = SpecStoreFwdState::None;
+    inst->specStoreFwdStoreSeqNum = 0;
+    inst->specStoreFwdDistance = 0;
+    inst->specStoreFwdShiftAmt = 0;
+    inst->specStoreFwdDataWaited = false;
+    inst->specStoreFwdSameEntry = false;
+    inst->specStoreFwdWonOverSq = false;
+    inst->specStoreFwdSqCorrected = false;
+}
+
+void
+SpecStoreFwdUnit::beginLoadAttempt(const DynInstPtr &inst)
+{
+    if (!lsqUnit || !inst || !pred.enabled()) {
+        return;
+    }
+    clearCurrentForward(inst);
+    if (inst->specStoreFwdState != SpecStoreFwdState::WaitingData &&
+        inst->specStoreFwdState != SpecStoreFwdState::SqCorrectedFail) {
+        clearPrediction(inst);
+    }
+}
+
+void
+SpecStoreFwdUnit::cancelLoadAttempt(const DynInstPtr &inst)
+{
+    if (!lsqUnit || !inst || !pred.enabled()) {
+        return;
+    }
+    clearCurrentForward(inst);
+    if (inst->specStoreFwdState != SpecStoreFwdState::WaitingData &&
+        inst->specStoreFwdState != SpecStoreFwdState::SqCorrectedFail) {
+        clearPrediction(inst);
+    }
+}
+
+void
+SpecStoreFwdUnit::markSqConfirmed(const DynInstPtr &inst)
+{
+    inst->specStoreFwdState = SpecStoreFwdState::SqConfirmed;
+    inst->specStoreFwdSameEntry = true;
+    inst->specStoreFwd = false;
+}
+
+void
+SpecStoreFwdUnit::markSqCorrected(const DynInstPtr &inst)
+{
+    inst->specStoreFwdState = SpecStoreFwdState::SqCorrectedFail;
+    inst->specStoreFwdSqCorrected = true;
+    inst->specStoreFwd = false;
+    resetPredictorMeta(inst);
+}
+
+void
+SpecStoreFwdUnit::markSpecWonOverSq(const DynInstPtr &inst)
+{
+    inst->specStoreFwdWonOverSq = true;
+}
+
+void
+SpecStoreFwdUnit::markAddrValidationFail(const DynInstPtr &inst)
+{
+    inst->specStoreFwdState = SpecStoreFwdState::AddrValidationFail;
+    inst->specStoreFwd = false;
+    resetPredictorMeta(inst);
+}
+
+bool
+SpecStoreFwdUnit::hasPrediction(const DynInstPtr &inst) const
+{
+    if (!inst) {
+        return false;
+    }
+    return inst->specStoreFwdState == SpecStoreFwdState::WaitingData ||
+        inst->specStoreFwdState == SpecStoreFwdState::PendingValidation ||
+        inst->specStoreFwdState == SpecStoreFwdState::SqConfirmed;
+}
+
+InstSeqNum
+SpecStoreFwdUnit::predictedStoreSeq(const DynInstPtr &inst) const
+{
+    return inst ? inst->specStoreFwdStoreSeqNum : 0;
 }
 
 void

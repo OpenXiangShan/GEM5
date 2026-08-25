@@ -229,7 +229,7 @@ class BaseO3CPU(BaseCPU):
         "Enable StoreSet strict-wait in mem dep prediction (checkInstStrict)")
 
     EnableSpecStoreFwd = Param.Bool(True,
-        "Enable speculative store-to-load forwarding for replay-based MDP")
+        "Enable PC-indexed speculative store-to-load forwarding")
     EnableSpecStoreFwdNoMdp = Param.Bool(True,
         "Ignore MDP scope and allow Spec-STLF prediction/training for all loads")
     SpecStoreFwdTableSize = Param.Unsigned(1024, "Spec-STLF meta table entries")

@@ -30,6 +30,8 @@ import sys
 
 Import('*')
 
+GTest('spec_store_fwd.test', 'spec_store_fwd.test.cc')
+
 if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('FuncScheduler.py', sim_objects=['FUPool', 'SpecWakeupChannel',
               'IssuePort', 'IssueQue', 'BaseSelector', 'PAgeSelector', 'Scheduler'])
