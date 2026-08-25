@@ -7,7 +7,7 @@ This script helps answer:
 3) For improved branches, does MGSCTRACE indicate SC is fixing TAGE mistakes?
 
 Typical usage:
-  python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
+  python3 .agents/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
     --outdir debug/sc_table_probe \
     --profiles off,l_only,g_only,i_only,full \
     --max-workers 4
@@ -19,19 +19,44 @@ import argparse
 import csv
 import dataclasses
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+def find_repo_root() -> Path:
+    """Find GEM5 from an explicit override, cwd, or the installed script path."""
+    starts = []
+    if os.environ.get("GEM5_HOME"):
+        starts.append(Path(os.environ["GEM5_HOME"]))
+    starts.extend((Path.cwd(), Path(__file__).resolve().parent))
+
+    for start in starts:
+        resolved = start.expanduser().resolve()
+        for candidate in (resolved, *resolved.parents):
+            if (
+                (candidate / "SConstruct").is_file()
+                and (candidate / "configs" / "example" / "kmhv3.py").is_file()
+            ):
+                return candidate
+    raise RuntimeError(
+        "Cannot find the GEM5 repository root. Run inside the checkout or set "
+        "GEM5_HOME."
+    )
+
+
+REPO_ROOT = find_repo_root()
 DEFAULT_GEM5 = REPO_ROOT / "build" / "RISCV" / "gem5.opt"
 DEFAULT_CONFIG = REPO_ROOT / "configs" / "example" / "kmhv3.py"
-DEFAULT_CPT_DIR = Path("/nfs/home/yanyue/tools/nexus-am/tests/frontendtest/mgsc_test/build")
-DEFAULT_SRC_DIR = Path("/nfs/home/yanyue/tools/nexus-am/tests/frontendtest/mgsc_test/tests")
+DEFAULT_AM_HOME = Path("/nfs/home/yanyue/tools/nexus-am")
+AM_HOME = Path(os.environ.get("AM_HOME", DEFAULT_AM_HOME)).expanduser()
+DEFAULT_CPT_DIR = AM_HOME / "tests" / "frontendtest" / "mgsc_test" / "build"
+DEFAULT_SRC_DIR = AM_HOME / "tests" / "frontendtest" / "mgsc_test" / "tests"
 
 TOP_CSV = "topMispredictsByBranch.csv"
 STATS_TXT = "stats.txt"
@@ -547,7 +572,33 @@ def render_markdown(
 
 def main() -> int:
     args = parse_args()
-    outdir = Path(args.outdir)
+    cpt_dir = Path(args.cpt_dir).expanduser()
+    src_dir = Path(args.src_dir).expanduser()
+    if not cpt_dir.is_dir():
+        raise SystemExit(
+            f"Checkpoint directory not found: {cpt_dir}. "
+            "Pass --cpt-dir or set AM_HOME."
+        )
+    if not src_dir.is_dir():
+        print(
+            f"warning: source directory not found: {src_dir}; "
+            "reports will omit source paths",
+            file=sys.stderr,
+        )
+    if not args.skip_run:
+        gem5_bin = Path(args.gem5_bin).expanduser()
+        config = Path(args.config).expanduser()
+        if not gem5_bin.is_file():
+            raise SystemExit(
+                f"gem5 binary not found: {gem5_bin}. "
+                "Build it or pass --gem5-bin."
+            )
+        if not config.is_file():
+            raise SystemExit(f"gem5 config not found: {config}. Pass --config.")
+        args.gem5_bin = str(gem5_bin)
+        args.config = str(config)
+
+    outdir = Path(args.outdir).expanduser()
     outdir.mkdir(parents=True, exist_ok=True)
 
     builtins = builtin_profiles()
@@ -561,7 +612,7 @@ def main() -> int:
         profiles.insert(0, builtins["off"])
 
     selected = [x.strip() for x in args.tests.split(",") if x.strip()] or None
-    cases = discover_cases(Path(args.cpt_dir), Path(args.src_dir), selected)
+    cases = discover_cases(cpt_dir, src_dir, selected)
     if not cases:
         print("No test cases found.")
         return 1

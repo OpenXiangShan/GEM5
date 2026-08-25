@@ -34,9 +34,9 @@ description: 用于比较 XiangShan RTL 与 gem5 BTBTAGE/TAGE 在 allocation、u
 至少明确下面几项：
 
 - RTL 路径
-  - 通常是
-    `/nfs/home/yanyue/workspace/xs-env/XiangShan/src/main/scala/xiangshan/frontend/bpu/tage`
-- RTL 是否已经 pull 到最新(默认pull 了)
+  - 优先使用用户给出的路径或 `XIANGSHAN_HOME`
+  - 本机常见 fallback 是 `/nfs/home/yanyue/workspace/xs-env/XiangShan`
+- RTL commit：用 `git -C "$XIANGSHAN_HOME" rev-parse HEAD` 记录，不要默认 pull 或假设它是最新版本
 - gem5 commit / branch
 - 对应 CI run / 本地 checkpoint run
 
@@ -116,29 +116,25 @@ description: 用于比较 XiangShan RTL 与 gem5 BTBTAGE/TAGE 在 allocation、u
 
 必须先搞清楚每个计数器是在统计什么。
 
-典型易混点：
+先从当前对比 commit 的 `src/cpu/pred/btb/btb_tage.cc` 中确认 `ADD_STAT` 与递增位置。当前 checkout 的易混点是：
 
-- old `updateAllocFailure`
-  - 往往是 per-table-probe no-victim
-- old `updateAllocFailureNoValidTable`
-  - 往往才是最终完整 allocation failure
-- new `allocProbeNoEligibleVictim`
-  - 是 per-table-probe
-- new `updateAllocFailure`
-  - 是 final failure
+- `updateAllocFailure`：每个 table probe 找不到 eligible victim 时递增
+- `updateAllocFailureNoValidTable`：完整搜索结束仍无法 allocation 时递增
+- `updateAllocSuccess`：实际分配成功
+- `updateResetU`：全局 useful reset
+- `updateMispred`：进入对应 TAGE update 路径的误预测计数
 
-如果不先对齐口径，很容易把结论做反。
+这些名字可能随 commit 改变。若历史归档中出现 `allocProbeNoEligibleVictim` 等其他名字，必须回到该归档对应 commit 再建立映射；不要把这里的当前快照反向套给历史数据。
 
 ## 性能分析时优先看的计数器
 
 ### 第一层：直接看 allocation / useful / mispred
 
-- `allocateSuccess`
-- final `allocateFailure`
-- probe-level no-victim
-  - 旧名或新名都要确认口径
-- `resetUseful`
-- `tage_update_mispred`
+- `updateAllocSuccess`
+- final failure（当前为 `updateAllocFailureNoValidTable`）
+- probe-level no-victim（当前为 `updateAllocFailure`）
+- `updateResetU`
+- `updateMispred`
 - `cond_MPKI`
 - `BPAllWrong`
 
@@ -177,7 +173,7 @@ description: 用于比较 XiangShan RTL 与 gem5 BTBTAGE/TAGE 在 allocation、u
 
 ### 2. 再用 `gem5_data_proc` 做 benchmark 级 stats 对比
 
-当前这套 CI 默认仍常见 `gcc12` 切片。  
+当前这套 CI 默认仍常见 `gcc12` 切片。
 处理 `gcc12-spec06-0.3c` 归档时，建议显式带：
 
 ```bash
@@ -214,7 +210,7 @@ description: 用于比较 XiangShan RTL 与 gem5 BTBTAGE/TAGE 在 allocation、u
 - 但中间搜索压力依旧存在
 - 只是 bogus failure 变少了
 
-### 模式 3：`allocateFailure` 降了，但 `cond_MPKI` 反而升了
+### 模式 3：final allocation failure 降了，但 `cond_MPKI` 反而升了
 
 更像是：
 
@@ -231,7 +227,7 @@ description: 用于比较 XiangShan RTL 与 gem5 BTBTAGE/TAGE 在 allocation、u
 - 普通 update 没有 per-entry decrement
 - reset 会统一把 useful 清到 0
 
-那么 useful 位宽本身很可能不是主矛盾。  
+那么 useful 位宽本身很可能不是主矛盾。
 这时更值得怀疑的是 reset cadence。
 
 ## 常见坑
@@ -240,12 +236,12 @@ description: 用于比较 XiangShan RTL 与 gem5 BTBTAGE/TAGE 在 allocation、u
 
 分析前先确认：
 
-- 你看到的 `allocateFailure` 究竟是 probe-level 还是 final-level
+- 你看到的 allocation failure 究竟是 probe-level 还是 final-level
 - 是否需要把旧名和新名手动映射
 
 ### 2. 不要把 “加计数器” 默认等同于 “完全不改语义”
 
-有些“加 stats”的提交会顺手重构搜索逻辑。  
+有些“加 stats”的提交会顺手重构搜索逻辑。
 这类提交要先看 diff，再决定能不能当成 stats-only。
 
 ### 3. 先看代表 benchmark，再下总体结论

@@ -2,6 +2,19 @@
 
 这些示例展示如何把复杂机制压成“资源 + 状态 + 事件 + 参数 + stats”。它们不是文件索引，也不是 RTL 逐行翻译。
 
+## 目录
+
+1. 端口 token + busy bitmap 的 issue 模型
+2. dependency wakeup + replay 回流模型
+3. LSQ load pipeline 的 replay reason 压缩
+4. completion index + dequeue quota 的 RAR/RAW 模型
+5. store buffer merge / forwarding / eviction 模型
+6. cache/MSHR readyTime queue 和 prefetch admission
+7. memory controller burst split / write queue merge / early response
+8. memory controller window / threshold / turnaround 调度
+9. 高准确度模型的检查清单
+10. 从 RTL 机制到行为级模型的转换模板
+
 ## 1. 端口 token + busy bitmap 的 issue 模型
 
 建模模式：用 ready queue、dependency wakeup、port busy bitmap 和 TimeBuffer 表示发射选择与执行延迟。

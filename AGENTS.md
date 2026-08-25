@@ -99,3 +99,11 @@ If full validation cannot be completed in the current environment, explicitly st
 ## Related Documents
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): high-level architecture map of the repository
+
+## Repository Skills
+
+Reusable agent workflows live under `.agents/skills/`. Agents that support the
+Agent Skills format should discover them there. Other agents may read the
+matching `SKILL.md` explicitly when a task fits its description. Keep a single
+canonical copy under `.agents/skills/`; do not duplicate skills under
+tool-specific directories such as `.codex/skills/`.
