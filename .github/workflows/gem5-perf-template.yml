@@ -24,7 +24,8 @@ on:
       vector_type:
         required: false
         type: string
-        description: "Benchmark type: base, simple"
+        default: "base"
+        description: "Vector decode strategy: base"
       gcbv_ref_so:
         required: false
         type: string
@@ -247,16 +248,12 @@ jobs:
               # use pgo profile to build gem5
               bash util/pgo/basic_pgo_new.sh
               ;;
-            "simple")
-              # use pgo profile to build gem5, use simple vector decode strategy in scons
-              bash util/pgo/basic_pgo_new_vector.sh
-              ;;
             "")
               # use pgo profile to build gem5
               bash util/pgo/basic_pgo_new.sh
               ;;
             *)
-              echo "Error: Invalid vector_type '${{ inputs.vector_type }}'. Must be one of: base, simple"
+              echo "Error: Invalid vector_type '${{ inputs.vector_type }}'. Must be: base"
               exit 1
               ;;
           esac

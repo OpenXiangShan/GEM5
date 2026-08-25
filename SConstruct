@@ -156,7 +156,7 @@ AddOption('--unit-test', action='store_true',
 AddOption('--debug-cycle', action='store_true',
           help='Enable print cycle in DPRINTF')
 AddOption('--rvv-impl', action='store', default='base',
-          choices=['base', 'simple'],
+          choices=['base'],
           help='Select the implementation of the RVV extension to use')
 
 os.environ['rvv_impl'] = GetOption('rvv_impl')

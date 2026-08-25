@@ -34,7 +34,7 @@ jobs:
         id: setup
         run: |
           echo "benchmark=spec06int-rvv-0.8c" >> "$GITHUB_OUTPUT"
-          echo "vector_type=simple" >> "$GITHUB_OUTPUT"
+          echo "vector_type=base" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "pull_request_target" ]; then
             echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else

@@ -52,7 +52,6 @@ on:
         default: 'base'
         options:
           - base
-          - simple
       extra_args:
         description: 'Extra gem5 args appended to config runs, e.g. --dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini --enable-dynamic-pf=True'
         required: false
