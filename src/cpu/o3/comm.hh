@@ -104,6 +104,8 @@ enum StallReason {
     ROBFull,  // B
     RegFull,  // B
     OtherStall,  // B
+    FetchStreamFrag,  // F, unused slots after taken branch / FTQ stream end
+    FetchBufFrag,  // F, unused slots after walking off the fetch buffer
     NumStallReasons
 };
 

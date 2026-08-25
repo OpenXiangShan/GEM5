@@ -82,6 +82,21 @@ namespace gem5
 namespace o3
 {
 
+StallReason
+Fetch::fragReasonFromCut(FetchCut cut)
+{
+    switch (cut) {
+      case FetchCut::Stream:
+        return StallReason::FetchStreamFrag;
+      case FetchCut::Buf:
+        return StallReason::FetchBufFrag;
+      case FetchCut::Icache:
+        return StallReason::IcacheStall;
+      default:
+        return StallReason::FetchFragStall;
+    }
+}
+
 Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
         RequestPort(_cpu->name() + ".icache_port", _cpu), fetch(_fetch)
 {}
@@ -1414,6 +1429,10 @@ Fetch::initializeTickState()
 void
 Fetch::fetchAndProcessInstructions(bool status_change)
 {
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        fetchCut[tid] = FetchCut::None;
+    }
+
     // Fetch instructions from active threads
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
@@ -1613,20 +1632,22 @@ Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
     if (stallSig->blockFetch[tid]) {
         setAllFetchStalls(stallSig->fetchBlockReason[tid]);
     } else if (insts_to_decode == 0) {
-        // fetch stalled
-        if (stallReason[0] != StallReason::NoStall) {
-            // previously set stall reason
+        // Prefer the latched cut; buffer-end used to return IcacheStall
+        // and this branch then painted the whole vector I$.
+        if (fetchCut[tid] != FetchCut::None) {
+            setAllFetchStalls(fragReasonFromCut(fetchCut[tid]));
+        } else if (stallReason[0] != StallReason::NoStall) {
             setAllFetchStalls(stallReason[0]);
         } else {
             setAllFetchStalls(StallReason::OtherFetchStall);
         }
     } else {
-        // fetch partially stalled or no stall
+        const StallReason unused = fragReasonFromCut(fetchCut[tid]);
         for (int i = 0; i < stallReason.size(); i++) {
             if (i < insts_to_decode)
                 stallReason[i] = StallReason::NoStall;
             else {
-                stallReason[i] = StallReason::FetchFragStall;
+                stallReason[i] = unused;
             }
         }
     }
@@ -2078,6 +2099,7 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     // Check if fetch buffer is valid and contains this PC
     if (!threads[tid].valid) {
         DPRINTF(Fetch, "[tid:%i] Fetch buffer invalid, stalling on ICache\n", tid);
+        fetchCut[tid] = FetchCut::Icache;
         return StallReason::IcacheStall;
     }
 
@@ -2087,6 +2109,8 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
         fetch_pc + 4 > threads[tid].startPC + fetchBufferSize) {
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
                 tid, fetch_pc, threads[tid].startPC, threads[tid].startPC + fetchBufferSize);
+        // Buffer still valid: this is a line/stream cut, not an I$ miss.
+        fetchCut[tid] = FetchCut::Buf;
         return StallReason::IcacheStall;
     }
 
@@ -2253,6 +2277,14 @@ Fetch::performInstructionFetch(ThreadID tid)
     DPRINTF(FetchVerbose, "FetchQue start dumping\n");
     for (auto it : fetchQueue[tid]) {
         DPRINTF(FetchVerbose, "inst: %s\n", it->staticInst->disassemble(it->pcState().instAddr()));
+    }
+
+    if (predictedBranch) {
+        fetchCut[tid] = FetchCut::Stream;
+    } else if (fetchCut[tid] == FetchCut::None && ftqEmpty(tid) &&
+               numInst < fetchWidth &&
+               fetchQueue[tid].size() < fetchQueueSize) {
+        fetchCut[tid] = FetchCut::Stream;
     }
 
     // Handle stall conditions and update statistics

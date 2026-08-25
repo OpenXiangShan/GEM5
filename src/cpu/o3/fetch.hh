@@ -990,6 +990,13 @@ class Fetch
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
 
+    // Why fetch stopped short of decodeWidth. Per Fetch instance (not
+    // file-static) so cores/SMT do not share the latch. Reset only in
+    // fetchAndProcessInstructions.
+    enum class FetchCut { None, Stream, Buf, Icache };
+    FetchCut fetchCut[MaxThreads]{};
+    static StallReason fragReasonFromCut(FetchCut cut);
+
     /**
      * Check if the thread can fetch instructions
      * @param tid Thread ID
