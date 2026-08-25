@@ -125,6 +125,10 @@ class BaseO3CPU(BaseCPU):
     commitToFetchDelay = Param.Cycles(3, "Commit to fetch delay")
     fetchWidth = Param.Unsigned(16, "Fetch width")
     fetchBufferSize = Param.Unsigned(66, "Fetch buffer size in bytes")
+    enableTwoFetch = Param.Bool(False,
+        "Enable two consecutive FTQ targets from one fetch buffer")
+    twoFetchMaxBytes = Param.Unsigned(64,
+        "Maximum fetch-buffer window covered by two-fetch")
     fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
                                     "per-thread")
 

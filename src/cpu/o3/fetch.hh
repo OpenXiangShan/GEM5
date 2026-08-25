@@ -384,9 +384,14 @@ class Fetch
      * Looks up the branch predictor, gets a prediction, and updates the PC.
      * @param inst The dynamic instruction object.
      * @param next_pc The PC state to update with the prediction.
+     * @param allow_two_fetch Whether this buffer may cross an FTQ boundary.
+     * @param continued_to_next_target Whether the current buffer was retained
+     *        for the next FTQ target.
      * @return true if a branch was predicted taken.
      */
-    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc);
+    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
+                               bool allow_two_fetch,
+                               bool &continued_to_next_target);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -575,11 +580,15 @@ class Fetch
      * @param tid The thread ID of the instruction.
      * @param pc The current program counter state (will be updated).
      * @param curMacroop The current macro-op being processed (if any).
+     * @param allow_two_fetch Whether this buffer may cross an FTQ boundary.
+     * @param continued_to_next_target Whether the current buffer was retained
+     *        for the next FTQ target.
      * @return true if a branch was predicted.
      */
-    bool
-    processSingleInstruction(ThreadID tid, PCStateBase &pc,
-                             StaticInstPtr &curMacroop);
+    bool processSingleInstruction(ThreadID tid, PCStateBase &pc,
+                                  StaticInstPtr &curMacroop,
+                                  bool allow_two_fetch,
+                                  bool &continued_to_next_target);
 
     /**
      * Checks if the decoder requires more memory to proceed and fetches
@@ -592,17 +601,6 @@ class Fetch
     StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop);
 
-
-    /**
-     * Looks up the branch predictor, gets a prediction, and updates the PC.
-     * @param inst The dynamic instruction object.
-     * @param next_pc The PC state to update with the prediction.
-     * @param predictedBranch Flag indicating if a branch was predicted.
-     * @param newMacro Flag indicating if we are moving to a new macro-op.
-     */
-    void
-    lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
-                         bool &predictedBranch, bool &newMacro);
 
   private:
     /** Pointer to the O3CPU. */
@@ -687,6 +685,12 @@ class Fetch
 
     /** The width of fetch in instructions. */
     unsigned fetchWidth;
+
+    /** Enable consuming two consecutive FTQ targets from one fetch buffer. */
+    const bool enableTwoFetch;
+
+    /** Maximum byte window covered by limited two-fetch. */
+    const unsigned twoFetchMaxBytes;
 
     /** The width of decode in instructions. */
     unsigned decodeWidth;
@@ -896,11 +900,17 @@ class Fetch
         /** Whether the fetch buffer data is valid */
         bool valid;
 
+        /** Whether this buffer has already crossed one FTQ boundary. */
+        bool usedForTwoFetch;
+
         /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
         unsigned size;
 
         /** Constructor initializes buffer with default size */
-        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0) {
+        FetchBuffer()
+            : data(nullptr), startPC(0), valid(false),
+              usedForTwoFetch(false), size(0)
+        {
         }
 
         /** Destructor is not needed as Fetch class manages memory */
@@ -911,6 +921,7 @@ class Fetch
         void reset() {
             valid = false;
             startPC = 0;
+            usedForTwoFetch = false;
             // No need to clear data as it will be overwritten
         }
 
@@ -1155,6 +1166,10 @@ class Fetch
         statistics::Scalar fetchTargetThreadNotReady;
         /** Prepared FTQ heads whose cache request could not be started. */
         statistics::Scalar fetchTargetRequestBlocked;
+        /** Predicted-taken FTQ boundaries considered for limited two-fetch. */
+        statistics::Scalar twoFetchAttempts;
+        /** FTQ boundaries crossed using the current fetch buffer. */
+        statistics::Scalar twoFetchSuccesses;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */
