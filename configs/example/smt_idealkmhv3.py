@@ -30,6 +30,26 @@ def setSharedLSQParams(args, system):
         cpu.branchPred.smtFTQPolicy = 'Partitioned'
 
 
+def setDualFrontendProbeParams(system):
+    for cpu in system.cpu:
+        # Upper-bound probe: predict and start fetching one FTQ target from
+        # each SMT thread in the same cycle. Each target creates two I-cache
+        # line requests, so four tag read ports are required to avoid
+        # introducing an artificial thread bias in the cache model.
+        cpu.branchPred.smtNumPredictingThreads = 2
+        cpu.smtNumFetchTargetThreads = 2
+        cpu.icache.tag_load_read_ports = 4
+
+        # Keep early-predictor training on the existing resolve/commit path.
+        # Their per-thread ahead state is preserved while the shared tables
+        # are treated as ideal dual-read resources for this upper-bound probe.
+        cpu.branchPred.ubtb.usingS3Pred = False
+        cpu.branchPred.abtb.enabled = True
+        cpu.branchPred.abtb.usingS3Pred = False
+        cpu.branchPred.microtage.enabled = True
+        cpu.branchPred.microtage.usingS3Pred = False
+
+
 if __name__ == '__m5_main__':
     FutureClass = None
 
@@ -55,6 +75,7 @@ if __name__ == '__m5_main__':
 
     test_sys = build_xiangshan_system(args)
     setSharedLSQParams(args, test_sys)
+    setDualFrontendProbeParams(test_sys)
 
     root = Root(full_system=True, system=test_sys)
 

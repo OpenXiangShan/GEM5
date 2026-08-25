@@ -41,8 +41,10 @@
 #define __CPU_PRED_BTB_MBTB_HH__
 
 #include <queue>
+#include <vector>
 
 #include "base/types.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/test_stats.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
@@ -250,7 +252,9 @@ class MBTB : public TimedBaseBTBPredictor
         }
     }BTBMeta;
 
-    std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
+    // Prediction metadata lives until the top level copies it into an FTQ
+    // entry, so concurrent SMT lookups must not overwrite another thread.
+    std::vector<std::shared_ptr<BTBMeta>> threadMeta;
 
     /** Process BTB entries for prediction
      *  @param entries Vector of BTB entries to process

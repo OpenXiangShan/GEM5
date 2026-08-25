@@ -105,8 +105,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       fetchQueueSize(params.fetchQueueSize),
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
+      numFetchTargetThreads(params.smtNumFetchTargetThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this),
+      finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
 {
     if (numThreads > MaxThreads)
@@ -117,6 +118,21 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("fetchWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
+    panic_if(numFetchTargetThreads == 0 ||
+             numFetchTargetThreads > numThreads ||
+             numFetchTargetThreads > 2,
+             "smtNumFetchTargetThreads (%u) must be in [1, min(2, "
+             "numThreads (%u))]",
+             numFetchTargetThreads, numThreads);
+    panic_if(numFetchTargetThreads > 1 && numFetchingThreads > 1,
+             "smtNumFetchTargetThreads and smtNumFetchingThreads cannot both "
+             "exceed one because fetch() would be invoked multiple times");
+
+    finishTranslationEvents.reserve(numThreads);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        finishTranslationEvents.emplace_back(
+            std::make_unique<FinishTranslationEvent>(this));
+    }
 
     smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     // IEW reports an early redirect before the formal Commit squash reaches
@@ -317,6 +333,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of FTQ heads skipped because IEW reported a pending redirect"),
     ADD_STAT(redirectPendingOnlyFetchCycles, statistics::units::Count::get(),
              "Number of fetch attempts blocked because all FTQ heads were redirect-pending"),
+    ADD_STAT(fetchTargetsStartedPerCycle, statistics::units::Count::get(),
+             "Number of distinct SMT thread FTQ fetches started in one cycle"),
+    ADD_STAT(fetchTargetsStartedByThread, statistics::units::Count::get(),
+             "Number of FTQ fetches started for each SMT thread"),
+    ADD_STAT(fetchLineRequestsCreatedPerCycle, statistics::units::Count::get(),
+             "Number of cache-line requests created by FTQ fetches in one cycle"),
+    ADD_STAT(fetchTargetThreadNotReady, statistics::units::Count::get(),
+             "Selected FTQ heads whose thread state could not start a fetch"),
+    ADD_STAT(fetchTargetRequestBlocked, statistics::units::Count::get(),
+             "Prepared FTQ heads whose cache request could not be started"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -394,6 +420,13 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         smtblockedCycles
             .init(fetch->numThreads)
             .flags(statistics::total);     
+        fetchTargetsStartedPerCycle
+            .init(0, fetch->numThreads, 1);
+        fetchTargetsStartedByThread
+            .init(fetch->numThreads)
+            .flags(statistics::total);
+        fetchLineRequestsCreatedPerCycle
+            .init(0, 2 * fetch->numThreads, 1);
         decodeStallRate
             .flags(statistics::total);
         fetchBubbles
@@ -820,7 +853,9 @@ Fetch::isDrained() const
      * cycle if the finish translation event is scheduled, so make
      * sure that's not the case.
      */
-    return !finishTranslationEvent.scheduled();
+    return std::none_of(
+        finishTranslationEvents.begin(), finishTranslationEvents.end(),
+        [](const auto &event) { return event->scheduled(); });
 }
 
 void
@@ -1091,15 +1126,18 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 
     // Don't send an instruction to decode if we can't handle it.
     if (!(numInst < fetchWidth) || !(fetchQueue[tid].size() < fetchQueueSize)) {
-        if (finishTranslationEvent.scheduled() && finishTranslationEvent.getReq() != mem_req) {
-            DPRINTF(FetchFault, "fault, finishTranslationEvent.getReq().addr=%#lx, mem_req.addr=%#lx\n",
-                    finishTranslationEvent.getReq()->getVaddr(), mem_req->getVaddr());
+        auto &finish_event = *finishTranslationEvents[tid];
+        if (finish_event.scheduled() && finish_event.getReq() != mem_req) {
+            DPRINTF(FetchFault,
+                    "fault, finish_event.getReq().addr=%#lx, "
+                    "mem_req.addr=%#lx\n",
+                    finish_event.getReq()->getVaddr(), mem_req->getVaddr());
             return;
         }
-        assert(!finishTranslationEvent.scheduled());
-        finishTranslationEvent.setFault(fault);
-        finishTranslationEvent.setReq(mem_req);
-        cpu->schedule(finishTranslationEvent, cpu->clockEdge(Cycles(1)));
+        assert(!finish_event.scheduled());
+        finish_event.setFault(fault);
+        finish_event.setReq(mem_req);
+        cpu->schedule(finish_event, cpu->clockEdge(Cycles(1)));
         return;
     }
 
@@ -1971,31 +2009,37 @@ Fetch::checkDecoupledFrontend(ThreadID tid)
 }
 
 ThreadID
-Fetch::getEligibleFetchTargetTid()
+Fetch::getEligibleFetchTargetTid(
+    const std::array<bool, MaxThreads> &excluded,
+    bool record_redirect_skips)
 {
     std::array<bool, MaxThreads> eligible;
     eligible.fill(true);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        eligible[tid] = !redirectPending[tid];
+        eligible[tid] = !redirectPending[tid] && !excluded[tid];
         if (fetchStatus[tid] == Idle || fetchStatus[tid] == Blocked ||
-            fetchStatus[tid] == TrapPending || fetchStatus[tid] == WaitingCache) {
+            fetchStatus[tid] == TrapPending ||
+            fetchStatus[tid] == WaitingCache) {
             eligible[tid] = false;
         }
     }
 
     unsigned skipped = 0;
-    // Use fetch-queue-aware scheduling: prioritize threads with fewer queue entries
+    // Use fetch-queue-aware scheduling: prioritize threads with fewer queue
+    // entries.
     std::array<unsigned, MaxThreads> fetchQueueSizes;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         fetchQueueSizes[tid] = fetchQueue[tid].size();
     }
-    ThreadID tid = dbpbtb->getTargetTidByFetchQueueSize(eligible, &skipped, fetchQueueSizes);
-    if (skipped) {
+    ThreadID tid = dbpbtb->getTargetTidByFetchQueueSize(
+        eligible, record_redirect_skips ? &skipped : nullptr,
+        fetchQueueSizes);
+    if (record_redirect_skips && skipped) {
         fetchStats.redirectPendingFetchSkips += skipped;
         DPRINTF(Fetch, "Skipped %u FTQ heads while backend redirect is pending\n",
                 skipped);
     }
-    if (tid == InvalidThreadID && skipped) {
+    if (record_redirect_skips && tid == InvalidThreadID && skipped) {
         fetchStats.redirectPendingOnlyFetchCycles++;
     }
     return tid;
@@ -2017,8 +2061,8 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
         status_change = true;
         return true;
     } else if (canFetchInstructions(tid)) {
-        // If the decoder needs bytes, performInstructionFetch() will issue an
-        // I-cache request via sendNextCacheRequest().
+        // If the decoder needs bytes, keep this thread eligible for the
+        // FTQ-to-I-cache request phase that follows instruction decoding.
         if (!macroop[tid] && !threads[tid].valid) {
             return true;
         } else if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {
@@ -2051,19 +2095,51 @@ Fetch::fetch(bool &status_change)
         ThreadID tid = *threadit++;
         performInstructionFetch(tid);
     }
-    auto tid = getEligibleFetchTargetTid();
-    if (tid == InvalidThreadID) {
-        return;
+
+    std::array<bool, MaxThreads> attempted{};
+    unsigned fetch_targets_started = 0;
+    bool fetch_attempted = false;
+
+    // This loop widens only FTQ-to-I-cache target selection. Instruction
+    // decoding above still visits all active threads once, independent of
+    // smtNumFetchTargetThreads. Charge each selected thread against the
+    // target-width budget even if it cannot start a request, so width one
+    // retains the baseline single-selection scheduling behavior.
+    for (unsigned attempt = 0;
+         attempt < numFetchTargetThreads &&
+         fetch_targets_started < numFetchTargetThreads;
+         ++attempt) {
+        const ThreadID tid = getEligibleFetchTargetTid(
+            attempted, attempt == 0);
+        if (tid == InvalidThreadID) {
+            break;
+        }
+        attempted[tid] = true;
+
+        if (!checkDecoupledFrontend(tid)) {
+            continue;
+        }
+        if (!prepareFetchAddress(tid, status_change)) {
+            fetchStats.fetchTargetThreadNotReady++;
+            continue;
+        }
+
+        fetch_attempted = true;
+        if (!sendNextCacheRequest(tid, *threads[tid].fetchpc)) {
+            fetchStats.fetchTargetRequestBlocked++;
+            continue;
+        }
+
+        fetch_targets_started++;
+        fetchStats.fetchTargetsStartedByThread[tid]++;
     }
-    if (!checkDecoupledFrontend(tid)) {
-        return;
+
+    if (fetch_attempted) {
+        ++fetchStats.cycles;
     }
-    if (!prepareFetchAddress(tid, status_change)) {
-        return;
-    }
-    ++fetchStats.cycles;
-    sendNextCacheRequest(tid, *threads[tid].fetchpc);
-    
+    fetchStats.fetchTargetsStartedPerCycle.sample(fetch_targets_started);
+    fetchStats.fetchLineRequestsCreatedPerCycle.sample(
+        2 * fetch_targets_started);
 }
 
 StallReason
@@ -2291,16 +2367,16 @@ Fetch::performInstructionFetch(ThreadID tid)
    // assert(fetchStatus[tid] == Running && "Fetch should be running");
 }
 
-void
+bool
 Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     if (threads[tid].valid) {
-        return;
+        return false;
     }
 
     if (ftqEmpty(tid)) {
         ++fetchStats.smtftqempty[tid];
         DPRINTF(Fetch, "[tid:%i] No FSQ entry available for next fetch\n", tid);
-        return;
+        return false;
     }
 
     assert(dbpbtb);
@@ -2325,7 +2401,7 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FSQ entry, "
                   "starting at PC %#x (endPC %#x; original PC %s)\n",
             tid, start_pc, stream.predEndPC, pc_state);
-    fetchCacheLine(start_pc, tid, pc_state.instAddr());
+    return fetchCacheLine(start_pc, tid, pc_state.instAddr());
 }
 
 void
