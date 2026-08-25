@@ -746,6 +746,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
         config.reopenUnusedPerUseful = p.direct_quality_reopen_unused_per_useful;
         config.reopenGuard = p.direct_quality_reopen_guard;
         config.reopenProbePeriod = p.direct_quality_reopen_probe_period;
+        config.reopenConfirmSamples =
+            p.direct_quality_reopen_confirm_samples;
         directQualityGate = std::make_shared<DirectQualityGate>(config);
     }
 
@@ -1607,6 +1609,13 @@ BOP::shareDirectQualityGateWith(BOP &other)
     other.directQualityGate = directQualityGate;
 }
 
+void
+BOP::setDirectQualityTraceSink(DirectQualityGate::TraceSink *sink)
+{
+    if (directQualityGate)
+        directQualityGate->setTraceSink(sink);
+}
+
 const char *
 BOP::pcValidationTraceName(PCValidationKind kind) const
 {
@@ -1720,11 +1729,20 @@ BOP::updateDirectQualityStats()
     stats.directQualityFeedbackReplacements =
         directQualityGate->feedbackReplacements();
     stats.directQualityFeedbackExpiries = directQualityGate->feedbackExpiries();
+    stats.directQualityFeedbackExpiryUnused =
+        directQualityGate->feedbackExpiryUnused();
     stats.directQualityUnknownDrops = directQualityGate->unknownDrops();
     stats.directQualityFeedbackTokenDrops =
         directQualityGate->feedbackTokenDrops();
     stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();
     stats.directQualityStateTransitions = directQualityGate->stateTransitions();
+    stats.directQualityBlockToRecoverTransitions =
+        directQualityGate->blockToRecoverTransitions();
+    stats.directQualityRecoverToOpenTransitions =
+        directQualityGate->recoverToOpenTransitions();
+    stats.directQualityRecoverToBlockTransitions =
+        directQualityGate->recoverToBlockTransitions();
+    stats.directQualityPeakOutstanding = directQualityGate->peakOutstanding();
 }
 
 void
@@ -1740,20 +1758,11 @@ BOP::notifyDirectQualityIssued(Addr paddr, uint8_t kind, unsigned quality_set,
 }
 
 void
-BOP::notifyDirectQualityOutcome(Addr paddr, bool useful)
+BOP::notifyDirectQualityDemand(Addr paddr)
 {
     if (!enableDirectQualityGate || !directQualityGate)
         return;
-    directQualityGate->resolve(blockAddress(paddr), useful);
-    updateDirectQualityStats();
-}
-
-void
-BOP::notifyDirectQualityDemand()
-{
-    if (!enableDirectQualityGate || !directQualityGate)
-        return;
-    directQualityGate->advanceDemand();
+    directQualityGate->observeDemand(blockAddress(paddr));
     updateDirectQualityStats();
 }
 
@@ -1928,7 +1937,10 @@ BOP::BopStats::BopStats(statistics::Group *parent)
                statistics::units::Count::get(),
                "Online direct-quality feedback-table replacements"),
       ADD_STAT(directQualityFeedbackExpiries, statistics::units::Count::get(),
-               "Online direct-quality feedback expiry drops"),
+               "Online direct-quality demand-window expiry events"),
+      ADD_STAT(directQualityFeedbackExpiryUnused,
+               statistics::units::Count::get(),
+               "Online direct-quality expiry events resolved as unused"),
       ADD_STAT(directQualityUnknownDrops, statistics::units::Count::get(),
                "Online direct-quality censored feedback drops"),
       ADD_STAT(directQualityFeedbackTokenDrops, statistics::units::Count::get(),
@@ -1936,7 +1948,18 @@ BOP::BopStats::BopStats(statistics::Group *parent)
       ADD_STAT(directQualityOrphanOutcomes, statistics::units::Count::get(),
                "Online direct-quality orphan outcomes"),
       ADD_STAT(directQualityStateTransitions, statistics::units::Count::get(),
-               "Online direct-quality state transitions")
+               "Online direct-quality state transitions"),
+      ADD_STAT(directQualityBlockToRecoverTransitions,
+               statistics::units::Count::get(),
+               "Online direct-quality BLOCK-to-RECOVER transitions"),
+      ADD_STAT(directQualityRecoverToOpenTransitions,
+               statistics::units::Count::get(),
+               "Online direct-quality RECOVER-to-OPEN transitions"),
+      ADD_STAT(directQualityRecoverToBlockTransitions,
+               statistics::units::Count::get(),
+               "Online direct-quality RECOVER-to-BLOCK transitions"),
+      ADD_STAT(directQualityPeakOutstanding, statistics::units::Count::get(),
+               "Peak retained online direct-quality feedback entries")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
     pcValidationConfidenceDist.init(0, 256, 1).prereq(

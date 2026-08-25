@@ -832,6 +832,8 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Reopen guard")
     direct_quality_reopen_probe_period = Param.Unsigned(64,
         "BLOCK reopen probe period")
+    direct_quality_reopen_confirm_samples = Param.Unsigned(0,
+        "Direct-quality samples required before RECOVER reopens")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 

@@ -61,6 +61,8 @@ class ArchDBer(SimObject):
     dump_bop_validation_trace = Param.Bool(False, "Dump bop validation trace")
     dump_bop_replay_trace = Param.Bool(
         False, "Dump pre-filter BOP replay trace and L2 demand oracle")
+    dump_bop_direct_quality_trace = Param.Bool(
+        False, "Dump physical direct-quality BOP issue/demand certification trace")
     dump_sms_train_trace = Param.Bool(False, "Dump sms train trace")
     dump_stride_train_trace = Param.Bool(False, "Dump stride train trace")
     dump_despacito_train_trace = Param.Bool(False, "Dump despacito train trace")

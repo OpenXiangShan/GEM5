@@ -10,6 +10,27 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+namespace
+{
+
+const char *
+directQualityOutcomeName(DirectQualityGate::TraceOutcome outcome)
+{
+    switch (outcome) {
+      case DirectQualityGate::TraceOutcome::UsefulDemand:
+        return "useful";
+      case DirectQualityGate::TraceOutcome::UnusedExpiry:
+        return "unused";
+      case DirectQualityGate::TraceOutcome::UnknownFeedbackReplacement:
+        return "unknown_feedback_replacement";
+      case DirectQualityGate::TraceOutcome::UnknownOwnerReplaced:
+        return "unknown_owner_replaced";
+    }
+    panic("Unknown direct-quality trace outcome\n");
+}
+
+} // anonymous namespace
+
 L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p)
     : CompositeWithWorkerPrefetcher(p),
       cdp(p.cdp),
@@ -27,9 +48,56 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     smallBOP->filter = &pfLRUFilter;
     largeBOP->sharePCValidationConfidenceWith(*smallBOP);
     largeBOP->shareDirectQualityGateWith(*smallBOP);
+    if (archDBer && archDBer->dumpBopDirectQualityTrace)
+        largeBOP->setDirectQualityTraceSink(this);
     cmc->filter = &pfLRUFilter;
     despacitoStream->filter = &pfLRUFilter;
     cdp->parentRid = p.sys->getRequestorId(this);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::directQualityTraceConfig(
+    const DirectQualityGate::Config &config)
+{
+    if (archDBer) {
+        archDBer->bopDirectQualityMetaTraceWrite(
+            config.horizon, config.feedbackEntries, config.feedbackWays);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::directQualityTraceIssue(
+    uint64_t event_sequence, uint64_t feedback_id,
+    uint64_t issue_demand_sequence, Addr line, uint8_t kind)
+{
+    if (archDBer) {
+        archDBer->bopDirectQualityIssueTraceWrite(
+            curTick(), event_sequence, feedback_id, issue_demand_sequence,
+            line, kind);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::directQualityTraceDemand(
+    uint64_t event_sequence, uint64_t demand_sequence, Addr line)
+{
+    if (archDBer) {
+        archDBer->bopDirectQualityDemandTraceWrite(
+            curTick(), event_sequence, demand_sequence, line);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::directQualityTraceOutcome(
+    uint64_t event_sequence, uint64_t feedback_id,
+    uint64_t resolve_demand_sequence, Addr line,
+    DirectQualityGate::TraceOutcome outcome)
+{
+    if (archDBer) {
+        archDBer->bopDirectQualityOutcomeTraceWrite(
+            curTick(), event_sequence, feedback_id, resolve_demand_sequence,
+            line, directQualityOutcomeName(outcome));
+    }
 }
 
 void
@@ -43,7 +111,6 @@ L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType p
     }
     if (pfSource == PrefetchSourceType::HWP_BOP) {
         largeBOP->notifyGlobalBOPOutcome(false);
-        largeBOP->notifyDirectQualityOutcome(paddr, false);
     }
     if (pfSource == PrefetchSourceType::CDP) {
         cdp->recordUnusedPrefetch(paddr);
@@ -56,7 +123,6 @@ L2CompositeWithWorkerPrefetcher::prefetchUseful(
 {
     if (pfSource == PrefetchSourceType::HWP_BOP) {
         largeBOP->notifyGlobalBOPOutcome(true);
-        largeBOP->notifyDirectQualityOutcome(paddr, true);
     }
 }
 
@@ -140,7 +206,7 @@ void
 L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
     if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite())
-        largeBOP->notifyDirectQualityDemand();
+        largeBOP->notifyDirectQualityDemand(pkt->getAddr());
     if (archDBer && archDBer->dumpBopReplayTrace) {
         activeBOPReplayEventId = ++nextBOPReplayEventId;
         if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite()) {
