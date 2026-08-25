@@ -783,7 +783,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
                                  AllocationTraceInfo &allocInfo) {
-    // Match RTL victim priority:
+    // Candidate priority:
     // 1) invalid way
     // 2) weak and not-useful way
     // 3) any not-useful way
@@ -791,104 +791,79 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
 
+    enum CandidatePriority
+    {
+        NoCandidate = 0,
+        NotUseful = 1,
+        WeakNotUseful = 2,
+        Invalid = 3,
+    };
+    struct AllocationCandidate
+    {
+        CandidatePriority priority = NoCandidate;
+        unsigned table = 0;
+        Addr index = 0;
+        Addr tag = 0;
+        int way = -1;
+    };
+    auto findBestCandidate = [&](unsigned table) {
+        AllocationCandidate candidate;
+        candidate.table = table;
+        candidate.index = getTageIndex(startPC, table,
+            meta->indexFoldedHist[table].get(), asidHash);
+        candidate.tag = getTageTag(startPC, table,
+            meta->tagFoldedHist[table].get(),
+            meta->altTagFoldedHist[table].get(), position, asidHash);
+
+        const auto &set = tageTable[table][candidate.index];
+        for (unsigned way = 0; way < getNumWays(table); ++way) {
+            const auto &entry = set[way];
+            CandidatePriority priority = NoCandidate;
+            if (!entry.valid) {
+                priority = Invalid;
+            } else if (!entry.useful) {
+                const bool weakish = std::abs(entry.counter * 2 + 1) <= 3;
+                priority = weakish ? WeakNotUseful : NotUseful;
+            }
+            if (priority > candidate.priority) {
+                candidate.priority = priority;
+                candidate.way = way;
+            }
+        }
+        return candidate;
+    };
+
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get(), asidHash);
-        Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position, asidHash);
-
-        auto &set = tageTable[ti][newIndex];
-
-        const unsigned ways = getNumWays(ti);
-
-        unsigned selected_table = ti;
-        Addr selected_index = newIndex;
-        Addr selected_tag = newTag;
-        int selected_way = -1;
-        for (unsigned way = 0; way < ways; ++way) {
-            if (!set[way].valid) {
-                selected_way = way;
-                break;
-            }
-        }
-
-        // When every way in the current set is disposable, prefer an empty
-        // way in either of the next two longer-history tables over replacing
-        // one. Prefer the nearer table when both have an invalid way.
-        if (selected_way == -1 && ti + 1 < numPredictors) {
-            bool all_not_useful = true;
-            for (unsigned way = 0; way < ways; ++way) {
-                if (set[way].useful) {
-                    all_not_useful = false;
-                    break;
+        const auto current = findBestCandidate(ti);
+        if (current.priority != NoCandidate) {
+            AllocationCandidate higher;
+            for (unsigned distance = 1;
+                 distance <= 2 && ti + distance < numPredictors;
+                 ++distance) {
+                const auto candidate = findBestCandidate(ti + distance);
+                if (candidate.priority > higher.priority) {
+                    higher = candidate;
                 }
             }
 
-            if (all_not_useful) {
-                for (unsigned distance = 1;
-                     distance <= 2 && ti + distance < numPredictors;
-                     ++distance) {
-                    const unsigned next_table = ti + distance;
-                    Addr next_index = getTageIndex(startPC, next_table,
-                        meta->indexFoldedHist[next_table].get(), asidHash);
-                    Addr next_tag = getTageTag(startPC, next_table,
-                        meta->tagFoldedHist[next_table].get(),
-                        meta->altTagFoldedHist[next_table].get(), position,
-                        asidHash);
-                    auto &next_set = tageTable[next_table][next_index];
-
-                    for (unsigned way = 0; way < getNumWays(next_table); ++way) {
-                        if (!next_set[way].valid) {
-                            selected_table = next_table;
-                            selected_index = next_index;
-                            selected_tag = next_tag;
-                            selected_way = way;
-                            break;
-                        }
-                    }
-                    if (selected_way != -1) {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (selected_way == -1) {
-            for (unsigned way = 0; way < ways; ++way) {
-                auto &cand = set[way];
-                const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-                if (!cand.useful && weakish) {
-                    selected_way = way;
-                    break;
-                }
-            }
-        }
-
-        if (selected_way == -1) {
-            for (unsigned way = 0; way < ways; ++way) {
-                if (!set[way].useful) {
-                    selected_way = way;
-                    break;
-                }
-            }
-        }
-
-        if (selected_way != -1) {
+            const auto selected = higher.priority > current.priority ?
+                higher : current;
             short newCounter = actual_taken ? 0 : -1;
-            auto &victim = tageTable[selected_table][selected_index][selected_way];
+            auto &victim = tageTable[selected.table][selected.index][selected.way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                    selected_table, selected_index, selected_way, selected_tag,
+                    selected.table, selected.index, selected.way, selected.tag,
                     position, newCounter, entry.pc);
             allocInfo.success = true;
-            allocInfo.table = selected_table;
-            allocInfo.index = selected_index;
-            allocInfo.way = selected_way;
-            allocInfo.tag = selected_tag;
+            allocInfo.table = selected.table;
+            allocInfo.index = selected.index;
+            allocInfo.way = selected.way;
+            allocInfo.tag = selected.tag;
             allocInfo.victimValid = victim.valid;
             allocInfo.victimTag = victim.tag;
             allocInfo.victimCounter = victim.counter;
             allocInfo.victimUseful = victim.useful;
             allocInfo.victimPC = victim.pc;
-            victim = TageEntry(selected_tag, newCounter, entry.pc); // u = 0 default
+            victim = TageEntry(selected.tag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;

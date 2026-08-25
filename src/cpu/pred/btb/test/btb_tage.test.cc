@@ -722,7 +722,7 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
 
 }
 
-TEST_F(BTBTAGETest, AllocationPrefersAdjacentTableInvalidWay) {
+TEST_F(BTBTAGETest, AllocationPrefersNearerHigherTableOnRankTie) {
     constexpr Addr start_pc = 0x1000;
     constexpr unsigned current_table = 1;
     constexpr unsigned next_table = current_table + 1;
@@ -760,9 +760,11 @@ TEST_F(BTBTAGETest, AllocationPrefersAdjacentTableInvalidWay) {
     }
     EXPECT_TRUE(tage->tageTable[next_table][
         tage->getTageIndex(start_pc, next_table)][0].valid);
+    EXPECT_FALSE(tage->tageTable[next_table + 1][
+        tage->getTageIndex(start_pc, next_table + 1)][0].valid);
 }
 
-TEST_F(BTBTAGETest, AllocationPrefersSecondAdjacentTableInvalidWay) {
+TEST_F(BTBTAGETest, AllocationPrefersSecondHigherTableOnStrictlyHigherRank) {
     constexpr Addr start_pc = 0x1000;
     constexpr unsigned current_table = 1;
     constexpr unsigned next_table = current_table + 1;
@@ -781,6 +783,13 @@ TEST_F(BTBTAGETest, AllocationPrefersSecondAdjacentTableInvalidWay) {
         setupTageEntry(tage, start_pc, next_table, 3, true, way);
     }
 
+    const auto success_before = static_cast<uint64_t>(
+        tage->tageStats.updateAllocSuccess);
+    const auto failure_before = static_cast<uint64_t>(
+        tage->tageStats.updateAllocFailure);
+    const auto reset_before = static_cast<uint64_t>(
+        tage->tageStats.updateResetU);
+    const auto useful_reset_before = tage->usefulResetCnt;
     BTBTAGE::AllocationTraceInfo alloc_info;
     EXPECT_TRUE(tage->testHandleNewEntryAllocation(start_pc, entry, true,
                                                     current_table, meta, 0,
@@ -791,6 +800,12 @@ TEST_F(BTBTAGETest, AllocationPrefersSecondAdjacentTableInvalidWay) {
     EXPECT_FALSE(alloc_info.victimValid);
     EXPECT_TRUE(tage->tageTable[second_next_table][
         tage->getTageIndex(start_pc, second_next_table)][0].valid);
+    EXPECT_EQ(static_cast<uint64_t>(tage->tageStats.updateAllocSuccess),
+              success_before + 1);
+    EXPECT_EQ(static_cast<uint64_t>(tage->tageStats.updateAllocFailure),
+              failure_before);
+    EXPECT_EQ(static_cast<uint64_t>(tage->tageStats.updateResetU), reset_before);
+    EXPECT_EQ(tage->usefulResetCnt, useful_reset_before);
 }
 
 TEST_F(BTBTAGETest, AllocationFallsBackWhenAdjacentTablesAreFull) {
@@ -824,7 +839,7 @@ TEST_F(BTBTAGETest, AllocationFallsBackWhenAdjacentTablesAreFull) {
     EXPECT_EQ(alloc_info.victimCounter, -1);
 }
 
-TEST_F(BTBTAGETest, AllocationDoesNotProbeAdjacentTableWithUsefulWay) {
+TEST_F(BTBTAGETest, AllocationPrefersHigherRankDespiteCurrentUsefulWay) {
     constexpr Addr start_pc = 0x1000;
     constexpr unsigned current_table = 1;
     constexpr unsigned next_table = current_table + 1;
@@ -843,10 +858,110 @@ TEST_F(BTBTAGETest, AllocationDoesNotProbeAdjacentTableWithUsefulWay) {
                                                     current_table, meta, 0,
                                                     alloc_info));
 
+    EXPECT_EQ(alloc_info.table, next_table);
+    EXPECT_EQ(alloc_info.way, 0);
+    EXPECT_FALSE(alloc_info.victimValid);
+}
+
+TEST_F(BTBTAGETest, AllocationKeepsCurrentTableWhenItsInvalidWayTies) {
+    constexpr Addr start_pc = 0x1000;
+    constexpr unsigned current_table = 1;
+    BTBEntry entry = createBTBEntry(start_pc);
+
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(start_pc, history, stagePreds);
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        tage->getPredictionMeta());
+
+    BTBTAGE::AllocationTraceInfo alloc_info;
+    EXPECT_TRUE(tage->testHandleNewEntryAllocation(start_pc, entry, true,
+                                                    current_table, meta, 0,
+                                                    alloc_info));
+
     EXPECT_EQ(alloc_info.table, current_table);
     EXPECT_EQ(alloc_info.way, 0);
-    EXPECT_FALSE(tage->tageTable[next_table][
-        tage->getTageIndex(start_pc, next_table)][0].valid);
+    EXPECT_FALSE(alloc_info.victimValid);
+}
+
+TEST_F(BTBTAGETest, AllocationKeepsCurrentWeakCandidateOverHigherNotUseful) {
+    constexpr Addr start_pc = 0x1000;
+    constexpr unsigned current_table = 1;
+    constexpr unsigned next_table = current_table + 1;
+    constexpr unsigned second_next_table = current_table + 2;
+    BTBEntry entry = createBTBEntry(start_pc);
+
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(start_pc, history, stagePreds);
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        tage->getPredictionMeta());
+
+    for (unsigned way = 0; way < tage->numWays[current_table]; ++way) {
+        setupTageEntry(tage, start_pc, current_table, -1, false, way);
+    }
+    for (unsigned way = 0; way < tage->numWays[next_table]; ++way) {
+        setupTageEntry(tage, start_pc, next_table, 3, false, way);
+        setupTageEntry(tage, start_pc, second_next_table, 3, true, way);
+    }
+
+    BTBTAGE::AllocationTraceInfo alloc_info;
+    EXPECT_TRUE(tage->testHandleNewEntryAllocation(start_pc, entry, true,
+                                                    current_table, meta, 0,
+                                                    alloc_info));
+
+    EXPECT_EQ(alloc_info.table, current_table);
+    EXPECT_EQ(alloc_info.way, 0);
+    EXPECT_EQ(alloc_info.victimCounter, -1);
+}
+
+TEST_F(BTBTAGETest, AllocationCountsFailureForUnallocatableCurrentTable) {
+    constexpr Addr start_pc = 0x1000;
+    constexpr unsigned current_table = 1;
+    constexpr unsigned next_table = current_table + 1;
+    BTBEntry entry = createBTBEntry(start_pc);
+
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(start_pc, history, stagePreds);
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        tage->getPredictionMeta());
+
+    for (unsigned way = 0; way < tage->numWays[current_table]; ++way) {
+        setupTageEntry(tage, start_pc, current_table, 3, true, way);
+    }
+
+    const auto failure_before = static_cast<uint64_t>(
+        tage->tageStats.updateAllocFailure);
+    const auto useful_reset_before = tage->usefulResetCnt;
+    BTBTAGE::AllocationTraceInfo alloc_info;
+    EXPECT_TRUE(tage->testHandleNewEntryAllocation(start_pc, entry, true,
+                                                    current_table, meta, 0,
+                                                    alloc_info));
+
+    EXPECT_EQ(alloc_info.table, next_table);
+    EXPECT_EQ(static_cast<uint64_t>(tage->tageStats.updateAllocFailure),
+              failure_before + 1);
+    EXPECT_EQ(tage->usefulResetCnt, useful_reset_before);
+}
+
+TEST_F(BTBTAGETest, UpdateAllocatesInHighestRankedCandidateTable) {
+    constexpr Addr start_pc = 0x1000;
+    BTBEntry entry = createBTBEntry(start_pc, true, true, false, -1);
+
+    setupTageEntry(tage, start_pc, 0, 3, false);
+    predictTAGE(tage, start_pc, {entry}, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    for (unsigned way = 0; way < tage->numWays[1]; ++way) {
+        setupTageEntry(tage, start_pc, 1, -1, false, way);
+        setupTageEntry(tage, start_pc, 2, 3, false, way);
+    }
+
+    FetchTarget stream = createStream(start_pc, entry, false, meta);
+    stream = setMispredStream(stream);
+    tage->update(stream);
+
+    const auto table_three_index = tage->getTageIndex(start_pc, 3);
+    EXPECT_TRUE(tage->tageTable[3][table_three_index][0].valid);
+    EXPECT_EQ(tage->tageTable[3][table_three_index][0].pc, entry.pc);
 }
 
 TEST_F(BTBTAGETest, AllocationAtHighestTableDoesNotProbePastEnd) {
