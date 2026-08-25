@@ -108,6 +108,8 @@ enum StallReason {
     ROBFull,  // B
     RegFull,  // B
     OtherStall,  // B
+    FetchStreamFrag,  // F
+    FetchBufFrag,  // F
     NumStallReasons
 };
 
