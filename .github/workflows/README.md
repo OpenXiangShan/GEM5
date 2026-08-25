@@ -46,8 +46,8 @@
 
 ### 支持的标签
 
-- `perf`: 触发 `idealkmhv3.py` + `gcc15-spec06-1.0c`
-- `perf-align`: 触发 `kmhv3.py` + `gcc15-spec06-0.3c`
+- `perf`: 触发 `idealkmhv3.py` + `spec06-rva23-novec-gcc16-0.3c`
+- `perf-align`: 触发 `kmhv3.py` + `spec06-rva23-novec-gcc16-0.3c`
 - `rvv`: 触发 `idealkmhv3.py` + `spec06int-rvv-0.8c`
 
 ### 权限控制
@@ -60,6 +60,7 @@
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
+- `manual-perf.yml` 和 `manual-solve.yml` 暂时保留 GCC15 SPEC06 选项供历史实验续跑；自动任务和默认选项使用 GCC16 RVA23 no-vector 切片
 - `idealkmhv3.py` 默认关闭动态预取；`smt_idealkmhv3.py` 保持当前默认行为
 - 需要手动切换动态预取时，请在 `manual-perf.yml` 的 `extra_args` 中直接写 `--enable-dynamic-pf=True|False`
 
@@ -112,14 +113,14 @@
 - ~~L2TLB checkpoint regression~~ → 长期未发现测试本体失败
 
 #### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
-默认跑 `gcc15-spec06-1.0c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
+默认跑 `spec06-rva23-novec-gcc16-0.3c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
 
 #### 3. `gem5-align-btb-0.3c.yml` - Align 性能测试
-默认跑 `gcc15-spec06-0.3c`，在 `xs-dev`、`*-align` 分支和 PR `perf-align` 标签上自动触发
+默认跑 `spec06-rva23-novec-gcc16-0.3c`，在 `xs-dev`、`*-align` 分支和 PR `perf-align` 标签上自动触发
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
-- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 gcc15/spec17 常规回归、gcc12 `idealkmhv3.py` 动态预取回归，以及 SMT SPEC06 int-only dynamic prefetch 回归
+- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 gcc16 rva23-novec/spec17 常规回归、gcc12 `idealkmhv3.py` 动态预取回归，以及 SMT SPEC06 int-only dynamic prefetch 回归
 
 ---
 
@@ -159,11 +160,11 @@ git push origin xs-dev
 # 只需要通过 Tier 1 快速检查即可
 
 # 场景2: 性能相关改动
-# 在 PR 上添加 perf 标签，运行 Ideal BTB 性能测试（idealkmhv3.py / gcc15-spec06-1.0c）
-# 在 PR 上添加 perf-align 标签，运行 Align BTB 性能测试（kmhv3.py / gcc15-spec06-0.3c）
+# 在 PR 上添加 perf 标签，运行 Ideal BTB 性能测试（idealkmhv3.py / spec06-rva23-novec-gcc16-0.3c）
+# 在 PR 上添加 perf-align 标签，运行 Align BTB 性能测试（kmhv3.py / spec06-rva23-novec-gcc16-0.3c）
 
-# 或者把当前分支改名为*-perf, 每次 push 会自动运行 gcc15-spec06-1.0c。
-# 如果是对齐 RTL 的轻量评估，可使用 *-align, 每次 push 会自动运行 gcc15-spec06-0.3c。
+# 或者把当前分支改名为*-perf, 每次 push 会自动运行 spec06-rva23-novec-gcc16-0.3c。
+# 如果是对齐 RTL 的轻量评估，可使用 *-align, 每次 push 会自动运行 spec06-rva23-novec-gcc16-0.3c。
 ```
 
 ### 维护者

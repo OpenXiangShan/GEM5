@@ -120,7 +120,7 @@ from util.solver.spec import (
 
 class ExampleSearch(SolveSpec):
     config_path = "configs/example/kmhv3.py"
-    benchmark_type = "gcc15-spec06-0.3c"
+    benchmark_type = "spec06-rva23-novec-gcc16-0.3c"
     specific_benchmarks = ""
     custom_bin = ""
     extra_args = ""
@@ -265,7 +265,7 @@ gh workflow run manual-solve.yml \
   -f note='<title>' \
   -f problem_ref='configs/solver_specs/foo.py:FooSearch' \
   -f configuration='kmhv3.py' \
-  -f benchmark_type='gcc15-spec06-0.3c' \
+  -f benchmark_type='spec06-rva23-novec-gcc16-0.3c' \
   -f max_parallel_trials='4' \
   -f max_parallel_workloads='4' \
   -f solver_kind='nsga2' \

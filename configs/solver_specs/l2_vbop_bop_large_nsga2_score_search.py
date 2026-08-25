@@ -137,7 +137,7 @@ def _set_param(root, target, value):
 
 class L2VbopBopLargeNsga2ScoreSearch(SolveSpec):
     config_path = "configs/example/kmhv3.py"
-    benchmark_type = "gcc15-spec06-0.3c"
+    benchmark_type = "spec06-rva23-novec-gcc16-0.3c"
     specific_benchmarks = ""
     extra_args = ""
     solver_name = "nsga2"

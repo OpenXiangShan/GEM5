@@ -23,16 +23,18 @@ on:
         description: 'Benchmark coverage type'
         required: true
         type: choice
-        default: 'gcc15-spec06-1.0c'
+        default: 'spec06-rva23-novec-gcc16-1.0c'
         options:
+          - spec06-rva23-novec-gcc16-0.3c
+          - spec06-rva23-novec-gcc16-1.0c
+          - gcc15-spec06-0.3c
+          - gcc15-spec06-1.0c
           - gcc12-spec06-0.3c
           - gcc12-spec06-smt-0.3c
           - gcc12-spec06-smt-1.0c
           - gcc12-spec06-smt-int-1.0c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
-          - gcc15-spec06-0.3c
-          - gcc15-spec06-1.0c
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
