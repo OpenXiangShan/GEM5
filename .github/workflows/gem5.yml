@@ -138,7 +138,7 @@ jobs:
             2>/dev/null |
             head -1000 || true
 
-  valgrind_memory_check:
+  asan_memory_check:
     if: |
       github.event_name != 'pull_request_target' ||
       (github.event.label.name == 'regression' &&
@@ -146,19 +146,44 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, open]
     continue-on-error: false
-    name: XS-GEM5 - Check memory corruption
+    name: XS-GEM5 - ASan smoke test
+    env:
+      ASAN_OPTIONS: detect_leaks=0
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-dramsim
-      - name: Build GEM5 debug
-        run: CC=gcc CXX=g++ scons build/RISCV/gem5.debug --linker=gold -j64
-      - name: Memory check
+      - name: Build GEM5 with ASan
         run: |
-          export GEM5_HOME=$(pwd)
-          bash util/memory_check/run-xs-with-valgrind.sh
-          cd $GEM5_HOME
+          CC=clang CXX=clang++ scons build/RISCV/gem5.opt \
+            --linker=gold --without-tcmalloc --with-asan -j64
+      - name: Run CoreMark ASan smoke test
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:abort_on_error=1:log_path=asan-test/asan
+        run: |
+          set -euo pipefail
+
+          mkdir -p asan-test/m5out
+          ./build/RISCV/gem5.opt \
+            --listener-mode=off \
+            -d asan-test/m5out \
+            ./configs/example/kmhv3.py \
+            --raw-cpt \
+            --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin \
+            --disable-difftest \
+            --maxinsts=10000
+      - name: Upload ASan diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: asan-diagnostics
+          path: |
+            asan-test/asan.*
+            asan-test/m5out/config.ini
+            asan-test/m5out/config.json
+          if-no-files-found: ignore
 
   new_sim_script_test_gcb_multi_core:
     if: |
