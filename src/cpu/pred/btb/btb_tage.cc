@@ -836,18 +836,17 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         const auto current = findBestCandidate(ti);
         if (current.priority != NoCandidate) {
-            AllocationCandidate higher;
+            auto selected = current;
             for (unsigned distance = 1;
                  distance <= 2 && ti + distance < numPredictors;
                  ++distance) {
                 const auto candidate = findBestCandidate(ti + distance);
-                if (candidate.priority > higher.priority) {
-                    higher = candidate;
+                if (candidate.priority > current.priority) {
+                    selected = candidate;
+                    break;
                 }
             }
 
-            const auto selected = higher.priority > current.priority ?
-                higher : current;
             short newCounter = actual_taken ? 0 : -1;
             auto &victim = tageTable[selected.table][selected.index][selected.way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",

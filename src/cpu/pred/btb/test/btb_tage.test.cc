@@ -764,6 +764,38 @@ TEST_F(BTBTAGETest, AllocationPrefersNearerHigherTableOnRankTie) {
         tage->getTageIndex(start_pc, next_table + 1)][0].valid);
 }
 
+TEST_F(BTBTAGETest, AllocationPrefersFirstHigherTableWhenBothOutrankCurrent) {
+    constexpr Addr start_pc = 0x1000;
+    constexpr unsigned current_table = 1;
+    constexpr unsigned next_table = current_table + 1;
+    constexpr unsigned second_next_table = current_table + 2;
+    BTBEntry entry = createBTBEntry(start_pc);
+
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(start_pc, history, stagePreds);
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        tage->getPredictionMeta());
+
+    for (unsigned way = 0; way < tage->numWays[current_table]; ++way) {
+        setupTageEntry(tage, start_pc, current_table, 3, false, way);
+    }
+    for (unsigned way = 0; way < tage->numWays[next_table]; ++way) {
+        setupTageEntry(tage, start_pc, next_table, -1, false, way);
+    }
+
+    BTBTAGE::AllocationTraceInfo alloc_info;
+    EXPECT_TRUE(tage->testHandleNewEntryAllocation(start_pc, entry, true,
+                                                    current_table, meta, 0,
+                                                    alloc_info));
+
+    EXPECT_EQ(alloc_info.table, next_table);
+    EXPECT_EQ(alloc_info.way, 0);
+    EXPECT_TRUE(alloc_info.victimValid);
+    EXPECT_EQ(alloc_info.victimCounter, -1);
+    EXPECT_FALSE(tage->tageTable[second_next_table][
+        tage->getTageIndex(start_pc, second_next_table)][0].valid);
+}
+
 TEST_F(BTBTAGETest, AllocationPrefersSecondHigherTableOnStrictlyHigherRank) {
     constexpr Addr start_pc = 0x1000;
     constexpr unsigned current_table = 1;
@@ -942,7 +974,7 @@ TEST_F(BTBTAGETest, AllocationCountsFailureForUnallocatableCurrentTable) {
     EXPECT_EQ(tage->usefulResetCnt, useful_reset_before);
 }
 
-TEST_F(BTBTAGETest, UpdateAllocatesInHighestRankedCandidateTable) {
+TEST_F(BTBTAGETest, UpdateAllocatesInQualifyingSecondHigherTable) {
     constexpr Addr start_pc = 0x1000;
     BTBEntry entry = createBTBEntry(start_pc, true, true, false, -1);
 
