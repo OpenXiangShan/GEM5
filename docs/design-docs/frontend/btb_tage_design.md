@@ -225,13 +225,13 @@ Kunminghu v2 的 FTB 架构下，一个 fetch block 内最多 `2` 条 branch。�
 当前 allocation 的优先级是：
 
 1. invalid way
-2. 当前 set 没有 invalid 且所有 way 都是 `!useful` 时，紧邻更长历史表的 invalid way
+2. 当前 set 没有 invalid 且所有 way 都是 `!useful` 时，最近两张更长历史表的 invalid way
 3. `weak && !useful`
 4. 任意 `!useful`
 
 这表示当前设计并不愿意为了新 branch 轻易破坏已经稳定工作的 entry。因为一旦误伤已有 provider，就可能让原本已经分化好的不同 branch 重新发生冲突。
 
-第 2 条只查看紧邻的更长历史表，不继续搜索更高表；若该表没有 invalid way，则回到当前 set，按后两条选择 victim。这样可以在当前 set 全部可替换时优先利用长历史表的空容量，避免不必要地覆盖当前表中的 entry。
+第 2 条按距离依次查看最近两张更长历史表，优先使用较近表的 invalid way，不继续搜索更高表；若两张表都没有 invalid way，则回到当前 set，按后两条选择 victim。这样可以在当前 set 全部可替换时优先利用长历史表的空容量，避免不必要地覆盖当前表中的 entry。
 
 ### 9.2 最高表 provider 不再继续向上分配
 

@@ -812,7 +812,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
 
         // When every way in the current set is disposable, prefer an empty
-        // way in the immediately longer-history table over replacing one.
+        // way in either of the next two longer-history tables over replacing
+        // one. Prefer the nearer table when both have an invalid way.
         if (selected_way == -1 && ti + 1 < numPredictors) {
             bool all_not_useful = true;
             for (unsigned way = 0; way < ways; ++way) {
@@ -823,21 +824,28 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             }
 
             if (all_not_useful) {
-                const unsigned next_table = ti + 1;
-                Addr next_index = getTageIndex(startPC, next_table,
-                    meta->indexFoldedHist[next_table].get(), asidHash);
-                Addr next_tag = getTageTag(startPC, next_table,
-                    meta->tagFoldedHist[next_table].get(),
-                    meta->altTagFoldedHist[next_table].get(), position,
-                    asidHash);
-                auto &next_set = tageTable[next_table][next_index];
+                for (unsigned distance = 1;
+                     distance <= 2 && ti + distance < numPredictors;
+                     ++distance) {
+                    const unsigned next_table = ti + distance;
+                    Addr next_index = getTageIndex(startPC, next_table,
+                        meta->indexFoldedHist[next_table].get(), asidHash);
+                    Addr next_tag = getTageTag(startPC, next_table,
+                        meta->tagFoldedHist[next_table].get(),
+                        meta->altTagFoldedHist[next_table].get(), position,
+                        asidHash);
+                    auto &next_set = tageTable[next_table][next_index];
 
-                for (unsigned way = 0; way < getNumWays(next_table); ++way) {
-                    if (!next_set[way].valid) {
-                        selected_table = next_table;
-                        selected_index = next_index;
-                        selected_tag = next_tag;
-                        selected_way = way;
+                    for (unsigned way = 0; way < getNumWays(next_table); ++way) {
+                        if (!next_set[way].valid) {
+                            selected_table = next_table;
+                            selected_index = next_index;
+                            selected_tag = next_tag;
+                            selected_way = way;
+                            break;
+                        }
+                    }
+                    if (selected_way != -1) {
                         break;
                     }
                 }
