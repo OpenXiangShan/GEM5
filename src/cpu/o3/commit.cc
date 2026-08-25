@@ -2270,7 +2270,7 @@ Commit::markCompletedInsts()
             fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
 
-            panic_if(!rob->findInst(inst->threadNumber, inst->seqNum),
+            panic_if(!inst->isInROB(),
                      "[tid:%i] [sn:%llu] Committed instruction not found in ROB",
                      inst->threadNumber,
                      inst->seqNum);
