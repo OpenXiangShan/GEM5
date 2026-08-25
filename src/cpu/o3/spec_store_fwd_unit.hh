@@ -92,6 +92,10 @@ class SpecStoreFwdUnit
     void resetPredictorMeta(const DynInstPtr &load_inst);
 
   private:
+    /** Return true when an older address-ready SQ store overlaps the load. */
+    bool hasAddrReadyStoreDependency(
+        const DynInstPtr &load_inst, LSQ::LSQRequest *request) const;
+
     LSQUnit *lsqUnit = nullptr;
     bool allowNoMdp_ = false;
     SpecStoreFwdPredictor pred;

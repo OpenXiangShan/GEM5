@@ -1630,9 +1630,24 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     // This needs to happen before the nuke check (which consults specStoreFwd).
     specStoreFwdUnit.resetSpecFwdInfo(inst);
 
-    // Early Spec-STLF: try speculative forwarding before pipeline nuke check.
-    // Even if Spec-STLF hits, we still run nuke check and read() to allow
-    // younger stores to override the forwarded data.
+    // A store in S1 may already have its address even though addrReady has not
+    // reached the SQ entry yet. Resolve that same-cycle RAW case before
+    // Spec-STLF so an address-ready dependency always uses normal replay/STLF.
+    if (inst->effAddrValid()) {
+        for (int i = 0; i < storePipeSx[1]->size; i++) {
+            auto& store_inst = storePipeSx[1]->insts[i];
+            if (pipeLineNukeCheck(inst, store_inst)) {
+                DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
+                ++stats.pipeRawNukeReplay;
+                inst->setProducerStorePC(store_inst->pcState().instAddr());
+                inst->setNukeReplay();
+                return NoFault;
+            }
+        }
+    }
+
+    // Try Spec-STLF only after ruling out already-known store dependencies.
+    // read() still runs after a hit to handle the rest of the normal LSQ path.
     if (request && request->isTranslationComplete() &&
         request->isMemAccessRequired() && load_fault == NoFault &&
         request->isNormalLd() && !inst->strictlyOrdered() &&
@@ -1656,22 +1671,6 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
 
                 specStoreFwdUnit.trySpecStoreFwd(
                     inst, request, wait_store_idxs);
-            }
-        }
-    }
-
-    if (inst->effAddrValid()) {
-        // S1 can still catch a same-cycle RAW/nuke against a store already in
-        // the store pipe. Replaying here avoids letting the load observe data
-        // before the conflicting store has published its address/data state.
-        for (int i = 0; i < storePipeSx[1]->size; i++) {
-            auto& store_inst = storePipeSx[1]->insts[i];
-            if (pipeLineNukeCheck(inst, store_inst)) {
-                DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
-                ++stats.pipeRawNukeReplay;
-                inst->setProducerStorePC(store_inst->pcState().instAddr());
-                inst->setNukeReplay();
-                return NoFault;
             }
         }
     }

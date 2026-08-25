@@ -43,6 +43,48 @@ namespace gem5
 namespace o3
 {
 
+bool
+SpecStoreFwdUnit::hasAddrReadyStoreDependency(
+    const DynInstPtr &load_inst, LSQ::LSQRequest *request) const
+{
+    if (!lsqUnit || !load_inst || !request || !request->isNormalLd()) {
+        return false;
+    }
+
+    const Addr load_start = request->mainReq()->getPaddr();
+    const Addr load_end = load_start + request->mainReq()->getSize();
+    auto store_it = load_inst->sqIt;
+
+    // Match read()'s outstanding-SQ window. Any known-address overlap must go
+    // through normal forwarding/replay handling instead of Spec-STLF.
+    while (lsqUnit->storeWBIt.dereferenceable() &&
+           store_it != lsqUnit->storeWBIt) {
+        --store_it;
+        if (!store_it->valid() || !store_it->instruction() ||
+            store_it->completed() || !store_it->addrReady() ||
+            store_it->size() == 0) {
+            continue;
+        }
+
+        const auto &store_inst = store_it->instruction();
+        if (store_inst->seqNum >= load_inst->seqNum) {
+            continue;
+        }
+
+        const Addr store_start = store_inst->physEffAddr;
+        const Addr store_end = store_start + store_it->size();
+        if (load_start < store_end && store_start < load_end) {
+            DPRINTF(SPECFwd,
+                    "Reject Spec-STLF: load[sn:%llu] overlaps "
+                    "address-ready store[sn:%llu]\n",
+                    load_inst->seqNum, store_inst->seqNum);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void
 SpecStoreFwdUnit::init(LSQUnit *lsq_unit, bool enable, size_t table_size,
                        unsigned ctr_bits, bool allow_no_mdp)
@@ -64,6 +106,9 @@ SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
         return false;
     }
     if (!request || !request->isNormalLd()) {
+        return false;
+    }
+    if (hasAddrReadyStoreDependency(load_inst, request)) {
         return false;
     }
     if (wait_store_idxs.empty()) {
