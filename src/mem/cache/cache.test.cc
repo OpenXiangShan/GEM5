@@ -82,10 +82,11 @@ class CountingBypassPolicy : public replacement_policy::Base
     }
 
     ReplaceableEntry *
-    getVictim(const ReplacementCandidates &, const PacketPtr) const override
+    getVictim(const ReplacementCandidates &candidates,
+              const PacketPtr) const override
     {
         ++packetCalls;
-        return nullptr;
+        return forceBypass ? nullptr : candidates.front();
     }
 
     std::shared_ptr<replacement_policy::ReplacementData>
@@ -96,6 +97,7 @@ class CountingBypassPolicy : public replacement_policy::Base
 
     mutable unsigned legacyCalls = 0;
     mutable unsigned packetCalls = 0;
+    bool forceBypass = true;
 };
 
 class UpperRequestPort : public RequestPort
@@ -455,6 +457,34 @@ TEST_F(CacheTimingTest, ReadSharedReqBypassesWithoutAllocating)
     EXPECT_FALSE(upper.response->hasSharers());
     EXPECT_FALSE(upper.response->cacheResponding());
     EXPECT_EQ(upper.response->getConstPtr<uint8_t>()[0], 0x5a);
+}
+
+TEST_F(CacheTimingTest, ReadSharedReqAdmittedCleanFillAllocates)
+{
+    lower.responseCacheResponding = false;
+    lower.responseHasSharers = false;
+    replacementPolicy.forceBypass = false;
+
+    auto request = std::make_shared<Request>(
+        TestAddr, CacheLineSize, Request::Flags(), Request::funcRequestorId);
+    auto packet = std::make_unique<Packet>(request, MemCmd::ReadSharedReq,
+                                           CacheLineSize);
+    packet->allocate();
+
+    ASSERT_TRUE(upper.sendTimingReq(packet.get()));
+
+    EventQueue *eventq = getEventQueue(0);
+    while (!upper.response && !eventq->empty()) {
+        eventq->serviceOne();
+    }
+
+    EXPECT_EQ(replacementPolicy.packetCalls, 1U);
+    EXPECT_EQ(replacementPolicy.legacyCalls, 0U);
+    EXPECT_TRUE(cache.inCache(TestAddr, false));
+    ASSERT_NE(upper.response, nullptr);
+    EXPECT_EQ(upper.response->cmd, MemCmd::ReadResp);
+    EXPECT_FALSE(upper.response->hasSharers());
+    EXPECT_FALSE(upper.response->cacheResponding());
 }
 
 TEST_F(CacheTimingTest, ReadSharedReqDirtyResponderFills)

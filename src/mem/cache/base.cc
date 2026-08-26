@@ -1057,7 +1057,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     o3::LSQ *dcache_refill_lsq = nullptr;
     Addr dcache_refill_addr = 0;
     bool dcache_refill_need_data_read = false;
-    bool policy_bypassed = false;
+    bool policy_bypass_result = false;
 
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
@@ -1118,8 +1118,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             pure_prefetch_fill ? mshr->getPFSource() :
                 PrefetchSourceType::PF_NONE,
             &dcache_refill_need_data_read,
-            bypass_eligible ? &policy_bypassed : nullptr);
-        const bool did_policy_bypass = policy_bypassed;
+            bypass_eligible ? &policy_bypass_result : nullptr);
+        const bool did_policy_bypass = policy_bypass_result;
         assert(blk != nullptr || did_policy_bypass);
         if (!did_policy_bypass && prefetcher) {
             prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
