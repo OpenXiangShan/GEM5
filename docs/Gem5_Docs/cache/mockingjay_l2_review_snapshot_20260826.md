@@ -1,180 +1,130 @@
-# Mockingjay L2 Review Snapshot
+# Mockingjay L2 审查快照
 
-## Snapshot Contract
+## 快照目的
 
-This branch is a review-only handoff captured before follow-up implementation
-work. It is deliberately based on the published implementation checkpoint:
+这是供代码审查使用的临时分支快照。它与实现分支的当前源码保持一致，只额外
+保存本文件；没有在本分支上继续开发另一套实现，也没有触发远程性能 CI。
 
-| Item | Value |
+| 项目 | 值 |
 | --- | --- |
-| Review branch | `codex/mockingjay-l2-review-summary-20260826` |
-| Snapshot commit | `c95ff7ac13c9e21dc505a266f6ea460f3f422ae3` plus this document |
-| Implementation base | `5361c1248804755d285313f41dd73b7a299f7b48` |
-| Last source-bearing implementation commit | `c2dbe9837bec4cbe99f165de98f5d1849de66c8c` |
-| Later source state | `34f4705357`, `4176c788d2`, and `c95ff7ac13` update handoff documentation only |
-| CI performance run | Not dispatched |
+| 临时审查分支 | `codex/mockingjay-l2-review-summary-20260826` |
+| 实现分支 | `codex/mockingjay-l2-5361c12` |
+| 同步的实现检查点 | `35f340a2e3`（审查记录更新；运行逻辑未变） |
+| 最后影响运行逻辑的提交 | `e32da611f3f18e81a1aad1093840b572e5684af3` |
+| 基线 | `5361c1248804755d285313f41dd73b7a299f7b48` |
+| 性能 CI | 未触发 |
 
-No uncommitted work from the implementation worktree is included here. This
-makes the branch reproducible for review: every source file is exactly the
-published `c95ff7ac13` version, and the only new file is this summary.
+当前树实现的是每个对齐 L2 slice 独立的 Mockingjay 行为级替换策略。用户指定的
+收敛原则已经落实：新增 Markdown 使用中文；不实现论文的真实 cache bypass，而是
+让对应填充正常进入缓存，并把该 cache line 标记为最大正 ETR，以便在后续正常
+替换中尽快被淘汰。
 
-## What The Implementation Adds
+## 范围与代码摘要
 
-The patch introduces a behavioral Mockingjay replacement policy for each
-non-classic aligned L2 slice.
+### 配置与对象归属
 
-| Area | Files | Current behavior |
-| --- | --- | --- |
-| Configuration | `configs/example/kmhv3.py` | Derives the per-slice geometry and creates one `MockingjayL2RP` object per `inner_cache`. Predictor state is not shared between slices. |
-| SimObject and build registration | `src/mem/cache/replacement_policies/ReplacementPolicies.py`, `SConscript` | Exposes `MockingjayL2RP` and generates its parameters. |
-| Policy model | `mockingjay_l2_rp.hh`, `mockingjay_l2_rp.cc` | Implements sampled history, RDP, signed ETR, per-set aging, writeback insertion, replacement statistics, and a bypass prediction. |
-| Packet-aware victim path | `replacement_policies/base.hh`, `dueling_rp.*`, `tags/{base,base_set_assoc,vipt_set_assoc}.*` | Adds `getVictim(candidates, pkt)` and propagates the packet through tags when the caller enables the optional bypass result. |
-| Direct response bypass | `src/mem/cache/base.{hh,cc}` | For a narrowly eligible clean L2 `ReadSharedReq`, a `nullptr` victim bypasses allocation and services the target from the lower-level response. |
-| Focused tests | `mockingjay_l2_rp.test.cc`, `cache.test.cc` | Covers policy mechanics and clean/dirty/`ReadCleanReq`/pending-downgrade response paths. |
+`configs/example/kmhv3.py` 只在非 `classic_l2` 的对齐 L2 路径中，为每个
+`l2_wrapper.slices[j].inner_cache` 构造一个新的 `MockingjayL2RP`。每个实例
+拥有自己的采样 cache、RDP、per-set clock、时间戳和 ETR 状态，因此预测器不会
+跨 slice 共享。
 
-## Current Control Flow
+配置根据实际 `inner_cache` 的 size、associativity、cache line 大小和 slice 数
+推导 `num_sets`、`block_bits`、`slice_bits`、`sampled_sets`、
+`sampled_tag_bits` 与 `rdp_entries`。几何检查拒绝非二次幂布局，并将 slice
+容量限制为 4 KiB 到 2 GiB，避免采样地址字段和预测器规模失真。
 
-| Event | Source path | Effect |
-| --- | --- | --- |
-| L2 hit | `BaseSetAssoc::accessBlock()` -> `MockingjayL2::touch()` | Samples reuse history, ages the set periodically, and promotes the resident ETR from the RDP prediction. |
-| Normal admitted fill | `BaseCache::handleFill()` -> tags `findVictim()` -> `MockingjayL2::reset()` | Selects a victim, installs the line through the normal cache/coherence path, samples the miss, ages the set, and assigns the insertion ETR. |
-| Eligible clean demand fill | `BaseCache::recvTimingResp()` -> packet-aware `getVictim(candidates, pkt)` | If Mockingjay returns `nullptr`, the lower response completes the one CPU target without allocating a temporary or resident block. |
-| Writeback fill | `MockingjayL2::reset()` | Keeps the line and inserts it with negative scan ETR; it is not bypassed. |
+新增的 SimObject 注册位于
+`src/mem/cache/replacement_policies/ReplacementPolicies.py` 和同目录的
+`SConscript`；模型本体位于 `mockingjay_l2_rp.{hh,cc}`，测试位于
+`mockingjay_l2_rp.test.cc`。
 
-The direct-bypass predicate is intentionally conservative. It requires a
-single CPU-side `ReadSharedReq`, a clean lower response, no MSHR downgrade or
-invalidation state, and excludes writable, atomic, cache-maintenance,
-prefetch, LL/SC, locked-RMW, and uncacheable operations. This boundary avoids
-skipping normal coherence-state conversion in unsafe cases.
+### 低复用填充的处理
 
-## Reported Validation At The Snapshot
+所有 fill 保留 GEM5 原有分配链：
 
-The following results were recorded in the published handoff. They are
-evidence from that checkpoint, not tests rerun by this summary branch.
-
-* `build/RISCV/mem/cache/replacement_policies/mockingjay_l2_rp.test.opt`:
-  10 of 10 tests passed.
-* `build/RISCV/mem/cache/cache.test.opt`: five timing cases passed, including
-  direct clean bypass, admitted clean fill, dirty responder, `ReadCleanReq`,
-  and pending downgrade.
-* `python3 -m py_compile configs/example/kmhv3.py` and `git diff --check`
-  passed.
-* A one-million-instruction `omnetpp/6881` checkpoint smoke constructed four
-  policies and completed with `simInsts=1000007` and
-  `system.cpu.committedInsts=1000007`.
-
-The smoke used local DDR4 and a checkpoint-compatible reference. It verifies
-construction and execution, not matched CI performance. No GCC15 SPEC06 A/B
-result exists yet.
-
-## Findings To Resolve Before Performance Attribution
-
-The following are source-level review findings for this snapshot. The first
-two change the algorithmic input or learning stream and should be fixed before
-any performance conclusion.
-
-### MJ-01: Packet-Aware Ordering Is Coupled To Direct Bypass Eligibility
-
-**Severity: P1. Status: confirmed.**
-
-`BaseCache::recvTimingResp()` supplies the optional bypass-result pointer only
-when the direct-response safety predicate holds. `BaseSetAssoc` then calls the
-packet-aware overload only when that pointer is non-null; otherwise it calls
-the old packet-less `getVictim(candidates)` path.
-
-Consequently, fills that are unsafe to direct-bypass (for example
-`ReadCleanReq`, writable/coherence fills, prefetches, or merged requests) do
-not compare the incoming RDP prediction with the resident victim ETR. They
-fall back to resident-only `abs(ETR)` selection. That preserves functional
-safety, but it is not the full Mockingjay incoming-line ordering rule.
-
-The fix should separate two decisions:
-
-1. Pass the incoming packet to victim selection for every cacheable fill that
-   should use Mockingjay ordering.
-2. Permit a `nullptr` direct bypass only when `BaseCache` has established the
-   existing response-safety predicate.
-
-The implementation must retain normal allocation and coherence processing for
-an unsafe direct response even when the incoming line is scan-like. A focused
-test should prove that an ineligible fill still receives packet-aware ordering
-but cannot take the direct-response bypass.
-
-### MJ-02: Non-Demand Traffic Can Train Demand History
-
-**Severity: P1. Status: confirmed.**
-
-`BaseSetAssoc::accessBlock()` invokes `touch(replacementData, pkt)` for every
-tag hit. `MockingjayL2::touch()` rejects only writebacks. Likewise,
-`MockingjayL2::reset()` applies ordinary sampled-history and ETR insertion to
-every non-writeback fill.
-
-This allows packets such as `CleanEvict`, `WriteClean`, and cache-maintenance
-traffic to advance sampled timestamps, train the reserved no-PC RDP bucket,
-or alter ETR. Those packets are cache-management traffic rather than demand
-reuse observations, so they should not be mixed with the demand predictor's
-history.
-
-At minimum, filter `CleanEvict`, `WriteClean`, and requests for which
-`req->isCacheMaintenance()` is true from sampled-history, RDP, aging, and
-promotion/insertion training. Add tests for a hit and a fill so the filter is
-observable in predictor and ETR statistics.
-
-### MJ-03: Generic Parameter Guards Need Completion
-
-**Severity: P2. Status: confirmed boundary.**
-
-The default geometry is safe (`block_bits=6`, `slice_bits=2`), but the policy
-does not reject generic overrides that shift an `Addr` by too many bits.
-`timestamp_bits` is allowed to be smaller than the configured history window;
-for example, a six-bit timestamp with default `INF_RD=63` cannot represent an
-elapsed distance greater than the history boundary. Add constructor guards
-that relate timestamp range and address-shift widths to the configured
-geometry.
-
-### MJ-04: Configuration Diagnostic Lower Bound Is Inconsistent
-
-**Severity: P3. Status: confirmed.**
-
-`kmhv3.py` rejects only `slice_size_bits <= 10`, which permits a 2 KiB slice,
-while its error message says the lower bound is 4 KiB. Align the condition or
-the diagnostic.
-
-### MJ-05: Degenerate Sampling And Counter Semantics Need Documentation
-
-**Severity: P3. Status: review boundary.**
-
-For `sampled_sets == 1`, the implementation samples only set zero, rather than
-the literal diagonal predicate used for larger values. This is a reasonable
-parameterization choice, but it should be documented or prohibited if exact
-reference behavior is required. Also, an admitted no-PC fill computes a
-signature during both packet-aware victim selection and `reset()`, so the
-`noPcSignatures` statistic can count one access twice. This affects
-observability, not replacement correctness.
-
-## Recommended Follow-Up Order
-
-1. Resolve MJ-01 with an interface that separates packet-aware ordering from
-   permission to turn a policy bypass into a direct response.
-2. Resolve MJ-02 and add focused traffic-class regression tests.
-3. Add the parameter/diagnostic guards from MJ-03 and MJ-04; decide and
-   document the MJ-05 behavior.
-4. Rebuild the policy and cache timing tests, then rerun the checkpoint smoke.
-5. Only after a clean source checkpoint and generated `config.ini` audit,
-   dispatch the already documented matched GCC15 SPEC06 A/B contract.
-
-## Review Commands
-
-```bash
-git log --reverse --oneline \
-  5361c1248804755d285313f41dd73b7a299f7b48..c95ff7ac13
-git diff --stat 5361c1248804755d285313f41dd73b7a299f7b48 c95ff7ac13
-git diff 5361c1248804755d285313f41dd73b7a299f7b48 c95ff7ac13 -- \
-  src/mem/cache/replacement_policies/mockingjay_l2_rp.cc \
-  src/mem/cache/base.cc src/mem/cache/tags/base_set_assoc.cc \
-  configs/example/kmhv3.py
+```text
+findVictim -> handleEvictions -> insertBlock -> replacementPolicy.reset
 ```
 
-Read this snapshot together with `mockingjay_l2_implementation.md` for the
-algorithm contract and `mockingjay_l2_progress.md` for the recorded local
-validation and the not-yet-dispatched CI contract.
+`MockingjayL2::getVictim()` 始终返回一个候选 line，不会以空指针表达 bypass。
+`MockingjayL2::reset(data, pkt)` 在更新本次采样历史之前读取 RDP 预测；若预测为
+scan，或预测 ETR 大于本次 victim 的绝对 ETR，则仍正常插入该 line，但把它设为
+`+INF_ETR` 并递增 `maxEtrInsertions`。后续 `selectVictim()` 按 `abs(ETR)` 最大
+选择 victim，因此该 line 相比绝对 ETR 更小的 line 会更早成为替换候选。
+
+这不是即时旁路：line 仍会短暂占用一个 way，且仍经历原有 coherence、response、
+refill 和 MSHR 流程。其目的只是用普通替换顺序近似论文中低复用 fill 的快速离开。
+同绝对值时保留负 ETR 优先的规则，因此 `-INF_ETR` 的 writeback 会先于
+`+INF_ETR` line 被选中。
+
+### 学习与替换规则
+
+* RDP 使用 PC、hit/miss 与预取标志的 CRC hash 低位索引；复用距离按同一物理
+  L2 slice 的同一 set 的访问次数统计。
+* 可训练流量包括普通请求和硬件预取。writeback、eviction、`WriteClean` 与
+  cache-maintenance 流量不更新采样历史或 RDP；writeback fill 以 `-INF_ETR`
+  插入。
+* 派生阈值为 `INF_RD = num_ways * history_multiplier - 1`、
+  `MAX_RD = INF_RD - scan_threshold_margin`、
+  `INF_ETR = num_ways * history_multiplier / aging_granularity - 1`。
+* victim 选择优先 invalid way；否则选择 `abs(ETR)` 最大的有效 line，绝对值
+  相同则负 ETR 优先。
+
+## 与早期原型的差异
+
+早期历史提交曾试验真实 bypass。最终检查点已将这类接口和路径撤回：
+
+* `BaseCache`、tags、VIPT tags、Dueling replacement policy 均回到基线接口；
+* 不存在 `policy_bypassed`、专用 direct-response bypass 或 packet-aware
+  victim API；
+* 不再保留为 bypass 增加的 cache timing test；对应行为由策略级
+  `+INF_ETR` 测试覆盖。
+
+因此本次差异的功能边界是 replacement policy 和配置，不改变 cache 的功能
+语义或时序流水线。
+
+## 已完成验证
+
+* `build/RISCV/mem/cache/replacement_policies/mockingjay_l2_rp.test.opt`：
+  16/16 通过，覆盖采样训练、scan、训练前决策、最大 ETR 插入、硬件预取、
+  非训练流量、per-set 隔离、平局和非法几何参数。
+* `build/RISCV/gem5.opt` 已针对当前策略重新编译链接。
+* `python3 -m py_compile configs/example/kmhv3.py` 和 `git diff --check` 通过。
+* checkpoint 冒烟使用 `omnetpp/6881`，输出目录为
+  `/tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826`；完成
+  `simInsts=1000008` 和 `system.cpu.committedInsts=1000008`。生成的
+  `config.ini` 确认四个独立 `MockingjayL2RP`，四个 slice 的
+  `maxEtrInsertions` 为 13、4、0、2。
+
+冒烟使用本地 DDR4 fallback 与 checkpoint 兼容 reference，只能证明构造、配置
+和基本执行正确，不能替代 CI DRAMsim3 下的性能结论。
+
+## 建议审查点
+
+1. 检查每个 `inner_cache` 是否获得独立 `MockingjayL2RP`，以及参数推导是否与
+   实际 slice geometry 一致。
+2. 检查 `getVictim()` 总是返回实际候选 line，且 `reset()` 的最大 ETR 决定只
+   改变 insertion priority，不改变正常 fill 链。
+3. 检查低复用决策使用训练前 RDP 结果，而训练本身仍只发生一次；检查正负 ETR
+   的绝对值排序与负值平局规则。
+4. 检查非训练流量不会污染 demand/预取学习历史，硬件预取 fill 则仍可训练。
+5. 检查构造函数的地址、时间戳和容量防护是否满足预期的参数空间。
+
+可从以下命令开始：
+
+```bash
+git diff --stat 5361c1248804755d285313f41dd73b7a299f7b48 35f340a2e3
+git diff 5361c1248804755d285313f41dd73b7a299f7b48 35f340a2e3 -- \
+  configs/example/kmhv3.py \
+  src/mem/cache/replacement_policies/ReplacementPolicies.py \
+  src/mem/cache/replacement_policies/mockingjay_l2_rp.cc \
+  src/mem/cache/replacement_policies/mockingjay_l2_rp.hh \
+  src/mem/cache/replacement_policies/mockingjay_l2_rp.test.cc
+```
+
+## 尚未完成的事项
+
+尚未进行受控性能 A/B。后续性能验证必须固定完整 SHA、`kmhv3.py`、
+`gcc15-spec06-1.0c`、完整整数 slice 集合、CI 的 parallel path 和 DRAMsim3，
+并同时审计归档的 `config.ini`、`score.txt` 与 manifest，之后才能讨论收益或
+进入 solver 参数探索。
