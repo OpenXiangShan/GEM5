@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import sys
 
@@ -166,12 +167,41 @@ def setKmhV3Params(args, system):
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.wpu = NULL
-                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
-                    l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
-                    # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    inner_cache = l2_wrapper.slices[j].inner_cache
+                    inner_cache.wpu = NULL
+                    inner_cache.do_fast_writeline = True
+                    inner_cache.prefetch_can_offload = False
+
+                    slice_size = int(inner_cache.size)
+                    line_size = int(system.cache_line_size)
+                    slice_count = int(args.l2_slices)
+                    if (slice_size <= 0 or line_size <= 0 or
+                            slice_size & (slice_size - 1) or
+                            line_size & (line_size - 1) or
+                            slice_count <= 0 or
+                            slice_count & (slice_count - 1)):
+                        fatal("Mockingjay L2 requires power-of-two slice, "
+                              "line, and slice-count geometry")
+
+                    slice_size_bits = int(math.log2(slice_size))
+                    if slice_size_bits <= 10 or slice_size_bits >= 31:
+                        fatal("Mockingjay L2 slice size must be in "
+                              "[4 KiB, 2 GiB)")
+
+                    num_sets = slice_size // (line_size * int(inner_cache.assoc))
+                    sampled_sets = 1 << max(0, slice_size_bits - 16)
+                    if num_sets % sampled_sets:
+                        fatal("Mockingjay sampled-set geometry must divide "
+                              "the L2 slice set count")
+
+                    inner_cache.replacement_policy = MockingjayL2RP(
+                        num_sets=num_sets,
+                        num_ways=int(inner_cache.assoc),
+                        block_bits=int(math.log2(line_size)),
+                        slice_bits=int(math.log2(slice_count)),
+                        sampled_sets=sampled_sets,
+                        sampled_tag_bits=31 - slice_size_bits,
+                        rdp_entries=1 << (slice_size_bits - 10))
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0

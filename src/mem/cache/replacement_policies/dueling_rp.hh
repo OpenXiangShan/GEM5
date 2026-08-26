@@ -117,9 +117,15 @@ class Dueling : public Base
                                                                      override;
     ReplaceableEntry* getVictim(const ReplacementCandidates& candidates) const
                                                                      override;
+    ReplaceableEntry* getVictim(const ReplacementCandidates& candidates,
+                                const PacketPtr pkt) const override;
     std::shared_ptr<ReplacementData> instantiateEntry() override;
 
     bool getReplType(Dueler* dueler) const;
+
+  private:
+    ReplaceableEntry* getVictimImpl(const ReplacementCandidates& candidates,
+                                    const PacketPtr pkt) const;
 };
 
 } // namespace replacement_policy

@@ -87,6 +87,15 @@ class BaseSetAssoc : public BaseTags
     /** Replacement policy */
     replacement_policy::Base *replacementPolicy;
 
+    /**
+     * Select a victim while preserving the packet used for a potential fill.
+     */
+    CacheBlk* findVictimWithPacket(Addr addr, const bool is_secure,
+                                   const std::size_t size,
+                                   std::vector<CacheBlk*>& evict_blks,
+                                   const PacketPtr pkt,
+                                   bool *policy_bypassed);
+
   public:
     /** Convenience typedef. */
      typedef BaseSetAssocParams Params;
@@ -171,21 +180,12 @@ class BaseSetAssoc : public BaseTags
      */
     CacheBlk* findVictim(Addr addr, const bool is_secure,
                          const std::size_t size,
-                         std::vector<CacheBlk*>& evict_blks) override
-    {
-        // Get possible entries to be victimized
-        const std::vector<ReplaceableEntry*> entries =
-            indexingPolicy->getPossibleEntries(addr);
+                         std::vector<CacheBlk*>& evict_blks) override;
 
-        // Choose replacement victim from replacement candidates
-        CacheBlk* victim = static_cast<CacheBlk*>(replacementPolicy->getVictim(
-                                entries));
-
-        // There is only one eviction for this replacement
-        evict_blks.push_back(victim);
-
-        return victim;
-    }
+    CacheBlk* findVictim(PacketPtr pkt, const bool is_secure,
+                         const std::size_t size,
+                         std::vector<CacheBlk*>& evict_blks,
+                         bool *policy_bypassed = nullptr) override;
 
     /**
      * Insert the new block into the cache and update replacement data.

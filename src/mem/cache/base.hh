@@ -910,12 +910,17 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param blk The cache block if it already exists.
      * @param writebacks List for any writebacks that need to be performed.
      * @param allocate Whether to allocate a block or use the temp block
+     * @param policy_bypassed Enables packet-aware victim selection and is set
+     * true when the policy explicitly bypasses this fill. In that case no
+     * temporary block is created and the caller must service the response
+     * directly from the packet.
      * @return Pointer to the new cache block.
      */
     CacheBlk *handleFill(
         PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
-        bool *refill_need_data_read = nullptr);
+        bool *refill_need_data_read = nullptr,
+        bool *policy_bypassed = nullptr);
 
     /**
      * Allocate a new block and perform any necessary writebacks
@@ -927,12 +932,14 @@ class BaseCache : public ClockedObject, public CacheAccessor
      *
      * @param pkt Packet holding the address to update
      * @param writebacks A list of writeback packets for the evicted blocks
+     * @param policy_bypassed Enables packet-aware victim selection and is set
+     * true only when a replacement policy deliberately bypasses the fill.
      * @return the allocated block
      */
     CacheBlk *allocateBlock(
         const PacketPtr pkt, PacketList &writebacks,
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
-        bool *evicted_dirty = nullptr);
+        bool *evicted_dirty = nullptr, bool *policy_bypassed = nullptr);
     /**
      * Evict a cache block.
      *

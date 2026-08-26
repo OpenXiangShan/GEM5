@@ -105,6 +105,24 @@ class Base : public SimObject
                            const ReplacementCandidates& candidates) const = 0;
 
     /**
+     * Find a replacement victim with information about the incoming access.
+     *
+     * Policies that do not need the incoming packet retain the historical
+     * behavior through this default implementation. A policy may return
+     * nullptr to bypass a fill when the tag store supports packet-aware
+     * victim selection.
+     *
+     * @param candidates Replacement candidates, selected by indexing policy.
+     * @param pkt Packet that will occupy the selected entry.
+     * @return Replacement entry to be replaced, or nullptr to bypass.
+     */
+    virtual ReplaceableEntry* getVictim(
+        const ReplacementCandidates& candidates, const PacketPtr pkt) const
+    {
+        return getVictim(candidates);
+    }
+
+    /**
      * Instantiate a replacement data entry.
      *
      * @return A shared pointer to the new replacement data.

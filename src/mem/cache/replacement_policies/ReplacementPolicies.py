@@ -164,3 +164,35 @@ class XSDRRIPRP(BaseReplacementPolicy):
     mode = Param.Int(2, "Mode: 0=SRRIP, 1=BRRIP, 2=DRRIP (Set Dueling)")
     num_sets = Param.Int(0, "Number of sets in the cache (required for DRRIP mode)")
     num_ways = Param.Int(Parent.assoc, "Number of ways in each set")
+
+class MockingjayL2RP(BaseReplacementPolicy):
+    type = 'MockingjayL2RP'
+    cxx_class = 'gem5::replacement_policy::MockingjayL2'
+    cxx_header = "mem/cache/replacement_policies/mockingjay_l2_rp.hh"
+
+    num_sets = Param.Unsigned(0, "Number of sets in this cache slice")
+    num_ways = Param.Unsigned(Parent.assoc, "Number of ways in each set")
+    block_bits = Param.Unsigned(6, "Log2 cache-line size")
+    slice_bits = Param.Unsigned(0,
+        "Interleaved slice-address bits below the per-slice set index")
+    history_multiplier = Param.Unsigned(8,
+        "Sampled history length in units of cache associativity")
+    aging_granularity = Param.Unsigned(8,
+        "Set accesses between ETR aging events")
+    sampled_sets = Param.Unsigned(8, "Number of physical sets sampled")
+    sampled_cache_sets_per_set = Param.Unsigned(16,
+        "Sampled-cache buckets per sampled physical set")
+    sampled_cache_ways = Param.Unsigned(5,
+        "Associativity of each sampled-cache bucket")
+    sampled_tag_bits = Param.Unsigned(12,
+        "Truncated sampled-cache tag width")
+    rdp_entries = Param.Unsigned(512,
+        "Direct-mapped reuse-distance predictor entries per slice")
+    temporal_difference_threshold = Param.Unsigned(16,
+        "Minimum distance delta that changes a trained RDP entry")
+    scan_threshold_margin = Param.Unsigned(22,
+        "Distance below INF_RD where lines stop being treated as scans")
+    prefetch_penalty_percent = Param.Unsigned(200,
+        "Reuse-distance multiplier for intervals ending in a prefetch")
+    timestamp_bits = Param.Unsigned(8,
+        "Timestamp width for sampled per-set histories")

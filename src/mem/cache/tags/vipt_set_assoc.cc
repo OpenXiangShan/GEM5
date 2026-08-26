@@ -92,13 +92,16 @@ VIPTSetAssoc::findBlock(Addr addr, bool is_secure) const
 CacheBlk*
 VIPTSetAssoc::findVictim(PacketPtr pkt, const bool is_secure,
                          const std::size_t size,
-                         std::vector<CacheBlk*>& evict_blks)
+                         std::vector<CacheBlk*>& evict_blks,
+                         bool *policy_bypassed)
 {
     // VIPT cache use the virtual address to find victim in corresponding set
     if (pkt->req->hasVaddr()) {
-        return BaseSetAssoc::findVictim(pkt->req->getVaddr(), is_secure, size, evict_blks);
+        return findVictimWithPacket(pkt->req->getVaddr(), is_secure, size,
+                                    evict_blks, pkt, policy_bypassed);
     } else {
-        return BaseSetAssoc::findVictim(pkt->getAddr(), is_secure, size, evict_blks);
+        return findVictimWithPacket(pkt->getAddr(), is_secure, size,
+                                    evict_blks, pkt, policy_bypassed);
     }
 }
 

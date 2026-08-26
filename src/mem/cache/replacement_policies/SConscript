@@ -31,7 +31,8 @@ Import('*')
 SimObject('ReplacementPolicies.py', sim_objects=[
     'BaseReplacementPolicy', 'DuelingRP', 'FIFORP', 'SecondChanceRP',
     'LFURP', 'LRURP', 'BIPRP', 'MRURP', 'RandomRP', 'BRRIPRP', 'SHiPRP',
-    'SHiPMemRP', 'SHiPPCRP', 'TreePLRURP', 'WeightedLRURP', 'XSDRRIPRP'])
+    'SHiPMemRP', 'SHiPPCRP', 'TreePLRURP', 'WeightedLRURP', 'XSDRRIPRP',
+    'MockingjayL2RP'])
 
 Source('bip_rp.cc')
 Source('brrip_rp.cc')
@@ -39,6 +40,7 @@ Source('dueling_rp.cc')
 Source('fifo_rp.cc')
 Source('lfu_rp.cc')
 Source('lru_rp.cc')
+Source('mockingjay_l2_rp.cc')
 Source('mru_rp.cc')
 Source('random_rp.cc')
 Source('second_chance_rp.cc')
@@ -48,3 +50,27 @@ Source('weighted_lru_rp.cc')
 Source('xs_drrip_rp.cc')
 
 GTest('replaceable_entry.test', 'replaceable_entry.test.cc')
+# MockingjayL2 is a SimObject with new-style statistics. Keep this as an
+# ordinary GTest and provide its runtime closure explicitly. This keeps the
+# target portable across ISA and build-mode variants.
+GTest('mockingjay_l2_rp.test',
+      'mockingjay_l2_rp.test.cc',
+      'mockingjay_l2_rp.cc',
+      '../../../base/hostinfo.cc',
+      '../../../base/output.cc',
+      '../../../base/statistics.cc',
+      '../../../base/time.cc',
+      '../../../base/types.cc',
+      '../../../base/stats/group.cc',
+      '../../../base/stats/info.cc',
+      '../../../base/stats/storage.cc',
+      '../../../sim/bufval.cc',
+      '../../../sim/core.cc',
+      '../../../sim/globals.cc',
+      '../../../sim/port.cc',
+      '../../../sim/probe/probe.cc',
+      '../../../sim/root.cc',
+      '../../../sim/sim_object.cc',
+      '../../../sim/tags.cc',
+      '../../../mem/packet.cc',
+      with_tag('gem5 trace'))

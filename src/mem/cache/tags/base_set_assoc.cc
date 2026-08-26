@@ -97,6 +97,63 @@ BaseSetAssoc::invalidate(CacheBlk *blk)
     replacementPolicy->invalidate(blk->replacementData);
 }
 
+CacheBlk*
+BaseSetAssoc::findVictimWithPacket(Addr addr, const bool is_secure,
+                                   const std::size_t size,
+                                   std::vector<CacheBlk*>& evict_blks,
+                                   const PacketPtr pkt,
+                                   bool *policy_bypassed)
+{
+    (void)is_secure;
+    (void)size;
+
+    if (policy_bypassed) {
+        *policy_bypassed = false;
+    }
+
+    // Get possible entries to be victimized.
+    const std::vector<ReplaceableEntry*> entries =
+        indexingPolicy->getPossibleEntries(addr);
+
+    CacheBlk *victim;
+    if (policy_bypassed) {
+        // A packet-aware policy may choose to bypass an incoming fill.
+        victim = static_cast<CacheBlk*>(replacementPolicy->getVictim(
+            entries, pkt));
+        *policy_bypassed = victim == nullptr;
+    } else {
+        // Preserve the legacy path for callers that cannot consume a
+        // replacement-policy bypass decision.
+        victim = static_cast<CacheBlk*>(replacementPolicy->getVictim(entries));
+    }
+
+    if (victim) {
+        // There is only one eviction for this replacement.
+        evict_blks.push_back(victim);
+    }
+
+    return victim;
+}
+
+CacheBlk*
+BaseSetAssoc::findVictim(Addr addr, const bool is_secure,
+                         const std::size_t size,
+                         std::vector<CacheBlk*>& evict_blks)
+{
+    return findVictimWithPacket(addr, is_secure, size, evict_blks, nullptr,
+                                nullptr);
+}
+
+CacheBlk*
+BaseSetAssoc::findVictim(PacketPtr pkt, const bool is_secure,
+                         const std::size_t size,
+                         std::vector<CacheBlk*>& evict_blks,
+                         bool *policy_bypassed)
+{
+    return findVictimWithPacket(pkt->getAddr(), is_secure, size, evict_blks,
+                                pkt, policy_bypassed);
+}
+
 void
 BaseSetAssoc::moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk)
 {
