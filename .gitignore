@@ -43,6 +43,10 @@ typings
 /*debug*
 /*build*
 /*test*
+!/tests/
+!/tests/test-progs/
+!/tests/test-progs/partial-store-perf/
+/tests/test-progs/partial-store-perf/build/
 /*txt*
 /ext/dramsim3/DRAMsim3/
 .cache
@@ -72,6 +76,7 @@ package.json
 microbench/build/
 microbench/output/
 microbench/dramsim3*
+/results/partial-store-perf/
 
 *.bin
 *.db

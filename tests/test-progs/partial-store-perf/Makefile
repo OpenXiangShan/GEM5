@@ -1,0 +1,17 @@
+NAME := partial-store-perf
+SRCS := partial_store_perf.c
+APP_DIR := $(shell pwd)
+
+PERF_NUM_LINES ?= 65536
+PERF_ROUNDS ?= 1
+PERF_LINE_STRIDE ?= 8191
+
+CFLAGS += -DPERF_NUM_LINES=$(PERF_NUM_LINES)
+CFLAGS += -DPERF_ROUNDS=$(PERF_ROUNDS)
+CFLAGS += -DPERF_LINE_STRIDE=$(PERF_LINE_STRIDE)
+
+CONFIG := $(PERF_NUM_LINES)-$(PERF_ROUNDS)-$(PERF_LINE_STRIDE)
+DST_DIR := $(APP_DIR)/build/$(ARCH)/$(CONFIG)
+BINARY := $(APP_DIR)/build/$(NAME)-$(CONFIG)-$(ARCH)
+
+include $(AM_HOME)/Makefile.app

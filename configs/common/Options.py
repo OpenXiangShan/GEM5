@@ -676,6 +676,17 @@ def addXiangshanCommonOptions(parser):
         default=None,
         metavar="{True,False}",
         help="Enable dynamic prefetch control (True/False).")
+    parser.set_defaults(enable_partial_store=None)
+    parser.add_argument(
+        "--enable-partial-store",
+        action="store_true",
+        dest="enable_partial_store",
+        help="enable permission-only partial stores in the L1D cache")
+    parser.add_argument(
+        "--disable-partial-store",
+        action="store_false",
+        dest="enable_partial_store",
+        help="use the baseline read-for-ownership path for partial stores")
 
     # Difftest option
     parser.set_defaults(enable_difftest=None)
