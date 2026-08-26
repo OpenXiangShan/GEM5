@@ -180,20 +180,29 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             unsigned start_depth = pfi.isCacheMiss() ? std::max(1, (entry->depth - 4)) : entry->depth;
             Addr pf_addr = 0;
             if (useXsDepth) {
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 2)), addresses, 0,
+                // Keep negative-stride address arithmetic in the unsigned
+                // Addr domain instead of left-shifting a signed value.
+                const Addr stride_offset = static_cast<Addr>(entry->stride);
+                const Addr depth4_addr = lookupAddr + stride_offset * 4;
+                const Addr depth32_addr = lookupAddr + stride_offset * 32;
+                sendPFWithFilter(pfi, blockAddress(depth4_addr), addresses, 0,
                                  PrefetchSourceType::SStride, 1);
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 5)), addresses, 0,
+                sendPFWithFilter(pfi, blockAddress(depth32_addr), addresses, 0,
                                  PrefetchSourceType::SStride, 2);
                 if (is_first_shot) {
                     stats.strideUniquepfCount += 2;
                 } else {
                     stats.strideRedundantpfCount += 2;
                 }
-                if (archDBer){
-                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 2)), pfi.getPC(), stride_hash_pc,
-                                            true, is_first_shot, pfi.isCacheMiss(), false);
-                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 5)), pfi.getPC(), stride_hash_pc,
-                                            true, is_first_shot, pfi.isCacheMiss(), false);
+                if (archDBer) {
+                    archDBer->strideTraceWrite(
+                        curTick(), blockAddress(depth4_addr), pfi.getPC(),
+                        stride_hash_pc, true, is_first_shot,
+                        pfi.isCacheMiss(), false);
+                    archDBer->strideTraceWrite(
+                        curTick(), blockAddress(depth32_addr), pfi.getPC(),
+                        stride_hash_pc, true, is_first_shot,
+                        pfi.isCacheMiss(), false);
                 }
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
