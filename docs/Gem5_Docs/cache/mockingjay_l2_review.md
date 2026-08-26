@@ -4,12 +4,13 @@
 
 * Branch: `codex/mockingjay-l2-5361c12`
 * Base: `5361c1248804755d285313f41dd73b7a299f7b48`
-* HEAD: `c2dbe9837b`
+* HEAD: `34f4705357`
 * State: local implementation checkpoint; no CI dispatch
 
-The implementation is split into three reviewable commits: the bypass
+The implementation is split into four reviewable commits: the bypass
 bookkeeping fix (`96ceca6e3b`), the policy and integration (`ee4aedf618`),
-and the admitted-fill regression coverage (`c2dbe9837b`).
+the admitted-fill regression coverage (`c2dbe9837b`), and this review-status
+refresh (`34f4705357`).
 
 This checkpoint adds a packet-aware `MockingjayL2RP` to each aligned L2 slice
 in `configs/example/kmhv3.py`. The policy models sampled history, reuse-
