@@ -10,7 +10,7 @@
 | 临时审查分支 | `codex/mockingjay-l2-review-summary-20260826` |
 | 实现分支 | `codex/mockingjay-l2-5361c12` |
 | 候选 CI 所用检查点 | `35f340a2e3` |
-| 当前审阅修订 | 软件预取不训练、slice 容量报错文案和中文记录同步 |
+| 当前源码验证检查点 | `beeb9ff4b8`：软件预取不训练、slice 容量报错文案和中文记录同步 |
 | 基线 | `5361c1248804755d285313f41dd73b7a299f7b48` |
 | 性能 CI | run 968 已完成，但不是受控 A/B |
 
@@ -91,10 +91,10 @@ scan，或预测 ETR 大于本次牺牲行的绝对 ETR，则仍正常插入该�
 * `build/RISCV/mem/cache/replacement_policies/mockingjay_l2_rp.test.opt`：
   17/17 通过，覆盖采样训练、scan、训练前决策、最大 ETR 插入、硬件预取、
   软件预取隔离、其他非训练流量、per-set 隔离、平局和非法几何参数。
-* `build/RISCV/gem5.opt` 已针对当前策略重新编译链接。
+* `build/RISCV/gem5.opt` 已在 `beeb9ff4b8` 上针对当前策略重新编译链接。
 * `python3 -m py_compile configs/example/kmhv3.py` 和 `git diff --check` 通过。
 * checkpoint 冒烟使用 `omnetpp/6881`，输出目录为
-  `/tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826`；完成
+  `/tmp/mockingjay-l2-omnetpp-6881-review-beeb9ff4b8`；完成
   `simInsts=1000008` 和 `system.cpu.committedInsts=1000008`。生成的
   `config.ini` 确认四个独立 `MockingjayL2RP`，四个 slice 的
   `maxEtrInsertions` 为 13、4、0、2。

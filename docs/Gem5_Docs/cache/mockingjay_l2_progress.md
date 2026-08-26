@@ -39,10 +39,10 @@ scan 或预测 ETR 大于所选牺牲行绝对 ETR，则以 `+INF_ETR` 插入。
 
 ## 2026-08-26：当前修订验证
 
-* 串行重建 `gem5.opt` 和替换策略 GTest；17/17 个策略测试通过，其中新增
-  软件预取不训练回归。
+* 在 `beeb9ff4b80262a45712d7c20b7829b476ad3c03` 上串行重建 `gem5.opt` 和替换
+  策略 GTest；17/17 个策略测试通过，其中新增软件预取不训练回归。
 * `python3 -m py_compile configs/example/kmhv3.py` 和 `git diff --check` 通过。
-* checkpoint 冒烟测试在 `/tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826` 完成，
+* checkpoint 冒烟测试在 `/tmp/mockingjay-l2-omnetpp-6881-review-beeb9ff4b8` 完成，
   `simInsts=1000008`、`system.cpu.committedInsts=1000008`。
 * `config.ini` 确认四个独立 `MockingjayL2RP`，默认 slice geometry 为
   `1024 sets × 8 ways`，`block_bits=6`、`slice_bits=2`、`sampled_sets=8`、
@@ -56,7 +56,7 @@ scan 或预测 ETR 大于所选牺牲行绝对 ETR，则以 `+INF_ETR` 插入。
 ```bash
 GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so \
 ./build/RISCV/gem5.opt \
-  -d /tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826 \
+  -d /tmp/mockingjay-l2-omnetpp-6881-review-beeb9ff4b8 \
   ./configs/example/kmhv3.py --mem-type=DDR4_2400_8x8 -I 1000000 \
   --generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/omnetpp/6881/_6881_0.962556_memory_.zstd
 ```

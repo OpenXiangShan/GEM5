@@ -6,6 +6,7 @@
 * 基线：`5361c1248804755d285313f41dd73b7a299f7b48`
 * 初始已发布检查点：`c95ff7ac13c9e21dc505a266f6ea460f3f422ae3`
 * 候选 CI 所用检查点：`35f340a2e3a989fb3d2ea8c1ea4d751a4ff618f4`。
+* 当前源码验证检查点：`beeb9ff4b80262a45712d7c20b7829b476ad3c03`。
 * 临时审查分支：`codex/mockingjay-l2-review-summary-20260826`；该分支保留同一套
   实现，并额外包含软件预取不训练的修正、中文审查快照和本文档同步。
 * 当前审查范围：在上述检查点之上移除真实缓存旁路，并改为
@@ -59,13 +60,13 @@ test 中为直接旁路增加的接口与路径。
 初始旁路原型曾通过 policy GTest 10/10、cache timing GTest 5/5；这些结果只
 作为历史参考，不能覆盖当前 `+INF_ETR` 语义。本次修订已完成以下验证：
 
-* 串行重建替换策略 GTest 和 `build/RISCV/gem5.opt`。
+* 在 `beeb9ff4b8` 上串行重建替换策略 GTest 和 `build/RISCV/gem5.opt`。
 * `mockingjay_l2_rp.test.opt` 的 17/17 测试通过，覆盖训练前判定、最大 ETR
   替换顺序、硬件预取、软件预取隔离、其他非训练流量和非法几何参数。
 * `python3 -m py_compile configs/example/kmhv3.py` 通过，`git diff --check`
   通过。
 * 使用 checkpoint 兼容 reference 和本地 DDR4 fallback 的一百万指令冒烟测试
-  在 `/tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826` 完成：
+  在 `/tmp/mockingjay-l2-omnetpp-6881-review-beeb9ff4b8` 完成：
   `simInsts=1000008`、`system.cpu.committedInsts=1000008`。
 * `config.ini` 确认四个独立 `MockingjayL2RP`，参数为
   `num_sets=1024`、`num_ways=8`、`block_bits=6`、`slice_bits=2`、
