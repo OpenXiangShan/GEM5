@@ -13,6 +13,7 @@
 #include "base/logging.hh"
 #include "base/types.hh"
 #include "cpu/pred/general_arch_db.hh"
+#include "mem/cache/prefetch/direct_quality_gate.hh"
 #include "params/ArchDBer.hh"
 #include "sim/sim_exit.hh"
 #include "sim/sim_object.hh"
@@ -77,6 +78,7 @@ class ArchDBer : public SimObject
     sqlite3_stmt *bopReplayEventStmt;
     sqlite3_stmt *bopReplayDelayActionStmt;
     sqlite3_stmt *bopDirectQualityMetaStmt;
+    sqlite3_stmt *bopDirectQualityCandidateStmt;
     sqlite3_stmt *bopDirectQualityIssueStmt;
     sqlite3_stmt *bopDirectQualityDemandStmt;
     sqlite3_stmt *bopDirectQualityOutcomeStmt;
@@ -189,11 +191,14 @@ class ArchDBer : public SimObject
       const char *bop_name, uint64_t replay_order, const char *action,
       Tick tick, Addr addr, Tick process_tick, unsigned int queue_size_after);
     void bopDirectQualityMetaTraceWrite(
-      unsigned int horizon, unsigned int feedback_entries,
-      unsigned int feedback_ways);
+      const prefetch::DirectQualityGate::Config &config);
+    void bopDirectQualityCandidateTraceWrite(
+      Tick tick, uint64_t event_sequence, Addr pc, uint8_t kind,
+      Addr trigger_line, Addr candidate_line, uint8_t state,
+      bool allowed, bool sampled);
     void bopDirectQualityIssueTraceWrite(
       Tick tick, uint64_t event_sequence, uint64_t feedback_id,
-      uint64_t issue_demand_sequence, Addr line, uint8_t kind);
+      uint64_t candidate_demand_sequence, Addr line, uint8_t kind);
     void bopDirectQualityDemandTraceWrite(
       Tick tick, uint64_t event_sequence, uint64_t demand_sequence,
       Addr line);

@@ -560,6 +560,7 @@ def _configure_l2_bop_direct_quality(prefetcher, options):
         bop.direct_quality_reopen_probe_period = 64
         bop.direct_quality_reopen_confirm_samples = \
             options.bop_direct_quality_reopen_confirm_samples
+        bop.direct_quality_decay_period = 64
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:

@@ -43,6 +43,7 @@ class DirectQualityGate
         unsigned reopenGuard = 4;
         unsigned reopenProbePeriod = 64;
         unsigned reopenConfirmSamples = 0;
+        unsigned decayPeriod = 64;
     };
 
     enum class TraceOutcome : uint8_t
@@ -54,7 +55,7 @@ class DirectQualityGate
     };
 
     /**
-     * Optional observer for exact physical direct-quality certification.
+     * Optional observer for exact raw-candidate direct-quality certification.
      * The normal gate has no sink; this interface deliberately carries only
      * the compact event identity needed by the offline oracle.
      */
@@ -63,9 +64,16 @@ class DirectQualityGate
       public:
         virtual ~TraceSink() = default;
         virtual void directQualityTraceConfig(const Config &config) = 0;
+        virtual void directQualityTraceCandidate(
+            uint64_t event_sequence, Addr pc, uint8_t kind,
+            Addr trigger_line, Addr candidate_line, State state,
+            bool allowed, bool sampled) = 0;
+        // "Issue" is retained for the existing ArchDB table name.  The
+        // event is a selected raw BOP candidate, not a physical request.
         virtual void directQualityTraceIssue(
             uint64_t event_sequence, uint64_t feedback_id,
-            uint64_t issue_demand_sequence, Addr line, uint8_t kind) = 0;
+            uint64_t candidate_demand_sequence, Addr line,
+            uint8_t kind) = 0;
         virtual void directQualityTraceDemand(
             uint64_t event_sequence, uint64_t demand_sequence,
             Addr line) = 0;
@@ -79,6 +87,7 @@ class DirectQualityGate
     {
         bool allowed = true;
         bool sampled = false;
+        bool feedbackInserted = false;
         State state = State::Observe;
         unsigned set = 0;
         unsigned way = 0;
@@ -90,14 +99,17 @@ class DirectQualityGate
 
     void setTraceSink(TraceSink *sink);
 
-    Decision admit(Addr pc, uint8_t kind, Addr line);
     /**
-     * Register a sampled request only after it reaches the real BOP issue
-     * point.  The token was captured at candidate admission and protects a
-     * newly allocated PC-kind entry from stale queued requests.
+     * Evaluate one raw BOP candidate. Selected feedback is registered here,
+     * before local filtering or queueing, so controller training is a BOP
+     * algorithm property rather than a physical prefetch-path property.
      */
-    void recordIssued(Addr line, uint8_t kind, unsigned quality_set,
-                      unsigned quality_way, uint8_t quality_generation);
+    Decision admit(Addr pc, uint8_t kind, Addr trigger_line,
+                   Addr candidate_line);
+    Decision admit(Addr pc, uint8_t kind, Addr line)
+    {
+        return admit(pc, kind, line, line);
+    }
     /**
      * Observe one L2 read demand.  This is the online form of the replay
      * oracle: the first later demand to a sampled line is useful, and an
@@ -106,17 +118,19 @@ class DirectQualityGate
     void observeDemand(Addr line);
 
     State state(Addr pc, uint8_t kind) const;
-    uint64_t issued() const { return issuedCount; }
+    uint64_t candidates() const { return candidateCount; }
+    uint64_t allowed() const { return allowedCount; }
+    uint64_t sampleSelected() const { return sampleSelectedCount; }
     uint64_t suppressed() const { return suppressedCount; }
     uint64_t sampled() const { return sampledCount; }
     uint64_t useful() const { return usefulCount; }
     uint64_t unused() const { return unusedCount; }
+    uint64_t feedbackCoalesced() const { return feedbackCoalescedCount; }
     uint64_t feedbackConflicts() const { return feedbackConflictCount; }
     uint64_t feedbackReplacements() const { return feedbackReplacementCount; }
     uint64_t feedbackExpiries() const { return feedbackExpiryCount; }
     uint64_t feedbackExpiryUnused() const { return feedbackExpiryUnusedCount; }
     uint64_t unknownDrops() const { return unknownDropCount; }
-    uint64_t feedbackTokenDrops() const { return feedbackTokenDropCount; }
     uint64_t orphanOutcomes() const { return orphanOutcomeCount; }
     uint64_t stateTransitions() const { return stateTransitionCount; }
     uint64_t blockToRecoverTransitions() const
@@ -147,14 +161,15 @@ class DirectQualityGate
         uint8_t kind = 0;
         uint8_t generation = 0;
         State state = State::Observe;
-        uint32_t issued = 0;
+        bool trained = false;
+        uint32_t candidates = 0;
         uint32_t sampled = 0;
         uint32_t useful = 0;
         uint32_t unused = 0;
+        uint32_t resolvedSinceDecay = 0;
         uint32_t recoverySamples = 0;
         uint32_t recoveryGeneration = 0;
         unsigned recoveryProbePeriod = 0;
-        uint8_t plru = 0;
     };
 
     struct FeedbackEntry
@@ -178,24 +193,28 @@ class DirectQualityGate
     unsigned feedbackSetBits;
     Addr qualityTagMask;
     std::array<QualityEntry, MaxQualityEntries> quality = {};
+    std::array<uint8_t, MaxQualityEntries> qualityPLRU = {};
     std::array<FeedbackEntry, MaxFeedbackEntries> feedback = {};
+    std::array<unsigned, MaxFeedbackEntries> feedbackNextVictim = {};
     std::array<unsigned, MaxFeedbackEntries> expiryHeap = {};
     unsigned expiryHeapSize = 0;
     uint64_t demandAge = 0;
     uint64_t nextFeedbackId = 0;
     uint64_t nextTraceEventSequence = 0;
     TraceSink *traceSink = nullptr;
-    uint64_t issuedCount = 0;
+    uint64_t candidateCount = 0;
+    uint64_t allowedCount = 0;
+    uint64_t sampleSelectedCount = 0;
     uint64_t suppressedCount = 0;
     uint64_t sampledCount = 0;
     uint64_t usefulCount = 0;
     uint64_t unusedCount = 0;
     uint64_t feedbackConflictCount = 0;
     uint64_t feedbackReplacementCount = 0;
+    uint64_t feedbackCoalescedCount = 0;
     uint64_t feedbackExpiryCount = 0;
     uint64_t feedbackExpiryUnusedCount = 0;
     uint64_t unknownDropCount = 0;
-    uint64_t feedbackTokenDropCount = 0;
     uint64_t orphanOutcomeCount = 0;
     uint64_t stateTransitionCount = 0;
     uint64_t blockToRecoverTransitionCount = 0;
@@ -204,6 +223,8 @@ class DirectQualityGate
     uint64_t outstandingCount = 0;
     uint64_t peakOutstandingCount = 0;
 
+    static uint64_t mix64(uint64_t value);
+    uint64_t qualitySignature(Addr pc, uint8_t kind) const;
     unsigned qualitySetFor(Addr pc, uint8_t kind) const;
     Addr qualityTagFor(Addr pc, uint8_t kind) const;
     unsigned feedbackSetFor(Addr line) const;
@@ -214,13 +235,20 @@ class DirectQualityGate
     unsigned feedbackIndex(unsigned set, unsigned way) const;
     void touchQuality(unsigned set, unsigned way);
     unsigned qualityVictim(unsigned set) const;
-    unsigned feedbackVictim(unsigned set) const;
+    unsigned feedbackVictim(unsigned set);
     unsigned blockProbePeriod(const QualityEntry &entry) const;
+    bool sample(Addr pc, uint8_t kind, Addr trigger_line, unsigned period,
+                uint64_t salt) const;
     bool shouldBlock(const QualityEntry &entry) const;
     bool meetsReopen(const QualityEntry &entry) const;
     void transitionTo(QualityEntry &entry, State next);
     void applyOutcome(QualityEntry &entry, uint32_t recovery_generation,
                       bool useful);
+    void updateState(QualityEntry &entry,
+                     unsigned previous_block_probe_period = 0);
+    uint64_t recordCandidate(Addr line, uint8_t kind, unsigned quality_set,
+                             unsigned quality_way,
+                             uint8_t quality_generation);
     void retireUnknown(unsigned feedback_index, TraceOutcome outcome);
     void invalidateFeedback(unsigned feedback_index);
     bool resolveFeedback(unsigned feedback_index, bool useful,

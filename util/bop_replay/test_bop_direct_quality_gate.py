@@ -8,10 +8,12 @@ import unittest
 from replay_bop_direct_quality_gate import (
     DirectQualityConfig,
     DirectQualityController,
+    DirectQualityReplay,
     _IssuedCandidate,
     _QualityAccumulator,
     SampledFeedbackTable,
 )
+import bop_replay as replay
 
 
 def config(**overrides: object) -> DirectQualityConfig:
@@ -445,6 +447,35 @@ class DirectQualityControllerTest(unittest.TestCase):
         )
         self.assertEqual(controller.stats["quality_replacements"], 1)
 
+    def test_quality_table_keeps_cross_kind_tag_aliases_separate(self):
+        controller = DirectQualityController(config(
+            quality_entries=16, quality_ways=4, quality_tag_bits=8,
+        ))
+        seen: dict[tuple[int, int], tuple[int, str]] = {}
+        collision: tuple[int, str, int, str] | None = None
+        for pc in range(0x1000, 0x100000, 2):
+            for kind in ("large", "small"):
+                key = controller._key(pc, kind)
+                previous = seen.get(key)
+                if previous is not None and previous[1] != kind:
+                    collision = (previous[0], previous[1], pc, kind)
+                    break
+                seen[key] = (pc, kind)
+            if collision is not None:
+                break
+        self.assertIsNotNone(collision)
+        first_pc, first_kind, second_pc, second_kind = collision
+
+        first = controller.lookup(first_pc, first_kind)
+        for _ in range(4):
+            controller.note_sample(first.index, first.generation, "unused")
+        self.assertEqual(controller.lookup(first_pc, first_kind).state, "block")
+
+        second = controller.lookup(second_pc, second_kind)
+        self.assertNotEqual(second.index, first.index)
+        self.assertEqual(second.state, "observe")
+        self.assertEqual(controller.lookup(first_pc, first_kind).state, "block")
+
 
 class SampledFeedbackTableTest(unittest.TestCase):
     def test_capacity_eviction_drops_label_without_negative_update(self):
@@ -453,7 +484,7 @@ class SampledFeedbackTableTest(unittest.TestCase):
         table = SampledFeedbackTable(
             config(feedback_entries=1),
             lambda entry, status: resolved.append((entry.candidate_id, status)),
-            lambda entry: dropped.append(entry.candidate_id),
+            lambda entry, reason: dropped.append(entry.candidate_id),
         )
         table.insert(0x1000, 0, 1, 0, 1)
         table.insert(0x2000, 0, 1, 0, 2)
@@ -466,7 +497,7 @@ class SampledFeedbackTableTest(unittest.TestCase):
         table = SampledFeedbackTable(
             config(feedback_entries=2, feedback_ways=2),
             lambda entry, status: resolved.append((entry.candidate_id, status)),
-            lambda entry: None,
+            lambda entry, reason: None,
         )
         self.assertTrue(table.insert(0x1000, 0, 1, 0, 1))
         self.assertFalse(table.insert(0x1000, 0, 1, 0, 2))
@@ -480,7 +511,7 @@ class SampledFeedbackTableTest(unittest.TestCase):
         table = SampledFeedbackTable(
             config(horizon=2),
             lambda entry, status: resolved.append((entry.candidate_id, status)),
-            lambda entry: dropped.append(entry.candidate_id),
+            lambda entry, reason: dropped.append(entry.candidate_id),
         )
         table.insert(0x1000, 0, 1, 0, 1)
         table.observe_demand(0x2000, 3)
@@ -489,6 +520,44 @@ class SampledFeedbackTableTest(unittest.TestCase):
         self.assertEqual(
             table.report()["feedback_expired_without_label"], 1,
         )
+
+
+class DirectQualityReplayTest(unittest.TestCase):
+    def test_horizon_expiry_updates_live_owner_as_unused(self):
+        runner = DirectQualityReplay(
+            config(horizon=1, min_samples=1),
+            replay.EvaluationWindow(),
+        )
+        # Establish the reporting window before admitting the sampled
+        # candidate, matching a normal trace whose first event is a demand.
+        runner.observe_demand(replay.Demand(0, 0, 0x4000))
+        runner.observe_event(replay.ReplayEvent(
+            access_seq=1,
+            order=1,
+            bop_name="bop_large",
+            bop_kind="large",
+            tick=1,
+            trigger_addr=0x1000,
+            trigger_pc=0x2000,
+            trigger_has_pc=True,
+            validation_hit=0,
+            best_offset_changed=False,
+            issue_enabled=True,
+            validation_enabled=False,
+            pc_confidence_enabled=False,
+            pc_sampled=False,
+            raw_candidate_valid=True,
+            raw_candidate_addr=0x3000,
+            policy_candidate_valid=True,
+            policy_candidate_addr=0x3000,
+        ))
+        runner.observe_demand(replay.Demand(1, 2, 0x4000))
+        runner.observe_demand(replay.Demand(2, 3, 0x4000))
+
+        lookup = runner.controller.lookup(0x2000, "large")
+        self.assertEqual(lookup.unused, 1)
+        self.assertEqual(lookup.state, "block")
+        self.assertEqual(runner.controller.stats["samples:unused"], 1)
 
 
 class QualityAccumulatorTest(unittest.TestCase):

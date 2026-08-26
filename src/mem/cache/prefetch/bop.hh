@@ -494,8 +494,7 @@ class BOP : public Queued
 
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr,
                               std::vector<AddrPriority> &addresses, int prio,
-                              PrefetchSourceType src,
-                              const DirectQualityGate::Decision *decision);
+                              PrefetchSourceType src);
 
         const char *pcValidationTraceName(PCValidationKind kind) const;
         void tracePCValidationUpdate(
@@ -555,8 +554,11 @@ class BOP : public Queued
             statistics::Scalar globalBOPBypassModeNoPCIssued;
             statistics::Distribution globalBOPUnusedEwma;
             statistics::Distribution globalBOPResolvedCoverage;
+            statistics::Scalar directQualityCandidates;
             statistics::Scalar directQualityIssued;
+            statistics::Scalar directQualityAllowed;
             statistics::Scalar directQualitySuppressed;
+            statistics::Scalar directQualitySampleSelected;
             statistics::Scalar directQualitySampled;
             statistics::Scalar directQualityUseful;
             statistics::Scalar directQualityUnused;
@@ -565,7 +567,7 @@ class BOP : public Queued
             statistics::Scalar directQualityFeedbackExpiries;
             statistics::Scalar directQualityFeedbackExpiryUnused;
             statistics::Scalar directQualityUnknownDrops;
-            statistics::Scalar directQualityFeedbackTokenDrops;
+            statistics::Scalar directQualityFeedbackCoalesced;
             statistics::Scalar directQualityOrphanOutcomes;
             statistics::Scalar directQualityStateTransitions;
             statistics::Scalar directQualityBlockToRecoverTransitions;
@@ -604,7 +606,7 @@ class BOP : public Queued
         /** Share one bounded direct-quality ledger across Large and Small BOP. */
         void shareDirectQualityGateWith(BOP &other);
 
-        /** Attach optional physical direct-quality trace observation. */
+        /** Attach optional raw-candidate direct-quality trace observation. */
         void setDirectQualityTraceSink(DirectQualityGate::TraceSink *sink);
 
         /** Apply the one-per-demand update merged across shared BOPs. */
@@ -613,11 +615,7 @@ class BOP : public Queued
         /** Receive a source-only useful/unused outcome from the L2 cache. */
         void notifyGlobalBOPOutcome(bool useful);
 
-        /** Online direct-quality physical-issue and L2-demand hooks. */
-        void notifyDirectQualityIssued(Addr paddr, uint8_t kind,
-                                       unsigned quality_set,
-                                       unsigned quality_way,
-                                       uint8_t quality_generation);
+        /** Online direct-quality raw-candidate and L2-demand hooks. */
         void notifyDirectQualityDemand(Addr paddr);
 
         bool tryAddOffset(int64_t offset, bool late = false);

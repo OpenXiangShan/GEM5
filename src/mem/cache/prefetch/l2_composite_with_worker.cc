@@ -66,19 +66,33 @@ L2CompositeWithWorkerPrefetcher::directQualityTraceConfig(
     const DirectQualityGate::Config &config)
 {
     if (archDBer) {
-        archDBer->bopDirectQualityMetaTraceWrite(
-            config.horizon, config.feedbackEntries, config.feedbackWays);
+        archDBer->bopDirectQualityMetaTraceWrite(config);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::directQualityTraceCandidate(
+    uint64_t event_sequence, Addr pc, uint8_t kind,
+    Addr trigger_line, Addr candidate_line, DirectQualityGate::State state,
+    bool allowed, bool sampled)
+{
+    if (archDBer) {
+        archDBer->bopDirectQualityCandidateTraceWrite(
+            curTick(), event_sequence, pc, kind, trigger_line, candidate_line,
+            static_cast<uint8_t>(state), allowed, sampled);
     }
 }
 
 void
 L2CompositeWithWorkerPrefetcher::directQualityTraceIssue(
     uint64_t event_sequence, uint64_t feedback_id,
-    uint64_t issue_demand_sequence, Addr line, uint8_t kind)
+    uint64_t candidate_demand_sequence, Addr line, uint8_t kind)
 {
     if (archDBer) {
+        // ArchDB preserves the historical "Issue" table name.  The gate
+        // invokes this before local filtering and PFQ admission.
         archDBer->bopDirectQualityIssueTraceWrite(
-            curTick(), event_sequence, feedback_id, issue_demand_sequence,
+            curTick(), event_sequence, feedback_id, candidate_demand_sequence,
             line, kind);
     }
 }
@@ -135,19 +149,7 @@ L2CompositeWithWorkerPrefetcher::prefetchUseful(
 PacketPtr
 L2CompositeWithWorkerPrefetcher::getPacket()
 {
-    PacketPtr pkt = Queued::getPacket();
-    if (!pkt || !pkt->req->hasXsMetadata())
-        return pkt;
-
-    const auto metadata = pkt->req->getXsMetadata();
-    if (metadata.prefetchSource == PrefetchSourceType::HWP_BOP &&
-        metadata.directQualityTokenValid) {
-        largeBOP->notifyDirectQualityIssued(
-            pkt->getAddr(), metadata.directQualityKind,
-            metadata.directQualitySet, metadata.directQualityWay,
-            metadata.directQualityGeneration);
-    }
-    return pkt;
+    return Queued::getPacket();
 }
 
 void
@@ -213,7 +215,9 @@ void
 L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
     if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite())
-        largeBOP->notifyDirectQualityDemand(pkt->getAddr());
+        // Match BOP raw candidates and L2 replay demand labels on pfi's
+        // address domain, rather than the packet's translated cache address.
+        largeBOP->notifyDirectQualityDemand(pfi.getAddr());
     if (archDBer && archDBer->dumpBopReplayTrace) {
         activeBOPReplayEventId = ++nextBOPReplayEventId;
         if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite()) {

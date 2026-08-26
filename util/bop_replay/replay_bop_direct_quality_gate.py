@@ -161,6 +161,9 @@ class DirectQualityConfig:
 class _QualityEntry:
     valid: bool = False
     tag: int = 0
+    # The online table's identity is (set, tag, BOP kind).  Keep kind in the
+    # bounded replay entry instead of treating a cross-kind tag alias as a hit.
+    kind: str = ""
     generation: int = 0
 
 
@@ -269,6 +272,8 @@ def _is_power_of_two(value: int) -> bool:
 
 
 def _kind_value(kind: str) -> int:
+    if kind == "generic":
+        return 0
     if kind == "large":
         return 1
     if kind == "small":
@@ -390,10 +395,11 @@ class DirectQualityController:
             raise ValueError(f"invalid direct-quality offset context {context_index}")
         self.offset_plru_state[entry_index] = state
 
-    def _reset_root(self, index: int, tag: int) -> None:
+    def _reset_root(self, index: int, tag: int, kind: str) -> None:
         entry = self.entries[index]
         entry.valid = True
         entry.tag = tag
+        entry.kind = kind
         entry.generation += 1
         self.offset_contexts[index] = [
             _QualityOffsetContext()
@@ -467,7 +473,7 @@ class DirectQualityController:
         for way in range(self.config.quality_ways):
             index = base + way
             entry = self.entries[index]
-            if entry.valid and entry.tag == tag:
+            if entry.valid and entry.tag == tag and entry.kind == kind:
                 self.stats["quality_hits"] += 1
                 self._touch_plru(set_index, way)
                 context_index, context = self._lookup_offset_context(
@@ -490,7 +496,7 @@ class DirectQualityController:
             victim_way = self._plru_victim(set_index)
             victim = base + victim_way
             self.stats["quality_replacements"] += 1
-        self._reset_root(victim, tag)
+        self._reset_root(victim, tag, kind)
         entry = self.entries[victim]
         self._touch_plru(set_index, victim - base)
         context_index, context = self._lookup_offset_context(victim, best_offset)
@@ -789,7 +795,7 @@ class SampledFeedbackTable:
     def __init__(
         self, config: DirectQualityConfig,
         on_resolve: Callable[[_FeedbackEntry, str], None],
-        on_drop: Callable[[_FeedbackEntry], None],
+        on_drop: Callable[[_FeedbackEntry, str], None],
     ):
         self.config = config
         self.on_resolve = on_resolve
@@ -832,7 +838,7 @@ class SampledFeedbackTable:
         if status is not None:
             self.on_resolve(entry, status)
         else:
-            self.on_drop(entry)
+            self.on_drop(entry, reason)
         entry.valid = False
 
     def insert(
@@ -1196,12 +1202,34 @@ class DirectQualityReplay:
         if candidate.context is not None:
             self.context_counts[candidate.context].resolve_raw_quality(status)
 
-    def _drop_feedback(self, entry: _FeedbackEntry) -> None:
+    def _drop_feedback(self, entry: _FeedbackEntry, reason: str) -> None:
         context_record = self.candidate_sample_context.pop(entry.candidate_id, None)
         if context_record is None:
             self.stats["feedback_drop_untracked_candidate"] += 1
             return
         context, selected = context_record
+        # The online gate treats a Horizon expiry as a real negative sample
+        # when the PC-kind quality entry which admitted it is still live.
+        # Capacity/quality replacement invalidates that owner, so the same
+        # expiry is unknown rather than negative evidence.
+        if reason == "feedback_expired_without_label":
+            quality_entry = self.controller.entries[entry.quality_index]
+            owner_live = (
+                quality_entry.valid
+                and quality_entry.generation == entry.quality_generation
+            )
+            if owner_live:
+                if selected:
+                    self.context_counts[context].samples_unused += 1
+                self.controller.note_sample(
+                    entry.quality_index, entry.quality_generation, "unused",
+                    entry.offset_context_index,
+                    entry.offset_context_generation,
+                    entry.recovery_generation, entry.audit_generation,
+                )
+            else:
+                self.stats["feedback_unknown_owner_replaced"] += 1
+            return
         if selected:
             self.context_counts[context].samples_dropped += 1
 

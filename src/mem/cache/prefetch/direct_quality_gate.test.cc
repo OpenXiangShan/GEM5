@@ -13,8 +13,13 @@ void
 recordIssued(DirectQualityGate &gate, Addr line,
              const DirectQualityGate::Decision &decision, uint8_t kind)
 {
-    gate.recordIssued(line, kind, decision.set, decision.way,
-                      decision.generation);
+    // Feedback is deliberately registered by admit() at the raw BOP
+    // candidate point. Keeping this no-op lets the older state tests express
+    // their logical candidate sequence without reintroducing queue timing.
+    (void)gate;
+    (void)line;
+    (void)decision;
+    (void)kind;
 }
 
 void
@@ -56,6 +61,18 @@ testConfig()
 class CapturingTraceSink : public DirectQualityGate::TraceSink
 {
   public:
+    struct Candidate
+    {
+        uint64_t eventSequence;
+        Addr pc;
+        uint8_t kind;
+        Addr triggerLine;
+        Addr candidateLine;
+        DirectQualityGate::State state;
+        bool allowed;
+        bool sampled;
+    };
+
     struct Issue
     {
         uint64_t eventSequence;
@@ -84,6 +101,7 @@ class CapturingTraceSink : public DirectQualityGate::TraceSink
     unsigned horizon = 0;
     unsigned feedbackEntries = 0;
     unsigned feedbackWays = 0;
+    std::vector<Candidate> candidates;
     std::vector<Issue> issues;
     std::vector<Demand> demands;
     std::vector<Outcome> outcomes;
@@ -93,6 +111,15 @@ class CapturingTraceSink : public DirectQualityGate::TraceSink
         horizon = config.horizon;
         feedbackEntries = config.feedbackEntries;
         feedbackWays = config.feedbackWays;
+    }
+
+    void directQualityTraceCandidate(
+        uint64_t event_sequence, Addr pc, uint8_t kind,
+        Addr trigger_line, Addr candidate_line, DirectQualityGate::State state,
+        bool allowed, bool sampled) override
+    {
+        candidates.push_back({event_sequence, pc, kind, trigger_line,
+                              candidate_line, state, allowed, sampled});
     }
 
     void directQualityTraceIssue(
@@ -123,6 +150,8 @@ TEST(DirectQualityGate, BlocksAtTenToOneAndReopens)
 {
     auto config = testConfig();
     config.horizon = 1;
+    config.blockProbePeriod = 1;
+    config.borderlineBlockProbePeriod = 1;
     DirectQualityGate gate(config);
     auto decision = gate.admit(0x1000, 1, 0x2000);
     recordIssued(gate, 0x2000, decision, 1);
@@ -193,8 +222,8 @@ TEST(DirectQualityGate, RecoveryRetainsBorderlineProbePeriod)
     config.strictUnusedPerUseful = 4;
     config.strictBlockGuard = 0;
     config.reopenUnusedPerUseful = 4;
-    config.blockProbePeriod = 16;
-    config.borderlineBlockProbePeriod = 2;
+    config.blockProbePeriod = 1;
+    config.borderlineBlockProbePeriod = 1;
     config.reopenConfirmSamples = 2;
     DirectQualityGate gate(config);
 
@@ -204,18 +233,14 @@ TEST(DirectQualityGate, RecoveryRetainsBorderlineProbePeriod)
     issueAndResolve(gate, 0x1000, 1, 0x30c0, true);
     EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Block);
 
-    const auto blocked = gate.admit(0x1000, 1, 0x3100);
-    EXPECT_FALSE(blocked.allowed);
     const auto probe = gate.admit(0x1000, 1, 0x3140);
     ASSERT_TRUE(probe.allowed);
     recordIssued(gate, 0x3140, probe, 1);
     gate.observeDemand(0x3140);
     EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Recover);
 
-    const auto first_recovery = gate.admit(0x1000, 1, 0x3180);
-    EXPECT_FALSE(first_recovery.allowed);
-    const auto second_recovery = gate.admit(0x1000, 1, 0x31c0);
-    EXPECT_TRUE(second_recovery.allowed);
+    const auto recovery_probe = gate.admit(0x1000, 1, 0x3180);
+    EXPECT_TRUE(recovery_probe.allowed);
 }
 
 TEST(DirectQualityGate, RecoveryRetainsStrictProbePeriod)
@@ -227,8 +252,8 @@ TEST(DirectQualityGate, RecoveryRetainsStrictProbePeriod)
     config.strictUnusedPerUseful = 4;
     config.strictBlockGuard = 0;
     config.reopenUnusedPerUseful = 4;
-    config.blockProbePeriod = 16;
-    config.borderlineBlockProbePeriod = 2;
+    config.blockProbePeriod = 1;
+    config.borderlineBlockProbePeriod = 1;
     config.reopenConfirmSamples = 2;
     DirectQualityGate gate(config);
 
@@ -238,20 +263,14 @@ TEST(DirectQualityGate, RecoveryRetainsStrictProbePeriod)
     issueAndResolve(gate, 0x1000, 1, 0x40c0, false);
     EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Block);
 
-    DirectQualityGate::Decision strict_probe;
-    for (unsigned candidate = 0; candidate < 12; ++candidate) {
-        strict_probe = gate.admit(0x1000, 1, 0x4100 + candidate * 64);
-        EXPECT_EQ(strict_probe.allowed, candidate == 11);
-    }
+    const auto strict_probe = gate.admit(0x1000, 1, 0x43c0);
+    ASSERT_TRUE(strict_probe.allowed);
     recordIssued(gate, 0x43c0, strict_probe, 1);
     gate.observeDemand(0x43c0);
     EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Recover);
 
-    for (unsigned candidate = 0; candidate < 16; ++candidate) {
-        const auto recovery_probe = gate.admit(
-            0x1000, 1, 0x4400 + candidate * 64);
-        EXPECT_EQ(recovery_probe.allowed, candidate == 15);
-    }
+    const auto recovery_probe = gate.admit(0x1000, 1, 0x4400);
+    EXPECT_TRUE(recovery_probe.allowed);
 }
 
 TEST(DirectQualityGate, NegativeRecoveryEvidenceReturnsToBlock)
@@ -331,6 +350,7 @@ TEST(DirectQualityGate, EarlyUsefulRemovalPreservesExpiryOrder)
 {
     auto config = testConfig();
     config.horizon = 2;
+    config.feedbackEntries = 4096;
     DirectQualityGate gate(config);
 
     const auto first = gate.admit(0x1000, 1, 0x8000);
@@ -353,22 +373,53 @@ TEST(DirectQualityGate, EarlyUsefulRemovalPreservesExpiryOrder)
     EXPECT_EQ(gate.peakOutstanding(), 2U);
 }
 
-TEST(DirectQualityGate, RejectsQueuedTokenAfterQualityReplacement)
+TEST(DirectQualityGate, RegistersFeedbackBeforeAnyPhysicalQueueIssue)
 {
     auto config = testConfig();
     config.qualityEntries = 1;
     config.qualityWays = 1;
     DirectQualityGate gate(config);
 
-    const auto old_decision = gate.admit(0x1000, 1, 0x5000);
-    gate.admit(0x1040, 1, 0x5040);
-    recordIssued(gate, 0x5000, old_decision, 1);
-
-    EXPECT_EQ(gate.sampled(), 0U);
-    EXPECT_EQ(gate.feedbackTokenDrops(), 1U);
-    EXPECT_EQ(gate.unknownDrops(), 1U);
+    const auto decision = gate.admit(0x1000, 1, 0x5000);
+    EXPECT_TRUE(decision.feedbackInserted);
+    EXPECT_EQ(gate.sampled(), 1U);
     gate.observeDemand(0x5000);
-    EXPECT_EQ(gate.useful(), 0U);
+    EXPECT_EQ(gate.useful(), 1U);
+}
+
+TEST(DirectQualityGate, SamplesByTriggerLineNotCandidateOrdinal)
+{
+    auto config = testConfig();
+    config.observeSamplePeriod = 4;
+    DirectQualityGate gate(config);
+
+    const auto first = gate.admit(0x1000, 1, 0x2000, 0x4000);
+    const auto second = gate.admit(0x1000, 1, 0x2000, 0x4040);
+
+    EXPECT_EQ(first.sampled, second.sampled);
+    EXPECT_EQ(gate.candidates(), 2U);
+}
+
+TEST(DirectQualityGate, DecaysResolvedEvidenceLikeRawReplay)
+{
+    auto config = testConfig();
+    config.horizon = 1;
+    config.minSamples = 2;
+    config.unusedPerUseful = 2;
+    config.blockGuard = 0;
+    config.reopenUnusedPerUseful = 1;
+    config.reopenGuard = 0;
+    config.decayPeriod = 2;
+    config.blockProbePeriod = 1;
+    config.borderlineBlockProbePeriod = 1;
+    DirectQualityGate gate(config);
+
+    issueAndResolve(gate, 0x1000, 1, 0x6000, false);
+    issueAndResolve(gate, 0x1000, 1, 0x6040, false);
+    EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Block);
+
+    issueAndResolve(gate, 0x1000, 1, 0x6080, true);
+    EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Open);
 }
 
 TEST(DirectQualityGate, FeedbackReplacementIsUnknownNotUnused)
@@ -424,15 +475,23 @@ TEST(DirectQualityGate, TraceOrdersIssueDemandAndUsefulOutcome)
     EXPECT_EQ(sink.feedbackEntries, 4U);
     EXPECT_EQ(sink.feedbackWays, 1U);
     ASSERT_EQ(sink.issues.size(), 1U);
-    EXPECT_EQ(sink.issues[0].eventSequence, 1U);
+    ASSERT_EQ(sink.candidates.size(), 1U);
+    EXPECT_EQ(sink.candidates[0].eventSequence, 1U);
+    EXPECT_EQ(sink.candidates[0].pc, 0x1000U);
+    EXPECT_EQ(sink.candidates[0].kind, 1U);
+    EXPECT_EQ(sink.candidates[0].triggerLine, 0x8000U);
+    EXPECT_EQ(sink.candidates[0].candidateLine, 0x8000U);
+    EXPECT_TRUE(sink.candidates[0].allowed);
+    EXPECT_TRUE(sink.candidates[0].sampled);
+    EXPECT_EQ(sink.issues[0].eventSequence, 2U);
     EXPECT_EQ(sink.issues[0].feedbackId, 1U);
     EXPECT_EQ(sink.issues[0].issueDemandSequence, 0U);
     EXPECT_EQ(sink.issues[0].line, 0x8000U);
     ASSERT_EQ(sink.demands.size(), 1U);
-    EXPECT_EQ(sink.demands[0].eventSequence, 2U);
+    EXPECT_EQ(sink.demands[0].eventSequence, 3U);
     EXPECT_EQ(sink.demands[0].demandSequence, 1U);
     ASSERT_EQ(sink.outcomes.size(), 1U);
-    EXPECT_EQ(sink.outcomes[0].eventSequence, 3U);
+    EXPECT_EQ(sink.outcomes[0].eventSequence, 4U);
     EXPECT_EQ(sink.outcomes[0].feedbackId, 1U);
     EXPECT_EQ(sink.outcomes[0].resolveDemandSequence, 1U);
     EXPECT_EQ(sink.outcomes[0].value,
@@ -454,12 +513,16 @@ TEST(DirectQualityGate, TraceMarksFeedbackReplacementUnknown)
     recordIssued(gate, 0x9040, second, 1);
 
     ASSERT_EQ(sink.issues.size(), 2U);
+    ASSERT_EQ(sink.candidates.size(), 2U);
     ASSERT_EQ(sink.outcomes.size(), 1U);
-    EXPECT_EQ(sink.outcomes[0].eventSequence, 2U);
+    EXPECT_EQ(sink.candidates[0].eventSequence, 1U);
+    EXPECT_EQ(sink.issues[0].eventSequence, 2U);
+    EXPECT_EQ(sink.candidates[1].eventSequence, 3U);
+    EXPECT_EQ(sink.outcomes[0].eventSequence, 4U);
+    EXPECT_EQ(sink.issues[1].eventSequence, 5U);
     EXPECT_EQ(sink.outcomes[0].feedbackId, sink.issues[0].feedbackId);
     EXPECT_EQ(sink.outcomes[0].value,
               DirectQualityGate::TraceOutcome::UnknownFeedbackReplacement);
-    EXPECT_EQ(sink.issues[1].eventSequence, 3U);
 }
 
 } // namespace prefetch

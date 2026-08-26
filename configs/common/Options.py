@@ -239,7 +239,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--dump-bop-direct-quality-trace",
                         action="store_true",
                         default=False,
-                        help="dump physical BOP direct-quality issue/demand trace")
+                        help="dump raw BOP direct-quality candidate/demand trace")
     parser.add_argument("--enable-bop-direct-quality-gate",
                         action="store_true",
                         default=False,
@@ -247,12 +247,12 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--bop-direct-quality-feedback-entries",
                         action="store",
                         type=int,
-                        default=4096,
+                        default=256,
                         help="online BOP direct-quality feedback-table entries")
     parser.add_argument("--bop-direct-quality-feedback-ways",
                         action="store",
                         type=int,
-                        default=16,
+                        default=4,
                         help="online BOP direct-quality feedback-table ways")
     parser.add_argument("--bop-direct-quality-reopen-confirm-samples",
                         action="store",

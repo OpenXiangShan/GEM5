@@ -72,9 +72,13 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher,
 
     void directQualityTraceConfig(
         const DirectQualityGate::Config &config) override;
+    void directQualityTraceCandidate(
+        uint64_t event_sequence, Addr pc, uint8_t kind,
+        Addr trigger_line, Addr candidate_line, DirectQualityGate::State state,
+        bool allowed, bool sampled) override;
     void directQualityTraceIssue(
         uint64_t event_sequence, uint64_t feedback_id,
-        uint64_t issue_demand_sequence, Addr line, uint8_t kind) override;
+        uint64_t candidate_demand_sequence, Addr line, uint8_t kind) override;
     void directQualityTraceDemand(
         uint64_t event_sequence, uint64_t demand_sequence, Addr line) override;
     void directQualityTraceOutcome(

@@ -60,7 +60,8 @@ ArchDBer::ArchDBer(const Params &p)
     mem_db(nullptr), bopReplayMetaStmt(nullptr), bopReplayPhaseStmt(nullptr),
     bopReplayDemandStmt(nullptr), bopReplayEventStmt(nullptr),
     bopReplayDelayActionStmt(nullptr),
-    bopDirectQualityMetaStmt(nullptr), bopDirectQualityIssueStmt(nullptr),
+    bopDirectQualityMetaStmt(nullptr), bopDirectQualityCandidateStmt(nullptr),
+    bopDirectQualityIssueStmt(nullptr),
     bopDirectQualityDemandStmt(nullptr), bopDirectQualityOutcomeStmt(nullptr),
     bopReplayPhaseId(0), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
@@ -141,9 +142,21 @@ ArchDBer::ArchDBer(const Params &p)
     prepareStatement(
         mem_db, &bopDirectQualityMetaStmt,
         "INSERT OR IGNORE INTO BOPDirectQualityMeta("
-        "SchemaVersion,Horizon,FeedbackEntries,FeedbackWays) "
-        "VALUES(1,?1,?2,?3);",
+        "SchemaVersion,QualityEntries,QualityWays,QualityTagBits,"
+        "FeedbackEntries,FeedbackWays,Horizon,MinSamples,"
+        "ObserveSamplePeriod,OpenSamplePeriod,BlockProbePeriod,"
+        "BorderlineBlockProbePeriod,UnusedPerUseful,BlockGuard,"
+        "StrictUnusedPerUseful,StrictBlockGuard,ReopenUnusedPerUseful,"
+        "ReopenGuard,ReopenProbePeriod,ReopenConfirmSamples,DecayPeriod) "
+        "VALUES(3,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,"
+        "?16,?17,?18,?19,?20);",
         "BOPDirectQualityMeta insert");
+    prepareStatement(
+        mem_db, &bopDirectQualityCandidateStmt,
+        "INSERT INTO BOPDirectQualityCandidate("
+        "EventSequence,Tick,PC,Kind,TriggerLine,CandidateLine,State,"
+        "Allowed,Sampled) VALUES(?,?,?,?,?,?,?,?,?);",
+        "BOPDirectQualityCandidate insert");
     prepareStatement(
         mem_db, &bopDirectQualityIssueStmt,
         "INSERT INTO BOPDirectQualityIssue("
@@ -173,6 +186,7 @@ ArchDBer::~ArchDBer()
   sqlite3_finalize(bopReplayEventStmt);
   sqlite3_finalize(bopReplayDelayActionStmt);
   sqlite3_finalize(bopDirectQualityMetaStmt);
+  sqlite3_finalize(bopDirectQualityCandidateStmt);
   sqlite3_finalize(bopDirectQualityIssueStmt);
   sqlite3_finalize(bopDirectQualityDemandStmt);
   sqlite3_finalize(bopDirectQualityOutcomeStmt);
@@ -678,8 +692,7 @@ ArchDBer::bopReplayDelayActionTraceWrite(
 
 void
 ArchDBer::bopDirectQualityMetaTraceWrite(
-    unsigned int horizon, unsigned int feedback_entries,
-    unsigned int feedback_ways)
+    const prefetch::DirectQualityGate::Config &config)
 {
   if (!(dumpGlobal && dumpBopDirectQualityTrace)) {
     return;
@@ -690,16 +703,67 @@ ArchDBer::bopDirectQualityMetaTraceWrite(
     fatal_if(result != SQLITE_OK,
              "Failed to bind BOPDirectQualityMeta: %s\n", sqlite3_errmsg(mem_db));
   };
-  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, horizon));
-  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, feedback_entries));
-  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, feedback_ways));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.qualityEntries));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.qualityWays));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.qualityTagBits));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.feedbackEntries));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.feedbackWays));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.horizon));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.minSamples));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.observeSamplePeriod));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.openSamplePeriod));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.blockProbePeriod));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.borderlineBlockProbePeriod));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.unusedPerUseful));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.blockGuard));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.strictUnusedPerUseful));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.strictBlockGuard));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.reopenUnusedPerUseful));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.reopenGuard));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.reopenProbePeriod));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.reopenConfirmSamples));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.decayPeriod));
   stepAndReset(mem_db, bopDirectQualityMetaStmt, "BOPDirectQualityMeta");
+}
+
+void
+ArchDBer::bopDirectQualityCandidateTraceWrite(
+    Tick tick, uint64_t event_sequence, Addr pc, uint8_t kind,
+    Addr trigger_line, Addr candidate_line, uint8_t state, bool allowed,
+    bool sampled)
+{
+  if (!(dumpGlobal && dumpBopDirectQualityTrace)) {
+    return;
+  }
+
+  int column = 1;
+  const auto bind = [this](int result) {
+    fatal_if(result != SQLITE_OK,
+             "Failed to bind BOPDirectQualityCandidate: %s\n",
+             sqlite3_errmsg(mem_db));
+  };
+  bind(sqlite3_bind_int64(bopDirectQualityCandidateStmt, column++,
+                          sqliteSignedInt(event_sequence)));
+  bind(sqlite3_bind_int64(bopDirectQualityCandidateStmt, column++,
+                          sqliteSignedInt(tick)));
+  bind(sqlite3_bind_int64(bopDirectQualityCandidateStmt, column++,
+                          sqliteSignedInt(pc)));
+  bind(sqlite3_bind_int(bopDirectQualityCandidateStmt, column++, kind));
+  bind(sqlite3_bind_int64(bopDirectQualityCandidateStmt, column++,
+                          sqliteSignedInt(trigger_line)));
+  bind(sqlite3_bind_int64(bopDirectQualityCandidateStmt, column++,
+                          sqliteSignedInt(candidate_line)));
+  bind(sqlite3_bind_int(bopDirectQualityCandidateStmt, column++, state));
+  bind(sqlite3_bind_int(bopDirectQualityCandidateStmt, column++, allowed));
+  bind(sqlite3_bind_int(bopDirectQualityCandidateStmt, column++, sampled));
+  stepAndReset(mem_db, bopDirectQualityCandidateStmt,
+               "BOPDirectQualityCandidate");
 }
 
 void
 ArchDBer::bopDirectQualityIssueTraceWrite(
     Tick tick, uint64_t event_sequence, uint64_t feedback_id,
-    uint64_t issue_demand_sequence, Addr line, uint8_t kind)
+    uint64_t candidate_demand_sequence, Addr line, uint8_t kind)
 {
   if (!(dumpGlobal && dumpBopDirectQualityTrace)) {
     return;
@@ -715,7 +779,7 @@ ArchDBer::bopDirectQualityIssueTraceWrite(
   bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
                           sqliteSignedInt(feedback_id)));
   bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
-                          sqliteSignedInt(issue_demand_sequence)));
+                          sqliteSignedInt(candidate_demand_sequence)));
   bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,
                           sqliteSignedInt(tick)));
   bind(sqlite3_bind_int64(bopDirectQualityIssueStmt, column++,

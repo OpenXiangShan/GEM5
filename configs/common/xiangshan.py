@@ -977,10 +977,40 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             ,
             "CREATE TABLE BOPDirectQualityMeta(" \
             "SchemaVersion INT PRIMARY KEY," \
+            "QualityEntries INT NOT NULL," \
+            "QualityWays INT NOT NULL," \
+            "QualityTagBits INT NOT NULL," \
             "Horizon INT NOT NULL," \
             "FeedbackEntries INT NOT NULL," \
-            "FeedbackWays INT NOT NULL);"
+            "FeedbackWays INT NOT NULL," \
+            "MinSamples INT NOT NULL," \
+            "ObserveSamplePeriod INT NOT NULL," \
+            "OpenSamplePeriod INT NOT NULL," \
+            "BlockProbePeriod INT NOT NULL," \
+            "BorderlineBlockProbePeriod INT NOT NULL," \
+            "UnusedPerUseful INT NOT NULL," \
+            "BlockGuard INT NOT NULL," \
+            "StrictUnusedPerUseful INT NOT NULL," \
+            "StrictBlockGuard INT NOT NULL," \
+            "ReopenUnusedPerUseful INT NOT NULL," \
+            "ReopenGuard INT NOT NULL," \
+            "ReopenProbePeriod INT NOT NULL," \
+            "ReopenConfirmSamples INT NOT NULL," \
+            "DecayPeriod INT NOT NULL);"
             ,
+            "CREATE TABLE BOPDirectQualityCandidate(" \
+            "EventSequence INT PRIMARY KEY," \
+            "Tick INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "Kind INT NOT NULL," \
+            "TriggerLine INT NOT NULL," \
+            "CandidateLine INT NOT NULL," \
+            "State INT NOT NULL," \
+            "Allowed BOOL NOT NULL," \
+            "Sampled BOOL NOT NULL);"
+            ,
+            # Schema V3: each row is a selected raw BOP candidate.  The
+            # historical table name is preserved for trace-tool compatibility.
             "CREATE TABLE BOPDirectQualityIssue(" \
             "EventSequence INT PRIMARY KEY," \
             "FeedbackId INT NOT NULL UNIQUE," \

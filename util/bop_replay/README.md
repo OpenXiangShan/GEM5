@@ -59,6 +59,28 @@ and global bypass feedback using fixed BOP raw-candidate and RR-validation
 signals from the trace. `recorded` evaluates the online policy candidates;
 `raw` evaluates the same BOP candidates before PC/global suppression.
 
+## Direct-Quality Gate Trace
+
+When `--dump-bop-direct-quality-trace` and the direct-quality gate are both
+enabled, ArchDB writes a separate causal feedback ledger. Schema V3 preserves
+the established table names `BOPDirectQualityIssue`,
+`BOPDirectQualityDemand`, and `BOPDirectQualityOutcome`; despite its
+historical name, an `Issue` row means a **selected raw BOP candidate** at the
+gate admission point. `BOPDirectQualityCandidate` records every raw gate
+input and pre-update decision, while `Issue` records only a selected sample
+whose feedback entry was actually inserted. They are recorded before address
+translation, PFQ admission, packet coalescing, cache lookup, and memory
+bandwidth effects.
+
+`IssueDemandSequence` is therefore the L2-read-demand sequence at raw
+candidate selection, not a physical packet-issue time. A candidate resolves
+as `UsefulDemand` when a later L2 read demand reaches the same line within the
+configured horizon. It resolves as `UnusedExpiry` only after that demand
+horizon. `UnknownFeedbackReplacement` and `UnknownOwnerReplaced` are dropped
+evidence and must not be counted as unused. This trace is intended to certify
+the bounded gate against the offline raw-policy controller; it is deliberately
+separate from physical `pfIssued`, `pfUseful`, `pfUnused`, and IPC metrics.
+
 When `pc_validation_producer_consumer` is enabled in trace metadata or through
 `--controller-config`, `replay-controller` reconstructs the RR producer owner
 from the learner and native delay-action stream, then runs the policy stage.

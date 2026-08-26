@@ -8,6 +8,17 @@ namespace gem5
 namespace prefetch
 {
 
+namespace
+{
+
+bool
+isPowerOf2(unsigned value)
+{
+    return value != 0 && (value & (value - 1)) == 0;
+}
+
+} // anonymous namespace
+
 DirectQualityGate::DirectQualityGate() : DirectQualityGate(Config())
 {}
 
@@ -19,16 +30,18 @@ DirectQualityGate::DirectQualityGate(const Config &config)
       qualityTagMask(config.qualityTagBits >= 63 ? ~Addr(0) :
                      ((Addr(1) << config.qualityTagBits) - 1))
 {
-    assert(cfg.qualityWays > 0 && cfg.qualityWays <= MaxQualityWays);
+    assert(cfg.qualityWays == 1 || cfg.qualityWays == 2 ||
+           cfg.qualityWays == 4);
     assert(cfg.feedbackWays > 0 && cfg.feedbackWays <= MaxFeedbackWays);
     assert(cfg.qualityEntries > 0 && cfg.qualityEntries <= MaxQualityEntries);
     assert(cfg.feedbackEntries > 0 && cfg.feedbackEntries <= MaxFeedbackEntries);
     assert((cfg.qualityEntries % cfg.qualityWays) == 0);
     assert((cfg.feedbackEntries % cfg.feedbackWays) == 0);
-    assert((cfg.qualityEntries & (cfg.qualityEntries - 1)) == 0);
-    assert((cfg.feedbackEntries & (cfg.feedbackEntries - 1)) == 0);
-    assert((qualitySets & (qualitySets - 1)) == 0);
-    assert((feedbackSets & (feedbackSets - 1)) == 0);
+    assert(isPowerOf2(cfg.qualityEntries));
+    assert(isPowerOf2(cfg.feedbackEntries));
+    assert(isPowerOf2(qualitySets));
+    assert(isPowerOf2(feedbackSets));
+    assert(cfg.decayPeriod == 0 || isPowerOf2(cfg.decayPeriod));
     while ((1U << qualitySetBits) < qualitySets)
         ++qualitySetBits;
     while ((1U << feedbackSetBits) < feedbackSets)
@@ -43,24 +56,40 @@ DirectQualityGate::setTraceSink(TraceSink *sink)
         traceSink->directQualityTraceConfig(cfg);
 }
 
+uint64_t
+DirectQualityGate::mix64(uint64_t value)
+{
+    value ^= value >> 30;
+    value *= 0xBF58476D1CE4E5B9ULL;
+    value ^= value >> 27;
+    value *= 0x94D049BB133111EBULL;
+    value ^= value >> 31;
+    return value;
+}
+
+uint64_t
+DirectQualityGate::qualitySignature(Addr pc, uint8_t kind) const
+{
+    return mix64((pc >> 1) ^
+                 (uint64_t(kind) * 0x9E3779B97F4A7C15ULL));
+}
+
 unsigned
 DirectQualityGate::qualitySetFor(Addr pc, uint8_t kind) const
 {
-    Addr hash = pc ^ (pc >> 17) ^ (Addr(kind) * 0x9e3779b9ULL);
-    return hash & (qualitySets - 1);
+    return qualitySignature(pc, kind) & (qualitySets - 1);
 }
 
 Addr
 DirectQualityGate::qualityTagFor(Addr pc, uint8_t kind) const
 {
-    Addr hash = pc ^ (pc >> 23) ^ (Addr(kind) * 0x517cc1b7ULL);
-    return (hash >> qualitySetBits) & qualityTagMask;
+    return (qualitySignature(pc, kind) >> qualitySetBits) & qualityTagMask;
 }
 
 unsigned
 DirectQualityGate::feedbackSetFor(Addr line) const
 {
-    return (line ^ (line >> 13)) & (feedbackSets - 1);
+    return mix64(line >> 6) & (feedbackSets - 1);
 }
 
 unsigned
@@ -79,24 +108,52 @@ unsigned
 DirectQualityGate::qualityVictim(unsigned set) const
 {
     const unsigned base = set * cfg.qualityWays;
-    for (unsigned way = 0; way < cfg.qualityWays; ++way)
+    for (unsigned way = 0; way < cfg.qualityWays; ++way) {
         if (!quality[base + way].valid)
             return way;
-    return quality[base].plru % cfg.qualityWays;
+    }
+
+    if (cfg.qualityWays == 1)
+        return 0;
+    if (cfg.qualityWays == 2)
+        return qualityPLRU[set] & 0x1;
+
+    const uint8_t state = qualityPLRU[set] & 0x7;
+    if ((state & 0x1) == 0)
+        return (state & 0x2) == 0 ? 0 : 1;
+    return (state & 0x4) == 0 ? 2 : 3;
 }
 
 void
 DirectQualityGate::touchQuality(unsigned set, unsigned way)
 {
-    const unsigned base = set * cfg.qualityWays;
-    for (unsigned candidate = 0; candidate < cfg.qualityWays; ++candidate) {
-        if (candidate == way)
-            quality[base + candidate].plru = 0;
-        else if (quality[base + candidate].valid)
-            quality[base + candidate].plru =
-                std::min<unsigned>(cfg.qualityWays - 1,
-                                   quality[base + candidate].plru + 1);
+    if (cfg.qualityWays == 1) {
+        assert(way == 0);
+        return;
     }
+
+    if (cfg.qualityWays == 2) {
+        assert(way < 2);
+        qualityPLRU[set] = way == 0 ? 1 : 0;
+        return;
+    }
+
+    assert(way < 4);
+    uint8_t state = qualityPLRU[set];
+    if (way == 0) {
+        state |= 0x1;
+        state |= 0x2;
+    } else if (way == 1) {
+        state |= 0x1;
+        state &= ~0x2;
+    } else if (way == 2) {
+        state &= ~0x1;
+        state |= 0x4;
+    } else {
+        state &= ~0x1;
+        state &= ~0x4;
+    }
+    qualityPLRU[set] = state;
 }
 
 unsigned
@@ -110,7 +167,6 @@ DirectQualityGate::allocateQuality(unsigned set, Addr tag, uint8_t kind)
     entry.tag = tag;
     entry.kind = kind;
     entry.generation = nextGeneration;
-    touchQuality(set, way);
     return way;
 }
 
@@ -118,28 +174,25 @@ unsigned
 DirectQualityGate::findFeedback(unsigned set, Addr line) const
 {
     const unsigned base = set * cfg.feedbackWays;
-    for (unsigned way = 0; way < cfg.feedbackWays; ++way)
+    for (unsigned way = 0; way < cfg.feedbackWays; ++way) {
         if (feedback[base + way].valid && feedback[base + way].line == line)
             return way;
+    }
     return cfg.feedbackWays;
 }
 
 unsigned
-DirectQualityGate::feedbackVictim(unsigned set) const
+DirectQualityGate::feedbackVictim(unsigned set)
 {
     const unsigned base = set * cfg.feedbackWays;
-    for (unsigned way = 0; way < cfg.feedbackWays; ++way)
+    for (unsigned way = 0; way < cfg.feedbackWays; ++way) {
         if (!feedback[base + way].valid)
             return way;
-    unsigned victim = 0;
-    uint64_t oldest = feedback[base].issueAge;
-    for (unsigned way = 1; way < cfg.feedbackWays; ++way) {
-        if (feedback[base + way].issueAge < oldest) {
-            oldest = feedback[base + way].issueAge;
-            victim = way;
-        }
     }
-    return victim;
+
+    const unsigned way = feedbackNextVictim[set];
+    feedbackNextVictim[set] = (way + 1) % cfg.feedbackWays;
+    return way;
 }
 
 unsigned
@@ -163,8 +216,18 @@ DirectQualityGate::feedbackIndex(unsigned set, unsigned way) const
     return set * cfg.feedbackWays + way;
 }
 
+bool
+DirectQualityGate::sample(Addr pc, uint8_t kind, Addr trigger_line,
+                           unsigned period, uint64_t salt) const
+{
+    assert(isPowerOf2(period));
+    const uint64_t signature = qualitySignature(pc, kind) ^ trigger_line ^ salt;
+    return (mix64(signature) & (period - 1)) == 0;
+}
+
 DirectQualityGate::Decision
-DirectQualityGate::admit(Addr pc, uint8_t kind, Addr line)
+DirectQualityGate::admit(Addr pc, uint8_t kind, Addr trigger_line,
+                         Addr candidate_line)
 {
     const unsigned set = qualitySetFor(pc, kind);
     const Addr tag = qualityTagFor(pc, kind);
@@ -173,59 +236,69 @@ DirectQualityGate::admit(Addr pc, uint8_t kind, Addr line)
         way = allocateQuality(set, tag, kind);
     auto &entry = quality[set * cfg.qualityWays + way];
     touchQuality(set, way);
-    ++entry.issued;
-    ++issuedCount;
+    ++entry.candidates;
+    ++candidateCount;
 
     Decision decision;
     decision.set = set;
     decision.way = way;
     decision.generation = entry.generation;
     decision.state = entry.state;
-    if (entry.state == State::Block || entry.state == State::Recover) {
-        const unsigned period = entry.state == State::Block ?
-            blockProbePeriod(entry) : entry.recoveryProbePeriod;
-        decision.allowed = period != 0 && (entry.issued % period) == 0;
+    if (entry.state == State::Block) {
+        decision.allowed = sample(pc, kind, trigger_line,
+                                  blockProbePeriod(entry), 0xB10C);
         decision.sampled = decision.allowed;
+    } else if (entry.state == State::Recover) {
+        decision.allowed = sample(pc, kind, trigger_line,
+                                  entry.recoveryProbePeriod, 0x5EC0);
+        decision.sampled = decision.allowed;
+    } else if (entry.state == State::Open) {
+        decision.sampled = sample(pc, kind, trigger_line,
+                                  cfg.openSamplePeriod, 0x5A6D);
     } else {
-        const unsigned period = entry.state == State::Observe ?
-            cfg.observeSamplePeriod : cfg.openSamplePeriod;
-        decision.sampled = period != 0 && (entry.issued % period) == 0;
+        decision.sampled = sample(pc, kind, trigger_line,
+                                  cfg.observeSamplePeriod, 0x0B5E);
     }
-    if (!decision.allowed)
+
+    if (decision.allowed) {
+        ++allowedCount;
+    } else {
         ++suppressedCount;
-    (void)line;
+    }
+
+    if (traceSink) {
+        traceSink->directQualityTraceCandidate(
+            ++nextTraceEventSequence, pc, kind, trigger_line, candidate_line,
+            decision.state, decision.allowed, decision.sampled);
+    }
+    if (decision.sampled) {
+        ++sampleSelectedCount;
+        decision.feedbackInserted = recordCandidate(
+            candidate_line, kind, set, way, entry.generation) != 0;
+    }
     return decision;
 }
 
-void
-DirectQualityGate::recordIssued(Addr line, uint8_t kind, unsigned quality_set,
-                                 unsigned quality_way,
-                                 uint8_t quality_generation)
+uint64_t
+DirectQualityGate::recordCandidate(Addr line, uint8_t kind,
+                                   unsigned quality_set,
+                                   unsigned quality_way,
+                                   uint8_t quality_generation)
 {
-    if (quality_set >= qualitySets || quality_way >= cfg.qualityWays) {
-        ++feedbackTokenDropCount;
-        ++unknownDropCount;
-        return;
-    }
-
-    auto &quality_entry = quality[quality_set * cfg.qualityWays + quality_way];
-    if (!quality_entry.valid || quality_entry.generation != quality_generation ||
-        quality_entry.kind != kind) {
-        ++feedbackTokenDropCount;
-        ++unknownDropCount;
-        return;
-    }
+    assert(quality_set < qualitySets);
+    assert(quality_way < cfg.qualityWays);
+    auto &qualityEntry = quality[quality_set * cfg.qualityWays + quality_way];
+    assert(qualityEntry.valid);
+    assert(qualityEntry.generation == quality_generation);
+    assert(qualityEntry.kind == kind);
 
     const unsigned set = feedbackSetFor(line);
-    unsigned way = findFeedback(set, line);
-    if (way != cfg.feedbackWays) {
-        // The cache can carry only one source tag for a coalesced line.
-        // Preserve the first physical request's attribution instead of
-        // replacing it with a later logical candidate.
-        return;
+    if (findFeedback(set, line) != cfg.feedbackWays) {
+        ++feedbackCoalescedCount;
+        return 0;
     }
-    if (way == cfg.feedbackWays)
-        way = allocateFeedback(set);
+
+    const unsigned way = allocateFeedback(set);
     const unsigned index = feedbackIndex(set, way);
     auto &entry = feedback[index];
     entry.valid = true;
@@ -234,19 +307,20 @@ DirectQualityGate::recordIssued(Addr line, uint8_t kind, unsigned quality_set,
     entry.qualityWay = quality_way;
     entry.qualityGeneration = quality_generation;
     entry.kind = kind;
-    entry.recoveryGeneration = quality_entry.recoveryGeneration;
+    entry.recoveryGeneration = qualityEntry.recoveryGeneration;
     entry.issueAge = demandAge;
     entry.traceId = ++nextFeedbackId;
     insertExpiry(index);
     ++outstandingCount;
     peakOutstandingCount = std::max(peakOutstandingCount, outstandingCount);
-    ++quality_entry.sampled;
+    ++qualityEntry.sampled;
     ++sampledCount;
     if (traceSink) {
         traceSink->directQualityTraceIssue(++nextTraceEventSequence,
                                            entry.traceId, entry.issueAge,
                                            entry.line, entry.kind);
     }
+    return entry.traceId;
 }
 
 void
@@ -283,28 +357,28 @@ DirectQualityGate::traceOutcome(const FeedbackEntry &entry,
 unsigned
 DirectQualityGate::blockProbePeriod(const QualityEntry &entry) const
 {
-    const uint64_t strict_limit =
+    const uint64_t strictLimit =
         uint64_t(cfg.strictUnusedPerUseful) * entry.useful +
         cfg.strictBlockGuard;
-    return entry.unused >= strict_limit ? cfg.blockProbePeriod :
+    return entry.unused >= strictLimit ? cfg.blockProbePeriod :
         cfg.borderlineBlockProbePeriod;
 }
 
 bool
 DirectQualityGate::shouldBlock(const QualityEntry &entry) const
 {
-    const uint64_t block_limit = uint64_t(cfg.unusedPerUseful) * entry.useful +
+    const uint64_t blockLimit = uint64_t(cfg.unusedPerUseful) * entry.useful +
         cfg.blockGuard;
-    return entry.unused >= block_limit;
+    return entry.unused >= blockLimit;
 }
 
 bool
 DirectQualityGate::meetsReopen(const QualityEntry &entry) const
 {
-    const uint64_t reopen_limit =
+    const uint64_t reopenLimit =
         uint64_t(cfg.reopenUnusedPerUseful) * entry.useful;
-    return reopen_limit >= cfg.reopenGuard &&
-        entry.unused <= reopen_limit - cfg.reopenGuard;
+    return reopenLimit >= cfg.reopenGuard &&
+        entry.unused <= reopenLimit - cfg.reopenGuard;
 }
 
 void
@@ -325,12 +399,55 @@ DirectQualityGate::transitionTo(QualityEntry &entry, State next)
 }
 
 void
+DirectQualityGate::updateState(QualityEntry &entry,
+                               unsigned previous_block_probe_period)
+{
+    const uint64_t samples = uint64_t(entry.useful) + entry.unused;
+    if (!entry.trained && samples < cfg.minSamples) {
+        transitionTo(entry, State::Observe);
+        return;
+    }
+    if (samples >= cfg.minSamples)
+        entry.trained = true;
+    if (!entry.trained)
+        return;
+
+    if (entry.state == State::Block) {
+        if (!meetsReopen(entry))
+            return;
+        if (cfg.reopenConfirmSamples == 0) {
+            transitionTo(entry, State::Open);
+            return;
+        }
+        entry.recoverySamples = 0;
+        ++entry.recoveryGeneration;
+        entry.recoveryProbePeriod = previous_block_probe_period != 0 ?
+            previous_block_probe_period : blockProbePeriod(entry);
+        transitionTo(entry, State::Recover);
+        return;
+    }
+
+    if (entry.state == State::Recover) {
+        if (shouldBlock(entry)) {
+            entry.recoverySamples = 0;
+            transitionTo(entry, State::Block);
+        } else if (entry.recoverySamples >= cfg.reopenConfirmSamples &&
+                   meetsReopen(entry)) {
+            transitionTo(entry, State::Open);
+        }
+        return;
+    }
+
+    transitionTo(entry, shouldBlock(entry) ? State::Block : State::Open);
+}
+
+void
 DirectQualityGate::applyOutcome(QualityEntry &entry,
                                 uint32_t recovery_generation,
                                 bool isUseful)
 {
-    const State previous_state = entry.state;
-    const unsigned previous_block_probe_period = blockProbePeriod(entry);
+    const State previousState = entry.state;
+    const unsigned previousBlockProbePeriod = blockProbePeriod(entry);
 
     if (isUseful) {
         ++entry.useful;
@@ -339,41 +456,19 @@ DirectQualityGate::applyOutcome(QualityEntry &entry,
         ++entry.unused;
         ++unusedCount;
     }
-
-    if (entry.useful + entry.unused < cfg.minSamples)
-        return;
-
-    if (previous_state == State::Observe || previous_state == State::Open) {
-        transitionTo(entry, shouldBlock(entry) ? State::Block : State::Open);
-        return;
-    }
-
-    if (previous_state == State::Block) {
-        if (!meetsReopen(entry))
-            return;
-
-        if (cfg.reopenConfirmSamples == 0) {
-            transitionTo(entry, State::Open);
-            return;
-        }
-
-        entry.recoverySamples = 0;
-        ++entry.recoveryGeneration;
-        entry.recoveryProbePeriod = previous_block_probe_period;
-        transitionTo(entry, State::Recover);
-        return;
-    }
-
-    assert(previous_state == State::Recover);
-    if (recovery_generation == entry.recoveryGeneration)
+    if (previousState == State::Recover &&
+        recovery_generation == entry.recoveryGeneration) {
         ++entry.recoverySamples;
+    }
+    ++entry.resolvedSinceDecay;
+    updateState(entry, previousBlockProbePeriod);
 
-    if (shouldBlock(entry)) {
-        entry.recoverySamples = 0;
-        transitionTo(entry, State::Block);
-    } else if (entry.recoverySamples >= cfg.reopenConfirmSamples &&
-               meetsReopen(entry)) {
-        transitionTo(entry, State::Open);
+    if (cfg.decayPeriod != 0 &&
+        entry.resolvedSinceDecay >= cfg.decayPeriod) {
+        entry.useful >>= 1;
+        entry.unused >>= 1;
+        entry.resolvedSinceDecay = 0;
+        updateState(entry);
     }
 }
 
@@ -421,7 +516,7 @@ DirectQualityGate::expiryBefore(unsigned lhs, unsigned rhs) const
     const auto &left = feedback[lhs];
     const auto &right = feedback[rhs];
     return left.issueAge != right.issueAge ? left.issueAge < right.issueAge :
-        lhs < rhs;
+        left.traceId < right.traceId;
 }
 
 void
@@ -506,8 +601,9 @@ DirectQualityGate::expireFeedback()
 
         ++feedbackExpiryCount;
         if (resolveFeedback(feedback_index, false,
-                            TraceOutcome::UnusedExpiry))
+                            TraceOutcome::UnusedExpiry)) {
             ++feedbackExpiryUnusedCount;
+        }
     }
 }
 
