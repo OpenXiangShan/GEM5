@@ -124,10 +124,11 @@ BaseCache::SendCustomEvent::description() const
 }
 
 BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
-                                          BaseCache *_cache,
+                                          BaseCache& _cache,
                                           const std::string &_label)
-    : QueuedResponsePort(_name, _cache, queue),
-      queue(*_cache, *this, true, _label),
+    : QueuedResponsePort(_name, queue),
+      cache{_cache},
+      queue(_cache, *this, true, _label),
       blocked(false), mustSendRetry(false),
       sendRetryEvent([this]{ processSendRetry(); }, _name)
 {
@@ -135,7 +136,7 @@ BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
 
 BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     : ClockedObject(p),
-      cpuSidePort (p.name + ".cpu_side_port", this, "CpuSidePort"),
+      cpuSidePort (p.name + ".cpu_side_port", *this, "CpuSidePort"),
       memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
       mshrQueue("MSHRs", p.mshrs, 0, p.demand_mshr_reserve, p.name),
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
@@ -266,7 +267,7 @@ BaseCache::CacheResponsePort::setBlocked()
     // if we already scheduled a retry in this cycle, but it has not yet
     // happened, cancel it
     if (sendRetryEvent.scheduled()) {
-        owner.deschedule(sendRetryEvent);
+        cache.deschedule(sendRetryEvent);
         DPRINTF(CachePort, "Port descheduled retry\n");
         mustSendRetry = true;
     }
@@ -280,7 +281,7 @@ BaseCache::CacheResponsePort::clearBlocked()
     blocked = false;
     if (mustSendRetry) {
         // @TODO: need to find a better time (next cycle?)
-        owner.schedule(sendRetryEvent, curTick() + 1);
+        cache.schedule(sendRetryEvent, curTick() + 1);
     }
 }
 
@@ -3456,12 +3457,12 @@ bool
 BaseCache::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
 {
     // Snoops shouldn't happen when bypassing caches
-    assert(!cache->system->bypassCaches());
+    assert(!cache.system->bypassCaches());
 
     assert(pkt->isResponse());
 
     // Express snoop responses from requestor to responder, e.g., from L1 to L2
-    cache->recvTimingSnoopResp(pkt);
+    cache.recvTimingSnoopResp(pkt);
     return true;
 }
 
@@ -3469,7 +3470,7 @@ BaseCache::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
 bool
 BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
 {
-    if (cache->system->bypassCaches() || pkt->isExpressSnoop()
+    if (cache.system->bypassCaches() || pkt->isExpressSnoop()
         || pkt->isStorePFTrain()) {
         // always let express snoop packets through even if blocked
         return true;
@@ -3478,18 +3479,18 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
         mustSendRetry = true;
         return false;
     }
-    if (!cache->tryAccessTag(pkt)) {
+    if (!cache.tryAccessTag(pkt)) {
         DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
         return false;
     }
-    int sliceidx = cache->getSliceIdx(pkt->getAddr());
-    if (sliceidx >= 0 && cache->cacheLevel != 1) {
-        if (cache->checkSLiceBusy(pkt, sliceidx)) {
+    int sliceidx = cache.getSliceIdx(pkt->getAddr());
+    if (sliceidx >= 0 && cache.cacheLevel != 1) {
+        if (cache.checkSLiceBusy(pkt, sliceidx)) {
             //no more buffer
             if (sendRetryEvent.scheduled()) {
-                owner.reschedule(sendRetryEvent, cache->nextCycle());
+                cache.reschedule(sendRetryEvent, cache.nextCycle());
             } else {
-                owner.schedule(sendRetryEvent, cache->nextCycle());
+                cache.schedule(sendRetryEvent, cache.nextCycle());
             }
             return false;
         }
@@ -3504,25 +3505,25 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
 {
     assert(pkt->isRequest());
 
-    if (cache->system->bypassCaches()) {
+    if (cache.system->bypassCaches()) {
         // Just forward the packet if caches are disabled.
         // @todo This should really enqueue the packet rather
-        [[maybe_unused]] bool success = cache->memSidePort.sendTimingReq(pkt);
+        [[maybe_unused]] bool success = cache.memSidePort.sendTimingReq(pkt);
         assert(success);
         return true;
     } else if (tryTiming(pkt)) {
         pkt->clearMshrArbFailed();
         pkt->clearMshrAliasFailed();
         pkt->clearHitInWriteBuffer();
-        cache->recvTimingReq(pkt);
+        cache.recvTimingReq(pkt);
         if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
             pkt->isHitInWriteBuffer()) {
             // If the MSHR arbitration failed, we need to retry later.
             // We will schedule a retry event to try again.
             if (sendRetryEvent.scheduled()) {
-                owner.reschedule(sendRetryEvent, cache->nextCycle());
+                cache.reschedule(sendRetryEvent, cache.nextCycle());
             } else {
-                owner.schedule(sendRetryEvent, cache->nextCycle());
+                cache.schedule(sendRetryEvent, cache.nextCycle());
             }
             DPRINTF(Cache, "MSHR arbitration failed for pkt %s, retrying later\n",
                     pkt->print());
@@ -3536,39 +3537,39 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
 Tick
 BaseCache::CpuSidePort::recvAtomic(PacketPtr pkt)
 {
-    if (cache->system->bypassCaches()) {
+    if (cache.system->bypassCaches()) {
         // Forward the request if the system is in cache bypass mode.
-        return cache->memSidePort.sendAtomic(pkt);
+        return cache.memSidePort.sendAtomic(pkt);
     } else {
-        return cache->recvAtomic(pkt);
+        return cache.recvAtomic(pkt);
     }
 }
 
 void
 BaseCache::CpuSidePort::recvFunctional(PacketPtr pkt)
 {
-    if (cache->system->bypassCaches()) {
+    if (cache.system->bypassCaches()) {
         // The cache should be flushed if we are in cache bypass mode,
         // so we don't need to check if we need to update anything.
-        cache->memSidePort.sendFunctional(pkt);
+        cache.memSidePort.sendFunctional(pkt);
         return;
     }
 
     // functional request
-    cache->functionalAccess(pkt, true);
+    cache.functionalAccess(pkt, true);
 }
 
 AddrRangeList
 BaseCache::CpuSidePort::getAddrRanges() const
 {
-    return cache->getAddrRanges();
+    return cache.getAddrRanges();
 }
 
 
 BaseCache::
-CpuSidePort::CpuSidePort(const std::string &_name, BaseCache *_cache,
+CpuSidePort::CpuSidePort(const std::string &_name, BaseCache& _cache,
                          const std::string &_label)
-    : CacheResponsePort(_name, _cache, _label), cache(_cache)
+    : CacheResponsePort(_name, _cache, _label)
 {
 }
 
@@ -3679,7 +3680,7 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
 BaseCache::MemSidePort::MemSidePort(const std::string &_name,
                                     BaseCache *_cache,
                                     const std::string &_label)
-    : CacheRequestPort(_name, _cache, _reqQueue, _snoopRespQueue),
+    : CacheRequestPort(_name, _reqQueue, _snoopRespQueue),
       _reqQueue(*_cache, *this, _snoopRespQueue, _label),
       _snoopRespQueue(*_cache, *this, true, _label), cache(_cache)
 {

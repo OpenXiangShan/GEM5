@@ -68,11 +68,12 @@ class RubyPort : public ClockedObject
     class MemRequestPort : public QueuedRequestPort
     {
       private:
+        RubyPort& owner;
         ReqPacketQueue reqQueue;
         SnoopRespPacketQueue snoopRespQueue;
 
       public:
-        MemRequestPort(const std::string &_name, RubyPort *_port);
+        MemRequestPort(const std::string &_name, RubyPort& _port);
 
       protected:
         bool recvTimingResp(PacketPtr pkt);
@@ -82,14 +83,16 @@ class RubyPort : public ClockedObject
     class MemResponsePort : public QueuedResponsePort
     {
       private:
+        RubyPort& owner;
         RespPacketQueue queue;
         bool access_backing_store;
         bool no_retry_on_stall;
 
       public:
-        MemResponsePort(const std::string &_name, RubyPort *_port,
-                     bool _access_backing_store,
-                     PortID id, bool _no_retry_on_stall);
+        MemResponsePort(const std::string &_name,
+                        RubyPort& _port,
+                        bool _access_backing_store,
+                        PortID id, bool _no_retry_on_stall);
         void hitCallback(PacketPtr pkt);
         void customSignalCallback(PacketPtr pkt);
         void evictionCallback(Addr address);
@@ -114,11 +117,12 @@ class RubyPort : public ClockedObject
     class PioRequestPort : public QueuedRequestPort
     {
       private:
+        RubyPort& owner;
         ReqPacketQueue reqQueue;
         SnoopRespPacketQueue snoopRespQueue;
 
       public:
-        PioRequestPort(const std::string &_name, RubyPort *_port);
+        PioRequestPort(const std::string &_name, RubyPort& _port);
 
       protected:
         bool recvTimingResp(PacketPtr pkt);
@@ -128,10 +132,11 @@ class RubyPort : public ClockedObject
     class PioResponsePort : public QueuedResponsePort
     {
       private:
+        RubyPort& owner;
         RespPacketQueue queue;
 
       public:
-        PioResponsePort(const std::string &_name, RubyPort *_port);
+        PioResponsePort(const std::string &_name, RubyPort& _port);
 
       protected:
         bool recvTimingReq(PacketPtr pkt);

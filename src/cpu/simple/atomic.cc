@@ -79,7 +79,7 @@ AtomicSimpleCPU::AtomicSimpleCPU(const BaseAtomicSimpleCPUParams &p)
       width(p.width), locked(false),
       simulate_data_stalls(p.simulate_data_stalls),
       simulate_inst_stalls(p.simulate_inst_stalls),
-      icachePort(name() + ".icache_port", this),
+      icachePort(name() + ".icache_port"),
       dcachePort(name() + ".dcache_port", this),
       dcache_access(false), dcache_latency(0),
       ppCommit(nullptr)
@@ -286,8 +286,6 @@ AtomicSimpleCPU::AtomicCPUDPort::recvAtomicSnoop(PacketPtr pkt)
             __func__, pkt->getAddr(), pkt->cmdString());
 
     // X86 ISA: Snooping an invalidation for monitor/mwait
-    AtomicSimpleCPU *cpu = (AtomicSimpleCPU *)(&owner);
-
     for (ThreadID tid = 0; tid < cpu->numThreads; tid++) {
         if (cpu->getCpuAddrMonitor(tid)->doMonitor(pkt)) {
             cpu->wakeup(tid);
@@ -317,7 +315,6 @@ AtomicSimpleCPU::AtomicCPUDPort::recvFunctionalSnoop(PacketPtr pkt)
             __func__, pkt->getAddr(), pkt->cmdString());
 
     // X86 ISA: Snooping an invalidation for monitor/mwait
-    AtomicSimpleCPU *cpu = (AtomicSimpleCPU *)(&owner);
     for (ThreadID tid = 0; tid < cpu->numThreads; tid++) {
         if (cpu->getCpuAddrMonitor(tid)->doMonitor(pkt)) {
             cpu->wakeup(tid);
