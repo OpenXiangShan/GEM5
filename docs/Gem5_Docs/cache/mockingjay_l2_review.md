@@ -82,7 +82,8 @@ test 中为直接旁路增加的接口与路径。
 每份配置都实例化四个 `MockingjayL2RP`，并有非零的最大 ETR 插入统计，故可确认
 策略实际生效。归档中没有 `policy_bypassed` 或 `bypasses`。
 
-相对基线归档的观察值如下：
+相对基线归档的观察值如下（完整候选包含 Int+FP，因此这里只把 Int 行作为后续
+整数 A/B 的比较口径）：
 
 | 指标 | 基线 | 候选 | 变化 |
 | --- | ---: | ---: | ---: |
@@ -94,9 +95,10 @@ test 中为直接旁路增加的接口与路径。
 path；候选使用 `default` 展开的共享节点池和 `distributed_sim.py` 路径。执行路径
 不同，因此上表只能记录“完整候选运行完成后的观察值”，不能归因于 Mockingjay，
 也不能用于 solver 或 DSE 决策。当前审阅分支的软件预取隔离修正也不在该候选 CI
-的源码中。要形成性能结论，必须用同一完整 SHA、`kmhv3.py`、完整整数 slice、空
-`distributed_servers` 和 CI DRAMsim3 重跑成对实验，并审计归档的 `config.ini`、
-`score.txt` 与 manifest。
+的源码中。要形成性能结论，必须用同一完整 SHA、`kmhv3.py`、
+`gcc15-spec06-1.0c`、`specific_benchmarks=perlbench,bzip2,gcc,mcf,gobmk,hmmer,sjeng,libquantum,h264ref,omnetpp,astar,xalancbmk`
+（1112 中的 697 个整数 slice）、空 `distributed_servers` 和 CI DRAMsim3 重跑
+成对实验，并审计归档的 `config.ini`、`score.txt` 与 manifest。
 
 ## 已知边界
 

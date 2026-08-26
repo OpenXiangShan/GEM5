@@ -83,11 +83,12 @@ GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so \
 
 ## 候选 CI 与受控 A/B 合同
 
-* Baseline run：`32391965338`；有效 job：`96499960567`；基线 SHA：
+* Baseline run：`32391965338`；`kmhv3.py` job：`96499960822`；基线 SHA：
   `5361c1248804755d285313f41dd73b7a299f7b48`。
 * Baseline 归档：
   `/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-1.0c/20260821_003117_5361c12488_kmhv3_run102`；
-  score 为 `20.612401866596542`。
+  Int score 为 `18.675663861478398`（该归档的总分 `20.612401866596542` 仅用于记录，
+  因为它包含 Int+FP）。
 * 候选 workflow：`32941495780`（run 968）；提交为
   `35f340a2e3a989fb3d2ea8c1ea4d751a4ff618f4`，归档为
   `/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-1.0c/20260826_151522_35f340a2e3_kmhv3_run968`。
@@ -102,7 +103,10 @@ GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so \
   执行路径变化，所以不能把任何 score 或 stats 差异归因于 Mockingjay，不能将其
   用于 solver/DSE，也不能用它替代重跑。
 * 待运行任务必须使用本分支完整 40 位 SHA、`kmhv3.py`、
-  `gcc15-spec06-1.0c`、完整整数 slice 集合、空 `distributed_servers`（CI
+  `gcc15-spec06-1.0c`，并将 `specific_benchmarks` 固定为
+  `perlbench,bzip2,gcc,mcf,gobmk,hmmer,sjeng,libquantum,h264ref,omnetpp,astar,xalancbmk`。
+  该过滤器按 runner 的大小写不敏感子串规则从 1112 个 workload 选出 697 个
+  整数 slice，排除 415 个浮点 slice；同时保持空 `distributed_servers`（CI
   parallel path）和 CI DRAMsim3。
 * 在性能结论之前，必须归档并核对 `config.ini`、`score.txt` 和 manifest；没有
   这些产物不能将 setup 成功或参数请求视为性能证据。

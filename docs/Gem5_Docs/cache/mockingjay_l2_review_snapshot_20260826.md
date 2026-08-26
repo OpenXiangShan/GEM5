@@ -138,6 +138,8 @@ git diff 5361c1248804755d285313f41dd73b7a299f7b48 HEAD -- \
 ## 尚未完成的事项
 
 尚未完成受控性能 A/B。后续性能验证必须固定完整 SHA、`kmhv3.py`、
-`gcc15-spec06-1.0c`、完整整数 slice 集合、CI 的 parallel path 和 DRAMsim3，
-并同时审计归档的 `config.ini`、`score.txt` 与 manifest，之后才能讨论收益或
-进入 solver 参数探索。
+`gcc15-spec06-1.0c`，并传入
+`specific_benchmarks=perlbench,bzip2,gcc,mcf,gobmk,hmmer,sjeng,libquantum,h264ref,omnetpp,astar,xalancbmk`。
+该字符串按现有 runner 规则选出 697/1112 个整数 slice；同时固定 CI 的 parallel
+path（空 `distributed_servers`）和 DRAMsim3，并审计归档的 `config.ini`、
+`score.txt` 与 manifest，之后才能讨论收益或进入 solver 参数探索。
