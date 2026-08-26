@@ -130,6 +130,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
+            cpu.branchPred.pairtage.enabled = True
+            cpu.branchPred.pairtage.enableSecondBlock = True
 
             if getattr(args, 'standalone_sc', False):
                 cpu.branchPred.microtage.enabled = False
