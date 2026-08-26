@@ -21,6 +21,8 @@ from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
 from util.solver.runtime.integration import maybe_handle_solver_runtime
+from common.FUScheduler_fetch10 import KMHV3Fetch10Scheduler
+
 
 def setPtwLevelLimitParams(args, tlb):
     tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
@@ -45,44 +47,44 @@ def setKmhV3Params(args, system):
 
         # decode
         cpu.fetchToDecodeDelay = 3
-        cpu.decodeWidth = 8
+        cpu.decodeWidth = 10
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
 
         # rename
-        cpu.renameWidth = 8
-        cpu.numPhysIntRegs = 224
-        cpu.numPhysFloatRegs = 256
+        cpu.renameWidth = 10
+        cpu.numPhysIntRegs = 272
+        cpu.numPhysFloatRegs = 320
         cpu.enable_storeSet_train = True
 
         # dispatch
         cpu.enableDispatchStage = False
-        cpu.numDQEntries = [8, 8, 8]
-        cpu.dispWidth = [8, 8, 8]
+        cpu.numDQEntries = [10, 10, 10]
+        cpu.dispWidth = [10, 10, 10]
 
         # scheduler
-        cpu.scheduler = KMHV3Scheduler()
-        cpu.scheduler.disableAllRegArb()
-        cpu.scheduler.enableMainRdpOpt = False
-        cpu.scheduler.intRegfileBanks = 1
-        # intiq0
-        cpu.scheduler.IQs[0].oports[0].rp = [IntRD(0, 0), IntRD(1, 0)]
-        cpu.scheduler.IQs[0].oports[1].rp = [IntRD(0, 1), IntRD(1, 1)]
+        cpu.scheduler = KMHV3Fetch10Scheduler()
+        # cpu.scheduler.disableAllRegArb()
+        # cpu.scheduler.enableMainRdpOpt = true
+        # cpu.scheduler.intRegfileBanks = 2
+        # # intiq0
+        # cpu.scheduler.IQs[0].oports[0].rp = [IntRD(0, 0), IntRD(1, 0)]
+        # cpu.scheduler.IQs[0].oports[1].rp = [IntRD(0, 1), IntRD(1, 1)]
 
-        # intiq1
-        cpu.scheduler.IQs[1].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
-        cpu.scheduler.IQs[1].oports[1].rp = [IntRD(2, 1), IntRD(3, 1)]
+        # # intiq1
+        # cpu.scheduler.IQs[1].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
+        # cpu.scheduler.IQs[1].oports[1].rp = [IntRD(2, 1), IntRD(3, 1)]
 
-        # intiq2
-        cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
-        cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
+        # # intiq2
+        # cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
+        # cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
 
         # rob
         cpu.commitWidth = 8
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'none'
-        cpu.numROBEntries = 352
+        cpu.numROBEntries = 512
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.robWalkPolicy = args.rob_walk_policy
 
