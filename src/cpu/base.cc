@@ -1040,13 +1040,13 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             const bool tail_agnostic = bits(vtype, 6);
             const uint32_t sew_bytes = 1 << bits(vtype, 5, 3);
             const uint32_t regs_per_group = RiscvISA::vtype_regs_per_group(vtype);
-            const uint32_t elems_per_reg = RiscvISA::VLENB / sew_bytes;
-            const uint32_t vlmax = RiscvISA::vtype_VLMAX(vtype);
+            const uint32_t elems_per_reg = (RiscvISA::DefaultVecLenInBits / 8) / sew_bytes;
+            const uint32_t vlmax = RiscvISA::vtype_VLMAX(vtype, RiscvISA::DefaultVecLenInBits);
             auto is_tail_agnostic_byte = [&](int byte_idx) {
                 if (!tail_agnostic || vl >= vlmax)
                     return false;
-                const int reg_idx = byte_idx / RiscvISA::VLENB;
-                const int byte_in_reg = byte_idx % RiscvISA::VLENB;
+                const int reg_idx = byte_idx / (RiscvISA::DefaultVecLenInBits / 8);
+                const int byte_in_reg = byte_idx % (RiscvISA::DefaultVecLenInBits / 8);
                 auto reg_is_in_group = [&](const RegId &reg) {
                     if (!reg.isVecReg())
                         return false;
@@ -1074,34 +1074,35 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             };
             bool maybe_error = false;
             int error_idx = 0;
-            for (int i = 0; i < RiscvISA::VLENB * 32; i++) {
+            for (int i = 0; i < (RiscvISA::DefaultVecLenInBits / 8) * 32; i++) {
                 if (nemu_byte[i] != gem5_byte[i] &&
                     is_tail_agnostic_byte(i))
                     continue;
                 if (nemu_byte[i] != gem5_byte[i]) {
                     maybe_error = true;
-                    error_idx = (i / RiscvISA::VLENB) *
-                                RiscvISA::NumVecElemPerVecReg;
+                    error_idx = (i / (RiscvISA::DefaultVecLenInBits / 8)) *
+                                (RiscvISA::DefaultVecLenInBits / 64);
                     break;
                 }
             }
 
             if (maybe_error) {
                 std::string gem5_val_, nemu_val_;
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+                constexpr int difftest_elems = DIFFTEST_VLEN / 64;
+                for (int j=difftest_elems-1; j>=0; j--) {
                     gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
                     if (j != 0) {
                         gem5_val_+="_";
                     }
                 }
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
+                for (int j=difftest_elems-1; j>=0; j--) {
                     nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
                     if (j != 0) {
                         nemu_val_ += "_";
                     }
                 }
                 warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
-                    (error_idx>>1), nemu_val_, gem5_val_);
+                    (error_idx / difftest_elems), nemu_val_, gem5_val_);
                 diff_at = ValueDiff;
             }
         }

@@ -32,6 +32,7 @@
 
 #include "arch/generic/decode_cache.hh"
 #include "arch/generic/decoder.hh"
+#include "arch/generic/isa.hh"
 #include "arch/riscv/insts/vector.hh"
 #include "arch/riscv/types.hh"
 #include "base/logging.hh"
@@ -57,6 +58,9 @@ class Decoder : public InstDecoder
     bool vtypeReady = true;
     VTYPE machVtype;
 
+    /** Architectural VLEN copied from the attached ISA at construction. */
+    uint32_t vlen = DefaultVecLenInBits;
+
     /// A cache of decoded instruction objects.
     static GenericISA::BasicDecodeCache<Decoder, ExtMachInst> defaultCache;
     friend class GenericISA::BasicDecodeCache<Decoder, ExtMachInst>;
@@ -69,10 +73,7 @@ class Decoder : public InstDecoder
     StaticInstPtr decode(ExtMachInst mach_inst, Addr addr);
 
   public:
-    Decoder(const RiscvDecoderParams &p) : InstDecoder(p, &machInst)
-    {
-        reset();
-    }
+    Decoder(const RiscvDecoderParams &p);
 
     void reset() override;
 
@@ -96,6 +97,8 @@ class Decoder : public InstDecoder
     void clearVtype();
 
     bool stall() override;
+
+    uint32_t getVecLenInBits() const { return vlen; }
 };
 
 } // namespace RiscvISA

@@ -28,10 +28,16 @@ typedef uint16_t ioaddr_t;
 #include "nemu_macro.hh"
 
 
-#define VENUM64 (gem5::RiscvISA::VLEN/64)
-#define VENUM32 (gem5::RiscvISA::VLEN/32)
-#define VENUM16 (gem5::RiscvISA::VLEN/16)
-#define VENUM8 (gem5::RiscvISA::VLEN/8)
+/*
+ * Difftest ABI with the stock NEMU reference is fixed at Kunminghu's 128-bit
+ * VLEN. gem5 may model a larger architectural VLEN, but vector difftest against
+ * the default NEMU .so is only valid when ISA.vlen == DIFFTEST_VLEN.
+ */
+#define DIFFTEST_VLEN (gem5::RiscvISA::DefaultVecLenInBits)
+#define VENUM64 (DIFFTEST_VLEN/64)
+#define VENUM32 (DIFFTEST_VLEN/32)
+#define VENUM16 (DIFFTEST_VLEN/16)
+#define VENUM8 (DIFFTEST_VLEN/8)
 
 
 

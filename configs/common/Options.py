@@ -328,6 +328,17 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
             help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
 
+    parser.add_argument("--rvv-vlen", type=int, default=128,
+            choices=[128, 256, 512],
+            help="RISC-V vector register length in bits (VLEN). "
+                 "Default 128 matches Kunminghu / NEMU difftest. "
+                 "Values other than 128 require a matching reference model; "
+                 "stock NEMU difftest is only valid for VLEN=128.")
+
+    parser.add_argument("--rvv-elen", type=int, default=64,
+            choices=[8, 16, 32, 64],
+            help="RISC-V maximum vector element length in bits (ELEN).")
+
     parser.add_argument("--restore-rvv-cpt", action="store_true", default=False,
             help="The input checkpoint is RVV, which requires RVV restorer")
 

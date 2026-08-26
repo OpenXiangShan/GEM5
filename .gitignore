@@ -77,3 +77,10 @@ microbench/dramsim3*
 *.log
 *.gz
 *.zstd
+/deps/
+# Local RVV VLEN test artifacts (downloaded / generated)
+util/xs_scripts/rvv_vlen/bins/
+util/xs_scripts/rvv_vlen/gem5-resource-cache/
+util/xs_scripts/rvv_vlen/upstream-se-results/
+util/xs_scripts/rvv_vlen/m5out-am-vlen-*/
+util/xs_scripts/rvv_vlen/am/**/build/

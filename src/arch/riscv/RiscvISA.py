@@ -13,6 +13,7 @@
 #
 # Copyright (c) 2016 RISC-V Foundation
 # Copyright (c) 2016 The University of Virginia
+# Copyright (c) 2023 The Regents of the University of California
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,8 +40,50 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from m5.objects.BaseISA import BaseISA
+from m5.params import (
+    Param,
+    UInt32,
+)
+
+
+class RiscvVectorLength(UInt32):
+    """Architectural VLEN in bits. Must be a power of two within XS-GEM5 limits."""
+
+    # Keep the lower bound at Kunminghu's historical default; upper bound matches
+    # MaxVecLenInBits in types.hh so register containers stay large enough.
+    min = 128
+    max = 512
+
+    def _check(self):
+        super()._check()
+        if self.value & (self.value - 1) != 0:
+            raise TypeError("VLEN is not a power of 2: %d" % self.value)
+
+
+class RiscvVectorElementLength(UInt32):
+    """Architectural ELEN in bits. Must be a power of two and <= VLEN."""
+
+    min = 8
+    max = 64
+
+    def _check(self):
+        super()._check()
+        if self.value & (self.value - 1) != 0:
+            raise TypeError("ELEN is not a power of 2: %d" % self.value)
+
 
 class RiscvISA(BaseISA):
     type = 'RiscvISA'
     cxx_class = 'gem5::RiscvISA::ISA'
     cxx_header = "arch/riscv/isa.hh"
+
+    # Default 128 matches Kunminghu / existing NEMU difftest ABI.
+    vlen = Param.RiscvVectorLength(
+        128,
+        "Length of each vector register in bits (RVV VLEN). "
+        "Must be <= MaxVecLenInBits (512) compiled into XS-GEM5.",
+    )
+    elen = Param.RiscvVectorElementLength(
+        64,
+        "Maximum vector element length in bits (RVV ELEN).",
+    )

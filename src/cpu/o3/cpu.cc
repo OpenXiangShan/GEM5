@@ -43,6 +43,7 @@
 #include "cpu/o3/cpu.hh"
 
 #include <cassert>
+#include <cstring>
 #include <limits>
 
 #include "arch/riscv/regs/misc.hh"
@@ -1746,10 +1747,16 @@ void
 CPU::readGem5Regs(ThreadID tid)
 {
     auto diffAllStates = this->diffAllStates[tid];
+    // Physical vector registers are MaxVLEN-sized; the NEMU difftest ABI only
+    // carries DefaultVecLenInBits (128). Copy the architectural prefix only.
+    alignas(16) uint8_t tmp_vec[RiscvISA::MaxVecLenInBytes];
     for (int i = 0; i < 32; i++) {
         diffAllStates->gem5RegFile[i] = readArchIntReg(i, tid);
         diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, tid);
-        readArchVecReg(i, (uint64_t*)&diffAllStates->gem5RegFile.vr[i], tid);
+        std::memset(tmp_vec, 0, sizeof(tmp_vec));
+        readArchVecReg(i, reinterpret_cast<uint64_t *>(tmp_vec), tid);
+        std::memcpy(&diffAllStates->gem5RegFile.vr[i], tmp_vec,
+                    DIFFTEST_VLEN / 8);
     }
 }
 

@@ -1154,7 +1154,7 @@ def format VectorMaskFormat(code, category, *flags) {{
 
     if (mask_vstart < rVl) {
         for (uint32_t bit = rVl;
-             bit < VLEN;
+             bit < vlen;
              ++bit) {
             Vd_ub[bit / 8] =
                 ASSIGN_VD_BIT(bit, true);
@@ -1213,7 +1213,7 @@ def format VectorReduceIntFormat(code, category, *flags) {{
             std::memset(
                 tmp_d0.as<uint8_t>() + sizeof(ElemType),
                 0xff,
-                RiscvISA::VLENB - sizeof(ElemType));
+                (vlen >> 3) - sizeof(ElemType));
         }
     }
     """ % (code)

@@ -89,6 +89,10 @@ class ISA : public BaseISA
     std::vector<int32_t> matrixAcc;
     std::vector<RegVal> matrixTokens;
 
+    /** Architectural VLEN/ELEN (bits). Fixed for a simulation run. */
+    unsigned vlen;
+    unsigned elen;
+
     RegVal &
     matrixToken(size_t idx);
 
@@ -112,6 +116,11 @@ class ISA : public BaseISA
     RegVal readMiscReg(int misc_reg);
     void setMiscRegNoEffect(int misc_reg, RegVal val);
     void setMiscReg(int misc_reg, RegVal val);
+
+    /** RVV VLEN in bits / bytes and ELEN in bits (Ch. 2 of the vector spec). */
+    unsigned getVecLenInBits() const { return vlen; }
+    unsigned getVecLenInBytes() const { return vlen >> 3; }
+    unsigned getVecElemLenInBits() const { return elen; }
 
     RegId flattenRegId(const RegId &regId) const { return regId; }
     int flattenIntIndex(int reg) const { return reg; }

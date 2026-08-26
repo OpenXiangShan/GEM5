@@ -196,7 +196,7 @@ std::string VleffMicroInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-       << VLENB * microIdx << '(' << registerName(srcRegIdx(0)) << ')' << ", "
+       << (vlen >> 3) * microIdx << '(' << registerName(srcRegIdx(0)) << ')' << ", "
        << registerName(srcRegIdx(1));
     if (!machInst.vm) ss << ", v0.t";
     return ss.str();
@@ -207,7 +207,7 @@ std::string VlWholeMicroInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
-       << VLENB * microIdx << '(' << registerName(srcRegIdx(0)) << ')';
+       << (vlen >> 3) * microIdx << '(' << registerName(srcRegIdx(0)) << ')';
     return ss.str();
 }
 
@@ -226,7 +226,7 @@ std::string VsWholeMicroInst::generateDisassembly(Addr pc,
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", "
-       << VLENB * microIdx << '(' << registerName(srcRegIdx(0)) << ')';
+       << (vlen >> 3) * microIdx << '(' << registerName(srcRegIdx(0)) << ')';
     return ss.str();
 }
 
@@ -331,8 +331,8 @@ std::string VlIndexMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    uint32_t vdElemIdx = vmi.rs % (VLEN / getSew(machInst.vtype8.vsew));
-    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
+    uint32_t vdElemIdx = vmi.rs % (vlen / getSew(machInst.vtype8.vsew));
+    uint32_t vs2ElemIdx = vmi.rs % (vlen / width_EEW(machInst.width));
     ss << mnemonic << ' '
         << registerName(destRegIdx(0)) << "[" << uint16_t(vdElemIdx) << "], "
         << '(' << registerName(srcRegIdx(0)) << "), "
@@ -358,8 +358,8 @@ std::string VsIndexMicroInst::generateDisassembly(Addr pc,
         const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
-    uint32_t vs3ElemIdx = vmi.rs % (VLEN / getSew(machInst.vtype8.vsew));
-    uint32_t vs2ElemIdx = vmi.rs % (VLEN / width_EEW(machInst.width));
+    uint32_t vs3ElemIdx = vmi.rs % (vlen / getSew(machInst.vtype8.vsew));
+    uint32_t vs2ElemIdx = vmi.rs % (vlen / width_EEW(machInst.width));
     ss << mnemonic << ' '
         << registerName(srcRegIdx(2)) << "[" << uint16_t(vs3ElemIdx) << "], "
         << '(' << registerName(srcRegIdx(0)) << "), "

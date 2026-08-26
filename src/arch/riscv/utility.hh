@@ -52,6 +52,7 @@
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
 #include "arch/riscv/regs/vector.hh"
+#include "base/logging.hh"
 #include "base/types.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
@@ -172,12 +173,20 @@ vtype_SEW(const uint64_t vtype)
 * Ref: https://github.com/qemu/qemu/blob/5e9d14f2/target/riscv/cpu.h
 */
 inline uint64_t
-vtype_VLMAX(const uint64_t vtype, const bool per_reg = false)
+vtype_VLMAX(const uint64_t vtype, uint32_t vlen_bits, const bool per_reg = false)
 {
     int64_t lmul = (int64_t)sext<3>(bits(vtype, 2, 0));
     lmul = per_reg ? std::min<int64_t>(0, lmul) : lmul;
     int64_t vsew = bits(vtype, 5, 3);
-    return gem5::RiscvISA::VLEN >> (vsew + 3 - lmul);
+    return vlen_bits >> (vsew + 3 - lmul);
+}
+
+/** Backward-compatible helper: uses DefaultVecLenInBits (Kunminghu = 128).
+ * Prefer the overload that takes an explicit VLEN for configurable models. */
+inline uint64_t
+vtype_VLMAX(const uint64_t vtype, const bool per_reg = false)
+{
+    return vtype_VLMAX(vtype, DefaultVecLenInBits, per_reg);
 }
 
 inline int64_t
@@ -243,10 +252,23 @@ get_emul(uint32_t eew, uint32_t sew, float vflmul, bool is_mask_ldst)
     return emul;
 }
 
+/**
+ * Map element index `n` to the architectural vector register that holds it.
+ *
+ * Why `vlen_bits` is required (no default): with MaxVecLenInBits > active VLEN,
+ * using DefaultVecLenInBits / MaxVecLenInBits here silently mis-splits LMUL /
+ * segment / indexed / slide micro-ops. Call sites must pass the decode-time
+ * architectural `vlen` captured on the StaticInst.
+ */
 inline int
-elem_gen_idx(int vd, int n, int elem_size)
+elem_gen_idx(int vd, int n, int elem_size, uint32_t vlen_bits)
 {
-    int elts_per_reg = (RiscvISA::VLEN>>3) / elem_size;
+    panic_if(elem_size == 0, "elem_gen_idx: elem_size must be > 0");
+    panic_if(vlen_bits < 8, "elem_gen_idx: vlen_bits=%u too small", vlen_bits);
+    int elts_per_reg = (vlen_bits >> 3) / elem_size;
+    panic_if(elts_per_reg <= 0,
+        "elem_gen_idx: elts_per_reg=0 (vlen_bits=%u elem_size=%d)",
+        vlen_bits, elem_size);
     vd = vd + n / elts_per_reg;
     return vd;
 }

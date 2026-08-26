@@ -9,7 +9,7 @@ output header {{
     assert(oldDstIdx > 0); \
     xc->getRegOperand(this, oldDstIdx, &old_vd); \
     old_Vd = old_vd.as<std::remove_reference_t<decltype(Vd[0])> >(); \
-    memcpy(Vd, old_Vd, VLENB);
+    memcpy(Vd, old_Vd, (vlen >> 3));
 
 #define SET_OLDDST_SRC() \
     oldDstIdx = _numSrcRegs; \
@@ -141,7 +141,7 @@ Fault
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    uint32_t elem_num_per_vreg = vlen / sew;
 
     %(op_decl)s;
     %(op_rd)s;
@@ -214,8 +214,8 @@ Fault
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
 
-    auto offset = (VLEN / sew) * (microIdx % %(ext_div)d);
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    auto offset = (vlen / sew) * (microIdx % %(ext_div)d);
+    uint32_t elem_num_per_vreg = vlen / sew;
     switch (sew / %(ext_div)d) {
       case 8: {
         using vext  [[maybe_unused]] = int8_t;
@@ -296,7 +296,7 @@ template<typename ElemType>
 
     StaticInstPtr microop;
 
-    uint32_t vlmax = VLEN / sew * vflmul;
+    uint32_t vlmax = vlen / sew * vflmul;
     for (int i = 0; i < num_microops; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, i);
         microop->setDelayedCommit();
@@ -364,7 +364,8 @@ Fault
     // number of destination elements handled by one micro-op is
     // independent of LMUL. LMUL is represented by the number of
     // generated micro-ops.
-    const int32_t micro_vlmax = VLEN / (2 * sew);
+    // Use architectural vlen (not MaxVecLenInBits / VLEN macro).
+    const int32_t micro_vlmax = vlen / (2 * sew);
     [[maybe_unused]] const size_t offset =
         (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
     uint32_t elem_num_per_vreg = micro_vlmax;
@@ -395,7 +396,7 @@ Fault
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
-    const int32_t t_micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    const int32_t t_micro_vlmax = vlen / sew * (vflmul > 0 ? 1 : vflmul);
     const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
     [[maybe_unused]] const size_t offset =
         (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
@@ -500,7 +501,7 @@ Fault
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    uint32_t elem_num_per_vreg = vlen / sew;
 
     VRM_REQUIRED;
 
@@ -595,7 +596,8 @@ Fault
     // number of destination elements handled by one micro-op is
     // independent of LMUL. LMUL is represented by the number of
     // generated micro-ops.
-    const int32_t micro_vlmax = VLEN / (2 * sew);
+    // Use architectural vlen (not MaxVecLenInBits / VLEN macro).
+    const int32_t micro_vlmax = vlen / (2 * sew);
     [[maybe_unused]] const size_t offset =
         (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
     uint32_t elem_num_per_vreg = micro_vlmax;
@@ -629,7 +631,7 @@ Fault
 
     VRM_REQUIRED;
 
-    const int32_t t_micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    const int32_t t_micro_vlmax = vlen / sew * (vflmul > 0 ? 1 : vflmul);
     const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
     [[maybe_unused]] const size_t offset =
         (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
@@ -676,7 +678,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t elem_num_per_vreg = vlen / sew;
     const uint32_t num_microops = (vflmul < 1 ? 1 : vflmul);
 
     StaticInstPtr microop;
@@ -755,7 +757,7 @@ Fault
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    uint32_t elem_num_per_vreg = vlen / sew;
 
     %(op_decl)s;
     %(op_rd)s;
@@ -859,7 +861,7 @@ Fault
     //
     // When vl is zero, no destination elements may be updated.
     if (rVl != 0) {
-        for (uint32_t bit = rVl; bit < VLEN; ++bit) {
+        for (uint32_t bit = rVl; bit < vlen; ++bit) {
             Vd[bit / 8] |= static_cast<uint8_t>(
                 1U << (bit % 8));
         }
@@ -1014,9 +1016,9 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
 
-    const uint16_t bit_offset = VLEN / sew;
+    const uint16_t bit_offset = vlen / sew;
     const uint16_t offset = bit_offset * microIdx;
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    uint32_t elem_num_per_vreg = vlen / sew;
 
     %(code)s;
     %(op_wb)s;
@@ -1111,14 +1113,14 @@ Fault
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    uint32_t elem_num_per_vreg = vlen / sew;
 
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
     COPY_OLD_VD();
 
-    const uint16_t bit_offset = VLENB / sizeof(ElemType);
+    const uint16_t bit_offset = (vlen >> 3) / sizeof(ElemType);
     const uint16_t offset = bit_offset * microIdx;
 
     %(code)s;
@@ -1203,9 +1205,9 @@ Fault
     // TODO: If vd is equal to vs2 the instruction is an architectural NOP.
     %(op_decl)s;
     %(op_rd)s;
-    uint32_t elem_num_per_vreg = VLEN / sew;
+    uint32_t elem_num_per_vreg = vlen / sew;
 
-    for (size_t i = 0; i < (VLEN / 64); i++) {
+    for (size_t i = 0; i < (vlen / 64); i++) {
         %(code)s;
     }
     %(op_wb)s;
@@ -1552,7 +1554,7 @@ Fault
         assert(numReduceRegs >= 1);
         assert(numReduceRegs <= 8);
 
-        const uint32_t elems_per_reg = VLEN / sew;
+        const uint32_t elems_per_reg = vlen / sew;
 
         // Start from old vd so vl=0 and vta=0 preserve the old value.
         RiscvISAInst::VecRegContainer tmp_old;
@@ -1696,7 +1698,7 @@ Fault
     xc->getRegOperand(this, 1, &tmp_old);
     auto OldVd = tmp_old.as<vu>();
 
-    for (uint32_t i = 0; i < VLEN / sew; ++i) {
+    for (uint32_t i = 0; i < vlen / sew; ++i) {
         Vd[i] = OldVd[i];
     }
 
@@ -1712,7 +1714,7 @@ Fault
         Vd[0] = Acc[0];
 
         if (machInst.vtype8.vta) {
-            for (uint32_t i = 1; i < VLEN / sew; ++i) {
+            for (uint32_t i = 1; i < vlen / sew; ++i) {
                 Vd[i] = ~vu(0);
             }
         }
@@ -1783,7 +1785,7 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
 
-    uint32_t microvlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    uint32_t microvlmax = vlen / sew * (vflmul > 0 ? 1 : vflmul);
     uint32_t elem_num_per_vreg = microvlmax;
     auto reduce_loop =
         [&, this](const auto& f, const auto* _, const auto* vs2) {
@@ -1840,7 +1842,7 @@ Fault
                 : negative_zero;
 
         const uint32_t elems_per_reg =
-            VLEN / sew;
+            vlen / sew;
 
         for (uint32_t i = 0;
              i < elems_per_reg;
@@ -1864,7 +1866,7 @@ Fault
 
 
     const uint32_t micro_vlmax =
-        VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+        vlen / sew * (vflmul > 0 ? 1 : vflmul);
 
     // The first data micro-op starts with vs1[0].
     // Later data micro-ops continue from the previous renamed
@@ -1929,7 +1931,7 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
 
-    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    uint32_t micro_vlmax = vlen / sew * (vflmul > 0 ? 1 : vflmul);
     if (micro_vlmax * this->microIdx < rVl) {
         Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
 
@@ -1961,7 +1963,7 @@ Fault
             std::memset(
                 reinterpret_cast<uint8_t *>(Vd) + sizeof(Vd[0]),
                 0xff,
-                VLEN / 8 - sizeof(Vd[0]));
+                (vlen >> 3) - sizeof(Vd[0]));
         }
     }
 
@@ -2079,15 +2081,15 @@ Fault
     %(op_rd)s;
     %(vm_decl_rd)s;
     COPY_OLD_VD();
-    const uint32_t vlmax = VLEN / sew * vflmul;
+    const uint32_t vlmax = vlen / sew * vflmul;
     const uint8_t vd_eewb = sizeof(ElemType);
     const uint8_t vs1_eewb = sizeof(IndexType);
     const uint8_t vs2_eewb = sizeof(ElemType);
     const uint8_t vs1_split_num = (vd_eewb + vs1_eewb - 1) / vs1_eewb;
     const uint8_t vd_split_num = (vs1_eewb + vd_eewb - 1) / vd_eewb;
-    [[maybe_unused]] const uint16_t vd_elems = VLENB / vd_eewb;
-    [[maybe_unused]] const uint16_t vs1_elems = VLENB / vs1_eewb;
-    [[maybe_unused]] const uint16_t vs2_elems = VLENB / vs2_eewb;
+    [[maybe_unused]] const uint16_t vd_elems = (vlen >> 3) / vd_eewb;
+    [[maybe_unused]] const uint16_t vs1_elems = (vlen >> 3) / vs1_eewb;
+    [[maybe_unused]] const uint16_t vs2_elems = (vlen >> 3) / vs2_eewb;
     [[maybe_unused]] const uint8_t vs2_vregs = vlmul < 0 ? 1 : 1 << vlmul;
     [[maybe_unused]] const uint8_t vs2_idx = microIdx % vs2_vregs;
     [[maybe_unused]] const uint8_t vs1_idx =
@@ -2098,7 +2100,7 @@ Fault
         vs1_elems * (vd_idx % vs1_split_num) / vs1_split_num;
     [[maybe_unused]] const uint16_t vd_bias =
         vd_elems * (vs1_idx % vd_split_num) / vd_split_num;
-    uint32_t elem_num_per_vreg = VLENB / std::max(vd_eewb, vs1_eewb);
+    uint32_t elem_num_per_vreg = (vlen >> 3) / std::max(vd_eewb, vs1_eewb);
 
     %(code)s;
 
@@ -2287,7 +2289,7 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
 
-    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    uint32_t micro_vlmax = vlen / sew * (vflmul > 0 ? 1 : vflmul);
     if (micro_vlmax * this->microIdx < rVl) {
 
         Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
@@ -2316,7 +2318,7 @@ Fault
         std::memset(
             reinterpret_cast<uint8_t *>(Vd) + sizeof(Vd[0]),
             0xff,
-            VLEN / 8 - sizeof(Vd[0]));
+            (vlen >> 3) - sizeof(Vd[0]));
     }
 
     %(op_wb)s;
@@ -2344,7 +2346,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t elem_num_per_vreg = vlen / sew;
     const uint32_t num_microops = vflmul < 1 ? 1 : vflmul;
     StaticInstPtr microop;
 
@@ -2406,7 +2408,7 @@ template<typename ElemType>
 %(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
 {
-    const uint32_t elem_num_per_vreg = VLEN / sew;
+    const uint32_t elem_num_per_vreg = vlen / sew;
     const uint32_t num_microops = vflmul < 1 ? 1 : vflmul;
     StaticInstPtr microop;
 
@@ -2427,7 +2429,7 @@ template<typename ElemType>
             vmi.rs = i * elem_num_per_vreg;
             vmi.re = (i+1) * elem_num_per_vreg;
             vmi.microVd = VD + i;
-            vmi.microVs2 = elem_gen_idx(VS2 + i, off, sew/8);
+            vmi.microVs2 = elem_gen_idx(VS2 + i, off, sew/8, vlen);
             if (vmi.microVs2 >= 32) {
                 vmi.microVs2 = 31;
             }
@@ -2437,7 +2439,7 @@ template<typename ElemType>
         }
     } else {
         for (int i = 0; i < num_microops; ++i) {
-            for (int j = i; j < RiscvISA::VLEN/8; ++j) {
+            for (int j = i; j < vlen/8; ++j) {
                 vmi.rs = i * elem_num_per_vreg;
                 vmi.re = (i+1) * elem_num_per_vreg;
                 vmi.microVd = VD + i;
@@ -2507,8 +2509,8 @@ Fault
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
-    [[maybe_unused]]const uint32_t vlmax = VLEN / sew * vflmul;
-    const int elem_num_per_vreg = VLEN / sew;
+    [[maybe_unused]]const uint32_t vlmax = vlen / sew * vflmul;
+    const int elem_num_per_vreg = vlen / sew;
 
     %(op_decl)s;
     %(op_rd)s;
@@ -2560,8 +2562,8 @@ Fault
     if (machInst.vill) {
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
-    [[maybe_unused]]const uint32_t vlmax = VLEN / sew * vflmul;
-    const uint32_t elem_num_per_vreg = VLEN / sew;
+    [[maybe_unused]]const uint32_t vlmax = vlen / sew * vflmul;
+    const uint32_t elem_num_per_vreg = vlen / sew;
 
     %(op_decl)s;
     %(op_rd)s;

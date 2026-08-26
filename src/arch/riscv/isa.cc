@@ -35,6 +35,7 @@
 #include <sstream>
 
 #include "arch/riscv/interrupts.hh"
+#include "arch/riscv/vec_len.hh"
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/pagetable.hh"
 #include "arch/riscv/pmp.hh"
@@ -331,14 +332,27 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
 
 
 
-ISA::ISA(const Params &p) : BaseISA(p)
+ISA::ISA(const Params &p) : BaseISA(p), vlen(p.vlen), elen(p.elen)
 {
+    fatal_if(p.vlen < p.elen,
+        "VLEN (%u) must be >= ELEN (%u)", p.vlen, p.elen);
+    fatal_if(p.vlen > MaxVecLenInBits,
+        "VLEN (%u) exceeds compiled MaxVecLenInBits (%u)",
+        p.vlen, MaxVecLenInBits);
+    // Reject mixed VLEN across harts early (shared decode cache invariant).
+    registerProcessVecLenInBits(p.vlen);
+    inform("RVV enabled, VLEN = %u bits, ELEN = %u bits "
+           "(register container MaxVLEN = %u bits)",
+           p.vlen, p.elen, MaxVecLenInBits);
+
     _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs, sizeof(RegVal));
     _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs, sizeof(RegVal));
 
-    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs, RiscvISA::VLENB);
+    // Physical register containers are always MaxVLEN-sized; architectural
+    // width is enforced by instruction semantics via getVecLenInBytes().
+    _regClasses.emplace_back(VecRegClass, NumVecRegs, debug::VecRegs, MaxVecLenInBytes);
     _regClasses.emplace_back(VecElemClass, NumVecElemPerVecReg * NumVecRegs, debug::VecRegs, sizeof(RegVal));
-    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, RiscvISA::VLENB);
+    _regClasses.emplace_back(VecPredRegClass, 1, debug::VecRegs, MaxVecLenInBytes);
     _regClasses.emplace_back(CCRegClass, 0, debug::IntRegs, sizeof(RegVal));
     _regClasses.emplace_back(RMiscRegClass,
                 rmisc_reg::NumRegs, debug::MiscRegs, sizeof(RegVal));
@@ -389,9 +403,11 @@ void ISA::clear()
         // Xiangshan assume machine boots with FS off
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET);
     } else {
-        // SE assumes process starts with FS on
+        // SE assumes process starts with FP and Vector usable: userland RVV
+        // ELFs (e.g. upstream rvv-memcpy) touch vtype/vl without firmware
+        // to set mstatus.VS. Mirror the existing FS-on SE policy for VS.
         miscRegFile[MISCREG_STATUS] = (2ULL << UXL_OFFSET) | (2ULL << SXL_OFFSET) |
-                                    (1ULL << FS_OFFSET);
+                                    (1ULL << FS_OFFSET) | (1ULL << VS_OFFSET);
     }
     if (FullSystem) {
         miscRegFile[MISCREG_MCOUNTEREN] = 0;
@@ -713,7 +729,9 @@ ISA::readMiscReg(int misc_reg)
         }
       case MISCREG_VLENB:
         {
-            return VLENB;
+            // Architectural VLENB CSR must reflect the configured VLEN, not the
+            // MaxVecLenInBytes container size used for physical register storage.
+            return getVecLenInBytes();
         }
         break;
       case MISCREG_VCSR:
@@ -1098,6 +1116,8 @@ ISA::serialize(CheckpointOut &cp) const
 {
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
     SERIALIZE_CONTAINER(miscRegFile);
+    SERIALIZE_SCALAR(vlen);
+    SERIALIZE_SCALAR(elen);
     SERIALIZE_SCALAR(matrixTileM);
     SERIALIZE_SCALAR(matrixTileK);
     SERIALIZE_SCALAR(matrixTileN);
@@ -1114,6 +1134,21 @@ ISA::unserialize(CheckpointIn &cp)
     UNSERIALIZE_CONTAINER(miscRegFile);
     if (miscRegFile.size() < NUM_MISCREGS)
         miscRegFile.resize(NUM_MISCREGS, 0);
+    // Older checkpoints may omit vlen/elen; keep constructor defaults then.
+    UNSERIALIZE_OPT_SCALAR(vlen);
+    UNSERIALIZE_OPT_SCALAR(elen);
+    // Re-validate after restore: a corrupt / hand-edited checkpoint must not
+    // silently run with an illegal (vlen, elen) pair.
+    fatal_if(vlen < elen,
+        "Unserialized VLEN (%u) must be >= ELEN (%u)", vlen, elen);
+    fatal_if(vlen > MaxVecLenInBits,
+        "Unserialized VLEN (%u) exceeds compiled MaxVecLenInBits (%u)",
+        vlen, MaxVecLenInBits);
+    fatal_if(vlen < DefaultVecLenInBits || (vlen & (vlen - 1)) != 0,
+        "Unserialized VLEN (%u) must be a power of two in [%u, %u]",
+        vlen, DefaultVecLenInBits, MaxVecLenInBits);
+    fatal_if(elen < 8 || elen > 64 || (elen & (elen - 1)) != 0,
+        "Unserialized ELEN (%u) must be a power of two in [8, 64]", elen);
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);

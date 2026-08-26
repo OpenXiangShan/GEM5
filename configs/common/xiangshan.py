@@ -23,6 +23,8 @@ from common.Caches import *
 from common import Options
 from common.FUScheduler import *
 from m5.objects import PerfRecord
+from common.RiscvVectorConfig import configure_riscv_vector_isa as \
+    _configure_riscv_vector_isa
 
 
 class XiangshanCore(RiscvO3CPU):
@@ -571,6 +573,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         for (i, cpu) in enumerate(test_sys.cpu):
             # Tie the cpu ports to the correct ruby system ports
             cpu.clk_domain = test_sys.cpu_clk_domain
+            _configure_riscv_vector_isa(args, [cpu])
             cpu.createThreads()
             print("Create threads for test sys cpu ({})".format(type(cpu)))
             cpu.createInterruptController()
@@ -624,6 +627,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             test_sys.iobridge.mem_side_port = test_sys.membus.cpu_side_ports
 
         for i in range(np):
+            _configure_riscv_vector_isa(args, [test_sys.cpu[i]])
             test_sys.cpu[i].createThreads()
             print("Create threads for test sys cpu ({})".format(type(test_sys.cpu[i])))
 
