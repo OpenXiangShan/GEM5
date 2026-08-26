@@ -499,6 +499,10 @@ class Commit
      *  instructions to get from the rename instruction queue.
      */
     const unsigned renameWidth;
+    /** Distinct SMT threads allowed to insert into the ROB in one cycle. */
+    const unsigned numPreDispatchThreads;
+    /** Aggregate Rename->ROB admission width across SMT threads. */
+    const unsigned aggregateRenameWidth;
 
     /** Commit width, in instructions. */
     const unsigned commitWidth;

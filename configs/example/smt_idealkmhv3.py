@@ -38,6 +38,7 @@ def setDualFrontendProbeParams(system):
         # introducing an artificial thread bias in the cache model.
         cpu.branchPred.smtNumPredictingThreads = 2
         cpu.smtNumFetchTargetThreads = 2
+        cpu.smtNumPreDispatchThreads = 2
         cpu.icache.tag_load_read_ports = 4
 
         # Keep early-predictor training on the existing resolve/commit path.
