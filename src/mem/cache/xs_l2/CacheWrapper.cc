@@ -34,7 +34,7 @@ CacheWrapper::getPort(const std::string &if_name, PortID idx)
 // --- CPUSidePort (Slave) - Receives from L1/CPU ---
 CacheWrapper::CPUSidePort::CPUSidePort(const std::string& name,
                                          CacheWrapper *owner)
-    : ResponsePort(name, owner), owner(owner)
+    : ResponsePort(name), owner(owner)
 {
 }
 
@@ -85,7 +85,7 @@ CacheWrapper::cpuSidePortRecvAtomic(PacketPtr pkt)
 // --- InnerCPUSidePort (Master) - Sends to inner cache CPU-side ---
 CacheWrapper::InnerCPUSidePort::InnerCPUSidePort(const std::string& name,
                                             CacheWrapper* owner)
-    : RequestPort(name, owner), owner(owner)
+    : RequestPort(name), owner(owner)
 {
 }
 
@@ -139,7 +139,7 @@ CacheWrapper::innerCpuPortRecvRangeChange()
 // --- InnerMemSidePort (Slave) - Receives from inner cache Mem-side ---
 CacheWrapper::InnerMemSidePort::InnerMemSidePort(const std::string& name,
                                             CacheWrapper* owner)
-    : ResponsePort(name, owner), owner(owner)
+    : ResponsePort(name), owner(owner)
 {
 }
 
@@ -190,7 +190,7 @@ CacheWrapper::innerMemPortRecvAtomic(PacketPtr pkt)
 // --- MemSidePort (Master) - Sends to memory ---
 CacheWrapper::MemSidePort::MemSidePort(const std::string& name,
                                         CacheWrapper* owner)
-    : RequestPort(name, owner), owner(owner)
+    : RequestPort(name), owner(owner)
 {
 }
 

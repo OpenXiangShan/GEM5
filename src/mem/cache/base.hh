@@ -182,10 +182,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
       protected:
 
-        CacheRequestPort(const std::string &_name, BaseCache *_cache,
+        CacheRequestPort(const std::string &_name,
                         ReqPacketQueue &_reqQueue,
                         SnoopRespPacketQueue &_snoopRespQueue) :
-            QueuedRequestPort(_name, _cache, _reqQueue, _snoopRespQueue)
+            QueuedRequestPort(_name, _reqQueue, _snoopRespQueue)
         { }
 
         /**
@@ -311,8 +311,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
       protected:
 
-        CacheResponsePort(const std::string &_name, BaseCache *_cache,
+        CacheResponsePort(const std::string &_name, BaseCache& _cache,
                        const std::string &_label);
+
+        BaseCache& cache;
 
         /** A normal packet queue used to store responses. */
         RespPacketQueue queue;
@@ -333,11 +335,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     class CpuSidePort : public CacheResponsePort
     {
-      private:
-
-        // a pointer to our specific cache implementation
-        BaseCache *cache;
-
       protected:
         virtual bool recvTimingSnoopResp(PacketPtr pkt) override;
 
@@ -353,7 +350,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
       public:
 
-        CpuSidePort(const std::string &_name, BaseCache *_cache,
+        CpuSidePort(const std::string &_name, BaseCache& _cache,
                     const std::string &_label);
 
     };

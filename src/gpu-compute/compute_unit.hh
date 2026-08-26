@@ -512,7 +512,7 @@ class ComputeUnit : public ClockedObject
     {
       public:
         DataPort(const std::string &_name, ComputeUnit *_cu, PortID id)
-            : RequestPort(_name, _cu, id), computeUnit(_cu) { }
+            : RequestPort(_name, id), computeUnit(_cu) { }
 
         bool snoopRangeSent;
 
@@ -584,7 +584,7 @@ class ComputeUnit : public ClockedObject
     {
       public:
         ScalarDataPort(const std::string &_name, ComputeUnit *_cu)
-            : RequestPort(_name, _cu), computeUnit(_cu)
+            : RequestPort(_name), computeUnit(_cu)
         {
         }
 
@@ -655,7 +655,7 @@ class ComputeUnit : public ClockedObject
     {
       public:
         SQCPort(const std::string &_name, ComputeUnit *_cu)
-            : RequestPort(_name, _cu), computeUnit(_cu) { }
+            : RequestPort(_name), computeUnit(_cu) { }
 
         bool snoopRangeSent;
 
@@ -696,7 +696,7 @@ class ComputeUnit : public ClockedObject
     {
       public:
         DTLBPort(const std::string &_name, ComputeUnit *_cu, PortID id)
-            : RequestPort(_name, _cu, id), computeUnit(_cu),
+            : RequestPort(_name, id), computeUnit(_cu),
               stalled(false)
         { }
 
@@ -743,7 +743,7 @@ class ComputeUnit : public ClockedObject
     {
       public:
         ScalarDTLBPort(const std::string &_name, ComputeUnit *_cu)
-            : RequestPort(_name, _cu), computeUnit(_cu), stalled(false)
+            : RequestPort(_name), computeUnit(_cu), stalled(false)
         {
         }
 
@@ -771,7 +771,7 @@ class ComputeUnit : public ClockedObject
     {
       public:
         ITLBPort(const std::string &_name, ComputeUnit *_cu)
-            : RequestPort(_name, _cu), computeUnit(_cu), stalled(false) { }
+            : RequestPort(_name), computeUnit(_cu), stalled(false) { }
 
 
         bool isStalled() { return stalled; }
@@ -813,7 +813,7 @@ class ComputeUnit : public ClockedObject
     {
       public:
         LDSPort(const std::string &_name, ComputeUnit *_cu)
-        : RequestPort(_name, _cu), computeUnit(_cu)
+        : RequestPort(_name), computeUnit(_cu)
         {
         }
 

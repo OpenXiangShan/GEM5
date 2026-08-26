@@ -90,11 +90,13 @@ class Base : public ClockedObject
     class PrefetchListener : public ProbeListenerArgBase<PacketPtr>
     {
       public:
-        PrefetchListener(Base &_parent, ProbeManager *pm,
-                         const std::string &name, bool _isFill = false,
+        PrefetchListener(Base &_parent, std::string name,
+                         bool _isFill = false,
                          bool _miss = false, bool _pftrain = false)
-            : ProbeListenerArgBase(pm, name),
-              parent(_parent), isFill(_isFill), miss(_miss), coreDirectNotify(_pftrain) {}
+            : ProbeListenerArgBase(std::move(name)),
+              parent(_parent), isFill(_isFill), miss(_miss),
+              coreDirectNotify(_pftrain)
+        {}
         void notify(const PacketPtr &pkt) override;
       protected:
         Base& parent;
@@ -105,7 +107,7 @@ class Base : public ClockedObject
         const bool coreDirectNotify;
     };
 
-    std::vector<PrefetchListener *> listeners;
+    std::vector<ProbeListenerPtr<PrefetchListener>> listeners;
 
   public:
     struct PFtriggerInfo{

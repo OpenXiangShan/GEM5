@@ -111,7 +111,7 @@ class MinorCPU : public BaseCPU
 
       public:
         MinorCPUPort(const std::string& name_, MinorCPU &cpu_)
-            : RequestPort(name_, &cpu_), cpu(cpu_)
+            : RequestPort(name_), cpu(cpu_)
         { }
 
     };
