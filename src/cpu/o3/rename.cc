@@ -683,6 +683,8 @@ Rename::renameInsts(ThreadID tid)
 
         renameDestRegs(inst, inst->threadNumber);
 
+        cpu->getRegisterPrefetcher().onRenamedInstruction(inst);
+
         if (ratSnapshotActive) {
             if (ratSnapshotAvailable() && suitableForRatSnapshot(inst)) {
                 takeSnapshot(inst, tid);

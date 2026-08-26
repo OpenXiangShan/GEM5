@@ -133,7 +133,8 @@ CPU::CPU(const BaseO3CPUParams &params)
       enableConstantFolding(params.enableConstantFolding),
       enableMovImmElimination(params.enableMovImmElimination),
       cpuStats(this),
-      valuePred(params.valuePred)
+      valuePred(params.valuePred),
+      registerPrefetcher(this, params)
 {
     if (!params.switched_out) {
         _status = Running;
@@ -267,6 +268,9 @@ CPU::CPU(const BaseO3CPUParams &params)
     rename.setRenameMap(renameMap);
     commit.setRenameMap(commitRenameMap);
     rename.setFreeList(&freeList);
+
+    registerPrefetcher.setLSQ(&iew.ldstQueue);
+    registerPrefetcher.setScheduler(iew.getScheduler());
 
     // Setup the ROB for whichever stages need it.
     commit.setROB(&rob);
@@ -579,6 +583,7 @@ CPU::tick()
     commit.tick();
     iew.tick();
     rename.tick();
+    registerPrefetcher.tick();
     decode.tick();
     fetch.tick();
 
@@ -776,6 +781,8 @@ CPU::haltContext(ThreadID tid)
     DPRINTF(O3CPU,"[tid:%i] Halt Context called. Deallocating\n", tid);
     assert(!switchedOut());
 
+    registerPrefetcher.invalidateGeneration(tid);
+
     deactivateThread(tid);
     removeThread(tid);
 
@@ -915,6 +922,7 @@ CPU::processInterrupts(const Fault &interrupt)
 void
 CPU::trap(const Fault &fault, ThreadID tid, const StaticInstPtr &inst)
 {
+    registerPrefetcher.invalidateGeneration(tid);
     // Pass the thread's TC into the invoke method.
     fault->invoke(threadContexts[tid], inst);
 }
@@ -1017,6 +1025,7 @@ CPU::drainSanityCheck() const
     rename.drainSanityCheck();
     iew.drainSanityCheck();
     commit.drainSanityCheck();
+    registerPrefetcher.drainSanityCheck();
 }
 
 bool
@@ -1051,6 +1060,11 @@ CPU::isCpuDrained() const
 
     if (!commit.isDrained()) {
         DPRINTF(Drain, "Commit not drained.\n");
+        drained = false;
+    }
+
+    if (!registerPrefetcher.isDrained()) {
+        DPRINTF(Drain, "Register prefetcher not drained.\n");
         drained = false;
     }
 
@@ -1112,6 +1126,7 @@ CPU::takeOverFrom(BaseCPU *oldCPU)
     rename.takeOverFrom();
     iew.takeOverFrom();
     commit.takeOverFrom();
+    registerPrefetcher.takeOverFrom();
 
     assert(!tickEvent.scheduled());
 
@@ -1355,8 +1370,15 @@ CPU::pcState(const PCStateBase &val, ThreadID tid)
 void
 CPU::squashFromTC(ThreadID tid)
 {
+    registerPrefetcher.invalidateGeneration(tid);
     thread[tid]->noSquashFromTC = true;
     commit.generateTCEvent(tid);
+}
+
+void
+CPU::squashFromRfp(const DynInstPtr &inst)
+{
+    iew.squashDueToRfpRecovery(inst);
 }
 
 CPU::ListIt
@@ -1508,6 +1530,8 @@ CPU::squashInstIt(ListIt &instIt, ThreadID tid)
                 (*instIt)->seqNum,
                 (*instIt)->pcState());
 
+        registerPrefetcher.squash(tid, (*instIt)->seqNum - 1);
+
         // Mark it as squashed.
         (*instIt)->setSquashed();
 
@@ -1523,6 +1547,9 @@ void
 CPU::flushTLBs()
 {
     BaseCPU::flushTLBs();
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        registerPrefetcher.invalidateGeneration(tid);
+    }
     fetch.flushFetchBuffer();
 }
 

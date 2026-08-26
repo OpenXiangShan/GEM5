@@ -33,6 +33,11 @@ def setPtwLevelLimitParams(args, tlb):
 def setKmhV3Params(args, system):
     for cpu in system.cpu:
 
+        cpu.enableRegisterPrefetch = args.enable_register_prefetch
+        cpu.rpfIssueWidth = args.rfp_issue_width
+        cpu.rpfReuseMaxWaitCycles = args.rfp_reuse_max_wait_cycles
+        cpu.rpfEnableDebugTrace = args.rfp_enable_debug_trace
+
         # fetch (idealfetch not care)
         cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression

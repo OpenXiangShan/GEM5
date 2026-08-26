@@ -969,6 +969,30 @@ def xiangshan_system_init():
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
     parser.add_argument(
+        "--enable-register-prefetch",
+        action="store_true",
+        default=False,
+        help="Enable the Kunminghu-v3 register prefetch feature",
+    )
+    parser.add_argument(
+        "--rfp-issue-width",
+        type=int,
+        default=1,
+        help="Maximum RFP translations and DCache admissions per cycle",
+    )
+    parser.add_argument(
+        "--rfp-reuse-max-wait-cycles",
+        type=int,
+        default=0,
+        help="Maximum issue-gate wait for RFP validation",
+    )
+    parser.add_argument(
+        "--rfp-enable-debug-trace",
+        action="store_true",
+        default=False,
+        help="Enable RFP lifecycle invariant checks",
+    )
+    parser.add_argument(
         "--solver-problem-ref",
         type=str,
         default="",

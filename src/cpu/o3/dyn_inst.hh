@@ -136,6 +136,13 @@ class DynInst : public ExecContext, public RefCounted
     /** Completes the access.  Only valid for memory operations. */
     Fault completeAcc(PacketPtr pkt);
 
+    /**
+     * Convert RFP response bytes with the ISA load-completion semantics and
+     * publish only the speculative destination register value.  Architectural
+     * fault and misc-register side effects remain owned by completeAcc().
+     */
+    Fault publishRfpValue(PacketPtr pkt);
+
     // Turn a split store's original DynInst into the store-address uop.
     // RISC-V stores use src0 as the address base and src1 as the store data.
     // The address uop keeps src0 and drops the src1 dependency after the
@@ -258,6 +265,18 @@ class DynInst : public ExecContext, public RefCounted
         IssueQueue,
         ReplayQueue,
         FastReplay
+    };
+
+    enum class RfpUseState
+    {
+        None,
+        Offered,
+        Launched,
+        DataReady,
+        ValidationPending,
+        Reused,
+        Fallback,
+        Invalid
     };
 
   private:
@@ -987,7 +1006,7 @@ class DynInst : public ExecContext, public RefCounted
     void
     setResult(T &&t)
     {
-        if (instFlags[RecordResult]) {
+        if (instFlags[RecordResult] && !rfpPublishingValue) {
             instResult.emplace(std::forward<T>(t));
         }
     }
@@ -1083,6 +1102,8 @@ class DynInst : public ExecContext, public RefCounted
         status.set(InPipe);
         clearReplayType();
         clearReplayFlags();
+        rfpReusePending = false;
+        rfpFallbackRequired = false;
     }
 
     void endPipelining() {
@@ -1134,6 +1155,10 @@ class DynInst : public ExecContext, public RefCounted
                 return 10; // C_RAW
               case LdStReplayType::NukeReplay:
                 return 11; // C_NK
+              case LdStReplayType::RfpFallbackReplay:
+                // RFP fallback only protects speculative data. Any normal
+                // load replay owner must retain its existing priority.
+                return 12;
               default:
                 return 100 + static_cast<int>(type);
             }
@@ -1227,6 +1252,9 @@ class DynInst : public ExecContext, public RefCounted
 
     void setHitInWriteBufferReplay() { setReplay(LdStReplayType::HitInWriteBufferReplay); }
     bool needHitInWriteBufferReplay() const { return getReplayType() == LdStReplayType::HitInWriteBufferReplay; }
+
+    void setRfpFallbackReplay() { setReplay(LdStReplayType::RfpFallbackReplay); }
+    bool needRfpFallbackReplay() const { return getReplayType() == LdStReplayType::RfpFallbackReplay; }
 
     void setFullForward() { status.set(FullForward); }
     bool fullForward() const { return status[FullForward]; }
@@ -1517,6 +1545,10 @@ class DynInst : public ExecContext, public RefCounted
     void
     setMiscReg(int misc_reg, RegVal val) override
     {
+        if (rfpPublishingValue) {
+            return;
+        }
+
         /** Writes to misc. registers are recorded and deferred until the
          * commit stage, when updateMiscRegs() is called. First, check if
          * the misc reg has been written before and update its value to be
@@ -1784,6 +1816,17 @@ class DynInst : public ExecContext, public RefCounted
     RegVal actualValue = 0xdeadbeefULL;
     bool vpMisprediction = false;
     bool vpSupported = false;
+
+    /** Register-prefetch identity and normal-load resolution state. */
+    uint64_t rfpTokenSerial = 0;
+    RfpUseState rfpUseState = RfpUseState::None;
+    Tick rfpRenameTick = 0;
+    bool rfpReusePending = false;
+    bool rfpValidationPassed = false;
+    bool rfpDataPublished = false;
+    bool rfpReused = false;
+    bool rfpFallbackRequired = false;
+    bool rfpPublishingValue = false;
 
     bool canLVP(){
         return isLoad() && !isVector() && !isLoadReserved();

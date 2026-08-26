@@ -1308,6 +1308,8 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 void
 LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
 {
+    cpu->getRegisterPrefetcher().onNormalCompletion(inst);
+
     // clear state in this instruction
     inst->effAddrValid(false);
     // Reset DTB translation state
@@ -1564,6 +1566,7 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
 
     if (load_fault == NoFault && !inst->readMemAccPredicate()) {
         assert(inst->readPredicate());
+        cpu->getRegisterPrefetcher().onNormalCompletion(inst);
         inst->setExecuted();
         inst->completeAcc(nullptr);
         inst->setSkipFollowingPipe();
@@ -1585,6 +1588,7 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     }
 
     if (load_fault != NoFault || !inst->readPredicate()) {
+        cpu->getRegisterPrefetcher().onNormalCompletion(inst);
         if (!inst->readPredicate())
             inst->forwardOldRegs();
 
@@ -1645,10 +1649,15 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
+    if (inst->rfpFallbackRequired) {
+        inst->markReplayFlag(LdStReplayType::RfpFallbackReplay);
+    }
+
     const bool cacheMissReplay =
         earlyWakeupCacheMissReplay ||
         (lsq->enableLdMissReplay() && request && request->isNormalLd() &&
-         !inst->fullForward() && !inst->cacheHit());
+         !inst->fullForward() && !inst->cacheHit() &&
+         !inst->rfpReusePending && !inst->rfpFallbackRequired);
     const bool bankConflictReplay = inst->isNormalLd() && !request;
 
     bool nukeReplay = false;
@@ -1708,6 +1717,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
             DPRINTF(LSQUnit, "RARQueue full, reschedule [sn:%llu], LoadCompletedItIdx: %d, inst->lqItIdx: %d\n",
                     inst->seqNum, loadCompletedIdx, inst->lqIt._idx);
             stats.RARQueueFull++;
+            cpu->getRegisterPrefetcher().rejectForRarRaw(inst);
             loadSetReplay(inst, request, true);
             addToRARReplayQueue(inst);
             return fault;
@@ -1715,12 +1725,20 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
             DPRINTF(LSQUnit, "RAWQueue full, reschedule [sn:%lli], StoreCompletedItIdx: %d, inst->sqItIdx: %d\n",
                     inst->seqNum, storeCompletedIdx, inst->sqIt.idx());
             stats.RAWQueueFull++;
+            cpu->getRegisterPrefetcher().rejectForRarRaw(inst);
             loadSetReplay(inst, request, true);
             addToRAWReplayQueue(inst);
             return fault;
           case LdStReplayType::NukeReplay:
             DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
             ++stats.pipeRawNukeReplay;
+            cpu->getRegisterPrefetcher().rejectForNuke(inst);
+            return fault;
+          case LdStReplayType::RfpFallbackReplay:
+            loadSetReplay(inst, request, true);
+            DPRINTF(LoadPipeline,
+                    "Load [sn:%llu] replays after RFP invalidation\n",
+                    inst->seqNum);
             return fault;
           default:
             panic("Unsupported load replay type selected in s2");
@@ -1742,6 +1760,27 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         if (existingIt == RAWQueue.end()) {
             RAWQueue.push_back(inst);
         }
+    }
+
+    if (inst->rfpReusePending) {
+        request = currentLoadRequest(inst);
+        if (!request ||
+            !cpu->getRegisterPrefetcher().finalizeReuse(
+                inst, request->mainReq())) {
+            inst->setRfpFallbackReplay();
+            if (request) {
+                loadSetReplay(inst, request, true);
+            }
+            return fault;
+        }
+
+        PacketPtr pkt = new Packet(request->mainReq(), MemCmd::ReadReq);
+        pkt->dataStatic(inst->memData);
+        cpu->getRegisterPrefetcher().completeReuse(inst);
+        writebackReg(inst, pkt);
+        request->writebackDone();
+        delete pkt;
+        return fault;
     }
 
     // No nuke happens, prepare the inst data
@@ -1906,6 +1945,7 @@ LSQUnit::executeLoadPipeSx()
                 else if (inst->needCacheMissReplay()) iewStage->cacheMissLdReplay(inst);
                 else if (inst->needMdpAddrReplay()) iewStage->mdpAddrReplayPipeDone(inst);
                 else if (inst->needNukeReplay()) {
+                    cpu->getRegisterPrefetcher().onNormalCompletion(inst);
                     if (auto *request = currentLoadRequest(inst); request) {
                         if (inst->cacheHit()) {
                             loadSetReplay(inst, request, true);
@@ -1915,6 +1955,8 @@ LSQUnit::executeLoadPipeSx()
                     }
                     inst->issueQue->retryMem(inst);
                 }
+                else if (inst->needRfpFallbackReplay())
+                    inst->issueQue->retryMem(inst);
                 else if (inst->needTLBMissReplay()) iewStage->deferMemInst(inst);
 
 
@@ -3030,6 +3072,8 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
         }
     }
 
+    cpu->getRegisterPrefetcher().onNormalCompletion(inst);
+
     const bool finish_after_writeback =
         !inst->isNormalLd() || !inst->inPipe();
     if (finish_after_writeback) {
@@ -3242,6 +3286,8 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     if (ret) {
         if (!isLoad) {
             isStoreBlocked = false;
+            cpu->getRegisterPrefetcher().observeLocalWrite(
+                data_pkt->getAddr(), data_pkt->getSize());
         }
         lsq->cachePortBusy(isLoad);
         request->packetSent();
@@ -3611,6 +3657,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         "Load[sn:%llu] MDP strict wait, storeCompletedIdx=%lu, required>=%lu\n",
                         load_inst->seqNum, storeCompletedIdx, required);
                 load_inst->setMdpAddrReplay();
+                cpu->getRegisterPrefetcher().rejectForMdp(load_inst);
                 loadSetReplay(load_inst, request, true);
                 iewStage->mdpAddrReplayRegisterStrict(load_inst, required);
                 return NoFault;
@@ -3641,6 +3688,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         "Load[sn:%llu] MDP wait %lu store addrs (replay)\n",
                         load_inst->seqNum, wait_stores.size());
                 load_inst->setMdpAddrReplay();
+                cpu->getRegisterPrefetcher().rejectForMdp(load_inst);
                 loadSetReplay(load_inst, request, true);
                 iewStage->mdpAddrReplayRegister(load_inst, wait_stores);
                 return NoFault;
@@ -3874,6 +3922,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                             request->mainReq()->getPaddr(), first_word);
                 }
                 load_inst->setFullForward();
+                cpu->getRegisterPrefetcher().rejectForForwarding(load_inst);
 
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;
@@ -3918,6 +3967,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         store_it._idx, request->mainReq()->getVaddr());
 
                 // Must discard the request.
+                cpu->getRegisterPrefetcher().rejectForForwarding(load_inst);
                 request->discard();
                 load_entry.setRequest(nullptr);
                 return NoFault;
@@ -3943,6 +3993,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 }
 
                 load_inst->setFullForward();
+                cpu->getRegisterPrefetcher().rejectForForwarding(load_inst);
                 if (debug::LoadPipeline) {
                     uint64_t first_word = 0;
                     if (load_inst->memData) {
@@ -3958,6 +4009,17 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 return NoFault;
             }
         }
+    }
+
+    if (request->SBforwardPackets.empty() &&
+        request->SQforwardPackets.empty() &&
+        cpu->getRegisterPrefetcher().tryPrepareReuse(
+            load_inst, request->mainReq())) {
+        return NoFault;
+    }
+    if (!request->SBforwardPackets.empty() ||
+        !request->SQforwardPackets.empty()) {
+        cpu->getRegisterPrefetcher().rejectForForwarding(load_inst);
     }
 
     // Normal memory path after all local forwarding choices failed.  From this

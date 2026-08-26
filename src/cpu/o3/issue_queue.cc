@@ -339,11 +339,33 @@ IssueQue::resetDepGraph(int numPhysRegs)
 bool
 IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
+    std::vector<DynInstPtr> ready_rfp_producers;
     for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
         if (src->isFixedMapping()) [[unlikely]] {
             continue;
         }
+
+        DynInstPtr rfp_producer;
+        const auto rfp_status = cpu->getRegisterPrefetcher().operandStatus(
+            src->flatIndex(), inst->threadNumber, inst->seqNum,
+            &rfp_producer);
+        if (rfp_status == RegisterPrefetcher::OperandStatus::Waiting) {
+            inst->clearScheduled();
+            READYQ_PUSH(inst);
+            return false;
+        }
+        if (rfp_status == RegisterPrefetcher::OperandStatus::Cancel) {
+            assert(rfp_producer);
+            cpu->getRegisterPrefetcher().cancelForConsumer(rfp_producer);
+            return false;
+        }
+        if (rfp_status == RegisterPrefetcher::OperandStatus::Ready) {
+            assert(scheduler->bypassScoreboard[src->flatIndex()]);
+            ready_rfp_producers.push_back(rfp_producer);
+            continue;
+        }
+
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex(),
@@ -359,6 +381,10 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
             scheduler->loadCancel(dst_inst);
             return false;
         }
+    }
+    for (const auto &rfp_producer : ready_rfp_producers) {
+        cpu->getRegisterPrefetcher().recordConsumerUse(
+            rfp_producer, inst->seqNum);
     }
     return true;
 }
@@ -1814,6 +1840,59 @@ Scheduler::specWakeUpFromVP(const DynInstPtr& inst)
 }
 
 void
+Scheduler::specWakeUpFromRFP(const DynInstPtr& inst)
+{
+    DPRINTF(Schedule, "[sn:%llu] RFP speculative wakeup dependents\n",
+            inst->seqNum);
+    for (auto to : issueQues) {
+        to->wakeUpDependents(inst, true);
+    }
+    for (int i = 0; i < inst->numDestRegs(); i++) {
+        PhysRegIdPtr dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) [[unlikely]] {
+            continue;
+        }
+        earlyScoreboard[dst->flatIndex()] = true;
+        bypassScoreboard[dst->flatIndex()] = false;
+    }
+}
+
+void
+Scheduler::rfpDataReady(const DynInstPtr& inst)
+{
+    for (int i = 0; i < inst->numDestRegs(); i++) {
+        PhysRegIdPtr dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) [[unlikely]] {
+            continue;
+        }
+        bypassScoreboard[dst->flatIndex()] = true;
+    }
+    for (auto to : issueQues) {
+        to->wakeUpDependents(inst, true);
+    }
+}
+
+void
+Scheduler::clearRfpState(const DynInstPtr& inst)
+{
+    auto events = specWakeEvents.find(inst->seqNum);
+    if (events != specWakeEvents.end()) {
+        for (auto *event : events->second) {
+            cpu->deschedule(event);
+        }
+        specWakeEvents.erase(events);
+    }
+    for (int i = 0; i < inst->numDestRegs(); ++i) {
+        const auto dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) {
+            continue;
+        }
+        earlyScoreboard[dst->flatIndex()] = false;
+        bypassScoreboard[dst->flatIndex()] = false;
+    }
+}
+
+void
 Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
 {
     assert(inst->isLoad());
@@ -1916,11 +1995,13 @@ Scheduler::useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
 }
 
 bool
-Scheduler::loadCancel(const DynInstPtr& inst)
+Scheduler::loadCancel(
+    const DynInstPtr& inst, SpeculationSource source)
 {
-    DPRINTF(Schedule, "[sn:%llu] %s cache miss, cancel consumers\n", inst->seqNum,
-            enums::OpClassStrings[inst->opClass()]);
-    if (inst->issueQue) {
+    DPRINTF(Schedule, "[sn:%llu] %s speculation source %u, cancel consumers\n",
+            inst->seqNum, enums::OpClassStrings[inst->opClass()],
+            static_cast<unsigned>(source));
+    if (source != SpeculationSource::RegisterPrefetch && inst->issueQue) {
         inst->issueQue->iqstats->loadmiss++;
     }
 
@@ -1928,7 +2009,8 @@ Scheduler::loadCancel(const DynInstPtr& inst)
 
     // For VP load: if prediction is correct (no misprediction), skip cancel.
     // If VP misprediction detected, allow DFS to cancel dependent consumers.
-    if (inst->vpResult.speculative && !inst->vpMisprediction) {
+    if (source != SpeculationSource::RegisterPrefetch &&
+        inst->vpResult.speculative && !inst->vpMisprediction) {
         return false;
     }
 
@@ -1948,6 +2030,9 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                 continue;
             }
             earlyScoreboard[dst->flatIndex()] = false;
+            if (source == SpeculationSource::RegisterPrefetch) {
+                bypassScoreboard[dst->flatIndex()] = false;
+            }
             for (auto iq : issueQues) {
                 for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
                     int srcIdx = it.first;
@@ -1957,7 +2042,9 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                             DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
                                     depInst->renamedSrcIdx(srcIdx)->flatIndex());
                             if (depInst->isIssued()) {
-                                if (inst->vpMisprediction) {
+                                if (source ==
+                                        SpeculationSource::RegisterPrefetch ||
+                                    inst->vpMisprediction) {
                                     // VP misprediction: consumer may already be in-flight.
                                     // Mark canceled and propagate to its dependents.
                                     depInst->setCancel();

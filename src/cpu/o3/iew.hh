@@ -294,6 +294,9 @@ class IEW
     // if load tlb miss or cache miss
     void loadCancel(const DynInstPtr &inst);
 
+    /** Squash consumers that executed with an invalid RFP value. */
+    void squashDueToRfpRecovery(const DynInstPtr &inst);
+
     void stlfFailLdReplay(const DynInstPtr &inst, const InstSeqNum &store_seq_num);
 
     void mdpAddrReplayRegister(const DynInstPtr &inst,

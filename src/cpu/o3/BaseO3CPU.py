@@ -306,6 +306,42 @@ class BaseO3CPU(BaseCPU):
     enableSelectiveVPFlush = Param.Bool(False,
         "Enable selective rollback for value prediction misprediction")
 
+    # Register prefetch. Disabled by default so existing CPU configurations
+    # retain their original memory and scheduling behavior.
+    enableRegisterPrefetch = Param.Bool(False, "Enable register prefetch")
+    rpfTableEntries = Param.Unsigned(256,
+        "Committed stride predictor entries per thread")
+    rpfAssociativity = Param.Unsigned(2,
+        "Committed stride predictor associativity")
+    rpfConfidenceBits = Param.Unsigned(2,
+        "RFP stride confidence counter width")
+    rpfConfidenceThreshold = Param.Unsigned(3,
+        "Minimum RFP stride confidence for launch")
+    rpfMaxStrideBytes = Param.Unsigned(4096,
+        "Maximum absolute RFP stride in bytes")
+    rpfRequireSamePage = Param.Bool(True,
+        "Reject RFP predictions crossing a 4 KiB page")
+    rpfLaunchQueueEntries = Param.Unsigned(8,
+        "RFP candidates awaiting translation or DCache admission")
+    rpfMaxInflight = Param.Unsigned(8,
+        "Maximum RFP DCache requests per CPU")
+    rpfPerThreadMaxInflight = Param.Unsigned(4,
+        "Maximum RFP DCache requests per thread")
+    rpfIssueWidth = Param.Unsigned(1,
+        "Maximum RFP translation and DCache admissions per cycle")
+    rpfDemandPriority = Param.Bool(True,
+        "Issue RFP only after demand memory work in the cycle")
+    rpfDropOnPressure = Param.Bool(True,
+        "Drop RFP candidates after bounded resource retries")
+    rpfMaxRetryCycles = Param.Unsigned(32,
+        "Maximum rejected RFP DCache admission attempts")
+    rpfReuseMaxWaitCycles = Param.Unsigned(0,
+        "Maximum consumer wait for RFP data; zero cancels immediately")
+    rpfCancelIssuedConsumerPolicy = Param.String("SquashFallback",
+        "Recovery policy for an issued RFP consumer")
+    rpfEnableDebugTrace = Param.Bool(False,
+        "Enable detailed RFP lifecycle debug checks")
+
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 
     enableMoveElimination = Param.Bool(True, "Enable register move elimination")

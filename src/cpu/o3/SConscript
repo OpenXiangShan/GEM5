@@ -51,6 +51,8 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('lsq_unit.cc')
     Source('mem_dep_unit.cc')
     Source('regfile.cc')
+    Source('register_prefetcher.cc')
+    Source('rfp_stride_table.cc')
     Source('rename.cc')
     Source('rename_map.cc')
     Source('rob.cc')
@@ -80,6 +82,11 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('O3CPU')
     DebugFlag('ROB')
     DebugFlag('Rename')
+    DebugFlag('Rfp')
+    DebugFlag('RfpCancel')
+    DebugFlag('RfpPredictor')
+    DebugFlag('RfpRequest')
+    DebugFlag('RfpValidate')
     DebugFlag('Scoreboard')
     DebugFlag('StoreSet')
     DebugFlag('Writeback')
@@ -97,6 +104,9 @@ if env['CONF']['TARGET_ISA'] != 'null':
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',
         'DynInst', 'O3CPU', 'Activity', 'Scoreboard', 'Writeback' ])
+
+    GTest('rfp_stride_table.test', 'register_prefetcher.test.cc',
+          'rfp_stride_table.cc')
 
 
     SimObject('BaseO3Checker.py', sim_objects=['BaseO3Checker'])

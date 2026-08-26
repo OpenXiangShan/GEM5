@@ -446,6 +446,29 @@ DynInst::completeAcc(PacketPtr pkt)
     return fault;
 }
 
+Fault
+DynInst::publishRfpValue(PacketPtr pkt)
+{
+    panic_if(rfpPublishingValue,
+             "Nested speculative RFP value publication");
+
+    // The generated RISC-V load completion code is the single source of
+    // truth for sign/zero extension and FP NaN-boxing.  Run it without the
+    // DynInst::completeAcc wrapper so a speculative candidate cannot replace
+    // the instruction's architectural fault.  setMiscReg() and setResult()
+    // suppress their side effects while this flag is set; setRegOperand()
+    // still writes the already-renamed speculative physical destination.
+    const bool no_squash_from_tc = thread->noSquashFromTC;
+    thread->noSquashFromTC = true;
+    rfpPublishingValue = true;
+    const Fault publish_fault =
+        staticInst->completeAcc(pkt, this, nullptr);
+    rfpPublishingValue = false;
+    thread->noSquashFromTC = no_squash_from_tc;
+
+    return publish_fault;
+}
+
 void DynInst::buildStoreAddrUop()
 {
     assert(staticInst->isSplitStoreAddr());

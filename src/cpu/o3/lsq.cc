@@ -1704,6 +1704,8 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     }
 
     if (result == DcacheMainPipeS2Result::GoToS3) {
+        cpu->getRegisterPrefetcher().observeLocalWrite(
+            data_pkt->getAddr(), data_pkt->getSize());
         stats.sbufferDcacheReqFire++;
         cachePortBusy(false);
         request->_numOutstandingPackets = 1;
@@ -1909,6 +1911,46 @@ LSQ::recvReqRetry()
     for (ThreadID tid : *activeThreads) {
         thread[tid].recvRetry();
     }
+
+    cpu->getRegisterPrefetcher().recvReqRetry();
+}
+
+LSQ::RfpDcacheSendResult
+LSQ::trySendRfpPacket(PacketPtr pkt, Addr vaddr, unsigned size)
+{
+    if (cacheBlocked()) {
+        return RfpDcacheSendResult::CacheBlocked;
+    }
+    if (!cachePortAvailable(true)) {
+        return RfpDcacheSendResult::PortBusy;
+    }
+    if (loadBankConflictedCheck(vaddr, size)) {
+        return RfpDcacheSendResult::BankConflict;
+    }
+
+    pkt->sendTick = curTick();
+    if (!dcachePort.sendTimingReq(pkt)) {
+        if (pkt->mshrArbFailed()) {
+            return RfpDcacheSendResult::MshrArbFail;
+        }
+        if (pkt->mshrAliasFailed()) {
+            return RfpDcacheSendResult::MshrAliasFail;
+        }
+        if (pkt->tagReadFail) {
+            return RfpDcacheSendResult::TagReadFail;
+        }
+        if (pkt->isHitInWriteBuffer()) {
+            return RfpDcacheSendResult::HitInWriteBuffer;
+        }
+
+        // A false timing send without a source-specific arbitration reason
+        // follows the request-port retry protocol and blocks all requestors.
+        cacheBlocked(true);
+        return RfpDcacheSendResult::CacheBlocked;
+    }
+
+    cachePortBusy(true);
+    return RfpDcacheSendResult::Accepted;
 }
 
 
@@ -1918,6 +1960,18 @@ LSQ::recvTimingResp(PacketPtr pkt)
     if (pkt->isError())
         DPRINTF(LSQ, "Got error packet back for address: %#X\n",
                 pkt->getAddr());
+
+    if (auto *rfp_request =
+            dynamic_cast<RegisterPrefetcher::RfpRequest *>(
+                pkt->senderState)) {
+        if (pkt->isInvalidate()) {
+            for (ThreadID tid = 0; tid < numThreads; tid++) {
+                thread[tid].checkSnoop(pkt);
+            }
+        }
+        cpu->getRegisterPrefetcher().recvTimingResp(pkt, *rfp_request);
+        return true;
+    }
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     panic_if(!request, "Got packet back with unknown sender state\n");
@@ -1942,6 +1996,7 @@ LSQ::recvTimingResp(PacketPtr pkt)
         for (ThreadID tid = 0; tid < numThreads; tid++) {
             thread[tid].checkSnoop(pkt);
         }
+        cpu->getRegisterPrefetcher().recvTimingSnoopReq(pkt);
     }
 
     if (request->isNormalLd() &&
@@ -1973,12 +2028,17 @@ LSQ::recvTimingSnoopReq(PacketPtr pkt)
         for (ThreadID tid = 0; tid < numThreads; tid++) {
             thread[tid].checkSnoop(pkt);
         }
+        cpu->getRegisterPrefetcher().recvTimingSnoopReq(pkt);
     } else if (pkt->req && pkt->req->isTlbiExtSync()) {
         DPRINTF(LSQ, "received TLBI Ext Sync\n");
         assert(!waitingForStaleTranslation);
 
         waitingForStaleTranslation = true;
         staleTranslationWaitTxnId = pkt->req->getExtraData();
+
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            cpu->getRegisterPrefetcher().invalidateGeneration(tid);
+        }
 
         for (auto& unit : thread) {
             unit.startStaleTranslationFlush();
@@ -2000,7 +2060,13 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
     LSQRequest *request = nullptr;
     if (sig != DcacheRespType::Bus_Clear) {
         // Bus_Clear event does not need request info
-        request = dynamic_cast<LSQRequest*>(pkt->getPrimarySenderState());
+        auto *sender = pkt->getPrimarySenderState();
+        if (dynamic_cast<RegisterPrefetcher::RfpRequest *>(sender)) {
+            // RFP owns its retry/response state and does not participate in
+            // normal load-miss replay hints.
+            return;
+        }
+        request = dynamic_cast<LSQRequest*>(sender);
         panic_if(!request, "Got packet back with unknown sender state\n");
     }
 

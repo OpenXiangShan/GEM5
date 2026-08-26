@@ -104,6 +104,7 @@ enum StallReason {
     ControlRecovery,  // BS
     MemVioRecovery,  // BS
     VPRecovery,  // BS
+    RFPRecovery,  // BS
     TrapRecovery,  // BS
     ROBFull,  // B
     RegFull,  // B
@@ -124,6 +125,7 @@ enum class SquashCause
     BranchMispredict,
     MemOrderViolation,
     ValuePrediction,
+    RegisterPrefetch,
     Trap,
     ThreadContext,
     SquashAfter,
@@ -139,6 +141,8 @@ squashCauseToStallReason(SquashCause cause)
         return StallReason::MemVioRecovery;
       case SquashCause::ValuePrediction:
         return StallReason::VPRecovery;
+      case SquashCause::RegisterPrefetch:
+        return StallReason::RFPRecovery;
       case SquashCause::Trap:
         return StallReason::TrapRecovery;
       // TC writes / squash-after are simulator-side clears, not
@@ -200,6 +204,7 @@ struct IEWStruct
     bool includeSquashInst[MaxThreads];
 
     bool valuePredictionError[MaxThreads];
+    bool registerPrefetchError[MaxThreads];
 };
 
 struct IssueStruct
@@ -413,6 +418,7 @@ smtCanDonateRobHeadroom(StallReason reason)
       case ControlRecovery:
       case MemVioRecovery:
       case VPRecovery:
+      case RFPRecovery:
       case TrapRecovery:
         return false;
       default:

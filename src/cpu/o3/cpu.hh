@@ -65,6 +65,7 @@
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/perfCCT.hh"
+#include "cpu/o3/register_prefetcher.hh"
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
@@ -201,6 +202,9 @@ class CPU : public BaseCPU
     demapPage(Addr vaddr, uint64_t asn)
     {
         mmu->demapPage(vaddr, asn);
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            registerPrefetcher.invalidateGeneration(tid);
+        }
     }
 
     /** Ticks CPU, calling tick() on each stage, and checking the overall
@@ -392,6 +396,9 @@ class CPU : public BaseCPU
      * state through the TC.
      */
     void squashFromTC(ThreadID tid);
+
+    /** Request a consumer-only squash after failed RFP recovery. */
+    void squashFromRfp(const DynInstPtr &inst);
 
     /** Function to add instruction onto the head of the list of the
      *  instructions.  Used when new instructions are fetched.
@@ -746,10 +753,23 @@ class CPU : public BaseCPU
     /** Value predictor */
     valuepred::VPUnit *valuePred;
 
+    /** CPU-owned committed-stride register prefetcher. */
+    RegisterPrefetcher registerPrefetcher;
+
   public:
     bool isValuePredictorEnabled() const { return valuePred != nullptr; }
 
     valuepred::VPUnit *getValuePredictor() const { return valuePred; }
+
+    RegisterPrefetcher &getRegisterPrefetcher()
+    {
+        return registerPrefetcher;
+    }
+
+    const RegisterPrefetcher &getRegisterPrefetcher() const
+    {
+        return registerPrefetcher;
+    }
 };
 
 } // namespace o3

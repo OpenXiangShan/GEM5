@@ -117,6 +117,18 @@ class LSQ
         GoToS3
     };
 
+    enum class RfpDcacheSendResult
+    {
+        Accepted,
+        CacheBlocked,
+        PortBusy,
+        BankConflict,
+        MshrArbFail,
+        MshrAliasFail,
+        TagReadFail,
+        HitInWriteBuffer
+    };
+
     /**
      * DcachePort class for the load/store queue.
      */
@@ -1139,6 +1151,9 @@ class LSQ
      * @param pkt Response packet from the memory sub-system
      */
     bool recvTimingResp(PacketPtr pkt);
+
+    RfpDcacheSendResult trySendRfpPacket(
+        PacketPtr pkt, Addr vaddr, unsigned size);
 
     void recvTimingSnoopReq(PacketPtr pkt);
 

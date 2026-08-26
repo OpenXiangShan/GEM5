@@ -22,6 +22,7 @@ enum LdStReplayType
     MshrAliasFailReplay,
     HitInWriteBufferReplay,
     MshrArbFailReplay,
+    RfpFallbackReplay,
     LdStReplayTypeCount
 };
 
@@ -41,6 +42,7 @@ static const char *load_store_replay_event_str[LdStReplayTypeCount] =
     "MshrAliasFailReplay",
     "HitInWriteBufferReplay",
     "MshrArbFailReplay",
+    "RfpFallbackReplay",
 };
 
 } // namespace o3

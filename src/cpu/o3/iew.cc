@@ -334,6 +334,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::ControlRecovery, "ControlRecovery"},
         {StallReason::MemVioRecovery, "MemVioRecovery"},
         {StallReason::VPRecovery, "VPRecovery"},
+        {StallReason::RFPRecovery, "RFPRecovery"},
         {StallReason::TrapRecovery, "TrapRecovery"},
         {StallReason::ROBFull, "ROBFull"},
         {StallReason::RegFull, "RegFull"},
@@ -694,6 +695,33 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
                 toCommit->pc[tid]->instAddr(),
                 toCommit->squashedTargetId[tid],
                 toCommit->squashedLoopIter[tid]);
+    }
+
+    stallSig->blockRename[tid] = true;
+}
+
+void
+IEW::squashDueToRfpRecovery(const DynInstPtr &inst)
+{
+    const ThreadID tid = inst->threadNumber;
+    recordThreadSquash(tid);
+
+    DPRINTF(IEW, "[tid:%i] RFP recovery, squashing consumers younger "
+            "than PC: %s [sn:%llu].\n",
+            tid, inst->pcState(), inst->seqNum);
+    if (!toCommit->squash[tid] ||
+        inst->seqNum < toCommit->squashedSeqNum[tid]) {
+        toFetch->iewInfo[tid].redirectPending = true;
+        toCommit->squash[tid] = true;
+        toCommit->registerPrefetchError[tid] = true;
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        set(toCommit->pc[tid], inst->pcState());
+        inst->staticInst->advancePC(*toCommit->pc[tid]);
+        toCommit->mispredictInst[tid] = nullptr;
+        toCommit->includeSquashInst[tid] = false;
+        wroteToTimeBuffer = true;
     }
 
     stallSig->blockRename[tid] = true;

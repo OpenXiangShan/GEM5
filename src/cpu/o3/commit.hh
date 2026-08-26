@@ -651,6 +651,7 @@ class Commit
         statistics::Vector squashDueToBranch;
         statistics::Vector squashDueToOrderViolation;
         statistics::Vector squashDueToValuePrediction;
+        statistics::Vector squashDueToRegisterPrefetch;
         statistics::Vector squashDueToTrap;
         statistics::Vector squashDueToTC;
         statistics::Vector squashDueToSquashAfter;

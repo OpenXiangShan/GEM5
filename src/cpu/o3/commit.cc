@@ -310,6 +310,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to order violation"),
       ADD_STAT(squashDueToValuePrediction, statistics::units::Count::get(),
                "Number of squash due to value prediction"),
+      ADD_STAT(squashDueToRegisterPrefetch, statistics::units::Count::get(),
+               "Number of squash due to register-prefetch recovery"),
       ADD_STAT(squashDueToTrap, statistics::units::Count::get(),
                "Number of squash due to trap"),
       ADD_STAT(squashDueToTC, statistics::units::Count::get(),
@@ -428,6 +430,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .init(cpu->numThreads)
         .flags(total);
 
+    squashDueToRegisterPrefetch
+        .init(cpu->numThreads)
+        .flags(total);
+
     squashDueToTrap
         .init(cpu->numThreads)
         .flags(total);
@@ -441,8 +447,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(total);
 
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
-        squashDueToValuePrediction + squashDueToTrap + squashDueToTC + \
-        squashDueToSquashAfter;
+        squashDueToValuePrediction + squashDueToRegisterPrefetch + \
+        squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
 
     ROBFull
         .init(cpu->numThreads)
@@ -1164,6 +1170,12 @@ Commit::commit()
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToValuePrediction[tid]++;
                 curSquashCause[tid] = SquashCause::ValuePrediction;
+            } else if (fromIEW->registerPrefetchError[tid]) {
+                DPRINTF(Commit,
+                    "[tid:%i] Squashing due to RFP recovery [sn:%llu]\n",
+                    tid, fromIEW->squashedSeqNum[tid]);
+                stats.squashDueToRegisterPrefetch[tid]++;
+                curSquashCause[tid] = SquashCause::RegisterPrefetch;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
@@ -2040,6 +2052,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     // the HTM UID is purely for correctness and debugging purposes
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
+
+    if (head_inst->isLoad()) {
+        if (inst_fault == NoFault) {
+            cpu->getRegisterPrefetcher().trainCommittedLoad(head_inst);
+        }
+        cpu->getRegisterPrefetcher().onNormalCompletion(head_inst);
+    }
 
     if (valuePred && head_inst->canLVP() && (inst_fault == NoFault)) {
         // essential trainning info for all value predictors

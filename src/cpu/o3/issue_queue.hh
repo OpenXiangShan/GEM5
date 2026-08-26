@@ -47,6 +47,13 @@ class MemDepUnit;
 using ReadyQue = std::list<DynInstPtr>;
 using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
 
+enum class SpeculationSource
+{
+    LoadPipeline,
+    ValuePrediction,
+    RegisterPrefetch
+};
+
 /**
  *          insert into queue
  *                 |
@@ -424,8 +431,13 @@ class Scheduler : public SimObject
     void useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
 
     void specWakeUpFromVP(const DynInstPtr& inst);
+    void specWakeUpFromRFP(const DynInstPtr& inst);
+    void rfpDataReady(const DynInstPtr& inst);
+    void clearRfpState(const DynInstPtr& inst);
     void specWakeUpFromLoadPipe(const DynInstPtr& inst);
-    bool loadCancel(const DynInstPtr& inst);
+    bool loadCancel(
+        const DynInstPtr& inst,
+        SpeculationSource source = SpeculationSource::LoadPipeline);
 
     void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);
