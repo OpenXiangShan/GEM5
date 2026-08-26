@@ -233,7 +233,7 @@ class BaseO3CPU(BaseCPU):
     EnableSpecStoreFwdNoMdp = Param.Bool(True,
         "Ignore MDP scope and allow Spec-STLF prediction/training for all loads")
     SpecStoreFwdTableSize = Param.Unsigned(1024, "Spec-STLF meta table entries")
-    SpecStoreFwdCtrBits = Param.Unsigned(2, "Spec-STLF saturating counter bits")
+    SpecStoreFwdCtrBits = Param.Unsigned(8, "Spec-STLF saturating counter bits")
 
     numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
