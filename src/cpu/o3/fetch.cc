@@ -147,6 +147,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         static_cast<unsigned>(commitToFetchDelay - iewToFetchDelay) : 0;
     redirectPendingHoldCycles = redirect_pending_gap + 1;
     for (int i = 0; i < MaxThreads; i++) {
+        fetchStatus[i] = Idle;
         setThreadStatus(i, Idle);
         decoder[i] = nullptr;
         threads[i].fetchpc.reset(params.isa[0]->newPCState());
