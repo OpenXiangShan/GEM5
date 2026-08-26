@@ -370,7 +370,7 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
 
     if args.num_cpus > 1 or args.smt:
         print("Simulating a multi-context system, demanding a larger GCPT restorer size (2M).")
-        sys.gcpt_restorer_size_limit = 2**20
+        sys.gcpt_restorer_size_limit = 2**21
     elif args.restore_rvv_cpt:
         print("Simulating single core with RVV, demanding GCPT restorer size of 0x1000.")
         sys.gcpt_restorer_size_limit = 0x1000
