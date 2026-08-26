@@ -16,9 +16,10 @@
 
 ## 2026-08-26: Final Local Validation
 
-* Review checkpoint is available on local branch `codex/mockingjay-l2-5361c12`
-  at `c2dbe9837b`; the implementation, bookkeeping fix, and admitted-fill
-  regression coverage are separate commits for review.
+* Review checkpoint is available on local and remote branch
+  `codex/mockingjay-l2-5361c12` at `4176c788d2`; the implementation,
+  bookkeeping fix, admitted-fill regression coverage, and review-status
+  documentation are separate commits for review.
 
 * Corrected the RDP index to use the low bits of the PC/state CRC hash.
   The previous top-bit extraction collapsed ordinary RV64 PCs into entry zero,
@@ -81,4 +82,6 @@
   `distributed_servers` (CI parallel path), and CI DRAMsim3. Archive
   `config.ini`, `score.txt`, and the manifest before making any performance
   claim.
-* No remote dispatch has been performed in this turn.
+* The review branch is published at
+  `origin/codex/mockingjay-l2-5361c12` (`4176c788d2`). No remote performance
+  dispatch has been performed in this turn.
