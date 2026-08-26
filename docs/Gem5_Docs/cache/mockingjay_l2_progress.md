@@ -39,7 +39,8 @@ scan 或预测 ETR 大于所选牺牲行绝对 ETR，则以 `+INF_ETR` 插入。
 
 ## 2026-08-26：当前修订验证
 
-* 串行重建 `gem5.opt` 和替换策略 GTest；16/16 个策略测试通过。
+* 串行重建 `gem5.opt` 和替换策略 GTest；17/17 个策略测试通过，其中新增
+  软件预取不训练回归。
 * `python3 -m py_compile configs/example/kmhv3.py` 和 `git diff --check` 通过。
 * checkpoint 冒烟测试在 `/tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826` 完成，
   `simInsts=1000008`、`system.cpu.committedInsts=1000008`。
@@ -77,15 +78,29 @@ GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so \
 4. 本次工作树修订：删除旁路 plumbing、改成 `+INF_ETR`、中文文档和重新
    验证；以分支最新提交作为审查检查点。
 
-不触发远程性能 CI，除非获得明确批准。
+本次代码审查不触发新的远程性能 CI；下节记录已存在的一次完整候选归档，以及它
+不能用于性能归因的原因。
 
-## 受控 CI A/B 合同（未触发）
+## 候选 CI 与受控 A/B 合同
 
 * Baseline run：`32391965338`；有效 job：`96499960567`；基线 SHA：
   `5361c1248804755d285313f41dd73b7a299f7b48`。
 * Baseline 归档：
   `/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-1.0c/20260821_003117_5361c12488_kmhv3_run102`；
   score 为 `20.612401866596542`。
+* 候选 workflow：`32941495780`（run 968）；提交为
+  `35f340a2e3a989fb3d2ea8c1ea4d751a4ff618f4`，归档为
+  `/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-1.0c/20260826_151522_35f340a2e3_kmhv3_run968`。
+  使用 `kmhv3.py` 和 `gcc15-spec06-1.0c`，1112 个 workload 全部完成，1112 份
+  `config.ini` 和 `stats.txt` 完整，无 abort。每份配置均含四个
+  `MockingjayL2RP`，故可确认策略被实际实例化。
+* 该候选相对基线的总分/GHz 为 `20.546875856038877`，观察变化为 `-0.317896%`；
+  整数分变化 `+0.192332%`，浮点分变化 `-0.676492%`。此记录仅描述归档结果，
+  不是性能归因。
+* **候选不满足受控 A/B 合同。** 基线的 `distributed_servers` 为空，走本地
+  parallel path；候选输入为 `default`，展开为共享节点池并走 `distributed_sim.py`。
+  执行路径变化，所以不能把任何 score 或 stats 差异归因于 Mockingjay，不能将其
+  用于 solver/DSE，也不能用它替代重跑。
 * 待运行任务必须使用本分支完整 40 位 SHA、`kmhv3.py`、
   `gcc15-spec06-1.0c`、完整整数 slice 集合、空 `distributed_servers`（CI
   parallel path）和 CI DRAMsim3。

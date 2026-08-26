@@ -9,13 +9,13 @@
 
 ## 动机
 
-Belady 的 MIN 策略会淘汰下一次使用距离最远的 cache line，但模拟器无法直接
+Belady 的 MIN 策略会淘汰下一次使用距离最远的缓存行，但模拟器无法直接
 知道未来的访问流。SHiP、Hawkeye 等学习型策略通常把问题压成二分类：cache
 line 是 Cache Friendly 还是 Cache Averse，或者之后会不会复用。论文指出这种
 粗粒度分类有两个问题：
 
 * 小的预测误差会直接翻转类别，而不是只小幅改变淘汰顺序。
-* 同一类别中的 line 经常出现平局，策略只能退回 LRU。
+* 同一类别中的缓存行经常出现平局，策略只能退回 LRU。
 
 较早的复用距离策略 KPK 和 IbRDP 虽然预测了预计到达时间（ETA），却使用
 `max(ETR, age)` 选择 victim。接近预测复用点时，age 可能覆盖 ETA，方向与
@@ -64,18 +64,18 @@ associativity 的历史长度。
 
 ### ETR 与 victim 选择
 
-插入或命中提升时，RDP 预测初始化 line 的 Estimated Time Remaining（ETR）。
+插入或命中提升时，RDP 预测初始化缓存行的 Estimated Time Remaining（ETR）。
 ETR 是 ETA 的粗粒度表示：每访问同一 set 八次，所有非 scan line 的 ETR 减一；
 ETR 经过零点后仍保留符号。正值表示预测复用尚未到达，负值表示预测时间已
 经过。scan line 不参与 aging。
 
-发生 miss 时，Mockingjay 选择 `abs(ETR)` 最大的有效 line；绝对值相同时优先
-负 ETR。这保持了直接的 ETA 顺序。论文还定义了对低复用预测进行缓存旁路
-（cache bypass）：预测为 scan，或其预测 ETR 大于当前 victim 的绝对 ETR 时，
-均可不保留该 fill。本 GEM5 端口不改动 cache 的正常 fill/响应流程；它在更新
-采样历史之前保留 scan 判定和预测 ETR，并将命中对应条件的 line 正常写入 cache、同时把 ETR
-设为 `+INF_ETR`。随后正常 victim 选择会优先于所有绝对 ETR 更小的 line 淘汰
-它；若存在 `-INF_ETR` writeback，则既有的负 ETR 平局规则会先选 writeback。
+发生 miss 时，Mockingjay 选择 `abs(ETR)` 最大的有效缓存行；绝对值相同时优先
+负 ETR。这保持了直接的 ETA 顺序。论文还定义了对低复用预测进行缓存旁路：预测
+为 scan，或其预测 ETR 大于当前牺牲行的绝对 ETR 时，均可不保留该填充。本 GEM5
+端口不改动 cache 的正常填充/响应流程；它在更新采样历史之前保留 scan 判定和
+预测 ETR，并将命中对应条件的缓存行正常写入 cache、同时把 ETR 设为 `+INF_ETR`。
+随后正常牺牲行选择会优先于所有绝对 ETR 更小的缓存行淘汰它；若存在
+`-INF_ETR` writeback，则既有的负 ETR 平局规则会先选 writeback。
 这样可以保留替换趋势，同时不引入跨 BaseCache、tags 和 MSHR 的旁路接口。
 writeback 继续使用低优先级的负 scan ETR。
 

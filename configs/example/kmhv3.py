@@ -186,7 +186,7 @@ def setKmhV3Params(args, system):
                     slice_size_bits = int(math.log2(slice_size))
                     if slice_size_bits <= 12 or slice_size_bits >= 31:
                         fatal("Mockingjay L2 slice size must be in "
-                              "[4 KiB, 2 GiB)")
+                              "[8 KiB, 2 GiB)")
 
                     num_sets = slice_size // (line_size * int(inner_cache.assoc))
                     sampled_sets = 1 << max(0, slice_size_bits - 16)

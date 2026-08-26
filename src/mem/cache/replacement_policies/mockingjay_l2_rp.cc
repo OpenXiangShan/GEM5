@@ -201,6 +201,7 @@ bool
 MockingjayL2::isTrainingAccess(const PacketPtr pkt) const
 {
     return pkt && !pkt->isWriteback() && !pkt->isEviction() &&
+        !pkt->cmd.isSWPrefetch() &&
         pkt->cmd != MemCmd::WriteClean &&
         !(pkt->req && pkt->req->isCacheMaintenance());
 }
@@ -609,9 +610,12 @@ MockingjayL2::MockingjayStats::MockingjayStats(
     ADD_STAT(agingEvents, "Per-set periodic ETR aging events"),
     ADD_STAT(maxEtrInsertions,
              "Fills admitted with maximum positive ETR for rapid replacement"),
-    ADD_STAT(positiveEtrVictims, "Victims with non-negative ETR"),
-    ADD_STAT(negativeEtrVictims, "Victims with negative ETR"),
-    ADD_STAT(invalidVictims, "Invalid entries selected for insertion")
+    ADD_STAT(positiveEtrVictims,
+             "Selected candidates with non-negative ETR"),
+    ADD_STAT(negativeEtrVictims,
+             "Selected candidates with negative ETR"),
+    ADD_STAT(invalidVictims,
+             "Invalid candidates selected for insertion")
 {
 }
 

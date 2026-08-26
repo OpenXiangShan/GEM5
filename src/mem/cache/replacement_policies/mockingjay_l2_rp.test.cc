@@ -551,6 +551,27 @@ TEST_F(MockingjayL2Test, NonDemandFillsDoNotTrain)
     EXPECT_EQ(policy.etr(entries[1].replacementData), 0);
 }
 
+TEST_F(MockingjayL2Test, SoftwarePrefetchesDoNotTrain)
+{
+    auto demand = packet(0, 0x1000);
+    fill(0, 0, demand.get());
+    policy.setEtr(entries[0].replacementData, 3);
+
+    const Counter no_pc_before = policy.noPcSignatures();
+    const uint16_t timestamp_before = policy.sampledTimestamp(0);
+    auto software_prefetch = packet(0x40, 0, MemCmd::SoftPFReq, false);
+
+    access(0, 0, software_prefetch.get());
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 3);
+
+    fill(0, 1, software_prefetch.get());
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[1].replacementData), 0);
+}
+
 TEST_F(MockingjayL2Test, AgingAndTrainingRemainPerSet)
 {
     auto set0_a = packet(0, 0x1000);

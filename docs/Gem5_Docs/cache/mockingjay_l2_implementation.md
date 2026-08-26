@@ -25,11 +25,11 @@
 | 热路径复杂度 | RDP/采样索引为 O(1)，一次周期 aging 只扫描该 set 的 O(ways) 个 line，victim 选择为 O(ways)；目标 slice 为 8-way。 |
 | 功能边界 | replacement policy 不改变 hit/miss 查找、coherence、MSHR 仲裁或 slice 路由；所有 fill 都沿 GEM5 原有流程完成。 |
 
-论文中的真实缓存旁路（cache bypass）需要改动响应、tags 和临时块生命周期。
+论文中的真实缓存旁路需要改动响应、tags 和临时块生命周期。
 本端口明确不实现这部分：在更新采样历史之前，若一次 fill 的 RDP 预测为 scan，
-或其预测 ETR 大于本次选中 victim 的绝对 ETR，line 仍正常分配并设置
-`+INF_ETR`。`selectVictim` 会选择绝对 ETR 最大的 line，因此该 line 会在后续
-竞争中优先于绝对 ETR 更小的 line 被淘汰，同时不会改变 cache 的功能时序。若
+或其预测 ETR 大于本次选中牺牲行的绝对 ETR，缓存行仍正常分配并设置
+`+INF_ETR`。`selectVictim` 会选择绝对 ETR 最大的缓存行，因此该缓存行会在后续
+竞争中优先于绝对 ETR 更小的缓存行被淘汰，同时不会改变 cache 的功能时序。若
 存在绝对值相同的负 ETR writeback，负值优先的既有 tie-break 仍先选 writeback。
 
 ## 状态与默认参数
@@ -67,7 +67,9 @@
 `timestamp_bits`。默认配置的 `block_bits=6`、`slice_bits=2` 和 8 位时间戳
 均满足这些约束。
 
-`MockingjayReplData` 保存 `valid`、`set_id`、`way_id` 和有符号 `etr`。策略
+`MockingjayReplData` 保存 `valid`、`set_id`、`way_id` 和有符号 `etr`。在一次
+标准 victim 选择与随后的 `reset` 之间，它还暂存被选中旧 line 的 `victim_etr`
+及其有效位；这只服务于新 fill 的最大 ETR 判定，不改动 cache 的分配接口。策略
 拥有以下固定大小结构：
 
 * `entries_by_set`：每个 set 的 way replacement-data 指针列表；
@@ -91,9 +93,11 @@
    训练前预测，再记录 miss、更新采样历史并执行 set aging。若训练前 RDP 预测
    为 scan，或预测 ETR 大于已保存 victim 的绝对 ETR，则新 line 固定为
    `+INF_ETR` 并递增 `maxEtrInsertions`，但不跳过分配、响应或 refill
-   notification。其他可训练 fill 使用训练后的预测 ETR。eviction、`WriteClean`
-   和 cache-maintenance 流量不训练 RDP、不推进采样时间戳，也不改变已有 line
-   的普通命中 ETR；writeback fill 保持 `-INF_ETR`。
+   notification。其他可训练填充使用训练后的预测 ETR。软件预取、eviction、
+   `WriteClean` 和 cache-maintenance 流量不训练 RDP、不推进采样时间戳，也不
+   改变已有 line 的普通命中 ETR；writeback fill 保持 `-INF_ETR`。软件预取在
+   cache 内部会生成不带 PC 的复制 Request，因此显式排除，避免将其误训练到
+   保留的 no-PC 表项。
 3. 采样历史命中时训练旧 PC signature 的复用距离；记录被 aging 淘汰或被
    LRU 替换时按 scan 训练。以预取结束的区间在训练前按参数放大。普通训练
    使用参考实现的整数 temporal-difference 规则：距离差小于阈值时不变，
@@ -113,8 +117,10 @@
 
 策略导出以下计数器：采样命中/未命中、复用和 scan 训练、RDP 命中/未命中、
 无 PC 请求、命中提升、普通插入、writeback 插入、周期 aging、
-`maxEtrInsertions`、正/负 ETR victim 以及 invalid victim。它们可以区分学习
-活动、低复用 line 插入和实际淘汰结果，支持有限规模的压力测试和归因。
+`maxEtrInsertions`、正/负 ETR 候选和 invalid 候选。`maxEtrInsertions` 表示
+最大 ETR 的快速淘汰插入次数，不是缓存旁路次数。候选统计在
+`getVictim()` 返回时递增，早于 cache 的 `handleEvictions()`，因此不能当作实际
+完成淘汰数；它们用于区分学习活动、低复用 line 插入和替换选择趋势。
 
 ## 验证计划
 
@@ -136,3 +142,7 @@
 一次 line residency。论文没有完全规定同号 ETR 平局、分数 TD 舍入和查找/递增
 顺序，当前实现把这些选择固定为可测试的确定性规则。时间戳模数被限制为大于
 历史窗口，但整整一个计数周期未触及的项仍可能发生别名，这是有界历史近似。
+对合并 MSHR 的 fill，`reset(data, pkt)` 接收的是下行响应携带的初始 miss
+Request；因此该次训练归属初始发起者，而不随之后合并的最终消费者改变。保持
+这一现状可避免向 cache/MSHR 引入 Mockingjay 专用元数据，但它是本模型的归因
+边界。
