@@ -4,7 +4,12 @@
 
 * Branch: `codex/mockingjay-l2-5361c12`
 * Base: `5361c1248804755d285313f41dd73b7a299f7b48`
-* State: local implementation checkpoint; no remote push and no CI dispatch
+* HEAD: `c2dbe9837b`
+* State: local implementation checkpoint; no CI dispatch
+
+The implementation is split into three reviewable commits: the bypass
+bookkeeping fix (`96ceca6e3b`), the policy and integration (`ee4aedf618`),
+and the admitted-fill regression coverage (`c2dbe9837b`).
 
 This checkpoint adds a packet-aware `MockingjayL2RP` to each aligned L2 slice
 in `configs/example/kmhv3.py`. The policy models sampled history, reuse-
@@ -45,7 +50,7 @@ statistics, and a conservative direct-response bypass for eligible clean
 ## Validation recorded before this checkpoint
 
 * `mockingjay_l2_rp.test.opt`: 10/10 tests passed.
-* `cache.test.opt`: 4/4 timing tests passed.
+* `cache.test.opt`: 5/5 timing tests passed.
 * `python3 -m py_compile configs/example/kmhv3.py` passed.
 * `git diff --check` passed.
 * A one-million-instruction `omnetpp` checkpoint smoke completed with matching
@@ -53,9 +58,9 @@ statistics, and a conservative direct-response bypass for eligible clean
   policies. The short smoke observed zero bypasses, so it is functional and
   configuration evidence, not a performance result.
 
-The latest source correction (after those recorded tests) fixes the response
-bookkeeping condition to use the value of the optional bypass flag. Rebuild
-and rerun both test binaries before treating this checkpoint as validated.
+The latest source correction reads the local bypass result value (rather than
+the address of the optional flag), and the admitted-fill test exercises the
+opposite path. Both focused binaries were rebuilt after that correction.
 
 ## Known limits
 

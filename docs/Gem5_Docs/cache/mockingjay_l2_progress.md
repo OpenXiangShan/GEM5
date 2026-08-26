@@ -16,6 +16,10 @@
 
 ## 2026-08-26: Final Local Validation
 
+* Review checkpoint is available on local branch `codex/mockingjay-l2-5361c12`
+  at `c2dbe9837b`; the implementation, bookkeeping fix, and admitted-fill
+  regression coverage are separate commits for review.
+
 * Corrected the RDP index to use the low bits of the PC/state CRC hash.
   The previous top-bit extraction collapsed ordinary RV64 PCs into entry zero,
   so all performance observations from that version are invalidated.
@@ -30,16 +34,19 @@
 
   `build/RISCV/mem/cache/replacement_policies/mockingjay_l2_rp.test.opt`
 
-* The cache timing regression passed all four cases:
+* The cache timing regression passed all five cases:
 
   `ReadCleanReqDirtyResponderFills`,
   `ReadSharedReqBypassesWithoutAllocating`,
+  `ReadSharedReqAdmittedCleanFillAllocates`,
   `ReadSharedReqDirtyResponderFills`, and
   `ReadSharedReqPendingDowngradeFills`.
 
   The last case injects a concurrent `ReadSharedReq` snoop between issue and
   response, proves that the MSHR enters `postDowngrade`, and verifies that the
   response takes the normal allocating path.
+  The admitted-fill case verifies the complementary path: a real victim is
+  selected, the response allocates, and the line remains resident.
 * The final-binary checkpoint smoke used the checkpoint-compatible reference
   and a local DDR4 fallback:
 
@@ -59,6 +66,8 @@
   `mstateen0` CSR instruction (`sn:163`) before useful execution. The smoke
   therefore uses `riscv64-nemu-notama-tvalref-so`. Local DDR4 timing is not
   comparable performance evidence for the CI DRAMsim3 configuration.
+* `git diff --check` and `python3 -m py_compile configs/example/kmhv3.py` pass
+  on the final branch.
 
 ## Controlled CI A/B Contract (Not Dispatched)
 
