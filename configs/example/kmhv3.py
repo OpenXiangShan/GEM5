@@ -184,7 +184,7 @@ def setKmhV3Params(args, system):
                               "line, and slice-count geometry")
 
                     slice_size_bits = int(math.log2(slice_size))
-                    if slice_size_bits <= 10 or slice_size_bits >= 31:
+                    if slice_size_bits <= 12 or slice_size_bits >= 31:
                         fatal("Mockingjay L2 slice size must be in "
                               "[4 KiB, 2 GiB)")
 
