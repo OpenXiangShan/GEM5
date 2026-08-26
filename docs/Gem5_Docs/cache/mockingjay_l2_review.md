@@ -5,7 +5,10 @@
 * 分支：`codex/mockingjay-l2-5361c12`
 * 基线：`5361c1248804755d285313f41dd73b7a299f7b48`
 * 初始已发布检查点：`c95ff7ac13c9e21dc505a266f6ea460f3f422ae3`
-* 当前检查点：本分支最新提交（实现和验证记录均在该提交中）
+* 当前检查点：`e32da611f3f18e81a1aad1093840b572e5684af3`
+  （`configs: Align Mockingjay slice size guard`）。
+* 临时审查分支：`codex/mockingjay-l2-review-summary-20260826`；该分支仅额外
+  保存面向审查的中文快照，不引入另一套实现代码。
 * 当前审查范围：在上述检查点之上移除真实缓存旁路，并改为
   `+INF_ETR` 正常插入；所有新增 Markdown 文档已改用中文。
 * CI 状态：未触发性能 CI。
