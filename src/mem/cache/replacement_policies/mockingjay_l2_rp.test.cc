@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -75,6 +77,14 @@ class MockingjayL2Test : public testing::Test
             return rdpEntry(signature).reuseDistance;
         }
 
+        void
+        setPrediction(PacketPtr pkt, bool hit, uint16_t reuse_distance)
+        {
+            RdpEntry &entry = rdpEntry(getSignature(pkt, hit));
+            entry.valid = true;
+            entry.reuseDistance = reuse_distance;
+        }
+
         uint32_t
         signature(PacketPtr pkt, bool hit) const
         {
@@ -99,14 +109,14 @@ class MockingjayL2Test : public testing::Test
             return sampledTag(addr);
         }
 
-        unsigned
+        std::size_t
         sampleIndex(unsigned set_id, Addr addr) const
         {
             return sampledCacheIndex(set_id, addr);
         }
 
         void
-        seedSampledEntry(unsigned index, unsigned way, uint64_t tag,
+        seedSampledEntry(std::size_t index, unsigned way, uint64_t tag,
                          uint32_t signature, uint16_t timestamp)
         {
             SampledEntry &entry = sampledCache[index][way];
@@ -120,6 +130,12 @@ class MockingjayL2Test : public testing::Test
         setSampledTimestamp(unsigned set_id, uint16_t timestamp)
         {
             sampledTimestamps[set_id] = timestamp;
+        }
+
+        uint16_t
+        sampledTimestamp(unsigned set_id) const
+        {
+            return sampledTimestamps[set_id];
         }
 
         void
@@ -179,9 +195,9 @@ class MockingjayL2Test : public testing::Test
         }
 
         Counter
-        bypasses() const
+        maxEtrInsertions() const
         {
-            return stats.bypasses.value();
+            return stats.maxEtrInsertions.value();
         }
 
         Counter
@@ -225,9 +241,8 @@ class MockingjayL2Test : public testing::Test
 
     std::unique_ptr<Packet>
     packet(Addr addr, Addr pc, MemCmd::Command cmd = MemCmd::ReadReq,
-           bool has_pc = true)
+           bool has_pc = true, Request::Flags flags = Request::Flags())
     {
-        Request::Flags flags;
         auto req = std::make_shared<Request>(addr, 64, flags, 0);
         if (has_pc) {
             req->setPC(pc);
@@ -250,12 +265,11 @@ class MockingjayL2Test : public testing::Test
     }
 };
 
-TEST_F(MockingjayL2Test, InvalidEntryIsAdmittedBeforeBypass)
+TEST_F(MockingjayL2Test, InvalidEntryIsAdmitted)
 {
-    auto incoming = packet(0, 0x1000);
     const auto candidates = set(0);
 
-    EXPECT_EQ(policy.getVictim(candidates, incoming.get()), candidates.front());
+    EXPECT_EQ(policy.getVictim(candidates), candidates.front());
 }
 
 TEST_F(MockingjayL2Test, ReferenceSampledAddressAndSignatureMapping)
@@ -310,7 +324,7 @@ TEST_F(MockingjayL2Test, SampledReuseTrainsThenPredictsIncomingFill)
     EXPECT_EQ(policy.prediction(first.get(), false), 1);
 }
 
-TEST_F(MockingjayL2Test, ScanPredictionBypassesAndStillTrainsHistory)
+TEST_F(MockingjayL2Test, ScanPredictionUsesMaxEtrInsertion)
 {
     auto resident0 = packet(0, 0x1110);
     auto resident1 = packet(0x100, 0x2220);
@@ -319,14 +333,126 @@ TEST_F(MockingjayL2Test, ScanPredictionBypassesAndStillTrainsHistory)
     fill(0, 1, resident1.get());
 
     // The one-entry sampled history evicts resident0's miss signature as a
-    // scan. Its next fill bypasses, but still records the missed access.
+    // scan. Its next fill is admitted normally with the maximum positive ETR.
     ASSERT_TRUE(policy.hasPrediction(resident0.get(), false));
     EXPECT_EQ(policy.prediction(resident0.get(), false),
               policy.infiniteDistance());
     const Counter misses_before = policy.sampledMisses();
-    EXPECT_EQ(policy.getVictim(set(0), resident0.get()), nullptr);
+    const auto candidates = set(0);
+    ReplaceableEntry *victim = policy.getVictim(candidates);
+    ASSERT_NE(victim, nullptr);
+    policy.reset(victim->replacementData, resident0.get());
     EXPECT_EQ(policy.sampledMisses(), misses_before + 1);
-    EXPECT_EQ(policy.bypasses(), 1);
+    EXPECT_EQ(policy.maxEtrInsertions(), 1);
+    EXPECT_EQ(policy.etr(victim->replacementData), policy.infiniteEtr());
+
+    const unsigned victim_way = victim == &entries[0] ? 0 : 1;
+    const unsigned other_way = victim_way == 0 ? 1 : 0;
+    ReplaceableEntry *other = &entries[other_way];
+    policy.setEtr(other->replacementData, 1);
+    EXPECT_EQ(policy.getVictim(candidates), victim);
+
+    policy.setClock(0, params.aging_granularity);
+    access(0, other_way, resident1.get());
+    EXPECT_EQ(policy.etr(victim->replacementData), policy.infiniteEtr());
+
+    // A negative ETR keeps the documented signed tie-break: a writeback-like
+    // -INF_ETR line is selected before an equally distant scan insertion.
+    policy.setEtr(other->replacementData, -policy.infiniteEtr());
+    EXPECT_EQ(policy.getVictim(candidates), other);
+}
+
+TEST_F(MockingjayL2Test, FartherPredictionUsesMaxEtrInsertion)
+{
+    auto incoming = packet(0x200, 0x3333);
+    policy.setEtr(entries[0].replacementData, 2);
+    policy.setEtr(entries[1].replacementData, 1);
+    policy.setPrediction(incoming.get(), false, 6);
+
+    const Counter insertions_before = policy.maxEtrInsertions();
+    ReplaceableEntry *victim = policy.getVictim(set(0));
+    ASSERT_EQ(victim, &entries[0]);
+    policy.invalidate(victim->replacementData);
+    policy.reset(victim->replacementData, incoming.get());
+
+    EXPECT_EQ(policy.etr(victim->replacementData), policy.infiniteEtr());
+    EXPECT_EQ(policy.maxEtrInsertions(), insertions_before + 1);
+}
+
+TEST_F(MockingjayL2Test, HardwarePrefetchUsesMaxEtrInsertion)
+{
+    auto incoming = packet(0x200, 0x3333, MemCmd::HardPFReq);
+    policy.setEtr(entries[0].replacementData, 2);
+    policy.setEtr(entries[1].replacementData, 1);
+    policy.setPrediction(incoming.get(), false, 6);
+
+    ReplaceableEntry *victim = policy.getVictim(set(0));
+    ASSERT_EQ(victim, &entries[0]);
+    policy.invalidate(victim->replacementData);
+    policy.reset(victim->replacementData, incoming.get());
+
+    EXPECT_EQ(policy.etr(victim->replacementData), policy.infiniteEtr());
+    EXPECT_EQ(policy.maxEtrInsertions(), 1);
+}
+
+TEST_F(MockingjayL2Test, MaxEtrDecisionUsesPreTrainingPrediction)
+{
+    auto incoming = packet(0, 0x3333);
+    policy.setPrediction(incoming.get(), false,
+                         policy.infiniteDistance() - 1);
+    const uint32_t signature = policy.signature(incoming.get(), false);
+    policy.setSampledTimestamp(0, 1);
+    policy.seedSampledEntry(policy.sampleIndex(0, incoming->getAddr()), 0,
+                            policy.sampleTag(incoming->getAddr()),
+                            signature, 0);
+
+    policy.setEtr(entries[0].replacementData, policy.infiniteEtr());
+    policy.setEtr(entries[1].replacementData, 0);
+    ReplaceableEntry *victim = policy.getVictim(set(0));
+    ASSERT_EQ(victim, &entries[0]);
+    policy.invalidate(victim->replacementData);
+    policy.reset(victim->replacementData, incoming.get());
+
+    // The sampled hit trains 14 down to 13. The insertion decision must
+    // retain the pre-training scan prediction, just as a real bypass would.
+    EXPECT_EQ(policy.prediction(incoming.get(), false),
+              policy.infiniteDistance() - 2);
+    EXPECT_EQ(policy.etr(victim->replacementData), policy.infiniteEtr());
+}
+
+TEST_F(MockingjayL2Test, FiniteQuantizedMaxEtrIsNotAScanInsertion)
+{
+    MockingjayL2RPParams quantized_params =
+        makeParams("mockingjay_quantized_max_etr");
+    quantized_params.scan_threshold_margin = 1;
+    TestableMockingjayL2 quantized_policy{quantized_params};
+    std::vector<ReplaceableEntry> quantized_entries{
+        quantized_params.num_sets * quantized_params.num_ways};
+    for (unsigned index = 0; index < quantized_entries.size(); ++index) {
+        quantized_entries[index].setPosition(
+            index / quantized_params.num_ways,
+            index % quantized_params.num_ways);
+        quantized_entries[index].replacementData =
+            quantized_policy.instantiateEntry();
+    }
+
+    auto incoming = packet(0, 0x4444);
+    quantized_policy.setPrediction(
+        incoming.get(), false, quantized_policy.infiniteDistance() - 1);
+    quantized_policy.setEtr(quantized_entries[0].replacementData,
+                            quantized_policy.infiniteEtr());
+    quantized_policy.setEtr(quantized_entries[1].replacementData, 0);
+
+    ReplacementCandidates candidates{
+        &quantized_entries[0], &quantized_entries[1]};
+    ReplaceableEntry *victim = quantized_policy.getVictim(candidates);
+    ASSERT_EQ(victim, &quantized_entries[0]);
+    quantized_policy.invalidate(victim->replacementData);
+    quantized_policy.reset(victim->replacementData, incoming.get());
+
+    EXPECT_EQ(quantized_policy.etr(victim->replacementData),
+              quantized_policy.infiniteEtr());
+    EXPECT_EQ(quantized_policy.maxEtrInsertions(), 0);
 }
 
 TEST_F(MockingjayL2Test, EveryStaleSampledEntryIsDetrained)
@@ -369,29 +495,60 @@ TEST_F(MockingjayL2Test, WritebacksRemainResidentDespiteScanPrediction)
     EXPECT_EQ(policy.etr(entries[0].replacementData), -policy.infiniteEtr());
     EXPECT_EQ(policy.writebackInsertions(), insertions_before + 1);
 
-    const Counter bypasses_before = policy.bypasses();
-    EXPECT_NE(policy.getVictim(set(0), writeback.get()), nullptr);
-    EXPECT_EQ(policy.bypasses(), bypasses_before);
+    const uint16_t timestamp_before = policy.sampledTimestamp(0);
+    access(0, 0, writeback.get());
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[0].replacementData), -policy.infiniteEtr());
+
+    EXPECT_NE(policy.getVictim(set(0)), nullptr);
 }
 
-TEST_F(MockingjayL2Test, SynchronizationRequestsRemainResidentDespiteScan)
+TEST_F(MockingjayL2Test, EvictionsAndMaintenanceDoNotTrain)
 {
-    auto resident0 = packet(0, 0x1110);
-    auto resident1 = packet(0x100, 0x2220);
-    auto load_locked = packet(0x200, 0x1110, MemCmd::LoadLockedReq);
-    auto locked_rmw = packet(0x240, 0x1110, MemCmd::LockedRMWReadReq);
+    auto demand = packet(0, 0x1000);
+    fill(0, 0, demand.get());
+    policy.setEtr(entries[0].replacementData, 3);
 
-    fill(0, 0, resident0.get());
-    fill(0, 1, resident1.get());
+    const Counter no_pc_before = policy.noPcSignatures();
+    const uint16_t timestamp_before = policy.sampledTimestamp(0);
+    auto clean_evict = packet(0, 0, MemCmd::CleanEvict, false);
+    access(0, 0, clean_evict.get());
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 3);
 
-    ASSERT_TRUE(policy.hasPrediction(resident0.get(), false));
-    ASSERT_EQ(policy.prediction(resident0.get(), false),
-              policy.infiniteDistance());
+    auto maintenance = packet(0, 0, MemCmd::ReadReq, false,
+                              Request::Flags(Request::CLEAN));
+    access(0, 0, maintenance.get());
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 3);
 
-    const Counter bypasses_before = policy.bypasses();
-    EXPECT_NE(policy.getVictim(set(0), load_locked.get()), nullptr);
-    EXPECT_NE(policy.getVictim(set(0), locked_rmw.get()), nullptr);
-    EXPECT_EQ(policy.bypasses(), bypasses_before);
+    auto write_clean = packet(0, 0, MemCmd::WriteClean, false);
+    access(0, 0, write_clean.get());
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 3);
+}
+
+TEST_F(MockingjayL2Test, NonDemandFillsDoNotTrain)
+{
+    const Counter no_pc_before = policy.noPcSignatures();
+    const uint16_t timestamp_before = policy.sampledTimestamp(0);
+    auto write_clean = packet(0, 0, MemCmd::WriteClean, false);
+
+    fill(0, 0, write_clean.get());
+
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 0);
+
+    auto maintenance = packet(0x40, 0, MemCmd::ReadReq, false,
+                              Request::Flags(Request::CLEAN));
+    fill(0, 1, maintenance.get());
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[1].replacementData), 0);
 }
 
 TEST_F(MockingjayL2Test, AgingAndTrainingRemainPerSet)
@@ -432,6 +589,36 @@ TEST_F(MockingjayL2Test, MissingPcUsesTheReservedPredictionBucket)
 
     EXPECT_NE(policy.getVictim(set(0)), nullptr);
     EXPECT_EQ(policy.noPcSignatures(), 2);
+}
+
+TEST_F(MockingjayL2Test, RejectsUnsafeAddressAndTimestampGeometry)
+{
+    auto invalid_block_bits = makeParams("mockingjay_invalid_block_bits");
+    invalid_block_bits.block_bits = std::numeric_limits<Addr>::digits;
+    EXPECT_ANY_THROW({ TestableMockingjayL2 invalid{invalid_block_bits}; });
+
+    auto invalid_slice_bits = makeParams("mockingjay_invalid_slice_bits");
+    invalid_slice_bits.slice_bits = std::numeric_limits<Addr>::digits;
+    EXPECT_ANY_THROW({ TestableMockingjayL2 invalid{invalid_slice_bits}; });
+
+    auto invalid_timestamp = makeParams("mockingjay_invalid_timestamp");
+    invalid_timestamp.num_ways = 8;
+    invalid_timestamp.history_multiplier = 64;
+    invalid_timestamp.timestamp_bits = 8;
+    EXPECT_ANY_THROW({ TestableMockingjayL2 invalid{invalid_timestamp}; });
+
+    auto invalid_sampled_cache = makeParams("mockingjay_invalid_sampled");
+    const unsigned large_power_of_two =
+        std::numeric_limits<unsigned>::max() / 2 + 1;
+    invalid_sampled_cache.num_sets = large_power_of_two;
+    invalid_sampled_cache.num_ways = 1;
+    invalid_sampled_cache.block_bits = 0;
+    invalid_sampled_cache.sampled_sets = large_power_of_two;
+    invalid_sampled_cache.sampled_cache_sets_per_set = large_power_of_two;
+    invalid_sampled_cache.history_multiplier = 32;
+    EXPECT_ANY_THROW({
+        TestableMockingjayL2 invalid{invalid_sampled_cache};
+    });
 }
 
 } // anonymous namespace

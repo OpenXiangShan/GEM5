@@ -41,19 +41,6 @@ Source('noncoherent_cache.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
 
-# The timing fixture uses concrete Cache, tag, and simulator objects. Put the
-# matching static archive after the test objects but before the external
-# libraries: linking it through LIBS would place it after --as-needed has
-# already discarded those libraries.
-class CacheGTest(GTest):
-    def srcs_to_objs(self, build_env, sources):
-        objs = super().srcs_to_objs(build_env, sources)
-        archive = Dir('#').Dir(build_env['BUILDDIR']).File(
-            'libgem5_%s.a' % build_env['ENV_LABEL'])
-        return objs + [archive]
-
-CacheGTest('cache.test', 'cache.test.cc')
-
 DebugFlag('Cache')
 DebugFlag('CacheComp')
 DebugFlag('CachePort')

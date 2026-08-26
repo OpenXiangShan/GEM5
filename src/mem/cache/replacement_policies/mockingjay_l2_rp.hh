@@ -8,6 +8,7 @@
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_MOCKINGJAY_L2_RP_HH__
 #define __MEM_CACHE_REPLACEMENT_POLICIES_MOCKINGJAY_L2_RP_HH__
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -65,9 +66,12 @@ class MockingjayL2 : public Base
         unsigned setId;
         unsigned wayId;
         int16_t etr;
+        int16_t victimEtr;
+        bool hasVictimEtr;
 
         MockingjayReplData()
-          : valid(false), setId(0), wayId(0), etr(0)
+          : valid(false), setId(0), wayId(0), etr(0), victimEtr(0),
+            hasVictimEtr(false)
         {
         }
     };
@@ -100,7 +104,7 @@ class MockingjayL2 : public Base
     mutable std::vector<RdpEntry> rdp;
     mutable std::vector<uint8_t> setClocks;
     mutable std::vector<uint16_t> sampledTimestamps;
-    std::vector<int> sampledSetSlots;
+    std::vector<std::size_t> sampledSetSlots;
     mutable std::vector<std::vector<SampledEntry>> sampledCache;
     std::vector<std::vector<MockingjayReplData*>> entriesBySet;
 
@@ -120,7 +124,7 @@ class MockingjayL2 : public Base
         statistics::Scalar insertions;
         statistics::Scalar writebackInsertions;
         statistics::Scalar agingEvents;
-        statistics::Scalar bypasses;
+        statistics::Scalar maxEtrInsertions;
         statistics::Scalar positiveEtrVictims;
         statistics::Scalar negativeEtrVictims;
         statistics::Scalar invalidVictims;
@@ -132,10 +136,11 @@ class MockingjayL2 : public Base
 
     bool isSampledSet(unsigned set_id) const;
     bool isPrefetch(const PacketPtr pkt) const;
+    bool isTrainingAccess(const PacketPtr pkt) const;
     uint32_t getSignature(const PacketPtr pkt, bool hit) const;
     uint16_t elapsed(uint16_t current, uint16_t previous) const;
     uint64_t sampledTag(Addr addr) const;
-    unsigned sampledCacheIndex(unsigned set_id, Addr addr) const;
+    std::size_t sampledCacheIndex(unsigned set_id, Addr addr) const;
     uint16_t prefetchAdjustedDistance(uint16_t distance,
                                       const PacketPtr pkt) const;
 
@@ -143,8 +148,6 @@ class MockingjayL2 : public Base
     void trainScan(uint32_t signature) const;
     void processSampledAccess(const MockingjayReplData &data,
                               const PacketPtr pkt, uint32_t signature) const;
-    void processBypassedFill(unsigned set_id, const PacketPtr pkt,
-                             uint32_t signature) const;
     int16_t predictEtr(uint32_t signature) const;
     void ageSet(unsigned set_id,
                 const MockingjayReplData *accessed_data) const;
@@ -172,8 +175,6 @@ class MockingjayL2 : public Base
 
     ReplaceableEntry* getVictim(
         const ReplacementCandidates& candidates) const override;
-    ReplaceableEntry* getVictim(const ReplacementCandidates& candidates,
-                                const PacketPtr pkt) const override;
 
     std::shared_ptr<ReplacementData> instantiateEntry() override;
 };
