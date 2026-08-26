@@ -407,7 +407,8 @@ MemCtrl::recvTimingReq(PacketPtr pkt)
     panic_if(pkt->cacheResponding(), "Should not see packets where cache "
              "is responding");
 
-    panic_if(!(pkt->isRead() || pkt->isWrite()),
+    const bool permission_only = pkt->cmd == MemCmd::StorePermReq;
+    panic_if(!(pkt->isRead() || pkt->isWrite() || permission_only),
              "Should only see read and writes at memory controller\n");
 
     // Calc avg gap between requests
@@ -418,6 +419,11 @@ MemCtrl::recvTimingReq(PacketPtr pkt)
 
     panic_if(!(dram->getAddrRange().contains(pkt->getAddr())),
              "Can't handle address range for packet %s\n", pkt->print());
+
+    if (permission_only) {
+        accessAndRespond(pkt, frontendLatency, dram);
+        return true;
+    }
 
     // Find out how many memory packets a pkt translates to
     // If the burst size is equal or larger than the pkt size, then a pkt

@@ -1251,6 +1251,15 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** Number of blocks written back per thread. */
         statistics::Vector writebacks;
 
+        statistics::Scalar partialPermissionReqs;
+        statistics::Scalar partialPermissionLatency;
+        statistics::Scalar partialDataFillReqs;
+        statistics::Scalar partialCoveredLoadHits;
+        statistics::Scalar partialLineWritebacks;
+        statistics::Scalar partialWritebackBytes;
+        statistics::Scalar partialWritebackMerges;
+        statistics::Scalar partialWritebackBypasses;
+
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;
         /** Total number of misses that hit in the MSHRs. */
@@ -1405,6 +1414,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
         return blkSize;
     }
 
+    bool partialStoreEnabled() const { return enablePartialStore; }
+
     size_t
     getActualSliceNum() const
     {
@@ -1420,6 +1431,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
         MSHR *mshr = mshrQueue.allocate(pkt->getBlockAddr(blkSize), blkSize,
                                         pkt, time, order++,
                                         allocOnFill(pkt->cmd));
+
+        if (enablePartialStore && pkt->cmd == MemCmd::WriteReq &&
+            pkt->isMaskedWrite() &&
+            pkt->req->isDcacheMainPipeSbufferReq()) {
+            mshr->setMissKind(MSHR::MissKind::PartialPermission);
+        }
 
         if (dcacheMainPipeEffectiveMSHRFull()) {
             setBlocked((BlockedCause)MSHRQueue_MSHRs);
@@ -1653,6 +1670,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     std::unordered_set<PacketPtr> outstandingUncacheableWrites;
 
     const unsigned cacheLevel{0};
+
+    const bool enablePartialStore;
 
     //const unsigned maxCacheLevel;
 

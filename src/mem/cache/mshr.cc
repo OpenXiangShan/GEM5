@@ -64,7 +64,7 @@ MSHR::MSHR(const std::string &name)
         downstreamPending(false),
         pendingModified(false),
         postInvalidate(false), postDowngrade(false),
-        wasWholeLineWrite(false), isForward(false),
+        wasWholeLineWrite(false), missKind(MissKind::Normal), isForward(false),
         targets(name + ".targets"),
         deferredTargets(name + ".deferredTargets")
 {
@@ -335,6 +335,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     assert(target);
     isForward = false;
     wasWholeLineWrite = false;
+    missKind = MissKind::Normal;
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
@@ -420,7 +421,9 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
     //   another read request that will downgrade our writable block
     //   to non-writable (Shared or Owned)
     PacketPtr tgt_pkt = targets.front().pkt;
-    if (pkt->req->isCacheMaintenance() ||
+    if ((inService && missKind == MissKind::PartialPermission &&
+         !pkt->isWrite()) ||
+        pkt->req->isCacheMaintenance() ||
         tgt_pkt->req->isCacheMaintenance() ||
         !deferredTargets.empty() ||
         (inService &&
@@ -585,7 +588,10 @@ MSHR::pushReadyTargets(TargetList &ready_targets, Target &tgt)
     // make sure write packet is processed before read packet
     // so that load can get the right data after sbuffer store has updated the cache
     if (tgt.pkt->isWrite()) {
-        ready_targets.push_front(tgt);
+        auto first_non_write = std::find_if(
+            ready_targets.begin(), ready_targets.end(),
+            [](const Target &target) { return !target.pkt->isWrite(); });
+        ready_targets.insert(first_non_write, tgt);
     } else {
         ready_targets.push_back(tgt);
     }
@@ -626,7 +632,11 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
         while (it != targets.end()) {
             DPRINTF(Cache, "target's packet addr: %#lx\n", it->pkt);
             DPRINTF(Cache, "Get target: %s from targets\n", it->pkt->print());
-            pushReadyTargets(ready_targets, *it);
+            if (pkt->cmd == MemCmd::StorePermResp) {
+                ready_targets.push_back(*it);
+            } else {
+                pushReadyTargets(ready_targets, *it);
+            }
             if (it->pkt->cmd == MemCmd::LockedRMWReadReq) {
                 // Leave the Locked RMW Read until the corresponding Locked
                 // Write comes in. Also don't service any later targets as the
@@ -725,6 +735,44 @@ MSHR::promoteDeferredTargets()
     targets.populateFlags();
     order = targets.front().order;
     readyTime = std::max(curTick(), targets.front().readyTime);
+
+    return true;
+}
+
+bool
+MSHR::deferredTargetsCovered(const std::vector<bool> &valid_mask) const
+{
+    assert(valid_mask.size() == blkSize);
+    auto covered = valid_mask;
+
+    for (const auto &target : deferredTargets) {
+        const PacketPtr pkt = target.pkt;
+        const unsigned offset = pkt->getOffset(blkSize);
+        assert(offset + pkt->getSize() <= blkSize);
+
+        if (pkt->isWrite()) {
+            if (pkt->isMaskedWrite()) {
+                const auto &byte_enable = pkt->req->getByteEnable();
+                assert(byte_enable.size() == pkt->getSize());
+                for (unsigned i = 0; i < pkt->getSize(); ++i) {
+                    if (byte_enable[i]) {
+                        covered[offset + i] = true;
+                    }
+                }
+            } else {
+                std::fill(covered.begin() + offset,
+                          covered.begin() + offset + pkt->getSize(), true);
+            }
+        } else if (pkt->isRead()) {
+            if (!std::all_of(covered.begin() + offset,
+                             covered.begin() + offset + pkt->getSize(),
+                             [](bool valid) { return valid; })) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
 
     return true;
 }

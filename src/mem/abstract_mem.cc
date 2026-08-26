@@ -490,7 +490,9 @@ AbstractMemory::functionalAccess(PacketPtr pkt)
 
     if (pkt->isRead()) {
         if (pmemAddr) {
-            pkt->setData(host_addr);
+            pkt->trySatisfyFunctional(
+                nullptr, pkt->getAddr(), pkt->isSecure(), pkt->getSize(),
+                host_addr);
         }
         TRACE_PACKET("Read");
         pkt->makeResponse();

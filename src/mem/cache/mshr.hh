@@ -119,9 +119,19 @@ class MSHR : public QueueEntry, public Printable
     bool postDowngrade;
 
   public:
+    enum class MissKind
+    {
+        Normal,
+        WholeLineWrite,
+        PartialPermission,
+        PartialDataFill
+    };
+
 
     /** Track if we sent this as a whole line write or not */
     bool wasWholeLineWrite;
+
+    MissKind missKind;
 
     /** True if the entry is just a simple forward from an upper level */
     bool isForward;
@@ -334,6 +344,9 @@ class MSHR : public QueueEntry, public Printable
     /** True if we need to get a writable copy of the block. */
     bool needsWritable() const { return targets.needsWritable; }
 
+    MissKind getMissKind() const { return missKind; }
+    void setMissKind(MissKind kind) { missKind = kind; }
+
     bool isCleaning() const {
         PacketPtr pkt = targets.front().pkt;
         return pkt->isClean();
@@ -530,6 +543,13 @@ class MSHR : public QueueEntry, public Printable
     }
 
     bool promoteDeferredTargets();
+
+    /**
+     * Determine whether deferred partial-store targets can be serviced from
+     * the currently valid bytes. Stores are applied to a temporary mask in
+     * target order so a later load can be covered by an earlier store.
+     */
+    bool deferredTargetsCovered(const std::vector<bool> &valid_mask) const;
 
     /**
      * Promotes deferred targets that do not require writable

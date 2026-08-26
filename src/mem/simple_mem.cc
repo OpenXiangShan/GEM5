@@ -114,7 +114,8 @@ SimpleMemory::recvTimingReq(PacketPtr pkt)
     panic_if(pkt->cacheResponding(), "Should not see packets where cache "
              "is responding");
 
-    panic_if(!(pkt->isRead() || pkt->isWrite()),
+    const bool permission_only = pkt->cmd == MemCmd::StorePermReq;
+    panic_if(!(pkt->isRead() || pkt->isWrite() || permission_only),
              "Should only see read and writes at memory controller, "
              "saw %s to %#llx\n", pkt->cmdString(), pkt->getAddr());
 
@@ -144,7 +145,7 @@ SimpleMemory::recvTimingReq(PacketPtr pkt)
 
     // calculate an appropriate tick to release to not exceed
     // the bandwidth limit
-    Tick duration = pkt->getSize() * bandwidth;
+    Tick duration = permission_only ? 0 : pkt->getSize() * bandwidth;
 
     // only consider ourselves busy if there is any need to wait
     // to avoid extra events being scheduled for (infinitely) fast

@@ -107,6 +107,8 @@ class MemCmd
         UpgradeReq,
         SCUpgradeReq,           // Special "weak" upgrade for StoreCond
         UpgradeResp,
+        StorePermReq,           // Permission-only request for a partial store
+        StorePermResp,
         SCUpgradeFailReq,       // Failed SCUpgradeReq in MSHR (never sent)
         UpgradeFailResp,        // Valid for SCUpgradeReq only
         ReadExReq,
@@ -1524,15 +1526,28 @@ class Packet : public Printable
     trySatisfyFunctional(PacketPtr other)
     {
         if (other->isMaskedWrite()) {
-            // Do not forward data if overlapping with a masked write
-            if (_isSecure == other->isSecure() &&
-                getAddr() <= (other->getAddr() + other->getSize() - 1) &&
-                other->getAddr() <= (getAddr() + getSize() - 1)) {
-                warn("Trying to check against a masked write, skipping."
-                     " (addr: 0x%x, other addr: 0x%x)", getAddr(),
-                     other->getAddr());
+            bool satisfied = false;
+            const auto &mask = other->req->getByteEnable();
+            auto *data = const_cast<uint8_t *>(
+                other->getConstPtr<uint8_t>());
+            unsigned begin = 0;
+            while (begin < mask.size()) {
+                while (begin < mask.size() && !mask[begin]) {
+                    ++begin;
+                }
+                unsigned end = begin;
+                while (end < mask.size() && mask[end]) {
+                    ++end;
+                }
+                if (begin < end) {
+                    satisfied = trySatisfyFunctional(
+                        other, other->getAddr() + begin, other->isSecure(),
+                        end - begin, data + begin) ||
+                        satisfied;
+                }
+                begin = end;
             }
-            return false;
+            return satisfied;
         }
         // all packets that are carrying a payload should have a valid
         // data pointer
@@ -1565,7 +1580,8 @@ class Packet : public Printable
     bool
     isMaskedWrite() const
     {
-        return (cmd == MemCmd::WriteReq && req->isMasked());
+        return (cmd == MemCmd::WriteReq || cmd == MemCmd::WritebackDirty) &&
+            req->isMasked();
     }
 
     /**

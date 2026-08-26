@@ -191,6 +191,11 @@ class BaseCache(ClockedObject):
         "If true, simulate Dcache refill behavior (LSQ pending flag/stats) on L1 fills",
     )
 
+    enable_partial_store = Param.Bool(
+        False,
+        "Acquire write permission without fetching data for partial L1D stores",
+    )
+
 class Cache(BaseCache):
     type = 'Cache'
     cxx_header = 'mem/cache/cache.hh'
