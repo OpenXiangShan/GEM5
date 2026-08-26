@@ -98,6 +98,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       iewToFetchDelay(params.iewToFetchDelay),
       commitToFetchDelay(params.commitToFetchDelay),
       fetchWidth(params.fetchWidth),
+      enableTwoFetch(params.enableTwoFetch),
+      twoFetchMaxBytes(params.twoFetchMaxBytes),
       decodeWidth(params.decodeWidth),
       retryPkt(),
       cacheBlkSize(cpu->cacheLineSize()),
@@ -118,6 +120,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("fetchWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
+    panic_if(enableTwoFetch &&
+             (twoFetchMaxBytes == 0 ||
+              fetchBufferSize < 2 ||
+              twoFetchMaxBytes > fetchBufferSize - 2),
+             "twoFetchMaxBytes (%u) requires a fetch buffer of at least "
+             "%u bytes, but fetchBufferSize is %u",
+             twoFetchMaxBytes, twoFetchMaxBytes + 2, fetchBufferSize);
     panic_if(numFetchTargetThreads == 0 ||
              numFetchTargetThreads > numThreads ||
              numFetchTargetThreads > 2,
@@ -344,6 +353,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Selected FTQ heads whose thread state could not start a fetch"),
     ADD_STAT(fetchTargetRequestBlocked, statistics::units::Count::get(),
              "Prepared FTQ heads whose cache request could not be started"),
+    ADD_STAT(twoFetchAttempts, statistics::units::Count::get(),
+             "Predicted-taken FTQ boundaries considered for limited two-fetch"),
+    ADD_STAT(twoFetchSuccesses, statistics::units::Count::get(),
+             "FTQ boundaries crossed using the current fetch buffer"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -606,6 +619,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     // Reset cache request state for this thread
     threads[tid].cacheReq.reset();
+    threads[tid].usedForTwoFetch = false;
     threads[tid].cacheReq.baseAddr = vaddr;
     threads[tid].cacheReq.totalSize = fetchBufferSize;
 
@@ -745,6 +759,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
     // Copy merged data directly into fetchBuffer
     memcpy(threads[tid].data, firstPkt->getConstPtr<uint8_t>(), firstPkt->getSize());
     memcpy(threads[tid].data + firstPkt->getSize(), secondPkt->getConstPtr<uint8_t>(), secondPkt->getSize());
+    threads[tid].usedForTwoFetch = false;
     threads[tid].valid = true;
 
     // Clean up the packets
@@ -916,12 +931,15 @@ Fetch::deactivateThread(ThreadID tid)
 }
 
 bool
-Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
+Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
+                             bool allow_two_fetch,
+                             bool &continued_to_next_target)
 {
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
     // this function updates it.
     bool predict_taken = false;
+    continued_to_next_target = false;
 
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
@@ -973,10 +991,45 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
     } else if (run_out) {
+        if (enableTwoFetch && !isTraceMode() &&
+            allow_two_fetch && predict_taken) {
+            ++fetchStats.twoFetchAttempts;
+
+            if (dbpbtb->ftqHasNext(tid)) {
+                const auto &next_stream = dbpbtb->ftqNextTarget(tid);
+                const bool target_matches =
+                    next_pc.instAddr() == next_stream.startPC;
+                const bool valid_range =
+                    next_stream.startPC >= stream.startPC &&
+                    next_stream.predEndPC >= next_stream.startPC;
+                const bool fits_window = valid_range &&
+                    next_stream.predEndPC - stream.startPC <=
+                        twoFetchMaxBytes;
+                const bool has_fetch_capacity =
+                    numInst < fetchWidth &&
+                    fetchQueue[tid].size() < fetchQueueSize;
+                const bool can_cross_boundary =
+                    !redirectPending[tid] &&
+                    (!checkInterrupt(next_pc.instAddr()) ||
+                     delayedCommit[tid]);
+
+                continued_to_next_target = target_matches && fits_window &&
+                    has_fetch_capacity && can_cross_boundary;
+            }
+        }
+
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
         ftqEntryFetchedInsts[tid] = 0;
-        threads[tid].valid = false;
-        DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+        if (continued_to_next_target) {
+            threads[tid].usedForTwoFetch = true;
+            ++fetchStats.twoFetchSuccesses;
+            DPRINTF(DecoupleBP,
+                    "2Fetch: continue with FTQ %lu in the current buffer.\n",
+                    dbpbtb->ftqHeadId(tid));
+        } else {
+            threads[tid].valid = false;
+            DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+        }
     }
 
     inst->setLoopIteration(currentLoopIter);
@@ -2192,7 +2245,9 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
 
 bool
 Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
-                               StaticInstPtr &curMacroop)
+                                StaticInstPtr &curMacroop,
+                                bool allow_two_fetch,
+                                bool &continued_to_next_target)
 {
     auto *dec_ptr = decoder[tid];
     bool predictedBranch = false;
@@ -2252,7 +2307,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     set(next_pc, pc);
 
     // Handle branch prediction and update next_pc for both modes
-    predictedBranch = lookupAndUpdateNextPC(instruction, *next_pc);
+    predictedBranch = lookupAndUpdateNextPC(
+        instruction, *next_pc, allow_two_fetch, continued_to_next_target);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
@@ -2307,15 +2363,14 @@ Fetch::performInstructionFetch(ThreadID tid)
     StaticInstPtr &curMacroop = macroop[tid];
 
     // Control flags for main fetch loop
-    bool predictedBranch = false;
-
+    bool stopFetchThisCycle = false;
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
     // Main instruction fetch loop - process until fetch width or other limits
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
+           !stopFetchThisCycle && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2328,7 +2383,13 @@ Fetch::performInstructionFetch(ThreadID tid)
         // into multiple micro-ops.
         do {
             // Process a single instruction, from decoding to PC update.
-            predictedBranch = processSingleInstruction(tid, pc_state, curMacroop);
+            bool continued_to_next_target = false;
+            const bool predicted_taken = processSingleInstruction(
+                tid, pc_state, curMacroop,
+                !threads[tid].usedForTwoFetch,
+                continued_to_next_target);
+            stopFetchThisCycle =
+                predicted_taken && !continued_to_next_target;
 
         } while (curMacroop &&
                  numInst < fetchWidth &&
@@ -2347,7 +2408,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     }
 
     // Log why fetch stopped
-    if (predictedBranch) {
+    if (stopFetchThisCycle) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch instruction encountered.\n", tid);
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);

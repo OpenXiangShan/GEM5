@@ -440,6 +440,15 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    bool ftqHasNext(ThreadID tid) const
+    {
+        return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);
+    }
+    const FetchTarget &ftqNextTarget(ThreadID tid) const
+    {
+        assert(ftqHasNext(tid));
+        return ftq.get(ftq.fetchId(tid) + 1, tid);
+    }
     int getTargetTid(const std::array<bool, MaxThreads> &eligible,
                      unsigned *ineligibleSkips)
     {
