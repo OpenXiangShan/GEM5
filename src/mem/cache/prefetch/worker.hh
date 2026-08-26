@@ -29,7 +29,6 @@ namespace prefetch
 
 class WorkerPrefetcher : public Queued
 {
-    bool firstCall = false;
     Event *transferEvent;
 
   public:
@@ -40,13 +39,7 @@ class WorkerPrefetcher : public Queued
 
     virtual void transfer();
 
-    void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override
-    {
-        if (!firstCall) {
-            firstCall = true;
-            schedule(transferEvent, nextCycle());
-        }
-    };
+    void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override {}
 
     void rxHint(BaseMMU::Translation *dpp) override;
     std::pair<long, long> rxMembusRatio(RequestorID requestorId) override
