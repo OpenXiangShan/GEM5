@@ -414,7 +414,7 @@ TEST_F(MockingjayL2Test, MaxEtrDecisionUsesPreTrainingPrediction)
     policy.reset(victim->replacementData, incoming.get());
 
     // The sampled hit trains 14 down to 13. The insertion decision must
-    // retain the pre-training scan prediction, just as a real bypass would.
+    // retain the pre-training scan prediction for the max-ETR insertion.
     EXPECT_EQ(policy.prediction(incoming.get(), false),
               policy.infiniteDistance() - 2);
     EXPECT_EQ(policy.etr(victim->replacementData), policy.infiniteEtr());
