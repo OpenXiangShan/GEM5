@@ -1100,7 +1100,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
 
     queue_size = 128
     max_prefetch_requests_with_pending_translation = 128
-    region_size = Param.Int(4096, "region size")
+    region_size = Param.Int(1024, "region size")
 
     # TrainFilter configuration
     enable_train_filter = Param.Bool(True, "Enable TrainFilter for ROB-order training")
