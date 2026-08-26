@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <limits>
 
 #include "base/intmath.hh"
@@ -45,11 +46,11 @@ MockingjayL2::MockingjayL2(const Params &p)
     timestampModulo(0),
     sampledTagMask(0),
     entryCount(0),
-    rdp(rdpEntries + 1),
-    setClocks(numSets, 0),
-    sampledTimestamps(numSets, 0),
-    sampledSetSlots(numSets, -1),
-    entriesBySet(numSets),
+    rdp(),
+    setClocks(),
+    sampledTimestamps(),
+    sampledSetSlots(),
+    entriesBySet(),
     stats(this)
 {
     fatal_if(numSets == 0, "MockingjayL2 requires num_sets > 0");
@@ -85,6 +86,22 @@ MockingjayL2::MockingjayL2(const Params &p)
     fatal_if(sampledTagBits == 0 || sampledTagBits > 63,
              "MockingjayL2 sampled_tag_bits must be in [1, 63]");
 
+    setBits = floorLog2(numSets);
+    sampledCacheSetBits = floorLog2(sampledCacheSetsPerSet);
+    constexpr unsigned addrBits = std::numeric_limits<Addr>::digits;
+    fatal_if(blockBits >= addrBits,
+             "MockingjayL2 block_bits must be smaller than the %u-bit Addr "
+             "width", addrBits);
+    fatal_if(sliceBits >= addrBits,
+             "MockingjayL2 slice_bits must be smaller than the %u-bit Addr "
+             "width", addrBits);
+    fatal_if(blockBits >= addrBits - sliceBits,
+             "MockingjayL2 block_bits + slice_bits must leave an address "
+             "bit");
+    const unsigned localAddrBits = addrBits - blockBits - sliceBits;
+    fatal_if(setBits + sampledCacheSetBits >= localAddrBits,
+             "MockingjayL2 sampled address fields must leave a tag bit");
+
     const uint64_t raw_history =
         static_cast<uint64_t>(numWays) * historyMultiplier;
     fatal_if(raw_history < 2 ||
@@ -98,15 +115,35 @@ MockingjayL2::MockingjayL2(const Params &p)
                  coarse_history > std::numeric_limits<int16_t>::max(),
              "MockingjayL2 ETR range is unsupported");
 
+    const unsigned timestamp_modulo = 1U << timestampBits;
+    fatal_if(timestamp_modulo <= raw_history,
+             "MockingjayL2 timestamp_bits must encode a modulus greater "
+             "than the sampled history window");
+
+    const uint64_t cache_entries =
+        static_cast<uint64_t>(numSets) * numWays;
+    fatal_if(cache_entries > std::numeric_limits<unsigned>::max(),
+             "MockingjayL2 cache geometry exceeds the supported entry "
+             "count");
+
+    const uint64_t sampled_cache_buckets =
+        static_cast<uint64_t>(sampledSets) * sampledCacheSetsPerSet;
+    fatal_if(sampled_cache_buckets > sampledCache.max_size(),
+             "MockingjayL2 sampled cache geometry exceeds vector capacity");
+
     infRd = static_cast<uint16_t>(raw_history - 1);
     maxRd = static_cast<uint16_t>(infRd - scanThresholdMargin);
     infEtr = static_cast<int16_t>(coarse_history - 1);
-    timestampModulo = static_cast<uint16_t>(1U << timestampBits);
+    timestampModulo = static_cast<uint16_t>(timestamp_modulo);
     sampledTagMask = (uint64_t(1) << sampledTagBits) - 1;
-    setBits = floorLog2(numSets);
-    sampledCacheSetBits = floorLog2(sampledCacheSetsPerSet);
 
-    unsigned sampled_slot = 0;
+    rdp.assign(static_cast<std::size_t>(rdpEntries) + 1, RdpEntry());
+    setClocks.assign(numSets, 0);
+    sampledTimestamps.assign(numSets, 0);
+    sampledSetSlots.assign(numSets, std::numeric_limits<std::size_t>::max());
+    entriesBySet.resize(numSets);
+
+    std::size_t sampled_slot = 0;
     for (unsigned set_id = 0; set_id < numSets; ++set_id) {
         setClocks[set_id] = agingGranularity;
         if (isSampledSet(set_id)) {
@@ -114,11 +151,12 @@ MockingjayL2::MockingjayL2(const Params &p)
         }
     }
     fatal_if(sampled_slot != sampledSets,
-             "MockingjayL2 sampled-set selection produced %u sets, expected %u",
+             "MockingjayL2 sampled-set selection produced %zu sets, expected %u",
              sampled_slot, sampledSets);
 
-    sampledCache.assign(sampledSets * sampledCacheSetsPerSet,
-                        std::vector<SampledEntry>(sampledCacheWays));
+    sampledCache.assign(
+        static_cast<std::size_t>(sampled_cache_buckets),
+        std::vector<SampledEntry>(sampledCacheWays));
 }
 
 uint64_t
@@ -159,6 +197,14 @@ MockingjayL2::isPrefetch(const PacketPtr pkt) const
                    pkt->cmd.isHWPrefetch());
 }
 
+bool
+MockingjayL2::isTrainingAccess(const PacketPtr pkt) const
+{
+    return pkt && !pkt->isWriteback() && !pkt->isEviction() &&
+        pkt->cmd != MemCmd::WriteClean &&
+        !(pkt->req && pkt->req->isCacheMaintenance());
+}
+
 uint32_t
 MockingjayL2::getSignature(const PacketPtr pkt, bool hit) const
 {
@@ -192,19 +238,19 @@ MockingjayL2::sampledTag(Addr addr) const
         sampledTagMask;
 }
 
-unsigned
+std::size_t
 MockingjayL2::sampledCacheIndex(unsigned set_id, Addr addr) const
 {
     assert(set_id < sampledSetSlots.size());
-    const int sampled_slot = sampledSetSlots[set_id];
-    assert(sampled_slot >= 0);
+    const std::size_t sampled_slot = sampledSetSlots[set_id];
+    assert(sampled_slot != std::numeric_limits<std::size_t>::max());
 
     const uint64_t local_block_addr =
         (addr >> blockBits) >> sliceBits;
     const unsigned bucket_offset = static_cast<unsigned>(
         (local_block_addr >> setBits) & (sampledCacheSetsPerSet - 1));
-    return static_cast<unsigned>(sampled_slot) * sampledCacheSetsPerSet +
-        bucket_offset;
+    return static_cast<std::size_t>(sampled_slot) *
+        sampledCacheSetsPerSet + bucket_offset;
 }
 
 uint16_t
@@ -271,7 +317,7 @@ MockingjayL2::processSampledAccess(const MockingjayReplData &data,
         return;
     }
 
-    const unsigned index = sampledCacheIndex(data.setId, pkt->getAddr());
+    const std::size_t index = sampledCacheIndex(data.setId, pkt->getAddr());
     std::vector<SampledEntry> &bucket = sampledCache[index];
     const uint64_t tag = sampledTag(pkt->getAddr());
     const uint16_t timestamp = sampledTimestamps[data.setId];
@@ -340,19 +386,6 @@ MockingjayL2::processSampledAccess(const MockingjayReplData &data,
     insertion->timestamp = timestamp;
     sampledTimestamps[data.setId] =
         static_cast<uint16_t>((timestamp + 1) % timestampModulo);
-}
-
-void
-MockingjayL2::processBypassedFill(unsigned set_id, const PacketPtr pkt,
-                                  uint32_t signature) const
-{
-    if (!pkt || !isSampledSet(set_id)) {
-        return;
-    }
-
-    MockingjayReplData sampled_data;
-    sampled_data.setId = set_id;
-    processSampledAccess(sampled_data, pkt, signature);
 }
 
 int16_t
@@ -450,7 +483,7 @@ MockingjayL2::touch(
     const PacketPtr pkt)
 {
     auto data = std::static_pointer_cast<MockingjayReplData>(replacement_data);
-    if (!data->valid || (pkt && pkt->isWriteback())) {
+    if (!data->valid || !isTrainingAccess(pkt)) {
         return;
     }
 
@@ -477,6 +510,9 @@ MockingjayL2::reset(
     const PacketPtr pkt)
 {
     auto data = std::static_pointer_cast<MockingjayReplData>(replacement_data);
+    const int16_t victim_etr = data->victimEtr;
+    const bool has_victim_etr = data->hasVictimEtr;
+    data->hasVictimEtr = false;
 
     if (!pkt) {
         data->valid = true;
@@ -491,11 +527,29 @@ MockingjayL2::reset(
         return;
     }
 
+    if (!isTrainingAccess(pkt)) {
+        data->valid = true;
+        data->etr = 0;
+        return;
+    }
+
     const uint32_t signature = getSignature(pkt, false);
+    const RdpEntry pre_training_prediction = rdpEntry(signature);
+    const int16_t pre_training_etr = predictEtr(signature);
+    const bool predicts_scan = pre_training_prediction.valid &&
+        pre_training_prediction.reuseDistance > maxRd;
     processSampledAccess(*data, pkt, signature);
     ageSet(data->setId, data.get());
     data->valid = true;
     data->etr = predictEtr(signature);
+    const int victim_distance = victim_etr < 0 ? -victim_etr : victim_etr;
+    if (predicts_scan ||
+        (has_victim_etr && pre_training_etr > victim_distance)) {
+        // Preserve the pre-training replacement-priority decision while the
+        // line follows the normal cache fill path.
+        data->etr = infEtr;
+        stats.maxEtrInsertions++;
+    }
     stats.insertions++;
 }
 
@@ -514,42 +568,9 @@ MockingjayL2::getVictim(const ReplacementCandidates& candidates) const
     ReplaceableEntry *victim = selectVictim(candidates);
     auto data = std::static_pointer_cast<MockingjayReplData>(
         victim->replacementData);
+    data->victimEtr = data->etr;
+    data->hasVictimEtr = data->valid;
     recordVictim(*data);
-    return victim;
-}
-
-ReplaceableEntry*
-MockingjayL2::getVictim(const ReplacementCandidates& candidates,
-                        const PacketPtr pkt) const
-{
-    ReplaceableEntry *victim = selectVictim(candidates);
-    auto victim_data = std::static_pointer_cast<MockingjayReplData>(
-        victim->replacementData);
-
-    // An invalid entry always admits the incoming line. Writebacks must also
-    // be retained because they carry coherence and dirty-data state.
-    if (!victim_data->valid || !pkt || pkt->isWriteback() ||
-        pkt->isLLSC() || pkt->isLockedRMW() ||
-        (pkt->req && (pkt->req->isLLSC() || pkt->req->isLockedRMW()))) {
-        recordVictim(*victim_data);
-        return victim;
-    }
-
-    const uint32_t signature = getSignature(pkt, false);
-    const int16_t incoming_etr = predictEtr(signature);
-    const int victim_distance = victim_data->etr < 0 ?
-        -victim_data->etr : victim_data->etr;
-
-    if (incoming_etr >= infEtr || incoming_etr > victim_distance) {
-        // Bypassed fills never reach reset(), but they are still L2 misses
-        // and must contribute to sampled per-set history exactly once.
-        processBypassedFill(victim_data->setId, pkt, signature);
-        ageSet(victim_data->setId, nullptr);
-        stats.bypasses++;
-        return nullptr;
-    }
-
-    recordVictim(*victim_data);
     return victim;
 }
 
@@ -586,7 +607,8 @@ MockingjayL2::MockingjayStats::MockingjayStats(
     ADD_STAT(insertions, "ETR updates on cache fills"),
     ADD_STAT(writebackInsertions, "Writeback fills assigned a scan ETR"),
     ADD_STAT(agingEvents, "Per-set periodic ETR aging events"),
-    ADD_STAT(bypasses, "Incoming fills bypassed by Mockingjay"),
+    ADD_STAT(maxEtrInsertions,
+             "Fills admitted with maximum positive ETR for rapid replacement"),
     ADD_STAT(positiveEtrVictims, "Victims with non-negative ETR"),
     ADD_STAT(negativeEtrVictims, "Victims with negative ETR"),
     ADD_STAT(invalidVictims, "Invalid entries selected for insertion")

@@ -1057,7 +1057,6 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     o3::LSQ *dcache_refill_lsq = nullptr;
     Addr dcache_refill_addr = 0;
     bool dcache_refill_need_data_read = false;
-    bool policy_bypass_result = false;
 
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
@@ -1065,29 +1064,6 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
-        const PacketPtr target_pkt = initial_tgt->pkt;
-        // A direct response bypasses Cache::satisfyRequest(), which normally
-        // normalizes coherence state after an allocated fill. Keep the path
-        // to a clean, quiescent ReadShared response.
-        const bool direct_bypass_safe_target =
-            target_pkt->cmd == MemCmd::ReadSharedReq;
-        const bool direct_bypass_safe_response =
-            !pkt->cacheResponding() && !mshr->hasPostInvalidate() &&
-            !mshr->hasPostDowngrade();
-        const bool bypass_eligible = cacheLevel == 2 && allocate &&
-            !mshr->isForward && pkt->isRead() &&
-            mshr->getNumTargets() == 1 && mshr->hasFromCPU() &&
-            !mshr->hasFromPref() && !mshr->wasWholeLineWrite &&
-            direct_bypass_safe_target && direct_bypass_safe_response &&
-            !target_pkt->needsWritable() && !target_pkt->cmd.isPrefetch() &&
-            target_pkt->req && !target_pkt->req->isPrefetch() &&
-            !target_pkt->isLLSC() && !target_pkt->isLockedRMW() &&
-            !target_pkt->req->isLLSC() &&
-            !target_pkt->req->isLockedRMW() &&
-            !target_pkt->req->isReadModifyWrite() &&
-            !target_pkt->req->isAtomic() && !target_pkt->req->isSwap() &&
-            !target_pkt->req->isCacheMaintenance() &&
-            !target_pkt->req->isUncacheable();
         const bool is_dcache_mainpipe_refill =
             allocate && (mshr->hasFromCPU() || mshr->hasFromPref());
         // Send allocated L1D fill/update traffic into the fake mainpipe.
@@ -1117,16 +1093,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             pkt, blk, writebacks, allocate,
             pure_prefetch_fill ? mshr->getPFSource() :
                 PrefetchSourceType::PF_NONE,
-            &dcache_refill_need_data_read,
-            bypass_eligible ? &policy_bypass_result : nullptr);
-        const bool did_policy_bypass = policy_bypass_result;
-        assert(blk != nullptr || did_policy_bypass);
-        if (!did_policy_bypass && prefetcher) {
+            &dcache_refill_need_data_read);
+        assert(blk != nullptr);
+        if (prefetcher) {
             prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
         }
-        if (!did_policy_bypass) {
-            ppFill->notify(pkt);
-        }
+        ppFill->notify(pkt);
     }
 
     // Don't want to promote the Locked RMW Read until
@@ -2279,8 +2251,7 @@ BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 CacheBlk*
 BaseCache::handleFill(
     PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
-    PrefetchSourceType prefetch_fill_source, bool *refill_need_data_read,
-    bool *policy_bypassed)
+    PrefetchSourceType prefetch_fill_source, bool *refill_need_data_read)
 {
     assert(pkt->isResponse());
     Addr addr = pkt->getAddr();
@@ -2290,9 +2261,6 @@ BaseCache::handleFill(
 
     if (refill_need_data_read) {
         *refill_need_data_read = false;
-    }
-    if (policy_bypassed) {
-        *policy_bypassed = false;
     }
 
     // When handling a fill, we should have no writes to this line.
@@ -2308,13 +2276,7 @@ BaseCache::handleFill(
         blk = allocate ?
             allocateBlock(
                 pkt, writebacks, prefetch_fill_source,
-                refill_need_data_read, policy_bypassed) : nullptr;
-
-        if (policy_bypassed && *policy_bypassed) {
-            DPRINTF(CacheRepl, "Replacement policy bypassed fill for %#llx\n",
-                    addr);
-            return nullptr;
-        }
+                refill_need_data_read) : nullptr;
 
         if (!blk) {
             // No replaceable block or a mostly exclusive
@@ -2424,13 +2386,8 @@ BaseCache::handleFill(
 CacheBlk*
 BaseCache::allocateBlock(
     const PacketPtr pkt, PacketList &writebacks,
-    PrefetchSourceType prefetch_fill_source, bool *evicted_dirty,
-    bool *policy_bypassed)
+    PrefetchSourceType prefetch_fill_source, bool *evicted_dirty)
 {
-    if (policy_bypassed) {
-        *policy_bypassed = false;
-    }
-
     // Get address
     const Addr addr = pkt->getAddr();
 
@@ -2458,7 +2415,7 @@ BaseCache::allocateBlock(
     // Find replacement victim
     std::vector<CacheBlk*> evict_blks;
     CacheBlk *victim = tags->findVictim(pkt, is_secure, blk_size_bits,
-                                        evict_blks, policy_bypassed);
+                                        evict_blks);
 
     // It is valid to return nullptr if there is no victim
     if (!victim)

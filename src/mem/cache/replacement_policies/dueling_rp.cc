@@ -147,20 +147,6 @@ Dueling::reset(const std::shared_ptr<ReplacementData>& replacement_data) const
 ReplaceableEntry*
 Dueling::getVictim(const ReplacementCandidates& candidates) const
 {
-    return getVictimImpl(candidates, nullptr);
-}
-
-ReplaceableEntry*
-Dueling::getVictim(const ReplacementCandidates& candidates,
-                   const PacketPtr pkt) const
-{
-    return getVictimImpl(candidates, pkt);
-}
-
-ReplaceableEntry*
-Dueling::getVictimImpl(const ReplacementCandidates& candidates,
-                       const PacketPtr pkt) const
-{
     // This function assumes that all candidates are either part of the same
     // sampled set, or are not samples.
     // @todo This should be improved at some point.
@@ -197,14 +183,8 @@ Dueling::getVictimImpl(const ReplacementCandidates& candidates,
     }
 
     // Use the selected replacement policy to find the victim
-    ReplaceableEntry *victim;
-    if (pkt) {
-        victim = team_a ? replPolicyA->getVictim(candidates, pkt) :
-            replPolicyB->getVictim(candidates, pkt);
-    } else {
-        victim = team_a ? replPolicyA->getVictim(candidates) :
-            replPolicyB->getVictim(candidates);
-    }
+    ReplaceableEntry* victim = team_a ? replPolicyA->getVictim(candidates) :
+        replPolicyB->getVictim(candidates);
 
     // Search for entry within the original candidates and clean-up duplicates
     for (int i = 0; i < candidates.size(); i++) {

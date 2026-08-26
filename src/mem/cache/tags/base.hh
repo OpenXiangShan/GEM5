@@ -298,20 +298,12 @@ class BaseTags : public ClockedObject
      * @param is_secure True if the target memory space is secure.
      * @param size Size, in bits, of new block to allocate.
      * @param evict_blks Cache blocks to be evicted.
-     * @param policy_bypassed Set to true when the replacement policy made an
-     * explicit bypass decision. A null victim with this flag clear still
-     * means that allocation could not proceed normally.
      * @return Cache block to be replaced.
      */
     virtual CacheBlk* findVictim(PacketPtr pkt, const bool is_secure,
                                  const std::size_t size,
-                                 std::vector<CacheBlk*>& evict_blks,
-                                 bool *policy_bypassed = nullptr)
+                                 std::vector<CacheBlk*>& evict_blks)
     {
-        if (policy_bypassed) {
-            *policy_bypassed = false;
-        }
-
         // based on physical address by default
         return findVictim(pkt->getAddr(), is_secure, size, evict_blks);
     }

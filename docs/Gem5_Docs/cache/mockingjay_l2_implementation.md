@@ -1,209 +1,138 @@
-# Mockingjay L2 Implementation Contract
+# Mockingjay L2 实现约定
 
-## Scope and Ownership
+## 范围与归属
 
-The target is the aligned L2 path used by `configs/example/kmhv3.py`.
-`L2CacheWrapper` routes requests and owns the shared wrapper-level prefetcher,
-but each `L2CacheSlice` owns a separate `inner_cache`. The replacement policy
-must be attached to each `inner_cache`, so every `(CPU, slice)` has independent
-sampled-cache, RDP, per-set clocks, and ETR state. No predictor state crosses
-slice boundaries.
+目标是 `configs/example/kmhv3.py` 使用的对齐 L2 路径。`L2CacheWrapper` 负责
+请求路由并拥有 wrapper 级共享预取器；每个 `L2CacheSlice` 则拥有独立的
+`inner_cache`。因此 replacement policy 必须挂在每个 `inner_cache` 上，使
+每个 `(CPU, slice)` 都有独立的采样 cache、RDP、set clock 和 ETR 状态，任何
+预测器状态都不能跨 slice 共享。
 
-The implementation adds `MockingjayL2RP` under
-`src/mem/cache/replacement_policies/`, exposes it as a SimObject, and creates a
-fresh object in the `kmhv3.py` loop over `l2_wrapper.slices[j]`. This is the
-replacement-policy extension point used by the existing `XSDRRIPRP`; it keeps
-the wrapper pipeline and routing behavior unchanged.
+实现新增 `src/mem/cache/replacement_policies/mockingjay_l2_rp.{hh,cc}`，将
+其注册为 SimObject，并在 `kmhv3.py` 遍历 `l2_wrapper.slices[j]` 时为每个
+`inner_cache` 创建新对象。缓存 wrapper、请求路由和原有 replacement-policy
+接口保持不变；不在 `BaseCache`、tags 或 MSHR 中加入 Mockingjay 专用路径。
 
-## Modeling Contract
+## 建模合同
 
-| Item | Contract |
+| 项目 | 约定 |
 | --- | --- |
-| Performance problem | Model capacity misses caused by poor L2 eviction order and bypass opportunities. |
-| Observable effects | A line can be inserted/promoted, selected as a positive/negative-ETR victim, or bypassed; normal cache timing and coherence continue through gem5's existing paths. |
-| Access state machine | `hit -> sampled-history update -> set aging -> promotion`; an incoming fill first selects a victim or bypasses from the pre-update state, then its sampled-history update and set aging occur. An admitted fill finally receives its insertion ETR. |
-| Resource state | Fixed-size RDP, fixed sampled-cache buckets, bounded per-set line pointer lists, per-line ETR, and per-set clocks/timestamps. |
-| Distance domain | Number of accesses to the same physical L2 slice set, never global accesses, cycles, or instructions. |
-| Hot-path complexity | O(1) RDP/sample lookup plus O(ways) aging on one periodic set event; victim selection O(ways). The target slice is 8-way. |
-| Functional boundary | Replacement does not alter hit/miss lookup, coherence state, MSHR arbitration, or slice routing. An explicit bypass for an eligible timing fill is completed directly from the response packet, without creating a temporary cache block or retaining the line. |
+| 性能问题 | 建模 L2 容量 miss 中由淘汰顺序不佳造成的损失，以及低复用 line 被留下过久的问题。 |
+| 可观察后果 | line 可以被插入、命中提升、选为正/负 ETR victim，或以 `+INF_ETR` 插入并在后续正常选择中优先于绝对 ETR 更小的 line 淘汰。 |
+| 控制状态机 | `hit -> 采样历史更新 -> set aging -> 提升`；fill 走原有 cache 分配流程，`reset` 完成采样、aging 和 ETR 插入。 |
+| 资源状态 | 固定容量 RDP、固定大小采样 cache bucket、每 set 的有限 line 指针、每 line 的 ETR、每 set 的 clock/时间戳。 |
+| 距离域 | 同一物理 L2 slice、同一 set 的访问次数；不是全局访问次数、cycle 或 instruction 数。 |
+| 热路径复杂度 | RDP/采样索引为 O(1)，一次周期 aging 只扫描该 set 的 O(ways) 个 line，victim 选择为 O(ways)；目标 slice 为 8-way。 |
+| 功能边界 | replacement policy 不改变 hit/miss 查找、coherence、MSHR 仲裁或 slice 路由；所有 fill 都沿 GEM5 原有流程完成。 |
 
-## Packet-Aware Bypass Extension
+论文中的真实缓存旁路（cache bypass）需要改动响应、tags 和临时块生命周期。
+本端口明确不实现这部分：在更新采样历史之前，若一次 fill 的 RDP 预测为 scan，
+或其预测 ETR 大于本次选中 victim 的绝对 ETR，line 仍正常分配并设置
+`+INF_ETR`。`selectVictim` 会选择绝对 ETR 最大的 line，因此该 line 会在后续
+竞争中优先于绝对 ETR 更小的 line 被淘汰，同时不会改变 cache 的功能时序。若
+存在绝对值相同的负 ETR writeback，负值优先的既有 tie-break 仍先选 writeback。
 
-The existing replacement interface passes `PacketPtr` to `touch` and `reset`,
-but not to `getVictim`. The paper's bypass decision needs the incoming PC,
-hit/miss, and prefetch state before a resident victim is evicted.
+## 状态与默认参数
 
-The implementation therefore adds a backward-compatible packet-aware victim
-path:
+所有规模都从参数进入。`kmhv3.py` 的初始值由每个 slice 的实际 geometry
+计算，而不是在策略中写死：
 
-```c++
-getVictim(candidates, pkt)
-```
-
-`BaseTags::findVictim` accepts an optional `policy_bypassed` result. Its base
-implementation clears that result and delegates to the existing packet-less
-overload, so tag stores and policies without direct-bypass support retain their
-behavior. `BaseSetAssoc` calls `getVictim(candidates, pkt)` only when the
-caller supplies that result pointer; otherwise it uses the historical
-packet-less victim selection. A null victim is an explicit bypass only when
-`policy_bypassed` is true. Other allocation failures keep the normal
-temporary-block behavior.
-
-For an explicit bypass, `BaseCache::handleFill` returns `nullptr` before it
-creates `tempBlock`, installs tag/data/coherence state, or updates fill
-metadata. `recvTimingResp` then services the target from the lower-level
-response packet through the existing `Cache::serviceMSHRTargets` direct
-response path. That path copies response data and responder flags to the
-target. Because no temporary block exists, the later temporary-block cleanup
-does not call `evictBlock`; in particular, the bypass cannot generate a
-temporary-fill `WritebackClean`.
-
-The response path also suppresses `notifyCachelineRefill` and the `Fill` probe
-for an explicit bypass. This prevents cacheline-refill and prefetch feedback
-from observing a line that was never resident.
-
-### Direct-Response Bypass Eligibility
-
-Direct response is deliberately narrower than the policy's prediction rule.
-It is enabled only for an allocating, non-error L2 timing fill when all of the
-following are true:
-
-* the cache is `cacheLevel == 2` and the MSHR is not a forward;
-* the MSHR has exactly one target, from the CPU side, and no prefetch target;
-* the target command is exactly `ReadSharedReq`, with no writable requirement
-  and no whole-line write;
-* the lower response is clean (`cacheResponding == false`) and the MSHR has no
-  pending downgrade or invalidation;
-* the target is neither a hardware/software prefetch, LL/SC, locked RMW,
-  read-modify-write, atomic/swap, cache-maintenance, nor uncacheable request.
-
-This excludes multi-target MSHRs, coherence-owning operations, and requests
-whose completion relies on a resident cache block. In particular,
-`ReadCleanReq`, dirty lower responses, and MSHRs that observed a snoop are
-intentionally ineligible: normal allocation changes their response semantics
-before an upper cache sees them. A dirty lower response must be converted into
-a Shared response after an allocated fill, and a concurrent read snoop sets
-`postDowngrade` even when it does not add an MSHR target. Atomic callers and
-all ineligible timing fills use the legacy victim-selection path, so they
-cannot turn a policy `nullptr` into a direct bypass.
-
-VIPT tags retain their virtual-address indexing while forwarding the original
-packet to the new overload. This keeps the interface extension neutral outside
-Mockingjay.
-
-## Data Structures and Defaults
-
-All sizes are parameters. The `kmhv3.py` defaults are derived from the actual
-per-slice cache geometry rather than hard-coded constants:
-
-| Parameter | Initial value for 512 KB, 8-way slice | Meaning |
+| 参数 | 512 KB、8-way slice 的初始值 | 含义 |
 | --- | ---: | --- |
-| `num_sets` | `inner_cache.size / (64 * inner_cache.assoc)` = 1024 | Per-slice set count |
-| `num_ways` | `inner_cache.assoc` = 8 | Per-slice associativity |
-| `block_bits` | 6 | 64 B cache line |
-| `slice_bits` | 2 | Interleaved slice selector removed before sampled-cache extraction |
-| `history_multiplier` | 8 | Paper's history length in units of ways |
-| `aging_granularity` | 8 | One ETR decrement per eight accesses to a set |
-| `sampled_sets` | 8 | Scaled from one sampled set per 64 KiB of L2 capacity |
-| `sampled_cache_sets_per_set` | 16 | Low block-tag buckets per sampled physical set |
-| `sampled_cache_ways` | 5 | Paper default |
-| `sampled_tag_bits` | 12 | `31 - log2(512 KiB)` truncated sampled tag width |
-| `rdp_entries` | 512 | `2^(log2(512 KiB) - 10)`, a 9-bit direct-mapped predictor |
-| `temporal_difference_threshold` | 16 | Public reference's integer interpretation of `diff / 16` |
-| `scan_threshold_margin` | 22 | Public reference's `MAX_RD = INF_RD - 22` rule |
-| `prefetch_penalty_percent` | 200 | Single-core paper default for `*-P` intervals |
+| `num_sets` | `inner_cache.size / (64 * inner_cache.assoc)` = 1024 | slice 内 set 数 |
+| `num_ways` | `inner_cache.assoc` = 8 | associativity |
+| `block_bits` | 6 | 64 B cache line 的 log2 |
+| `slice_bits` | 2 | 提取采样地址前去掉的交错 slice 位 |
+| `history_multiplier` | 8 | 以 way 数为单位的历史长度 |
+| `aging_granularity` | 8 | 每 8 次 set 访问进行一次 ETR aging |
+| `sampled_sets` | 8 | 采样的物理 set 数 |
+| `sampled_cache_sets_per_set` | 16 | 每个采样 set 的低位 block-tag bucket 数 |
+| `sampled_cache_ways` | 5 | 每个 bucket 的 associativity |
+| `sampled_tag_bits` | 12 | 截断后的采样 tag 宽度 |
+| `rdp_entries` | 512 | 每个 slice 的 direct-mapped RDP 表项数 |
+| `temporal_difference_threshold` | 16 | RDP temporal-difference 更新阈值 |
+| `scan_threshold_margin` | 22 | `MAX_RD = INF_RD - 22` 的 margin |
+| `prefetch_penalty_percent` | 200 | 以预取结束的区间的复用距离倍率 |
+| `timestamp_bits` | 8 | 采样历史时间戳宽度 |
 
-Derived values are `INF_RD = num_ways * history_multiplier - 1`,
-`MAX_RD = INF_RD - scan_threshold_margin`, and
-`INF_ETR = (num_ways * history_multiplier / aging_granularity) - 1`.
-For the initial 8-way slice they are 63, 41, and 7 respectively. Parameters
-are validated for nonzero values and power-of-two geometry where indexing
-depends on it.
+派生值为：
 
-`MockingjayReplData` holds `valid`, `set_id`, `way_id`, and signed `etr`.
-The policy owns:
+* `INF_RD = num_ways * history_multiplier - 1`；
+* `MAX_RD = INF_RD - scan_threshold_margin`；
+* `INF_ETR = (num_ways * history_multiplier / aging_granularity) - 1`。
 
-* `entries_by_set`: bounded pointers to the replacement data of every way;
-* a per-set aging clock;
-* sampled-set timestamps and a fixed 5-way sampled-cache bucket array;
-* a direct-mapped RDP vector with valid bit and predicted reuse distance,
-  indexed by the low `log2(rdp_entries)` bits of the PC/state CRC hash.
+初始 8-way slice 的三个值分别是 63、41、7。构造函数会检查非零参数、需要
+幂次方索引的 geometry、距离和 ETR 的可表示范围，并拒绝会越过 `Addr` 位宽的
+地址字段布局、溢出的采样 cache bucket 数、以及模数不大于采样历史窗口的
+`timestamp_bits`。默认配置的 `block_bits=6`、`slice_bits=2` 和 8 位时间戳
+均满足这些约束。
 
-No dynamically growing lookup map is used in the access path.
+`MockingjayReplData` 保存 `valid`、`set_id`、`way_id` 和有符号 `etr`。策略
+拥有以下固定大小结构：
 
-The paper specifies the least-significant bits of the CRC hash for the RDP
-signature. The preserved public ChampSim source instead extracts the high bits.
-For the RV64 PC range used here, that form collapses ordinary PCs into entry
-zero after its three-step CRC transform, so this port follows the paper and
-uses the low hash bits.
+* `entries_by_set`：每个 set 的 way replacement-data 指针列表；
+* 每 set 一个 aging clock；
+* 采样 set 的时间戳和固定 associativity 的采样 cache bucket；
+* 带 valid 位和预测复用距离的 direct-mapped RDP，索引为 PC/state CRC hash
+  的低 `log2(rdp_entries)` 位。
 
-## Algorithm Details
+访问路径不使用无界增长的 map。
 
-1. `touch(data, pkt)` handles an L2 hit. It records a hit signature,
-   processes sampled history when this is a sampled set, performs periodic
-   set aging, and promotes the line by replacing its ETR with the RDP result.
-2. For a demand fill, `getVictim(candidates, pkt)` first predicts and selects
-   from the resident pre-update state. A predicted bypass then records the
-   miss in sampled history and ages the set, but has no line ETR to assign.
-   An admitted fill reaches `reset(data, pkt)`, which records the miss,
-   performs the same sampling/aging sequence, and assigns the predicted ETR.
-   Thus every bypassed or admitted demand fill trains exactly once after its
-   selection decision. Writeback fills receive the low-priority negative scan
-   ETR but are never bypassed.
-3. Sampled history trains the prior PC signature on reuse and trains a scan
-   when an aged-out or LRU sampled entry is displaced. `*-P` intervals inflate
-   the sampled distance before training. The reference implementation's
-   integer temporal-difference behavior is used: a non-scan prediction moves
-   by one only when the distance differs by at least 16; a scan observation
-   detrains by one toward `INF_RD`.
-4. Every eight accesses to a set, each other valid non-scan way's ETR is
-   decremented and clamped at `-INF_ETR`. Scan ETRs are not aged.
-5. Victim selection first returns an invalid way. Otherwise it finds maximum
-   `abs(ETR)`, breaking ties in favor of negative ETR. For packet-aware
-   incoming fills, it bypasses if the prediction is a scan or its ETR is
-   strictly larger than the selected victim's absolute ETR. Equal priority
-   inserts so the deterministic resident tie-break remains observable.
+论文和公开 ChampSim 参考实现都保留 CRC hash 的低 `PC_SIGNATURE_BITS` 位。
+本实现以 `hash(input) & (rdp_entries - 1)` 索引 power-of-two RDP，语义与
+参考实现的左移再右移截断等价。
 
-Requests without a PC use a reserved no-PC signature. They remain cacheable
-and are counted, but their predictor correlation is intentionally isolated
-from ordinary load PCs. Packet-less `touch/reset` paths only maintain valid
-replacement state and do not train the predictor.
+## 算法细节
 
-## Observability
+1. `touch(data, pkt)` 处理 L2 hit：记录 hit signature，在采样 set 上更新
+   采样历史，执行周期性 set aging，然后用 RDP 结果提升 line 的 ETR。
+2. 可训练 fill（普通请求和硬件预取）由 GEM5 原有 tags/cache 流程选择 victim；
+   `getVictim` 在该选择发生时保存有效 victim 的 ETR，`reset(data, pkt)` 先读取
+   训练前预测，再记录 miss、更新采样历史并执行 set aging。若训练前 RDP 预测
+   为 scan，或预测 ETR 大于已保存 victim 的绝对 ETR，则新 line 固定为
+   `+INF_ETR` 并递增 `maxEtrInsertions`，但不跳过分配、响应或 refill
+   notification。其他可训练 fill 使用训练后的预测 ETR。eviction、`WriteClean`
+   和 cache-maintenance 流量不训练 RDP、不推进采样时间戳，也不改变已有 line
+   的普通命中 ETR；writeback fill 保持 `-INF_ETR`。
+3. 采样历史命中时训练旧 PC signature 的复用距离；记录被 aging 淘汰或被
+   LRU 替换时按 scan 训练。以预取结束的区间在训练前按参数放大。普通训练
+   使用参考实现的整数 temporal-difference 规则：距离差小于阈值时不变，
+   否则每次只移动一步；scan 训练向 `INF_RD` 移动。
+4. 每 set 每八次访问，其他有效且非 scan 的 line 的 ETR 减一，并限制在
+   `-INF_ETR`；scan line 不 aging。
+5. victim 选择先返回 invalid way；否则选 `abs(ETR)` 最大者，绝对值相同则
+   负 ETR 优先。由 `+INF_ETR` 插入的低复用 line 因而会在正常替换竞争中优先
+   于绝对 ETR 更小的 line 离开 cache；与 `-INF_ETR` writeback 平局时，后者先
+   被选择。等优先级保持确定性的 resident tie-break。
 
-The policy exports counters for sampled hits/misses, reuse and scan training,
-RDP lookup hits/misses, no-PC accesses, promotions, periodic aging events,
-insertions, bypasses, and positive/negative ETR victims. These distinguish
-learning activity from eviction outcomes and support a finite-size stress test.
+没有 PC 的请求使用保留的 no-PC signature；它们仍然 cacheable 并计数，但不与
+普通 load PC 共享预测相关性。packet-less 的 `touch/reset` 只维护 replacement
+状态，不训练 RDP。
 
-## Validation Plan
+## 统计量
 
-1. Compile generated SimObject parameters and the optimized RISC-V binary.
-2. Add focused gtests for invalid priority, sampled reuse, scan detraining,
-   per-set isolation, signed ETR tie-break, no-PC behavior, and bypass.
-   Add cache-level timing tests for the clean direct-bypass case, dirty and
-   `ReadCleanReq` exclusions, and a concurrent read snoop that sets
-   `postDowngrade` and must force allocation.
-3. Run a short checkpoint smoke test with enlarged structures, confirm policy
-   construction and nonzero/consistent stats, then restore paper-scaled
-   defaults.
-4. Run the requested omnetpp/6881 GCC15 checkpoint with `kmhv3.py`, inspect
-   `config.ini`, exit status, and Mockingjay counters.
-5. After local validation, publish the branch and present the fully resolved
-   GCC15 SPEC06 1.0c CI contract for explicit dispatch approval. Compare the
-   completed archive and `score.txt` with run 32391965338 at the same base SHA.
+策略导出以下计数器：采样命中/未命中、复用和 scan 训练、RDP 命中/未命中、
+无 PC 请求、命中提升、普通插入、writeback 插入、周期 aging、
+`maxEtrInsertions`、正/负 ETR victim 以及 invalid victim。它们可以区分学习
+活动、低复用 line 插入和实际淘汰结果，支持有限规模的压力测试和归因。
 
-## Accuracy Boundaries
+## 验证计划
 
-This is a behavioral performance model, not an RTL implementation. It keeps
-the paper's predictor, per-set time domain, ETR ordering, bypass criterion, and
-prefetch interval penalty. It intentionally reuses gem5's event-driven cache
-pipeline rather than modeling a separate off-critical-path hardware engine.
-The paper's source does not fully specify same-sign ETR ties, fractional TD
-rounding, or lookup/increment ordering; this implementation fixes those choices
-as deterministic rules above and tests them. The 8-bit per-set timestamps keep
-the paper's bounded-history representation: they distinguish one wrap but can
-alias an entry left untouched for a full 256 sampled-set accesses. Entries older
-than the configured history are detrained on their next sampled-cache bucket
-access, which makes that case a bounded, inherited approximation rather than a
-cycle-accurate timestamp model.
+1. 生成 SimObject 参数并编译优化版 RISC-V binary。
+2. 运行 policy GTest，覆盖 geometry、采样复用、scan detraining、每 set 隔离、
+   有符号 ETR tie-break、无 PC 行为和 `+INF_ETR` 插入。
+3. 用短 checkpoint smoke 确认四个 L2 slice 各自构造 policy，检查
+   `config.ini` 和每个 slice 的采样、RDP、插入、aging 统计。
+4. 在明确批准后，按 `mockingjay_l2_progress.md` 中冻结的 GCC15 SPEC06
+   合同运行 A/B；在归档 `config.ini`、`score.txt` 和 manifest 前不做性能结论。
+
+## 精度边界
+
+这是行为级性能模型，不是 RTL 的逐拍实现。它保留论文的 PC 预测、按 set 的
+时间域、有符号 ETR 排序、预取区间惩罚和低复用 line 的快速淘汰趋势；没有实现
+论文的真实缓存旁路，也没有改变 GEM5 cache 的 coherence 或响应时序。
+为此损失的细节是：被判定为 scan 的请求仍占用一次正常 fill，并在短时间内
+占据一个 way；这会保留 cache 容量和带宽的真实竞争，但不模拟 bypass 省下的
+一次 line residency。论文没有完全规定同号 ETR 平局、分数 TD 舍入和查找/递增
+顺序，当前实现把这些选择固定为可测试的确定性规则。时间戳模数被限制为大于
+历史窗口，但整整一个计数周期未触及的项仍可能发生别名，这是有界历史近似。

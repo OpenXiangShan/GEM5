@@ -1,87 +1,93 @@
-# Mockingjay L2 Progress
+# Mockingjay L2 进展记录
 
-## 2026-08-25: Setup and Design
+## 2026-08-25：准备与设计
 
-* Created clean worktree `/tmp/gem5-mockingjay-5361c12` on branch
-  `codex/mockingjay-l2-5361c12`, based exactly on
-  `5361c1248804755d285313f41dd73b7a299f7b48`.
-* Preserved the original workspace and its unrelated untracked files.
-* Read `shah2022.pdf` and the authors' public ChampSim reference implementation.
-* Confirmed the integration point: one independent policy SimObject per
-  `system.l2_wrappers[i].slices[j].inner_cache` in `kmhv3.py`.
-* Confirmed the target checkpoint exists:
-  `/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/omnetpp/6881/_6881_0.962556_memory_.zstd`.
-* Confirmed the requested baseline run 32391965338 completed on the same base
-  SHA and includes `performance-score-gcc15-spec06-1.0c/score.txt`.
+* 在 `/tmp/gem5-mockingjay-5361c12` 创建独立 worktree，分支为
+  `codex/mockingjay-l2-5361c12`，基线精确为
+  `5361c1248804755d285313f41dd73b7a299f7b48`。
+* 保留原工作区及其无关的未跟踪文件。
+* 阅读 `shah2022.pdf` 和作者公开的 ChampSim 参考实现。
+* 确认集成点：`kmhv3.py` 中每个
+  `system.l2_wrappers[i].slices[j].inner_cache` 配置独立的替换策略
+  SimObject。
+* 确认目标 checkpoint 存在：
+  `/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/omnetpp/6881/_6881_0.962556_memory_.zstd`。
+* 确认请求的 baseline run `32391965338` 在相同基线 SHA 上完成，且归档包含
+  `performance-score-gcc15-spec06-1.0c/score.txt`。
 
-## 2026-08-26: Final Local Validation
+## 2026-08-26：早期原型验证记录
 
-* Review checkpoint is available on local and remote branch
-  `codex/mockingjay-l2-5361c12` at `4176c788d2`; the implementation,
-  bookkeeping fix, admitted-fill regression coverage, and review-status
-  documentation are separate commits for review.
+以下结果属于早期“真实缓存旁路”原型；它们不能作为当前 `+INF_ETR` 插入
+模型的验证结论，但 checkpoint、配置和 baseline 的环境信息仍可复用：
 
-* Corrected the RDP index to use the low bits of the PC/state CRC hash.
-  The previous top-bit extraction collapsed ordinary RV64 PCs into entry zero,
-  so all performance observations from that version are invalidated.
-* Restricted direct policy bypass to a clean, single-target `ReadSharedReq`
-  MSHR with no pending downgrade or invalidation. This preserves the normal
-  fill path's coherence-state normalization for dirty lower responders and
-  concurrent read snoops.
-* Rebuilt the optimized binary and both focused test targets serially. This
-  checkout has unrelated generated-header races under concurrent SCons
-  actions.
-* The policy GTest passed all 10 tests:
+* 替换策略 GTest 在当时通过 10/10。
+* cache timing GTest 在当时通过 5/5。
+* `python3 -m py_compile configs/example/kmhv3.py` 和 `git diff --check`
+  当时通过。
+* 使用 checkpoint 兼容 reference 和本地 DDR4 fallback 的一百万指令 smoke 已
+  进入真实仿真，`simInsts=1000007`，
+  `system.cpu.committedInsts=1000007`。
+* 生成的 `config.ini` 当时确认四个独立 L2 policy，均为 `MockingjayL2RP`，
+  `num_sets=1024`、`num_ways=8`、`block_bits=6`、`slice_bits=2`、
+  `sampled_sets=8`、`sampled_tag_bits=12`、`rdp_entries=512`；每个 slice 都有
+  采样历史、RDP、提升、插入和 aging 活动。
 
-  `build/RISCV/mem/cache/replacement_policies/mockingjay_l2_rp.test.opt`
+本次工作树修订按审查要求删除真实缓存旁路及其 BaseCache/tags/
+packet-aware 接口改动，改为所有填充正常分配；在更新采样历史前，若预测为
+scan 或预测 ETR 大于所选牺牲行绝对 ETR，则以 `+INF_ETR` 插入。下节记录该
+修订已完成的本地验证。
 
-* The cache timing regression passed all five cases:
+## 2026-08-26：当前修订验证
 
-  `ReadCleanReqDirtyResponderFills`,
-  `ReadSharedReqBypassesWithoutAllocating`,
-  `ReadSharedReqAdmittedCleanFillAllocates`,
-  `ReadSharedReqDirtyResponderFills`, and
-  `ReadSharedReqPendingDowngradeFills`.
+* 串行重建 `gem5.opt` 和替换策略 GTest；16/16 个策略测试通过。
+* `python3 -m py_compile configs/example/kmhv3.py` 和 `git diff --check` 通过。
+* checkpoint 冒烟测试在 `/tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826` 完成，
+  `simInsts=1000008`、`system.cpu.committedInsts=1000008`。
+* `config.ini` 确认四个独立 `MockingjayL2RP`，默认 slice geometry 为
+  `1024 sets × 8 ways`，`block_bits=6`、`slice_bits=2`、`sampled_sets=8`、
+  `sampled_tag_bits=12`、`rdp_entries=512`；四个 `maxEtrInsertions` 为
+  13、4、0、2。
+* 冒烟测试输出没有 `bypasses` 或 `policy_bypassed`。本地 DDR4 fallback 只作
+  功能/配置证据，不作 CI DRAMsim3 性能证据。
 
-  The last case injects a concurrent `ReadSharedReq` snoop between issue and
-  response, proves that the MSHR enters `postDowngrade`, and verifies that the
-  response takes the normal allocating path.
-  The admitted-fill case verifies the complementary path: a real victim is
-  selected, the response allocates, and the line remains resident.
-* The final-binary checkpoint smoke used the checkpoint-compatible reference
-  and a local DDR4 fallback:
+本次修订的冒烟测试使用命令：
 
-  `GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so ./build/RISCV/gem5.opt -d /tmp/mockingjay-l2-omnetpp-6881-final-b53bhi ./configs/example/kmhv3.py --mem-type=DDR4_2400_8x8 -I 1000000 --generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/omnetpp/6881/_6881_0.962556_memory_.zstd`
+```bash
+GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so \
+./build/RISCV/gem5.opt \
+  -d /tmp/mockingjay-l2-omnetpp-6881-max-etr-20260826 \
+  ./configs/example/kmhv3.py --mem-type=DDR4_2400_8x8 -I 1000000 \
+  --generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/omnetpp/6881/_6881_0.962556_memory_.zstd
+```
 
-  It restored the embedded checkpoint restorer, entered real simulation, and
-  completed at `simInsts=1000007` with
-  `system.cpu.committedInsts=1000007`.
-* Its generated `config.ini` verified four independent L2 policies, each with
-  `type=MockingjayL2RP`, `num_sets=1024`, `num_ways=8`, `block_bits=6`,
-  `slice_bits=2`, `sampled_sets=8`, `sampled_tag_bits=12`, and
-  `rdp_entries=512`. Every slice recorded sampled-history, RDP, promotion,
-  insertion, and aging activity. This short final-code smoke recorded zero
-  bypasses, so it is functional/configuration evidence only.
-* The default interpreter reference
-  (`riscv64-nemu-interpreter-so`) fails at the checkpoint's initial
-  `mstateen0` CSR instruction (`sn:163`) before useful execution. The smoke
-  therefore uses `riscv64-nemu-notama-tvalref-so`. Local DDR4 timing is not
-  comparable performance evidence for the CI DRAMsim3 configuration.
-* `git diff --check` and `python3 -m py_compile configs/example/kmhv3.py` pass
-  on the final branch.
+默认 interpreter reference (`riscv64-nemu-interpreter-so`) 会在 checkpoint 初始
+`mstateen0` CSR 指令（`sn:163`）失败，因此冒烟测试使用
+`riscv64-nemu-notama-tvalref-so`。本地 DDR4 时序不能与 CI 的 DRAMsim3 做性能
+比较。
 
-## Controlled CI A/B Contract (Not Dispatched)
+## 工作树修订状态
 
-* Baseline run: `32391965338`, valid job `96499960567`, base SHA
-  `5361c1248804755d285313f41dd73b7a299f7b48`.
-* Baseline archive:
-  `/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-1.0c/20260821_003117_5361c12488_kmhv3_run102`
-  with score `20.612401866596542`.
-* Proposed run must use this branch's full 40-character SHA, `kmhv3.py`,
-  `gcc15-spec06-1.0c`, the complete integer slice set, blank
-  `distributed_servers` (CI parallel path), and CI DRAMsim3. Archive
-  `config.ini`, `score.txt`, and the manifest before making any performance
-  claim.
-* The review branch is published at
-  `origin/codex/mockingjay-l2-5361c12` (`4176c788d2`). No remote performance
-  dispatch has been performed in this turn.
+历史代码的审查顺序是：
+
+1. `96ceca6e3b`：早期旁路原型的 bookkeeping 修复；本次工作树修订会移除其
+   相关缓存流水线代码。
+2. `ee4aedf618`：Mockingjay 替换策略、配置与初始文档。
+3. `c2dbe9837b`：早期 admitted-fill 回归；在本次模型中由替换策略的
+   `+INF_ETR` 插入测试替代。
+4. 本次工作树修订：删除旁路 plumbing、改成 `+INF_ETR`、中文文档和重新
+   验证；以分支最新提交作为审查检查点。
+
+不触发远程性能 CI，除非获得明确批准。
+
+## 受控 CI A/B 合同（未触发）
+
+* Baseline run：`32391965338`；有效 job：`96499960567`；基线 SHA：
+  `5361c1248804755d285313f41dd73b7a299f7b48`。
+* Baseline 归档：
+  `/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-1.0c/20260821_003117_5361c12488_kmhv3_run102`；
+  score 为 `20.612401866596542`。
+* 待运行任务必须使用本分支完整 40 位 SHA、`kmhv3.py`、
+  `gcc15-spec06-1.0c`、完整整数 slice 集合、空 `distributed_servers`（CI
+  parallel path）和 CI DRAMsim3。
+* 在性能结论之前，必须归档并核对 `config.ini`、`score.txt` 和 manifest；没有
+  这些产物不能将 setup 成功或参数请求视为性能证据。
