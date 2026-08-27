@@ -88,7 +88,9 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 - `src/mem/abstract_mem.cc`、`mem_ctrl.cc` 和 `simple_mem.cc`：权限请求终止和 functional 数据合成。
 - `src/mem/cache/Cache.py`：增加 `enable_partial_store`，默认 `False`；仅在 `configs/example/kmhv3.py` 的 L1D 显式开启。
 
-启用时应检查单核、L1D 和非压缩 cache。首版遇到 partial block snoop 时显式报错，防止超出模型边界后静默返回无效数据。
+启用时应检查单核、L1D 和非压缩 cache。下层 eviction 对 partial block
+发起的 presence-only snoop 只设置 `BLOCK_CACHED`，不提供数据或改变 block
+状态；其他 partial block snoop 仍显式报错，防止超出模型边界后静默返回无效数据。
 
 ## 8. 统计与验证
 

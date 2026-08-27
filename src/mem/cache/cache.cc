@@ -1260,6 +1260,17 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
 
     bool respond = false;
     bool blk_valid = blk && blk->isValid();
+
+    // Evictions from a lower cache only probe whether this block is still
+    // cached above. A partial block is sufficient to answer that question;
+    // no data is supplied and its coherence state remains unchanged.
+    if (blk_valid && blk->isPartial() && pkt->isEviction()) {
+        DPRINTF(Cache, "Partial block present for eviction probe %s\n",
+                pkt->print());
+        pkt->setBlockCached();
+        return snoop_delay;
+    }
+
     panic_if(blk_valid && blk->isPartial(),
              "%s: snoop %s reached unsupported partial block %s",
              name(), pkt->print(), blk->print());

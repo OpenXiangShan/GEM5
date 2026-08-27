@@ -81,6 +81,24 @@ TEST(PartialStoreTest, PermissionCommandHasNoData)
     EXPECT_EQ(cmd.responseCommand(), MemCmd::StorePermResp);
 }
 
+TEST(PartialStoreTest, EvictionProbeCommandClassification)
+{
+    for (const auto cmd : {MemCmd::WritebackDirty,
+                           MemCmd::WritebackClean,
+                           MemCmd::CleanEvict}) {
+        Packet pkt(makeRequest(std::vector<bool>(BlkSize, true)), cmd);
+        EXPECT_TRUE(pkt.isEviction());
+        EXPECT_TRUE(pkt.mustCheckAbove());
+        EXPECT_FALSE(pkt.needsResponse());
+    }
+
+    Packet read_shared(
+        makeRequest(std::vector<bool>(BlkSize, true)), MemCmd::ReadSharedReq);
+    EXPECT_FALSE(read_shared.isEviction());
+    EXPECT_FALSE(read_shared.mustCheckAbove());
+    EXPECT_TRUE(read_shared.needsResponse());
+}
+
 TEST(PartialStoreTest, ValidMaskGrowsAndBecomesFull)
 {
     CacheBlk blk;
