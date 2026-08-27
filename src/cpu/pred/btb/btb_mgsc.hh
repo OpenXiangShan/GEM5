@@ -592,15 +592,19 @@ class BTBMGSC : public TimedBaseBTBPredictor
     typedef struct MgscMeta
     {
         std::unordered_map<Addr, MgscPrediction> preds;
-        std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
-        std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist;
-        std::vector<ImliFoldedHist> indexIFoldedHist;
-        std::vector<GlobalFoldedHist> indexGFoldedHist;
-        std::vector<PathFoldedHist> indexPFoldedHist;
-        MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<GlobalBwFoldedHist> indexBwFoldedHist,
-                 std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist,
-                 std::vector<ImliFoldedHist> indexIFoldedHist, std::vector<GlobalFoldedHist> indexGFoldedHist,
-                 std::vector<PathFoldedHist> indexPFoldedHist)
+        // Folded-history snapshots stored as raw values (get()) rather than the
+        // full FoldedHistBase objects. These are only consumed during recovery
+        // (via recoverValue()), so the folded value is all that is needed; this
+        // avoids copying the large position tables on every prediction.
+        std::vector<uint64_t> indexBwFoldedHist;
+        std::vector<std::vector<uint64_t>> indexLFoldedHist;
+        std::vector<uint64_t> indexIFoldedHist;
+        std::vector<uint64_t> indexGFoldedHist;
+        std::vector<uint64_t> indexPFoldedHist;
+        MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<uint64_t> indexBwFoldedHist,
+                 std::vector<std::vector<uint64_t>> indexLFoldedHist,
+                 std::vector<uint64_t> indexIFoldedHist, std::vector<uint64_t> indexGFoldedHist,
+                 std::vector<uint64_t> indexPFoldedHist)
             : preds(preds),
               indexBwFoldedHist(indexBwFoldedHist),
               indexLFoldedHist(indexLFoldedHist),

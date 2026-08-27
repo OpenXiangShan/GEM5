@@ -31,6 +31,26 @@ namespace btb_pred{
 namespace
 {
 
+// Snapshot a folded-history vector as raw folded values. Prediction and tag
+// lookups read the values directly and recovery restores them through
+// recoverValue(), so the metadata only needs the folded value and not the full
+// object with its per-shift position tables.
+template <typename Src>
+void
+snapshotFoldedValues(const Src &src, std::vector<uint64_t> &dst)
+{
+    dst.resize(src.size());
+    for (size_t i = 0; i < src.size(); ++i) {
+        dst[i] = src[i].get();
+    }
+}
+
+}  // namespace
+
+
+namespace
+{
+
 #ifndef UNIT_TEST
 inline uint64_t
 mixTraceHash(uint64_t value)
@@ -56,13 +76,18 @@ hashBitset(const boost::dynamic_bitset<> &bits)
     return seed;
 }
 
+// Hash a vector of folded-history values snapshotted via get(). The history
+// type is taken from a parallel vector of live folded-history objects (the type
+// is a per-table constant), so the result is identical to hashing the original
+// TageFoldedHist objects directly.
 uint64_t
-hashFoldedHistVec(const std::vector<TageFoldedHist> &folded)
+hashFoldedHistVec(const std::vector<uint64_t> &values,
+                  const std::vector<TageFoldedHist> &typeSrc)
 {
-    uint64_t seed = mixTraceHash(folded.size());
-    for (size_t i = 0; i < folded.size(); ++i) {
-        uint64_t value = folded[i].get();
-        value ^= static_cast<uint64_t>(folded[i].getHistoryType()) << 56;
+    uint64_t seed = mixTraceHash(values.size());
+    for (size_t i = 0; i < values.size(); ++i) {
+        uint64_t value = values[i];
+        value ^= static_cast<uint64_t>(typeSrc[i].getHistoryType()) << 56;
         seed ^= mixTraceHash(value + static_cast<uint64_t>(i) * 0x9e3779b97f4a7c15ULL +
                              (seed << 6) + (seed >> 2));
     }
@@ -321,11 +346,11 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(
-            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
+            startPC, i, predMeta->indexFoldedHist[i], asidHash, tid)
                               : getTageIndex(
             startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(),
+                            predMeta->tagFoldedHist[i], predMeta->altTagFoldedHist[i],
                             position, asidHash)
                         : getTageTag(startPC, i, state.tagFoldedHist[i].get(),
                                      state.altTagFoldedHist[i].get(), position, asidHash);
@@ -511,9 +536,9 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
 
     // Clear old prediction metadata and save current history state
     threadMeta[tid] = std::make_shared<TageMeta>();
-    threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
-    threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
-    threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
+    snapshotFoldedValues(state.tagFoldedHist, threadMeta[tid]->tagFoldedHist);
+    snapshotFoldedValues(state.altTagFoldedHist, threadMeta[tid]->altTagFoldedHist);
+    snapshotFoldedValues(state.indexFoldedHist, threadMeta[tid]->indexFoldedHist);
     threadMeta[tid]->history = history;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
@@ -542,9 +567,9 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
     auto &state = historyState(pred.tid);
     threadMeta[pred.tid] = std::make_shared<TageMeta>();
     auto &meta = threadMeta[pred.tid];
-    meta->tagFoldedHist = state.tagFoldedHist;
-    meta->altTagFoldedHist = state.altTagFoldedHist;
-    meta->indexFoldedHist = state.indexFoldedHist;
+    snapshotFoldedValues(state.tagFoldedHist, meta->tagFoldedHist);
+    snapshotFoldedValues(state.altTagFoldedHist, meta->altTagFoldedHist);
+    snapshotFoldedValues(state.indexFoldedHist, meta->indexFoldedHist);
     meta->history = history;
 
     pred.tageInfoForMgscs.clear();
@@ -801,9 +826,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(
-            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
+            startPC, ti, meta->indexFoldedHist[ti], asidHash, tid);
         Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position, asidHash);
+            meta->tagFoldedHist[ti], meta->altTagFoldedHist[ti], position, asidHash);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -1030,12 +1055,13 @@ BTBTAGE::update(const FetchTarget &stream) {
             auto alt_info = trace_pred.altInfo;
             const uint64_t history_hash = hashBitset(predMeta->history);
             const uint64_t phistory_hash = hashBitset(stream.phistory);
+            const auto &dbState = historyState(stream.tid);
             const uint64_t index_folded_hist_hash =
-                hashFoldedHistVec(predMeta->indexFoldedHist);
+                hashFoldedHistVec(predMeta->indexFoldedHist, dbState.indexFoldedHist);
             const uint64_t tag_folded_hist_hash =
-                hashFoldedHistVec(predMeta->tagFoldedHist);
+                hashFoldedHistVec(predMeta->tagFoldedHist, dbState.tagFoldedHist);
             const uint64_t alt_tag_folded_hist_hash =
-                hashFoldedHistVec(predMeta->altTagFoldedHist);
+                hashFoldedHistVec(predMeta->altTagFoldedHist, dbState.altTagFoldedHist);
             t.set(startAddr, btb_entry.pc, main_info.way,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
                 main_info.table, main_info.index, main_info.entry.tag,
@@ -1047,7 +1073,7 @@ BTBTAGE::update(const FetchTarget &stream) {
                 allocInfo.victimCounter, allocInfo.victimUseful,
                 allocInfo.victimPC,
                 history_str, phistory_str,
-                predMeta->indexFoldedHist[main_info.table].get(),
+                predMeta->indexFoldedHist[main_info.table],
                 trace_pred.useAltIdx, trace_pred.useAltCtr,
                 trace_pred.hitTableMask, trace_pred.finalProviderTable,
                 trace_pred.finalProviderIsAlt, history_hash, phistory_hash,
@@ -1295,9 +1321,9 @@ BTBTAGE::recoverFoldedHist(const FetchTarget &entry)
     auto predMeta =
         std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
-        threadHistory[entry.tid].tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        threadHistory[entry.tid].altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        threadHistory[entry.tid].indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        threadHistory[entry.tid].tagFoldedHist[i].recoverValue(predMeta->tagFoldedHist[i]);
+        threadHistory[entry.tid].altTagFoldedHist[i].recoverValue(predMeta->altTagFoldedHist[i]);
+        threadHistory[entry.tid].indexFoldedHist[i].recoverValue(predMeta->indexFoldedHist[i]);
     }
 }
 

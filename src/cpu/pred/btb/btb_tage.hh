@@ -452,9 +452,14 @@ public:
     typedef struct TageMeta
     {
         std::unordered_map<Addr, TagePrediction> preds;
-        std::vector<TageFoldedHist> tagFoldedHist;
-        std::vector<TageFoldedHist> altTagFoldedHist;
-        std::vector<TageFoldedHist> indexFoldedHist;
+        // Folded-history snapshots stored as raw values (get()) rather than the
+        // full FoldedHistBase objects. Recovery restores them via recoverValue()
+        // and prediction/tag lookups read the value directly, so only the folded
+        // value is needed. This avoids copying the large position tables inside
+        // each FoldedHistBase on every prediction.
+        std::vector<uint64_t> tagFoldedHist;
+        std::vector<uint64_t> altTagFoldedHist;
+        std::vector<uint64_t> indexFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;

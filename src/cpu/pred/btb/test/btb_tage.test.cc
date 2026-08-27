@@ -482,7 +482,7 @@ int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC) {
     auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
     // use meta to find the table, predicted info
     for (int t = 0; t < tage->numPredictors; t++) {
-        Addr index = tage->getTageIndex(startPC, t, meta->indexFoldedHist[t].get());
+        Addr index = tage->getTageIndex(startPC, t, meta->indexFoldedHist[t]);
         for (unsigned way = 0; way < tage->numWays[t]; way++) {
             auto &entry = tage->tageTable[t][index][way];
             if (entry.valid && entry.pc == branchPC) {
