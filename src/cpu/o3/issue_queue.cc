@@ -482,11 +482,18 @@ IssueQue::nextVectorSplitReleaseTick() const
 void
 IssueQue::eraseVectorSplitBlocker(InstSeqNum seq_num)
 {
+    // Erasing from an empty set is a no-op; skip the hash lookup entirely so
+    // scalar workloads (no vector splits in flight) pay nothing per commit or
+    // squash.
     for (auto& unit : vectorLoadSplitStates) {
-        unit.blockingSeqs.erase(seq_num);
+        if (!unit.blockingSeqs.empty()) {
+            unit.blockingSeqs.erase(seq_num);
+        }
     }
     for (auto& unit : vectorStoreSplitStates) {
-        unit.blockingSeqs.erase(seq_num);
+        if (!unit.blockingSeqs.empty()) {
+            unit.blockingSeqs.erase(seq_num);
+        }
     }
 }
 
@@ -1181,22 +1188,36 @@ IssueQue::popReadyVectorInst()
 void
 IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
+    // With a single thread, instList is filled in global dispatch order, so its
+    // seqNums increase monotonically and every committed instruction
+    // (inst->seqNum <= seqNum) forms a front prefix: stop at the first younger
+    // entry instead of walking to the tail. Under SMT the shared per-IQ instList
+    // interleaves threads against one global seqNum counter, so it is not
+    // per-thread monotonic (a thread stalled before dispatch appends older
+    // seqNums after another thread's newer ones); fall back to the full filtered
+    // walk there. Only touch the vector-ready set when it actually holds entries
+    // (empty on scalar workloads).
+    const bool monotonic = cpu->numThreads == 1;
     for (auto it = instList.begin(); it != instList.end();) {
         const auto &inst = *it;
-        if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
+        if (inst->seqNum > seqNum) {
+            if (monotonic) {
+                break;
+            }
+            ++it;
+            continue;
+        }
+        if (inst->threadNumber == tid) {
             assert(inst->isIssued());
-            vectorReadyQSeqs.erase(inst->seqNum);
+            if (!vectorReadyQSeqs.empty()) {
+                vectorReadyQSeqs.erase(inst->seqNum);
+            }
             eraseVectorSplitBlocker(inst->seqNum);
             it = instList.erase(it);
         } else {
             ++it;
         }
     }
-    // while (!instList.empty() && instList.front()->seqNum <= seqNum) {
-    //     assert(instList.front()->isIssued());
-    //     vectorReadyQSeqs.erase(instList.front()->seqNum);
-    //     instList.pop_front();
-    // }
 }
 
 void
