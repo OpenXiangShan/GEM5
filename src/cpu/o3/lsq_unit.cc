@@ -1802,6 +1802,7 @@ LSQUnit::executeLoadPipeSx()
                 DPRINTF(LoadPipeline, "Instruction was squashed. PC: %s, [tid:%i]"
                     " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
                     inst->seqNum);
+                lsq->complete_load_bank_wait(inst);
                 inst->setExecuted();
                 inst->setCanCommit();
                 inst = nullptr;
@@ -1943,6 +1944,9 @@ LSQUnit::executeLoadPipeSx()
             if (i == loadPipeStages - 1 && !inst->needReplay()) {
                 // Terminal path 4: only a non-replayed load at the last pipe
                 // stage can finish the IEW side and become ready to commit.
+                // This also releases a bank-conflict waiter that completed
+                // through forwarding or another non-cache path.
+                lsq->complete_load_bank_wait(inst);
                 if (inst->isExecuted() &&
                     (inst->isNormalLd() || !inst->readMemAccPredicate())) {
                     iewStage->readyToFinish(inst);
@@ -3240,7 +3244,7 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
 
     if (ret) {
         if (isLoad) {
-            lsq->recordLoadBankGrant(inst);
+            lsq->complete_load_bank_wait(inst);
         }
         if (!isLoad) {
             isStoreBlocked = false;

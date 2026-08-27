@@ -1184,8 +1184,8 @@ class LSQ
     bool loadBankConflictedCheck(
         const DynInstPtr &inst, Addr vaddr, unsigned size);
 
-    /** Release loser-first priority after the blocked load is sent. */
-    void recordLoadBankGrant(const DynInstPtr &inst);
+    /** Release loser-first priority after the blocked load makes progress. */
+    void complete_load_bank_wait(const DynInstPtr &inst);
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }

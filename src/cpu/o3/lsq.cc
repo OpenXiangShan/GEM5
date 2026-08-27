@@ -1247,7 +1247,7 @@ LSQ::loadBankConflictedCheck(
 }
 
 void
-LSQ::recordLoadBankGrant(const DynInstPtr &inst)
+LSQ::complete_load_bank_wait(const DynInstPtr &inst)
 {
     if (bankConflictWaiter == inst) {
         bankConflictWaiter = nullptr;
