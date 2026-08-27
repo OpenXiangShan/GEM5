@@ -1263,6 +1263,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar partialSnoopMerges;
         statistics::Scalar partialSnoopFillLatency;
         statistics::Scalar partialSnoopReserveFull;
+        statistics::Scalar partialFillVictimConflicts;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;

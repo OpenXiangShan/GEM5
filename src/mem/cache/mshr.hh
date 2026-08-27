@@ -347,6 +347,11 @@ class MSHR : public QueueEntry, public Printable
 
     MissKind getMissKind() const { return missKind; }
     void setMissKind(MissKind kind) { missKind = kind; }
+    bool isPartialFill() const
+    {
+        return missKind == MissKind::PartialDataFill ||
+            missKind == MissKind::PartialSnoopFill;
+    }
 
     bool isCleaning() const {
         PacketPtr pkt = targets.front().pkt;

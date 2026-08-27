@@ -647,7 +647,11 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
-            allocateMissBuffer(pkt, forward_time);
+            MSHR *new_mshr = allocateMissBuffer(pkt, forward_time);
+            if (enablePartialStore && blk && blk->isPartial() &&
+                pkt->isRead()) {
+                new_mshr->setMissKind(MSHR::MissKind::PartialDataFill);
+            }
 
         }
     }
@@ -1194,6 +1198,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             if (blk) {
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
+            if (enablePartialStore && blk && blk->isPartial() &&
+                mshr->getTarget()->pkt->isRead()) {
+                mshr->setMissKind(MSHR::MissKind::PartialDataFill);
+            }
             mshrQueue.markPending(mshr);
             schedMemSideSendEvent(clockEdge() + pkt->payloadDelay);
             notify_dcache_refill(false);
@@ -1664,10 +1672,16 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
             const MSHR* mshr =
                 mshrQueue.findMatch(regenerateBlkAddr(blk), blk->isSecure());
             if (mshr) {
-                // Must be an outstanding upgrade or clean request on a block
-                // we're about to replace
+                // A partial fill also protects its existing block: the fill
+                // response must merge only the bytes that are still invalid.
                 assert((!blk->isSet(CacheBlk::WritableBit) &&
-                    mshr->needsWritable()) || mshr->isCleaning());
+                    mshr->needsWritable()) || mshr->isCleaning() ||
+                    mshr->isPartialFill());
+                if (mshr->isPartialFill()) {
+                    stats.partialFillVictimConflicts++;
+                    DPRINTF(CacheRepl, "Rejecting partial-fill victim %s\n",
+                            blk->print());
+                }
                 return false;
             }
         }
@@ -2920,15 +2934,17 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // point
         bool pending_modified_resp = !pkt->hasSharers() &&
             pkt->cacheResponding();
-        // PartialSnoopFill is assigned when the deferred snoop is captured;
-        // preserve it instead of reclassifying its internal read request.
+        // Partial fills are classified before they can protect an existing
+        // partial block from replacement. Preserve that classification here.
         if (mshr->getMissKind() != MSHR::MissKind::PartialSnoopFill) {
             if (pkt->cmd == MemCmd::StorePermReq) {
                 mshr->setMissKind(MSHR::MissKind::PartialPermission);
                 if (enablePartialStore) {
                     stats.partialPermissionReqs++;
                 }
-            } else if (blk && blk->isPartial() && pkt->isRead()) {
+            } else if (mshr->getMissKind() ==
+                           MSHR::MissKind::PartialDataFill ||
+                       (blk && blk->isPartial() && pkt->isRead())) {
                 mshr->setMissKind(MSHR::MissKind::PartialDataFill);
                 if (enablePartialStore) {
                     stats.partialDataFillReqs++;
@@ -3274,6 +3290,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "total ticks partial snoops waited for complete data"),
     ADD_STAT(partialSnoopReserveFull, statistics::units::Count::get(),
              "number of partial snoops that exhausted reserved MSHRs"),
+    ADD_STAT(partialFillVictimConflicts, statistics::units::Count::get(),
+             "number of replacements blocked by active partial fills"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),

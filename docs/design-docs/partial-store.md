@@ -65,6 +65,8 @@ MSHR 增加 `MissKind`：`Normal`、`WholeLineWrite`、`PartialPermission`、`Pa
 
 `PartialDataFill` 使用普通整行 read 请求取得下层数据，但 refill 只能复制 `~validMask` 对应的字节。响应期间到达的 store 先更新 block；refill 必须再次读取当前 mask，不能用请求发出时的旧 mask 覆盖新数据。
 
+补齐请求分配或从 deferred target 提升时，MSHR 会立即标记为 partial fill。若其他 refill 的 replacement victim 命中该 MSHR，缓存沿用现有冲突处理：拒绝替换 partial block，并用 `tempBlock` 完成其他 refill。`partialFillVictimConflicts` 统计这种被阻止的替换尝试。
+
 ## 6. Shared Snoop 补全
 
 DTB walker 等单核 coherent client 的 `ReadSharedReq` 可能经 CoherentXBar snoop L1D。若命中 `PartialModified`，L1D 不能直接返回不完整数据，也不能让请求继续访问下层后与 L1D 的新数据失去一致性。此时 L1D 成为 ordering point：
