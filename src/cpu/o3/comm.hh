@@ -254,13 +254,6 @@ struct SquashVersion
     SquashVersion() : version(0) {}
 };
 
-struct ResolveQueueEntry
-{
-    ThreadID tid;
-    branch_prediction::btb_pred::FetchTargetId ftqId;
-    std::vector<branch_prediction::btb_pred::FullResolveEvent> events;
-};
-
 /** Struct that defines all backwards communication. */
 struct TimeStruct
 {
@@ -303,6 +296,8 @@ struct TimeStruct
 
         /** IEW detected a redirect before the delayed formal squash reaches Fetch. */
         bool redirectPending = false;  // *F
+        /** Youngest sequence number that remains valid after that redirect. */
+        InstSeqNum redirectLastValidSeqNum = 0;  // *F
 
         unsigned iqCount;
         unsigned ldstqCount;

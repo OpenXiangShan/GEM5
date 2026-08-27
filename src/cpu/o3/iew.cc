@@ -595,6 +595,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum;
         toCommit->squash[tid] = true;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
@@ -635,6 +636,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
     // the squash.
     if (!toCommit->squash[tid] || inst->seqNum <= toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum - 1;
         toCommit->squash[tid] = true;
 
         toCommit->squashedSeqNum[tid] = inst->seqNum;
@@ -669,6 +671,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
             tid, inst->pcState(), inst->seqNum);
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum;
         toCommit->squash[tid] = true;
 
         toCommit->valuePredictionError[tid] = true;
@@ -1940,6 +1943,7 @@ IEW::tick()
     cycleThreadSquash.fill(false);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         toFetch->iewInfo[tid].redirectPending = false;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = 0;
         toFetch->iewInfo[tid].resolvedCFIs.clear();
     }
 

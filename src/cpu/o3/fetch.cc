@@ -323,8 +323,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of events the resolve queue becomes full"),
     ADD_STAT(resolveEnqueueFailEvent, statistics::units::Count::get(),
              "Number of times an entry could not be enqueued to the resolve queue"),
+    ADD_STAT(resolveMissingContextEvents, statistics::units::Count::get(),
+             "Number of resolved events whose prediction context was unavailable"),
+    ADD_STAT(resolveSquashedEvents, statistics::units::Count::get(),
+             "Number of resolved events discarded because of a squash"),
     ADD_STAT(resolveDequeueCount, statistics::units::Count::get(),
              "Number of times an entry is dequeued from the resolve queue"),
+    ADD_STAT(resolveDequeueEventCount, statistics::units::Count::get(),
+             "Number of individual resolved events consumed from the resolve queue"),
     ADD_STAT(resolveEnqueueCount, statistics::units::Count::get(),
              "Number of times an entry is enqueued to the resolve queue"),
     ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
@@ -537,6 +543,7 @@ Fetch::startupStage()
 void
 Fetch::clearStates(ThreadID tid)
 {
+    clearResolveQueue(tid);
     setThreadStatus(tid, Running);
     set(threads[tid].fetchpc, cpu->pcState(tid));
     macroop[tid] = NULL;
@@ -565,6 +572,7 @@ Fetch::resetStage()
 
     // Setup PC and nextPC with initial state.
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        clearResolveQueue(tid);
         setThreadStatus(tid, Running);
         set(threads[tid].fetchpc, cpu->pcState(tid));
         macroop[tid] = NULL;
@@ -1219,6 +1227,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 {
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s. seqNum: %lu\n",
             tid, new_pc, seqNum);
+    squashResolveQueue(tid, seqNum);
     if (squashInst) {
         DPRINTF(Fetch, "[tid:%i] Squash caused by inst at PC: %s, seqNum: %lu\n",
                 tid, squashInst->pcState(), squashInst->seqNum);
@@ -1430,6 +1439,9 @@ Fetch::initializeTickState()
         }
     }
 
+    // Capture prediction context before normal commit can retire its FTQ entry.
+    latchIEWSignals();
+
     // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1443,7 +1455,7 @@ Fetch::initializeTickState()
         }
     }
 
-    handleIEWSignals();
+    drainResolveQueue();
 
     DPRINTF(Fetch, "Running stage.\n");
     return status_change;
@@ -1739,24 +1751,37 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 void
-Fetch::handleIEWSignals()
+Fetch::latchIEWSignals()
 {
     // Currently resolve stage training is a btb-only feature
     if (!isBTBPred()) {
         return;
     }
 
-    const bool had_pending_resolve = !resolveQueue.empty();
     uint8_t enqueueCount = 0;
     uint8_t enqueueSize = 0;
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (numThreads > 1 && fromIEW->iewInfo[tid].redirectPending) {
-            redirectPending[tid] = true;
-            redirectPendingCycles[tid] = redirectPendingHoldCycles;
-            dbpbtb->setRedirectPending(tid, true);
+        const auto &iewInfo = fromIEW->iewInfo[tid];
+        if (iewInfo.redirectPending) {
+            if (numThreads > 1) {
+                redirectPending[tid] = true;
+                redirectPendingCycles[tid] = redirectPendingHoldCycles;
+                dbpbtb->setRedirectPending(tid, true);
+            }
+            // The early redirect reaches Fetch before the formal Commit
+            // squash.  Prune now so wrong-path events cannot train in that
+            // delay window or consume resolve-queue capacity.
+            squashResolveQueue(tid, iewInfo.redirectLastValidSeqNum);
         }
-        enqueueSize += fromIEW->iewInfo[tid].resolvedCFIs.size();
+        for (const auto &resolved : iewInfo.resolvedCFIs) {
+            if (!iewInfo.redirectPending ||
+                resolved.seqNum <= iewInfo.redirectLastValidSeqNum) {
+                enqueueSize++;
+            } else {
+                fetchStats.resolveSquashedEvents++;
+            }
+        }
     }
 
     if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
@@ -1764,21 +1789,38 @@ Fetch::handleIEWSignals()
         fetchStats.resolveEnqueueFailEvent += enqueueSize;
     } else {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
+            const auto &iewInfo = fromIEW->iewInfo[tid];
+            auto &incoming = iewInfo.resolvedCFIs;
             for (const auto &resolved : incoming) {
                 panic_if(resolved.tid != tid,
                          "Resolve event arrived on the wrong thread wire");
-                bool merged = false;
+                if (iewInfo.redirectPending &&
+                    resolved.seqNum > iewInfo.redirectLastValidSeqNum) {
+                    continue;
+                }
+                ResolveQueueEntry *mergedEntry = nullptr;
                 for (auto &queued : resolveQueue) {
                     if (queued.tid == tid &&
                         queued.ftqId == resolved.ftqId) {
                         queued.events.push_back(resolved);
-                        merged = true;
+                        mergedEntry = &queued;
                         break;
                     }
                 }
 
-                if (merged) {
+                if (mergedEntry) {
+                    // A newly merged event must observe the same one-cycle
+                    // producer/consumer separation as a newly queued group.
+                    mergedEntry->readyTick = cpu->clockEdge(Cycles(1));
+                    continue;
+                }
+
+                if (!dbpbtb->acceptResolveUpdate(tid, resolved.ftqId)) {
+                    fetchStats.resolveMissingContextEvents++;
+                    DPRINTF(Fetch,
+                            "Drop stale resolve event for tid %u FTQ %llu "
+                            "because its prediction context is unavailable\n",
+                            tid, static_cast<unsigned long long>(resolved.ftqId));
                     continue;
                 }
 
@@ -1786,6 +1828,7 @@ Fetch::handleIEWSignals()
                 new_entry.tid = tid;
                 new_entry.ftqId = resolved.ftqId;
                 new_entry.events.push_back(resolved);
+                new_entry.readyTick = cpu->clockEdge(Cycles(1));
                 resolveQueue.push_back(std::move(new_entry));
                 enqueueCount++;
             }
@@ -1793,22 +1836,74 @@ Fetch::handleIEWSignals()
         fetchStats.resolveEnqueueCount.sample(enqueueCount);
     }
 
+}
+
+void
+Fetch::drainResolveQueue()
+{
+    if (!isBTBPred()) {
+        return;
+    }
+
     fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
 
-    // Process only entries that were already pending before this cycle.
-    // This preserves a cycle of separation between IEW producing resolved CFIs
-    // and fetch consuming them as predictor resolved updates.
-    if (had_pending_resolve && !resolveQueue.empty()) {
+    if (!resolveQueue.empty() &&
+        resolveQueue.front().readyTick <= curTick()) {
         auto &entry = resolveQueue.front();
         ThreadID tid = entry.tid;
         bool success = dbpbtb->resolveUpdate(entry.events);
         if (success) {
             dbpbtb->notifyResolveSuccess(tid);
+            fetchStats.resolveDequeueEventCount += entry.events.size();
             resolveQueue.pop_front();
             fetchStats.resolveDequeueCount++;
         } else {
             dbpbtb->notifyResolveFailure(tid);
         }
+    }
+}
+
+void
+Fetch::squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum)
+{
+    for (auto entry = resolveQueue.begin(); entry != resolveQueue.end();) {
+        if (entry->tid != tid) {
+            ++entry;
+            continue;
+        }
+
+        const auto oldSize = entry->events.size();
+        entry->events.erase(
+            std::remove_if(
+                entry->events.begin(), entry->events.end(),
+                [squashSeqNum](const auto &event) {
+                    return event.seqNum > squashSeqNum;
+                }),
+            entry->events.end());
+        fetchStats.resolveSquashedEvents += oldSize - entry->events.size();
+
+        if (entry->events.empty()) {
+            dbpbtb->cancelResolveUpdate(entry->tid, entry->ftqId);
+            entry = resolveQueue.erase(entry);
+        } else {
+            ++entry;
+        }
+    }
+}
+
+void
+Fetch::clearResolveQueue(ThreadID tid)
+{
+    for (auto entry = resolveQueue.begin(); entry != resolveQueue.end();) {
+        if (entry->tid != tid) {
+            ++entry;
+            continue;
+        }
+
+        if (dbpbtb) {
+            dbpbtb->cancelResolveUpdate(entry->tid, entry->ftqId);
+        }
+        entry = resolveQueue.erase(entry);
     }
 }
 
@@ -1891,6 +1986,10 @@ Fetch::handleDecodeSquash(ThreadID tid)
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
                 "from decode.\n",tid);
 
+        // This must not depend on fetchStatus: an overlapping older squash
+        // can already have placed Fetch in Squashing while Decode supplies a
+        // tighter wrong-path cutoff.
+        squashResolveQueue(tid, fromDecode->decodeInfo[tid].doneSeqNum);
         auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
         clearRedirectPending(tid);
         if (fromDecode->decodeInfo[tid].branchMispredict) {

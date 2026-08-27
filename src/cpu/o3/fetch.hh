@@ -81,6 +81,21 @@ class TraceFetch;
 class TraceInstruction;
 
 /**
+ * One accepted group of resolved control-flow events.
+ *
+ * The BPU retains the prediction context while this entry is queued.  The
+ * ready tick preserves the existing one-cycle boundary between IEW producing
+ * an event and predictor training consuming it.
+ */
+struct ResolveQueueEntry
+{
+    ThreadID tid;
+    branch_prediction::btb_pred::FetchTargetId ftqId;
+    std::vector<branch_prediction::btb_pred::FullResolveEvent> events;
+    Tick readyTick = 0;
+};
+
+/**
  * Fetch class handles both single threaded and SMT fetch. Its
  * width is specified by the parameters; each cycle it tries to fetch
  * that many instructions. It supports using a branch predictor to
@@ -493,10 +508,17 @@ class Fetch
      */
     bool handleCommitSignals(ThreadID tid);
 
-    /** Handles iew signals including resolved cfi, mark their btb entries
-     *  and train predictors if they are configured to update in resolve stage.
-     */
-    void handleIEWSignals();
+    /** Accept IEW resolve events before commit can retire their FTQ context. */
+    void latchIEWSignals();
+
+    /** Train at most one previously accepted resolve group. */
+    void drainResolveQueue();
+
+    /** Remove wrong-path resolve events after a redirect. */
+    void squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum);
+
+    /** Remove all resolve events owned by one thread. */
+    void clearResolveQueue(ThreadID tid);
 
     /** Handles decode squash signals.
      *  @return: Returns true if squash occurred and immediate return needed.
@@ -1135,8 +1157,16 @@ class Fetch
         /** Stat for total number of resolve enqueue fail events. */
         statistics::Scalar resolveEnqueueFailEvent;
 
+        /** Resolved events rejected because their prediction context is gone. */
+        statistics::Scalar resolveMissingContextEvents;
+
+        /** Resolved events discarded because of a squash. */
+        statistics::Scalar resolveSquashedEvents;
+
         /** Stat for total number of resolve dequeue events. */
         statistics::Scalar resolveDequeueCount;
+        /** Number of individual resolved events successfully consumed. */
+        statistics::Scalar resolveDequeueEventCount;
         /** Stat for total number of resolve enqueue events. */
         statistics::Distribution resolveEnqueueCount;
         /** Stat for entry occupancy distribution of the resolve queue. */

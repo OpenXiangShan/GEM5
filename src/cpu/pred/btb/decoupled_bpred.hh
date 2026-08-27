@@ -6,6 +6,8 @@
 #include <deque>
 #include <queue>
 #include <stack>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -158,6 +160,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<HistoryManager> historyManagers;
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
+
+    // Accepted resolve updates must outlive normal FTQ retirement.  Only
+    // entries actually overtaken by commit are moved into the retained map.
+    std::array<std::unordered_set<FetchTargetId>, MaxThreads>
+        pendingResolveTargets;
+    std::array<std::unordered_map<FetchTargetId, FetchTarget>, MaxThreads>
+        retiredResolveTargets;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -757,6 +766,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(ThreadID tid, Addr new_pc);
 
     // Helper functions for update
+    bool acceptResolveUpdate(ThreadID tid, FetchTargetId targetId);
+    void cancelResolveUpdate(ThreadID tid, FetchTargetId targetId);
+    void retainPendingResolveTargets(ThreadID tid);
     bool resolveUpdate(const std::vector<FullResolveEvent> &events);
     PreparedUpdate prepareUpdate(
         const FetchTarget &target,
