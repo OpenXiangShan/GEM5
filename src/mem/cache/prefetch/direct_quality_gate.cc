@@ -11,7 +11,7 @@ namespace prefetch
 namespace
 {
 
-bool
+[[maybe_unused]] bool
 isPowerOf2(unsigned value)
 {
     return value != 0 && (value & (value - 1)) == 0;
