@@ -237,7 +237,7 @@ BTBLLBPX::BTBLLBPX(bool adaptCtxDepthParam)
       rcrEntries(32),
       rcrType(RCRType::UnconditionalOnly),
       rcrWindow(8),
-      rcrDist(0),
+      rcrDist(1),
       rcrShift(1),
       rcrTagBits(32),
       rcrBaseTagBits(12),
