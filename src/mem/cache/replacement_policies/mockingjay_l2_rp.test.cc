@@ -44,6 +44,7 @@ makeParams(const std::string &name = "mockingjay_test")
     params.temporal_difference_threshold = 1;
     params.scan_threshold_margin = 2;
     params.prefetch_penalty_percent = 200;
+    params.prefetch_min_etr = 1;
     params.timestamp_bits = 8;
     return params;
 }
@@ -204,6 +205,18 @@ class MockingjayL2Test : public testing::Test
         writebackInsertions() const
         {
             return stats.writebackInsertions.value();
+        }
+
+        Counter
+        prefetchInsertions() const
+        {
+            return stats.prefetchInsertions.value();
+        }
+
+        Counter
+        prefetchFloorInsertions() const
+        {
+            return stats.prefetchFloorInsertions.value();
         }
 
         Counter
@@ -393,6 +406,48 @@ TEST_F(MockingjayL2Test, HardwarePrefetchUsesMaxEtrInsertion)
 
     EXPECT_EQ(policy.etr(victim->replacementData), policy.infiniteEtr());
     EXPECT_EQ(policy.maxEtrInsertions(), 1);
+    EXPECT_EQ(policy.prefetchInsertions(), 1);
+    EXPECT_EQ(policy.prefetchFloorInsertions(), 0);
+}
+
+TEST_F(MockingjayL2Test, UntrainedHardwarePrefetchUsesInsertionFloor)
+{
+    auto incoming = packet(0x200, 0x3333, MemCmd::HardPFReq);
+
+    fill(0, 0, incoming.get());
+
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 1);
+    EXPECT_EQ(policy.prefetchInsertions(), 1);
+    EXPECT_EQ(policy.prefetchFloorInsertions(), 1);
+}
+
+TEST_F(MockingjayL2Test, HardwarePrefetchRefillUsesRequestFlag)
+{
+    auto incoming = packet(0x200, 0x3333, MemCmd::ReadSharedReq, true,
+                           Request::Flags(Request::PREFETCH));
+
+    fill(0, 0, incoming.get());
+
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 1);
+    EXPECT_EQ(policy.prefetchInsertions(), 1);
+    EXPECT_EQ(policy.prefetchFloorInsertions(), 1);
+    EXPECT_EQ(policy.sampledTimestamp(0), 1);
+}
+
+TEST_F(MockingjayL2Test, NoPcPrefetchRefillDoesNotTrain)
+{
+    auto incoming = packet(0x200, 0, MemCmd::ReadSharedReq, false,
+                           Request::Flags(Request::PREFETCH));
+    const Counter no_pc_before = policy.noPcSignatures();
+    const uint16_t timestamp_before = policy.sampledTimestamp(0);
+
+    fill(0, 0, incoming.get());
+
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[0].replacementData), 1);
+    EXPECT_EQ(policy.prefetchInsertions(), 1);
+    EXPECT_EQ(policy.prefetchFloorInsertions(), 1);
 }
 
 TEST_F(MockingjayL2Test, MaxEtrDecisionUsesPreTrainingPrediction)
@@ -569,7 +624,21 @@ TEST_F(MockingjayL2Test, SoftwarePrefetchesDoNotTrain)
     fill(0, 1, software_prefetch.get());
     EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
     EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
-    EXPECT_EQ(policy.etr(entries[1].replacementData), 0);
+    EXPECT_EQ(policy.etr(entries[1].replacementData), 1);
+    EXPECT_EQ(policy.prefetchInsertions(), 1);
+    EXPECT_EQ(policy.prefetchFloorInsertions(), 1);
+
+    // A fill below the originating cache carries a normal read command, but
+    // retains Request::PREFETCH and has lost the software prefetch PC.
+    auto translated_software_prefetch = packet(
+        0x80, 0, MemCmd::ReadSharedReq, false,
+        Request::Flags(Request::PREFETCH));
+    fill(0, 1, translated_software_prefetch.get());
+    EXPECT_EQ(policy.noPcSignatures(), no_pc_before);
+    EXPECT_EQ(policy.sampledTimestamp(0), timestamp_before);
+    EXPECT_EQ(policy.etr(entries[1].replacementData), 1);
+    EXPECT_EQ(policy.prefetchInsertions(), 2);
+    EXPECT_EQ(policy.prefetchFloorInsertions(), 2);
 }
 
 TEST_F(MockingjayL2Test, AgingAndTrainingRemainPerSet)

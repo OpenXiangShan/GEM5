@@ -6,9 +6,9 @@
 * 基线：`5361c1248804755d285313f41dd73b7a299f7b48`
 * 初始已发布检查点：`c95ff7ac13c9e21dc505a266f6ea460f3f422ae3`
 * 候选 CI 所用检查点：`35f340a2e3a989fb3d2ea8c1ea4d751a4ff618f4`。
-* 当前源码验证检查点：`beeb9ff4b80262a45712d7c20b7829b476ad3c03`。
+* 前一源码验证检查点：`beeb9ff4b80262a45712d7c20b7829b476ad3c03`。
 * 临时审查分支：`codex/mockingjay-l2-review-summary-20260826`；该分支保留同一套
-  实现，并额外包含软件预取不训练的修正、中文审查快照和本文档同步。
+  实现，并额外包含软件预取不训练、预取插入偏置、中文审查快照和本文档同步。
 * 当前审查范围：在上述检查点之上移除真实缓存旁路，并改为
   `+INF_ETR` 正常插入；所有新增 Markdown 文档已改用中文。
 * CI 状态：已有一次完整候选 CI 归档，详见下方“验证状态”；其执行路径与基线
@@ -27,6 +27,43 @@ test 中为直接旁路增加的接口与路径。
 在随后的标准牺牲行选择中优先于绝对 ETR 更小的缓存行被踢出。绝对值相同的
 负 ETR 仍优先，因而 `-INF_ETR` writeback 会先于 `+INF_ETR` 缓存行被选中。该
 取舍保留淘汰顺序的性能因果链，而不改变缓存的功能语义和时序流水线。
+
+## 预取 refill 语义
+
+“没有 bypass”不是 DRRIP 与 Mockingjay 的等价条件。现有 `XSDRRIP` 的
+`getRRPV()` 明确区分 refill：普通 demand 为 `RRPV=0`，预取为 `RRPV=1`，而
+victim 选择 RRPV 最大者。因此 DRRIP 的预取 line 会正常进入 cache，但天然比
+demand line 更容易在后续竞争中被替换。
+
+旧 Mockingjay 对没有已有 RDP 预测的 fill 统一使用 `ETR=0`。`ETR=0` 的预取
+因而获得了和 demand 一样的保护；`prefetch_penalty_percent` 只放大以预取结束的
+训练距离，不能修正这一次初始插入。当前审查中的修正新增
+`prefetch_min_etr=1`：每个预取 refill 至少使用 `ETR=1`，而未训练 demand 仍为
+`ETR=0`。在插入后的当前 ETR 状态，Mockingjay 按 `abs(ETR)` 最大选 victim，
+所以该正 ETR 是较低的保留优先级，近似 DRRIP 的 `RRPV=1`，但并非无条件
+`+INF_ETR` 的激进快速淘汰。它只是插入偏置；随后的 set aging 或 hit promotion
+会重新排序，不承诺整个驻留期持续低优先级。
+已有 scan/victim 比较触发的 `+INF_ETR` 仍优先，它只改变插入 priority，仍不
+实现真实 bypass。
+
+预取识别同时检查 packet command 和 `Request::PREFETCH`。下游 refill 会把
+`HardPFReq`/`SoftPFReq` 转为普通 read command，但 request flag 保留；带 PC 的
+硬件预取仍可用预取 signature 训练 RDP，软件预取和其他无 PC 预取不训练，避免
+污染 no-PC bucket。新增 `prefetchInsertions` 和 `prefetchFloorInsertions` 用于在
+后续归档中验证实际覆盖率。
+
+## 浮点回退的当前线索
+
+已有完整候选归档中，FP score 从 `22.0992462676` 变为 `21.9497466541`
+（`-0.676492%`）。`GemsFDTD` 与 `sphinx3` 两项约解释该几何平均回退的 84.6%，
+各自单项约回退 4.7%。前者的 L2 prefetch miss 从 107,494 升至 156,672、useful
+prefetch 从 410,843 降至 340,784；后者的 L3 total miss rate 从约 4.06% 升至
+11.27%，并出现更高的 L1D demand miss latency。它们与“预取获得过高 L2
+保留优先级，进而挤掉有用 line”的机制一致，但不是因果证明。
+
+该候选使用旧 SHA，尚无本节的软件预取隔离和插入下限；并且候选与基线走了不同
+的 distributed runner 路径。因此这些数字只能作为修正方向的证据，不能说明本次
+补丁已经恢复 FP，也不能用作 DSE 结论。
 
 ## 主要文件
 
@@ -60,11 +97,19 @@ test 中为直接旁路增加的接口与路径。
 初始旁路原型曾通过 policy GTest 10/10、cache timing GTest 5/5；这些结果只
 作为历史参考，不能覆盖当前 `+INF_ETR` 语义。本次修订已完成以下验证：
 
-* 在 `beeb9ff4b8` 上串行重建替换策略 GTest 和 `build/RISCV/gem5.opt`。
-* `mockingjay_l2_rp.test.opt` 的 17/17 测试通过，覆盖训练前判定、最大 ETR
-  替换顺序、硬件预取、软件预取隔离、其他非训练流量和非法几何参数。
+* 在本次预取插入修订上重新生成 SimObject 参数、重建替换策略 GTest 和
+  `build/RISCV/gem5.opt`。
+* `mockingjay_l2_rp.test.opt` 的 20/20 测试通过，覆盖训练前判定、最大 ETR
+  替换顺序、硬件预取 command、下游 request flag、无 PC 预取、软件预取隔离、
+  其他非训练流量和非法几何参数。
 * `python3 -m py_compile configs/example/kmhv3.py` 通过，`git diff --check`
   通过。
+* 使用 checkpoint 兼容 reference 和本地 DDR4 fallback 的 100,000 指令冒烟测试
+  在 `/tmp/mockingjay-l2-prefetch-smoke.f8uWYe` 完成：
+  `simInsts=100007`、`system.cpu.committedInsts=100007`。`config.ini` 确认四个
+  独立 `MockingjayL2RP` 的 `prefetch_min_etr=1`；四个 slice 的
+  `prefetchInsertions/prefetchFloorInsertions` 为 `305/305`、`333/333`、
+  `244/244`、`271/271`。这证明预取 refill 已被识别并应用插入偏置。
 * 使用 checkpoint 兼容 reference 和本地 DDR4 fallback 的一百万指令冒烟测试
   在 `/tmp/mockingjay-l2-omnetpp-6881-review-beeb9ff4b8` 完成：
   `simInsts=1000008`、`system.cpu.committedInsts=1000008`。

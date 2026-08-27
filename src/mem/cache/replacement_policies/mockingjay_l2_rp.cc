@@ -37,6 +37,7 @@ MockingjayL2::MockingjayL2(const Params &p)
     temporalDifferenceThreshold(p.temporal_difference_threshold),
     scanThresholdMargin(p.scan_threshold_margin),
     prefetchPenaltyPercent(p.prefetch_penalty_percent),
+    prefetchMinEtr(p.prefetch_min_etr),
     timestampBits(p.timestamp_bits),
     setBits(0),
     sampledCacheSetBits(0),
@@ -134,6 +135,8 @@ MockingjayL2::MockingjayL2(const Params &p)
     infRd = static_cast<uint16_t>(raw_history - 1);
     maxRd = static_cast<uint16_t>(infRd - scanThresholdMargin);
     infEtr = static_cast<int16_t>(coarse_history - 1);
+    fatal_if(prefetchMinEtr > static_cast<unsigned>(infEtr),
+             "MockingjayL2 prefetch_min_etr must not exceed INF_ETR");
     timestampModulo = static_cast<uint16_t>(timestamp_modulo);
     sampledTagMask = (uint64_t(1) << sampledTagBits) - 1;
 
@@ -193,17 +196,34 @@ MockingjayL2::isSampledSet(unsigned set_id) const
 bool
 MockingjayL2::isPrefetch(const PacketPtr pkt) const
 {
-    return pkt && ((pkt->req && pkt->req->isPrefetch()) ||
-                   pkt->cmd.isHWPrefetch());
+    return pkt && (pkt->cmd.isPrefetch() ||
+                   (pkt->req && pkt->req->isPrefetch()));
 }
 
 bool
 MockingjayL2::isTrainingAccess(const PacketPtr pkt) const
 {
-    return pkt && !pkt->isWriteback() && !pkt->isEviction() &&
-        !pkt->cmd.isSWPrefetch() &&
-        pkt->cmd != MemCmd::WriteClean &&
-        !(pkt->req && pkt->req->isCacheMaintenance());
+    if (!pkt || pkt->isWriteback() || pkt->isEviction() ||
+        pkt->cmd.isSWPrefetch() || pkt->cmd == MemCmd::WriteClean ||
+        (pkt->req && pkt->req->isCacheMaintenance())) {
+        return false;
+    }
+
+    // Miss packets turn into ordinary reads below the originating cache, but
+    // retain Request::PREFETCH. Software prefetch clones have no PC there;
+    // do not let them train the reserved no-PC predictor entry. A no-PC
+    // hardware prefetch is likewise not useful for a PC-indexed predictor.
+    return !isPrefetch(pkt) || (pkt->req && pkt->req->hasPC());
+}
+
+int16_t
+MockingjayL2::applyPrefetchPriority(int16_t etr, const PacketPtr pkt) const
+{
+    if (!isPrefetch(pkt)) {
+        return etr;
+    }
+
+    return std::max(etr, static_cast<int16_t>(prefetchMinEtr));
 }
 
 uint32_t
@@ -529,11 +549,19 @@ MockingjayL2::reset(
     }
 
     if (!isTrainingAccess(pkt)) {
+        const bool is_prefetch = isPrefetch(pkt);
         data->valid = true;
-        data->etr = 0;
+        data->etr = applyPrefetchPriority(0, pkt);
+        if (is_prefetch) {
+            stats.prefetchInsertions++;
+            if (data->etr != 0) {
+                stats.prefetchFloorInsertions++;
+            }
+        }
         return;
     }
 
+    const bool is_prefetch = isPrefetch(pkt);
     const uint32_t signature = getSignature(pkt, false);
     const RdpEntry pre_training_prediction = rdpEntry(signature);
     const int16_t pre_training_etr = predictEtr(signature);
@@ -542,14 +570,23 @@ MockingjayL2::reset(
     processSampledAccess(*data, pkt, signature);
     ageSet(data->setId, data.get());
     data->valid = true;
-    data->etr = predictEtr(signature);
+    const int16_t trained_etr = predictEtr(signature);
+    data->etr = applyPrefetchPriority(trained_etr, pkt);
     const int victim_distance = victim_etr < 0 ? -victim_etr : victim_etr;
-    if (predicts_scan ||
-        (has_victim_etr && pre_training_etr > victim_distance)) {
+    const bool force_max_etr = predicts_scan ||
+        (has_victim_etr && pre_training_etr > victim_distance);
+    if (force_max_etr) {
         // Preserve the pre-training replacement-priority decision while the
         // line follows the normal cache fill path.
         data->etr = infEtr;
         stats.maxEtrInsertions++;
+    }
+    if (is_prefetch) {
+        stats.prefetchInsertions++;
+        if (!force_max_etr &&
+            trained_etr < static_cast<int16_t>(prefetchMinEtr)) {
+            stats.prefetchFloorInsertions++;
+        }
     }
     stats.insertions++;
 }
@@ -607,6 +644,10 @@ MockingjayL2::MockingjayStats::MockingjayStats(
     ADD_STAT(promotions, "ETR updates on cache hits"),
     ADD_STAT(insertions, "ETR updates on cache fills"),
     ADD_STAT(writebackInsertions, "Writeback fills assigned a scan ETR"),
+    ADD_STAT(prefetchInsertions,
+             "Prefetch fills assigned prefetch-aware insertion priority"),
+    ADD_STAT(prefetchFloorInsertions,
+             "Prefetch fills finally inserted at the configured ETR floor"),
     ADD_STAT(agingEvents, "Per-set periodic ETR aging events"),
     ADD_STAT(maxEtrInsertions,
              "Fills admitted with maximum positive ETR for rapid replacement"),

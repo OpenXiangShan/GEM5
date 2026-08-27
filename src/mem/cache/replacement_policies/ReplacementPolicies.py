@@ -194,5 +194,7 @@ class MockingjayL2RP(BaseReplacementPolicy):
         "Distance below INF_RD where lines stop being treated as scans")
     prefetch_penalty_percent = Param.Unsigned(200,
         "Reuse-distance multiplier for intervals ending in a prefetch")
+    prefetch_min_etr = Param.Unsigned(1,
+        "Minimum ETR assigned to a prefetch fill")
     timestamp_bits = Param.Unsigned(8,
         "Timestamp width for sampled per-set histories")

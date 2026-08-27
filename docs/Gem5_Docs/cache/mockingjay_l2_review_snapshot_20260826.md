@@ -11,7 +11,7 @@
 | 临时审查分支 | `codex/mockingjay-l2-review-summary-20260826` |
 | 实现分支 | `codex/mockingjay-l2-5361c12` |
 | 候选 CI 所用检查点 | `35f340a2e3` |
-| 当前源码验证检查点 | `beeb9ff4b8`：软件预取不训练、slice 容量报错文案和中文记录同步 |
+| 当前源码验证 | 2026-08-27 预取插入修订：`prefetch_min_etr=1`、软件预取/无 PC 预取不训练、20/20 GTest 和短 checkpoint smoke 通过 |
 | 基线 | `5361c1248804755d285313f41dd73b7a299f7b48` |
 | 性能 CI | run 968 已完成，但不是受控 A/B |
 
@@ -58,14 +58,35 @@ scan，或预测 ETR 大于本次牺牲行的绝对 ETR，则仍正常插入该�
 同绝对值时保留负 ETR 优先的规则，因此 `-INF_ETR` 的 writeback 会先于
 `+INF_ETR` 缓存行被选中。
 
+### 预取的插入优先级
+
+DRRIP 虽然不 bypass 预取，但它把 demand refill 置为 `RRPV=0`、预取 refill
+置为 `RRPV=1`，所以预取 line 在下一次竞争中较容易成为 victim。早期
+Mockingjay 的未训练预取却与 demand 同为 `ETR=0`；预取训练距离的倍率不改变
+这次插入，因而会给预取过高保护。
+
+当前审查补丁为 `MockingjayL2RP` 增加 `prefetch_min_etr=1`。所有预取 refill
+正常分配，但其 ETR 至少为 1；未训练 demand 维持 0。在插入后的当前 ETR 状态，
+策略选择 `abs(ETR)` 最大的 victim，因此预取 line 比 `ETR=0` 的 demand line
+更早成为候选。该偏置不在整个驻留期永久生效，后续 aging 或 hit promotion 会按
+预测重排 ETR。已有 scan 或 victim 比较触发的 `+INF_ETR` 保持原样。该调整不新增
+bypass 路径，也不让所有
+预取无条件取最大 ETR，后者会比 DRRIP 的 `RRPV=1` 更激进。
+
+预取判定覆盖 command 和 `Request::PREFETCH`，因为 cache 下游 refill 已不一定
+保留 `HardPFReq`/`SoftPFReq` command。带 PC 的硬件预取继续使用预取 signature
+训练；软件预取和无 PC 预取不会训练 no-PC RDP entry。`prefetchInsertions` 记录
+所有预取 refill，`prefetchFloorInsertions` 只记录最终使用 floor 的 refill，以便
+受控 A/B 时检查实际生效比例。
+
 ### 学习与替换规则
 
 * RDP 使用 PC、hit/miss 与预取标志的 CRC hash 低位索引；复用距离按同一物理
   L2 slice 的同一 set 的访问次数统计。
-* 可训练流量包括普通请求和硬件预取。软件预取、writeback、eviction、
-  `WriteClean` 与 cache-maintenance 流量不更新采样历史或 RDP；软件预取会在
-  cache 内部丢失 PC，因此必须排除，避免污染 no-PC 表项。writeback fill 以
-  `-INF_ETR` 插入。
+* 可训练流量包括普通请求和带 PC 的硬件预取。软件预取、无 PC 的预取、
+  writeback、eviction、`WriteClean` 与 cache-maintenance 流量不更新采样历史或
+  RDP；软件预取会在 cache 内部丢失 PC，因此必须排除，避免污染 no-PC 表项。
+  writeback fill 以 `-INF_ETR` 插入。
 * 派生阈值为 `INF_RD = num_ways * history_multiplier - 1`、
   `MAX_RD = INF_RD - scan_threshold_margin`、
   `INF_ETR = num_ways * history_multiplier / aging_granularity - 1`。
@@ -90,10 +111,17 @@ scan，或预测 ETR 大于本次牺牲行的绝对 ETR，则仍正常插入该�
 ## 已完成验证
 
 * `build/RISCV/mem/cache/replacement_policies/mockingjay_l2_rp.test.opt`：
-  17/17 通过，覆盖采样训练、scan、训练前决策、最大 ETR 插入、硬件预取、
-  软件预取隔离、其他非训练流量、per-set 隔离、平局和非法几何参数。
-* `build/RISCV/gem5.opt` 已在 `beeb9ff4b8` 上针对当前策略重新编译链接。
+  20/20 通过，覆盖采样训练、scan、训练前决策、最大 ETR 插入、硬件预取 command、
+  下游 request flag、无 PC 预取、软件预取隔离、其他非训练流量、per-set 隔离、
+  平局和非法几何参数。
+* `build/RISCV/gem5.opt` 已在本次预取插入修订上重新编译链接。
 * `python3 -m py_compile configs/example/kmhv3.py` 和 `git diff --check` 通过。
+* checkpoint 冒烟使用 `omnetpp/6881`，输出目录为
+  `/tmp/mockingjay-l2-prefetch-smoke.f8uWYe`；完成
+  `simInsts=100007` 和 `system.cpu.committedInsts=100007`。生成的 `config.ini`
+  确认四个独立 `MockingjayL2RP` 均含 `prefetch_min_etr=1`；四个 slice 的
+  `prefetchInsertions/prefetchFloorInsertions` 为 `305/305`、`333/333`、
+  `244/244`、`271/271`。
 * checkpoint 冒烟使用 `omnetpp/6881`，输出目录为
   `/tmp/mockingjay-l2-omnetpp-6881-review-beeb9ff4b8`；完成
   `simInsts=1000008` 和 `system.cpu.committedInsts=1000008`。生成的

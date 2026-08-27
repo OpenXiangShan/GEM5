@@ -90,6 +90,7 @@ class MockingjayL2 : public Base
     const unsigned temporalDifferenceThreshold;
     const unsigned scanThresholdMargin;
     const unsigned prefetchPenaltyPercent;
+    const unsigned prefetchMinEtr;
     const unsigned timestampBits;
     unsigned setBits;
     unsigned sampledCacheSetBits;
@@ -123,6 +124,8 @@ class MockingjayL2 : public Base
         statistics::Scalar promotions;
         statistics::Scalar insertions;
         statistics::Scalar writebackInsertions;
+        statistics::Scalar prefetchInsertions;
+        statistics::Scalar prefetchFloorInsertions;
         statistics::Scalar agingEvents;
         statistics::Scalar maxEtrInsertions;
         statistics::Scalar positiveEtrVictims;
@@ -137,6 +140,7 @@ class MockingjayL2 : public Base
     bool isSampledSet(unsigned set_id) const;
     bool isPrefetch(const PacketPtr pkt) const;
     bool isTrainingAccess(const PacketPtr pkt) const;
+    int16_t applyPrefetchPriority(int16_t etr, const PacketPtr pkt) const;
     uint32_t getSignature(const PacketPtr pkt, bool hit) const;
     uint16_t elapsed(uint16_t current, uint16_t previous) const;
     uint64_t sampledTag(Addr addr) const;

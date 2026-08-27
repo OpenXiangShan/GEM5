@@ -53,6 +53,7 @@
 | `temporal_difference_threshold` | 16 | RDP temporal-difference 更新阈值 |
 | `scan_threshold_margin` | 22 | `MAX_RD = INF_RD - 22` 的 margin |
 | `prefetch_penalty_percent` | 200 | 以预取结束的区间的复用距离倍率 |
+| `prefetch_min_etr` | 1 | 预取 refill 的最小 ETR，避免其获得未训练 demand 的 `ETR=0` 优先级 |
 | `timestamp_bits` | 8 | 采样历史时间戳宽度 |
 
 派生值为：
@@ -88,15 +89,22 @@
 
 1. `touch(data, pkt)` 处理 L2 hit：记录 hit signature，在采样 set 上更新
    采样历史，执行周期性 set aging，然后用 RDP 结果提升 line 的 ETR。
-2. 可训练 fill（普通请求和硬件预取）由 GEM5 原有 tags/cache 流程选择 victim；
-   `getVictim` 在该选择发生时保存有效 victim 的 ETR，`reset(data, pkt)` 先读取
-   训练前预测，再记录 miss、更新采样历史并执行 set aging。若训练前 RDP 预测
-   为 scan，或预测 ETR 大于已保存 victim 的绝对 ETR，则新 line 固定为
-   `+INF_ETR` 并递增 `maxEtrInsertions`，但不跳过分配、响应或 refill
-   notification。其他可训练填充使用训练后的预测 ETR。软件预取、eviction、
-   `WriteClean` 和 cache-maintenance 流量不训练 RDP、不推进采样时间戳，也不
-   改变已有 line 的普通命中 ETR；writeback fill 保持 `-INF_ETR`。软件预取在
-   cache 内部会生成不带 PC 的复制 Request，因此显式排除，避免将其误训练到
+2. 可训练 fill（普通请求，以及带 PC 的硬件预取）由 GEM5 原有 tags/cache
+   流程选择 victim；`getVictim` 在该选择发生时保存有效 victim 的 ETR，
+   `reset(data, pkt)` 先读取训练前预测，再记录 miss、更新采样历史并执行 set
+   aging。若训练前 RDP 预测为 scan，或预测 ETR 大于已保存 victim 的绝对 ETR，
+   则新 line 固定为 `+INF_ETR` 并递增 `maxEtrInsertions`，但不跳过分配、响应或
+   refill notification。其他可训练填充使用训练后的预测 ETR。所有预取 fill
+   都再施加 `prefetch_min_etr` 下限：默认值为 1，因此预测为 0 的预取也不会与
+   未训练 demand fill 共享 `ETR=0`；更大的预测 ETR 和 `+INF_ETR` 不会被降低。
+   在插入后的当前 ETR 状态，victim 按 `abs(ETR)` 最大选择，正的预取下限使该
+   line 比 `ETR=0` 的 demand line 更早成为候选。它只是插入偏置：之后的 set
+   aging 和 hit promotion 会按各自的预测重排 ETR，不把预取永久固定为低优先级。
+   软件预取、无 PC 的预取、eviction、
+   `WriteClean` 和 cache-maintenance 流量不训练 RDP、不推进采样时间戳，也不改变
+   已有 line 的普通命中 ETR；writeback fill 保持 `-INF_ETR`。这是必要的 packet
+   生命周期处理：cache 向下游转发 miss 时会把预取命令改为普通 read，但保留
+   `Request::PREFETCH`；软件预取复制的 Request 又没有 PC，不能让它误训练到
    保留的 no-PC 表项。
 3. 采样历史命中时训练旧 PC signature 的复用距离；记录被 aging 淘汰或被
    LRU 替换时按 scan 训练。以预取结束的区间在训练前按参数放大。普通训练
@@ -116,9 +124,12 @@
 ## 统计量
 
 策略导出以下计数器：采样命中/未命中、复用和 scan 训练、RDP 命中/未命中、
-无 PC 请求、命中提升、普通插入、writeback 插入、周期 aging、
-`maxEtrInsertions`、正/负 ETR 候选和 invalid 候选。`maxEtrInsertions` 表示
-最大 ETR 的快速淘汰插入次数，不是缓存旁路次数。候选统计在
+无 PC 请求、命中提升、普通插入、writeback 插入、`prefetchInsertions`、
+`prefetchFloorInsertions`、周期 aging、`maxEtrInsertions`、正/负 ETR 候选和
+invalid 候选。`prefetchInsertions` 是收到预取 refill 的次数；
+`prefetchFloorInsertions` 是最终以 `prefetch_min_etr` 抬高的 ETR 插入的次数；
+随后被 `+INF_ETR` 覆盖的 fill 不计入该值。
+`maxEtrInsertions` 表示最大 ETR 的快速淘汰插入次数，不是缓存旁路次数。候选统计在
 `getVictim()` 返回时递增，早于 cache 的 `handleEvictions()`，因此不能当作实际
 完成淘汰数；它们用于区分学习活动、低复用 line 插入和替换选择趋势。
 

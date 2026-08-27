@@ -66,6 +66,31 @@ GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so \
 `riscv64-nemu-notama-tvalref-so`。本地 DDR4 时序不能与 CI 的 DRAMsim3 做性能
 比较。
 
+## 2026-08-27：预取插入优先级修订
+
+* 核对 `XSDRRIP`：普通 demand refill 使用 `RRPV=0`，预取 refill 使用
+  `RRPV=1`，二者都正常填入 cache，但预取在后续竞争中拥有更低的初始保留优先级。
+* Mockingjay 新增 `prefetch_min_etr=1`。所有预取 refill 正常分配，未训练 demand
+  仍为 `ETR=0`；预取的预测 ETR 小于 1 时抬高到 1，原有 scan/victim 比较的
+  `+INF_ETR` 决定仍优先。此参数是插入偏置，不是永久预取标记，之后仍由 aging
+  和 hit promotion 按预测重排。
+* 预取判定同时使用 packet command 与 `Request::PREFETCH`，覆盖下游由
+  `HardPFReq`/`SoftPFReq` 转换而来的普通 read refill。软件预取和无 PC 预取不训练
+  RDP，避免污染 no-PC bucket；带 PC 的硬件预取继续训练。
+* 新增 `prefetchInsertions` 与 `prefetchFloorInsertions`。后者只统计最终以 floor
+  插入的 fill，不统计随后被 `+INF_ETR` 覆盖的 fill。
+* 重新生成 SimObject 参数、重建 `gem5.opt` 与策略 GTest。策略测试 20/20 通过，
+  覆盖硬件预取 command、下游 request flag、无 PC 预取和软件预取的原始/下游路径。
+  `python3 -m py_compile configs/example/kmhv3.py` 与 `git diff --check` 通过。
+* 使用本地 DDR4 fallback 和 checkpoint 兼容 reference 运行 `omnetpp/6881`
+  的 100,000 指令 smoke，输出目录为
+  `/tmp/mockingjay-l2-prefetch-smoke.f8uWYe`；完成
+  `simInsts=100007`、`system.cpu.committedInsts=100007`。四个 slice 的
+  `config.ini` 均为 `MockingjayL2RP` 且 `prefetch_min_etr=1`；
+  `prefetchInsertions/prefetchFloorInsertions` 分别为 `305/305`、`333/333`、
+  `244/244`、`271/271`。这是构造、配置和统计覆盖证据，不是 CI DRAMsim3 的
+  性能结论。
+
 ## 工作树修订状态
 
 历史代码的审查顺序是：
