@@ -334,6 +334,9 @@ void
 IssueQue::resetDepGraph(int numPhysRegs)
 {
     subDepGraph.resize(numPhysRegs);
+    depIdxActive.assign(numPhysRegs, false);
+    activeDepIdx.clear();
+    activeDepIdx.reserve(numPhysRegs);
 }
 
 bool
@@ -1117,7 +1120,12 @@ IssueQue::insert(const DynInstPtr& inst)
                     inst->markSrcRegReady(i);
                 }
                 DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
-                subDepGraph[src->flatIndex()].push_back({i, inst});
+                const auto depIdx = src->flatIndex();
+                if (!depIdxActive[depIdx]) {
+                    depIdxActive[depIdx] = true;
+                    activeDepIdx.push_back(depIdx);
+                }
+                subDepGraph[depIdx].push_back({i, inst});
                 addToDepGraph = true;
             }
         }
@@ -1238,8 +1246,13 @@ IssueQue::doSquash(SquashInfo squashInfo)
         }
     }
 
-    // clear in depGraph
-    for (auto& entrys : subDepGraph) {
+    // clear in depGraph: visit only registered (possibly non-empty) indices and
+    // drop any that end up empty. Order across indices does not matter here since
+    // this loop only erases squashed consumers and never reorders survivors.
+    size_t writeIdx = 0;
+    for (size_t readIdx = 0; readIdx < activeDepIdx.size(); ++readIdx) {
+        const uint32_t depIdx = activeDepIdx[readIdx];
+        auto& entrys = subDepGraph[depIdx];
         for (auto it = entrys.begin(); it != entrys.end();) {
             if ((*it).second->isSquashed() && ((*it).second->threadNumber == squashInfo.squashTid)) {
                 it = entrys.erase(it);
@@ -1247,7 +1260,13 @@ IssueQue::doSquash(SquashInfo squashInfo)
                 it++;
             }
         }
+        if (entrys.empty()) {
+            depIdxActive[depIdx] = false;
+        } else {
+            activeDepIdx[writeIdx++] = depIdx;
+        }
     }
+    activeDepIdx.resize(writeIdx);
 
     scheduleVectorReadyQEvent();
 }
