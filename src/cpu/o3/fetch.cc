@@ -1766,11 +1766,13 @@ Fetch::handleIEWSignals()
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
             for (const auto &resolved : incoming) {
+                panic_if(resolved.tid != tid,
+                         "Resolve event arrived on the wrong thread wire");
                 bool merged = false;
                 for (auto &queued : resolveQueue) {
-                    if (queued.resolvedTid == tid &&
-                        queued.resolvedFTQId == resolved.ftqId) {
-                        queued.resolvedInstPC.push_back(resolved.pc);
+                    if (queued.tid == tid &&
+                        queued.ftqId == resolved.ftqId) {
+                        queued.events.push_back(resolved);
                         merged = true;
                         break;
                     }
@@ -1781,9 +1783,9 @@ Fetch::handleIEWSignals()
                 }
 
                 ResolveQueueEntry new_entry;
-                new_entry.resolvedTid = tid;
-                new_entry.resolvedFTQId = resolved.ftqId;
-                new_entry.resolvedInstPC.push_back(resolved.pc);
+                new_entry.tid = tid;
+                new_entry.ftqId = resolved.ftqId;
+                new_entry.events.push_back(resolved);
                 resolveQueue.push_back(std::move(new_entry));
                 enqueueCount++;
             }
@@ -1798,10 +1800,8 @@ Fetch::handleIEWSignals()
     // and fetch consuming them as predictor resolved updates.
     if (had_pending_resolve && !resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
-        ThreadID tid = entry.resolvedTid;
-        const auto stream_id = entry.resolvedFTQId;
-        bool success = dbpbtb->resolveUpdate(
-            stream_id, entry.resolvedInstPC, tid);
+        ThreadID tid = entry.tid;
+        bool success = dbpbtb->resolveUpdate(entry.events);
         if (success) {
             dbpbtb->notifyResolveSuccess(tid);
             resolveQueue.pop_front();

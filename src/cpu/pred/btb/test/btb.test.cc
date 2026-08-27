@@ -44,6 +44,27 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
     return info;
 }
 
+FullResolveEvent
+createResolveEvent(ThreadID tid, FetchTargetId ftqId, InstSeqNum seqNum,
+                   const BranchInfo &branch, bool taken, bool mispredicted)
+{
+    return FullResolveEvent{
+        tid,
+        ftqId,
+        seqNum,
+        branch.pc,
+        branch.target,
+        taken,
+        mispredicted,
+        branch.isCond,
+        branch.isIndirect,
+        branch.isDirect,
+        branch.isCall,
+        branch.isReturn,
+        branch.size
+    };
+}
+
 /**
  * @brief Setup a FetchTarget with common parameters for BTB update
  *
@@ -481,7 +502,7 @@ TEST(PreparedUpdateTest, FiltersAndMarksResolvedBranches)
     EXPECT_TRUE(update.branches[0].resolvedThisAttempt);
     EXPECT_FALSE(update.branches[1].resolvedThisAttempt);
 
-    update.setBTBEntryCandidate(branch_b, false, target);
+    update.setBTBEntryCandidate(branch_b, false);
     update.markResolved(branch_b.pc);
     EXPECT_TRUE(update.branches[1].resolvedThisAttempt);
     ASSERT_EQ(update.branches.size(), 3);
@@ -520,6 +541,75 @@ TEST(PreparedUpdateTest, NotTakenBranchKeepsExecutionTargetFact)
     EXPECT_FALSE(update.branches[0].actualTaken);
     EXPECT_EQ(update.branches[0].entry.target, 0xdead);
     EXPECT_EQ(update.branches[0].actualTarget, 0x1008);
+}
+
+TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
+{
+    FetchTarget target;
+    target.tid = 1;
+    target.startPC = 0x1000;
+    target.exeTaken = false;
+    target.exeBranchInfo = createBranchInfo(0x1008, 0x100c, true);
+
+    auto branch_a = BTBEntry(createBranchInfo(0x1000, 0x1010, true));
+    auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
+    auto branch_c = BTBEntry(createBranchInfo(0x1008, 0x3000, true));
+    target.predBTBEntries = {branch_a, branch_b, branch_c};
+
+    auto resolved_a = createBranchInfo(0x1000, 0x1004, true);
+    auto resolved_b = createBranchInfo(0x1004, 0x4000, true);
+    std::vector<FullResolveEvent> events = {
+        createResolveEvent(1, 7, 10, resolved_a, false, false),
+        createResolveEvent(1, 7, 11, resolved_b, true, true)
+    };
+
+    PreparedUpdate update(target, 64, events);
+    for (const auto &event : events) {
+        update.applyResolveEvent(event);
+    }
+
+    EXPECT_TRUE(update.outcome.fromResolveEvent);
+    EXPECT_TRUE(update.outcome.taken);
+    EXPECT_TRUE(update.outcome.controlMispred);
+    EXPECT_EQ(update.outcome.branch.pc, resolved_b.pc);
+    EXPECT_EQ(update.endInstPC, resolved_b.pc);
+    ASSERT_EQ(update.branches.size(), 2);
+    EXPECT_TRUE(update.branches[0].resolvedThisAttempt);
+    EXPECT_FALSE(update.branches[0].actualTaken);
+    EXPECT_TRUE(update.branches[1].resolvedThisAttempt);
+    EXPECT_TRUE(update.branches[1].actualTaken);
+    EXPECT_EQ(update.branches[1].actualTarget, 0x4000);
+
+    EXPECT_FALSE(target.exeTaken);
+    EXPECT_EQ(target.exeBranchInfo.pc, 0x1008);
+}
+
+TEST_F(BTBTest, ResolveEventCreatesUnpredictedTakenCandidate)
+{
+    constexpr Addr start_pc = 0x1000;
+    auto actual_branch = createBranchInfo(0x1004, 0x3000, true);
+    boost::dynamic_bitset<> history(8, 0);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    mbtb->putPCHistory(start_pc, history, stage_preds);
+
+    FetchTarget target;
+    target.tid = 0;
+    target.startPC = start_pc;
+    target.exeTaken = false;
+    target.predMetas[0] = mbtb->getPredictionMeta();
+    auto event = createResolveEvent(0, 9, 20, actual_branch, true, true);
+    std::vector<FullResolveEvent> events = {event};
+
+    PreparedUpdate update(target, mbtb->predictWidth, events);
+    mbtb->prepareUpdate(target, update);
+    update.applyResolveEvent(event);
+
+    ASSERT_TRUE(update.btbEntryCandidate);
+    EXPECT_EQ(update.btbEntryCandidate->pc, actual_branch.pc);
+    ASSERT_EQ(update.branches.size(), 1);
+    EXPECT_TRUE(update.branches[0].actualTaken);
+    EXPECT_TRUE(update.branches[0].controlMispred);
+    EXPECT_TRUE(update.branches[0].resolvedThisAttempt);
 }
 
 TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)

@@ -1082,11 +1082,19 @@ DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
 }
 
 bool
-DecoupledBPUWithBTB::resolveUpdate(
-    FetchTargetId target_id,
-    const std::vector<uint64_t> &resolved_inst_pcs,
-    ThreadID tid)
+DecoupledBPUWithBTB::resolveUpdate(const std::vector<FullResolveEvent> &events)
 {
+    if (events.empty()) {
+        return true;
+    }
+
+    const ThreadID tid = events.front().tid;
+    const FetchTargetId target_id = events.front().ftqId;
+    for (const auto &event : events) {
+        panic_if(event.tid != tid || event.ftqId != target_id,
+                 "Resolve event group mixes thread or FTQ identities");
+    }
+
     if (!ftq.hasTarget(target_id, tid)) {
         DPRINTF(DecoupleBP,
                 "Target id %llu not found in fetchTargetQueue, "
@@ -1096,15 +1104,11 @@ DecoupledBPUWithBTB::resolveUpdate(
     }
 
     const auto &target = ftq.get(target_id, tid);
+    auto update = prepareUpdate(target, events);
 
     // Update predictor components only if the target is hit or taken
-    if (!(target.isHit || target.exeTaken)) {
+    if (!(target.isHit || update.outcome.taken)) {
         return true;
-    }
-
-    auto update = prepareUpdate(target);
-    for (const auto resolved_inst_pc : resolved_inst_pcs) {
-        update.markResolved(resolved_inst_pc);
     }
 
     // Phase 1: probe all resolved-update components to ensure no blocker
@@ -1156,11 +1160,15 @@ DecoupledBPUWithBTB::setRedirectPending(ThreadID tid, bool pending)
 }
 
 PreparedUpdate
-DecoupledBPUWithBTB::prepareUpdate(const FetchTarget &target)
+DecoupledBPUWithBTB::prepareUpdate(
+    const FetchTarget &target, const std::vector<FullResolveEvent> &events)
 {
-    PreparedUpdate update(target, predictWidth);
-    if ((target.isHit || target.exeTaken) && mbtb->isEnabled()) {
+    PreparedUpdate update(target, predictWidth, events);
+    if ((target.isHit || update.outcome.taken) && mbtb->isEnabled()) {
         mbtb->prepareUpdate(target, update);
+    }
+    for (const auto &event : events) {
+        update.applyResolveEvent(event);
     }
     return update;
 }

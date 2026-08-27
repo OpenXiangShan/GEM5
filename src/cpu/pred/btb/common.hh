@@ -11,6 +11,7 @@
 // #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/resolve_event.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/static_inst.hh"
 
@@ -285,8 +286,6 @@ struct LFSR64
     }
 };
 
-using FetchTargetId = uint64_t;
-
 enum class PairPhase : uint8_t
 {
     Even = 0,
@@ -473,8 +472,9 @@ struct FetchTarget
 /**
  * Predictor update data derived from one FetchTarget.
  *
- * FetchTarget owns the immutable prediction snapshot and the resolved control
- * outcome.  PreparedUpdate owns the materialized branch facts used by predictor
+ * FetchTarget owns the immutable prediction snapshot.  The execution outcome
+ * comes either from a FullResolveEvent or the legacy commit-time digest.
+ * PreparedUpdate owns the materialized branch facts used by predictor
  * components for one update attempt.  Keeping these values separate prevents
  * resolve and commit from communicating through mutable FTQ scratch.
  */
@@ -489,35 +489,52 @@ struct BranchUpdate
     bool matchesMbtbMissCandidate = false;
 };
 
+struct ControlFlowOutcome
+{
+    BranchInfo branch;
+    bool taken = false;
+    bool controlMispred = false;
+    bool fromResolveEvent = false;
+};
+
 struct PreparedUpdate
 {
     Addr endInstPC = 0;
     std::vector<BranchUpdate> branches;
     std::optional<BTBEntry> btbEntryCandidate;
+    ControlFlowOutcome outcome;
 
     PreparedUpdate() = default;
 
-    PreparedUpdate(const FetchTarget &target, unsigned predictWidth)
+    PreparedUpdate(
+        const FetchTarget &target, unsigned predictWidth,
+        const std::vector<FullResolveEvent> &resolveEvents = {})
     {
-        if (target.squashType == SQUASH_NONE) {
-            endInstPC = target.exeTaken ?
-                target.getControlPC() :
-                (target.startPC + predictWidth) &
-                    ~mask(floorLog2(predictWidth) - 1);
-        } else {
+        outcome = makeControlFlowOutcome(target, resolveEvents);
+
+        const bool legacySquash =
+            resolveEvents.empty() && target.squashType != SQUASH_NONE;
+        const bool nonControlSquash =
+            target.squashType != SQUASH_NONE &&
+            target.squashType != SQUASH_CTRL;
+        if (legacySquash || nonControlSquash) {
             endInstPC = target.squashPC;
+        } else if (outcome.controlMispred || outcome.taken) {
+            endInstPC = outcome.branch.pc;
+        } else {
+            endInstPC = (target.startPC + predictWidth) &
+                ~mask(floorLog2(predictWidth) - 1);
         }
 
         for (const auto &entry : target.predBTBEntries) {
             if (entry.valid && entry.pc >= target.startPC &&
                 entry.pc <= endInstPC) {
-                branches.push_back(makeBranchUpdate(entry, target, false));
+                branches.push_back(makeBranchUpdate(entry, outcome, false));
             }
         }
     }
 
-    void setBTBEntryCandidate(
-        const BTBEntry &entry, bool isOld, const FetchTarget &target)
+    void setBTBEntryCandidate(const BTBEntry &entry, bool isOld)
     {
         btbEntryCandidate = entry.valid ?
             std::optional<BTBEntry>(entry) : std::nullopt;
@@ -530,7 +547,7 @@ struct PreparedUpdate
                 branch.matchesMbtbMissCandidate = true;
             }
         }
-        branches.push_back(makeBranchUpdate(entry, target, true));
+        branches.push_back(makeBranchUpdate(entry, outcome, true));
     }
 
     void markResolved(Addr resolvedInstPC)
@@ -542,20 +559,79 @@ struct PreparedUpdate
         }
     }
 
+    void applyResolveEvent(const FullResolveEvent &event)
+    {
+        for (auto &branch : branches) {
+            if (branch.entry.valid && branch.entry.pc == event.pc) {
+                branch.actualTaken = event.taken;
+                branch.actualTarget = event.target;
+                branch.controlMispred = event.mispredicted;
+                branch.resolvedThisAttempt = true;
+            }
+        }
+    }
+
   private:
+    static BranchInfo branchInfo(const FullResolveEvent &event)
+    {
+        BranchInfo branch;
+        branch.pc = event.pc;
+        branch.target = event.target;
+        branch.isCond = event.isCond;
+        branch.isIndirect = event.isIndirect;
+        branch.isDirect = event.isDirect;
+        branch.isCall = event.isCall;
+        branch.isReturn = event.isReturn;
+        branch.size = event.size;
+        return branch;
+    }
+
+    static ControlFlowOutcome makeControlFlowOutcome(
+        const FetchTarget &target,
+        const std::vector<FullResolveEvent> &resolveEvents)
+    {
+        if (resolveEvents.empty()) {
+            return ControlFlowOutcome{
+                target.exeBranchInfo,
+                target.exeTaken,
+                target.squashType == SQUASH_CTRL &&
+                    target.squashPC == target.exeBranchInfo.pc,
+                false
+            };
+        }
+
+        const FullResolveEvent *frontier = nullptr;
+        const FullResolveEvent *terminal = nullptr;
+        for (const auto &event : resolveEvents) {
+            if (!frontier || event.seqNum > frontier->seqNum) {
+                frontier = &event;
+            }
+            if ((event.taken || event.mispredicted) &&
+                (!terminal || event.seqNum < terminal->seqNum)) {
+                terminal = &event;
+            }
+        }
+
+        const auto &primary = terminal ? *terminal : *frontier;
+        return ControlFlowOutcome{
+            branchInfo(primary), primary.taken, primary.mispredicted, true
+        };
+    }
+
     static BranchUpdate makeBranchUpdate(
-        BTBEntry entry, const FetchTarget &target, bool isMbtbMissCandidate)
+        BTBEntry entry, const ControlFlowOutcome &outcome,
+        bool isMbtbMissCandidate)
     {
         const bool actualTaken =
-            target.exeTaken && target.exeBranchInfo.pc == entry.pc;
+            outcome.taken && outcome.branch.pc == entry.pc;
         if (isMbtbMissCandidate && !actualTaken) {
             entry.alwaysTaken = false;
         }
         return BranchUpdate{
             entry,
             actualTaken,
-            target.exeBranchInfo.target,
-            target.squashType == SQUASH_CTRL && target.squashPC == entry.pc,
+            outcome.branch.target,
+            outcome.controlMispred && outcome.branch.pc == entry.pc,
             false,
             !isMbtbMissCandidate,
             isMbtbMissCandidate

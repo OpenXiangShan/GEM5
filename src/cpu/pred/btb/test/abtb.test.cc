@@ -65,7 +65,7 @@ void updateABTB(FetchTarget &stream, AheadBTB *abtb) {
     // components use index 0, so do not ask MBTB to read ABTB's metadata here.
     PreparedUpdate update(stream, abtb->predictWidth);
     update.setBTBEntryCandidate(
-        BTBEntry(stream.exeBranchInfo), false, stream);
+        BTBEntry(stream.exeBranchInfo), false);
     abtb->update(stream, update);
 }
 

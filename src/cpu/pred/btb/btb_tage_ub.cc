@@ -374,7 +374,7 @@ BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
 bool
 BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     const BTBEntry &entry, bool actualTaken, const TagePrediction &pred,
-    const BranchPredictionMeta &meta, const FetchTarget &stream)
+    const BranchPredictionMeta &meta, bool controlMispred)
 {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
@@ -442,9 +442,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
         }
     }
 
-    const bool thisFbMispred =
-        stream.squashType == SquashType::SQUASH_CTRL &&
-        stream.squashPC == entry.pc;
+    const bool thisFbMispred = controlMispred;
     if (getDelay() == 2 && thisFbMispred) {
         tageStats.updateMispred++;
         if (!usedAlt && mainInfo.found) {
@@ -536,7 +534,8 @@ BTBTAGEUpperBound::update(
         }
 
         bool needAllocate = updatePredictorStateAndCheckAllocation(
-            btbEntry, actualTaken, storedPred, storedMeta, stream);
+            btbEntry, actualTaken, storedPred, storedMeta,
+            branch.controlMispred);
 
         if (needAllocate) {
             uint64_t allocatedTable = 0;
@@ -553,7 +552,7 @@ BTBTAGEUpperBound::update(
         tageStats.recomputedVsActualDiff++;
     }
     if (getDelay() < 2) {
-        checkUtageUpdateMisspred(stream);
+        checkUtageUpdateMisspred(stream, update);
     }
 }
 

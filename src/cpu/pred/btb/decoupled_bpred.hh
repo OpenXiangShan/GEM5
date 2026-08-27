@@ -757,10 +757,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(ThreadID tid, Addr new_pc);
 
     // Helper functions for update
-    bool resolveUpdate(FetchTargetId target_id,
-                       const std::vector<uint64_t> &resolved_inst_pcs,
-                       ThreadID tid);
-    PreparedUpdate prepareUpdate(const FetchTarget &target);
+    bool resolveUpdate(const std::vector<FullResolveEvent> &events);
+    PreparedUpdate prepareUpdate(
+        const FetchTarget &target,
+        const std::vector<FullResolveEvent> &events = {});
     void updatePredictorComponents(const FetchTarget &target,
                                    const PreparedUpdate &update);
     void updateStatistics(const FetchTarget &target,

@@ -50,6 +50,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/pred/btb/resolve_event.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -255,9 +256,9 @@ struct SquashVersion
 
 struct ResolveQueueEntry
 {
-    ThreadID resolvedTid;
-    uint64_t resolvedFTQId;
-    std::vector<uint64_t> resolvedInstPC;
+    ThreadID tid;
+    branch_prediction::btb_pred::FetchTargetId ftqId;
+    std::vector<branch_prediction::btb_pred::FullResolveEvent> events;
 };
 
 /** Struct that defines all backwards communication. */
@@ -296,13 +297,9 @@ struct TimeStruct
         StallReason lqHeadStallReason;
         StallReason sqHeadStallReason;
 
-        struct ResolvedCFIEntry
-        {
-            uint64_t ftqId;
-            uint64_t pc;
-        };
-        /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
-        std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
+        /** Resolved control-flow facts produced this cycle. */
+        std::vector<branch_prediction::btb_pred::FullResolveEvent>
+            resolvedCFIs;  // *F
 
         /** IEW detected a redirect before the delayed formal squash reaches Fetch. */
         bool redirectPending = false;  // *F

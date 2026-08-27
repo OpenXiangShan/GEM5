@@ -304,7 +304,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned instShiftAmt {1};
 
     // use for microtage updatemispred counting
-    void checkUtageUpdateMisspred(const FetchTarget &stream);
+    void checkUtageUpdateMisspred(
+        const FetchTarget &stream, const PreparedUpdate &update);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -491,7 +492,7 @@ private:
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                 bool control_mispred);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,

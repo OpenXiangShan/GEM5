@@ -167,7 +167,7 @@ class BTBTAGEUpperBound : public BTBTAGE
                                                 bool actualTaken,
                                                 const TagePrediction &pred,
                                                 const BranchPredictionMeta &meta,
-                                                const FetchTarget &stream);
+                                                bool controlMispred);
     bool allocateExactEntry(const BTBEntry &entry, bool actualTaken,
                             unsigned startTable,
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,

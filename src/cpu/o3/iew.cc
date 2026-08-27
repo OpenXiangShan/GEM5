@@ -1589,14 +1589,6 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
-    if (inst->isControl()) {
-        auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
-        TimeStruct::IewComm::ResolvedCFIEntry entry;
-        entry.ftqId = inst->getFtqId();
-        entry.pc = inst->getPC();
-        resolved_cfis.push_back(entry);
-    }
-
     if (!fetchRedirect[tid] ||
         !toCommit->squash[tid] ||
         toCommit->squashedSeqNum[tid] > inst->seqNum) {
@@ -1609,6 +1601,30 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
             new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
             inst->pcState(*new_pc);
+        }
+
+        if (inst->isControl()) {
+            std::unique_ptr<PCStateBase> actual_next(inst->pcState().clone());
+            inst->staticInst->advancePC(*actual_next);
+            auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
+            resolved_cfis.push_back(
+                branch_prediction::btb_pred::FullResolveEvent{
+                    tid,
+                    inst->getFtqId(),
+                    inst->seqNum,
+                    inst->getPC(),
+                    actual_next->instAddr(),
+                    inst->branching(),
+                    inst->mispredicted(),
+                    inst->staticInst->isCondCtrl(),
+                    inst->staticInst->isIndirectCtrl(),
+                    inst->staticInst->isDirectCtrl(),
+                    inst->staticInst->isCall(),
+                    inst->staticInst->isReturn() &&
+                        !inst->staticInst->isNonSpeculative() &&
+                        !inst->staticInst->isDirectCtrl(),
+                    static_cast<uint8_t>(inst->getInstBytes())
+                });
         }
 
         if (inst->mispredicted() && !loadNotExecuted &&

@@ -237,7 +237,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     unsigned instShiftAmt {1};
 
     // used for MicroTAGE update misprediction counting
-    void checkUtageUpdateMisspred(const FetchTarget &stream);
+    void checkUtageUpdateMisspred(
+        const FetchTarget &stream, const PreparedUpdate &update);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -374,14 +375,19 @@ public:
         S3Update
     };
 
-    void trainEntries(const std::vector<BTBEntry> &entries_to_update,
+    struct TrainingEntry
+    {
+        BTBEntry entry;
+        bool actualTaken;
+        bool controlMispred;
+    };
+
+    void trainEntries(const std::vector<TrainingEntry> &entries_to_update,
                       const std::shared_ptr<TageMeta> &predMeta,
                       const Addr &startPC,
                       ThreadID tid,
                       uint8_t asidHash,
-                      TrainingMode mode,
-                      const FetchTarget *stream,
-                      const CondTakens *teacherCondTakens);
+                      TrainingMode mode);
     void trainResolvedEntries(const PreparedUpdate &update,
                               const std::shared_ptr<TageMeta> &predMeta,
                               const Addr &startPC,
@@ -416,7 +422,7 @@ public:
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                 bool control_mispred);
     // Reuse the provider/allocation policy under an S3-teacher mismatch definition.
     bool updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
                                  bool actual_taken,

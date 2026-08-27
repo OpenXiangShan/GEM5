@@ -547,7 +547,7 @@ MBTB::prepareUpdate(const FetchTarget &stream, PreparedUpdate &update)
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
     for (auto &e: predBTBEntries) {
-        if (stream.exeBranchInfo == e) {
+        if (update.outcome.branch == e) {
             pred_branch_hit = true;
             entry_to_write = e;
             break;
@@ -556,9 +556,10 @@ MBTB::prepareUpdate(const FetchTarget &stream, PreparedUpdate &update)
     bool is_old_entry = pred_branch_hit;
 
     // If branch was not predicted but was actually taken in execution, create new entry
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", stream.exeBranchInfo.pc);
-        BTBEntry new_entry = BTBEntry(stream.exeBranchInfo);
+    if (!pred_branch_hit && update.outcome.taken) {
+        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n",
+                update.outcome.branch.pc);
+        BTBEntry new_entry = BTBEntry(update.outcome.branch);
         new_entry.valid = true;
         // For conditional branches, initialize as always taken
         if (new_entry.isCond) {
@@ -572,14 +573,15 @@ MBTB::prepareUpdate(const FetchTarget &stream, PreparedUpdate &update)
         entry_to_write = new_entry;
         is_old_entry = false;
     } else {
-        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
-                pred_branch_hit, stream.exeTaken);
+        DPRINTF(BTB,
+                "Not creating new entry: pred_branch_hit=%d, taken=%d\n",
+                pred_branch_hit, update.outcome.taken);
         // Existing entries will be updated in update()
     }
 
     // Set tag and update packet metadata for use in update().
     entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
-    update.setBTBEntryCandidate(entry_to_write, is_old_entry, stream);
+    update.setBTBEntryCandidate(entry_to_write, is_old_entry);
 }
 
 /**

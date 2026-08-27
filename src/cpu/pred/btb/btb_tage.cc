@@ -586,14 +586,13 @@ bool
 BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             bool control_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
     auto &alt_info = pred.altInfo;
     bool used_alt = pred.useAlt;
     // Use base table instead of entry.ctr for fallback prediction
-    Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
     bool use_provider = main_info.found && !used_alt;
@@ -678,8 +677,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
+    bool this_fb_mispred = control_mispred;
     if (this_fb_mispred) {
         tageStats.mispredictBranchHasProvider += main_info.found;
         tageStats.mispredictBranchUseProvider += use_provider;
@@ -963,7 +961,8 @@ BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
         }
 
         // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, actual_taken, recomputed, branch.controlMispred);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;
@@ -1036,13 +1035,14 @@ BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
         tageStats.recomputedVsOriginalDiff++;
     }
     if (getDelay() <2){
-        checkUtageUpdateMisspred(stream);
+        checkUtageUpdateMisspred(stream, update);
     }
     DPRINTF(TAGE, "end update\n");
 }
 
 void
-BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
+BTBTAGE::checkUtageUpdateMisspred(
+    const FetchTarget &stream, const PreparedUpdate &update) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch
@@ -1063,9 +1063,11 @@ BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                (first_taken_pc != 0 && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred =
+        (first_taken_pc == 0 && update.outcome.taken) ||
+        (first_taken_pc != 0 && !update.outcome.taken);
+    bool branch_mispred = update.outcome.taken &&
+        first_taken_pc != update.outcome.branch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }

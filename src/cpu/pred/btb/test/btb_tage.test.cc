@@ -1208,7 +1208,7 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
     stream = setMispredStream(stream);
 
     PreparedUpdate update(stream, 64);
-    update.setBTBEntryCandidate(newEntry, false, stream);
+    update.setBTBEntryCandidate(newEntry, false);
     tage->update(stream, update);
 
     int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
@@ -1237,7 +1237,7 @@ TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
     PreparedUpdate update(stream, 64);
     BTBEntry mbtbCandidate = finalEntry;
     mbtbCandidate.alwaysTaken = true;
-    update.setBTBEntryCandidate(mbtbCandidate, false, stream);
+    update.setBTBEntryCandidate(mbtbCandidate, false);
     update.markResolved(finalEntry.pc);
     tage->setResolvedUpdate(true);
     tage->update(stream, update);
@@ -1446,7 +1446,7 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     stream = setMispredStream(stream);
 
     PreparedUpdate update(stream, 64);
-    update.setBTBEntryCandidate(newEntry, false, stream);
+    update.setBTBEntryCandidate(newEntry, false);
     tage->update(stream, update);
 
     EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));

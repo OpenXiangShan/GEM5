@@ -508,7 +508,7 @@ bool
 MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             bool control_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -589,8 +589,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
+    bool this_fb_mispred = control_mispred;
     // No allocation if no misprediction
     if (!this_fb_mispred) {
         return false;
@@ -895,7 +894,7 @@ MicroTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
     }
 
     trainResolvedEntries(update, predMeta, startAddr, stream);
-    checkUtageUpdateMisspred(stream);
+    checkUtageUpdateMisspred(stream, update);
     DPRINTF(UTAGE, "end update\n");
 }
 
@@ -923,21 +922,29 @@ MicroTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     // Only train the conditional prefix that remains reachable under the
     // final-stage teacher prediction for this fetch block.
     CondTakens teacher_cond_takens;
-    auto entries_to_update = prepareS3UpdateEntriesFromAbtbMeta(
+    auto btb_entries = prepareS3UpdateEntriesFromAbtbMeta(
         predMeta->abtbEntries, s3Pred, teacher_cond_takens);
+    std::vector<TrainingEntry> entries_to_update;
+    entries_to_update.reserve(btb_entries.size());
+    for (const auto &entry : btb_entries) {
+        Addr branch_pc = entry.pc;
+        auto teacher_it = CondTakens_find(teacher_cond_takens, branch_pc);
+        const bool actual_taken =
+            teacher_it != teacher_cond_takens.end() && teacher_it->second;
+        entries_to_update.push_back(
+            TrainingEntry{entry, actual_taken, false});
+    }
     trainEntries(entries_to_update, predMeta, startAddr, tid, s3Pred.asidHash,
-                 TrainingMode::S3Update, nullptr, &teacher_cond_takens);
+                 TrainingMode::S3Update);
 }
 
 void
-MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
+MicroTAGE::trainEntries(const std::vector<TrainingEntry> &entries_to_update,
                         const std::shared_ptr<TageMeta> &predMeta,
                         const Addr &startPC,
                         ThreadID tid,
                         uint8_t asidHash,
-                        TrainingMode mode,
-                        const FetchTarget *stream,
-                        const CondTakens *teacherCondTakens)
+                        TrainingMode mode)
 {
     const bool isS3Update = mode == TrainingMode::S3Update;
     bool utage_hit = false;
@@ -961,24 +968,14 @@ MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
                 btb_entry, startPC, predMeta, tid, asidHash);
         };
 
-    for (const auto &btb_entry : entries_to_update) {
+    for (const auto &training_entry : entries_to_update) {
+        const auto &btb_entry = training_entry.entry;
         if (isS3Update) {
             tageStats.s3UpdateEntries++;
         }
 
-        bool actual_taken = false;
-        if (isS3Update) {
-            assert(teacherCondTakens != nullptr);
-            const auto &teacher_cond_takens = *teacherCondTakens;
-            Addr branch_pc = btb_entry.pc;
-            auto teacher_it = CondTakens_find(teacher_cond_takens, branch_pc);
-            if (teacher_it != teacher_cond_takens.end()) {
-                actual_taken = teacher_it->second;
-            }
-        } else {
-            assert(stream != nullptr);
-            actual_taken = stream->exeTaken && stream->exeBranchInfo == btb_entry;
-        }
+        const bool actual_taken = training_entry.actualTaken;
+        const bool control_mispred = training_entry.controlMispred;
 
         auto recomputed = get_prediction_for_training(btb_entry);
 
@@ -988,7 +985,8 @@ MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
 
         bool need_allocate = isS3Update
             ? updatePredictorStateAndCheckAllocationS3(btb_entry, actual_taken, recomputed)
-            : updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, *stream);
+            : updatePredictorStateAndCheckAllocation(
+                btb_entry, actual_taken, recomputed, control_mispred);
 
         if (!need_allocate) {
             continue;
@@ -1048,7 +1046,7 @@ MicroTAGE::trainResolvedEntries(
     const Addr &startPC,
     const FetchTarget &stream)
 {
-    std::vector<BTBEntry> entries;
+    std::vector<TrainingEntry> entries;
     entries.reserve(update.branches.size());
     for (const auto &branch : update.branches) {
         const auto &entry = branch.entry;
@@ -1056,15 +1054,17 @@ MicroTAGE::trainResolvedEntries(
             (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
             continue;
         }
-        entries.push_back(entry);
+        entries.push_back(TrainingEntry{
+            entry, branch.actualTaken, branch.controlMispred});
     }
 
     trainEntries(entries, predMeta, startPC, stream.tid, stream.asidHash,
-                 TrainingMode::Resolved, &stream, nullptr);
+                 TrainingMode::Resolved);
 }
 
 void
-MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
+MicroTAGE::checkUtageUpdateMisspred(
+    const FetchTarget &stream, const PreparedUpdate &update) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "checkUtageUpdateMisspred: no prediction meta, skip\n");
@@ -1092,10 +1092,11 @@ MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (!has_taken_pred && stream.exeTaken) ||
-                                (has_taken_pred && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && has_taken_pred &&
-                          first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred =
+        (!has_taken_pred && update.outcome.taken) ||
+        (has_taken_pred && !update.outcome.taken);
+    bool branch_mispred = update.outcome.taken && has_taken_pred &&
+        first_taken_pc != update.outcome.branch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
