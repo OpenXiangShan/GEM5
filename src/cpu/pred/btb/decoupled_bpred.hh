@@ -434,7 +434,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void trapSquash(unsigned fsq_id, Addr last_committed_pc,
                     const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
 
-    void commit(unsigned fsqID, ThreadID tid);
+    void commit(FetchTargetId fsqID, ThreadID tid);
 
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
@@ -757,11 +757,14 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(ThreadID tid, Addr new_pc);
 
     // Helper functions for update
-    bool resolveUpdate(unsigned &target_id, ThreadID tid);
-    void prepareResolveUpdateEntries(unsigned &target_id, ThreadID tid);
-    void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
-    void updatePredictorComponents(FetchTarget &target);
-    void updateStatistics(const FetchTarget &target);
+    bool resolveUpdate(FetchTargetId target_id,
+                       const std::vector<uint64_t> &resolved_inst_pcs,
+                       ThreadID tid);
+    PreparedUpdate prepareUpdate(const FetchTarget &target);
+    void updatePredictorComponents(const FetchTarget &target,
+                                   const PreparedUpdate &update);
+    void updateStatistics(const FetchTarget &target,
+                          const PreparedUpdate &update);
     void notifyResolveSuccess(ThreadID tid);
     void notifyResolveFailure(ThreadID tid);
     void blockPredictionOnce(ThreadID tid);

@@ -355,15 +355,7 @@ struct FetchTarget
     bool exeTaken;         // whether the branch is taken(resolved)
     BranchInfo exeBranchInfo; // executed branch info
 
-    BTBEntry updateNewBTBEntry; // the possible new entry, set by L1BTB.getAndSetNewBTBEntry, used by L1BTB/L0BTB.update
-    bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
     bool resolved;  // whether the branch is resolved/executed
-
-    // below two should be set before components update
-    // used to decide which branches to update (don't update if not actually executed)
-    Addr updateEndInstPC;   // end pc of the squash inst/taken inst
-    // for components to decide which entries to update
-    std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
@@ -400,10 +392,7 @@ struct FetchTarget
          falseHit(false),
          exeTaken(false),
          exeBranchInfo(BranchInfo()),
-         updateNewBTBEntry(BTBEntry()),
-         updateIsOldEntry(false),
          resolved(false),
-         updateEndInstPC(0),
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),
          predSource(0),
@@ -420,7 +409,6 @@ struct FetchTarget
    {
        predMetas.fill(nullptr);
        predBTBEntries.clear();
-       updateBTBEntries.clear();
    }
 
     // the default exe result should be consistent with prediction
@@ -485,37 +473,51 @@ struct FetchTarget
         return update;
     }
 
-    // should be called before components update
-    void setUpdateInstEndPC(unsigned predictWidth)
+};
+
+/**
+ * Predictor update data derived from one FetchTarget.
+ *
+ * FetchTarget owns the immutable prediction snapshot and the resolved control
+ * outcome.  PreparedUpdate owns only the temporary branch selection used by
+ * predictor components for one update attempt.  Keeping these values separate
+ * prevents resolve and commit from communicating through mutable FTQ scratch.
+ */
+struct PreparedUpdate
+{
+    Addr endInstPC = 0;
+    std::vector<BTBEntry> btbEntries;
+    BTBEntry newBTBEntry;
+    bool hasBTBEntryCandidate = false;
+    bool isOldEntry = false;
+
+    PreparedUpdate() = default;
+
+    PreparedUpdate(const FetchTarget &target, unsigned predictWidth)
     {
-        if (squashType == SQUASH_NONE) {
-            if (exeTaken) { // taken inst pc
-                updateEndInstPC = getControlPC();
-            } else { // natural fall through, align to the next block
-                // assert(halfAligned);
-                updateEndInstPC = (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-            }
+        if (target.squashType == SQUASH_NONE) {
+            endInstPC = target.exeTaken ?
+                target.getControlPC() :
+                (target.startPC + predictWidth) &
+                    ~mask(floorLog2(predictWidth) - 1);
         } else {
-            updateEndInstPC = squashPC;
+            endInstPC = target.squashPC;
         }
-    }
 
-    // should be called before components update, after setUpdateInstEndPC
-    void setUpdateBTBEntries()
-    {
-        updateBTBEntries.clear();
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
-                updateBTBEntries.push_back(entry);
+        for (const auto &entry : target.predBTBEntries) {
+            if (entry.valid && entry.pc >= target.startPC &&
+                entry.pc <= endInstPC) {
+                btbEntries.push_back(entry);
             }
         }
     }
 
-    // Argument resolved pc could not match any BTB entry branch pc,
-    // Just ignore it in that case.
-    void markBTBEntryResolved(Addr resolvedInstPC)
+    void markResolved(Addr resolvedInstPC)
     {
-        for (auto &entry : updateBTBEntries) {
+        if (hasBTBEntryCandidate && newBTBEntry.pc == resolvedInstPC) {
+            newBTBEntry.resolved = true;
+        }
+        for (auto &entry : btbEntries) {
             if (entry.valid && entry.pc == resolvedInstPC) {
                 entry.resolved = true;
             }

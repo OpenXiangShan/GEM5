@@ -63,9 +63,11 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 void updateABTB(FetchTarget &stream, AheadBTB *abtb) {
     // ABTB and MBTB use different metadata types.  In UNIT_TEST builds both
     // components use index 0, so do not ask MBTB to read ABTB's metadata here.
-    stream.updateNewBTBEntry = BTBEntry(stream.exeBranchInfo);
-    stream.updateIsOldEntry = false;
-    abtb->update(stream);
+    PreparedUpdate update(stream, abtb->predictWidth);
+    update.newBTBEntry = BTBEntry(stream.exeBranchInfo);
+    update.hasBTBEntryCandidate = true;
+    update.isOldEntry = false;
+    abtb->update(stream, update);
 }
 
 

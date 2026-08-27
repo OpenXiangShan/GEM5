@@ -132,7 +132,8 @@ class UBTB : public TimedBaseBTBPredictor
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
-    void update(const FetchTarget &stream) override;
+    void update(const FetchTarget &stream,
+                const PreparedUpdate &update) override;
 
     /** for statistics only
      * @param stream The fetch stream containing execution results

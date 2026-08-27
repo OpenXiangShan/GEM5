@@ -138,9 +138,12 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
-    bool canResolveUpdate(const FetchTarget &entry) override;
-    void doResolveUpdate(const FetchTarget &entry) override;
+    void update(const FetchTarget &entry,
+                const PreparedUpdate &update) override;
+    bool canResolveUpdate(const FetchTarget &entry,
+                          const PreparedUpdate &update) override;
+    void doResolveUpdate(const FetchTarget &entry,
+                         const PreparedUpdate &update) override;
     // Train MicroTAGE from the final-stage teacher prediction instead of commit-time truth.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
     void setAbtbComponentIdx(int idx) { abtbComponentIdx = idx; }
@@ -396,7 +399,8 @@ public:
                                            uint8_t asidHash = 0);
 
     // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    std::vector<BTBEntry> prepareUpdateEntries(
+        const FetchTarget &stream, const PreparedUpdate &update);
     // Build the reachable conditional prefix for S3 teacher update.
     std::vector<BTBEntry> prepareS3UpdateEntries(const FullBTBPrediction &s3Pred);
     std::vector<BTBEntry> prepareS3UpdateEntriesFromAbtbMeta(

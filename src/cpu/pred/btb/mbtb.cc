@@ -531,14 +531,14 @@ MBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
  * 3. If miss and branch was taken:
  *    - Create a new entry
  *    - For conditional branches, initialize as always taken with counter = 1
- * 4. Set the tag and update stream metadata for later use in update()
- * 
+ * 4. Set the tag and packet metadata for later use in update()
+ *
  * Note: This is only called in L1 BTB during update
  */
 void
-MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
+MBTB::prepareUpdate(const FetchTarget &stream, PreparedUpdate &update)
 {
-    DPRINTF(BTB, "getAndSetNewBTBEntry called for pc %#lx\n", stream.startPC);
+    DPRINTF(BTB, "prepareUpdate called for pc %#lx\n", stream.startPC);
     // Get prediction metadata from previous stages
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &predBTBEntries = meta->hit_entries;
@@ -578,10 +578,11 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
         // Existing entries will be updated in update()
     }
 
-    // Set tag and update stream metadata for use in update()
+    // Set tag and update packet metadata for use in update().
     entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
-    stream.updateNewBTBEntry = entry_to_write;
-    stream.updateIsOldEntry = is_old_entry;
+    update.newBTBEntry = entry_to_write;
+    update.hasBTBEntryCandidate = entry_to_write.valid;
+    update.isOldEntry = is_old_entry;
 }
 
 /**
@@ -801,26 +802,28 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
  * 5. Update MRU information
  */
 void
-MBTB::update(const FetchTarget &stream)
+MBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     // 1. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
-    auto entries_need_update = prepareUpdateEntries(stream);
+    auto entries_need_update = prepareUpdateEntries(stream, update);
     for (auto &entry : entries_need_update) {
         updateBTBEntry(entry, stream);
     }
 }
 
 std::vector<BTBEntry>
-MBTB::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
+MBTB::prepareUpdateEntries(
+    const FetchTarget &stream, const PreparedUpdate &update)
+{
+    auto all_entries = update.btbEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
+    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
+        BTBEntry potential_new_entry = update.newBTBEntry;
         bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;

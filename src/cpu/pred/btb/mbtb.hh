@@ -158,13 +158,8 @@ class MBTB : public TimedBaseBTBPredictor
                                const boost::dynamic_bitset<> &history,
                                FullBTBPrediction &pred) override;
 
-    /**
-     * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
-     *        only in L1BTB will this function be called before update
-     * 
-     * @param stream 
-     */
-    void getAndSetNewBTBEntry(FetchTarget &stream);
+    /** Derive the old/new BTB entry selected for this update attempt. */
+    void prepareUpdate(const FetchTarget &stream, PreparedUpdate &update);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
@@ -172,9 +167,11 @@ class MBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream) override;
+    void update(const FetchTarget &stream,
+                const PreparedUpdate &update) override;
 
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    std::vector<BTBEntry> prepareUpdateEntries(
+        const FetchTarget &stream, const PreparedUpdate &update);
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \

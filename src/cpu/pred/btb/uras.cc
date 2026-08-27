@@ -165,7 +165,7 @@ BTBuRAS::recoverState(const FetchTarget &entry)
 }
 
 void
-BTBuRAS::update(const FetchTarget &entry)
+BTBuRAS::update(const FetchTarget &entry, const PreparedUpdate &update)
 {
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;

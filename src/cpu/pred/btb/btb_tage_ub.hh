@@ -107,7 +107,8 @@ class BTBTAGEUpperBound : public BTBTAGE
     void recoverPHist(const boost::dynamic_bitset<> &history,
                       const FetchTarget &entry,
                       const PathHistoryUpdate &update) override;
-    void update(const FetchTarget &entry) override;
+    void update(const FetchTarget &entry,
+                const PreparedUpdate &update) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 
 #ifdef UNIT_TEST
@@ -172,7 +173,7 @@ class BTBTAGEUpperBound : public BTBTAGE
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,
                             uint64_t &allocatedTable);
     std::vector<BTBEntry> prepareUpperBoundUpdateEntries(
-        const FetchTarget &stream);
+        const FetchTarget &stream, const PreparedUpdate &update);
     void refreshContextStats(unsigned table);
     void notePredictionResult(const BTBEntry &btbEntry,
                               const TagePrediction &pred,

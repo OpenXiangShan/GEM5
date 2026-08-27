@@ -130,7 +130,7 @@ protected:
     // Helper function to commit a call instruction
     void commitCall(Addr startPC, Addr branchPC, std::shared_ptr<void> meta, unsigned size = 4) {
         auto commitStream = createCallCommitStream(startPC, branchPC, size, meta);
-        ras->update(commitStream);
+        ras->update(commitStream, PreparedUpdate());
     }
 
     std::unique_ptr<BTBRAS> ras;

@@ -51,7 +51,8 @@ class BTBuRAS : public TimedBaseBTBPredictor
 
         void recoverState(const FetchTarget &entry);
 
-        void update(const FetchTarget &entry) override;
+        void update(const FetchTarget &entry,
+                    const PreparedUpdate &update) override;
 
         int getSp() {return specSp;}
 

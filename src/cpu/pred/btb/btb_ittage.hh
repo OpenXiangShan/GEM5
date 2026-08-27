@@ -118,7 +118,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                       const FetchTarget &entry,
                       const PathHistoryUpdate &update) override;
 
-    void update(const FetchTarget &entry) override;
+    void update(const FetchTarget &entry,
+                const PreparedUpdate &update) override;
 
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 

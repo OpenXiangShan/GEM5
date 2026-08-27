@@ -413,12 +413,14 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<BTBEntry>
-MicroTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
+MicroTAGE::prepareUpdateEntries(
+    const FetchTarget &stream, const PreparedUpdate &update)
+{
+    auto all_entries = update.btbEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
+    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
+        BTBEntry potential_new_entry = update.newBTBEntry;
         bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;
@@ -853,7 +855,9 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
  * update backpressure and always lets the caller proceed.
  */
 bool
-MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
+MicroTAGE::canResolveUpdate(
+    const FetchTarget &stream, const PreparedUpdate &update)
+{
     if (usingS3Pred) {
         return true;
     }
@@ -889,7 +893,9 @@ MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
  * predictor state is updated by updateUsingS3Pred().
  */
 void
-MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
+MicroTAGE::doResolveUpdate(
+    const FetchTarget &stream, const PreparedUpdate &update)
+{
     if (usingS3Pred) {
         return;
     }
@@ -897,7 +903,7 @@ MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
     }
-    update(stream);
+    this->update(stream, update);
 }
 
 /**
@@ -906,7 +912,7 @@ MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
  * @param stream The fetch stream containing branch execution information
  */
 void
-MicroTAGE::update(const FetchTarget &stream) {
+MicroTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
     if (usingS3Pred) {
         DPRINTF(UTAGE, "update bypassed because usingS3Pred is enabled\n");
         return;
@@ -919,7 +925,7 @@ MicroTAGE::update(const FetchTarget &stream) {
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
+    auto entries_to_update = prepareUpdateEntries(stream, update);
 
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);

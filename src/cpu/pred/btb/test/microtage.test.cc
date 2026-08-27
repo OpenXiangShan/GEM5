@@ -92,11 +92,13 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.updateBTBEntries = {entry};
     stream.exeTaken = true;
     stream.exeBranchInfo = entry;
+    PreparedUpdate update;
+    update.btbEntries = {entry};
+    update.isOldEntry = true;
 
-    tage->update(stream);
+    tage->update(stream, update);
     EXPECT_FALSE(predictTaken(tage.get(), 0x1000, entry));
 }
 

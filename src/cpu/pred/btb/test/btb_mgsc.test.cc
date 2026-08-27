@@ -322,13 +322,14 @@ struct MgscHarness
         // Training update using prediction meta
         FetchTarget update_stream;
         update_stream.startPC = start_pc;
-        update_stream.updateBTBEntries = {entry};
-        update_stream.updateIsOldEntry = true;
         update_stream.resolved = true;
         update_stream.exeBranchInfo = entry;
         update_stream.exeTaken = actual_taken;
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(update_stream);
+        PreparedUpdate update;
+        update.btbEntries = {entry};
+        update.isOldEntry = true;
+        mgsc.update(update_stream, update);
 
         return result;
     }
@@ -510,13 +511,14 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
         stream.resolved = true;
         stream.exeBranchInfo = entry;
         stream.exeTaken = true;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(stream);
+        PreparedUpdate update;
+        update.btbEntries = {entry};
+        update.isOldEntry = true;
+        mgsc.update(stream, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
     }
 
@@ -524,13 +526,14 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
         stream.resolved = true;
         stream.exeBranchInfo = entry;
         stream.exeTaken = false;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(stream);
+        PreparedUpdate update;
+        update.btbEntries = {entry};
+        update.isOldEntry = true;
+        mgsc.update(stream, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));
     }
 }

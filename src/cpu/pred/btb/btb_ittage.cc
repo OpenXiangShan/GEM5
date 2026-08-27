@@ -316,7 +316,7 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
 }
 
 void
-BTBITTAGE::update(const FetchTarget &stream)
+BTBITTAGE::update(const FetchTarget &stream, const PreparedUpdate &update)
 {
     int &resetCnt = usesTidPartitionedStorage() ?
         usefulResetCntByThread[stream.tid] : usefulResetCnt;
@@ -326,11 +326,11 @@ BTBITTAGE::update(const FetchTarget &stream)
     Addr startAddr = stream.getRealStartPC();
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
     // update at the basis of btb entries
-    auto all_entries_to_update = stream.updateBTBEntries;
+    auto all_entries_to_update = update.btbEntries;
 
     // add new entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        all_entries_to_update.push_back(stream.updateNewBTBEntry);
+    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
+        all_entries_to_update.push_back(update.newBTBEntry);
     }
 
     // // only update indirect branches that are not returns

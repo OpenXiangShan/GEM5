@@ -96,7 +96,8 @@ namespace btb_pred {
 
         void recoverState(const FetchTarget &entry);
 
-        void update(const FetchTarget &entry) override;
+        void update(const FetchTarget &entry,
+                    const PreparedUpdate &update) override;
 
         // RAS prediction statistics require a concrete DynInst in production.
 #ifndef UNIT_TEST

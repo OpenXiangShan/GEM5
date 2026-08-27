@@ -388,11 +388,11 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
 
 
 void
-UBTB::update(const FetchTarget &stream)
+UBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = stream.updateEndInstPC;
+    Addr end_inst_pc = update.endInstPC;
 
     auto pred_hit_entry = meta->hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)

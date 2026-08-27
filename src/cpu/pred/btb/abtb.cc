@@ -564,9 +564,6 @@ std::vector<BTBEntry>
 AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
                             Addr end_inst_pc)
 {
-    // auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    // // hit entries whose corresponding insts are acutally executed
-    // Addr end_inst_pc = stream.updateEndInstPC;
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
     auto old_entries = hit_entries;
@@ -611,22 +608,24 @@ AheadBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
  */
 std::vector<BTBEntry>
 AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
-                                     const FetchTarget &stream)
+                                 const PreparedUpdate &update)
 {
     auto all_entries = old_entries;
 
     // since we don't want duplications in uBTB's entriesToUpdate,
     // which causes its counter to update twice unintentionally
     // we need to check if the new entry already exists in uBTB
-    bool pred_branch_hit = false;
-    for (auto &e: all_entries) {
-        if (stream.updateNewBTBEntry == e) {
-            pred_branch_hit = true;
-            break;
+    if (update.hasBTBEntryCandidate) {
+        bool pred_branch_hit = false;
+        for (auto &e: all_entries) {
+            if (update.newBTBEntry == e) {
+                pred_branch_hit = true;
+                break;
+            }
         }
-    }
-    if (!pred_branch_hit) {
-        all_entries.push_back(stream.updateNewBTBEntry);
+        if (!pred_branch_hit) {
+            all_entries.push_back(update.newBTBEntry);
+        }
     }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
@@ -807,14 +806,14 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
  * 5. Update MRU information
  */
 void
-AheadBTB::update(const FetchTarget &stream)
+AheadBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
 {
     if (usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
         return;
     }
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get();
-    Addr end_inst_pc = stream.updateEndInstPC;
+    Addr end_inst_pc = update.endInstPC;
 
     // 1. Process old entries
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
@@ -824,8 +823,8 @@ AheadBTB::update(const FetchTarget &stream)
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-    
+    auto entries_to_update = collectEntriesToUpdate(old_entries, update);
+
     // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
     for (auto &entry : entries_to_update) {
         Addr startPC = stream.getRealStartPC();

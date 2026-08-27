@@ -742,7 +742,8 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 }
 
 void
-DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
+DecoupledBPUWithBTB::updateStatistics(
+    const FetchTarget &target, const PreparedUpdate &update)
 {
     // Check if this target was mispredicted
     bool miss_predicted = target.squashType == SQUASH_CTRL;
@@ -772,16 +773,17 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
         }
     }
 
-    if (target.isHit || target.exeTaken) {
+    if ((target.isHit || target.exeTaken) &&
+        update.hasBTBEntryCandidate) {
         // Update BTB entry statistics
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            auto &btb_entry = target.updateNewBTBEntry;
+            const auto &btb_entry = update.newBTBEntry;
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = target.updateNewBTBEntry;
+            it->second.first = update.newBTBEntry;
         }
     }
 

@@ -182,7 +182,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream) override;
+    void update(const FetchTarget &stream,
+                const PreparedUpdate &update) override;
 
 
 
@@ -377,7 +378,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::vector<BTBEntry> collectEntriesToUpdate(
         const std::vector<BTBEntry>& old_entries,
-        const FetchTarget &stream);
+        const PreparedUpdate &update);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry

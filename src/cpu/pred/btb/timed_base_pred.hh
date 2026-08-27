@@ -47,6 +47,7 @@ class TimedBaseBTBPredictor: public SimObject
 #ifdef UNIT_TEST
     TimedBaseBTBPredictor();
     void setNumDelay(unsigned delay) { numDelay = delay; }
+    void setResolvedUpdate(bool enabled) { resolvedUpdate = enabled; }
     void setSmtTidPartitioned(bool partitioned)
     {
         smtTidPartitioned = partitioned;
@@ -85,12 +86,21 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void recoverPHist(const boost::dynamic_bitset<> &history,
                               const FetchTarget &entry,
                               const PathHistoryUpdate &update) {}
-    virtual void update(const FetchTarget &entry) {}
+    virtual void update(const FetchTarget &entry,
+                        const PreparedUpdate &update) {}
     virtual unsigned getDelay() {return numDelay;}
     virtual bool getResolvedUpdate() {return resolvedUpdate;}
     // Two-phase resolved update: probe first, then apply
-    virtual bool canResolveUpdate(const FetchTarget &entry) { return true; }
-    virtual void doResolveUpdate(const FetchTarget &entry) { update(entry); }
+    virtual bool canResolveUpdate(const FetchTarget &entry,
+                                  const PreparedUpdate &update)
+    {
+        return true;
+    }
+    virtual void doResolveUpdate(const FetchTarget &entry,
+                                 const PreparedUpdate &update)
+    {
+        this->update(entry, update);
+    }
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchTarget &entry, const DynInstPtr &inst) {}

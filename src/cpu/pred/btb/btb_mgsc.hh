@@ -193,7 +193,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       bool cond_taken);
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
+    void update(const FetchTarget &entry,
+                const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
@@ -300,7 +301,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             ThreadID tid, uint8_t asidHash);
 
     // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    std::vector<BTBEntry> prepareUpdateEntries(
+        const FetchTarget &stream, const PreparedUpdate &update);
 
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
                                const FetchTarget &stream);

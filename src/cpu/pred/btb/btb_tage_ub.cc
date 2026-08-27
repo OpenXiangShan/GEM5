@@ -492,12 +492,13 @@ BTBTAGEUpperBound::allocateExactEntry(
 }
 
 std::vector<BTBEntry>
-BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
+BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(
+    const FetchTarget &stream, const PreparedUpdate &update)
 {
-    auto allEntries = stream.updateBTBEntries;
+    auto allEntries = update.btbEntries;
 
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potentialNewEntry = stream.updateNewBTBEntry;
+    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
+        BTBEntry potentialNewEntry = update.newBTBEntry;
         bool newEntryTaken =
             stream.exeTaken && stream.getControlPC() == potentialNewEntry.pc;
         if (!newEntryTaken) {
@@ -532,9 +533,10 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
 }
 
 void
-BTBTAGEUpperBound::update(const FetchTarget &stream)
+BTBTAGEUpperBound::update(
+    const FetchTarget &stream, const PreparedUpdate &update)
 {
-    auto entriesToUpdate = prepareUpperBoundUpdateEntries(stream);
+    auto entriesToUpdate = prepareUpperBoundUpdateEntries(stream, update);
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);
     if (!predMeta) {

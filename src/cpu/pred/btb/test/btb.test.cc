@@ -64,8 +64,8 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     stream.exeBranchInfo = branch;
     stream.exeTaken = taken;
     stream.predMetas[0] = meta;
-    stream.updateEndInstPC = endInstPC;
     stream.squashType = SQUASH_CTRL; // mispredict default
+    stream.squashPC = endInstPC;
     return stream;
 }
 
@@ -139,15 +139,15 @@ predictUpdateCycle(MBTB* btb,
     if (btb->getDelay() < stagePreds.size()) {
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
-    stream.setUpdateBTBEntries();
-    btb->getAndSetNewBTBEntry(stream);
+    PreparedUpdate update(stream, btb->predictWidth);
+    btb->prepareUpdate(stream, update);
 
-    for (auto &entry : stream.updateBTBEntries) {
+    for (auto &entry : update.btbEntries) {
         entry.resolved = true;
     }
-    stream.updateNewBTBEntry.resolved = true;
+    update.newBTBEntry.resolved = true;
 
-    btb->update(stream);
+    btb->update(stream, update);
 
     // Return final predictions after update
     stagePreds.clear();
@@ -277,7 +277,7 @@ TEST_F(BTBTest, TidPartitionKeepsSamePcEntriesIndependent) {
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]
-// 3. getAndSetNewBTBEntry, only L1 BTB has this function
+// 3. prepareUpdate, only L1 BTB derives the old/new entry candidate
 // 4. update, update btb entries
 
 // Test basic prediction after update
@@ -434,9 +434,10 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     auto meta = mbtb->getPredictionMeta();
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
-    mbtb->getAndSetNewBTBEntry(stream);
-    mbtb->update(stream);
-    
+    PreparedUpdate update(stream, mbtb->predictWidth);
+    mbtb->prepareUpdate(stream, update);
+    mbtb->update(stream, update);
+
     // Check final predictions
     stagePreds.clear();
     stagePreds.resize(4);
@@ -445,6 +446,102 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
     verifyPrediction(stagePreds, mbtb->getDelay(), expectedBranches);
+}
+
+TEST(PreparedUpdateTest, FiltersAndMarksResolvedBranches)
+{
+    FetchTarget target;
+    target.startPC = 0x1000;
+    target.exeTaken = true;
+    target.squashType = SQUASH_CTRL;
+    target.squashPC = 0x1004;
+
+    auto branch_a = BTBEntry(createBranchInfo(0x1000, 0x1010, true));
+    auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
+    auto branch_c = BTBEntry(createBranchInfo(0x1008, 0x3000, true));
+    branch_a.valid = true;
+    branch_b.valid = true;
+    branch_c.valid = true;
+    target.predBTBEntries = {branch_a, branch_b, branch_c};
+
+    PreparedUpdate update(target, 64);
+    ASSERT_EQ(update.btbEntries.size(), 2);
+    EXPECT_EQ(update.btbEntries[0].pc, branch_a.pc);
+    EXPECT_EQ(update.btbEntries[1].pc, branch_b.pc);
+
+    update.markResolved(branch_a.pc);
+    update.markResolved(branch_a.pc);
+    update.markResolved(0xdeadbeef);
+    EXPECT_TRUE(update.btbEntries[0].resolved);
+    EXPECT_FALSE(update.btbEntries[1].resolved);
+
+    update.newBTBEntry = branch_b;
+    update.hasBTBEntryCandidate = true;
+    update.markResolved(branch_b.pc);
+    EXPECT_TRUE(update.newBTBEntry.resolved);
+    EXPECT_TRUE(update.btbEntries[1].resolved);
+
+    // Packet-local eligibility must not leak back into the FTQ snapshot.  A
+    // retry reconstructs the same selection without inheriting resolved bits.
+    EXPECT_FALSE(target.predBTBEntries[0].resolved);
+    EXPECT_FALSE(target.predBTBEntries[1].resolved);
+    PreparedUpdate retry(target, 64);
+    ASSERT_EQ(retry.btbEntries.size(), 2);
+    EXPECT_FALSE(retry.btbEntries[0].resolved);
+    EXPECT_FALSE(retry.btbEntries[1].resolved);
+}
+
+TEST_F(BTBTest, ResolvedUpdateFiltersUnmarkedEntries)
+{
+    mbtb->setResolvedUpdate(true);
+
+    auto branch_a = BTBEntry(createBranchInfo(0x1000, 0x1010, true));
+    auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
+    branch_a.valid = true;
+    branch_b.valid = true;
+    branch_a.resolved = true;
+
+    FetchTarget target;
+    PreparedUpdate update;
+    update.btbEntries = {branch_a, branch_b};
+    update.isOldEntry = true;
+
+    const auto filtered = mbtb->prepareUpdateEntries(target, update);
+    ASSERT_EQ(filtered.size(), 1);
+    EXPECT_EQ(filtered.front().pc, branch_a.pc);
+}
+
+TEST_F(BTBTest, PreparedUpdateDistinguishesMissingAndNewCandidate)
+{
+    constexpr Addr start_pc = 0x1000;
+    auto branch = createBranchInfo(0x1004, 0x2000, true);
+    boost::dynamic_bitset<> history(8, 0);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    mbtb->putPCHistory(start_pc, history, stage_preds);
+    auto meta = mbtb->getPredictionMeta();
+
+    auto not_taken = setupStream(
+        start_pc, branch, false, meta, branch.pc);
+    PreparedUpdate no_candidate(not_taken, mbtb->predictWidth);
+    mbtb->prepareUpdate(not_taken, no_candidate);
+    EXPECT_FALSE(no_candidate.hasBTBEntryCandidate);
+    EXPECT_TRUE(mbtb->prepareUpdateEntries(not_taken, no_candidate).empty());
+
+    auto taken = setupStream(start_pc, branch, true, meta, branch.pc);
+    PreparedUpdate new_candidate(taken, mbtb->predictWidth);
+    mbtb->prepareUpdate(taken, new_candidate);
+    EXPECT_TRUE(new_candidate.hasBTBEntryCandidate);
+    EXPECT_FALSE(new_candidate.isOldEntry);
+    EXPECT_TRUE(new_candidate.newBTBEntry.valid);
+    EXPECT_EQ(new_candidate.newBTBEntry.pc, branch.pc);
+
+    auto zero_pc_branch = createBranchInfo(0, 0x2000, true);
+    auto zero_pc_taken = setupStream(0, zero_pc_branch, true, meta, 0);
+    PreparedUpdate zero_pc_candidate(zero_pc_taken, mbtb->predictWidth);
+    mbtb->prepareUpdate(zero_pc_taken, zero_pc_candidate);
+    EXPECT_TRUE(zero_pc_candidate.hasBTBEntryCandidate);
+    zero_pc_candidate.markResolved(0);
+    EXPECT_TRUE(zero_pc_candidate.newBTBEntry.resolved);
 }
 
 // Test recovery from misprediction

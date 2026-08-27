@@ -675,9 +675,10 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<BTBEntry>
-BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
+BTBMGSC::prepareUpdateEntries(
+    const FetchTarget &stream, const PreparedUpdate &update)
 {
-    auto all_entries = stream.updateBTBEntries;
+    auto all_entries = update.btbEntries;
 
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
@@ -685,8 +686,10 @@ BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
-    auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond && !potential_new_entry.alwaysTaken) {
+    const auto &potential_new_entry = update.newBTBEntry;
+    if (update.hasBTBEntryCandidate && !update.isOldEntry &&
+        potential_new_entry.isCond &&
+        !potential_new_entry.alwaysTaken) {
         all_entries.push_back(potential_new_entry);
     }
 
@@ -996,7 +999,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 }
 
 void
-BTBMGSC::update(const FetchTarget &stream)
+BTBMGSC::update(const FetchTarget &stream, const PreparedUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No update if disabled
@@ -1005,7 +1008,7 @@ BTBMGSC::update(const FetchTarget &stream)
     DPRINTF(MGSC, "update startAddr: %#lx\n", startAddr);
 
     // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
+    auto entries_to_update = prepareUpdateEntries(stream, update);
 
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);

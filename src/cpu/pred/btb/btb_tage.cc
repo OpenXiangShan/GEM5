@@ -580,12 +580,14 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<BTBEntry>
-BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
+BTBTAGE::prepareUpdateEntries(
+    const FetchTarget &stream, const PreparedUpdate &update)
+{
+    auto all_entries = update.btbEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
+    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
+        BTBEntry potential_new_entry = update.newBTBEntry;
         bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;
@@ -886,7 +888,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
  * Returns false if the update cannot proceed due to a bank conflict.
  */
 bool
-BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
+BTBTAGE::canResolveUpdate(
+    const FetchTarget &stream, const PreparedUpdate &update)
+{
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -911,12 +915,14 @@ BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
  * @brief Perform resolved update after probe success.
  */
 void
-BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
+BTBTAGE::doResolveUpdate(
+    const FetchTarget &stream, const PreparedUpdate &update)
+{
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
     }
-    update(stream);
+    this->update(stream, update);
 }
 
 /**
@@ -925,7 +931,7 @@ BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
  * @param stream The fetch stream containing branch execution information
  */
 void
-BTBTAGE::update(const FetchTarget &stream) {
+BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -933,8 +939,8 @@ BTBTAGE::update(const FetchTarget &stream) {
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
-    
+    auto entries_to_update = prepareUpdateEntries(stream, update);
+
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -947,7 +953,9 @@ BTBTAGE::update(const FetchTarget &stream) {
     bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.pc == stream.updateNewBTBEntry.pc;
+        const bool is_new_entry =
+            update.hasBTBEntryCandidate && !update.isOldEntry &&
+            btb_entry.pc == update.newBTBEntry.pc;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;

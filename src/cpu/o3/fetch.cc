@@ -1799,12 +1799,9 @@ Fetch::handleIEWSignals()
     if (had_pending_resolve && !resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
         ThreadID tid = entry.resolvedTid;
-        unsigned int stream_id = entry.resolvedFTQId;
-        dbpbtb->prepareResolveUpdateEntries(stream_id, tid);
-        for (const auto resolvedInstPC : entry.resolvedInstPC) {
-            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, tid);
-        }
-        bool success = dbpbtb->resolveUpdate(stream_id, tid);
+        const auto stream_id = entry.resolvedFTQId;
+        bool success = dbpbtb->resolveUpdate(
+            stream_id, entry.resolvedInstPC, tid);
         if (success) {
             dbpbtb->notifyResolveSuccess(tid);
             resolveQueue.pop_front();

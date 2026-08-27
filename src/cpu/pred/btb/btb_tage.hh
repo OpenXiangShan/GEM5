@@ -172,9 +172,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
-    bool canResolveUpdate(const FetchTarget &entry) override;
-    void doResolveUpdate(const FetchTarget &entry) override;
+    void update(const FetchTarget &entry,
+                const PreparedUpdate &update) override;
+    bool canResolveUpdate(const FetchTarget &entry,
+                          const PreparedUpdate &update) override;
+    void doResolveUpdate(const FetchTarget &entry,
+                         const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
@@ -485,7 +488,8 @@ private:
                                            uint8_t asidHash = 0) const;
 
     // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    std::vector<BTBEntry> prepareUpdateEntries(
+        const FetchTarget &stream, const PreparedUpdate &update);
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
