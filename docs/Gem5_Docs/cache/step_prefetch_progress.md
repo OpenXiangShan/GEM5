@@ -25,7 +25,7 @@
 | 单元/小测试 | 已完成 | `step.test.cc` 14/14 通过，覆盖生命周期、maturity、多 history 收敛、AT victim 训练、TOE、`issued` 和隔离 |
 | `gem5.opt` 构建 | 已完成 | `scons build/RISCV/gem5.opt --gold-linker -j1` 通过；生成有效 ELF |
 | omnetpp 单点 | 已完成诊断 smoke | 当前修订的 10k/1M 基线与 STEP 均正常恢复、difftest 无 mismatch；按最新要求不把本地 A/B 作为 CI 门槛或性能结论 |
-| 完整 CI 回归 | 待触发 | 已核对 `manual-perf.yml`；提交、推送后使用 `distributed_servers=default` 立即 dispatch |
+| 完整 CI 回归 | 运行中 | manual-perf run `33056028992`；被测 SHA 为 `4b4a6fdfbe23c77020a6392ec3452f307fc3677a`，状态以 Actions 页面为准 |
 | STEP 参数 DSE | 未开始 | 仅在完整 CI 正收益后定义代表切片、目标和预算 |
 
 ## 已做事实核对
@@ -48,6 +48,12 @@
    `riscv64-nemu-notama-tvalref-so` 和 2-channel DRAMsim3；10k 与 1M 均以
    `max instruction count` 正常退出。它们仅用于确认恢复、配置和生命周期没有
    明显错误，完整性能结论以即将触发的 CI 归档为准。
+7. 2026-08-27 已触发 `manual-perf.yml`：`configuration=kmhv3.py`、
+   `benchmark_type=gcc15-spec06-1.0c`、`specific_benchmarks` 为空（该 workflow
+   的 `checkpoint.lst` 全集）、`extra_args=--enable-step`、
+   `distributed_servers=default`、`distributed_jobs_per_server=32`。workflow 将
+   `default` 展开为 `node020-node034,node036-node039`；run URL 为
+   `https://github.com/OpenXiangShan/GEM5/actions/runs/33056028992`。
 
 ## 已废弃的本地尝试
 
