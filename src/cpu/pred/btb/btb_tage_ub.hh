@@ -172,8 +172,6 @@ class BTBTAGEUpperBound : public BTBTAGE
                             unsigned startTable,
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,
                             uint64_t &allocatedTable);
-    std::vector<BTBEntry> prepareUpperBoundUpdateEntries(
-        const FetchTarget &stream, const PreparedUpdate &update);
     void refreshContextStats(unsigned table);
     void notePredictionResult(const BTBEntry &btbEntry,
                               const TagePrediction &pred,

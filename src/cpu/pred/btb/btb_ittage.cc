@@ -325,26 +325,6 @@ BTBITTAGE::update(const FetchTarget &stream, const PreparedUpdate &update)
     }
     Addr startAddr = stream.getRealStartPC();
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
-    // update at the basis of btb entries
-    auto all_entries_to_update = update.btbEntries;
-
-    // add new entry if it's a btb miss during prediction
-    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
-        all_entries_to_update.push_back(update.newBTBEntry);
-    }
-
-    // // only update indirect branches that are not returns
-    if (getResolvedUpdate()) {
-        auto remove_it =
-            std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                           [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn && e.resolved); });
-        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                                        [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
-        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
-    }
-
     // get tage predictions from meta
     // TODO: use component idx
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
@@ -354,15 +334,19 @@ BTBITTAGE::update(const FetchTarget &stream, const PreparedUpdate &update)
     auto updateIndexFoldedHist = meta->indexFoldedHist;
     
     // update each branch
-    for (auto &btb_entry : all_entries_to_update) {
-        bool this_indirect_actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+    for (const auto &branch : update.branches) {
+        const auto &btb_entry = branch.entry;
+        if (!(btb_entry.isIndirect && !btb_entry.isReturn) ||
+            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            continue;
+        }
         auto pred_it = preds.find(btb_entry.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = stream.squashType == SQUASH_CTRL && stream.squashPC == btb_entry.pc;
-        Addr exe_target = stream.exeBranchInfo.target;
+        bool mispred = branch.controlMispred;
+        Addr exe_target = branch.actualTarget;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics

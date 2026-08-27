@@ -300,10 +300,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             const TageInfoForMGSC &tage_info,
                                             ThreadID tid, uint8_t asidHash);
 
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(
-        const FetchTarget &stream, const PreparedUpdate &update);
-
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
                                const FetchTarget &stream);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,

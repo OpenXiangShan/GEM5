@@ -64,9 +64,8 @@ void updateABTB(FetchTarget &stream, AheadBTB *abtb) {
     // ABTB and MBTB use different metadata types.  In UNIT_TEST builds both
     // components use index 0, so do not ask MBTB to read ABTB's metadata here.
     PreparedUpdate update(stream, abtb->predictWidth);
-    update.newBTBEntry = BTBEntry(stream.exeBranchInfo);
-    update.hasBTBEntryCandidate = true;
-    update.isOldEntry = false;
+    update.setBTBEntryCandidate(
+        BTBEntry(stream.exeBranchInfo), false, stream);
     abtb->update(stream, update);
 }
 

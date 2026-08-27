@@ -773,17 +773,16 @@ DecoupledBPUWithBTB::updateStatistics(
         }
     }
 
-    if ((target.isHit || target.exeTaken) &&
-        update.hasBTBEntryCandidate) {
+    if ((target.isHit || target.exeTaken) && update.btbEntryCandidate) {
         // Update BTB entry statistics
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            const auto &btb_entry = update.newBTBEntry;
+            const auto &btb_entry = *update.btbEntryCandidate;
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = update.newBTBEntry;
+            it->second.first = *update.btbEntryCandidate;
         }
     }
 

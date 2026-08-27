@@ -574,42 +574,6 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
 }
 
 /**
- * @brief Prepare BTB entries for update by filtering and processing
- * 
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
-std::vector<BTBEntry>
-BTBTAGE::prepareUpdateEntries(
-    const FetchTarget &stream, const PreparedUpdate &update)
-{
-    auto all_entries = update.btbEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
-        BTBEntry potential_new_entry = update.newBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
-}
-
-/**
  * @brief Update predictor state for a single entry
  * 
  * @param entry The BTB entry being updated
@@ -937,10 +901,6 @@ BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
 
     DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
-    // ========== Normal Update Logic ==========
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream, update);
-
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -951,11 +911,14 @@ BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        const bool is_new_entry =
-            update.hasBTBEntryCandidate && !update.isOldEntry &&
-            btb_entry.pc == update.newBTBEntry.pc;
+    for (const auto &branch : update.branches) {
+        const auto &btb_entry = branch.entry;
+        if (!(btb_entry.isCond && !btb_entry.alwaysTaken) ||
+            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            continue;
+        }
+        const bool actual_taken = branch.actualTaken;
+        const bool is_new_entry = branch.matchesMbtbMissCandidate;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;

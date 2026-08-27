@@ -170,9 +170,6 @@ class MBTB : public TimedBaseBTBPredictor
     void update(const FetchTarget &stream,
                 const PreparedUpdate &update) override;
 
-    std::vector<BTBEntry> prepareUpdateEntries(
-        const FetchTarget &stream, const PreparedUpdate &update);
-
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
@@ -292,10 +289,10 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream);
+    void updateBTBEntry(const BranchUpdate &branch, const FetchTarget &stream);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
-    BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
+    BTBEntry buildUpdatedEntry(const BranchUpdate &branch,
                                const BTBEntry* existing_entry,
                                const FetchTarget &stream);
 

@@ -382,6 +382,10 @@ public:
                       TrainingMode mode,
                       const FetchTarget *stream,
                       const CondTakens *teacherCondTakens);
+    void trainResolvedEntries(const PreparedUpdate &update,
+                              const std::shared_ptr<TageMeta> &predMeta,
+                              const Addr &startPC,
+                              const FetchTarget &stream);
 
 #ifdef UNIT_TEST
   public:
@@ -398,9 +402,6 @@ public:
                                            ThreadID tid = 0,
                                            uint8_t asidHash = 0);
 
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(
-        const FetchTarget &stream, const PreparedUpdate &update);
     // Build the reachable conditional prefix for S3 teacher update.
     std::vector<BTBEntry> prepareS3UpdateEntries(const FullBTBPrediction &s3Pred);
     std::vector<BTBEntry> prepareS3UpdateEntriesFromAbtbMeta(

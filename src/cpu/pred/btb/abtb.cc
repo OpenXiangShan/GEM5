@@ -615,16 +615,16 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
     // since we don't want duplications in uBTB's entriesToUpdate,
     // which causes its counter to update twice unintentionally
     // we need to check if the new entry already exists in uBTB
-    if (update.hasBTBEntryCandidate) {
+    if (update.btbEntryCandidate) {
         bool pred_branch_hit = false;
         for (auto &e: all_entries) {
-            if (update.newBTBEntry == e) {
+            if (*update.btbEntryCandidate == e) {
                 pred_branch_hit = true;
                 break;
             }
         }
         if (!pred_branch_hit) {
-            all_entries.push_back(update.newBTBEntry);
+            all_entries.push_back(*update.btbEntryCandidate);
         }
     }
 
@@ -658,7 +658,6 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
     // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
     // else use the recorded entry
     auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
-    entry_to_write.resolved = false; // reset resolved bit on update
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {

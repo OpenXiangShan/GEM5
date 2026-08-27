@@ -669,34 +669,6 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
 }
 
 /**
- * @brief Prepare BTB entries for update by filtering and processing
- *
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
-std::vector<BTBEntry>
-BTBMGSC::prepareUpdateEntries(
-    const FetchTarget &stream, const PreparedUpdate &update)
-{
-    auto all_entries = update.btbEntries;
-
-    // Filter out non-conditional and always-taken branches
-    auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-                                    [](const BTBEntry &e) { return !e.isCond && !e.alwaysTaken; });
-    all_entries.erase(remove_it, all_entries.end());
-
-    // Handle potential new BTB entry
-    const auto &potential_new_entry = update.newBTBEntry;
-    if (update.hasBTBEntryCandidate && !update.isOldEntry &&
-        potential_new_entry.isCond &&
-        !potential_new_entry.alwaysTaken) {
-        all_entries.push_back(potential_new_entry);
-    }
-
-    return all_entries;
-}
-
-/**
  * Update a prediction table and allocate new entry if needed
  *
  * This function handles the main perceptron tables (bwTable, lTable, iTable, gTable, pTable, biasTable)
@@ -1007,16 +979,23 @@ BTBMGSC::update(const FetchTarget &stream, const PreparedUpdate &update)
     Addr startAddr = stream.getRealStartPC();
     DPRINTF(MGSC, "update startAddr: %#lx\n", startAddr);
 
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream, update);
-
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
     auto &preds = meta->preds;
 
     // Process each BTB entry
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+    for (const auto &branch : update.branches) {
+        const auto &btb_entry = branch.entry;
+        const bool eligible_prediction_entry =
+            branch.fromPrediction &&
+            (btb_entry.isCond || btb_entry.alwaysTaken);
+        const bool eligible_new_entry =
+            !branch.fromPrediction && btb_entry.isCond &&
+            !btb_entry.alwaysTaken;
+        if (!(eligible_prediction_entry || eligible_new_entry)) {
+            continue;
+        }
+        const bool actual_taken = branch.actualTaken;
         auto pred_it = preds.find(btb_entry.pc);
 
         if (pred_it == preds.end()) {

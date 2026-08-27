@@ -406,42 +406,6 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
     return threadMeta[tid];
 }
 
-/**
- * @brief Prepare BTB entries for update by filtering and processing
- *
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
-std::vector<BTBEntry>
-MicroTAGE::prepareUpdateEntries(
-    const FetchTarget &stream, const PreparedUpdate &update)
-{
-    auto all_entries = update.btbEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
-        BTBEntry potential_new_entry = update.newBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
-}
-
 std::vector<BTBEntry>
 MicroTAGE::prepareS3UpdateEntries(const FullBTBPrediction &s3Pred)
 {
@@ -923,10 +887,6 @@ MicroTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
 
     DPRINTF(UTAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
-    // ========== Normal Update Logic ==========
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream, update);
-
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -934,8 +894,7 @@ MicroTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
         return;
     }
 
-    trainEntries(entries_to_update, predMeta, startAddr, stream.tid, stream.asidHash,
-                 TrainingMode::Resolved, &stream, nullptr);
+    trainResolvedEntries(update, predMeta, startAddr, stream);
     checkUtageUpdateMisspred(stream);
     DPRINTF(UTAGE, "end update\n");
 }
@@ -1080,6 +1039,28 @@ MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
             tageStats.updateUtageHit++;
         }
     }
+}
+
+void
+MicroTAGE::trainResolvedEntries(
+    const PreparedUpdate &update,
+    const std::shared_ptr<TageMeta> &predMeta,
+    const Addr &startPC,
+    const FetchTarget &stream)
+{
+    std::vector<BTBEntry> entries;
+    entries.reserve(update.branches.size());
+    for (const auto &branch : update.branches) {
+        const auto &entry = branch.entry;
+        if (!(entry.isCond && !entry.alwaysTaken) ||
+            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            continue;
+        }
+        entries.push_back(entry);
+    }
+
+    trainEntries(entries, predMeta, startPC, stream.tid, stream.asidHash,
+                 TrainingMode::Resolved, &stream, nullptr);
 }
 
 void

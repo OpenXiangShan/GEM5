@@ -325,10 +325,9 @@ struct MgscHarness
         update_stream.resolved = true;
         update_stream.exeBranchInfo = entry;
         update_stream.exeTaken = actual_taken;
+        update_stream.predBTBEntries = {entry};
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
-        PreparedUpdate update;
-        update.btbEntries = {entry};
-        update.isOldEntry = true;
+        PreparedUpdate update(update_stream, 64);
         mgsc.update(update_stream, update);
 
         return result;
@@ -514,10 +513,9 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.resolved = true;
         stream.exeBranchInfo = entry;
         stream.exeTaken = true;
+        stream.predBTBEntries = {entry};
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        PreparedUpdate update;
-        update.btbEntries = {entry};
-        update.isOldEntry = true;
+        PreparedUpdate update(stream, 64);
         mgsc.update(stream, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
     }
@@ -529,10 +527,9 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.resolved = true;
         stream.exeBranchInfo = entry;
         stream.exeTaken = false;
+        stream.predBTBEntries = {entry};
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        PreparedUpdate update;
-        update.btbEntries = {entry};
-        update.isOldEntry = true;
+        PreparedUpdate update(stream, 64);
         mgsc.update(stream, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));
     }

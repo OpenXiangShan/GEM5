@@ -491,41 +491,6 @@ BTBTAGEUpperBound::allocateExactEntry(
     return false;
 }
 
-std::vector<BTBEntry>
-BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(
-    const FetchTarget &stream, const PreparedUpdate &update)
-{
-    auto allEntries = update.btbEntries;
-
-    if (update.hasBTBEntryCandidate && !update.isOldEntry) {
-        BTBEntry potentialNewEntry = update.newBTBEntry;
-        bool newEntryTaken =
-            stream.exeTaken && stream.getControlPC() == potentialNewEntry.pc;
-        if (!newEntryTaken) {
-            potentialNewEntry.alwaysTaken = false;
-        }
-        allEntries.push_back(potentialNewEntry);
-    }
-
-    if (getResolvedUpdate()) {
-        auto removeIt = std::remove_if(
-            allEntries.begin(), allEntries.end(),
-            [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken && e.resolved);
-            });
-        allEntries.erase(removeIt, allEntries.end());
-    } else {
-        auto removeIt = std::remove_if(
-            allEntries.begin(), allEntries.end(),
-            [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken);
-            });
-        allEntries.erase(removeIt, allEntries.end());
-    }
-
-    return allEntries;
-}
-
 void
 BTBTAGEUpperBound::refreshContextStats(unsigned table)
 {
@@ -536,7 +501,6 @@ void
 BTBTAGEUpperBound::update(
     const FetchTarget &stream, const PreparedUpdate &update)
 {
-    auto entriesToUpdate = prepareUpperBoundUpdateEntries(stream, update);
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -544,11 +508,15 @@ BTBTAGEUpperBound::update(
     }
 
     bool hasStoredVsActualDiff = false;
-    for (auto &btbEntry : entriesToUpdate) {
+    for (const auto &branch : update.branches) {
+        const auto &btbEntry = branch.entry;
+        if (!(btbEntry.isCond && !btbEntry.alwaysTaken) ||
+            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            continue;
+        }
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
-        const bool actualTaken =
-            stream.exeTaken && stream.exeBranchInfo == btbEntry;
+        const bool actualTaken = branch.actualTaken;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
         if (predIt != predMeta->preds.end() &&

@@ -75,7 +75,6 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
 PreparedUpdate createPreparedUpdate(const FetchTarget &stream)
 {
     PreparedUpdate update(stream, 64);
-    update.isOldEntry = true;
     return update;
 }
 
@@ -1209,14 +1208,41 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
     stream = setMispredStream(stream);
 
     PreparedUpdate update(stream, 64);
-    update.isOldEntry = false;
-    update.newBTBEntry = newEntry;
-    update.hasBTBEntryCandidate = true;
+    update.setBTBEntryCandidate(newEntry, false, stream);
     tage->update(stream, update);
 
     int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
     EXPECT_GE(table, 0)
         << "New conditional entry should still allocate without prediction-time meta";
+}
+
+TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
+{
+    stagePreds[1].btbEntries.clear();
+    tage->putPCHistory(0x1000, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    BTBEntry finalEntry =
+        createBTBEntry(0x1010, true, true, false, -1);
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.exeBranchInfo = finalEntry;
+    stream.exeTaken = true;
+    stream.resolved = true;
+    stream.predBranchInfo = finalEntry;
+    stream.predBTBEntries = {finalEntry};
+    stream.predMetas[0] = meta;
+    stream = setMispredStream(stream);
+
+    PreparedUpdate update(stream, 64);
+    BTBEntry mbtbCandidate = finalEntry;
+    mbtbCandidate.alwaysTaken = true;
+    update.setBTBEntryCandidate(mbtbCandidate, false, stream);
+    update.markResolved(finalEntry.pc);
+    tage->setResolvedUpdate(true);
+    tage->update(stream, update);
+
+    EXPECT_GE(findTableWithEntry(tage, 0x1000, finalEntry.pc), 0);
 }
 
 /**
@@ -1420,9 +1446,7 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     stream = setMispredStream(stream);
 
     PreparedUpdate update(stream, 64);
-    update.isOldEntry = false;
-    update.newBTBEntry = newEntry;
-    update.hasBTBEntryCandidate = true;
+    update.setBTBEntryCandidate(newEntry, false, stream);
     tage->update(stream, update);
 
     EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));

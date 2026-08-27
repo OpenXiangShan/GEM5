@@ -2,6 +2,7 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <algorithm>
+#include <optional>
 #include <queue>
 #include <string>
 
@@ -116,7 +117,6 @@ enum class HistoryType
  *
  * Stores essential information about a branch instruction including:
  * - PC and target address
- * - Resolved bit
  * - Branch type (conditional, indirect, call, return)
  * - Instruction size
  */
@@ -124,11 +124,6 @@ struct BranchInfo
 {
     Addr pc;
     Addr target;
-    // An independent resolved bit to indicate whether CFI is resolved
-    // or not for training, which is trained in resolve stage so
-    // it's necessary to know whether the branch is resolved and skip
-    // the BTB entry or not.
-    bool resolved;
     bool isCond;
     bool isIndirect;
     bool isDirect;
@@ -138,7 +133,8 @@ struct BranchInfo
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), target(0), isCond(false), isIndirect(false), isDirect(false),
+          isCall(false), isReturn(false), size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
@@ -146,7 +142,6 @@ struct BranchInfo
     BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
         : pc(control_pc),
           target(target_pc),
-          resolved(false),
           isCond(static_inst->isCondCtrl()),
           isIndirect(static_inst->isIndirectCtrl()),
           isDirect(static_inst->isDirectCtrl()),
@@ -479,17 +474,26 @@ struct FetchTarget
  * Predictor update data derived from one FetchTarget.
  *
  * FetchTarget owns the immutable prediction snapshot and the resolved control
- * outcome.  PreparedUpdate owns only the temporary branch selection used by
- * predictor components for one update attempt.  Keeping these values separate
- * prevents resolve and commit from communicating through mutable FTQ scratch.
+ * outcome.  PreparedUpdate owns the materialized branch facts used by predictor
+ * components for one update attempt.  Keeping these values separate prevents
+ * resolve and commit from communicating through mutable FTQ scratch.
  */
+struct BranchUpdate
+{
+    BTBEntry entry;
+    bool actualTaken = false;
+    Addr actualTarget = 0;
+    bool controlMispred = false;
+    bool resolvedThisAttempt = false;
+    bool fromPrediction = true;
+    bool matchesMbtbMissCandidate = false;
+};
+
 struct PreparedUpdate
 {
     Addr endInstPC = 0;
-    std::vector<BTBEntry> btbEntries;
-    BTBEntry newBTBEntry;
-    bool hasBTBEntryCandidate = false;
-    bool isOldEntry = false;
+    std::vector<BranchUpdate> branches;
+    std::optional<BTBEntry> btbEntryCandidate;
 
     PreparedUpdate() = default;
 
@@ -507,21 +511,55 @@ struct PreparedUpdate
         for (const auto &entry : target.predBTBEntries) {
             if (entry.valid && entry.pc >= target.startPC &&
                 entry.pc <= endInstPC) {
-                btbEntries.push_back(entry);
+                branches.push_back(makeBranchUpdate(entry, target, false));
             }
         }
     }
 
-    void markResolved(Addr resolvedInstPC)
+    void setBTBEntryCandidate(
+        const BTBEntry &entry, bool isOld, const FetchTarget &target)
     {
-        if (hasBTBEntryCandidate && newBTBEntry.pc == resolvedInstPC) {
-            newBTBEntry.resolved = true;
+        btbEntryCandidate = entry.valid ?
+            std::optional<BTBEntry>(entry) : std::nullopt;
+        if (!btbEntryCandidate || isOld) {
+            return;
         }
-        for (auto &entry : btbEntries) {
-            if (entry.valid && entry.pc == resolvedInstPC) {
-                entry.resolved = true;
+
+        for (auto &branch : branches) {
+            if (branch.entry.pc == entry.pc) {
+                branch.matchesMbtbMissCandidate = true;
             }
         }
+        branches.push_back(makeBranchUpdate(entry, target, true));
+    }
+
+    void markResolved(Addr resolvedInstPC)
+    {
+        for (auto &branch : branches) {
+            if (branch.entry.valid && branch.entry.pc == resolvedInstPC) {
+                branch.resolvedThisAttempt = true;
+            }
+        }
+    }
+
+  private:
+    static BranchUpdate makeBranchUpdate(
+        BTBEntry entry, const FetchTarget &target, bool isMbtbMissCandidate)
+    {
+        const bool actualTaken =
+            target.exeTaken && target.exeBranchInfo.pc == entry.pc;
+        if (isMbtbMissCandidate && !actualTaken) {
+            entry.alwaysTaken = false;
+        }
+        return BranchUpdate{
+            entry,
+            actualTaken,
+            target.exeBranchInfo.target,
+            target.squashType == SQUASH_CTRL && target.squashPC == entry.pc,
+            false,
+            !isMbtbMissCandidate,
+            isMbtbMissCandidate
+        };
     }
 };
 /**
