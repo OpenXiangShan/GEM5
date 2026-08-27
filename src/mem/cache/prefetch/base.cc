@@ -513,6 +513,17 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             prefetchStats.pfUsefulButMiss++;
     }
 
+    // Some prefetchers require the uncoalesced demand-access stream even
+    // when the normal prefetch-training policy only observes misses or
+    // prefetch hits.  Keep this hook before observeAccess() so the latter's
+    // prefetch_on_access/prefetch_on_pf_hit settings remain legacy-policy
+    // controls.  Hardware-prefetch requests are excluded explicitly even if
+    // a packet type also reports itself as demand.
+    if (pkt->isDemand() && !pkt->req->isPrefetch() &&
+        !pkt->req->isUncacheable()) {
+        observeRawDemandAccess(pkt, miss);
+    }
+
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
         PrefetchSourceType pf_source;

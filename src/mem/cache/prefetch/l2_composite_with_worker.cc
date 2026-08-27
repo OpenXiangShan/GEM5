@@ -52,6 +52,7 @@ L2CompositeWithWorkerPrefetcher::addToQueue(std::list<DeferredPacket> &queue, De
         // Check whether the cdp prefetch request needs to be filtered out
         if (dpp.pkt->req->getXsMetadata().prefetchSource == PrefetchSourceType::CDP) {
             if (cdp->needFilter(dpp.pkt->req->getPaddr())) {
+                completeDeferredStagedPrefetch(dpp, false);
                 delete dpp.pkt;
                 return;
             }
@@ -82,8 +83,17 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
 void
 L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 {
+    auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
+    // A STEP L2 target is a terminal placement decision, not merely an
+    // initial hint. Keep the request in this L2 even when the existing
+    // low-accuracy policy would otherwise forward it to L3.
+    if (ptr->pfahead && ptr->pfahead_host == cache->level() &&
+        ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::STEP) {
+        WorkerPrefetcher::rxHint(dpp);
+        return;
+    }
+
     if (offloadLowAccuracy) {
-        auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
         float cdp_ratio =
             (prefetchStats.pfDequeued_srcs[PrefetchSourceType::CDP].value()) /
             (prefetchStats.pfDequeued.value());

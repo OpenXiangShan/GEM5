@@ -199,6 +199,8 @@ def config_aligned_l2(options, system, l2_cache_class):
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
 
 def config_cache(options, system):
+    validate_step_options(options)
+
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
         sys.exit(1)

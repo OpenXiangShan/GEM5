@@ -74,10 +74,12 @@ buildPfControlSourceAdmitPct(const std::vector<int> &values)
         return table;
     }
 
-    panic_if(values.size() != NUM_PF_SOURCES,
-             "pf_control_source_admit_pcts must be empty or have "
-             "%u entries, got %zu",
-             unsigned(NUM_PF_SOURCES), values.size());
+    panic_if(values.size() != NUM_PF_SOURCES &&
+                 values.size() != NUM_PF_SOURCES - 1,
+             "pf_control_source_admit_pcts must be empty or have %u "
+             "entries (legacy form: %u), got %zu",
+             unsigned(NUM_PF_SOURCES), unsigned(NUM_PF_SOURCES - 1),
+             values.size());
 
     for (size_t idx = 0; idx < values.size(); ++idx) {
         const int pct = values[idx];
@@ -974,6 +976,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                         blockAddress(itr->pfInfo.getAddr()));
                 late_in_pfq = true;  // hit in pf queue
                 late_pfq_src = itr->pfInfo.getXsMetadata().prefetchSource;
+                completeDeferredStagedPrefetch(*itr, false);
                 delete itr->pkt;
                 itr = pfq.erase(itr);
                 statsQueued.pfRemovedDemand++;
@@ -1009,9 +1012,13 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
 
-    // Queue up generated prefetches
+    // Queue up generated prefetches. A staged token that is not selected by
+    // this bandwidth pass is released below; it was never handed to Queued.
     size_t num_pfs = 0;
-    for (AddrPriority& addr_prio : addresses) {
+    size_t candidate_index = 0;
+    for (; candidate_index < addresses.size() && num_pfs < max_pfs;
+         ++candidate_index) {
+        AddrPriority &addr_prio = addresses[candidate_index];
 
         // Block align prefetch address
         addr_prio.addr = blockAddress(addr_prio.addr);
@@ -1029,6 +1036,9 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             if (shouldPfControlAdmitLocally(
                     addr_prio.pfahead, addr_prio.pfahead_host) &&
                 !admitPfControlCandidate(addr_prio.pfSource)) {
+                if (addr_prio.stagedToken) {
+                    completeStagedPrefetch(*addr_prio.stagedToken, false);
+                }
                 continue;
             }
             addr_prio.pfSource =
@@ -1041,11 +1051,18 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             // Create and insert the request
             insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
-            if (num_pfs == max_pfs) {
-                break;
-            }
         } else {
             DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+            if (addr_prio.stagedToken) {
+                completeStagedPrefetch(*addr_prio.stagedToken, false);
+            }
+        }
+    }
+
+    for (; candidate_index < addresses.size(); ++candidate_index) {
+        const auto &addr_prio = addresses[candidate_index];
+        if (addr_prio.stagedToken) {
+            releaseStagedPrefetch(*addr_prio.stagedToken);
         }
     }
 }
@@ -1060,10 +1077,15 @@ Queued::PFSendEventWrapper()
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
 
-    // Queue up generated prefetches
+    // Queue up generated prefetches. GetPFRequestsFromBuffer may reserve one
+    // STEP candidate per target level; release any reservation this cycle's
+    // throttle does not actually submit to Queued.
     size_t num_pfs = 0;
-    for (AddrPriority& addr_prio : addresses) {
-            
+    size_t candidate_index = 0;
+    for (; candidate_index < addresses.size() && num_pfs < max_pfs;
+         ++candidate_index) {
+        AddrPriority &addr_prio = addresses[candidate_index];
+
         PacketPtr pkt = addr_prio.pf_trigger_info.pkt;
         PrefetchInfo pfi = PrefetchInfo(*addr_prio.pf_trigger_info.pfi_old);
         //override address's prio to 1 
@@ -1084,6 +1106,9 @@ Queued::PFSendEventWrapper()
             if (shouldPfControlAdmitLocally(
                     addr_prio.pfahead, addr_prio.pfahead_host) &&
                 !admitPfControlCandidate(addr_prio.pfSource)) {
+                if (addr_prio.stagedToken) {
+                    completeStagedPrefetch(*addr_prio.stagedToken, false);
+                }
                 continue;
             }
             addr_prio.pfSource =
@@ -1095,11 +1120,17 @@ Queued::PFSendEventWrapper()
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
             insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
-            if (num_pfs == max_pfs) {
-                break;
-            }
         } else {
             DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+            if (addr_prio.stagedToken) {
+                completeStagedPrefetch(*addr_prio.stagedToken, false);
+            }
+        }
+    }
+    for (; candidate_index < addresses.size(); ++candidate_index) {
+        const auto &addr_prio = addresses[candidate_index];
+        if (addr_prio.stagedToken) {
+            releaseStagedPrefetch(*addr_prio.stagedToken);
         }
     }
     if (hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
@@ -1334,6 +1365,21 @@ Queued::processMissingTranslations(unsigned max)
 }
 
 void
+Queued::completeDeferredStagedPrefetch(DeferredPacket &dpp, bool accepted)
+{
+    if (!dpp.stagedToken) {
+        return;
+    }
+
+    fatal_if(dpp.stagedCompletionOwner == nullptr,
+             "staged prefetch token has no completion owner");
+    dpp.stagedCompletionOwner->completeStagedPrefetch(
+        *dpp.stagedToken, accepted);
+    dpp.stagedToken.reset();
+    dpp.stagedCompletionOwner = nullptr;
+}
+
+void
 Queued::translationComplete(DeferredPacket *dp, bool failed)
 {
     bool in_squash = false;
@@ -1377,6 +1423,13 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 Tick pf_time = curTick() + clockPeriod() * latency;
                 it->createPkt(target_paddr, blkSize, requestorId, tagPrefetch,
                             pf_time, it->translationRequest->getPFSource(), it->translationRequest->getPFDepth());
+                const bool forwards = willForwardToDownStream(pfq, *it);
+                if (!forwards) {
+                    // PFQ admission at this cache is the terminal success
+                    // point for a local STEP target. Clear the token before
+                    // addToQueue copies the deferred packet into PFQ.
+                    completeDeferredStagedPrefetch(*it, true);
+                }
                 addToQueue(pfq, *it);
             }
         } else {
@@ -1384,8 +1437,16 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                     "prefetch request %#x \n", tlb->name(),
                     it->translationRequest->getVaddr());
         }
+        if (failed || !it->pkt) {
+            completeDeferredStagedPrefetch(*it, false);
+        }
         pfqMissingTranslation.erase(it);
     } else {
+        // A full pending-translation queue may have already made this
+        // request terminal before its asynchronous translation returned.
+        // The helper is idempotent, so retain the false completion here for
+        // any future producer that moves a request into the squash queue.
+        completeDeferredStagedPrefetch(*it, false);
         pfqSquashed.erase(it);
     }
 }
@@ -1468,16 +1529,23 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
     return translation_req;
 }
 
-void
+Queued::InsertResult
 Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio)
 {
+    const auto reject_staged = [this, &addr_prio]() {
+        if (addr_prio.stagedToken) {
+            completeStagedPrefetch(*addr_prio.stagedToken, false);
+        }
+    };
     int32_t priority = addr_prio.priority;
     if (queueFilter) {
         if (alreadyInQueue(pfq, new_pfi, priority)) {
-            return;
+            reject_staged();
+            return InsertResult::Rejected;
         }
         if (alreadyInQueue(pfqMissingTranslation, new_pfi, priority)) {
-            return;
+            reject_staged();
+            return InsertResult::Rejected;
         }
     }
 
@@ -1518,7 +1586,8 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
 
         // ContextID is needed for translation
         if (!pkt->req->hasContextId()) {
-            return;
+            reject_staged();
+            return InsertResult::Rejected;
         }
         if (useVirtualAddresses) {
             has_target_pa = false;
@@ -1533,7 +1602,8 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         } else {
             // Using PA for training but the request does not have a VA,
             // unable to process this page crossing prefetch.
-            return;
+            reject_staged();
+            return InsertResult::Rejected;
         }
     }
     if (has_target_pa && cacheSnoop && queueFilter &&
@@ -1542,17 +1612,23 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         statsQueued.pfInCache++;
         DPRINTF(HWPrefetch, "Dropping redundant in "
                 "cache/MSHR prefetch addr:%#x\n", target_paddr);
-        return;
+        reject_staged();
+        return InsertResult::Rejected;
     }
     if (has_target_pa && !system->isMemAddr(target_paddr)) {
         DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
-        return;
+        reject_staged();
+        return InsertResult::Rejected;
     }
 
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
     dpp.pfahead = addr_prio.pfahead;
     dpp.pfahead_host = addr_prio.pfahead_host;
+    dpp.stagedToken = addr_prio.stagedToken;
+    if (dpp.stagedToken) {
+        dpp.stagedCompletionOwner = this;
+    }
     if (dpp.pfahead) {
         DPRINTF(HWPrefetchOther, "Create one pfahead request\n");
     }
@@ -1563,6 +1639,11 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         DPRINTF(HWPrefetch, "Prefetch queued. "
                 "addr:%#x priority: %3d tick:%lld.\n",
                 new_pfi.getAddr(), priority, pf_time);
+        if (willForwardToDownStream(pfq, dpp)) {
+            addToQueue(pfq, dpp);
+            return InsertResult::PendingForward;
+        }
+        completeDeferredStagedPrefetch(dpp, true);
         addToQueue(pfq, dpp);
     } else {
         // Add the translation request and try to resolve it later
@@ -1574,12 +1655,22 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         if (!tlbReqEvent.scheduled()) {
             schedule(tlbReqEvent, nextCycle());
         }
+        return InsertResult::PendingTranslation;
     }
+    return InsertResult::Accepted;
+}
+
+bool
+Queued::willForwardToDownStream(const std::list<DeferredPacket> &queue,
+                                const DeferredPacket &dpp) const
+{
+    return &queue == &pfq && hasHintDownStream() && dpp.pfahead &&
+        dpp.pfahead_host > cache->level();
 }
 
 void
 Queued::addToQueue(std::list<DeferredPacket> &queue,
-                             DeferredPacket &dpp)
+                   DeferredPacket &dpp)
 {
     /* Verify prefetch buffer space for request */
     unsigned queue_size;
@@ -1587,7 +1678,14 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
     if (&queue == &pfq) {
         // if found the dpp is pfahead marked
         // send it to next level pfq
-        if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
+        const bool step_pfahead = dpp.pfahead &&
+            dpp.pfInfo.getXsMetadata().prefetchSource ==
+                PrefetchSourceType::STEP;
+        fatal_if(step_pfahead && dpp.pfahead_host > cache->level() &&
+                     !hasHintDownStream(),
+                 "STEP prefetch target L%d is unreachable from L%d",
+                 dpp.pfahead_host, cache->level());
+        if (willForwardToDownStream(queue, dpp)) {
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
             DPRINTF(HWPrefetchOther,
@@ -1633,6 +1731,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
                 queue.size(), it->pfInfo.getAddr());
         statsQueued.pfRemovedFull_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
+        completeDeferredStagedPrefetch(*it, false);
 
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
@@ -1692,7 +1791,11 @@ Queued::offloadToDownStream()
     auto dpp_it = pfq.begin();
     while (offloaded < offloadBandwidth && dpp_it != pfq.end()) {
         // we should not offload cdp prefetch request to lower caches
-        if (dpp_it->pfInfo.getXsMetadata().prefetchSource != PrefetchSourceType::CDP) {
+        const PrefetchSourceType source =
+            dpp_it->pfInfo.getXsMetadata().prefetchSource;
+        const bool step_at_target = source == PrefetchSourceType::STEP &&
+            dpp_it->pfahead_host == cache->level();
+        if (source != PrefetchSourceType::CDP && !step_at_target) {
             prefetchStats.pfOffloaded++;
             assert(dpp_it->pkt != nullptr);
             DPRINTF(HWPrefetch, "Offload prefetch for %#x.\n", dpp_it->pkt->getAddr());

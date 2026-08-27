@@ -182,6 +182,12 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         choices=ObjectList.hwp_list.get_names(), help="L2 wrapper cache hardware prefetcher")
     parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
+    parser.add_argument("--enable-step", action="store_true", default=False,
+                        help="Replace the L1 SMS PHT with STEP spatial footprint prefetching")
+    parser.add_argument("--step-enable-soe", action="store_true", default=False,
+                        help="Enable STEP second-offset prefetch issuance")
+    parser.add_argument("--step-pf-level", type=int, choices=(1, 2, 3), default=2,
+                        help="STEP prefetch target cache level")
 
     # Run duration options
     parser.add_argument("-m", "--abs-max-tick", type=int, default=m5.MaxTick,

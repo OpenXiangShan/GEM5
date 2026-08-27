@@ -29,6 +29,8 @@
 #ifndef __CACHE_PREFETCH_ASSOCIATIVE_SET_HH__
 #define __CACHE_PREFETCH_ASSOCIATIVE_SET_HH__
 
+#include <functional>
+
 #include "mem/cache/replacement_policies/base.hh"
 #include "mem/cache/tags/indexing_policies/base.hh"
 #include "mem/cache/tags/tagged_entry.hh"
@@ -95,9 +97,20 @@ class AssociativeSet
      * Find a victim to be replaced
      * @param addr key to select the possible victim
      * @param victim_secure optional destination for the victim security state
+     * @param victim_valid optional destination for the victim validity before
+     *                     this method invalidates it
      * @result entry to be victimized
      */
-    Entry* findVictim(Addr addr, bool *victim_secure = nullptr);
+    Entry* findVictim(Addr addr, bool *victim_secure = nullptr,
+                      bool *victim_valid = nullptr);
+
+    /**
+     * Find a victim among entries accepted by @p eligible. Returns nullptr
+     * when every way in the indexed set is excluded.
+     */
+    Entry* findVictimEligible(
+        Addr addr, const std::function<bool(const Entry &)> &eligible,
+        bool *victim_secure = nullptr, bool *victim_valid = nullptr);
 
     /**
      * Find the set of entries that could be replaced given

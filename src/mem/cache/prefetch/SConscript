@@ -61,6 +61,30 @@ DebugFlag('CMCPrefetcher')
 DebugFlag('DespacitoStreamPrefetcher')
 
 GTest('context_key.test', 'context_key.test.cc')
+# STEP owns FT/AT/PHT state but reuses the normal SimObject-backed indexing
+# and replacement policies. Keep this focused test target independent from
+# the full gem5 library so it remains practical during implementation.
+GTest('step.test',
+      'step.test.cc',
+      'step.cc',
+      '../replacement_policies/lru_rp.cc',
+      '../tags/indexing_policies/base.cc',
+      '../tags/indexing_policies/set_associative.cc',
+      '../../../base/hostinfo.cc',
+      '../../../base/output.cc',
+      '../../../base/statistics.cc',
+      '../../../base/time.cc',
+      '../../../base/stats/group.cc',
+      '../../../base/stats/info.cc',
+      '../../../base/stats/storage.cc',
+      '../../../sim/core.cc',
+      '../../../sim/globals.cc',
+      '../../../sim/root.cc',
+      '../../../sim/sim_object.cc',
+      '../../../sim/tags.cc',
+      with_tag('gem5 drain'),
+      Dir(env['BUILDDIR']).Dir('debug').File(
+          'XSCompositePrefetcher.cc'))
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
@@ -72,6 +96,7 @@ Source('indirect_memory.cc')
 Source('pif.cc')
 Source('queued.cc')
 Source('sms.cc')
+Source('step.cc')
 Source('ipcp.cc')
 Source('xs_stride.cc')
 Source('opt.cc')

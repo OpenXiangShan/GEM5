@@ -43,6 +43,7 @@ from os.path import join as joinpath
 
 from common import CpuConfig
 from common import ObjectList
+from common import PrefetcherConfig
 
 import m5
 from m5.defines import buildEnv
@@ -649,6 +650,7 @@ def run(options, root, testsys, cpu_class):
     if options.checkpoint_restore:
         cpt_starttick, checkpoint_dir = findCptDir(options, cptdir, testsys)
     root.apply_config(options.param)
+    PrefetcherConfig.validate_step_prefetcher_topology(root)
     m5.instantiate(checkpoint_dir)
 
     # Initialization is complete.  If we're not in control of simulation
@@ -821,6 +823,7 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     checkpoint_dir = None
     root.apply_config(options.param)
+    PrefetcherConfig.validate_step_prefetcher_topology(root)
     m5.instantiate(checkpoint_dir)
 
     # Handle the max tick settings now that tick frequency was resolved

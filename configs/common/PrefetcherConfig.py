@@ -25,6 +25,7 @@ PF_SOURCE_NAMES = [
     "CDP",
     "SOpt",
     "DespacitoStream",
+    "STEP",
 ]
 
 
@@ -41,6 +42,7 @@ PF_SOURCE_BY_NAME.update({
     "stream": PF_SOURCE_BY_NAME["sstream"],
     "stride": PF_SOURCE_BY_NAME["sstride"],
     "pht": PF_SOURCE_BY_NAME["spht"],
+    "step": PF_SOURCE_BY_NAME["step"],
     "store": PF_SOURCE_BY_NAME["storestream"],
     "despacito": PF_SOURCE_BY_NAME["despacitostream"],
 })
@@ -290,6 +292,12 @@ def _parse_source_pct_table(spec, path):
             for idx, pct in enumerate(spec):
                 table[idx] = _validate_source_pct(pct, f"{path}.{idx}")
             return table
+        # Keep positional admission policies written before STEP was added.
+        # The new source has no legacy policy, so leave its entry disabled.
+        if len(spec) == len(PF_SOURCE_NAMES) - 1:
+            for idx, pct in enumerate(spec):
+                table[idx] = _validate_source_pct(pct, f"{path}.{idx}")
+            return table
         items = spec
     else:
         _config_error(path, "a dict, full list, pair list, or string", spec)
@@ -423,6 +431,93 @@ def is_pf_buffer_enabled(options):
     # Enabled by default; --disable-pf-buffer is the only CLI override.
     return getattr(options, 'enable_pf_buffer', True)
 
+
+def validate_step_options(options):
+    """Reject CLI combinations that cannot instantiate a STEP topology."""
+    if not getattr(options, "enable_step", False):
+        return
+
+    if getattr(options, "no_pf", False):
+        fatal("--enable-step cannot be combined with --no-pf")
+    if not getattr(options, "caches", False):
+        fatal("--enable-step requires --caches")
+    if getattr(options, "l1d_hwp_type", None) != "XSCompositePrefetcher":
+        fatal("--enable-step requires --l1d-hwp-type=XSCompositePrefetcher")
+    if not is_pf_buffer_enabled(options):
+        fatal("--enable-step requires the prefetch buffer; remove "
+              "--disable-pf-buffer")
+
+
+def _is_power_of_two(value):
+    return value > 0 and (value & (value - 1)) == 0
+
+
+def _validate_step_set_geometry(prefetcher, table_name):
+    """Validate the table geometry shared by STEP and SetAssociative."""
+    entries = int(getattr(prefetcher, "step_{}_entries".format(table_name)))
+    assoc = int(getattr(prefetcher, "step_{}_assoc".format(table_name)))
+
+    # BaseIndexingPolicy sizes its backing set vector from entries / assoc,
+    # while AssociativeSet registers every declared entry. A non-divisible
+    # geometry would therefore register past the policy's last set.
+    if (entries <= 0 or assoc <= 0 or entries % assoc != 0 or
+            not _is_power_of_two(entries // assoc)):
+        fatal(
+            "STEP {} table requires positive entries/assoc, an integral "
+            "entry-to-assoc ratio, and a power-of-two set count "
+            "(entries={}, assoc={})".format(table_name, entries, assoc)
+        )
+
+
+def _validate_step_prefetch_buffer_geometry(prefetcher):
+    entries = int(getattr(prefetcher, "step_pf_buffer_entries"))
+    if entries <= 0:
+        fatal("STEP prefetch buffer requires a positive entry count "
+              "(entries={})".format(entries))
+
+
+def validate_step_prefetcher_topology(root):
+    """Validate the final STEP routing after ``-P``/solver overlays."""
+    system = getattr(root, "system", None)
+    if system is None:
+        return
+
+    for cpu in getattr(system, "cpu", []):
+        for cache_name in ("icache", "dcache"):
+            cache = getattr(cpu, cache_name, None)
+            prefetcher = getattr(cache, "prefetcher", None)
+            if prefetcher is None or not getattr(
+                    prefetcher, "enable_step", False):
+                continue
+
+            if cache_name != "dcache":
+                fatal("STEP may only be enabled on an L1 data cache")
+
+            if getattr(prefetcher, "type", "") != "XSCompositePrefetcher":
+                fatal("STEP may only be enabled on the L1D XSCompositePrefetcher")
+            if not getattr(prefetcher, "use_pf_buffer", False):
+                fatal("STEP requires use_pf_buffer=true")
+            if getattr(prefetcher, "prefetch_train", False):
+                fatal("STEP requires prefetch_train=false")
+
+            for table_name in ("ft", "act", "pht"):
+                _validate_step_set_geometry(prefetcher, table_name)
+            _validate_step_prefetch_buffer_geometry(prefetcher)
+
+            target_level = int(getattr(prefetcher, "step_pf_level", 2))
+            if target_level < 1 or target_level > 3:
+                fatal("STEP target level must be in [1, 3], got {}".format(
+                    target_level))
+
+            downstream = list(getattr(prefetcher, "_downstream_pf", []))
+            if target_level >= 2 and not downstream:
+                fatal("STEP target level {} has no L1-to-L2 prefetch hint".format(
+                    target_level))
+            if target_level >= 3:
+                l2_prefetcher = downstream[0]
+                if not list(getattr(l2_prefetcher, "_downstream_pf", [])):
+                    fatal("STEP target level 3 has no L2-to-L3 prefetch hint")
+
 def _configure_pf_buffer(prefetcher, pf_buffer_enabled):
     if prefetcher != NULL and hasattr(prefetcher, 'use_pf_buffer'):
         prefetcher.use_pf_buffer = pf_buffer_enabled
@@ -468,7 +563,8 @@ def _configure_xs_composite_kmh_align(prefetcher):
     prefetcher.enable_opt = False
     prefetcher.pht_pf_level = 2
 
-def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
+def _configure_xs_composite(prefetcher, cache_level, options,
+                            pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
 
     # Start from the selected XSComposite profile, then apply explicit overrides.
@@ -481,6 +577,34 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
         prefetcher.enable_spp = True
     if options.l1d_enable_cplx:
         prefetcher.enable_cplx = True
+
+    if getattr(options, "enable_step", False) and cache_level == "l1d":
+        step_pf_level = int(getattr(options, "step_pf_level", 2))
+        required = []
+        if step_pf_level >= 2:
+            required.extend((
+                ("l2cache", "an L2 cache"),
+                ("l1_to_l2_pf_hint", "the L1-to-L2 prefetch hint"),
+            ))
+        if step_pf_level >= 3:
+            required.extend((
+                ("l3cache", "an L3 cache"),
+                ("l2_to_l3_pf_hint", "the L2-to-L3 prefetch hint"),
+            ))
+        missing = [description for name, description in required
+                   if not getattr(options, name, False)]
+        if missing:
+            fatal("STEP target level {} is unreachable; enable {}".format(
+                step_pf_level, " and ".join(missing)))
+
+        # STEP replaces only the SMS PHT component. Leave the selected
+        # stream/stride profile and legacy training policy unchanged for a
+        # controlled A/B comparison. STEP observes its own raw demand stream
+        # through Base::observeRawDemandAccess().
+        prefetcher.enable_pht = False
+        prefetcher.enable_step = True
+        prefetcher.step_enable_soe = getattr(options, "step_enable_soe", False)
+        prefetcher.step_pf_level = step_pf_level
 
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
@@ -560,7 +684,8 @@ def create_prefetcher(cpu, cache_level, options):
     _register_prefetcher_tlb(prefetcher, cpu)
 
     if prefetcher_name == 'XSCompositePrefetcher':
-        _configure_xs_composite(prefetcher, options, pf_buffer_enabled)
+        _configure_xs_composite(prefetcher, cache_level, options,
+                                pf_buffer_enabled)
 
     if cache_level == 'l2':
         _configure_l2_prefetcher(prefetcher, prefetcher_name, options,

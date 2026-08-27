@@ -112,21 +112,35 @@ class Base : public ClockedObject
         PacketPtr pkt;
         std::unique_ptr<PrefetchInfo_old> pfi_old; 
         PrefetchSourceType pfSourceType;
-        PFtriggerInfo() : pkt(nullptr), pfi_old(nullptr), pfSourceType(PrefetchSourceType::PF_NONE) {}
+        // Opaque identity carried across a staged prefetch buffer. Zero means
+        // that the request has no staged-decision owner.
+        uint64_t stagedDecisionId;
+        PFtriggerInfo()
+            : pkt(nullptr), pfi_old(nullptr),
+              pfSourceType(PrefetchSourceType::PF_NONE),
+              stagedDecisionId(0)
+        {}
         PFtriggerInfo(PacketPtr p, const PrefetchInfo &a)
             : pkt(p ? new Packet(p, false, false) : nullptr),
-            pfi_old(std::make_unique<PrefetchInfo_old>(a)), pfSourceType(PrefetchSourceType::PF_NONE) {}
+            pfi_old(std::make_unique<PrefetchInfo_old>(a)),
+            pfSourceType(PrefetchSourceType::PF_NONE), stagedDecisionId(0)
+        {}
         PFtriggerInfo(const PFtriggerInfo &other)
             : pkt(other.pkt ? new Packet(other.pkt, false, false) : nullptr),
               pfi_old(other.pfi_old ? std::make_unique<PrefetchInfo_old>(*(other.pfi_old)) : nullptr),
-              pfSourceType(other.pfSourceType) {}
+              pfSourceType(other.pfSourceType),
+              stagedDecisionId(other.stagedDecisionId)
+        {}
         PFtriggerInfo& operator=(const PFtriggerInfo &other)
         {
             if (this != &other) {
                 delete pkt;
                 pkt = other.pkt ? new Packet(other.pkt, false, false) : nullptr;
-                pfi_old = std::make_unique<PrefetchInfo_old>(*(other.pfi_old));
+                pfi_old = other.pfi_old ?
+                    std::make_unique<PrefetchInfo_old>(*(other.pfi_old)) :
+                    nullptr;
                 pfSourceType = other.pfSourceType;
+                stagedDecisionId = other.stagedDecisionId;
             }
             return *this;
         }
@@ -417,6 +431,9 @@ class Base : public ClockedObject
         }
         void setTriggerInfo_PFsrc(const PrefetchSourceType pfSource) const {
             trigger_info.pfSourceType = pfSource;
+        }
+        void setTriggerInfo_StagedDecisionId(uint64_t decision_id) const {
+            trigger_info.stagedDecisionId = decision_id;
         }
     };
     /**
@@ -1256,6 +1273,14 @@ class Base : public ClockedObject
     virtual void offloadToDownStream() { panic("offloadToDownStream() not implemented"); }
 
     virtual bool hasHintsWaiting() { return false; }
+
+    /**
+     * Observe a demand access after Base's common probe filtering, but before
+     * the optional legacy prefetch-training policy is applied.  Keep this at
+     * the end of the virtual interface so incremental builds cannot shift an
+     * existing Base vtable slot used by generated bindings.
+     */
+    virtual void observeRawDemandAccess(const PacketPtr &pkt, bool miss) {}
 };
 
 } // namespace prefetch

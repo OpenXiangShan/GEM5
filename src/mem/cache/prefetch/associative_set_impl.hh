@@ -80,7 +80,8 @@ AssociativeSet<Entry>::accessEntry(Entry *entry)
 
 template<class Entry>
 Entry*
-AssociativeSet<Entry>::findVictim(Addr addr, bool *victim_secure)
+AssociativeSet<Entry>::findVictim(Addr addr, bool *victim_secure,
+                                  bool *victim_valid)
 {
     // Get possible entries to be victimized
     const std::vector<ReplaceableEntry*> selected_entries =
@@ -90,7 +91,41 @@ AssociativeSet<Entry>::findVictim(Addr addr, bool *victim_secure)
     if (victim_secure) {
         *victim_secure = victim->isSecure();
     }
+    if (victim_valid) {
+        *victim_valid = victim->isValid();
+    }
     // There is only one eviction for this replacement
+    invalidate(victim);
+    return victim;
+}
+
+template<class Entry>
+Entry*
+AssociativeSet<Entry>::findVictimEligible(
+    Addr addr, const std::function<bool(const Entry &)> &eligible,
+    bool *victim_secure, bool *victim_valid)
+{
+    const std::vector<ReplaceableEntry*> selected_entries =
+        indexingPolicy->getPossibleEntries(addr);
+    std::vector<ReplaceableEntry*> eligible_entries;
+    eligible_entries.reserve(selected_entries.size());
+    for (ReplaceableEntry *entry : selected_entries) {
+        if (eligible(*static_cast<Entry *>(entry))) {
+            eligible_entries.push_back(entry);
+        }
+    }
+    if (eligible_entries.empty()) {
+        return nullptr;
+    }
+
+    Entry *victim = static_cast<Entry *>(
+        replacementPolicy->getVictim(eligible_entries));
+    if (victim_secure) {
+        *victim_secure = victim->isSecure();
+    }
+    if (victim_valid) {
+        *victim_valid = victim->isValid();
+    }
     invalidate(victim);
     return victim;
 }

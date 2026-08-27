@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <deque>
 #include <list>
+#include <optional>
 #include <utility>
 
 #include "arch/generic/mmu.hh"
@@ -64,6 +65,24 @@ using PFTriggerInfo = Base::PFtriggerInfo;
 class Queued : public Base
 {
   public:
+    /**
+     * Opaque identity for a candidate staged in a finite producer buffer.
+     *
+     * Queued and Worker only carry this value. The originating prefetcher
+     * validates it before changing its own buffer or trigger state.
+     */
+    struct StagedPrefetchToken
+    {
+        Addr region = 0;
+        ContextID contextId = InvalidContextID;
+        uint64_t entryGeneration = 0;
+        uint64_t candidateId = 0;
+        uint64_t decisionId = 0;
+        uint64_t targetLevel = 0;
+        uint8_t offset = 0;
+        bool secure = false;
+    };
+
     struct PrefetchCmd
     {
         Addr addr;
@@ -75,6 +94,9 @@ class Queued : public Base
         int depth=0;
         PrefetchSourceType pfSource;
         PFTriggerInfo pf_trigger_info{};
+        // A finite producer can defer its own state transition until the
+        // target queue accepts or terminally rejects this candidate.
+        std::optional<StagedPrefetchToken> stagedToken;
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
             panic("PrefetchCmd: no source specified");
@@ -95,6 +117,15 @@ class Queued : public Base
     // using AddrPriority = std::pair<Addr, int32_t>;
     using AddrPriority = PrefetchCmd;
 
+    /** Terminal state of one candidate submitted to the prefetch queue. */
+    enum class InsertResult : uint8_t
+    {
+        Rejected,
+        Accepted,
+        PendingTranslation,
+        PendingForward,
+    };
+
   protected:
     struct DeferredPacket : public BaseMMU::Translation
     {
@@ -114,6 +145,11 @@ class Queued : public Base
         RequestPtr translationRequest;
         ThreadContext *tc;
         bool ongoingTranslation;
+        // Keep only an opaque producer token while this packet is deferred or
+        // forwarded. The producer owns interpretation and may be upstream of
+        // the Queued instance that ultimately reaches the target PFQ.
+        std::optional<StagedPrefetchToken> stagedToken;
+        Queued *stagedCompletionOwner = nullptr;
 
         /**
          * Constructor
@@ -125,7 +161,8 @@ class Queued : public Base
          */
         DeferredPacket(Queued *o, PrefetchInfo const &pfi, Tick t,
             int32_t prio) : owner(o), pfInfo(pfi), tick(t), pkt(nullptr),
-            priority(prio), translationRequest(), tc(nullptr),
+            priority(prio), pfahead(false), pfahead_host(0),
+            translationRequest(), tc(nullptr),
             ongoingTranslation(false) {
         }
 
@@ -376,7 +413,8 @@ class Queued : public Base
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
-    void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio);
+    InsertResult insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
+                        const AddrPriority &addr_prio);
 
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses) = 0;
@@ -403,6 +441,25 @@ class Queued : public Base
      * @param dpp DeferredPacket to add
      */
     virtual void addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp);
+
+    /** Whether addToQueue() will hand this packet to the next cache level. */
+    bool willForwardToDownStream(const std::list<DeferredPacket> &queue,
+                                 const DeferredPacket &dpp) const;
+
+    /**
+     * Notify a staged producer once this queue has accepted or terminally
+     * rejected a candidate. Ordinary producers leave the marker clear.
+     */
+    virtual void completeStagedPrefetch(const StagedPrefetchToken &token,
+                                        bool accepted)
+    {}
+
+    /** Return a reserved staged candidate to its producer without retiring it. */
+    virtual void releaseStagedPrefetch(const StagedPrefetchToken &token)
+    {}
+
+    /** Complete a deferred staged producer exactly once. */
+    void completeDeferredStagedPrefetch(DeferredPacket &dpp, bool accepted);
 
     /**
      * Starts the translations of the queued prefetches with a

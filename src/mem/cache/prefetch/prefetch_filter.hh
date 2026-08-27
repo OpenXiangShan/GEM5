@@ -3,8 +3,10 @@
 #ifndef GEM5_PREFETCH_FILTER_HH
 #define GEM5_PREFETCH_FILTER_HH
 
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,15 +18,20 @@
 #include "mem/cache/tags/tagged_entry.hh"
 
 namespace gem5 {
+namespace replacement_policy
+{
+class Base;
+}
+
 namespace prefetch {
 class BaseIndexingPolicy;
 class Base;
-namespace replacement_policy { class Base; }
 using AddrPriority = gem5::prefetch::Queued::AddrPriority;
 class PrefetchFilter
 {
   public:
-  using TriggerInfo = Base::PFtriggerInfo;
+    using TriggerInfo = Base::PFtriggerInfo;
+    using StagedPrefetchToken = Queued::StagedPrefetchToken;
 
     struct Entry : public TaggedEntry
     {
@@ -37,11 +44,19 @@ class PrefetchFilter
         uint64_t PFlevel;      // prefetch level for this region, L1/L2/L3
         ContextID contextId;   // VA namespace of this region
         std::vector<std::unique_ptr<TriggerInfo>> bitTriggers;
+        // STEP's staged PB path reserves a bit before asynchronous queueing.
+        // The entry/candidate identities make late completions harmless after
+        // a finite PB entry has been reclaimed or replaced.
+        uint64_t entryGeneration;
+        uint64_t inFlightBits;
+        std::vector<uint64_t> candidateIds;
+        std::vector<uint64_t> decisionIds;
 
         Entry()
             : TaggedEntry(), region_addr(0), region_bits(0), filter_bits(0), alias_bits(0),
               paddr_valid(false), decr_mode(false), PFlevel(0),
-              contextId(InvalidContextID) {}
+              contextId(InvalidContextID), entryGeneration(0),
+              inFlightBits(0) {}
 
         Entry(const Entry &other)
             : TaggedEntry(other),
@@ -52,7 +67,11 @@ class PrefetchFilter
               paddr_valid(other.paddr_valid),
               decr_mode(other.decr_mode),
               PFlevel(other.PFlevel),
-              contextId(other.contextId)
+              contextId(other.contextId),
+              entryGeneration(other.entryGeneration),
+              inFlightBits(other.inFlightBits),
+              candidateIds(other.candidateIds),
+              decisionIds(other.decisionIds)
         {
             copyTriggers(other);
         }
@@ -69,6 +88,10 @@ class PrefetchFilter
                 decr_mode = other.decr_mode;
                 PFlevel = other.PFlevel;
                 contextId = other.contextId;
+                entryGeneration = other.entryGeneration;
+                inFlightBits = other.inFlightBits;
+                candidateIds = other.candidateIds;
+                decisionIds = other.decisionIds;
                 copyTriggers(other);
             }
             return *this;
@@ -89,14 +112,47 @@ class PrefetchFilter
             bitTriggers.reserve(other.bitTriggers.size());
             for (const auto &src : other.bitTriggers) {
                 if (src) {
-                    PacketPtr pkt = src->pkt;
-                    bitTriggers.emplace_back(
-                        std::make_unique<TriggerInfo>(pkt, *(src->pfi_old)));
+                    bitTriggers.emplace_back(std::make_unique<TriggerInfo>(
+                        *src));
                 } else {
                     bitTriggers.emplace_back(nullptr);
                 }
             }
         }
+    };
+
+    /** A non-destructive selection from a finite prefetch buffer. */
+    struct PendingRequest
+    {
+        Addr address = 0;
+        Addr region = 0;
+        unsigned offset = 0;
+        int priority = 0;
+        uint64_t level = 0;
+        ContextID contextId = InvalidContextID;
+        bool secure = false;
+        unsigned tableIndex = 0;
+        TriggerInfo trigger;
+    };
+
+    /** A PB reservation returned only by the staged STEP interface. */
+    struct StagedRequest
+    {
+        Addr address = 0;
+        int priority = 0;
+        TriggerInfo trigger;
+        StagedPrefetchToken token;
+    };
+
+    /** Effects of inserting a new STEP decision into the finite PB. */
+    struct StagedInsertResult
+    {
+        uint64_t newBits = 0;
+        // A staged region is limited to 64 cache lines, so eviction can
+        // report every displaced candidate without allocating on the
+        // prefetch-trigger hot path.
+        std::array<StagedPrefetchToken, 64> evictedTokens{};
+        unsigned evictedTokenCount = 0;
     };
 
     static constexpr unsigned DEFAULT_REGION_SIZE = 1024; // 1KB
@@ -105,7 +161,9 @@ class PrefetchFilter
       unsigned entries = 16, unsigned region_size = DEFAULT_REGION_SIZE,
       unsigned blk_size = 64, statistics::Group *parent = nullptr,
       unsigned vaddr_hash_width = 2, PrefetchSourceType pf_source_type = PrefetchSourceType::PF_NONE,
-      const std::string &name = "prefetch_filter");
+      const std::string &name = "prefetch_filter",
+      bool strict_region_match = false,
+      bool reclaim_empty_entries = false);
     ~PrefetchFilter();
 
     // Lookup entry by virtual address (uses VA->region conversion and TaggedEntry tag)
@@ -135,6 +193,31 @@ class PrefetchFilter
     // Get blocks still pending prefetch (region_bits & ~filter_bits)
     uint64_t pendingBlocks(Entry *e) const;
 
+    /**
+     * Insert new blocks for a staged producer without changing legacy filter
+     * behavior. Entries with an in-flight block are pinned until that block
+     * reaches its terminal queue disposition.
+     */
+    StagedInsertResult insertStaged(Addr region_addr, uint64_t region_bits,
+                                    uint8_t alias_bits, bool paddr_valid,
+                                    bool decr_mode, bool is_secure,
+                                    uint64_t pf_level,
+                                    const TriggerInfo &trigger,
+                                    uint64_t decision_id);
+
+    /** Reserve one ready staged bit so it cannot be selected twice. */
+    std::optional<StagedRequest> reserveStaged(uint64_t target_level);
+
+    /** Terminally consume a reserved staged bit and return its trigger. */
+    std::optional<TriggerInfo> completeStaged(
+        const StagedPrefetchToken &token, bool accepted);
+
+    /** Release a reservation that never reached Queued, without consuming it. */
+    bool releaseStaged(const StagedPrefetchToken &token);
+
+    /** Whether a staged PB bit is ready to be reserved. */
+    bool hasStagedRequests() const;
+
     // Compute alias bits from virtual address
     static uint8_t aliasFromVaddr(Addr vaddr) { return (vaddr >> 12) & 0x3; }
 
@@ -146,9 +229,25 @@ class PrefetchFilter
     unsigned rrIndex{0};
     const unsigned REGION_ADDR_RAW_WIDTH;
     const unsigned vaddrHashWidth; // width for vaddr hash (per chisel spec)
+    // The legacy filters use their compact region hash as the lookup tag.
+    // A STEP PB needs a full page/context comparison after the set lookup so
+    // multiple pages with the same compact hash cannot be confused.
+    const bool strictRegionMatch;
+    // A staged STEP footprint has no use once every bit has crossed its PB
+    // boundary. Legacy filters retain their historical valid-empty behavior.
+    const bool reclaimEmptyEntries;
+    uint64_t nextEntryGeneration{0};
+    uint64_t nextCandidateId{0};
 
     void ensureTriggerStorage(Entry &e);
+    void ensureStagedStorage(Entry &e);
     void storeTriggersForBits(Entry &e, uint64_t bits, const TriggerInfo *trigger);
+    uint64_t selectableBlocks(const Entry *entry) const;
+    bool tokenMatches(const Entry &entry, const StagedPrefetchToken &token) const;
+    StagedPrefetchToken makeToken(const Entry &entry, unsigned offset,
+                                  bool secure) const;
+    void collectPendingTokens(const Entry &entry, bool secure,
+                              StagedInsertResult &result) const;
 
     // Compute region-hash tag as described by chisel:
     // low  = region_tag[BLK_ADDR_RAW_WIDTH-1:0]
@@ -176,6 +275,8 @@ class PrefetchFilter
         statistics::Scalar l3Issued;
         statistics::Scalar hashcollisionCount;
         statistics::Scalar contextAliasCount;
+        statistics::Scalar emptyReclaims;
+        statistics::Scalar pendingEvictedBlocks;
     } stats;
     PrefetchSourceType pfSourceType;
     const std::string table_name;
@@ -185,7 +286,23 @@ class PrefetchFilter
   bool GetPFAddrL1(std::vector<AddrPriority> &addresses);
   bool GetPFAddrL2(std::vector<AddrPriority> &addresses);
   bool GetPFAddrL3(std::vector<AddrPriority> &addresses);
+  bool PeekPFAddrL1(PendingRequest &request);
+  bool PeekPFAddrL2(PendingRequest &request);
+  bool PeekPFAddrL3(PendingRequest &request);
+
+  /** Consume a previously peeked request after a terminal disposition. */
+  bool commit(const PendingRequest &request, bool *entry_empty = nullptr);
+  /** Discard a previously peeked request without counting it as issued. */
+  bool discard(const PendingRequest &request, bool *entry_empty = nullptr);
   bool hasPFRequestsInBuffer();
+
+  private:
+    bool selectNext(uint64_t level, PendingRequest &request);
+    bool getPFAddr(uint64_t level, std::vector<AddrPriority> &addresses);
+    bool consume(const PendingRequest &request, bool count_as_issued,
+                 bool *entry_empty);
+    Entry *findExactEntry(Addr region, ContextID context_id, bool secure,
+                          uint64_t level);
 };
 
 } // namespace prefetch

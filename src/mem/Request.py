@@ -44,4 +44,5 @@ class PrefetchSourceType(Enum):
         "CDP",
         "SOpt",
         "DespacitoStream",
+        "STEP",
     ]

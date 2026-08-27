@@ -42,6 +42,7 @@ namespace prefetch
 // PrefetchFilter is implemented in its own header/source to keep sms.
 #include "mem/cache/prefetch/prefetch_filter.hh"
 
+class StepSpatialPrefetcher;
 
 class XSCompositePrefetcher : public Queued
 {
@@ -51,7 +52,13 @@ class XSCompositePrefetcher : public Queued
 
     const bool enableTrainFilter;  // Enable TrainFilter for ROB-order training
 
-    bool useTrainingBuffer() const override { return enableTrainFilter; }
+    // STEP observes raw demand accesses through Base's dedicated hook.  The
+    // existing composite components must retain their original ROB-ordered
+    // training path for a controlled STEP-versus-SMS comparison.
+    bool useTrainingBuffer() const override
+    {
+        return enableTrainFilter;
+    }
 
     Addr regionAddress(Addr a) { return a / regionSize; };
 
@@ -165,6 +172,7 @@ class XSCompositePrefetcher : public Queued
 
   public:
     XSCompositePrefetcher(const XSCompositePrefetcherParams &p);
+    ~XSCompositePrefetcher() override;
 
     // dummy implementation, calc(3 args) will not call it
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
@@ -178,14 +186,22 @@ class XSCompositePrefetcher : public Queued
     /** Update the RR right table after a prefetch fill */
     void notifyFill(const PacketPtr& pkt) override;
 
+    /** Validate the final cache and hint topology before probes are wired. */
+    void regProbeListeners() override;
+
   private:
     const unsigned pfFilterSize{256};
     const unsigned pfPageFilterSize{16};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
+    // STEP uses its own line-aligned fill filter. The legacy shared filter
+    // intentionally retains its existing key and fill behavior.
+    boost::compute::detail::lru_cache<Addr, Addr> stepBlockLRUFilter;
 
     PrefetchFilter sms_pfFilter;
+    PrefetchFilter stepPb;
     PrefetchFilter stridestream_pfFilter_l1;
     PrefetchFilter stridestream_pfFilter_l2l3;
+    std::unique_ptr<StepSpatialPrefetcher> step;
 
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilter;
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL2;
@@ -193,6 +209,21 @@ class XSCompositePrefetcher : public Queued
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int ahead_level = -1);
+    bool sendStepPFWithFilter(const PrefetchInfo &pfi, Addr addr,
+                              std::vector<AddrPriority> &addresses, int prio,
+                              int ahead_level);
+    bool stepPrefetchFiltered(const PrefetchInfo &pfi, Addr addr,
+                              int ahead_level);
+    Addr stepBlockFilterKey(Addr addr, ContextID context_id) const;
+    uint64_t bufferStepPrefetches(const PrefetchInfo &pfi, Addr region,
+                                  uint64_t candidates,
+                                  uint64_t decision_id);
+    bool getStepPrefetchFromBuffer(std::vector<AddrPriority> &addresses,
+                                   int target_level);
+    void completeStagedPrefetch(const StagedPrefetchToken &token,
+                                bool accepted) override;
+    void releaseStagedPrefetch(const StagedPrefetchToken &token) override;
+    void observeRawDemandAccess(const PacketPtr &pkt, bool miss) override;
     void sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
                       boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level);
     void updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,
@@ -217,6 +248,7 @@ class XSCompositePrefetcher : public Queued
 
     const bool enableActivepage;
     const bool enablePht;
+    const bool enableStep;
     const bool enableCPLX;
     const bool enableSPP;
     const bool enableTemporal;
@@ -227,6 +259,8 @@ class XSCompositePrefetcher : public Queued
     const bool enableXsstream;
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
+    const unsigned stepRegionSize;
+    const int stepPFLevel;
 
   public:
     void notifyIns(int ins_num) override

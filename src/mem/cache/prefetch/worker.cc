@@ -44,6 +44,7 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
                     "Worker: offload: [%lx, %d] skip recently in "
                     "localBuffer\n",
                     ptr->pfInfo.getAddr(), ptr->pfahead_host);
+            completeDeferredStagedPrefetch(*ptr, false);
             return;
         }
         pfLRUFilter.insert(filter_key, 0);
@@ -54,6 +55,12 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
             localBuffer.size());
     localBuffer.push_back(*ptr);
+    // The copied local-buffer packet owns the staged token after handoff.
+    ptr->stagedToken.reset();
+    ptr->stagedCompletionOwner = nullptr;
+    if (!transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 void
@@ -63,7 +70,8 @@ WorkerPrefetcher::transfer()
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
-        auto drop_local_packet = [&dpp_it]() {
+        auto drop_local_packet = [this, &dpp_it]() {
+            completeDeferredStagedPrefetch(*dpp_it, false);
             if (dpp_it->pkt != nullptr) {
                 delete dpp_it->pkt;
                 dpp_it->pkt = nullptr;
@@ -84,6 +92,10 @@ WorkerPrefetcher::transfer()
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] dropped by PF control admission\n",
                         dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
             } else {
+                const bool forwards = willForwardToDownStream(pfq, *dpp_it);
+                if (!forwards) {
+                    completeDeferredStagedPrefetch(*dpp_it, true);
+                }
                 addToQueue(pfq, *dpp_it);
                 DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
@@ -94,6 +106,10 @@ WorkerPrefetcher::transfer()
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] dropped by PF control admission\n",
                         dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
             } else {
+                const bool forwards = willForwardToDownStream(pfq, *dpp_it);
+                if (!forwards) {
+                    completeDeferredStagedPrefetch(*dpp_it, true);
+                }
                 addToQueue(pfq, *dpp_it);
                 DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
@@ -103,7 +119,9 @@ WorkerPrefetcher::transfer()
         count++;
         latestTransferTick = curTick();
     }
-    schedule(transferEvent, nextCycle());
+    if (!localBuffer.empty() && !transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 }  // namespace prefetch

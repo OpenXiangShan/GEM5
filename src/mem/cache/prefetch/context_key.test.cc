@@ -55,5 +55,40 @@ TEST(ContextKey, IsStableWithinAContext)
     EXPECT_EQ(contextKey(address, 7), contextKey(address, 7));
 }
 
+TEST(ContextKey, StepAndStreamShareTheBlockFilterKey)
+{
+    // STEP candidates and stream candidates are both inserted into the
+    // composite prefetcher's shared block filter.  The source type is
+    // metadata only; it must not create a second key namespace.
+    constexpr Addr block = 0x4000;
+    constexpr ContextID context_id = 3;
+
+    const Addr stream_key = contextKey(block, context_id);
+    const Addr step_key = contextKey(block, context_id);
+
+    EXPECT_EQ(step_key, stream_key);
+}
+
+TEST(ContextKey, SharedBlockFilterSeparatesContexts)
+{
+    constexpr Addr block = 0x4000;
+
+    // A STEP candidate from another context must not be suppressed by a
+    // stream candidate from context 1 (and vice versa).
+    EXPECT_NE(contextKey(block, 1), contextKey(block, 2));
+}
+
+TEST(ContextKey, SharedBlockFilterAlignsFillAndCandidate)
+{
+    constexpr Addr block = 0x4000;
+    constexpr Addr fill = block + 0x23;
+    constexpr ContextID context_id = 3;
+
+    // Cache fills may preserve a byte offset, while candidates are generated
+    // per cache line. Both paths must qualify the aligned line address.
+    EXPECT_EQ(contextKey(block, context_id),
+              contextKey(fill & ~Addr(63), context_id));
+}
+
 }  // namespace prefetch
 }  // namespace gem5

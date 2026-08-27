@@ -1,12 +1,16 @@
 #include "mem/cache/prefetch/sms.hh"
+
+#include <climits>
 #include <cstdint>
 #include <iterator>
-#include <climits>
 
+#include "base/logging.hh"
 #include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
 #include "debug/XSCompositePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
+#include "mem/cache/prefetch/context_key.hh"
+#include "mem/cache/prefetch/step.hh"
 
 namespace gem5
 {
@@ -33,9 +37,14 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       phtPFLevel(std::min(p.pht_pf_level, (int) 3)),
       stats(this),
       pfBlockLRUFilter(pfFilterSize),
+      stepBlockLRUFilter(pfFilterSize),
       sms_pfFilter(p.sms_filter_indexing_policy, p.sms_filter_replacement_policy, p.sms_filter_entries,
              p.region_size, p.block_size, this, p.vaddr_hash_width,
              PrefetchSourceType::SPht, "sms_pfFilter"),
+      stepPb(p.step_pf_buffer_indexing_policy,
+             p.step_pf_buffer_replacement_policy, p.step_pf_buffer_entries,
+             p.step_region_size, p.block_size, this, p.vaddr_hash_width,
+             PrefetchSourceType::STEP, "step_pb", true, true),
       stridestream_pfFilter_l1(p.stridestream_L1_filter_indexing_policy, p.stridestream_L1_filter_replacement_policy,
                      p.stridestream_L1_filter_entries, p.region_size, p.block_size, this,
                      p.vaddr_hash_width, PrefetchSourceType::SStream,
@@ -44,6 +53,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
                        p.stridestream_L2L3_filter_entries, p.region_size, p.block_size, this,
                        p.vaddr_hash_width, PrefetchSourceType::SStream,
                        "stridestream_pfFilter_l2l3"),
+      step(nullptr),
       pfPageLRUFilter(pfPageFilterSize),
       pfPageLRUFilterL2(pfPageFilterSize),
       pfPageLRUFilterL3(pfPageFilterSize),
@@ -58,7 +68,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       Opt(p.opt),
       Xsstream(p.xsstream),
       enableActivepage(p.enable_activepage),
-      enablePht(p.enable_pht),
+      enablePht(p.enable_pht && !p.enable_step),
+      enableStep(p.enable_step),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
@@ -69,6 +80,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableXsstream(p.enable_xsstream),
       phtEarlyUpdate(p.pht_early_update),
       neighborPhtUpdate(p.neighbor_pht_update),
+      stepRegionSize(p.step_region_size),
+      stepPFLevel(p.step_pf_level),
       phtSentPrefetch(),
       phtReqSendEvent([this]{ phtSendEventWrapper(); },
           name()),
@@ -78,6 +91,15 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(smallBOP);
     assert(learnedBOP);
     assert(isPowerOf2(regionSize));
+    fatal_if(enableStep && !usePFBuffer,
+             "STEP requires use_pf_buffer=true; disable-pf-buffer is "
+             "unsupported");
+    fatal_if(enableStep && p.prefetch_train,
+             "STEP requires prefetch_train=false so its PB is the only "
+             "prefetch-training path");
+    if (enableStep) {
+        step = std::make_unique<StepSpatialPrefetcher>(p, this);
+    }
 
     setSharedFilterContextQualified(true);
     largeBOP->setSharedFilterContextQualified(true);
@@ -119,6 +141,9 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
+    DPRINTF(XSCompositePrefetcher,
+            "STEP: enabled=%d region_size=%u target_level=%d\n",
+            enableStep, stepRegionSize, stepPFLevel);
     if (Xsstream)
     {
         Xsstream->stridestream_pfFilter_l1 = &this->stridestream_pfFilter_l1;
@@ -133,6 +158,82 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     for(unsigned i = 0; i < 3; i++)
         phtSentPrefetch.push_back(phtsentInfo());
     
+}
+
+XSCompositePrefetcher::~XSCompositePrefetcher() = default;
+
+void
+XSCompositePrefetcher::regProbeListeners()
+{
+    if (enableStep) {
+        fatal_if(cache == nullptr || cache->level() != 1,
+                 "STEP must be attached to an L1 data cache");
+        fatal_if(stepPFLevel >= 2 && !hasHintDownStream(),
+                 "STEP target level %d requires an L1-to-L2 hint",
+                 stepPFLevel);
+        fatal_if(stepPFLevel >= 3 &&
+                     (!hasHintDownStream() ||
+                      !hintDownStream->hasHintDownStream()),
+                 "STEP target level 3 requires an L2-to-L3 hint");
+    }
+    Queued::regProbeListeners();
+}
+
+void
+XSCompositePrefetcher::observeRawDemandAccess(const PacketPtr &pkt, bool miss)
+{
+    if (!enableStep || pkt->req->isPrefetch() || pkt->req->isInstFetch() ||
+        pkt->isWrite() || !pkt->isRead() || pkt->isStorePFTrain() ||
+        !pkt->req->hasPC()) {
+        return;
+    }
+
+    // STEP follows the parent prefetcher's address-space setting but does not
+    // inherit its miss/prefetch-hit trigger policy.  The hook is intentionally
+    // before Base::observeAccess(), so every eligible demand load contributes
+    // to FOE/SOE/TOE without changing legacy component training.
+    if (useVirtualAddresses && !pkt->req->hasVaddr()) {
+        return;
+    }
+    const Addr address = useVirtualAddresses ? pkt->req->getVaddr() :
+        pkt->req->getPaddr();
+    const ContextID context_id = pkt->req->hasContextId() ?
+        pkt->req->contextId() : InvalidContextID;
+
+    assert(step);
+    const auto decision = step->observe(address, pkt->req->getPC(),
+                                        context_id, pkt->isSecure(), true);
+    if (!decision) {
+        return;
+    }
+
+    PrefetchSourceType pf_source = PrefetchSourceType::PF_NONE;
+    int pf_depth = 0;
+    if (miss) {
+        pf_source = pkt->getPFSource();
+        pf_depth = pkt->getPFDepth();
+    } else {
+        const auto metadata = cache->getHitBlkXsMetadata(pkt);
+        pf_source = metadata.prefetchSource;
+        pf_depth = metadata.prefetchDepth;
+    }
+    PrefetchInfo pfi(pkt, address, miss,
+                     Request::XsMetadata(pf_source, pf_depth));
+    // The normal Base path snapshots this request attribute into its deferred
+    // PrefetchInfo. STEP bypasses that path intentionally, so retain the same
+    // provenance in the PB's deep-copied trigger state without consuming the
+    // legacy squash marker.
+    pfi.setReqAfterSquash(pkt->req->isFirstReqAfterSquash());
+    pfi.setEverPrefetched(
+        hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+    pfi.setPfFirstHit(
+        !miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+    pfi.setPfHit(!miss && pfi.isEverPrefetched());
+    pfi.setTriggerInfo(pkt);
+
+    const uint64_t pb_admitted_blocks = bufferStepPrefetches(
+        pfi, decision->region, decision->candidates, decision->id);
+    step->recordBuffered(*decision, pb_admitted_blocks);
 }
 
 void
@@ -267,14 +368,17 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
 
-        bool use_pht = pfi.isCacheMiss() ||
-                       (pfi.isPfFirstHit() &&
-                        (pf_source == PrefetchSourceType::SStride || pf_source == PrefetchSourceType::HWP_BOP ||
-                         pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
-                         pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::Berti));
+        const bool spatial_trigger = pfi.isCacheMiss() ||
+            (pfi.isPfFirstHit() &&
+             (pf_source == PrefetchSourceType::SStride ||
+              pf_source == PrefetchSourceType::HWP_BOP ||
+              pf_source == PrefetchSourceType::SPht ||
+              pf_source == PrefetchSourceType::STEP ||
+              pf_source == PrefetchSourceType::IPCP_CPLX ||
+              pf_source == PrefetchSourceType::SPP ||
+              pf_source == PrefetchSourceType::Berti));
 
-        use_pht &= (!pfi.isStore()) && enablePht;
-
+        const bool use_pht = spatial_trigger && !pfi.isStore() && enablePht;
         bool trigger_pht = false;
         stride_pf_addr = phtPFAhead ? stride_pf_addr : 0;  // trigger addr sent to pht
         if (use_pht) {
@@ -350,7 +454,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         act.accessEntry(entry);
         in_active_page = entry->inActivePage(regionBlks);
         uint64_t region_bit_accessed = 1UL << region_offset;
-        if (phtEarlyUpdate)
+        if (!enableStep && phtEarlyUpdate)
             updatePht(entry, region_start, re_act_entry, true, region_offset);
         if (!(entry->regionBits & region_bit_accessed)) {
             entry->accessCount += 1;
@@ -412,7 +516,9 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
             re_act_entry->isSecure(), re_act_entry);
     }
 
-    updatePht(entry, region_start, re_act_mode, false, 0);  // update pht with evicted entry
+    if (!enableStep) {
+        updatePht(entry, region_start, re_act_mode, false, 0);
+    }
     entry->pc = pc;
     entry->contextId = context_id;
     entry->_setSecure(secure);
@@ -692,9 +798,11 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
 
 bool
 XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
-                                        int prio, PrefetchSourceType src, int ahead_level)
+                                        int prio, PrefetchSourceType src,
+                                        int ahead_level)
 {
-    // Count generated prefetch
+    // Keep the legacy SMS/stream/Berti filter contract unchanged. STEP has a
+    // separate PB handoff function so enabling it cannot alter this path.
     prefetchStats.pfGenerated++;
     Addr page_key = sharedFilterKey(pfi, regionAddress(addr));
     Addr block_key = sharedFilterKey(pfi, addr);
@@ -724,7 +832,8 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
         return false;
 
     } else {
-        if (!(src == PrefetchSourceType::SStream || src == PrefetchSourceType::StoreStream)) {
+        if (!(src == PrefetchSourceType::SStream ||
+              src == PrefetchSourceType::StoreStream)) {
             pfBlockLRUFilter.insert(block_key, 0);
         }
         if (archDBer) {
@@ -738,8 +847,214 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
         } else {
             addresses.back().pfahead = false;
         }
-        DPRINTF(XSCompositePrefetcher, "Send pf: %lx, target level: %i\n", addr, ahead_level);
+        DPRINTF(XSCompositePrefetcher, "Send pf: %lx, target level: %i\n",
+                addr, ahead_level);
         return true;
+    }
+}
+
+Addr
+XSCompositePrefetcher::stepBlockFilterKey(Addr addr,
+                                          ContextID context_id) const
+{
+    // contextKey() deliberately treats InvalidContextID as context zero for
+    // legacy callers. STEP's private filter follows its FT/AT/PHT isolation
+    // and keeps those two ownership domains distinct.
+    const ContextID table_context = context_id == InvalidContextID ?
+        INT_MAX : context_id;
+    return contextKey(blockAddress(addr), table_context);
+}
+
+bool
+XSCompositePrefetcher::stepPrefetchFiltered(const PrefetchInfo &pfi, Addr addr,
+                                            int ahead_level)
+{
+    const ContextID context_id = pfi.hasContextId() ? pfi.contextId() :
+        InvalidContextID;
+    const Addr step_block_key = stepBlockFilterKey(addr, context_id);
+    if (stepBlockLRUFilter.contains(step_block_key)) {
+        DPRINTF(XSCompositePrefetcher,
+                "STEP skip prefetched or filled line: %lx\n", addr);
+        return true;
+    }
+
+    const Addr page_key = sharedFilterKey(pfi, regionAddress(addr));
+    const Addr block_key = sharedFilterKey(pfi, addr);
+    if (ahead_level < 2 && pfPageLRUFilter.contains(page_key)) {
+        return true;
+    }
+    if (ahead_level == 2 && pfPageLRUFilterL2.contains(page_key)) {
+        return true;
+    }
+    if (ahead_level == 3 && pfPageLRUFilterL3.contains(page_key)) {
+        return true;
+    }
+    return pfBlockLRUFilter.contains(block_key);
+}
+
+bool
+XSCompositePrefetcher::sendStepPFWithFilter(
+    const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
+    int prio, int ahead_level)
+{
+    // This preflight is intentionally side-effect free. The shared filter,
+    // trace, and generated count are committed only after Queued accepts the
+    // candidate, so a rejected FOE cannot suppress a later TOE decision.
+    if (stepPrefetchFiltered(pfi, addr, ahead_level)) {
+        prefetchStats.pfFiltered++;
+        return false;
+    }
+
+    addresses.emplace_back(addr, prio, PrefetchSourceType::STEP);
+    // Preserve the target level even for local L1 placement.  The generic
+    // offload path needs this identity to keep a STEP L1 target from leaking
+    // to L2 when prefetch_can_offload is enabled.
+    addresses.back().pfahead_host = ahead_level;
+    if (ahead_level > 1) {
+        assert(ahead_level == 2 || ahead_level == 3);
+        addresses.back().pfahead = true;
+    } else {
+        addresses.back().pfahead = false;
+    }
+    DPRINTF(XSCompositePrefetcher, "STEP send pf: %lx, target level: %i\n",
+            addr, ahead_level);
+    return true;
+}
+
+uint64_t
+XSCompositePrefetcher::bufferStepPrefetches(const PrefetchInfo &pfi,
+                                             Addr region,
+                                             uint64_t candidates,
+                                             uint64_t decision_id)
+{
+    const unsigned region_blks = stepRegionSize / blkSize;
+    assert(region_blks > 0 && region_blks <= 64);
+    const uint64_t valid_bits = region_blks == 64 ? ~uint64_t(0) :
+        ((uint64_t(1) << region_blks) - 1);
+    // Admission only probes the filters. The shared-filter insertion, trace
+    // write, and generated count happen at PB-to-Queued handoff.
+    uint64_t pb_admitted_blocks = 0;
+    uint64_t remaining = candidates & valid_bits;
+    while (remaining) {
+        const unsigned offset = __builtin_ctzll(remaining);
+        const uint64_t bit = uint64_t(1) << offset;
+        const Addr addr = region * stepRegionSize + offset * blkSize;
+        if (!stepPrefetchFiltered(pfi, addr, stepPFLevel)) {
+            pb_admitted_blocks |= bit;
+        }
+        remaining &= remaining - 1;
+    }
+
+    if (pb_admitted_blocks == 0) {
+        return 0;
+    }
+
+    pfi.setTriggerInfo_PFsrc(PrefetchSourceType::STEP);
+    pfi.setTriggerInfo_StagedDecisionId(decision_id);
+    const auto result = stepPb.insertStaged(
+        region, pb_admitted_blocks, 0, true, false, pfi.isSecure(),
+        stepPFLevel, pfi.trigger_info, decision_id);
+    for (unsigned i = 0; i < result.evictedTokenCount; ++i) {
+        const auto &token = result.evictedTokens[i];
+        step->recordTerminalFailure(token.region, token.contextId,
+                                    token.secure, token.decisionId);
+    }
+    if (result.newBits != 0 && !PFReqSendEvent.scheduled()) {
+        schedule(PFReqSendEvent, nextCycle());
+    }
+    // A later STEP decision may overlap a still-live PB footprint. Only new
+    // bits create a pending FT decision; existing bits retain their original
+    // trigger and decision identity until their own terminal disposition.
+    return result.newBits;
+}
+
+bool
+XSCompositePrefetcher::getStepPrefetchFromBuffer(
+    std::vector<AddrPriority> &addresses, int target_level)
+{
+    const auto request = stepPb.reserveStaged(target_level);
+    if (!request) {
+        return false;
+    }
+
+    fatal_if(request->trigger.pfi_old == nullptr,
+             "STEP prefetch buffer entry has no trigger state");
+
+    // Reserving hides this PB bit from another arbitration pass until Queued
+    // either reaches its target PFQ or reports a terminal rejection.
+    PrefetchInfo trigger_pfi(*request->trigger.pfi_old);
+    std::vector<AddrPriority> accepted;
+    if (!sendStepPFWithFilter(trigger_pfi, request->address, accepted,
+                              request->priority, target_level)) {
+        if (stepPb.completeStaged(request->token, false)) {
+            step->recordBufferHandoffFiltered();
+            step->recordTerminalFailure(
+                request->token.region, request->token.contextId,
+                request->token.secure, request->token.decisionId);
+        }
+        return false;
+    }
+
+    assert(accepted.size() == 1);
+    accepted.front().pf_trigger_info = request->trigger;
+    // Selecting a PB bit only makes it eligible for Queued. The FT transition
+    // is completed after PF control, page checks, and queue admission decide
+    // whether this candidate actually has a downstream destination.
+    accepted.front().stagedToken = request->token;
+    addresses.push_back(accepted.front());
+    return true;
+}
+
+void
+XSCompositePrefetcher::completeStagedPrefetch(const StagedPrefetchToken &token,
+                                               bool accepted)
+{
+    if (!step) {
+        return;
+    }
+
+    const auto trigger = stepPb.completeStaged(token, accepted);
+    if (!trigger) {
+        return;
+    }
+    fatal_if(trigger->pfi_old == nullptr,
+             "STEP staged prefetch has no trigger state");
+    const auto &trigger_pfi = *trigger->pfi_old;
+    const Addr address = token.region * stepRegionSize +
+        token.offset * blkSize;
+
+    if (accepted) {
+        // This is the legacy composite shared filter. Its key shape remains
+        // unchanged; STEP candidates are already cache-line aligned.
+        prefetchStats.pfGenerated++;
+        pfBlockLRUFilter.insert(sharedFilterKey(trigger_pfi, address),
+                                0);
+        if (archDBer) {
+            archDBer->l1PFTraceWrite(curTick(), trigger_pfi.getPC(),
+                                     trigger_pfi.getAddr(), address,
+                                     PrefetchSourceType::STEP);
+        }
+        step->recordHandoff(token.region, token.contextId, token.secure,
+                            token.decisionId);
+    } else {
+        step->recordBufferHandoffRejected();
+        step->recordTerminalFailure(token.region, token.contextId,
+                                    token.secure, token.decisionId);
+    }
+
+    if (stepPb.hasStagedRequests() && !PFReqSendEvent.scheduled()) {
+        schedule(PFReqSendEvent, nextCycle());
+    }
+}
+
+void
+XSCompositePrefetcher::releaseStagedPrefetch(const StagedPrefetchToken &token)
+{
+    // Throttle truncation has not sent this request to Queued. Keep the PB
+    // candidate and its FT decision live for a future arbitration turn.
+    if (stepPb.releaseStaged(token) && stepPb.hasStagedRequests() &&
+        !PFReqSendEvent.scheduled()) {
+        schedule(PFReqSendEvent, nextCycle());
     }
 }
 
@@ -803,6 +1118,8 @@ void
 XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
 {
     if (pkt->req->hasVaddr()) {
+        // Preserve the legacy shared-filter update exactly. Existing SMS and
+        // companion prefetchers depend on this virtual-address behavior.
         stats.refillNotifyCount++;
         berti->notifyFill(pkt);
         ContextID context_id = pkt->req->hasContextId() ?
@@ -810,6 +1127,18 @@ XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
         pfBlockLRUFilter.insert(
             contextKey(pkt->req->getVaddr(), context_id), 0);
     }
+
+    if (!enableStep || (useVirtualAddresses && !pkt->req->hasVaddr())) {
+        return;
+    }
+
+    const Addr address = useVirtualAddresses ? pkt->req->getVaddr() :
+        pkt->req->getPaddr();
+    const ContextID context_id = pkt->req->hasContextId() ?
+        pkt->req->contextId() : InvalidContextID;
+    // The STEP private filter sees the same address space as its raw-demand
+    // observer and always uses cache-line granularity.
+    stepBlockLRUFilter.insert(stepBlockFilterKey(address, context_id), 0);
 }
 
 XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *parent)
@@ -847,8 +1176,8 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
 bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
 {
     //here we decide which to send for this cycle
-    //L1 Streamstride>berti>SMS>CMC>learnedBOP>smallBOP>largeBOP
-    //L2 Streamstride>SMS>BOP>TP
+    //L1 Streamstride>berti>STEP/SMS>CMC>learnedBOP>smallBOP>largeBOP
+    //L2 Streamstride>STEP/SMS>BOP>TP
     //first we get 1 L1PF
     bool L1PFsent = false;
     if (stridestream_pfFilter_l1.hasPFRequestsInBuffer()){
@@ -857,7 +1186,10 @@ bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &a
     if (!L1PFsent && berti->hasPFRequestsInBuffer()){
         L1PFsent = berti->GetPFRequestsFromBuffer(addresses);
     }
-    if(!L1PFsent && sms_pfFilter.hasPFRequestsInBuffer()){
+    if (!L1PFsent && enableStep && stepPb.hasStagedRequests()) {
+        L1PFsent = getStepPrefetchFromBuffer(addresses, 1);
+    }
+    if (!L1PFsent && !enableStep && sms_pfFilter.hasPFRequestsInBuffer()) {
         L1PFsent = sms_pfFilter.GetPFAddrL1(addresses);
     }
     if(!L1PFsent && cmc->hasPFRequestsInBuffer()){
@@ -885,7 +1217,10 @@ bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &a
     if (stridestream_pfFilter_l2l3.hasPFRequestsInBuffer()){
         L2PFsent = stridestream_pfFilter_l2l3.GetPFAddrL2(addresses);
     }
-    if (!L2PFsent && sms_pfFilter.hasPFRequestsInBuffer()){
+    if (!L2PFsent && enableStep && stepPb.hasStagedRequests()) {
+        L2PFsent = getStepPrefetchFromBuffer(addresses, 2);
+    }
+    if (!L2PFsent && !enableStep && sms_pfFilter.hasPFRequestsInBuffer()) {
         L2PFsent = sms_pfFilter.GetPFAddrL2(addresses);
     }
     if (BOPPFlevel == 2 && !L2PFsent && largeBOP->hasPFRequestsInBuffer()){
@@ -905,13 +1240,17 @@ bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &a
     }
     bool L3PFsent = false;
     L3PFsent = stridestream_pfFilter_l2l3.GetPFAddrL3(addresses);
-    if (!L3PFsent && sms_pfFilter.hasPFRequestsInBuffer()){
+    if (!L3PFsent && enableStep && stepPb.hasStagedRequests()) {
+        L3PFsent = getStepPrefetchFromBuffer(addresses, 3);
+    }
+    if (!L3PFsent && !enableStep && sms_pfFilter.hasPFRequestsInBuffer()) {
         L3PFsent = sms_pfFilter.GetPFAddrL3(addresses);
     }
     return L1PFsent || L2PFsent || L3PFsent;
 }
 bool XSCompositePrefetcher::hasPFRequestsInBuffer() {
-    return sms_pfFilter.hasPFRequestsInBuffer() ||
+    return (enableStep && stepPb.hasStagedRequests()) ||
+            (!enableStep && sms_pfFilter.hasPFRequestsInBuffer()) ||
             stridestream_pfFilter_l1.hasPFRequestsInBuffer() ||
             stridestream_pfFilter_l2l3.hasPFRequestsInBuffer() ||
             largeBOP->hasPFRequestsInBuffer() ||

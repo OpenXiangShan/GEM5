@@ -1254,6 +1254,77 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     )
     pht_pf_ahead = Param.Bool(True, "Prefetch pattern region ahead with stride")
     pht_pf_level = Param.Int(2, "Prefetch target level")
+
+    # STEP spatial footprint prefetcher. These structures are independent of
+    # the legacy SMS ACT/PHT because STEP needs several raw footprints per key.
+    enable_step = Param.Bool(False, "Replace SMS PHT issuance with STEP")
+    step_region_size = Param.MemorySize("4KiB", "STEP spatial region size")
+    step_ft_entries = Param.MemorySize(
+        "256", "Number of STEP filter-table entries"
+    )
+    step_ft_assoc = Param.Int(8, "Associativity of the STEP filter table")
+    step_ft_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.step_ft_assoc,
+            size=Parent.step_ft_entries),
+        "Indexing policy of the STEP filter table"
+    )
+    step_ft_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the STEP filter table"
+    )
+    step_act_entries = Param.MemorySize(
+        "128", "Number of STEP accumulation-table entries"
+    )
+    step_act_assoc = Param.Int(8, "Associativity of the STEP accumulation table")
+    step_act_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.step_act_assoc,
+            size=Parent.step_act_entries),
+        "Indexing policy of the STEP accumulation table"
+    )
+    step_act_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the STEP accumulation table"
+    )
+    step_pht_entries = Param.MemorySize(
+        "512", "Number of STEP pattern-history-table entries"
+    )
+    step_pht_assoc = Param.Int(8, "Associativity of the STEP pattern history table")
+    step_pht_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.step_pht_assoc,
+            size=Parent.step_pht_entries),
+        "Indexing policy of the STEP pattern history table"
+    )
+    step_pht_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the STEP pattern history table"
+    )
+    step_pc_hash_bits = Param.Unsigned(12, "Hashed PC width for STEP FOE")
+    step_confidence_entries = Param.Unsigned(
+        3, "Maximum number of recent STEP footprints to compare"
+    )
+    step_confidence_threshold = Param.Percent(
+        75, "Minimum Jaccard similarity for STEP FOE/SOE"
+    )
+    step_enable_foe = Param.Bool(True, "Allow STEP first-offset issuance")
+    step_enable_soe = Param.Bool(False, "Allow STEP second-offset issuance")
+    step_enable_toe = Param.Bool(True, "Allow STEP third-offset issuance")
+    step_pf_level = Param.Int(2, "STEP prefetch target level")
+    step_pf_buffer_entries = Param.MemorySize(
+        "32", "Number of STEP prefetch-buffer entries"
+    )
+    step_pf_buffer_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.step_pf_buffer_entries,
+            size=Parent.step_pf_buffer_entries),
+        "Indexing policy of the STEP prefetch buffer"
+    )
+    step_pf_buffer_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the STEP prefetch buffer"
+    )
     # pf gen table (full-assoc)
     # not implemented now, because queued prefetcher already had a filter
     pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
