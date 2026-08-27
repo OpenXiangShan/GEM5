@@ -106,27 +106,25 @@ Commit::processTrapEvent(ThreadID tid)
 Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
       stuckCheckEvent([this]() {
-        static std::vector<DynInstPtr> debug_insts;
-
         for (ThreadID tid = 0; tid < numThreads; tid++) {
             if (cpu->curCycle() - this->lastCommitCycle[tid] > 40000) {
                 if (traceMaybeExitOnPipelineDrainFromStuckCheck()) {
                     return;
                 }
 
-                if (auto inst = rob->readHeadInst(0)) {
-                    warn("can't commit inst %s\n", inst->genDisassembly());
-                    debug_insts.insert(
-                        debug_insts.begin(), rob->getInstList(tid).begin(),
-                        rob->getInstList(tid).end());
-                    warn("dump rob front 10 insts\n");
+                if (auto inst = rob->readHeadInst(tid)) {
+                    warn("Thread %d can't commit head inst %s\n", tid,
+                         inst->genDisassembly());
+                    const auto &debug_insts = rob->getInstList(tid);
+                    warn("dump thread %d rob front 10 insts\n", tid);
                     int i = 0;
-                    for (auto inst = debug_insts.begin();
-                        inst != debug_insts.end() && i < 10; inst++, i++) {
-                        warn("%s\n", (*inst)->genDisassembly());
+                    for (auto it = debug_insts.begin();
+                        it != debug_insts.end() && i < 10; it++, i++) {
+                        warn("%s\n", (*it)->genDisassembly());
                     }
                 } else {
-                    warn("rob was empty, may be fetch or rename stuck\n");
+                    warn("Thread %d rob was empty, may be fetch or rename "
+                         "stuck\n", tid);
                 }
                 panic(
                     "Commit stage is stucked for more than 40,000 cycles!\n"
