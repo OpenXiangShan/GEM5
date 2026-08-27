@@ -55,7 +55,7 @@ namespace RiscvISA;
 
 //Include the riscv vector implementation
 //Must Include this before "decoder.isa"
-##include "vector/$(rvv_impl)/base.isa"
+##include "vector/base/base.isa"
 
 //Include the decoder definition
 ##include "decoder.isa"

@@ -26,7 +26,6 @@ jobs:
     
     outputs:
       benchmark_type: ${{ steps.setup.outputs.benchmark }}
-      vector_type: ${{ steps.setup.outputs.vector_type }}
       pr_sha: ${{ steps.setup.outputs.pr_sha }}
     
     steps:
@@ -34,7 +33,6 @@ jobs:
         id: setup
         run: |
           echo "benchmark=spec06int-rvv-0.8c" >> "$GITHUB_OUTPUT"
-          echo "vector_type=base" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "pull_request_target" ]; then
             echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else
@@ -48,6 +46,5 @@ jobs:
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: ${{ needs.trigger.outputs.benchmark_type }}
-      vector_type: ${{ needs.trigger.outputs.vector_type }}
       gcbv_ref_so: /nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so
       pr_sha: ${{ needs.trigger.outputs.pr_sha }}
