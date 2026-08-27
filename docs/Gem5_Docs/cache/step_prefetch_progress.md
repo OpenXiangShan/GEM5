@@ -20,8 +20,8 @@
 | 论文对照审计 | 已完成 | 明确 Jaccard 为严格 `> 0.75`，并区分论文低存储基线与 GEM5 本地参数/时序选择 |
 | 现有 SMS 审计 | 已完成 | 现有 PHT 是单项饱和计数器，不可直接承载多 footprint 相似度 |
 | 实施合同 | 已完成 | `step_prefetch_implementation.md` 定义状态、参数、复杂度和验证口径 |
-| 文档提交 | 待提交 | 初始三份文档已在 `0ff4520602` 提交；本次源代码对齐和验证结果将在实现提交后单独提交 |
-| STEP 代码 | 已实现，待提交 | `step.hh/.cc`、参数、source attribution、独立 `stepPb`、raw-demand hook，以及 Queue 接受后才更新 `FT.issued` 的 staged completion 均在当前 worktree |
+| 文档与代码提交 | 已完成并推送 | 初始文档为 `0ff4520602`；STEP 实现为 `1b574b055a`，验证文档为 `4b4a6fdfbe`，CI 合同记录为 `b147a86fe4` |
+| STEP 代码 | 已实现并推送 | `step.hh/.cc`、参数、source attribution、独立 `stepPb`、raw-demand hook，以及 Queue 接受后才更新 `FT.issued` 的 staged completion 均在 `1b574b055a` |
 | 单元/小测试 | 已完成 | `step.test.cc` 14/14 通过，覆盖生命周期、maturity、多 history 收敛、AT victim 训练、TOE、`issued` 和隔离 |
 | `gem5.opt` 构建 | 已完成 | `scons build/RISCV/gem5.opt --gold-linker -j1` 通过；生成有效 ELF |
 | omnetpp 单点 | 已完成诊断 smoke | 当前修订的 10k/1M 基线与 STEP 均正常恢复、difftest 无 mismatch；按最新要求不把本地 A/B 作为 CI 门槛或性能结论 |
@@ -37,7 +37,8 @@
    与指定 omnetpp 切片一致。
 3. 当前主工作区含用户未跟踪文件，因此所有本任务写入都只在上述隔离 worktree 进行。
 4. 远端 CI、push 和 solver dispatch 都是可见的外部状态变更：构建、单点、文档和
-   代码提交完成后，将先给出精确命令/输入和已验证的本地证据，再执行需要确认的触发。
+   代码已提交并推送；当前已按记录的完整合同触发 CI。solver 仍须在完整 CI 出现
+   正向结果后另行定义实验合同。
 5. STEP 用独立 `stepPb` 承接候选，不复用 legacy `sms_pfFilter`；PB-to-Queued
    handoff 才提交共享去重、trace 和 `pfGenerated`，且仅在 PF-control、跨页检查和
    `Queued::insert()` 接受后置 `FT.issued`。STEP 固定要求 `use_pf_buffer=true`、

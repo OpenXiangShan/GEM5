@@ -160,10 +160,11 @@ entries、12-bit PC hash，且主实验关闭 SOE。它不是论文全参数空�
 
 ## 文件和当前状态
 
-1. 已实现但尚未作为代码提交的改动包括 `step.hh/.cc`、`step.test.cc`、
+1. 已提交的 `1b574b055a` 包含 `step.hh/.cc`、`step.test.cc`、
    `Prefetcher.py`、`sms.hh/.cc`、`Options.py`、`PrefetcherConfig.py`、
    `Request.py` 和 prefetch `SConscript`。它们覆盖参数、source attribution、
-   STEP 状态、训练、lookup 和独立 buffer。
+   STEP 状态、训练、lookup 和独立 buffer；验证与 CI 合同已分别记录在
+   `4b4a6fdfbe` 和 `b147a86fe4`。
 2. `step.test.cc` 覆盖收敛/发散 footprint、重复 offset、FOE maturity、SOE/TOE
    匹配、同事件多条 history 的置信度、真实 AT victim 训练、`issued` 抑制和
    未接纳后 TOE 继续、PHT 的 PC/maturity 语义，以及 ContextID/secure 隔离。
