@@ -2,7 +2,7 @@
 
 ## 1. 背景与目标
 
-当前 classic cache 在 partial store miss 时发送 `ReadExReq`，同时取得写权限和完整 cacheline 数据。目标是在单核、无外部 snoop 的场景中，将该路径改为只申请权限，避免不必要的下层和 DDR 读流量。
+当前 classic cache 在 partial store miss 时发送 `ReadExReq`，同时取得写权限和完整 cacheline 数据。目标是在单核、无多核 snoop 的场景中，将该路径改为只申请权限，避免不必要的下层和 DDR 读流量。单核内 DTB walker 等 coherent client 发出的 shared read 仍需正确处理。
 
 当前实现只覆盖 classic timing L1D 的普通 cacheable StoreBuffer 写，不支持 Ruby、多核 snoop、AMO、LL/SC、uncacheable、压缩 cache 或 DMA coherence。
 
@@ -59,13 +59,26 @@ L1D 仅在 block invalid 且 StoreBuffer 写未覆盖整行时生成 `StorePermR
 
 ## 5. MSHR 与并发请求
 
-MSHR 增加 `MissKind`：`Normal`、`WholeLineWrite`、`PartialPermission` 和 `PartialDataFill`。
+MSHR 增加 `MissKind`：`Normal`、`WholeLineWrite`、`PartialPermission`、`PartialDataFill` 和 `PartialSnoopFill`。
 
 `PartialPermission` 未完成时，后续 store 可以进入 active targets 并合并 byte mask；load 必须进入 deferred targets。`StorePermResp` 只服务 store targets。随后 deferred load 重新检查 L1 mask：已覆盖则命中，否则发起 `PartialDataFill`。
 
 `PartialDataFill` 使用普通整行 read 请求取得下层数据，但 refill 只能复制 `~validMask` 对应的字节。响应期间到达的 store 先更新 block；refill 必须再次读取当前 mask，不能用请求发出时的旧 mask 覆盖新数据。
 
-## 6. Masked Writeback
+## 6. Shared Snoop 补全
+
+DTB walker 等单核 coherent client 的 `ReadSharedReq` 可能经 CoherentXBar snoop L1D。若命中 `PartialModified`，L1D 不能直接返回不完整数据，也不能让请求继续访问下层后与 L1D 的新数据失去一致性。此时 L1D 成为 ordering point：
+
+```text
+ReadSharedReq snoop -> reserved MSHR -> internal full-line ReadSharedReq
+                    -> merge invalid bytes -> deferred snoop response
+```
+
+原 snoop 被标记为由 L1D 响应；其副本作为 `FromSnoop` target 等待补全。内部请求复制 `Request`，避免与 CoherentXBar 中原事务的路由身份冲突。若同地址已有 read MSHR，则只追加 snoop target，并复用在途 fill。
+
+普通请求看不到 `partial_snoop_mshr_reserve` 提供的应急 MSHR，默认保留 4 项，避免不可重试的 snoop 因普通 MSHR 满而丢失。保留项耗尽会显式 panic；该恢复路径、atomic snoop 和多核竞争不在当前模型范围内。
+
+## 7. Masked Writeback
 
 Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据和 `byteEnable=validMask`：
 
@@ -77,24 +90,24 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 
 同地址 Write Queue 必须保持新旧数据顺序：full + partial 时把 partial overlay 到 full packet；partial + partial 时数据按新请求覆盖且 mask 做 OR；partial + full 时由 full packet 取代旧 partial packet。若同地址 MSHR 或已发送 writeback 存在，则沿现有 order/retry 机制串行化，禁止旧整行写回晚于新 partial 数据生效。
 
-## 7. 代码落点
+## 8. 代码落点
 
 - `src/mem/packet.hh`、`packet.cc`：新增命令，令 masked write 判断覆盖 `WritebackDirty`。
 - `src/mem/cache/cache_blk.hh`：partial 状态、valid mask 和覆盖判断。
 - `src/mem/cache/cache.cc`、`base.cc`：miss 分类、partial hit、选择性 refill、masked eviction 和下层 bypass。
-- `src/mem/cache/mshr.hh`、`mshr.cc`：`MissKind`、target 延迟和 store mask 合并。
+- `src/mem/cache/mshr.hh`、`mshr.cc`：`MissKind`、snoop target、target 延迟和 store mask 合并。
 - `src/mem/cache/base.cc`：同地址 masked writeback 合并。
 - `src/mem/packet.cc` 和 functional cache 路径：按 byte mask 组合 functional data，避免 queued partial writeback 被忽略。
 - `src/mem/abstract_mem.cc`、`mem_ctrl.cc` 和 `simple_mem.cc`：权限请求终止和 functional 数据合成。
-- `src/mem/cache/Cache.py`：增加 `enable_partial_store`，默认 `False`；仅在 `configs/example/kmhv3.py` 的 L1D 显式开启。
+- `src/mem/cache/Cache.py`：增加 `enable_partial_store` 和 `partial_snoop_mshr_reserve`；仅在 `configs/example/kmhv3.py` 的 L1D 显式开启 partial store。
 
 启用时应检查单核、L1D 和非压缩 cache。下层 eviction 对 partial block
 发起的 presence-only snoop 只设置 `BLOCK_CACHED`，不提供数据或改变 block
-状态；其他 partial block snoop 仍显式报错，防止超出模型边界后静默返回无效数据。
+状态；shared read snoop 走补全路径，其他 partial block snoop 仍显式报错，防止超出模型边界后静默返回无效数据。
 
-## 8. 统计与验证
+## 9. 统计与验证
 
-新增 `partialPermissionReqs`、`partialPermissionLatency`、`partialDataFillReqs`、`partialCoveredLoadHits`、`partialLineWritebacks`、`partialWritebackBytes`、`partialWritebackMerges` 和 `partialWritebackBypasses`。
+新增 `partialPermissionReqs`、`partialPermissionLatency`、`partialDataFillReqs`、`partialCoveredLoadHits`、`partialLineWritebacks`、`partialWritebackBytes`、`partialWritebackMerges`、`partialWritebackBypasses`、`partialSnoopFills`、`partialSnoopMerges`、`partialSnoopFillLatency` 和 `partialSnoopReserveFull`。其中 snoop latency 统计从捕获 snoop 到补全数据可用的 tick，不含最终 snoop response 在互连上的返回时间。
 
 验证覆盖以下情形：
 
@@ -105,6 +118,7 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 5. 同地址 Write Queue 冲突和 permission MSHR 期间的 load/store 合并；
 6. `enable_partial_store=False/True` A/B 功能结果一致；
 7. 开启后 `ReadExReq`、`bytesReadSys` 和 StoreBuffer DDR read 减少，延迟补全与 masked write 流量能由新增统计解释。
+8. DTB walker shared read 命中 partial block 时正确补全，且不产生 masked eviction writeback。
 
 基础构建命令为：
 

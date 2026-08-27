@@ -76,7 +76,8 @@ MSHRQueue::updateOccupancyStats(Tick now)
 
 MSHR *
 MSHRQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
-                    Tick when_ready, Counter order, bool alloc_on_fill)
+                    Tick when_ready, Counter order, bool alloc_on_fill,
+                    MSHR::Target::Source source)
 {
     assert(!freeList.empty());
     MSHR *mshr = freeList.front();
@@ -87,7 +88,8 @@ MSHRQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
             allocatedList.size() + 1, numEntries);
 
     updateOccupancyStats(curTick());
-    mshr->allocate(blk_addr, blk_size, pkt, when_ready, order, alloc_on_fill);
+    mshr->allocate(blk_addr, blk_size, pkt, when_ready, order, alloc_on_fill,
+                   source);
     mshr->allocIter = allocatedList.insert(allocatedList.end(), mshr);
     mshr->readyIter = addToReadyList(mshr);
 

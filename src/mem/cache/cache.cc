@@ -601,7 +601,14 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         cmd = needsWritable ? MemCmd::ReadExReq :
             (force_clean_rsp ? MemCmd::ReadCleanReq : MemCmd::ReadSharedReq);
     }
-    PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
+    // A partial-snoop target retains the original Request for routing its
+    // eventual snoop response. The internal fill needs a distinct Request,
+    // since coherent xbars key outstanding routes by Request identity.
+    RequestPtr miss_req = cpu_pkt->req;
+    if (partial_data_fill && cpu_pkt->getCacheRespondingBy() != 0) {
+        miss_req = std::make_shared<Request>(*cpu_pkt->req);
+    }
+    PacketPtr pkt = new Packet(miss_req, cmd, blkSize);
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
 
     // Preserve StoreBuffer classification across cache levels.
@@ -996,6 +1003,14 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
           case MSHR::Target::FromSnoop:
             // I don't believe that a snoop can be in an error state
             assert(!is_error);
+            if (partialStoreEnabled() &&
+                (mshr->getMissKind() == MSHR::MissKind::PartialDataFill ||
+                 mshr->getMissKind() == MSHR::MissKind::PartialSnoopFill) &&
+                tgt_pkt->getCacheRespondingBy() ==
+                    reinterpret_cast<uint64_t>(mshr)) {
+                stats.partialSnoopFillLatency +=
+                    curTick() - target.recvTime;
+            }
             // response to snoop request
             DPRINTF(Cache, "processing deferred snoop...\n");
             // If the response is invalidating, a snooping target can
@@ -1183,6 +1198,59 @@ Cache::doTimingSupplyResponse(PacketPtr req_pkt, const uint8_t *blk_data,
     DPRINTF(CacheVerbose, "%s: created response: %s tick: %lu\n", __func__,
             pkt->print(), forward_time);
     memSidePort.schedTimingSnoopResp(pkt, forward_time);
+}
+
+bool
+Cache::handleTimingPartialSnoop(PacketPtr pkt, CacheBlk *blk, MSHR *mshr)
+{
+    if (!partialStoreEnabled() || !blk || !blk->isPartial() ||
+        pkt->cmd != MemCmd::ReadSharedReq) {
+        return false;
+    }
+
+    panic_if(!blk->isSet(CacheBlk::DirtyBit) ||
+             !blk->isSet(CacheBlk::WritableBit),
+             "%s: shared snoop reached malformed partial block %s",
+             name(), blk->print());
+    panic_if(pkt->req->isUncacheable(),
+             "%s: uncacheable shared snoop reached partial block %s",
+             name(), blk->print());
+
+    // Preserve the original Request identity for the snoop response. This
+    // copy must be made before marking the live request as cache-responding.
+    PacketPtr snoop_copy = new Packet(pkt, true, true);
+    MSHR *response_mshr = mshr;
+
+    if (response_mshr) {
+        PacketPtr fill_target = response_mshr->getTarget()->pkt;
+        panic_if(!fill_target->isRead(),
+                 "%s: partial snoop conflicts with non-read MSHR %s",
+                 name(), response_mshr->print());
+        response_mshr->allocateSnoopTarget(snoop_copy, curTick(), order++);
+        stats.partialSnoopMerges++;
+    } else {
+        Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
+        response_mshr =
+            allocatePartialSnoopMissBuffer(snoop_copy, forward_time);
+        stats.partialSnoopFills++;
+    }
+
+    snoop_copy->setCacheRespondingBy(
+        reinterpret_cast<uint64_t>(response_mshr));
+
+    // Stop the original request at the xbar. Once the missing bytes arrive,
+    // the deferred target supplies a complete cache-to-cache response.
+    pkt->setHasSharers();
+    pkt->setCacheResponding();
+    pkt->setResponderHadWritable();
+
+    DPRINTF(Cache, "Completing partial block for deferred snoop %s via MSHR "
+            "%#lx\n", pkt->print(), reinterpret_cast<uint64_t>(response_mshr));
+
+    if (response_mshr->getNumTargets() > numTarget) {
+        warn("allocating bonus target for partial snoop");
+    }
+    return true;
 }
 
 uint32_t
@@ -1467,6 +1535,10 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         DPRINTF(Cache, "Setting block cached for %s from lower cache on "
                 "mshr hit\n", pkt->print());
         pkt->setBlockCached();
+        return;
+    }
+
+    if (handleTimingPartialSnoop(pkt, blk, mshr)) {
         return;
     }
 

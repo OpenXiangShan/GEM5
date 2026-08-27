@@ -124,7 +124,8 @@ class MSHR : public QueueEntry, public Printable
         Normal,
         WholeLineWrite,
         PartialPermission,
-        PartialDataFill
+        PartialDataFill,
+        PartialSnoopFill
     };
 
 
@@ -463,7 +464,8 @@ class MSHR : public QueueEntry, public Printable
      * @param alloc_on_fill Should the cache allocate a block on fill
      */
     void allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
-                  Tick when_ready, Counter _order, bool alloc_on_fill);
+                  Tick when_ready, Counter _order, bool alloc_on_fill,
+                  Target::Source source = Target::FromCPU);
 
     void markInService(bool pending_modified_resp);
 
@@ -480,6 +482,7 @@ class MSHR : public QueueEntry, public Printable
      */
     void allocateTarget(PacketPtr target, Tick when, Counter order,
                         bool alloc_on_fill);
+    void allocateSnoopTarget(PacketPtr target, Tick when, Counter order);
     bool handleSnoop(PacketPtr target, Counter order);
 
     /** A simple constructor. */

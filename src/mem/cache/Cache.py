@@ -195,6 +195,10 @@ class BaseCache(ClockedObject):
         False,
         "Acquire write permission without fetching data for partial L1D stores",
     )
+    partial_snoop_mshr_reserve = Param.Unsigned(
+        4,
+        "Emergency MSHRs reserved for completing partial blocks on snoops",
+    )
 
 class Cache(BaseCache):
     type = 'Cache'

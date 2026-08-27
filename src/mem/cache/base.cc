@@ -138,7 +138,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     : ClockedObject(p),
       cpuSidePort (p.name + ".cpu_side_port", *this, "CpuSidePort"),
       memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
-      mshrQueue("MSHRs", p.mshrs, 0, p.demand_mshr_reserve, p.name),
+      mshrQueue("MSHRs", p.mshrs,
+                p.enable_partial_store ? p.partial_snoop_mshr_reserve : 0,
+                p.demand_mshr_reserve, p.name),
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
       tags(p.tags),
       tagLoadReadPorts(p.tag_load_read_ports),
@@ -192,11 +194,11 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       doFastWriteline(p.do_fast_writeline),
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
-    // the MSHR queue has no reserve entries as we check the MSHR
-    // queue on every single allocation, whereas the write queue has
-    // as many reserve entries as we have MSHRs, since every MSHR may
-    // eventually require a writeback, and we do not check the write
-    // buffer before committing to an MSHR
+    // Normal requests check the MSHR queue before allocation. Partial-store
+    // snoops cannot be retried, so they use emergency reserve entries. The
+    // write queue has as many reserve entries as we have MSHRs, since every
+    // MSHR may eventually require a writeback, and we do not check the write
+    // buffer before committing to an MSHR.
 
     // forward snoops is overridden in init() once we can query
     // whether the connected requestor is actually snooping or not
@@ -227,6 +229,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
              (cacheLevel != 1 || isReadOnly || system->multiCore() ||
               compressor),
              "%s: partial stores require a single-core, uncompressed L1D",
+             name());
+    fatal_if(enablePartialStore && p.partial_snoop_mshr_reserve == 0,
+             "%s: partial stores require at least one snoop MSHR reserve",
              name());
 
     if (sliceNum > 0) {
@@ -2915,20 +2920,24 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // point
         bool pending_modified_resp = !pkt->hasSharers() &&
             pkt->cacheResponding();
-        if (pkt->cmd == MemCmd::StorePermReq) {
-            mshr->setMissKind(MSHR::MissKind::PartialPermission);
-            if (enablePartialStore) {
-                stats.partialPermissionReqs++;
+        // PartialSnoopFill is assigned when the deferred snoop is captured;
+        // preserve it instead of reclassifying its internal read request.
+        if (mshr->getMissKind() != MSHR::MissKind::PartialSnoopFill) {
+            if (pkt->cmd == MemCmd::StorePermReq) {
+                mshr->setMissKind(MSHR::MissKind::PartialPermission);
+                if (enablePartialStore) {
+                    stats.partialPermissionReqs++;
+                }
+            } else if (blk && blk->isPartial() && pkt->isRead()) {
+                mshr->setMissKind(MSHR::MissKind::PartialDataFill);
+                if (enablePartialStore) {
+                    stats.partialDataFillReqs++;
+                }
+            } else if (mshr->isWholeLineWrite()) {
+                mshr->setMissKind(MSHR::MissKind::WholeLineWrite);
+            } else {
+                mshr->setMissKind(MSHR::MissKind::Normal);
             }
-        } else if (blk && blk->isPartial() && pkt->isRead()) {
-            mshr->setMissKind(MSHR::MissKind::PartialDataFill);
-            if (enablePartialStore) {
-                stats.partialDataFillReqs++;
-            }
-        } else if (mshr->isWholeLineWrite()) {
-            mshr->setMissKind(MSHR::MissKind::WholeLineWrite);
-        } else {
-            mshr->setMissKind(MSHR::MissKind::Normal);
         }
         markInService(mshr, pending_modified_resp);
 
@@ -3257,6 +3266,14 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of masked writebacks merged in the write queue"),
     ADD_STAT(partialWritebackBypasses, statistics::units::Count::get(),
              "number of masked writebacks bypassing miss allocation"),
+    ADD_STAT(partialSnoopFills, statistics::units::Count::get(),
+             "number of fills started to complete partial snoop hits"),
+    ADD_STAT(partialSnoopMerges, statistics::units::Count::get(),
+             "number of partial snoops merged into existing fills"),
+    ADD_STAT(partialSnoopFillLatency, statistics::units::Tick::get(),
+             "total ticks partial snoops waited for complete data"),
+    ADD_STAT(partialSnoopReserveFull, statistics::units::Count::get(),
+             "number of partial snoops that exhausted reserved MSHRs"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),
