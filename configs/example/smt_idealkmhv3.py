@@ -39,6 +39,12 @@ def setDualFrontendProbeParams(system):
         cpu.branchPred.smtNumPredictingThreads = 2
         cpu.smtNumFetchTargetThreads = 2
         cpu.smtNumPreDispatchThreads = 2
+        # Keep the dual-thread pre-dispatch probe closer to an RTL-oriented
+        # 10-wide implementation: each thread can contribute up to five
+        # instructions per cycle. Wider upper-bound probes can override both
+        # widths from the command line.
+        cpu.decodeWidth = 5
+        cpu.renameWidth = 5
         cpu.icache.tag_load_read_ports = 4
 
         # Keep early-predictor training on the existing resolve/commit path.
