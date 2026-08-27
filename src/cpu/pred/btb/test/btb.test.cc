@@ -551,22 +551,21 @@ TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
     target.exeTaken = false;
     target.exeBranchInfo = createBranchInfo(0x1008, 0x100c, true);
 
-    auto branch_a = BTBEntry(createBranchInfo(0x1000, 0x1010, true));
+    auto branch_a = BTBEntry(
+        createBranchInfo(0x1000, 0x1010, false, true));
+    auto unresolved = BTBEntry(createBranchInfo(0x1002, 0x1800, true));
     auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
     auto branch_c = BTBEntry(createBranchInfo(0x1008, 0x3000, true));
-    target.predBTBEntries = {branch_a, branch_b, branch_c};
+    target.predBTBEntries = {branch_a, unresolved, branch_b, branch_c};
 
-    auto resolved_a = createBranchInfo(0x1000, 0x1004, true);
+    auto resolved_a = createBranchInfo(0x1000, 0x5000, true);
     auto resolved_b = createBranchInfo(0x1004, 0x4000, true);
     std::vector<FullResolveEvent> events = {
-        createResolveEvent(1, 7, 10, resolved_a, false, false),
-        createResolveEvent(1, 7, 11, resolved_b, true, true)
+        createResolveEvent(1, 7, 11, resolved_b, true, true),
+        createResolveEvent(1, 7, 10, resolved_a, false, false)
     };
 
     PreparedUpdate update(target, 64, events);
-    for (const auto &event : events) {
-        update.applyResolveEvent(event);
-    }
 
     EXPECT_TRUE(update.outcome.fromResolveEvent);
     EXPECT_TRUE(update.outcome.taken);
@@ -576,6 +575,9 @@ TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
     ASSERT_EQ(update.branches.size(), 2);
     EXPECT_TRUE(update.branches[0].resolvedThisAttempt);
     EXPECT_FALSE(update.branches[0].actualTaken);
+    EXPECT_TRUE(update.branches[0].entry.isCond);
+    EXPECT_FALSE(update.branches[0].entry.isIndirect);
+    EXPECT_EQ(update.branches[0].entry.target, resolved_a.target);
     EXPECT_TRUE(update.branches[1].resolvedThisAttempt);
     EXPECT_TRUE(update.branches[1].actualTaken);
     EXPECT_EQ(update.branches[1].actualTarget, 0x4000);

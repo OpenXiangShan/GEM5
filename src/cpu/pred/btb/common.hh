@@ -526,10 +526,28 @@ struct PreparedUpdate
                 ~mask(floorLog2(predictWidth) - 1);
         }
 
-        for (const auto &entry : target.predBTBEntries) {
-            if (entry.valid && entry.pc >= target.startPC &&
-                entry.pc <= endInstPC) {
-                branches.push_back(makeBranchUpdate(entry, outcome, false));
+        if (resolveEvents.empty()) {
+            for (const auto &entry : target.predBTBEntries) {
+                if (entry.valid && entry.pc >= target.startPC &&
+                    entry.pc <= endInstPC) {
+                    branches.push_back(
+                        makeBranchUpdate(entry, outcome, false));
+                }
+            }
+        } else {
+            for (const auto &entry : target.predBTBEntries) {
+                auto event = std::find_if(
+                    resolveEvents.begin(), resolveEvents.end(),
+                    [&entry](const FullResolveEvent &resolved) {
+                        return entry.valid && entry.pc == resolved.pc;
+                    });
+                if (event == resolveEvents.end()) {
+                    continue;
+                }
+
+                auto branch = makeBranchUpdate(entry, outcome, false);
+                applyResolveEvent(branch, *event);
+                branches.push_back(std::move(branch));
             }
         }
     }
@@ -563,10 +581,7 @@ struct PreparedUpdate
     {
         for (auto &branch : branches) {
             if (branch.entry.valid && branch.entry.pc == event.pc) {
-                branch.actualTaken = event.taken;
-                branch.actualTarget = event.target;
-                branch.controlMispred = event.mispredicted;
-                branch.resolvedThisAttempt = true;
+                applyResolveEvent(branch, event);
             }
         }
     }
@@ -584,6 +599,16 @@ struct PreparedUpdate
         branch.isReturn = event.isReturn;
         branch.size = event.size;
         return branch;
+    }
+
+    static void applyResolveEvent(
+        BranchUpdate &branch, const FullResolveEvent &event)
+    {
+        static_cast<BranchInfo &>(branch.entry) = branchInfo(event);
+        branch.actualTaken = event.taken;
+        branch.actualTarget = event.target;
+        branch.controlMispred = event.mispredicted;
+        branch.resolvedThisAttempt = true;
     }
 
     static ControlFlowOutcome makeControlFlowOutcome(

@@ -17,7 +17,11 @@ namespace btb_pred
 
 using FetchTargetId = uint64_t;
 
-/** Execution facts for one dynamically resolved control-flow instruction. */
+/**
+ * Execution facts for one dynamically resolved control-flow instruction.
+ * target is the control-flow destination, including for a not-taken
+ * conditional branch; it is not the selected next PC.
+ */
 struct FullResolveEvent
 {
     ThreadID tid = 0;

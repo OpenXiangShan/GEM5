@@ -1606,6 +1606,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         if (inst->isControl()) {
             std::unique_ptr<PCStateBase> actual_next(inst->pcState().clone());
             inst->staticInst->advancePC(*actual_next);
+            const Addr resolved_target = inst->staticInst->isDirectCtrl() ?
+                inst->branchTarget()->instAddr() : actual_next->instAddr();
             auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
             resolved_cfis.push_back(
                 branch_prediction::btb_pred::FullResolveEvent{
@@ -1613,7 +1615,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
                     inst->getFtqId(),
                     inst->seqNum,
                     inst->getPC(),
-                    actual_next->instAddr(),
+                    resolved_target,
                     inst->branching(),
                     inst->mispredicted(),
                     inst->staticInst->isCondCtrl(),
