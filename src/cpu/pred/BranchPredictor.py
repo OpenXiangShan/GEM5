@@ -1031,7 +1031,7 @@ class BTBRAS(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/ras.hh'
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
-    numEntries = Param.Unsigned(32, "Number of entries in the RAS")
+    numEntries = Param.Unsigned(16, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
     numDelay = 2
