@@ -89,6 +89,11 @@ Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
 
 Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     : fetchPolicy(params.smtFetchPolicy),
+      smtDecodePolicy(params.smtDecodePolicy),
+      smtBorrowThrottleHoldCycles(params.smtBorrowThrottleCycles),
+      delayedSchedulerDelay(params.smtFetchDelayedSchedulerDelay),
+      smtFetchBlockPolicy(params.smtFetchBlockPolicy),
+      longLatencyThreshold(params.smtFetchBlockThreshold),
       cpu(_cpu),
       branchPred(nullptr),
       dbpbtb(nullptr),
@@ -143,7 +148,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
             std::make_unique<FinishTranslationEvent>(this));
     }
 
-    smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     // IEW reports an early redirect before the formal Commit squash reaches
     // Fetch:
     //   T0                 IEW detects a wrong-path condition
@@ -166,6 +170,10 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         redirectPendingCycles[i] = 0;
         lastIcacheStall[i] = 0;
         smtBorrowThrottleCycles[i] = 0;
+        threadFetchBlocked[i] = false;
+        blockStateHoldCycles[i] = 0;
+        longLatencyStallCycles[i] = 0;
+        lastLoadHeadSeqNum[i] = UINT64_MAX;
     }
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
@@ -364,7 +372,15 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(traceMetaCleanupSquashEntries, statistics::units::Count::get(),
              "Total entries erased by squash/rollback cleanups"),
     ADD_STAT(traceMetaCleanupCommitCalls, statistics::units::Count::get(),
-             "Number of times cleanup was called on successful commit")
+             "Number of times cleanup was called on successful commit"),
+    ADD_STAT(fetchBlockState, statistics::units::Count::get(),
+             "Block policy thread state combination per cycle "
+             "(0=both unblocked, 1=tid0 blocked, 2=tid1 blocked, 3=both blocked)"),
+    ADD_STAT(fetchThrottleState, statistics::units::Count::get(),
+             "Decode policy thread state combination per cycle, Th means "
+             "uncandidated or throttled. (0=both not Th, 1=tid0 Th, 2=tid1 Th, 3=both Th)"),
+    ADD_STAT(fetchBlockHoldCycle, statistics::units::Count::get(),
+             "Per-thread block/unblock state holding cycle distribution")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -469,7 +485,32 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(traceMetaCleanupSquashEntries);
         traceMetaCleanupCommitCalls
             .prereq(traceMetaCleanupCommitCalls);
+        fetchBlockState
+            .init(1 << cpu->numThreads)
+            .flags(statistics::total);
+        fetchBlockState.subname(0, "BothUnBlocked");
+        fetchBlockState.subname(1, "Tid0Blocked");
+        fetchBlockState.subname(2, "Tid1Blocked");
+        fetchBlockState.subname(3, "BothBlocked");
+        fetchThrottleState
+            .init(1 << cpu->numThreads)
+            .flags(statistics::total);
+        fetchThrottleState.subname(0, "BothUnThrottled");
+        fetchThrottleState.subname(1, "Tid0Throttled");
+        fetchThrottleState.subname(2, "Tid1Throttled");
+        fetchThrottleState.subname(3, "BothThrottled");
+        fetchBlockHoldCycle
+            .init(2, 0, 999, 100)
+            .flags(statistics::pdf);
+        fetchBlockHoldCycle.subname(0, "Unblocked");
+        fetchBlockHoldCycle.subname(1, "Blocked");
 }
+
+void
+Fetch::setIEWStage(IEW *iew_stage) {
+    iewStage = iew_stage;
+}
+
 void
 Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
 {
@@ -499,22 +540,23 @@ Fetch::initDecodeScheduler()
     }
     DPRINTF(Fetch, "Initialized SMT Decode Scheduler: 1\n");
     
-    if (smtDecodePolicy == "icount") {
+    if (smtDecodePolicy == SMTDecodePolicy::ICount) {
         // Use ROB as default counter for icount
         decodeScheduler = new ICountScheduler(numThreads, robCounter);
     }
-    else if (smtDecodePolicy == "delayed") {
+    else if (smtDecodePolicy == SMTDecodePolicy::DelayedICount) {
         decodeScheduler = new DelayedICountScheduler(numThreads, robCounter, delayedSchedulerDelay);
     }
-    else if (smtDecodePolicy == "multi_priority") {
+    else if (smtDecodePolicy == SMTDecodePolicy::MultiPriority) {
         decodeScheduler = new MultiPrioritySched(numThreads, {lsqCounter, iqCounter, robCounter});
     }
-    else {
-        // Default: round-robin like (use delayed with thread cycling)
-        decodeScheduler = new DelayedICountScheduler(numThreads, robCounter, numThreads);
+    else if (smtDecodePolicy == SMTDecodePolicy::RoundRobin) {
+        decodeScheduler = new RoundRobinScheduler(numThreads, robCounter);
+    } else {
+        panic("undifined smtDecodePolicy:%d\n", (int)smtDecodePolicy);
     }
 
-    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: %s\n", smtDecodePolicy.c_str());
+    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: %d\n", (int)smtDecodePolicy);
 }
 
 void
@@ -1484,6 +1526,9 @@ Fetch::initializeTickState()
         }
     }
 
+    // === Block Policy: consume IEW long-latency signals ===
+    checkLongLatencyLoads();
+
     // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1553,19 +1598,13 @@ Fetch::selectUnstalledThread()
     ThreadID selected = InvalidThreadID;
     bool has_candidate = false;
     bool has_unthrottled_candidate = false;
+    bool candidate[MaxThreads];
+    bool throttled[MaxThreads];
 
+    // update smtBorrowThrottleCycles and check whether has candidate
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        const bool candidate = !stallSig->blockFetch[tid] &&
-                               !fetchQueue[tid].empty();
-        if (!candidate) {
-            smtBorrowThrottleCycles[tid] = 0;
-            lsqCounter->setCounter(tid, UINT64_MAX);
-            iqCounter->setCounter(tid, UINT64_MAX);
-            robCounter->setCounter(tid, UINT64_MAX);
-            continue;
-        }
-        has_candidate = true;
-
+        candidate[tid] = true;
+        throttled[tid] = false;
         const bool throttle_now =
             smtHasBorrowThrottleStall(fromIEW->iewInfo[tid]) ||
             smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater);
@@ -1574,44 +1613,84 @@ Fetch::selectUnstalledThread()
         } else if (smtBorrowThrottleCycles[tid] > 0) {
             --smtBorrowThrottleCycles[tid];
         }
-
-        const bool throttled = smtBorrowThrottleCycles[tid] > 0;
-        if (!throttled) {
-            has_unthrottled_candidate = true;
+        if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
+            smtBorrowThrottleCycles[tid] = 0;
+            lsqCounter->setCounter(tid, UINT64_MAX);
+            iqCounter->setCounter(tid, UINT64_MAX);
+            robCounter->setCounter(tid, UINT64_MAX);
+            candidate[tid] = false;
+            continue;
         }
-
-        lsqCounter->setCounter(
-            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].ldstqCount);
-        iqCounter->setCounter(
-            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].iqCount);
-        robCounter->setCounter(
-            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].robCount);
-
-        DPRINTF(Fetch,
-                "[tid:%i] lsq=%u iq=%u rob=%u throttled=%u mem_pressure=%u hold=%u\n",
-                tid, fromIEW->iewInfo[tid].ldstqCount,
-                fromIEW->iewInfo[tid].iqCount, fromIEW->iewInfo[tid].robCount,
-                throttled,
-                smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater),
-                smtBorrowThrottleCycles[tid]);
+        has_candidate = true;
     }
-
-    if (has_candidate && !has_unthrottled_candidate) {
+    if (has_candidate) {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
-                continue;
-            }
+            if (!candidate[tid]) continue;
             lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
             iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
             robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
+            if (isBlockPolicyActive() && threadFetchBlocked[tid]) {
+                // === Block Policy: skip blocked thread when policy is active ===
+                throttled[tid] = true;
+                lsqCounter->setCounter(tid, UINT64_MAX - 1);
+                iqCounter->setCounter(tid, UINT64_MAX - 1);
+                robCounter->setCounter(tid, UINT64_MAX - 1);
+            } else {
+                if (smtBorrowThrottleCycles[tid] > 0) {
+                    throttled[tid] = true;
+                    lsqCounter->setCounter(tid, UINT64_MAX - 1);
+                    iqCounter->setCounter(tid, UINT64_MAX - 1);
+                    robCounter->setCounter(tid, UINT64_MAX - 1);
+                } else {
+                    has_unthrottled_candidate = true;
+                }
+            }
+            DPRINTF(Fetch,
+                    "[tid:%i] block=%u mem_pressure=%u hold=%u throttled=%u lsq=%u iq=%u rob=%u\n",
+                    tid, threadFetchBlocked[tid],
+                    smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater),
+                    smtBorrowThrottleCycles[tid], throttled[tid], fromIEW->iewInfo[tid].ldstqCount,
+                    fromIEW->iewInfo[tid].iqCount, fromIEW->iewInfo[tid].robCount);
         }
-    }
-
-    if (has_candidate) {
+        // while both threads are throttled, select policy as both threads are not throttle
+        if (!has_unthrottled_candidate) {
+            for (ThreadID tid = 0; tid < numThreads; ++tid) {
+                if (!candidate[tid]) continue;
+                lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
+                iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
+                robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
+            }
+        }
+        int throttleState = 0;
+        for (ThreadID tid = numThreads - 1; tid >= 0; tid--) {
+            throttleState = (throttleState << 1) + (int)(!candidate[tid] || throttled[tid]);
+        }
+        fetchStats.fetchThrottleState[throttleState]++;
         selected = decodeScheduler->getThread();
+    } else {
+        DPRINTF(Fetch, "No candidate thread at this tick!\n");
+    }
+    return selected;
+}
+
+bool
+Fetch::isBlockPolicyActive() const
+{
+    if (smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockPolicy) {
+        return false;
+    }
+    int blocked_count = 0;
+    int unblocked_count = 0;
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (threadFetchBlocked[tid])
+            blocked_count++;
+        else
+            unblocked_count++;
     }
 
-    return selected;
+    // Only active when both blocked and unblocked candidates exist
+    return (blocked_count > 0 && unblocked_count > 0);
 }
 
 void
@@ -1653,7 +1732,7 @@ Fetch::sendInstructionsToDecode()
         return;
     }
 
-    ThreadID tid =selectUnstalledThread();
+    ThreadID tid = selectUnstalledThread();
 
     if(tid == -1)
     {
@@ -1790,6 +1869,67 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     // If we've reached this point, we have not gotten any signals that
     // cause fetch to change its status.  Fetch remains the same as before.
     return false;
+}
+
+
+void
+Fetch::checkLongLatencyLoads()
+{
+    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockPolicy) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            blockStateHoldCycles[tid]++;
+
+            // Get LQ head stall reason for this thread
+            StallReason lqReason = iewStage->ldstQueue.lqEmpty(tid)
+                ? StallReason::NoStall
+                : iewStage->checkLsqStall(tid, true);
+
+            // Check if LQ head is stuck on a long-latency load
+            bool is_long_latency =
+                (lqReason == StallReason::LoadL2Bound ||
+                lqReason == StallReason::LoadL3Bound ||
+                lqReason == StallReason::LoadMemBound);
+
+            if (is_long_latency) {
+                InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
+                if (newLoadHead == lastLoadHeadSeqNum[tid]) {
+                    if (!threadFetchBlocked[tid] &&
+                        longLatencyStallCycles[tid] >= longLatencyThreshold) {
+                        threadFetchBlocked[tid] = true;
+                        fetchStats.fetchBlockHoldCycle[0].sample(blockStateHoldCycles[tid]);
+                        blockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] Long-latency load detected: "
+                            "LQ head stalled for %llu cycles (reason=%d)\n",
+                            tid, longLatencyStallCycles[tid], (int)lqReason);
+                    }
+                    longLatencyStallCycles[tid]++;
+                } else {
+                    if (threadFetchBlocked[tid]) {
+                        threadFetchBlocked[tid] = false;
+                        fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
+                        blockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
+                    }
+                    longLatencyStallCycles[tid] = 0;
+                    lastLoadHeadSeqNum[tid] = newLoadHead;
+                }
+            } else {
+                if (threadFetchBlocked[tid]) {
+                    threadFetchBlocked[tid] = false;
+                    fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
+                    blockStateHoldCycles[tid] = 0;
+                    DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
+                }
+                longLatencyStallCycles[tid] = 0;
+                lastLoadHeadSeqNum[tid] = UINT64_MAX;
+            }
+        }
+    }
+    int blockState = 0;
+    for (ThreadID tid = numThreads - 1; tid >= 0; tid--) {
+        blockState = (blockState << 1) + (int)(threadFetchBlocked[tid]);
+    }
+    fetchStats.fetchBlockState[blockState]++;
 }
 
 void

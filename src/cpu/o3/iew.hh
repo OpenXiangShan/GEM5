@@ -626,6 +626,9 @@ class IEW
 
     void setRob(ROB *rob);
 
+    StallReason checkLsqStall(ThreadID tid, bool isLoad) {
+      return checkLSQStall(tid, isLoad);
+    }
 };
 
 } // namespace o3

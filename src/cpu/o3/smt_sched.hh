@@ -89,6 +89,15 @@ class DelayedICountScheduler : public ICountScheduler
         ThreadID selectedTid = timebuffer.front();
         timebuffer.pop_front();
         timebuffer.push_back(ICountScheduler::getThread());
+        // check whether candidate
+        for (uint64_t i = 0; i < numThreads; i++) {
+            ThreadID tid = (selectedTid + i) % numThreads;
+            uint64_t count = counter->getCounter(tid);
+            if (count < UINT64_MAX) {
+                selectedTid = tid;
+                break;
+            }
+        }
         return selectedTid;
     }
 };
@@ -128,6 +137,33 @@ class MultiPrioritySched : public SMTScheduler
         return selectedTid;
     }
 };
+
+class RoundRobinScheduler : public SMTScheduler
+{
+    // count of inst based smt shceduler
+  protected:
+    InstsCounter* counter;
+    uint64_t selectedTimes = 0;
+
+  public:
+    RoundRobinScheduler(int numThreads, InstsCounter* counter) : SMTScheduler(numThreads), counter(counter) {}
+
+    ThreadID getThread() override
+    {
+        ThreadID selectedTid = 0;
+        for (uint64_t i = 0; i < numThreads; i++) {
+            ThreadID tid = (selectedTimes + i) % numThreads;
+            uint64_t count = counter->getCounter(tid);
+            if (count < UINT64_MAX - 1) {
+                selectedTid = tid;
+                break;
+            }
+        }
+        selectedTimes++;
+        return selectedTid;
+    }
+};
+
 
 }}
 #endif

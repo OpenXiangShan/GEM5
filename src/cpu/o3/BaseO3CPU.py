@@ -50,6 +50,12 @@ from m5.SimObject import *
 class SMTFetchPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'Branch', 'IQCount', 'LSQCount' ]
 
+class SMTDecodePolicy(ScopedEnum):
+    vals = [ 'ICount', 'DelayedICount', 'MultiPriority', 'RoundRobin' ]
+
+class SMTFetchBlockPolicy(ScopedEnum):
+    vals = [ 'BaseLine', 'BlockPolicy' ]
+
 class SMTQueuePolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
 
@@ -269,8 +275,6 @@ class BaseO3CPU(BaseCPU):
                                           "SMT ROB Sharing Policy")
     smtROBThreshold = Param.Int(100, "SMT ROB Threshold Sharing Parameter")
     smtCommitPolicy = Param.CommitPolicy('RoundRobin', "SMT Commit Policy")
-    smtBorrowThrottleCycles = Param.Unsigned(
-        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch")
     smtBorrowLdstqHighWater = Param.Unsigned(
         0, "Explicit SMT borrowing LSQ high-water threshold; 0 uses percentage")
     smtBorrowLdstqHighWaterPercent = Param.Percent(
@@ -279,6 +283,20 @@ class BaseO3CPU(BaseCPU):
         8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
     smtBorrowDonorReserveEntries = Param.Unsigned(
         8, "Minimum ROB entries reserved for a borrowing donor to resume")
+
+    smtDecodePolicy = Param.SMTDecodePolicy('MultiPriority',
+        "SMT decode select policy: ICount, DelayedICount, MultiPriority, RoundRobin")
+    smtFetchBlockPolicy = Param.SMTFetchBlockPolicy('BaseLine',
+        "SMT fetch block policy for long-latency loads: "
+        "Baseline (no blocking) or BlockPolicy (stall fetch on long-latency load)")
+    smtFetchBlockThreshold = Param.Unsigned(15,
+        "Number of cycles a load must wait in the LQ before it is considered "
+        "long-latency and triggers fetch blocking (T15 from Tullsen & Brown's paper)")
+    smtFetchDelayedSchedulerDelay = Param.Unsigned(2,
+        "Number of cycles the DelayedICount Policy delayed")
+    smtBorrowThrottleCycles = Param.Unsigned(
+        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch, 0 means disable throttle")
+
     smtPregPolicy = Param.SMTQueuePolicy('Dynamic',
                                          "SMT Preg (physical register) Sharing Policy")
     smtPregFixedBase = Param.Unsigned(0,

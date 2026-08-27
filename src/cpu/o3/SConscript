@@ -35,7 +35,8 @@ if env['CONF']['TARGET_ISA'] != 'null':
               'IssuePort', 'IssueQue', 'BaseSelector', 'PAgeSelector', 'Scheduler'])
     SimObject('FuncUnitConfig.py', sim_objects=[])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
-        'SMTFetchPolicy', 'SMTQueuePolicy', 'SMTLSQMode', 'CommitPolicy',
+        'SMTFetchPolicy', 'SMTDecodePolicy', 'SMTFetchBlockPolicy',
+        'SMTQueuePolicy', 'SMTLSQMode', 'CommitPolicy',
         'ROBWalkPolicy', 'ROBCompressPolicy', 'PerfRecord'])
 
     Source('commit.cc')
