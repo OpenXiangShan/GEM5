@@ -3168,16 +3168,15 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool ret = true;
     bool cache_got_blocked = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
+    auto inst = request->instruction();
     if (isLoad) {
         bank_conflict = lsq->loadBankConflictedCheck(
-            data_pkt->req->getVaddr(), data_pkt->req->getSize());
+            inst, data_pkt->req->getVaddr(), data_pkt->req->getSize());
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
     data_pkt->sendTick = curTick();
     PacketPtr pkt = data_pkt;
-
-    auto inst = dynamic_cast<LSQRequest *>(data_pkt->senderState)->instruction();
 
     DPRINTF(LSQUnit, "Attempting to send packet for inst [sn:%llu], addr: %#x\n",
             inst->seqNum, data_pkt->getAddr());
@@ -3240,6 +3239,9 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     }
 
     if (ret) {
+        if (isLoad) {
+            lsq->recordLoadBankGrant(inst);
+        }
         if (!isLoad) {
             isStoreBlocked = false;
         }
