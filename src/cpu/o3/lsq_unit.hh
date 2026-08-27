@@ -1010,6 +1010,7 @@ class LSQUnit
         statistics::Scalar specStoreFwdSpecWinsSq;
         statistics::Scalar specStoreFwdSqCorrectsSpec;
         statistics::Scalar specStoreFwdAddrValidationFail;
+        statistics::Vector specStoreFwdCtrDecrements;
         statistics::Formula specStoreFwdAccuracy;
         statistics::Formula specStoreFwdAllLoadCoverage;
         statistics::Formula specStoreFwdMdpWaitCoverage;

@@ -31,11 +31,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/spec_store_fwd.hh"
+#include "cpu/o3/spec_store_fwd_types.hh"
 
 namespace gem5
 {
@@ -105,6 +107,17 @@ class SpecStoreFwdUnit
     void markSpecWonOverSq(const DynInstPtr &inst);
     void markAddrValidationFail(const DynInstPtr &inst);
 
+    void feedbackShiftMismatch(const DynInstPtr &inst);
+    void feedbackDataReplayInvalidSource(const DynInstPtr &inst);
+    void feedbackSqYoungerFull(const DynInstPtr &inst, uint16_t distance,
+                               uint16_t shift);
+    void feedbackSqPartialReplay(const DynInstPtr &inst);
+    void feedbackSqDataNotReadyReplay(const DynInstPtr &inst,
+                                      uint16_t distance);
+    void feedbackYoungerNukeOrViolation(const DynInstPtr &inst,
+                                        uint16_t distance,
+                                        std::optional<uint16_t> shift = std::nullopt);
+
     bool hasPrediction(const DynInstPtr &inst) const;
     InstSeqNum predictedStoreSeq(const DynInstPtr &inst) const;
 
@@ -115,7 +128,10 @@ class SpecStoreFwdUnit
                                bool saved_prediction);
     void clearCurrentForward(const DynInstPtr &inst);
     void clearPrediction(const DynInstPtr &inst);
-    void resetPredictorMeta(const DynInstPtr &load_inst);
+    void applyFeedback(const DynInstPtr &load_inst,
+                       SpecStoreFwdFeedbackReason reason,
+                       std::optional<uint16_t> distance = std::nullopt,
+                       std::optional<uint16_t> shift = std::nullopt);
 
     LSQUnit *lsqUnit = nullptr;
     bool allowNoMdp_ = false;

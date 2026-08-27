@@ -28,6 +28,7 @@
 
 #include <gtest/gtest.h>
 
+#include "cpu/o3/spec_store_fwd.hh"
 #include "cpu/o3/spec_store_fwd_types.hh"
 
 namespace gem5::o3
@@ -50,16 +51,19 @@ TEST(SpecStoreFwdArbitration, YoungerSourceWins)
               SpecStoreFwdDecision::CorrectWithSq);
 }
 
-TEST(SpecStoreFwdArbitration, ConflictReplaysOnlyForSameOrYoungerSqStore)
+TEST(SpecStoreFwdArbitration, PartialReplaysOnlyForSameOrYoungerSqStore)
 {
     EXPECT_EQ(selectSpecStoreFwdSource(
-                  true, 100, SpecStoreFwdSqResult::Conflict, 90),
+                  true, 100, SpecStoreFwdSqResult::PartialForward, 90),
               SpecStoreFwdDecision::KeepSpec);
     EXPECT_EQ(selectSpecStoreFwdSource(
-                  true, 100, SpecStoreFwdSqResult::Conflict, 100),
+                  true, 100, SpecStoreFwdSqResult::PartialForward, 100),
               SpecStoreFwdDecision::ReplayForSq);
     EXPECT_EQ(selectSpecStoreFwdSource(
-                  true, 100, SpecStoreFwdSqResult::Conflict, 110),
+                  true, 100, SpecStoreFwdSqResult::PartialForward, 110),
+              SpecStoreFwdDecision::ReplayForSq);
+    EXPECT_EQ(selectSpecStoreFwdSource(
+                  true, 100, SpecStoreFwdSqResult::DataNotReady, 100),
               SpecStoreFwdDecision::ReplayForSq);
 }
 
@@ -79,8 +83,53 @@ TEST(SpecStoreFwdArbitration, NoPredictionUsesNormalSqBehavior)
                   false, 0, SpecStoreFwdSqResult::FullForward, 100),
               SpecStoreFwdDecision::NormalPath);
     EXPECT_EQ(selectSpecStoreFwdSource(
-                  false, 0, SpecStoreFwdSqResult::Conflict, 100),
+                  false, 0, SpecStoreFwdSqResult::PartialForward, 100),
               SpecStoreFwdDecision::ReplayForSq);
+}
+
+TEST(SpecStoreFwdPredictor, DecrementSaturatesAndSuppressesPrediction)
+{
+    SpecStoreFwdPredictor predictor;
+    predictor.init(true, 1024, 4);
+    constexpr Addr pc = 0x1000;
+    for (int i = 0; i < 16; ++i) {
+        predictor.train(pc, 3, 1);
+    }
+    ASSERT_TRUE(predictor.predict(pc));
+    predictor.decrement(pc);
+    EXPECT_FALSE(predictor.predict(pc));
+    predictor.train(pc, 3, 1);
+    EXPECT_TRUE(predictor.predict(pc));
+    for (int i = 0; i < 20; ++i) {
+        predictor.decrement(pc);
+    }
+    EXPECT_FALSE(predictor.predict(pc));
+}
+
+TEST(SpecStoreFwdPredictor, MetadataFeedbackPreservesOrReplacesFields)
+{
+    SpecStoreFwdPredictor predictor;
+    predictor.init(true, 1024, 4);
+    constexpr Addr pc = 0x1000;
+    for (int i = 0; i < 15; ++i) {
+        predictor.train(pc, 3, 1);
+    }
+    predictor.updateDistanceAndDecrement(pc, 7);
+    for (int i = 0; i < 15; ++i) {
+        predictor.train(pc, 7, 1);
+    }
+    const auto first_prediction = predictor.predict(pc);
+    ASSERT_TRUE(first_prediction);
+    EXPECT_EQ(first_prediction->first, 7);
+    EXPECT_EQ(first_prediction->second, 1);
+    predictor.updateMetaAndDecrement(pc, 9, 2);
+    for (int i = 0; i < 15; ++i) {
+        predictor.train(pc, 9, 2);
+    }
+    const auto second_prediction = predictor.predict(pc);
+    ASSERT_TRUE(second_prediction);
+    EXPECT_EQ(second_prediction->first, 9);
+    EXPECT_EQ(second_prediction->second, 2);
 }
 
 } // namespace gem5::o3

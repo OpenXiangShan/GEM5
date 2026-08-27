@@ -51,7 +51,30 @@ enum class SpecStoreFwdSqResult : uint8_t
 {
     Miss,
     FullForward,
-    Conflict,
+    PartialForward,
+    DataNotReady,
+    /** Backward-compatible name for a partial SQ overlap. */
+    Conflict = PartialForward,
+};
+
+enum class SpecStoreFwdFeedbackReason : uint8_t
+{
+    ShiftMismatch,
+    SqYoungerFull,
+    SqPartialReplay,
+    SqDataNotReadyReplay,
+    DataReplayInvalidSource,
+    YoungerNukeOrViolation,
+    Count,
+};
+
+inline constexpr const char *SpecStoreFwdFeedbackReasonNames[] = {
+    "shiftMismatch",
+    "sqYoungerFull",
+    "sqPartialReplay",
+    "sqDataNotReadyReplay",
+    "dataReplayInvalidSource",
+    "youngerNukeOrViolation",
 };
 
 enum class SpecStoreFwdDecision : uint8_t
@@ -71,7 +94,8 @@ selectSpecStoreFwdSource(bool spec_active, uint64_t predicted_store_seq,
                          bool predicted_addr_mismatch = false)
 {
     if (!spec_active) {
-        return sq_result == SpecStoreFwdSqResult::Conflict ?
+        return (sq_result == SpecStoreFwdSqResult::PartialForward ||
+                sq_result == SpecStoreFwdSqResult::DataNotReady) ?
             SpecStoreFwdDecision::ReplayForSq :
             SpecStoreFwdDecision::NormalPath;
     }

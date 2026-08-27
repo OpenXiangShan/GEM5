@@ -63,6 +63,7 @@ SpecStoreFwdUnit::trySpecStoreFwd(
         const size_t boundary = load_inst->sqIt.idx();
         const auto distance = load_inst->specStoreFwdDistance;
         if (boundary < distance) {
+            feedbackDataReplayInvalidSource(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -106,6 +107,7 @@ SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
         const size_t boundary = load_inst->sqIt.idx();
         const auto distance = load_inst->specStoreFwdDistance;
         if (boundary < distance) {
+            feedbackDataReplayInvalidSource(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -137,6 +139,7 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
 {
     if (!lsqUnit->storeQueue.isValidIdx(store_idx)) {
         if (saved_prediction) {
+            feedbackDataReplayInvalidSource(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -146,6 +149,7 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
     const auto store_it = lsqUnit->storeQueue.getIterator(store_idx);
     if (!store_it->valid() || !store_it->instruction()) {
         if (saved_prediction) {
+            feedbackDataReplayInvalidSource(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -164,6 +168,7 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
         store_request->mainReq()->isMasked();
     if (invalid_source || masked) {
         if (saved_prediction) {
+            feedbackDataReplayInvalidSource(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -177,6 +182,11 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
     const unsigned store_size = static_cast<unsigned>(store_width / 8);
     const unsigned load_size = request->mainReq()->getSize();
     if (shift >= store_size || load_size > store_size - shift) {
+        if (saved_prediction) {
+            feedbackShiftMismatch(load_inst);
+            markSqCorrected(load_inst);
+            return AttemptResult::CorrectedFail;
+        }
         return AttemptResult::Miss;
     }
 
@@ -192,6 +202,7 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
             static_cast<int64_t>(store_inst->physEffAddr);
         if (actual_shift < 0 || actual_shift != shift ||
             load_size > store_size - static_cast<unsigned>(actual_shift)) {
+            feedbackShiftMismatch(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -303,6 +314,7 @@ SpecStoreFwdUnit::checkSpecStoreFwdMispred(const DynInstPtr &store_inst)
             continue;
         }
 
+        feedbackShiftMismatch(ld_inst);
         markAddrValidationFail(ld_inst);
 
         mispreds++;
@@ -484,7 +496,6 @@ SpecStoreFwdUnit::markSqCorrected(const DynInstPtr &inst)
     inst->specStoreFwdState = SpecStoreFwdState::SqCorrectedFail;
     inst->specStoreFwdSqCorrected = true;
     inst->specStoreFwd = false;
-    resetPredictorMeta(inst);
 }
 
 void
@@ -498,7 +509,6 @@ SpecStoreFwdUnit::markAddrValidationFail(const DynInstPtr &inst)
 {
     inst->specStoreFwdState = SpecStoreFwdState::AddrValidationFail;
     inst->specStoreFwd = false;
-    resetPredictorMeta(inst);
 }
 
 bool
@@ -519,13 +529,78 @@ SpecStoreFwdUnit::predictedStoreSeq(const DynInstPtr &inst) const
 }
 
 void
-SpecStoreFwdUnit::resetPredictorMeta(const DynInstPtr &load_inst)
+SpecStoreFwdUnit::applyFeedback(const DynInstPtr &load_inst,
+                                SpecStoreFwdFeedbackReason reason,
+                                std::optional<uint16_t> distance,
+                                std::optional<uint16_t> shift)
 {
     if (!lsqUnit || !load_inst || !pred.enabled()) {
         return;
     }
 
-    pred.reset(load_inst->pcState().instAddr());
+    const Addr pc = load_inst->pcState().instAddr();
+    if (distance && shift) {
+        pred.updateMetaAndDecrement(pc, *distance, *shift);
+    } else if (distance) {
+        pred.updateDistanceAndDecrement(pc, *distance);
+    } else {
+        pred.decrement(pc);
+    }
+    ++lsqUnit->stats.specStoreFwdCtrDecrements[
+        static_cast<unsigned>(reason)];
+    DPRINTF(SPECFwd,
+            "Spec-STLF feedback load[sn:%llu] reason=%s update=%s "
+            "distance=%u shift=%u decrement\n",
+            load_inst->seqNum,
+            SpecStoreFwdFeedbackReasonNames[static_cast<unsigned>(reason)],
+            distance ? (shift ? "meta" : "distance") : "none",
+            distance.value_or(0), shift.value_or(0));
+}
+
+void
+SpecStoreFwdUnit::feedbackShiftMismatch(const DynInstPtr &inst)
+{
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::ShiftMismatch);
+}
+
+void
+SpecStoreFwdUnit::feedbackDataReplayInvalidSource(const DynInstPtr &inst)
+{
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::DataReplayInvalidSource);
+}
+
+void
+SpecStoreFwdUnit::feedbackSqYoungerFull(const DynInstPtr &inst,
+                                        uint16_t distance, uint16_t shift)
+{
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::SqYoungerFull, distance,
+                  shift);
+}
+
+void
+SpecStoreFwdUnit::feedbackSqPartialReplay(const DynInstPtr &inst)
+{
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::SqPartialReplay);
+}
+
+void
+SpecStoreFwdUnit::feedbackSqDataNotReadyReplay(const DynInstPtr &inst,
+                                               uint16_t distance)
+{
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::SqDataNotReadyReplay,
+                  distance);
+}
+
+void
+SpecStoreFwdUnit::feedbackYoungerNukeOrViolation(
+    const DynInstPtr &inst, uint16_t distance, std::optional<uint16_t> shift)
+{
+    if (distance == 0) {
+        applyFeedback(inst, SpecStoreFwdFeedbackReason::YoungerNukeOrViolation);
+    } else {
+        applyFeedback(inst, SpecStoreFwdFeedbackReason::YoungerNukeOrViolation,
+                      distance, shift);
+    }
 }
 
 } // namespace o3

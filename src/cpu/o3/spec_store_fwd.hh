@@ -38,7 +38,6 @@
 #include "base/intmath.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
-#include "cpu/o3/store_set.hh"
 
 namespace gem5
 {
@@ -49,7 +48,7 @@ namespace o3
 /**
  * Speculative store-to-load forwarding (Spec-STLF) predictor.
  *
- * This module only owns the PC-indexed meta table and its training/reset
+ * This module only owns the PC-indexed meta table and its training/feedback
  * policy. The LSQ is responsible for scanning candidate stores, performing
  * the actual data copy, and triggering squashes on mispredictions.
  */
@@ -137,6 +136,48 @@ class SpecStoreFwdPredictor
         _table[index(pc)].ctr = 0;
     }
 
+    /** Apply one saturating negative feedback update to the indexed entry. */
+    void
+    decrement(Addr pc)
+    {
+        if (!ready()) {
+            return;
+        }
+        auto &meta = _table[index(pc)];
+        if (meta.ctr > 0) {
+            --meta.ctr;
+        }
+    }
+
+    /** Update distance while retaining shift metadata, then decrement. */
+    void
+    updateDistanceAndDecrement(Addr pc, uint16_t distance)
+    {
+        if (!ready()) {
+            return;
+        }
+        auto &meta = _table[index(pc)];
+        meta.distance = distance;
+        if (meta.ctr > 0) {
+            --meta.ctr;
+        }
+    }
+
+    /** Update both metadata fields, then apply one saturating decrement. */
+    void
+    updateMetaAndDecrement(Addr pc, uint16_t distance, uint16_t shift_amt)
+    {
+        if (!ready()) {
+            return;
+        }
+        auto &meta = _table[index(pc)];
+        meta.distance = distance;
+        meta.shiftAmt = shift_amt;
+        if (meta.ctr > 0) {
+            --meta.ctr;
+        }
+    }
+
   private:
     static constexpr unsigned PcLowBits = 4;
 
@@ -163,10 +204,22 @@ class SpecStoreFwdPredictor
 
         const unsigned high_bits = _indexBits - PcLowBits;
         const Addr upper = pc_no_lsb >> (PcLowBits + 1);
-        const Addr high = StoreSet::XORFold(upper, high_bits);
+        const Addr high = xorFold(upper, high_bits);
 
         const Addr idx = (high << PcLowBits) | low;
         return static_cast<size_t>(idx) & _indexMask;
+    }
+
+    static Addr
+    xorFold(Addr value, unsigned width)
+    {
+        const unsigned chunks = (sizeof(value) * 8 + width - 1) / width;
+        Addr folded = 0;
+        for (unsigned i = 0; i < chunks; ++i) {
+            folded ^= value & ((static_cast<Addr>(1) << width) - 1);
+            value >>= width;
+        }
+        return folded;
     }
 };
 
