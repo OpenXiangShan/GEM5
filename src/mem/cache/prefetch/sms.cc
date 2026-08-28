@@ -164,6 +164,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     Addr pf_tgt_addr = 0;
     bool decr = false;
     bool is_first_64 = false;
+    int origin_depth = 0;
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         assert(!(enableActivepage && enableXsstream));
         if (enableXsstream) {
@@ -175,16 +176,14 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             assert(Opt);
             Opt->calculatePrefetch(pfi, addresses, is_first_64);
         }
-        int origin_depth = 0;
         if (act_match_entry) {
             decr = act_match_entry->inBackwardMode;
             DPRINTF(XSCompositePrefetcher, "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: %d\n", pc,
                     vaddr, region_offset, is_active_page, decr);
             if (is_active_page && enableActivepage) {
                 origin_depth = act_match_entry->depth;
-                int depth = 16;
                 // active page
-                pf_tgt_addr = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;  // depth here?
+                pf_tgt_addr = decr ? block_addr - origin_depth * blkSize : block_addr + origin_depth * blkSize;
                 sendStreamPF(pfi, pf_tgt_addr, addresses, pfPageLRUFilter, decr, 1);
             }
         }
@@ -192,10 +191,12 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
     if (act_match_entry && is_active_page && pf_tgt_addr && enter_new_region && enableActivepage) {
         if (streamPFAhead) {
-            Addr pf_tgt_addr_l2 = decr ? pf_tgt_addr - 48 * blkSize : pf_tgt_addr + 48 * blkSize;  // depth here?
+            int depth = origin_depth ? (origin_depth << 1) : 48;
+            Addr pf_tgt_addr_l2 = decr ? pf_tgt_addr - depth * blkSize : pf_tgt_addr + depth * blkSize;
             sendStreamPF(pfi, pf_tgt_addr_l2, addresses, pfPageLRUFilterL2, decr, 2);
 
-            Addr pf_tgt_addr_l3 = decr ? pf_tgt_addr - 256 * blkSize : pf_tgt_addr + 256 * blkSize;  // depth here?
+            depth = origin_depth ? (origin_depth << 4) : 256;
+            Addr pf_tgt_addr_l3 = decr ? pf_tgt_addr - depth * blkSize : pf_tgt_addr + depth * blkSize;
             sendStreamPF(pfi, pf_tgt_addr_l3, addresses, pfPageLRUFilterL3, decr, 3);
         }
     }
