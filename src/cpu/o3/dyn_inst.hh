@@ -50,6 +50,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/refcnt.hh"
 #include "base/trace.hh"
@@ -273,7 +274,7 @@ class DynInst : public ExecContext, public RefCounted
         Offered,
         Launched,
         DataReady,
-        ValidationPending,
+        S0Validated,
         Reused,
         Fallback,
         Invalid
@@ -1103,7 +1104,14 @@ class DynInst : public ExecContext, public RefCounted
         clearReplayType();
         clearReplayFlags();
         rfpReusePending = false;
+        rfpValidationPassed = false;
         rfpFallbackRequired = false;
+        rfpS0Attempted = false;
+        rfpS0Validated = false;
+        rfpRarReserved = false;
+        rfpRawReserved = false;
+        rfpS0ValidationTick = 0;
+        rfpNormalRecoveryPending = false;
     }
 
     void endPipelining() {
@@ -1827,6 +1835,34 @@ class DynInst : public ExecContext, public RefCounted
     bool rfpReused = false;
     bool rfpFallbackRequired = false;
     bool rfpPublishingValue = false;
+
+    // Statistics shadow state describes the complete dynamic load lifetime.
+    // Unlike the functional pipeline state below, it survives load replays.
+    bool rfpEligibleAtRename = false;
+    uint64_t rfpStreamGeneration = 0;
+    uint64_t rfpStreamLookahead = 0;
+    bool rfpPredictionValid = false;
+    bool rfpPredictionSelected = false;
+    Addr rfpPredictedVa = 0;
+    bool rfpPrefetchIssued = false;
+    Tick rfpPrefetchAdmissionTick = 0;
+    bool rfpNormalDemandReadSent = false;
+    bool rfpConsumerUsed = false;
+    bool rfpLoadS0Observed = false;
+    Tick rfpLoadS0Tick = 0;
+
+    bool rfpS0Attempted = false;
+    bool rfpS0Validated = false;
+    bool rfpRarReserved = false;
+    bool rfpRawReserved = false;
+    Tick rfpS0ValidationTick = 0;
+    bool rfpNormalRecoveryPending = false;
+    struct RfpProducerUse
+    {
+        InstSeqNum producerSeqNum;
+        Tick s0ValidationTick;
+    };
+    std::unique_ptr<std::vector<RfpProducerUse>> rfpProducerUses;
 
     bool canLVP(){
         return isLoad() && !isVector() && !isLoadReserved();

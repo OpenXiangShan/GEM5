@@ -313,9 +313,9 @@ class BaseO3CPU(BaseCPU):
         "Committed stride predictor entries per thread")
     rpfAssociativity = Param.Unsigned(2,
         "Committed stride predictor associativity")
-    rpfConfidenceBits = Param.Unsigned(2,
+    rpfConfidenceBits = Param.Unsigned(4,
         "RFP stride confidence counter width")
-    rpfConfidenceThreshold = Param.Unsigned(3,
+    rpfConfidenceThreshold = Param.Unsigned(15,
         "Minimum RFP stride confidence for launch")
     rpfMaxStrideBytes = Param.Unsigned(4096,
         "Maximum absolute RFP stride in bytes")

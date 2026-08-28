@@ -210,6 +210,9 @@ class LSQ
         bool recordForward(RequestPtr req, LSQRequest *lsqreq,
                            ThreadID load_tid, InstSeqNum load_seq);
 
+        bool hasForwardingBytes(const RequestPtr &req, ThreadID load_tid,
+                                InstSeqNum load_seq) const;
+
         // The eviction packet has been built or sent; younger same-line stores
         // must go to a vice entry instead of mutating this entry's payload.
         bool evictionInProgress() const

@@ -168,6 +168,29 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
     return full_forward;
 }
 
+bool
+LSQ::StoreBufferEntry::hasForwardingBytes(
+    const RequestPtr &req, ThreadID load_tid, InstSeqNum load_seq) const
+{
+    const size_t offset = req->getPaddr() & (validMask.size() - 1);
+    auto byte_eligible = [load_tid, load_seq](
+                             const StoreBufferEntry *entry,
+                             size_t byte_idx) {
+        return entry && entry->tid == load_tid &&
+            entry->seqNum < load_seq && entry->validMask[byte_idx];
+    };
+
+    for (size_t byte = 0; byte < req->getSize(); ++byte) {
+        const size_t byte_idx = offset + byte;
+        assert(byte_idx < validMask.size());
+        if (byte_eligible(vice, byte_idx) ||
+            byte_eligible(this, byte_idx)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void
 LSQ::StoreBuffer::setData(std::vector<StoreBufferEntry *> &data_vec)
 {
@@ -1381,6 +1404,26 @@ LSQ::executePipeSx()
         ThreadID tid = *threads++;
 
         thread[tid].executePipeSx();
+    }
+
+    // A successful RFP decision is still part of load S0, but it is
+    // linearized after every thread's store pipe has exposed this cycle's
+    // translated addresses. Resolve proposals globally by age before IEW's
+    // issueAndSelect() observes the producer state.
+    std::vector<DynInstPtr> rfp_proposals;
+    for (ThreadID tid : *activeThreads) {
+        thread[tid].collectRfpS0Proposals(rfp_proposals);
+    }
+    std::stable_sort(
+        rfp_proposals.begin(), rfp_proposals.end(),
+        [](const DynInstPtr &lhs, const DynInstPtr &rhs) {
+            if (lhs->seqNum != rhs->seqNum) {
+                return lhs->seqNum < rhs->seqNum;
+            }
+            return lhs->threadNumber < rhs->threadNumber;
+        });
+    for (const auto &inst : rfp_proposals) {
+        thread[inst->threadNumber].resolveRfpS0Proposal(inst);
     }
 }
 

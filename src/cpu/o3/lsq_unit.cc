@@ -79,6 +79,52 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+bool
+translatedRequestsOverlap(LSQ::LSQRequest *load_request,
+                          LSQ::LSQRequest *store_request)
+{
+    if (!load_request || !store_request ||
+        !load_request->isTranslationComplete() ||
+        !store_request->isTranslationComplete()) {
+        return false;
+    }
+
+    for (size_t load_idx = 0; load_idx < load_request->numReqs(); ++load_idx) {
+        const auto &load_req = load_request->req(load_idx);
+        if (!load_req->hasPaddr()) {
+            continue;
+        }
+        const Addr load_start = load_req->getPaddr();
+        const Addr load_end = load_start + load_req->getSize();
+
+        for (size_t store_idx = 0;
+             store_idx < store_request->numReqs(); ++store_idx) {
+            const auto &store_req = store_request->req(store_idx);
+            if (!store_req->hasPaddr()) {
+                continue;
+            }
+            const Addr store_start = store_req->getPaddr();
+            const auto &byte_enable = store_req->getByteEnable();
+            for (size_t byte = 0; byte < store_req->getSize(); ++byte) {
+                if (!byte_enable.empty() &&
+                    byte < byte_enable.size() && !byte_enable[byte]) {
+                    continue;
+                }
+                const Addr byte_addr = store_start + byte;
+                if (byte_addr >= load_start && byte_addr < load_end) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+} // anonymous namespace
+
 LSQUnit::AddrRangeCoverage
 LSQUnit::checkStoreLoadForwardingRange(typename StoreQueue::iterator store_it,
                                       LSQRequest *request, const DynInstPtr &load_inst,
@@ -1023,6 +1069,9 @@ LSQUnit::checkSnoop(PacketPtr pkt)
                         pkt->getAddr(), ld_inst->seqNum);
 
                 // Mark the load for re-execution
+                cpu->getRegisterPrefetcher().recordNormalMemOrderSquash(
+                    ld_inst,
+                    RegisterPrefetcher::NormalRecoveryReason::ExternalSnoop);
                 ld_inst->fault = std::make_shared<ReExec>();
                 request->setStateToFault();
             } else {
@@ -1116,9 +1165,9 @@ LSQUnit::checkLocalStoreVisible(Addr store_paddr,
             ld_inst->tcBase()->getIsaPtr()->handleLockedSnoopHit(ld_inst.get());
         }
 
-        if (ld_inst->isExecuted()) {
+        if (ld_inst->isExecuted() || ld_inst->rfpS0Validated) {
             DPRINTF(LSQUnit,
-                    "Local visible store ignores already executed load "
+                    "Local visible store ignores logically executed load "
                     "[sn:%lli] on addr %#x\n",
                     ld_inst->seqNum, store_paddr);
             continue;
@@ -1221,6 +1270,13 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                 ++stats.ldLdViolation;
                                 ++stats.loadOrderViolation;
 
+                                cpu->getRegisterPrefetcher().
+                                    recordNormalMemOrderSquash(
+                                        ld_inst,
+                                        RegisterPrefetcher::
+                                            NormalRecoveryReason::
+                                                LoadLoadOrder);
+
                                 return std::make_shared<GenericISA::M5PanicFault>(
                                     "Detected fault with inst [sn:%lli] and "
                                     "[sn:%lli] at address %#x\n",
@@ -1268,6 +1324,10 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         DPRINTF(LSQUnit, "Detected fault with inst [sn:%lli] and "
                                 "[sn:%lli] at address %#x\n",
                                 inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
+                        cpu->getRegisterPrefetcher().recordNormalMemOrderSquash(
+                            ld_inst,
+                            RegisterPrefetcher::NormalRecoveryReason::
+                                StoreLoadRaw);
                         memDepViolator = ld_inst;
 
                         ++stats.memOrderViolation;
@@ -1499,6 +1559,7 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
     Fault load_fault = NoFault;
     // Now initiateAcc only does TLB access
     load_fault = inst->initiateAcc();
+    cpu->getRegisterPrefetcher().observeLoadS0(inst);
 
     if (inst->isTranslationDelayed() && load_fault == NoFault) {
         inst->setTLBMissReplay();
@@ -1524,7 +1585,7 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     Fault load_fault = inst->getFault();
     LSQRequest* request = currentLoadRequest(inst);
 
-    if (inst->effAddrValid()) {
+    if (!inst->rfpS0Validated && inst->effAddrValid()) {
         // S1 can still catch a same-cycle RAW/nuke against a store already in
         // the store pipe. Replaying here avoids letting the load observe data
         // before the conflicting store has published its address/data state.
@@ -1546,8 +1607,10 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             // read() is the main LSQ access: it may satisfy the load from
             // SQ/SBuffer forwarding, send a DCache request, or leave replay
             // state on the instruction/request for later stages to consume.
-            Fault fault;
-            fault = read(request, inst->lqIdx);
+            Fault fault = NoFault;
+            if (!inst->rfpS0Validated) {
+                fault = read(request, inst->lqIdx);
+            }
             // inst->getFault() may have the first-fault of a
             // multi-access split request at this point.
             // Overwrite that only if we got another type of fault
@@ -1623,6 +1686,24 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 
     assert(!inst->isSquashed());
     LSQRequest* request = currentLoadRequest(inst);
+
+    if (inst->rfpS0Validated) {
+        panic_if(!request || !request->isTranslationComplete() ||
+                     !inst->rfpReusePending ||
+                     !inst->rfpValidationPassed ||
+                     !inst->rfpDataPublished || inst->needReplay(),
+                 "RFP load reached S2 without its accepted S0 contract: "
+                 "sn=%llu",
+                 inst->seqNum);
+        PacketPtr pkt = new Packet(request->mainReq(), MemCmd::ReadReq);
+        pkt->dataStatic(inst->memData);
+        cpu->getRegisterPrefetcher().completeReuse(inst);
+        writebackReg(inst, pkt);
+        request->writebackDone();
+        delete pkt;
+        return fault;
+    }
+
     bool earlyWakeupCacheMissReplay = false;
 
     // S2 is the load pipe's replay-selection point.  It first checks whether
@@ -1762,27 +1843,6 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
-    if (inst->rfpReusePending) {
-        request = currentLoadRequest(inst);
-        if (!request ||
-            !cpu->getRegisterPrefetcher().finalizeReuse(
-                inst, request->mainReq())) {
-            inst->setRfpFallbackReplay();
-            if (request) {
-                loadSetReplay(inst, request, true);
-            }
-            return fault;
-        }
-
-        PacketPtr pkt = new Packet(request->mainReq(), MemCmd::ReadReq);
-        pkt->dataStatic(inst->memData);
-        cpu->getRegisterPrefetcher().completeReuse(inst);
-        writebackReg(inst, pkt);
-        request->writebackDone();
-        delete pkt;
-        return fault;
-    }
-
     // No nuke happens, prepare the inst data
     // assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
     request = currentLoadRequest(inst);
@@ -1863,7 +1923,8 @@ LSQUnit::executeLoadPipeSx()
                             inst->readMemAccPredicate() &&
                             request &&
                             request->isTranslationComplete() &&
-                            request->isMemAccessRequired()) {
+                            request->isMemAccessRequired() &&
+                            !inst->rfpS0Validated) {
                             iewStage->getScheduler()->specWakeUpFromLoadPipe(
                                 inst);
                         }
@@ -2215,6 +2276,216 @@ LSQUnit::executePipeSx()
     executeLoadPipeSx();
     executeStorePipeSx();
     updateCompletedIdx();
+}
+
+void
+LSQUnit::collectRfpS0Proposals(
+    std::vector<DynInstPtr> &proposals) const
+{
+    const auto &stage = loadPipeSx[0];
+    for (const auto &inst : stage->insts) {
+        if (inst && !inst->isSquashed() &&
+            cpu->getRegisterPrefetcher().hasCandidateForS0(inst)) {
+            proposals.push_back(inst);
+        }
+    }
+}
+
+bool
+LSQUnit::rfpMdpWaitRequired(const DynInstPtr &inst)
+{
+    if (!lsq->enableReplayBasedMDP() || !inst->isNormalLd() ||
+        (!inst->mdpPredStrictWait && inst->mdpProducingStores.empty())) {
+        return false;
+    }
+
+    if (inst->mdpPredStrictWait) {
+        return inst->sqIt.idx() > storeCompletedIdx + 1;
+    }
+
+    for (auto store_it = storeQueue.begin();
+         store_it != storeQueue.end(); ++store_it) {
+        if (!store_it->valid() || !store_it->instruction()) {
+            continue;
+        }
+        const auto &store_inst = store_it->instruction();
+        if (store_inst->seqNum >= inst->seqNum) {
+            break;
+        }
+        if (!store_it->addrReady() &&
+            std::find(inst->mdpProducingStores.begin(),
+                      inst->mdpProducingStores.end(), store_inst->seqNum) !=
+                inst->mdpProducingStores.end()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+LSQUnit::rfpSqForwardingVisible(
+    const DynInstPtr &inst, LSQRequest *request)
+{
+    auto store_it = inst->sqIt;
+    while (storeWBIt.dereferenceable() && store_it != storeWBIt) {
+        --store_it;
+        if (!store_it->valid() || !store_it->instruction() ||
+            store_it->completed() || store_it->size() == 0) {
+            continue;
+        }
+
+        const auto &store_inst = store_it->instruction();
+        if (store_inst->seqNum >= inst->seqNum ||
+            store_inst->strictlyOrdered()) {
+            continue;
+        }
+        auto *store_request = store_it->request();
+        if (!store_request || !store_request->isTranslationComplete() ||
+            !store_request->isMemAccessRequired() ||
+            store_inst->getFault() != NoFault) {
+            continue;
+        }
+        if (store_request->mainReq() &&
+            store_request->mainReq()->isCacheMaintenance()) {
+            continue;
+        }
+        if (translatedRequestsOverlap(request, store_request)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+LSQUnit::rfpSbufferForwardingVisible(
+    const DynInstPtr &inst, LSQRequest *request)
+{
+    if (!request || request->isSplit()) {
+        return false;
+    }
+    const auto &main_req = request->mainReq();
+    const Addr block_addr = main_req->getPaddr() & cacheBlockMask;
+    const auto *entry = lsq->findForwardingStoreBufferEntry(
+        block_addr, lsqID, inst->seqNum);
+    return entry &&
+        entry->hasForwardingBytes(main_req, lsqID, inst->seqNum);
+}
+
+bool
+LSQUnit::rfpStorePipeConflictVisible(
+    const DynInstPtr &inst, LSQRequest *request, bool *address_pending)
+{
+    *address_pending = false;
+    for (const unsigned stage_idx : {0U, 1U}) {
+        const auto &stage = storePipeSx[stage_idx];
+        for (const auto &store_inst : stage->insts) {
+            if (!store_inst || store_inst->isSquashed() ||
+                store_inst->seqNum >= inst->seqNum) {
+                continue;
+            }
+            if (!store_inst->readPredicate() ||
+                store_inst->getFault() != NoFault) {
+                continue;
+            }
+            auto *store_request = store_inst->savedRequest;
+            if (!store_request ||
+                !store_request->isTranslationComplete()) {
+                *address_pending = true;
+                continue;
+            }
+            if (!store_request->isMemAccessRequired()) {
+                continue;
+            }
+            if (translatedRequestsOverlap(request, store_request)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void
+LSQUnit::resolveRfpS0Proposal(const DynInstPtr &inst)
+{
+    auto &rfp = cpu->getRegisterPrefetcher();
+    if (!rfp.hasCandidateForS0(inst)) {
+        return;
+    }
+
+    LSQRequest *request = currentLoadRequest(inst);
+    if (inst->getFault() != NoFault || !inst->readPredicate()) {
+        rfp.rejectAtS0(inst, RegisterPrefetcher::S0RejectReason::Fault);
+        return;
+    }
+    if (!request || !request->isTranslationComplete()) {
+        rfp.rejectAtS0(
+            inst, RegisterPrefetcher::S0RejectReason::TranslationPending);
+        return;
+    }
+    if (!inst->readMemAccPredicate() || !request->isMemAccessRequired() ||
+        !request->isNormalLd() || request->isSplit() ||
+        request->mainReq()->isLocalAccess()) {
+        rfp.rejectAtS0(inst,
+                       RegisterPrefetcher::S0RejectReason::Unsupported);
+        return;
+    }
+    if (rfpMdpWaitRequired(inst)) {
+        rfp.rejectAtS0(inst, RegisterPrefetcher::S0RejectReason::Mdp);
+        return;
+    }
+    bool store_address_pending = false;
+    if (rfpStorePipeConflictVisible(
+            inst, request, &store_address_pending)) {
+        rfp.rejectAtS0(inst, RegisterPrefetcher::S0RejectReason::Nuke);
+        return;
+    }
+    if (store_address_pending) {
+        rfp.rejectAtS0(
+            inst,
+            RegisterPrefetcher::S0RejectReason::StoreAddressPending);
+        return;
+    }
+    if (rfpSqForwardingVisible(inst, request) ||
+        rfpSbufferForwardingVisible(inst, request)) {
+        rfp.rejectAtS0(inst,
+                       RegisterPrefetcher::S0RejectReason::Forwarding);
+        return;
+    }
+
+    const bool track_rar =
+        loadCompletedIdx != loadQueue.tail() && inst->isNormalLd() &&
+        inst->lqIt.idx() > loadCompletedIdx + 1;
+    const bool track_raw =
+        storeCompletedIdx != storeQueue.tail() && inst->isNormalLd() &&
+        inst->sqIt.idx() > storeCompletedIdx + 1;
+    const bool already_rar =
+        std::find(RARQueue.begin(), RARQueue.end(), inst) != RARQueue.end();
+    const bool already_raw =
+        std::find(RAWQueue.begin(), RAWQueue.end(), inst) != RAWQueue.end();
+    const bool reserve_rar = track_rar && !already_rar;
+    const bool reserve_raw = track_raw && !already_raw;
+
+    if (reserve_rar && lsq->logicalFreeRAREntries(lsqID) == 0) {
+        rfp.rejectAtS0(inst, RegisterPrefetcher::S0RejectReason::RarFull);
+        return;
+    }
+    if (reserve_raw && lsq->logicalFreeRAWEntries(lsqID) == 0) {
+        rfp.rejectAtS0(inst, RegisterPrefetcher::S0RejectReason::RawFull);
+        return;
+    }
+
+    if (!rfp.acceptAtS0(
+            inst, request->mainReq(), reserve_rar, reserve_raw)) {
+        return;
+    }
+    if (reserve_rar) {
+        RARQueue.push_back(inst);
+    }
+    if (reserve_raw) {
+        RAWQueue.push_back(inst);
+    }
+    inst->rfpRarReserved = track_rar;
+    inst->rfpRawReserved = track_raw;
 }
 
 bool
@@ -3284,7 +3555,10 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     }
 
     if (ret) {
-        if (!isLoad) {
+        if (isLoad) {
+            cpu->getRegisterPrefetcher().recordNormalDemandRead(
+                inst, data_pkt->getSize());
+        } else {
             isStoreBlocked = false;
             cpu->getRegisterPrefetcher().observeLocalWrite(
                 data_pkt->getAddr(), data_pkt->getSize());
@@ -4011,12 +4285,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    if (request->SBforwardPackets.empty() &&
-        request->SQforwardPackets.empty() &&
-        cpu->getRegisterPrefetcher().tryPrepareReuse(
-            load_inst, request->mainReq())) {
-        return NoFault;
-    }
     if (!request->SBforwardPackets.empty() ||
         !request->SQforwardPackets.empty()) {
         cpu->getRegisterPrefetcher().rejectForForwarding(load_inst);

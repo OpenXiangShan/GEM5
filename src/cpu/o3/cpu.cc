@@ -781,7 +781,7 @@ CPU::haltContext(ThreadID tid)
     DPRINTF(O3CPU,"[tid:%i] Halt Context called. Deallocating\n", tid);
     assert(!switchedOut());
 
-    registerPrefetcher.invalidateGeneration(tid);
+    registerPrefetcher.flushThreadForTeardown(tid);
 
     deactivateThread(tid);
     removeThread(tid);
@@ -1607,7 +1607,11 @@ CPU::wakeDependents(const DynInstPtr &inst)
 void
 CPU::wakeCPU()
 {
-    if (activityRec.active() || tickEvent.scheduled()) {
+    // An idle CPU can retain stale activity after its last thread is removed.
+    // A late translation or cache response must still be able to schedule one
+    // tick so its now-terminal owner can be reclaimed.
+    if (tickEvent.scheduled() ||
+        (activityRec.active() && _status != Idle)) {
         DPRINTF(Activity, "CPU already running.\n");
         return;
     }

@@ -30,8 +30,11 @@
 #ifndef __CPU_O3_RFP_STRIDE_TABLE_HH__
 #define __CPU_O3_RFP_STRIDE_TABLE_HH__
 
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "base/types.hh"
@@ -41,6 +44,34 @@ namespace gem5
 {
 namespace o3
 {
+
+class RfpStreamTracker
+{
+  public:
+    struct Occurrence
+    {
+        Addr pc = 0;
+        uint64_t generation = 0;
+        InstSeqNum seq = 0;
+    };
+
+    uint64_t onRename(Addr pc, uint64_t generation, InstSeqNum seq);
+    void onCommit(Addr pc, uint64_t generation, InstSeqNum seq);
+    size_t squash(InstSeqNum last_valid_seq);
+    void reset();
+    void checkInvariants() const;
+
+    bool empty() const { return occurrences.empty(); }
+    size_t size() const { return occurrences.size(); }
+    uint64_t outstanding(Addr pc, uint64_t generation) const;
+
+  private:
+    void release(Addr pc, uint64_t generation);
+
+    std::deque<Occurrence> occurrences;
+    std::unordered_map<uint64_t,
+        std::unordered_map<Addr, uint64_t>> perGenerationOutstanding;
+};
 
 class RfpStrideTable
 {
@@ -59,7 +90,8 @@ class RfpStrideTable
     struct Prediction
     {
         Addr address = 0;
-        uint32_t version = 0;
+        uint64_t version = 0;
+        uint64_t lookahead = 0;
     };
 
     struct LookupResult
@@ -73,6 +105,8 @@ class RfpStrideTable
     {
         bool firstSample = false;
         bool strideMatch = false;
+        bool strideMismatch = false;
+        bool illegalStride = false;
         bool strideChange = false;
         bool confidenceInc = false;
         bool confidenceDec = false;
@@ -83,12 +117,12 @@ class RfpStrideTable
                    unsigned confidenceBits, unsigned confidenceThreshold,
                    uint64_t maxStrideBytes, bool requireSamePage);
 
-    LookupResult lookup(Addr pc, uint64_t generation, Tick now);
-    bool claimPrediction(Addr pc, uint64_t generation, uint32_t version);
+    LookupResult lookup(Addr pc, uint64_t generation, uint64_t lookahead,
+                        Tick now);
     TrainResult train(Addr pc, Addr address, uint64_t generation,
                       InstSeqNum seq, Tick now);
     bool versionMatches(Addr pc, uint64_t generation,
-                        uint32_t version) const;
+                        uint64_t version) const;
     void reset();
 
   private:
@@ -99,10 +133,9 @@ class RfpStrideTable
         Addr lastCommittedVa = 0;
         int64_t stride = 0;
         uint8_t confidence = 0;
-        uint32_t version = 1;
+        uint64_t version = 0;
         uint64_t generation = 0;
         InstSeqNum lastTrainSeq = 0;
-        InstSeqNum lastLaunchTrainSeq = 0;
         Tick lastUseTick = 0;
     };
 
@@ -110,6 +143,7 @@ class RfpStrideTable
     Entry *find(Addr pc, uint64_t generation);
     const Entry *find(Addr pc, uint64_t generation) const;
     bool legalStride(int64_t stride) const;
+    uint64_t allocateVersion();
 
     const unsigned numEntries;
     const unsigned associativity;
@@ -118,6 +152,7 @@ class RfpStrideTable
     const unsigned confidenceThreshold;
     const uint64_t maxStrideBytes;
     const bool requireSamePage;
+    uint64_t nextVersion = 1;
     std::vector<Entry> table;
 };
 

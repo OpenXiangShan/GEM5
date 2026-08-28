@@ -384,7 +384,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
     }
     for (const auto &rfp_producer : ready_rfp_producers) {
         cpu->getRegisterPrefetcher().recordConsumerUse(
-            rfp_producer, inst->seqNum);
+            rfp_producer, inst);
     }
     return true;
 }
@@ -754,6 +754,11 @@ IssueQue::issueToFu()
             issuedStore++;
         }
 
+        // A memory replay has already passed its first load S0. The RFP
+        // candidate must therefore have either validated or fallen back; a
+        // live pre-S0 candidate here would bypass the sole OG0 wakeup edge.
+        panic_if(cpu->getRegisterPrefetcher().hasCandidateForS0(inst),
+                 "RFP load entered replayQ before its first S0");
         scheduler->addToFU(inst);
         DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
         replayQ.pop();
@@ -778,6 +783,7 @@ IssueQue::issueToFu()
             (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad;
         if (issueOccupied) {
+            cpu->getRegisterPrefetcher().onProducerIssueCanceled(inst);
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
@@ -786,6 +792,7 @@ IssueQue::issueToFu()
             continue;
         }
         if (!checkScoreboard(inst)) {
+            cpu->getRegisterPrefetcher().onProducerIssueCanceled(inst);
             continue;
         }
 
@@ -1077,6 +1084,7 @@ IssueQue::scheduleInst()
 
             scheduler->specWakeUpDependents(inst, this);
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueArb);
+            cpu->getRegisterPrefetcher().onProducerIssue(inst);
         }
         inst->clearArbFailed();
     }
@@ -1867,9 +1875,6 @@ Scheduler::rfpDataReady(const DynInstPtr& inst)
         }
         bypassScoreboard[dst->flatIndex()] = true;
     }
-    for (auto to : issueQues) {
-        to->wakeUpDependents(inst, true);
-    }
 }
 
 void
@@ -2018,6 +2023,12 @@ Scheduler::loadCancel(
     while (!dfs.empty()) {
         auto top = dfs.top();
         dfs.pop();
+        // The current DFS already owns cancellation of top's descendants.
+        // If top is itself an RFP producer between OG0 and FU entry, only
+        // reset its issue-attempt state here; recursively starting another DFS
+        // would duplicate work and corrupt the issue-stage time buffers.
+        const bool rfp_wake_retracted =
+            cpu->getRegisterPrefetcher().onProducerIssueCanceled(top, true);
         // clear pending wake events scheduled by top
         auto& pendingEvents = specWakeEvents[top->seqNum];
         for (auto it = pendingEvents.begin(); it != pendingEvents.end(); it++) {
@@ -2030,7 +2041,8 @@ Scheduler::loadCancel(
                 continue;
             }
             earlyScoreboard[dst->flatIndex()] = false;
-            if (source == SpeculationSource::RegisterPrefetch) {
+            if (source == SpeculationSource::RegisterPrefetch ||
+                rfp_wake_retracted) {
                 bypassScoreboard[dst->flatIndex()] = false;
             }
             for (auto iq : issueQues) {

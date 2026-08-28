@@ -793,6 +793,7 @@ Commit::squashAll(ThreadID tid)
     youngestSeqNum[tid] = lastCommitedSeqNum[tid];
 
     rob->squash(squashed_inst, tid);
+    cpu->getRegisterPrefetcher().squash(tid, squashed_inst);
     changedROBNumEntries[tid] = true;
 
     if (valuePred)
@@ -1202,6 +1203,7 @@ Commit::commit()
             youngestSeqNum[tid] = squashed_inst;
 
             rob->squash(squashed_inst, tid);
+            cpu->getRegisterPrefetcher().squash(tid, squashed_inst);
             changedROBNumEntries[tid] = true;
 
             if (valuePred)

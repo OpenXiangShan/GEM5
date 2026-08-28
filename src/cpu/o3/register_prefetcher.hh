@@ -46,6 +46,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/rfp_stride_table.hh"
+#include "cpu/o3/rfp_wakeup_state.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 
@@ -65,7 +66,7 @@ class Scheduler;
 class RegisterPrefetcher
 {
   public:
-    static constexpr unsigned MaxRfpBytes = 16;
+    static constexpr unsigned MaxRfpBytes = 8;
 
     enum class OperandStatus
     {
@@ -73,6 +74,27 @@ class RegisterPrefetcher
         Waiting,
         Cancel,
         Ready
+    };
+
+    enum class S0RejectReason
+    {
+        TranslationPending,
+        Fault,
+        Unsupported,
+        Forwarding,
+        Mdp,
+        StoreAddressPending,
+        Nuke,
+        RarFull,
+        RawFull
+    };
+
+    enum class NormalRecoveryReason
+    {
+        StoreLoadRaw,
+        LoadLoadOrder,
+        ExternalSnoop,
+        NumReasons
     };
 
     class RfpRequest final : public BaseMMU::Translation,
@@ -101,6 +123,9 @@ class RegisterPrefetcher
     void setScheduler(Scheduler *new_scheduler) { scheduler = new_scheduler; }
 
     void onRenamedInstruction(const DynInstPtr &inst);
+    void onProducerIssue(const DynInstPtr &inst);
+    bool onProducerIssueCanceled(const DynInstPtr &inst,
+                                 bool consumers_already_canceled = false);
     void trainCommittedLoad(const DynInstPtr &inst);
     void tick();
     void recvReqRetry();
@@ -109,12 +134,15 @@ class RegisterPrefetcher
     void observeLocalWrite(Addr address, unsigned size);
     void squash(ThreadID tid, InstSeqNum squash_seq_num);
     void invalidateGeneration(ThreadID tid);
+    void flushThreadForTeardown(ThreadID tid);
     void takeOverFrom();
 
-    bool tryPrepareReuse(const DynInstPtr &inst,
-                         const RequestPtr &normal_req);
-    bool finalizeReuse(const DynInstPtr &inst,
-                       const RequestPtr &normal_req);
+    bool hasCandidateForS0(const DynInstPtr &inst) const;
+    void observeLoadS0(const DynInstPtr &inst);
+    void recordNormalDemandRead(const DynInstPtr &inst, unsigned size);
+    bool acceptAtS0(const DynInstPtr &inst, const RequestPtr &normal_req,
+                    bool rar_reserved, bool raw_reserved);
+    void rejectAtS0(const DynInstPtr &inst, S0RejectReason reason);
     void completeReuse(const DynInstPtr &inst);
     void rejectForForwarding(const DynInstPtr &inst);
     void rejectForMdp(const DynInstPtr &inst);
@@ -126,8 +154,11 @@ class RegisterPrefetcher
                                 InstSeqNum consumer_seq,
                                 DynInstPtr *producer);
     void recordConsumerUse(const DynInstPtr &producer,
-                           InstSeqNum consumer_seq);
+                           const DynInstPtr &consumer);
+    void recordConsumerAtFu(const DynInstPtr &consumer);
     void cancelForConsumer(const DynInstPtr &producer);
+    void recordNormalMemOrderSquash(const DynInstPtr &producer,
+                                    NormalRecoveryReason reason);
 
     bool isDrained() const;
     void drainSanityCheck() const;
@@ -140,10 +171,24 @@ class RegisterPrefetcher
         CacheQueued,
         Inflight,
         ResponseReady,
-        AwaitingValidation,
+        S0Validated,
         Reused,
         FallbackNormal,
-        Discarded
+        Discarded,
+        NumStates
+    };
+
+    enum class DeadlineState
+    {
+        NoCandidate,
+        LaunchQueued,
+        Translating,
+        CacheQueued,
+        Inflight,
+        ResponseReady,
+        S0Validated,
+        TerminalUnavailable,
+        NumStates
     };
 
     enum class FailureReason
@@ -158,6 +203,7 @@ class RegisterPrefetcher
         ResponseMalformed,
         PublishFault,
         Squashed,
+        PregRecycle,
         Generation,
         NoData,
         TokenMismatch,
@@ -166,8 +212,19 @@ class RegisterPrefetcher
         FlagsMismatch,
         Forwarding,
         Ordering,
+        Mdp,
+        StoreAddressPending,
+        Nuke,
+        RarFull,
+        RawFull,
+        LocalWrite,
+        SnoopInvalidate,
+        DemandTranslationPending,
+        DemandFault,
         Unsupported,
-        NormalCompletion
+        NormalCompletion,
+        ThreadTeardown,
+        NumReasons
     };
 
     struct Candidate
@@ -177,7 +234,8 @@ class RegisterPrefetcher
         ContextID contextId = InvalidContextID;
         InstSeqNum seqNum = 0;
         RegIndex destinationFlatIdx = 0;
-        uint32_t predictorVersion = 0;
+        uint64_t predictorVersion = 0;
+        uint64_t lookahead = 0;
         DynInstPtr producer;
         Addr pc = 0;
         Addr predictedVa = 0;
@@ -186,8 +244,11 @@ class RegisterPrefetcher
         Request::Flags originalFlags;
         uint64_t generation = 0;
         Tick lookupTick = 0;
+        Tick translationStartTick = 0;
+        Tick translationDoneTick = 0;
         Tick admissionTick = 0;
         Tick responseTick = 0;
+        Tick producerIssueTick = 0;
         unsigned retryCycles = 0;
         State state = State::LaunchQueued;
         FailureReason failure = FailureReason::None;
@@ -199,15 +260,21 @@ class RegisterPrefetcher
         bool translationOutstanding = false;
         bool packetInflight = false;
         bool responseHasData = false;
-        bool specWoken = false;
+        bool everAdmitted = false;
+        bool fanoutSampled = false;
+        RfpWakeupState wakeup;
         bool orphaned = false;
+        std::unordered_set<InstSeqNum> consumerGateSeen;
         std::unordered_map<InstSeqNum, Tick> consumerWaitStart;
+        std::unordered_set<InstSeqNum> canceledConsumers;
         std::unordered_set<InstSeqNum> issuedConsumers;
     };
 
     struct RfpStats : public statistics::Group
     {
-        explicit RfpStats(statistics::Group *parent);
+        RfpStats(statistics::Group *parent, unsigned num_threads,
+                 unsigned issue_width, unsigned candidate_capacity,
+                 unsigned max_retry_cycles);
 
         statistics::Scalar lookup;
         statistics::Scalar tableHit;
@@ -250,6 +317,11 @@ class RegisterPrefetcher
         statistics::Scalar localWriteInvalidate;
 
         statistics::Scalar specWake;
+        statistics::Scalar producerIssueAttempts;
+        statistics::Scalar producerIssueWakeOnIssue;
+        statistics::Scalar responseDataReadyAfterProducerIssue;
+        statistics::Scalar producerIssueWakeRollback;
+        statistics::Scalar consumerGateBeforeS0;
         statistics::Scalar consumerWait;
         statistics::Scalar consumerEarlyCancel;
         statistics::Scalar consumerIssuedWithData;
@@ -268,13 +340,181 @@ class RegisterPrefetcher
         statistics::Scalar validationFailMdp;
         statistics::Scalar validationFailNuke;
         statistics::Scalar validationFailRarRaw;
+        statistics::Scalar s0ValidationAttempt;
+        statistics::Scalar s0ValidationPass;
+        statistics::Scalar s0RejectTranslationPending;
+        statistics::Scalar s0RejectFault;
+        statistics::Scalar s0RejectUnsupported;
+        statistics::Scalar s0RejectNoData;
+        statistics::Scalar s0RejectIdentity;
+        statistics::Scalar s0RejectAddress;
+        statistics::Scalar s0RejectAttributes;
+        statistics::Scalar s0RejectForwarding;
+        statistics::Scalar s0RejectMdp;
+        statistics::Scalar s0RejectStoreAddressPending;
+        statistics::Scalar s0RejectNuke;
+        statistics::Scalar s0RejectRarFull;
+        statistics::Scalar s0RejectRawFull;
+        statistics::Scalar s0RarReserved;
+        statistics::Scalar s0RawReserved;
+        statistics::Scalar consumerBackToBack;
+        statistics::Scalar consumerAtFu;
+        statistics::Scalar consumerAtFuBackToBack;
+        statistics::Scalar s0OwnerRecycled;
+        statistics::Scalar postS0RfpInvariantFailure;
+        statistics::Scalar normalMemOrderSquashAfterRfp;
         statistics::Scalar reused;
         statistics::Scalar fallbackNormal;
         statistics::Scalar duplicateDemandAvoided;
+
+        statistics::Scalar lookupMiss;
+        statistics::Scalar ineligibleLoadRename;
+        statistics::Scalar rejectActiveCandidate;
+        statistics::Scalar rejectClaim;
+        statistics::Scalar rejectMisalignedPrediction;
+        statistics::Scalar rejectCrossLinePrediction;
+        statistics::Scalar trainSamples;
+        statistics::Scalar trainStrideMismatch;
+        statistics::Scalar trainIllegalStride;
+        statistics::Scalar streamOccurrencesRenamed;
+        statistics::Scalar streamOccurrencesCommitted;
+        statistics::Scalar streamOccurrencesSquashed;
+        statistics::Scalar streamOccurrencesTeardown;
+        statistics::Scalar predictionsBeyondNextOccurrence;
+        statistics::Scalar predictionIncorrectWithStrideMatch;
+        statistics::Scalar streamHighWatermark;
+
+        statistics::Scalar eligibleLoadS0;
+        statistics::Scalar predictionResolved;
+        statistics::Scalar predictionCorrect;
+        statistics::Scalar predictionIncorrect;
+        statistics::Scalar predictionLineCorrect;
+        statistics::Scalar selectedPredictionResolved;
+        statistics::Scalar selectedPredictionCorrect;
+        statistics::Scalar selectedPredictionIncorrect;
+        statistics::Scalar issuedPredictionResolved;
+        statistics::Scalar issuedPredictionCorrect;
+        statistics::Scalar issuedPredictionIncorrect;
+        statistics::Scalar committedLoads;
+        statistics::Scalar committedEligibleLoads;
+        statistics::Scalar committedPredictedLoads;
+        statistics::Scalar committedCorrectPredictions;
+        statistics::Scalar committedIncorrectPredictions;
+        statistics::Scalar committedRfpReused;
+        statistics::Scalar committedRfpReuseWithConsumer;
+        statistics::Scalar committedRfpReuseWithoutConsumer;
+        statistics::Scalar committedDemandReadsAvoided;
+        statistics::Scalar committedEligibleNormalDemandLoads;
+        statistics::Scalar committedRfpBytesUseful;
+
+        statistics::Scalar normalEligibleDemandLoads;
+        statistics::Scalar normalEligibleDemandPackets;
+        statistics::Scalar normalEligibleDemandBytes;
+        statistics::Scalar prefetchBytesIssued;
+        statistics::Scalar prefetchBytesReceived;
+        statistics::Scalar prefetchBytesUseful;
+        statistics::Scalar prefetchBytesWasted;
+        statistics::Scalar responseDataReady;
+        statistics::Scalar responseMalformed;
+        statistics::Scalar responseFast;
+        statistics::Scalar responseSlow;
+        statistics::Scalar prefetchOnTimeAtS0;
+        statistics::Scalar prefetchLateAtS0;
+        statistics::Scalar prefetchUnavailableAtS0;
+        statistics::Scalar prefetchNotIssuedAtS0;
+
+        statistics::Scalar candidateDiscarded;
+        statistics::Scalar issuedTerminalWaste;
+        statistics::Scalar responseReadyTerminalWaste;
+        statistics::Scalar wrongPathPrefetchIssued;
+        statistics::Scalar snoopInvalidateEvents;
+        statistics::Scalar snoopCandidatesInvalidated;
+        statistics::Scalar localWriteEvents;
+        statistics::Scalar rejectGlobalInflightFull;
+        statistics::Scalar rejectThreadInflightFull;
+        statistics::Scalar translationWidthDeferred;
+        statistics::Scalar admissionWidthDeferred;
+        statistics::Scalar candidateHighWatermark;
+        statistics::Scalar liveCandidates;
+        statistics::Scalar liveIssuedCandidates;
+        statistics::Scalar inflightAtDump;
+
+        statistics::Scalar consumerPairsSeenAtGate;
+        statistics::Scalar consumerPairsWaited;
+        statistics::Scalar consumerPairsCanceled;
+        statistics::Scalar consumerPairsWaitedToReady;
+        statistics::Scalar consumerPairsWaitedCanceled;
+        statistics::Scalar consumerPairsWaitExpired;
+
+        statistics::Vector candidateDiscardReason;
+        statistics::Vector candidateDiscardState;
+        statistics::Vector predictionDeadlineState;
+        statistics::Vector normalRecoveryReason;
+        statistics::Vector perThreadInflightFullCycles;
+
+        statistics::Average candidateStorageOccupancy;
+        statistics::Average activeCandidateOccupancy;
+        statistics::Average launchQueueOccupancy;
+        statistics::Average translatingOccupancy;
+        statistics::Average cacheQueuedOccupancy;
+        statistics::Average responseReadyOccupancy;
+        statistics::Average s0ValidatedOccupancy;
+        statistics::Average terminalOutstandingOccupancy;
+        statistics::Average streamOccurrenceOccupancy;
+
         statistics::Distribution latencyLookupToAdmission;
         statistics::Distribution latencyAdmissionToResponse;
         statistics::Distribution latencyResponseToReuse;
         statistics::Distribution latencyRenameToConsumerUse;
+        statistics::Distribution latencyS0ToConsumerIssue;
+        statistics::Distribution latencyS0ToConsumerFu;
+        statistics::Distribution latencyLookupToTranslation;
+        statistics::Distribution latencyTranslation;
+        statistics::Distribution latencyTranslationToAdmission;
+        statistics::Distribution latencyPredictionToLoadS0;
+        statistics::Distribution latencyAdmissionToLoadS0;
+        statistics::Distribution latencyResponseToLoadS0;
+        statistics::Distribution latencyLoadS0ToResponse;
+        statistics::Distribution latencyCandidateLifetime;
+        statistics::Distribution retriesPerCandidate;
+        statistics::Distribution consumerWaitToReady;
+        statistics::Distribution consumerWaitToCancel;
+        statistics::Distribution latencyResponseToConsumerIssue;
+        statistics::Distribution latencyProducerIssueToLoadS0;
+        statistics::Distribution fanoutPerReusedLoad;
+        statistics::Distribution translationsPerCycle;
+        statistics::Distribution admissionAttemptsPerCycle;
+        statistics::Distribution prefetchesIssuedPerCycle;
+        statistics::Distribution predictionLookahead;
+
+        statistics::Formula prefetchIssued;
+        statistics::Formula prefetchUseful;
+        statistics::Formula prefetchUnused;
+        statistics::Formula tableHitRate;
+        statistics::Formula predictionGenerationRate;
+        statistics::Formula dynamicPredictionAccuracy;
+        statistics::Formula committedPredictionAccuracy;
+        statistics::Formula predictionCoverage;
+        statistics::Formula correctPredictionCoverage;
+        statistics::Formula selectedPredictionAccuracy;
+        statistics::Formula issuedPredictionAccuracy;
+        statistics::Formula launchConversion;
+        statistics::Formula admissionConversion;
+        statistics::Formula prefetchAccuracy;
+        statistics::Formula resolvedPrefetchAccuracy;
+        statistics::Formula committedPrefetchAccuracy;
+        statistics::Formula prefetchCoverage;
+        statistics::Formula allLoadPrefetchCoverage;
+        statistics::Formula demandReadCoverage;
+        statistics::Formula responseUseRate;
+        statistics::Formula prefetchByteAccuracy;
+        statistics::Formula resolvedPrefetchByteAccuracy;
+        statistics::Formula committedPrefetchByteAccuracy;
+        statistics::Formula prefetchTimeliness;
+        statistics::Formula validationYield;
+        statistics::Formula reuseConversion;
+        statistics::Formula consumerBackToBackRate;
+        statistics::Formula consumerAtFuBackToBackRate;
     };
 
     Candidate *findCandidate(const DynInstPtr &inst);
@@ -289,6 +529,8 @@ class RegisterPrefetcher
     void markTranslationDelayed(uint64_t serial);
     bool requestSquashed(uint64_t serial) const;
     bool sendCandidate(Candidate &candidate);
+    void applyWakeAction(Candidate &candidate, RfpWakeupState::Action action,
+                         bool consumers_already_canceled = false);
     bool validateIdentity(const Candidate &candidate,
                           const DynInstPtr &inst) const;
     bool validateAddressAndAttributes(Candidate &candidate,
@@ -299,7 +541,9 @@ class RegisterPrefetcher
                           bool cancel_consumers);
     void releaseInstructionBinding(Candidate &candidate, bool fallback);
     void cleanupTerminalCandidates();
-    void invalidateLine(Addr address, uint64_t excluded_serial = 0);
+    void invalidateLine(Addr address, uint64_t excluded_serial = 0,
+                        FailureReason reason = FailureReason::SnoopInvalidate);
+    DeadlineState deadlineState(const Candidate *candidate) const;
     void checkInvariants() const;
     void recordLookupReject(RfpStrideTable::RejectReason reason);
     uint64_t cyclesBetween(Tick start, Tick end) const;
@@ -320,9 +564,14 @@ class RegisterPrefetcher
 
     uint64_t nextSerial = 1;
     unsigned inflight = 0;
+    unsigned candidateHighWatermarkValue = 0;
+    unsigned streamHighWatermarkValue = 0;
+    unsigned admissionAttemptsThisCycle = 0;
+    unsigned prefetchesIssuedThisCycle = 0;
     std::vector<unsigned> perThreadInflight;
     std::vector<uint64_t> generations;
     std::vector<std::unique_ptr<RfpStrideTable>> predictors;
+    std::vector<RfpStreamTracker> streamTrackers;
     std::deque<uint64_t> launchQueue;
     std::unordered_map<uint64_t, std::unique_ptr<Candidate>> candidates;
     std::unordered_map<RegIndex, uint64_t> pregOwners;

@@ -578,14 +578,12 @@ class LSQUnit
      * Load pipeline stage contract:
      *
      * - S0 translate: start/finish address translation and record the
-     *   translated request.  A delayed translation marks TLBMissReplay; data
-     *   and cache replay decisions are left to later stages.
-     * - S1 send: run the same-cycle RAW/nuke guard, then let read() perform
-     *   SQ/SBuffer forwarding or send the cache request.  A sendable request
-     *   may spec-wakeup dependent instructions.
-     * - S2 recv/select: reconcile data availability, DCache/SQ forwarding
-     *   state, nuke checks, and RAW/RAR tracking capacity into either one
-     *   replay reason or a completion path.
+     *   translated request. RFP candidates become bounded proposals that are
+     *   resolved after this cycle's store pipe, before issueAndSelect().
+     * - S1 send: validated RFP loads only advance bookkeeping. Other loads run
+     *   the normal nuke, forwarding, and DCache-send path.
+     * - S2 recv/select: validated RFP loads perform synthetic completion.
+     *   Other loads retain normal replay selection and ordering tracking.
      * - S3 writeback: currently a timing placeholder.  The normal finish path
      *   is handled by executeLoadPipeSx() after the last stage.
      */
@@ -608,12 +606,25 @@ class LSQUnit
     /** Wrap function. */
     void executePipeSx();
 
+    /** Collect and resolve RFP proposals still resident in load S0. */
+    void collectRfpS0Proposals(std::vector<DynInstPtr> &proposals) const;
+    void resolveRfpS0Proposal(const DynInstPtr &inst);
+
     /** Schedule event for the cpu. */
     void schedule(Event& ev, Tick when);
 
     BaseMMU *getMMUPtr();
 
   private:
+    bool rfpMdpWaitRequired(const DynInstPtr &inst);
+    bool rfpSqForwardingVisible(const DynInstPtr &inst,
+                                LSQRequest *request);
+    bool rfpSbufferForwardingVisible(const DynInstPtr &inst,
+                                     LSQRequest *request);
+    bool rfpStorePipeConflictVisible(const DynInstPtr &inst,
+                                     LSQRequest *request,
+                                     bool *address_pending);
+
     System *system;
 
     /** Pointer to the CPU. */
