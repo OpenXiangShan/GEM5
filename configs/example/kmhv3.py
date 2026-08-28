@@ -97,7 +97,7 @@ def setKmhV3Params(args, system):
         # value predictor
         cpu.valuePred = CompositeValuePredictor(
                             predictors=[
-                                IdealConstantLVP(),
+                                IdealConstantLVP(enableProfiling=True),
                                 # ExampleValuePredictor(),
                                 # EStride(logMaxConfidence=13, thresholdPercent=0.35)
                             ],

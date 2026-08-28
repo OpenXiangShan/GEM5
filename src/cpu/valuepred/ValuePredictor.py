@@ -150,3 +150,6 @@ class IdealConstantLVP(ValuePredictor):
 
     satCounterBits = Param.Unsigned(9, "bits of saturating counter, initial value is 0")
     resetConfidence = Param.Bool(True, "reset confidence to 0 when mispredict")
+    enableProfiling = Param.Bool(
+        False,
+        "emit per-PC IdealConstantLVP profiling data without changing prediction state")
