@@ -694,7 +694,7 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent,
       ADD_STAT(specStoreFwdFail, statistics::units::Count::get(),
                "Spec-STLF wrong predictions (commit-time, attributed to stores)"),
       ADD_STAT(specStoreFwdTrainEvents, statistics::units::Count::get(),
-               "Spec-STLF training events (commit-time)"),
+               "Spec-STLF same-range training events (commit-time)"),
       ADD_STAT(specStoreFwdTotalLoads, statistics::units::Count::get(),
                "Total committed loads counted for Spec-STLF coverage"),
       ADD_STAT(specStoreFwdMdpWaitLoads, statistics::units::Count::get(),
@@ -711,7 +711,7 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent,
                "Committed Spec-STLF failures corrected by SQ arbitration"),
       ADD_STAT(specStoreFwdAddrValidationFail,
                statistics::units::Count::get(),
-               "Spec-STLF failures caused by address or offset validation"),
+               "Spec-STLF failures caused by range validation"),
       ADD_STAT(specStoreFwdCtrDecrements, statistics::units::Count::get(),
                "Spec-STLF predictor counter decrements by feedback reason"),
       ADD_STAT(specStoreFwdAccuracy, statistics::units::Ratio::get(),
@@ -1403,27 +1403,19 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                     static_cast<size_t>(inst->sqIdx) ?
                                 static_cast<uint16_t>(ld_inst->sqIt.idx() -
                                     static_cast<size_t>(inst->sqIdx)) : 0;
-                            const auto load_end = ld_inst->physEffAddr +
-                                ld_inst->effSize;
-                            const auto store_end = inst->physEffAddr +
-                                inst->effSize;
                             const auto *load_req = currentLoadRequest(ld_inst);
                             const auto *store_req = currentStoreRequest(inst);
-                            const bool full_coverage = load_req && store_req &&
+                            const bool same_range = load_req && store_req &&
                                 !load_req->isSplit() && !store_req->isSplit() &&
-                                ld_inst->physEffAddr >= inst->physEffAddr &&
-                                load_end <= store_end;
-                            if (distance != 0 && full_coverage) {
-                                specStoreFwdUnit.feedbackYoungerNukeOrViolation(
-                                    ld_inst, distance,
-                                    static_cast<uint16_t>(ld_inst->physEffAddr -
-                                        inst->physEffAddr));
-                            } else if (distance != 0) {
+                                isSameStoreLoadRange(
+                                    ld_inst->physEffAddr, ld_inst->effSize,
+                                    inst->physEffAddr, inst->effSize);
+                            if (distance != 0 && same_range) {
                                 specStoreFwdUnit.feedbackYoungerNukeOrViolation(
                                     ld_inst, distance);
                             } else {
                                 specStoreFwdUnit.feedbackYoungerNukeOrViolation(
-                                    ld_inst, distance);
+                                    ld_inst);
                             }
                             specStoreFwdUnit.markAddrValidationFail(ld_inst);
                             const ssize_t store_idx = inst->sqIdx;
@@ -1744,25 +1736,18 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
                             static_cast<size_t>(store_inst->sqIdx) ?
                         static_cast<uint16_t>(inst->sqIt.idx() -
                             static_cast<size_t>(store_inst->sqIdx)) : 0;
-                    const auto load_end = inst->physEffAddr + inst->effSize;
-                    const auto store_end = store_inst->physEffAddr +
-                        store_inst->effSize;
                     const auto *load_req = currentLoadRequest(inst);
                     const auto *store_req = currentStoreRequest(store_inst);
-                    const bool full_coverage = load_req && store_req &&
+                    const bool same_range = load_req && store_req &&
                         !load_req->isSplit() && !store_req->isSplit() &&
-                        inst->physEffAddr >= store_inst->physEffAddr &&
-                        load_end <= store_end;
-                    if (distance != 0 && full_coverage) {
-                        specStoreFwdUnit.feedbackYoungerNukeOrViolation(
-                            inst, distance, static_cast<uint16_t>(
-                                inst->physEffAddr - store_inst->physEffAddr));
-                    } else if (distance != 0) {
+                        isSameStoreLoadRange(
+                            inst->physEffAddr, inst->effSize,
+                            store_inst->physEffAddr, store_inst->effSize);
+                    if (distance != 0 && same_range) {
                         specStoreFwdUnit.feedbackYoungerNukeOrViolation(
                             inst, distance);
                     } else {
-                        specStoreFwdUnit.feedbackYoungerNukeOrViolation(
-                            inst, distance);
+                        specStoreFwdUnit.feedbackYoungerNukeOrViolation(inst);
                     }
                     specStoreFwdUnit.markSqCorrected(inst);
                     if (request) {
@@ -4095,21 +4080,29 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 } else {
                     const auto distance = static_cast<uint16_t>(
                         load_inst->sqIt.idx() - store_it.idx());
+                    const bool same_range = !request->isSplit() &&
+                        store_it->request() &&
+                        !store_it->request()->isSplit() &&
+                        isSameStoreLoadRange(
+                            request->mainReq()->getPaddr(),
+                            request->mainReq()->getSize(),
+                            store_it->instruction()->physEffAddr,
+                            store_it->size());
                     if (decision == SpecStoreFwdDecision::CorrectWithSq) {
-                        const auto shift = static_cast<int64_t>(
-                            request->mainReq()->getPaddr()) -
-                            static_cast<int64_t>(
-                                store_it->instruction()->physEffAddr);
-                        if (shift >= 0 && shift <= UINT16_MAX) {
+                        if (same_range) {
                             specStoreFwdUnit.feedbackSqYoungerFull(
-                                load_inst, distance,
-                                static_cast<uint16_t>(shift));
+                                load_inst, distance);
                         } else {
-                            specStoreFwdUnit.feedbackShiftMismatch(load_inst);
+                            specStoreFwdUnit.feedbackSqYoungerFull(load_inst);
                         }
                     } else if (coverage == AddrRangeCoverage::DataNotReady) {
-                        specStoreFwdUnit.feedbackSqDataNotReadyReplay(
-                            load_inst, distance);
+                        if (same_range) {
+                            specStoreFwdUnit.feedbackSqDataNotReadyReplay(
+                                load_inst, distance);
+                        } else {
+                            specStoreFwdUnit.feedbackSqDataNotReadyReplay(
+                                load_inst);
+                        }
                     } else {
                         specStoreFwdUnit.feedbackSqPartialReplay(load_inst);
                     }
@@ -4136,12 +4129,18 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 int shift_amt = request->mainReq()->getPaddr() -
                     store_it->instruction()->physEffAddr;
 
-                // Record STLF meta for commit-time training.
+                // Only identical store/load ranges train SFP. Normal SQ
+                // forwarding still supports a wider store covering the load.
+                const bool same_range = isSameStoreLoadRange(
+                    request->mainReq()->getPaddr(),
+                    request->mainReq()->getSize(),
+                    store_it->instruction()->physEffAddr, store_it->size());
                 load_inst->stlfFromStoreQueue = true;
-                load_inst->stlfStoreSeqNum = store_it->instruction()->seqNum;
+                load_inst->stlfSameRange = same_range;
+                load_inst->stlfStoreSeqNum =
+                    store_it->instruction()->seqNum;
                 load_inst->stlfDistance = static_cast<uint16_t>(
                     load_inst->sqIt.idx() - store_it.idx());
-                load_inst->stlfShiftAmt = static_cast<uint16_t>(shift_amt);
 
                 // Allocate memory if this is the first time a load is issued.
                 if (!load_inst->memData) {

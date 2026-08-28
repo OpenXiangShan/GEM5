@@ -68,7 +68,7 @@ SpecStoreFwdUnit::trySpecStoreFwd(
             return AttemptResult::CorrectedFail;
         }
         return tryCandidate(load_inst, request, boundary - distance, distance,
-                            load_inst->specStoreFwdShiftAmt, true);
+                            true);
     }
     if (load_inst->specStoreFwdState != SpecStoreFwdState::None ||
         wait_store_idxs.empty()) {
@@ -86,9 +86,8 @@ SpecStoreFwdUnit::trySpecStoreFwd(
             continue;
         }
         const auto distance = static_cast<uint16_t>(boundary - store_idx);
-        if (distance == pred_meta->first) {
-            return tryCandidate(load_inst, request, store_idx, distance,
-                                pred_meta->second, false);
+        if (distance == *pred_meta) {
+            return tryCandidate(load_inst, request, store_idx, distance, false);
         }
     }
     return AttemptResult::Miss;
@@ -112,7 +111,7 @@ SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
             return AttemptResult::CorrectedFail;
         }
         return tryCandidate(load_inst, request, boundary - distance, distance,
-                            load_inst->specStoreFwdShiftAmt, true);
+                            true);
     }
     if (load_inst->specStoreFwdState != SpecStoreFwdState::None) {
         return AttemptResult::Miss;
@@ -124,18 +123,17 @@ SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
     }
 
     const size_t boundary = load_inst->sqIt.idx();
-    if (boundary < pred_meta->first) {
+    if (boundary < *pred_meta) {
         return AttemptResult::Miss;
     }
-    return tryCandidate(load_inst, request, boundary - pred_meta->first,
-                        pred_meta->first, pred_meta->second, false);
+    return tryCandidate(load_inst, request, boundary - *pred_meta, *pred_meta,
+                        false);
 }
 
 SpecStoreFwdUnit::AttemptResult
 SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
                                LSQ::LSQRequest *request, size_t store_idx,
-                               uint16_t distance, uint16_t shift,
-                               bool saved_prediction)
+                               uint16_t distance, bool saved_prediction)
 {
     if (!lsqUnit->storeQueue.isValidIdx(store_idx)) {
         if (saved_prediction) {
@@ -181,9 +179,9 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
     }
     const unsigned store_size = static_cast<unsigned>(store_width / 8);
     const unsigned load_size = request->mainReq()->getSize();
-    if (shift >= store_size || load_size > store_size - shift) {
+    if (load_size != store_size) {
         if (saved_prediction) {
-            feedbackShiftMismatch(load_inst);
+            feedbackRangeMismatch(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -193,16 +191,12 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
     if (!saved_prediction) {
         load_inst->specStoreFwdStoreSeqNum = store_inst->seqNum;
         load_inst->specStoreFwdDistance = distance;
-        load_inst->specStoreFwdShiftAmt = shift;
     }
 
     if (store_it->addrReady()) {
-        const int64_t actual_shift =
-            static_cast<int64_t>(load_inst->physEffAddr) -
-            static_cast<int64_t>(store_inst->physEffAddr);
-        if (actual_shift < 0 || actual_shift != shift ||
-            load_size > store_size - static_cast<unsigned>(actual_shift)) {
-            feedbackShiftMismatch(load_inst);
+        if (!isSameStoreLoadRange(load_inst->physEffAddr, load_size,
+                                  store_inst->physEffAddr, store_size)) {
+            feedbackRangeMismatch(load_inst);
             markSqCorrected(load_inst);
             return AttemptResult::CorrectedFail;
         }
@@ -224,7 +218,7 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
     request->SQforwardPackets.clear();
     for (unsigned i = 0; i < load_size; ++i) {
         const uint8_t byte = store_it->isAllZeros() ? 0 :
-            static_cast<uint8_t>(store_it->data()[shift + i]);
+            static_cast<uint8_t>(store_it->data()[i]);
         request->SQforwardPackets.push_back(
             LSQ::LSQRequest::FWDPacket{static_cast<int>(i), byte});
     }
@@ -234,18 +228,17 @@ SpecStoreFwdUnit::tryCandidate(const DynInstPtr &load_inst,
         SpecStoreFwdState::SqConfirmed :
         SpecStoreFwdState::PendingValidation;
     load_inst->stlfFromStoreQueue = true;
+    load_inst->stlfSameRange = true;
     load_inst->stlfStoreSeqNum = store_inst->seqNum;
     load_inst->stlfDistance = distance;
-    load_inst->stlfShiftAmt = shift;
     load_inst->setFullForward();
     ++lsqUnit->stats.forwLoads;
 
     DPRINTF(SPECFwd,
             "Spec-STLF load[sn:%llu] PC %#lx forwards from store[sn:%llu] "
-            "(distance=%u shift=%u size=%u addrReady=%u)\n",
+            "(distance=%u size=%u addrReady=%u)\n",
             load_inst->seqNum, load_inst->pcState().instAddr(),
-            store_inst->seqNum, distance, shift, load_size,
-            store_it->addrReady());
+            store_inst->seqNum, distance, load_size, store_it->addrReady());
     return AttemptResult::Forwarded;
 }
 
@@ -300,21 +293,14 @@ SpecStoreFwdUnit::checkSpecStoreFwdMispred(const DynInstPtr &store_inst)
         }
 
         const unsigned load_size = ld_inst->effSize;
-        const int64_t actual_shift =
-            static_cast<int64_t>(ld_inst->physEffAddr) -
-            static_cast<int64_t>(store_paddr);
-        const bool shift_in_range = actual_shift >= 0 &&
-            static_cast<uint64_t>(actual_shift) <= store_size;
-        const bool mispred = !shift_in_range ||
-            actual_shift != ld_inst->specStoreFwdShiftAmt ||
-            (shift_in_range &&
-             load_size > store_size - static_cast<unsigned>(actual_shift));
+        const bool mispred = !isSameStoreLoadRange(
+            ld_inst->physEffAddr, load_size, store_paddr, store_size);
         if (!mispred) {
             ld_inst->specStoreFwdState = SpecStoreFwdState::SqConfirmed;
             continue;
         }
 
-        feedbackShiftMismatch(ld_inst);
+        feedbackRangeMismatch(ld_inst);
         markAddrValidationFail(ld_inst);
 
         mispreds++;
@@ -388,17 +374,16 @@ SpecStoreFwdUnit::commitLoad(const DynInstPtr &inst)
         lsqUnit->stats.specStoreFwdSqCorrectsSpec++;
     }
     // Predictor training is independent of MDP and only observes committed
-    // full forwarding from the live store queue.
-    if (inst->stlfFromStoreQueue && inst->fullForward()) {
-        pred.train(inst->pcState().instAddr(), inst->stlfDistance,
-                   inst->stlfShiftAmt);
+    // same-range full forwarding from the live store queue.
+    if (inst->stlfFromStoreQueue && inst->stlfSameRange &&
+        inst->fullForward()) {
+        pred.train(inst->pcState().instAddr(), inst->stlfDistance);
         if (pred.ready()) {
             lsqUnit->stats.specStoreFwdTrainEvents++;
         }
         DPRINTF(SPECFwd,
-                "Spec-STLF train load[sn:%llu] PC %#lx distance=%u shift=%u\n",
-                inst->seqNum, inst->pcState().instAddr(), inst->stlfDistance,
-                inst->stlfShiftAmt);
+                "Spec-STLF train load[sn:%llu] PC %#lx distance=%u\n",
+                inst->seqNum, inst->pcState().instAddr(), inst->stlfDistance);
     }
 }
 
@@ -435,9 +420,9 @@ SpecStoreFwdUnit::clearCurrentForward(const DynInstPtr &inst)
     }
     inst->specStoreFwd = false;
     inst->stlfFromStoreQueue = false;
+    inst->stlfSameRange = false;
     inst->stlfStoreSeqNum = 0;
     inst->stlfDistance = 0;
-    inst->stlfShiftAmt = 0;
 }
 
 void
@@ -449,7 +434,6 @@ SpecStoreFwdUnit::clearPrediction(const DynInstPtr &inst)
     inst->specStoreFwdState = SpecStoreFwdState::None;
     inst->specStoreFwdStoreSeqNum = 0;
     inst->specStoreFwdDistance = 0;
-    inst->specStoreFwdShiftAmt = 0;
     inst->specStoreFwdDataWaited = false;
     inst->specStoreFwdSameEntry = false;
     inst->specStoreFwdWonOverSq = false;
@@ -531,17 +515,14 @@ SpecStoreFwdUnit::predictedStoreSeq(const DynInstPtr &inst) const
 void
 SpecStoreFwdUnit::applyFeedback(const DynInstPtr &load_inst,
                                 SpecStoreFwdFeedbackReason reason,
-                                std::optional<uint16_t> distance,
-                                std::optional<uint16_t> shift)
+                                std::optional<uint16_t> distance)
 {
     if (!lsqUnit || !load_inst || !pred.enabled()) {
         return;
     }
 
     const Addr pc = load_inst->pcState().instAddr();
-    if (distance && shift) {
-        pred.updateMetaAndDecrement(pc, *distance, *shift);
-    } else if (distance) {
+    if (distance) {
         pred.updateDistanceAndDecrement(pc, *distance);
     } else {
         pred.decrement(pc);
@@ -550,17 +531,16 @@ SpecStoreFwdUnit::applyFeedback(const DynInstPtr &load_inst,
         static_cast<unsigned>(reason)];
     DPRINTF(SPECFwd,
             "Spec-STLF feedback load[sn:%llu] reason=%s update=%s "
-            "distance=%u shift=%u decrement\n",
+            "distance=%u decrement\n",
             load_inst->seqNum,
             SpecStoreFwdFeedbackReasonNames[static_cast<unsigned>(reason)],
-            distance ? (shift ? "meta" : "distance") : "none",
-            distance.value_or(0), shift.value_or(0));
+            distance ? "distance" : "none", distance.value_or(0));
 }
 
 void
-SpecStoreFwdUnit::feedbackShiftMismatch(const DynInstPtr &inst)
+SpecStoreFwdUnit::feedbackRangeMismatch(const DynInstPtr &inst)
 {
-    applyFeedback(inst, SpecStoreFwdFeedbackReason::ShiftMismatch);
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::RangeMismatch);
 }
 
 void
@@ -570,11 +550,10 @@ SpecStoreFwdUnit::feedbackDataReplayInvalidSource(const DynInstPtr &inst)
 }
 
 void
-SpecStoreFwdUnit::feedbackSqYoungerFull(const DynInstPtr &inst,
-                                        uint16_t distance, uint16_t shift)
+SpecStoreFwdUnit::feedbackSqYoungerFull(
+    const DynInstPtr &inst, std::optional<uint16_t> distance)
 {
-    applyFeedback(inst, SpecStoreFwdFeedbackReason::SqYoungerFull, distance,
-                  shift);
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::SqYoungerFull, distance);
 }
 
 void
@@ -584,8 +563,8 @@ SpecStoreFwdUnit::feedbackSqPartialReplay(const DynInstPtr &inst)
 }
 
 void
-SpecStoreFwdUnit::feedbackSqDataNotReadyReplay(const DynInstPtr &inst,
-                                               uint16_t distance)
+SpecStoreFwdUnit::feedbackSqDataNotReadyReplay(
+    const DynInstPtr &inst, std::optional<uint16_t> distance)
 {
     applyFeedback(inst, SpecStoreFwdFeedbackReason::SqDataNotReadyReplay,
                   distance);
@@ -593,14 +572,10 @@ SpecStoreFwdUnit::feedbackSqDataNotReadyReplay(const DynInstPtr &inst,
 
 void
 SpecStoreFwdUnit::feedbackYoungerNukeOrViolation(
-    const DynInstPtr &inst, uint16_t distance, std::optional<uint16_t> shift)
+    const DynInstPtr &inst, std::optional<uint16_t> distance)
 {
-    if (distance == 0) {
-        applyFeedback(inst, SpecStoreFwdFeedbackReason::YoungerNukeOrViolation);
-    } else {
-        applyFeedback(inst, SpecStoreFwdFeedbackReason::YoungerNukeOrViolation,
-                      distance, shift);
-    }
+    applyFeedback(inst, SpecStoreFwdFeedbackReason::YoungerNukeOrViolation,
+                  distance);
 }
 
 } // namespace o3

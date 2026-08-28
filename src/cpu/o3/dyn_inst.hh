@@ -502,7 +502,6 @@ class DynInst : public ExecContext, public RefCounted
     SpecStoreFwdState specStoreFwdState = SpecStoreFwdState::None;
     InstSeqNum specStoreFwdStoreSeqNum = 0;
     uint16_t specStoreFwdDistance = 0;
-    uint16_t specStoreFwdShiftAmt = 0;
 
     /** Commit-safe classification bits for a single dynamic prediction. */
     bool specStoreFwdDataWaited = false;
@@ -514,16 +513,15 @@ class DynInst : public ExecContext, public RefCounted
      * Store-to-load forwarding metadata for full-range forwarding from the SQ.
      *
      * - stlfFromStoreQueue: data came from the store queue (not sbuffer/bus)
+     * - stlfSameRange:      source store and load cover identical byte ranges
      * - stlfStoreSeqNum:    source store seqNum
      * - stlfDistance:       store-queue distance (load.sqIt.idx() - store.sqIdx)
-     * - stlfShiftAmt:       byte offset into the store data
-     *
      * These fields are used for Spec-STLF training at load commit.
      */
     bool stlfFromStoreQueue = false;
+    bool stlfSameRange = false;
     InstSeqNum stlfStoreSeqNum = 0;
     uint16_t stlfDistance = 0;
-    uint16_t stlfShiftAmt = 0;
 
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[8] = {0};

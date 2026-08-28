@@ -107,16 +107,18 @@ class SpecStoreFwdUnit
     void markSpecWonOverSq(const DynInstPtr &inst);
     void markAddrValidationFail(const DynInstPtr &inst);
 
-    void feedbackShiftMismatch(const DynInstPtr &inst);
+    void feedbackRangeMismatch(const DynInstPtr &inst);
     void feedbackDataReplayInvalidSource(const DynInstPtr &inst);
-    void feedbackSqYoungerFull(const DynInstPtr &inst, uint16_t distance,
-                               uint16_t shift);
+    void feedbackSqYoungerFull(
+        const DynInstPtr &inst,
+        std::optional<uint16_t> distance = std::nullopt);
     void feedbackSqPartialReplay(const DynInstPtr &inst);
-    void feedbackSqDataNotReadyReplay(const DynInstPtr &inst,
-                                      uint16_t distance);
-    void feedbackYoungerNukeOrViolation(const DynInstPtr &inst,
-                                        uint16_t distance,
-                                        std::optional<uint16_t> shift = std::nullopt);
+    void feedbackSqDataNotReadyReplay(
+        const DynInstPtr &inst,
+        std::optional<uint16_t> distance = std::nullopt);
+    void feedbackYoungerNukeOrViolation(
+        const DynInstPtr &inst,
+        std::optional<uint16_t> distance = std::nullopt);
 
     bool hasPrediction(const DynInstPtr &inst) const;
     InstSeqNum predictedStoreSeq(const DynInstPtr &inst) const;
@@ -124,14 +126,12 @@ class SpecStoreFwdUnit
   private:
     AttemptResult tryCandidate(const DynInstPtr &load_inst,
                                LSQ::LSQRequest *request, size_t store_idx,
-                               uint16_t distance, uint16_t shift,
-                               bool saved_prediction);
+                               uint16_t distance, bool saved_prediction);
     void clearCurrentForward(const DynInstPtr &inst);
     void clearPrediction(const DynInstPtr &inst);
     void applyFeedback(const DynInstPtr &load_inst,
                        SpecStoreFwdFeedbackReason reason,
-                       std::optional<uint16_t> distance = std::nullopt,
-                       std::optional<uint16_t> shift = std::nullopt);
+                       std::optional<uint16_t> distance = std::nullopt);
 
     LSQUnit *lsqUnit = nullptr;
     bool allowNoMdp_ = false;

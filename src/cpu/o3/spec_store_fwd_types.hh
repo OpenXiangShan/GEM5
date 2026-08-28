@@ -59,7 +59,7 @@ enum class SpecStoreFwdSqResult : uint8_t
 
 enum class SpecStoreFwdFeedbackReason : uint8_t
 {
-    ShiftMismatch,
+    RangeMismatch,
     SqYoungerFull,
     SqPartialReplay,
     SqDataNotReadyReplay,
@@ -69,13 +69,21 @@ enum class SpecStoreFwdFeedbackReason : uint8_t
 };
 
 inline constexpr const char *SpecStoreFwdFeedbackReasonNames[] = {
-    "shiftMismatch",
+    "rangeMismatch",
     "sqYoungerFull",
     "sqPartialReplay",
     "sqDataNotReadyReplay",
     "dataReplayInvalidSource",
     "youngerNukeOrViolation",
 };
+
+/** SFP only learns store-to-load forwarding with identical byte ranges. */
+constexpr bool
+isSameStoreLoadRange(uint64_t load_addr, uint64_t load_size,
+                     uint64_t store_addr, uint64_t store_size)
+{
+    return load_addr == store_addr && load_size == store_size;
+}
 
 enum class SpecStoreFwdDecision : uint8_t
 {

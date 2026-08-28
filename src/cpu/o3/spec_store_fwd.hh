@@ -32,7 +32,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <utility>
 #include <vector>
 
 #include "base/intmath.hh"
@@ -59,7 +58,6 @@ class SpecStoreFwdPredictor
     {
         // Store-queue distance (load.sqIt.idx() - store.sqIdx).
         uint16_t distance = 0;
-        uint16_t shiftAmt = 0;
         uint8_t ctr = 0;
     };
 
@@ -94,7 +92,7 @@ class SpecStoreFwdPredictor
     bool enabled() const { return _enabled; }
     bool ready() const { return _enabled && !_table.empty(); }
 
-    std::optional<std::pair<uint16_t, uint16_t>>
+    std::optional<uint16_t>
     predict(Addr pc) const
     {
         if (!ready()) {
@@ -104,24 +102,23 @@ class SpecStoreFwdPredictor
         if (meta.ctr != _ctrMax) {
             return std::nullopt;
         }
-        return std::make_pair(meta.distance, meta.shiftAmt);
+        return meta.distance;
     }
 
     void
-    train(Addr pc, uint16_t distance, uint16_t shift_amt)
+    train(Addr pc, uint16_t distance)
     {
         if (!ready()) {
             return;
         }
 
         auto &meta = _table[index(pc)];
-        if (meta.distance == distance && meta.shiftAmt == shift_amt) {
+        if (meta.distance == distance) {
             if (meta.ctr < _ctrMax) {
                 meta.ctr++;
             }
         } else {
             meta.distance = distance;
-            meta.shiftAmt = shift_amt;
             // Reset counter on mismatch (per design doc).
             meta.ctr = 0;
         }
@@ -149,7 +146,7 @@ class SpecStoreFwdPredictor
         }
     }
 
-    /** Update distance while retaining shift metadata, then decrement. */
+    /** Update distance metadata, then decrement. */
     void
     updateDistanceAndDecrement(Addr pc, uint16_t distance)
     {
@@ -158,21 +155,6 @@ class SpecStoreFwdPredictor
         }
         auto &meta = _table[index(pc)];
         meta.distance = distance;
-        if (meta.ctr > 0) {
-            --meta.ctr;
-        }
-    }
-
-    /** Update both metadata fields, then apply one saturating decrement. */
-    void
-    updateMetaAndDecrement(Addr pc, uint16_t distance, uint16_t shift_amt)
-    {
-        if (!ready()) {
-            return;
-        }
-        auto &meta = _table[index(pc)];
-        meta.distance = distance;
-        meta.shiftAmt = shift_amt;
         if (meta.ctr > 0) {
             --meta.ctr;
         }

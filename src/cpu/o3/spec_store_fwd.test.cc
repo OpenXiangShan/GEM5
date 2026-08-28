@@ -87,18 +87,26 @@ TEST(SpecStoreFwdArbitration, NoPredictionUsesNormalSqBehavior)
               SpecStoreFwdDecision::ReplayForSq);
 }
 
+TEST(SpecStoreFwdRange, RequiresIdenticalStartAndSize)
+{
+    EXPECT_TRUE(isSameStoreLoadRange(0x1000, 8, 0x1000, 8));
+    EXPECT_FALSE(isSameStoreLoadRange(0x1004, 4, 0x1000, 8));
+    EXPECT_FALSE(isSameStoreLoadRange(0x1000, 4, 0x1000, 8));
+    EXPECT_FALSE(isSameStoreLoadRange(0x1000, 8, 0x1004, 8));
+}
+
 TEST(SpecStoreFwdPredictor, DecrementSaturatesAndSuppressesPrediction)
 {
     SpecStoreFwdPredictor predictor;
     predictor.init(true, 1024, 4);
     constexpr Addr pc = 0x1000;
     for (int i = 0; i < 16; ++i) {
-        predictor.train(pc, 3, 1);
+        predictor.train(pc, 3);
     }
     ASSERT_TRUE(predictor.predict(pc));
     predictor.decrement(pc);
     EXPECT_FALSE(predictor.predict(pc));
-    predictor.train(pc, 3, 1);
+    predictor.train(pc, 3);
     EXPECT_TRUE(predictor.predict(pc));
     for (int i = 0; i < 20; ++i) {
         predictor.decrement(pc);
@@ -106,30 +114,19 @@ TEST(SpecStoreFwdPredictor, DecrementSaturatesAndSuppressesPrediction)
     EXPECT_FALSE(predictor.predict(pc));
 }
 
-TEST(SpecStoreFwdPredictor, MetadataFeedbackPreservesOrReplacesFields)
+TEST(SpecStoreFwdPredictor, DistanceFeedbackReplacesMetadataAndDecrements)
 {
     SpecStoreFwdPredictor predictor;
     predictor.init(true, 1024, 4);
     constexpr Addr pc = 0x1000;
-    for (int i = 0; i < 15; ++i) {
-        predictor.train(pc, 3, 1);
+    for (int i = 0; i < 16; ++i) {
+        predictor.train(pc, 3);
     }
+    ASSERT_EQ(predictor.predict(pc), 3);
     predictor.updateDistanceAndDecrement(pc, 7);
-    for (int i = 0; i < 15; ++i) {
-        predictor.train(pc, 7, 1);
-    }
-    const auto first_prediction = predictor.predict(pc);
-    ASSERT_TRUE(first_prediction);
-    EXPECT_EQ(first_prediction->first, 7);
-    EXPECT_EQ(first_prediction->second, 1);
-    predictor.updateMetaAndDecrement(pc, 9, 2);
-    for (int i = 0; i < 15; ++i) {
-        predictor.train(pc, 9, 2);
-    }
-    const auto second_prediction = predictor.predict(pc);
-    ASSERT_TRUE(second_prediction);
-    EXPECT_EQ(second_prediction->first, 9);
-    EXPECT_EQ(second_prediction->second, 2);
+    EXPECT_FALSE(predictor.predict(pc));
+    predictor.train(pc, 7);
+    ASSERT_EQ(predictor.predict(pc), 7);
 }
 
 } // namespace gem5::o3
