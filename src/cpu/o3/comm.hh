@@ -451,6 +451,18 @@ smtHasBorrowThrottleStall(const TimeStruct::IewComm &info)
 }
 
 inline bool
+smtHasBorrowThrottleLQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.lqHeadStallReason);
+}
+
+inline bool
+smtHasBorrowThrottleSQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.sqHeadStallReason);
+}
+
+inline bool
 smtHasMemoryPressure(const TimeStruct::IewComm &info,
                      unsigned ldstqHighWater = 0)
 {
