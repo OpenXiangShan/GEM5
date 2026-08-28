@@ -1033,7 +1033,7 @@ class BTBRAS(TimedBaseBTBPredictor):
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numEntries = Param.Unsigned(16, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(3, "Width of the counter")
-    numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
+    numInflightEntries = Param.Unsigned(32, "Number of inflight entries")
     numDelay = 2
 
 class BTBuRAS(TimedBaseBTBPredictor):
