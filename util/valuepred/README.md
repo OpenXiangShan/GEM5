@@ -50,3 +50,20 @@ slices. Slices are independent processes, and PCs from different benchmark
 ELFs can reuse the same virtual address without representing the same static
 instruction. The aggregate tool keys its static-PC union by `(benchmark, tid,
 PC)` for that reason.
+
+To evaluate the static set pressure of a candidate physical organization, run:
+
+```bash
+python3 util/valuepred/ideal_constant_lvp_capacity.py \
+  /path/to/performance_archive \
+  --scope lifetime \
+  --table qf-1k-4w:1024:4:all \
+  --table pct-1k-4w:1024:4:ever-saturated \
+  --out-dir /tmp/ideal-constant-lvp-set-pressure
+```
+
+The mapper uses a compressed-instruction-safe xor-folded `pc >> 1` index and
+reports final static collisions for each slice. It is deliberately not a
+replacement or coverage simulator: temporal replacement needs an online shadow
+table or an access trace, while this report only identifies static set hot
+spots in a candidate geometry.
