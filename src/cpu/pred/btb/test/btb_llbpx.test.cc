@@ -50,7 +50,7 @@ TEST(BTBLLBPXTest, RcrTypeFilteringMatchesOriginalClasses)
     EXPECT_TRUE(BTBLLBPX::TestAccess::shouldRecordRCR(llbpx, uncond, true));
 }
 
-TEST(BTBLLBPXTest, RcrHashesUseOneRecordDistanceByDefault)
+TEST(BTBLLBPXTest, RcrHashesUseTwoRecordDistanceByDefault)
 {
     BTBLLBPX llbpx;
     for (unsigned i = 0; i < 12; ++i) {
@@ -60,11 +60,11 @@ TEST(BTBLLBPXTest, RcrHashesUseOneRecordDistanceByDefault)
 
     const auto &ids = BTBLLBPX::TestAccess::rcrIds(llbpx, 0);
     const Addr expected_ccid =
-        BTBLLBPX::TestAccess::calcRCRHash(llbpx, 0, 8, 1, 1, 32);
+        BTBLLBPX::TestAccess::calcRCRHash(llbpx, 0, 8, 2, 1, 32);
     const Addr expected_pcid =
         BTBLLBPX::TestAccess::calcRCRHash(llbpx, 0, 8, 0, 1, 32);
     const Addr expected_bcid =
-        BTBLLBPX::TestAccess::calcRCRHash(llbpx, 0, 2, 1, 1, 12);
+        BTBLLBPX::TestAccess::calcRCRHash(llbpx, 0, 2, 2, 1, 12);
     const Addr expected_pbcid =
         BTBLLBPX::TestAccess::calcRCRHash(llbpx, 0, 2, 0, 1, 12);
 
@@ -90,7 +90,7 @@ TEST(BTBLLBPXTest, OriginalContextKeyUsesRcrHashInsteadOfLegacyMix)
     const Addr key = BTBLLBPX::TestAccess::contextKey(
         llbpx, 0, 0x8000, 0x8010, history, 0);
     const Addr expected = BTBLLBPX::TestAccess::originalContextKey(
-        llbpx, 0, 0x8010, 8, 1);
+        llbpx, 0, 0x8010, 8, 2);
 
     EXPECT_EQ(key, expected);
 }

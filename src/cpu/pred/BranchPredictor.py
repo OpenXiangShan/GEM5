@@ -1165,7 +1165,7 @@ class BTBLLBPX(TimedBaseBTBPredictor):
     rcrEntries = Param.Unsigned(32, "Recent control-flow records kept by LLBP-X")
     rcrType = Param.Unsigned(4, "LLBP-X RCR branch class filter: 0=all, 1=call, 2=call/ret, 3=uncond, 4=all taken")
     rcrWindow = Param.Unsigned(8, "LLBP-X RCR current-context window size")
-    rcrDist = Param.Unsigned(1, "LLBP-X RCR skip distance before current-context hashing")
+    rcrDist = Param.Unsigned(2, "LLBP-X RCR skip distance before current-context hashing")
     rcrShift = Param.Unsigned(1, "LLBP-X RCR rolling-hash shift")
     rcrTagBits = Param.Unsigned(14, "LLBP-X RCR context ID width")
     rcrBaseTagBits = Param.Unsigned(16, "LLBP-X RCR base-context ID width")
