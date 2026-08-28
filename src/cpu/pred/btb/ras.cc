@@ -267,8 +267,17 @@ BTBRAS::update(const FetchTarget &entry)
                 static_cast<long long>(meta_ptr->TOSW), entry.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
             push_stack(tid, retAddr);
-            state.BOS = std::max(state.BOS, meta_ptr->TOSW + 1);
         }
+    }
+
+    // Match the RTL inference-queue retirement window. A committed push stays
+    // available as the oldest speculative entry because younger entries may
+    // still name it as their parent. Other commits may reclaim all but one
+    // predecessor once their prediction metadata has moved far enough ahead.
+    if (entry.exeTaken && takenEntry.isCall) {
+        state.BOS = std::max(state.BOS, meta_ptr->TOSW);
+    } else if (meta_ptr->TOSW - state.BOS > 2) {
+        state.BOS = std::max(state.BOS, meta_ptr->TOSW - 1);
     }
     if (takenEntry.isCall || takenEntry.isReturn) {
         printStack("after update(commit)", tid);
