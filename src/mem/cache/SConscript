@@ -58,6 +58,7 @@ DebugFlag('HWPrefetch')
 DebugFlag('HWPrefetchOther')
 DebugFlag('StridePrefetcher')
 DebugFlag('MSHR')
+DebugFlag('PartialStore')
 DebugFlag('HWPrefetchQueue')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag

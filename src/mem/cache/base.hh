@@ -912,7 +912,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     CacheBlk *handleFill(
         PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
-        bool *refill_need_data_read = nullptr);
+        bool *refill_need_data_read = nullptr,
+        bool partial_data_fill = false);
 
     /**
      * Allocate a new block and perform any necessary writebacks
@@ -1253,17 +1254,20 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         statistics::Scalar partialPermissionReqs;
         statistics::Scalar partialPermissionLatency;
+        statistics::Scalar partialPermissionReadConflicts;
         statistics::Scalar partialDataFillReqs;
         statistics::Scalar partialCoveredLoadHits;
         statistics::Scalar partialLineWritebacks;
         statistics::Scalar partialWritebackBytes;
         statistics::Scalar partialWritebackMerges;
         statistics::Scalar partialWritebackBypasses;
+        statistics::Scalar partialWritebackMshrConflicts;
         statistics::Scalar partialSnoopFills;
         statistics::Scalar partialSnoopMerges;
         statistics::Scalar partialSnoopFillLatency;
         statistics::Scalar partialSnoopReserveFull;
         statistics::Scalar partialFillVictimConflicts;
+        statistics::Scalar partialFillStoreCompletions;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;

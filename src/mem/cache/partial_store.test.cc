@@ -125,6 +125,26 @@ TEST(PartialStoreTest, ValidMaskGrowsAndBecomesFull)
     EXPECT_TRUE(blk.hasValidData(0, BlkSize));
 }
 
+TEST(PartialStoreTest, FullyCoveredBlockRejectsOlderPartialFill)
+{
+    CacheBlk blk;
+    std::vector<uint8_t> block_data(BlkSize, 0x05);
+    blk.data = block_data.data();
+    blk.insert(TestAddr, false);
+    blk.markPartial(BlkSize);
+
+    Packet stores(
+        makeRequest(std::vector<bool>(BlkSize, true)), MemCmd::WriteReq);
+    stores.allocate();
+    blk.markValidData(&stores, BlkSize);
+    ASSERT_FALSE(blk.isPartial());
+
+    const std::vector<uint8_t> old_fill(BlkSize, 0x6d);
+    EXPECT_FALSE(blk.mergePartialFill(old_fill.data(), BlkSize));
+    EXPECT_TRUE(std::all_of(block_data.begin(), block_data.end(),
+                            [](uint8_t byte) { return byte == 0x05; }));
+}
+
 TEST(PartialStoreTest, MaskedWritebackPreservesDisabledBytes)
 {
     std::vector<bool> mask(BlkSize, false);
@@ -138,6 +158,25 @@ TEST(PartialStoreTest, MaskedWritebackPreservesDisabledBytes)
     for (unsigned i = 0; i < BlkSize; ++i) {
         EXPECT_EQ(destination[i], mask[i] ? 0xa5 : 0x5a);
     }
+}
+
+TEST(PartialStoreTest, NewerMaskedWritebackWinsInOverlay)
+{
+    std::vector<bool> first_mask(BlkSize, false);
+    first_mask[3] = true;
+    std::unique_ptr<Packet> first(makeWriteback(first_mask, 0x11));
+
+    std::vector<bool> second_mask(BlkSize, false);
+    second_mask[3] = true;
+    second_mask[37] = true;
+    std::unique_ptr<Packet> second(makeWriteback(second_mask, 0x22));
+
+    std::vector<uint8_t> fill(BlkSize, 0x5a);
+    first->writeDataToBlock(fill.data(), BlkSize);
+    second->writeDataToBlock(fill.data(), BlkSize);
+    EXPECT_EQ(fill[3], 0x22);
+    EXPECT_EQ(fill[37], 0x22);
+    EXPECT_EQ(fill[4], 0x5a);
 }
 
 TEST(PartialStoreTest, FunctionalReadCombinesPartialAndFullData)

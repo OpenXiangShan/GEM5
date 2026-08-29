@@ -134,6 +134,9 @@ class MSHR : public QueueEntry, public Printable
 
     MissKind missKind;
 
+    /** Newer bytes from a masked dirty writeback racing this read miss. */
+    PacketPtr partialWriteback;
+
     /** True if the entry is just a simple forward from an upper level */
     bool isForward;
 
@@ -351,6 +354,22 @@ class MSHR : public QueueEntry, public Printable
     {
         return missKind == MissKind::PartialDataFill ||
             missKind == MissKind::PartialSnoopFill;
+    }
+
+    bool hasPartialWriteback() const { return partialWriteback != nullptr; }
+
+    /**
+     * Merge a masked dirty writeback into the pending fill overlay.
+     *
+     * The newest packet is retained so its coherence flags take precedence.
+     */
+    void mergePartialWriteback(PacketPtr pkt);
+
+    PacketPtr releasePartialWriteback()
+    {
+        PacketPtr pkt = partialWriteback;
+        partialWriteback = nullptr;
+        return pkt;
     }
 
     bool isCleaning() const {
