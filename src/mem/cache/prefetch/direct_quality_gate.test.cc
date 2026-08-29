@@ -693,5 +693,72 @@ TEST(DirectQualityGate, Cqf14E6T30EpochSweepDelaysUnusedUntilT30)
     EXPECT_EQ(gate.feedbackExpiryUnused(), 1U);
 }
 
+TEST(DirectQualityGate, CqfDseDefaultMatchesFrozenCqfContract)
+{
+    DirectQualityGate frozen(DirectQualityGate::Config::bopCqf14E6T30());
+    DirectQualityGate dse(DirectQualityGate::Config::bopCqfDse());
+
+    for (unsigned index = 0; index < 1024; ++index) {
+        const Addr pc = 0x1000 + (index % 11) * 4;
+        const uint8_t kind = (index & 1) ? 1 : 2;
+        const Addr trigger = 0x100000 + Addr(index) * 64;
+        const Addr candidate = trigger + ((index % 5) + 1) * 64;
+        const auto frozen_decision = frozen.admit(pc, kind, trigger, candidate);
+        const auto dse_decision = dse.admit(pc, kind, trigger, candidate);
+        EXPECT_EQ(frozen_decision.allowed, dse_decision.allowed);
+        EXPECT_EQ(frozen_decision.sampled, dse_decision.sampled);
+        EXPECT_EQ(frozen_decision.feedbackInserted, dse_decision.feedbackInserted);
+        EXPECT_EQ(frozen_decision.state, dse_decision.state);
+        EXPECT_EQ(frozen_decision.set, dse_decision.set);
+        EXPECT_EQ(frozen_decision.way, dse_decision.way);
+
+        const Addr demand = index % 3 == 0 ? candidate : 0x200000 + Addr(index) * 64;
+        frozen.observeDemand(demand);
+        dse.observeDemand(demand);
+    }
+
+    EXPECT_EQ(frozen.candidates(), dse.candidates());
+    EXPECT_EQ(frozen.allowed(), dse.allowed());
+    EXPECT_EQ(frozen.sampleSelected(), dse.sampleSelected());
+    EXPECT_EQ(frozen.sampled(), dse.sampled());
+    EXPECT_EQ(frozen.useful(), dse.useful());
+    EXPECT_EQ(frozen.unused(), dse.unused());
+    EXPECT_EQ(frozen.unknownDrops(), dse.unknownDrops());
+    EXPECT_EQ(frozen.feedbackExpiries(), dse.feedbackExpiries());
+}
+
+TEST(DirectQualityGate, CqfDseEpochVariantsExpireWithinTheirNextSweep)
+{
+    struct EpochVariant
+    {
+        unsigned bits;
+        unsigned shift;
+        unsigned timeout;
+    };
+    const std::vector<EpochVariant> variants = {
+        {5, 7, 15}, {6, 6, 31}, {7, 5, 63},
+    };
+
+    for (const auto &variant : variants) {
+        auto config = DirectQualityGate::Config::bopCqfDse();
+        config.feedbackEntries = 64;
+        config.compactEpochBits = variant.bits;
+        config.compactEpochShift = variant.shift;
+        config.compactEpochTimeout = variant.timeout;
+        config.observeSamplePeriod = 1;
+        config.openSamplePeriod = 1;
+        DirectQualityGate gate(config);
+        const auto decision = gate.admit(0x1000, 1, 0x300000, 0x400000);
+        ASSERT_TRUE(decision.feedbackInserted);
+
+        // T63/S5 becomes eligible at demand 2016. A 64-entry round-robin
+        // walk may need one more table pass to visit its particular slot.
+        for (unsigned demand = 0; demand < 2112; ++demand)
+            gate.observeDemand(0x500000 + Addr(demand) * 64);
+        EXPECT_EQ(gate.unused(), 1U)
+            << "E" << variant.bits << "/S" << variant.shift;
+    }
+}
+
 }  // namespace prefetch
 }  // namespace gem5

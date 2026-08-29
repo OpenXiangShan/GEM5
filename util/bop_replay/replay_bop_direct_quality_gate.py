@@ -56,6 +56,7 @@ FEEDBACK_OWNER_LAYOUT_QUALITY_KEY = "quality_key"
 FEEDBACK_EXPIRY_MODE_HEAP = "heap"
 FEEDBACK_EXPIRY_MODE_ROUND_ROBIN = "round_robin"
 FEEDBACK_AGE_ENCODING_FULL = "full"
+FEEDBACK_AGE_ENCODING_EPOCH5 = "epoch5"
 FEEDBACK_AGE_ENCODING_EPOCH6 = "epoch6"
 FEEDBACK_AGE_ENCODING_EPOCH7 = "epoch7"
 FEEDBACK_EPOCH_SHIFT = 6
@@ -66,6 +67,8 @@ HOST_CACHE_LINE_MASK = (1 << (64 - 6)) - 1
 
 
 def _feedback_epoch_bits(encoding: str) -> int:
+    if encoding == FEEDBACK_AGE_ENCODING_EPOCH5:
+        return 5
     if encoding == FEEDBACK_AGE_ENCODING_EPOCH6:
         return 6
     if encoding == FEEDBACK_AGE_ENCODING_EPOCH7:
@@ -118,6 +121,10 @@ class DirectQualityConfig:
     # Epoch encodings compare modulo elapsed epochs against this threshold.
     # It is invalid outside round-robin epoch configurations.
     feedback_epoch_timeout: int = 0
+    # V6 metadata records these fields explicitly. Zero keeps the V3/V4/V5
+    # interpretation derived from the encoding and historical E6 shift.
+    feedback_epoch_bits: int = 0
+    feedback_epoch_shift: int = 0
     observe_sample_period: int = 16
     # False retains the initial probe-only baseline. True keeps OBSERVE
     # fail-open while sampling it at observe_sample_period for training.
@@ -241,32 +248,53 @@ class DirectQualityConfig:
             )
         if self.feedback_age_encoding not in (
                 FEEDBACK_AGE_ENCODING_FULL,
+                FEEDBACK_AGE_ENCODING_EPOCH5,
                 FEEDBACK_AGE_ENCODING_EPOCH6,
                 FEEDBACK_AGE_ENCODING_EPOCH7):
             raise ValueError(
-                "feedback_age_encoding must be 'full', 'epoch6', or 'epoch7'"
+                "feedback_age_encoding must be 'full', 'epoch5', 'epoch6', or 'epoch7'"
             )
         if self.feedback_age_encoding != FEEDBACK_AGE_ENCODING_FULL:
             if self.feedback_expiry_mode != FEEDBACK_EXPIRY_MODE_ROUND_ROBIN:
                 raise ValueError("epoch feedback age requires round_robin expiry")
-            # A slot is revisited only once per full round-robin walk. Leave
-            # enough epoch-ring headroom for that revisit, otherwise a near-
-            # wrap threshold can roll to zero before being sampled.
-            max_revisit_epochs = (
-                self.feedback_entries + (1 << FEEDBACK_EPOCH_SHIFT) - 1
-            ) >> FEEDBACK_EPOCH_SHIFT
-            max_epoch_timeout = (
-                _feedback_epoch_mask(self.feedback_age_encoding)
-                - max_revisit_epochs
+            epoch_bits = self.epoch_bits
+            epoch_shift = self.epoch_shift
+            explicit_epoch_layout = (
+                self.feedback_epoch_bits != 0 or self.feedback_epoch_shift != 0
             )
-            if not 1 <= self.feedback_epoch_timeout <= max_epoch_timeout:
-                raise ValueError(
-                    "feedback_epoch_timeout must be in [1, "
-                    f"{max_epoch_timeout}] for {self.feedback_age_encoding}"
+            if explicit_epoch_layout:
+                if self.feedback_epoch_bits != epoch_bits:
+                    raise ValueError("feedback_epoch_bits conflicts with feedback_age_encoding")
+                if not 5 <= epoch_shift <= 7 or epoch_bits + epoch_shift != 12:
+                    raise ValueError(
+                        "epoch feedback age requires E5/S7, E6/S6, or E7/S5"
+                    )
+                if not 1 <= self.feedback_epoch_timeout < (1 << (epoch_bits - 1)):
+                    raise ValueError(
+                        "feedback_epoch_timeout must be below the epoch-ring half range"
+                    )
+                if (self.feedback_epoch_timeout * (1 << epoch_shift)
+                        + self.feedback_entries // 2 > self.horizon):
+                    raise ValueError("epoch feedback timeout exceeds the Horizon")
+            else:
+                # V3/V4/V5 had a fixed S6 epoch shift even for epoch7.
+                # Keep its previously accepted replay range unchanged.
+                max_revisit_epochs = (
+                    self.feedback_entries + (1 << FEEDBACK_EPOCH_SHIFT) - 1
+                ) >> FEEDBACK_EPOCH_SHIFT
+                max_epoch_timeout = (
+                    _feedback_epoch_mask(self.feedback_age_encoding)
+                    - max_revisit_epochs
                 )
-        elif self.feedback_epoch_timeout != 0:
+                if not 1 <= self.feedback_epoch_timeout <= max_epoch_timeout:
+                    raise ValueError(
+                        "feedback_epoch_timeout must be in [1, "
+                        f"{max_epoch_timeout}] for {self.feedback_age_encoding}"
+                    )
+        elif (self.feedback_epoch_timeout != 0 or self.feedback_epoch_bits != 0
+              or self.feedback_epoch_shift != 0):
             raise ValueError(
-                "feedback_epoch_timeout requires an epoch feedback-age encoding"
+                "feedback epoch fields require an epoch feedback-age encoding"
             )
         if not 1 <= self.sample_counter_bits <= 64:
             raise ValueError("sample_counter_bits must be in [1, 64]")
@@ -278,10 +306,6 @@ class DirectQualityConfig:
             if self.offset_context_slots != 1:
                 raise ValueError(
                     "quality_key feedback owners require offset_context_slots=1"
-                )
-            if self.reopen_confirm_samples != 0:
-                raise ValueError(
-                    "quality_key feedback owners require reopen_confirm_samples=0"
                 )
             if self.audit_samples != 0:
                 raise ValueError(
@@ -295,6 +319,16 @@ class DirectQualityConfig:
     @property
     def feedback_sets(self) -> int:
         return self.feedback_entries // self.feedback_ways
+
+    @property
+    def epoch_bits(self) -> int:
+        return self.feedback_epoch_bits or _feedback_epoch_bits(
+            self.feedback_age_encoding
+        )
+
+    @property
+    def epoch_shift(self) -> int:
+        return self.feedback_epoch_shift or FEEDBACK_EPOCH_SHIFT
 
 
 @dataclass
@@ -1058,8 +1092,8 @@ class SampledFeedbackTable:
 
     def _epoch(self, demand_index: int) -> int:
         return (
-            demand_index >> FEEDBACK_EPOCH_SHIFT
-        ) & _feedback_epoch_mask(self.config.feedback_age_encoding)
+            demand_index >> self.config.epoch_shift
+        ) & ((1 << self.config.epoch_bits) - 1)
 
     def _sweep_due(
         self, entry: _FeedbackEntry, demand_index: int,
@@ -1072,7 +1106,7 @@ class SampledFeedbackTable:
             )
         epoch_delta = (
             self._epoch(demand_index) - entry.issue_epoch
-        ) & _feedback_epoch_mask(self.config.feedback_age_encoding)
+        ) & ((1 << self.config.epoch_bits) - 1)
         return epoch_delta >= self.config.feedback_epoch_timeout, epoch_delta
 
     def _line(self, addr: int) -> int:
@@ -1316,10 +1350,8 @@ class SampledFeedbackTable:
             if self.config.feedback_age_encoding == FEEDBACK_AGE_ENCODING_FULL:
                 report["feedback_sweep_timeout"] = self.sweep_timeout
             else:
-                report["feedback_epoch_bits"] = _feedback_epoch_bits(
-                    self.config.feedback_age_encoding
-                )
-                report["feedback_epoch_shift"] = FEEDBACK_EPOCH_SHIFT
+                report["feedback_epoch_bits"] = self.config.epoch_bits
+                report["feedback_epoch_shift"] = self.config.epoch_shift
                 report["feedback_epoch_timeout"] = (
                     self.config.feedback_epoch_timeout
                 )
@@ -1640,7 +1672,7 @@ class DirectQualityReplay:
             return self.controller.note_sample(
                 owner.index, owner.generation, status,
                 owner.context_index, owner.context_generation,
-                owner.recovery_generation, owner.audit_generation,
+                entry.recovery_generation, entry.audit_generation,
             )
 
         quality_entry = self.controller.entries[entry.quality_index]

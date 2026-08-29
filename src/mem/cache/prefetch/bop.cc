@@ -730,10 +730,19 @@ BOP::BOP(const BOPPrefetcherParams &p)
             // This profile owns all semantic parameters. In particular, do
             // not inherit PC-validation tag bits or feedback capacity knobs.
             config = DirectQualityGate::Config::bopCqf14E6T30();
-        } else if (p.direct_quality_profile == "legacy") {
+        } else if (p.direct_quality_profile == "bop-cqf-dse" ||
+                   p.direct_quality_profile == "legacy") {
+            if (p.direct_quality_profile == "bop-cqf-dse") {
+                config = DirectQualityGate::Config::bopCqfDse();
+                // BOP-CQF-DSE keeps tag8/tag14 and all CQF data-path
+                // semantics fixed. The solver may change only these capacity,
+                // policy, and compact-age fields before instantiation.
+                config.qualityTagBits = 8;
+            } else {
+                config.qualityTagBits = p.pc_validation_tag_bits;
+            }
             config.qualityEntries = p.direct_quality_entries;
             config.qualityWays = p.direct_quality_ways;
-            config.qualityTagBits = p.pc_validation_tag_bits;
             config.feedbackEntries = p.direct_quality_feedback_entries;
             config.feedbackWays = p.direct_quality_feedback_ways;
             config.horizon = p.direct_quality_horizon;
@@ -754,6 +763,11 @@ BOP::BOP(const BOPPrefetcherParams &p)
             config.reopenConfirmSamples =
                 p.direct_quality_reopen_confirm_samples;
             config.decayPeriod = p.direct_quality_decay_period;
+            if (p.direct_quality_profile == "bop-cqf-dse") {
+                config.compactEpochBits = p.direct_quality_epoch_bits;
+                config.compactEpochShift = p.direct_quality_epoch_shift;
+                config.compactEpochTimeout = p.direct_quality_epoch_timeout;
+            }
         } else {
             fatal("%s: unsupported direct-quality profile %s\n", name(),
                   p.direct_quality_profile);

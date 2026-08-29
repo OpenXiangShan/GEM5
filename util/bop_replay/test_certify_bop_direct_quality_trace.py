@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from certify_bop_direct_quality_trace import RawTraceReplay, certify
+from certify_bop_direct_quality_trace import RawTraceReplay, _config_from_meta, certify
 from replay_bop_direct_quality_gate import (
     DirectQualityConfig,
     FEEDBACK_ADDRESS_LAYOUT_SV48_TRUNCATED,
@@ -54,6 +54,44 @@ def cqf_config() -> DirectQualityConfig:
 
 
 class V5CertifierTest(unittest.TestCase):
+    def test_v6_metadata_recovers_explicit_e5_s7_tuple(self):
+        with sqlite3.connect(":memory:") as connection:
+            connection.row_factory = sqlite3.Row
+            connection.executescript("""
+                CREATE TABLE BOPDirectQualityMeta(
+                    SchemaVersion INT, Profile TEXT, QualityEntries INT,
+                    QualityWays INT, QualityTagBits INT, QualityHashLayout TEXT,
+                    FeedbackEntries INT, FeedbackWays INT, FeedbackTagBits INT,
+                    FeedbackAddressLayout TEXT, FeedbackOwnerLayout TEXT,
+                    FeedbackExpiryMode TEXT, FeedbackAgeEncoding TEXT,
+                    FeedbackEpochBits INT, FeedbackEpochShift INT,
+                    FeedbackEpochTimeout INT, Horizon INT, MinSamples INT,
+                    ObserveSamplePeriod INT, OpenSamplePeriod INT,
+                    BlockProbePeriod INT, BorderlineBlockProbePeriod INT,
+                    UnusedPerUseful INT, BlockGuard INT,
+                    StrictUnusedPerUseful INT, StrictBlockGuard INT,
+                    ReopenUnusedPerUseful INT, ReopenGuard INT,
+                    ReopenProbePeriod INT, ReopenConfirmSamples INT,
+                    DecayPeriod INT);
+            """)
+            connection.execute(
+                "INSERT INTO BOPDirectQualityMeta VALUES("
+                + ",".join("?" for _ in range(31)) + ")",
+                (
+                    6, "BOP-CQF-DSE", 64, 4, 8, "xor_fold", 64, 4, 14,
+                    "sv48_truncated_tag", "quality_key", "round_robin",
+                    "epoch5", 5, 7, 15, 2048, 32, 16, 16, 64, 8, 10, 4,
+                    20, 4, 10, 4, 64, 0, 64,
+                ),
+            )
+            config = _config_from_meta(
+                connection.execute("SELECT * FROM BOPDirectQualityMeta").fetchone()
+            )
+        self.assertEqual(config.feedback_age_encoding, "epoch5")
+        self.assertEqual(config.epoch_bits, 5)
+        self.assertEqual(config.epoch_shift, 7)
+        self.assertEqual(config.feedback_epoch_timeout, 15)
+
     def test_v5_cqf_metadata_reconstructs_logical_owner_epoch_sweep(self):
         config = cqf_config()
         expected: list[dict[str, object]] = []

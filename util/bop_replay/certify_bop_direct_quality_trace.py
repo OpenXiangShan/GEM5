@@ -225,12 +225,12 @@ class RawTraceReplay:
 
 def _config_from_meta(row: sqlite3.Row) -> DirectQualityConfig:
     schema_version = int(row["SchemaVersion"])
-    if schema_version not in (3, 4, 5):
+    if schema_version not in (3, 4, 5, 6):
         raise ValueError(
-            "direct-quality certification requires V3, V4, or V5 raw-candidate trace "
+            "direct-quality certification requires V3, V4, V5, or V6 raw-candidate trace "
             "metadata"
         )
-    if schema_version == 5:
+    if schema_version in (5, 6):
         return DirectQualityConfig(
             quality_entries=int(row["QualityEntries"]),
             quality_ways=int(row["QualityWays"]),
@@ -246,6 +246,12 @@ def _config_from_meta(row: sqlite3.Row) -> DirectQualityConfig:
             feedback_expiry_mode=str(row["FeedbackExpiryMode"]),
             feedback_age_encoding=str(row["FeedbackAgeEncoding"]),
             feedback_epoch_timeout=int(row["FeedbackEpochTimeout"]),
+            feedback_epoch_bits=(
+                int(row["FeedbackEpochBits"]) if schema_version == 6 else 0
+            ),
+            feedback_epoch_shift=(
+                int(row["FeedbackEpochShift"]) if schema_version == 6 else 0
+            ),
             observe_sample_period=int(row["ObserveSamplePeriod"]),
             observe_issue_all=True,
             open_sample_period=int(row["OpenSamplePeriod"]),

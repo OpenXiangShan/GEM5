@@ -145,13 +145,14 @@ ArchDBer::ArchDBer(const Params &p)
         "SchemaVersion,Profile,QualityEntries,QualityWays,QualityTagBits,"
         "QualityHashLayout,FeedbackEntries,FeedbackWays,FeedbackTagBits,"
         "FeedbackAddressLayout,FeedbackOwnerLayout,FeedbackExpiryMode,"
-        "FeedbackAgeEncoding,FeedbackEpochTimeout,Horizon,MinSamples,"
+        "FeedbackAgeEncoding,FeedbackEpochBits,FeedbackEpochShift,"
+        "FeedbackEpochTimeout,Horizon,MinSamples,"
         "ObserveSamplePeriod,OpenSamplePeriod,BlockProbePeriod,"
         "BorderlineBlockProbePeriod,UnusedPerUseful,BlockGuard,"
         "StrictUnusedPerUseful,StrictBlockGuard,ReopenUnusedPerUseful,"
         "ReopenGuard,ReopenProbePeriod,ReopenConfirmSamples,DecayPeriod) "
-        "VALUES(5,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,"
-        "?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28);",
+        "VALUES(6,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,"
+        "?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30);",
         "BOPDirectQualityMeta insert");
     prepareStatement(
         mem_db, &bopDirectQualityCandidateStmt,
@@ -723,6 +724,10 @@ ArchDBer::bopDirectQualityMetaTraceWrite(
                          config.feedbackExpiryModeName(), -1, SQLITE_STATIC));
   bind(sqlite3_bind_text(bopDirectQualityMetaStmt, column++,
                          config.feedbackAgeEncodingName(), -1, SQLITE_STATIC));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++,
+                        config.feedbackEpochBits()));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++,
+                        config.feedbackEpochShift()));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++,
                        config.feedbackEpochTimeout()));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.horizon));

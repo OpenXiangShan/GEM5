@@ -47,49 +47,91 @@ DirectQualityGate::Config::bopCqf14E6T30()
     config.reopenProbePeriod = 64;
     config.reopenConfirmSamples = 0;
     config.decayPeriod = 64;
+    config.compactEpochBits = 6;
+    config.compactEpochShift = 6;
+    config.compactEpochTimeout = 30;
+    return config;
+}
+
+DirectQualityGate::Config
+DirectQualityGate::Config::bopCqfDse()
+{
+    Config config = bopCqf14E6T30();
+    config.profile = Profile::BopCqfDse;
     return config;
 }
 
 const char *
 DirectQualityGate::Config::profileName() const
 {
-    return profile == Profile::BopCqf14E6T30 ? "BOP-CQF14E6T30" : "legacy";
+    switch (profile) {
+      case Profile::BopCqf14E6T30:
+        return "BOP-CQF14E6T30";
+      case Profile::BopCqfDse:
+        return "BOP-CQF-DSE";
+      case Profile::Legacy:
+        return "legacy";
+    }
+    return "unknown";
 }
 
 const char *
 DirectQualityGate::Config::qualityHashLayoutName() const
 {
-    return profile == Profile::BopCqf14E6T30 ? "xor_fold" : "mix64";
+    return profile != Profile::Legacy ? "xor_fold" : "mix64";
 }
 
 const char *
 DirectQualityGate::Config::feedbackOwnerLayoutName() const
 {
-    return profile == Profile::BopCqf14E6T30 ? "quality_key" : "slot_generation";
+    return profile != Profile::Legacy ? "quality_key" : "slot_generation";
 }
 
 const char *
 DirectQualityGate::Config::feedbackAddressLayoutName() const
 {
-    return profile == Profile::BopCqf14E6T30 ? "sv48_truncated_tag" : "sv48_reversible_set_tag";
+    return profile != Profile::Legacy ? "sv48_truncated_tag" : "sv48_reversible_set_tag";
 }
 
 const char *
 DirectQualityGate::Config::feedbackExpiryModeName() const
 {
-    return profile == Profile::BopCqf14E6T30 ? "round_robin" : "heap";
+    return profile != Profile::Legacy ? "round_robin" : "heap";
 }
 
 const char *
 DirectQualityGate::Config::feedbackAgeEncodingName() const
 {
-    return profile == Profile::BopCqf14E6T30 ? "epoch6" : "full";
+    if (profile == Profile::Legacy)
+        return "full";
+    switch (compactEpochBits) {
+      case 5:
+        return "epoch5";
+      case 6:
+        return "epoch6";
+      case 7:
+        return "epoch7";
+      default:
+        return "invalid_epoch";
+    }
+}
+
+unsigned
+DirectQualityGate::Config::feedbackEpochBits() const
+{
+    return profile != Profile::Legacy ? compactEpochBits : 0;
+}
+
+unsigned
+DirectQualityGate::Config::feedbackEpochShift() const
+{
+    return profile != Profile::Legacy ? compactEpochShift : 0;
 }
 
 unsigned
 DirectQualityGate::Config::feedbackEpochTimeout() const
 {
-    return profile == Profile::BopCqf14E6T30 ? CompactEpochTimeout : 0;
+    return profile != Profile::Legacy ? compactEpochTimeout : 0;
 }
 
 DirectQualityGate::DirectQualityGate() : DirectQualityGate(Config()) {}
@@ -124,7 +166,7 @@ DirectQualityGate::DirectQualityGate(const Config &config)
     assert(isPowerOf2(qualitySets));
     assert(isPowerOf2(feedbackSets));
     assert(cfg.decayPeriod == 0 || isPowerOf2(cfg.decayPeriod));
-    if (compactProfile()) {
+    if (cfg.profile == Profile::BopCqf14E6T30) {
         fatal_if(cfg.qualityEntries != 256 || cfg.qualityWays != 4 ||
                  cfg.qualityTagBits != 8 || cfg.feedbackEntries != 256 ||
                  cfg.feedbackWays != 4 || cfg.feedbackTagBits != CompactFeedbackTagBits ||
@@ -135,8 +177,40 @@ DirectQualityGate::DirectQualityGate(const Config &config)
                  cfg.strictUnusedPerUseful != 20 || cfg.strictBlockGuard != 4 ||
                  cfg.reopenUnusedPerUseful != 10 || cfg.reopenGuard != 4 ||
                  cfg.reopenProbePeriod != 64 || cfg.reopenConfirmSamples != 0 ||
-                 cfg.decayPeriod != 64,
+                 cfg.decayPeriod != 64 || cfg.compactEpochBits != 6 ||
+                 cfg.compactEpochShift != 6 || cfg.compactEpochTimeout != 30,
                  "BOP-CQF14E6T30 requires its fixed certified configuration\n");
+    }
+    if (cfg.profile == Profile::BopCqfDse) {
+        const bool legal_quality_entries = cfg.qualityEntries == 64 ||
+            cfg.qualityEntries == 128 || cfg.qualityEntries == 256;
+        const bool legal_feedback_entries = cfg.feedbackEntries == 64 ||
+            cfg.feedbackEntries == 128 || cfg.feedbackEntries == 256;
+        fatal_if(!legal_quality_entries || !legal_feedback_entries ||
+                 cfg.qualityWays != 4 || cfg.feedbackWays != 4 ||
+                 cfg.qualityTagBits != 8 ||
+                 cfg.feedbackTagBits != CompactFeedbackTagBits,
+                 "BOP-CQF-DSE requires 64/128/256-entry 4-way Quality and "
+                 "Feedback tables with tag8/tag14\n");
+        fatal_if(cfg.compactEpochBits < 5 || cfg.compactEpochBits > 7 ||
+                 cfg.compactEpochShift < 5 || cfg.compactEpochShift > 7 ||
+                 cfg.compactEpochBits + cfg.compactEpochShift != 12,
+                 "BOP-CQF-DSE requires E5/S7, E6/S6, or E7/S5 feedback age encoding\n");
+        const unsigned half_range = 1U << (cfg.compactEpochBits - 1);
+        fatal_if(cfg.compactEpochTimeout == 0 ||
+                 cfg.compactEpochTimeout >= half_range,
+                 "BOP-CQF-DSE epoch timeout must be in [1, %u)\n", half_range);
+        fatal_if(uint64_t(cfg.compactEpochTimeout) *
+                     (uint64_t(1) << cfg.compactEpochShift) +
+                     cfg.feedbackEntries / 2 > cfg.horizon,
+                 "BOP-CQF-DSE feedback timeout exceeds the configured Horizon\n");
+        fatal_if(cfg.observeSamplePeriod == 0 || cfg.openSamplePeriod == 0 ||
+                 cfg.blockProbePeriod == 0 || cfg.borderlineBlockProbePeriod == 0 ||
+                 cfg.reopenProbePeriod == 0 || cfg.minSamples == 0,
+                 "BOP-CQF-DSE sample and probe periods must be non-zero\n");
+        fatal_if(cfg.strictUnusedPerUseful < cfg.unusedPerUseful ||
+                 cfg.reopenUnusedPerUseful > cfg.unusedPerUseful,
+                 "BOP-CQF-DSE requires strict ratio >= base ratio >= reopen ratio\n");
     }
     while ((1U << qualitySetBits) < qualitySets)
         ++qualitySetBits;
@@ -182,7 +256,7 @@ DirectQualityGate::qualitySignature(Addr pc, uint8_t kind) const
             kindMix = 0x3C6EF372FE94F82AULL;
             break;
           default:
-            fatal("BOP-CQF14E6T30 does not support direct-quality kind %u\n", kind);
+            fatal("BOP-CQF direct-quality profiles do not support kind %u\n", kind);
         }
         uint64_t signature = pc >> 1;
         signature ^= signature >> 7;
@@ -627,10 +701,8 @@ DirectQualityGate::resolveFeedback(unsigned feedback_index, bool isUseful, Trace
     uint16_t recoveryGeneration = fb.recoveryGeneration;
     if (compactProfile()) {
         const unsigned way = findQuality(fb.qualitySet, fb.qualityTag, fb.qualityKind);
-        if (way != cfg.qualityWays) {
+        if (way != cfg.qualityWays)
             entry = &quality[fb.qualitySet * cfg.qualityWays + way];
-            recoveryGeneration = 0;
-        }
     } else {
         auto &physical = quality[fb.qualityIndex];
         if (physical.isValid() && physical.generation == fb.qualityGeneration)
@@ -772,7 +844,7 @@ DirectQualityGate::expireCompactFeedback(unsigned feedback_index)
     auto &entry = feedback[feedback_index];
     if (!entry.valid)
         return;
-    if (compactEpochDistance(entry.issueEpoch) < CompactEpochTimeout)
+    if (compactEpochDistance(entry.issueEpoch) < cfg.compactEpochTimeout)
         return;
 
     ++feedbackExpiryCount;

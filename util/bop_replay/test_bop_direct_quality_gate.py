@@ -114,6 +114,46 @@ class DirectQualityControllerTest(unittest.TestCase):
                 offset_context_slots=2,
             )
 
+    def test_quality_key_owner_allows_recovery_confirmation(self):
+        controller = DirectQualityController(config(
+            feedback_owner_layout=FEEDBACK_OWNER_LAYOUT_QUALITY_KEY,
+            min_samples=1,
+            unused_per_useful=1,
+            block_guard=0,
+            strict_unused_per_useful=2,
+            strict_block_guard=0,
+            reopen_unused_per_useful=1,
+            reopen_guard=0,
+            reopen_confirm_samples=2,
+        ))
+        lookup = controller.lookup(0x1000, "large")
+        controller.note_sample(lookup.index, lookup.generation, "unused")
+        lookup = controller.lookup(0x1000, "large")
+        self.assertEqual(lookup.state, "block")
+
+        controller.note_sample(
+            lookup.index, lookup.generation, "useful", 0,
+            lookup.context_generation, lookup.recovery_generation,
+        )
+        recovering = controller.lookup(0x1000, "large")
+        self.assertEqual(recovering.state, "recover")
+
+        controller.note_sample(
+            recovering.index, recovering.generation, "useful", 0,
+            recovering.context_generation, recovering.recovery_generation - 1,
+        )
+        self.assertEqual(controller.lookup(0x1000, "large").state, "recover")
+        controller.note_sample(
+            recovering.index, recovering.generation, "useful", 0,
+            recovering.context_generation, recovering.recovery_generation,
+        )
+        self.assertEqual(controller.lookup(0x1000, "large").state, "recover")
+        controller.note_sample(
+            recovering.index, recovering.generation, "useful", 0,
+            recovering.context_generation, recovering.recovery_generation,
+        )
+        self.assertEqual(controller.lookup(0x1000, "large").state, "open")
+
     def test_ten_to_one_negative_evidence_blocks_context(self):
         controller = DirectQualityController(config())
         lookup = controller.lookup(0x1000, "large")
@@ -576,6 +616,31 @@ class SampledFeedbackTableTest(unittest.TestCase):
                 feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
                 feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH6,
                 feedback_epoch_timeout=60,
+            )
+
+    def test_explicit_e5_s7_uses_half_range_and_horizon_checks(self):
+        cfg = config(
+            feedback_entries=64,
+            feedback_ways=4,
+            horizon=2048,
+            feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+            feedback_age_encoding="epoch5",
+            feedback_epoch_bits=5,
+            feedback_epoch_shift=7,
+            feedback_epoch_timeout=15,
+        )
+        self.assertEqual(cfg.epoch_bits, 5)
+        self.assertEqual(cfg.epoch_shift, 7)
+        with self.assertRaisesRegex(ValueError, "half range"):
+            config(
+                feedback_entries=64,
+                feedback_ways=4,
+                horizon=2048,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_age_encoding="epoch5",
+                feedback_epoch_bits=5,
+                feedback_epoch_shift=7,
+                feedback_epoch_timeout=16,
             )
 
     def test_round_robin_sweep_expires_one_slot_at_or_after_timeout(self):

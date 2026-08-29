@@ -26,8 +26,10 @@ class DirectQualityGate
     /**
      * Legacy keeps the original generic gate semantics. BopCqf14E6T30 is the
      * fixed compact profile certified against the streaming offline replay.
+     * BopCqfDse preserves its compact semantics while exposing only the
+     * explicitly bounded DirectQuality search parameters.
      */
-    enum class Profile : uint8_t { Legacy, BopCqf14E6T30 };
+    enum class Profile : uint8_t { Legacy, BopCqf14E6T30, BopCqfDse };
 
     struct Config
     {
@@ -53,14 +55,23 @@ class DirectQualityGate
         unsigned reopenProbePeriod = 64;
         unsigned reopenConfirmSamples = 0;
         unsigned decayPeriod = 64;
+        // Epoch state is stored in FeedbackEntry::issueEpoch. The fixed CQF
+        // profile always uses E6/S6/T30; the DSE profile may use E5/S7/T15,
+        // E6/S6/T{30,31}, or E7/S5/T{60,62,63}.
+        unsigned compactEpochBits = 6;
+        unsigned compactEpochShift = 6;
+        unsigned compactEpochTimeout = 30;
 
         static Config bopCqf14E6T30();
+        static Config bopCqfDse();
         const char *profileName() const;
         const char *qualityHashLayoutName() const;
         const char *feedbackOwnerLayoutName() const;
         const char *feedbackAddressLayoutName() const;
         const char *feedbackExpiryModeName() const;
         const char *feedbackAgeEncodingName() const;
+        unsigned feedbackEpochBits() const;
+        unsigned feedbackEpochShift() const;
         unsigned feedbackEpochTimeout() const;
     };
 
@@ -170,11 +181,6 @@ class DirectQualityGate
     static constexpr unsigned AgeBits = 16;
     static constexpr uint16_t AgeHalfRange = uint16_t(1U << (AgeBits - 1));
     static constexpr unsigned CompactFeedbackTagBits = 14;
-    static constexpr unsigned CompactEpochBits = 6;
-    static constexpr unsigned CompactEpochShift = 6;
-    static constexpr unsigned CompactEpochTimeout = 30;
-    static constexpr uint8_t CompactEpochMask =
-        (uint8_t(1) << CompactEpochBits) - 1;
 
     struct QualityEntry
     {
@@ -218,7 +224,7 @@ class DirectQualityGate
         uint16_t recoveryGeneration = 0;
         uint16_t issueAge = 0;
         uint16_t expiryHeapIndex = NoExpiryRecord;
-        // BOP-CQF14E6T30 resolves against a logical Quality key, allowing a
+        // CQF profiles resolve against a logical Quality key, allowing a
         // reinserted key to receive its still-pending direct evidence.
         uint8_t qualitySet = 0;
         uint16_t qualityTag = 0;
@@ -314,14 +320,16 @@ class DirectQualityGate
     void restoreExpiryHeap(unsigned heap_index);
     void expireFeedback();
     void expireCompactFeedback(unsigned feedback_index);
-    bool compactProfile() const { return cfg.profile == Profile::BopCqf14E6T30; }
+    bool compactProfile() const { return cfg.profile != Profile::Legacy; }
     uint8_t compactEpoch() const
     {
-        return static_cast<uint8_t>((demandAge >> CompactEpochShift) & CompactEpochMask);
+        const uint8_t mask = static_cast<uint8_t>((uint8_t(1) << cfg.compactEpochBits) - 1);
+        return static_cast<uint8_t>((demandAge >> cfg.compactEpochShift) & mask);
     }
     uint8_t compactEpochDistance(uint8_t issue_epoch) const
     {
-        return static_cast<uint8_t>((compactEpoch() - issue_epoch) & CompactEpochMask);
+        const uint8_t mask = static_cast<uint8_t>((uint8_t(1) << cfg.compactEpochBits) - 1);
+        return static_cast<uint8_t>((compactEpoch() - issue_epoch) & mask);
     }
 };
 

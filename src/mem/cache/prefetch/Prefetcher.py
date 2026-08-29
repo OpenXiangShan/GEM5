@@ -865,7 +865,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     enable_direct_quality_gate = Param.Bool(False,
         "Enable the bounded online Tier20/P8 direct-quality gate")
     direct_quality_profile = Param.String("legacy",
-        "Direct-quality profile: legacy or bop-cqf14e6t30")
+        "Direct-quality profile: legacy, bop-cqf14e6t30, or bop-cqf-dse")
     direct_quality_entries = Param.Unsigned(256,
         "Direct-quality PC table entries")
     direct_quality_ways = Param.Unsigned(4,
@@ -904,6 +904,12 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Direct-quality samples required before RECOVER reopens")
     direct_quality_decay_period = Param.Unsigned(64,
         "Resolved direct-quality samples between useful/unused decay")
+    direct_quality_epoch_bits = Param.Unsigned(6,
+        "Compact direct-quality feedback epoch width")
+    direct_quality_epoch_shift = Param.Unsigned(6,
+        "L2-demand bits skipped before compact feedback epoch")
+    direct_quality_epoch_timeout = Param.Unsigned(30,
+        "Compact direct-quality feedback epoch expiry threshold")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 

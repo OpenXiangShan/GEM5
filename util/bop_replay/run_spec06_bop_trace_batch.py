@@ -80,7 +80,7 @@ def trace_schema_version(trace_db: Path) -> int | None:
 def completed(case_dir: Path) -> bool:
     trace_db = case_dir / "trace.db"
     baseline = case_dir / "raw-baseline.json"
-    if trace_schema_version(trace_db) != 5 or not baseline.is_file():
+    if trace_schema_version(trace_db) not in (5, 6) or not baseline.is_file():
         return False
     try:
         report = json.loads(baseline.read_text())
@@ -129,7 +129,7 @@ def run_case(
         result = subprocess.run(command, stdout=stdout, stderr=stderr, env=env)
     if result.returncode != 0:
         return Result(case.name, "gem5_failed", f"exit={result.returncode}")
-    if trace_schema_version(trace_db) != 5:
+    if trace_schema_version(trace_db) not in (5, 6):
         return Result(case.name, "trace_failed", "missing or non-V5 BOP trace")
 
     verify_command = [

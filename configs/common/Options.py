@@ -245,7 +245,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         default=False,
                         help="enable the online Tier20/P8 BOP direct-quality gate")
     parser.add_argument("--bop-direct-quality-profile",
-                        choices=("legacy", "bop-cqf14e6t30"),
+                        choices=("legacy", "bop-cqf14e6t30", "bop-cqf-dse"),
                         default="bop-cqf14e6t30",
                         help="online direct-quality layout/policy profile")
     parser.add_argument("--bop-direct-quality-feedback-entries",
@@ -263,6 +263,21 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         type=int,
                         default=0,
                         help="direct-quality samples required before RECOVER opens")
+    parser.add_argument("--bop-direct-quality-epoch-bits",
+                        action="store",
+                        type=int,
+                        default=6,
+                        help="compact direct-quality feedback epoch width")
+    parser.add_argument("--bop-direct-quality-epoch-shift",
+                        action="store",
+                        type=int,
+                        default=6,
+                        help="L2-demand bits skipped before feedback epoch")
+    parser.add_argument("--bop-direct-quality-epoch-timeout",
+                        action="store",
+                        type=int,
+                        default=30,
+                        help="compact direct-quality feedback expiry threshold")
     parser.add_argument("--enable-rolling",
                         default=False,
                         help="enable rolling perfcnt "

@@ -989,6 +989,8 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "FeedbackOwnerLayout TEXT NOT NULL," \
             "FeedbackExpiryMode TEXT NOT NULL," \
             "FeedbackAgeEncoding TEXT NOT NULL," \
+            "FeedbackEpochBits INT NOT NULL," \
+            "FeedbackEpochShift INT NOT NULL," \
             "FeedbackEpochTimeout INT NOT NULL," \
             "Horizon INT NOT NULL," \
             "MinSamples INT NOT NULL," \
