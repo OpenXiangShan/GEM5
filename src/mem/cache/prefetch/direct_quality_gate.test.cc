@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <set>
 #include <vector>
 
 #include "mem/cache/prefetch/direct_quality_gate.hh"
@@ -54,6 +55,41 @@ testConfig()
     config.reopenUnusedPerUseful = 1;
     config.reopenGuard = 0;
     return config;
+}
+
+uint64_t
+cqfSignature(Addr pc, uint8_t kind)
+{
+    uint64_t kind_mix = 0;
+    if (kind == 1)
+        kind_mix = 0x9E3779B97F4A7C15ULL;
+    else if (kind == 2)
+        kind_mix = 0x3C6EF372FE94F82AULL;
+
+    uint64_t signature = pc >> 1;
+    signature ^= signature >> 7;
+    signature ^= signature >> 13;
+    signature ^= signature >> 27;
+    signature ^= kind_mix;
+    signature ^= signature >> 11;
+    signature ^= signature >> 23;
+    return signature;
+}
+
+std::vector<Addr>
+cqfSetPeers(Addr pc, uint8_t kind, unsigned count)
+{
+    const uint64_t signature = cqfSignature(pc, kind);
+    const unsigned set = signature & 0x3f;
+    std::set<unsigned> tags = {static_cast<unsigned>((signature >> 6) & 0xff)};
+    std::vector<Addr> peers;
+    for (Addr candidate = pc + 2; peers.size() < count; candidate += 2) {
+        const uint64_t peer_signature = cqfSignature(candidate, kind);
+        const unsigned peer_tag = (peer_signature >> 6) & 0xff;
+        if ((peer_signature & 0x3f) == set && tags.insert(peer_tag).second)
+            peers.push_back(candidate);
+    }
+    return peers;
 }
 
 class CapturingTraceSink : public DirectQualityGate::TraceSink
@@ -302,6 +338,27 @@ TEST(DirectQualityGate, SeparatesKindsAndDropsFeedbackConflicts)
     gate.observeDemand(0x3000);
     EXPECT_EQ(gate.useful(), 1U);
     EXPECT_EQ(gate.unknownDrops(), 0U);
+}
+
+TEST(DirectQualityGate, Sv48FeedbackTagKeepsHighLineBitsExact)
+{
+    auto config = testConfig();
+    config.feedbackEntries = 4;
+    config.feedbackWays = 4;
+    config.horizon = 1;
+    DirectQualityGate gate(config);
+
+    const Addr firstLine = 0;
+    const Addr secondLine = 0xffff800000000000ULL;
+    ASSERT_TRUE(gate.admit(0x1000, 1, firstLine).feedbackInserted);
+    ASSERT_TRUE(gate.admit(0x1000, 1, secondLine).feedbackInserted);
+    EXPECT_EQ(gate.sampled(), 2U);
+    EXPECT_EQ(gate.feedbackCoalesced(), 0U);
+
+    gate.observeDemand(firstLine);
+    EXPECT_EQ(gate.useful(), 1U);
+    gate.observeDemand(0xdead);
+    EXPECT_EQ(gate.unused(), 1U);
 }
 
 TEST(DirectQualityGate, DemandWindowExpiryIsUnused)
@@ -554,6 +611,86 @@ TEST(DirectQualityGate, TraceKeepsSameAgeExpiryOrder)
     EXPECT_EQ(sink.outcomes[1].feedbackId, sink.issues[1].feedbackId);
     EXPECT_EQ(sink.outcomes[0].value, DirectQualityGate::TraceOutcome::UnusedExpiry);
     EXPECT_EQ(sink.outcomes[1].value, DirectQualityGate::TraceOutcome::UnusedExpiry);
+}
+
+TEST(DirectQualityGate, Cqf14E6T30FreezesTheCertifiedContract)
+{
+    const auto config = DirectQualityGate::Config::bopCqf14E6T30();
+    EXPECT_STREQ(config.profileName(), "BOP-CQF14E6T30");
+    EXPECT_STREQ(config.qualityHashLayoutName(), "xor_fold");
+    EXPECT_STREQ(config.feedbackOwnerLayoutName(), "quality_key");
+    EXPECT_STREQ(config.feedbackAddressLayoutName(), "sv48_truncated_tag");
+    EXPECT_STREQ(config.feedbackExpiryModeName(), "round_robin");
+    EXPECT_STREQ(config.feedbackAgeEncodingName(), "epoch6");
+    EXPECT_EQ(config.qualityEntries, 256U);
+    EXPECT_EQ(config.qualityWays, 4U);
+    EXPECT_EQ(config.qualityTagBits, 8U);
+    EXPECT_EQ(config.feedbackEntries, 256U);
+    EXPECT_EQ(config.feedbackWays, 4U);
+    EXPECT_EQ(config.feedbackTagBits, 14U);
+    EXPECT_EQ(config.feedbackEpochTimeout(), 30U);
+}
+
+TEST(DirectQualityGate, Cqf14E6T30KeepsTheLegacySamplingStream)
+{
+    auto compact = DirectQualityGate::Config::bopCqf14E6T30();
+    auto legacy = compact;
+    legacy.profile = DirectQualityGate::Profile::Legacy;
+    DirectQualityGate compact_gate(compact);
+    DirectQualityGate legacy_gate(legacy);
+
+    for (Addr line = 0x1000; line < 0x4000; line += 64) {
+        const auto compact_decision = compact_gate.admit(0x123456, 1, line, line);
+        const auto legacy_decision = legacy_gate.admit(0x123456, 1, line, line);
+        EXPECT_EQ(compact_decision.sampled, legacy_decision.sampled);
+    }
+}
+
+TEST(DirectQualityGate, Cqf14E6T30LogicalOwnerSurvivesKeyReinsertion)
+{
+    DirectQualityGate gate(DirectQualityGate::Config::bopCqf14E6T30());
+    const Addr owner_pc = 0x1000;
+    const Addr candidate_line = 0x9000;
+    bool inserted = false;
+    for (Addr trigger_line = 0x2000; trigger_line < 0x20000; trigger_line += 64) {
+        inserted = gate.admit(owner_pc, 1, trigger_line, candidate_line).feedbackInserted;
+        if (inserted)
+            break;
+    }
+    ASSERT_TRUE(inserted);
+
+    for (const Addr peer : cqfSetPeers(owner_pc, 1, 4))
+        gate.admit(peer, 1, 0x3000, 0xa000 + peer);
+    // This recreates the logical (set, tag, kind) owner after the original
+    // physical slot was displaced. The pending sample must credit this key.
+    gate.admit(owner_pc, 1, 0x4000, 0xb000);
+    gate.observeDemand(candidate_line);
+
+    EXPECT_EQ(gate.useful(), 1U);
+    EXPECT_EQ(gate.unknownDrops(), 0U);
+}
+
+TEST(DirectQualityGate, Cqf14E6T30EpochSweepDelaysUnusedUntilT30)
+{
+    DirectQualityGate gate(DirectQualityGate::Config::bopCqf14E6T30());
+    bool inserted = false;
+    for (Addr trigger_line = 0x2000; trigger_line < 0x20000; trigger_line += 64) {
+        inserted = gate.admit(0x1000, 1, trigger_line, 0x9000).feedbackInserted;
+        if (inserted)
+            break;
+    }
+    ASSERT_TRUE(inserted);
+
+    for (unsigned demand = 0; demand < 1919; ++demand)
+        gate.observeDemand(0xdead);
+    EXPECT_EQ(gate.unused(), 0U);
+
+    // At demand 1920 the epoch delta reaches 30. The independent sweep needs
+    // at most one table round before visiting the selected feedback slot.
+    for (unsigned demand = 0; demand < 257; ++demand)
+        gate.observeDemand(0xdead);
+    EXPECT_EQ(gate.unused(), 1U);
+    EXPECT_EQ(gate.feedbackExpiryUnused(), 1U);
 }
 
 }  // namespace prefetch

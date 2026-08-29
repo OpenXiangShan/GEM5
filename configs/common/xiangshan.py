@@ -977,12 +977,20 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             ,
             "CREATE TABLE BOPDirectQualityMeta(" \
             "SchemaVersion INT PRIMARY KEY," \
+            "Profile TEXT NOT NULL," \
             "QualityEntries INT NOT NULL," \
             "QualityWays INT NOT NULL," \
             "QualityTagBits INT NOT NULL," \
-            "Horizon INT NOT NULL," \
+            "QualityHashLayout TEXT NOT NULL," \
             "FeedbackEntries INT NOT NULL," \
             "FeedbackWays INT NOT NULL," \
+            "FeedbackTagBits INT NOT NULL," \
+            "FeedbackAddressLayout TEXT NOT NULL," \
+            "FeedbackOwnerLayout TEXT NOT NULL," \
+            "FeedbackExpiryMode TEXT NOT NULL," \
+            "FeedbackAgeEncoding TEXT NOT NULL," \
+            "FeedbackEpochTimeout INT NOT NULL," \
+            "Horizon INT NOT NULL," \
             "MinSamples INT NOT NULL," \
             "ObserveSamplePeriod INT NOT NULL," \
             "OpenSamplePeriod INT NOT NULL," \

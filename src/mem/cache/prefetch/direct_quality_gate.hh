@@ -23,13 +23,21 @@ class DirectQualityGate
   public:
     enum class State : uint8_t { Observe, Open, Block, Recover };
 
+    /**
+     * Legacy keeps the original generic gate semantics. BopCqf14E6T30 is the
+     * fixed compact profile certified against the streaming offline replay.
+     */
+    enum class Profile : uint8_t { Legacy, BopCqf14E6T30 };
+
     struct Config
     {
+        Profile profile = Profile::Legacy;
         unsigned qualityEntries = 256;
         unsigned qualityWays = 4;
         unsigned qualityTagBits = 10;
         unsigned feedbackEntries = 256;
         unsigned feedbackWays = 4;
+        unsigned feedbackTagBits = 36;
         unsigned horizon = 2048;
         unsigned minSamples = 32;
         unsigned observeSamplePeriod = 16;
@@ -45,6 +53,15 @@ class DirectQualityGate
         unsigned reopenProbePeriod = 64;
         unsigned reopenConfirmSamples = 0;
         unsigned decayPeriod = 64;
+
+        static Config bopCqf14E6T30();
+        const char *profileName() const;
+        const char *qualityHashLayoutName() const;
+        const char *feedbackOwnerLayoutName() const;
+        const char *feedbackAddressLayoutName() const;
+        const char *feedbackExpiryModeName() const;
+        const char *feedbackAgeEncodingName() const;
+        unsigned feedbackEpochTimeout() const;
     };
 
     enum class TraceOutcome : uint8_t
@@ -134,15 +151,37 @@ class DirectQualityGate
     static constexpr unsigned MaxFeedbackEntries = 4096;
     static constexpr unsigned NoExpiryRecord = MaxFeedbackEntries;
     static constexpr unsigned CacheLineBits = 6;
+    // The compact feedback layout targets canonical Sv48 byte addresses. A
+    // feedback identity is therefore addr[47:6], not a 64-bit host Addr. A
+    // reversible permutation splits that identity into set bits and an exact
+    // tag without introducing feedback aliases.
+    static constexpr unsigned Sv48AddressBits = 48;
+    static constexpr unsigned FeedbackLineBits = Sv48AddressBits - CacheLineBits;
+    static constexpr uint64_t FeedbackLineMask = (uint64_t(1) << FeedbackLineBits) - 1;
+    static constexpr uint64_t FeedbackLineSignBit = uint64_t(1) << (FeedbackLineBits - 1);
+    // compactLine() logically right-shifts a 64-bit host Addr, leaving a
+    // 58-bit host line number. A negative canonical Sv48 address carries its
+    // sign extension in bits [57:42] of that host representation.
+    static constexpr unsigned HostLineBits = 64 - CacheLineBits;
+    static constexpr uint64_t HostLineMask = (uint64_t(1) << HostLineBits) - 1;
     // Horizon is bounded below half the age space; this permits wrap-safe
     // expiry comparisons while retaining the full demand sequence for trace
     // output.
     static constexpr unsigned AgeBits = 16;
     static constexpr uint16_t AgeHalfRange = uint16_t(1U << (AgeBits - 1));
+    static constexpr unsigned CompactFeedbackTagBits = 14;
+    static constexpr unsigned CompactEpochBits = 6;
+    static constexpr unsigned CompactEpochShift = 6;
+    static constexpr unsigned CompactEpochTimeout = 30;
+    static constexpr uint8_t CompactEpochMask =
+        (uint8_t(1) << CompactEpochBits) - 1;
 
     struct QualityEntry
     {
-        // valid, kind, and state share one byte in the hardware layout.
+        // The simulator keeps a generic byte encoding so confirm/recovery
+        // tests remain available. The fixed Tier20/P8 RTL packing replaces
+        // valid + state with one two-bit status code (invalid/observe/open/
+        // block); kind remains a separate two-bit field.
         uint8_t metadata = 0;
         uint16_t tag = 0;
         uint8_t generation = 0;
@@ -171,19 +210,28 @@ class DirectQualityGate
     struct FeedbackEntry
     {
         bool valid = false;
-        // A 64-byte-aligned physical line is represented by its line number.
-        uint64_t line = 0;
+        // Upper bits of the reversible 42-bit Sv48 cache-line key. The
+        // feedback set index carries the remaining low key bits.
+        uint64_t tag = 0;
         uint8_t qualityIndex = 0;
         uint8_t qualityGeneration = 0;
         uint16_t recoveryGeneration = 0;
         uint16_t issueAge = 0;
         uint16_t expiryHeapIndex = NoExpiryRecord;
+        // BOP-CQF14E6T30 resolves against a logical Quality key, allowing a
+        // reinserted key to receive its still-pending direct evidence.
+        uint8_t qualitySet = 0;
+        uint16_t qualityTag = 0;
+        uint8_t qualityKind = 0;
+        uint8_t issueEpoch = 0;
     };
 
     struct FeedbackTraceInfo
     {
         uint64_t id = 0;
         uint64_t issueAge = 0;
+        // Trace-only state. The hardware feedback entry retains only tag.
+        uint64_t line = 0;
     };
 
     Config cfg;
@@ -192,6 +240,7 @@ class DirectQualityGate
     unsigned qualitySetBits;
     unsigned feedbackSetBits;
     Addr qualityTagMask;
+    uint64_t feedbackTagMask;
     std::array<QualityEntry, MaxQualityEntries> quality = {};
     std::array<uint8_t, MaxQualityEntries> qualityPLRU = {};
     std::array<FeedbackEntry, MaxFeedbackEntries> feedback = {};
@@ -200,6 +249,7 @@ class DirectQualityGate
     // Allocated only with a TraceSink; never part of the hardware entry.
     std::vector<FeedbackTraceInfo> feedbackTrace;
     unsigned expiryHeapSize = 0;
+    unsigned feedbackSweepPointer = 0;
     uint64_t demandAge = 0;
     uint64_t nextFeedbackId = 0;
     uint64_t nextTraceEventSequence = 0;
@@ -227,12 +277,15 @@ class DirectQualityGate
 
     static uint64_t mix64(uint64_t value);
     uint64_t qualitySignature(Addr pc, uint8_t kind) const;
+    static uint64_t samplingSignature(Addr pc, uint8_t kind);
     unsigned qualitySetFor(Addr pc, uint8_t kind) const;
     Addr qualityTagFor(Addr pc, uint8_t kind) const;
-    unsigned feedbackSetFor(uint64_t line) const;
+    static uint64_t feedbackKeyFor(uint64_t line);
+    unsigned feedbackSetForKey(uint64_t key) const;
+    uint64_t feedbackTagForKey(uint64_t key) const;
     unsigned findQuality(unsigned set, Addr tag, uint8_t kind) const;
     unsigned allocateQuality(unsigned set, Addr tag, uint8_t kind);
-    unsigned findFeedback(unsigned set, uint64_t line) const;
+    unsigned findFeedback(unsigned set, uint64_t tag) const;
     unsigned allocateFeedback(unsigned set);
     unsigned feedbackIndex(unsigned set, unsigned way) const;
     void touchQuality(unsigned set, unsigned way);
@@ -260,6 +313,16 @@ class DirectQualityGate
     void removeExpiry(unsigned feedback_index);
     void restoreExpiryHeap(unsigned heap_index);
     void expireFeedback();
+    void expireCompactFeedback(unsigned feedback_index);
+    bool compactProfile() const { return cfg.profile == Profile::BopCqf14E6T30; }
+    uint8_t compactEpoch() const
+    {
+        return static_cast<uint8_t>((demandAge >> CompactEpochShift) & CompactEpochMask);
+    }
+    uint8_t compactEpochDistance(uint8_t issue_epoch) const
+    {
+        return static_cast<uint8_t>((compactEpoch() - issue_epoch) & CompactEpochMask);
+    }
 };
 
 }  // namespace prefetch

@@ -22,6 +22,17 @@ from typing import Any
 from replay_bop_direct_quality_gate import (
     DirectQualityConfig,
     DirectQualityController,
+    FEEDBACK_ADDRESS_LAYOUT_LEGACY,
+    FEEDBACK_ADDRESS_LAYOUT_SV48,
+    FEEDBACK_ADDRESS_LAYOUT_SV48_TRUNCATED,
+    FEEDBACK_AGE_ENCODING_EPOCH6,
+    FEEDBACK_AGE_ENCODING_FULL,
+    FEEDBACK_EXPIRY_MODE_HEAP,
+    FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+    FEEDBACK_OWNER_LAYOUT_QUALITY_KEY,
+    FEEDBACK_OWNER_LAYOUT_SLOT_GENERATION,
+    QUALITY_HASH_LAYOUT_MIX64,
+    QUALITY_HASH_LAYOUT_XOR_FOLD,
     SampledFeedbackTable,
     _FeedbackEntry,
 )
@@ -44,7 +55,7 @@ def _row_value(row: sqlite3.Row, name: str) -> int:
 
 
 class RawTraceReplay:
-    """Offline reconstruction of the V3 raw DirectQuality event stream."""
+    """Offline reconstruction of a V3/V4/V5 raw DirectQuality event stream."""
 
     def __init__(self, config: DirectQualityConfig, on_event: Any):
         self.config = config
@@ -69,13 +80,19 @@ class RawTraceReplay:
         })
 
     def _owner_is_current(self, entry: _FeedbackEntry) -> bool:
+        if self.config.feedback_owner_layout == FEEDBACK_OWNER_LAYOUT_QUALITY_KEY:
+            return self.controller.lookup_owner_key(
+                entry.quality_set, entry.quality_tag, entry.quality_kind,
+            ) is not None
         root = self.controller.entries[entry.quality_index]
         return root.valid and root.generation == entry.quality_generation
 
     def _drop_feedback(self, entry: _FeedbackEntry, reason: str) -> None:
         # Horizon expiry is a real negative label when the quality owner is
         # still live.  Only replacement/conflict drops are unknown labels.
-        if reason == "feedback_expired_without_label":
+        if reason in (
+                "feedback_expired_without_label",
+                "feedback_sweep_expired_without_label"):
             if self._owner_is_current(entry):
                 self._resolve_feedback(entry, "unused")
             else:
@@ -96,6 +113,33 @@ class RawTraceReplay:
         )
 
     def _resolve_feedback(self, entry: _FeedbackEntry, status: str) -> None:
+        if self.config.feedback_owner_layout == FEEDBACK_OWNER_LAYOUT_QUALITY_KEY:
+            owner = self.controller.lookup_owner_key(
+                entry.quality_set, entry.quality_tag, entry.quality_kind,
+            )
+            if owner is None:
+                self._append(
+                    "outcome",
+                    feedback_id=entry.candidate_id,
+                    resolve_demand_sequence=self.demand_sequence,
+                    line=entry.line,
+                    outcome="unknown_owner_replaced",
+                )
+                return
+            self.controller.note_sample(
+                owner.index, owner.generation, status,
+                owner.context_index, owner.context_generation,
+                owner.recovery_generation, owner.audit_generation,
+            )
+            self._append(
+                "outcome",
+                feedback_id=entry.candidate_id,
+                resolve_demand_sequence=self.demand_sequence,
+                line=entry.line,
+                outcome=status,
+            )
+            return
+
         if not self._owner_is_current(entry):
             self._append(
                 "outcome",
@@ -149,11 +193,13 @@ class RawTraceReplay:
 
         feedback_id = self.next_feedback_id + 1
         self.feedback_kinds[feedback_id] = kind_value
+        owner_set, owner_tag = self.controller._key(pc, kind)
         inserted = self.feedback.insert(
             candidate_line, lookup.index, lookup.generation,
             self.demand_sequence, feedback_id,
             lookup.context_index, lookup.context_generation,
             lookup.recovery_generation, lookup.audit_generation,
+            owner_set, owner_tag, kind,
         )
         if not inserted:
             self.feedback_kinds.pop(feedback_id)
@@ -178,19 +224,61 @@ class RawTraceReplay:
 
 
 def _config_from_meta(row: sqlite3.Row) -> DirectQualityConfig:
-    if int(row["SchemaVersion"]) != 3:
+    schema_version = int(row["SchemaVersion"])
+    if schema_version not in (3, 4, 5):
         raise ValueError(
-            "direct-quality certification requires V3 raw-candidate trace "
+            "direct-quality certification requires V3, V4, or V5 raw-candidate trace "
             "metadata"
+        )
+    if schema_version == 5:
+        return DirectQualityConfig(
+            quality_entries=int(row["QualityEntries"]),
+            quality_ways=int(row["QualityWays"]),
+            quality_tag_bits=int(row["QualityTagBits"]),
+            quality_hash_layout=str(row["QualityHashLayout"]),
+            feedback_owner_layout=str(row["FeedbackOwnerLayout"]),
+            offset_context_slots=1,
+            feedback_entries=int(row["FeedbackEntries"]),
+            feedback_ways=int(row["FeedbackWays"]),
+            feedback_tag_bits=int(row["FeedbackTagBits"]),
+            feedback_address_layout=str(row["FeedbackAddressLayout"]),
+            horizon=int(row["Horizon"]),
+            feedback_expiry_mode=str(row["FeedbackExpiryMode"]),
+            feedback_age_encoding=str(row["FeedbackAgeEncoding"]),
+            feedback_epoch_timeout=int(row["FeedbackEpochTimeout"]),
+            observe_sample_period=int(row["ObserveSamplePeriod"]),
+            observe_issue_all=True,
+            open_sample_period=int(row["OpenSamplePeriod"]),
+            block_probe_period=int(row["BlockProbePeriod"]),
+            borderline_block_probe_period=int(row["BorderlineBlockProbePeriod"]),
+            min_samples=int(row["MinSamples"]),
+            unused_per_useful=int(row["UnusedPerUseful"]),
+            block_guard=int(row["BlockGuard"]),
+            strict_unused_per_useful=int(row["StrictUnusedPerUseful"]),
+            strict_block_guard=int(row["StrictBlockGuard"]),
+            reopen_unused_per_useful=int(row["ReopenUnusedPerUseful"]),
+            reopen_guard=int(row["ReopenGuard"]),
+            reopen_probe_period=int(row["ReopenProbePeriod"]),
+            reopen_confirm_samples=int(row["ReopenConfirmSamples"]),
+            decay_period=int(row["DecayPeriod"]),
         )
     return DirectQualityConfig(
         quality_entries=int(row["QualityEntries"]),
         quality_ways=int(row["QualityWays"]),
         quality_tag_bits=int(row["QualityTagBits"]),
+        quality_hash_layout=QUALITY_HASH_LAYOUT_MIX64,
+        feedback_owner_layout=FEEDBACK_OWNER_LAYOUT_SLOT_GENERATION,
         offset_context_slots=1,
         feedback_entries=int(row["FeedbackEntries"]),
         feedback_ways=int(row["FeedbackWays"]),
+        feedback_tag_bits=(36 if schema_version == 4 else 24),
+        feedback_address_layout=(
+            FEEDBACK_ADDRESS_LAYOUT_SV48
+            if schema_version == 4 else FEEDBACK_ADDRESS_LAYOUT_LEGACY
+        ),
         horizon=int(row["Horizon"]),
+        feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_HEAP,
+        feedback_age_encoding=FEEDBACK_AGE_ENCODING_FULL,
         observe_sample_period=int(row["ObserveSamplePeriod"]),
         observe_issue_all=True,
         open_sample_period=int(row["OpenSamplePeriod"]),

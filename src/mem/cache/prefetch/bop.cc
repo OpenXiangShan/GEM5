@@ -726,29 +726,38 @@ BOP::BOP(const BOPPrefetcherParams &p)
 
     if (enableDirectQualityGate) {
         DirectQualityGate::Config config;
-        config.qualityEntries = p.direct_quality_entries;
-        config.qualityWays = p.direct_quality_ways;
-        config.qualityTagBits = p.pc_validation_tag_bits;
-        config.feedbackEntries = p.direct_quality_feedback_entries;
-        config.feedbackWays = p.direct_quality_feedback_ways;
-        config.horizon = p.direct_quality_horizon;
-        config.minSamples = p.direct_quality_min_samples;
-        config.observeSamplePeriod = p.direct_quality_observe_sample_period;
-        config.openSamplePeriod = p.direct_quality_open_sample_period;
-        config.blockProbePeriod = p.direct_quality_block_probe_period;
-        config.borderlineBlockProbePeriod =
-            p.direct_quality_borderline_block_probe_period;
-        config.unusedPerUseful = p.direct_quality_unused_per_useful;
-        config.blockGuard = p.direct_quality_block_guard;
-        config.strictUnusedPerUseful =
-            p.direct_quality_strict_unused_per_useful;
-        config.strictBlockGuard = p.direct_quality_strict_block_guard;
-        config.reopenUnusedPerUseful = p.direct_quality_reopen_unused_per_useful;
-        config.reopenGuard = p.direct_quality_reopen_guard;
-        config.reopenProbePeriod = p.direct_quality_reopen_probe_period;
-        config.reopenConfirmSamples =
-            p.direct_quality_reopen_confirm_samples;
-        config.decayPeriod = p.direct_quality_decay_period;
+        if (p.direct_quality_profile == "bop-cqf14e6t30") {
+            // This profile owns all semantic parameters. In particular, do
+            // not inherit PC-validation tag bits or feedback capacity knobs.
+            config = DirectQualityGate::Config::bopCqf14E6T30();
+        } else if (p.direct_quality_profile == "legacy") {
+            config.qualityEntries = p.direct_quality_entries;
+            config.qualityWays = p.direct_quality_ways;
+            config.qualityTagBits = p.pc_validation_tag_bits;
+            config.feedbackEntries = p.direct_quality_feedback_entries;
+            config.feedbackWays = p.direct_quality_feedback_ways;
+            config.horizon = p.direct_quality_horizon;
+            config.minSamples = p.direct_quality_min_samples;
+            config.observeSamplePeriod = p.direct_quality_observe_sample_period;
+            config.openSamplePeriod = p.direct_quality_open_sample_period;
+            config.blockProbePeriod = p.direct_quality_block_probe_period;
+            config.borderlineBlockProbePeriod =
+                p.direct_quality_borderline_block_probe_period;
+            config.unusedPerUseful = p.direct_quality_unused_per_useful;
+            config.blockGuard = p.direct_quality_block_guard;
+            config.strictUnusedPerUseful =
+                p.direct_quality_strict_unused_per_useful;
+            config.strictBlockGuard = p.direct_quality_strict_block_guard;
+            config.reopenUnusedPerUseful = p.direct_quality_reopen_unused_per_useful;
+            config.reopenGuard = p.direct_quality_reopen_guard;
+            config.reopenProbePeriod = p.direct_quality_reopen_probe_period;
+            config.reopenConfirmSamples =
+                p.direct_quality_reopen_confirm_samples;
+            config.decayPeriod = p.direct_quality_decay_period;
+        } else {
+            fatal("%s: unsupported direct-quality profile %s\n", name(),
+                  p.direct_quality_profile);
+        }
         directQualityGate = std::make_shared<DirectQualityGate>(config);
     }
 

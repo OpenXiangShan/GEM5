@@ -8,7 +8,14 @@ import unittest
 from replay_bop_direct_quality_gate import (
     DirectQualityConfig,
     DirectQualityController,
+    FEEDBACK_ADDRESS_LAYOUT_SV48,
+    FEEDBACK_ADDRESS_LAYOUT_SV48_TRUNCATED,
+    FEEDBACK_AGE_ENCODING_EPOCH6,
+    FEEDBACK_AGE_ENCODING_EPOCH7,
+    FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+    FEEDBACK_OWNER_LAYOUT_QUALITY_KEY,
     DirectQualityReplay,
+    QUALITY_HASH_LAYOUT_XOR_FOLD,
     _IssuedCandidate,
     _QualityAccumulator,
     SampledFeedbackTable,
@@ -41,6 +48,72 @@ def config(**overrides: object) -> DirectQualityConfig:
 
 
 class DirectQualityControllerTest(unittest.TestCase):
+    def test_xor_fold_tag8_is_tag10_low_subset_with_same_set(self):
+        tag10 = DirectQualityController(config(
+            quality_entries=256,
+            quality_ways=4,
+            quality_tag_bits=10,
+            quality_hash_layout=QUALITY_HASH_LAYOUT_XOR_FOLD,
+        ))
+        tag8 = DirectQualityController(config(
+            quality_entries=256,
+            quality_ways=4,
+            quality_tag_bits=8,
+            quality_hash_layout=QUALITY_HASH_LAYOUT_XOR_FOLD,
+        ))
+        for pc in (0x1000, 0x123456, 0x400000, 0x7fff_ffff_ffe):
+            for kind in ("large", "small"):
+                set10, value10 = tag10._key(pc, kind)
+                set8, value8 = tag8._key(pc, kind)
+                self.assertEqual(set8, set10)
+                self.assertEqual(value8, value10 & 0xff)
+
+    def test_xor_fold_tag8_audits_cross_pc_quality_alias(self):
+        tag8 = DirectQualityController(config(
+            quality_entries=256,
+            quality_ways=4,
+            quality_tag_bits=8,
+            quality_hash_layout=QUALITY_HASH_LAYOUT_XOR_FOLD,
+        ))
+        tag10 = DirectQualityController(config(
+            quality_entries=256,
+            quality_ways=4,
+            quality_tag_bits=10,
+            quality_hash_layout=QUALITY_HASH_LAYOUT_XOR_FOLD,
+        ))
+        seen: dict[tuple[int, int], tuple[int, tuple[int, int]]] = {}
+        collision: tuple[int, int] | None = None
+        for pc in range(0x1000, 0x200000, 2):
+            key8 = tag8._key(pc, "large")
+            key10 = tag10._key(pc, "large")
+            previous = seen.get(key8)
+            if previous is not None and previous[1] != key10:
+                collision = (previous[0], pc)
+                break
+            seen[key8] = (pc, key10)
+        self.assertIsNotNone(collision)
+        first_pc, second_pc = collision
+
+        first = tag8.lookup(first_pc, "large")
+        for _ in range(4):
+            tag8.note_sample(first.index, first.generation, "unused")
+        second = tag8.lookup(second_pc, "large")
+        self.assertEqual(second.index, first.index)
+        self.assertEqual(second.state, "block")
+        self.assertEqual(tag8.stats["quality_key_alias_admissions"], 1)
+
+        first10 = tag10.lookup(first_pc, "large")
+        second10 = tag10.lookup(second_pc, "large")
+        self.assertNotEqual(second10.index, first10.index)
+        self.assertEqual(second10.state, "observe")
+
+    def test_quality_key_owner_rejects_unsupported_context_modes(self):
+        with self.assertRaisesRegex(ValueError, "offset_context_slots=1"):
+            config(
+                feedback_owner_layout=FEEDBACK_OWNER_LAYOUT_QUALITY_KEY,
+                offset_context_slots=2,
+            )
+
     def test_ten_to_one_negative_evidence_blocks_context(self):
         controller = DirectQualityController(config())
         lookup = controller.lookup(0x1000, "large")
@@ -478,6 +551,241 @@ class DirectQualityControllerTest(unittest.TestCase):
 
 
 class SampledFeedbackTableTest(unittest.TestCase):
+    def test_epoch_encodings_require_round_robin_and_a_nonzero_timeout(self):
+        with self.assertRaisesRegex(ValueError, "round_robin"):
+            config(feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH7)
+        with self.assertRaisesRegex(ValueError, "feedback_epoch_timeout"):
+            config(
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH7,
+            )
+        with self.assertRaisesRegex(ValueError, r"\[1, 123\]"):
+            config(
+                feedback_entries=256,
+                feedback_ways=4,
+                horizon=2048,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH7,
+                feedback_epoch_timeout=124,
+            )
+        with self.assertRaisesRegex(ValueError, r"\[1, 59\]"):
+            config(
+                feedback_entries=256,
+                feedback_ways=4,
+                horizon=2048,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH6,
+                feedback_epoch_timeout=60,
+            )
+
+    def test_round_robin_sweep_expires_one_slot_at_or_after_timeout(self):
+        resolved: list[tuple[int, str]] = []
+        dropped: list[tuple[int, str]] = []
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=4,
+                feedback_ways=1,
+                horizon=4,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_sweep_timeout=1,
+            ),
+            lambda entry, status: resolved.append((entry.candidate_id, status)),
+            lambda entry, reason: dropped.append((entry.candidate_id, reason)),
+        )
+        self.assertTrue(table.insert(0x1000, 0, 1, 0, 1))
+        inserted_index = next(
+            index for index, entry in enumerate(table.entries) if entry.valid
+        )
+        for demand_index in range(1, 5):
+            table.observe_demand(0x8000, demand_index)
+
+        self.assertEqual(resolved, [])
+        self.assertEqual(
+            dropped, [(1, "feedback_sweep_expired_without_label")],
+        )
+        stats = table.report()
+        self.assertEqual(stats["feedback_sweep_expired_without_label"], 1)
+        self.assertGreaterEqual(stats["feedback_sweep_expiry_age_min"], 1)
+        self.assertLessEqual(stats["feedback_sweep_expiry_age_max"], 4)
+        self.assertEqual(stats["feedback_sweep_pointer_final"], 0)
+        self.assertEqual(inserted_index + 1, stats["feedback_sweep_expiry_age_min"])
+
+    def test_round_robin_sweep_gives_useful_priority_at_timeout(self):
+        resolved: list[tuple[int, str]] = []
+        dropped: list[tuple[int, str]] = []
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=1,
+                feedback_ways=1,
+                horizon=2,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_sweep_timeout=2,
+            ),
+            lambda entry, status: resolved.append((entry.candidate_id, status)),
+            lambda entry, reason: dropped.append((entry.candidate_id, reason)),
+        )
+        self.assertTrue(table.insert(0x1000, 0, 1, 0, 1))
+        table.observe_demand(0x8000, 1)
+        table.observe_demand(0x1000, 2)
+
+        self.assertEqual(resolved, [(1, "useful")])
+        self.assertEqual(dropped, [])
+        stats = table.report()
+        self.assertNotIn("feedback_sweep_expired_without_label", stats)
+        self.assertEqual(stats["feedback_sweep_useful_priority"], 1)
+
+    def test_epoch7_sweep_uses_epoch_timeout_without_shadow_age_policy(self):
+        dropped: list[tuple[int, str]] = []
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=1,
+                feedback_ways=1,
+                horizon=2048,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH7,
+                feedback_epoch_timeout=30,
+            ),
+            lambda entry, status: None,
+            lambda entry, reason: dropped.append((entry.candidate_id, reason)),
+        )
+        self.assertTrue(table.insert(0x1000, 0, 1, 0, 1))
+        table.observe_demand(0x8000, 1919)
+        self.assertEqual(dropped, [])
+        table.observe_demand(0x8000, 1920)
+
+        self.assertEqual(
+            dropped, [(1, "feedback_sweep_expired_without_label")],
+        )
+        stats = table.report()
+        self.assertEqual(stats["feedback_sweep_epoch_delta_min"], 30)
+        self.assertEqual(stats["feedback_sweep_epoch_delta_max"], 30)
+        self.assertEqual(stats["feedback_sweep_expiry_age_min"], 1920)
+
+    def test_epoch7_sweep_epoch_difference_wraps_modulo_128(self):
+        dropped: list[tuple[int, str]] = []
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=1,
+                feedback_ways=1,
+                horizon=2048,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH7,
+                feedback_epoch_timeout=30,
+            ),
+            lambda entry, status: None,
+            lambda entry, reason: dropped.append((entry.candidate_id, reason)),
+        )
+        issue_demand = 126 << 6
+        self.assertTrue(table.insert(0x1000, 0, 1, issue_demand, 1))
+        table.observe_demand(0x8000, issue_demand + 1919)
+        self.assertEqual(dropped, [])
+        table.observe_demand(0x8000, issue_demand + 1920)
+
+        self.assertEqual(
+            dropped, [(1, "feedback_sweep_expired_without_label")],
+        )
+        self.assertEqual(table.report()["feedback_sweep_epoch_delta_min"], 30)
+
+    def test_epoch6_t30_matches_epoch7_across_the_six_bit_ring_wrap(self):
+        def run(encoding: str) -> tuple[list[tuple[int, str]], dict[str, int | str]]:
+            dropped: list[tuple[int, str]] = []
+            table = SampledFeedbackTable(
+                config(
+                    feedback_entries=1,
+                    feedback_ways=1,
+                    horizon=2048,
+                    feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                    feedback_age_encoding=encoding,
+                    feedback_epoch_timeout=30,
+                ),
+                lambda entry, status: None,
+                lambda entry, reason: dropped.append((entry.candidate_id, reason)),
+            )
+            # issueEpoch=62. At +1,920 demands the six-bit current epoch is
+            # 28, so elapsedEpoch must resolve to 30 across the modulo wrap.
+            issue_demand = 62 << 6
+            self.assertTrue(table.insert(0x1000, 0, 1, issue_demand, 1))
+            table.observe_demand(0x8000, issue_demand + 1919)
+            self.assertEqual(dropped, [])
+            table.observe_demand(0x8000, issue_demand + 1920)
+            return dropped, table.report()
+
+        epoch6_dropped, epoch6 = run(FEEDBACK_AGE_ENCODING_EPOCH6)
+        epoch7_dropped, epoch7 = run(FEEDBACK_AGE_ENCODING_EPOCH7)
+
+        self.assertEqual(epoch6_dropped, epoch7_dropped)
+        self.assertEqual(
+            epoch6["feedback_sweep_epoch_delta_min"],
+            epoch7["feedback_sweep_epoch_delta_min"],
+        )
+        self.assertEqual(epoch6["feedback_epoch_bits"], 6)
+        self.assertEqual(epoch7["feedback_epoch_bits"], 7)
+
+    def test_epoch7_sweep_gives_useful_priority_at_epoch_timeout(self):
+        resolved: list[tuple[int, str]] = []
+        dropped: list[tuple[int, str]] = []
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=1,
+                feedback_ways=1,
+                horizon=2048,
+                feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+                feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH7,
+                feedback_epoch_timeout=30,
+            ),
+            lambda entry, status: resolved.append((entry.candidate_id, status)),
+            lambda entry, reason: dropped.append((entry.candidate_id, reason)),
+        )
+        self.assertTrue(table.insert(0x1000, 0, 1, 0, 1))
+        table.observe_demand(0x1000, 1920)
+
+        self.assertEqual(resolved, [(1, "useful")])
+        self.assertEqual(dropped, [])
+        self.assertEqual(table.report()["feedback_sweep_useful_priority"], 1)
+
+    def test_sv48_reversible_layout_keeps_distinct_lines_distinct(self):
+        resolved: list[tuple[int, str]] = []
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=4,
+                feedback_ways=4,
+                feedback_address_layout=FEEDBACK_ADDRESS_LAYOUT_SV48,
+                feedback_tag_bits=36,
+            ),
+            lambda entry, status: resolved.append((entry.candidate_id, status)),
+            lambda entry, reason: None,
+        )
+        first_line = 0x000000000000
+        second_line = 1 << 45
+        self.assertNotEqual(table._key(first_line), table._key(second_line))
+        self.assertTrue(table.insert(first_line, 0, 1, 0, 1))
+        self.assertTrue(table.insert(second_line, 0, 1, 0, 2))
+        table.observe_demand(first_line, 1)
+        self.assertEqual(resolved, [(1, "useful")])
+
+    def test_truncated_sv48_tag_exposes_alias_coalescing_and_false_useful(self):
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=4,
+                feedback_ways=4,
+                feedback_address_layout=FEEDBACK_ADDRESS_LAYOUT_SV48_TRUNCATED,
+                feedback_tag_bits=18,
+            ),
+            lambda entry, status: None,
+            lambda entry, reason: None,
+        )
+        # Deterministic positive Sv48 line numbers whose 24-bit compact
+        # fingerprints collide under the reversible key.
+        first_line = 1829748365685 << 6
+        second_line = 739466019150 << 6
+        self.assertEqual(table._key(first_line), table._key(second_line))
+        self.assertTrue(table.insert(first_line, 0, 1, 0, 1))
+        self.assertFalse(table.insert(second_line, 0, 1, 0, 2))
+        table.observe_demand(second_line, 1)
+        stats = table.report()
+        self.assertEqual(stats["feedback_alias_coalesced"], 1)
+        self.assertEqual(stats["feedback_false_useful"], 1)
+
     def test_capacity_eviction_drops_label_without_negative_update(self):
         resolved: list[tuple[int, str]] = []
         dropped: list[int] = []
@@ -523,6 +831,160 @@ class SampledFeedbackTableTest(unittest.TestCase):
 
 
 class DirectQualityReplayTest(unittest.TestCase):
+    @staticmethod
+    def _observe_candidate(
+        runner: DirectQualityReplay, access_seq: int, pc: int, candidate: int,
+    ) -> None:
+        runner.observe_event_values(
+            access_seq=access_seq,
+            tick=access_seq,
+            bop_kind="large",
+            trigger_addr=pc,
+            trigger_pc=pc,
+            trigger_has_pc=True,
+            best_offset_after=1,
+            raw_candidate_valid=True,
+            raw_candidate_addr=candidate,
+            phase_id=0,
+            selected=True,
+        )
+
+    @staticmethod
+    def _different_quality_key_pc(
+        controller: DirectQualityController, pc: int,
+    ) -> int:
+        original = controller._key(pc, "large")
+        for candidate in range(pc + 2, pc + 0x10000, 2):
+            if controller._key(candidate, "large") != original:
+                return candidate
+        raise AssertionError("could not find a distinct folded Quality key")
+
+    def test_quality_key_owner_drops_evicted_key_on_feedback_resolve(self):
+        cfg = config(
+            quality_entries=1,
+            quality_ways=1,
+            quality_tag_bits=8,
+            quality_hash_layout=QUALITY_HASH_LAYOUT_XOR_FOLD,
+            feedback_owner_layout=FEEDBACK_OWNER_LAYOUT_QUALITY_KEY,
+            feedback_entries=4,
+            feedback_ways=4,
+            min_samples=1,
+        )
+        runner = DirectQualityReplay(cfg, replay.EvaluationWindow())
+        runner.observe_demand_values(0x8000, True)
+        first_pc = 0x1000
+        self._observe_candidate(runner, 1, first_pc, 0x3000)
+        replacement_pc = self._different_quality_key_pc(
+            runner.controller, first_pc,
+        )
+        self._observe_candidate(runner, 2, replacement_pc, 0x4000)
+        runner.observe_demand_values(0x3000, True)
+
+        first = runner.controller.lookup(first_pc, "large", 1)
+        self.assertEqual(first.useful, 0)
+        self.assertEqual(runner.stats["feedback_unknown_owner_key_miss"], 1)
+
+    def test_quality_key_owner_accepts_reinserted_logical_key(self):
+        cfg = config(
+            quality_entries=1,
+            quality_ways=1,
+            quality_tag_bits=8,
+            quality_hash_layout=QUALITY_HASH_LAYOUT_XOR_FOLD,
+            feedback_owner_layout=FEEDBACK_OWNER_LAYOUT_QUALITY_KEY,
+            feedback_entries=4,
+            feedback_ways=4,
+            min_samples=1,
+        )
+        runner = DirectQualityReplay(cfg, replay.EvaluationWindow())
+        runner.observe_demand_values(0x8000, True)
+        first_pc = 0x1000
+        self._observe_candidate(runner, 1, first_pc, 0x3000)
+        replacement_pc = self._different_quality_key_pc(
+            runner.controller, first_pc,
+        )
+        self._observe_candidate(runner, 2, replacement_pc, 0x4000)
+        self._observe_candidate(runner, 3, first_pc, 0x5000)
+        runner.observe_demand_values(0x3000, True)
+
+        first = runner.controller.lookup(first_pc, "large", 1)
+        self.assertEqual(first.useful, 1)
+        self.assertEqual(runner.stats["feedback_unknown_owner_key_miss"], 0)
+
+    def test_tuple_hot_path_matches_object_wrappers(self):
+        cfg = config(
+            horizon=2,
+            min_samples=1,
+            feedback_entries=4,
+            feedback_ways=1,
+            feedback_expiry_mode=FEEDBACK_EXPIRY_MODE_ROUND_ROBIN,
+            feedback_age_encoding=FEEDBACK_AGE_ENCODING_EPOCH7,
+            feedback_epoch_timeout=1,
+        )
+        object_runner = DirectQualityReplay(cfg, replay.EvaluationWindow())
+        tuple_runner = DirectQualityReplay(cfg, replay.EvaluationWindow())
+        demands = (
+            replay.Demand(0, 0, 0x1000),
+            replay.Demand(1, 1, 0x3000),
+            replay.Demand(2, 2, 0x2000),
+            replay.Demand(3, 3, 0x5000),
+            replay.Demand(4, 4, 0x6000),
+        )
+        events = (
+            replay.ReplayEvent(
+                access_seq=1, order=1, bop_name="bop_large",
+                bop_kind="large", tick=1, trigger_addr=0x1000,
+                trigger_pc=0x400, trigger_has_pc=True, validation_hit=0,
+                best_offset_changed=False, issue_enabled=True,
+                validation_enabled=False, pc_confidence_enabled=False,
+                pc_sampled=False, raw_candidate_valid=True,
+                raw_candidate_addr=0x2000, policy_candidate_valid=True,
+                policy_candidate_addr=0x2000,
+            ),
+            replay.ReplayEvent(
+                access_seq=3, order=2, bop_name="bop_small",
+                bop_kind="small", tick=3, trigger_addr=0x3000,
+                trigger_pc=0x500, trigger_has_pc=True, validation_hit=0,
+                best_offset_changed=False, issue_enabled=True,
+                validation_enabled=False, pc_confidence_enabled=False,
+                pc_sampled=False, raw_candidate_valid=True,
+                raw_candidate_addr=0x4000, policy_candidate_valid=True,
+                policy_candidate_addr=0x4000,
+            ),
+            replay.ReplayEvent(
+                access_seq=4, order=3, bop_name="bop_large",
+                bop_kind="large", tick=4, trigger_addr=0x5000,
+                trigger_pc=0, trigger_has_pc=False, validation_hit=0,
+                best_offset_changed=False, issue_enabled=True,
+                validation_enabled=False, pc_confidence_enabled=False,
+                pc_sampled=False, raw_candidate_valid=False,
+                raw_candidate_addr=0, policy_candidate_valid=False,
+                policy_candidate_addr=0,
+            ),
+        )
+        event_index = 0
+        for demand in demands:
+            object_runner.observe_demand(demand)
+            tuple_runner.observe_demand_values(demand.addr, True)
+            while event_index < len(events) and events[event_index].access_seq == demand.access_seq:
+                event = events[event_index]
+                object_runner.observe_event(event)
+                tuple_runner.observe_event_values(
+                    access_seq=event.access_seq,
+                    tick=event.tick,
+                    bop_kind=event.bop_kind,
+                    trigger_addr=event.trigger_addr,
+                    trigger_pc=event.trigger_pc,
+                    trigger_has_pc=event.trigger_has_pc,
+                    best_offset_after=event.best_offset_after,
+                    raw_candidate_valid=event.raw_candidate_valid,
+                    raw_candidate_addr=event.raw_candidate_addr,
+                    phase_id=event.phase_id,
+                    selected=True,
+                )
+                event_index += 1
+
+        self.assertEqual(object_runner.finish(), tuple_runner.finish())
+
     def test_horizon_expiry_updates_live_owner_as_unused(self):
         runner = DirectQualityReplay(
             config(horizon=1, min_samples=1),

@@ -43,6 +43,38 @@ import bop_replay as replay
 HORIZON = 2048
 STATES = ("observe", "open", "audit", "block", "recover")
 OUTCOMES = ("useful", "unused", "redundant", "censored")
+FEEDBACK_ADDRESS_LAYOUT_LEGACY = "legacy_mix64_full_line"
+FEEDBACK_ADDRESS_LAYOUT_SV48 = "sv48_reversible_set_tag"
+# Approximate hardware layout used only for alias-impact experiments.  The
+# set remains six bits; ``feedback_tag_bits`` selects a truncated fingerprint
+# from the same reversible Sv48 key.
+FEEDBACK_ADDRESS_LAYOUT_SV48_TRUNCATED = "sv48_truncated_tag"
+QUALITY_HASH_LAYOUT_MIX64 = "mix64"
+QUALITY_HASH_LAYOUT_XOR_FOLD = "xor_fold"
+FEEDBACK_OWNER_LAYOUT_SLOT_GENERATION = "slot_generation"
+FEEDBACK_OWNER_LAYOUT_QUALITY_KEY = "quality_key"
+FEEDBACK_EXPIRY_MODE_HEAP = "heap"
+FEEDBACK_EXPIRY_MODE_ROUND_ROBIN = "round_robin"
+FEEDBACK_AGE_ENCODING_FULL = "full"
+FEEDBACK_AGE_ENCODING_EPOCH6 = "epoch6"
+FEEDBACK_AGE_ENCODING_EPOCH7 = "epoch7"
+FEEDBACK_EPOCH_SHIFT = 6
+SV48_CACHE_LINE_BITS = 48 - 6
+SV48_CACHE_LINE_MASK = (1 << SV48_CACHE_LINE_BITS) - 1
+SV48_CACHE_LINE_SIGN_BIT = 1 << (SV48_CACHE_LINE_BITS - 1)
+HOST_CACHE_LINE_MASK = (1 << (64 - 6)) - 1
+
+
+def _feedback_epoch_bits(encoding: str) -> int:
+    if encoding == FEEDBACK_AGE_ENCODING_EPOCH6:
+        return 6
+    if encoding == FEEDBACK_AGE_ENCODING_EPOCH7:
+        return 7
+    raise ValueError(f"{encoding!r} is not an epoch feedback-age encoding")
+
+
+def _feedback_epoch_mask(encoding: str) -> int:
+    return (1 << _feedback_epoch_bits(encoding)) - 1
 
 
 @dataclass(frozen=True)
@@ -52,13 +84,40 @@ class DirectQualityConfig:
     quality_entries: int = 128
     quality_ways: int = 4
     quality_tag_bits: int = 10
+    # ``mix64`` preserves the established replay mapping. ``xor_fold`` is a
+    # fixed XOR/shift PC fold intended to be implementable without a wide RTL
+    # multiplier. This controls Quality-table identity only; sampling retains
+    # the established mix64 stream so hash experiments do not change samples.
+    quality_hash_layout: str = QUALITY_HASH_LAYOUT_MIX64
+    # A feedback owner can name the physical Quality slot incarnation or the
+    # logical Quality key. The latter is a fixed Tier20/P8-only area study.
+    feedback_owner_layout: str = FEEDBACK_OWNER_LAYOUT_SLOT_GENERATION
     # One slot preserves the original PC x BOP-kind quality state. Larger
     # values split that root state by recent native BOP best offsets.
     offset_context_slots: int = 1
     feedback_entries: int = 256
     feedback_ways: int = 4
     feedback_tag_bits: int = 24
+    # Legacy replay used mix64(line) for set selection while retaining a full
+    # line dictionary. The Sv48 layout instead uses a reversible 42-bit line
+    # key, whose low bits are the set and whose upper bits are an exact tag.
+    feedback_address_layout: str = FEEDBACK_ADDRESS_LAYOUT_LEGACY
     horizon: int = HORIZON
+    # ``heap`` is the exact-Horizon reference. ``round_robin`` reads one
+    # sampled-feedback age slot per demand and intentionally approximates the
+    # unused decision around the configured sweep timeout.
+    feedback_expiry_mode: str = FEEDBACK_EXPIRY_MODE_HEAP
+    # Zero selects Horizon - feedback_entries / 2, centering one complete
+    # round-robin scan around Horizon. Fixed experiments set this explicitly.
+    feedback_sweep_timeout: int = 0
+    # ``full`` stores the complete 13-bit demand age in an AgeSidecar entry.
+    # ``epoch6`` and ``epoch7`` store only a 64-demand issue epoch. They
+    # retain no within-epoch phase, so expiry is quantized at 64 demands.
+    # Epoch6 stores demandAge[11:6]; Epoch7 stores demandAge[12:6].
+    feedback_age_encoding: str = FEEDBACK_AGE_ENCODING_FULL
+    # Epoch encodings compare modulo elapsed epochs against this threshold.
+    # It is invalid outside round-robin epoch configurations.
+    feedback_epoch_timeout: int = 0
     observe_sample_period: int = 16
     # False retains the initial probe-only baseline. True keeps OBSERVE
     # fail-open while sampling it at observe_sample_period for training.
@@ -101,6 +160,18 @@ class DirectQualityConfig:
             raise ValueError("quality_entries must be divisible by quality_ways")
         if self.quality_ways not in (1, 2, 4):
             raise ValueError("quality_ways must be one, two, or four")
+        if self.quality_tag_bits <= 0 or self.quality_tag_bits > 16:
+            raise ValueError("quality_tag_bits must be in [1, 16]")
+        if self.quality_hash_layout not in (
+                QUALITY_HASH_LAYOUT_MIX64, QUALITY_HASH_LAYOUT_XOR_FOLD):
+            raise ValueError("quality_hash_layout must be 'mix64' or 'xor_fold'")
+        if self.feedback_owner_layout not in (
+                FEEDBACK_OWNER_LAYOUT_SLOT_GENERATION,
+                FEEDBACK_OWNER_LAYOUT_QUALITY_KEY):
+            raise ValueError(
+                "feedback_owner_layout must be 'slot_generation' or "
+                "'quality_key'"
+            )
         if self.offset_context_slots not in (1, 2, 4):
             raise ValueError("offset_context_slots must be one, two, or four")
         if self.feedback_entries <= 0 or not _is_power_of_two(self.feedback_entries):
@@ -141,12 +212,81 @@ class DirectQualityConfig:
             raise ValueError("audit_block_guard must be non-negative")
         if self.sample_source not in ("line", "global_counter"):
             raise ValueError("sample_source must be 'line' or 'global_counter'")
+        if self.feedback_address_layout not in (
+            FEEDBACK_ADDRESS_LAYOUT_LEGACY,
+            FEEDBACK_ADDRESS_LAYOUT_SV48,
+            FEEDBACK_ADDRESS_LAYOUT_SV48_TRUNCATED,
+        ):
+            raise ValueError(
+                "feedback_address_layout must be 'legacy_mix64_full_line' "
+                ", 'sv48_reversible_set_tag', or 'sv48_truncated_tag'"
+            )
+        if self.feedback_tag_bits <= 0 or self.feedback_tag_bits > 36:
+            raise ValueError("feedback_tag_bits must be in [1, 36]")
+        if (self.feedback_address_layout == FEEDBACK_ADDRESS_LAYOUT_SV48
+                and self.feedback_tag_bits != 36):
+            raise ValueError(
+                "sv48_reversible_set_tag requires feedback_tag_bits=36"
+            )
+        if self.feedback_expiry_mode not in (
+                FEEDBACK_EXPIRY_MODE_HEAP,
+                FEEDBACK_EXPIRY_MODE_ROUND_ROBIN):
+            raise ValueError(
+                "feedback_expiry_mode must be 'heap' or 'round_robin'"
+            )
+        if (self.feedback_sweep_timeout < 0
+                or self.feedback_sweep_timeout > self.horizon):
+            raise ValueError(
+                "feedback_sweep_timeout must be in [0, horizon]"
+            )
+        if self.feedback_age_encoding not in (
+                FEEDBACK_AGE_ENCODING_FULL,
+                FEEDBACK_AGE_ENCODING_EPOCH6,
+                FEEDBACK_AGE_ENCODING_EPOCH7):
+            raise ValueError(
+                "feedback_age_encoding must be 'full', 'epoch6', or 'epoch7'"
+            )
+        if self.feedback_age_encoding != FEEDBACK_AGE_ENCODING_FULL:
+            if self.feedback_expiry_mode != FEEDBACK_EXPIRY_MODE_ROUND_ROBIN:
+                raise ValueError("epoch feedback age requires round_robin expiry")
+            # A slot is revisited only once per full round-robin walk. Leave
+            # enough epoch-ring headroom for that revisit, otherwise a near-
+            # wrap threshold can roll to zero before being sampled.
+            max_revisit_epochs = (
+                self.feedback_entries + (1 << FEEDBACK_EPOCH_SHIFT) - 1
+            ) >> FEEDBACK_EPOCH_SHIFT
+            max_epoch_timeout = (
+                _feedback_epoch_mask(self.feedback_age_encoding)
+                - max_revisit_epochs
+            )
+            if not 1 <= self.feedback_epoch_timeout <= max_epoch_timeout:
+                raise ValueError(
+                    "feedback_epoch_timeout must be in [1, "
+                    f"{max_epoch_timeout}] for {self.feedback_age_encoding}"
+                )
+        elif self.feedback_epoch_timeout != 0:
+            raise ValueError(
+                "feedback_epoch_timeout requires an epoch feedback-age encoding"
+            )
         if not 1 <= self.sample_counter_bits <= 64:
             raise ValueError("sample_counter_bits must be in [1, 64]")
         if self.decay_period < 0:
             raise ValueError("decay_period must be non-negative")
         if self.decay_period and not _is_power_of_two(self.decay_period):
             raise ValueError("decay_period must be zero or a power of two")
+        if self.feedback_owner_layout == FEEDBACK_OWNER_LAYOUT_QUALITY_KEY:
+            if self.offset_context_slots != 1:
+                raise ValueError(
+                    "quality_key feedback owners require offset_context_slots=1"
+                )
+            if self.reopen_confirm_samples != 0:
+                raise ValueError(
+                    "quality_key feedback owners require reopen_confirm_samples=0"
+                )
+            if self.audit_samples != 0:
+                raise ValueError(
+                    "quality_key feedback owners require audit_samples=0"
+                )
 
     @property
     def quality_sets(self) -> int:
@@ -165,6 +305,9 @@ class _QualityEntry:
     # bounded replay entry instead of treating a cross-kind tag alias as a hit.
     kind: str = ""
     generation: int = 0
+    # Replay-only exact PC retained for Quality-key alias diagnostics. It is
+    # never read by the policy lookup, admission, or owner resolution paths.
+    shadow_pc: int = 0
 
 
 @dataclass
@@ -192,10 +335,19 @@ class _FeedbackEntry:
     tag: int = 0
     quality_index: int = 0
     quality_generation: int = 0
+    quality_set: int = 0
+    quality_tag: int = 0
+    quality_kind: str = ""
+    # Replay-only issuer identity used to audit logical owner-key aliases.
+    owner_pc: int = 0
     offset_context_index: int = 0
     offset_context_generation: int = 0
     recovery_generation: int = 0
     audit_generation: int = 0
+    # Hardware-visible only for epoch feedback-age encodings. The full demand
+    # index below is trace-only audit state and never participates in epoch
+    # expiry decisions.
+    issue_epoch: int = 0
     demand_index_at_issue: int = 0
     candidate_id: int = 0
     last_touch: int = 0
@@ -291,6 +443,47 @@ def _mix64(value: int) -> int:
     return value & replay.UINT64_MASK
 
 
+def _xor_fold_quality_signature(pc: int, kind: str) -> int:
+    """Return the fixed XOR/shift Quality signature used by the RTL study.
+
+    ``kind`` is mixed with a lookup constant rather than a runtime multiply.
+    The result is a deterministic 64-bit value from which table set and tag
+    are sliced. It deliberately has no arithmetic multiplier.
+    """
+    kind_mix = {
+        "generic": 0x0000000000000000,
+        "large": 0x9E3779B97F4A7C15,
+        "small": 0x3C6EF372FE94F82A,
+    }[kind]
+    signature = (pc >> 1) & replay.UINT64_MASK
+    signature ^= signature >> 7
+    signature ^= signature >> 13
+    signature ^= signature >> 27
+    signature ^= kind_mix
+    signature ^= signature >> 11
+    signature ^= signature >> 23
+    return signature & replay.UINT64_MASK
+
+
+def _sv48_feedback_key(line_number: int) -> int:
+    """Return an exact, reversible key for a 42-bit cache-line address."""
+    compact_line = line_number & SV48_CACHE_LINE_MASK
+    canonical_line = compact_line
+    if compact_line & SV48_CACHE_LINE_SIGN_BIT:
+        canonical_line |= HOST_CACHE_LINE_MASK ^ SV48_CACHE_LINE_MASK
+    if line_number != canonical_line:
+        raise ValueError(
+            "sv48_reversible_set_tag requires a canonical Sv48 byte address"
+        )
+    key = compact_line
+    key ^= key >> 17
+    key ^= (key << 13) & SV48_CACHE_LINE_MASK
+    key ^= key >> 6
+    key ^= (key << 7) & SV48_CACHE_LINE_MASK
+    key ^= key >> 11
+    return key & SV48_CACHE_LINE_MASK
+
+
 class DirectQualityController:
     """Bounded PC-kind quality roots with optional recent-offset contexts."""
 
@@ -310,11 +503,18 @@ class DirectQualityController:
         self.sample_counter_mask = (1 << config.sample_counter_bits) - 1
         self.stats: Counter[str] = Counter()
 
-    def _signature(self, pc: int, kind: str) -> int:
+    def _quality_signature(self, pc: int, kind: str) -> int:
+        if self.config.quality_hash_layout == QUALITY_HASH_LAYOUT_XOR_FOLD:
+            return _xor_fold_quality_signature(pc, kind)
+        return _mix64((pc >> 1) ^ (_kind_value(kind) * 0x9E3779B97F4A7C15))
+
+    @staticmethod
+    def _sampling_signature(pc: int, kind: str) -> int:
+        """Preserve the established sample stream across Quality hash tests."""
         return _mix64((pc >> 1) ^ (_kind_value(kind) * 0x9E3779B97F4A7C15))
 
     def _key(self, pc: int, kind: str) -> tuple[int, int]:
-        signature = self._signature(pc, kind)
+        signature = self._quality_signature(pc, kind)
         set_bits = self.config.quality_sets.bit_length() - 1
         return (
             signature & (self.config.quality_sets - 1),
@@ -395,12 +595,13 @@ class DirectQualityController:
             raise ValueError(f"invalid direct-quality offset context {context_index}")
         self.offset_plru_state[entry_index] = state
 
-    def _reset_root(self, index: int, tag: int, kind: str) -> None:
+    def _reset_root(self, index: int, tag: int, kind: str, pc: int) -> None:
         entry = self.entries[index]
         entry.valid = True
         entry.tag = tag
         entry.kind = kind
         entry.generation += 1
+        entry.shadow_pc = pc
         self.offset_contexts[index] = [
             _QualityOffsetContext()
             for _ in range(self.config.offset_context_slots)
@@ -475,6 +676,8 @@ class DirectQualityController:
             entry = self.entries[index]
             if entry.valid and entry.tag == tag and entry.kind == kind:
                 self.stats["quality_hits"] += 1
+                if entry.shadow_pc != pc:
+                    self.stats["quality_key_alias_admissions"] += 1
                 self._touch_plru(set_index, way)
                 context_index, context = self._lookup_offset_context(
                     index, best_offset,
@@ -496,7 +699,7 @@ class DirectQualityController:
             victim_way = self._plru_victim(set_index)
             victim = base + victim_way
             self.stats["quality_replacements"] += 1
-        self._reset_root(victim, tag, kind)
+        self._reset_root(victim, tag, kind, pc)
         entry = self.entries[victim]
         self._touch_plru(set_index, victim - base)
         context_index, context = self._lookup_offset_context(victim, best_offset)
@@ -505,6 +708,38 @@ class DirectQualityController:
             context.unused, entry.generation, context.generation,
             context.recovery_generation, context.audit_generation,
         )
+
+    def lookup_owner_key(
+        self, set_index: int, tag: int, kind: str,
+    ) -> _QualityLookup | None:
+        """Find an existing owner by its hardware-visible Quality key.
+
+        This is intentionally a non-allocating four-way lookup. In the
+        logical-owner experiment it replaces slot-generation validation when
+        sampled feedback resolves. The supported fixed profile has one
+        offset context and no recovery/audit epochs, so a root key names the
+        complete policy owner.
+        """
+        if not 0 <= set_index < self.config.quality_sets:
+            raise ValueError(f"invalid direct-quality owner set {set_index}")
+        base = set_index * self.config.quality_ways
+        self.stats["owner_key_lookups"] += 1
+        for way in range(self.config.quality_ways):
+            index = base + way
+            entry = self.entries[index]
+            if not (entry.valid and entry.tag == tag and entry.kind == kind):
+                continue
+            context = self.offset_contexts[index][0]
+            if not context.valid:
+                raise RuntimeError("live direct-quality owner has no context")
+            self.stats["owner_key_hits"] += 1
+            return _QualityLookup(
+                index, 0, context.offset, context.state, context.useful,
+                context.unused, entry.generation, context.generation,
+                context.recovery_generation, context.audit_generation,
+            )
+        self.stats["owner_key_misses"] += 1
+        return None
 
     def should_issue(
         self, lookup: _QualityLookup, pc: int, kind: str, line: int,
@@ -594,7 +829,7 @@ class DirectQualityController:
         self, pc: int, kind: str, line: int, period: int, salt: int,
         best_offset: int, sample_counter: int,
     ) -> bool:
-        signature = self._signature(pc, kind)
+        signature = self._sampling_signature(pc, kind)
         if self.config.sample_source == "line":
             signature ^= line & replay.UINT64_MASK
         else:
@@ -802,24 +1037,70 @@ class SampledFeedbackTable:
         self.on_drop = on_drop
         self.entries = [_FeedbackEntry() for _ in range(config.feedback_entries)]
         self.set_next_victim = [0] * config.feedback_sets
-        self.by_line: dict[int, deque[int]] = defaultdict(deque)
+        # Hardware-visible identity.  Exact mode has one identity per line;
+        # truncated mode intentionally aliases distinct lines here.
+        self.by_key: dict[tuple[int, int], deque[int]] = defaultdict(deque)
         self.expiry_heap: list[tuple[int, int, int]] = []
+        self.sweep_pointer = 0
+        self.sweep_expiry_age_min: int | None = None
+        self.sweep_expiry_age_max: int | None = None
+        self.sweep_epoch_delta_min: int | None = None
+        self.sweep_epoch_delta_max: int | None = None
         self.clock = 0
         self.stats: Counter[str] = Counter()
+
+    @property
+    def sweep_timeout(self) -> int:
+        """Return the approximate expiry threshold for a full table scan."""
+        if self.config.feedback_sweep_timeout:
+            return self.config.feedback_sweep_timeout
+        return max(1, self.config.horizon - self.config.feedback_entries // 2)
+
+    def _epoch(self, demand_index: int) -> int:
+        return (
+            demand_index >> FEEDBACK_EPOCH_SHIFT
+        ) & _feedback_epoch_mask(self.config.feedback_age_encoding)
+
+    def _sweep_due(
+        self, entry: _FeedbackEntry, demand_index: int,
+    ) -> tuple[bool, int | None]:
+        """Return policy eligibility without consulting trace-only age state."""
+        if self.config.feedback_age_encoding == FEEDBACK_AGE_ENCODING_FULL:
+            return (
+                demand_index - entry.demand_index_at_issue >= self.sweep_timeout,
+                None,
+            )
+        epoch_delta = (
+            self._epoch(demand_index) - entry.issue_epoch
+        ) & _feedback_epoch_mask(self.config.feedback_age_encoding)
+        return epoch_delta >= self.config.feedback_epoch_timeout, epoch_delta
 
     def _line(self, addr: int) -> int:
         return addr & ~(64 - 1)
 
     def _key(self, line: int) -> tuple[int, int]:
-        signature = _mix64(line >> 6)
+        line_number = line >> 6
         set_bits = self.config.feedback_sets.bit_length() - 1
+        if self.config.feedback_address_layout in (
+                FEEDBACK_ADDRESS_LAYOUT_SV48,
+                FEEDBACK_ADDRESS_LAYOUT_SV48_TRUNCATED):
+            signature = _sv48_feedback_key(line_number)
+            tag_mask = (1 << self.config.feedback_tag_bits) - 1
+            tag = (signature >> set_bits) & tag_mask
+        else:
+            signature = _mix64(line_number)
+            # Legacy traces model a full-line software identity while using
+            # mix64 only for set selection. Preserve that exact behavior;
+            # truncation is intentionally available only in the explicit
+            # Sv48 approximate layout.
+            tag = line_number
         return (
             signature & (self.config.feedback_sets - 1),
-            (signature >> set_bits) & ((1 << self.config.feedback_tag_bits) - 1),
+            tag,
         )
 
-    def _remove_line_index(self, line: int, index: int) -> None:
-        pending = self.by_line.get(line)
+    def _remove_key_index(self, key: tuple[int, int], index: int) -> None:
+        pending = self.by_key.get(key)
         if pending is None:
             return
         try:
@@ -827,13 +1108,13 @@ class SampledFeedbackTable:
         except ValueError:
             return
         if not pending:
-            self.by_line.pop(line, None)
+            self.by_key.pop(key, None)
 
     def _invalidate(self, index: int, reason: str, status: str | None = None) -> None:
         entry = self.entries[index]
         if not entry.valid:
             return
-        self._remove_line_index(entry.line, index)
+        self._remove_key_index(self._key(entry.line), index)
         self.stats[reason] += 1
         if status is not None:
             self.on_resolve(entry, status)
@@ -845,7 +1126,8 @@ class SampledFeedbackTable:
         self, addr: int, quality_index: int, quality_generation: int,
         demand_index: int, candidate_id: int, offset_context_index: int = 0,
         offset_context_generation: int = 0, recovery_generation: int = 0,
-        audit_generation: int = 0,
+        audit_generation: int = 0, quality_set: int = 0,
+        quality_tag: int = 0, quality_kind: str = "", owner_pc: int = 0,
     ) -> bool:
         line = self._line(addr)
         set_index, tag = self._key(line)
@@ -853,13 +1135,15 @@ class SampledFeedbackTable:
         self.clock += 1
         self.stats["feedback_insert_attempts"] += 1
 
-        # A later request to a line already awaiting a direct label can never
-        # add an independent useful/unused observation: one demand consumes
-        # only the earliest candidate and labels later ones redundant. Do not
-        # spend feedback capacity on those duplicates.
-        for index in self.by_line.get(line, ()):
+        # A later request to the same hardware identity can never add an
+        # independent useful observation. In compact mode this also exposes
+        # distinct real lines that alias the stored fingerprint.
+        key = (set_index, tag)
+        for index in self.by_key.get(key, ()):
             if self.entries[index].valid:
                 self.stats["feedback_coalesced"] += 1
+                if self.entries[index].line != line:
+                    self.stats["feedback_alias_coalesced"] += 1
                 return False
 
         victim = next(
@@ -880,32 +1164,65 @@ class SampledFeedbackTable:
         entry.tag = tag
         entry.quality_index = quality_index
         entry.quality_generation = quality_generation
+        entry.quality_set = quality_set
+        entry.quality_tag = quality_tag
+        entry.quality_kind = quality_kind
+        entry.owner_pc = owner_pc
         entry.offset_context_index = offset_context_index
         entry.offset_context_generation = offset_context_generation
         entry.recovery_generation = recovery_generation
         entry.audit_generation = audit_generation
+        entry.issue_epoch = (
+            0 if self.config.feedback_age_encoding == FEEDBACK_AGE_ENCODING_FULL
+            else self._epoch(demand_index)
+        )
         entry.demand_index_at_issue = demand_index
         entry.candidate_id = candidate_id
         entry.last_touch = self.clock
-        self.by_line[line].append(victim)
-        heapq.heappush(
-            self.expiry_heap,
-            (demand_index + self.config.horizon, candidate_id, victim),
-        )
+        self.by_key[key].append(victim)
+        if self.config.feedback_expiry_mode == FEEDBACK_EXPIRY_MODE_HEAP:
+            heapq.heappush(
+                self.expiry_heap,
+                (demand_index + self.config.horizon, candidate_id, victim),
+            )
         self.stats["feedback_inserted"] += 1
         return True
 
     def observe_demand(self, addr: int, demand_index: int) -> None:
-        while self.expiry_heap and self.expiry_heap[0][0] < demand_index:
-            _, candidate_id, index = heapq.heappop(self.expiry_heap)
-            entry = self.entries[index]
-            if entry.valid and entry.candidate_id == candidate_id:
-                self._invalidate(index, "feedback_expired_without_label")
+        if self.config.feedback_expiry_mode == FEEDBACK_EXPIRY_MODE_HEAP:
+            while self.expiry_heap and self.expiry_heap[0][0] < demand_index:
+                _, candidate_id, index = heapq.heappop(self.expiry_heap)
+                entry = self.entries[index]
+                if entry.valid and entry.candidate_id == candidate_id:
+                    self._invalidate(index, "feedback_expired_without_label")
+            self._resolve_useful(addr, demand_index)
+            return
+
+        # The approximate path does not sort feedback by issue age. Useful
+        # evidence wins on a same-demand collision, then one independently
+        # addressed AgeSidecar-equivalent slot is checked for expiry.
+        sweep_index = self.sweep_pointer
+        self.sweep_pointer = (
+            self.sweep_pointer + 1
+        ) % self.config.feedback_entries
+        sweep_entry = self.entries[sweep_index]
+        sweep_was_due = False
+        if sweep_entry.valid:
+            sweep_was_due, _ = self._sweep_due(sweep_entry, demand_index)
+        useful_index = self._resolve_useful(addr, demand_index)
+        if useful_index == sweep_index and sweep_was_due:
+            self.stats["feedback_sweep_useful_priority"] += 1
+        self._sweep_expire(sweep_index, demand_index)
+
+    def _resolve_useful(self, addr: int, demand_index: int) -> int | None:
+        """Consume the earliest matching feedback and return its slot index."""
+        del demand_index
 
         line = self._line(addr)
-        pending = self.by_line.get(line)
+        key = self._key(line)
+        pending = self.by_key.get(key)
         if not pending:
-            return
+            return None
         # A demand consumes exactly one earliest sampled candidate. Later
         # samples to the same line are redundant feedback and intentionally do
         # not contribute a false negative label.
@@ -915,6 +1232,8 @@ class SampledFeedbackTable:
             if not entry.valid:
                 pending.popleft()
                 continue
+            if entry.line != line:
+                self.stats["feedback_false_useful"] += 1
             self._invalidate(index, "feedback_useful", "useful")
             while pending:
                 duplicate = pending[0]
@@ -922,14 +1241,56 @@ class SampledFeedbackTable:
                 if not duplicate_entry.valid:
                     pending.popleft()
                     continue
+                if duplicate_entry.line != line:
+                    self.stats["feedback_false_redundant"] += 1
                 self._invalidate(duplicate, "feedback_redundant", "redundant")
+            return index
+        return None
+
+    def _sweep_expire(self, index: int, demand_index: int) -> None:
+        """Approximate one unused decision with a fixed round-robin probe."""
+        self.stats["feedback_sweep_checks"] += 1
+        entry = self.entries[index]
+        if not entry.valid:
             return
+        self.stats["feedback_sweep_valid_checks"] += 1
+        due, epoch_delta = self._sweep_due(entry, demand_index)
+        if not due:
+            return
+        if epoch_delta is not None:
+            self.stats["feedback_sweep_epoch_delta_sum"] += epoch_delta
+            if (self.sweep_epoch_delta_min is None
+                    or epoch_delta < self.sweep_epoch_delta_min):
+                self.sweep_epoch_delta_min = epoch_delta
+            if (self.sweep_epoch_delta_max is None
+                    or epoch_delta > self.sweep_epoch_delta_max):
+                self.sweep_epoch_delta_max = epoch_delta
+        # This trace-only timestamp provides the observable label-age error;
+        # _sweep_due above is the sole epoch-policy decision.
+        age = demand_index - entry.demand_index_at_issue
+        self.stats["feedback_sweep_expiry_age_sum"] += age
+        if self.sweep_expiry_age_min is None or age < self.sweep_expiry_age_min:
+            self.sweep_expiry_age_min = age
+        if self.sweep_expiry_age_max is None or age > self.sweep_expiry_age_max:
+            self.sweep_expiry_age_max = age
+        if age < self.config.horizon:
+            self.stats["feedback_sweep_early_expiry"] += 1
+        elif age > self.config.horizon:
+            self.stats["feedback_sweep_late_expiry"] += 1
+        else:
+            self.stats["feedback_sweep_exact_horizon_expiry"] += 1
+        self._invalidate(index, "feedback_sweep_expired_without_label")
 
     def finish(self) -> None:
-        while self.expiry_heap:
-            _, candidate_id, index = heapq.heappop(self.expiry_heap)
-            entry = self.entries[index]
-            if entry.valid and entry.candidate_id == candidate_id:
+        if self.config.feedback_expiry_mode == FEEDBACK_EXPIRY_MODE_HEAP:
+            while self.expiry_heap:
+                _, candidate_id, index = heapq.heappop(self.expiry_heap)
+                entry = self.entries[index]
+                if entry.valid and entry.candidate_id == candidate_id:
+                    self._invalidate(index, "feedback_censored", "censored")
+            return
+        for index, entry in enumerate(self.entries):
+            if entry.valid:
                 self._invalidate(index, "feedback_censored", "censored")
 
     def discard_pending(self, reason: str) -> None:
@@ -939,8 +1300,36 @@ class SampledFeedbackTable:
                 self._invalidate(index, reason)
         self.expiry_heap.clear()
 
-    def report(self) -> dict[str, int]:
-        return {key: int(value) for key, value in sorted(self.stats.items())}
+    def report(self) -> dict[str, int | str]:
+        report: dict[str, int | str] = {
+            key: int(value) for key, value in sorted(self.stats.items())
+        }
+        if self.config.feedback_expiry_mode == FEEDBACK_EXPIRY_MODE_ROUND_ROBIN:
+            report["feedback_age_encoding"] = self.config.feedback_age_encoding
+            report["feedback_sweep_pointer_final"] = self.sweep_pointer
+            report["feedback_sweep_expiry_age_min"] = (
+                self.sweep_expiry_age_min or 0
+            )
+            report["feedback_sweep_expiry_age_max"] = (
+                self.sweep_expiry_age_max or 0
+            )
+            if self.config.feedback_age_encoding == FEEDBACK_AGE_ENCODING_FULL:
+                report["feedback_sweep_timeout"] = self.sweep_timeout
+            else:
+                report["feedback_epoch_bits"] = _feedback_epoch_bits(
+                    self.config.feedback_age_encoding
+                )
+                report["feedback_epoch_shift"] = FEEDBACK_EPOCH_SHIFT
+                report["feedback_epoch_timeout"] = (
+                    self.config.feedback_epoch_timeout
+                )
+                report["feedback_sweep_epoch_delta_min"] = (
+                    self.sweep_epoch_delta_min or 0
+                )
+                report["feedback_sweep_epoch_delta_max"] = (
+                    self.sweep_epoch_delta_max or 0
+                )
+        return report
 
 
 class _QualityAccumulator:
@@ -960,13 +1349,16 @@ class _QualityAccumulator:
         self.counts: Counter[str] = Counter()
 
     def observe_demand(self, demand: replay.Demand) -> None:
+        self.observe_demand_addr(demand.addr)
+
+    def observe_demand_addr(self, addr: int) -> None:
         self.eligible_demands += 1
         self.demand_index += 1
         while self.expiry_heap and self.expiry_heap[0][0] < self.demand_index:
             _, _, candidate = heapq.heappop(self.expiry_heap)
             if candidate.candidate_id in self.pending_ids:
                 self._resolve(candidate, "unused")
-        pending = self.pending_by_line.get(demand.addr)
+        pending = self.pending_by_line.get(addr)
         if not pending:
             return
         while pending and pending[0].candidate_id not in self.pending_ids:
@@ -1058,48 +1450,90 @@ class DirectQualityReplay:
 
     @staticmethod
     def _context(event: replay.ReplayEvent) -> tuple[int, str] | None:
-        if not event.trigger_has_pc:
-            return None
-        return event.trigger_pc, event.bop_kind
+        return DirectQualityReplay._context_values(
+            event.trigger_has_pc, event.trigger_pc, event.bop_kind,
+        )
+
+    @staticmethod
+    def _context_values(
+        trigger_has_pc: bool, trigger_pc: int, bop_kind: str,
+    ) -> tuple[int, str] | None:
+        return (trigger_pc, bop_kind) if trigger_has_pc else None
 
     def _candidate(
         self, event: replay.ReplayEvent, context: tuple[int, str] | None,
     ) -> _IssuedCandidate:
+        return self._candidate_values(
+            event.bop_kind, event.access_seq, event.tick,
+            event.raw_candidate_addr, event.phase_id, context,
+        )
+
+    def _candidate_values(
+        self, bop_kind: str, access_seq: int, tick: int,
+        raw_candidate_addr: int, phase_id: int,
+        context: tuple[int, str] | None,
+    ) -> _IssuedCandidate:
         candidate = _IssuedCandidate(
-            self.next_candidate_id, event.bop_kind, event.access_seq, event.tick,
-            event.raw_candidate_addr, self.raw["combined"].demand_index,
-            event.phase_id, context,
+            self.next_candidate_id, bop_kind, access_seq, tick,
+            raw_candidate_addr, self.raw["combined"].demand_index,
+            phase_id, context,
         )
         self.next_candidate_id += 1
         return candidate
 
     def observe_demand(self, demand: replay.Demand) -> None:
-        selected = replay._in_evaluation_window(demand, self.window)
+        self.observe_demand_values(
+            demand.addr,
+            replay._in_evaluation_window(demand, self.window),
+        )
+
+    def observe_demand_values(self, addr: int, selected: bool) -> None:
         if selected and not self.entered_evaluation_window:
             # Preserve warmup-trained state, but a warmup candidate must not
             # consume a stable-window demand. Its unresolved label is dropped.
             self.feedback.discard_pending("feedback_window_boundary_drop")
             self.entered_evaluation_window = True
         self.feedback_demand_index += 1
-        self.feedback.observe_demand(demand.addr, self.feedback_demand_index)
+        self.feedback.observe_demand(addr, self.feedback_demand_index)
         if selected:
             for accumulator in self.raw.values():
-                accumulator.observe_demand(demand)
+                accumulator.observe_demand_addr(addr)
             for accumulator in self.direct.values():
-                accumulator.observe_demand(demand)
+                accumulator.observe_demand_addr(addr)
         self.stats["demands"] += 1
 
     def observe_event(self, event: replay.ReplayEvent) -> None:
+        self.observe_event_values(
+            access_seq=event.access_seq,
+            tick=event.tick,
+            bop_kind=event.bop_kind,
+            trigger_addr=event.trigger_addr,
+            trigger_pc=event.trigger_pc,
+            trigger_has_pc=event.trigger_has_pc,
+            best_offset_after=event.best_offset_after,
+            raw_candidate_valid=event.raw_candidate_valid,
+            raw_candidate_addr=event.raw_candidate_addr,
+            phase_id=event.phase_id,
+            selected=replay._in_evaluation_window(event, self.window),
+        )
+
+    def observe_event_values(
+        self, *, access_seq: int, tick: int, bop_kind: str,
+        trigger_addr: int, trigger_pc: int, trigger_has_pc: bool,
+        best_offset_after: int, raw_candidate_valid: bool,
+        raw_candidate_addr: int, phase_id: int, selected: bool,
+    ) -> None:
         self.stats["events"] += 1
-        if not event.raw_candidate_valid:
+        if not raw_candidate_valid:
             return
-        selected = replay._in_evaluation_window(event, self.window)
-        context = self._context(event)
-        raw_candidate = self._candidate(event, context)
+        context = self._context_values(trigger_has_pc, trigger_pc, bop_kind)
+        raw_candidate = self._candidate_values(
+            bop_kind, access_seq, tick, raw_candidate_addr, phase_id, context,
+        )
         if context is not None and selected:
             self.context_counts[context].raw_candidates += 1
         if selected:
-            for accumulator in (self.raw["combined"], self.raw[event.bop_kind]):
+            for accumulator in (self.raw["combined"], self.raw[bop_kind]):
                 accumulator.emit(raw_candidate)
 
         if context is None:
@@ -1109,7 +1543,7 @@ class DirectQualityReplay:
             lookup = None
         else:
             pc, kind = context
-            lookup = self.controller.lookup(pc, kind, event.best_offset_after)
+            lookup = self.controller.lookup(pc, kind, best_offset_after)
             state = lookup.state
             if selected:
                 counts = self.context_counts[context]
@@ -1118,7 +1552,7 @@ class DirectQualityReplay:
                     getattr(counts, f"state_{state}") + 1,
                 )
             issued, sampled = self.controller.should_issue(
-                lookup, pc, kind, event.trigger_addr & ~(64 - 1),
+                lookup, pc, kind, trigger_addr & ~(64 - 1),
             )
 
         if not issued:
@@ -1127,20 +1561,24 @@ class DirectQualityReplay:
                 self.context_counts[context].suppressed_candidates += 1
             return
 
-        direct_candidate = self._candidate(event, context)
+        direct_candidate = self._candidate_values(
+            bop_kind, access_seq, tick, raw_candidate_addr, phase_id, context,
+        )
         if selected:
-            for accumulator in (self.direct["combined"], self.direct[event.bop_kind]):
+            for accumulator in (self.direct["combined"], self.direct[bop_kind]):
                 accumulator.emit(direct_candidate)
         self.stats["policy_issued"] += 1
         if context is not None and selected:
             self.context_counts[context].issued_candidates += 1
 
         if sampled and lookup is not None:
+            owner_set, owner_tag = self.controller._key(*context)
             inserted = self.feedback.insert(
                 direct_candidate.addr, lookup.index, lookup.generation,
                 self.feedback_demand_index, direct_candidate.candidate_id,
                 lookup.context_index, lookup.context_generation,
                 lookup.recovery_generation, lookup.audit_generation,
+                owner_set, owner_tag, context[1], context[0],
             )
             if inserted:
                 # The feedback callbacks are only reachable after a successful
@@ -1161,19 +1599,11 @@ class DirectQualityReplay:
         if status == "useful":
             if selected:
                 self.context_counts[candidate_context].samples_useful += 1
-            before, after = self.controller.note_sample(
-                entry.quality_index, entry.quality_generation, "useful",
-                entry.offset_context_index, entry.offset_context_generation,
-                entry.recovery_generation, entry.audit_generation,
-            )
+            transition = self._note_feedback_sample(entry, "useful")
         elif status == "unused":
             if selected:
                 self.context_counts[candidate_context].samples_unused += 1
-            before, after = self.controller.note_sample(
-                entry.quality_index, entry.quality_generation, "unused",
-                entry.offset_context_index, entry.offset_context_generation,
-                entry.recovery_generation, entry.audit_generation,
-            )
+            transition = self._note_feedback_sample(entry, "unused")
         elif status == "redundant":
             if selected:
                 self.context_counts[candidate_context].samples_redundant += 1
@@ -1181,6 +1611,9 @@ class DirectQualityReplay:
             if selected:
                 self.context_counts[candidate_context].samples_censored += 1
             return
+        if transition is None:
+            return
+        before, after = transition
         if selected:
             counts = self.context_counts[candidate_context]
             if before in ("block", "recover") and after == "audit":
@@ -1189,6 +1622,36 @@ class DirectQualityReplay:
                 counts.audit_passes += 1
             elif before == "audit" and after == "block":
                 counts.audit_failures += 1
+
+    def _note_feedback_sample(
+        self, entry: _FeedbackEntry, status: str,
+    ) -> tuple[str, str] | None:
+        """Apply feedback using the configured physical or logical owner."""
+        if self.config.feedback_owner_layout == FEEDBACK_OWNER_LAYOUT_QUALITY_KEY:
+            owner = self.controller.lookup_owner_key(
+                entry.quality_set, entry.quality_tag, entry.quality_kind,
+            )
+            if owner is None:
+                self.stats["feedback_unknown_owner_key_miss"] += 1
+                return None
+            resolved_entry = self.controller.entries[owner.index]
+            if resolved_entry.shadow_pc != entry.owner_pc:
+                self.stats[f"quality_key_cross_pc_{status}"] += 1
+            return self.controller.note_sample(
+                owner.index, owner.generation, status,
+                owner.context_index, owner.context_generation,
+                owner.recovery_generation, owner.audit_generation,
+            )
+
+        quality_entry = self.controller.entries[entry.quality_index]
+        if (not quality_entry.valid
+                or quality_entry.generation != entry.quality_generation):
+            return None
+        return self.controller.note_sample(
+            entry.quality_index, entry.quality_generation, status,
+            entry.offset_context_index, entry.offset_context_generation,
+            entry.recovery_generation, entry.audit_generation,
+        )
 
     def _resolve_direct_combined(
         self, candidate: _IssuedCandidate, status: str,
@@ -1212,23 +1675,18 @@ class DirectQualityReplay:
         # when the PC-kind quality entry which admitted it is still live.
         # Capacity/quality replacement invalidates that owner, so the same
         # expiry is unknown rather than negative evidence.
-        if reason == "feedback_expired_without_label":
-            quality_entry = self.controller.entries[entry.quality_index]
-            owner_live = (
-                quality_entry.valid
-                and quality_entry.generation == entry.quality_generation
-            )
-            if owner_live:
+        if reason in (
+                "feedback_expired_without_label",
+                "feedback_sweep_expired_without_label"):
+            transition = self._note_feedback_sample(entry, "unused")
+            if transition is not None:
                 if selected:
                     self.context_counts[context].samples_unused += 1
-                self.controller.note_sample(
-                    entry.quality_index, entry.quality_generation, "unused",
-                    entry.offset_context_index,
-                    entry.offset_context_generation,
-                    entry.recovery_generation, entry.audit_generation,
-                )
             else:
-                self.stats["feedback_unknown_owner_replaced"] += 1
+                if self.config.feedback_owner_layout == FEEDBACK_OWNER_LAYOUT_QUALITY_KEY:
+                    self.stats["feedback_unknown_owner_key_replaced"] += 1
+                else:
+                    self.stats["feedback_unknown_owner_replaced"] += 1
             return
         if selected:
             self.context_counts[context].samples_dropped += 1
@@ -1245,6 +1703,22 @@ class DirectQualityReplay:
             "controller_stats": self.controller.report(),
             "feedback_stats": self.feedback.report(),
             "replay_stats": {key: int(value) for key, value in sorted(self.stats.items())},
+            "quality_owner_audit": {
+                "layout": self.config.feedback_owner_layout,
+                "hash_layout": self.config.quality_hash_layout,
+                "quality_key_alias_admissions": int(
+                    self.controller.stats["quality_key_alias_admissions"]
+                ),
+                "owner_key_misses": int(
+                    self.controller.stats["owner_key_misses"]
+                ),
+                "cross_pc_useful": int(
+                    self.stats["quality_key_cross_pc_useful"]
+                ),
+                "cross_pc_unused": int(
+                    self.stats["quality_key_cross_pc_unused"]
+                ),
+            },
             "contexts": self._context_report(),
             "marginal_vs_raw": _marginal(direct["combined"], raw["combined"]),
         }
@@ -1349,15 +1823,78 @@ def _marginal(
     }
 
 
-def replay_direct_quality_gate(
+def _replay_direct_quality_gate_object_stream(
     connection: sqlite3.Connection, config: DirectQualityConfig,
     window: replay.EvaluationWindow,
 ) -> dict[str, object]:
+    """Reference object-stream implementation retained for equivalence tests."""
     connection.row_factory = sqlite3.Row
     runner = DirectQualityReplay(config, window)
     replay._stream_trace_rows(
         connection, runner.observe_demand, runner.observe_event, lambda: None,
     )
+    return runner.finish()
+
+
+def replay_direct_quality_gate(
+    connection: sqlite3.Connection, config: DirectQualityConfig,
+    window: replay.EvaluationWindow,
+) -> dict[str, object]:
+    """Replay direct quality from tuple rows without generic trace objects.
+
+    The raw BOP trace can contain tens of millions of records. Constructing
+    a ``sqlite3.Row``, ``Demand``, and ``ReplayEvent`` for every record was
+    the dominant cost on large MCF traces. This stream retains the reference
+    ordering exactly: process the L2 demand first, then all BOP candidates at
+    the same AccessSeq.
+    """
+    connection.row_factory = None
+    runner = DirectQualityReplay(config, window)
+    demand_rows = iter(connection.execute(
+        "SELECT AccessSeq,PhaseId,Tick,Addr FROM L2DemandTrace ORDER BY AccessSeq"
+    ))
+    event_rows = iter(connection.execute(
+        "SELECT AccessSeq,BOPKind,PhaseId,Tick,TriggerAddr,TriggerPC,"
+        "TriggerHasPC,BestOffsetAfter,RawCandidateValid,RawCandidateAddr "
+        "FROM BOPReplayEvent ORDER BY AccessSeq,rowid"
+    ))
+    demand_row = next(demand_rows, None)
+    event_row = next(event_rows, None)
+
+    while demand_row is not None or event_row is not None:
+        demand_seq = int(demand_row[0]) if demand_row is not None else None
+        event_seq = int(event_row[0]) if event_row is not None else None
+        access_seq = event_seq if demand_seq is None else demand_seq
+        if event_seq is not None and event_seq < access_seq:
+            access_seq = event_seq
+
+        if demand_row is not None and demand_seq == access_seq:
+            phase_id = int(demand_row[1])
+            tick = int(demand_row[2])
+            runner.observe_demand_values(
+                replay._sqlite_u64(demand_row[3]),
+                replay._in_evaluation_values(phase_id, tick, window),
+            )
+            demand_row = next(demand_rows, None)
+
+        while event_row is not None and int(event_row[0]) == access_seq:
+            phase_id = int(event_row[2])
+            tick = int(event_row[3])
+            runner.observe_event_values(
+                access_seq=access_seq,
+                bop_kind=str(event_row[1]),
+                phase_id=phase_id,
+                tick=tick,
+                trigger_addr=replay._sqlite_u64(event_row[4]),
+                trigger_pc=replay._sqlite_u64(event_row[5]),
+                trigger_has_pc=bool(event_row[6]),
+                best_offset_after=int(event_row[7]),
+                raw_candidate_valid=bool(event_row[8]),
+                raw_candidate_addr=replay._sqlite_u64(event_row[9]),
+                selected=replay._in_evaluation_values(phase_id, tick, window),
+            )
+            event_row = next(event_rows, None)
+
     return runner.finish()
 
 

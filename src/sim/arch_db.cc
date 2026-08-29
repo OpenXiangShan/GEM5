@@ -142,14 +142,16 @@ ArchDBer::ArchDBer(const Params &p)
     prepareStatement(
         mem_db, &bopDirectQualityMetaStmt,
         "INSERT OR IGNORE INTO BOPDirectQualityMeta("
-        "SchemaVersion,QualityEntries,QualityWays,QualityTagBits,"
-        "FeedbackEntries,FeedbackWays,Horizon,MinSamples,"
+        "SchemaVersion,Profile,QualityEntries,QualityWays,QualityTagBits,"
+        "QualityHashLayout,FeedbackEntries,FeedbackWays,FeedbackTagBits,"
+        "FeedbackAddressLayout,FeedbackOwnerLayout,FeedbackExpiryMode,"
+        "FeedbackAgeEncoding,FeedbackEpochTimeout,Horizon,MinSamples,"
         "ObserveSamplePeriod,OpenSamplePeriod,BlockProbePeriod,"
         "BorderlineBlockProbePeriod,UnusedPerUseful,BlockGuard,"
         "StrictUnusedPerUseful,StrictBlockGuard,ReopenUnusedPerUseful,"
         "ReopenGuard,ReopenProbePeriod,ReopenConfirmSamples,DecayPeriod) "
-        "VALUES(3,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,"
-        "?16,?17,?18,?19,?20);",
+        "VALUES(5,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,"
+        "?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28);",
         "BOPDirectQualityMeta insert");
     prepareStatement(
         mem_db, &bopDirectQualityCandidateStmt,
@@ -703,11 +705,26 @@ ArchDBer::bopDirectQualityMetaTraceWrite(
     fatal_if(result != SQLITE_OK,
              "Failed to bind BOPDirectQualityMeta: %s\n", sqlite3_errmsg(mem_db));
   };
+  bind(sqlite3_bind_text(bopDirectQualityMetaStmt, column++, config.profileName(),
+                         -1, SQLITE_STATIC));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.qualityEntries));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.qualityWays));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.qualityTagBits));
+  bind(sqlite3_bind_text(bopDirectQualityMetaStmt, column++,
+                         config.qualityHashLayoutName(), -1, SQLITE_STATIC));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.feedbackEntries));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.feedbackWays));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.feedbackTagBits));
+  bind(sqlite3_bind_text(bopDirectQualityMetaStmt, column++,
+                         config.feedbackAddressLayoutName(), -1, SQLITE_STATIC));
+  bind(sqlite3_bind_text(bopDirectQualityMetaStmt, column++,
+                         config.feedbackOwnerLayoutName(), -1, SQLITE_STATIC));
+  bind(sqlite3_bind_text(bopDirectQualityMetaStmt, column++,
+                         config.feedbackExpiryModeName(), -1, SQLITE_STATIC));
+  bind(sqlite3_bind_text(bopDirectQualityMetaStmt, column++,
+                         config.feedbackAgeEncodingName(), -1, SQLITE_STATIC));
+  bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++,
+                       config.feedbackEpochTimeout()));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.horizon));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.minSamples));
   bind(sqlite3_bind_int(bopDirectQualityMetaStmt, column++, config.observeSamplePeriod));

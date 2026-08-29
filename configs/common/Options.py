@@ -244,6 +244,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="enable the online Tier20/P8 BOP direct-quality gate")
+    parser.add_argument("--bop-direct-quality-profile",
+                        choices=("legacy", "bop-cqf14e6t30"),
+                        default="bop-cqf14e6t30",
+                        help="online direct-quality layout/policy profile")
     parser.add_argument("--bop-direct-quality-feedback-entries",
                         action="store",
                         type=int,

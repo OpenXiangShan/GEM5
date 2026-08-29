@@ -21,6 +21,77 @@ isPowerOf2(unsigned value)
 
 }  // anonymous namespace
 
+DirectQualityGate::Config
+DirectQualityGate::Config::bopCqf14E6T30()
+{
+    Config config;
+    config.profile = Profile::BopCqf14E6T30;
+    config.qualityEntries = 256;
+    config.qualityWays = 4;
+    config.qualityTagBits = 8;
+    config.feedbackEntries = 256;
+    config.feedbackWays = 4;
+    config.feedbackTagBits = CompactFeedbackTagBits;
+    config.horizon = 2048;
+    config.minSamples = 32;
+    config.observeSamplePeriod = 16;
+    config.openSamplePeriod = 16;
+    config.blockProbePeriod = 64;
+    config.borderlineBlockProbePeriod = 8;
+    config.unusedPerUseful = 10;
+    config.blockGuard = 4;
+    config.strictUnusedPerUseful = 20;
+    config.strictBlockGuard = 4;
+    config.reopenUnusedPerUseful = 10;
+    config.reopenGuard = 4;
+    config.reopenProbePeriod = 64;
+    config.reopenConfirmSamples = 0;
+    config.decayPeriod = 64;
+    return config;
+}
+
+const char *
+DirectQualityGate::Config::profileName() const
+{
+    return profile == Profile::BopCqf14E6T30 ? "BOP-CQF14E6T30" : "legacy";
+}
+
+const char *
+DirectQualityGate::Config::qualityHashLayoutName() const
+{
+    return profile == Profile::BopCqf14E6T30 ? "xor_fold" : "mix64";
+}
+
+const char *
+DirectQualityGate::Config::feedbackOwnerLayoutName() const
+{
+    return profile == Profile::BopCqf14E6T30 ? "quality_key" : "slot_generation";
+}
+
+const char *
+DirectQualityGate::Config::feedbackAddressLayoutName() const
+{
+    return profile == Profile::BopCqf14E6T30 ? "sv48_truncated_tag" : "sv48_reversible_set_tag";
+}
+
+const char *
+DirectQualityGate::Config::feedbackExpiryModeName() const
+{
+    return profile == Profile::BopCqf14E6T30 ? "round_robin" : "heap";
+}
+
+const char *
+DirectQualityGate::Config::feedbackAgeEncodingName() const
+{
+    return profile == Profile::BopCqf14E6T30 ? "epoch6" : "full";
+}
+
+unsigned
+DirectQualityGate::Config::feedbackEpochTimeout() const
+{
+    return profile == Profile::BopCqf14E6T30 ? CompactEpochTimeout : 0;
+}
+
 DirectQualityGate::DirectQualityGate() : DirectQualityGate(Config()) {}
 
 DirectQualityGate::DirectQualityGate(const Config &config)
@@ -29,13 +100,17 @@ DirectQualityGate::DirectQualityGate(const Config &config)
       feedbackSets(config.feedbackEntries / config.feedbackWays),
       qualitySetBits(0),
       feedbackSetBits(0),
-      qualityTagMask(config.qualityTagBits >= 63 ? ~Addr(0) : ((Addr(1) << config.qualityTagBits) - 1))
+      qualityTagMask(config.qualityTagBits >= 63 ? ~Addr(0) : ((Addr(1) << config.qualityTagBits) - 1)),
+      feedbackTagMask(config.feedbackTagBits >= 64 ? ~uint64_t(0) :
+                      ((uint64_t(1) << config.feedbackTagBits) - 1))
 {
     assert(cfg.qualityWays == 1 || cfg.qualityWays == 2 || cfg.qualityWays == 4);
     assert(cfg.feedbackWays > 0 && cfg.feedbackWays <= MaxFeedbackWays);
     assert(cfg.qualityEntries > 0 && cfg.qualityEntries <= MaxQualityEntries);
     assert(cfg.feedbackEntries > 0 && cfg.feedbackEntries <= MaxFeedbackEntries);
     fatal_if(cfg.qualityTagBits > 16, "Direct-quality compact entries support at most 16 tag bits\n");
+    fatal_if(cfg.feedbackTagBits == 0 || cfg.feedbackTagBits > 36,
+             "Direct-quality feedback tags must contain 1 to 36 bits\n");
     fatal_if(cfg.horizon >= AgeHalfRange, "Direct-quality horizon must be less than %u for compact ages\n",
              AgeHalfRange);
     fatal_if(cfg.blockProbePeriod > UINT8_MAX || cfg.borderlineBlockProbePeriod > UINT8_MAX,
@@ -49,6 +124,20 @@ DirectQualityGate::DirectQualityGate(const Config &config)
     assert(isPowerOf2(qualitySets));
     assert(isPowerOf2(feedbackSets));
     assert(cfg.decayPeriod == 0 || isPowerOf2(cfg.decayPeriod));
+    if (compactProfile()) {
+        fatal_if(cfg.qualityEntries != 256 || cfg.qualityWays != 4 ||
+                 cfg.qualityTagBits != 8 || cfg.feedbackEntries != 256 ||
+                 cfg.feedbackWays != 4 || cfg.feedbackTagBits != CompactFeedbackTagBits ||
+                 cfg.horizon != 2048 || cfg.minSamples != 32 ||
+                 cfg.observeSamplePeriod != 16 || cfg.openSamplePeriod != 16 ||
+                 cfg.blockProbePeriod != 64 || cfg.borderlineBlockProbePeriod != 8 ||
+                 cfg.unusedPerUseful != 10 || cfg.blockGuard != 4 ||
+                 cfg.strictUnusedPerUseful != 20 || cfg.strictBlockGuard != 4 ||
+                 cfg.reopenUnusedPerUseful != 10 || cfg.reopenGuard != 4 ||
+                 cfg.reopenProbePeriod != 64 || cfg.reopenConfirmSamples != 0 ||
+                 cfg.decayPeriod != 64,
+                 "BOP-CQF14E6T30 requires its fixed certified configuration\n");
+    }
     while ((1U << qualitySetBits) < qualitySets)
         ++qualitySetBits;
     while ((1U << feedbackSetBits) < feedbackSets)
@@ -81,6 +170,35 @@ DirectQualityGate::mix64(uint64_t value)
 uint64_t
 DirectQualityGate::qualitySignature(Addr pc, uint8_t kind) const
 {
+    if (compactProfile()) {
+        uint64_t kindMix = 0;
+        switch (kind) {
+          case 0:
+            break;
+          case 1:
+            kindMix = 0x9E3779B97F4A7C15ULL;
+            break;
+          case 2:
+            kindMix = 0x3C6EF372FE94F82AULL;
+            break;
+          default:
+            fatal("BOP-CQF14E6T30 does not support direct-quality kind %u\n", kind);
+        }
+        uint64_t signature = pc >> 1;
+        signature ^= signature >> 7;
+        signature ^= signature >> 13;
+        signature ^= signature >> 27;
+        signature ^= kindMix;
+        signature ^= signature >> 11;
+        signature ^= signature >> 23;
+        return signature;
+    }
+    return mix64((pc >> 1) ^ (uint64_t(kind) * 0x9E3779B97F4A7C15ULL));
+}
+
+uint64_t
+DirectQualityGate::samplingSignature(Addr pc, uint8_t kind)
+{
     return mix64((pc >> 1) ^ (uint64_t(kind) * 0x9E3779B97F4A7C15ULL));
 }
 
@@ -96,10 +214,39 @@ DirectQualityGate::qualityTagFor(Addr pc, uint8_t kind) const
     return (qualitySignature(pc, kind) >> qualitySetBits) & qualityTagMask;
 }
 
-unsigned
-DirectQualityGate::feedbackSetFor(uint64_t line) const
+uint64_t
+DirectQualityGate::feedbackKeyFor(uint64_t line)
 {
-    return mix64(line) & (feedbackSets - 1);
+    const uint64_t compactLine = line & FeedbackLineMask;
+    const uint64_t canonicalLine = compactLine & FeedbackLineSignBit
+        ? compactLine | (HostLineMask & ~FeedbackLineMask) : compactLine;
+    fatal_if(line != canonicalLine,
+             "Direct-quality compact feedback layout requires a canonical Sv48 cache-line address\n");
+
+    // Each fixed-width xorshift is bijective over the 42-bit line domain.
+    // The alternating directions mix both low stride bits and high address
+    // bits into the set field. Consequently, set bits plus the stored upper
+    // tag reproduce an exact cache-line identity rather than a short
+    // signature.
+    uint64_t key = compactLine;
+    key ^= key >> 17;
+    key ^= (key << 13) & FeedbackLineMask;
+    key ^= key >> 6;
+    key ^= (key << 7) & FeedbackLineMask;
+    key ^= key >> 11;
+    return key & FeedbackLineMask;
+}
+
+unsigned
+DirectQualityGate::feedbackSetForKey(uint64_t key) const
+{
+    return key & (feedbackSets - 1);
+}
+
+uint64_t
+DirectQualityGate::feedbackTagForKey(uint64_t key) const
+{
+    return (key >> feedbackSetBits) & feedbackTagMask;
 }
 
 unsigned
@@ -182,11 +329,11 @@ DirectQualityGate::allocateQuality(unsigned set, Addr tag, uint8_t kind)
 }
 
 unsigned
-DirectQualityGate::findFeedback(unsigned set, uint64_t line) const
+DirectQualityGate::findFeedback(unsigned set, uint64_t tag) const
 {
     const unsigned base = set * cfg.feedbackWays;
     for (unsigned way = 0; way < cfg.feedbackWays; ++way) {
-        if (feedback[base + way].valid && feedback[base + way].line == line)
+        if (feedback[base + way].valid && feedback[base + way].tag == tag)
             return way;
     }
     return cfg.feedbackWays;
@@ -231,7 +378,10 @@ bool
 DirectQualityGate::sample(Addr pc, uint8_t kind, Addr trigger_line, unsigned period, uint64_t salt) const
 {
     assert(isPowerOf2(period));
-    const uint64_t signature = qualitySignature(pc, kind) ^ trigger_line ^ salt;
+    // Sampling intentionally retains the established mix64 stream across
+    // Quality-key experiments. Reusing qualitySignature() here would change
+    // the sample population when CQF selects its XOR-fold Quality mapping.
+    const uint64_t signature = samplingSignature(pc, kind) ^ trigger_line ^ salt;
     return (mix64(signature) & (period - 1)) == 0;
 }
 
@@ -294,8 +444,10 @@ DirectQualityGate::recordCandidate(Addr line, uint8_t kind, unsigned quality_set
     assert(qualityEntry.kindValue() == kind);
 
     const uint64_t lineNumber = compactLine(line);
-    const unsigned set = feedbackSetFor(lineNumber);
-    if (findFeedback(set, lineNumber) != cfg.feedbackWays) {
+    const uint64_t key = feedbackKeyFor(lineNumber);
+    const unsigned set = feedbackSetForKey(key);
+    const uint64_t tag = feedbackTagForKey(key);
+    if (findFeedback(set, tag) != cfg.feedbackWays) {
         ++feedbackCoalescedCount;
         return 0;
     }
@@ -304,23 +456,29 @@ DirectQualityGate::recordCandidate(Addr line, uint8_t kind, unsigned quality_set
     const unsigned index = feedbackIndex(set, way);
     auto &entry = feedback[index];
     entry.valid = true;
-    entry.line = lineNumber;
+    entry.tag = tag;
     entry.qualityIndex = static_cast<uint8_t>(quality_set * cfg.qualityWays + quality_way);
     entry.qualityGeneration = quality_generation;
     entry.recoveryGeneration = qualityEntry.recoveryGeneration;
     entry.issueAge = compactAge();
+    entry.qualitySet = static_cast<uint8_t>(quality_set);
+    entry.qualityTag = qualityEntry.tag;
+    entry.qualityKind = kind;
+    entry.issueEpoch = compactEpoch();
     if (traceSink) {
         auto &trace = feedbackTrace[index];
         trace.id = ++nextFeedbackId;
         trace.issueAge = demandAge;
+        trace.line = lineNumber;
     }
-    insertExpiry(index);
+    if (!compactProfile())
+        insertExpiry(index);
     ++outstandingCount;
     peakOutstandingCount = std::max(peakOutstandingCount, outstandingCount);
     ++sampledCount;
     if (traceSink) {
         auto &trace = feedbackTrace[index];
-        traceSink->directQualityTraceIssue(++nextTraceEventSequence, trace.id, trace.issueAge, expandLine(entry.line),
+        traceSink->directQualityTraceIssue(++nextTraceEventSequence, trace.id, trace.issueAge, expandLine(lineNumber),
                                            kind);
         return trace.id;
     }
@@ -332,7 +490,8 @@ DirectQualityGate::invalidateFeedback(unsigned feedback_index)
 {
     auto &entry = feedback[feedback_index];
     assert(entry.valid);
-    removeExpiry(feedback_index);
+    if (!compactProfile())
+        removeExpiry(feedback_index);
     entry.valid = false;
     assert(outstandingCount > 0);
     --outstandingCount;
@@ -352,7 +511,7 @@ DirectQualityGate::traceOutcome(unsigned feedback_index, TraceOutcome outcome)
     const auto &entry = feedback[feedback_index];
     if (traceSink) {
         const auto &trace = feedbackTrace[feedback_index];
-        traceSink->directQualityTraceOutcome(++nextTraceEventSequence, trace.id, demandAge, expandLine(entry.line),
+        traceSink->directQualityTraceOutcome(++nextTraceEventSequence, trace.id, demandAge, expandLine(trace.line),
                                              outcome);
     }
 }
@@ -464,13 +623,25 @@ DirectQualityGate::resolveFeedback(unsigned feedback_index, bool isUseful, Trace
 {
     auto &fb = feedback[feedback_index];
     assert(fb.valid);
-    auto &entry = quality[fb.qualityIndex];
-    if (!entry.isValid() || entry.generation != fb.qualityGeneration) {
+    QualityEntry *entry = nullptr;
+    uint16_t recoveryGeneration = fb.recoveryGeneration;
+    if (compactProfile()) {
+        const unsigned way = findQuality(fb.qualitySet, fb.qualityTag, fb.qualityKind);
+        if (way != cfg.qualityWays) {
+            entry = &quality[fb.qualitySet * cfg.qualityWays + way];
+            recoveryGeneration = 0;
+        }
+    } else {
+        auto &physical = quality[fb.qualityIndex];
+        if (physical.isValid() && physical.generation == fb.qualityGeneration)
+            entry = &physical;
+    }
+    if (!entry) {
         retireUnknown(feedback_index, TraceOutcome::UnknownOwnerReplaced);
         ++orphanOutcomeCount;
         return false;
     }
-    applyOutcome(entry, fb.recoveryGeneration, isUseful);
+    applyOutcome(*entry, recoveryGeneration, isUseful);
     traceOutcome(feedback_index, outcome);
     invalidateFeedback(feedback_index);
     return true;
@@ -483,13 +654,19 @@ DirectQualityGate::observeDemand(Addr line)
     if (traceSink) {
         traceSink->directQualityTraceDemand(++nextTraceEventSequence, demandAge, line);
     }
-    expireFeedback();
-
+    if (!compactProfile())
+        expireFeedback();
     const uint64_t lineNumber = compactLine(line);
-    const unsigned set = feedbackSetFor(lineNumber);
-    const unsigned way = findFeedback(set, lineNumber);
+    const uint64_t key = feedbackKeyFor(lineNumber);
+    const unsigned set = feedbackSetForKey(key);
+    const unsigned way = findFeedback(set, feedbackTagForKey(key));
     if (way != cfg.feedbackWays) {
         resolveFeedback(feedbackIndex(set, way), true, TraceOutcome::UsefulDemand);
+    }
+    if (compactProfile()) {
+        const unsigned sweepIndex = feedbackSweepPointer;
+        feedbackSweepPointer = (feedbackSweepPointer + 1) % cfg.feedbackEntries;
+        expireCompactFeedback(sweepIndex);
     }
 }
 
@@ -573,6 +750,7 @@ DirectQualityGate::removeExpiry(unsigned feedback_index)
 void
 DirectQualityGate::expireFeedback()
 {
+    assert(!compactProfile());
     while (expiryHeapSize != 0) {
         const unsigned feedback_index = expiryHeap[0];
         const auto &entry = feedback[feedback_index];
@@ -585,6 +763,21 @@ DirectQualityGate::expireFeedback()
             ++feedbackExpiryUnusedCount;
         }
     }
+}
+
+void
+DirectQualityGate::expireCompactFeedback(unsigned feedback_index)
+{
+    assert(compactProfile());
+    auto &entry = feedback[feedback_index];
+    if (!entry.valid)
+        return;
+    if (compactEpochDistance(entry.issueEpoch) < CompactEpochTimeout)
+        return;
+
+    ++feedbackExpiryCount;
+    if (resolveFeedback(feedback_index, false, TraceOutcome::UnusedExpiry))
+        ++feedbackExpiryUnusedCount;
 }
 
 DirectQualityGate::State

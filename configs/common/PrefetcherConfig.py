@@ -534,6 +534,7 @@ def _configure_l2_bop_direct_quality(prefetcher, options):
         return
     for bop in (prefetcher.bop_large, prefetcher.bop_small):
         bop.enable_direct_quality_gate = True
+        bop.direct_quality_profile = options.bop_direct_quality_profile
         # Tier20/P8 is intentionally evaluated independently from native P/C.
         bop.enable_issue_validation = False
         bop.enable_pc_validation_confidence = False

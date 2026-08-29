@@ -864,6 +864,8 @@ class BOPPrefetcher(QueuedPrefetcher):
         "before global bypass mode may be active; zero disables this gate")
     enable_direct_quality_gate = Param.Bool(False,
         "Enable the bounded online Tier20/P8 direct-quality gate")
+    direct_quality_profile = Param.String("legacy",
+        "Direct-quality profile: legacy or bop-cqf14e6t30")
     direct_quality_entries = Param.Unsigned(256,
         "Direct-quality PC table entries")
     direct_quality_ways = Param.Unsigned(4,

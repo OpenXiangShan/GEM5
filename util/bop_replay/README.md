@@ -72,6 +72,16 @@ whose feedback entry was actually inserted. They are recorded before address
 translation, PFQ admission, packet coalescing, cache lookup, and memory
 bandwidth effects.
 
+Schema V5 additionally records the complete layout contract. The default
+online profile is `BOP-CQF14E6T30`: a 256-entry, four-way XOR-fold Quality
+table with tag8; a 256-entry, four-way Sv48 Feedback table with tag14 and a
+logical `{qualitySet, qualityTag, kind}` owner; and one round-robin expiry
+probe per L2 demand using `demandAge[11:6]` with epoch threshold 30. Sampling
+intentionally remains on the legacy `mix64(PC, kind, trigger-line, salt)`
+stream. `python3 certify_bop_direct_quality_trace.py <trace.db>` reconstructs
+these semantics from the V5 metadata and must report zero event mismatches
+before an online/offline alignment claim is made.
+
 `IssueDemandSequence` is therefore the L2-read-demand sequence at raw
 candidate selection, not a physical packet-issue time. A candidate resolves
 as `UsefulDemand` when a later L2 read demand reaches the same line within the
