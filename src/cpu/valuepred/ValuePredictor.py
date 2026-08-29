@@ -152,4 +152,19 @@ class IdealConstantLVP(ValuePredictor):
     resetConfidence = Param.Bool(True, "reset confidence to 0 when mispredict")
     enableProfiling = Param.Bool(
         False,
-        "emit per-PC IdealConstantLVP profiling data without changing prediction state")
+        "emit per-PC and saturation-epoch IdealConstantLVP profiling data "
+        "without changing prediction state")
+
+    enableShadowProfiling = Param.Bool(
+        False,
+        "run a bounded QF/PCT shadow model during profiling only")
+    shadowQfEntries = Param.Unsigned(
+        1024, "number of entries in the bounded qualification/filter shadow table")
+    shadowQfWays = Param.Unsigned(
+        4, "number of ways per QF shadow set")
+    shadowPctEntries = Param.Unsigned(
+        2048, "number of entries in the bounded prediction shadow table")
+    shadowPctWays = Param.Unsigned(
+        4, "number of ways per PCT shadow set")
+    shadowQualification = Param.Unsigned(
+        4, "consecutive equal committed values required for QF promotion")
