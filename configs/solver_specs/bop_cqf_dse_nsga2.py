@@ -76,7 +76,8 @@ class BOPCQFDseNsga2(SolveSpec):
     custom_bin = CUSTOM_CHECKPOINTS
     extra_args = (
         "--enable-bop-direct-quality-gate "
-        "--bop-direct-quality-profile=bop-cqf-dse"
+        "--bop-direct-quality-profile=bop-cqf-dse "
+        "--disable-difftest"
     )
     solver_name = "nsga2"
     summary_top_n = 24
