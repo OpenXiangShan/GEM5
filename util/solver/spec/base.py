@@ -25,6 +25,7 @@ class SolveSpec(metaclass=SolveSpecMeta):
     benchmark_type = ""
     specific_benchmarks = ""
     custom_bin = ""
+    custom_bin_weights = ()
     extra_args = ""
     solver_name = None
     summary_top_n = 16

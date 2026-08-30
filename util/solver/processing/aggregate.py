@@ -20,16 +20,43 @@ def _aggregate_stats_values(
     aggregate: str,
     metric_name: str,
     scope_label: str,
-) -> tuple[float | None, str | None]:
+    weights: dict[str, float] | None = None,
+) -> tuple[float | None, str | None, dict | None]:
     numeric_values = [
         float(value)
         for value in values.values()
         if value is not None and not math.isnan(value)
     ]
     if not numeric_values:
-        return None, f"missing stats metric {metric_name}"
+        return None, f"missing stats metric {metric_name}", None
+    if weights is not None:
+        missing = sorted(set(values) - set(weights))
+        extra = sorted(set(weights) - set(values))
+        if missing or extra:
+            details = []
+            if missing:
+                details.append("missing weights for " + ", ".join(missing))
+            if extra:
+                details.append("weights without values for " + ", ".join(extra))
+            return None, "; ".join(details), None
+        total_weight = math.fsum(weights.values())
+        if total_weight <= 0:
+            return None, "custom-bin weights must have a positive sum", None
+        numerator = math.fsum(
+            float(values[name]) * weights[name] for name in sorted(values)
+        )
+        return (
+            numerator / total_weight,
+            None,
+            {
+                "aggregation": "weighted_mean",
+                "weights": {name: weights[name] for name in sorted(weights)},
+                "weight_sum": total_weight,
+                "weighted_numerator": numerator,
+            },
+        )
     if aggregate == "mean":
-        return fmean(numeric_values), None
+        return fmean(numeric_values), None, None
     if aggregate == "geomean":
         invalid = [
             name for name, value in values.items()
@@ -40,9 +67,10 @@ def _aggregate_stats_values(
             return (
                 None,
                 f"metric {metric_name} requires positive {scope_label} values for geomean; invalid: {joined}",
+                None,
             )
-        return geometric_mean(numeric_values), None
-    return None, f"unsupported benchmark aggregate {aggregate}"
+        return geometric_mean(numeric_values), None, None
+    return None, f"unsupported benchmark aggregate {aggregate}", None
 
 
 def _extract_objective_value(
@@ -65,12 +93,32 @@ def _extract_objective_value(
                     None,
                     f"metric {objective.metric} missing in {workload_count - len(values)} workload(s)",
                 )
-            return _aggregate_stats_values(
+            weights = None
+            if problem.custom_bin_weights:
+                if workload_count != len(problem.custom_bin_weights):
+                    return (
+                        None,
+                        "custom-bin weight count does not match workload count: "
+                        f"{len(problem.custom_bin_weights)} weights for "
+                        f"{workload_count} workload(s)",
+                    )
+                workload_names = sorted(values)
+                weights = {
+                    workload_name: problem.custom_bin_weights[index]
+                    for index, workload_name in enumerate(workload_names)
+                }
+            value, error, weighting = _aggregate_stats_values(
                 values,
                 aggregate="mean",
                 metric_name=objective.metric,
                 scope_label="workload",
+                weights=weights,
             )
+            if weighting is not None:
+                metrics.setdefault("custom_bin_weighting", {})[objective.metric] = (
+                    weighting
+                )
+            return value, error
 
         weighted_csv = execution.raw_files.get("weighted_csv")
         if not weighted_csv or not Path(weighted_csv).is_file():
@@ -80,12 +128,13 @@ def _extract_objective_value(
         metrics.setdefault("weighted_stats_samples", {})[objective.metric] = len(values)
         if not values:
             return None, f"missing weighted stats metric {objective.metric}"
-        return _aggregate_stats_values(
+        value, error, _ = _aggregate_stats_values(
             values,
             aggregate=objective.benchmark_aggregate,
             metric_name=objective.metric,
             scope_label="benchmark",
         )
+        return value, error
 
     if objective.source_kind == "score_txt":
         score_path = execution.raw_files.get("score_txt")

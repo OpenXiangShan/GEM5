@@ -483,6 +483,55 @@ def _best_result_section(
     return lines
 
 
+def _custom_bin_weighting_section(best: EvaluatedTrial | None) -> list[str]:
+    if best is None:
+        return []
+    weighting_by_metric = best.metrics.get("custom_bin_weighting", {})
+    stats_by_metric = best.metrics.get("stats_values", {})
+    if not isinstance(weighting_by_metric, dict):
+        return []
+
+    lines = []
+    for metric in sorted(weighting_by_metric):
+        weighting = weighting_by_metric[metric]
+        if not isinstance(weighting, dict):
+            continue
+        weights = weighting.get("weights", {})
+        weight_sum = weighting.get("weight_sum")
+        if not isinstance(weights, dict) or not weight_sum:
+            continue
+        values = stats_by_metric.get(metric, {})
+        if not isinstance(values, dict):
+            values = {}
+
+        lines.extend(
+            [
+                "### Custom-Bin Weighting",
+                "",
+                (
+                    f"`{metric}` is the normalized weighted arithmetic mean "
+                    f"with total raw weight `{float(weight_sum):.9f}`."
+                ),
+                "",
+                "| workload | IPC | raw weight | normalized contribution |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        for workload, raw_weight in sorted(weights.items()):
+            ipc = values.get(workload)
+            contribution = (
+                float(ipc) * float(raw_weight) / float(weight_sum)
+                if ipc is not None
+                else None
+            )
+            lines.append(
+                f"| {workload} | {_format_objective(ipc)} | "
+                f"{float(raw_weight):.9f} | {_format_objective(contribution)} |"
+            )
+        lines.append("")
+    return lines
+
+
 def _format_convergence_x_axis(series_length: int) -> str:
     if series_length <= 0:
         return 'x-axis "Valid Trial"'
@@ -562,11 +611,20 @@ def render_summary(
     ]
     if problem.uses_custom_bin_mode():
         lines.append(f"- Custom bin: `{problem.custom_bin}`")
+        if problem.custom_bin_weights:
+            lines.append(
+                "- Custom-bin objective aggregation: weighted arithmetic mean "
+                f"over {len(problem.custom_bin_weights)} workloads "
+                f"(weight sum `{sum(problem.custom_bin_weights):.9f}`)"
+            )
+        else:
+            lines.append("- Custom-bin objective aggregation: equal-weight arithmetic mean")
     elif problem.specific_benchmarks:
         lines.append(f"- Workload filter: `{problem.specific_benchmarks}`")
     if problem.is_multi_objective():
         lines.append(f"- Pareto frontier size: `{len(frontier)}`")
     lines.extend(["", *_best_result_section(problem, best, objectives)])
+    lines.extend(_custom_bin_weighting_section(best))
     lines.extend(["## Run Configuration", ""])
     lines.append(f"- Config path: `{problem.config_path}`")
     if metadata is not None:

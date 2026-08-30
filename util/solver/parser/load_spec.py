@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha1
 import importlib.util
+import math
 import os
 from pathlib import Path
 import sys
@@ -179,13 +180,20 @@ def parse_problem(problem_ref: str) -> ParsedProblem:
         )
 
     parameters = [field.to_parameter(name) for name, field in problem_cls.iter_tunables()]
+    custom_bin = getattr(problem_cls, "custom_bin", "") or ""
+    custom_bin_weights = _parse_custom_bin_weights(
+        problem_cls,
+        benchmark_type=benchmark_type,
+        custom_bin=custom_bin,
+    )
     return ParsedProblem(
         name=problem_cls.__name__,
         problem_ref=f"{spec_path}:{class_name}",
         config_path=config_path,
         benchmark_type=benchmark_type,
         specific_benchmarks=getattr(problem_cls, "specific_benchmarks", "") or "",
-        custom_bin=getattr(problem_cls, "custom_bin", "") or "",
+        custom_bin=custom_bin,
+        custom_bin_weights=custom_bin_weights,
         extra_args=getattr(problem_cls, "extra_args", "") or "",
         parameters=parameters,
         objective=parsed_objectives[0],
@@ -194,6 +202,66 @@ def parse_problem(problem_ref: str) -> ParsedProblem:
         solver_hint=getattr(problem_cls, "solver_name", None),
         summary_top_n=summary_top_n,
     )
+
+
+def _custom_bin_tokens(raw_value: str) -> list[str]:
+    return [
+        token.strip()
+        for token in raw_value.replace("\n", ",").split(",")
+        if token.strip()
+    ]
+
+
+def _parse_custom_bin_weights(
+    problem_cls,
+    *,
+    benchmark_type: str,
+    custom_bin: str,
+) -> tuple[float, ...]:
+    raw_weights = getattr(problem_cls, "custom_bin_weights", ())
+    if raw_weights is None:
+        return ()
+    if not isinstance(raw_weights, (list, tuple)):
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.custom_bin_weights must be a list or tuple"
+        )
+
+    weights = []
+    for index, raw_weight in enumerate(raw_weights, start=1):
+        if isinstance(raw_weight, bool):
+            raise SpecLoadError(
+                f"{problem_cls.__name__}.custom_bin_weights[{index}] must be numeric"
+            )
+        try:
+            weight = float(raw_weight)
+        except (TypeError, ValueError) as exc:
+            raise SpecLoadError(
+                f"{problem_cls.__name__}.custom_bin_weights[{index}] must be numeric"
+            ) from exc
+        if not math.isfinite(weight) or weight < 0:
+            raise SpecLoadError(
+                f"{problem_cls.__name__}.custom_bin_weights[{index}] must be finite and non-negative"
+            )
+        weights.append(weight)
+
+    if not weights:
+        return ()
+    if benchmark_type != "custom_bin":
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.custom_bin_weights requires benchmark_type='custom_bin'"
+        )
+
+    checkpoint_count = len(_custom_bin_tokens(custom_bin))
+    if len(weights) != checkpoint_count:
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.custom_bin_weights has {len(weights)} entries, "
+            f"but custom_bin has {checkpoint_count} checkpoint(s)"
+        )
+    if math.fsum(weights) <= 0:
+        raise SpecLoadError(
+            f"{problem_cls.__name__}.custom_bin_weights must have a positive sum"
+        )
+    return tuple(weights)
 
 
 def _validate_objective(problem_cls, objective: ObjectiveSpec) -> None:

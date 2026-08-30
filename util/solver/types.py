@@ -96,6 +96,7 @@ class ParsedProblem:
     benchmark_type: str
     specific_benchmarks: str
     custom_bin: str
+    custom_bin_weights: tuple[float, ...]
     extra_args: str
     parameters: list[ParsedParameter]
     objective: ObjectiveSpec | None

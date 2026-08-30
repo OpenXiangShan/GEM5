@@ -58,6 +58,45 @@ CUSTOM_CHECKPOINTS = ",".join(
     if checkpoint
 )
 
+# Extracted from /nfs/home/lijiangtao/tools/gem5_data_proc/simpoint_cpt/
+# resources/checkpoints_all.json (SHA-256 b9d0c16f04791fe29bc8badd535defffb908b5be2498aca6cb7ea9206698c8a7).
+# The order is identical to _CUSTOM_CHECKPOINTS, so the solver can use the
+# multi-custom-bin workload order as a stable slice-to-weight mapping in CI.
+CUSTOM_CHECKPOINT_WEIGHTS = (
+    0.148205,
+    0.144497,
+    0.187251,
+    0.0056679,
+    0.0520644,
+    0.0527474,
+    0.00925612,
+    0.0330737,
+    0.0195004,
+    0.0793543,
+    0.164923,
+    0.0941396,
+    0.111046,
+    0.00293469,
+    0.00889506,
+    0.00805332,
+    0.0369422,
+    0.0365785,
+    0.0248846,
+    0.0076794,
+    0.0719216,
+    0.0153323,
+    0.113417,
+    0.0761684,
+    0.0581101,
+    0.082038,
+    0.0470301,
+    0.069599,
+    0.0286905,
+    0.0608844,
+    0.962556,
+    0.163166,
+)
+
 
 def _set_param(root, target: str, value: int) -> None:
     owner, _, param_name = resolve_target(root, target)
@@ -74,6 +113,7 @@ class BOPCQFDseNsga2(SolveSpec):
     benchmark_type = "custom_bin"
     specific_benchmarks = ""
     custom_bin = CUSTOM_CHECKPOINTS
+    custom_bin_weights = CUSTOM_CHECKPOINT_WEIGHTS
     extra_args = (
         "--enable-bop-direct-quality-gate "
         "--bop-direct-quality-profile=bop-cqf-dse "
