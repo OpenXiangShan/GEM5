@@ -113,12 +113,11 @@ class BTBLLBPX : public TimedBaseBTBPredictor
 
     struct ContextEntry
     {
-        inline static unsigned defaultPatternSetCapacity = 64;
+        inline static unsigned defaultPatternSetCapacity = 16;
         inline static unsigned defaultPatternSetAssoc = 4;
 
         bool valid{false};
         Addr tag{0};
-        Addr patternKey{0};
         uint16_t confidentPatterns{0};
         uint8_t confidence{0};
         uint64_t lastTouch{0};
@@ -130,7 +129,6 @@ class BTBLLBPX : public TimedBaseBTBPredictor
         {
             valid = true;
             tag = newTag;
-            patternKey = 0;
             confidentPatterns = 0;
             confidence = 0;
             lastTouch = 0;
@@ -394,28 +392,25 @@ class BTBLLBPX : public TimedBaseBTBPredictor
                                short counterAfter, bool actualTaken);
     unsigned adaptContextDepth(const BranchMeta &meta,
                                const std::vector<unsigned> &providerTables);
-    bool synthesizeMissingBranchMeta(const FetchTarget &entry,
-                                     const LLBPXMeta &llbpxMeta,
+    bool synthesizeMissingBranchMeta(const LLBPXMeta &llbpxMeta,
                                      const BTBEntry &btbEntry,
                                      BranchMeta &branchMeta) const;
     void writeTraceRecord(const BranchMeta &meta, bool actualTaken);
     uint64_t tableMaskFor(const std::vector<unsigned> &tables) const;
-    Addr patternKeyForSnapshotTable(const FetchTarget &entry, Addr startPC,
-                                    Addr branchPC, Addr contextKey,
-                                    unsigned wi, unsigned table,
-                                    uint8_t asidHash) const;
     void refreshStorageStats();
 
     Addr hashBits(const boost::dynamic_bitset<> &history, unsigned bits) const;
+    Addr foldGlobalHistory(const boost::dynamic_bitset<> &history,
+                           unsigned historyLength, unsigned outputBits) const;
     Addr mix(Addr value) const;
     Addr contextKey(ThreadID tid, Addr startPC, Addr branchPC,
                     const boost::dynamic_bitset<> &history,
                     uint8_t asidHash) const;
     Addr originalContextKey(ThreadID tid, Addr branchPC, unsigned window,
                             unsigned dist) const;
-    Addr patternKey(Addr contextKey, Addr branchPC, uint8_t asidHash) const;
-    Addr patternKeyForTable(ThreadID tid, Addr startPC, Addr branchPC,
-                            Addr contextKey, unsigned wi, unsigned table,
+    Addr patternKeyForTable(Addr branchPC,
+                            const boost::dynamic_bitset<> &history,
+                            unsigned wi, unsigned table,
                             uint8_t asidHash) const;
     Addr tagFromKey(Addr key) const;
     void updateCounter(bool taken, short &counter) const;
@@ -531,16 +526,9 @@ struct BTBLLBPX::TestAccess
         return cid;
     }
 
-    static Addr patternKey(BTBLLBPX &llbpx, Addr contextKey, Addr branchPC,
-                           uint8_t asidHash)
+    static Addr patternTag(BTBLLBPX &llbpx, Addr key)
     {
-        return llbpx.patternKey(contextKey, branchPC, asidHash);
-    }
-
-    static Addr patternTag(BTBLLBPX &llbpx, Addr key, Addr branchPC,
-                           uint8_t asidHash)
-    {
-        return key;
+        return llbpx.tagFromKey(key);
     }
 
     static auto &patternSet(ContextEntry &ctx)
@@ -548,13 +536,13 @@ struct BTBLLBPX::TestAccess
         return ctx.patternSet();
     }
 
-    static Addr patternKeyForTable(BTBLLBPX &llbpx, ThreadID tid, Addr startPC,
-                                   Addr branchPC, Addr contextKey,
+    static Addr patternKeyForTable(BTBLLBPX &llbpx, Addr branchPC,
+                                   const boost::dynamic_bitset<> &history,
                                    unsigned wi, unsigned table,
                                    uint8_t asidHash)
     {
-        return llbpx.patternKeyForTable(tid, startPC, branchPC, contextKey,
-                                        wi, table, asidHash);
+        return llbpx.patternKeyForTable(branchPC, history, wi, table,
+                                        asidHash);
     }
 
     static Addr contextIdForDepth(BTBLLBPX &llbpx, ThreadID tid, unsigned wi,
@@ -622,7 +610,7 @@ struct BTBLLBPX::TestAccess
         branchMeta.contextHit = true;
         branchMeta.patternHit = true;
         branchMeta.contextTag = contextTag;
-        branchMeta.patternTag = key;
+        branchMeta.patternTag = key >> 10;
         meta->branches.emplace(branchPC, branchMeta);
         return meta;
     }

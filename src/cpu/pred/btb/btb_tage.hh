@@ -191,13 +191,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     unsigned getNumPredictors() const { return numPredictors; }
     unsigned getHistoryLength(unsigned table) const { return histLengths.at(table); }
-    Addr getLlbpxPatternKey(ThreadID tid, Addr startPC, Addr branchPC,
-                            unsigned table, Addr contextKey,
-                            uint8_t asidHash = 0) const;
-    Addr getLlbpxPatternKeyFromSnapshot(const FetchTarget &entry, Addr startPC,
-                                        Addr branchPC, unsigned table,
-                                        Addr contextKey,
-                                        uint8_t asidHash = 0) const;
     void setLlbpx(BTBLLBPX *llbpx) { llbpxPredictor = llbpx; }
 #ifdef UNIT_TEST
     void setTestLLBPXProviderInfo(Addr pc, bool pred, int providerDepth)

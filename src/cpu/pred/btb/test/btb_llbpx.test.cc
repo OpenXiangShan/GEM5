@@ -112,6 +112,45 @@ TEST(BTBLLBPXTest, PatternBufferTracksContextReadinessByCid)
     EXPECT_EQ(entry->readyTick, 3U);
 }
 
+TEST(BTBLLBPXTest, PatternStoreUsesFourBucketsWithFourWays)
+{
+    BTBLLBPX llbpx;
+    auto &contexts = BTBLLBPX::TestAccess::contexts(llbpx);
+    EXPECT_EQ(contexts.sets(), 2048U);
+    EXPECT_EQ(contexts.ways(), 7U);
+
+    auto &ctx = contexts.allocate(1, 1);
+    auto &patterns = BTBLLBPX::TestAccess::patternSet(ctx);
+
+    EXPECT_EQ(patterns.sets(), 4U);
+    EXPECT_EQ(patterns.ways(), 4U);
+    EXPECT_EQ(patterns.maxSize(), 16U);
+}
+
+TEST(BTBLLBPXTest, PatternKeyUsesBranchPcAndDirectionHistory)
+{
+    BTBTAGE tage(8, 2, 64, 4, true);
+    BTBLLBPX llbpx(true);
+    llbpx.setTage(&tage);
+
+    boost::dynamic_bitset<> historyA(64, 0);
+    boost::dynamic_bitset<> historyB(64, 0);
+    historyB.set(0);
+    historyB.set(3);
+
+    constexpr Addr branchPC = 0x5000;
+    constexpr unsigned table = 0;
+    const Addr keyA = BTBLLBPX::TestAccess::patternKeyForTable(
+        llbpx, branchPC, historyA, 0, table, 0);
+    const Addr keyB = BTBLLBPX::TestAccess::patternKeyForTable(
+        llbpx, branchPC, historyB, 0, table, 0);
+
+    const Addr folded = (1ULL << 0) | (1ULL << 3);
+    const Addr expectedTag = (branchPC ^ folded ^ (folded << 1)) & 0x1fff;
+    EXPECT_EQ(BTBLLBPX::TestAccess::patternTag(llbpx, keyB), expectedTag);
+    EXPECT_NE(keyA, keyB);
+}
+
 TEST(BTBLLBPXTest, TimingLookupUsesContextBufferInsteadOfPatternKey)
 {
     BTBLLBPX llbpx;
@@ -135,11 +174,10 @@ TEST(BTBLLBPXTest, TimingLookupUsesContextBufferInsteadOfPatternKey)
         llbpx, 0, 0, false);
     const Addr ctag = BTBLLBPX::TestAccess::contextTag(llbpx, cid, entry.pc);
     auto &ctx = BTBLLBPX::TestAccess::contexts(llbpx).allocate(cid, ctag);
-    ctx.patternKey = BTBLLBPX::TestAccess::patternKeyForTable(
-        llbpx, 0, 0x3ff0, entry.pc, cid, 0, 0, 0);
-    const Addr ptag = BTBLLBPX::TestAccess::patternTag(
-        llbpx, ctx.patternKey, entry.pc, 0);
-    auto *pattern = BTBLLBPX::TestAccess::patternSet(ctx).insert(ctx.patternKey);
+    const Addr key = BTBLLBPX::TestAccess::patternKeyForTable(
+        llbpx, entry.pc, history, 0, 0, 0);
+    const Addr ptag = BTBLLBPX::TestAccess::patternTag(llbpx, key);
+    auto *pattern = BTBLLBPX::TestAccess::patternSet(ctx).insert(key);
     ASSERT_NE(pattern, nullptr);
     pattern->tag = ptag;
     pattern->counter = 1;
@@ -181,20 +219,17 @@ TEST(BTBLLBPXTest, AdaptiveDepthSelectsDeepContextAndFiltersTables)
         BTBLLBPX::TestAccess::contextIdForDepth(llbpx, 0, 1, false);
     const Addr bcid = BTBLLBPX::TestAccess::rcrIds(llbpx, 0).bcid;
 
-    auto &shallowCtx = BTBLLBPX::TestAccess::contexts(llbpx).allocate(
+    BTBLLBPX::TestAccess::contexts(llbpx).allocate(
         shallowCid, BTBLLBPX::TestAccess::contextTag(llbpx, shallowCid, entry.pc));
-    shallowCtx.patternKey = 0;
-
     auto &deepCtx = BTBLLBPX::TestAccess::contexts(llbpx).allocate(
         deepCid, BTBLLBPX::TestAccess::contextTag(llbpx, deepCid, entry.pc));
     const unsigned deepOnlyTable = 6; // hist len = 28 in the unit-test TAGE ctor
     ASSERT_LT(22U, tage.getHistoryLength(deepOnlyTable));
     const Addr deepKey = BTBLLBPX::TestAccess::patternKeyForTable(
-        llbpx, 0, 0x4ff0, entry.pc, deepCid, 1, deepOnlyTable, 0);
-    deepCtx.patternKey = deepKey;
+        llbpx, entry.pc, history, 1, deepOnlyTable, 0);
     auto *pattern = BTBLLBPX::TestAccess::patternSet(deepCtx).insert(deepKey);
     ASSERT_NE(pattern, nullptr);
-    pattern->tag = BTBLLBPX::TestAccess::patternTag(llbpx, deepKey, entry.pc, 0);
+    pattern->tag = BTBLLBPX::TestAccess::patternTag(llbpx, deepKey);
     pattern->counter = 1;
     pattern->providerDepth = deepOnlyTable;
 
@@ -234,7 +269,7 @@ TEST(BTBLLBPXTest, UpdateWithoutTimingStillWritesPatternState)
     auto &ctx = BTBLLBPX::TestAccess::contexts(llbpx).allocate(cid, ctag);
     auto *pattern = BTBLLBPX::TestAccess::patternSet(ctx).insert(key);
     ASSERT_NE(pattern, nullptr);
-    pattern->tag = BTBLLBPX::TestAccess::patternTag(llbpx, key, entry.pc, 0);
+    pattern->tag = BTBLLBPX::TestAccess::patternTag(llbpx, key);
     pattern->counter = -1;
     pattern->providerDepth = 3;
 

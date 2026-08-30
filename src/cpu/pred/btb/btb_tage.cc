@@ -1244,58 +1244,6 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash, ThreadID tid) const
                         asidHash, tid);
 }
 
-Addr
-BTBTAGE::getLlbpxPatternKey(ThreadID tid, Addr startPC, Addr branchPC,
-                            unsigned table, Addr contextKey,
-                            uint8_t asidHash) const
-{
-    assert(table < numPredictors);
-    [[maybe_unused]] const Addr ignoredContextKey = contextKey;
-    const auto &state = historyState(tid);
-    const Addr alignedPC = startPC & ~(blockSize - 1);
-    const unsigned position = (branchPC - alignedPC) >> instShiftAmt;
-    assert(position < maxBranchPositions);
-    const Addr index = getTageIndex(
-        startPC, table, state.indexFoldedHist[table].get(), asidHash, tid);
-    const Addr tag = getTageTag(
-        startPC, table, state.tagFoldedHist[table].get(),
-        state.altTagFoldedHist[table].get(), position, asidHash);
-    // Match original LLBP key construction more closely:
-    // use the per-table TAGE index/tag snapshot as the base key and leave
-    // history-bucket encoding to the caller.
-    const Addr indexShift = std::min<unsigned>(
-        std::max<int>(static_cast<int>(tableTagBits[table]) - 1, 0), 31);
-    return (tag ^ (index << indexShift));
-}
-
-Addr
-BTBTAGE::getLlbpxPatternKeyFromSnapshot(const FetchTarget &entry, Addr startPC,
-                                        Addr branchPC, unsigned table,
-                                        Addr contextKey,
-                                        uint8_t asidHash) const
-{
-    assert(table < numPredictors);
-    [[maybe_unused]] const Addr ignoredContextKey = contextKey;
-    auto predMeta = std::static_pointer_cast<TageMeta>(
-        entry.predMetas[componentIdx]);
-    if (!predMeta) {
-        return 0;
-    }
-
-    const Addr alignedPC = startPC & ~(blockSize - 1);
-    const unsigned position = (branchPC - alignedPC) >> instShiftAmt;
-    assert(position < maxBranchPositions);
-    const Addr index = getTageIndex(
-        startPC, table, predMeta->indexFoldedHist[table].get(), asidHash,
-        entry.tid);
-    const Addr tag = getTageTag(
-        startPC, table, predMeta->tagFoldedHist[table].get(),
-        predMeta->altTagFoldedHist[table].get(), position, asidHash);
-    const Addr indexShift = std::min<unsigned>(
-        std::max<int>(static_cast<int>(tableTagBits[table]) - 1, 0), 31);
-    return (tag ^ (index << indexShift));
-}
-
 bool
 BTBTAGE::matchTag(Addr expected, Addr found) const
 {

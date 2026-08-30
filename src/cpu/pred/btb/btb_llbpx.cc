@@ -169,7 +169,7 @@ BTBLLBPX::BTBLLBPX(const Params &p)
     : TimedBaseBTBPredictor(p),
       numThreads(p.numThreads),
       tageNumPredictors(p.tageNumPredictors),
-      patternSetCapacity(p.patternSets),
+      patternSetCapacity(p.patternSets * p.patternWays),
       patternSetAssoc(p.patternWays),
       tagBits(p.tagBits),
       keyBits(p.keyBits),
@@ -213,7 +213,13 @@ BTBLLBPX::BTBLLBPX(const Params &p)
              "BTBLLBPX rcrType must be in [0, 4]");
     panic_if(enableTiming && patternBufferSize == 0,
              "BTBLLBPX timing mode requires a non-zero patternBufferSize");
-    ContextEntry::defaultPatternSetCapacity = p.patternSets;
+    panic_if(p.patternWays == 0, "BTBLLBPX patternWays must be non-zero");
+    panic_if(p.patternSets != 0 &&
+             (p.patternSets & (p.patternSets - 1)) != 0,
+             "BTBLLBPX patternSets must be zero or a power of two");
+    panic_if(keyBits < tagBits + 10,
+             "BTBLLBPX keyBits must hold tagBits plus the 10-bit history code");
+    ContextEntry::defaultPatternSetCapacity = patternSetCapacity;
     ContextEntry::defaultPatternSetAssoc = p.patternWays;
 #ifndef UNIT_TEST
     llbpxStats.allocPatternByTable.init(std::max<unsigned>(tageNumPredictors, 1));
@@ -230,10 +236,10 @@ BTBLLBPX::BTBLLBPX(bool adaptCtxDepthParam)
     : TimedBaseBTBPredictor(),
       numThreads(MaxThreads),
       tageNumPredictors(8),
-      patternSetCapacity(64),
+      patternSetCapacity(16),
       patternSetAssoc(4),
-      tagBits(16),
-      keyBits(32),
+      tagBits(13),
+      keyBits(23),
       rcrEntries(40),
       rcrType(RCRType::UnconditionalOnly),
       rcrWindow(8),
@@ -254,12 +260,12 @@ BTBLLBPX::BTBLLBPX(bool adaptCtxDepthParam)
       adaptCtxDepth(adaptCtxDepthParam),
       overrideOnlyOnDiff(false),
       patternBufferLatency(6),
-      contexts(2048, 4),
+      contexts(2048, 7),
       ctt(1024, 4),
       patternBufferSize(64),
       threadState(MaxThreads)
 {
-    ContextEntry::defaultPatternSetCapacity = 64;
+    ContextEntry::defaultPatternSetCapacity = 16;
     ContextEntry::defaultPatternSetAssoc = 4;
     setNumDelay(2);
 }
@@ -427,26 +433,8 @@ BTBLLBPX::tableMaskFor(const std::vector<unsigned> &tables) const
     return mask;
 }
 
-Addr
-BTBLLBPX::patternKeyForSnapshotTable(const FetchTarget &entry, Addr startPC,
-                                     Addr branchPC, Addr contextKey,
-                                     unsigned wi, unsigned table,
-                                     uint8_t asidHash) const
-{
-    const int code = filterCode(wi, table);
-    const Addr lowBits = static_cast<Addr>(std::max(code, 0)) & mask(10);
-    if (!tagePredictor) {
-        const Addr base = patternKey(contextKey, branchPC, asidHash);
-        return (((base & mask(keyBits)) << 10) | lowBits) & mask(keyBits);
-    }
-    const Addr base = tagePredictor->getLlbpxPatternKeyFromSnapshot(
-        entry, startPC, branchPC, table, contextKey, asidHash);
-    return (((base & mask(keyBits)) << 10) | lowBits) & mask(keyBits);
-}
-
 bool
-BTBLLBPX::synthesizeMissingBranchMeta(const FetchTarget &entry,
-                                      const LLBPXMeta &llbpxMeta,
+BTBLLBPX::synthesizeMissingBranchMeta(const LLBPXMeta &llbpxMeta,
                                       const BTBEntry &btbEntry,
                                       BranchMeta &branchMeta) const
 {
@@ -480,21 +468,13 @@ BTBLLBPX::synthesizeMissingBranchMeta(const FetchTarget &entry,
          ++snapshotWi) {
         branchMeta.tableKeysByWi[snapshotWi].assign(numTables, 0);
         branchMeta.tableKeyValidByWi[snapshotWi].assign(numTables, false);
-        const Addr snapshotCid =
-            (useOriginalRcr || adaptCtxDepth || snapshotWi != 0) ?
-            branchMeta.cids[snapshotWi] :
-            contextKey(branchMeta.tid, llbpxMeta.startPC, btbEntry.pc,
-                       llbpxMeta.historySnapshot, llbpxMeta.asidHash);
         for (unsigned table = 0; table < numTables; ++table) {
             if (filterCode(snapshotWi, table) < 0) {
                 continue;
             }
-            const Addr key = patternKeyForSnapshotTable(
-                entry, llbpxMeta.startPC, btbEntry.pc, snapshotCid, snapshotWi,
-                table, llbpxMeta.asidHash);
-            if (key == 0 && tagePredictor) {
-                continue;
-            }
+            const Addr key = patternKeyForTable(
+                btbEntry.pc, llbpxMeta.historySnapshot, snapshotWi, table,
+                llbpxMeta.asidHash);
             branchMeta.tableKeysByWi[snapshotWi][table] = key;
             branchMeta.tableKeyValidByWi[snapshotWi][table] = true;
         }
@@ -695,17 +675,12 @@ BTBLLBPX::lookup(ThreadID tid, Addr startPC, const BTBEntry &entry,
          ++snapshotWi) {
         meta.tableKeysByWi[snapshotWi].assign(numTables, 0);
         meta.tableKeyValidByWi[snapshotWi].assign(numTables, false);
-        const Addr snapshotCid =
-            (useOriginalRcr || adaptCtxDepth || snapshotWi != 0) ?
-            meta.cids[snapshotWi] :
-            contextKey(tid, startPC, entry.pc, history, asidHash);
         for (unsigned table = 0; table < numTables; ++table) {
             if (filterCode(snapshotWi, table) < 0) {
                 continue;
             }
             meta.tableKeysByWi[snapshotWi][table] = patternKeyForTable(
-                tid, startPC, entry.pc, snapshotCid, snapshotWi, table,
-                asidHash);
+                entry.pc, history, snapshotWi, table, asidHash);
             meta.tableKeyValidByWi[snapshotWi][table] = true;
         }
     }
@@ -739,7 +714,7 @@ BTBLLBPX::lookup(ThreadID tid, Addr startPC, const BTBEntry &entry,
             continue;
         }
         const Addr key = meta.tableKeysByWi[meta.wi][table];
-        const Addr patternTag = key;
+        const Addr patternTag = tagFromKey(key);
         if (!fallbackKeyValid) {
             meta.key = key;
             meta.keyTable = table;
@@ -907,7 +882,7 @@ BTBLLBPX::onTageAllocation(const FetchTarget &entry, const BTBEntry &btbEntry,
     auto it = meta->branches.find(btbEntry.pc);
     if (it == meta->branches.end()) {
         BranchMeta synthesizedMeta;
-        if (synthesizeMissingBranchMeta(entry, *meta, btbEntry, synthesizedMeta)) {
+        if (synthesizeMissingBranchMeta(*meta, btbEntry, synthesizedMeta)) {
             auto insertResult =
                 meta->branches.emplace(btbEntry.pc, std::move(synthesizedMeta));
             it = insertResult.first;
@@ -951,7 +926,7 @@ BTBLLBPX::update(const FetchTarget &entry)
         auto it = meta->branches.find(btbEntry.pc);
         if (it == meta->branches.end()) {
             BranchMeta synthesizedMeta;
-            if (synthesizeMissingBranchMeta(entry, *meta, btbEntry,
+            if (synthesizeMissingBranchMeta(*meta, btbEntry,
                                             synthesizedMeta)) {
                 auto insertResult = meta->branches.emplace(
                     btbEntry.pc, std::move(synthesizedMeta));
@@ -1034,7 +1009,6 @@ BTBLLBPX::allocateFor(BranchMeta &meta, bool actualTaken,
     auto *ctx = contexts.find(targetCid, contextTag);
     if (!ctx) {
         ctx = &contexts.allocate(targetCid, contextTag);
-        ctx->patternKey = patternKey(targetCid, meta.branchPC, meta.asidHash);
         meta.trace.allocContextCreated++;
 #ifndef UNIT_TEST
         llbpxStats.allocContext++;
@@ -1062,7 +1036,7 @@ BTBLLBPX::allocateFor(BranchMeta &meta, bool actualTaken,
             continue;
         }
         const Addr key = meta.tableKeysByWi[targetWi][table];
-        const Addr ptag = key;
+        const Addr ptag = tagFromKey(key);
         auto *pattern = ctx->patternSet().get(key);
         const int allocDepth = static_cast<int>(table);
         if (!pattern) {
@@ -1570,6 +1544,24 @@ BTBLLBPX::hashBits(const boost::dynamic_bitset<> &history, unsigned bits) const
 }
 
 Addr
+BTBLLBPX::foldGlobalHistory(const boost::dynamic_bitset<> &history,
+                            unsigned historyLength, unsigned outputBits) const
+{
+    if (outputBits == 0) {
+        return 0;
+    }
+
+    Addr folded = 0;
+    const unsigned limit = std::min<unsigned>(history.size(), historyLength);
+    for (unsigned bit = 0; bit < limit; ++bit) {
+        if (history[bit]) {
+            folded ^= 1ULL << (bit % outputBits);
+        }
+    }
+    return folded & mask(outputBits);
+}
+
+Addr
 BTBLLBPX::mix(Addr value) const
 {
     value ^= value >> 33;
@@ -1609,32 +1601,33 @@ BTBLLBPX::originalContextKey(ThreadID tid, Addr branchPC, unsigned window,
 }
 
 Addr
-BTBLLBPX::patternKey(Addr contextKey, Addr branchPC, uint8_t asidHash) const
-{
-    return mix(contextKey ^ (branchPC >> 1) ^ (static_cast<Addr>(asidHash) << 7)) &
-           mask(keyBits);
-}
-
-Addr
-BTBLLBPX::patternKeyForTable(ThreadID tid, Addr startPC, Addr branchPC,
-                             Addr contextKey, unsigned wi, unsigned table,
+BTBLLBPX::patternKeyForTable(Addr branchPC,
+                             const boost::dynamic_bitset<> &history,
+                             unsigned wi, unsigned table,
                              uint8_t asidHash) const
 {
     const int code = filterCode(wi, table);
     const Addr lowBits = static_cast<Addr>(std::max(code, 0)) & mask(10);
+    Addr patternTag =
+        (branchPC ^ mix(static_cast<Addr>(asidHash))) & mask(tagBits);
     if (!tagePredictor) {
-        const Addr base = patternKey(contextKey, branchPC, asidHash);
-        return (((base & mask(keyBits)) << 10) | lowBits) & mask(keyBits);
+        return ((patternTag << 10) | lowBits) & mask(keyBits);
     }
-    const Addr base = tagePredictor->getLlbpxPatternKey(
-        tid, startPC, branchPC, table, contextKey, asidHash);
-    return (((base & mask(keyBits)) << 10) | lowBits) & mask(keyBits);
+
+    // Original LLBP identity: branch PC plus two folds of the selected GHR.
+    const unsigned historyLength = tagePredictor->getHistoryLength(table);
+    patternTag = branchPC ^
+        foldGlobalHistory(history, historyLength, tagBits) ^
+        (foldGlobalHistory(history, historyLength, tagBits - 1) << 1) ^
+        mix(static_cast<Addr>(asidHash));
+    patternTag &= mask(tagBits);
+    return ((patternTag << 10) | lowBits) & mask(keyBits);
 }
 
 Addr
 BTBLLBPX::tagFromKey(Addr key) const
 {
-    return mix(key) & mask(tagBits);
+    return (key >> 10) & mask(tagBits);
 }
 
 void
