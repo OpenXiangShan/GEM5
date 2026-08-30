@@ -77,7 +77,9 @@ class BOPCQFDseNsga2(SolveSpec):
     extra_args = (
         "--enable-bop-direct-quality-gate "
         "--bop-direct-quality-profile=bop-cqf-dse "
-        "--disable-difftest"
+        "--difftest-ref-so="
+        "/nfs/home/share/gem5_ci/ref/normal/"
+        "riscv64-nemu-notama-tvalref-so"
     )
     solver_name = "nsga2"
     summary_top_n = 24
