@@ -1425,7 +1425,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
             setBlocked((BlockedCause)MSHRQueue_MSHRs);
         }
 
-        if (sched_send && !memSidePort.hasSchedSendEvent()) {
+        if (sched_send) {
             // schedule the send
             DPRINTF(Cache, "Scheduling a send for addr %llx after alloc MSHR\n", pkt->getAddr());
             schedMemSideSendEvent(time);

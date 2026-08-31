@@ -162,10 +162,7 @@ PacketQueue::schedSendEvent(Tick when)
     // if we are waiting on a retry just hold off
     if (waitingOnRetry) {
         DPRINTF(PacketQueue, "Not scheduling send as waiting for retry\n");
-        return;
-    }
-    if (sendEvent.scheduled()) {
-        DPRINTF(PacketQueue, "Not scheduling send as already scheduled\n");
+        assert(!sendEvent.scheduled());
         return;
     }
 
