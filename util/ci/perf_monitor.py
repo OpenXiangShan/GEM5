@@ -19,14 +19,20 @@ DEFAULT_REPO = "OpenXiangShan/GEM5"
 DEFAULT_DATA_PROC = "/nfs/home/share/gem5_ci/gem5_data_proc"
 DEFAULT_GROUPS = "basic,branch,frontend,intel_topdown"
 
-# Archives created before archive_schema_version=2 did not record the profile
-# JSON. Keep only the profile needed by the two automatic post-merge workflows;
-# new/manual archives use their recorded cluster_config instead.
-LEGACY_CLUSTER_CONFIGS = {
-    "spec06-rva23-novec-gcc16-0.3c": (
-        "/nfs/home/share/checkpoints_profiles/"
-        "spec06_gcc16_rva23_novec_260820/json/checkpoints_cov0.3.json"
-    ),
+# Archives created before archive_schema_version=2 did not record their profile
+# inputs. Keep only the profile used by the two automatic post-merge workflows;
+# new/manual archives use the exact paths recorded at benchmark time.
+LEGACY_PROFILE_INPUTS = {
+    "spec06-rva23-novec-gcc16-0.3c": {
+        "checkpoint_list": (
+            "/nfs/home/share/gem5_ci/spec06_cpts/gcc16_rva23_novec/"
+            "spec06_0.3c.lst"
+        ),
+        "cluster_config": (
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec06_gcc16_rva23_novec_260820/json/checkpoints_cov0.3.json"
+        ),
+    },
 }
 
 ARCHIVE_PATTERNS = (
@@ -51,6 +57,8 @@ COMPATIBILITY_KEYS = (
     "specific_benchmarks",
     "vector_type",
     "resolved_extra_args",
+    "checkpoint_list",
+    "cluster_config",
 )
 
 SUMMARY_ROWS = {"int_avg", "fp_avg", "overall_avg"}
@@ -157,6 +165,9 @@ def parse_metadata(path: Path) -> dict[str, str]:
     metadata.setdefault(
         "resolved_extra_args", metadata.get("extra_args", "").strip()
     )
+    legacy_profile = LEGACY_PROFILE_INPUTS.get(metadata.get("benchmark_type", ""), {})
+    metadata.setdefault("checkpoint_list", legacy_profile.get("checkpoint_list", ""))
+    metadata.setdefault("cluster_config", legacy_profile.get("cluster_config", ""))
     return metadata
 
 
@@ -252,6 +263,14 @@ def failed_steps(jobs: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
     return failures
 
 
+def source_run_was_skipped(run: dict[str, Any], jobs: list[dict[str, Any]]) -> bool:
+    return run.get("conclusion") == "skipped" or (
+        run.get("conclusion") == "success"
+        and bool(jobs)
+        and all(job.get("conclusion") == "skipped" for job in jobs)
+    )
+
+
 def run_data_proc(
     data_proc: Path,
     archive: Path,
@@ -275,9 +294,7 @@ def run_data_proc(
         "-g",
         groups,
     ]
-    cluster_config = metadata.get("cluster_config", "") or LEGACY_CLUSTER_CONFIGS.get(
-        metadata.get("benchmark_type", ""), ""
-    )
+    cluster_config = metadata.get("cluster_config", "")
     if cluster_config and Path(cluster_config).is_file():
         cmd.extend(["-j", cluster_config])
     result = _run(cmd, cwd=data_proc)
@@ -455,7 +472,7 @@ def classify(
     if aborts:
         return "critical", [f"{len(aborts)} workload(s) contain abort markers"]
     if completeness is not None and not completeness.get("complete", False):
-        return "critical", ["candidate result is incomplete or coverage differs from baseline"]
+        return "critical", ["candidate/baseline data is incomplete or coverage differs"]
 
     reasons = []
     severity = "normal"
@@ -596,20 +613,22 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
     if run.get("status") != "completed":
         raise MonitorError(f"source run {args.run_id} is not completed")
     jobs = get_jobs(args.repo, args.run_id)
+    skipped = source_run_was_skipped(run, jobs)
 
     archive = None
     metadata = None
-    try:
-        archive, _ = locate_archive(args.repo, args.run_id)
-        metadata = parse_metadata(archive)
-        recorded_run_id = metadata.get("workflow_run_id")
-        if recorded_run_id and recorded_run_id != str(args.run_id):
-            raise MonitorError(
-                f"archive belongs to run {recorded_run_id}, not source run {args.run_id}"
-            )
-    except MonitorError:
-        if run.get("conclusion") == "success":
-            raise
+    if not skipped:
+        try:
+            archive, _ = locate_archive(args.repo, args.run_id)
+            metadata = parse_metadata(archive)
+            recorded_run_id = metadata.get("workflow_run_id")
+            if recorded_run_id and recorded_run_id != str(args.run_id):
+                raise MonitorError(
+                    f"archive belongs to run {recorded_run_id}, not source run {args.run_id}"
+                )
+        except MonitorError:
+            if run.get("conclusion") == "success":
+                raise
 
     analysis: dict[str, Any] = {
         "schema_version": 1,
@@ -626,6 +645,11 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
         "policy": policy,
     }
 
+    if skipped:
+        analysis["ignored"] = True
+        analysis["reasons"] = ["source workflow contained no executed benchmark job"]
+        return analysis
+
     if run.get("conclusion") != "success":
         analysis["severity"], analysis["reasons"] = classify(
             run, None, [], analysis["aborts"], policy
@@ -641,6 +665,7 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
         int(policy["max_baseline_candidates"]),
     )
     if baseline_info is None:
+        analysis["severity"] = "warning"
         analysis["reasons"] = ["no earlier successful compatible xs-dev baseline was found"]
         return analysis
 

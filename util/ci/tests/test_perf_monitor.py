@@ -27,11 +27,15 @@ class PerfMonitorTest(unittest.TestCase):
             "specific_benchmarks": "",
             "vector_type": "base",
             "resolved_extra_args": "--foo=1",
+            "checkpoint_list": "/profiles/list",
+            "cluster_config": "/profiles/weights.json",
             "commit": "candidate",
         }
         baseline = dict(candidate, commit="baseline")
         self.assertTrue(perf_monitor.metadata_compatible(candidate, baseline))
         baseline["resolved_extra_args"] = "--foo=0"
+        self.assertFalse(perf_monitor.metadata_compatible(candidate, baseline))
+        baseline = dict(candidate, cluster_config="/profiles/new-weights.json")
         self.assertFalse(perf_monitor.metadata_compatible(candidate, baseline))
 
     def test_baseline_must_be_xs_dev_push(self):
@@ -86,6 +90,24 @@ class PerfMonitorTest(unittest.TestCase):
         self.assertEqual(severity, "critical")
         self.assertIn("overall score regressed", reasons[0])
 
+    def test_skipped_source_run_detection(self):
+        run = {"conclusion": "success"}
+        self.assertTrue(
+            perf_monitor.source_run_was_skipped(
+                run, [{"conclusion": "skipped"}]
+            )
+        )
+        self.assertFalse(
+            perf_monitor.source_run_was_skipped(
+                run, [{"conclusion": "failure"}]
+            )
+        )
+        self.assertFalse(
+            perf_monitor.source_run_was_skipped(
+                {"conclusion": "cancelled"}, [{"conclusion": "skipped"}]
+            )
+        )
+
     def test_classify_normal(self):
         run = {"conclusion": "success"}
         deltas = [
@@ -119,10 +141,11 @@ class PerfMonitorTest(unittest.TestCase):
             self.assertTrue(perf_monitor.archive_finalized(archive, {}))
 
     def test_legacy_auto_perf_profile_is_known(self):
-        profile = perf_monitor.LEGACY_CLUSTER_CONFIGS[
+        profile = perf_monitor.LEGACY_PROFILE_INPUTS[
             "spec06-rva23-novec-gcc16-0.3c"
         ]
-        self.assertTrue(profile.endswith("checkpoints_cov0.3.json"))
+        self.assertTrue(profile["cluster_config"].endswith("checkpoints_cov0.3.json"))
+        self.assertTrue(profile["checkpoint_list"].endswith("spec06_0.3c.lst"))
 
 
 if __name__ == "__main__":

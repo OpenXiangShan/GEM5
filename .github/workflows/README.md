@@ -201,8 +201,8 @@ python actions_gem5.py --token <github-token> --always-on
 确定性分析由 `util/ci/perf_monitor.py` 完成：
 
 - 从 Actions job log 定位 NFS archive，并校验 run 状态、abort、score、coverage 和完成标记；
-- 按 config、benchmark、workload filter、vector 类型和完整 extra args 选择最近的兼容
-  `xs-dev` baseline；
+- 按 config、benchmark、checkpoint/weighting profile、workload filter、vector 类型和完整
+  extra args 选择最近的兼容 `xs-dev` push baseline；
 - 复用 `/nfs/home/share/gem5_ci/gem5_data_proc/run.py` 生成 weighted score 和关键计数器；
 - 默认阈值为 overall 绝对变化 0.5%、overall 严重回退 1%、单 workload
   绝对变化 2%、单 workload 严重回退 5%，配置在 `.github/perf-monitor-policy.json`；
