@@ -96,13 +96,20 @@ def setKmhV3Params(args, system):
 
         # value predictor
         cpu.valuePred = CompositeValuePredictor(
-                            predictors=[
-                                IdealConstantLVP(),
-                                # ExampleValuePredictor(),
-                                # EStride(logMaxConfidence=13, thresholdPercent=0.35)
-                            ],
-                            arb=CVPConfidenceArb(counterBits=6)
-                        )
+            predictors=[
+                ConstantLVP(
+                    numWays=3,
+                    numSets=128,
+                    tagBits=16,
+                    confidenceBits=9,
+                    usefulBits=2,
+                    thresholdPercent=100,
+                ),
+                # ExampleValuePredictor(),
+                # EStride(logMaxConfidence=13, thresholdPercent=0.35)
+            ],
+            arb=CVPConfidenceArb(counterBits=6)
+        )
 
         # lsq
         cpu.LQEntries = 120

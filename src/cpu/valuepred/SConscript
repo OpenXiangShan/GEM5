@@ -12,7 +12,8 @@ SimObject('ValuePredictor.py',
             'ExampleValuePredictor',
             'CompositeValuePredictor',
             'MemoryRenaming',
-            'IdealConstantLVP'
+            'IdealConstantLVP',
+            'ConstantLVP'
           ],
           enums=['ValuePredType'])
 
@@ -23,10 +24,12 @@ Source('enhanced_stride.cc')
 Source('example_value_predictor.cc')
 Source('memory_renaming.cc')
 Source('ideal_constant_lvp.cc')
+Source('constant_lvp.cc')
 
 DebugFlag('VPCOMMON')
 DebugFlag('EStride')
 DebugFlag('MemoryRenaming')
+DebugFlag('ConstantLVP')
 
 
-CompoundFlag('VP', ['VPCOMMON', 'EStride', 'MemoryRenaming'])
+CompoundFlag('VP', ['VPCOMMON', 'EStride', 'MemoryRenaming', 'ConstantLVP'])

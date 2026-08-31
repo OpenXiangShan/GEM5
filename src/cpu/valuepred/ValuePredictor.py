@@ -6,7 +6,8 @@ from m5.SimObject import *
 class ValuePredType(ScopedEnum):
     # vals will contains value predictor type
     vals = ["EStride", "MemoryRenaming", "IdealConstantLVP",
-            "ExampleValuePredictor", "CompositeValuePredictor"]
+            "ExampleValuePredictor", "CompositeValuePredictor",
+            "ConstantLVP"]
 
 class ValuePredictor(SimObject):
     type = "ValuePredictor"
@@ -150,3 +151,18 @@ class IdealConstantLVP(ValuePredictor):
 
     satCounterBits = Param.Unsigned(9, "bits of saturating counter, initial value is 0")
     resetConfidence = Param.Bool(True, "reset confidence to 0 when mispredict")
+
+class ConstantLVP(ValuePredictor):
+    type = "ConstantLVP"
+    cxx_class = "gem5::valuepred::ConstantLVP"
+    cxx_header = "cpu/valuepred/constant_lvp.hh"
+    abstract = False
+
+    numWays = Param.Unsigned(3, "Number of skewed-associative table ways")
+    numSets = Param.Unsigned(128, "Number of entries in each way")
+    tagBits = Param.Unsigned(16, "Hashed PC tag width")
+    confidenceBits = Param.Unsigned(
+        9, "Constant confidence counter width; allocations start at one")
+    usefulBits = Param.Unsigned(2, "Replacement useful counter width")
+    thresholdPercent = Param.Percent(
+        100, "Minimum confidence percentage required to predict")
