@@ -53,6 +53,10 @@ STAT_PEAK_SUFFIXES = {
     "roi": "profileRoiPeakDistinctSaturatedValues",
     "lifetime": "profileLifetimePeakDistinctSaturatedValues",
 }
+STAT_PC_PEAK_SUFFIXES = {
+    "roi": "profileRoiPeakSaturatedPcs",
+    "lifetime": "profileLifetimePeakSaturatedPcs",
+}
 STAT_USAGE_FIELDS = {
     "vp_supported": "system.cpu.valuePred.VPsupported",
     "vp_predicted": "system.cpu.valuePred.VPpredicted",
@@ -307,11 +311,12 @@ def parse_value_csv(
 
 
 def parse_stats(path: Optional[Path]) -> Dict[str, Optional[int]]:
-    """Read value-capacity and VP-use counters from the final stats block."""
+    """Read online capacity and VP-use counters from the final stats block."""
 
     result: Dict[str, Optional[int]] = {
         f"{scope}_peak_distinct_saturated_values": None for scope in SCOPES
     }
+    result.update({f"{scope}_peak_saturated_pcs": None for scope in SCOPES})
     result.update({key: None for key in STAT_USAGE_FIELDS})
     if path is None or not path.is_file():
         return result
@@ -333,10 +338,18 @@ def parse_stats(path: Optional[Path]) -> Dict[str, Optional[int]]:
             if len(fields) < 2:
                 continue
             field_name = fields[0]
-            scope = next(
+            distinct_value_scope = next(
                 (
                     candidate
                     for candidate, suffix in STAT_PEAK_SUFFIXES.items()
+                    if field_name == suffix or field_name.endswith("." + suffix)
+                ),
+                None,
+            )
+            pc_scope = next(
+                (
+                    candidate
+                    for candidate, suffix in STAT_PC_PEAK_SUFFIXES.items()
                     if field_name == suffix or field_name.endswith("." + suffix)
                 ),
                 None,
@@ -349,7 +362,11 @@ def parse_stats(path: Optional[Path]) -> Dict[str, Optional[int]]:
                 ),
                 None,
             )
-            if scope is None and usage_key is None:
+            if (
+                distinct_value_scope is None
+                and pc_scope is None
+                and usage_key is None
+            ):
                 continue
             try:
                 value = float(fields[1])
@@ -359,8 +376,12 @@ def parse_stats(path: Optional[Path]) -> Dict[str, Optional[int]]:
                 ) from error
             if not math.isfinite(value) or not value.is_integer() or value < 0:
                 raise AnalysisError(f"{path} has invalid {field_name} value {fields[1]!r}")
-            if scope is not None:
-                current[f"{scope}_peak_distinct_saturated_values"] = int(value)
+            if distinct_value_scope is not None:
+                current[
+                    f"{distinct_value_scope}_peak_distinct_saturated_values"
+                ] = int(value)
+            elif pc_scope is not None:
+                current[f"{pc_scope}_peak_saturated_pcs"] = int(value)
             else:
                 assert usage_key is not None
                 current[usage_key] = int(value)
@@ -479,6 +500,16 @@ def analyze_slice(
     selected = [row for row in rows if row.scope == scope]
     stats = parse_stats(slice_input.stats_path)
     stats_peak = stats[f"{scope}_peak_distinct_saturated_values"]
+    stats_pc_peak = stats[f"{scope}_peak_saturated_pcs"]
+    if (
+        stats_peak is not None
+        and stats_pc_peak is not None
+        and stats_peak > stats_pc_peak
+    ):
+        raise AnalysisError(
+            f"{slice_input.slice_name}: online distinct-value peak {stats_peak} "
+            f"exceeds online saturated-PC peak {stats_pc_peak}"
+        )
 
     pcs: Dict[Tuple[int, int], Set[int]] = defaultdict(set)
     pc_segments: Dict[Tuple[int, int], List[Segment]] = defaultdict(list)
@@ -677,6 +708,10 @@ def analyze_slice(
         ),
         # Main hardware-capacity metric: a live set maintained on the
         # committed update path by IdealConstantLVP.
+        "concurrent_saturated_pc_peak": stats_pc_peak,
+        "concurrent_saturated_pc_peak_source": (
+            "stats" if stats_pc_peak is not None else "unavailable"
+        ),
         "concurrent_distinct_value_peak": peak,
         "concurrent_distinct_value_peak_source": peak_source,
         # Auxiliary offline sweep of dumped saturated-value segment spans.
@@ -745,6 +780,8 @@ PER_SLICE_FIELDS = (
     "stats_vp_predicted",
     "stats_vp_corrected",
     "coverage_contribution_pct",
+    "concurrent_saturated_pc_peak",
+    "concurrent_saturated_pc_peak_source",
     "concurrent_distinct_value_peak",
     "concurrent_distinct_value_peak_source",
     "interval_concurrent_distinct_value_peak",
@@ -811,8 +848,10 @@ def _summary_for(
         }
 
     source_counts: Dict[str, int] = defaultdict(int)
+    pc_peak_source_counts: Dict[str, int] = defaultdict(int)
     for row in rows:
         source_counts[str(row["concurrent_distinct_value_peak_source"])] += 1
+        pc_peak_source_counts[str(row["concurrent_saturated_pc_peak_source"])] += 1
     metadata_values: Dict[str, Set[str]] = defaultdict(set)
     for audit in audits:
         for key, value in audit["metadata"].items():
@@ -830,6 +869,7 @@ def _summary_for(
             int(row["prediction_use_columns_present"]) for row in rows
         ),
         "peak_source_counts": dict(sorted(source_counts.items())),
+        "pc_peak_source_counts": dict(sorted(pc_peak_source_counts.items())),
         "slices_with_interval_peak_different_from_online_stats": sum(
             int(row["interval_peak_differs_from_online_stats"]) for row in rows
         ),
@@ -845,6 +885,9 @@ def _summary_for(
             ),
             "concurrent_distinct_value_peak": distribution(
                 "concurrent_distinct_value_peak"
+            ),
+            "concurrent_saturated_pc_peak": distribution(
+                "concurrent_saturated_pc_peak"
             ),
             "interval_concurrent_distinct_value_peak": distribution(
                 "interval_concurrent_distinct_value_peak"

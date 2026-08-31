@@ -58,6 +58,8 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
         m5out,
         roi_peak=None,
         lifetime_peak=None,
+        roi_pc_peak=None,
+        lifetime_pc_peak=None,
         vp_supported=None,
         vp_predicted=None,
         vp_corrected=None,
@@ -75,6 +77,16 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
                     "system.cpu.valuePred.predictors."
                     "profileLifetimePeakDistinctSaturatedValues "
                     f"{lifetime_peak}\n"
+                )
+            if roi_pc_peak is not None:
+                output.write(
+                    "system.cpu.valuePred.predictors."
+                    f"profileRoiPeakSaturatedPcs {roi_pc_peak}\n"
+                )
+            if lifetime_pc_peak is not None:
+                output.write(
+                    "system.cpu.valuePred.predictors."
+                    f"profileLifetimePeakSaturatedPcs {lifetime_pc_peak}\n"
                 )
             for stat, value in (
                 ("VPsupported", vp_supported),
@@ -123,6 +135,7 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
             self.write_stats(
                 m5out,
                 roi_peak=2,
+                roi_pc_peak=3,
                 vp_supported=10,
                 vp_predicted=4,
                 vp_corrected=4,
@@ -132,6 +145,10 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
                 stats.write(
                     "system.cpu.valuePred.predictors."
                     "profileRoiPeakDistinctSaturatedValues 5\n"
+                )
+                stats.write(
+                    "system.cpu.valuePred.predictors."
+                    "profileRoiPeakSaturatedPcs 7\n"
                 )
                 stats.write("system.cpu.valuePred.VPsupported 10\n")
                 stats.write("system.cpu.valuePred.VPpredicted 4\n")
@@ -155,6 +172,10 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
             self.assertEqual(slice_row["coverage_contribution_pct"], "40.0")
             self.assertEqual(slice_row["concurrent_distinct_value_peak"], "5")
             self.assertEqual(slice_row["concurrent_distinct_value_peak_source"], "stats")
+            self.assertEqual(slice_row["concurrent_saturated_pc_peak"], "7")
+            self.assertEqual(
+                slice_row["concurrent_saturated_pc_peak_source"], "stats"
+            )
             self.assertEqual(
                 slice_row["interval_concurrent_distinct_value_peak"], "2"
             )
@@ -183,6 +204,7 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
             with (output / "summary.json").open() as report:
                 summary = json.load(report)
             self.assertEqual(summary["peak_source_counts"], {"stats": 1})
+            self.assertEqual(summary["pc_peak_source_counts"], {"stats": 1})
             self.assertEqual(
                 summary["slices_with_interval_peak_different_from_online_stats"],
                 1,
@@ -190,6 +212,10 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
             self.assertEqual(
                 summary["distributions"]["concurrent_distinct_value_peak"]["max"],
                 5.0,
+            )
+            self.assertEqual(
+                summary["distributions"]["concurrent_saturated_pc_peak"]["max"],
+                7.0,
             )
             self.assertEqual(
                 summary["distributions"][
@@ -252,6 +278,22 @@ class IdealConstantLVPValuesTest(unittest.TestCase):
             self.assertEqual(row["concurrent_distinct_value_peak"], "")
             self.assertEqual(row["concurrent_distinct_value_peak_source"], "unavailable")
             self.assertEqual(row["interval_concurrent_distinct_value_peak"], "1")
+
+    def test_rejects_value_peak_above_online_saturated_pc_peak(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            archive = root / "archive"
+            output = root / "output"
+            m5out = self.write_values(
+                archive,
+                "mcf_7",
+                [value_row("roi", "0x10", 1, 1, "0xaa", 10, 20)],
+            )
+            self.write_stats(m5out, roi_peak=2, roi_pc_peak=1)
+
+            completed = self.run_tool(archive, output, check=False)
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("exceeds online saturated-PC peak", completed.stderr)
 
     def test_rejects_duplicate_keys_and_malformed_intervals(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

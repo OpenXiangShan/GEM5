@@ -3,7 +3,7 @@
 
 The performance side is deliberately restricted to the already matched
 IdealConstantLVP-enabled/disabled runs (run947/run102 in the current study).
-The profiling side is independent v3 output: no profiling cycles, IPC, score,
+The profiling side is independent raw-value output: no profiling cycles, IPC, score,
 or speedup is consumed here.  A complete value profile is required before any
 decision table or chart is emitted.
 
@@ -30,6 +30,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 
 VALUE_VERSION = "ideal_constant_lvp_saturated_values_v1"
+CAPACITY_CANDIDATES = (128, 256, 512, 768, 1024)
 REQUIRED_AB_FIELDS = {
     "slice",
     "benchmark",
@@ -53,6 +54,8 @@ REQUIRED_VALUE_SLICE_FIELDS = {
     "stats_vp_predicted",
     "stats_vp_corrected",
     "coverage_contribution_pct",
+    "concurrent_saturated_pc_peak",
+    "concurrent_saturated_pc_peak_source",
     "concurrent_distinct_value_peak",
     "concurrent_distinct_value_peak_source",
     "interval_concurrent_distinct_value_peak",
@@ -74,7 +77,7 @@ REQUIRED_VALUE_PC_FIELDS = {
 
 
 class DecisionError(ValueError):
-    """Inputs do not satisfy the complete A/B plus v3 contract."""
+    """Inputs do not satisfy the complete A/B plus profiling contract."""
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -196,6 +199,10 @@ def validate_value_slice(row: Mapping[str, str], path: Path) -> None:
         raise DecisionError(
             f"{path}: online distinct-value peak is not backed by stats"
         )
+    if row["concurrent_saturated_pc_peak_source"] != "stats":
+        raise DecisionError(
+            f"{path}: online saturated-PC peak is not backed by stats"
+        )
     if as_int(row["prediction_use_columns_present"], "prediction_use_columns_present") != 1:
         raise DecisionError(f"{path}: prediction-use columns are incomplete")
     integer_fields = (
@@ -208,6 +215,7 @@ def validate_value_slice(row: Mapping[str, str], path: Path) -> None:
         "stats_vp_supported",
         "stats_vp_predicted",
         "stats_vp_corrected",
+        "concurrent_saturated_pc_peak",
         "concurrent_distinct_value_peak",
         "interval_concurrent_distinct_value_peak",
         "interval_concurrent_saturated_pc_peak",
@@ -230,6 +238,13 @@ def validate_value_slice(row: Mapping[str, str], path: Path) -> None:
         raise DecisionError(f"{path}: value CSV correct uses differ from VPcorrected")
     if parsed["stats_vp_supported"] < parsed["correct_prediction_uses"]:
         raise DecisionError(f"{path}: correct uses exceed VPsupported")
+    if (
+        parsed["concurrent_distinct_value_peak"]
+        > parsed["concurrent_saturated_pc_peak"]
+    ):
+        raise DecisionError(
+            f"{path}: online distinct-value peak exceeds online saturated-PC peak"
+        )
     as_float(row["coverage_contribution_pct"], "coverage_contribution_pct")
 
 
@@ -315,6 +330,16 @@ def join_rows(
             raise DecisionError(f"{slice_name}: pc_entries does not match per-PC rows")
         pc_dist = pc_distribution_for(pc_rows, slice_name)
         ab_row = ab[slice_name]
+        online_pc_peak = as_int(
+            value["concurrent_saturated_pc_peak"],
+            "concurrent_saturated_pc_peak",
+        )
+        online_value_peak = as_int(
+            value["concurrent_distinct_value_peak"],
+            "concurrent_distinct_value_peak",
+        )
+        assert online_pc_peak is not None
+        assert online_value_peak is not None
         joined.append(
             {
                 "slice": slice_name,
@@ -342,9 +367,16 @@ def join_rows(
                     if cumulative
                     else 0.0
                 ),
-                "online_peak_distinct_values": as_int(
-                    value["concurrent_distinct_value_peak"],
-                    "concurrent_distinct_value_peak",
+                "online_peak_saturated_pcs": online_pc_peak,
+                "online_peak_distinct_values": online_value_peak,
+                # These are independently observed ROI maxima, so their
+                # difference is a provisioning comparison, not a snapshot
+                # of same-cycle sharing.
+                "provisioning_value_slots_saved": online_pc_peak - online_value_peak,
+                "provisioning_value_slots_saved_pct": (
+                    (online_pc_peak - online_value_peak) / online_pc_peak * 100.0
+                    if online_pc_peak
+                    else 0.0
                 ),
                 "interval_peak_distinct_values": as_int(
                     value["interval_concurrent_distinct_value_peak"],
@@ -392,7 +424,10 @@ SLICE_FIELDS = (
     "global_distinct_saturated_values",
     "value_sharing_saved_slots",
     "value_sharing_ratio_pct",
+    "online_peak_saturated_pcs",
     "online_peak_distinct_values",
+    "provisioning_value_slots_saved",
+    "provisioning_value_slots_saved_pct",
     "interval_peak_distinct_values",
     "interval_peak_saturated_pcs",
     "prediction_uses",
@@ -453,7 +488,10 @@ def group_summary(name: str, rows: Sequence[Mapping[str, object]]) -> Dict[str, 
     for field in (
         "cumulative_distinct_values",
         "global_distinct_saturated_values",
+        "online_peak_saturated_pcs",
         "online_peak_distinct_values",
+        "provisioning_value_slots_saved",
+        "provisioning_value_slots_saved_pct",
         "interval_peak_distinct_values",
         "interval_peak_saturated_pcs",
         "pc_distinct_values_p95",
@@ -484,6 +522,18 @@ def workload_summary(rows: Sequence[Mapping[str, object]]) -> List[Dict[str, obj
         )
         result.append(summary)
     return result
+
+
+def capacity_coverage(
+    rows: Sequence[Mapping[str, object]], field: str
+) -> Dict[int, Optional[float]]:
+    values = [float(row[field]) for row in rows if row.get(field) not in (None, "")]
+    if not values:
+        return {capacity: None for capacity in CAPACITY_CANDIDATES}
+    return {
+        capacity: sum(value <= capacity for value in values) / len(values) * 100.0
+        for capacity in CAPACITY_CANDIDATES
+    }
 
 
 def write_charts(
@@ -569,6 +619,111 @@ def write_charts(
     save(fig, "speedup_vs_online_distinct_value_peak")
 
     fig, ax = plt.subplots(figsize=(9, 6))
+    for group in ("insensitive", "gain", "regression"):
+        items = [
+            row
+            for row in rows
+            if row["sensitivity_class"] == group
+            and float(row["online_peak_saturated_pcs"]) > 0
+        ]
+        ax.scatter(
+            [float(row["online_peak_saturated_pcs"]) for row in items],
+            [float(row["cycle_speedup_pct"]) for row in items],
+            s=24,
+            alpha=0.62,
+            edgecolors="none",
+            color=colors[group],
+            label=labels[group],
+        )
+    ax.set_xscale("log")
+    ax.axhline(0, color="#333333", linewidth=0.8)
+    ax.set_xlabel("Online saturated PC entries (log)")
+    ax.set_ylabel("Matched A/B slice cycle speedup (%)")
+    ax.set_title("Speedup versus online PC-entry demand")
+    ax.legend()
+    ax.grid(alpha=0.2)
+    save(fig, "speedup_vs_online_saturated_pc_peak")
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), sharey=True)
+    for axis, title, items in (
+        (axes[0], "All slices", list(rows)),
+        (
+            axes[1],
+            "Sensitive-gain slices",
+            [row for row in rows if row["sensitivity_class"] == "gain"],
+        ),
+    ):
+        values_by_field = {
+            "online_peak_saturated_pcs": "PC entries",
+            "online_peak_distinct_values": "Raw-value slots",
+        }
+        maximum = max(
+            [
+                float(row[field])
+                for field in values_by_field
+                for row in items
+                if row.get(field) not in (None, "")
+            ]
+            or [0.0]
+        )
+        for field, label in values_by_field.items():
+            values = sorted(float(row[field]) for row in items)
+            if values:
+                axis.step(
+                    values,
+                    [(index + 1) / len(values) * 100.0 for index in range(len(values))],
+                    where="post",
+                    linewidth=2.0,
+                    label=label,
+                )
+        for capacity in CAPACITY_CANDIDATES:
+            axis.axvline(capacity, color="#b0b0b0", linewidth=0.8, linestyle="--")
+            axis.text(
+                capacity,
+                2,
+                str(capacity),
+                rotation=90,
+                color="#666666",
+                ha="right",
+                va="bottom",
+                fontsize=8,
+            )
+        axis.set_xlim(0, max(maximum, float(max(CAPACITY_CANDIDATES))) * 1.04)
+        axis.set_ylim(0, 100)
+        axis.set_xlabel("Online capacity per slice")
+        axis.set_title(title)
+        axis.grid(alpha=0.2)
+        axis.legend()
+    axes[0].set_ylabel("Slices at or below capacity (%)")
+    save(fig, "online_pc_value_capacity_ecdf")
+
+    fig, ax = plt.subplots(figsize=(8.5, 7))
+    maximum = max(
+        max(float(row["online_peak_saturated_pcs"]), float(row["online_peak_distinct_values"]))
+        for row in rows
+    )
+    for group in ("insensitive", "gain", "regression"):
+        items = [row for row in rows if row["sensitivity_class"] == group]
+        ax.scatter(
+            [float(row["online_peak_saturated_pcs"]) for row in items],
+            [float(row["online_peak_distinct_values"]) for row in items],
+            s=24,
+            alpha=0.62,
+            edgecolors="none",
+            color=colors[group],
+            label=labels[group],
+        )
+    ax.plot([0, maximum], [0, maximum], color="#333333", linewidth=0.9, label="no sharing")
+    ax.set_xlim(0, maximum * 1.04 if maximum else 1)
+    ax.set_ylim(0, maximum * 1.04 if maximum else 1)
+    ax.set_xlabel("Online saturated PC entries")
+    ax.set_ylabel("Online distinct raw-value slots")
+    ax.set_title("Paired PC-entry and raw-value peak demand")
+    ax.legend()
+    ax.grid(alpha=0.2)
+    save(fig, "online_pc_value_peak_pair")
+
+    fig, ax = plt.subplots(figsize=(9, 6))
     pc_groups = {
         "all": pc_rows,
         "sensitive gain": [row for row in pc_rows if row.get("sensitivity_class") == "gain"],
@@ -627,50 +782,84 @@ def write_markdown(
     rows: Sequence[Mapping[str, object]],
     charts: Sequence[str],
 ) -> None:
-    all_summary = group_summary("all_slices", rows)
-    sensitive = [
-        row for row in rows if row["sensitivity_class"] != "insensitive"
-    ]
-    sensitive_summary = group_summary("sensitive_slices", sensitive)
-    lines = [
-        "## Raw saturated-value capacity (v3 profiling)",
-        "",
-        "本节只把 v3 profiling 的 raw `RegVal` 统计与固定的 "
-        "run947/run102 A/B speedup 连接；v3 profiling 的 cycles、IPC、score "
-        "不参与性能结论。在线容量使用 "
-        "`profile*PeakDistinctSaturatedValues`，区间 sweep 仅作为辅助时间边界。",
-        "",
-        "| 集合 | 切片 | online distinct-value peak P50/P95/max | "
-        "cumulative per-PC distinct P50/P95/max | "
-        "global shared distinct P50/P95/max |",
-        "| --- | ---: | ---: | ---: | ---: |",
-    ]
-    for name, summary in (("全部", all_summary), ("敏感", sensitive_summary)):
-        def format_summary(field: str) -> str:
-            value = summary[field]
-            return f"{float(value):.0f}" if value is not None else "N/A"
+    groups = (
+        ("全部", list(rows)),
+        ("敏感收益", [row for row in rows if row["sensitivity_class"] == "gain"]),
+        (
+            "敏感回退",
+            [row for row in rows if row["sensitivity_class"] == "regression"],
+        ),
+    )
 
+    def value_summary(items: Sequence[Mapping[str, object]], field: str) -> str:
+        values = [
+            float(row[field]) for row in items if row.get(field) not in (None, "")
+        ]
+        if not values:
+            return "N/A"
+        return " / ".join(
+            f"{percentile(values, percentage):.0f}" for percentage in (50, 95)
+        ) + f" / {max(values):.0f}"
+
+    def ratio_summary(items: Sequence[Mapping[str, object]]) -> str:
+        values = [float(row["provisioning_value_slots_saved_pct"]) for row in items]
+        if not values:
+            return "N/A"
+        return " / ".join(
+            f"{percentile(values, percentage):.1f}%" for percentage in (10, 50, 90)
+        )
+
+    all_rows = groups[0][1]
+    gain_rows = groups[1][1]
+    all_pc_coverage = capacity_coverage(all_rows, "online_peak_saturated_pcs")
+    all_value_coverage = capacity_coverage(all_rows, "online_peak_distinct_values")
+    gain_pc_coverage = capacity_coverage(gain_rows, "online_peak_saturated_pcs")
+    gain_value_coverage = capacity_coverage(gain_rows, "online_peak_distinct_values")
+    lines = [
+        "## Raw saturated-value capacity",
+        "",
+        "本节只把 raw `RegVal` profiling 统计与固定的 "
+        "run947/run102 A/B speedup 连接；profiling 的 cycles、IPC、score "
+        "不参与性能结论。每个切片都从同一最终 ROI stats block 读取 "
+        "`profileRoiPeakSaturatedPcs` 和 "
+        "`profileRoiPeakDistinctSaturatedValues`。前者决定 PC/tag/置信度表 "
+        "entry 容量，后者决定可共享 raw value-store 的槽位容量，不能互相替代。",
+        "",
+        "| 集合 | 切片 | PC entry peak P50/P95/max | raw value-slot peak P50/P95/max | "
+        "按峰值配置可减少的 value slot P50/P95/max | 比例 P10/P50/P90 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for name, items in groups:
         lines.append(
-            f"| {name} | {int(summary['slices'])} | "
-            f"{format_summary('online_peak_distinct_values_p50')} / "
-            f"{format_summary('online_peak_distinct_values_p95')} / "
-            f"{format_summary('online_peak_distinct_values_max')} | "
-            f"{format_summary('cumulative_distinct_values_p50')} / "
-            f"{format_summary('cumulative_distinct_values_p95')} / "
-            f"{format_summary('cumulative_distinct_values_max')} | "
-            f"{format_summary('global_distinct_saturated_values_p50')} / "
-            f"{format_summary('global_distinct_saturated_values_p95')} / "
-            f"{format_summary('global_distinct_saturated_values_max')} |"
+            f"| {name} | {len(items)} | "
+            f"{value_summary(items, 'online_peak_saturated_pcs')} | "
+            f"{value_summary(items, 'online_peak_distinct_values')} | "
+            f"{value_summary(items, 'provisioning_value_slots_saved')} | "
+            f"{ratio_summary(items)} |"
         )
     lines.extend(
         [
             "",
-            "`cumulative_distinct_values` 是每个 `(tid, PC)` 各占一个 "
-            "raw-value slot 的需求；`global_distinct_saturated_values` "
-            "对同一切片内相同 raw value 做共享后的下界。不同切片不可相加。",
+            "这两个峰值未必发生在同一时刻，因此“按峰值配置可减少的 value slot”是 "
+            "physical provisioning 对比，而不是一次时刻快照的共享量。实现共享仍需 "
+            "value-store 查询和引用管理；PC/tag/状态表仍按 PC entry peak 配置。不同切片不可相加。",
             "",
+            "| 候选容量 | 全部：PC entry 覆盖 | 全部：raw value-slot 覆盖 | "
+            "敏感收益：PC entry 覆盖 | 敏感收益：raw value-slot 覆盖 |",
+            "| ---: | ---: | ---: | ---: |",
         ]
     )
+    for capacity in CAPACITY_CANDIDATES:
+        def coverage_text(value: Optional[float]) -> str:
+            return f"{value:.2f}%" if value is not None else "N/A"
+
+        lines.append(
+            f"| {capacity} | {coverage_text(all_pc_coverage[capacity])} | "
+            f"{coverage_text(all_value_coverage[capacity])} | "
+            f"{coverage_text(gain_pc_coverage[capacity])} | "
+            f"{coverage_text(gain_value_coverage[capacity])} |"
+        )
+    lines.append("")
     for chart in charts:
         lines.append(f"![{chart}]({chart}.png)")
         lines.append("")
@@ -742,6 +931,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "online_peak_distinct_values": distribution(
             float(row["online_peak_distinct_values"]) for row in joined
         ),
+        "online_peak_saturated_pcs": distribution(
+            float(row["online_peak_saturated_pcs"]) for row in joined
+        ),
+        "provisioning_value_slots_saved": distribution(
+            float(row["provisioning_value_slots_saved"]) for row in joined
+        ),
+        "provisioning_value_slots_saved_pct": distribution(
+            float(row["provisioning_value_slots_saved_pct"]) for row in joined
+        ),
+        "capacity_coverage_pct": {
+            "all_slices": {
+                "pc_entries": capacity_coverage(
+                    joined, "online_peak_saturated_pcs"
+                ),
+                "raw_value_slots": capacity_coverage(
+                    joined, "online_peak_distinct_values"
+                ),
+            },
+            "sensitive_gain": {
+                "pc_entries": capacity_coverage(
+                    [row for row in joined if row["sensitivity_class"] == "gain"],
+                    "online_peak_saturated_pcs",
+                ),
+                "raw_value_slots": capacity_coverage(
+                    [row for row in joined if row["sensitivity_class"] == "gain"],
+                    "online_peak_distinct_values",
+                ),
+            },
+        },
         "cumulative_distinct_values": distribution(
             float(row["cumulative_distinct_values"]) for row in joined
         ),

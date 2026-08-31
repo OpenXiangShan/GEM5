@@ -2,6 +2,7 @@
 """Regression tests for the A/B plus raw-value decision join."""
 
 import csv
+import importlib.util
 import json
 import subprocess
 import sys
@@ -72,6 +73,8 @@ class IdealConstantLVPValueDecisionTest(unittest.TestCase):
             "stats_vp_predicted": "9",
             "stats_vp_corrected": "8",
             "coverage_contribution_pct": "40.0",
+            "concurrent_saturated_pc_peak": "3",
+            "concurrent_saturated_pc_peak_source": "stats",
             "concurrent_distinct_value_peak": "2",
             "concurrent_distinct_value_peak_source": "stats",
             "interval_concurrent_distinct_value_peak": "2",
@@ -86,6 +89,7 @@ class IdealConstantLVPValueDecisionTest(unittest.TestCase):
                 "cumulative_distinct_values": "2",
                 "global_distinct_saturated_values": "2",
                 "value_sharing_saved_slots": "0",
+                "concurrent_saturated_pc_peak": "1",
                 "concurrent_distinct_value_peak": "1",
                 "interval_concurrent_distinct_value_peak": "1",
                 "prediction_uses": "6",
@@ -201,6 +205,8 @@ class IdealConstantLVPValueDecisionTest(unittest.TestCase):
             self.assertEqual(rows["mcf_1"]["cycle_speedup_pct"], "4.0")
             self.assertEqual(rows["mcf_1"]["sensitivity_class"], "gain")
             self.assertEqual(rows["mcf_1"]["online_peak_distinct_values"], "2")
+            self.assertEqual(rows["mcf_1"]["online_peak_saturated_pcs"], "3")
+            self.assertEqual(rows["mcf_1"]["provisioning_value_slots_saved"], "1")
             self.assertEqual(rows["mcf_1"]["pc_distinct_values_max"], "2.0")
             self.assertAlmostEqual(
                 float(rows["mcf_1"]["value_sharing_ratio_pct"]), 100 / 3
@@ -223,6 +229,28 @@ class IdealConstantLVPValueDecisionTest(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 2)
             self.assertIn("per-PC values do not sum", completed.stderr)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("matplotlib") is not None,
+        "matplotlib is not installed",
+    )
+    def test_renders_paired_online_capacity_charts(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            output = root / "output"
+            self.run_tool(
+                self.write_ab(root),
+                self.write_values(root),
+                output,
+                charts=True,
+            )
+            for stem in (
+                "speedup_vs_online_saturated_pc_peak",
+                "online_pc_value_capacity_ecdf",
+                "online_pc_value_peak_pair",
+            ):
+                self.assertTrue((output / f"{stem}.png").is_file())
+                self.assertTrue((output / f"{stem}.svg").is_file())
 
 
 if __name__ == "__main__":

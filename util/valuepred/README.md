@@ -93,13 +93,18 @@ The tool writes:
 - `summary.json`: suite-wide distributions. Like other capacity summaries,
   never sum independent slice capacities to choose one table size.
 
-`concurrent_distinct_value_peak` is the online
-`profile*PeakDistinctSaturatedValues` stat maintained by the predictor's live
-saturated-entry set, and is the hardware value-register capacity metric. The
-separate `interval_concurrent_*` fields are an offline inclusive sweep of CSV
-saturated-value-segment boundaries. They are not the first/last prediction-use
-intervals in `ideal_constant_lvp_prediction_intervals.csv`; they provide
-temporal diagnostics only. At a committed value-change boundary both old and
-new segments can be present in the dump, so they must not replace the online
-capacity stat. If the relevant stats counter is absent, the primary peak is
-reported as unavailable rather than falling back to the interval result.
+`concurrent_saturated_pc_peak` is the online `profile*PeakSaturatedPcs` stat:
+it is the PC/tag/confidence-table entry capacity. `concurrent_distinct_value_peak`
+is the separate online `profile*PeakDistinctSaturatedValues` stat: it is the
+raw value-store capacity after sharing equal `RegVal` values. The tool rejects
+a slice where the latter exceeds the former, but the two peaks are independent
+maxima and their difference is a provisioning comparison, not a same-cycle
+sharing snapshot.
+
+The separate `interval_concurrent_*` fields are an offline inclusive sweep of
+CSV saturated-value-segment boundaries. They are not the first/last
+prediction-use intervals in `ideal_constant_lvp_prediction_intervals.csv`; they
+provide temporal diagnostics only. At a committed value-change boundary both
+old and new segments can be present in the dump, so they must not replace the
+online capacity stats. If a relevant stats counter is absent, its primary peak
+is reported as unavailable rather than falling back to the interval result.
