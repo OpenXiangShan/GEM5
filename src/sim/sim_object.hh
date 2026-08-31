@@ -218,6 +218,29 @@ class SimObject : public EventManager, public Serializable, public Drainable,
     virtual void initState();
 
     /**
+     * warmupState() is called on cache when restoring from a
+     * checkpoint with the --memtrace_path option.
+     * The default implementation does nothing, but caches can override
+     * this to read the memory trace and warm up the cache state.
+     * 
+     * @param pmem_file The file path of the physical memory trace.
+     * @param trace_file The file path of cache states.
+     */
+    virtual void warmupState(const std::string &pmem_file,const std::string &trace_file){}
+
+    /**
+     * getcachesize() and getcacheassoc() are used by the cache warmup code to determine the size and associativity of the cache. 
+     */
+    virtual int getcachesize()
+    {
+      return 0;
+    }
+    virtual int getcacheassoc()
+    {
+      return 0;
+    }
+
+    /**
      * Register probe points for this object.
      *
      * @ingroup api_simobject

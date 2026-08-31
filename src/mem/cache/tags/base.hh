@@ -208,6 +208,45 @@ class BaseTags : public ClockedObject
     virtual ReplaceableEntry* findBlockBySetAndWay(int set, int way) const;
 
     /**
+     * Warmup the cache state using the given files.
+     * 
+     * @param pmem_file The file containing the physical memory state.
+     * @param trace_file The file containing the cache states.
+     */
+    void warmupState(const std::string &pmem_file,const std::string &trace_file);
+
+    /**
+     * Decompress a gz file into memory.
+     * 
+     * @param gz_path The path to the gz file.
+     * @return A vector containing the decompressed data.
+     */
+    std::vector<char> decompress_gz_to_memory(const std::string &gz_path);
+
+    /**
+     * Query the in-memory data for the target address and return the result.
+     * 
+     * @param data The in-memory data to query.
+     * @param target_address The target address to query for.
+     * @param result The buffer to store the query result.
+     * @param max_result_length The maximum length of the query result.
+     * @return The actual length of the query result.
+     */
+    size_t query_in_memory(const std::vector<char>& data,
+                       uint64_t target_address,
+                       char* result,
+                       size_t max_result_length) ;
+
+    /**
+     * Update the replacement policy state for the accessed block.
+     * 
+     * @param blk The accessed block.
+     * @param rank The rank of the block in the replacement policy.
+     */
+    virtual void updateRp(CacheBlk* blk,int rank) = 0;
+
+
+    /**
      * Align an address to the block size.
      * @param addr the address to align.
      * @return The block address.

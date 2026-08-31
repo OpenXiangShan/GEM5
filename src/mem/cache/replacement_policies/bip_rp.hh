@@ -76,6 +76,9 @@ class BIP : public LRU
      */
     void reset(const std::shared_ptr<ReplacementData>& replacement_data) const
                                                                      override;
+    void reset4memtrace(const std::shared_ptr<ReplacementData>& replacement_data,int priority) const override
+    {     
+    }     
 };
 
 } // namespace replacement_policy

@@ -70,6 +70,15 @@ LRU::reset(const std::shared_ptr<ReplacementData>& replacement_data) const
         replacement_data)->lastTouchTick = curTick();
 }
 
+void
+LRU::reset4memtrace(const std::shared_ptr<ReplacementData>& replacement_data,int priority) const
+{
+    // Set last touch timestamp
+    // Here we use priority to set lastTouchTick, the lower the priority, the older the lastTouchTick
+    std::static_pointer_cast<LRUReplData>(
+        replacement_data)->lastTouchTick = curTick() - priority;
+}
+
 ReplaceableEntry*
 LRU::getVictim(const ReplacementCandidates& candidates) const
 {

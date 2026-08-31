@@ -187,6 +187,9 @@ class TreePLRU : public Base
     void reset(const std::shared_ptr<ReplacementData>& replacement_data) const
                                                                      override;
 
+    void reset4memtrace(const std::shared_ptr<ReplacementData>& replacement_data,int priority) const override
+    {
+    }
     /**
      * Find replacement victim using TreePLRU bits. It is assumed that all
      * candidates share the same replacement data tree.

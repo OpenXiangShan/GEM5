@@ -397,6 +397,9 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
             sys.workload.raw_bootloader = True
         else:
             sys.gcpt_restorer_file = gcpt_restorer
+    if args.memtrace_path is not None:
+        sys.restore_from_memtrace = True
+        sys.memtrace_file = args.memtrace_path
     # enable h checkpoint
     if args.enable_h_gcpt:
         sys.enable_h_gcpt = True

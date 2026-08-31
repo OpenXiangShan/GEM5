@@ -132,6 +132,12 @@ SnoopFilter::lookupRequest(const Packet* cpkt, const ResponsePort&
             // to the CPU, already -> the response will not be seen by this
             // filter -> we do not need to keep the in-flight request, but make
             // sure that we know that that cluster has a copy
+            SimObject * temp_simobject =find("system");
+            System * temp_system = dynamic_cast<System *> (temp_simobject);
+            if(temp_system->restore_from_memtrace_enabled() == true)
+            {
+                sf_item.holder |= req_port;
+            }
             panic_if((sf_item.holder & req_port).none(),
                      "Need to hold the value!");
             DPRINTF(SnoopFilter,
@@ -141,9 +147,19 @@ SnoopFilter::lookupRequest(const Packet* cpkt, const ResponsePort&
     } else { // if (!cpkt->needsResponse())
         assert(cpkt->isEviction());
         // make sure that the sender actually had the line
-        panic_if((sf_item.holder & req_port).none(), "requestor %x is not a " \
-                 "holder :( SF value %x.%x\n", req_port,
-                 sf_item.requested, sf_item.holder);
+        SimObject * temp_simobject =find("system");
+        System * temp_system = dynamic_cast<System *> (temp_simobject);
+        if(temp_system->restore_from_memtrace_enabled() == true)
+        {
+            panic_if(!sf_item.holder.none() && (sf_item.holder & req_port).none(), "requestor %x is not a " \
+            "holder :( SF value %x.%x\n", req_port,
+            sf_item.requested, sf_item.holder);
+        }
+        else{
+            panic_if((sf_item.holder & req_port).none(), "requestor %x is not a " \
+            "holder :( SF value %x.%x\n", req_port,
+            sf_item.requested, sf_item.holder);
+        }
         // CleanEvicts and Writebacks -> the sender and all caches above
         // it may not have the line anymore.
         if (!cpkt->isBlockCached()) {
