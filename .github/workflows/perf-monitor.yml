@@ -1,0 +1,97 @@
+name: Performance CI Monitor
+
+on:
+  workflow_run:
+    workflows:
+      - gem5 Ideal BTB Performance Test
+      - gem5 Align BTB Performance Test(0.3c)
+      - Manual Performance Test
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Completed performance workflow run ID to analyze'
+        required: true
+        type: string
+      baseline_run_id:
+        description: 'Optional explicit compatible baseline run ID'
+        required: false
+        type: string
+      trigger_agent:
+        description: 'Dispatch the DeepSeek investigator for detected anomalies'
+        required: true
+        type: boolean
+        default: true
+      force_agent:
+        description: 'Dispatch the investigator even when thresholds are not crossed'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: perf-monitor-${{ github.event.workflow_run.id || inputs.source_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: [self-hosted, node]
+    timeout-minutes: 30
+    env:
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+      BASELINE_RUN_ID: ${{ inputs.baseline_run_id || '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'xs-dev' }}
+          persist-credentials: false
+
+      - name: Analyze completed performance run
+        id: analyze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(
+            --repo "$GITHUB_REPOSITORY"
+            --run-id "$SOURCE_RUN_ID"
+            --output-dir "$RUNNER_TEMP/perf-monitor"
+            --policy "$GITHUB_WORKSPACE/.github/perf-monitor-policy.json"
+          )
+          if [ -n "$BASELINE_RUN_ID" ]; then
+            args+=(--baseline-run-id "$BASELINE_RUN_ID")
+          fi
+          python3 util/ci/perf_monitor.py "${args[@]}"
+
+      - name: Publish analysis summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/perf-monitor/summary.md" ]; then
+            cat "$RUNNER_TEMP/perf-monitor/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload monitor analysis
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-monitor-analysis
+          path: ${{ runner.temp }}/perf-monitor
+          retention-days: 30
+
+      - name: Dispatch read-only DeepSeek investigation
+        if: >-
+          (github.event_name == 'workflow_run' || inputs.trigger_agent == true) &&
+          (steps.analyze.outputs.should_investigate == 'true' || inputs.force_agent == true)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run perf-anomaly-agent.lock.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            -f monitor_run_id="$GITHUB_RUN_ID" \
+            -f source_run_id="$SOURCE_RUN_ID"

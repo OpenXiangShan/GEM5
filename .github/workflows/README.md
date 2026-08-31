@@ -193,6 +193,34 @@ python actions_gem5.py --token <github-token> --always-on
 
 ---
 
+## 🔍 性能 CI 自动监测
+
+`perf-monitor.yml` 使用 `workflow_run: completed` 监听 Ideal BTB、Align BTB 和
+`manual-perf.yml`。它不轮询正在运行的 job，也不会把未结束的 archive 当成有效结果。
+
+确定性分析由 `util/ci/perf_monitor.py` 完成：
+
+- 从 Actions job log 定位 NFS archive，并校验 run 状态、abort、score、coverage 和完成标记；
+- 按 config、benchmark、workload filter、vector 类型和完整 extra args 选择最近的兼容
+  `xs-dev` baseline；
+- 复用 `/nfs/home/share/gem5_ci/gem5_data_proc/run.py` 生成 weighted score 和关键计数器；
+- 默认阈值为 overall 绝对变化 0.5%、overall 严重回退 1%、单 workload
+  绝对变化 2%、单 workload 严重回退 5%，配置在 `.github/perf-monitor-policy.json`；
+- `normal` 只保留 Actions summary/artifact，不通知人；`warning` 或 `critical` 才 dispatch
+  `perf-anomaly-agent.lock.yml`。
+
+Agent workflow 使用 DeepSeek 的 OpenAI-compatible endpoint。它只读 checkout、分析 artifact
+和 NFS 数据，safe output 处于 staged 模式，不创建 issue、评论、commit 或 PR。部署要求：
+
+- 仓库 Actions Secret：`DEEPSEEK_API_KEY`；
+- `[self-hosted, node]` runner 能读取性能 NFS，并安装 Docker（gh-aw 的 AWF sandbox 需要）；
+- 修改 `perf-anomaly-agent.md` frontmatter 后，用固定 gh-aw 版本重新编译并同时提交 lock 文件。
+
+手动回放已完成的 run 可从 Actions 页面触发 `Performance CI Monitor`，传入
+`source_run_id`，必要时再指定严格兼容的 `baseline_run_id`。
+
+---
+
 ## 🎯 设计原则
 
 - **DRY**: 测试不重复，配置单一来源
@@ -209,6 +237,10 @@ python actions_gem5.py --token <github-token> --always-on
 - `.github/workflows/gem5.yml` - `xs-dev` 合入后或 `regression` 标签触发的完整功能回归
 - `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` / `perf` 标签默认性能测试
 - `.github/workflows/gem5-align-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
+- `.github/workflows/perf-monitor.yml` - 已完成性能 run 的确定性分析和异常分流
+- `.github/workflows/perf-anomaly-agent.md` - DeepSeek 只读调查 workflow 源文件
+- `.github/workflows/perf-anomaly-agent.lock.yml` - gh-aw 编译生成的可执行 workflow
+- `util/ci/perf_monitor.py` - baseline、完整性、阈值和 counter delta 分析
 - `.github/workflows/on-demand-spec-rvv.yml` - `rvv` 标签 RVV 性能测试
 - `env-scripts/github/actions_gem5.py` - 性能评论机器人
 
