@@ -67,3 +67,39 @@ reports final static collisions for each slice. It is deliberately not a
 replacement or coverage simulator: temporal replacement needs an online shadow
 table or an access trace, while this report only identifies static set hot
 spots in a candidate geometry.
+
+## Saturated value sharing
+
+Saturated-value profiling additionally writes
+`m5out/ideal_constant_lvp_saturated_values.csv`. Each row is one raw `RegVal`
+value segment of a saturated `(tid, PC, saturation_epoch)`. Aggregate it with:
+
+```bash
+python3 util/valuepred/ideal_constant_lvp_values.py \
+  /path/to/performance_archive \
+  --scope roi \
+  --out-dir /tmp/ideal-constant-lvp-values-roi
+```
+
+The tool writes:
+
+- `per_slice_values.csv`: per-slice distinct-value and sharing summaries.
+  `cumulative_distinct_values` counts a separate value slot for every PC;
+  `global_distinct_saturated_values` unions raw values across PCs in that
+  slice, so their difference is the possible sharing reduction.
+- `per_pc_values.csv`: per `(tid, PC)` distinct saturated values, value-segment
+  count, epoch count, and sharing fanout.
+- `per_value_sharing.csv`: raw values and the PC fanout that shares each one.
+- `summary.json`: suite-wide distributions. Like other capacity summaries,
+  never sum independent slice capacities to choose one table size.
+
+`concurrent_distinct_value_peak` is the online
+`profile*PeakDistinctSaturatedValues` stat maintained by the predictor's live
+saturated-entry set, and is the hardware value-register capacity metric. The
+separate `interval_concurrent_*` fields are an offline inclusive sweep of CSV
+saturated-value-segment boundaries. They are not the first/last prediction-use
+intervals in `ideal_constant_lvp_prediction_intervals.csv`; they provide
+temporal diagnostics only. At a committed value-change boundary both old and
+new segments can be present in the dump, so they must not replace the online
+capacity stat. If the relevant stats counter is absent, the primary peak is
+reported as unavailable rather than falling back to the interval result.

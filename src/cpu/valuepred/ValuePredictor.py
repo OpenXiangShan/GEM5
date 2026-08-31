@@ -152,8 +152,8 @@ class IdealConstantLVP(ValuePredictor):
     resetConfidence = Param.Bool(True, "reset confidence to 0 when mispredict")
     enableProfiling = Param.Bool(
         False,
-        "emit per-PC and saturation-epoch IdealConstantLVP profiling data "
-        "without changing prediction state")
+        "emit per-PC, saturation-epoch, and raw saturated-value "
+        "IdealConstantLVP profiling data without changing prediction state")
 
     enableShadowProfiling = Param.Bool(
         False,

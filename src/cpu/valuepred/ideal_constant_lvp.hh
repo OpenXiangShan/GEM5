@@ -2,6 +2,7 @@
 #define __IDEAL_CONSTANT_LVP_HH__
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -28,6 +29,7 @@ class IdealConstantLVP : public VPUnit
         SatCounter16 confidence;
         RegVal value;
         uint64_t saturationEpoch = 0;
+        uint64_t saturationValueSegment = 0;
 
         ICEntry(unsigned sat_counter_bits, RegVal v)
             : confidence(sat_counter_bits, 0), value(v)
@@ -69,6 +71,66 @@ class IdealConstantLVP : public VPUnit
 
     using ProfileTable = std::unordered_map<Addr, ProfileEntry>;
     using PredictionIntervals = std::vector<PredictionInterval>;
+
+    // A saturation epoch normally owns one value segment.  Keep a separate
+    // segment when a zero-bit counter remains saturated across a value change
+    // so each stored raw RegVal bit pattern remains observable.
+    struct SaturatedValueSegment
+    {
+        ThreadID tid = 0;
+        Addr pc = 0;
+        uint64_t saturationEpoch = 0;
+        uint64_t valueSegment = 0;
+        RegVal saturatedValue = 0;
+        uint64_t saturationStartSeqNo = 0;
+        uint64_t saturationEndSeqNo = 0;
+        uint64_t firstPredictionUseSeqNo = 0;
+        uint64_t lastPredictionUseSeqNo = 0;
+        uint64_t predictionUses = 0;
+        uint64_t correctPredictionUses = 0;
+        bool openAtScopeStart = false;
+        bool openAtEnd = true;
+    };
+
+    struct SaturatedValueSegmentKey
+    {
+        Addr pc = 0;
+        uint64_t saturationEpoch = 0;
+        uint64_t valueSegment = 0;
+
+        bool
+        operator==(const SaturatedValueSegmentKey &other) const
+        {
+            return pc == other.pc &&
+                saturationEpoch == other.saturationEpoch &&
+                valueSegment == other.valueSegment;
+        }
+    };
+
+    struct SaturatedValueSegmentKeyHash
+    {
+        size_t
+        operator()(const SaturatedValueSegmentKey &key) const
+        {
+            const auto pc_hash = std::hash<Addr>{}(key.pc);
+            const auto epoch_hash = std::hash<uint64_t>{}(
+                key.saturationEpoch);
+            const auto segment_hash = std::hash<uint64_t>{}(
+                key.valueSegment);
+            return pc_hash ^ (epoch_hash << 1) ^ (segment_hash << 2);
+        }
+    };
+
+    struct SaturatedValueProfile
+    {
+        std::vector<SaturatedValueSegment> segments;
+        // One-based vector indexes avoid searching historical segments when
+        // a live epoch closes, changes value, or commits a delayed prediction.
+        std::unordered_map<SaturatedValueSegmentKey, uint64_t,
+                SaturatedValueSegmentKeyHash> segmentIndexes;
+    };
+
+    using SaturatedValueProfiles = std::vector<SaturatedValueProfile>;
 
     // The shadow tables model a bounded QF/PCT organization only when
     // profiling is explicitly enabled.  They are deliberately separate from
@@ -143,6 +205,8 @@ class IdealConstantLVP : public VPUnit
     struct IdealConstantPredictionRecord : public VPPredictionRecord
     {
         uint64_t saturationEpoch = 0;
+        uint64_t valueSegment = 0;
+        RegVal saturatedValue = 0;
     };
 
     struct ShadowPredictionRecord : public IdealConstantPredictionRecord
@@ -162,6 +226,8 @@ class IdealConstantLVP : public VPUnit
     std::vector<uint64_t> roiProfileUpdateSequences;
     std::vector<PredictionIntervals> lifetimePredictionIntervals;
     std::vector<PredictionIntervals> roiPredictionIntervals;
+    std::vector<SaturatedValueProfile> lifetimeSaturatedValueProfiles;
+    std::vector<SaturatedValueProfile> roiSaturatedValueProfiles;
     std::vector<ShadowTable> shadowQfTables;
     std::vector<ShadowTable> shadowPctTables;
     std::vector<ShadowCounters> lifetimeShadowCounters;
@@ -173,6 +239,13 @@ class IdealConstantLVP : public VPUnit
     uint64_t currentSaturatedPcs = 0;
     uint64_t lifetimePeakSaturatedPcs = 0;
     uint64_t roiPeakSaturatedPcs = 0;
+
+    // Values are keyed by their complete RegVal bit pattern.  The refcount
+    // lets a shared value register file's live capacity be tracked without
+    // scanning all saturated PCs on every committed update.
+    std::unordered_map<RegVal, uint64_t> saturatedValueRefCounts;
+    uint64_t lifetimePeakDistinctSaturatedValues = 0;
+    uint64_t roiPeakDistinctSaturatedValues = 0;
 
     const unsigned satCounterBits;
     const bool resetConfidence;
@@ -199,12 +272,30 @@ class IdealConstantLVP : public VPUnit
             bool correct_prediction,
             bool update_roi_stats);
     void observeSaturationTransition(bool was_saturated, bool is_saturated);
+    void observeSaturatedValueChange(bool was_saturated, bool is_saturated,
+            RegVal previous_value, RegVal current_value,
+            bool value_changed);
+    void addSaturatedValue(RegVal value);
+    void removeSaturatedValue(RegVal value);
     void resetRoiSaturationStats();
     void refreshSaturationStats();
     void resetRoiProfile();
+    void resetRoiSaturatedValueProfile();
+    void openSaturatedValueSegment(SaturatedValueProfile &profile,
+            ThreadID tid, Addr pc, uint64_t saturation_epoch,
+            uint64_t value_segment, RegVal value,
+            uint64_t saturation_start_seq_no, bool open_at_scope_start);
+    void closeSaturatedValueSegment(SaturatedValueProfile &profile,
+            Addr pc, uint64_t saturation_epoch, uint64_t value_segment,
+            uint64_t saturation_end_seq_no);
+    void observeSaturatedValuePrediction(ThreadID tid, Addr pc,
+            uint64_t saturation_epoch, uint64_t value_segment,
+            RegVal saturated_value, uint64_t committed_seq_no,
+            bool correct_prediction);
     void refreshProfileStats();
     void dumpProfile() const;
     void dumpPredictionIntervals() const;
+    void dumpSaturatedValues() const;
 
     static unsigned shadowIndex(Addr pc, unsigned sets);
     ShadowEntry *findShadowEntry(ShadowTable &table, Addr pc,
@@ -258,6 +349,7 @@ class IdealConstantLVP : public VPUnit
         statistics::Scalar profileRoiEverSaturatedPcs;
         statistics::Scalar profileRoiSaturatedAtEndPcs;
         statistics::Scalar profileRoiPeakSaturatedPcs;
+        statistics::Scalar profileRoiPeakDistinctSaturatedValues;
         statistics::Scalar profileRoiCommittedSaturatedOffers;
         statistics::Scalar profileRoiPredictionUses;
         statistics::Scalar profileRoiCorrectPredictionUses;
@@ -265,6 +357,7 @@ class IdealConstantLVP : public VPUnit
         statistics::Scalar profileLifetimeEverSaturatedPcs;
         statistics::Scalar profileLifetimeSaturatedPcsAtEnd;
         statistics::Scalar profileLifetimePeakSaturatedPcs;
+        statistics::Scalar profileLifetimePeakDistinctSaturatedValues;
 
         statistics::Scalar shadowRoiCommittedUpdates;
         statistics::Scalar shadowRoiQfLookups;

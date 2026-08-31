@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <iomanip>
 #include <limits>
 
 #include "base/logging.hh"
@@ -25,6 +26,8 @@ IdealConstantLVP::IdealConstantLVP(const Params &params)
       roiProfileUpdateSequences(params.numThreads, 0),
       lifetimePredictionIntervals(params.numThreads),
       roiPredictionIntervals(params.numThreads),
+      lifetimeSaturatedValueProfiles(params.numThreads),
+      roiSaturatedValueProfiles(params.numThreads),
       shadowQfTables(),
       shadowPctTables(),
       lifetimeShadowCounters(params.numThreads),
@@ -79,6 +82,7 @@ IdealConstantLVP::IdealConstantLVP(const Params &params)
         registerExitCallback([this] {
             dumpProfile();
             dumpPredictionIntervals();
+            dumpSaturatedValues();
         });
     }
     if (enableShadowProfiling)
@@ -103,6 +107,11 @@ IdealConstantLVP::IdealConstantLVPStats::IdealConstantLVPStats(
       ADD_STAT(profileRoiPeakSaturatedPcs, statistics::units::Count::get(),
               "Maximum simultaneously saturated IdealConstantLVP table "
               "entries (one per (tid, PC)) after the last stats reset"),
+      ADD_STAT(profileRoiPeakDistinctSaturatedValues,
+              statistics::units::Count::get(),
+              "Maximum number of distinct raw RegVal bit patterns held by "
+              "simultaneously saturated IdealConstantLVP entries after the "
+              "last stats reset"),
       ADD_STAT(profileRoiCommittedSaturatedOffers,
               statistics::units::Count::get(),
               "Committed instructions for which a saturated IdealConstantLVP "
@@ -126,6 +135,11 @@ IdealConstantLVP::IdealConstantLVPStats::IdealConstantLVPStats(
               statistics::units::Count::get(),
               "Maximum simultaneously saturated IdealConstantLVP table "
               "entries (one per (tid, PC)) since predictor construction"),
+      ADD_STAT(profileLifetimePeakDistinctSaturatedValues,
+              statistics::units::Count::get(),
+              "Maximum number of distinct raw RegVal bit patterns held by "
+              "simultaneously saturated IdealConstantLVP entries since "
+              "predictor construction"),
       ADD_STAT(shadowRoiCommittedUpdates, statistics::units::Count::get(),
               "Committed updates observed by the bounded shadow model after reset"),
       ADD_STAT(shadowRoiQfLookups, statistics::units::Count::get(),
@@ -227,19 +241,66 @@ IdealConstantLVP::observeSaturationTransition(bool was_saturated,
 }
 
 void
+IdealConstantLVP::addSaturatedValue(RegVal value)
+{
+    auto [it, inserted] = saturatedValueRefCounts.try_emplace(value, 0);
+    (void)inserted;
+    it->second++;
+    const uint64_t distinct_values = saturatedValueRefCounts.size();
+    lifetimePeakDistinctSaturatedValues = std::max(
+        lifetimePeakDistinctSaturatedValues, distinct_values);
+    roiPeakDistinctSaturatedValues = std::max(
+        roiPeakDistinctSaturatedValues, distinct_values);
+}
+
+void
+IdealConstantLVP::removeSaturatedValue(RegVal value)
+{
+    const auto it = saturatedValueRefCounts.find(value);
+    gem5_assert(it != saturatedValueRefCounts.end() && it->second > 0,
+            "IdealConstantLVP saturated value reference accounting "
+            "underflow\n");
+    if (--it->second == 0)
+        saturatedValueRefCounts.erase(it);
+}
+
+void
+IdealConstantLVP::observeSaturatedValueChange(bool was_saturated,
+        bool is_saturated, RegVal previous_value, RegVal current_value,
+        bool value_changed)
+{
+    if (!was_saturated && is_saturated) {
+        addSaturatedValue(current_value);
+    } else if (was_saturated && !is_saturated) {
+        removeSaturatedValue(previous_value);
+    } else if (was_saturated && is_saturated && value_changed &&
+            previous_value != current_value) {
+        removeSaturatedValue(previous_value);
+        addSaturatedValue(current_value);
+    }
+}
+
+void
 IdealConstantLVP::resetRoiSaturationStats()
 {
     // The table persists across resetstats, so pre-existing saturated entries
     // are live capacity demand for the entire following ROI window.
     roiPeakSaturatedPcs = currentSaturatedPcs;
+    // Distinct values use the same live saturated-entry set.  Preserve the
+    // warmup state as the initial demand of the new ROI window.
+    roiPeakDistinctSaturatedValues = saturatedValueRefCounts.size();
 }
 
 void
 IdealConstantLVP::refreshSaturationStats()
 {
     profileStats.profileRoiPeakSaturatedPcs = roiPeakSaturatedPcs;
+    profileStats.profileRoiPeakDistinctSaturatedValues =
+        roiPeakDistinctSaturatedValues;
     profileStats.profileLifetimePeakSaturatedPcs =
         lifetimePeakSaturatedPcs;
+    profileStats.profileLifetimePeakDistinctSaturatedValues =
+        lifetimePeakDistinctSaturatedValues;
 }
 
 void
@@ -755,7 +816,131 @@ IdealConstantLVP::resetRoiProfile()
         roiProfileUpdateSequences[tid] = 0;
         roiPredictionIntervals[tid].clear();
     }
+    resetRoiSaturatedValueProfile();
     resetShadowRoiProfile();
+}
+
+void
+IdealConstantLVP::openSaturatedValueSegment(SaturatedValueProfile &profile,
+        ThreadID tid, Addr pc, uint64_t saturation_epoch,
+        uint64_t value_segment, RegVal value, uint64_t saturation_start_seq_no,
+        bool open_at_scope_start)
+{
+    gem5_assert(saturation_epoch != 0 && value_segment != 0,
+            "IdealConstantLVP saturated value segment has no epoch/index\n");
+    const SaturatedValueSegmentKey key{pc, saturation_epoch, value_segment};
+    gem5_assert(profile.segmentIndexes.find(key) ==
+            profile.segmentIndexes.end(),
+            "IdealConstantLVP saturated value segment was opened twice\n");
+
+    SaturatedValueSegment segment;
+    segment.tid = tid;
+    segment.pc = pc;
+    segment.saturationEpoch = saturation_epoch;
+    segment.valueSegment = value_segment;
+    segment.saturatedValue = value;
+    segment.saturationStartSeqNo = saturation_start_seq_no;
+    segment.openAtScopeStart = open_at_scope_start;
+    profile.segments.push_back(segment);
+    const auto [it, inserted] = profile.segmentIndexes.emplace(
+            key, profile.segments.size());
+    gem5_assert(inserted,
+            "IdealConstantLVP saturated value segment index collision\n");
+    (void)it;
+}
+
+void
+IdealConstantLVP::closeSaturatedValueSegment(SaturatedValueProfile &profile,
+        Addr pc, uint64_t saturation_epoch, uint64_t value_segment,
+        uint64_t saturation_end_seq_no)
+{
+    const SaturatedValueSegmentKey key{pc, saturation_epoch, value_segment};
+    const auto index_it = profile.segmentIndexes.find(key);
+    gem5_assert(index_it != profile.segmentIndexes.end(),
+            "IdealConstantLVP saturated value segment was not open\n");
+    gem5_assert(index_it->second != 0 &&
+            index_it->second <= profile.segments.size(),
+            "IdealConstantLVP saturated value segment index is invalid\n");
+    auto &segment = profile.segments[index_it->second - 1];
+    gem5_assert(segment.openAtEnd,
+            "IdealConstantLVP saturated value segment was already closed\n");
+    segment.saturationEndSeqNo = saturation_end_seq_no;
+    segment.openAtEnd = false;
+}
+
+void
+IdealConstantLVP::observeSaturatedValuePrediction(ThreadID tid, Addr pc,
+        uint64_t saturation_epoch, uint64_t value_segment,
+        RegVal saturated_value, uint64_t committed_seq_no,
+        bool correct_prediction)
+{
+    const SaturatedValueSegmentKey key{pc, saturation_epoch, value_segment};
+    auto find_segment = [&](SaturatedValueProfile &profile) ->
+            SaturatedValueSegment & {
+        const auto index_it = profile.segmentIndexes.find(key);
+        gem5_assert(index_it != profile.segmentIndexes.end(),
+                "IdealConstantLVP value segment is missing\n");
+        gem5_assert(index_it->second != 0 &&
+                index_it->second <= profile.segments.size(),
+                "IdealConstantLVP value segment index is invalid\n");
+        return profile.segments[index_it->second - 1];
+    };
+    auto record_prediction = [&](SaturatedValueSegment &segment) {
+        gem5_assert(segment.saturatedValue == saturated_value,
+                "IdealConstantLVP prediction value does not match segment\n");
+        if (segment.predictionUses == 0)
+            segment.firstPredictionUseSeqNo = committed_seq_no;
+        segment.lastPredictionUseSeqNo = committed_seq_no;
+        segment.predictionUses++;
+        if (correct_prediction)
+            segment.correctPredictionUses++;
+    };
+
+    auto &lifetime_segment = find_segment(
+            lifetimeSaturatedValueProfiles[tid]);
+    record_prediction(lifetime_segment);
+
+    auto &roi_profile = roiSaturatedValueProfiles[tid];
+    if (roi_profile.segmentIndexes.find(key) ==
+            roi_profile.segmentIndexes.end()) {
+        // The ROI reset may have discarded a historical row while its
+        // prediction record was still in flight.  Preserve the segment's
+        // actual end state from the lifetime record rather than turning an
+        // already closed segment into a false open-ended ROI interval.
+        openSaturatedValueSegment(roi_profile, tid, pc, saturation_epoch,
+                value_segment, saturated_value, 0, true);
+        auto &roi_segment = find_segment(roi_profile);
+        roi_segment.saturationEndSeqNo =
+            lifetime_segment.saturationEndSeqNo;
+        roi_segment.openAtEnd = lifetime_segment.openAtEnd;
+    }
+    record_prediction(find_segment(roi_profile));
+}
+
+void
+IdealConstantLVP::resetRoiSaturatedValueProfile()
+{
+    if (!enableProfiling)
+        return;
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        auto &profile = roiSaturatedValueProfiles[tid];
+        profile.segments.clear();
+        profile.segmentIndexes.clear();
+
+        // Entries survive resetstats.  Emit them as left-truncated records so
+        // the ROI value-register demand includes warmup-resident epochs.
+        for (const auto &[pc, entry] : idealConstTables[tid]) {
+            if (!entry.confidence.isSaturated())
+                continue;
+            gem5_assert(entry.saturationEpoch != 0 &&
+                    entry.saturationValueSegment != 0,
+                    "Saturated IdealConstantLVP entry has no value epoch\n");
+            openSaturatedValueSegment(profile, tid, pc,
+                    entry.saturationEpoch, entry.saturationValueSegment,
+                    entry.value, 0, true);
+        }
+    }
 }
 
 void
@@ -1012,6 +1197,68 @@ IdealConstantLVP::dumpPredictionIntervals() const
 }
 
 void
+IdealConstantLVP::dumpSaturatedValues() const
+{
+    auto out_handle = simout.create(
+            "ideal_constant_lvp_saturated_values.csv", false, true);
+    auto &out = *out_handle->stream();
+
+    out << "# ideal_constant_lvp_saturated_values_v1\n";
+    out << "# value_definition=raw_regval_bit_pattern\n";
+    out << "# interval_definition=committed_sequence_boundaries_for_each_"
+           "saturated_value_segment\n";
+    out << "scope,tid,pc,saturation_epoch,value_segment,saturated_value,"
+           "saturation_start_seq_no,saturation_end_seq_no,"
+           "first_prediction_use_seq_no,last_prediction_use_seq_no,"
+           "prediction_uses,correct_prediction_uses,open_at_scope_start,"
+           "open_at_end\n";
+
+    auto dump_scope = [&out](const char *scope,
+            const SaturatedValueProfiles &all_profiles) {
+        for (const auto &profile : all_profiles) {
+            std::vector<const SaturatedValueSegment *> segments;
+            segments.reserve(profile.segments.size());
+            for (const auto &segment : profile.segments)
+                segments.push_back(&segment);
+            std::sort(segments.begin(), segments.end(),
+                    [](const auto *left, const auto *right) {
+                        if (left->tid != right->tid)
+                            return left->tid < right->tid;
+                        if (left->pc != right->pc)
+                            return left->pc < right->pc;
+                        if (left->saturationEpoch !=
+                                right->saturationEpoch) {
+                            return left->saturationEpoch <
+                                right->saturationEpoch;
+                        }
+                        return left->valueSegment < right->valueSegment;
+                    });
+
+            for (const auto *segment : segments) {
+                out << scope << ',' << segment->tid << ",0x" << std::hex
+                    << segment->pc << std::dec << ','
+                    << segment->saturationEpoch << ','
+                    << segment->valueSegment << ",0x" << std::hex
+                    << std::setw(16) << std::setfill('0')
+                    << segment->saturatedValue << std::setfill(' ')
+                    << std::dec << ',' << segment->saturationStartSeqNo
+                    << ',' << segment->saturationEndSeqNo << ','
+                    << segment->firstPredictionUseSeqNo << ','
+                    << segment->lastPredictionUseSeqNo << ','
+                    << segment->predictionUses << ','
+                    << segment->correctPredictionUses << ','
+                    << segment->openAtScopeStart << ',' << segment->openAtEnd
+                    << '\n';
+            }
+        }
+    };
+
+    dump_scope("lifetime", lifetimeSaturatedValueProfiles);
+    dump_scope("roi", roiSaturatedValueProfiles);
+    simout.close(out_handle);
+}
+
+void
 IdealConstantLVP::dumpShadowProfile() const
 {
     if (!enableShadowProfiling || shadowQfTables.empty())
@@ -1127,7 +1374,11 @@ IdealConstantLVP::predict(const VPPredictRequest &request)
             const auto &entry = idealConstTables[request.tid].at(request.pc);
             gem5_assert(entry.saturationEpoch != 0,
                     "Saturated IdealConstantLVP entry has no epoch\n");
+            gem5_assert(entry.saturationValueSegment != 0,
+                    "Saturated IdealConstantLVP entry has no value segment\n");
             profile_record->saturationEpoch = entry.saturationEpoch;
+            profile_record->valueSegment = entry.saturationValueSegment;
+            profile_record->saturatedValue = entry.value;
         }
         candidate.record->offeredPrediction = true;
         candidate.record->predictedValue = candidate.result.value;
@@ -1145,8 +1396,11 @@ IdealConstantLVP::doUpdate(Addr pc, ThreadID tid, RegVal actualValue,
     auto it = idealConstTable.find(pc);
     const bool had_entry = it != idealConstTable.end();
     const bool was_saturated = had_entry && it->second.confidence.isSaturated();
+    const RegVal previous_value = had_entry ? it->second.value : 0;
     const uint64_t previous_saturation_epoch = was_saturated ?
         it->second.saturationEpoch : 0;
+    const uint64_t previous_value_segment = was_saturated ?
+        it->second.saturationValueSegment : 0;
     bool value_changed = false;
     if (it == idealConstTable.end()) {
         // Not found, allocate a new entry
@@ -1174,6 +1428,12 @@ IdealConstantLVP::doUpdate(Addr pc, ThreadID tid, RegVal actualValue,
     auto &entry = idealConstTable.at(pc);
     const bool is_saturated = entry.confidence.isSaturated();
     observeSaturationTransition(was_saturated, is_saturated);
+    const bool saturated_value_changed = was_saturated && is_saturated &&
+        value_changed && previous_value != entry.value;
+    if (was_saturated != is_saturated || saturated_value_changed) {
+        observeSaturatedValueChange(was_saturated, is_saturated,
+                previous_value, entry.value, value_changed);
+    }
 
     if (enableProfiling) {
         uint64_t saturation_epoch_started = 0;
@@ -1182,12 +1442,51 @@ IdealConstantLVP::doUpdate(Addr pc, ThreadID tid, RegVal actualValue,
             entry.saturationEpoch++;
             gem5_assert(entry.saturationEpoch != 0,
                     "IdealConstantLVP saturation epoch overflow\n");
+            entry.saturationValueSegment = 1;
             saturation_epoch_started = entry.saturationEpoch;
+            openSaturatedValueSegment(lifetimeSaturatedValueProfiles[tid],
+                    tid, pc, entry.saturationEpoch,
+                    entry.saturationValueSegment, entry.value,
+                    committed_seq_no, false);
+            openSaturatedValueSegment(roiSaturatedValueProfiles[tid], tid,
+                    pc, entry.saturationEpoch, entry.saturationValueSegment,
+                    entry.value, committed_seq_no, false);
         }
         if (was_saturated && !is_saturated) {
             gem5_assert(previous_saturation_epoch != 0,
                     "Saturated IdealConstantLVP entry has no epoch\n");
+            gem5_assert(previous_value_segment != 0,
+                    "Saturated IdealConstantLVP entry has no value segment\n");
             saturation_epoch_ended = previous_saturation_epoch;
+            closeSaturatedValueSegment(lifetimeSaturatedValueProfiles[tid],
+                    pc, previous_saturation_epoch, previous_value_segment,
+                    committed_seq_no);
+            closeSaturatedValueSegment(roiSaturatedValueProfiles[tid], pc,
+                    previous_saturation_epoch, previous_value_segment,
+                    committed_seq_no);
+        }
+        if (saturated_value_changed) {
+            gem5_assert(previous_saturation_epoch != 0 &&
+                    previous_value_segment != 0,
+                    "Saturated IdealConstantLVP entry has no value segment\n");
+            gem5_assert(previous_value_segment !=
+                    std::numeric_limits<uint64_t>::max(),
+                    "IdealConstantLVP value segment overflow\n");
+            closeSaturatedValueSegment(lifetimeSaturatedValueProfiles[tid],
+                    pc, previous_saturation_epoch, previous_value_segment,
+                    committed_seq_no);
+            closeSaturatedValueSegment(roiSaturatedValueProfiles[tid], pc,
+                    previous_saturation_epoch, previous_value_segment,
+                    committed_seq_no);
+            entry.saturationValueSegment = previous_value_segment + 1;
+            openSaturatedValueSegment(lifetimeSaturatedValueProfiles[tid],
+                    tid, pc, previous_saturation_epoch,
+                    entry.saturationValueSegment, entry.value,
+                    committed_seq_no, false);
+            openSaturatedValueSegment(roiSaturatedValueProfiles[tid], tid,
+                    pc, previous_saturation_epoch,
+                    entry.saturationValueSegment, entry.value,
+                    committed_seq_no, false);
         }
         updateProfile(lifetimeProfileTables[tid], pc,
                 ++lifetimeProfileUpdateSequences[tid], committed_seq_no,
@@ -1213,6 +1512,8 @@ IdealConstantLVP::update(const VPUpdateInfo &updateInfo,
         const VPPredictionRecord *record, const VPFeedback &feedback)
 {
     uint64_t prediction_epoch = 0;
+    uint64_t prediction_value_segment = 0;
+    RegVal prediction_value = 0;
     if (enableProfiling && feedback.offeredPrediction) {
         auto *profile_record =
             dynamic_cast<const IdealConstantPredictionRecord *>(record);
@@ -1221,9 +1522,18 @@ IdealConstantLVP::update(const VPUpdateInfo &updateInfo,
         prediction_epoch = profile_record->saturationEpoch;
         gem5_assert(prediction_epoch != 0,
                 "IdealConstantLVP prediction has no saturation epoch\n");
+        gem5_assert(profile_record->valueSegment != 0,
+                "IdealConstantLVP prediction has no value segment\n");
+        prediction_value_segment = profile_record->valueSegment;
+        prediction_value = profile_record->saturatedValue;
     }
     doUpdate(updateInfo.pc, updateInfo.tid, updateInfo.actualValue, feedback,
             updateInfo.isMisprediction, updateInfo.seqNo, prediction_epoch);
+    if (enableProfiling && feedback.offeredPrediction && feedback.applied) {
+        observeSaturatedValuePrediction(updateInfo.tid, updateInfo.pc,
+                prediction_epoch, prediction_value_segment, prediction_value,
+                updateInfo.seqNo, !updateInfo.isMisprediction);
+    }
     if (enableShadowProfiling) {
         shadowUpdate(updateInfo.pc, updateInfo.tid, updateInfo.actualValue,
                 record);
