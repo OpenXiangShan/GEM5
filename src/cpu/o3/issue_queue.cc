@@ -218,6 +218,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
 
     portBusy.resize(outports, 0);
 
+    delay_ageQue.resize(outports, TimeBuffer<DynInstPtr>(2, 0));
+
     intRdRfTPI.resize(outports);
     fpRdRfTPI.resize(outports);
     intWrRfTPI.resize(outports);
@@ -1001,6 +1003,7 @@ IssueQue::selectInst()
                         } else {
                             rfTypePortId = intRdRfTPI[pi][i];
                         }
+                        if (scheduler->age_readarb) *delay_ageQue[pi].access(0) = inst;
                         scheduler->useRfRdPort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
                     } else if (psrc->isFloatReg() && fpRdRfTPI[pi].size() > i) {
                         rfTypePortId = fpRdRfTPI[pi][i];
@@ -1069,6 +1072,11 @@ IssueQue::tick()
     scheduleInst();
     processVectorReadyQ();
     inflightIssues.advance();
+
+    if (scheduler->age_readarb)
+    for (auto& it : delay_ageQue) {
+        it.advance();
+    }
 
     for (auto& t : portBusy) {
         t = t >> 1;
@@ -1867,6 +1875,16 @@ Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
     assert(typePortId < occupancy.size());
     auto& t_inst = occupancy[typePortId].first;
     auto& t_pri = occupancy[typePortId].second;
+
+    if (age_readarb) {
+        auto prev_inst0 = (*t_inst->issueQue->delay_ageQue[t_inst->issueportid].access(-2));
+        auto prev_inst1 = (*inst->issueQue->delay_ageQue[inst->issueportid].access(-2));
+
+        if (t_inst && prev_inst0 && prev_inst1) {
+            t_pri = prev_inst0->seqNum;
+            pri = prev_inst1->seqNum;
+        }
+    }
 
     if (t_inst) {
         if (t_pri < pri) {  // smaller is higher priority
