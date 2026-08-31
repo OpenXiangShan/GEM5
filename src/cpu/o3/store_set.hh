@@ -32,6 +32,7 @@
 #include <cmath>
 #include <list>
 #include <map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -103,6 +104,8 @@ class StoreSet
      */
     std::vector<InstSeqNum> checkInst(Addr PC);
 
+    void setStrictWaitEnabled(bool enable) { enableStrictWait = enable; }
+
     /** Records this PC/sequence number as issued. */
     void issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store);
 
@@ -145,6 +148,16 @@ class StoreSet
 
     /** Bit vector to tell if the LFST has a valid entry. */
     std::vector<std::vector<bool>> validLFSTLarge;
+
+    /**
+     * Stores inserted but not yet issued/squashed/cleared.
+     *
+     * For strict loads, we conservatively wait on all outstanding stores
+     * tracked here.
+     */
+    std::unordered_set<InstSeqNum> pendingStores;
+
+    bool enableStrictWait = true;
 
     /** Map of stores that have been inserted into the store set, but
      * not yet issued or squashed.

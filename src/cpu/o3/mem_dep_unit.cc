@@ -63,6 +63,7 @@ MemDepUnit::MemDepUnit(const BaseO3CPUParams &params)
       stats(nullptr)
 {
     DPRINTF(MemDepUnit, "Creating MemDepUnit object.\n");
+    depPred.setStrictWaitEnabled(params.enable_storeSet_strict_wait);
 }
 
 MemDepUnit::~MemDepUnit()
@@ -99,6 +100,7 @@ MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
 
     depPred.init(params.store_set_clear_period, params.store_set_clear_thres, params.SSITSize,
             params.LFSTSize, params.LFSTEntrySize);
+    depPred.setStrictWaitEnabled(params.enable_storeSet_strict_wait);
 
     enableReplayBasedMDP = params.EnableReplayBasedMDP;
     enableMDPStrictWait = params.EnableMDPStrictWait;
