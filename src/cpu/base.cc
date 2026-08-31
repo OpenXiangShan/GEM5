@@ -1569,7 +1569,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                 continue;
                             }
                             if (memcmp(it->data, &gem5_val,
-                                       diffInfo.effSize) == 0) {
+                                       std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
                                 matched_recent_store = &(*it);
                                 break;
                             }
@@ -1593,7 +1593,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
                     if (diffInfo.inst->isLoad() &&
                                memcmp(golden_ptr, &gem5_val,
-                                      diffInfo.effSize) == 0) {
+                                      std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
                         DPRINTF(Diff,
                                 "Load content matched in golden memory. "
                                 "Sync from golden to ref\n");
@@ -1601,7 +1601,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         continue;
                     } else if (diffInfo.inst->isLoad() && exec_golden_ptr &&
                                memcmp(exec_golden_ptr, &gem5_val,
-                                      diffInfo.effSize) == 0) {
+                                      std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
                         DPRINTF(Diff,
                                 "Load content matched the execution-time "
                                 "golden snapshot. Sync from the recorded "
@@ -1618,11 +1618,11 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         sync_mem_reg(matched_recent_store->data);
                         continue;
                     } else if (diffInfo.inst->isAtomic()) {
-                        DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n", diffInfo.amoOldGoldenValue,
+                        DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n", *(uint64_t*)diffInfo.amoOldGoldenValue,
                                 gem5_val);
                         DPRINTF(Diff, "New golden value: %#lx\n", *(uint64_t *)golden_ptr);
                         if (memcmp(&diffInfo.amoOldGoldenValue, &gem5_val,
-                                   diffInfo.effSize) == 0) {
+                                   std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
                             DPRINTF(Diff, "Atomic encountered, old value matched. Sync from golden to ref\n");
                             sync_mem_reg(golden_ptr);
                             continue;

@@ -368,9 +368,6 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
                 assert(size == inst->effSize);
 
                 if (inst->isAtomic()) {
-                    panic_if(size > sizeof(uint64_t),
-                             "Unexpected AMO size %zu at addr %#lx\n",
-                             size, addr);
                     // Preserve the DUT-observed old value until completeStore()
                     // derives the post-AMO memory image. Keep the actual
                     // response value for difftest, since the request may have
@@ -2412,7 +2409,7 @@ LSQUnit::writebackBlockedStore()
         system->multiContextDifftest() && inst->isAtomic() &&
         cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-        uint8_t issue_golden[8] = {};
+        uint8_t issue_golden[16] = {};
         panic_if(request->_size > sizeof(issue_golden),
                  "Unexpected AMO size %u at addr %#lx\n",
                  request->_size, request->mainReq()->getPaddr());
@@ -2487,7 +2484,7 @@ LSQUnit::directStoreToCache()
         if (system->multiContextDifftest() && inst->isAtomic() &&
             cpu->goldenMemManager() &&
             cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-            uint8_t issue_golden[8] = {};
+            uint8_t issue_golden[16] = {};
             panic_if(request->_size > sizeof(issue_golden),
                      "Unexpected AMO size %u at addr %#lx\n",
                      request->_size, request->mainReq()->getPaddr());
@@ -3112,7 +3109,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, 0xff,
                                                      request->_size);
         } else {
-            uint8_t tmp_data[8];
+            uint8_t tmp_data[16];
             memset(tmp_data, 0, sizeof(tmp_data));
             assert(request->req()->getAtomicOpFunctor());
 
