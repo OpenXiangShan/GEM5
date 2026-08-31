@@ -383,6 +383,13 @@ IssueQue::isVectorMemInst(const DynInstPtr& inst) const
     return inst && inst->isVector() && inst->isMemRef() && !inst->isSquashed();
 }
 
+bool
+IssueQue::needsVectorMemSplit(const DynInstPtr& inst) const
+{
+    return isVectorMemInst(inst) &&
+           inst->opClass() != enums::VectorUnitStrideLoad;
+}
+
 IssueQue::VectorSplitKind
 IssueQue::vectorSplitKind(const DynInstPtr& inst) const
 {
@@ -423,7 +430,7 @@ IssueQue::nextVectorSplitUnitFor(VectorSplitKind kind)
 bool
 IssueQue::isBlockingVectorSplitInst(const DynInstPtr& inst) const
 {
-    return isVectorMemInst(inst) && inst->opClass() != enums::VectorUnitStrideLoad;
+    return needsVectorMemSplit(inst);
 }
 
 bool
@@ -804,7 +811,7 @@ IssueQue::retryMem(const DynInstPtr& inst)
             DynInst::LoadPipeSource::ReplayQueue);
     }
     DPRINTF(Schedule, "retry %s [sn:%llu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
-    if (isVectorMemInst(inst)) {
+    if (needsVectorMemSplit(inst)) {
         enqueueVectorMemDelay(inst, true);
         return;
     }
@@ -924,7 +931,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            if (isVectorMemInst(inst)) {
+            if (needsVectorMemSplit(inst)) {
                 enqueueVectorMemDelay(inst, false);
             } else {
                 READYQ_PUSH(inst);
