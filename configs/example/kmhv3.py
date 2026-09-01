@@ -54,6 +54,7 @@ def setKmhV3Params(args, system):
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
         cpu.enable_storeSet_train = True
+        cpu.EnablePHASTMDP = False
 
         # dispatch
         cpu.enableDispatchStage = False
@@ -202,6 +203,7 @@ if __name__ == '__m5_main__':
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
+    args.l3_size = '32MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.cdp_use_dynamic_degree = False
     args.cdp_accuracy_threshold = 0.05

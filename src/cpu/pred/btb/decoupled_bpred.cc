@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <utility>
 
 #include "arch/riscv/regs/misc.hh"
 #include "base/debug_helper.hh"
@@ -631,7 +632,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     }
 
     // 5. Add entry to fetch target queue
-    ftq.insert(entry);
+    ftq.insert(std::move(entry));
     threads[tid].nextPredictionAfterSquash = false;
     advancePairPhase(threads[tid].s0PairPhase);
     threads[tid].validprediction = false;
@@ -640,10 +641,10 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 6. Debug output and update statistics
     dumpFsq("after insert new target");
     DPRINTF(DecoupleBP, "Inserted fetch target %lu starting at PC %#lx\n",
-            ftq.backId(tid), entry.startPC);
+            ftq.backId(tid), ftq.back(tid).startPC);
 
     // 7. Increment statistics
-    printTarget(entry);
+    printTarget(ftq.back(tid));
     dbpBtbStats.fsqEntryEnqueued++;
 
 }
@@ -764,16 +765,16 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     thread.s0PC = secondPred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
-    ftq.insert(entry);
+    ftq.insert(std::move(entry));
     pairtage->recordTwoTakenBlockEnqueued();
     advancePairPhase(thread.s0PairPhase);
 
     DPRINTF(DecoupleBP,
             "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
-            ftq.backId(tid), tid, entry.startPC, secondBlock.branchPC,
+            ftq.backId(tid), tid, ftq.back(tid).startPC, secondBlock.branchPC,
             secondBlock.targetPC, secondBlock.taken);
 
-    printTarget(entry);
+    printTarget(ftq.back(tid));
     dbpBtbStats.fsqEntryEnqueued++;
 }
 

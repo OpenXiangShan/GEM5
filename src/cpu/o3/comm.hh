@@ -363,6 +363,7 @@ struct TimeStruct
         unsigned squashedLoopIter; // F
 
         bool isTrapSquash;
+        bool isDeferedMDPSquash;
         bool squash; // *F, D, R, I
         bool robSquashing; // *F, D, R, I
 

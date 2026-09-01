@@ -123,7 +123,14 @@ class Decode
     bool isDrained() const;
 
     /** Takes over from another CPU's thread. */
-    void takeOverFrom() { resetStage(); }
+    void
+    takeOverFrom()
+    {
+        resetStage();
+        for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+            decodedBranchHistory[tid].clear();
+        }
+    }
 
     /** Ticks decode, processing all input signals and decoding as many
      * instructions as possible.
@@ -173,6 +180,14 @@ class Decode
      */
     unsigned squash(ThreadID tid);
 
+    BranchHistory &getBranchHistory(ThreadID tid)
+    {
+        return decodedBranchHistory[tid];
+    }
+
+    void squashBranchHistory(ThreadID tid, InstSeqNum squash_seq_num,
+                             bool include_squash_inst);
+
     void setFetchStage(Fetch *fetch_stage)
     {
         fetch_ptr = fetch_stage;
@@ -218,6 +233,9 @@ class Decode
 
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
+
+    /** Speculative branch history used by path-sensitive MDP lookup. */
+    BranchHistory decodedBranchHistory[MaxThreads];
 
     /** Per-thread stall buffers to avoid contention in SMT mode.
      * Each thread has its own FIFO queue for backpressure isolation.

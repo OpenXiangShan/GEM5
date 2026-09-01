@@ -1,6 +1,8 @@
 #ifndef __CPU_PRED_BTB_RAS_HH__
 #define __CPU_PRED_BTB_RAS_HH__
 
+#include <cstdint>
+
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/btb/common.hh"
@@ -70,15 +72,15 @@ namespace btb_pred {
         typedef struct RASInflightEntry
         {
             RASEssential data;
-            int nos; // parent node pointer
+            int64_t nos; // Logical parent node pointer
         }RASInflightEntry;
 
         typedef struct RASMeta {
             int ssp;
             int sctr;
             // RASEntry tos; // top of stack
-            int TOSR;
-            int TOSW;
+            int64_t TOSR;
+            int64_t TOSW;
             bool willPush;
             Addr target;
             // RASInflightEntry inflight; // inflight top of stack
@@ -108,9 +110,9 @@ namespace btb_pred {
     private:
         struct ThreadRASState
         {
-            int TOSW = 0; // inflight pointer to the write top of stack
-            int TOSR = 0; // inflight pointer to the read top of stack
-            int BOS = 0;  // inflight pointer to the bottom of stack
+            int64_t TOSW = 0; // Logical next-write pointer
+            int64_t TOSR = -1; // Logical top-of-stack read pointer
+            int64_t BOS = 0;  // Logical oldest valid pointer
             int ssp = 0;  // speculative stack pointer
             int nsp = 0;  // committed stack pointer
             int sctr = 0;
@@ -133,13 +135,15 @@ namespace btb_pred {
 
         void ptrDec(int &ptr);
 
-        void inflightPtrInc(int &ptr);
-        
-        void inflightPtrDec(int &ptr);
+        unsigned inflightIndex(int64_t ptr) const;
 
-        bool inflightInRange(const ThreadRASState &state, int ptr);
+        uint64_t inflightOccupancy(const ThreadRASState &state) const;
 
-        int inflightPtrPlus1(int ptr);
+        bool inflightNearOverflow(const ThreadRASState &state) const;
+
+        bool inflightInRange(const ThreadRASState &state, int64_t ptr) const;
+
+        void recordInflightDepth(const ThreadRASState &state);
 
         void checkCorrectness(ThreadID tid);
 
@@ -163,17 +167,18 @@ namespace btb_pred {
             }
             DPRINTFR(RAS, "non-volatile stack:\n");
             for (int i = 0; i < numInflightEntries; i++) {
-                DPRINTFR(RAS, "entry [%d] retAddr %#lx, ctr %u nos %d", i,
+                DPRINTFR(RAS, "entry [%d] retAddr %#lx, ctr %u nos %lld", i,
                          state.inflightStack[i].data.retAddr,
                          state.inflightStack[i].data.ctr,
-                         state.inflightStack[i].nos);
-                if (state.TOSW == i) {
+                         static_cast<long long>(state.inflightStack[i].nos));
+                if (inflightIndex(state.TOSW) == i) {
                     DPRINTFR(RAS, " <-- TOSW");
                 }
-                if (state.TOSR == i) {
+                if (inflightInRange(state, state.TOSR) &&
+                    inflightIndex(state.TOSR) == i) {
                     DPRINTFR(RAS, " <-- TOSR");
                 }
-                if (state.BOS == i) {
+                if (inflightIndex(state.BOS) == i) {
                     DPRINTFR(RAS, " <-- BOS");
                 }
                 DPRINTFR(RAS, "\n");
@@ -229,6 +234,9 @@ namespace btb_pred {
 
         Scalar Pushes;
         Scalar Pops;
+        Scalar SpecUpdatesBlockedNearOverflow;
+        Scalar RedirectsBlockedNearOverflow;
+        Scalar MaxInflightDepth;
 
 #ifndef UNIT_TEST
         RASStats(statistics::Group* parent);

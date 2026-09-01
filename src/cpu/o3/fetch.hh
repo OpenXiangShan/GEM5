@@ -54,19 +54,22 @@
 #include "config/the_isa.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/smt_sched.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
+#include "enums/SMTDecodePolicy.hh"
+#include "enums/SMTFetchBlockPolicy.hh"
 #include "enums/SMTFetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
-#include "cpu/o3/smt_sched.hh"
 
 namespace gem5
 {
@@ -227,6 +230,28 @@ class Fetch
     /** Fetch policy. */
     SMTFetchPolicy fetchPolicy;
 
+    /** Distinct SMT threads allowed to feed Decode in one cycle. */
+    unsigned numPreDispatchThreads;
+
+    /**  Decode Policy: baseline fetch blocking policy */
+    SMTDecodePolicy smtDecodePolicy;
+    unsigned smtBorrowThrottleCycles[MaxThreads];
+    unsigned smtBorrowThrottleHoldCycles;
+    unsigned smtLdstqHighWater;
+    int delayedSchedulerDelay; // only for DelayedICcountPolicy
+
+    /**  Block Policy: long-latency load fetch blocking */
+    SMTFetchBlockPolicy smtFetchBlockPolicy;
+    void checkLongLatencyLoads();
+    bool isBlockPolicyActive() const;
+    unsigned longLatencyThreshold;
+    InstSeqNum lastLoadHeadSeqNum[MaxThreads];
+    uint64_t longLatencyStallCycles[MaxThreads];
+    bool threadFetchBlocked[MaxThreads];
+
+    /** Block Policy: per-thread state tracking for statistics */
+    uint64_t blockStateHoldCycles[MaxThreads];
+
     /** List that has the threads organized by priority. */
     std::list<ThreadID> priorityList;
 
@@ -243,16 +268,6 @@ class Fetch
     InstsCounter* iqCounter;
     InstsCounter* robCounter;
 
-    unsigned smtBorrowThrottleCycles[MaxThreads];
-    unsigned smtBorrowThrottleHoldCycles;
-    unsigned smtLdstqHighWater;
-    /** Distinct SMT threads allowed to feed Decode in one cycle. */
-    unsigned numPreDispatchThreads;
-
-    // Configuration parameters
-    std::string smtDecodePolicy ="multi_priority";
-    int delayedSchedulerDelay;
-
   public:
     /** Fetch constructor. */
     Fetch(CPU *_cpu, const BaseO3CPUParams &params);
@@ -264,6 +279,9 @@ class Fetch
 
     /** Registers probes. */
     void regProbePoints();
+
+    /** Sets ptr to iew. */
+    void setIEWStage(IEW *iew_stage);
 
     /** Sets the main backwards communication time buffer pointer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
@@ -607,6 +625,8 @@ class Fetch
   private:
     /** Pointer to the O3CPU. */
     CPU *cpu;
+
+    IEW *iewStage;
 
     /** Time buffer interface. */
     TimeBuffer<TimeStruct> *timeBuffer;
@@ -1186,6 +1206,11 @@ class Fetch
         statistics::Scalar traceMetaCleanupSquashEntries;
         /** Number of times cleanup was called on successful commit. */
         statistics::Scalar traceMetaCleanupCommitCalls;
+
+        // === Block Policy statistics ===
+        statistics::Vector fetchBlockState;
+        statistics::Vector fetchThrottleState;
+        statistics::VectorDistribution fetchBlockHoldCycle;  // [0]=Unblocked [1]=Blocked
     } fetchStats;
 
     SquashVersion localSquashVer[MaxThreads];

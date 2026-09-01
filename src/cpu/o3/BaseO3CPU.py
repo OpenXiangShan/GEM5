@@ -50,6 +50,12 @@ from m5.SimObject import *
 class SMTFetchPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'Branch', 'IQCount', 'LSQCount' ]
 
+class SMTDecodePolicy(ScopedEnum):
+    vals = [ 'ICount', 'DelayedICount', 'MultiPriority', 'RoundRobin' ]
+
+class SMTFetchBlockPolicy(ScopedEnum):
+    vals = [ 'BaseLine', 'BlockPolicy' ]
+
 class SMTQueuePolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
 
@@ -216,6 +222,31 @@ class BaseO3CPU(BaseCPU):
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
+    EnablePHASTMDP = Param.Bool(True,
+        "Use PHAST memory dependence prediction instead of StoreSets")
+    mdp_violation_timing = Param.String(
+        "atResolve",
+        "When to recover from and train a detected MDP RAW violation: "
+        "atResolve or atCommit")
+    phast_num_rows = Param.Unsigned(64, "PHAST rows per history table")
+    phast_associativity = Param.Unsigned(4, "PHAST table associativity")
+    phast_tag_bits = Param.Unsigned(16, "PHAST tag bits")
+    phast_max_counter = Param.Unsigned(16, "PHAST confidence counter max")
+    phast_counter_threshold = Param.Unsigned(
+        1, "Minimum PHAST confidence required to issue a prediction")
+    phast_counter_increment = Param.Unsigned(
+        0,
+        "PHAST confidence increment after a correct prediction; 0 restores max confidence")
+    phast_counter_decrement = Param.Unsigned(
+        1, "PHAST confidence decrement after an incorrect prediction")
+    phast_selected_target_bits = Param.Unsigned(
+        5, "Target-address bits included in the PHAST path hash")
+    phast_history_lengths = VectorParam.Unsigned(
+        [0, 2, 4, 6, 8, 12, 16, 32],
+        "Branch-history lengths for PHAST path tables, shortest to longest")
+    phast_second_target_max_distance = Param.Unsigned(
+        0,
+        "Exclusive maximum SQ distance for a PHAST second target; 0 uses half of the virtual SQ capacity")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
@@ -272,8 +303,6 @@ class BaseO3CPU(BaseCPU):
                                           "SMT ROB Sharing Policy")
     smtROBThreshold = Param.Int(100, "SMT ROB Threshold Sharing Parameter")
     smtCommitPolicy = Param.CommitPolicy('RoundRobin', "SMT Commit Policy")
-    smtBorrowThrottleCycles = Param.Unsigned(
-        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch")
     smtBorrowLdstqHighWater = Param.Unsigned(
         0, "Explicit SMT borrowing LSQ high-water threshold; 0 uses percentage")
     smtBorrowLdstqHighWaterPercent = Param.Percent(
@@ -282,6 +311,20 @@ class BaseO3CPU(BaseCPU):
         8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
     smtBorrowDonorReserveEntries = Param.Unsigned(
         8, "Minimum ROB entries reserved for a borrowing donor to resume")
+
+    smtDecodePolicy = Param.SMTDecodePolicy('MultiPriority',
+        "SMT decode select policy: ICount, DelayedICount, MultiPriority, RoundRobin")
+    smtFetchBlockPolicy = Param.SMTFetchBlockPolicy('BaseLine',
+        "SMT fetch block policy for long-latency loads: "
+        "Baseline (no blocking) or BlockPolicy (stall fetch on long-latency load)")
+    smtFetchBlockThreshold = Param.Unsigned(15,
+        "Number of cycles a load must wait in the LQ before it is considered "
+        "long-latency and triggers fetch blocking (T15 from Tullsen & Brown's paper)")
+    smtFetchDelayedSchedulerDelay = Param.Unsigned(2,
+        "Number of cycles the DelayedICount Policy delayed")
+    smtBorrowThrottleCycles = Param.Unsigned(
+        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch, 0 means disable throttle")
+
     smtPregPolicy = Param.SMTQueuePolicy('Dynamic',
                                          "SMT Preg (physical register) Sharing Policy")
     smtPregFixedBase = Param.Unsigned(0,

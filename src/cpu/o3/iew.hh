@@ -507,6 +507,9 @@ class IEW
 
     bool enableStoreSetTrain;
 
+    /** Defer RAW MDP recovery/training until the violating load is at Commit. */
+    const bool mdpViolationAtCommit;
+
     /** Number of active threads. */
     ThreadID numThreads;
 
@@ -544,6 +547,8 @@ class IEW
         statistics::Scalar lsqFullEvents;
         /** Stat for total number of memory ordering violation events. */
         statistics::Scalar memOrderViolationEvents;
+        /** RAW MDP violations deferred from IEW until Commit. */
+        statistics::Scalar mdpViolationDeferred;
         /** Stat for total number of incorrect predicted taken branches. */
         statistics::Scalar predictedTakenIncorrect;
         /** Stat for total number of incorrect predicted not taken branches. */
@@ -634,6 +639,9 @@ class IEW
 
     void setRob(ROB *rob);
 
+    StallReason checkLsqStall(ThreadID tid, bool isLoad) {
+      return checkLSQStall(tid, isLoad);
+    }
 };
 
 } // namespace o3

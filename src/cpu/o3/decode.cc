@@ -130,7 +130,7 @@ Decode::startupStage()
 void
 Decode::clearStates(ThreadID tid)
 {
-
+    decodedBranchHistory[tid].clear();
 }
 
 void
@@ -319,6 +319,19 @@ Decode::fetchInstsValid()
 }
 
 void
+Decode::squashBranchHistory(ThreadID tid, InstSeqNum squash_seq_num,
+                            bool include_squash_inst)
+{
+    auto &branch_history = decodedBranchHistory[tid];
+    while (!branch_history.empty() &&
+           (include_squash_inst ?
+                branch_history.front().seqNum >= squash_seq_num :
+                branch_history.front().seqNum > squash_seq_num)) {
+        branch_history.pop_front();
+    }
+}
+
+void
 Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 {
     DPRINTF(Decode, "[tid:%i] [sn:%llu] Squashing due to incorrect branch "
@@ -361,6 +374,7 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     stallSig->blockFetch[tid] = true; // tell fetch don't send new insts
 
     fixedbuffer[tid].clear();
+    squashBranchHistory(tid, squash_seq_num, false);
 
     // Clear per-thread stallBuffer for the squashed thread
     auto delIt = stallBuffer[tid].begin();
@@ -388,6 +402,7 @@ Decode::squash(ThreadID tid)
     DPRINTF(Decode, "[tid:%i] Squashing.\n",tid);
 
     fixedbuffer[tid].clear();
+    squashBranchHistory(tid, fromCommit->commitInfo[tid].doneSeqNum, false);
 
     // Clear per-thread stallBuffer for the squashed thread
     auto delIt = stallBuffer[tid].begin();
@@ -999,6 +1014,21 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
             npc->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
             inst->setPredTaken(false);
             inst->setPredTarg(*npc);
+        }
+
+        if (inst->isControl() &&
+            !(inst->isDirectCtrl() && inst->isUncondCtrl())) {
+            branchInfo branch_info = {
+                inst->isIndirectCtrl(),
+                inst->readPredTaken(),
+                inst->readPredTarg().instAddr(),
+                inst->seqNum,
+                inst->pcState().instAddr(),
+            };
+            decodedBranchHistory[tid].push_front(branch_info);
+            if (decodedBranchHistory[tid].size() > MAX_BRANCH_HISTORY) {
+                decodedBranchHistory[tid].pop_back();
+            }
         }
     }
     for (auto &fused_inst : fusionInst) {

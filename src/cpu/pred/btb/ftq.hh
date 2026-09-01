@@ -101,7 +101,7 @@ public:
     int getTargetTidByFetchQueueSize(const std::array<bool, MaxThreads> &eligible,
                                      unsigned *ineligibleSkips,
                                      const std::array<unsigned, MaxThreads> &fetchQueueSizes);
-    void insert(FetchTarget& target);
+    void insert(FetchTarget&& target);
     void finishTarget(ThreadID tid);
     void commitTarget(ThreadID tid);
     void squashAfter(FetchTargetId targetId, ThreadID tid);
