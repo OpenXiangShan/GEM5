@@ -55,7 +55,7 @@ class ConstantLVP : public VPUnit
     const bool resetConfidence;
     const uint16_t maxConfidence;
     const uint16_t confidenceThreshold;
-    const uint16_t confidencePenalty;
+    const unsigned confidencePenalty;
 
     // A zero confidence counter denotes an invalid entry.
     // [tid][way][set]
@@ -100,6 +100,7 @@ class ConstantLVP : public VPUnit
         statistics::Scalar updateMisses;
         statistics::Scalar valueMatches;
         statistics::Scalar valueMismatches;
+        statistics::Scalar mismatchInvalidations;
         statistics::Scalar invalidAllocations;
         statistics::Scalar usefulReplacements;
         statistics::Scalar allocationFailures;

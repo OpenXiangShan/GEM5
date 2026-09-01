@@ -30,8 +30,8 @@ ConstantLVP::ConstantLVP(const Params &params)
       maxConfidence(mask(confidenceBits)),
       confidenceThreshold(static_cast<uint16_t>(std::max<double>(1.0,
               std::ceil(params.thresholdPercent * maxConfidence / 100.0)))),
-      confidencePenalty(
-              1U << ((std::min(confidenceBits, 16U) + 1) / 2)),
+      confidencePenalty(params.confidencePenalty == 0 ?
+              maxConfidence : params.confidencePenalty),
       constantStats(this)
 {
     fatal_if(numWays == 0, "ConstantLVP numWays must be nonzero");
@@ -42,6 +42,9 @@ ConstantLVP::ConstantLVP(const Params &params)
             "ConstantLVP tagBits must be in [1, 64]");
     fatal_if(confidenceBits == 0 || confidenceBits > 16,
             "ConstantLVP confidenceBits must be in [1, 16]");
+    fatal_if(params.confidencePenalty > maxConfidence,
+            "ConstantLVP confidencePenalty must be zero or no greater than "
+            "the confidence counter maximum");
     fatal_if(usefulBits == 0 || usefulBits > 16,
             "ConstantLVP usefulBits must be in [1, 16]");
     fatal_if(params.thresholdPercent == 0 ||
@@ -59,9 +62,10 @@ ConstantLVP::ConstantLVP(const Params &params)
 
     DPRINTF(ConstantLVP,
             "params: ways=%u sets=%u tagBits=%u confidenceBits=%u "
-            "usefulBits=%u resetConfidence=%u confidenceThreshold=%u\n",
+            "usefulBits=%u resetConfidence=%u confidenceThreshold=%u "
+            "confidencePenalty=%u\n",
             numWays, numSets, tagBits, confidenceBits, usefulBits,
-            resetConfidence, confidenceThreshold);
+            resetConfidence, confidenceThreshold, confidencePenalty);
 }
 
 ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
@@ -84,6 +88,8 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
               "ConstantLVP hit updates whose value remains constant"),
       ADD_STAT(valueMismatches, statistics::units::Count::get(),
               "ConstantLVP hit updates whose value changes"),
+      ADD_STAT(mismatchInvalidations, statistics::units::Count::get(),
+              "ConstantLVP value mismatches that invalidate the entry"),
       ADD_STAT(invalidAllocations, statistics::units::Count::get(),
               "ConstantLVP allocations into zero-confidence entries"),
       ADD_STAT(usefulReplacements, statistics::units::Count::get(),
@@ -256,12 +262,12 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
             constantStats.valueMismatches++;
             if (resetConfidence) {
                 entry->confidence.reset();
-                entry->useful.reset();
             } else {
                 entry->confidence -= confidencePenalty;
-                if (static_cast<uint16_t>(entry->confidence) == 0) {
-                    entry->useful.reset();
-                }
+            }
+            if (static_cast<uint16_t>(entry->confidence) == 0) {
+                entry->useful.reset();
+                constantStats.mismatchInvalidations++;
             }
             entry->value = updateInfo.actualValue;
         }
