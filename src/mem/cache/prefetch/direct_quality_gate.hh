@@ -145,6 +145,14 @@ class DirectQualityGate
     uint64_t feedbackCoalesced() const { return feedbackCoalescedCount; }
     uint64_t feedbackConflicts() const { return feedbackConflictCount; }
     uint64_t feedbackReplacements() const { return feedbackReplacementCount; }
+    uint64_t nonCanonicalFeedbackCandidates() const
+    {
+        return nonCanonicalFeedbackCandidateCount;
+    }
+    uint64_t nonCanonicalFeedbackDemands() const
+    {
+        return nonCanonicalFeedbackDemandCount;
+    }
     uint64_t feedbackExpiries() const { return feedbackExpiryCount; }
     uint64_t feedbackExpiryUnused() const { return feedbackExpiryUnusedCount; }
     uint64_t unknownDrops() const { return unknownDropCount; }
@@ -162,10 +170,11 @@ class DirectQualityGate
     static constexpr unsigned MaxFeedbackEntries = 4096;
     static constexpr unsigned NoExpiryRecord = MaxFeedbackEntries;
     static constexpr unsigned CacheLineBits = 6;
-    // The compact feedback layout targets canonical Sv48 byte addresses. A
-    // feedback identity is therefore addr[47:6], not a 64-bit host Addr. A
-    // reversible permutation splits that identity into set bits and an exact
-    // tag without introducing feedback aliases.
+    // Canonical Sv48 byte addresses use addr[47:6] directly. Some online
+    // L2 prefetch paths carry a non-canonical host Addr, so the compact
+    // layout folds host-line bits [57:42] into that identity instead of
+    // rejecting the access. The retained set/tag is intentionally a compact
+    // fingerprint, not a full host-address identity.
     static constexpr unsigned Sv48AddressBits = 48;
     static constexpr unsigned FeedbackLineBits = Sv48AddressBits - CacheLineBits;
     static constexpr uint64_t FeedbackLineMask = (uint64_t(1) << FeedbackLineBits) - 1;
@@ -270,6 +279,8 @@ class DirectQualityGate
     uint64_t feedbackConflictCount = 0;
     uint64_t feedbackReplacementCount = 0;
     uint64_t feedbackCoalescedCount = 0;
+    uint64_t nonCanonicalFeedbackCandidateCount = 0;
+    uint64_t nonCanonicalFeedbackDemandCount = 0;
     uint64_t feedbackExpiryCount = 0;
     uint64_t feedbackExpiryUnusedCount = 0;
     uint64_t unknownDropCount = 0;
@@ -286,7 +297,7 @@ class DirectQualityGate
     static uint64_t samplingSignature(Addr pc, uint8_t kind);
     unsigned qualitySetFor(Addr pc, uint8_t kind) const;
     Addr qualityTagFor(Addr pc, uint8_t kind) const;
-    static uint64_t feedbackKeyFor(uint64_t line);
+    static uint64_t feedbackKeyFor(uint64_t line, bool *non_canonical = nullptr);
     unsigned feedbackSetForKey(uint64_t key) const;
     uint64_t feedbackTagForKey(uint64_t key) const;
     unsigned findQuality(unsigned set, Addr tag, uint8_t kind) const;

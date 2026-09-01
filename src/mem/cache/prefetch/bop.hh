@@ -564,6 +564,8 @@ class BOP : public Queued
             statistics::Scalar directQualityUnused;
             statistics::Scalar directQualityFeedbackConflicts;
             statistics::Scalar directQualityFeedbackReplacements;
+            statistics::Scalar directQualityNonCanonicalFeedbackCandidates;
+            statistics::Scalar directQualityNonCanonicalFeedbackDemands;
             statistics::Scalar directQualityFeedbackExpiries;
             statistics::Scalar directQualityFeedbackExpiryUnused;
             statistics::Scalar directQualityUnknownDrops;

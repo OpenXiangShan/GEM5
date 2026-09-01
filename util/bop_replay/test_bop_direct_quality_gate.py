@@ -828,6 +828,27 @@ class SampledFeedbackTableTest(unittest.TestCase):
         table.observe_demand(first_line, 1)
         self.assertEqual(resolved, [(1, "useful")])
 
+    def test_sv48_layout_folds_noncanonical_lines_consistently(self):
+        resolved: list[tuple[int, str]] = []
+        table = SampledFeedbackTable(
+            config(
+                feedback_entries=4,
+                feedback_ways=4,
+                feedback_address_layout=FEEDBACK_ADDRESS_LAYOUT_SV48,
+                feedback_tag_bits=36,
+            ),
+            lambda entry, status: resolved.append((entry.candidate_id, status)),
+            lambda entry, reason: None,
+        )
+        first_line = 0x0001000000000000
+        second_line = 0x0002000000000000
+        self.assertNotEqual(table._key(first_line), table._key(second_line))
+        self.assertTrue(table.insert(first_line, 0, 1, 0, 1))
+        self.assertTrue(table.insert(second_line, 0, 1, 0, 2))
+        table.observe_demand(first_line, 1)
+        table.observe_demand(second_line, 2)
+        self.assertEqual(resolved, [(1, "useful"), (2, "useful")])
+
     def test_truncated_sv48_tag_exposes_alias_coalescing_and_false_useful(self):
         table = SampledFeedbackTable(
             config(

@@ -359,6 +359,32 @@ TEST(DirectQualityGate, Sv48FeedbackTagKeepsHighLineBitsExact)
     EXPECT_EQ(gate.useful(), 1U);
     gate.observeDemand(0xdead);
     EXPECT_EQ(gate.unused(), 1U);
+    EXPECT_EQ(gate.nonCanonicalFeedbackCandidates(), 0U);
+    EXPECT_EQ(gate.nonCanonicalFeedbackDemands(), 0U);
+}
+
+TEST(DirectQualityGate, FoldsNonCanonicalFeedbackLinesConsistently)
+{
+    auto config = testConfig();
+    config.feedbackEntries = 4;
+    config.feedbackWays = 4;
+    DirectQualityGate gate(config);
+
+    // These byte addresses have non-zero host bits above Sv48. They formerly
+    // aborted the simulation; they must now retain distinct, stable feedback
+    // identities for both raw-candidate and later-demand paths.
+    const Addr firstLine = 0x0001000000000000ULL;
+    const Addr secondLine = 0x0002000000000000ULL;
+    ASSERT_TRUE(gate.admit(0x1000, 1, firstLine).feedbackInserted);
+    ASSERT_TRUE(gate.admit(0x1000, 1, secondLine).feedbackInserted);
+    EXPECT_EQ(gate.nonCanonicalFeedbackCandidates(), 2U);
+    EXPECT_EQ(gate.feedbackCoalesced(), 0U);
+
+    gate.observeDemand(firstLine);
+    EXPECT_EQ(gate.useful(), 1U);
+    gate.observeDemand(secondLine);
+    EXPECT_EQ(gate.useful(), 2U);
+    EXPECT_EQ(gate.nonCanonicalFeedbackDemands(), 2U);
 }
 
 TEST(DirectQualityGate, DemandWindowExpiryIsUnused)

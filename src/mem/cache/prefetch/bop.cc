@@ -1753,6 +1753,10 @@ BOP::updateDirectQualityStats()
         directQualityGate->feedbackConflicts();
     stats.directQualityFeedbackReplacements =
         directQualityGate->feedbackReplacements();
+    stats.directQualityNonCanonicalFeedbackCandidates =
+        directQualityGate->nonCanonicalFeedbackCandidates();
+    stats.directQualityNonCanonicalFeedbackDemands =
+        directQualityGate->nonCanonicalFeedbackDemands();
     stats.directQualityFeedbackExpiries = directQualityGate->feedbackExpiries();
     stats.directQualityFeedbackExpiryUnused =
         directQualityGate->feedbackExpiryUnused();
@@ -1945,6 +1949,12 @@ BOP::BopStats::BopStats(statistics::Group *parent)
       ADD_STAT(directQualityFeedbackReplacements,
                statistics::units::Count::get(),
                "Online direct-quality feedback-table replacements"),
+      ADD_STAT(directQualityNonCanonicalFeedbackCandidates,
+               statistics::units::Count::get(),
+               "Sampled direct-quality candidates using folded non-canonical addresses"),
+      ADD_STAT(directQualityNonCanonicalFeedbackDemands,
+               statistics::units::Count::get(),
+               "L2 demands using folded non-canonical addresses"),
       ADD_STAT(directQualityFeedbackExpiries, statistics::units::Count::get(),
                "Online direct-quality demand-window expiry events"),
       ADD_STAT(directQualityFeedbackExpiryUnused,

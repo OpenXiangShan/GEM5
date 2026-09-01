@@ -499,16 +499,32 @@ def _xor_fold_quality_signature(pc: int, kind: str) -> int:
     return signature & replay.UINT64_MASK
 
 
-def _sv48_feedback_key(line_number: int) -> int:
-    """Return an exact, reversible key for a 42-bit cache-line address."""
+def _sv48_feedback_compact_line(line_number: int) -> tuple[int, bool]:
+    """Map a host cache-line address into the CQF's 42-bit key domain.
+
+    Canonical Sv48 line addresses retain their previous exact mapping. For a
+    non-canonical host line, fold bits [57:42] into the payload with the same
+    XOR network used by the online gate. The compact CQF set/tag is already a
+    bounded fingerprint, so this keeps address handling defined without
+    adding stored address bits.
+    """
     compact_line = line_number & SV48_CACHE_LINE_MASK
     canonical_line = compact_line
     if compact_line & SV48_CACHE_LINE_SIGN_BIT:
         canonical_line |= HOST_CACHE_LINE_MASK ^ SV48_CACHE_LINE_MASK
-    if line_number != canonical_line:
-        raise ValueError(
-            "sv48_reversible_set_tag requires a canonical Sv48 byte address"
-        )
+    non_canonical = line_number != canonical_line
+    if non_canonical:
+        high_line = line_number >> SV48_CACHE_LINE_BITS
+        compact_line ^= high_line
+        compact_line ^= high_line << 13
+        compact_line ^= high_line << 27
+        compact_line &= SV48_CACHE_LINE_MASK
+    return compact_line, non_canonical
+
+
+def _sv48_feedback_key(line_number: int) -> int:
+    """Return the reversible key for the normalized 42-bit feedback line."""
+    compact_line, _ = _sv48_feedback_compact_line(line_number)
     key = compact_line
     key ^= key >> 17
     key ^= (key << 13) & SV48_CACHE_LINE_MASK

@@ -289,19 +289,31 @@ DirectQualityGate::qualityTagFor(Addr pc, uint8_t kind) const
 }
 
 uint64_t
-DirectQualityGate::feedbackKeyFor(uint64_t line)
+DirectQualityGate::feedbackKeyFor(uint64_t line, bool *non_canonical)
 {
-    const uint64_t compactLine = line & FeedbackLineMask;
+    uint64_t compactLine = line & FeedbackLineMask;
     const uint64_t canonicalLine = compactLine & FeedbackLineSignBit
         ? compactLine | (HostLineMask & ~FeedbackLineMask) : compactLine;
-    fatal_if(line != canonicalLine,
-             "Direct-quality compact feedback layout requires a canonical Sv48 cache-line address\n");
+    const bool isNonCanonical = line != canonicalLine;
+    if (non_canonical)
+        *non_canonical = isNonCanonical;
 
-    // Each fixed-width xorshift is bijective over the 42-bit line domain.
-    // The alternating directions mix both low stride bits and high address
-    // bits into the set field. Consequently, set bits plus the stored upper
-    // tag reproduce an exact cache-line identity rather than a short
-    // signature.
+    if (isNonCanonical) {
+        // Preserve the established key for canonical Sv48 lines. For a host
+        // line outside that domain, fold its otherwise unrepresented upper
+        // 16 line bits across the 42-bit Sv48 payload before the existing
+        // permutation. This is a small combinational XOR network and gives
+        // the same address a stable key on candidate and demand paths.
+        const uint64_t highLine = line >> FeedbackLineBits;
+        compactLine ^= highLine;
+        compactLine ^= highLine << 13;
+        compactLine ^= highLine << 27;
+        compactLine &= FeedbackLineMask;
+    }
+
+    // Each fixed-width xorshift is bijective over the compact 42-bit line
+    // domain. The alternating directions mix both low stride bits and high
+    // address bits into the set field before the configured tag truncation.
     uint64_t key = compactLine;
     key ^= key >> 17;
     key ^= (key << 13) & FeedbackLineMask;
@@ -518,7 +530,10 @@ DirectQualityGate::recordCandidate(Addr line, uint8_t kind, unsigned quality_set
     assert(qualityEntry.kindValue() == kind);
 
     const uint64_t lineNumber = compactLine(line);
-    const uint64_t key = feedbackKeyFor(lineNumber);
+    bool nonCanonical = false;
+    const uint64_t key = feedbackKeyFor(lineNumber, &nonCanonical);
+    if (nonCanonical)
+        ++nonCanonicalFeedbackCandidateCount;
     const unsigned set = feedbackSetForKey(key);
     const uint64_t tag = feedbackTagForKey(key);
     if (findFeedback(set, tag) != cfg.feedbackWays) {
@@ -729,7 +744,10 @@ DirectQualityGate::observeDemand(Addr line)
     if (!compactProfile())
         expireFeedback();
     const uint64_t lineNumber = compactLine(line);
-    const uint64_t key = feedbackKeyFor(lineNumber);
+    bool nonCanonical = false;
+    const uint64_t key = feedbackKeyFor(lineNumber, &nonCanonical);
+    if (nonCanonical)
+        ++nonCanonicalFeedbackDemandCount;
     const unsigned set = feedbackSetForKey(key);
     const unsigned way = findFeedback(set, feedbackTagForKey(key));
     if (way != cfg.feedbackWays) {
