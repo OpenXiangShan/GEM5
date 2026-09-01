@@ -986,7 +986,7 @@ class MBTB(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/mbtb.hh'
 
     numEntries = Param.Unsigned(8192, "Number of entries in the MBTB")
-    tagBits = Param.Unsigned(20, "Number of bits in the tag")
+    tagBits = Param.Unsigned(16, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(1, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set") # for 2 SRAMs, 4 ways per SRAM
@@ -1001,7 +1001,7 @@ class AheadBTB(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/abtb.hh'
 
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
-    tagBits = Param.Unsigned(38, "Number of bits in the tag")
+    tagBits = Param.Unsigned(24, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set")
@@ -1017,7 +1017,7 @@ class UBTB(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/btb_ubtb.hh'
 
     numEntries = Param.Unsigned(32, "Number of entries in the uBTB")
-    tagBits = Param.Unsigned(38, "Number of bits in the tag")
+    tagBits = Param.Unsigned(22, "Number of bits in the tag")
 
     aheadPipelinedStages = Param.Unsigned(0, "Number of stages ahead pipelined")
     numDelay = 0
@@ -1099,7 +1099,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = Param.Unsigned(1, "Number of ways per set")
-    baseTableSize = Param.Unsigned(256,"Base table size")
+    baseTableSize = Param.Unsigned(512,"Base table size")
     maxBranchPositions = Param.Unsigned(32,"Maximum branch positions per 64-byte block")
     useAltOnNaSize = Param.Unsigned(128,"Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7,"Width of the useAltOnNa table")
