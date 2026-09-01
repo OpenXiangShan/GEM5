@@ -52,6 +52,7 @@ class ConstantLVP : public VPUnit
     const unsigned tagBits;
     const unsigned confidenceBits;
     const unsigned usefulBits;
+    const bool resetConfidence;
     const uint16_t maxConfidence;
     const uint16_t confidenceThreshold;
     const uint16_t confidencePenalty;

@@ -103,6 +103,7 @@ def setKmhV3Params(args, system):
                     tagBits=16,
                     confidenceBits=9,
                     usefulBits=2,
+                    resetConfidence=True,
                     thresholdPercent=100,
                 ),
                 # ExampleValuePredictor(),

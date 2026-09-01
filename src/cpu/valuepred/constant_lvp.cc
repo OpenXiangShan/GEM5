@@ -26,6 +26,7 @@ ConstantLVP::ConstantLVP(const Params &params)
       tagBits(params.tagBits),
       confidenceBits(params.confidenceBits),
       usefulBits(params.usefulBits),
+      resetConfidence(params.resetConfidence),
       maxConfidence(mask(confidenceBits)),
       confidenceThreshold(static_cast<uint16_t>(std::max<double>(1.0,
               std::ceil(params.thresholdPercent * maxConfidence / 100.0)))),
@@ -58,9 +59,9 @@ ConstantLVP::ConstantLVP(const Params &params)
 
     DPRINTF(ConstantLVP,
             "params: ways=%u sets=%u tagBits=%u confidenceBits=%u "
-            "usefulBits=%u confidenceThreshold=%u\n",
+            "usefulBits=%u resetConfidence=%u confidenceThreshold=%u\n",
             numWays, numSets, tagBits, confidenceBits, usefulBits,
-            confidenceThreshold);
+            resetConfidence, confidenceThreshold);
 }
 
 ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
@@ -252,9 +253,14 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
             }
         } else {
             constantStats.valueMismatches++;
-            entry->confidence -= confidencePenalty;
-            if (static_cast<uint16_t>(entry->confidence) == 0) {
+            if (resetConfidence) {
+                entry->confidence.reset();
                 entry->useful.reset();
+            } else {
+                entry->confidence -= confidencePenalty;
+                if (static_cast<uint16_t>(entry->confidence) == 0) {
+                    entry->useful.reset();
+                }
             }
             entry->value = updateInfo.actualValue;
         }

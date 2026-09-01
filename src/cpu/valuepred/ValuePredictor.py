@@ -164,5 +164,7 @@ class ConstantLVP(ValuePredictor):
     confidenceBits = Param.Unsigned(
         9, "Constant confidence counter width; allocations start at one")
     usefulBits = Param.Unsigned(2, "Replacement useful counter width")
+    resetConfidence = Param.Bool(
+        False, "Reset confidence and useful counters on a value mismatch")
     thresholdPercent = Param.Percent(
         100, "Minimum confidence percentage required to predict")
