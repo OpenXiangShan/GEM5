@@ -51,6 +51,7 @@ def setKmhV3IdealParams(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
+        cpu.EnablePHASTMDP = True
 
         # dispatch
         cpu.enableDispatchStage = False

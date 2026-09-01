@@ -433,6 +433,12 @@ class CPU : public BaseCPU
 
     uint32_t getIQInsts() { return iew.getIQInsts(); }
 
+    Fetch *getFetch() { return &fetch; }
+    Decode *getDecode() { return &decode; }
+    Rename *getRename() { return &rename; }
+    IEW *getIEW() { return &iew; }
+    Commit *getCommit() { return &commit; }
+
     /**
      * Return the oldest in-flight instruction sequence number.
      * If there are no in-flight instructions, returns the maximum value

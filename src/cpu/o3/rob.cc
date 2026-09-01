@@ -624,7 +624,8 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
         InstSeqNum seqnum = 0;
         for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
             auto& inst = *it;
-            if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted()) {
+            if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted() ||
+                 inst->memDepInfo.violationPending) {
                 break;
             }
             seqnum = inst->seqNum;
