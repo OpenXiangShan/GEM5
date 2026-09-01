@@ -122,9 +122,18 @@ _BENCHMARKS = {
     ),
     "spec17-1.0c": BenchmarkConfig(
         benchmark_type="spec17-1.0c",
-        checkpoint_list="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst",
-        checkpoint_root="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0",
-        cluster_config="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/cluster-0-0.json",
+        checkpoint_list=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec17_rate_gcc16_rv64gcb_260812/checkpoint/checkpoint.lst"
+        ),
+        checkpoint_root=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec17_rate_gcc16_rv64gcb_260812/checkpoint"
+        ),
+        cluster_config=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec17_rate_gcc16_rv64gcb_260812/json/checkpoints_all.json"
+        ),
         score_script="gem5-score-ci-17.sh",
     ),
     "spec06-rvv-1.0c": BenchmarkConfig(
