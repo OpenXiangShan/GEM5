@@ -130,6 +130,7 @@ ConstantLVP::pcHashToTag(Addr pc, unsigned way) const
 ConstantLVP::Location
 ConstantLVP::locationForWay(Addr pc, unsigned way) const
 {
+    pc = pc >> 1;
     return {
         .way = way,
         .index = pcHashToWayIndex(pc, way),
