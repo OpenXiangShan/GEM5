@@ -534,6 +534,44 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
     return threadMeta[tid];
 }
 
+std::unordered_set<Addr>
+BTBTAGE::getMbtbCtrFreezePCs(const FetchTarget &stream) const
+{
+    std::unordered_set<Addr> frozenCtrPCs;
+    auto meta = std::static_pointer_cast<TageMeta>(
+        stream.predMetas[componentIdx]);
+    if (!meta) {
+        return frozenCtrPCs;
+    }
+
+    for (const auto &entry : stream.updateBTBEntries) {
+        if (!entry.isCond) {
+            continue;
+        }
+
+        auto predIt = meta->preds.find(entry.pc);
+        if (predIt == meta->preds.end()) {
+            continue;
+        }
+
+        const auto &mainInfo = predIt->second.mainInfo;
+        if (!mainInfo.found) {
+            continue;
+        }
+
+        const bool actualTaken =
+            stream.exeTaken && stream.exeBranchInfo == entry;
+        const bool providerWeak = mainInfo.entry.counter == -1 ||
+                                  mainInfo.entry.counter == 0;
+        const bool providerWrong = mainInfo.taken() != actualTaken;
+        if (!providerWeak || !providerWrong) {
+            frozenCtrPCs.insert(entry.pc);
+        }
+    }
+
+    return frozenCtrPCs;
+}
+
 void
 BTBTAGE::refreshPredictionMeta(Addr startPC,
                                const bitset &history,

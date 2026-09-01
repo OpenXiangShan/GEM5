@@ -41,6 +41,7 @@
 #define __CPU_PRED_BTB_MBTB_HH__
 
 #include <queue>
+#include <unordered_set>
 #include <vector>
 
 #include "base/types.hh"
@@ -173,6 +174,8 @@ class MBTB : public TimedBaseBTBPredictor
      *  3. Updates MRU information
      */
     void update(const FetchTarget &stream) override;
+    void update(const FetchTarget &stream,
+                const std::unordered_set<Addr> &frozenCtrPCs);
 
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
 
@@ -295,12 +298,17 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream);
+    void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream,
+                        bool freezeCtr);
+
+    void updateImpl(const FetchTarget &stream,
+                    const std::unordered_set<Addr> *frozenCtrPCs);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
                                const BTBEntry* existing_entry,
-                               const FetchTarget &stream);
+                               const FetchTarget &stream,
+                               bool freezeCtr);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,

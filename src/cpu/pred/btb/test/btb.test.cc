@@ -335,6 +335,33 @@ TEST_F(BTBTest, ConditionalCounter) {
     }
 }
 
+TEST_F(BTBTest, FrozenCounterStillClearsAlwaysTaken) {
+    const BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
+    predictUpdateCycle(mbtb, 0x1000, branch, true);
+
+    std::vector<FullBTBPrediction> stagePreds(4);
+    mbtb->putPCHistory(
+        0x1000, boost::dynamic_bitset<>(8, 0), stagePreds);
+    auto meta = mbtb->getPredictionMeta();
+    FetchTarget stream = setupStream(
+        0x1000, branch, false, meta, branch.pc);
+    stream.predBTBEntries =
+        stagePreds[mbtb->getDelay()].btbEntries;
+    stream.setUpdateBTBEntries();
+    mbtb->getAndSetNewBTBEntry(stream);
+
+    const int initialCtr =
+        stagePreds[mbtb->getDelay()].btbEntries[0].ctr;
+    mbtb->update(stream, {branch.pc});
+
+    stagePreds.assign(4, FullBTBPrediction());
+    mbtb->putPCHistory(
+        0x1000, boost::dynamic_bitset<>(8, 0), stagePreds);
+    const auto &entry = stagePreds[mbtb->getDelay()].btbEntries[0];
+    EXPECT_EQ(entry.ctr, initialCtr);
+    EXPECT_FALSE(entry.alwaysTaken);
+}
+
 // Test counter saturation behavior, for mBTB
 TEST_F(BTBTest, CounterSaturation) {
     // Create conditional branch info

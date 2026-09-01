@@ -493,6 +493,36 @@ int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC) {
     return -1;
 }
 
+std::unordered_set<Addr>
+getFrozenMbtbCtrPCs(BTBTAGE *tage,
+                    const std::vector<BTBEntry> &entries,
+                    Addr takenPC,
+                    bool streamTaken,
+                    const std::map<Addr, short> &providerCounters)
+{
+    FetchTarget stream;
+    stream.updateBTBEntries = entries;
+    stream.exeTaken = streamTaken;
+    stream.exeBranchInfo.pc = takenPC;
+
+    auto meta = std::make_shared<BTBTAGE::TageMeta>();
+    for (const auto &[pc, counter] : providerCounters) {
+        BTBTAGE::TageEntry provider;
+        provider.valid = true;
+        provider.counter = counter;
+        provider.pc = pc;
+        BTBTAGE::TageTableInfo mainInfo(
+            true, provider, 0, 0, 0, 0);
+        BTBTAGE::TagePrediction pred;
+        pred.btb_pc = pc;
+        pred.mainInfo = mainInfo;
+        meta->preds[pc] = pred;
+    }
+    stream.predMetas[tage->getComponentIdx()] = meta;
+
+    return tage->getMbtbCtrFreezePCs(stream);
+}
+
 class BTBTAGETest : public ::testing::Test
 {
 protected:
@@ -506,6 +536,38 @@ protected:
     boost::dynamic_bitset<> history;
     std::vector<FullBTBPrediction> stagePreds;
 };
+
+TEST_F(BTBTAGETest, MbtbCounterFreezePolicy) {
+    constexpr Addr firstPC = 0x1000;
+    constexpr Addr secondPC = 0x1004;
+    const auto first = createBTBEntry(firstPC);
+    const auto second = createBTBEntry(secondPC);
+
+    auto frozen = getFrozenMbtbCtrPCs(tage, {first}, firstPC, true, {});
+    EXPECT_TRUE(frozen.empty());
+
+    frozen = getFrozenMbtbCtrPCs(
+        tage, {first}, firstPC, true, {{firstPC, 0}});
+    EXPECT_TRUE(frozen.count(firstPC));
+
+    frozen = getFrozenMbtbCtrPCs(
+        tage, {first}, firstPC, false, {{firstPC, 0}});
+    EXPECT_FALSE(frozen.count(firstPC));
+
+    frozen = getFrozenMbtbCtrPCs(
+        tage, {first}, firstPC, true, {{firstPC, 2}});
+    EXPECT_TRUE(frozen.count(firstPC));
+
+    frozen = getFrozenMbtbCtrPCs(
+        tage, {first}, firstPC, false, {{firstPC, 2}});
+    EXPECT_TRUE(frozen.count(firstPC));
+
+    frozen = getFrozenMbtbCtrPCs(
+        tage, {first, second}, firstPC, true,
+        {{firstPC, 0}, {secondPC, 0}});
+    EXPECT_TRUE(frozen.count(firstPC));
+    EXPECT_FALSE(frozen.count(secondPC));
+}
 
 // Test basic prediction functionality
 TEST_F(BTBTAGETest, BasicPrediction) {

@@ -617,7 +617,8 @@ MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
  * 5. Update MRU information
  */
 void
-MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
+MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream,
+                     bool freezeCtr)
 {
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
@@ -657,7 +658,8 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream);
+    auto entry_to_write = buildUpdatedEntry(
+        entry, existing_ptr, stream, freezeCtr);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
@@ -676,7 +678,8 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
 BTBEntry
 MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const BTBEntry* existing_entry,
-                        const FetchTarget &stream)
+                        const FetchTarget &stream,
+                        bool freezeCtr)
 {
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
     auto entry_to_write = (req_entry.isCond && existing_entry)
@@ -694,7 +697,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
             DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
                     entry_to_write.pc, entry_to_write.alwaysTaken);
         }
-        if (!entry_to_write.alwaysTaken) {
+        if (!entry_to_write.alwaysTaken && !freezeCtr) {
             updateCtr(entry_to_write.ctr, this_cond_taken);
         }
     }
@@ -803,6 +806,20 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
 void
 MBTB::update(const FetchTarget &stream)
 {
+    updateImpl(stream, nullptr);
+}
+
+void
+MBTB::update(const FetchTarget &stream,
+             const std::unordered_set<Addr> &frozenCtrPCs)
+{
+    updateImpl(stream, &frozenCtrPCs);
+}
+
+void
+MBTB::updateImpl(const FetchTarget &stream,
+                 const std::unordered_set<Addr> *frozenCtrPCs)
+{
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     // 1. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
@@ -810,7 +827,9 @@ MBTB::update(const FetchTarget &stream)
 
     auto entries_need_update = prepareUpdateEntries(stream);
     for (auto &entry : entries_need_update) {
-        updateBTBEntry(entry, stream);
+        const bool freezeCtr = frozenCtrPCs &&
+            frozenCtrPCs->find(entry.pc) != frozenCtrPCs->end();
+        updateBTBEntry(entry, stream, freezeCtr);
     }
 }
 

@@ -6,6 +6,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -151,6 +152,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
                             uint8_t asidHash = 0) const;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    std::unordered_set<Addr> getMbtbCtrFreezePCs(
+        const FetchTarget &stream) const;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
                                FullBTBPrediction &pred) override;

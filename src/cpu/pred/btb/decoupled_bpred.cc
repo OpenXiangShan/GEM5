@@ -1106,10 +1106,17 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
         }
     }
 
+    const auto frozenCtrPCs = tage->isEnabled() ?
+        tage->getMbtbCtrFreezePCs(target) : std::unordered_set<Addr>{};
+
     // Phase 2: all clear, perform updates once
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
-            components[i]->doResolveUpdate(target);
+            if (components[i] == mbtb) {
+                mbtb->update(target, frozenCtrPCs);
+            } else {
+                components[i]->doResolveUpdate(target);
+            }
         }
     }
 
@@ -1197,10 +1204,17 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
             mbtb->getAndSetNewBTBEntry(target);
         }
 
+        const auto frozenCtrPCs = tage->isEnabled() ?
+            tage->getMbtbCtrFreezePCs(target) : std::unordered_set<Addr>{};
+
         // Update predictor components
         for (int i = 0; i < numComponents; ++i) {
             if (!components[i]->getResolvedUpdate()) {
-                components[i]->update(target);
+                if (components[i] == mbtb) {
+                    mbtb->update(target, frozenCtrPCs);
+                } else {
+                    components[i]->update(target);
+                }
             }
         }
     }
