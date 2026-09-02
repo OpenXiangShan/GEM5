@@ -970,6 +970,18 @@ def xiangshan_system_init():
         help="Number of reorder buffer entries",
     )
     parser.add_argument(
+        "--rob-compress-policy",
+        choices=("none", "kmhv2", "MohBoE", "kmhv3"),
+        default=None,
+        help="Override the ROB compression policy selected by the config",
+    )
+    parser.add_argument(
+        "--crob-inst-per-group",
+        type=int,
+        default=None,
+        help="Override the maximum logical instructions per compressed ROB group",
+    )
+    parser.add_argument(
         "--standalone-sc",
         action="store_true",
         default=False,

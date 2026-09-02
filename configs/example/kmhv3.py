@@ -82,9 +82,20 @@ def setKmhV3Params(args, system):
         cpu.commitWidth = 8
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
-        cpu.RobCompressPolicy = 'none'
+        rob_compress_policy = args.rob_compress_policy or 'none'
+        crob_inst_per_group = (
+            args.crob_inst_per_group
+            if args.crob_inst_per_group is not None
+            else 2
+        )
+        if crob_inst_per_group < 1 or crob_inst_per_group > cpu.renameWidth:
+            fatal(
+                "crob-inst-per-group must be between 1 and renameWidth "
+                f"({cpu.renameWidth}), got {crob_inst_per_group}"
+            )
+        cpu.RobCompressPolicy = rob_compress_policy
         cpu.numROBEntries = 352
-        cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.CROB_instPerGroup = crob_inst_per_group
         cpu.robWalkPolicy = args.rob_walk_policy
 
         # lsu
