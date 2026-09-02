@@ -347,6 +347,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::ROBFull, "ROBFull"},
         {StallReason::RegFull, "RegFull"},
         {StallReason::OtherStall, "OtherStall"},
+        {StallReason::FetchStreamFrag, "FetchStreamFrag"},
+        {StallReason::FetchBufFrag, "FetchBufFrag"},
         {StallReason::OtherFetchStall, "OtherFetchStall"},
         {StallReason::FTQBubble, "FTQBubble"},
         {StallReason::MemDQBandwidth, "MemDQBandwidth"},
@@ -1111,6 +1113,39 @@ IEW::dispatchInsts()
         toRename->iewInfo[tid].ldstqCount = ldstQueue.getCount(tid);
         toRename->iewInfo[tid].robCount = rob->getThreadEntries(tid);
         toRename->iewInfo[tid].iqCount = scheduler->getIQInsts(tid);
+    } else {
+        // tick() still counts this vector. Do not keep last cycle's
+        // FetchFrag across idle / backend-blocked beats.
+        bool squashing = false;
+        for (ThreadID t = 0; t < numThreads; ++t) {
+            if (fromCommit->commitInfo[t].squash ||
+                fromCommit->commitInfo[t].robSquashing) {
+                squashing = true;
+                break;
+            }
+        }
+        if (!squashing) {
+            StallReason blocked = StallReason::NoStall;
+            for (int i = 0; i < numThreads; i++) {
+                if (stallSig->blockRename[i] &&
+                    stallSig->renameBlockReason[i] != StallReason::NoStall) {
+                    blocked = stallSig->renameBlockReason[i];
+                    break;
+                }
+            }
+            if (blocked != StallReason::NoStall) {
+                setAllStalls(blocked);
+            } else {
+                for (int i = 0; i < dispatchStalls.size(); i++) {
+                    if (fromRename->renameStallReason.size() == 0) {
+                        dispatchStalls.at(i) = StallReason::NoStall;
+                    } else {
+                        dispatchStalls.at(i) =
+                            fromRename->renameStallReason.at(i);
+                    }
+                }
+            }
+        }
     }
 }
 
