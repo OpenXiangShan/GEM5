@@ -109,6 +109,9 @@ def setKmhV3Params(args, system):
                     # Keep the historical useful update behavior by default;
                     # experiments can gate it on correct predictions.
                     usefulOnlyOnCorrectPrediction=False,
+                    # Zero keeps probationary protection disabled; experiments
+                    # can set this to a confidence count such as 128.
+                    probationaryUsefulConfidence=0,
                     resetConfidence=True,
                     thresholdPercent=100,
                 ),

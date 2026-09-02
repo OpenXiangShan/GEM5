@@ -28,6 +28,7 @@ ConstantLVP::ConstantLVP(const Params &params)
       usefulBits(params.usefulBits),
       resetConfidence(params.resetConfidence),
       usefulOnlyOnCorrectPrediction(params.usefulOnlyOnCorrectPrediction),
+      probationaryUsefulConfidence(params.probationaryUsefulConfidence),
       maxConfidence(mask(confidenceBits)),
       confidenceThreshold(static_cast<uint16_t>(std::max<double>(1.0,
               std::ceil(params.thresholdPercent * maxConfidence / 100.0)))),
@@ -46,6 +47,9 @@ ConstantLVP::ConstantLVP(const Params &params)
     fatal_if(params.confidencePenalty > maxConfidence,
             "ConstantLVP confidencePenalty must be zero or no greater than "
             "the confidence counter maximum");
+    fatal_if(probationaryUsefulConfidence > maxConfidence,
+            "ConstantLVP probationaryUsefulConfidence must be zero or no "
+            "greater than the confidence counter maximum");
     fatal_if(usefulBits == 0 || usefulBits > 16,
             "ConstantLVP usefulBits must be in [1, 16]");
     fatal_if(params.thresholdPercent == 0 ||
@@ -64,10 +68,12 @@ ConstantLVP::ConstantLVP(const Params &params)
     DPRINTF(ConstantLVP,
             "params: ways=%u sets=%u tagBits=%u confidenceBits=%u "
             "usefulBits=%u resetConfidence=%u usefulOnlyOnCorrectPrediction=%u "
-            "confidenceThreshold=%u confidencePenalty=%u\n",
+            "probationaryUsefulConfidence=%u confidenceThreshold=%u "
+            "confidencePenalty=%u\n",
             numWays, numSets, tagBits, confidenceBits, usefulBits,
             resetConfidence, usefulOnlyOnCorrectPrediction,
-            confidenceThreshold, confidencePenalty);
+            probationaryUsefulConfidence, confidenceThreshold,
+            confidencePenalty);
 }
 
 ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
@@ -94,12 +100,18 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
               "ConstantLVP value-match updates that update useful"),
       ADD_STAT(usefulSuppressed, statistics::units::Count::get(),
               "ConstantLVP value-match updates that suppress useful updates"),
+      ADD_STAT(probationaryUsefulPromotions, statistics::units::Count::get(),
+              "ConstantLVP zero-useful entries promoted at the probationary "
+              "confidence threshold"),
       ADD_STAT(mismatchInvalidations, statistics::units::Count::get(),
               "ConstantLVP value mismatches that invalidate the entry"),
       ADD_STAT(invalidAllocations, statistics::units::Count::get(),
               "ConstantLVP allocations into zero-confidence entries"),
       ADD_STAT(usefulReplacements, statistics::units::Count::get(),
               "ConstantLVP replacements of valid zero-useful entries"),
+      ADD_STAT(confidenceBasedReplacements, statistics::units::Count::get(),
+              "ConstantLVP replacements selected by minimum confidence "
+              "among zero-useful candidates"),
       ADD_STAT(allocationFailures, statistics::units::Count::get(),
               "ConstantLVP misses with no immediately replaceable entry"),
       ADD_STAT(usefulDecrements, statistics::units::Count::get(),
@@ -173,6 +185,21 @@ ConstantLVP::allocate(Entry &entry, uint64_t tag, RegVal value)
     entry.confidence.reset();
     ++entry.confidence;
     entry.useful.reset();
+}
+
+bool
+ConstantLVP::promoteProbationaryUseful(Entry &entry)
+{
+    if (probationaryUsefulConfidence == 0 ||
+            static_cast<uint16_t>(entry.useful) != 0 ||
+            static_cast<uint16_t>(entry.confidence) <
+                probationaryUsefulConfidence) {
+        return false;
+    }
+
+    ++entry.useful;
+    constantStats.probationaryUsefulPromotions++;
+    return true;
 }
 
 bool
@@ -261,7 +288,15 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
             const bool correctPrediction =
                 feedback.applied && feedback.offeredPrediction &&
                 feedback.wouldHaveBeenCorrect;
-            if (!usefulOnlyOnCorrectPrediction || correctPrediction) {
+            if (usefulOnlyOnCorrectPrediction && correctPrediction) {
+                // A correct prediction is strong evidence: protect the entry
+                // immediately, even if it was only probationary before use.
+                entry->useful.saturate();
+                constantStats.usefulIncrements++;
+            } else if (usefulOnlyOnCorrectPrediction &&
+                    promoteProbationaryUseful(*entry)) {
+                constantStats.usefulIncrements++;
+            } else if (!usefulOnlyOnCorrectPrediction) {
                 ++entry->useful;
                 if (static_cast<uint16_t>(entry->confidence) >=
                         confidenceThreshold) {
@@ -321,24 +356,39 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
         }
     }
 
+    Entry *victim = nullptr;
+    Location victimLocation;
+    uint16_t victimConfidence = 0;
     for (unsigned offset = 0; offset < numWays; ++offset) {
         const unsigned way = (firstWay + offset) % numWays;
         const auto candidate = locationForWay(updateInfo.pc, way);
         auto &candidateEntry =
             tables[updateInfo.tid][way][candidate.index];
-        if (static_cast<uint16_t>(candidateEntry.useful) == 0) {
-            allocate(candidateEntry, candidate.tag, updateInfo.actualValue);
-            constantStats.usefulReplacements++;
-            DPRINTF(ConstantLVP,
-                    "[update] tid=%u seq=%llu pc=%#llx replace unuseful "
-                    "way=%u set=%u value=%#llx\n",
-                    updateInfo.tid,
-                    static_cast<unsigned long long>(updateInfo.seqNo),
-                    static_cast<unsigned long long>(updateInfo.pc),
-                    way, candidate.index,
-                    static_cast<unsigned long long>(updateInfo.actualValue));
-            return;
+        if (static_cast<uint16_t>(candidateEntry.useful) != 0) {
+            continue;
         }
+
+        const uint16_t candidateConfidence = candidateEntry.confidence;
+        if (!victim || candidateConfidence < victimConfidence) {
+            victim = &candidateEntry;
+            victimLocation = candidate;
+            victimConfidence = candidateConfidence;
+        }
+    }
+
+    if (victim) {
+        allocate(*victim, victimLocation.tag, updateInfo.actualValue);
+        constantStats.usefulReplacements++;
+        constantStats.confidenceBasedReplacements++;
+        DPRINTF(ConstantLVP,
+                "[update] tid=%u seq=%llu pc=%#llx replace unuseful "
+                "way=%u set=%u oldConfidence=%u value=%#llx\n",
+                updateInfo.tid,
+                static_cast<unsigned long long>(updateInfo.seqNo),
+                static_cast<unsigned long long>(updateInfo.pc),
+                victimLocation.way, victimLocation.index, victimConfidence,
+                static_cast<unsigned long long>(updateInfo.actualValue));
+        return;
     }
 
     constantStats.allocationFailures++;
