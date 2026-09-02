@@ -219,7 +219,6 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
             diffAllStates[tid] = std::make_shared<DiffAllStates>();
             auto diff_state = diffAllStates[tid];
             diff_state->diff.nemu_reg = &(diff_state->referenceRegFile);
-            diff_state->diff.nemu_this_pc = 0x80000000u;
             diff_state->diff.cpu_id = difftestHartId(tid);
             warn("difftest hart id set to %d for tid %d\n",
                  diff_state->diff.cpu_id, tid);
@@ -1808,6 +1807,8 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
                      "committed instruction PC %#lx for tid %d",
                      diffAllStates->gem5RegFile.pc,
                      diffInfo.pc->instAddr(), tid);
+            diffAllStates->diff.nemu_this_pc =
+                diffAllStates->gem5RegFile.pc;
             diffAllStates->hasCommit = true;
             if (noHypeMode) {
                 auto start = pmemStart + pmemSize * difftestHartId(tid);
