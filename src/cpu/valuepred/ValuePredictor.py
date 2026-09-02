@@ -168,6 +168,9 @@ class ConstantLVP(ValuePredictor):
         0,
         "Confidence decrement on a value mismatch; zero uses the maximum "
         "confidence value")
+    usefulOnlyOnCorrectPrediction = Param.Bool(
+        False,
+        "Increment useful only when a prediction was applied and correct")
     resetConfidence = Param.Bool(
         False, "Reset confidence and useful counters on a value mismatch")
     thresholdPercent = Param.Percent(

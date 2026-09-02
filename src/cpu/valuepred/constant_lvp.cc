@@ -27,6 +27,7 @@ ConstantLVP::ConstantLVP(const Params &params)
       confidenceBits(params.confidenceBits),
       usefulBits(params.usefulBits),
       resetConfidence(params.resetConfidence),
+      usefulOnlyOnCorrectPrediction(params.usefulOnlyOnCorrectPrediction),
       maxConfidence(mask(confidenceBits)),
       confidenceThreshold(static_cast<uint16_t>(std::max<double>(1.0,
               std::ceil(params.thresholdPercent * maxConfidence / 100.0)))),
@@ -62,10 +63,11 @@ ConstantLVP::ConstantLVP(const Params &params)
 
     DPRINTF(ConstantLVP,
             "params: ways=%u sets=%u tagBits=%u confidenceBits=%u "
-            "usefulBits=%u resetConfidence=%u confidenceThreshold=%u "
-            "confidencePenalty=%u\n",
+            "usefulBits=%u resetConfidence=%u usefulOnlyOnCorrectPrediction=%u "
+            "confidenceThreshold=%u confidencePenalty=%u\n",
             numWays, numSets, tagBits, confidenceBits, usefulBits,
-            resetConfidence, confidenceThreshold, confidencePenalty);
+            resetConfidence, usefulOnlyOnCorrectPrediction,
+            confidenceThreshold, confidencePenalty);
 }
 
 ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
@@ -88,6 +90,10 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
               "ConstantLVP hit updates whose value remains constant"),
       ADD_STAT(valueMismatches, statistics::units::Count::get(),
               "ConstantLVP hit updates whose value changes"),
+      ADD_STAT(usefulIncrements, statistics::units::Count::get(),
+              "ConstantLVP value-match updates that update useful"),
+      ADD_STAT(usefulSuppressed, statistics::units::Count::get(),
+              "ConstantLVP value-match updates that suppress useful updates"),
       ADD_STAT(mismatchInvalidations, statistics::units::Count::get(),
               "ConstantLVP value mismatches that invalidate the entry"),
       ADD_STAT(invalidAllocations, statistics::units::Count::get(),
@@ -242,7 +248,6 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
         const VPPredictionRecord *record, const VPFeedback &feedback)
 {
     (void)record;
-    (void)feedback;
     assertValidTid(updateInfo.tid);
     constantStats.updates++;
 
@@ -253,10 +258,18 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
         if (entry->value == updateInfo.actualValue) {
             constantStats.valueMatches++;
             ++entry->confidence;
-            ++entry->useful;
-            if (static_cast<uint16_t>(entry->confidence) >=
-                    confidenceThreshold) {
-                entry->useful.saturate();
+            const bool correctPrediction =
+                feedback.applied && feedback.offeredPrediction &&
+                feedback.wouldHaveBeenCorrect;
+            if (!usefulOnlyOnCorrectPrediction || correctPrediction) {
+                ++entry->useful;
+                if (static_cast<uint16_t>(entry->confidence) >=
+                        confidenceThreshold) {
+                    entry->useful.saturate();
+                }
+                constantStats.usefulIncrements++;
+            } else {
+                constantStats.usefulSuppressed++;
             }
         } else {
             constantStats.valueMismatches++;

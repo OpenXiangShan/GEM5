@@ -53,6 +53,7 @@ class ConstantLVP : public VPUnit
     const unsigned confidenceBits;
     const unsigned usefulBits;
     const bool resetConfidence;
+    const bool usefulOnlyOnCorrectPrediction;
     const uint16_t maxConfidence;
     const uint16_t confidenceThreshold;
     const unsigned confidencePenalty;
@@ -100,6 +101,8 @@ class ConstantLVP : public VPUnit
         statistics::Scalar updateMisses;
         statistics::Scalar valueMatches;
         statistics::Scalar valueMismatches;
+        statistics::Scalar usefulIncrements;
+        statistics::Scalar usefulSuppressed;
         statistics::Scalar mismatchInvalidations;
         statistics::Scalar invalidAllocations;
         statistics::Scalar usefulReplacements;

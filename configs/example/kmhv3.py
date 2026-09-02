@@ -106,6 +106,9 @@ def setKmhV3Params(args, system):
                     # A zero value uses maxConfidence; experiments can
                     # override this parameter with an explicit decrement.
                     confidencePenalty=0,
+                    # Keep the historical useful update behavior by default;
+                    # experiments can gate it on correct predictions.
+                    usefulOnlyOnCorrectPrediction=False,
                     resetConfidence=True,
                     thresholdPercent=100,
                 ),
