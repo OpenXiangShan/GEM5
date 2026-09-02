@@ -27,6 +27,7 @@
 #include "params/PAgeSelector.hh"
 #include "params/Scheduler.hh"
 #include "params/SpecWakeupChannel.hh"
+#include "enums/SMTQueuePolicy.hh"
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
 
@@ -209,6 +210,12 @@ class IssueQue : public SimObject
     // iq per-thread occupancy counter, used for fetch-side feedback stats
     InstsCounter* instsCounter = nullptr;
 
+    // SMT IQ partitioning
+    SMTQueuePolicy smtIQPolicy = SMTQueuePolicy::Dynamic;
+    int smtIQWatermark = 0;
+    int numThreads = 1;
+    uint32_t threadEntries[MaxThreads] = {};
+
     struct IssueQueStats : public statistics::Group
     {
         IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name);
@@ -273,7 +280,7 @@ class IssueQue : public SimObject
     bool hasInstsCounter() const { return instsCounter != nullptr; }
 
     void tick();
-    bool ready();
+    bool ready(int tid);
     int emptyEntries() const { return iqsize - instNum; }
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);
@@ -391,9 +398,12 @@ class Scheduler : public SimObject
 
     std::vector<int> dispSeqVec;
 
+    // SMT IQ partitioning params (forwarded to each IssueQue in setCPU)
+    SMTQueuePolicy smtIQPolicy = SMTQueuePolicy::Dynamic;
+
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
-    bool ready(OpClass op, int disp_seq);
+    bool ready(OpClass op, int tid, int disp_seq);
 
   public:
     PendingWakeEventsType specWakeEvents;

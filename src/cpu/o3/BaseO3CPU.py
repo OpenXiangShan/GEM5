@@ -57,7 +57,7 @@ class SMTFetchBlockPolicy(ScopedEnum):
     vals = [ 'BaseLine', 'BlockPolicy' ]
 
 class SMTQueuePolicy(ScopedEnum):
-    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
+    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing', 'Watermark' ]
 
 class SMTLSQMode(ScopedEnum):
     vals = [ 'Independent', 'Shared' ]
@@ -293,7 +293,7 @@ class BaseO3CPU(BaseCPU):
     smtLSQPolicy    = Param.SMTQueuePolicy('Partitioned',
                                            "SMT shared LSQ allocation policy")
     smtLSQThreshold = Param.Int(100, "SMT LSQ Threshold Sharing Parameter")
-    smtIQPolicy    = Param.SMTQueuePolicy('Partitioned',
+    smtIQPolicy    = Param.SMTQueuePolicy('Dynamic',
                                           "SMT IQ Sharing Policy")
     smtIQThreshold = Param.Int(100, "SMT IQ Threshold Sharing Parameter")
     smtROBPolicy   = Param.SMTQueuePolicy('Partitioned',
