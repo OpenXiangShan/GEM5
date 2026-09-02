@@ -746,7 +746,8 @@ class CPU : public BaseCPU
                             HtmFailureFaultCause cause) override;
 
     //difftest virtual function
-    void readGem5Regs(ThreadID tid) override;
+    void readDutRegs(
+        ThreadID tid, riscv64_CPU_regfile &state) override;
 
   private:
     /** Value predictor */

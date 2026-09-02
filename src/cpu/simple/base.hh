@@ -207,7 +207,8 @@ class BaseSimpleCPU : public BaseCPU
 
     RegVal readMiscReg(int misc_reg, ThreadID tid) override;
 
-    void readGem5Regs(ThreadID tid) override;
+    void readDutRegs(
+        ThreadID tid, riscv64_CPU_regfile &state) override;
 };
 
 } // namespace gem5
