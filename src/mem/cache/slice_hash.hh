@@ -11,7 +11,6 @@ namespace gem5
 enum class SliceHashPolicy
 {
     None,
-    Xor,
     XorFold,
     Murmur3,
     Invalid,
@@ -22,16 +21,16 @@ SliceHashPolicy parseSliceHashPolicy(const std::string &policy);
 /**
  * Map a cache-line address to a physical slice.
  *
- * All non-trivial policies XOR a hash of the upper line-address bits into
- * the original low slice bits. This keeps the mapping bijective over the low
- * bits for every fixed set/tag value.
+ * The None policy preserves the conventional low-bit slice selection. All
+ * hash policies compute the slice directly from the complete line address;
+ * their inner caches must therefore retain the complete line address in the
+ * set and tag fields.
  */
 Addr hashSlice(Addr line_addr, unsigned slice_bits,
                SliceHashPolicy policy);
 
-/** Recover the original low line-address bits from a physical slice ID. */
-Addr recoverSliceLowBits(Addr upper_line_addr, Addr slice_id,
-                         unsigned slice_bits, SliceHashPolicy policy);
+/** Number of low line-address bits omitted from a per-slice set index. */
+unsigned sliceSetShift(unsigned slice_bits, SliceHashPolicy policy);
 
 } // namespace gem5
 

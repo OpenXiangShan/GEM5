@@ -59,15 +59,22 @@ BaseIndexingPolicy::BaseIndexingPolicy(const Params &p)
     : SimObject(p), assoc(p.assoc),
       numSets(p.size / (p.entry_size * assoc)),
       setShift(floorLog2(p.entry_size)),
-      sliceShift(p.num_slices > 0 ? floorLog2(p.num_slices) : 0),
-      slice_idx(p.slice_idx),
+      sliceBits(p.num_slices > 0 ? floorLog2(p.num_slices) : 0),
       sliceHashPolicy(parseSliceHashPolicy(p.slice_hash_policy)),
+      sliceShift(sliceSetShift(sliceBits, sliceHashPolicy)),
+      slice_idx(p.slice_idx),
       setMask(numSets - 1), sets(numSets),
       tagShift(setShift + sliceShift + floorLog2(numSets))
 {
     fatal_if(!isPowerOf2(numSets), "# of sets must be non-zero and a power " \
              "of 2");
     fatal_if(assoc <= 0, "associativity must be greater than zero");
+    fatal_if(p.num_slices > 0 && !isPowerOf2(p.num_slices),
+             "# of slices must be a power of 2");
+    fatal_if(p.num_slices > 0 &&
+             (p.slice_idx < 0 || p.slice_idx >= p.num_slices),
+             "Slice index %d is outside [0, %d)",
+             p.slice_idx, p.num_slices);
     fatal_if(sliceHashPolicy == SliceHashPolicy::Invalid,
              "Unknown slice hash policy '%s'", p.slice_hash_policy);
     fatal_if(sliceHashPolicy != SliceHashPolicy::None &&

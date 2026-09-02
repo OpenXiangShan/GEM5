@@ -83,12 +83,16 @@ class BaseIndexingPolicy : public SimObject
      */
     const int setShift;
 
+    /** Number of bits required to identify a physical cache slice. */
+    const unsigned sliceBits;
+
+    /** Policy used to select a physical cache slice. */
+    const SliceHashPolicy sliceHashPolicy;
+
+    /** Number of low line bits omitted before extracting the set. */
     const int sliceShift;
 
     const int slice_idx;
-
-    /** Mapping used to recover the line bits omitted by sliced caches. */
-    const SliceHashPolicy sliceHashPolicy;
 
     /**
      * Mask out all bits that aren't part of the set index.

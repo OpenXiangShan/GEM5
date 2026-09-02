@@ -62,7 +62,7 @@ class L2CacheWrapper(ClockedObject):
     cache_assoc = Param.Unsigned("Cache associativity")
     block_bits = Param.Unsigned(6, "Log2 of cache block size in bytes")
     slice_hash_policy = Param.String(
-        "none", "Slice mapping: none, xor, xor-fold, or murmur3")
+        "none", "Slice mapping: none, xor-fold, or murmur3")
 
     pipe_dir_write_stage = Param.Unsigned(3, "the stage of directory write in L2MainPipe")
     dir_read_bypass = Param.Bool(False, "whether to bypass the directory read when set address is the same")

@@ -87,20 +87,17 @@ class L2CacheWrapper : public ClockedObject
             return getSliceId(addr) == static_cast<PortID>(slice_id);
         });
         slice->setGetSetIdxFunc([this](Addr addr) -> Addr {
-            Addr set_idx = (addr >> (block_bits + sliceBits)) & setMask;
-            return set_idx;
+            return getInnerSetIdx(addr);
         });
         // Set the function to calculate DataSram bank index for an address
         slice->setGetDataBankIdxFunc([this](Addr addr) -> Addr {
-            Addr set_idx = (addr >> (block_bits + sliceBits)) & setMask;
             // Extract lower bits of set index based on number of banks
-            return set_idx & (dataSramBanks - 1);
+            return getInnerSetIdx(addr) & (dataSramBanks - 1);
         });
         // Set the function to calculate DirSram bank index for an address
         slice->setGetDirBankIdxFunc([this](Addr addr) -> Addr {
-            Addr set_idx = (addr >> (block_bits + sliceBits)) & setMask;
             // Extract lower bits of set index based on number of banks
-            return set_idx & (dirSramBanks - 1);
+            return getInnerSetIdx(addr) & (dirSramBanks - 1);
         });
     }
 
@@ -150,6 +147,7 @@ class L2CacheWrapper : public ClockedObject
 
     const unsigned sliceBits;
     const SliceHashPolicy sliceHashPolicy;
+    const unsigned setSliceShift;
     const Addr setMask;
     const Addr block_bits;
     const uint64_t pipe_dir_write_stage;
@@ -172,7 +170,13 @@ class L2CacheWrapper : public ClockedObject
     };
     L2CacheWrapperStats stats;
 
-    inline PortID getSliceId(Addr addr) const {
+    inline Addr getInnerSetIdx(Addr addr) const
+    {
+        return (addr >> (block_bits + setSliceShift)) & setMask;
+    }
+
+    inline PortID getSliceId(Addr addr) const
+    {
         return static_cast<PortID>(
             hashSlice(addr >> block_bits, sliceBits, sliceHashPolicy));
     }

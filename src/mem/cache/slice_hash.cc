@@ -42,29 +42,6 @@ murmur3Finalizer(Addr value)
     return value;
 }
 
-Addr
-hashUpperLine(Addr upper_line_addr, unsigned slice_bits,
-              SliceHashPolicy policy)
-{
-    const Addr mask = lowMask(slice_bits);
-
-    switch (policy) {
-      case SliceHashPolicy::None:
-        return 0;
-      case SliceHashPolicy::Xor:
-        return upper_line_addr & mask;
-      case SliceHashPolicy::XorFold:
-        return foldXor(upper_line_addr, slice_bits);
-      case SliceHashPolicy::Murmur3:
-        return murmur3Finalizer(upper_line_addr) & mask;
-      case SliceHashPolicy::Invalid:
-        break;
-    }
-
-    assert(false && "invalid slice hash policy");
-    return 0;
-}
-
 } // anonymous namespace
 
 SliceHashPolicy
@@ -72,9 +49,6 @@ parseSliceHashPolicy(const std::string &policy)
 {
     if (policy == "none") {
         return SliceHashPolicy::None;
-    }
-    if (policy == "xor") {
-        return SliceHashPolicy::Xor;
     }
     if (policy == "xor-fold") {
         return SliceHashPolicy::XorFold;
@@ -93,22 +67,25 @@ hashSlice(Addr line_addr, unsigned slice_bits, SliceHashPolicy policy)
     }
 
     const Addr mask = lowMask(slice_bits);
-    const Addr low_bits = line_addr & mask;
-    const Addr upper_line_addr = line_addr >> slice_bits;
-    return low_bits ^ hashUpperLine(upper_line_addr, slice_bits, policy);
-}
-
-Addr
-recoverSliceLowBits(Addr upper_line_addr, Addr slice_id,
-                    unsigned slice_bits, SliceHashPolicy policy)
-{
-    if (slice_bits == 0) {
-        return 0;
+    switch (policy) {
+      case SliceHashPolicy::None:
+        return line_addr & mask;
+      case SliceHashPolicy::XorFold:
+        return foldXor(line_addr, slice_bits);
+      case SliceHashPolicy::Murmur3:
+        return murmur3Finalizer(line_addr) & mask;
+      case SliceHashPolicy::Invalid:
+        break;
     }
 
-    const Addr mask = lowMask(slice_bits);
-    return (slice_id & mask) ^
-           hashUpperLine(upper_line_addr, slice_bits, policy);
+    assert(false && "invalid slice hash policy");
+    return 0;
+}
+
+unsigned
+sliceSetShift(unsigned slice_bits, SliceHashPolicy policy)
+{
+    return policy == SliceHashPolicy::None ? slice_bits : 0;
 }
 
 } // namespace gem5

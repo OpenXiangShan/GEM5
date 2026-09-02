@@ -66,15 +66,13 @@ Addr
 SetAssociative::regenerateAddr(const Addr tag, const ReplaceableEntry* entry)
                                                                         const
 {
-    // Sliced tags omit the original low line bits. Recover them from the
-    // physical slice ID so evictions and writebacks retain the full address.
-    const Addr addr_without_slice =
-        (tag << tagShift) | (entry->getSet() << (setShift + sliceShift));
-    const Addr upper_line_addr =
-        addr_without_slice >> (setShift + sliceShift);
-    const Addr low_line_bits = recoverSliceLowBits(
-        upper_line_addr, slice_idx, sliceShift, sliceHashPolicy);
-    return addr_without_slice | (low_line_bits << setShift);
+    if (sliceHashPolicy == SliceHashPolicy::None) {
+        return (tag << tagShift) |
+               (((entry->getSet() << sliceShift) | slice_idx) << setShift);
+    }
+
+    // Hashed slices retain the complete line address in their set and tag.
+    return (tag << tagShift) | (entry->getSet() << setShift);
 }
 
 std::vector<ReplaceableEntry*>

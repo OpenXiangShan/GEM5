@@ -17,6 +17,7 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       cpu_side_port(p.name + ".cpu_side", *this),
       sliceBits(p.num_slices > 0 ? floorLog2(p.num_slices) : 0),
       sliceHashPolicy(parseSliceHashPolicy(p.slice_hash_policy)),
+      setSliceShift(sliceSetShift(sliceBits, sliceHashPolicy)),
       setMask((p.cache_size / (1 << p.block_bits) / p.cache_assoc / p.num_slices) - 1),
       block_bits(p.block_bits),
       pipe_dir_write_stage(p.pipe_dir_write_stage),
