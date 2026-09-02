@@ -32,7 +32,22 @@ DEFAULT_MARKER_TIMEOUT_SEC = 30.0
 DEFAULT_LAUNCH_RETRIES = 2
 DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
 DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
+DEFAULT_LOG_LIMIT_BYTES = 64 * 1024 * 1024
 ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def parse_positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return number
+
+
+def default_log_limit_bytes() -> int:
+    value = os.environ.get("GEM5_PERF_LOG_LIMIT_BYTES")
+    if not value:
+        return DEFAULT_LOG_LIMIT_BYTES
+    return parse_positive_int(value)
 
 
 @dataclass(frozen=True)
@@ -225,6 +240,15 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         "--extra-gem5-args",
         default="",
         help="Extra GEM5 arguments. Overrides the legacy sixth positional argument when set.",
+    )
+    parser.add_argument(
+        "--log-limit-bytes",
+        type=parse_positive_int,
+        default=default_log_limit_bytes(),
+        help=(
+            "Keep only this many trailing bytes in each workload log.txt. "
+            "Defaults to $GEM5_PERF_LOG_LIMIT_BYTES or 64 MiB."
+        ),
     )
 
     args, rest = parser.parse_known_args(argv)
@@ -484,15 +508,18 @@ def make_job_script(
     checkpoint: Path,
     command: list[str],
     env: dict[str, str],
+    log_limit_bytes: int,
 ) -> str:
     command_text = " ".join(shlex.quote(part) for part in command)
     workload_message = shlex.quote(f"distributed_sim workload: {workload.name}")
     checkpoint_message = shlex.quote(f"checkpoint: {checkpoint}")
     command_message = shlex.quote(f"command: {command_text}")
+    log_path = work_dir / "log.txt"
     return f"""set -u
 mkdir -p {shlex.quote(str(work_dir))}
+log_limit_bytes={log_limit_bytes}
+run_job() {{
 cd {shlex.quote(str(work_dir))}
-exec >{shlex.quote("log.txt")} 2>&1
 printf '%s\\n' {workload_message}
 printf '%s\\n' {checkpoint_message}
 echo "host: $(hostname)"
@@ -512,6 +539,9 @@ fi
 echo "finish: $(date -Is)"
 echo "exit_status: $status"
 exit "$status"
+}}
+run_job 2>&1 | tail -c "$log_limit_bytes" > {shlex.quote(str(log_path))}
+exit "${{PIPESTATUS[0]}}"
 """
 
 
@@ -1044,6 +1074,7 @@ def run_scheduler(
     launch_retry_delay: float,
     launch_interval: float,
     force: bool,
+    log_limit_bytes: int,
 ) -> int:
     total = len(workloads)
     skipped = 0
@@ -1130,6 +1161,7 @@ def run_scheduler(
                     checkpoint=checkpoint,
                     command=command,
                     env=env,
+                    log_limit_bytes=log_limit_bytes,
                 )
                 launch_job(
                     server=server,
@@ -1261,6 +1293,7 @@ def main(argv: list[str]) -> int:
         print(f"Benchmark filters: {benchmark_filters}")
     if extra_gem5_args.strip():
         print(f"Extra gem5 args: {extra_gem5_args}")
+    print(f"Log limit bytes: {args.log_limit_bytes}")
 
     if args.dry_run:
         for index, workload in enumerate(workloads, start=1):
@@ -1294,6 +1327,7 @@ def main(argv: list[str]) -> int:
         launch_retry_delay=args.launch_retry_delay,
         launch_interval=args.launch_interval,
         force=args.force,
+        log_limit_bytes=args.log_limit_bytes,
     )
 
 
