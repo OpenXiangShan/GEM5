@@ -45,6 +45,9 @@ class BaseIndexingPolicy(SimObject):
 
     slice_idx = Param.Int(0, "Cache slice index")
 
+    slice_hash_policy = Param.String(
+        "none", "Slice mapping used to reconstruct cache block addresses")
+
     # Get the associativity
     assoc = Param.Int(Parent.assoc, "associativity")
 

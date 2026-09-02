@@ -7,6 +7,7 @@
 
 #include "base/types.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/slice_hash.hh"
 #include "mem/cache/xs_l2/L2CacheSlice.hh"
 #include "mem/cache/xs_l2/SlicedCacheAccessor.hh"
 #include "mem/packet.hh"
@@ -14,6 +15,7 @@
 #include "params/L2CacheWrapper.hh"
 #include "sim/clocked_object.hh"
 #include "sim/port.hh"
+#include "sim/stats.hh"
 #include "sim/system.hh"
 
 namespace gem5
@@ -85,21 +87,18 @@ class L2CacheWrapper : public ClockedObject
             return getSliceId(addr) == static_cast<PortID>(slice_id);
         });
         slice->setGetSetIdxFunc([this](Addr addr) -> Addr {
-            Addr slice_bits = popCount(sliceMask);
-            Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
+            Addr set_idx = (addr >> (block_bits + sliceBits)) & setMask;
             return set_idx;
         });
         // Set the function to calculate DataSram bank index for an address
         slice->setGetDataBankIdxFunc([this](Addr addr) -> Addr {
-            Addr slice_bits = popCount(sliceMask);
-            Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
+            Addr set_idx = (addr >> (block_bits + sliceBits)) & setMask;
             // Extract lower bits of set index based on number of banks
             return set_idx & (dataSramBanks - 1);
         });
         // Set the function to calculate DirSram bank index for an address
         slice->setGetDirBankIdxFunc([this](Addr addr) -> Addr {
-            Addr slice_bits = popCount(sliceMask);
-            Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
+            Addr set_idx = (addr >> (block_bits + sliceBits)) & setMask;
             // Extract lower bits of set index based on number of banks
             return set_idx & (dirSramBanks - 1);
         });
@@ -149,7 +148,8 @@ class L2CacheWrapper : public ClockedObject
     friend class SliceCPUSidePort;
     friend class SlicedCacheAccessor;
 
-    const Addr sliceMask;
+    const unsigned sliceBits;
+    const SliceHashPolicy sliceHashPolicy;
     const Addr setMask;
     const Addr block_bits;
     const uint64_t pipe_dir_write_stage;
@@ -161,8 +161,20 @@ class L2CacheWrapper : public ClockedObject
 
     System* system;
 
+    struct L2CacheWrapperStats : public statistics::Group
+    {
+        L2CacheWrapperStats(statistics::Group *parent, unsigned num_slices);
+
+        statistics::Vector cpuSideRequests;
+        statistics::Vector cpuSideRequestBlocked;
+        statistics::Vector prefetchRequests;
+        statistics::Vector prefetchRequestBlocked;
+    };
+    L2CacheWrapperStats stats;
+
     inline PortID getSliceId(Addr addr) const {
-        return ((addr >> block_bits) & sliceMask);
+        return static_cast<PortID>(
+            hashSlice(addr >> block_bits, sliceBits, sliceHashPolicy));
     }
 
     // Return the last tick of next cycle

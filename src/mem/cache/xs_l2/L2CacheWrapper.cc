@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "base/intmath.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/L2CacheWrapper.hh"
 #include "sim/system.hh"
@@ -13,7 +15,8 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     : ClockedObject(p),
       sendPrefetchEvent([this]{ processSendPrefetchEvent(); }, "SendPrefetchEvent"),
       cpu_side_port(p.name + ".cpu_side", *this),
-      sliceMask(p.num_slices - 1),
+      sliceBits(p.num_slices > 0 ? floorLog2(p.num_slices) : 0),
+      sliceHashPolicy(parseSliceHashPolicy(p.slice_hash_policy)),
       setMask((p.cache_size / (1 << p.block_bits) / p.cache_assoc / p.num_slices) - 1),
       block_bits(p.block_bits),
       pipe_dir_write_stage(p.pipe_dir_write_stage),
@@ -22,7 +25,8 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       dirSramBanks(p.dir_sram_banks),
       sliced_cache_accessor(this),
       prefetcher(p.prefetcher),
-      system(p.system)
+      system(p.system),
+      stats(this, p.num_slices)
 {
     if (p.num_slices == 0 || (p.num_slices & (p.num_slices - 1)) != 0) {
         fatal("L2CacheWrapper: num_slices must be a power of 2.");
@@ -36,11 +40,42 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
         fatal("L2CacheWrapper: dir_sram_banks must be a power of 2.");
     }
 
+    fatal_if(sliceHashPolicy == SliceHashPolicy::Invalid,
+             "L2CacheWrapper: unknown slice hash policy '%s'",
+             p.slice_hash_policy);
+
     for (int i = 0; i < p.num_slices; ++i) {
         slice_cpuside_ports.emplace_back(p.name + ".slice_cpuside_ports." + std::to_string(i), *this, i);
     }
     if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), &sliced_cache_accessor, 1 << block_bits);
+    }
+}
+
+L2CacheWrapper::L2CacheWrapperStats::L2CacheWrapperStats(
+    statistics::Group *parent, unsigned num_slices)
+    : statistics::Group(parent),
+      ADD_STAT(cpuSideRequests, statistics::units::Count::get(),
+               "Accepted CPU-side requests per L2 slice"),
+      ADD_STAT(cpuSideRequestBlocked, statistics::units::Count::get(),
+               "Blocked CPU-side request attempts per L2 slice"),
+      ADD_STAT(prefetchRequests, statistics::units::Count::get(),
+               "Accepted wrapper prefetch requests per L2 slice"),
+      ADD_STAT(prefetchRequestBlocked, statistics::units::Count::get(),
+               "Blocked wrapper prefetch attempts per L2 slice")
+{
+    using namespace statistics;
+
+    cpuSideRequests.init(num_slices).flags(total | nozero);
+    cpuSideRequestBlocked.init(num_slices).flags(total | nozero);
+    prefetchRequests.init(num_slices).flags(total | nozero);
+    prefetchRequestBlocked.init(num_slices).flags(total | nozero);
+    for (unsigned i = 0; i < num_slices; ++i) {
+        const std::string name = "slice" + std::to_string(i);
+        cpuSideRequests.subname(i, name);
+        cpuSideRequestBlocked.subname(i, name);
+        prefetchRequests.subname(i, name);
+        prefetchRequestBlocked.subname(i, name);
     }
 }
 
@@ -86,8 +121,10 @@ L2CacheWrapper::processSendPrefetchEvent()
 
     prefetch_blocked = !slice_cpuside_ports[slice_id].sendTimingReq(pkt);
     if (prefetch_blocked) {
+        stats.prefetchRequestBlocked[slice_id]++;
         return;
     }
+    stats.prefetchRequests[slice_id]++;
     outstanding_prefetch = nullptr;
     scheduleSendPrefetch();
 }
@@ -141,12 +178,15 @@ L2CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
     auto slice_id = owner.getSliceId(pkt->getAddr());
     DPRINTF(L2CacheWrapper, "Got timing req for addr %#x, routing to slice %d\n", pkt->getAddr(), slice_id);
 
-    if (owner.prefetch_blocked || !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
+    if (owner.prefetch_blocked ||
+        !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
         DPRINTF(L2CacheWrapper, "Slice %d is busy, blocking CPU side\n", slice_id);
+        owner.stats.cpuSideRequestBlocked[slice_id]++;
         owner.upper_req_blocked = true;
         return false;
     }
 
+    owner.stats.cpuSideRequests[slice_id]++;
     owner.scheduleSendPrefetch();
     return true;
 }

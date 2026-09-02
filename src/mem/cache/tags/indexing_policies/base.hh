@@ -50,6 +50,7 @@
 #include <vector>
 
 #include "base/logging.hh"
+#include "mem/cache/slice_hash.hh"
 #include "params/BaseIndexingPolicy.hh"
 #include "sim/sim_object.hh"
 
@@ -85,6 +86,9 @@ class BaseIndexingPolicy : public SimObject
     const int sliceShift;
 
     const int slice_idx;
+
+    /** Mapping used to recover the line bits omitted by sliced caches. */
+    const SliceHashPolicy sliceHashPolicy;
 
     /**
      * Mask out all bits that aren't part of the set index.

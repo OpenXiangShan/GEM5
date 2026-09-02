@@ -61,12 +61,19 @@ BaseIndexingPolicy::BaseIndexingPolicy(const Params &p)
       setShift(floorLog2(p.entry_size)),
       sliceShift(p.num_slices > 0 ? floorLog2(p.num_slices) : 0),
       slice_idx(p.slice_idx),
+      sliceHashPolicy(parseSliceHashPolicy(p.slice_hash_policy)),
       setMask(numSets - 1), sets(numSets),
       tagShift(setShift + sliceShift + floorLog2(numSets))
 {
     fatal_if(!isPowerOf2(numSets), "# of sets must be non-zero and a power " \
              "of 2");
     fatal_if(assoc <= 0, "associativity must be greater than zero");
+    fatal_if(sliceHashPolicy == SliceHashPolicy::Invalid,
+             "Unknown slice hash policy '%s'", p.slice_hash_policy);
+    fatal_if(sliceHashPolicy != SliceHashPolicy::None &&
+             p.num_slices <= 0,
+             "Slice hash policy '%s' requires a sliced cache",
+             p.slice_hash_policy);
 
     // Make space for the entries
     for (uint32_t i = 0; i < numSets; ++i) {

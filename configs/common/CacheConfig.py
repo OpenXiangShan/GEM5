@@ -120,6 +120,8 @@ def config_aligned_l2(options, system, l2_cache_class):
                                             num_slices=num_l2_slices,
                                             cache_size=options.l2_size,
                                             cache_assoc=options.l2_assoc,
+                                            slice_hash_policy=(
+                                                options.l2_slice_hash_policy),
                                             block_bits=int(math.log2(system.cache_line_size)))
                                             for _ in range(options.num_cpus)]
     for i in range(options.num_cpus):
@@ -159,6 +161,8 @@ def config_aligned_l2(options, system, l2_cache_class):
             inner_cache.size = inner_cache.size / num_l2_slices
             inner_cache.tags.indexing_policy.num_slices = num_l2_slices
             inner_cache.tags.indexing_policy.slice_idx = j
+            inner_cache.tags.indexing_policy.slice_hash_policy = \
+                options.l2_slice_hash_policy
             if isinstance(inner_cache.replacement_policy, DRRIPRP):
                 inner_cache.replacement_policy.num_slices = num_l2_slices
                 inner_cache.replacement_policy.num_sets_per_slice = inner_cache.size // (64 * inner_cache.assoc)

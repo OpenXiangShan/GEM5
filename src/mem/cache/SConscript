@@ -38,8 +38,11 @@ Source('cache_blk.cc')
 Source('mshr.cc')
 Source('mshr_queue.cc')
 Source('noncoherent_cache.cc')
+Source('slice_hash.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
+
+GTest('slice_hash.test', 'slice_hash.test.cc', 'slice_hash.cc')
 
 DebugFlag('Cache')
 DebugFlag('CacheComp')
@@ -59,4 +62,3 @@ DebugFlag('HWPrefetchQueue')
 # it explicitly even above and beyond CacheAll.
 CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
                           'CacheVerbose', 'HWPrefetch', 'MSHR'])
-
