@@ -30,6 +30,10 @@ import sys
 
 Import('*')
 
+GTest('crob_kmhv2_break_analysis.test',
+      'crob_kmhv2_break_analysis.test.cc',
+      'crob_kmhv2_break_analysis.cc')
+
 if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('FuncScheduler.py', sim_objects=['FUPool', 'SpecWakeupChannel',
               'IssuePort', 'IssueQue', 'BaseSelector', 'PAgeSelector', 'Scheduler'])
@@ -40,6 +44,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
         'ROBWalkPolicy', 'ROBCompressPolicy', 'PerfRecord'])
 
     Source('commit.cc')
+    Source('crob_kmhv2_break_analysis.cc')
     Source('cpu.cc')
     Source('decode.cc')
     Source('dyn_inst.cc')

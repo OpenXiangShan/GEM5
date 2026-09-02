@@ -519,6 +519,10 @@ class Commit
      */
     const unsigned renameWidth;
 
+    /** ROB compression controls used to gate bundle analysis. */
+    const ROBCompressPolicy robCompressPolicy;
+    const unsigned crobInstsPerGroup;
+
     /** Commit width, in instructions. */
     const unsigned commitWidth;
 
@@ -588,6 +592,9 @@ class Commit
 
     /** Updates commit stats based on this instruction. */
     void updateComInstStats(const DynInstPtr &inst);
+
+    /** Record kmhv2 grouping and complex-interruption statistics. */
+    void recordKmhv2BreakStats(ThreadID tid);
 
     // Difftest
     void diffInst(ThreadID tid, const DynInstPtr &inst);
@@ -678,6 +685,14 @@ class Commit
         statistics::Formula totalSquash;
 
         statistics::Vector ROBFull;
+        statistics::Scalar crobKmhv2AnalyzedBundles;
+        statistics::Vector crobKmhv2InstClass;
+        statistics::Vector crobKmhv2BreakingInstClass;
+        statistics::Scalar crobKmhv2BreakBlocks;
+        statistics::Distribution crobKmhv2SimpleRunLength;
+        statistics::Scalar crobKmhv2PhysicalEntries;
+        statistics::Scalar crobKmhv2NoBreakPhysicalEntries;
+        statistics::Scalar crobKmhv2BreakLostEntries;
         statistics::Distribution smtRestEntryWhileROBFull;
         statistics::Vector ROBBorrowingStateChange;
         statistics::VectorDistribution smtStateHoldCycle;

@@ -67,13 +67,16 @@ bool
 ROB::allocateGroup_kmhv2(const DynInstPtr inst, ThreadID tid)
 {
     auto& groups = threadGroups[tid];
+
+    if (groups.empty()) [[unlikely]] {
+        return true;
+    }
+
     auto& prev = instList[tid].back();
 
     // load/store/control exclusive one group
     bool alloc = false;
-    if (groups.empty()) [[unlikely]] {
-        alloc = true;
-    } else if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
+    if (inst->isMemRef() || inst->isControl() || inst->isNonSpeculative()) {
         alloc = true;
     } else if (prev->isMemRef() || prev->isControl() ||
                prev->isNonSpeculative()) {

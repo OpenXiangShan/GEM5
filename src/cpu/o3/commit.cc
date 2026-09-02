@@ -61,6 +61,7 @@
 #include "cpu/checker/cpu.hh"
 #include "cpu/exetrace.hh"
 #include "cpu/o3/cpu.hh"
+#include "cpu/o3/crob_kmhv2_break_analysis.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
@@ -149,6 +150,8 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       mdpViolationAtCommit(params.mdp_violation_timing == "atCommit"),
       enableStoreSetTrain(params.enable_storeSet_train),
       renameWidth(params.renameWidth),
+      robCompressPolicy(params.RobCompressPolicy),
+      crobInstsPerGroup(params.CROB_instPerGroup),
       commitWidth(params.commitWidth),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
@@ -330,6 +333,23 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Total number of squash"),
       ADD_STAT(ROBFull, statistics::units::Count::get(),
                "Total number of ROBFull"),
+      ADD_STAT(crobKmhv2AnalyzedBundles, statistics::units::Count::get(),
+               "Successfully admitted kmhv2 bundles analyzed"),
+      ADD_STAT(crobKmhv2InstClass, statistics::units::Count::get(),
+               "Allocated kmhv2 instructions by compression class"),
+      ADD_STAT(crobKmhv2BreakingInstClass, statistics::units::Count::get(),
+               "Complex instructions inside a simple-complex-simple block"),
+      ADD_STAT(crobKmhv2BreakBlocks, statistics::units::Count::get(),
+               "Complex blocks interrupting simple runs in one cycle and FTQ"),
+      ADD_STAT(crobKmhv2SimpleRunLength, statistics::units::Count::get(),
+               "Length of same-cycle same-FTQ kmhv2 simple runs"),
+      ADD_STAT(crobKmhv2PhysicalEntries, statistics::units::Count::get(),
+               "Physical entries required by analyzed kmhv2 bundles"),
+      ADD_STAT(crobKmhv2NoBreakPhysicalEntries,
+               statistics::units::Count::get(),
+               "Entries if complex instructions did not fragment simple runs"),
+      ADD_STAT(crobKmhv2BreakLostEntries, statistics::units::Count::get(),
+               "Extra physical entries caused by complex interruption"),
       ADD_STAT(smtRestEntryWhileROBFull, statistics::units::Count::get(),
                "Distribution of total rest entries while ROBFull in SMT mode"),
       ADD_STAT(ROBBorrowingStateChange, statistics::units::Count::get(),
@@ -457,6 +477,20 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     ROBFull
         .init(cpu->numThreads)
         .flags(statistics::total);
+
+    constexpr std::array<const char *, Kmhv2InstClassCount> class_names = {
+        "simpleIntegerAlu", "simpleFloatingAlu", "simpleOther", "load",
+        "store", "branch", "jump", "otherComplex"
+    };
+    crobKmhv2InstClass.init(Kmhv2InstClassCount);
+    crobKmhv2BreakingInstClass.init(Kmhv2InstClassCount);
+    for (size_t i = 0; i < class_names.size(); ++i) {
+        crobKmhv2InstClass.subname(i, class_names[i]);
+        crobKmhv2BreakingInstClass.subname(i, class_names[i]);
+    }
+    crobKmhv2SimpleRunLength
+        .init(0, commit->renameWidth, 1)
+        .flags(statistics::nozero);
 
     smtRestEntryWhileROBFull
         .init(0, 160, 5)
@@ -2321,6 +2355,8 @@ Commit::moveInstsToBuffer()
         return;
     }
 
+    recordKmhv2BreakStats(tid);
+
     // Read any renamed instructions and place them into the ROB.
     int insts_to_process = fixedbuffer[tid].size();
     for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
@@ -2351,6 +2387,74 @@ Commit::moveInstsToBuffer()
         stallSig->blockIEW[tid] = true;
         DPRINTF(Commit, "Not all instructions from Rename stage could be processed, blocking thread %i\n", tid);
     }
+}
+
+void
+Commit::recordKmhv2BreakStats(ThreadID tid)
+{
+    if (robCompressPolicy != ROBCompressPolicy::kmhv2 ||
+        fixedbuffer[tid].empty()) {
+        return;
+    }
+
+    std::vector<Kmhv2InstSample> samples;
+    samples.reserve(fixedbuffer[tid].size());
+
+    for (const auto &inst : fixedbuffer[tid]) {
+        if (inst->isSquashed()) {
+            continue;
+        }
+
+        Kmhv2InstClass inst_class;
+        const bool complex = inst->isMemRef() || inst->isControl() ||
+                             inst->isNonSpeculative();
+        if (!complex) {
+            if (inst->isInteger()) {
+                inst_class = Kmhv2InstClass::SimpleIntegerAlu;
+            } else if (inst->isFloating()) {
+                inst_class = Kmhv2InstClass::SimpleFloatingAlu;
+            } else {
+                inst_class = Kmhv2InstClass::SimpleOther;
+            }
+        } else if (inst->isAtomic()) {
+            inst_class = Kmhv2InstClass::OtherComplex;
+        } else if (inst->isLoad()) {
+            inst_class = Kmhv2InstClass::Load;
+        } else if (inst->isStore()) {
+            inst_class = Kmhv2InstClass::Store;
+        } else if (inst->isControl()) {
+            inst_class = inst->isUncondCtrl() ? Kmhv2InstClass::Jump
+                                              : Kmhv2InstClass::Branch;
+        } else {
+            inst_class = Kmhv2InstClass::OtherComplex;
+        }
+
+        samples.push_back({inst_class, inst->ftqId});
+    }
+
+    if (samples.empty()) {
+        return;
+    }
+
+    const auto result = analyzeKmhv2Bundle(samples, crobInstsPerGroup);
+    stats.crobKmhv2AnalyzedBundles++;
+    for (size_t i = 0; i < Kmhv2InstClassCount; ++i) {
+        stats.crobKmhv2InstClass[i] += result.classCounts[i];
+        stats.crobKmhv2BreakingInstClass[i] +=
+            result.breakingClassCounts[i];
+    }
+    stats.crobKmhv2BreakBlocks += result.breakBlocks;
+    for (size_t length = 1; length < result.simpleRunLengths.size();
+         ++length) {
+        if (result.simpleRunLengths[length] != 0) {
+            stats.crobKmhv2SimpleRunLength.sample(
+                length, result.simpleRunLengths[length]);
+        }
+    }
+    stats.crobKmhv2PhysicalEntries += result.physicalEntries;
+    stats.crobKmhv2NoBreakPhysicalEntries +=
+        result.noBreakPhysicalEntries;
+    stats.crobKmhv2BreakLostEntries += result.breakLostEntries;
 }
 
 
