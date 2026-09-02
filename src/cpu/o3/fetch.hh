@@ -80,19 +80,12 @@ class CPU;
 class TraceFetch;
 class TraceInstruction;
 
-/**
- * One accepted group of resolved control-flow events.
- *
- * The BPU retains the prediction context while this entry is queued.  The
- * ready tick preserves the existing one-cycle boundary between IEW producing
- * an event and predictor training consuming it.
- */
+/** One group of resolved control-flow events for the same FTQ entry. */
 struct ResolveQueueEntry
 {
     ThreadID tid;
     branch_prediction::btb_pred::FetchTargetId ftqId;
     std::vector<branch_prediction::btb_pred::FullResolveEvent> events;
-    Tick readyTick = 0;
 };
 
 /**
@@ -508,11 +501,8 @@ class Fetch
      */
     bool handleCommitSignals(ThreadID tid);
 
-    /** Accept IEW resolve events before commit can retire their FTQ context. */
-    void latchIEWSignals();
-
-    /** Train at most one previously accepted resolve group. */
-    void drainResolveQueue();
+    /** Merge IEW resolve events and train at most one queued FTQ group. */
+    void handleIEWSignals();
 
     /** Remove wrong-path resolve events after a redirect. */
     void squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum);
@@ -1156,9 +1146,6 @@ class Fetch
         statistics::Scalar resolveQueueFullEvents;
         /** Stat for total number of resolve enqueue fail events. */
         statistics::Scalar resolveEnqueueFailEvent;
-
-        /** Resolved events rejected because their prediction context is gone. */
-        statistics::Scalar resolveMissingContextEvents;
 
         /** Resolved events discarded because of a squash. */
         statistics::Scalar resolveSquashedEvents;

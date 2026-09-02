@@ -323,8 +323,6 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of events the resolve queue becomes full"),
     ADD_STAT(resolveEnqueueFailEvent, statistics::units::Count::get(),
              "Number of times an entry could not be enqueued to the resolve queue"),
-    ADD_STAT(resolveMissingContextEvents, statistics::units::Count::get(),
-             "Number of resolved events whose prediction context was unavailable"),
     ADD_STAT(resolveSquashedEvents, statistics::units::Count::get(),
              "Number of resolved events discarded because of a squash"),
     ADD_STAT(resolveDequeueCount, statistics::units::Count::get(),
@@ -1439,9 +1437,6 @@ Fetch::initializeTickState()
         }
     }
 
-    // Capture prediction context before normal commit can retire its FTQ entry.
-    latchIEWSignals();
-
     // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1455,7 +1450,7 @@ Fetch::initializeTickState()
         }
     }
 
-    drainResolveQueue();
+    handleIEWSignals();
 
     DPRINTF(Fetch, "Running stage.\n");
     return status_change;
@@ -1751,13 +1746,14 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 void
-Fetch::latchIEWSignals()
+Fetch::handleIEWSignals()
 {
     // Currently resolve stage training is a btb-only feature
     if (!isBTBPred()) {
         return;
     }
 
+    const bool had_pending_resolve = !resolveQueue.empty();
     uint8_t enqueueCount = 0;
     uint8_t enqueueSize = 0;
 
@@ -1798,29 +1794,17 @@ Fetch::latchIEWSignals()
                     resolved.seqNum > iewInfo.redirectLastValidSeqNum) {
                     continue;
                 }
-                ResolveQueueEntry *mergedEntry = nullptr;
+                bool merged = false;
                 for (auto &queued : resolveQueue) {
                     if (queued.tid == tid &&
                         queued.ftqId == resolved.ftqId) {
                         queued.events.push_back(resolved);
-                        mergedEntry = &queued;
+                        merged = true;
                         break;
                     }
                 }
 
-                if (mergedEntry) {
-                    // A newly merged event must observe the same one-cycle
-                    // producer/consumer separation as a newly queued group.
-                    mergedEntry->readyTick = cpu->clockEdge(Cycles(1));
-                    continue;
-                }
-
-                if (!dbpbtb->acceptResolveUpdate(tid, resolved.ftqId)) {
-                    fetchStats.resolveMissingContextEvents++;
-                    DPRINTF(Fetch,
-                            "Drop stale resolve event for tid %u FTQ %llu "
-                            "because its prediction context is unavailable\n",
-                            tid, static_cast<unsigned long long>(resolved.ftqId));
+                if (merged) {
                     continue;
                 }
 
@@ -1828,7 +1812,6 @@ Fetch::latchIEWSignals()
                 new_entry.tid = tid;
                 new_entry.ftqId = resolved.ftqId;
                 new_entry.events.push_back(resolved);
-                new_entry.readyTick = cpu->clockEdge(Cycles(1));
                 resolveQueue.push_back(std::move(new_entry));
                 enqueueCount++;
             }
@@ -1836,19 +1819,10 @@ Fetch::latchIEWSignals()
         fetchStats.resolveEnqueueCount.sample(enqueueCount);
     }
 
-}
-
-void
-Fetch::drainResolveQueue()
-{
-    if (!isBTBPred()) {
-        return;
-    }
-
     fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
 
-    if (!resolveQueue.empty() &&
-        resolveQueue.front().readyTick <= curTick()) {
+    // Process only entries that were already queued before this cycle.
+    if (had_pending_resolve && !resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
         ThreadID tid = entry.tid;
         bool success = dbpbtb->resolveUpdate(entry.events);
@@ -1883,7 +1857,6 @@ Fetch::squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum)
         fetchStats.resolveSquashedEvents += oldSize - entry->events.size();
 
         if (entry->events.empty()) {
-            dbpbtb->cancelResolveUpdate(entry->tid, entry->ftqId);
             entry = resolveQueue.erase(entry);
         } else {
             ++entry;
@@ -1900,9 +1873,6 @@ Fetch::clearResolveQueue(ThreadID tid)
             continue;
         }
 
-        if (dbpbtb) {
-            dbpbtb->cancelResolveUpdate(entry->tid, entry->ftqId);
-        }
         entry = resolveQueue.erase(entry);
     }
 }

@@ -926,7 +926,6 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                 "Ignore squash for tid %u on missing FTQ target %u; "
                 "recovering predictor state from redirect PC %#lx\n",
                 tid, target_id, redirect_pc);
-        retainPendingResolveTargets(tid);
         ftq.clear(tid);
         clearPreds(tid);
         threads[tid].validprediction = false;
@@ -1055,7 +1054,6 @@ DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
 
     // Process all targets that have been committed (target_id >= head target id).
     while (!ftq.empty(tid) && target_id >= ftq.frontId(tid)) {
-        const FetchTargetId committed_id = ftq.frontId(tid);
         auto &target = ftq.front(tid);
 
         DPRINTF(DecoupleBP,
@@ -1071,21 +1069,6 @@ DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
         updateStatistics(target, update);
         updatePredictorComponents(target, update);
 
-        // Resolve training can be delayed by the shared queue or a modeled
-        // predictor-bank conflict.  Move only an accepted, still-pending
-        // target out of the FTQ so normal commit need not wait for training.
-        if (pendingResolveTargets[tid].find(committed_id) !=
-            pendingResolveTargets[tid].end()) {
-            const bool inserted = retiredResolveTargets[tid].emplace(
-                committed_id, std::move(target)).second;
-            panic_if(!inserted,
-                     "Duplicate retained resolve context for tid %u FTQ %llu",
-                     tid, static_cast<unsigned long long>(committed_id));
-            DPRINTF(DecoupleBP,
-                    "Retain committed resolve context for tid %u FTQ %llu\n",
-                    tid, static_cast<unsigned long long>(committed_id));
-        }
-
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
     }
@@ -1096,56 +1079,6 @@ DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
         printTarget(ftq.front(tid));
 
     historyManagers[tid].commit(target_id);
-}
-
-bool
-DecoupledBPUWithBTB::acceptResolveUpdate(
-    ThreadID tid, FetchTargetId target_id)
-{
-    panic_if(tid >= numThreads,
-             "Resolve update has invalid thread id %u", tid);
-
-    auto &pending = pendingResolveTargets[tid];
-    if (pending.find(target_id) != pending.end()) {
-        return true;
-    }
-
-    if (!ftq.hasTarget(target_id, tid) &&
-        retiredResolveTargets[tid].find(target_id) ==
-            retiredResolveTargets[tid].end()) {
-        return false;
-    }
-
-    pending.insert(target_id);
-    return true;
-}
-
-void
-DecoupledBPUWithBTB::cancelResolveUpdate(
-    ThreadID tid, FetchTargetId target_id)
-{
-    panic_if(tid >= numThreads,
-             "Resolve update cancellation has invalid thread id %u", tid);
-    pendingResolveTargets[tid].erase(target_id);
-    retiredResolveTargets[tid].erase(target_id);
-}
-
-void
-DecoupledBPUWithBTB::retainPendingResolveTargets(ThreadID tid)
-{
-    for (const auto target_id : pendingResolveTargets[tid]) {
-        if (!ftq.hasTarget(target_id, tid) ||
-            retiredResolveTargets[tid].find(target_id) !=
-                retiredResolveTargets[tid].end()) {
-            continue;
-        }
-
-        const bool inserted = retiredResolveTargets[tid].emplace(
-            target_id, std::move(ftq.get(target_id, tid))).second;
-        panic_if(!inserted,
-                 "Duplicate retained resolve context for tid %u FTQ %llu",
-                 tid, static_cast<unsigned long long>(target_id));
-    }
 }
 
 bool
@@ -1162,31 +1095,26 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<FullResolveEvent> &events)
                  "Resolve event group mixes thread or FTQ identities");
     }
 
-    const FetchTarget *target = nullptr;
-    if (ftq.hasTarget(target_id, tid)) {
-        target = &ftq.get(target_id, tid);
-    } else {
-        auto retained = retiredResolveTargets[tid].find(target_id);
-        if (retained != retiredResolveTargets[tid].end()) {
-            target = &retained->second;
-        }
+    if (!ftq.hasTarget(target_id, tid)) {
+        DPRINTF(DecoupleBP,
+                "Drop resolve update for tid %u FTQ %llu because its "
+                "prediction context is no longer available\n",
+                tid, static_cast<unsigned long long>(target_id));
+        return true;
     }
-    panic_if(!target,
-             "Accepted resolve update lost context for tid %u FTQ %llu",
-             tid, static_cast<unsigned long long>(target_id));
 
-    auto update = prepareUpdate(*target, events);
+    const auto &target = ftq.get(target_id, tid);
+    auto update = prepareUpdate(target, events);
 
     // Update predictor components only if the target is hit or taken
-    if (!(target->isHit || update.outcome.taken)) {
-        cancelResolveUpdate(tid, target_id);
+    if (!(target.isHit || update.outcome.taken)) {
         return true;
     }
 
     // Phase 1: probe all resolved-update components to ensure no blocker
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
-            if (!components[i]->canResolveUpdate(*target, update)) {
+            if (!components[i]->canResolveUpdate(target, update)) {
                 return false;
             }
         }
@@ -1195,11 +1123,10 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<FullResolveEvent> &events)
     // Phase 2: all clear, perform updates once
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
-            components[i]->doResolveUpdate(*target, update);
+            components[i]->doResolveUpdate(target, update);
         }
     }
 
-    cancelResolveUpdate(tid, target_id);
     return true;
 }
 
