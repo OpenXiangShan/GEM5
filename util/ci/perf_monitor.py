@@ -195,6 +195,10 @@ def find_baseline(
         if run.get("status") != "completed" or run.get("conclusion") != "success":
             raise MonitorError(f"explicit baseline run {explicit_run_id} is not successful")
         path, _ = locate_archive(repo, explicit_run_id)
+        if path.resolve() == candidate_path.resolve():
+            raise MonitorError(
+                f"explicit baseline run {explicit_run_id} resolves to the candidate archive"
+            )
         metadata = parse_metadata(path)
         if not metadata_compatible(candidate_metadata, metadata):
             raise MonitorError(f"explicit baseline run {explicit_run_id} is not compatible")
@@ -364,6 +368,16 @@ def score_completeness(
     baseline_invalid_coverage = [
         name for name in expected if _float(baseline[name].get("coverage")) is None
     ]
+    invalid_summary_scores = (
+        ["overall_avg"]
+        if _float(candidate.get("overall_avg", {}).get("score")) is None
+        else []
+    )
+    baseline_invalid_summary_scores = (
+        ["overall_avg"]
+        if _float(baseline.get("overall_avg", {}).get("score")) is None
+        else []
+    )
     coverage_mismatch = []
     for name in expected:
         if name not in candidate:
@@ -380,6 +394,8 @@ def score_completeness(
         or invalid_coverage
         or baseline_invalid_scores
         or baseline_invalid_coverage
+        or invalid_summary_scores
+        or baseline_invalid_summary_scores
         or coverage_mismatch
     )
     return {
@@ -390,6 +406,8 @@ def score_completeness(
         "invalid_coverage": invalid_coverage,
         "baseline_invalid_scores": baseline_invalid_scores,
         "baseline_invalid_coverage": baseline_invalid_coverage,
+        "invalid_summary_scores": invalid_summary_scores,
+        "baseline_invalid_summary_scores": baseline_invalid_summary_scores,
         "coverage_mismatch": coverage_mismatch,
     }
 
@@ -556,6 +574,8 @@ def render_markdown(analysis: dict[str, Any]) -> str:
             "invalid_coverage",
             "baseline_invalid_scores",
             "baseline_invalid_coverage",
+            "invalid_summary_scores",
+            "baseline_invalid_summary_scores",
             "baseline_aborts",
         ):
             values = completeness.get(key, [])

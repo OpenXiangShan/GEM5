@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).parents[1] / "perf_monitor.py"
@@ -73,6 +74,36 @@ class PerfMonitorTest(unittest.TestCase):
         self.assertFalse(completeness["complete"])
         self.assertEqual(completeness["baseline_invalid_scores"], ["mcf"])
         self.assertEqual(completeness["baseline_invalid_coverage"], ["mcf"])
+
+    def test_completeness_requires_overall_score(self):
+        baseline = {
+            "mcf": score_row(10.0),
+            "overall_avg": score_row("nan", "nan"),
+        }
+        candidate = {"mcf": score_row(10.0)}
+        completeness = perf_monitor.score_completeness(candidate, baseline)
+        self.assertFalse(completeness["complete"])
+        self.assertEqual(completeness["invalid_summary_scores"], ["overall_avg"])
+        self.assertEqual(
+            completeness["baseline_invalid_summary_scores"], ["overall_avg"]
+        )
+
+    def test_explicit_baseline_cannot_be_candidate_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory)
+            with mock.patch.object(
+                perf_monitor,
+                "get_run",
+                return_value={"status": "completed", "conclusion": "success"},
+            ), mock.patch.object(
+                perf_monitor, "locate_archive", return_value=(candidate, {})
+            ):
+                with self.assertRaisesRegex(
+                    perf_monitor.MonitorError, "candidate archive"
+                ):
+                    perf_monitor.find_baseline(
+                        "OpenXiangShan/GEM5", candidate, {}, "123", 10
+                    )
 
     def test_classify_regression(self):
         run = {"conclusion": "success"}

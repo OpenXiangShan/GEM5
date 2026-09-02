@@ -5,6 +5,7 @@ on:
     workflows:
       - gem5 Ideal BTB Performance Test
       - gem5 Align BTB Performance Test(0.3c)
+      - gem5 SMT SPEC2006 Performance Test(0.3c)
       - Manual Performance Test
     types: [completed]
   workflow_dispatch:
@@ -17,19 +18,19 @@ on:
         description: 'Optional explicit compatible baseline run ID'
         required: false
         type: string
-      trigger_agent:
-        description: 'Dispatch the DeepSeek investigator for detected anomalies'
+      trigger_ai:
+        description: 'Generate a CRS summary for detected anomalies'
         required: true
         type: boolean
         default: true
-      force_agent:
-        description: 'Dispatch the investigator even when thresholds are not crossed'
+      force_ai:
+        description: 'Generate a CRS summary even when thresholds are not crossed'
         required: true
         type: boolean
         default: false
 
 permissions:
-  actions: write
+  actions: read
   contents: read
 
 concurrency:
@@ -49,7 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'xs-dev' }}
+          # Never execute monitor code from a manually selected feature branch,
+          # because the later CRS step receives a repository secret.
+          ref: xs-dev
           persist-credentials: false
 
       - name: Analyze completed performance run
@@ -68,11 +71,38 @@ jobs:
           fi
           python3 util/ci/perf_monitor.py "${args[@]}"
 
+      - name: Summarize anomaly with CRS
+        id: crs
+        if: >-
+          (github.event_name == 'workflow_run' || inputs.trigger_ai == true) &&
+          (steps.analyze.outputs.should_investigate == 'true' || inputs.force_ai == true)
+        continue-on-error: true
+        env:
+          CRS_OPENAI_API_KEY: ${{ secrets.CRS_OPENAI_API_KEY }}
+          CRS_OPENAI_BASE_URL: http://172.28.11.121:18080
+          CRS_MODEL: gpt-5.6-sol
+          LD_PRELOAD: ''
+        run: |
+          python3 util/ci/crs_perf_summary.py \
+            --analysis "$RUNNER_TEMP/perf-monitor/analysis.json" \
+            --output "$RUNNER_TEMP/perf-monitor/ai-summary.md"
+
       - name: Publish analysis summary
         if: always()
         run: |
           if [ -f "$RUNNER_TEMP/perf-monitor/summary.md" ]; then
             cat "$RUNNER_TEMP/perf-monitor/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -s "$RUNNER_TEMP/perf-monitor/ai-summary.md" ]; then
+            {
+              echo
+              echo '## CRS anomaly summary'
+              echo
+              cat "$RUNNER_TEMP/perf-monitor/ai-summary.md"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.crs.outcome }}" = "failure" ]; then
+            echo 'CRS summary was unavailable; deterministic analysis is still valid.' \
+              >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload monitor analysis
@@ -82,16 +112,3 @@ jobs:
           name: perf-monitor-analysis
           path: ${{ runner.temp }}/perf-monitor
           retention-days: 30
-
-      - name: Dispatch read-only DeepSeek investigation
-        if: >-
-          (github.event_name == 'workflow_run' || inputs.trigger_agent == true) &&
-          (steps.analyze.outputs.should_investigate == 'true' || inputs.force_agent == true)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run perf-anomaly-agent.lock.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$GITHUB_REF_NAME" \
-            -f monitor_run_id="$GITHUB_RUN_ID" \
-            -f source_run_id="$SOURCE_RUN_ID"
