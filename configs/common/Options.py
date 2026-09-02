@@ -687,6 +687,17 @@ def addXiangshanCommonOptions(parser):
         action="store_false",
         dest="enable_partial_store",
         help="use the baseline read-for-ownership path for partial stores")
+    parser.set_defaults(enable_partial_writeback_allocate=None)
+    parser.add_argument(
+        "--enable-partial-writeback-allocate",
+        action="store_true",
+        dest="enable_partial_writeback_allocate",
+        help="allocate partial cache blocks on masked dirty writeback misses")
+    parser.add_argument(
+        "--disable-partial-writeback-allocate",
+        action="store_false",
+        dest="enable_partial_writeback_allocate",
+        help="forward masked dirty writeback misses to the next level")
 
     # Difftest option
     parser.set_defaults(enable_difftest=None)

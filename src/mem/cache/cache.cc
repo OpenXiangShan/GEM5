@@ -541,7 +541,7 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     const bool partial_store_miss = partialStoreEnabled() && !blkValid &&
         cpu_pkt->cmd == MemCmd::WriteReq && cpu_pkt->isMaskedWrite() &&
         cpu_pkt->isDcacheMainPipeSbufferReq();
-    const bool partial_data_fill = partialStoreEnabled() && blkValid &&
+    const bool partial_data_fill = partialBlockEnabled() && blkValid &&
         blk->isPartial() && cpu_pkt->isRead();
 
     if (cpu_pkt->req->isUncacheable() ||
@@ -1003,7 +1003,7 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
           case MSHR::Target::FromSnoop:
             // I don't believe that a snoop can be in an error state
             assert(!is_error);
-            if (partialStoreEnabled() &&
+            if (partialBlockEnabled() &&
                 (mshr->getMissKind() == MSHR::MissKind::PartialDataFill ||
                  mshr->getMissKind() == MSHR::MissKind::PartialSnoopFill) &&
                 tgt_pkt->getCacheRespondingBy() ==
@@ -1203,7 +1203,7 @@ Cache::doTimingSupplyResponse(PacketPtr req_pkt, const uint8_t *blk_data,
 bool
 Cache::handleTimingPartialSnoop(PacketPtr pkt, CacheBlk *blk, MSHR *mshr)
 {
-    if (!partialStoreEnabled() || !blk || !blk->isPartial() ||
+    if (!partialBlockEnabled() || !blk || !blk->isPartial() ||
         pkt->cmd != MemCmd::ReadSharedReq) {
         return false;
     }

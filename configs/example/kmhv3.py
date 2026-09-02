@@ -163,6 +163,11 @@ def setKmhV3Params(args, system):
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
+                system.l2_caches[i].enable_partial_writeback_allocate = (
+                    args.num_cpus == 1
+                    if args.enable_partial_writeback_allocate is None
+                    else args.enable_partial_writeback_allocate
+                )
                 system.l2_caches[i].slice_num = 4
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].do_fast_writeline = True
@@ -177,6 +182,11 @@ def setKmhV3Params(args, system):
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.enable_partial_writeback_allocate = (
+                        args.num_cpus == 1
+                        if args.enable_partial_writeback_allocate is None
+                        else args.enable_partial_writeback_allocate
+                    )
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False

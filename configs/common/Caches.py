@@ -115,6 +115,7 @@ class L2Cache(Cache):
     wpu = UTagWpu(utag_bits = 8, cycle_reduction = 2)
 
     cache_level = 2
+    enable_partial_writeback_allocate = False
 
     # NOTE: slice stall is implemented in L2CacheWrapper now,
     #       so this parameter has no effect in L2Cache.

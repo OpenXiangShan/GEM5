@@ -1262,6 +1262,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar partialWritebackMerges;
         statistics::Scalar partialWritebackBypasses;
         statistics::Scalar partialWritebackMshrConflicts;
+        statistics::Scalar partialWritebackAllocAttempts;
+        statistics::Scalar partialWritebackAllocSuccesses;
+        statistics::Scalar partialWritebackAllocFallbacks;
+        statistics::Scalar partialWritebackAllocVictimEvictions;
+        statistics::Scalar partialWritebackHitMerges;
+        statistics::Scalar partialWritebackBecameFull;
         statistics::Scalar partialSnoopFills;
         statistics::Scalar partialSnoopMerges;
         statistics::Scalar partialSnoopFillLatency;
@@ -1424,6 +1430,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
     }
 
     bool partialStoreEnabled() const { return enablePartialStore; }
+    bool partialBlockEnabled() const
+    {
+        return enablePartialStore || enablePartialWritebackAllocate;
+    }
 
     size_t
     getActualSliceNum() const
@@ -1511,6 +1521,14 @@ class BaseCache : public ClockedObject, public CacheAccessor
         // schedule the send
         schedMemSideSendEvent(time);
     }
+
+    /**
+     * Install a masked dirty writeback in a previously invalid cache block.
+     * The disabled bytes remain unknown and are represented by CacheBlk's
+     * partial valid mask.
+     */
+    bool allocatePartialWriteback(PacketPtr pkt, CacheBlk *&blk,
+                                  PacketList &writebacks);
 
     /**
      * Returns true if the cache is blocked for accesses.
@@ -1701,6 +1719,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const unsigned cacheLevel{0};
 
     const bool enablePartialStore;
+    const bool enablePartialWritebackAllocate;
 
     //const unsigned maxCacheLevel;
 

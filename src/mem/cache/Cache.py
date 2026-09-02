@@ -195,6 +195,10 @@ class BaseCache(ClockedObject):
         False,
         "Acquire write permission without fetching data for partial L1D stores",
     )
+    enable_partial_writeback_allocate = Param.Bool(
+        False,
+        "Allocate partial cache blocks on masked dirty writeback misses",
+    )
     partial_snoop_mshr_reserve = Param.Unsigned(
         4,
         "Emergency MSHRs reserved for completing partial blocks on snoops",

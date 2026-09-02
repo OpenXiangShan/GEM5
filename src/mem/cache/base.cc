@@ -140,7 +140,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cpuSidePort (p.name + ".cpu_side_port", *this, "CpuSidePort"),
       memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
       mshrQueue("MSHRs", p.mshrs,
-                p.enable_partial_store ? p.partial_snoop_mshr_reserve : 0,
+                (p.enable_partial_store ||
+                 p.enable_partial_writeback_allocate) ?
+                    p.partial_snoop_mshr_reserve : 0,
                 p.demand_mshr_reserve, p.name),
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
       tags(p.tags),
@@ -190,6 +192,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       stats(*this),
       cacheLevel(p.cache_level),
       enablePartialStore(p.enable_partial_store),
+      enablePartialWritebackAllocate(p.enable_partial_writeback_allocate),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
       doFastWriteline(p.do_fast_writeline),
@@ -233,6 +236,16 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
              name());
     fatal_if(enablePartialStore && p.partial_snoop_mshr_reserve == 0,
              "%s: partial stores require at least one snoop MSHR reserve",
+             name());
+    fatal_if(enablePartialWritebackAllocate &&
+             (cacheLevel == 1 || isReadOnly || system->multiCore() ||
+              compressor),
+             "%s: partial writeback allocation requires a single-core, "
+             "uncompressed writable cache below L1",
+             name());
+    fatal_if(partialBlockEnabled() && p.partial_snoop_mshr_reserve == 0,
+             "%s: partial cache blocks require at least one snoop MSHR "
+             "reserve",
              name());
 
     if (sliceNum > 0) {
@@ -542,22 +555,31 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
         // Coalesce unless it was a software prefetch (see above).
         if (pkt) {
             if (pkt->isWriteback() && pkt->cmd == MemCmd::WritebackDirty &&
-                pkt->isMaskedWrite() && mshr->getTarget()->pkt->isRead()) {
-                mshr->mergePartialWriteback(pkt);
-                stats.partialWritebackMshrConflicts++;
-                DPRINTF(PartialStore,
-                        "Overlaying masked writeback on read MSHR for "
-                        "%#llx\n", pkt->getBlockAddr(blkSize));
-                if (debug::PartialStore) {
-                    const auto &mask = pkt->req->getByteEnable();
-                    const auto *data = pkt->getConstPtr<uint8_t>();
-                    for (unsigned i = 0; i < mask.size(); ++i) {
-                        if (mask[i]) {
-                            DPRINTFR(PartialStore, " byte[%u]=%02x", i,
-                                     data[i]);
+                pkt->isMaskedWrite()) {
+                if (mshr->getTarget()->pkt->isRead()) {
+                    mshr->mergePartialWriteback(pkt);
+                    stats.partialWritebackMshrConflicts++;
+                    DPRINTF(PartialStore,
+                            "Overlaying masked writeback on read MSHR for "
+                            "%#llx\n", pkt->getBlockAddr(blkSize));
+                    if (debug::PartialStore) {
+                        const auto &mask = pkt->req->getByteEnable();
+                        const auto *data = pkt->getConstPtr<uint8_t>();
+                        for (unsigned i = 0; i < mask.size(); ++i) {
+                            if (mask[i]) {
+                                DPRINTFR(PartialStore, " byte[%u]=%02x", i,
+                                         data[i]);
+                            }
                         }
+                        DPRINTFR(PartialStore, "\n");
                     }
-                    DPRINTFR(PartialStore, "\n");
+                } else {
+                    // Keep a masked writeback behind non-read MSHRs. The
+                    // write queue ordering logic will issue it after the
+                    // outstanding permission/upgrade transaction, avoiding
+                    // an early partial allocation that could be overwritten
+                    // by that transaction's fill.
+                    allocateWriteBuffer(pkt, forward_time);
                 }
                 return;
             }
@@ -599,7 +621,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 DPRINTF(Cache, "%s: miss on late pref: %i, pref source: %i, coalescing cpu requests: %i\n", __func__,
                         pkt->missOnLatePf, pkt->pfSource, pkt->coalescingMSHR);
 
-                if (enablePartialStore &&
+                if (partialStoreEnabled() &&
                     mshr->getMissKind() ==
                         MSHR::MissKind::PartialPermission &&
                     !pkt->isWrite()) {
@@ -666,7 +688,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 assert((pkt->needsWritable() &&
                     !blk->isSet(CacheBlk::WritableBit)) ||
                     pkt->req->isCacheMaintenance() ||
-                    (enablePartialStore && blk->isPartial() &&
+                    (partialBlockEnabled() && blk->isPartial() &&
                      pkt->isRead()));
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
@@ -679,7 +701,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
             MSHR *new_mshr = allocateMissBuffer(pkt, forward_time);
-            if (enablePartialStore && blk && blk->isPartial() &&
+            if (partialBlockEnabled() && blk && blk->isPartial() &&
                 pkt->isRead()) {
                 new_mshr->setMissKind(MSHR::MissKind::PartialDataFill);
             }
@@ -1092,7 +1114,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         (pkt->isRead() || pkt->cmd == MemCmd::UpgradeResp ||
          pkt->cmd == MemCmd::StorePermResp ||
          mshr->wasWholeLineWrite);
-    if (enablePartialStore &&
+    if (partialStoreEnabled() &&
         mshr->getMissKind() == MSHR::MissKind::PartialPermission) {
         stats.partialPermissionLatency += miss_latency;
     }
@@ -1219,7 +1241,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     serviceMSHRTargets(mshr, pkt, blk);
 
-    if (enablePartialStore && pkt->cmd == MemCmd::StorePermResp &&
+    if (partialStoreEnabled() && pkt->cmd == MemCmd::StorePermResp &&
         blk && blk->isValid() && !mshr->hasLockedRMWReadTarget()) {
         const bool deferred_covered = !blk->isPartial() ||
             mshr->deferredTargetsCovered(blk->getValidMask());
@@ -1257,7 +1279,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             if (blk) {
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
-            if (enablePartialStore && blk && blk->isPartial() &&
+            if (partialBlockEnabled() && blk && blk->isPartial() &&
                 mshr->getTarget()->pkt->isRead()) {
                 mshr->setMissKind(MSHR::MissKind::PartialDataFill);
             }
@@ -2188,6 +2210,16 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         DPRINTF(Cache, "Writeback for %s\n", pkt->print());
         assert(blkSize == pkt->getSize());
 
+        // Do not update an existing block while a transaction for the same
+        // line is outstanding. Read MSHRs can absorb the masked bytes as an
+        // overlay; other MSHRs must preserve the normal write ordering.
+        if (pkt->cmd == MemCmd::WritebackDirty && pkt->isMaskedWrite() &&
+            mshrQueue.findMatch(pkt->getBlockAddr(blkSize),
+                                pkt->isSecure())) {
+            lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
+            return false;
+        }
+
         // we could get a clean writeback while we are having
         // outstanding accesses to a block, do the simple thing for
         // now and drop the clean writeback so that we do not upset
@@ -2208,8 +2240,14 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         const bool has_old_data = blk && blk->isValid();
         if (!blk) {
             if (pkt->isMaskedWrite()) {
-                // A partial writeback cannot allocate an incomplete block.
-                // Forward it through this cache's write queue unchanged.
+                if (enablePartialWritebackAllocate && !pkt->hasSharers() &&
+                    allocatePartialWriteback(pkt, blk, writebacks)) {
+                    return true;
+                }
+
+                // A partial writeback can only allocate when explicitly
+                // enabled, exclusive, and a victim is available. Otherwise
+                // forward it through this cache's write queue unchanged.
                 stats.partialWritebackBypasses++;
                 incMissCount(pkt);
                 return false;
@@ -2251,6 +2289,15 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         assert(!pkt->needsResponse());
 
         updateBlockData(blk, pkt, has_old_data);
+        if (partialBlockEnabled() && pkt->isMaskedWrite() &&
+            blk->isPartial()) {
+            const bool was_partial = blk->isPartial();
+            blk->markValidData(pkt, blkSize);
+            stats.partialWritebackHitMerges++;
+            if (was_partial && !blk->isPartial()) {
+                stats.partialWritebackBecameFull++;
+            }
+        }
         DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
         incHitCount(pkt);
         incSquashedDemandHitCount(pkt, blk);
@@ -2344,11 +2391,11 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         return !pkt->writeThrough();
     }
 
-    const bool partial_read_miss = enablePartialStore && blk &&
+    const bool partial_read_miss = partialBlockEnabled() && blk &&
         blk->isPartial() && pkt->isRead() &&
         !blk->hasValidData(pkt->getOffset(blkSize), pkt->getSize());
 
-    if (enablePartialStore && blk && blk->isPartial() && pkt->isRead() &&
+    if (partialBlockEnabled() && blk && blk->isPartial() && pkt->isRead() &&
         !partial_read_miss) {
         stats.partialCoveredLoadHits++;
     }
@@ -2492,7 +2539,7 @@ BaseCache::handleFill(
     assert(blk->isSecure() == is_secure);
     assert(regenerateBlkAddr(blk) == addr);
 
-    if (enablePartialStore && pkt->cmd == MemCmd::StorePermResp) {
+    if (partialStoreEnabled() && pkt->cmd == MemCmd::StorePermResp) {
         assert(!has_old_data);
         blk->markPartial(blkSize);
     }
@@ -2543,7 +2590,7 @@ BaseCache::handleFill(
         assert(pkt->hasData());
         assert(pkt->getSize() == blkSize);
 
-        if (enablePartialStore && has_old_data &&
+        if (partialBlockEnabled() && has_old_data &&
             (partial_data_fill || blk->isPartial())) {
             const bool merged = blk->mergePartialFill(
                 pkt->getConstPtr<uint8_t>(), blkSize);
@@ -2673,6 +2720,53 @@ BaseCache::allocateBlock(
     }
 
     return victim;
+}
+
+bool
+BaseCache::allocatePartialWriteback(PacketPtr pkt, CacheBlk *&blk,
+                                     PacketList &writebacks)
+{
+    assert(enablePartialWritebackAllocate);
+    assert(pkt->cmd == MemCmd::WritebackDirty);
+    assert(pkt->isMaskedWrite());
+    assert(pkt->getSize() == blkSize);
+    assert(!blk || !blk->isValid());
+
+    stats.partialWritebackAllocAttempts++;
+
+    bool evicted_dirty = false;
+    CacheBlk *victim = allocateBlock(pkt, writebacks,
+                                     PrefetchSourceType::PF_NONE,
+                                     &evicted_dirty);
+    if (!victim) {
+        stats.partialWritebackAllocFallbacks++;
+        return false;
+    }
+
+    if (evicted_dirty) {
+        stats.partialWritebackAllocVictimEvictions++;
+    }
+
+    victim->markPartial(blkSize);
+    victim->setCoherenceBits(CacheBlk::ReadableBit | CacheBlk::DirtyBit);
+    if (!pkt->hasSharers()) {
+        victim->setCoherenceBits(CacheBlk::WritableBit);
+    }
+    updateBlockData(victim, pkt, false);
+    const bool was_partial = victim->isPartial();
+    victim->markValidData(pkt, blkSize);
+    if (was_partial && !victim->isPartial()) {
+        stats.partialWritebackBecameFull++;
+    }
+    victim->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
+                         std::max(cyclesToTicks(lookupLatency),
+                                  (uint64_t)pkt->payloadDelay));
+
+    incHitCount(pkt);
+    incSquashedDemandHitCount(pkt, victim);
+    stats.partialWritebackAllocSuccesses++;
+    blk = victim;
+    return true;
 }
 
 void
@@ -3360,6 +3454,24 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
     ADD_STAT(partialWritebackMshrConflicts,
              statistics::units::Count::get(),
              "number of masked writebacks overlaid on read MSHRs"),
+    ADD_STAT(partialWritebackAllocAttempts,
+             statistics::units::Count::get(),
+             "number of masked writeback miss allocation attempts"),
+    ADD_STAT(partialWritebackAllocSuccesses,
+             statistics::units::Count::get(),
+             "number of masked writeback miss allocations"),
+    ADD_STAT(partialWritebackAllocFallbacks,
+             statistics::units::Count::get(),
+             "number of masked writeback miss allocation fallbacks"),
+    ADD_STAT(partialWritebackAllocVictimEvictions,
+             statistics::units::Count::get(),
+             "number of dirty victims evicted for partial writeback allocation"),
+    ADD_STAT(partialWritebackHitMerges,
+             statistics::units::Count::get(),
+             "number of partial writebacks merged into allocated blocks"),
+    ADD_STAT(partialWritebackBecameFull,
+             statistics::units::Count::get(),
+             "number of partial blocks completed by writebacks"),
     ADD_STAT(partialSnoopFills, statistics::units::Count::get(),
              "number of fills started to complete partial snoop hits"),
     ADD_STAT(partialSnoopMerges, statistics::units::Count::get(),
