@@ -95,10 +95,16 @@ ArchDBer::ArchDBer(const Params &p)
         "GlobalBOPUnusedThreshold,"
         "GlobalBOPMinResolvedCoverageShift,NegativeOffsetsEnabled,"
         "AutoLearning,VictimOffsetsListSize,RestoreCycle,"
-        "ClockPeriodTicks,Offsets) "
+        "ClockPeriodTicks,StudentCoverEnabled,StudentPoolSize,"
+        "StudentConfAlpha,StudentCovThreshold,StudentTeacherTopN,"
+        "StudentFilterEntries,StudentHashMode,StudentHashCount,"
+        "StudentLargeOffsetPriority,StudentLargeOffsetPriorityCoeff,"
+        "StudentDelayQueueEnabled,StudentDelayQueueSize,StudentDelayTicks,"
+        "Offsets) "
         "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,"
         "?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,"
-        "?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37);",
+        "?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,"
+        "?38,?39,?40,?41,?42,?43,?44,?45,?46,?47,?48,?49,?50);",
         "BOPReplayMeta insert");
     prepareStatement(
         mem_db, &bopReplayPhaseStmt,
@@ -118,7 +124,9 @@ ArchDBer::ArchDBer(const Params &p)
         "TriggerHasPC,"
         "TriggerIsDemand,TriggerIsRead,TriggerCacheMiss,TriggerPFSource,"
         "TriggerPFFirstHit,TriggerPFHit,Late,BestOffsetBefore,"
-        "BestOffsetAfter,BestScore,Round,BestOffsetChanged,IssueEnabled,"
+        "BestOffsetAfter,TeacherIssueEnabled,StudentIssueEnabled,"
+        "StudentSelectedValid,StudentSelectedEnable,StudentSelectedOffset,"
+        "SelectedOffset,BestScore,Round,BestOffsetChanged,IssueEnabled,"
         "ValidationEnabled,ValidationHit,PCConfidenceEnabled,PCIndex,PCTag,"
         "PCEntryHit,PCConfidence,PCState,PCSampled,PCLowEntryMissStreak,"
         "PCEpoch,GlobalBypassActive,PolicySuppressed,RawCandidateValid,"
@@ -128,7 +136,8 @@ ArchDBer::ArchDBer(const Params &p)
         "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,"
         "?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,"
         "?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,"
-        "?37,?38,?39,?40,?41,?42,?43,?44,?45);",
+        "?37,?38,?39,?40,?41,?42,?43,?44,?45,?46,?47,?48,"
+        "?49,?50,?51);",
         "BOPReplayEvent insert");
     prepareStatement(
         mem_db, &bopReplayDelayActionStmt,
@@ -450,6 +459,14 @@ ArchDBer::bopReplayMetaTraceWrite(
     bool negative_offsets_enable, bool auto_learning,
     unsigned int victim_offsets_list_size, unsigned int restore_cycle,
     Tick clock_period_ticks,
+    bool student_cover_enabled, unsigned int student_pool_size,
+    double student_conf_alpha, double student_cov_threshold,
+    unsigned int student_teacher_top_n, unsigned int student_filter_entries,
+    const std::string &student_hash_mode, unsigned int student_hash_count,
+    bool student_large_offset_priority,
+    double student_large_offset_priority_coeff,
+    bool student_delay_queue_enabled,
+    unsigned int student_delay_queue_size, Tick student_delay_ticks,
     const std::string &offsets)
 {
   if (!(dumpGlobal && dumpBopReplayTrace)) {
@@ -461,7 +478,7 @@ ArchDBer::bopReplayMetaTraceWrite(
     fatal_if(result != SQLITE_OK, "Failed to bind BOPReplayMeta: %s\n",
              sqlite3_errmsg(mem_db));
   };
-  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, 5));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, 6));
   bind(sqlite3_bind_text(bopReplayMetaStmt, column++, bop_name, -1,
                          SQLITE_TRANSIENT));
   bind(sqlite3_bind_int(bopReplayMetaStmt, column++, block_size));
@@ -511,6 +528,24 @@ ArchDBer::bopReplayMetaTraceWrite(
   bind(sqlite3_bind_int(bopReplayMetaStmt, column++, restore_cycle));
   bind(sqlite3_bind_int64(bopReplayMetaStmt, column++,
                           sqliteSignedInt(clock_period_ticks)));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, student_cover_enabled));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, student_pool_size));
+  bind(sqlite3_bind_double(bopReplayMetaStmt, column++, student_conf_alpha));
+  bind(sqlite3_bind_double(bopReplayMetaStmt, column++, student_cov_threshold));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, student_teacher_top_n));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, student_filter_entries));
+  bind(sqlite3_bind_text(bopReplayMetaStmt, column++,
+                         student_hash_mode.c_str(), -1, SQLITE_TRANSIENT));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, student_hash_count));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         student_large_offset_priority));
+  bind(sqlite3_bind_double(bopReplayMetaStmt, column++,
+                           student_large_offset_priority_coeff));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++,
+                         student_delay_queue_enabled));
+  bind(sqlite3_bind_int(bopReplayMetaStmt, column++, student_delay_queue_size));
+  bind(sqlite3_bind_int64(bopReplayMetaStmt, column++,
+                          sqliteSignedInt(student_delay_ticks)));
   bind(sqlite3_bind_text(bopReplayMetaStmt, column++, offsets.c_str(), -1,
                          SQLITE_TRANSIENT));
   stepAndReset(mem_db, bopReplayMetaStmt, "BOPReplayMeta");
@@ -577,6 +612,9 @@ ArchDBer::bopReplayEventTraceWrite(
     bool trigger_is_demand, bool trigger_is_read, bool trigger_cache_miss,
     int trigger_pf_source, bool trigger_pf_first_hit, bool trigger_pf_hit,
     bool late, int64_t best_offset_before, int64_t best_offset_after,
+    bool teacher_issue_enabled, bool student_issue_enabled,
+    bool student_selected_valid, bool student_selected_enable,
+    int64_t student_selected_offset, int64_t selected_offset,
     unsigned int best_score, unsigned int round, bool best_offset_changed,
     bool issue_enabled, bool validation_enabled, int validation_hit,
     bool pc_confidence_enabled, int pc_index, Addr pc_tag,
@@ -625,6 +663,14 @@ ArchDBer::bopReplayEventTraceWrite(
                           sqliteSignedInt(best_offset_before)));
   bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
                           sqliteSignedInt(best_offset_after)));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, teacher_issue_enabled));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, student_issue_enabled));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, student_selected_valid));
+  bind(sqlite3_bind_int(bopReplayEventStmt, column++, student_selected_enable));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(student_selected_offset)));
+  bind(sqlite3_bind_int64(bopReplayEventStmt, column++,
+                          sqliteSignedInt(selected_offset)));
   bind(sqlite3_bind_int(bopReplayEventStmt, column++, best_score));
   bind(sqlite3_bind_int(bopReplayEventStmt, column++, round));
   bind(sqlite3_bind_int(bopReplayEventStmt, column++, best_offset_changed));

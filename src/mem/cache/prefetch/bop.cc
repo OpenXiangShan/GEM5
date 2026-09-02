@@ -29,7 +29,10 @@
 #include "mem/cache/prefetch/bop.hh"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <sstream>
+#include <tuple>
 
 #include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
@@ -43,6 +46,20 @@ namespace gem5
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
+
+namespace
+{
+
+uint64_t
+splitmix64(uint64_t value)
+{
+    value += 0x9E3779B97F4A7C15ULL;
+    value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    value = (value ^ (value >> 27)) * 0x94D049BB133111EBULL;
+    return value ^ (value >> 31);
+}
+
+} // anonymous namespace
 
 unsigned int
 BOP::pcValidationKindIndex(PCValidationKind kind)
@@ -716,9 +733,25 @@ BOP::BOP(const BOPPrefetcherParams &p)
           p.global_bop_min_resolved_coverage_shift),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
+      enableStudentCover(p.enable_student_cover),
+      studentPoolSize(p.student_pool_size),
+      studentConfAlpha(p.student_conf_alpha),
+      studentCovThreshold(p.student_cov_threshold),
+      studentTeacherTopN(p.student_teacher_top_n),
+      studentFilterEntries(p.student_filter_entries),
+      studentHashCount(p.student_hash_count),
+      studentHashMode(p.student_hash_mode),
+      studentLargeOffsetPriorityEnable(
+          p.student_large_offset_priority_enable),
+      studentLargeOffsetPriorityCoeff(
+          p.student_large_offset_priority_coeff),
+      studentDelayQueueEnabled(p.student_delay_queue_enable),
+      studentDelayQueueSize(p.student_delay_queue_size),
+      studentDelayTicks(cyclesToTicks(p.student_delay_queue_cycles)),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
-      bestScore(0), round(0), stats(this)
+      bestScore(0), round(0),
+      stats(this, p.student_pool_size, p.student_delay_queue_size)
 {
     pcValidationGenericName = name();
     pcValidationLargeName = name();
@@ -781,6 +814,33 @@ BOP::BOP(const BOPPrefetcherParams &p)
     if (!isPowerOf2(blkSize)) {
         fatal("%s: cache line size is not power of 2\n", name());
     }
+    fatal_if(enableStudentCover && studentPoolSize == 0,
+             "%s: student_pool_size must be non-zero when student coverage is enabled",
+             name());
+    fatal_if(enableStudentCover && studentPoolSize > 64,
+             "%s: student_pool_size=%u exceeds the 64-bit coverage mask",
+             name(), studentPoolSize);
+    fatal_if(enableStudentCover && !isPowerOf2(studentFilterEntries),
+             "%s: student_filter_entries must be a power of two", name());
+    fatal_if(enableStudentCover && studentHashCount == 0,
+             "%s: student_hash_count must be non-zero when student coverage is enabled",
+             name());
+    fatal_if(enableStudentCover &&
+                 (studentHashMode != "lowbits") &&
+                 (studentHashMode != "bop_rr") &&
+                 (studentHashMode != "splitmix"),
+             "%s: unsupported bounded student_hash_mode '%s'", name(),
+             studentHashMode);
+    fatal_if(enableStudentCover &&
+                 (studentConfAlpha < 0.0 || studentConfAlpha > 1.0),
+             "%s: student_conf_alpha must be in [0, 1]", name());
+    fatal_if(enableStudentCover &&
+                 (studentCovThreshold < 0.0 || studentCovThreshold > 1.0),
+             "%s: student_cov_threshold must be in [0, 1]", name());
+    fatal_if(enableStudentCover && studentDelayQueueEnabled &&
+                 studentDelayQueueSize == 0,
+             "%s: student_delay_queue_size must be non-zero when delay is enabled",
+             name());
     if (enableIssueValidation && enablePCValidationConfidence) {
         fatal("%s: strict and PC-confidence BOP validation are mutually exclusive\n",
               name());
@@ -807,6 +867,10 @@ BOP::BOP(const BOPPrefetcherParams &p)
 
     rrLeft.resize(rrEntries);
     rrRight.resize(rrEntries);
+    if (enableStudentCover) {
+        studentPool.reserve(studentPoolSize);
+        studentFilterBits.assign(studentFilterEntries, 0);
+    }
 
     int offset_count = p.offsets.size();
     maxOffsetCount = p.negative_offsets_enable ? 2*p.offsets.size() : p.offsets.size();
@@ -902,7 +966,11 @@ BOP::writeBOPReplayMeta()
         pcValidationOffsetContextSlots,
         globalBOPUnusedThreshold, globalBOPMinResolvedCoverageShift,
         negativeOffsetsEnable, autoLearning, victimListSize, restoreCycle,
-        clockPeriod(),
+        clockPeriod(), enableStudentCover, studentPoolSize,
+        studentConfAlpha, studentCovThreshold, studentTeacherTopN,
+        studentFilterEntries, studentHashMode, studentHashCount,
+        studentLargeOffsetPriorityEnable, studentLargeOffsetPriorityCoeff,
+        studentDelayQueueEnabled, studentDelayQueueSize, studentDelayTicks,
         offsets.str());
     replayMetaWritten = true;
 }
@@ -1153,6 +1221,387 @@ BOP::getBestOffsetIter()
     return std::find(offsetsList.begin(), offsetsList.end(), bestOffset);
 }
 
+std::vector<unsigned int>
+BOP::studentHashIndexes(Addr line_addr) const
+{
+    std::vector<unsigned int> indexes;
+    if (!enableStudentCover || studentFilterEntries == 0) {
+        return indexes;
+    }
+
+    indexes.reserve(studentHashCount);
+    const uint64_t mask = static_cast<uint64_t>(studentFilterEntries - 1);
+    uint64_t base1 = 0;
+    uint64_t base2 = 1;
+    if (studentHashMode == "lowbits") {
+        base1 = line_addr;
+        base2 = ((line_addr >> 6) ^ (line_addr >> 12) ^ 0x9E37ULL) | 1ULL;
+    } else if (studentHashMode == "bop_rr") {
+        const unsigned int lgm = floorLog2(studentFilterEntries);
+        base1 = ((line_addr & mask) ^ ((line_addr >> lgm) & mask)) & mask;
+        base2 = ((((line_addr >> (2 * lgm)) & mask) ^ line_addr ^
+                  0xC2B2ULL) | 1ULL);
+    } else {
+        base1 = splitmix64(line_addr);
+        base2 = splitmix64(line_addr ^ 0x9E3779B97F4A7C15ULL) | 1ULL;
+    }
+
+    for (unsigned int i = 0; i < studentHashCount; ++i) {
+        indexes.push_back(static_cast<unsigned int>((base1 + i * base2) &
+                                                    mask));
+    }
+    return indexes;
+}
+
+bool
+BOP::studentPoolAllSameSign() const
+{
+    if (studentPool.empty()) {
+        return false;
+    }
+    const bool positive = studentPool.front().offset > 0;
+    return std::all_of(studentPool.begin(), studentPool.end(),
+        [positive](const StudentOffsetEntry &entry) {
+            return positive ? entry.offset > 0 : entry.offset < 0;
+        });
+}
+
+bool
+BOP::studentIntermediateOffsetsMatchSlope(size_t best_idx, size_t worst_idx,
+                                          uint32_t best_cov,
+                                          uint32_t worst_cov) const
+{
+    if (studentPool.size() <= 2) {
+        return true;
+    }
+
+    const auto best_abs = std::llabs(studentPool[best_idx].offset);
+    const auto worst_abs = std::llabs(studentPool[worst_idx].offset);
+    const double ref_dist = static_cast<double>(worst_abs - best_abs);
+    if (ref_dist <= 0.0) {
+        return false;
+    }
+    const double ref_cov_gap =
+        static_cast<double>(best_cov) - static_cast<double>(worst_cov);
+    for (size_t index = 0; index < studentPool.size(); ++index) {
+        if (index == best_idx || index == worst_idx) {
+            continue;
+        }
+        const auto current_abs = std::llabs(studentPool[index].offset);
+        if (current_abs <= best_abs || current_abs >= worst_abs) {
+            return false;
+        }
+        const uint32_t current_cov = studentPool[index].curPhaseCov;
+        if (current_cov > best_cov || current_cov < worst_cov) {
+            return false;
+        }
+        const double current_dist =
+            static_cast<double>(current_abs - best_abs);
+        const double current_cov_gap =
+            static_cast<double>(best_cov) - static_cast<double>(current_cov);
+        if (ref_cov_gap == 0.0) {
+            if (current_cov_gap != 0.0) {
+                return false;
+            }
+            continue;
+        }
+        const double lhs = current_cov_gap * ref_dist;
+        const double rhs = ref_cov_gap * current_dist;
+        if (lhs < studentLargeOffsetPriorityCoeff * rhs ||
+            studentLargeOffsetPriorityCoeff * lhs > rhs) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
+BOP::studentShouldPreferLargeOffset(size_t best_idx, size_t worst_idx,
+                                    uint32_t best_cov,
+                                    uint32_t worst_cov) const
+{
+    if (studentPool.size() < 2 || studentPhaseTrainCount == 0 ||
+        !studentPoolAllSameSign()) {
+        return false;
+    }
+    const auto abs_less = [](const StudentOffsetEntry &lhs,
+                             const StudentOffsetEntry &rhs) {
+        const auto lhs_abs = std::llabs(lhs.offset);
+        const auto rhs_abs = std::llabs(rhs.offset);
+        return lhs_abs == rhs_abs ? lhs.offset < rhs.offset :
+                                    lhs_abs < rhs_abs;
+    };
+    const auto minmax = std::minmax_element(studentPool.begin(),
+                                            studentPool.end(), abs_less);
+    const auto best_abs = std::llabs(studentPool[best_idx].offset);
+    const auto worst_abs = std::llabs(studentPool[worst_idx].offset);
+    if (best_abs != std::llabs(minmax.first->offset) ||
+        worst_abs != std::llabs(minmax.second->offset)) {
+        return false;
+    }
+    const double lhs = studentLargeOffsetPriorityCoeff *
+        (static_cast<double>(worst_cov) - static_cast<double>(best_cov));
+    const double rhs = static_cast<double>(worst_abs - best_abs) /
+        studentPhaseTrainCount;
+    return lhs <= rhs && studentIntermediateOffsetsMatchSlope(
+        best_idx, worst_idx, best_cov, worst_cov);
+}
+
+void
+BOP::studentInsertFilterMask(const std::vector<unsigned int> &indexes,
+                             uint64_t mask)
+{
+    for (const auto index : indexes) {
+        studentFilterBits[index] |= mask;
+    }
+}
+
+void
+BOP::studentDrainDelayQueue(Tick now)
+{
+    if (!studentDelayQueueEnabled) {
+        return;
+    }
+    while (!studentDelayQueue.empty() &&
+           studentDelayQueue.front().readyTick <= now) {
+        const auto &entry = studentDelayQueue.front();
+        studentInsertFilterMask(entry.filterIndexes, entry.mask);
+        stats.studentDelayQueueDrainCount++;
+        studentDelayQueue.pop_front();
+    }
+    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueue.size());
+}
+
+void
+BOP::studentEnqueuePrediction(Addr train_addr, size_t bit_idx,
+                              int64_t offset)
+{
+    const int64_t predicted = static_cast<int64_t>(train_addr) +
+        offset * static_cast<int64_t>(blkSize);
+    if (predicted < 0) {
+        return;
+    }
+    const Addr predicted_addr = static_cast<Addr>(predicted);
+    if (!crossPage && !samePage(train_addr, predicted_addr)) {
+        return;
+    }
+    const auto indexes = studentHashIndexes(predicted_addr >> lBlkSize);
+    if (indexes.empty()) {
+        return;
+    }
+    const uint64_t mask = 1ULL << bit_idx;
+    if (!studentDelayQueueEnabled) {
+        studentInsertFilterMask(indexes, mask);
+        return;
+    }
+    if (studentDelayQueue.size() >= studentDelayQueueSize) {
+        stats.studentDelayQueueFullDropCount++;
+        return;
+    }
+    studentDelayQueue.emplace_back(curTick() + studentDelayTicks, indexes,
+                                   mask);
+    stats.studentDelayQueueInsertCount++;
+    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueue.size());
+}
+
+size_t
+BOP::studentPickBestIndex() const
+{
+    assert(!studentPool.empty());
+    size_t best = 0;
+    auto best_key = std::make_tuple(studentPool[0].curPhaseCov,
+                                    studentPool[0].conf,
+                                    -std::llabs(studentPool[0].offset),
+                                    -studentPool[0].offset);
+    for (size_t index = 1; index < studentPool.size(); ++index) {
+        const auto key = std::make_tuple(studentPool[index].curPhaseCov,
+                                         studentPool[index].conf,
+                                         -std::llabs(studentPool[index].offset),
+                                         -studentPool[index].offset);
+        if (key > best_key) {
+            best = index;
+            best_key = key;
+        }
+    }
+    return best;
+}
+
+size_t
+BOP::studentPickWorstIndex() const
+{
+    assert(!studentPool.empty());
+    size_t worst = 0;
+    auto worst_key = std::make_tuple(studentPool[0].curPhaseCov,
+                                     studentPool[0].conf,
+                                     std::llabs(studentPool[0].offset),
+                                     studentPool[0].offset);
+    for (size_t index = 1; index < studentPool.size(); ++index) {
+        const auto key = std::make_tuple(studentPool[index].curPhaseCov,
+                                         studentPool[index].conf,
+                                         std::llabs(studentPool[index].offset),
+                                         studentPool[index].offset);
+        if (key < worst_key) {
+            worst = index;
+            worst_key = key;
+        }
+    }
+    return worst;
+}
+
+size_t
+BOP::studentPickEvictIndex() const
+{
+    assert(!studentPool.empty());
+    size_t victim = 0;
+    auto victim_key = std::make_tuple(studentPool[0].conf,
+                                      studentPool[0].lastPhaseCov,
+                                      -std::llabs(studentPool[0].offset),
+                                      studentPool[0].offset);
+    for (size_t index = 1; index < studentPool.size(); ++index) {
+        const auto key = std::make_tuple(studentPool[index].conf,
+                                         studentPool[index].lastPhaseCov,
+                                         -std::llabs(studentPool[index].offset),
+                                         studentPool[index].offset);
+        if (key < victim_key) {
+            victim = index;
+            victim_key = key;
+        }
+    }
+    return victim;
+}
+
+void
+BOP::studentObserveTrainAddr(Addr addr)
+{
+    if (!enableStudentCover) {
+        return;
+    }
+    studentPhaseTrainCount++;
+    if (studentPool.empty()) {
+        return;
+    }
+    studentDrainDelayQueue(curTick());
+    uint64_t hit_mask = ~0ULL;
+    for (const auto index : studentHashIndexes(addr >> lBlkSize)) {
+        hit_mask &= studentFilterBits[index];
+    }
+    for (size_t index = 0; index < studentPool.size(); ++index) {
+        if (hit_mask & (1ULL << index)) {
+            studentPool[index].curPhaseCov++;
+        }
+        studentEnqueuePrediction(addr, index, studentPool[index].offset);
+    }
+}
+
+bool
+BOP::studentInsertTeacherBest(int64_t offset)
+{
+    if (!enableStudentCover || offset == 0 || studentTeacherTopN == 0 ||
+        std::any_of(studentPool.begin(), studentPool.end(),
+            [offset](const StudentOffsetEntry &entry) {
+                return entry.offset == offset;
+            })) {
+        return false;
+    }
+    if (studentPool.size() >= studentPoolSize) {
+        studentPool.erase(studentPool.begin() + studentPickEvictIndex());
+    }
+    studentPool.emplace_back(offset);
+    stats.teacherInjectedCount++;
+    stats.teacherInjectedOffsetDist.sample(offset);
+    return true;
+}
+
+void
+BOP::studentClearPhaseState()
+{
+    if (!enableStudentCover) {
+        return;
+    }
+    std::fill(studentFilterBits.begin(), studentFilterBits.end(), 0);
+    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueue.size());
+    studentDelayQueue.clear();
+    studentPhaseTrainCount = 0;
+    for (auto &entry : studentPool) {
+        entry.curPhaseCov = 0;
+    }
+}
+
+bool
+BOP::studentShouldIssue() const
+{
+    return enableStudentCover && studentSelectedValid &&
+           studentSelectedEnable;
+}
+
+int64_t
+BOP::studentSelectIssueOffset(int64_t teacher_best_offset) const
+{
+    return studentShouldIssue() ? studentSelectedOffset : teacher_best_offset;
+}
+
+void
+BOP::studentOnTeacherPhaseEnd(int64_t teacher_best_offset)
+{
+    if (!enableStudentCover) {
+        return;
+    }
+    stats.studentPhaseCount++;
+    stats.studentPoolOccupancyDist.sample(studentPool.size());
+    if (!studentPool.empty()) {
+        const size_t best = studentPickBestIndex();
+        const size_t worst = studentPickWorstIndex();
+        const uint32_t best_cov = studentPool[best].curPhaseCov;
+        const uint32_t worst_cov = studentPool[worst].curPhaseCov;
+        const bool prefer_large = studentLargeOffsetPriorityEnable &&
+            studentShouldPreferLargeOffset(best, worst, best_cov, worst_cov);
+        const size_t selected = prefer_large ? worst : best;
+        const uint32_t selected_cov = prefer_large ? worst_cov : best_cov;
+        const size_t reward = prefer_large ? worst : best;
+        const size_t punish = prefer_large ? best : worst;
+        const double coverage = studentPhaseTrainCount == 0 ? 0.0 :
+            static_cast<double>(selected_cov) / studentPhaseTrainCount;
+        const double other_coverage = studentPhaseTrainCount == 0 ? 0.0 :
+            static_cast<double>(prefer_large ? best_cov : worst_cov) /
+            studentPhaseTrainCount;
+        studentSelectedOffset = studentPool[selected].offset;
+        studentSelectedValid = true;
+        studentSelectedEnable = coverage >= studentCovThreshold;
+        stats.studentCovRatioPctDist.sample(
+            static_cast<uint64_t>(std::round(coverage * 100.0)));
+        stats.studentWorstCovRatioPctDist.sample(
+            static_cast<uint64_t>(std::round(other_coverage * 100.0)));
+        if (studentSelectedEnable) {
+            stats.studentIssueCount++;
+            stats.studentSelectedOffsetDist.sample(studentSelectedOffset);
+        } else {
+            stats.studentFallbackCount++;
+        }
+        if (prefer_large) {
+            stats.studentLargeOffsetPriorityCount++;
+        }
+        for (size_t index = 0; index < studentPool.size(); ++index) {
+            double update = 0.0;
+            if (index == reward) {
+                update = 1.0;
+            } else if (index == punish) {
+                update = -1.0;
+            }
+            studentPool[index].conf = studentPool[index].conf *
+                studentConfAlpha + update * (1.0 - studentConfAlpha);
+            studentPool[index].lastPhaseCov = studentPool[index].curPhaseCov;
+        }
+    } else {
+        studentSelectedValid = false;
+        studentSelectedEnable = false;
+        stats.studentFallbackCount++;
+    }
+    if (teacher_best_offset != 0 && studentTeacherTopN != 0) {
+        studentInsertTeacherBest(teacher_best_offset);
+    }
+    studentClearPhaseState();
+}
+
 bool
 BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 {
@@ -1291,16 +1740,27 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     }
 
     // Go through the nth offset and update the score, the best score and the
-    // current best offset if a better one is found.
+    // current best offset if a better one is found.  The student observes the
+    // same demand stream and advances only at a completed teacher phase.
     const int64_t previous_best_offset = bestOffset;
-    bestOffsetLearning(addr, late, pfi);
+    const bool teacher_phase_end = bestOffsetLearning(addr, late, pfi);
+    studentObserveTrainAddr(addr);
+    if (teacher_phase_end) {
+        studentOnTeacherPhaseEnd(bestOffset);
+    }
     const bool best_offset_changed = bestOffset != previous_best_offset;
 
-    const Addr validation_addr = bestOffset != 0
-        ? addr - (static_cast<Addr>(bestOffset) << lBlkSize) : 0;
-    const Addr prefetch_addr = bestOffset != 0
-        ? addr + (bestOffset * (1ULL << lBlkSize)) : 0;
-    bool issue_prefetch = issuePrefetchRequests;
+    const bool teacher_issue = issuePrefetchRequests;
+    const bool student_issue = studentShouldIssue();
+    const int64_t selected_offset =
+        studentSelectIssueOffset(bestOffset);
+    const bool algorithm_issue =
+        (teacher_issue || student_issue) && selected_offset != 0;
+    const Addr validation_addr = selected_offset != 0
+        ? addr - (static_cast<Addr>(selected_offset) << lBlkSize) : 0;
+    const Addr prefetch_addr = selected_offset != 0
+        ? addr + (selected_offset * (1ULL << lBlkSize)) : 0;
+    bool issue_prefetch = algorithm_issue;
     int validation_hit = -1;
     int pc_entry_hit = -1;
     int pc_confidence = -1;
@@ -1315,7 +1775,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
         enableIssueValidation || enablePCValidationConfidence;
 
     if (issue_prefetch && enableIssueValidation) {
-        assert(bestOffset != 0);
+        assert(selected_offset != 0);
         validation_hit = testRR(validation_addr).first;
 
         stats.issueValidationChecks++;
@@ -1326,9 +1786,9 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
             issue_prefetch = false;
         }
         DPRINTF(BOPPrefetcher, "Issue validation addr %#lx best offset %lld: %s\n", validation_addr,
-                static_cast<long long>(bestOffset), validation_hit ? "hit" : "miss");
+                static_cast<long long>(selected_offset), validation_hit ? "hit" : "miss");
     } else if (issue_prefetch && enablePCValidationConfidence) {
-        assert(bestOffset != 0);
+        assert(selected_offset != 0);
         const auto [rr_hit, rr_entry] = testRR(validation_addr);
         validation_hit = rr_hit;
         stats.issueValidationChecks++;
@@ -1393,7 +1853,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                     break;
                   case PCConfidenceState::Medium:
                     pc_sampled = pcValidationTable->sampleMediumIssue(
-                        trigger_pc, pcValidationKind, bestOffset,
+                        trigger_pc, pcValidationKind, selected_offset,
                         addr >> lBlkSize);
                     if (pc_sampled) {
                         stats.pcValidationMediumMissIssued++;
@@ -1428,7 +1888,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                     if (rr_entry.owner == current_key) {
                         stats.rrOwnerSamePCHits++;
                         const auto current_lookup = pcValidationTable->lookup(
-                            current_key, pcValidationKind, bestOffset);
+                            current_key, pcValidationKind, selected_offset);
                         set_current_lookup(current_lookup);
                         pcValidationTable->submitValidation(
                             current_lookup, trigger_pc, addr >> lBlkSize,
@@ -1437,7 +1897,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                     } else {
                         stats.rrOwnerCrossPCHits++;
                         const auto current_lookup = pcValidationTable->lookup(
-                            current_key, pcValidationKind, bestOffset);
+                            current_key, pcValidationKind, selected_offset);
                         set_current_lookup(current_lookup);
                         apply_consumer_admission(current_lookup);
                         pcValidationTable->submitValidation(
@@ -1446,7 +1906,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                         stats.pcValidationConsumerMissUpdates++;
 
                         const auto owner_lookup = pcValidationTable->lookup(
-                            rr_entry.owner, pcValidationKind, bestOffset);
+                            rr_entry.owner, pcValidationKind, selected_offset);
                         account_lookup(owner_lookup);
                         pcValidationTable->submitValidation(
                             owner_lookup, 0, addr >> lBlkSize, true);
@@ -1454,7 +1914,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                     }
                 } else {
                     const auto owner_lookup = pcValidationTable->lookup(
-                        rr_entry.owner, pcValidationKind, bestOffset);
+                        rr_entry.owner, pcValidationKind, selected_offset);
                     account_lookup(owner_lookup);
                     pcValidationTable->submitValidation(
                         owner_lookup, 0, addr >> lBlkSize, true);
@@ -1464,7 +1924,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
         } else if (pfi.hasPC()) {
             const auto pc_lookup =
                 pcValidationTable->lookup(
-                    trigger_pc, pcValidationKind, bestOffset);
+                    trigger_pc, pcValidationKind, selected_offset);
             set_current_lookup(pc_lookup);
 
             if (!validation_hit) {
@@ -1494,12 +1954,12 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
         DPRINTF(BOPPrefetcher,
                 "PC validation addr %#lx offset %lld: RR %s, PC state %d, "
                 "confidence %d, issue %d, bypass %d\n",
-                validation_addr, static_cast<long long>(bestOffset),
+                validation_addr, static_cast<long long>(selected_offset),
                 validation_hit ? "hit" : "miss", pc_state, pc_confidence,
                 issue_prefetch, bypass_mode);
     }
 
-    if (issue_prefetch && bestOffset != 0 && pfi.hasPC() &&
+    if (issue_prefetch && selected_offset != 0 && pfi.hasPC() &&
         enableDirectQualityGate && directQualityGate) {
         const auto direct_quality_decision = directQualityGate->admit(
             trigger_pc, static_cast<uint8_t>(pcValidationKind),
@@ -1515,14 +1975,14 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     bool buffered = false;
     bool filtered = false;
     bool filter_passed = false;
-    const bool raw_candidate_valid = issuePrefetchRequests && bestOffset != 0;
-    const bool policy_candidate_valid = issue_prefetch && bestOffset != 0;
+    const bool raw_candidate_valid = algorithm_issue;
+    const bool policy_candidate_valid = issue_prefetch && selected_offset != 0;
     const bool policy_suppressed = raw_candidate_valid && !policy_candidate_valid;
 
     if (issue_prefetch) {
         generated = true;
         buffered = samePage(pfi.getAddr(), prefetch_addr) || crossPage;
-        stats.issuedOffsetDist.sample(bestOffset);
+        stats.issuedOffsetDist.sample(selected_offset);
         filter_passed = sendPFWithFilter(
             pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         if (filter_passed && enableGlobalBOPCoverageGuard) {
@@ -1531,9 +1991,10 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
         }
         filtered = !filter_passed;
         DPRINTF(BOPPrefetcher,
-                "Generated prefetch %#lx offset: %d\n",
-                prefetch_addr, bestOffset);
-    } else if (!issuePrefetchRequests) {
+                "Generated prefetch %#lx offset: %lld teacher %d student %d\n",
+                prefetch_addr, static_cast<long long>(selected_offset),
+                teacher_issue, student_issue);
+    } else if (!algorithm_issue) {
         stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
     }
@@ -1544,8 +2005,10 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
             pcValidationKindName(pcValidationKind), addr, trigger_pc,
             pfi.hasPC(), trigger_is_demand, trigger_is_read, pfi.isCacheMiss(),
             trigger_pf_source, pfi.isPfFirstHit(), pfi.isPfHit(), late,
-            previous_best_offset, bestOffset, bestScore, round,
-            best_offset_changed, issuePrefetchRequests, validation_enabled,
+            previous_best_offset, bestOffset, teacher_issue, student_issue,
+            studentSelectedValid, studentSelectedEnable,
+            studentSelectedOffset, selected_offset, bestScore, round,
+            best_offset_changed, algorithm_issue, validation_enabled,
             validation_hit, enablePCValidationConfidence, pc_index, pc_tag,
             pc_entry_hit, pc_confidence, pc_state, pc_sampled,
             pc_low_entry_miss_streak, pc_epoch, bypass_mode, policy_suppressed,
@@ -1558,11 +2021,11 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     if (archDBer) {
         archDBer->bopValidationTraceWrite(
             curTick(), "candidate", name().c_str(), trigger_pc, addr,
-            validation_addr, prefetch_addr, bestOffset, bestScore, round, late,
+            validation_addr, prefetch_addr, selected_offset, bestScore, round, late,
             trigger_is_demand, pfi.isCacheMiss(), trigger_pf_source,
-            pfi.isPfFirstHit(), pfi.isPfHit(), issuePrefetchRequests,
+            pfi.isPfFirstHit(), pfi.isPfHit(), algorithm_issue,
             validation_enabled, validation_hit,
-            issuePrefetchRequests && validation_enabled && !issue_prefetch,
+            algorithm_issue && validation_enabled && !issue_prefetch,
             generated, buffered, filtered, filter_passed,
             enablePCValidationConfidence, pc_index, pc_tag, pc_entry_hit,
             pc_confidence, pc_state, pc_sampled, pc_epoch,
@@ -1597,6 +2060,14 @@ BOP::sharePCValidationConfidenceWith(BOP &other)
         fatal("%s and %s must agree on BOP producer/consumer validation\n",
               name(), other.name());
     }
+    // The paired large/small identity is also the replay and direct-quality
+    // key. It must not depend on whether native P/C happens to be enabled.
+    pcValidationKind = PCValidationKind::Large;
+    other.pcValidationKind = PCValidationKind::Small;
+    pcValidationLargeName = name();
+    pcValidationSmallName = other.name();
+    other.pcValidationLargeName = pcValidationLargeName;
+    other.pcValidationSmallName = pcValidationSmallName;
     if (!enablePCValidationConfidence) {
         return;
     }
@@ -1607,12 +2078,6 @@ BOP::sharePCValidationConfidenceWith(BOP &other)
     other.pcValidationTable = pcValidationTable;
     pcValidationTableShared = true;
     other.pcValidationTableShared = true;
-    pcValidationKind = PCValidationKind::Large;
-    other.pcValidationKind = PCValidationKind::Small;
-    pcValidationLargeName = name();
-    pcValidationSmallName = other.name();
-    other.pcValidationLargeName = pcValidationLargeName;
-    other.pcValidationSmallName = pcValidationSmallName;
 }
 
 void
@@ -1622,12 +2087,13 @@ BOP::shareDirectQualityGateWith(BOP &other)
         fatal("%s and %s must agree on direct-quality gate enablement\n",
               name(), other.name());
     }
+    // Keep the direct-quality key stable even for a raw C run where the
+    // shared gate is deliberately disabled.
+    pcValidationKind = PCValidationKind::Large;
+    other.pcValidationKind = PCValidationKind::Small;
     if (!enableDirectQualityGate)
         return;
     other.directQualityGate = directQualityGate;
-    // DirectQuality is keyed by PC and BOP kind even when native P/C is off.
-    pcValidationKind = PCValidationKind::Large;
-    other.pcValidationKind = PCValidationKind::Small;
 }
 
 void
@@ -1822,10 +2288,40 @@ BOP::notifyFill(const PacketPtr& pkt)
 
 }
 
-BOP::BopStats::BopStats(statistics::Group *parent)
+BOP::BopStats::BopStats(statistics::Group *parent,
+                         unsigned int student_pool_size,
+                         unsigned int student_delay_queue_size)
     : statistics::Group(parent),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
+      ADD_STAT(teacherInjectedOffsetDist, statistics::units::Count::get(),
+               "Teacher offsets admitted to the student pool"),
+      ADD_STAT(studentSelectedOffsetDist, statistics::units::Count::get(),
+               "Student-selected offsets that pass the coverage threshold"),
+      ADD_STAT(studentPoolOccupancyDist, statistics::units::Count::get(),
+               "Student pool occupancy at teacher phase end"),
+      ADD_STAT(studentCovRatioPctDist, statistics::units::Ratio::get(),
+               "Student selected coverage percentage at phase end"),
+      ADD_STAT(studentWorstCovRatioPctDist, statistics::units::Ratio::get(),
+               "Student non-selected extreme coverage percentage at phase end"),
+      ADD_STAT(studentDelayQueueOccupancyDist, statistics::units::Count::get(),
+               "Student coverage delay queue occupancy"),
       ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
+      ADD_STAT(teacherInjectedCount, statistics::units::Count::get(),
+               "Teacher offsets inserted into the student pool"),
+      ADD_STAT(studentPhaseCount, statistics::units::Count::get(),
+               "Teacher-aligned student coverage phases"),
+      ADD_STAT(studentIssueCount, statistics::units::Count::get(),
+               "Student phases passing the independent issue threshold"),
+      ADD_STAT(studentFallbackCount, statistics::units::Count::get(),
+               "Student phases falling back to teacher output"),
+      ADD_STAT(studentLargeOffsetPriorityCount, statistics::units::Count::get(),
+               "Student phases selecting the large-offset priority path"),
+      ADD_STAT(studentDelayQueueInsertCount, statistics::units::Count::get(),
+               "Student coverage predictions inserted into the delay queue"),
+      ADD_STAT(studentDelayQueueDrainCount, statistics::units::Count::get(),
+               "Student coverage predictions made visible after delay"),
+      ADD_STAT(studentDelayQueueFullDropCount, statistics::units::Count::get(),
+               "Student coverage predictions dropped because the delay queue was full"),
       ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of globally throttled prefetches"),
       ADD_STAT(issueValidationChecks, statistics::units::Count::get(),
                "Number of current-best-offset issue validation checks"),
@@ -1982,6 +2478,18 @@ BOP::BopStats::BopStats(statistics::Group *parent)
                "Peak retained online direct-quality feedback entries")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
+    teacherInjectedOffsetDist.init(-256, 257, 1).prereq(
+        teacherInjectedOffsetDist);
+    studentSelectedOffsetDist.init(-256, 257, 1).prereq(
+        studentSelectedOffsetDist);
+    studentPoolOccupancyDist.init(0, student_pool_size + 1, 1).prereq(
+        studentPoolOccupancyDist);
+    studentCovRatioPctDist.init(0, 101, 1).prereq(studentCovRatioPctDist);
+    studentWorstCovRatioPctDist.init(0, 101, 1).prereq(
+        studentWorstCovRatioPctDist);
+    studentDelayQueueOccupancyDist.init(
+        0, std::max(1u, student_delay_queue_size) + 1, 1).prereq(
+            studentDelayQueueOccupancyDist);
     pcValidationConfidenceDist.init(0, 256, 1).prereq(
         pcValidationConfidenceDist);
     globalBOPUnusedEwma.init(0, 256, 1).prereq(globalBOPUnusedEwma);

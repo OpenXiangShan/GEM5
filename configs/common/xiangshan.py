@@ -898,6 +898,19 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "VictimOffsetsListSize INT NOT NULL," \
             "RestoreCycle INT NOT NULL," \
             "ClockPeriodTicks INT NOT NULL," \
+            "StudentCoverEnabled BOOL NOT NULL," \
+            "StudentPoolSize INT NOT NULL," \
+            "StudentConfAlpha REAL NOT NULL," \
+            "StudentCovThreshold REAL NOT NULL," \
+            "StudentTeacherTopN INT NOT NULL," \
+            "StudentFilterEntries INT NOT NULL," \
+            "StudentHashMode TEXT NOT NULL," \
+            "StudentHashCount INT NOT NULL," \
+            "StudentLargeOffsetPriority BOOL NOT NULL," \
+            "StudentLargeOffsetPriorityCoeff REAL NOT NULL," \
+            "StudentDelayQueueEnabled BOOL NOT NULL," \
+            "StudentDelayQueueSize INT NOT NULL," \
+            "StudentDelayTicks INT NOT NULL," \
             "Offsets TEXT NOT NULL);"
             ,
             "CREATE TABLE BOPReplayPhase(" \
@@ -936,6 +949,12 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "Late BOOL NOT NULL," \
             "BestOffsetBefore INT NOT NULL," \
             "BestOffsetAfter INT NOT NULL," \
+            "TeacherIssueEnabled BOOL NOT NULL," \
+            "StudentIssueEnabled BOOL NOT NULL," \
+            "StudentSelectedValid BOOL NOT NULL," \
+            "StudentSelectedEnable BOOL NOT NULL," \
+            "StudentSelectedOffset INT NOT NULL," \
+            "SelectedOffset INT NOT NULL," \
             "BestScore INT NOT NULL," \
             "Round INT NOT NULL," \
             "BestOffsetChanged BOOL NOT NULL," \

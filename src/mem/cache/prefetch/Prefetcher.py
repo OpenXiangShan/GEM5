@@ -817,6 +817,33 @@ class BOPPrefetcher(QueuedPrefetcher):
 
     autoLearning = Param.Bool(False," auto learn offset")
 
+    enable_student_cover = Param.Bool(False,
+        "Enable the teacher/student BOP coverage learner and independent issue")
+    student_teacher_top_n = Param.Unsigned(1,
+        "Number of teacher offsets admitted to the student pool")
+    student_pool_size = Param.Unsigned(4,
+        "Number of candidate offsets retained by the student")
+    student_conf_alpha = Param.Float(0.0,
+        "EMA weight for student offset confidence across teacher phases")
+    student_cov_threshold = Param.Float(0.0,
+        "Minimum student coverage ratio required for independent issue")
+    student_filter_entries = Param.Unsigned(2048,
+        "Power-of-two entries in the student coverage filter")
+    student_hash_mode = Param.String("splitmix",
+        "Student coverage filter hash: lowbits, bop_rr, or splitmix")
+    student_hash_count = Param.Unsigned(1,
+        "Number of student coverage filter hashes")
+    student_large_offset_priority_enable = Param.Bool(False,
+        "Allow stream-shaped student pools to prioritize the largest offset")
+    student_large_offset_priority_coeff = Param.Float(0.99,
+        "Tolerance used by the student large-offset priority detector")
+    student_delay_queue_enable = Param.Bool(False,
+        "Delay visibility of student coverage predictions")
+    student_delay_queue_size = Param.Unsigned(16,
+        "Entries in the student coverage delay queue")
+    student_delay_queue_cycles = Param.Cycles(300,
+        "Cycles before a student coverage prediction is visible")
+
     offsets = VectorParam.Int([72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144,
                               150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
 
@@ -924,6 +951,18 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     delay_queue_size = 16
     delay_queue_cycles = 300
     crossPage = False
+    enable_student_cover = False
+    student_teacher_top_n = 1
+    student_pool_size = 8
+    student_conf_alpha = 0.0
+    student_cov_threshold = 0.05
+    student_filter_entries = 2048
+    student_hash_mode = "splitmix"
+    student_hash_count = 1
+    student_large_offset_priority_enable = False
+    student_delay_queue_enable = False
+    student_delay_queue_size = 16
+    student_delay_queue_cycles = 300
 
     offsets = [x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
@@ -939,6 +978,19 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     delay_queue_enable = True
     delay_queue_size = 16
     delay_queue_cycles = 300
+    enable_student_cover = False
+    student_teacher_top_n = 1
+    student_pool_size = 4
+    student_conf_alpha = 0.0
+    student_cov_threshold = 0.02
+    student_filter_entries = 4096
+    student_hash_mode = "bop_rr"
+    student_hash_count = 1
+    student_large_offset_priority_enable = True
+    student_large_offset_priority_coeff = 0.99
+    student_delay_queue_enable = True
+    student_delay_queue_size = 64
+    student_delay_queue_cycles = 300
 
     offsets = [
           -117, -147, -91, 117, 147, 91,

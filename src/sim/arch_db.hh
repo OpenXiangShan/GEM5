@@ -164,6 +164,14 @@ class ArchDBer : public SimObject
       bool negative_offsets_enable, bool auto_learning,
       unsigned int victim_offsets_list_size, unsigned int restore_cycle,
       Tick clock_period_ticks,
+      bool student_cover_enabled, unsigned int student_pool_size,
+      double student_conf_alpha, double student_cov_threshold,
+      unsigned int student_teacher_top_n, unsigned int student_filter_entries,
+      const std::string &student_hash_mode, unsigned int student_hash_count,
+      bool student_large_offset_priority,
+      double student_large_offset_priority_coeff,
+      bool student_delay_queue_enabled,
+      unsigned int student_delay_queue_size, Tick student_delay_ticks,
       const std::string &offsets);
     void bopReplayPhaseTraceWrite(
       uint64_t phase_id, const char *phase_name, Tick start_tick);
@@ -177,6 +185,9 @@ class ArchDBer : public SimObject
       bool trigger_is_demand, bool trigger_is_read, bool trigger_cache_miss,
       int trigger_pf_source, bool trigger_pf_first_hit, bool trigger_pf_hit,
       bool late, int64_t best_offset_before, int64_t best_offset_after,
+      bool teacher_issue_enabled, bool student_issue_enabled,
+      bool student_selected_valid, bool student_selected_enable,
+      int64_t student_selected_offset, int64_t selected_offset,
       unsigned int best_score, unsigned int round, bool best_offset_changed,
       bool issue_enabled, bool validation_enabled, int validation_hit,
       bool pc_confidence_enabled, int pc_index, Addr pc_tag,

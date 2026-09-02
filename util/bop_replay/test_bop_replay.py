@@ -644,7 +644,7 @@ class LearnerTest(unittest.TestCase):
             score_max=20,
             round_max=50,
             bad_score=12,
-            rr_entries=4,
+            rr_entries=16,
             tag_bits=8,
             delay_queue_enabled=True,
             delay_queue_size=1,
@@ -1178,6 +1178,70 @@ class TraceLoadingTest(unittest.TestCase):
         )
         self.assertEqual(phase_window.phase_id, 1)
         self.assertEqual(phase_window.start_tick, 100)
+
+class TeacherStudentBOPReplayTest(unittest.TestCase):
+    @staticmethod
+    def _event(access_seq: int, addr: int) -> ReplayEvent:
+        return ReplayEvent(
+            access_seq=access_seq,
+            order=access_seq,
+            bop_name="system.l2.bop_small",
+            bop_kind="small",
+            tick=access_seq * 10,
+            trigger_addr=addr,
+            trigger_pc=0x800,
+            trigger_has_pc=True,
+            validation_hit=-1,
+            best_offset_changed=False,
+            issue_enabled=False,
+            validation_enabled=False,
+            pc_confidence_enabled=False,
+            pc_sampled=False,
+            raw_candidate_valid=False,
+            raw_candidate_addr=0,
+            policy_candidate_valid=False,
+            policy_candidate_addr=0,
+        )
+
+    def test_student_can_issue_when_teacher_is_disabled(self):
+        config = BOPConfig(
+            bop_name="system.l2.bop_small",
+            block_size=64,
+            score_max=1,
+            round_max=2,
+            # The teacher identifies +1 but does not open its own issue path.
+            bad_score=3,
+            rr_entries=16,
+            tag_bits=4,
+            delay_queue_enabled=False,
+            cross_page=True,
+            adapt_offset=False,
+            offsets=(1, 2),
+            student_cover_enabled=True,
+            student_pool_size=2,
+            student_conf_alpha=0.0,
+            student_cov_threshold=0.5,
+            student_filter_entries=8,
+            student_hash_mode="splitmix",
+            student_hash_count=1,
+            student_delay_queue_enabled=False,
+        )
+        learner = BOPLearner(config)
+        base = 0x1000
+        learner._insert_rr(base - 64)
+        outputs = [
+            learner.process(self._event(index, base + index * 64))
+            for index in range(4)
+        ]
+
+        output = outputs[-1]
+        self.assertFalse(learner.issue_enabled)
+        self.assertTrue(learner.student_selected_valid)
+        self.assertTrue(learner.student_selected_enabled)
+        self.assertTrue(output.issue_enabled)
+        self.assertTrue(output.raw_candidate_valid)
+        self.assertEqual(output.selected_offset, 1)
+        self.assertEqual(output.raw_candidate_addr, base + 4 * 64)
 
 
 if __name__ == "__main__":

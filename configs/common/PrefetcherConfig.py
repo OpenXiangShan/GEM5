@@ -529,17 +529,21 @@ def _configure_l2_bop_validation_defaults(prefetcher):
         bop.enable_global_bop_coverage_guard = True
         bop.global_bop_min_resolved_coverage_shift = 3
 
+
+def _disable_l2_bop_pc_control(prefetcher):
+    for bop in (prefetcher.bop_large, prefetcher.bop_small):
+        bop.enable_issue_validation = False
+        bop.enable_pc_validation_confidence = False
+        bop.enable_pc_validation_producer_consumer = False
+        bop.enable_global_bop_coverage_guard = False
+
+
 def _configure_l2_bop_direct_quality(prefetcher, options):
     if not getattr(options, 'enable_bop_direct_quality_gate', False):
         return
     for bop in (prefetcher.bop_large, prefetcher.bop_small):
         bop.enable_direct_quality_gate = True
         bop.direct_quality_profile = options.bop_direct_quality_profile
-        # Tier20/P8 is intentionally evaluated independently from native P/C.
-        bop.enable_issue_validation = False
-        bop.enable_pc_validation_confidence = False
-        bop.enable_pc_validation_producer_consumer = False
-        bop.enable_global_bop_coverage_guard = False
         bop.direct_quality_entries = 256
         bop.direct_quality_ways = 4
         bop.direct_quality_feedback_entries = \
@@ -566,6 +570,13 @@ def _configure_l2_bop_direct_quality(prefetcher, options):
         bop.direct_quality_epoch_shift = options.bop_direct_quality_epoch_shift
         bop.direct_quality_epoch_timeout = options.bop_direct_quality_epoch_timeout
 
+
+def _configure_l2_bop_student_cover(prefetcher, options):
+    if not getattr(options, 'enable_bop_student_cover', False):
+        return
+    for bop in (prefetcher.bop_large, prefetcher.bop_small):
+        bop.enable_student_cover = True
+
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
@@ -576,7 +587,13 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     _configure_cdp(prefetcher, options)
     if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_bop_validation_defaults(prefetcher)
+        if getattr(options, 'disable_bop_pc_control', False):
+            _disable_l2_bop_pc_control(prefetcher)
         _configure_l2_bop_direct_quality(prefetcher, options)
+        if getattr(options, 'enable_bop_direct_quality_gate', False):
+            # CQF is evaluated independently from native P/C.
+            _disable_l2_bop_pc_control(prefetcher)
+        _configure_l2_bop_student_cover(prefetcher, options)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):

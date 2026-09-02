@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Iterator, Mapping, Sequence
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 LEARNER_REPLAY_MIN_SCHEMA_VERSION = 3
 LEARNER_REPLAY_CERTIFICATION_MIN_SCHEMA_VERSION = 5
 UINT64_MASK = (1 << 64) - 1
@@ -73,6 +73,19 @@ LEARNER_REPORT_FIELDS = (
     "issue_validation",
     "pc_validation_confidence",
     "offsets",
+    "student_cover_enabled",
+    "student_pool_size",
+    "student_conf_alpha",
+    "student_cov_threshold",
+    "student_teacher_top_n",
+    "student_filter_entries",
+    "student_hash_mode",
+    "student_hash_count",
+    "student_large_offset_priority",
+    "student_large_offset_priority_coeff",
+    "student_delay_queue_enabled",
+    "student_delay_queue_size",
+    "student_delay_ticks",
 )
 CONTROLLER_REPORT_FIELDS = (
     "pc_validation_entries",
@@ -134,6 +147,12 @@ class ReplayEvent:
     late: bool = False
     best_offset_before: int = 0
     best_offset_after: int = 0
+    teacher_issue_enabled: bool = False
+    student_issue_enabled: bool = False
+    student_selected_valid: bool = False
+    student_selected_enable: bool = False
+    student_selected_offset: int = 0
+    selected_offset: int = 0
     best_score: int = 0
     round: int = 0
     online_generated: bool = False
@@ -251,6 +270,19 @@ class BOPConfig:
     global_coverage_guard: bool = False
     global_bop_unused_threshold: int = 38
     global_bop_min_resolved_coverage_shift: int = 3
+    student_cover_enabled: bool = False
+    student_pool_size: int = 0
+    student_conf_alpha: float = 0.0
+    student_cov_threshold: float = 0.0
+    student_teacher_top_n: int = 1
+    student_filter_entries: int = 0
+    student_hash_mode: str = "splitmix"
+    student_hash_count: int = 1
+    student_large_offset_priority: bool = False
+    student_large_offset_priority_coeff: float = 0.99
+    student_delay_queue_enabled: bool = False
+    student_delay_queue_size: int = 0
+    student_delay_ticks: int = 0
     learner_configs: Mapping[str, "BOPConfig"] = field(default_factory=dict, compare=False)
     replay_delay_actions: Mapping[str, tuple[ReplayDelayAction, ...]] = field(
         default_factory=dict, compare=False
@@ -318,6 +350,22 @@ class BOPConfig:
             global_bop_unused_threshold=int(row["GlobalBOPUnusedThreshold"]),
             global_bop_min_resolved_coverage_shift=int(
                 row["GlobalBOPMinResolvedCoverageShift"]),
+            student_cover_enabled=bool(value("StudentCoverEnabled", False)),
+            student_pool_size=int(value("StudentPoolSize", 0)),
+            student_conf_alpha=float(value("StudentConfAlpha", 0.0)),
+            student_cov_threshold=float(value("StudentCovThreshold", 0.0)),
+            student_teacher_top_n=int(value("StudentTeacherTopN", 1)),
+            student_filter_entries=int(value("StudentFilterEntries", 0)),
+            student_hash_mode=str(value("StudentHashMode", "splitmix")),
+            student_hash_count=int(value("StudentHashCount", 1)),
+            student_large_offset_priority=bool(
+                value("StudentLargeOffsetPriority", False)),
+            student_large_offset_priority_coeff=float(
+                value("StudentLargeOffsetPriorityCoeff", 0.99)),
+            student_delay_queue_enabled=bool(
+                value("StudentDelayQueueEnabled", False)),
+            student_delay_queue_size=int(value("StudentDelayQueueSize", 0)),
+            student_delay_ticks=int(value("StudentDelayTicks", 0)),
             trace_delay_queue_enabled=delay_queue_enabled,
             trace_delay_queue_size=delay_queue_size,
             trace_delay_ticks=delay_ticks,
@@ -441,6 +489,7 @@ class LearnerOutput:
     validation_hit: int
     validation_owner_pc: int = 0
     validation_owner_valid: bool = False
+    selected_offset: int = 0
 
 
 @dataclass(frozen=True)
@@ -449,6 +498,14 @@ class _RREntry:
     tag: int = 0
     owner_pc: int = 0
     owner_valid: bool = False
+
+
+@dataclass
+class _StudentOffset:
+    offset: int
+    confidence: float = 0.0
+    last_phase_coverage: int = 0
+    current_phase_coverage: int = 0
 
 
 class BOPLearner:
@@ -497,6 +554,33 @@ class BOPLearner:
         self.rr_right: list[_RREntry] = [_RREntry()] * config.rr_entries
         self.delay_queue: deque[tuple[_RREntry, int]] = deque()
         self.delay_event_tick: int | None = None
+        self.student_pool: list[_StudentOffset] = []
+        self.student_filter_bits: list[int] = []
+        self.student_delay_queue: deque[tuple[int, tuple[int, ...], int]] = (
+            deque()
+        )
+        self.student_selected_offset = 1
+        self.student_selected_valid = False
+        self.student_selected_enabled = False
+        self.student_phase_train_count = 0
+        if config.student_cover_enabled:
+            if not 0 < config.student_pool_size <= 64:
+                raise ValueError("student_pool_size must be in [1, 64]")
+            if not _is_power_of_two(config.student_filter_entries):
+                raise ValueError("student_filter_entries must be a power of two")
+            if config.student_hash_count <= 0:
+                raise ValueError("student_hash_count must be non-zero")
+            if config.student_hash_mode not in {"lowbits", "bop_rr", "splitmix"}:
+                raise ValueError("unsupported bounded student_hash_mode")
+            if not 0.0 <= config.student_conf_alpha <= 1.0:
+                raise ValueError("student_conf_alpha must be in [0, 1]")
+            if not 0.0 <= config.student_cov_threshold <= 1.0:
+                raise ValueError("student_cov_threshold must be in [0, 1]")
+            if config.student_delay_queue_enabled and (
+                config.student_delay_queue_size == 0
+            ):
+                raise ValueError("student_delay_queue_size must be non-zero")
+            self.student_filter_bits = [0] * config.student_filter_entries
 
     @staticmethod
     def _u64(value: int) -> int:
@@ -515,6 +599,255 @@ class BOPLearner:
         line = self._line(addr) // self.config.block_size
         bits = self.config.rr_entries.bit_length() - 1
         return (line >> bits) & ((1 << self.config.tag_bits) - 1)
+
+    @staticmethod
+    def _splitmix64(value: int) -> int:
+        value = (value + 0x9E3779B97F4A7C15) & UINT64_MASK
+        value = ((value ^ (value >> 30)) * 0xBF58476D1CE4E5B9) & UINT64_MASK
+        value = ((value ^ (value >> 27)) * 0x94D049BB133111EB) & UINT64_MASK
+        return value ^ (value >> 31)
+
+    def _student_hash_indexes(self, line_addr: int) -> tuple[int, ...]:
+        if not self.config.student_cover_enabled:
+            return ()
+        mask = self.config.student_filter_entries - 1
+        if self.config.student_hash_mode == "lowbits":
+            base1 = line_addr
+            base2 = ((line_addr >> 6) ^ (line_addr >> 12) ^ 0x9E37) | 1
+        elif self.config.student_hash_mode == "bop_rr":
+            bits = self.config.student_filter_entries.bit_length() - 1
+            base1 = ((line_addr & mask) ^ ((line_addr >> bits) & mask)) & mask
+            base2 = (((line_addr >> (2 * bits)) & mask) ^ line_addr ^ 0xC2B2) | 1
+        else:
+            base1 = self._splitmix64(line_addr)
+            base2 = self._splitmix64(
+                line_addr ^ 0x9E3779B97F4A7C15
+            ) | 1
+        return tuple(
+            (base1 + index * base2) & mask
+            for index in range(self.config.student_hash_count)
+        )
+
+    @staticmethod
+    def _same_page(first: int, second: int) -> bool:
+        return (first >> 12) == (second >> 12)
+
+    def _student_all_same_sign(self) -> bool:
+        if not self.student_pool:
+            return False
+        positive = self.student_pool[0].offset > 0
+        return all(
+            entry.offset > 0 if positive else entry.offset < 0
+            for entry in self.student_pool
+        )
+
+    def _student_intermediate_offsets_match_slope(
+        self, best_index: int, worst_index: int, best_coverage: int,
+        worst_coverage: int,
+    ) -> bool:
+        if len(self.student_pool) <= 2:
+            return True
+        best_abs = abs(self.student_pool[best_index].offset)
+        worst_abs = abs(self.student_pool[worst_index].offset)
+        reference_distance = worst_abs - best_abs
+        if reference_distance <= 0:
+            return False
+        reference_gap = best_coverage - worst_coverage
+        coefficient = self.config.student_large_offset_priority_coeff
+        for index, entry in enumerate(self.student_pool):
+            if index in (best_index, worst_index):
+                continue
+            current_abs = abs(entry.offset)
+            if current_abs <= best_abs or current_abs >= worst_abs:
+                return False
+            current_coverage = entry.current_phase_coverage
+            if current_coverage > best_coverage or current_coverage < worst_coverage:
+                return False
+            current_distance = current_abs - best_abs
+            current_gap = best_coverage - current_coverage
+            if reference_gap == 0:
+                if current_gap != 0:
+                    return False
+                continue
+            lhs = current_gap * reference_distance
+            rhs = reference_gap * current_distance
+            if lhs < coefficient * rhs or coefficient * lhs > rhs:
+                return False
+        return True
+
+    def _student_should_prefer_large_offset(
+        self, best_index: int, worst_index: int, best_coverage: int,
+        worst_coverage: int,
+    ) -> bool:
+        if (
+            len(self.student_pool) < 2
+            or self.student_phase_train_count == 0
+            or not self._student_all_same_sign()
+        ):
+            return False
+        by_abs = lambda entry: (abs(entry.offset), entry.offset)
+        minimum = min(self.student_pool, key=by_abs)
+        maximum = max(self.student_pool, key=by_abs)
+        if (
+            abs(self.student_pool[best_index].offset) != abs(minimum.offset)
+            or abs(self.student_pool[worst_index].offset) != abs(maximum.offset)
+        ):
+            return False
+        lhs = self.config.student_large_offset_priority_coeff * (
+            worst_coverage - best_coverage
+        )
+        rhs = (abs(self.student_pool[worst_index].offset) -
+               abs(self.student_pool[best_index].offset)) / self.student_phase_train_count
+        return lhs <= rhs and self._student_intermediate_offsets_match_slope(
+            best_index, worst_index, best_coverage, worst_coverage
+        )
+
+    def _student_insert_filter_mask(
+        self, indexes: tuple[int, ...], mask: int,
+    ) -> None:
+        for index in indexes:
+            self.student_filter_bits[index] |= mask
+
+    def _student_drain_delay_queue(self, now: int) -> None:
+        if not self.config.student_delay_queue_enabled:
+            return
+        while self.student_delay_queue and self.student_delay_queue[0][0] <= now:
+            _, indexes, mask = self.student_delay_queue.popleft()
+            self._student_insert_filter_mask(indexes, mask)
+
+    def _student_enqueue_prediction(
+        self, train_addr: int, bit_index: int, offset: int, tick: int,
+    ) -> None:
+        predicted = train_addr + offset * self.config.block_size
+        if predicted < 0:
+            return
+        predicted &= UINT64_MASK
+        if not self.config.cross_page and not self._same_page(train_addr, predicted):
+            return
+        indexes = self._student_hash_indexes(predicted // self.config.block_size)
+        if not indexes:
+            return
+        mask = 1 << bit_index
+        if not self.config.student_delay_queue_enabled:
+            self._student_insert_filter_mask(indexes, mask)
+            return
+        if len(self.student_delay_queue) >= self.config.student_delay_queue_size:
+            return
+        self.student_delay_queue.append(
+            (tick + self.config.student_delay_ticks, indexes, mask)
+        )
+
+    def _student_observe_train_addr(self, addr: int, tick: int) -> None:
+        if not self.config.student_cover_enabled:
+            return
+        self.student_phase_train_count += 1
+        if not self.student_pool:
+            return
+        self._student_drain_delay_queue(tick)
+        hit_mask = UINT64_MASK
+        for index in self._student_hash_indexes(addr // self.config.block_size):
+            hit_mask &= self.student_filter_bits[index]
+        for index, entry in enumerate(self.student_pool):
+            if hit_mask & (1 << index):
+                entry.current_phase_coverage += 1
+        for index, entry in enumerate(self.student_pool):
+            self._student_enqueue_prediction(addr, index, entry.offset, tick)
+
+    def _student_pick_best_index(self) -> int:
+        return max(
+            range(len(self.student_pool)),
+            key=lambda index: (
+                self.student_pool[index].current_phase_coverage,
+                self.student_pool[index].confidence,
+                -abs(self.student_pool[index].offset),
+                -self.student_pool[index].offset,
+            ),
+        )
+
+    def _student_pick_worst_index(self) -> int:
+        return min(
+            range(len(self.student_pool)),
+            key=lambda index: (
+                self.student_pool[index].current_phase_coverage,
+                self.student_pool[index].confidence,
+                abs(self.student_pool[index].offset),
+                self.student_pool[index].offset,
+            ),
+        )
+
+    def _student_pick_evict_index(self) -> int:
+        return min(
+            range(len(self.student_pool)),
+            key=lambda index: (
+                self.student_pool[index].confidence,
+                self.student_pool[index].last_phase_coverage,
+                -abs(self.student_pool[index].offset),
+                self.student_pool[index].offset,
+            ),
+        )
+
+    def _student_insert_teacher_best(self, offset: int) -> None:
+        if (
+            not self.config.student_cover_enabled
+            or offset == 0
+            or self.config.student_teacher_top_n == 0
+            or any(entry.offset == offset for entry in self.student_pool)
+        ):
+            return
+        if len(self.student_pool) >= self.config.student_pool_size:
+            del self.student_pool[self._student_pick_evict_index()]
+        self.student_pool.append(_StudentOffset(offset))
+
+    def _student_clear_phase_state(self) -> None:
+        self.student_filter_bits[:] = [0] * len(self.student_filter_bits)
+        self.student_delay_queue.clear()
+        self.student_phase_train_count = 0
+        for entry in self.student_pool:
+            entry.current_phase_coverage = 0
+
+    def _student_on_teacher_phase_end(self, teacher_best_offset: int) -> None:
+        if not self.config.student_cover_enabled:
+            return
+        if self.student_pool:
+            best_index = self._student_pick_best_index()
+            worst_index = self._student_pick_worst_index()
+            best_coverage = self.student_pool[best_index].current_phase_coverage
+            worst_coverage = self.student_pool[worst_index].current_phase_coverage
+            prefer_large = (
+                self.config.student_large_offset_priority
+                and self._student_should_prefer_large_offset(
+                    best_index, worst_index, best_coverage, worst_coverage
+                )
+            )
+            selected_index = worst_index if prefer_large else best_index
+            selected_coverage = (
+                worst_coverage if prefer_large else best_coverage
+            )
+            reward_index = selected_index
+            punish_index = best_index if prefer_large else worst_index
+            coverage = (
+                selected_coverage / self.student_phase_train_count
+                if self.student_phase_train_count else 0.0
+            )
+            self.student_selected_offset = self.student_pool[selected_index].offset
+            self.student_selected_valid = True
+            self.student_selected_enabled = (
+                coverage >= self.config.student_cov_threshold
+            )
+            for index, entry in enumerate(self.student_pool):
+                update = 1.0 if index == reward_index else (
+                    -1.0 if index == punish_index else 0.0
+                )
+                entry.confidence = (
+                    entry.confidence * self.config.student_conf_alpha
+                    + update * (1.0 - self.config.student_conf_alpha)
+                )
+                entry.last_phase_coverage = entry.current_phase_coverage
+        else:
+            self.student_selected_valid = False
+            self.student_selected_enabled = False
+        self._student_insert_teacher_best(teacher_best_offset)
+        self._student_clear_phase_state()
 
     def _insert_rr(
         self, addr: int, owner_pc: int = 0, owner_valid: bool = False,
@@ -706,6 +1039,7 @@ class BOPLearner:
                 self.best_score = item[1]
                 self.phase_best_offset = self._calc(self.iterator)
         self.iterator += 1
+        teacher_phase_end = False
         if self.iterator == len(self.offsets):
             self.iterator = 0
             self.round += 1
@@ -717,14 +1051,30 @@ class BOPLearner:
                 self.phase_best_offset = 0
                 for offset_item in self.offsets:
                     offset_item[1] = 0
+                teacher_phase_end = True
         after = self.best_offset
-        raw_valid = self.issue_enabled and after != 0
-        raw_addr = self._line(addr + after * self.config.block_size) if raw_valid else 0
+        self._student_observe_train_addr(addr, event.tick)
+        if teacher_phase_end:
+            self._student_on_teacher_phase_end(after)
+        teacher_issue = self.issue_enabled
+        student_issue = (
+            self.config.student_cover_enabled
+            and self.student_selected_valid
+            and self.student_selected_enabled
+        )
+        selected_offset = self.student_selected_offset if student_issue else after
+        algorithm_issue = (teacher_issue or student_issue) and selected_offset != 0
+        raw_valid = algorithm_issue
+        raw_addr = (
+            self._line(addr + selected_offset * self.config.block_size)
+            if raw_valid else 0
+        )
         validation_enabled = (
             self.config.issue_validation or self.config.pc_validation_confidence
         )
         validation_addr = (
-            self._u64(addr - after * self.config.block_size) if after != 0 else 0
+            self._u64(addr - selected_offset * self.config.block_size)
+            if selected_offset != 0 else 0
         )
         validation_entry = (
             self._test_rr_entry(validation_addr)
@@ -735,10 +1085,11 @@ class BOPLearner:
             if raw_valid and validation_enabled else -1
         return LearnerOutput(
             event, event.bop_kind, before, after, self.best_score, self.round,
-            before != after, self.issue_enabled, raw_valid, raw_addr,
+            before != after, algorithm_issue, raw_valid, raw_addr,
             validation_enabled, validation_hit,
             validation_entry.owner_pc if validation_entry else 0,
             validation_entry.owner_valid if validation_entry else False,
+            selected_offset,
         )
 
 
@@ -792,8 +1143,8 @@ def compare_online_learner(
 ) -> dict[str, object]:
     fields = (
         "best_offset_before", "best_offset_after", "best_score", "round",
-        "best_offset_changed", "issue_enabled", "raw_candidate_valid",
-        "raw_candidate_addr",
+        "best_offset_changed", "selected_offset", "issue_enabled",
+        "raw_candidate_valid", "raw_candidate_addr",
     )
     ordered_events = sorted(events, key=lambda item: (item.access_seq, item.order))
     mismatches = []
@@ -816,6 +1167,7 @@ def compare_online_learner(
             "best_score": event.best_score,
             "round": event.round,
             "best_offset_changed": event.best_offset_changed,
+            "selected_offset": event.selected_offset or event.best_offset_after,
             "issue_enabled": event.issue_enabled,
             "raw_candidate_valid": event.raw_candidate_valid,
             "raw_candidate_addr": event.raw_candidate_addr,
@@ -1695,7 +2047,7 @@ class PCValidationController:
     def policy_candidate(self, event: ReplayEvent) -> bool:
         return self.policy_candidate_values(
             bop_kind=event.bop_kind,
-            best_offset=event.best_offset_after,
+            best_offset=event.selected_offset or event.best_offset_after,
             best_offset_changed=event.best_offset_changed,
             raw_candidate_valid=event.raw_candidate_valid,
             pc_confidence_enabled=event.pc_confidence_enabled,
@@ -1714,7 +2066,7 @@ class PCValidationController:
         event = output.event
         return self.policy_candidate_values(
             bop_kind=output.kind,
-            best_offset=output.best_offset_after,
+            best_offset=output.selected_offset or output.best_offset_after,
             best_offset_changed=output.best_offset_changed,
             raw_candidate_valid=output.raw_candidate_valid,
             pc_confidence_enabled=config.pc_validation_confidence,
@@ -2103,7 +2455,7 @@ def _load_trace_connection(
     if not meta_rows:
         raise ValueError("BOPReplayMeta is empty; enable --dump-bop-replay-trace")
     schema_versions = {int(row["SchemaVersion"]) for row in meta_rows}
-    if not schema_versions.issubset({1, 2, 3, 4, SCHEMA_VERSION}):
+    if not schema_versions.issubset({1, 2, 3, 4, 5, SCHEMA_VERSION}):
         raise ValueError(f"unsupported replay schema version(s): {sorted(schema_versions)}")
     parsed_configs = {
         str(row["BOPName"]): BOPConfig.from_meta(row) for row in meta_rows
@@ -2235,6 +2587,17 @@ def _load_trace_connection(
             late=bool(event_value(row, "Late", False)),
             best_offset_before=int(event_value(row, "BestOffsetBefore", 0)),
             best_offset_after=int(event_value(row, "BestOffsetAfter", 0)),
+            teacher_issue_enabled=bool(
+                event_value(row, "TeacherIssueEnabled", False)),
+            student_issue_enabled=bool(
+                event_value(row, "StudentIssueEnabled", False)),
+            student_selected_valid=bool(
+                event_value(row, "StudentSelectedValid", False)),
+            student_selected_enable=bool(
+                event_value(row, "StudentSelectedEnable", False)),
+            student_selected_offset=int(
+                event_value(row, "StudentSelectedOffset", 0)),
+            selected_offset=int(event_value(row, "SelectedOffset", 0)),
             best_score=int(event_value(row, "BestScore", 0)),
             round=int(event_value(row, "Round", 0)),
             online_generated=bool(event_value(row, "OnlineGenerated", False)),
@@ -2584,7 +2947,7 @@ def _streaming_metadata(
     schema_versions = {int(row["SchemaVersion"]) for row in meta_rows}
     if schema_versions != {SCHEMA_VERSION}:
         raise ValueError(
-            "streaming replay requires a V5 trace; use materialized replay "
+            "streaming replay requires the current trace schema; use materialized replay "
             f"for schema version(s) {sorted(schema_versions)}"
         )
     parsed_configs = {
@@ -2629,6 +2992,12 @@ def _stream_event_from_row(row: sqlite3.Row) -> ReplayEvent:
         late=bool(row["Late"]),
         best_offset_before=int(row["BestOffsetBefore"]),
         best_offset_after=int(row["BestOffsetAfter"]),
+        teacher_issue_enabled=bool(row["TeacherIssueEnabled"]),
+        student_issue_enabled=bool(row["StudentIssueEnabled"]),
+        student_selected_valid=bool(row["StudentSelectedValid"]),
+        student_selected_enable=bool(row["StudentSelectedEnable"]),
+        student_selected_offset=int(row["StudentSelectedOffset"]),
+        selected_offset=int(row["SelectedOffset"]),
         best_score=int(row["BestScore"]),
         round=int(row["Round"]),
         phase_id=int(row["PhaseId"]),
@@ -2856,8 +3225,8 @@ class _StreamingPolicyReplay:
 class _OnlineVerifier:
     _FIELDS = (
         "best_offset_before", "best_offset_after", "best_score", "round",
-        "best_offset_changed", "issue_enabled", "raw_candidate_valid",
-        "raw_candidate_addr",
+        "best_offset_changed", "selected_offset", "issue_enabled",
+        "raw_candidate_valid", "raw_candidate_addr",
     )
 
     def __init__(self):
@@ -2878,6 +3247,8 @@ class _OnlineVerifier:
             return
         for field_name in self._FIELDS:
             expected = getattr(event, field_name)
+            if field_name == "selected_offset" and expected == 0:
+                expected = event.best_offset_after
             actual = getattr(output, field_name)
             if expected != actual:
                 self._record({
@@ -2924,6 +3295,8 @@ def _stream_trace_rows(
         "IssueEnabled,ValidationEnabled,PCConfidenceEnabled,PCSampled,"
         "RawCandidateValid,RawCandidateAddr,PolicyCandidateValid,"
         "PolicyCandidateAddr,Late,BestOffsetBefore,BestOffsetAfter,BestScore,Round,"
+        "TeacherIssueEnabled,StudentIssueEnabled,StudentSelectedValid,"
+        "StudentSelectedEnable,StudentSelectedOffset,SelectedOffset,"
         f"{trigger_is_demand_column} AS TriggerIsDemand,"
         f"{trigger_is_read_column} AS TriggerIsRead "
         "FROM BOPReplayEvent ORDER BY AccessSeq,rowid"

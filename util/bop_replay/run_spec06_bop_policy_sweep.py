@@ -91,7 +91,8 @@ def raw_verified(case_dir: Path) -> bool:
     except sqlite3.Error:
         return False
     return bool(
-        row and int(row[0]) == 5 and report.get("verification", {}).get("pass")
+        row and int(row[0]) in (5, 6)
+        and report.get("verification", {}).get("pass")
     )
 
 
