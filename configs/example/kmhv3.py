@@ -45,12 +45,12 @@ def setKmhV3Params(args, system):
 
         # decode
         cpu.fetchToDecodeDelay = 3
-        cpu.decodeWidth = 8
+        cpu.decodeWidth = 10
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
 
         # rename
-        cpu.renameWidth = 8
+        cpu.renameWidth = 10
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
         cpu.enable_storeSet_train = True
@@ -59,7 +59,7 @@ def setKmhV3Params(args, system):
         # dispatch
         cpu.enableDispatchStage = False
         cpu.numDQEntries = [8, 8, 8]
-        cpu.dispWidth = [8, 8, 8]
+        cpu.dispWidth = [10, 10, 10]
 
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
