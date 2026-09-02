@@ -397,7 +397,9 @@ UBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
     auto pred_hit_entry = meta->hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
      // Use BTBEntry instead of BranchInfo; make it invalid when not taken
-    BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
+    const auto &actualBranch = update.outcome.branch;
+    const bool actualTaken = update.outcome.valid && update.outcome.taken;
+    BTBEntry takenEntry = actualTaken ? BTBEntry(actualBranch) : BTBEntry();
     auto startAddr = stream.getRealStartPC();
     Addr oldtag = getTag(startAddr, stream.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
@@ -414,9 +416,10 @@ UBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
         oldEntryIter = ubtb.end();
     }
 
-    if (stream.exeTaken) {
-        if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
-            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (actualTaken) {
+        if (!pred_hit_entry.valid || pred_hit_entry != actualBranch) {
+            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n",
+                    actualBranch.pc, stream.predTick);
             ubtbStats.updateMiss++;
         }else {
             ubtbStats.updateHit++;

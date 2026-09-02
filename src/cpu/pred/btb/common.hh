@@ -11,7 +11,7 @@
 // #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/pred/btb/resolve_event.hh"
+#include "cpu/pred/btb/branch_outcome.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/static_inst.hh"
 
@@ -473,7 +473,7 @@ struct FetchTarget
  * Predictor update data derived from one FetchTarget.
  *
  * FetchTarget owns the immutable prediction snapshot.  The execution outcome
- * comes either from a FullResolveEvent or the legacy commit-time digest.
+ * comes either from a BranchOutcome or the legacy commit-time digest.
  * PreparedUpdate owns the materialized branch facts used by predictor
  * components for one update attempt.  Keeping these values separate prevents
  * resolve and commit from communicating through mutable FTQ scratch.
@@ -494,7 +494,8 @@ struct ControlFlowOutcome
     BranchInfo branch;
     bool taken = false;
     bool controlMispred = false;
-    bool fromResolveEvent = false;
+    bool fromOutcomeEvent = false;
+    bool valid = false;
 };
 
 struct PreparedUpdate
@@ -506,18 +507,12 @@ struct PreparedUpdate
 
     PreparedUpdate() = default;
 
-    PreparedUpdate(
-        const FetchTarget &target, unsigned predictWidth,
-        const std::vector<FullResolveEvent> &resolveEvents = {})
+    /** Build the legacy commit packet from mutable FetchTarget fields. */
+    PreparedUpdate(const FetchTarget &target, unsigned predictWidth)
     {
-        outcome = makeControlFlowOutcome(target, resolveEvents);
+        outcome = makeLegacyControlFlowOutcome(target);
 
-        const bool legacySquash =
-            resolveEvents.empty() && target.squashType != SQUASH_NONE;
-        const bool nonControlSquash =
-            target.squashType != SQUASH_NONE &&
-            target.squashType != SQUASH_CTRL;
-        if (legacySquash || nonControlSquash) {
+        if (target.squashType != SQUASH_NONE) {
             endInstPC = target.squashPC;
         } else if (outcome.controlMispred || outcome.taken) {
             endInstPC = outcome.branch.pc;
@@ -526,29 +521,54 @@ struct PreparedUpdate
                 ~mask(floorLog2(predictWidth) - 1);
         }
 
-        if (resolveEvents.empty()) {
-            for (const auto &entry : target.predBTBEntries) {
-                if (entry.valid && entry.pc >= target.startPC &&
-                    entry.pc <= endInstPC) {
-                    branches.push_back(
-                        makeBranchUpdate(entry, outcome, false));
-                }
+        for (const auto &entry : target.predBTBEntries) {
+            if (entry.valid && entry.pc >= target.startPC &&
+                entry.pc <= endInstPC) {
+                branches.push_back(
+                    makeBranchUpdate(entry, outcome, false));
             }
-        } else {
-            for (const auto &entry : target.predBTBEntries) {
-                auto event = std::find_if(
-                    resolveEvents.begin(), resolveEvents.end(),
-                    [&entry](const FullResolveEvent &resolved) {
-                        return entry.valid && entry.pc == resolved.pc;
-                    });
-                if (event == resolveEvents.end()) {
-                    continue;
-                }
+        }
+    }
 
-                auto branch = makeBranchUpdate(entry, outcome, false);
-                applyResolveEvent(branch, *event);
-                branches.push_back(std::move(branch));
+    /**
+     * Build a packet from actual outcomes. An empty vector is a valid
+     * complete branchless block and never falls back to FetchTarget::exe*.
+     */
+    PreparedUpdate(
+        const FetchTarget &target, unsigned predictWidth,
+        const std::vector<BranchOutcome> &outcomeEvents,
+        std::optional<Addr> committedEndPC = std::nullopt)
+    {
+        outcome = makeControlFlowOutcome(outcomeEvents);
+
+        const bool legacyNonControlBoundary =
+            !committedEndPC && target.squashType != SQUASH_NONE &&
+            target.squashType != SQUASH_CTRL;
+        if (legacyNonControlBoundary) {
+            endInstPC = target.squashPC;
+        } else if (outcome.valid &&
+                   (outcome.controlMispred || outcome.taken)) {
+            endInstPC = outcome.branch.pc;
+        } else if (committedEndPC) {
+            endInstPC = *committedEndPC;
+        } else {
+            endInstPC = (target.startPC + predictWidth) &
+                ~mask(floorLog2(predictWidth) - 1);
+        }
+
+        for (const auto &entry : target.predBTBEntries) {
+            auto event = std::find_if(
+                outcomeEvents.begin(), outcomeEvents.end(),
+                [&entry](const BranchOutcome &resolved) {
+                    return entry.valid && entry.pc == resolved.pc;
+                });
+            if (event == outcomeEvents.end()) {
+                continue;
             }
+
+            auto branch = makeBranchUpdate(entry, outcome, false);
+            applyOutcome(branch, *event);
+            branches.push_back(std::move(branch));
         }
     }
 
@@ -577,17 +597,17 @@ struct PreparedUpdate
         }
     }
 
-    void applyResolveEvent(const FullResolveEvent &event)
+    void applyOutcome(const BranchOutcome &event)
     {
         for (auto &branch : branches) {
             if (branch.entry.valid && branch.entry.pc == event.pc) {
-                applyResolveEvent(branch, event);
+                applyOutcome(branch, event);
             }
         }
     }
 
   private:
-    static BranchInfo branchInfo(const FullResolveEvent &event)
+    static BranchInfo branchInfo(const BranchOutcome &event)
     {
         BranchInfo branch;
         branch.pc = event.pc;
@@ -601,8 +621,8 @@ struct PreparedUpdate
         return branch;
     }
 
-    static void applyResolveEvent(
-        BranchUpdate &branch, const FullResolveEvent &event)
+    static void applyOutcome(
+        BranchUpdate &branch, const BranchOutcome &event)
     {
         static_cast<BranchInfo &>(branch.entry) = branchInfo(event);
         branch.actualTaken = event.taken;
@@ -611,23 +631,29 @@ struct PreparedUpdate
         branch.resolvedThisAttempt = true;
     }
 
-    static ControlFlowOutcome makeControlFlowOutcome(
-        const FetchTarget &target,
-        const std::vector<FullResolveEvent> &resolveEvents)
+    static ControlFlowOutcome makeLegacyControlFlowOutcome(
+        const FetchTarget &target)
     {
-        if (resolveEvents.empty()) {
-            return ControlFlowOutcome{
-                target.exeBranchInfo,
-                target.exeTaken,
-                target.squashType == SQUASH_CTRL &&
-                    target.squashPC == target.exeBranchInfo.pc,
-                false
-            };
+        return ControlFlowOutcome{
+            target.exeBranchInfo,
+            target.exeTaken,
+            target.squashType == SQUASH_CTRL &&
+                target.squashPC == target.exeBranchInfo.pc,
+            false,
+            true
+        };
+    }
+
+    static ControlFlowOutcome makeControlFlowOutcome(
+        const std::vector<BranchOutcome> &outcomeEvents)
+    {
+        if (outcomeEvents.empty()) {
+            return {};
         }
 
-        const FullResolveEvent *frontier = nullptr;
-        const FullResolveEvent *terminal = nullptr;
-        for (const auto &event : resolveEvents) {
+        const BranchOutcome *frontier = nullptr;
+        const BranchOutcome *terminal = nullptr;
+        for (const auto &event : outcomeEvents) {
             if (!frontier || event.seqNum > frontier->seqNum) {
                 frontier = &event;
             }
@@ -639,7 +665,8 @@ struct PreparedUpdate
 
         const auto &primary = terminal ? *terminal : *frontier;
         return ControlFlowOutcome{
-            branchInfo(primary), primary.taken, primary.mispredicted, true
+            branchInfo(primary), primary.taken, primary.mispredicted, true,
+            true
         };
     }
 

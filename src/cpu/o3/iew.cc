@@ -1613,7 +1613,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
                 inst->branchTarget()->instAddr() : actual_next->instAddr();
             auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
             resolved_cfis.push_back(
-                branch_prediction::btb_pred::FullResolveEvent{
+                branch_prediction::btb_pred::BranchOutcome{
                     tid,
                     inst->getFtqId(),
                     inst->seqNum,

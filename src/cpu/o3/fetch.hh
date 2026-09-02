@@ -85,7 +85,7 @@ struct ResolveQueueEntry
 {
     ThreadID tid;
     branch_prediction::btb_pred::FetchTargetId ftqId;
-    std::vector<branch_prediction::btb_pred::FullResolveEvent> events;
+    std::vector<branch_prediction::btb_pred::BranchOutcome> events;
 };
 
 /**

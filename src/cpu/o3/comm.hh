@@ -50,7 +50,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
-#include "cpu/pred/btb/resolve_event.hh"
+#include "cpu/pred/btb/branch_outcome.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -291,7 +291,7 @@ struct TimeStruct
         StallReason sqHeadStallReason;
 
         /** Resolved control-flow facts produced this cycle. */
-        std::vector<branch_prediction::btb_pred::FullResolveEvent>
+        std::vector<branch_prediction::btb_pred::BranchOutcome>
             resolvedCFIs;  // *F
 
         /** IEW detected a redirect before the delayed formal squash reaches Fetch. */

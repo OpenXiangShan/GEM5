@@ -283,7 +283,8 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param meta BTB metadata from prediction
      */
     void checkPredictionHit(const FetchTarget &stream,
-                           const BTBMeta* meta);
+                            const BTBMeta* meta,
+                            const PreparedUpdate &update);
 
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)

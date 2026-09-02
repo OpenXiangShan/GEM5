@@ -44,11 +44,11 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
     return info;
 }
 
-FullResolveEvent
+BranchOutcome
 createResolveEvent(ThreadID tid, FetchTargetId ftqId, InstSeqNum seqNum,
                    const BranchInfo &branch, bool taken, bool mispredicted)
 {
-    return FullResolveEvent{
+    return BranchOutcome{
         tid,
         ftqId,
         seqNum,
@@ -560,14 +560,14 @@ TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
 
     auto resolved_a = createBranchInfo(0x1000, 0x5000, true);
     auto resolved_b = createBranchInfo(0x1004, 0x4000, true);
-    std::vector<FullResolveEvent> events = {
+    std::vector<BranchOutcome> events = {
         createResolveEvent(1, 7, 11, resolved_b, true, true),
         createResolveEvent(1, 7, 10, resolved_a, false, false)
     };
 
     PreparedUpdate update(target, 64, events);
 
-    EXPECT_TRUE(update.outcome.fromResolveEvent);
+    EXPECT_TRUE(update.outcome.fromOutcomeEvent);
     EXPECT_TRUE(update.outcome.taken);
     EXPECT_TRUE(update.outcome.controlMispred);
     EXPECT_EQ(update.outcome.branch.pc, resolved_b.pc);
@@ -586,6 +586,23 @@ TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
     EXPECT_EQ(target.exeBranchInfo.pc, 0x1008);
 }
 
+TEST(PreparedUpdateTest, EmptyOutcomeBlockDoesNotUseLegacyExecutionState)
+{
+    FetchTarget target;
+    target.startPC = 0x1000;
+    target.exeTaken = true;
+    target.exeBranchInfo = createBranchInfo(0x1004, 0x2000, true);
+    target.predBTBEntries = {BTBEntry(target.exeBranchInfo)};
+
+    const std::vector<BranchOutcome> no_branches;
+    PreparedUpdate update(target, 64, no_branches, 0x101c);
+
+    EXPECT_FALSE(update.outcome.valid);
+    EXPECT_FALSE(update.outcome.taken);
+    EXPECT_EQ(update.endInstPC, 0x101c);
+    EXPECT_TRUE(update.branches.empty());
+}
+
 TEST_F(BTBTest, ResolveEventCreatesUnpredictedTakenCandidate)
 {
     constexpr Addr start_pc = 0x1000;
@@ -600,11 +617,11 @@ TEST_F(BTBTest, ResolveEventCreatesUnpredictedTakenCandidate)
     target.exeTaken = false;
     target.predMetas[0] = mbtb->getPredictionMeta();
     auto event = createResolveEvent(0, 9, 20, actual_branch, true, true);
-    std::vector<FullResolveEvent> events = {event};
+    std::vector<BranchOutcome> events = {event};
 
     PreparedUpdate update(target, mbtb->predictWidth, events);
     mbtb->prepareUpdate(target, update);
-    update.applyResolveEvent(event);
+    update.applyOutcome(event);
 
     ASSERT_TRUE(update.btbEntryCandidate);
     EXPECT_EQ(update.btbEntryCandidate->pc, actual_branch.pc);

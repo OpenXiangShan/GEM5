@@ -589,17 +589,20 @@ MBTB::prepareUpdate(const FetchTarget &stream, PreparedUpdate &update)
  * Also check BTB prediction status
  */
 void
-MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
+MBTB::checkPredictionHit(
+    const FetchTarget &stream, const BTBMeta* meta,
+    const PreparedUpdate &update)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e) {
+        if (update.outcome.valid && update.outcome.branch == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (!pred_branch_hit && update.outcome.taken) {
+        DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n",
+                update.outcome.branch.pc, stream.predTick);
         btbStats.updateMiss++;
     } else {
         btbStats.updateHit++;
@@ -804,8 +807,11 @@ MBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     // 1. Check prediction hit status, for stats recording
-    checkPredictionHit(stream,
-        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
+    checkPredictionHit(
+        stream,
+        std::static_pointer_cast<BTBMeta>(
+            stream.predMetas[getComponentIdx()]).get(),
+        update);
 
     for (const auto &branch : update.branches) {
         if (getResolvedUpdate() && !branch.resolvedThisAttempt) {

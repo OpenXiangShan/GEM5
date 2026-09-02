@@ -1082,7 +1082,7 @@ DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
 }
 
 bool
-DecoupledBPUWithBTB::resolveUpdate(const std::vector<FullResolveEvent> &events)
+DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
 {
     if (events.empty()) {
         return true;
@@ -1160,15 +1160,26 @@ DecoupledBPUWithBTB::setRedirectPending(ThreadID tid, bool pending)
 }
 
 PreparedUpdate
-DecoupledBPUWithBTB::prepareUpdate(
-    const FetchTarget &target, const std::vector<FullResolveEvent> &events)
+DecoupledBPUWithBTB::prepareUpdate(const FetchTarget &target)
 {
-    PreparedUpdate update(target, predictWidth, events);
+    PreparedUpdate update(target, predictWidth);
+    if ((target.isHit || update.outcome.taken) && mbtb->isEnabled()) {
+        mbtb->prepareUpdate(target, update);
+    }
+    return update;
+}
+
+PreparedUpdate
+DecoupledBPUWithBTB::prepareUpdate(
+    const FetchTarget &target, const std::vector<BranchOutcome> &events,
+    std::optional<Addr> committedEndPC)
+{
+    PreparedUpdate update(target, predictWidth, events, committedEndPC);
     if ((target.isHit || update.outcome.taken) && mbtb->isEnabled()) {
         mbtb->prepareUpdate(target, update);
     }
     for (const auto &event : events) {
-        update.applyResolveEvent(event);
+        update.applyOutcome(event);
     }
     return update;
 }
@@ -1178,7 +1189,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     const FetchTarget &target, const PreparedUpdate &update)
 {
     // Update predictor components only if the target is hit or taken
-    if (target.isHit || target.exeTaken) {
+    if (target.isHit || update.outcome.taken) {
         // Update predictor components
         for (int i = 0; i < numComponents; ++i) {
             if (!components[i]->getResolvedUpdate()) {

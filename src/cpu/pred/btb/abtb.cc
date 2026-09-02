@@ -584,17 +584,20 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  * Check if the branch was predicted correctly
  */
 void
-AheadBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(
+    const FetchTarget &stream, const BTBMeta* meta,
+    const PreparedUpdate &update)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e) {
+        if (update.outcome.valid && update.outcome.branch == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (!pred_branch_hit && update.outcome.taken) {
+        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n",
+                update.outcome.branch.pc, stream.predTick);
         btbStats.updateMiss++;
     }
 
@@ -818,8 +821,11 @@ AheadBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
 
     // 2. Check prediction hit status, for stats recording
-    checkPredictionHit(stream,
-        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
+    checkPredictionHit(
+        stream,
+        std::static_pointer_cast<BTBMeta>(
+            stream.predMetas[getComponentIdx()]).get(),
+        update);
 
     // 3. Collect entries to update
     auto entries_to_update = collectEntriesToUpdate(old_entries, update);
@@ -841,7 +847,9 @@ AheadBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
             ? meta->lookupIndex
             : getIndex(previousPC, stream.asidHash, stream.tid);
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
-        updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
+        updateBTBEntry(
+            btb_idx, btb_tag, entry, update.outcome.branch,
+            update.outcome.valid && update.outcome.taken);
     }
 }
 

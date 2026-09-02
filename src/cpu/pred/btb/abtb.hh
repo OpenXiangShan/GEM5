@@ -369,7 +369,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param meta BTB metadata from prediction
      */
     void checkPredictionHit(const FetchTarget &stream,
-                           const BTBMeta* meta);
+                            const BTBMeta* meta,
+                            const PreparedUpdate &update);
 
     /** Collect entries that need to be updated
      *  @param old_entries Processed old entries

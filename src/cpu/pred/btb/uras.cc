@@ -170,12 +170,13 @@ BTBuRAS::update(const FetchTarget &entry, const PreparedUpdate &update)
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;
     printStack("before update", stack, sp);
-    auto takenSlot = entry.exeBranchInfo;
-    if (entry.exeTaken && (takenSlot.isReturn || takenSlot.isCall)) {
+    const auto &takenSlot = update.outcome.branch;
+    if (update.outcome.valid && update.outcome.taken &&
+        (takenSlot.isReturn || takenSlot.isCall)) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
-        auto miss = entry.squashType == SQUASH_CTRL && entry.squashPC == entry.exeBranchInfo.pc;
+        const auto miss = update.outcome.controlMispred;
         // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
         if (takenSlot.isReturn) {
             if (enableDB) {
