@@ -27,7 +27,13 @@
 - 本地 controller：
   [util/solver/run_solver.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/util/solver/run_solver.py)
 - GitHub Actions 手动 workflow：
-  [.github/workflows/manual-perf.yml](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/.github/workflows/manual-perf.yml)
+  [.github/workflows/manual-solve.yml](../../../.github/workflows/manual-solve.yml)
+
+内建 `benchmark_type` 的切片路径不由 solver 单独维护。性能 CI 和 solver 都从
+[`util/xs_scripts/perf_benchmarks.py`](../../../util/xs_scripts/perf_benchmarks.py) 解析
+checkpoint list、checkpoint root、聚类配置和算分脚本。修改已有切片路径时只改这一处；
+solver 自己只维护 SMT 等能力限制。详细职责边界见
+[性能 CI 与 Solver 共用切片配置](shared-perf-benchmark-config.md)。
 
 ## 2. 当前原型的使用边界
 
@@ -40,6 +46,8 @@
   - [configs/example/kmhv2.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/kmhv2.py)
 - 当前 solver runtime / CI 手动入口暂不支持 SMT config，也不接受 `gcc12-spec06-smt-*`
   benchmark_type。
+- `h-spec06-*` 依赖性能 workflow 的 H-profile reference、restorer 和额外参数，当前也只由
+  性能 workflow 支持，不由 solver runtime 接受。
 - 这里的“支持多个 config”只表示 runtime 接口已经接好；某个具体 solver spec
   能否在所选 config 上工作，仍取决于它的 `target` 路径能否在该 config 上成功绑定。
   例如当前文档中的 `VTAGEIPCSearch` 仍依赖 `idealkmhv3.py` 里的 value predictor
