@@ -434,7 +434,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void trapSquash(unsigned fsq_id, Addr last_committed_pc,
                     const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
 
-    void commit(FetchTargetId fsqID, ThreadID tid);
+    void commit(
+        FetchTargetId fsqID, ThreadID tid,
+        const std::vector<CommittedFetchBlock> &committedBlocks);
 
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }

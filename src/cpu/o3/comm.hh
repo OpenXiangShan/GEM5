@@ -351,6 +351,9 @@ struct TimeStruct
         InstSeqNum robheadSeqNum;
 
         uint64_t doneFtqId; // F
+        /** Complete FetchBlocks produced at the doneFtqId boundary. */
+        std::vector<branch_prediction::btb_pred::CommittedFetchBlock>
+            committedFetchBlocks; // *F
         uint64_t squashedTargetId; // F
         unsigned squashedLoopIter; // F
 

@@ -54,6 +54,7 @@
 #include "base/stats/info.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -1607,29 +1608,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         }
 
         if (inst->isControl()) {
-            std::unique_ptr<PCStateBase> actual_next(inst->pcState().clone());
-            inst->staticInst->advancePC(*actual_next);
-            const Addr resolved_target = inst->staticInst->isDirectCtrl() ?
-                inst->branchTarget()->instAddr() : actual_next->instAddr();
             auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
-            resolved_cfis.push_back(
-                branch_prediction::btb_pred::BranchOutcome{
-                    tid,
-                    inst->getFtqId(),
-                    inst->seqNum,
-                    inst->getPC(),
-                    resolved_target,
-                    inst->branching(),
-                    inst->mispredicted(),
-                    inst->staticInst->isCondCtrl(),
-                    inst->staticInst->isIndirectCtrl(),
-                    inst->staticInst->isDirectCtrl(),
-                    inst->staticInst->isCall(),
-                    inst->staticInst->isReturn() &&
-                        !inst->staticInst->isNonSpeculative() &&
-                        !inst->staticInst->isDirectCtrl(),
-                    static_cast<uint8_t>(inst->getInstBytes())
-                });
+            resolved_cfis.push_back(makeBranchOutcome(inst));
         }
 
         if (inst->mispredicted() && !loadNotExecuted &&

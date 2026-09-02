@@ -1045,8 +1045,29 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id,
 }
 
 void
-DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
+DecoupledBPUWithBTB::commit(
+    FetchTargetId target_id, ThreadID tid,
+    const std::vector<CommittedFetchBlock> &committedBlocks)
 {
+    size_t block_idx = 0;
+    FetchTargetId previous_block_id = 0;
+    for (const auto &block : committedBlocks) {
+        panic_if(block.tid != tid,
+                 "Commit batch for tid %u contains block from tid %u",
+                 tid, block.tid);
+        panic_if(previous_block_id && block.ftqId <= previous_block_id,
+                 "Commit batch contains non-monotonic FTQ IDs");
+        panic_if(block.ftqId > target_id,
+                 "Commit block FTQ %llu is newer than watermark %llu",
+                 static_cast<unsigned long long>(block.ftqId),
+                 static_cast<unsigned long long>(target_id));
+        for (const auto &branch : block.branches) {
+            panic_if(branch.tid != tid || branch.ftqId != block.ftqId,
+                     "Commit block contains a branch with mismatched identity");
+        }
+        previous_block_id = block.ftqId;
+    }
+
     // No need to dequeue when queue is empty
     if (ftq.empty(tid)) {
         return;
@@ -1054,6 +1075,7 @@ DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
 
     // Process all targets that have been committed (target_id >= head target id).
     while (!ftq.empty(tid) && target_id >= ftq.frontId(tid)) {
+        const FetchTargetId committed_id = ftq.frontId(tid);
         auto &target = ftq.front(tid);
 
         DPRINTF(DecoupleBP,
@@ -1063,11 +1085,21 @@ DecoupledBPUWithBTB::commit(FetchTargetId target_id, ThreadID tid)
                 target.startPC, target.exeBranchInfo.pc, target.exeBranchInfo.target, target.predBranchInfo.pc,
                 target.predBranchInfo.target);
 
-        const auto update = prepareUpdate(target);
+        while (block_idx < committedBlocks.size() &&
+               committedBlocks[block_idx].ftqId < committed_id) {
+            block_idx++;
+        }
+        if (block_idx < committedBlocks.size() &&
+            committedBlocks[block_idx].ftqId == committed_id) {
+            const auto &block = committedBlocks[block_idx];
+            const auto update = prepareUpdate(
+                target, block.branches, block.lastCommittedPC);
 
-        // Statistics and components consume the same prepared update.
-        updateStatistics(target, update);
-        updatePredictorComponents(target, update);
+            // Training and retirement share a completion fact, not success.
+            updateStatistics(target, update);
+            updatePredictorComponents(target, update);
+            block_idx++;
+        }
 
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;

@@ -60,6 +60,7 @@
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/exetrace.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
@@ -578,6 +579,7 @@ Commit::clearStates(ThreadID tid)
     pc[tid].reset(cpu->tcBase(tid)->getIsaPtr()->newPCState());
     lastCommitedSeqNum[tid] = 0;
     squashAfterInst[tid] = NULL;
+    clearCommittedFetchBlock(tid);
 }
 
 void Commit::drain() { drainPending = true; }
@@ -644,6 +646,7 @@ Commit::takeOverFrom()
         tcSquash[tid] = false;
         curSquashCause[tid] = SquashCause::None;
         squashAfterInst[tid] = NULL;
+        clearCommittedFetchBlock(tid);
     }
     rob->takeOverFrom();
 }
@@ -1284,6 +1287,57 @@ Commit::commit()
 
     }
 }
+
+void
+Commit::clearCommittedFetchBlock(ThreadID tid)
+{
+    committedFetchBlockValid[tid] = false;
+    committedFetchBlocks[tid] = {};
+}
+
+void
+Commit::recordCommittedInst(const DynInstPtr &inst)
+{
+    if (!bp->isBTB()) {
+        return;
+    }
+
+    const ThreadID tid = inst->threadNumber;
+    const auto ftq_id = inst->getFtqId();
+    auto &block = committedFetchBlocks[tid];
+
+    if (!committedFetchBlockValid[tid]) {
+        committedFetchBlockValid[tid] = true;
+        block.tid = tid;
+        block.ftqId = ftq_id;
+    } else if (block.ftqId != ftq_id) {
+        panic_if(
+            ftq_id < block.ftqId,
+            "Committed FTQ ID moved backwards for tid %u: %llu -> %llu",
+            tid, static_cast<unsigned long long>(block.ftqId),
+            static_cast<unsigned long long>(ftq_id));
+
+        DPRINTF(Commit,
+                "Emit committed FetchBlock tid %u FTQ %llu: %u insts, "
+                "%zu branches, last PC %#lx\n",
+                tid, static_cast<unsigned long long>(block.ftqId),
+                block.committedInstCount, block.branches.size(),
+                block.lastCommittedPC);
+        toIEW->commitInfo[tid].committedFetchBlocks.push_back(
+            std::move(block));
+
+        block = {};
+        block.tid = tid;
+        block.ftqId = ftq_id;
+    }
+
+    block.lastCommittedPC = inst->getPC();
+    block.committedInstCount++;
+    if (inst->isControl() && !inst->isNonSpeculative()) {
+        block.branches.push_back(makeBranchOutcome(inst));
+    }
+}
+
 void
 Commit::updateMstatusSd(ThreadID tid){
     RiscvISA::STATUS mstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
@@ -1401,6 +1455,7 @@ Commit::commitInsts()
                                                 num_committed_per_thread[tid]);
 
                 if (commit_success) {
+                    recordCommittedInst(head_inst);
                     cpu->perfCCT->updateInstPos(head_inst->seqNum,
                                                 PerfRecord::AtCommit);
                     auto res = head_inst->getResult();

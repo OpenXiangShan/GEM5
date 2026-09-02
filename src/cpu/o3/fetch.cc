@@ -1880,12 +1880,20 @@ Fetch::clearResolveQueue(ThreadID tid)
 bool
 Fetch::handleCommitSignals(ThreadID tid)
 {
+    const auto &commit_info = fromCommit->commitInfo[tid];
+    panic_if(commit_info.squash &&
+                 !commit_info.committedFetchBlocks.empty(),
+             "Committed FetchBlock batch overlaps a squash for tid %u", tid);
+
     // Check squash signals from commit.
-    if (!fromCommit->commitInfo[tid].squash) {
-        if (fromCommit->commitInfo[tid].doneFtqId) {
-            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n", fromCommit->commitInfo[tid].doneFtqId);
+    if (!commit_info.squash) {
+        if (commit_info.doneFtqId) {
+            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n",
+                    commit_info.doneFtqId);
             assert(dbpbtb);
-            dbpbtb->commit(fromCommit->commitInfo[tid].doneFtqId, tid);
+            dbpbtb->commit(
+                commit_info.doneFtqId, tid,
+                commit_info.committedFetchBlocks);
         }
         return false;
     }
