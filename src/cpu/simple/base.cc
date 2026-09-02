@@ -527,6 +527,8 @@ BaseSimpleCPU::readGem5Regs(ThreadID tid)
             threadContexts[tid]->getReg(RegId(IntRegClass, i));
         diffAllStates->gem5RegFile[i + 32] =
             threadContexts[tid]->getReg(RegId(FloatRegClass, i));
+        threadContexts[tid]->getReg(
+            RegId(VecRegClass, i), &diffAllStates->gem5RegFile.vr[i]);
     }
 }
 

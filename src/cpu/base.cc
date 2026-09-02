@@ -240,7 +240,6 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
             warn("Difftest is enabled with ref so: %s.\n",
                  params().difftest_ref_so.c_str());
 
-            diff_state->proxy->regcpy(&(diff_state->gem5RegFile), REF_TO_DUT);
             diff_state->diff.dynamic_config.ignore_illegal_mem_access = false;
             diff_state->diff.dynamic_config.debug_difftest = false;
             diff_state->proxy->update_config(&diff_state->diff.dynamic_config);
@@ -432,6 +431,78 @@ BaseCPU::startup()
     }
     diffInfo.scalarResults.resize(MaxDestRegisters);
 
+    if (enableDifftest && !_switchedOut) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            captureDifftestState(tid);
+        }
+    }
+
+}
+
+void
+BaseCPU::captureDifftestState(ThreadID tid)
+{
+    auto &state = diffAllStates[tid]->gem5RegFile;
+    state = {};
+    readGem5Regs(tid);
+
+    state.mode = readMiscRegNoEffect(RiscvISA::MISCREG_PRV, tid);
+    state.mstatus = readMiscRegNoEffect(RiscvISA::MISCREG_STATUS, tid);
+    state.sstatus = state.mstatus & RiscvISA::NEMU_SSTATUS_RMASK;
+    state.mepc = readMiscRegNoEffect(RiscvISA::MISCREG_MEPC, tid);
+    state.sepc = readMiscRegNoEffect(RiscvISA::MISCREG_SEPC, tid);
+    state.mtval = readMiscRegNoEffect(RiscvISA::MISCREG_MTVAL, tid);
+    state.stval = readMiscRegNoEffect(RiscvISA::MISCREG_STVAL, tid);
+    state.mtvec = readMiscRegNoEffect(RiscvISA::MISCREG_MTVEC, tid);
+    state.stvec = readMiscRegNoEffect(RiscvISA::MISCREG_STVEC, tid);
+    state.mcause = readMiscRegNoEffect(RiscvISA::MISCREG_MCAUSE, tid);
+    state.scause = readMiscRegNoEffect(RiscvISA::MISCREG_SCAUSE, tid);
+    state.satp = readMiscRegNoEffect(RiscvISA::MISCREG_SATP, tid);
+    state.mip = readMiscReg(RiscvISA::MISCREG_IP, tid);
+    state.mie = readMiscReg(RiscvISA::MISCREG_IE, tid);
+    state.mscratch = readMiscRegNoEffect(RiscvISA::MISCREG_MSCRATCH, tid);
+    state.sscratch = readMiscRegNoEffect(RiscvISA::MISCREG_SSCRATCH, tid);
+    state.mideleg = readMiscRegNoEffect(RiscvISA::MISCREG_MIDELEG, tid);
+    state.medeleg = readMiscRegNoEffect(RiscvISA::MISCREG_MEDELEG, tid);
+    state.pc = threadContexts[tid]->pcState().instAddr();
+
+    state.v = readMiscRegNoEffect(RiscvISA::MISCREG_VIRMODE, tid);
+    state.mtval2 = readMiscRegNoEffect(RiscvISA::MISCREG_MTVAL2, tid);
+    state.mtinst = readMiscRegNoEffect(RiscvISA::MISCREG_MTINST, tid);
+    state.hstatus = readMiscRegNoEffect(RiscvISA::MISCREG_HSTATUS, tid);
+    state.hideleg = readMiscReg(RiscvISA::MISCREG_HIDELEG, tid);
+    state.hedeleg = readMiscRegNoEffect(RiscvISA::MISCREG_HEDELEG, tid);
+    state.hcounteren =
+        readMiscRegNoEffect(RiscvISA::MISCREG_HCOUNTEREN, tid);
+    state.htval = readMiscRegNoEffect(RiscvISA::MISCREG_HTVAL, tid);
+    state.htinst = readMiscRegNoEffect(RiscvISA::MISCREG_HTINST, tid);
+    state.hgatp = readMiscRegNoEffect(RiscvISA::MISCREG_HGATP, tid);
+    state.vsstatus = readMiscRegNoEffect(RiscvISA::MISCREG_VSSTATUS, tid);
+    state.vstvec = readMiscRegNoEffect(RiscvISA::MISCREG_VSTVEC, tid);
+    state.vsepc = readMiscRegNoEffect(RiscvISA::MISCREG_VSEPC, tid);
+    state.vscause = readMiscRegNoEffect(RiscvISA::MISCREG_VSCAUSE, tid);
+    state.vstval = readMiscRegNoEffect(RiscvISA::MISCREG_VSTVAL, tid);
+    state.vsatp = readMiscRegNoEffect(RiscvISA::MISCREG_VSATP, tid);
+    state.vsscratch =
+        readMiscRegNoEffect(RiscvISA::MISCREG_VSSCRATCH, tid);
+
+    state.vstart = readMiscRegNoEffect(RiscvISA::MISCREG_VSTART, tid);
+    state.vxsat = readMiscRegNoEffect(RiscvISA::MISCREG_VXSAT, tid);
+    state.vxrm = readMiscRegNoEffect(RiscvISA::MISCREG_VXRM, tid);
+    state.vcsr = readMiscReg(RiscvISA::MISCREG_VCSR, tid);
+    state.vl = readMiscRegNoEffect(RiscvISA::MISCREG_VL, tid);
+    state.vtype = readMiscRegNoEffect(RiscvISA::MISCREG_VTYPE, tid);
+    state.vlenb = readMiscReg(RiscvISA::MISCREG_VLENB, tid);
+
+    state.fcsr =
+        (readMiscRegNoEffect(RiscvISA::MISCREG_FFLAGS, tid) &
+         RiscvISA::FFLAGS_MASK) |
+        ((readMiscRegNoEffect(RiscvISA::MISCREG_FRM, tid) &
+          RiscvISA::FRM_MASK) << RiscvISA::FRM_OFFSET);
+
+    DPRINTF(Diff,
+            "Captured initial DUT state for tid %d: pc %#lx, mstatus %#lx\n",
+            tid, state.pc, state.mstatus);
 }
 
 void
@@ -1728,10 +1799,16 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 
     if (fence_should_diff || amo_should_diff || is_sc || other_should_diff || lr_should_diff) {
         should_diff = true;
-        if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
+        if (!diffAllStates->hasCommit) {
+            // The snapshot was captured before the DUT retired this
+            // instruction, so both DUT and REF execute it exactly once.
+            fatal_if(diffAllStates->gem5RegFile.pc !=
+                         diffInfo.pc->instAddr(),
+                     "Difftest initial state PC %#lx does not match first "
+                     "committed instruction PC %#lx for tid %d",
+                     diffAllStates->gem5RegFile.pc,
+                     diffInfo.pc->instAddr(), tid);
             diffAllStates->hasCommit = true;
-            readGem5Regs(tid);
-            diffAllStates->gem5RegFile.pc = diffInfo.pc->instAddr();
             if (noHypeMode) {
                 auto start = pmemStart + pmemSize * difftestHartId(tid);
                 diffAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
