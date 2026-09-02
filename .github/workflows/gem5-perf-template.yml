@@ -471,6 +471,27 @@ jobs:
                 exit 1
               fi
           fi
+      - name: Aggregate kmhv2 CROB interruption statistics
+        if: ${{ success() && contains(inputs.extra_args, '--rob-compress-policy=kmhv2') }}
+        env:
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+          CLUSTER_CONFIG_RAW: ${{ steps.config.outputs.cluster_config }}
+        run: |
+          CLUSTER_CONFIG="$CLUSTER_CONFIG_RAW"
+          if [[ "$CLUSTER_CONFIG" != /* ]]; then
+            CLUSTER_CONFIG="$GITHUB_WORKSPACE/$CLUSTER_CONFIG"
+          fi
+          OUTPUT_DIR="$GITHUB_WORKSPACE/crob-kmhv2-analysis"
+          python3 "$GITHUB_WORKSPACE/util/crob/aggregate_kmhv2_break_stats.py" \
+            "$PERF_ARCHIVE_DIR/spec_all" \
+            --weights "$CLUSTER_CONFIG" \
+            --output-dir "$OUTPUT_DIR"
+          cp -r "$OUTPUT_DIR" "$PERF_ARCHIVE_DIR/"
+          {
+            echo "### kmhv2 CROB interruption statistics"
+            echo "- CSV artifact directory: \`crob-kmhv2-analysis\`"
+            echo "- Server archive: \`$PERF_ARCHIVE_DIR/crob-kmhv2-analysis\`"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Archive performance data
         if: ${{ always() && steps.archive.outputs.target_dir != '' }}
         run: |
@@ -511,7 +532,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.config.outputs.artifact_name }}${{ steps.config.outputs.pf_artifact_suffix }}
-          path: score.txt
+          path: |
+            score.txt
+            crob-kmhv2-analysis/*.csv
           if-no-files-found: warn
           retention-days: 30
       
