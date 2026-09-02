@@ -20,6 +20,12 @@ GTest('abtb.test',
     '../timed_base_pred.cc',
 )
 
+GTest('ubtb.test',
+    '../btb_ubtb.cc',
+    'ubtb.test.cc',
+    '../timed_base_pred.cc',
+)
+
 # Add TAGE test with necessary dependencies
 GTest('tage.test', 
     '../btb_tage.cc',
@@ -70,6 +76,7 @@ GTest('ras_pop_push.test',
 env.Append(UNITTESTS=['uras.test',
         'ras_pop_push.test',
         'btb.test',
+        'ubtb.test',
         'tage.test',
         'mgsc.test',
         'microtage.test',
