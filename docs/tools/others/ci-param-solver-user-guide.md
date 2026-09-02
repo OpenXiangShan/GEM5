@@ -25,7 +25,7 @@
 当前用户入口主要有两个：
 
 - 本地 controller：
-  [util/solver/run_solver.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/util/solver/run_solver.py)
+  [util/solver/run_solver.py](../../../util/solver/run_solver.py)
 - GitHub Actions 手动 workflow：
   [.github/workflows/manual-solve.yml](../../../.github/workflows/manual-solve.yml)
 
@@ -41,9 +41,9 @@ solver 自己只维护 SMT 等能力限制。详细职责边界见
 
 - 当前只支持 Python config 脚本，不支持 shell wrapper 作为 solver runtime 接入点。
 - 当前已经接好 solver runtime、并在 CI 手动入口里暴露选择的 config 是：
-  - [configs/example/idealkmhv3.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/idealkmhv3.py)
-  - [configs/example/kmhv3.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/kmhv3.py)
-  - [configs/example/kmhv2.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/kmhv2.py)
+  - [configs/example/idealkmhv3.py](../../../configs/example/idealkmhv3.py)
+  - [configs/example/kmhv3.py](../../../configs/example/kmhv3.py)
+  - [configs/example/kmhv2.py](../../../configs/example/kmhv2.py)
 - 当前 solver runtime / CI 手动入口暂不支持 SMT config，也不接受 `gcc12-spec06-smt-*`
   benchmark_type。
 - `h-spec06-*` 依赖性能 workflow 的 H-profile reference、restorer 和额外参数，当前也只由
@@ -79,7 +79,7 @@ solver 自己只维护 SMT 等能力限制。详细职责边界见
 ## 3. 一个 solver spec 应该怎么写
 
 solver spec 是一个 `SolveSpec` 子类。当前实现入口在：
-[util/solver/spec/__init__.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/util/solver/spec/__init__.py)
+[util/solver/spec/__init__.py](../../../util/solver/spec/__init__.py)
 
 你需要至少定义这些类属性：
 
@@ -101,7 +101,7 @@ solver spec 是一个 `SolveSpec` 子类。当前实现入口在：
 workflow 预检日志里给出提示。
 
 当前推荐直接参考：
-[configs/solver_specs/vtage_ipc_search.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/solver_specs/vtage_ipc_search.py)
+[configs/solver_specs/vtage_ipc_search.py](../../../configs/solver_specs/vtage_ipc_search.py)
 
 示例：
 
@@ -525,7 +525,7 @@ VTAGEIPCSearch
 ## 8. CI 手动触发方法
 
 当前 workflow 是：
-[.github/workflows/manual-perf.yml](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/.github/workflows/manual-perf.yml)
+[.github/workflows/manual-solve.yml](../../../.github/workflows/manual-solve.yml)
 
 它会做这些事：
 
@@ -764,7 +764,7 @@ VTAGEIPCSearch
 ### 11.1 给 argparse 增加三个参数
 
 当前接入点参考：
-[configs/common/xiangshan.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/common/xiangshan.py)
+[configs/common/xiangshan.py](../../../configs/common/xiangshan.py)
 
 需要支持：
 
@@ -775,7 +775,7 @@ VTAGEIPCSearch
 ### 11.2 在 instantiate 前调用 runtime integration
 
 当前参考：
-[configs/example/idealkmhv3.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/example/idealkmhv3.py)
+[configs/example/idealkmhv3.py](../../../configs/example/idealkmhv3.py)
 
 需要在 root 构建好、真正 `instantiate / run` 前执行：
 
@@ -855,9 +855,9 @@ m5.internal.params.<Something>Params
 ## 13. 当前仓库里可直接参考的例子
 
 - 随机搜索 VTAGE 三参数：
-  [configs/solver_specs/vtage_ipc_search.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/solver_specs/vtage_ipc_search.py)
+  [configs/solver_specs/vtage_ipc_search.py](../../../configs/solver_specs/vtage_ipc_search.py)
 - 最小 grid 搜索：
-  [configs/solver_specs/example_grid_search.py](/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/configs/solver_specs/example_grid_search.py)
+  [configs/solver_specs/example_grid_search.py](../../../configs/solver_specs/example_grid_search.py)
 
 已验证过的运行方式：
 
