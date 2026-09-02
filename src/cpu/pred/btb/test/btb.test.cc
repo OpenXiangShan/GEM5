@@ -656,7 +656,7 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     PreparedUpdate resolve_update(resolve_a, mbtb->predictWidth);
     mbtb->prepareUpdate(resolve_a, resolve_update);
     resolve_update.markResolved(branch_a.pc);
-    mbtb->setResolvedUpdate(true);
+    mbtb->setTrainingStage(PredictorTrainingStage::Resolve);
     mbtb->update(resolve_a, resolve_update);
 
     predictions.assign(4, FullBTBPrediction());

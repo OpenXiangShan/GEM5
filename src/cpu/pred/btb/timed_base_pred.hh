@@ -14,6 +14,7 @@
     #include "cpu/inst_seq.hh"
     #include "cpu/o3/dyn_inst_ptr.hh"
     #include "cpu/pred/btb/common.hh"
+    #include "enums/TrainingStage.hh"
     #include "sim/sim_object.hh"
     #include "params/TimedBaseBTBPredictor.hh"
 #endif
@@ -36,6 +37,12 @@ namespace test {
 using DynInstPtr = o3::DynInstPtr;
 #endif
 
+enum class PredictorTrainingStage
+{
+    Commit,
+    Resolve,
+};
+
 #ifdef UNIT_TEST
 class TimedBaseBTBPredictor
 #else
@@ -47,7 +54,10 @@ class TimedBaseBTBPredictor: public SimObject
 #ifdef UNIT_TEST
     TimedBaseBTBPredictor();
     void setNumDelay(unsigned delay) { numDelay = delay; }
-    void setResolvedUpdate(bool enabled) { resolvedUpdate = enabled; }
+    void setTrainingStage(PredictorTrainingStage stage)
+    {
+        trainingStage = stage;
+    }
     void setSmtTidPartitioned(bool partitioned)
     {
         smtTidPartitioned = partitioned;
@@ -89,7 +99,14 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void update(const FetchTarget &entry,
                         const PreparedUpdate &update) {}
     virtual unsigned getDelay() {return numDelay;}
-    virtual bool getResolvedUpdate() {return resolvedUpdate;}
+    bool trainsAtResolve() const
+    {
+        return trainingStage == PredictorTrainingStage::Resolve;
+    }
+    bool trainsAtCommit() const
+    {
+        return trainingStage == PredictorTrainingStage::Commit;
+    }
     // Two-phase resolved update: probe first, then apply
     virtual bool canResolveUpdate(const FetchTarget &entry,
                                   const PreparedUpdate &update)
@@ -172,7 +189,7 @@ class TimedBaseBTBPredictor: public SimObject
 
 private:
     unsigned numDelay;
-    bool resolvedUpdate;
+    PredictorTrainingStage trainingStage;
     bool enabled;
     bool smtTidPartitioned;
 };

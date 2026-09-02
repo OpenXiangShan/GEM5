@@ -1051,7 +1051,7 @@ MicroTAGE::trainResolvedEntries(
     for (const auto &branch : update.branches) {
         const auto &entry = branch.entry;
         if (!(entry.isCond && !entry.alwaysTaken) ||
-            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            (trainsAtResolve() && !branch.resolvedThisAttempt)) {
             continue;
         }
         entries.push_back(TrainingEntry{

@@ -1145,7 +1145,7 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
 
     // Phase 1: probe all resolved-update components to ensure no blocker
     for (int i = 0; i < numComponents; ++i) {
-        if (components[i]->getResolvedUpdate()) {
+        if (components[i]->trainsAtResolve()) {
             if (!components[i]->canResolveUpdate(target, update)) {
                 return false;
             }
@@ -1154,7 +1154,7 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
 
     // Phase 2: all clear, perform updates once
     for (int i = 0; i < numComponents; ++i) {
-        if (components[i]->getResolvedUpdate()) {
+        if (components[i]->trainsAtResolve()) {
             components[i]->doResolveUpdate(target, update);
         }
     }
@@ -1224,7 +1224,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(
     if (target.isHit || update.outcome.taken) {
         // Update predictor components
         for (int i = 0; i < numComponents; ++i) {
-            if (!components[i]->getResolvedUpdate()) {
+            if (components[i]->trainsAtCommit()) {
                 components[i]->update(target, update);
             }
         }

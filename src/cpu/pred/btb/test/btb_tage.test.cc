@@ -1239,7 +1239,7 @@ TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
     mbtbCandidate.alwaysTaken = true;
     update.setBTBEntryCandidate(mbtbCandidate, false);
     update.markResolved(finalEntry.pc);
-    tage->setResolvedUpdate(true);
+    tage->setTrainingStage(PredictorTrainingStage::Resolve);
     tage->update(stream, update);
 
     EXPECT_GE(findTableWithEntry(tage, 0x1000, finalEntry.pc), 0);
@@ -1256,7 +1256,7 @@ TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
 TEST_F(BTBTAGETest, BankConflict) {
     // Create TAGE with 4 banks
     BTBTAGE *bankTage = new BTBTAGE(4, 2, 1024, 4);
-    bankTage->setResolvedUpdate(true);
+    bankTage->setTrainingStage(PredictorTrainingStage::Resolve);
     boost::dynamic_bitset<> testHistory(128);
     std::vector<FullBTBPrediction> testStagePreds(5);
 

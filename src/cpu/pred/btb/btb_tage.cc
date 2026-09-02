@@ -912,7 +912,7 @@ BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
     for (const auto &branch : update.branches) {
         const auto &btb_entry = branch.entry;
         if (!(btb_entry.isCond && !btb_entry.alwaysTaken) ||
-            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            (trainsAtResolve() && !branch.resolvedThisAttempt)) {
             continue;
         }
         const bool actual_taken = branch.actualTaken;

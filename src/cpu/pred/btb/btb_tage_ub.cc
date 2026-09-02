@@ -509,7 +509,7 @@ BTBTAGEUpperBound::update(
     for (const auto &branch : update.branches) {
         const auto &btbEntry = branch.entry;
         if (!(btbEntry.isCond && !btbEntry.alwaysTaken) ||
-            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            (trainsAtResolve() && !branch.resolvedThisAttempt)) {
             continue;
         }
         auto predIt = predMeta->preds.find(btbEntry.pc);

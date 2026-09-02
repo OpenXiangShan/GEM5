@@ -337,7 +337,7 @@ BTBITTAGE::update(const FetchTarget &stream, const PreparedUpdate &update)
     for (const auto &branch : update.branches) {
         const auto &btb_entry = branch.entry;
         if (!(btb_entry.isIndirect && !btb_entry.isReturn) ||
-            (getResolvedUpdate() && !branch.resolvedThisAttempt)) {
+            (trainsAtResolve() && !branch.resolvedThisAttempt)) {
             continue;
         }
         auto pred_it = preds.find(btb_entry.pc);

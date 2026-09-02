@@ -814,7 +814,7 @@ MBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
         update);
 
     for (const auto &branch : update.branches) {
-        if (getResolvedUpdate() && !branch.resolvedThisAttempt) {
+        if (trainsAtResolve() && !branch.resolvedThisAttempt) {
             continue;
         }
         updateBTBEntry(branch, stream);
