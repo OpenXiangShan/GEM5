@@ -13,38 +13,6 @@ import json
 from pathlib import Path
 
 
-_SPEC06_CI_ROOT = "/nfs/home/share/gem5_ci/spec06_cpts"
-_GCC12_SPEC06_ROOT = (
-    "/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/"
-    "spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc"
-)
-_GCC12_SPEC06_SMT_ROOT = (
-    "/nfs/home/share/xuyan/"
-    "spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_"
-    "disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0"
-)
-_GCC16_SPEC06_PROFILE = (
-    "/nfs/home/share/checkpoints_profiles/"
-    "spec06_gcc16_rva23_novec_260820"
-)
-_GCC15_SPEC06_PROFILE = (
-    "/nfs/home/share/checkpoints_profiles/"
-    "spec06_gcc15_rv64gcb_base_260604"
-)
-_H_SPEC06_ROOT = f"{_SPEC06_CI_ROOT}/h_spec06"
-_SPEC17_ROOT = "/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0"
-_RVV_SPEC06_ROOT = (
-    "/nfs/home/xutongqiao/GEM5-CI/"
-    "spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_"
-    "NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv"
-)
-_SPEC26_CI_ROOT = "/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718"
-_GCC15_SPEC26_ROOT = (
-    "/nfs/home/share/checkpoints_profiles/"
-    "spec26_rate_gcc15_rv64gcb_260718/checkpoint"
-)
-
-
 @dataclass(frozen=True)
 class BenchmarkConfig:
     benchmark_type: str
@@ -100,16 +68,16 @@ _BENCHMARKS = _index_benchmarks(
     (
         BenchmarkConfig(
             benchmark_type="gcc12-spec06-0.3c",
-            checkpoint_list=f"{_SPEC06_CI_ROOT}/spec06_0.3c_int.lst",
-            checkpoint_root=_GCC12_SPEC06_ROOT,
-            cluster_config=f"{_SPEC06_CI_ROOT}/cluster-0-0.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c_int.lst",
+            checkpoint_root="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json",
             comment="run 30% coverage spec06 checkpoints, 148 checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="gcc12-spec06-smt-0.3c",
-            checkpoint_list=f"{_SPEC06_CI_ROOT}/spec06_0.3c.lst",
-            checkpoint_root=_GCC12_SPEC06_SMT_ROOT,
-            cluster_config=f"{_SPEC06_CI_ROOT}/spec06_0.3c.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c.lst",
+            checkpoint_root="/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c.json",
             comment=(
                 "run 30% coverage dual-context SMT spec06 checkpoints, "
                 "148 checkpoints"
@@ -117,69 +85,57 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="gcc12-spec06-smt-1.0c",
-            checkpoint_list=f"{_SPEC06_CI_ROOT}/checkpoint-0-0-0.lst",
-            checkpoint_root=_GCC12_SPEC06_SMT_ROOT,
-            cluster_config=f"{_SPEC06_CI_ROOT}/cluster-0-0.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst",
+            checkpoint_root="/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json",
             comment="run 100% coverage dual-context SMT spec06 checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="gcc12-spec06-smt-int-1.0c",
-            checkpoint_list=f"{_SPEC06_CI_ROOT}/spec_1c_int.lst",
-            checkpoint_root=_GCC12_SPEC06_SMT_ROOT,
-            cluster_config=f"{_SPEC06_CI_ROOT}/spec06_1c_int.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/spec_1c_int.lst",
+            checkpoint_root="/nfs/home/share/xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/spec06_1c_int.json",
             comment=(
                 "run 100% coverage dual-context SMT SPEC06 int checkpoints"
             ),
         ),
         BenchmarkConfig(
             benchmark_type="gcc12-spec06-0.8c",
-            checkpoint_list=f"{_SPEC06_CI_ROOT}/spec_0.8c_int.lst",
-            checkpoint_root=_GCC12_SPEC06_ROOT,
-            cluster_config=f"{_SPEC06_CI_ROOT}/cluster-0-0.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst",
+            checkpoint_root="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json",
             comment="run 80% coverage spec06 checkpoints, 500+ checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="gcc12-spec06-1.0c",
-            checkpoint_list=f"{_SPEC06_CI_ROOT}/checkpoint-0-0-0.lst",
-            checkpoint_root=_GCC12_SPEC06_ROOT,
-            cluster_config=f"{_SPEC06_CI_ROOT}/cluster-0-0.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst",
+            checkpoint_root="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json",
             comment="run 100% coverage spec06 checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="spec06-rva23-novec-gcc16-0.3c",
-            checkpoint_list=(
-                f"{_SPEC06_CI_ROOT}/gcc16_rva23_novec/spec06_0.3c.lst"
-            ),
-            checkpoint_root=f"{_GCC16_SPEC06_PROFILE}/checkpoint",
-            cluster_config=(
-                f"{_GCC16_SPEC06_PROFILE}/json/checkpoints_cov0.3.json"
-            ),
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/gcc16_rva23_novec/spec06_0.3c.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/json/checkpoints_cov0.3.json",
             comment=(
                 "run 30% coverage gcc16 rva23-novec SPEC06 checkpoints"
             ),
         ),
         BenchmarkConfig(
             benchmark_type="spec06-rva23-novec-gcc16-1.0c",
-            checkpoint_list=(
-                f"{_GCC16_SPEC06_PROFILE}/checkpoint/checkpoint.lst"
-            ),
-            checkpoint_root=f"{_GCC16_SPEC06_PROFILE}/checkpoint",
-            cluster_config=(
-                f"{_GCC16_SPEC06_PROFILE}/json/checkpoints_all.json"
-            ),
+            checkpoint_list="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/checkpoint.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/json/checkpoints_all.json",
             comment=(
                 "run 100% coverage gcc16 rva23-novec SPEC06 checkpoints"
             ),
         ),
         BenchmarkConfig(
             benchmark_type="gcc15-spec06-0.3c",
-            checkpoint_list=(
-                f"{_SPEC06_CI_ROOT}/gcc15_260604/spec06_0.3c.lst"
-            ),
-            checkpoint_root=f"{_GCC15_SPEC06_PROFILE}/checkpoint",
-            cluster_config=(
-                f"{_GCC15_SPEC06_PROFILE}/json/checkpoints_cov0.3.json"
-            ),
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/gcc15_260604/spec06_0.3c.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json",
             comment=(
                 "run legacy 30% coverage gcc15 SPEC06 checkpoints from "
                 "spec06_gcc15_rv64gcb_base_260604"
@@ -187,13 +143,9 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="gcc15-spec06-1.0c",
-            checkpoint_list=(
-                f"{_GCC15_SPEC06_PROFILE}/checkpoint/checkpoint.lst"
-            ),
-            checkpoint_root=f"{_GCC15_SPEC06_PROFILE}/checkpoint",
-            cluster_config=(
-                f"{_GCC15_SPEC06_PROFILE}/json/checkpoints_all.json"
-            ),
+            checkpoint_list="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/checkpoint.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json",
             comment=(
                 "run legacy 100% coverage gcc15 SPEC06 checkpoints from "
                 "spec06_gcc15_rv64gcb_base_260604"
@@ -201,11 +153,9 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="h-spec06-0.5c",
-            checkpoint_list=f"{_H_SPEC06_ROOT}/h_spec06_0.5c.lst",
-            checkpoint_root=f"{_H_SPEC06_ROOT}/checkpoint-0-0-0",
-            cluster_config=(
-                f"{_H_SPEC06_ROOT}/h_spec06_0.5c_h_profile_insts.json"
-            ),
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c.lst",
+            checkpoint_root="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c_h_profile_insts.json",
             comment=(
                 "run 50% coverage H SPEC06 checkpoints with FS0 NEMU, "
                 "GCPT restore, DRAMsim3 and 40M maxinsts"
@@ -213,11 +163,9 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="h-spec06-1.0c",
-            checkpoint_list=f"{_H_SPEC06_ROOT}/h_spec06_1.0c.lst",
-            checkpoint_root=f"{_H_SPEC06_ROOT}/checkpoint-0-0-0",
-            cluster_config=(
-                f"{_H_SPEC06_ROOT}/h_spec06_1.0c_h_profile_insts.json"
-            ),
+            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c.lst",
+            checkpoint_root="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0",
+            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c_h_profile_insts.json",
             comment=(
                 "run 100% coverage H SPEC06 checkpoints with FS0 NEMU, "
                 "GCPT restore, DRAMsim3 and 40M maxinsts"
@@ -225,37 +173,33 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="spec17-1.0c",
-            checkpoint_list=f"{_SPEC17_ROOT}/checkpoint.lst",
-            checkpoint_root=f"{_SPEC17_ROOT}/",
-            cluster_config=f"{_SPEC17_ROOT}/cluster-0-0.json",
+            checkpoint_list="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst",
+            checkpoint_root="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/",
+            cluster_config="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/cluster-0-0.json",
             score_script="gem5-score-ci-17.sh",
             comment="run 100% coverage spec17 checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="spec06-rvv-1.0c",
-            checkpoint_list=f"{_RVV_SPEC06_ROOT}/checkpoint.lst",
-            checkpoint_root=f"{_RVV_SPEC06_ROOT}/",
-            cluster_config=f"{_RVV_SPEC06_ROOT}/cluster-0-0.json",
-            artifact_name_override=(
-                "performance-score-spec06-1.0c-with-rvv-extension"
-            ),
+            checkpoint_list="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint.lst",
+            checkpoint_root="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/",
+            cluster_config="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster-0-0.json",
+            artifact_name_override="performance-score-spec06-1.0c-with-rvv-extension",
             comment="run 100% coverage spec06 rvv checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="spec06int-rvv-0.8c",
-            checkpoint_list=f"{_RVV_SPEC06_ROOT}/checkpoint_0.8c_int.lst",
-            checkpoint_root=f"{_RVV_SPEC06_ROOT}/",
-            cluster_config=f"{_RVV_SPEC06_ROOT}/cluster_0.8c_int.json",
-            artifact_name_override=(
-                "performance-score-spec06int-0.8c-with-rvv-extension"
-            ),
+            checkpoint_list="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint_0.8c_int.lst",
+            checkpoint_root="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/",
+            cluster_config="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster_0.8c_int.json",
+            artifact_name_override="performance-score-spec06int-0.8c-with-rvv-extension",
             comment="run 80% coverage spec06 int rvv checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="gcc15-spec26-0.3c",
-            checkpoint_list=f"{_SPEC26_CI_ROOT}/spec26_0.3c.lst",
-            checkpoint_root=_GCC15_SPEC26_ROOT,
-            cluster_config=f"{_SPEC26_CI_ROOT}/checkpoints_cov0.3.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/spec26_0.3c.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec26_rate_gcc15_rv64gcb_260718/checkpoint",
+            cluster_config="/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/checkpoints_cov0.3.json",
             score_script="gem5-score-ci-26.sh",
             comment=(
                 "run 30% coverage SPEC CPU2026 checkpoints plus "
@@ -264,9 +208,9 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="gcc15-spec26-1.0c",
-            checkpoint_list=f"{_SPEC26_CI_ROOT}/spec26_1.0c.lst",
-            checkpoint_root=_GCC15_SPEC26_ROOT,
-            cluster_config=f"{_SPEC26_CI_ROOT}/checkpoints_all.json",
+            checkpoint_list="/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/spec26_1.0c.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec26_rate_gcc15_rv64gcb_260718/checkpoint",
+            cluster_config="/nfs/home/share/gem5_ci/spec26_cpts/rv64gcb_260718/checkpoints_all.json",
             score_script="gem5-score-ci-26.sh",
             comment="run 100% coverage SPEC CPU2026 checkpoints",
         ),
