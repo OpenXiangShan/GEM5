@@ -77,7 +77,8 @@ def setTidPartitionedPredictorParams(system):
         # The RTL implementation can afford to duplicate the small uBTB.
         # Double the physical model before splitting it so each thread keeps
         # the original 32-entry capacity.
-        cpu.branchPred.ubtb.numEntries = 64
+        cpu.branchPred.ubtb.numSets = 1
+        cpu.branchPred.ubtb.numWays = 64
         cpu.branchPred.ubtb.smtTidPartitioned = True
 
 
