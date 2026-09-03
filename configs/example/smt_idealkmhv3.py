@@ -24,7 +24,9 @@ def setSharedLSQParams(args, system):
         # shared target queue and starve the other thread's frontend.
         cpu.StoreQueueMultiple = 1 # Do not support Virtual-SQ in SMT
         cpu.smtLSQMode = 'Shared'
-        cpu.smtLSQPolicy = 'Dynamic'
+        cpu.smtLSQPolicy = 'DynamicBorrowing'  # for LQ and SQ only
+        cpu.smtRARQPolicy = 'Dynamic'  # RARQ uses pure Dynamic policy
+        cpu.smtRAWQPolicy = 'Dynamic'  # RAWQ uses pure Dynamic policy
         cpu.smtROBPolicy = 'DynamicBorrowing'
         cpu.branchPred.smtFTQMode = 'Shared'
         cpu.branchPred.smtFTQPolicy = 'Partitioned'

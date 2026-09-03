@@ -2030,6 +2030,34 @@ IEW::tick()
 
     scheduler->tick();
     ldstQueue.tick();
+    
+    // Update LSQ borrowing donor status for LQ and SQ
+    // A thread becomes a donor if it has no buffered rename instructions and is stalled
+    // Use hold cycles to avoid frequent donor state transitions
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        bool has_buffered_rename = !fixedbuffer[tid].empty();
+        
+        // For LQ: determine if thread should be a donor
+        bool lq_donor = false;
+        lq_donor = smtHasBorrowThrottleLQStall(toFetch->iewInfo[tid]);
+        if (lq_donor) {
+            ldstQueue.setLQBorrowingDonor(tid, true);
+        } else {
+            ldstQueue.setLQBorrowingDonor(tid, false);
+        }
+        
+        // For SQ: determine if thread should be a donor
+        bool sq_donor = false;
+        sq_donor = smtHasBorrowThrottleSQStall(toFetch->iewInfo[tid]);
+        if (sq_donor) {
+            ldstQueue.setSQBorrowingDonor(tid, true);
+        } else {
+            ldstQueue.setSQBorrowingDonor(tid, false);
+        }
+    }
+    
+    // Add borrowing state hold cycle for LSQ
+    ldstQueue.addBorrowingStateHoldCycle();
 
     // dispatch
     moveInstsToBuffer();
