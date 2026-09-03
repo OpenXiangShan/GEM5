@@ -44,9 +44,12 @@
 #include "cpu/base.hh"
 
 #include <algorithm>
+#include <array>
+#include <initializer_list>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/insts/fusion.hh"
@@ -940,6 +943,287 @@ BaseCPU::csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint
         diff_at = ValueDiff;
 }
 
+namespace
+{
+
+constexpr int NumVecRegs = 32;
+
+struct VectorDestinationLayout
+{
+    size_t first_reg = 0;
+    size_t num_regs = 0;
+    size_t elem_bytes = 1;
+    size_t active_elems = 0;
+    size_t field_count = 1;
+    bool tail_agnostic = false;
+    bool mask_destination = false;
+};
+
+bool
+hasMnemonicPrefix(const StaticInst &inst, const char *prefix)
+{
+    const std::string_view mnemonic(inst.getMnemonic());
+    return mnemonic.compare(0, std::char_traits<char>::length(prefix),
+                            prefix) == 0;
+}
+
+bool
+hasMnemonicPrefix(const StaticInst &inst,
+                  std::initializer_list<const char *> prefixes)
+{
+    for (const char *prefix : prefixes) {
+        if (hasMnemonicPrefix(inst, prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+isWholeVectorDestination(const StaticInst &inst)
+{
+    return hasMnemonicPrefix(inst, {"vl1re", "vl2re", "vl4re", "vl8re",
+                                    "vmv1r", "vmv2r", "vmv4r", "vmv8r"});
+}
+
+bool
+isMaskDestination(const StaticInst &inst)
+{
+    return hasMnemonicPrefix(inst, {"vmadc", "vmsbc", "vmseq", "vmsne",
+        "vmslt", "vmsle", "vmsgt", "vmand", "vmnand", "vmandn", "vmxor",
+        "vmor", "vmnor", "vmorn", "vmxnor", "vmsbf", "vmsif", "vmsof",
+        "vmf", "vlm", "vmask_mv"});
+}
+
+bool
+isSingleElementVectorDestination(const StaticInst &inst)
+{
+    return hasMnemonicPrefix(inst, {"vmv_s_x", "vfmv_s_f", "vred", "vwred",
+                                    "vfred", "vfwred"});
+}
+
+bool
+isIndexedVectorLoad(const StaticInst &inst)
+{
+    return hasMnemonicPrefix(inst, {"vluxei", "vloxei"});
+}
+
+bool
+isVectorCompress(const StaticInst &inst)
+{
+    return hasMnemonicPrefix(inst, {"vcompress", "Vcompress"});
+}
+
+bool
+usesV0AsData(const StaticInst &inst)
+{
+    return hasMnemonicPrefix(inst, {"vmerge", "vfmerge", "vadc", "vmadc",
+                                    "vsbc", "vmsbc"});
+}
+
+size_t
+wholeVectorRegisterCount(const StaticInst &inst)
+{
+    if (hasMnemonicPrefix(inst, {"vl8re", "vmv8r"})) {
+        return 8;
+    }
+    if (hasMnemonicPrefix(inst, {"vl4re", "vmv4r"})) {
+        return 4;
+    }
+    if (hasMnemonicPrefix(inst, {"vl2re", "vmv2r"})) {
+        return 2;
+    }
+    return 1;
+}
+
+VectorDestinationLayout
+getVectorDestinationLayout(const StaticInst &inst, uint64_t vtype,
+                           uint64_t vl)
+{
+    const auto &riscv_inst =
+        dynamic_cast<const RiscvISA::RiscvStaticInst &>(inst);
+    const auto &mach_inst = riscv_inst.machInst;
+    VectorDestinationLayout layout;
+    layout.first_reg = mach_inst.vd;
+
+    if (isWholeVectorDestination(inst)) {
+        layout.num_regs = wholeVectorRegisterCount(inst);
+        layout.active_elems = layout.num_regs * RiscvISA::VLENB;
+        return layout;
+    }
+
+    if (isMaskDestination(inst)) {
+        layout.num_regs = 1;
+        layout.active_elems = std::min<uint64_t>(vl, RiscvISA::VLEN);
+        // RVV 1.0: mask-producing instructions always have agnostic tails.
+        layout.tail_agnostic = layout.mask_destination = true;
+        return layout;
+    }
+
+    const size_t sew_bytes = size_t{1} << bits(vtype, 5, 3);
+    const auto vlmul = RiscvISA::vtype_vlmul(vtype);
+    size_t dest_elem_bytes = sew_bytes;
+    int64_t dest_lmul = vlmul;
+    const bool is_vector_load =
+        inst.isLoad() || hasMnemonicPrefix(inst, "VleffEnd");
+    const bool indexed_load = isIndexedVectorLoad(inst);
+    if (is_vector_load && !indexed_load) {
+        const size_t eew_bytes = RiscvISA::width_EEW(mach_inst.width) / 8;
+        dest_elem_bytes = eew_bytes;
+        const auto vflmul = RiscvISA::getVflmul(bits(vtype, 2, 0));
+        layout.num_regs = RiscvISA::get_emul(
+            eew_bytes * 8, sew_bytes, vflmul, false);
+    } else if (hasMnemonicPrefix(inst, {"vw", "vfw"})) {
+        dest_elem_bytes *= 2;
+        ++dest_lmul;
+    }
+
+    if (!is_vector_load || indexed_load) {
+        layout.num_regs = size_t{1} << std::max<int64_t>(0, dest_lmul);
+    }
+    layout.field_count = is_vector_load ? mach_inst.nf + 1 : 1;
+    layout.num_regs *= layout.field_count;
+    layout.num_regs = std::min(layout.num_regs,
+                               size_t{NumVecRegs} - layout.first_reg);
+    layout.elem_bytes = dest_elem_bytes;
+
+    if (isSingleElementVectorDestination(inst)) {
+        layout.num_regs = 1;
+        layout.active_elems = vl == 0 ? 0 : 1;
+    } else {
+        const size_t capacity =
+            layout.num_regs * RiscvISA::VLENB / layout.elem_bytes;
+        layout.active_elems = std::min<uint64_t>(vl, capacity);
+    }
+    layout.tail_agnostic = bits(vtype, 6);
+    return layout;
+}
+
+std::array<uint8_t, RiscvISA::VLENB * NumVecRegs>
+getVectorAgnosticBits(const StaticInst &inst,
+                      const riscv64_CPU_regfile &gem5_reg_file,
+                      uint64_t vtype, uint64_t vl)
+{
+    std::array<uint8_t, RiscvISA::VLENB * NumVecRegs> mask{};
+    bool has_vector_dest = hasMnemonicPrefix(inst, "VleffEnd");
+    for (int i = 0; i < inst.numDestRegs(); ++i) {
+        if (inst.destRegIdx(i).isVecReg() &&
+            inst.destRegIdx(i).index() < NumVecRegs) {
+            has_vector_dest = true;
+            break;
+        }
+    }
+    if (!has_vector_dest) {
+        return mask;
+    }
+
+    const auto &mach_inst =
+        dynamic_cast<const RiscvISA::RiscvStaticInst &>(inst).machInst;
+    auto layout = getVectorDestinationLayout(inst, vtype, vl);
+    const size_t group_begin = layout.first_reg * RiscvISA::VLENB;
+    const size_t group_bytes = layout.num_regs * RiscvISA::VLENB;
+
+    if (layout.mask_destination) {
+        for (size_t bit = layout.active_elems;
+             bit < RiscvISA::VLEN; ++bit) {
+            mask[group_begin + bit / 8] |= uint8_t{1} << (bit % 8);
+        }
+        if (!mach_inst.vm && !usesV0AsData(inst) && bits(vtype, 7)) {
+            const auto *v0 = reinterpret_cast<const uint8_t *>(
+                &gem5_reg_file.vr[0]);
+            for (size_t bit = 0; bit < layout.active_elems; ++bit) {
+                if (!(v0[bit / 8] & (uint8_t{1} << (bit % 8)))) {
+                    mask[group_begin + bit / 8] |=
+                        uint8_t{1} << (bit % 8);
+                }
+            }
+        }
+        return mask;
+    }
+
+    const size_t field_bytes = group_bytes / layout.field_count;
+    if (isVectorCompress(inst)) {
+        const auto *selection = reinterpret_cast<const uint8_t *>(
+            &gem5_reg_file.vr[mach_inst.vs1]);
+        layout.active_elems = 0;
+        for (size_t elem = 0; elem < vl; ++elem) {
+            layout.active_elems +=
+                bool(selection[elem / 8] & (uint8_t{1} << (elem % 8)));
+        }
+    }
+    const size_t active_bytes = std::min(
+        field_bytes, layout.active_elems * layout.elem_bytes);
+    if (layout.tail_agnostic) {
+        for (size_t field = 0; field < layout.field_count; ++field) {
+            const size_t field_begin = group_begin + field * field_bytes;
+            std::fill_n(mask.begin() + field_begin + active_bytes,
+                        field_bytes - active_bytes, 0xff);
+        }
+    }
+
+    if (!mach_inst.vm && !usesV0AsData(inst) && bits(vtype, 7)) {
+        const auto *v0 = reinterpret_cast<const uint8_t *>(
+            &gem5_reg_file.vr[0]);
+        for (size_t field = 0; field < layout.field_count; ++field) {
+            const size_t field_begin = group_begin + field * field_bytes;
+            for (size_t elem = 0; elem < layout.active_elems; ++elem) {
+                if (v0[elem / 8] & (uint8_t{1} << (elem % 8))) {
+                    continue;
+                }
+                std::fill_n(mask.begin() + field_begin +
+                                elem * layout.elem_bytes,
+                            layout.elem_bytes, 0xff);
+            }
+        }
+    }
+    return mask;
+}
+
+int
+findVectorRegisterMismatch(
+    riscv64_CPU_regfile &ref_reg_file,
+    const riscv64_CPU_regfile &gem5_reg_file,
+    const std::array<uint8_t, RiscvISA::VLENB * NumVecRegs> &agnostic_bits,
+    bool &reference_updated)
+{
+    auto *ref_bytes = reinterpret_cast<uint8_t *>(&ref_reg_file.vr[0]);
+    const auto *gem5_bytes =
+        reinterpret_cast<const uint8_t *>(&gem5_reg_file.vr[0]);
+
+    for (size_t byte_idx = 0; byte_idx < agnostic_bits.size(); ++byte_idx) {
+        const uint8_t diff = ref_bytes[byte_idx] ^ gem5_bytes[byte_idx];
+        if ((diff & ~agnostic_bits[byte_idx]) != 0) {
+            return byte_idx / RiscvISA::VLENB;
+        }
+    }
+
+    for (size_t byte_idx = 0; byte_idx < agnostic_bits.size(); ++byte_idx) {
+        const uint8_t diff = ref_bytes[byte_idx] ^ gem5_bytes[byte_idx];
+        if ((diff & agnostic_bits[byte_idx]) != 0) {
+            ref_bytes[byte_idx] =
+                (ref_bytes[byte_idx] & ~agnostic_bits[byte_idx]) |
+                (gem5_bytes[byte_idx] & agnostic_bits[byte_idx]);
+            reference_updated = true;
+        }
+    }
+    return -1;
+}
+
+std::string
+formatVectorRegister(const riscv64_CPU_regfile &reg_file, int reg_idx)
+{
+    std::string value;
+
+    for (int elem = RiscvISA::NumVecElemPerVecReg - 1; elem >= 0; --elem) {
+        if (!value.empty()) {
+            value += "_";
+        }
+        value += csprintf("%016lx", reg_file.vr[reg_idx]._64[elem]);
+    }
+    return value;
+}
+
+} // anonymous namespace
 
 
 std::pair<int, bool>
@@ -1031,129 +1315,73 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     if (enableRVV) {
         if (diffInfo.inst->isVector()) {
             readGem5Regs(tid);
-            uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
-            uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
-            uint8_t* nemu_byte = (uint8_t*)&(diffAllStates->referenceRegFile.vr[0]);
-            uint8_t* gem5_byte = (uint8_t*)&(diffAllStates->gem5RegFile.vr[0]);
-            const uint64_t vtype = diffAllStates->referenceRegFile.vtype;
-            const uint64_t vl = diffAllStates->referenceRegFile.vl;
-            const bool tail_agnostic = bits(vtype, 6);
-            const uint32_t sew_bytes = 1 << bits(vtype, 5, 3);
-            const uint32_t regs_per_group = RiscvISA::vtype_regs_per_group(vtype);
-            const uint32_t elems_per_reg = RiscvISA::VLENB / sew_bytes;
-            const uint32_t vlmax = RiscvISA::vtype_VLMAX(vtype);
-            auto is_tail_agnostic_byte = [&](int byte_idx) {
-                if (!tail_agnostic || vl >= vlmax)
-                    return false;
-                const int reg_idx = byte_idx / RiscvISA::VLENB;
-                const int byte_in_reg = byte_idx % RiscvISA::VLENB;
-                auto reg_is_in_group = [&](const RegId &reg) {
-                    if (!reg.isVecReg())
-                        return false;
-                    const int vec_reg = reg.index();
-                    const int group_base = vec_reg & ~(regs_per_group - 1);
-                    if (reg_idx < group_base ||
-                        reg_idx >= group_base + regs_per_group)
-                        return false;
-                    const uint32_t elem_idx =
-                        (reg_idx - group_base) * elems_per_reg +
-                        byte_in_reg / sew_bytes;
-                    return elem_idx >= vl;
-                };
-                for (int dest_idx = 0; dest_idx < diffInfo.inst->numDestRegs();
-                     dest_idx++) {
-                    if (reg_is_in_group(diffInfo.inst->destRegIdx(dest_idx)))
-                        return true;
-                }
-                for (int src_idx = 0; src_idx < diffInfo.inst->numSrcRegs();
-                     src_idx++) {
-                    if (reg_is_in_group(diffInfo.inst->srcRegIdx(src_idx)))
-                        return true;
-                }
-                return false;
-            };
-            bool maybe_error = false;
-            int error_idx = 0;
-            for (int i = 0; i < RiscvISA::VLENB * 32; i++) {
-                if (nemu_byte[i] != gem5_byte[i] &&
-                    is_tail_agnostic_byte(i))
-                    continue;
-                if (nemu_byte[i] != gem5_byte[i]) {
-                    maybe_error = true;
-                    error_idx = (i / RiscvISA::VLENB) *
-                                RiscvISA::NumVecElemPerVecReg;
-                    break;
-                }
+            const auto agnostic_bits = getVectorAgnosticBits(
+                *diffInfo.inst, diffAllStates->gem5RegFile,
+                diffAllStates->referenceRegFile.vtype,
+                diffAllStates->referenceRegFile.vl);
+            bool reference_updated = false;
+            const int mismatch_reg = findVectorRegisterMismatch(
+                diffAllStates->referenceRegFile,
+                diffAllStates->gem5RegFile,
+                agnostic_bits, reference_updated);
+
+            if (reference_updated) {
+                // Keep both models aligned after accepting an unspecified
+                // tail-agnostic or mask-agnostic destination value.
+                diffAllStates->proxy->regcpy(
+                    &diffAllStates->referenceRegFile, DUT_TO_REF);
             }
 
-            if (maybe_error) {
-                std::string gem5_val_, nemu_val_;
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    gem5_val_ += csprintf("%016lx", gem5_val[j + error_idx]);
-                    if (j != 0) {
-                        gem5_val_+="_";
-                    }
-                }
-                for (int j=RiscvISA::NumVecElemPerVecReg-1; j>=0; j--) {
-                    nemu_val_ += csprintf("%016lx", nemu_val[j + error_idx]);
-                    if (j != 0) {
-                        nemu_val_ += "_";
-                    }
-                }
+            if (mismatch_reg >= 0) {
                 warn("May be diff at v%d\n Ref  value: %s\n GEM5 value: %s\n",
-                    (error_idx>>1), nemu_val_, gem5_val_);
+                     mismatch_reg,
+                     formatVectorRegister(diffAllStates->referenceRegFile,
+                                          mismatch_reg),
+                     formatVectorRegister(diffAllStates->gem5RegFile,
+                                          mismatch_reg));
                 diff_at = ValueDiff;
             }
         }
 
-        // vtype
-        uint64_t gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VTYPE, tid);
-        diffAllStates->gem5RegFile.vtype = gem5_val;
-        uint64_t ref_val = diffAllStates->referenceRegFile.vtype;
-        // unable highest digit comparison of vtype because the older version of NEMU (used by GCBH) did not support it well.
-        if (gem5_val % (1ULL<<63) != ref_val % (1ULL<<63)) {
+        const auto diff_vector_csr =
+            [&](int misc_reg, uint64_t &gem5_value, uint64_t ref_value,
+                const char *name, uint64_t mask = ~uint64_t{0}) {
+            gem5_value = readMiscReg(misc_reg, tid);
+            if ((gem5_value & mask) == (ref_value & mask)) {
+                return;
+            }
             warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vtype", ref_val, gem5_val);
+                 "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
+                 name, ref_value, gem5_value);
             if (!diff_at) {
                 diff_at = ValueDiff;
             }
-        }
+        };
 
-        // vstart now do not diff
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTART, tid);
-        diffAllStates->gem5RegFile.vstart = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vstart;
+        // Older NEMU versions do not reliably expose the VILL bit.
+        diff_vector_csr(RiscvISA::MISCREG_VTYPE,
+                        diffAllStates->gem5RegFile.vtype,
+                        diffAllStates->referenceRegFile.vtype, "vtype",
+                        ~(1ULL << 63));
 
-        // vxsat
-        diffAllStates->gem5RegFile.vxsat = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXSAT, tid);
-        // vxrm
-        diffAllStates->gem5RegFile.vxrm = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VXRM, tid);
-        // vcsr
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VCSR, tid);
-        diffAllStates->gem5RegFile.vcsr = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vcsr;
-        if (gem5_val != ref_val) {
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vcsr", ref_val, gem5_val);
-            if (!diff_at) {
-                diff_at = ValueDiff;
-            }
-        }
+        // vstart is not compared because asynchronous traps may legally be
+        // taken at different vector instruction boundaries by the two models.
+        diffAllStates->gem5RegFile.vstart =
+            readMiscReg(RiscvISA::MISCREG_VSTART, tid);
 
-        // vl
-        gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VL, tid);
-        diffAllStates->gem5RegFile.vl = gem5_val;
-        ref_val = diffAllStates->referenceRegFile.vl;
-        if (gem5_val != ref_val) {
-            warn("Diff at \033[31m%s\033[0m Ref value: \033[31m"
-                    "%#lx\033[0m, GEM5 value: \033[31m%#lx\033[0m\n",
-                    "vl", ref_val, gem5_val);
-            if (!diff_at) {
-                diff_at = ValueDiff;
-            }
-        }
+        // VCSR already contains VXSAT and VXRM; retain their individual
+        // values for state reporting.
+        diffAllStates->gem5RegFile.vxsat =
+            readMiscReg(RiscvISA::MISCREG_VXSAT, tid);
+        diffAllStates->gem5RegFile.vxrm =
+            readMiscReg(RiscvISA::MISCREG_VXRM, tid);
+
+        diff_vector_csr(RiscvISA::MISCREG_VCSR,
+                        diffAllStates->gem5RegFile.vcsr,
+                        diffAllStates->referenceRegFile.vcsr, "vcsr");
+        diff_vector_csr(RiscvISA::MISCREG_VL,
+                        diffAllStates->gem5RegFile.vl,
+                        diffAllStates->referenceRegFile.vl, "vl");
     }
 
     // always check some CSR regs
