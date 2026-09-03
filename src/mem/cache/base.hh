@@ -1256,6 +1256,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar partialPermissionLatency;
         statistics::Scalar partialPermissionReadConflicts;
         statistics::Scalar partialDataFillReqs;
+        statistics::Scalar partialReadMisses;
         statistics::Scalar partialCoveredLoadHits;
         statistics::Scalar partialLineWritebacks;
         statistics::Scalar partialWritebackBytes;

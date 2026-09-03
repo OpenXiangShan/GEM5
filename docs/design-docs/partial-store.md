@@ -109,7 +109,7 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 
 ## 9. 统计与验证
 
-新增 `partialPermissionReqs`、`partialPermissionLatency`、`partialDataFillReqs`、`partialCoveredLoadHits`、`partialLineWritebacks`、`partialWritebackBytes`、`partialWritebackMerges`、`partialWritebackBypasses`、`partialSnoopFills`、`partialSnoopMerges`、`partialSnoopFillLatency` 和 `partialSnoopReserveFull`。其中 snoop latency 统计从捕获 snoop 到补全数据可用的 tick，不含最终 snoop response 在互连上的返回时间。
+新增 `partialPermissionReqs`、`partialPermissionLatency`、`partialDataFillReqs`、`partialReadMisses`、`partialCoveredLoadHits`、`partialLineWritebacks`、`partialWritebackBytes`、`partialWritebackMerges`、`partialWritebackBypasses`、`partialSnoopFills`、`partialSnoopMerges`、`partialSnoopFillLatency` 和 `partialSnoopReserveFull`。其中 `partialReadMisses` 仅统计 L1D 收到的 `ReadReq` 访问 partial-valid cacheline 且请求范围未被 valid mask 覆盖的次数；snoop latency 统计从捕获 snoop 到补全数据可用的 tick，不含最终 snoop response 在互连上的返回时间。
 
 验证覆盖以下情形：
 

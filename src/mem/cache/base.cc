@@ -2394,6 +2394,11 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         blk->isPartial() && pkt->isRead() &&
         !blk->hasValidData(pkt->getOffset(blkSize), pkt->getSize());
 
+    if (cacheLevel == 1 && pkt->cmd == MemCmd::ReadReq &&
+        partial_read_miss) {
+        stats.partialReadMisses++;
+    }
+
     if (partialBlockEnabled() && blk && blk->isPartial() && pkt->isRead() &&
         !partial_read_miss) {
         stats.partialCoveredLoadHits++;
@@ -3440,6 +3445,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of reads deferred behind permission-only MSHRs"),
     ADD_STAT(partialDataFillReqs, statistics::units::Count::get(),
              "number of reads issued to complete partial blocks"),
+    ADD_STAT(partialReadMisses, statistics::units::Count::get(),
+             "number of L1D ReadReq accesses missing in partial blocks"),
     ADD_STAT(partialCoveredLoadHits, statistics::units::Count::get(),
              "number of loads covered by partial block data"),
     ADD_STAT(partialLineWritebacks, statistics::units::Count::get(),
