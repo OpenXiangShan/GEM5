@@ -61,7 +61,7 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry,
     FetchTarget stream;
     stream.startPC = startPC;
     stream.predBranchInfo = entry; // keep fields consistent
-    stream.predBTBEntries = {entry};
+    stream.setPredictedBranches({entry});
     stream.predMetas[0] = meta;
     return stream;
 }
@@ -308,7 +308,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
 
         FetchTarget stream;
         stream.startPC = 0x1000;
-        stream.predBTBEntries = c.predictedBeforeSquash;
+        stream.setPredictedBranches(c.predictedBeforeSquash);
 
         const auto ghist = stream.getGHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken);
@@ -1258,7 +1258,7 @@ TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
     FetchTarget stream;
     stream.startPC = 0x1000;
     stream.predBranchInfo = finalEntry;
-    stream.predBTBEntries = {finalEntry};
+    stream.setPredictedBranches({finalEntry});
     stream.predMetas[0] = meta;
 
     const auto outcome = createBranchOutcome(finalEntry, true, true);

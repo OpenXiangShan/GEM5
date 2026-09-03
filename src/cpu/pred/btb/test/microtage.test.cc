@@ -109,7 +109,7 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.predBTBEntries = {entry};
+    stream.setPredictedBranches({entry});
     const PredictionUpdateContext context(stream);
     PreparedUpdate update(
         context,

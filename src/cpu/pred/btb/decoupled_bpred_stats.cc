@@ -1051,7 +1051,7 @@ DecoupledBPUWithBTB::processMisprediction(
         } else {
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
-            for (auto &e: entry.predBTBEntries) {
+            for (const auto &e : entry.predictedBranches) {
                 if (e.pc == branchAddr) {
                     predBranchInBTB = true;
                     break;

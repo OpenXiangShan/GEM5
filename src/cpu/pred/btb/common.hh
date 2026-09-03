@@ -234,6 +234,40 @@ struct BTBEntry : BranchInfo
 };
 
 /**
+ * Prediction-time BTB state that must survive until history recovery or
+ * predictor training. Branch semantics and targets come from BranchOutcome.
+ */
+struct PredictedBranchSnapshot
+{
+    Addr pc = 0;
+    bool valid = false;
+    bool alwaysTaken = false;
+    int ctr = 0;
+    int source = -1;
+
+    PredictedBranchSnapshot() = default;
+
+    explicit PredictedBranchSnapshot(const BTBEntry &entry)
+        : pc(entry.pc),
+          valid(entry.valid),
+          alwaysTaken(entry.alwaysTaken),
+          ctr(entry.ctr),
+          source(entry.source)
+    {}
+
+    BTBEntry materialize(const BranchInfo &actual) const
+    {
+        BTBEntry entry;
+        static_cast<BranchInfo &>(entry) = actual;
+        entry.valid = valid;
+        entry.alwaysTaken = alwaysTaken;
+        entry.ctr = ctr;
+        entry.source = source;
+        return entry;
+    }
+};
+
+/**
  * @brief Tage prediction info for MGSC
  */
 struct TageInfoForMGSC
@@ -343,7 +377,7 @@ struct FetchTarget
 
     bool isHit;          // whether the predicted btb entry is hit
     bool falseHit;       // not used
-    std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
+    std::vector<PredictedBranchSnapshot> predictedBranches;
 
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
@@ -389,8 +423,16 @@ struct FetchTarget
          s3Source(-1)
    {
        predMetas.fill(nullptr);
-       predBTBEntries.clear();
    }
+
+    void setPredictedBranches(const std::vector<BTBEntry> &entries)
+    {
+        predictedBranches.clear();
+        predictedBranches.reserve(entries.size());
+        for (const auto &entry : entries) {
+            predictedBranches.emplace_back(entry);
+        }
+    }
 
     Addr getRealStartPC() const {
         return startPC;
@@ -400,7 +442,7 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
+        for (const auto &entry : predictedBranches) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
                 update.shamt++;
             }
@@ -416,7 +458,7 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
+        for (const auto &entry : predictedBranches) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
                 update.shamt++;
             }
@@ -486,7 +528,7 @@ struct PredictionUpdateContext
     bool isHit;
     Tick predTick;
 
-    const std::vector<BTBEntry> &predBTBEntries;
+    const std::vector<PredictedBranchSnapshot> &predictedBranches;
     const std::array<std::shared_ptr<void>, 9> &predMetas;
     const boost::dynamic_bitset<> &phistory;
     const std::queue<Addr> &previousPCs;
@@ -497,7 +539,7 @@ struct PredictionUpdateContext
           startPC(target.startPC),
           isHit(target.isHit),
           predTick(target.predTick),
-          predBTBEntries(target.predBTBEntries),
+          predictedBranches(target.predictedBranches),
           predMetas(target.predMetas),
           phistory(target.phistory),
           previousPCs(target.previousPCs)
@@ -553,16 +595,17 @@ struct PreparedUpdate
     {
         outcome = makeControlFlowOutcome(outcomeEvents);
 
-        for (const auto &entry : context.predBTBEntries) {
+        for (const auto &prediction : context.predictedBranches) {
             auto event = std::find_if(
                 outcomeEvents.begin(), outcomeEvents.end(),
-                [&entry](const BranchOutcome &resolved) {
-                    return entry.valid && entry.pc == resolved.pc;
+                [&prediction](const BranchOutcome &resolved) {
+                    return prediction.valid && prediction.pc == resolved.pc;
                 });
             if (event == outcomeEvents.end()) {
                 continue;
             }
 
+            const auto entry = prediction.materialize(branchInfo(*event));
             auto branch = makeBranchUpdate(entry, outcome, false);
             applyOutcome(branch, *event);
             branches.push_back(std::move(branch));

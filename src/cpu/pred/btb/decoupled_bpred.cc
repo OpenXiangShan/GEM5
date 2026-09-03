@@ -1303,9 +1303,11 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
 
     entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
     entry.falseHit = false;
-    entry.predBTBEntries = pred.btbEntries;
-    if (pairtageFallThroughHit && entry.predBTBEntries.empty()) {
-        entry.predBTBEntries.push_back(pairMeta->predictedFirstBlock.buildBTBEntry(pairtage->getComponentIdx()));
+    entry.setPredictedBranches(pred.btbEntries);
+    if (pairtageFallThroughHit && entry.predictedBranches.empty()) {
+        entry.predictedBranches.emplace_back(
+            pairMeta->predictedFirstBlock.buildBTBEntry(
+                pairtage->getComponentIdx()));
     }
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;

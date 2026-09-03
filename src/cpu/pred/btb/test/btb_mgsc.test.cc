@@ -343,7 +343,7 @@ struct MgscHarness
         // Training update using prediction meta
         FetchTarget update_stream;
         update_stream.startPC = start_pc;
-        update_stream.predBTBEntries = {entry};
+        update_stream.setPredictedBranches({entry});
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext update_context(update_stream);
         PreparedUpdate update(
@@ -532,7 +532,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.predBTBEntries = {entry};
+        stream.setPredictedBranches({entry});
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext context(stream);
         PreparedUpdate update(
@@ -547,7 +547,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.predBTBEntries = {entry};
+        stream.setPredictedBranches({entry});
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext context(stream);
         PreparedUpdate update(

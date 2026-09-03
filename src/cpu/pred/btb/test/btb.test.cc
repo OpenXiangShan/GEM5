@@ -156,7 +156,8 @@ predictUpdateCycle(MBTB* btb,
     // Populate predicted BTB entries in stream from stage predictions
     // Use entries from the first valid stage (delay)
     if (btb->getDelay() < stagePreds.size()) {
-        stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
+        stream.setPredictedBranches(
+            stagePreds[btb->getDelay()].btbEntries);
     }
     auto update = createPreparedUpdate(stream, branch, taken);
     btb->prepareUpdate(PredictionUpdateContext(stream), update);
@@ -479,7 +480,7 @@ TEST(PreparedUpdateTest, FiltersAndMarksResolvedBranches)
     branch_a.valid = true;
     branch_b.valid = true;
     branch_c.valid = true;
-    target.predBTBEntries = {branch_a, branch_b, branch_c};
+    target.setPredictedBranches({branch_a, branch_b, branch_c});
 
     std::vector<BranchOutcome> events = {
         createResolveEvent(0, 0, 1, branch_a, false, false),
@@ -523,7 +524,9 @@ TEST(PreparedUpdateTest, NotTakenBranchUsesActualBranchFacts)
     auto predictedIndirect =
         BTBEntry(createBranchInfo(0x1004, 0xdead, false, true));
     predictedIndirect.valid = true;
-    target.predBTBEntries = {predictedIndirect};
+    predictedIndirect.ctr = 2;
+    predictedIndirect.source = 3;
+    target.setPredictedBranches({predictedIndirect});
     const auto actualBranch =
         createBranchInfo(0x1004, 0x1008, true, false);
 
@@ -533,8 +536,11 @@ TEST(PreparedUpdateTest, NotTakenBranchUsesActualBranchFacts)
     EXPECT_EQ(update.branches[0].entry.target, 0x1008);
     EXPECT_TRUE(update.branches[0].entry.isCond);
     EXPECT_FALSE(update.branches[0].entry.isIndirect);
+    EXPECT_EQ(update.branches[0].entry.ctr, 2);
+    EXPECT_EQ(update.branches[0].entry.source, 3);
     EXPECT_EQ(update.branches[0].actualTarget, 0x1008);
-    EXPECT_EQ(target.predBTBEntries[0].target, 0xdead);
+    EXPECT_EQ(target.predictedBranches[0].ctr, 2);
+    EXPECT_EQ(target.predictedBranches[0].source, 3);
 }
 
 TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
@@ -548,7 +554,8 @@ TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
     auto unresolved = BTBEntry(createBranchInfo(0x1002, 0x1800, true));
     auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
     auto branch_c = BTBEntry(createBranchInfo(0x1008, 0x3000, true));
-    target.predBTBEntries = {branch_a, unresolved, branch_b, branch_c};
+    target.setPredictedBranches(
+        {branch_a, unresolved, branch_b, branch_c});
 
     auto resolved_a = createBranchInfo(0x1000, 0x5000, true);
     auto resolved_b = createBranchInfo(0x1004, 0x4000, true);
@@ -581,7 +588,7 @@ TEST(PreparedUpdateTest, EmptyOutcomeBlockIgnoresPredictionSnapshot)
     target.startPC = 0x1000;
     target.predTaken = true;
     target.predBranchInfo = createBranchInfo(0x1004, 0x2000, true);
-    target.predBTBEntries = {BTBEntry(target.predBranchInfo)};
+    target.setPredictedBranches({BTBEntry(target.predBranchInfo)});
 
     const std::vector<BranchOutcome> no_branches;
     PreparedUpdate update(PredictionUpdateContext(target), no_branches);
@@ -642,7 +649,8 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     meta = mbtb->getPredictionMeta();
 
     auto resolve_a = setupStream(0x1000, branch_b, true, meta);
-    resolve_a.predBTBEntries = predictions[mbtb->getDelay()].btbEntries;
+    resolve_a.setPredictedBranches(
+        predictions[mbtb->getDelay()].btbEntries);
     std::vector<BranchOutcome> resolve_events = {
         createResolveEvent(0, 0, 1, branch_a, false, false)
     };
