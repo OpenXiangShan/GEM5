@@ -32,7 +32,12 @@ DEFAULT_MARKER_TIMEOUT_SEC = 30.0
 DEFAULT_LAUNCH_RETRIES = 2
 DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
 DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
+NO_ELIGIBLE_SERVERS_EXIT_CODE = 75
 ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+class NoEligibleServersError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -841,7 +846,7 @@ def filter_servers_by_idle(
             f"{server.name}: {server.idle_probe_error or server.idle_cpus}"
             for server in servers
         )
-        raise RuntimeError(
+        raise NoEligibleServersError(
             f"no servers satisfy --require-idle-cpus={require_idle_cpus}. {details}"
         )
     return selected
@@ -1300,6 +1305,9 @@ def main(argv: list[str]) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main(sys.argv[1:]))
+    except NoEligibleServersError as exc:
+        print(f"distributed_sim.py: error: {exc}", file=sys.stderr)
+        raise SystemExit(NO_ELIGIBLE_SERVERS_EXIT_CODE)
     except Exception as exc:
         print(f"distributed_sim.py: error: {exc}", file=sys.stderr)
         raise SystemExit(1)
