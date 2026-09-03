@@ -504,15 +504,15 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     bool use_sc_pred = forceUseSC;  // Force use SC if configured
     if (!use_sc_pred) {
         if (tage_info.tage_pred_conf_high) {
-            if (abs(total_sum) > total_thres / 2) {
+            if (abs(total_sum) > total_thres) {
                 use_sc_pred = true;
             }
         } else if (tage_info.tage_pred_conf_mid) {
-            if (abs(total_sum) > total_thres / 4) {
+            if (abs(total_sum) > total_thres / 2) {
                 use_sc_pred = true;
             }
         } else if (tage_info.tage_pred_conf_low) {
-            if (abs(total_sum) > total_thres / 8) {
+            if (abs(total_sum) > total_thres / 4) {
                 use_sc_pred = true;
             }
         }
@@ -915,8 +915,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 #ifndef UNIT_TEST
     // Write trace record
     if (enableDB && (focusBranchPC == 0 || entry.pc == focusBranchPC)) {
-        auto effective_gate = pred.tage_conf_high ? (total_thres / 2)
-            : (pred.tage_conf_mid ? (total_thres / 4) : (total_thres / 8));
+        auto effective_gate = pred.tage_conf_high ? total_thres
+            : (pred.tage_conf_mid ? (total_thres / 2) : (total_thres / 4));
         auto margin = std::abs(total_sum) - effective_gate;
         auto indexAt = [](const std::vector<unsigned> &indices, size_t idx) -> uint64_t {
             return idx < indices.size() ? indices[idx] : 0;

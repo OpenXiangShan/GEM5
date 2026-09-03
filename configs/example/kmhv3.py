@@ -129,6 +129,13 @@ def setKmhV3Params(args, system):
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
+            cpu.branchPred.mgsc.enableBwTable = False
+            cpu.branchPred.mgsc.enableLTable = False
+            cpu.branchPred.mgsc.enableITable = False
+            cpu.branchPred.mgsc.enableGTable = True
+            cpu.branchPred.mgsc.enablePTable = False
+            cpu.branchPred.mgsc.enableBiasTable = False
+            cpu.branchPred.mgsc.enablePCThreshold = True
             cpu.branchPred.ras.enabled = True
 
             if getattr(args, 'standalone_sc', False):
