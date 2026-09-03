@@ -1812,6 +1812,16 @@ class DynInst : public ExecContext, public RefCounted
     /** get golden */
     uint8_t *getGolden() { return goldenData; }
 
+    void
+    recordVPObservedLoadResult(uint32_t latency_cycles, bool cache_hit,
+            bool critical_load = false)
+    {
+        vpObservedLoadLatencyCycles = latency_cycles;
+        vpObservedCacheHit = cache_hit;
+        vpCriticalLoad = critical_load;
+        vpTrainInfoValid = true;
+    }
+
     /** value prediction */
     valuepred::VPResult vpResult = {false, 0xdeadbeefULL};
     std::unique_ptr<valuepred::VPPredictionRecord> vpRecord = nullptr;
@@ -1820,6 +1830,10 @@ class DynInst : public ExecContext, public RefCounted
     RegVal actualValue = 0xdeadbeefULL;
     bool vpMisprediction = false;
     bool vpSupported = false;
+    uint32_t vpObservedLoadLatencyCycles = 0;
+    bool vpObservedCacheHit = false;
+    bool vpTrainInfoValid = false;
+    bool vpCriticalLoad = false;
 
     bool canLVP(){
         return isLoad() && !isVector() && !isLoadReserved();
