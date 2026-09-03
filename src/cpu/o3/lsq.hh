@@ -1181,7 +1181,11 @@ class LSQ
         return (a >> dcacheBankOffsetBits) & (numBank - 1);
     }
 
-    bool loadBankConflictedCheck(Addr vaddr, unsigned size);
+    bool loadBankConflictedCheck(
+        const DynInstPtr &inst, Addr vaddr, unsigned size);
+
+    /** Release loser-first priority after the blocked load makes progress. */
+    void complete_load_bank_wait(const DynInstPtr &inst);
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
@@ -1414,6 +1418,10 @@ class LSQ
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
     std::vector<std::vector<bool>> bankOccupied;
+    /** Per-cycle owner for banks claimed by loads, not main-pipe traffic. */
+    std::vector<std::vector<ThreadID>> bankLoadOwner;
+    /** First cross-thread bank-conflict loser awaiting a cache grant. */
+    DynInstPtr bankConflictWaiter;
 
     void notifyDcacheRefill(
         Addr addr, bool need_data_read = true,

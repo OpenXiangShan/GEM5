@@ -616,6 +616,9 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     storeBuffer.setData(store_buffer_entries);
     storeBuffer.setMaxThread(numThreads);
     bankOccupied.resize(dcacheSetDivNum, std::vector<bool>(numBank, false));
+    bankLoadOwner.resize(
+        dcacheSetDivNum,
+        std::vector<ThreadID>(numBank, InvalidThreadID));
 }
 
 
@@ -683,6 +686,7 @@ LSQ::takeOverFrom()
 {
     usedStorePorts = 0;
     _cacheBlocked = false;
+    bankConflictWaiter = nullptr;
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread[tid].takeOverFrom();
@@ -971,6 +975,8 @@ LSQ::markDcacheMainPipeBusyBanks()
     for (unsigned div = 0; div < dcacheSetDivNum; ++div) {
         std::fill(bankOccupied.at(div).begin(), bankOccupied.at(div).end(),
                   false);
+        std::fill(bankLoadOwner.at(div).begin(), bankLoadOwner.at(div).end(),
+                  InvalidThreadID);
     }
 
     auto mark_banks = [this](const DcacheMainPipeRequest &req,
@@ -1168,11 +1174,14 @@ LSQ::getDcacheDivBankSetKey(Addr vaddr) const
 }
 
 bool
-LSQ::loadBankConflictedCheck(Addr vaddr, unsigned size)
+LSQ::loadBankConflictedCheck(
+    const DynInstPtr &inst, Addr vaddr, unsigned size)
 {
     if (!enableBankConflictCheck || size == 0) {
         return false;
     }
+
+    const ThreadID tid = inst->threadNumber;
 
     struct TouchedBank
     {
@@ -1200,23 +1209,49 @@ LSQ::loadBankConflictedCheck(Addr vaddr, unsigned size)
 
     // Probe every target bank before claiming any of them. A failed
     // multi-bank load will not update bankOccupied and recentlyloadAddr.
+    bool bank_conflict = false;
+    bool cross_thread_conflict = false;
     for (auto &bank : touched_banks) {
         bank.recentlyAccessed = recentlyloadAddr.contains(bank.key);
         if (!bank.recentlyAccessed &&
             bankOccupied[bank.div][bank.bankIndex]) {
-            return true;
+            bank_conflict = true;
+            const ThreadID owner =
+                bankLoadOwner[bank.div][bank.bankIndex];
+            cross_thread_conflict |=
+                owner != InvalidThreadID && owner != tid;
         }
+    }
+
+    if (bank_conflict) {
+        // Do not let later losers replace an unserved waiter. Once this
+        // exact load gets a cache grant, a later conflict can become next.
+        if (cross_thread_conflict &&
+            (!bankConflictWaiter || bankConflictWaiter->isSquashed() ||
+             !bankConflictWaiter->isInROB())) {
+            bankConflictWaiter = inst;
+        }
+        return true;
     }
 
     // Occupy the banks and insert new keys to recentlyloadAddr.
     for (const auto &bank : touched_banks) {
         bankOccupied[bank.div][bank.bankIndex] = true;
+        bankLoadOwner[bank.div][bank.bankIndex] = tid;
         if (!bank.recentlyAccessed) {
             recentlyloadAddr.insert(bank.key, {});
         }
     }
 
     return false;
+}
+
+void
+LSQ::complete_load_bank_wait(const DynInstPtr &inst)
+{
+    if (bankConflictWaiter == inst) {
+        bankConflictWaiter = nullptr;
+    }
 }
 
 void
@@ -1374,14 +1409,35 @@ LSQ::recordStoreQueueReplay(const DynInstPtr &inst)
 void
 LSQ::executePipeSx()
 {
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
-        thread[tid].executePipeSx();
+    if (!activeThreads || activeThreads->empty()) {
+        bankConflictWaiter = nullptr;
+        return;
     }
+
+    auto priority = activeThreads->end();
+    if (bankConflictWaiter && !bankConflictWaiter->isSquashed() &&
+        bankConflictWaiter->isInROB()) {
+        priority = std::find(
+            activeThreads->begin(), activeThreads->end(),
+            bankConflictWaiter->threadNumber);
+    }
+
+    if (priority == activeThreads->end()) {
+        bankConflictWaiter = nullptr;
+        priority = activeThreads->begin();
+    }
+
+    // Keep the active-thread list untouched and only choose a circular
+    // starting point for this LSQ pipeline pass.
+    auto execute_threads = [this](auto begin, auto end) {
+        while (begin != end) {
+            const ThreadID tid = *begin++;
+            thread[tid].executePipeSx();
+        }
+    };
+
+    execute_threads(priority, activeThreads->end());
+    execute_threads(activeThreads->begin(), priority);
 }
 
 Fault
