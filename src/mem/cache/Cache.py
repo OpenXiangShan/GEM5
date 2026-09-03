@@ -195,6 +195,10 @@ class BaseCache(ClockedObject):
         False,
         "Acquire write permission without fetching data for partial L1D stores",
     )
+    partial_store_granularity = Param.Unsigned(
+        1,
+        "Partial-store valid-data granularity in bytes (1, 4, or 8)",
+    )
     enable_partial_writeback_allocate = Param.Bool(
         False,
         "Allocate partial cache blocks on masked dirty writeback misses",

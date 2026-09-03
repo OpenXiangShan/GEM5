@@ -437,7 +437,7 @@ MSHR::deallocate()
  */
 void
 MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
-                     bool alloc_on_fill)
+                     bool alloc_on_fill, bool force_defer)
 {
     // assume we'd never issue a prefetch when we've got an
     // outstanding miss
@@ -458,7 +458,8 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
     //   another read request that will downgrade our writable block
     //   to non-writable (Shared or Owned)
     PacketPtr tgt_pkt = targets.front().pkt;
-    if ((inService && missKind == MissKind::PartialPermission &&
+    if (force_defer ||
+        (inService && missKind == MissKind::PartialPermission &&
          !pkt->isWrite()) ||
         pkt->req->isCacheMaintenance() ||
         tgt_pkt->req->isCacheMaintenance() ||
@@ -785,40 +786,85 @@ MSHR::promoteDeferredTargets()
 }
 
 bool
-MSHR::deferredTargetsCovered(const std::vector<bool> &valid_mask) const
+MSHR::promoteDeferredTargetsCovered(const std::vector<bool> &valid_mask,
+                                    unsigned granularity)
 {
     assert(valid_mask.size() == blkSize);
+    assert(granularity > 0 && blkSize % granularity == 0);
     auto covered = valid_mask;
 
-    for (const auto &target : deferredTargets) {
-        const PacketPtr pkt = target.pkt;
+    auto last = deferredTargets.begin();
+    for (; last != deferredTargets.end(); ++last) {
+        const PacketPtr pkt = last->pkt;
         const unsigned offset = pkt->getOffset(blkSize);
         assert(offset + pkt->getSize() <= blkSize);
+        bool can_promote = true;
 
         if (pkt->isWrite()) {
+            const std::vector<bool> *byte_enable = nullptr;
             if (pkt->isMaskedWrite()) {
-                const auto &byte_enable = pkt->req->getByteEnable();
-                assert(byte_enable.size() == pkt->getSize());
-                for (unsigned i = 0; i < pkt->getSize(); ++i) {
-                    if (byte_enable[i]) {
-                        covered[offset + i] = true;
-                    }
+                byte_enable = &pkt->req->getByteEnable();
+                assert(byte_enable->size() == pkt->getSize());
+            }
+            auto written = [&](unsigned byte) {
+                if (byte < offset || byte >= offset + pkt->getSize()) {
+                    return false;
                 }
-            } else {
-                std::fill(covered.begin() + offset,
-                          covered.begin() + offset + pkt->getSize(), true);
+                return pkt->isMaskedWrite() ?
+                    (*byte_enable)[byte - offset] : true;
+            };
+
+            for (unsigned granule_begin = 0; granule_begin < blkSize;
+                 granule_begin += granularity) {
+                const unsigned granule_end = granule_begin + granularity;
+                bool touched = false;
+                bool complete = true;
+                for (unsigned byte = granule_begin; byte < granule_end;
+                     ++byte) {
+                    const bool byte_written = written(byte);
+                    touched |= byte_written;
+                    complete &= byte_written;
+                }
+                if (touched && !covered[granule_begin] && !complete) {
+                    can_promote = false;
+                    break;
+                }
+            }
+
+            if (!can_promote) {
+                break;
+            }
+
+            for (unsigned i = 0; i < pkt->getSize(); ++i) {
+                if (written(offset + i)) {
+                    covered[offset + i] = true;
+                }
             }
         } else if (pkt->isRead()) {
             if (!std::all_of(covered.begin() + offset,
                              covered.begin() + offset + pkt->getSize(),
                              [](bool valid) { return valid; })) {
-                return false;
+                can_promote = false;
             }
         } else {
-            return false;
+            can_promote = false;
+        }
+
+        if (!can_promote) {
+            break;
         }
     }
 
+    deferredTargets.clearDownstreamPending(deferredTargets.begin(), last);
+    targets.splice(targets.end(), deferredTargets,
+                   deferredTargets.begin(), last);
+    deferredTargets.populateFlags();
+    targets.populateFlags();
+    if (targets.empty()) {
+        return false;
+    }
+    order = targets.front().order;
+    readyTime = std::max(curTick(), targets.front().readyTime);
     return true;
 }
 

@@ -1436,6 +1436,16 @@ class BaseCache : public ClockedObject, public CacheAccessor
         return enablePartialStore || enablePartialWritebackAllocate;
     }
 
+    bool isPartialStorePermissionRequest(PacketPtr pkt) const
+    {
+        return enablePartialStore && pkt->cmd == MemCmd::WriteReq &&
+            pkt->isMaskedWrite() &&
+            pkt->isDcacheMainPipeSbufferReq() &&
+            isMaskComposedOfAlignedBlocks(
+                pkt->getAddr(), pkt->req->getByteEnable(),
+                partialStoreGranularityBytes);
+    }
+
     size_t
     getActualSliceNum() const
     {
@@ -1452,9 +1462,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
                                         pkt, time, order++,
                                         allocOnFill(pkt->cmd));
 
-        if (enablePartialStore && pkt->cmd == MemCmd::WriteReq &&
-            pkt->isMaskedWrite() &&
-            pkt->isDcacheMainPipeSbufferReq()) {
+        if (isPartialStorePermissionRequest(pkt)) {
             mshr->setMissKind(MSHR::MissKind::PartialPermission);
         }
 
@@ -1721,6 +1729,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     const bool enablePartialStore;
     const bool enablePartialWritebackAllocate;
+    const unsigned partialStoreGranularityBytes;
 
     //const unsigned maxCacheLevel;
 

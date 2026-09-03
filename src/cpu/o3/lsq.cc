@@ -75,6 +75,7 @@
 #include "debug/StoreBuffer.hh"
 #include "debug/TagReadFail.hh"
 #include "debug/Writeback.hh"
+#include "mem/cache/cache_blk.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"

@@ -125,6 +125,77 @@ TEST(PartialStoreTest, ValidMaskGrowsAndBecomesFull)
     EXPECT_TRUE(blk.hasValidData(0, BlkSize));
 }
 
+TEST(PartialStoreTest, GranularValidMaskRequiresCompleteWrites)
+{
+    CacheBlk blk;
+    blk.insert(TestAddr, false);
+    blk.markPartial(BlkSize, 4);
+
+    std::vector<bool> one_byte(BlkSize, false);
+    one_byte[8] = true;
+    Packet one_byte_write(makeRequest(one_byte), MemCmd::WriteReq);
+    one_byte_write.allocate();
+    EXPECT_FALSE(blk.canWrite(&one_byte_write, BlkSize));
+    blk.markValidData(&one_byte_write, BlkSize);
+    EXPECT_FALSE(blk.hasValidData(8, 1));
+
+    std::vector<bool> one_word(BlkSize, false);
+    std::fill(one_word.begin() + 8, one_word.begin() + 12, true);
+    Packet one_word_write(makeRequest(one_word), MemCmd::WriteReq);
+    one_word_write.allocate();
+    EXPECT_TRUE(blk.canWrite(&one_word_write, BlkSize));
+    blk.markValidData(&one_word_write, BlkSize);
+    EXPECT_TRUE(blk.hasValidData(8, 1));
+    EXPECT_TRUE(blk.hasValidData(8, 4));
+
+    const auto byte_mask = blk.getValidMask();
+    EXPECT_EQ(byte_mask.size(), BlkSize);
+    EXPECT_TRUE(std::all_of(byte_mask.begin() + 8,
+                            byte_mask.begin() + 12,
+                            [](bool valid) { return valid; }));
+    EXPECT_FALSE(byte_mask[7]);
+    EXPECT_FALSE(byte_mask[12]);
+}
+
+TEST(PartialStoreTest, EightByteGranularValidMaskMergesFill)
+{
+    std::vector<uint8_t> block_data(BlkSize, 0x05);
+    std::vector<uint8_t> fill_data(BlkSize, 0x6d);
+    CacheBlk blk;
+    blk.data = block_data.data();
+    blk.insert(TestAddr, false);
+    blk.markPartial(BlkSize, 8);
+
+    std::vector<bool> store_mask(BlkSize, false);
+    std::fill(store_mask.begin() + 16, store_mask.begin() + 24, true);
+    Packet store(makeRequest(store_mask), MemCmd::WriteReq);
+    store.allocate();
+    blk.markValidData(&store, BlkSize);
+    std::fill(block_data.begin() + 16, block_data.begin() + 24, 0xa5);
+
+    EXPECT_TRUE(blk.mergePartialFill(fill_data.data(), BlkSize));
+    EXPECT_TRUE(std::all_of(block_data.begin() + 16,
+                            block_data.begin() + 24,
+                            [](uint8_t byte) { return byte == 0xa5; }));
+    EXPECT_EQ(block_data[15], 0x6d);
+    EXPECT_EQ(block_data[24], 0x6d);
+}
+
+TEST(PartialStoreTest, AlignedGranuleMaskClassification)
+{
+    std::vector<bool> mask(BlkSize, false);
+    std::fill(mask.begin() + 8, mask.begin() + 16, true);
+
+    EXPECT_TRUE(isMaskComposedOfAlignedBlocks(TestAddr, mask, 1));
+    EXPECT_TRUE(isMaskComposedOfAlignedBlocks(TestAddr, mask, 4));
+    EXPECT_TRUE(isMaskComposedOfAlignedBlocks(TestAddr, mask, 8));
+
+    mask[10] = false;
+    EXPECT_TRUE(isMaskComposedOfAlignedBlocks(TestAddr, mask, 1));
+    EXPECT_FALSE(isMaskComposedOfAlignedBlocks(TestAddr, mask, 4));
+    EXPECT_FALSE(isMaskComposedOfAlignedBlocks(TestAddr, mask, 8));
+}
+
 TEST(PartialStoreTest, FullyCoveredBlockRejectsOlderPartialFill)
 {
     CacheBlk blk;

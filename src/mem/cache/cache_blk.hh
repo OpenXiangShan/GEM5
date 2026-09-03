@@ -66,6 +66,35 @@ namespace gem5
 {
 
 /**
+ * Check whether a byte mask is composed of complete, aligned blocks of the
+ * requested size. At least one block must be enabled.
+ */
+inline bool
+isMaskComposedOfAlignedBlocks(Addr addr,
+                              const std::vector<bool> &byte_enable,
+                              unsigned block_size)
+{
+    if (block_size == 0 || addr % block_size != 0 ||
+        byte_enable.empty() || byte_enable.size() % block_size != 0) {
+        return false;
+    }
+
+    bool has_covered_block = false;
+    for (size_t offset = 0; offset < byte_enable.size();
+         offset += block_size) {
+        const bool block_covered = byte_enable[offset];
+        for (size_t byte = offset + 1; byte < offset + block_size; ++byte) {
+            if (byte_enable[byte] != block_covered) {
+                return false;
+            }
+        }
+        has_covered_block |= block_covered;
+    }
+
+    return has_covered_block;
+}
+
+/**
  * A Basic Cache block.
  * Contains information regarding its coherence, prefetching status, as
  * well as a pointer to its data.
@@ -114,9 +143,11 @@ class CacheBlk : public TaggedEntry
   private:
     /**
      * A partial block has permission for the line, but only the bytes set in
-     * validMask contain usable data. Normal blocks leave the mask empty.
+     * validMask's granules contain usable data. Normal blocks leave the mask
+     * empty.
      */
     bool partialData = false;
+    unsigned validGranularity = 1;
     std::vector<bool> validMask;
 
   protected:
@@ -204,6 +235,7 @@ class CacheBlk : public TaggedEntry
         setSrcRequestorId(other.getSrcRequestorId());
         std::swap(lockList, other.lockList);
         partialData = other.partialData;
+        validGranularity = other.validGranularity;
         validMask = std::move(other.validMask);
 
         other.invalidate();
@@ -231,30 +263,57 @@ class CacheBlk : public TaggedEntry
         setSrcRequestorId(Request::invldRequestorId);
         lockList.clear();
         partialData = false;
+        validGranularity = 1;
         validMask.clear();
     }
 
     bool isPartial() const { return isValid() && partialData; }
 
     void
-    markPartial(unsigned blk_size)
+    markPartial(unsigned blk_size, unsigned granularity = 1)
     {
         assert(isValid());
+        assert(granularity > 0);
+        assert(blk_size % granularity == 0);
         partialData = true;
-        validMask = std::vector<bool>(blk_size, false);
+        validGranularity = granularity;
+        validMask = std::vector<bool>(blk_size / granularity, false);
     }
 
     void
     clearPartial()
     {
         partialData = false;
+        validGranularity = 1;
         validMask.clear();
     }
 
-    const std::vector<bool> &getValidMask() const
+    unsigned getValidGranularity() const
+    {
+        assert(isPartial());
+        return validGranularity;
+    }
+
+    const std::vector<bool> &getValidGranuleMask() const
     {
         assert(isPartial());
         return validMask;
+    }
+
+    /** Return the valid data state as the byte mask used by packets. */
+    std::vector<bool> getValidMask() const
+    {
+        assert(isPartial());
+        std::vector<bool> byte_mask(validMask.size() * validGranularity,
+                                    false);
+        for (unsigned granule = 0; granule < validMask.size(); ++granule) {
+            if (validMask[granule]) {
+                std::fill(byte_mask.begin() + granule * validGranularity,
+                          byte_mask.begin() + (granule + 1) * validGranularity,
+                          true);
+            }
+        }
+        return byte_mask;
     }
 
     bool
@@ -263,10 +322,58 @@ class CacheBlk : public TaggedEntry
         if (!isPartial()) {
             return true;
         }
-        assert(offset + size <= validMask.size());
-        return std::all_of(validMask.begin() + offset,
-                           validMask.begin() + offset + size,
+        const unsigned byte_size = validMask.size() * validGranularity;
+        assert(offset + size <= byte_size);
+        const unsigned first_granule = offset / validGranularity;
+        const unsigned last_granule =
+            (offset + size + validGranularity - 1) / validGranularity;
+        return std::all_of(validMask.begin() + first_granule,
+                           validMask.begin() + last_granule,
                            [](bool valid) { return valid; });
+    }
+
+    /**
+     * Check whether this write can update all newly touched invalid granules
+     * without first fetching their old bytes.
+     */
+    bool
+    canWrite(const PacketPtr pkt, unsigned blk_size) const
+    {
+        assert(isPartial());
+        assert(validMask.size() * validGranularity == blk_size);
+        const unsigned offset = pkt->getOffset(blk_size);
+        assert(offset + pkt->getSize() <= blk_size);
+
+        const std::vector<bool> *byte_enable = nullptr;
+        if (pkt->isMaskedWrite()) {
+            byte_enable = &pkt->req->getByteEnable();
+            assert(byte_enable->size() == pkt->getSize());
+        }
+        auto covered = [&](unsigned byte) {
+            if (byte < offset || byte >= offset + pkt->getSize()) {
+                return false;
+            }
+            return pkt->isMaskedWrite() ? (*byte_enable)[byte - offset] : true;
+        };
+
+        for (unsigned granule = 0; granule < validMask.size(); ++granule) {
+            const unsigned begin = granule * validGranularity;
+            const unsigned end = begin + validGranularity;
+            bool touched = false;
+            for (unsigned byte = begin; byte < end; ++byte) {
+                touched |= covered(byte);
+            }
+            if (!touched || validMask[granule]) {
+                continue;
+            }
+            for (unsigned byte = begin; byte < end; ++byte) {
+                if (!covered(byte)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     void
@@ -274,19 +381,30 @@ class CacheBlk : public TaggedEntry
     {
         assert(isPartial());
         const unsigned offset = pkt->getOffset(blk_size);
-        assert(offset + pkt->getSize() <= validMask.size());
+        assert(offset + pkt->getSize() <= blk_size);
 
+        const std::vector<bool> *byte_enable = nullptr;
         if (pkt->isMaskedWrite()) {
-            const auto &byte_enable = pkt->req->getByteEnable();
-            assert(byte_enable.size() == pkt->getSize());
-            for (unsigned i = 0; i < pkt->getSize(); ++i) {
-                if (byte_enable[i]) {
-                    validMask[offset + i] = true;
-                }
+            byte_enable = &pkt->req->getByteEnable();
+            assert(byte_enable->size() == pkt->getSize());
+        }
+        auto covered = [&](unsigned byte) {
+            if (byte < offset || byte >= offset + pkt->getSize()) {
+                return false;
             }
-        } else {
-            std::fill(validMask.begin() + offset,
-                      validMask.begin() + offset + pkt->getSize(), true);
+            return pkt->isMaskedWrite() ? (*byte_enable)[byte - offset] : true;
+        };
+
+        for (unsigned granule = 0; granule < validMask.size(); ++granule) {
+            const unsigned begin = granule * validGranularity;
+            const unsigned end = begin + validGranularity;
+            bool complete = true;
+            for (unsigned byte = begin; byte < end; ++byte) {
+                complete &= covered(byte);
+            }
+            if (complete) {
+                validMask[granule] = true;
+            }
         }
 
         if (std::all_of(validMask.begin(), validMask.end(),
@@ -306,9 +424,9 @@ class CacheBlk : public TaggedEntry
             return false;
         }
 
-        assert(validMask.size() == blk_size);
+        assert(validMask.size() * validGranularity == blk_size);
         for (unsigned i = 0; i < blk_size; ++i) {
-            if (!validMask[i]) {
+            if (!validMask[i / validGranularity]) {
                 data[i] = fill_data[i];
             }
         }

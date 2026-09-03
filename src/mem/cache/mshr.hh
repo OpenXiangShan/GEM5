@@ -505,7 +505,7 @@ class MSHR : public QueueEntry, public Printable
      * @param target The target.
      */
     void allocateTarget(PacketPtr target, Tick when, Counter order,
-                        bool alloc_on_fill);
+                        bool alloc_on_fill, bool force_defer = false);
     void allocateSnoopTarget(PacketPtr target, Tick when, Counter order);
     bool handleSnoop(PacketPtr target, Counter order);
 
@@ -572,11 +572,11 @@ class MSHR : public QueueEntry, public Printable
     bool promoteDeferredTargets();
 
     /**
-     * Determine whether deferred partial-store targets can be serviced from
-     * the currently valid bytes. Stores are applied to a temporary mask in
-     * target order so a later load can be covered by an earlier store.
+     * Promote the longest deferred prefix that can be serviced with the
+     * currently valid bytes and the cache's partial-data granularity.
      */
-    bool deferredTargetsCovered(const std::vector<bool> &valid_mask) const;
+    bool promoteDeferredTargetsCovered(const std::vector<bool> &valid_mask,
+                                       unsigned granularity);
 
     /**
      * Promotes deferred targets that do not require writable

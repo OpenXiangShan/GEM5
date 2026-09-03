@@ -193,11 +193,21 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cacheLevel(p.cache_level),
       enablePartialStore(p.enable_partial_store),
       enablePartialWritebackAllocate(p.enable_partial_writeback_allocate),
+      partialStoreGranularityBytes(p.partial_store_granularity),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
       doFastWriteline(p.do_fast_writeline),
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
+    fatal_if(partialStoreGranularityBytes != 1 &&
+             partialStoreGranularityBytes != 4 &&
+             partialStoreGranularityBytes != 8,
+             "%s: partial store granularity must be 1, 4, or 8 bytes",
+             name());
+    fatal_if(blkSize % partialStoreGranularityBytes != 0,
+             "%s: partial store granularity must divide the cache line size",
+             name());
+
     // Normal requests check the MSHR queue before allocation. Partial-store
     // snoops cannot be retried, so they use emergency reserve entries. The
     // write queue has as many reserve entries as we have MSHRs, since every
@@ -624,7 +634,8 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 if (partialStoreEnabled() &&
                     mshr->getMissKind() ==
                         MSHR::MissKind::PartialPermission &&
-                    !pkt->isWrite()) {
+                    (!pkt->isWrite() ||
+                     !isPartialStorePermissionRequest(pkt))) {
                     stats.partialPermissionReadConflicts++;
                     DPRINTF(PartialStore,
                             "Deferring %s behind permission-only MSHR\n",
@@ -636,6 +647,10 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 if (!checkAndAllocateMSHRCycle(pkt)) {
                     return;
                 }
+                const bool defer_partial_store =
+                    mshr->getMissKind() == MSHR::MissKind::PartialPermission &&
+                    (!pkt->isWrite() ||
+                     !isPartialStorePermissionRequest(pkt));
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
                 // requests for the same address here. It
@@ -644,7 +659,8 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // port and also takes into account the additional
                 // delay of the xbar.
                 mshr->allocateTarget(pkt, forward_time, order++,
-                                     allocOnFill(pkt->cmd));
+                                     allocOnFill(pkt->cmd),
+                                     defer_partial_store);
                 if (mshr->getNumTargets() >= numTarget) {
                     noTargetMSHR = mshr;
                     setBlocked(Blocked_NoTargets);
@@ -689,7 +705,8 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     !blk->isSet(CacheBlk::WritableBit)) ||
                     pkt->req->isCacheMaintenance() ||
                     (partialBlockEnabled() && blk->isPartial() &&
-                     pkt->isRead()));
+                     (pkt->isRead() ||
+                      (pkt->isWrite() && !blk->canWrite(pkt, blkSize)))));
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
             // MSHR arbiter: per-cycle grant limit is configurable via
@@ -702,7 +719,8 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // lookupLatency component.
             MSHR *new_mshr = allocateMissBuffer(pkt, forward_time);
             if (partialBlockEnabled() && blk && blk->isPartial() &&
-                pkt->isRead()) {
+                (pkt->isRead() ||
+                 (pkt->isWrite() && !blk->canWrite(pkt, blkSize)))) {
                 new_mshr->setMissKind(MSHR::MissKind::PartialDataFill);
             }
 
@@ -1243,9 +1261,11 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     if (partialStoreEnabled() && pkt->cmd == MemCmd::StorePermResp &&
         blk && blk->isValid() && !mshr->hasLockedRMWReadTarget()) {
-        const bool deferred_covered = !blk->isPartial() ||
-            mshr->deferredTargetsCovered(blk->getValidMask());
-        if (deferred_covered && mshr->promoteDeferredTargets()) {
+        const bool promoted = blk->isPartial() ?
+            mshr->promoteDeferredTargetsCovered(
+                blk->getValidMask(), blk->getValidGranularity()) :
+            mshr->promoteDeferredTargets();
+        if (promoted) {
             serviceMSHRTargets(mshr, pkt, blk);
         }
     }
@@ -1280,7 +1300,9 @@ BaseCache::recvTimingResp(PacketPtr pkt)
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
             if (partialBlockEnabled() && blk && blk->isPartial() &&
-                mshr->getTarget()->pkt->isRead()) {
+                (mshr->getTarget()->pkt->isRead() ||
+                 (mshr->getTarget()->pkt->isWrite() &&
+                  !blk->canWrite(mshr->getTarget()->pkt, blkSize)))) {
                 mshr->setMissKind(MSHR::MissKind::PartialDataFill);
             }
             mshrQueue.markPending(mshr);
@@ -2393,6 +2415,9 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     const bool partial_read_miss = partialBlockEnabled() && blk &&
         blk->isPartial() && pkt->isRead() &&
         !blk->hasValidData(pkt->getOffset(blkSize), pkt->getSize());
+    const bool partial_write_miss = partialBlockEnabled() && blk &&
+        blk->isPartial() && pkt->isWrite() &&
+        !blk->canWrite(pkt, blkSize);
 
     if (cacheLevel == 1 && pkt->cmd == MemCmd::ReadReq &&
         partial_read_miss) {
@@ -2404,7 +2429,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         stats.partialCoveredLoadHits++;
     }
 
-    if (blk && !partial_read_miss && (pkt->needsWritable() ?
+    if (blk && !partial_read_miss && !partial_write_miss &&
+        (pkt->needsWritable() ?
             blk->isSet(CacheBlk::WritableBit) :
             blk->isSet(CacheBlk::ReadableBit))) {
         DPRINTF(Cache, "need writable: %d, is writable: %d, need resp: %d\n",
@@ -2545,7 +2571,7 @@ BaseCache::handleFill(
 
     if (partialStoreEnabled() && pkt->cmd == MemCmd::StorePermResp) {
         assert(!has_old_data);
-        blk->markPartial(blkSize);
+        blk->markPartial(blkSize, partialStoreGranularityBytes);
     }
 
     blk->setCoherenceBits(CacheBlk::ReadableBit);

@@ -687,6 +687,12 @@ def addXiangshanCommonOptions(parser):
         action="store_false",
         dest="enable_partial_store",
         help="use the baseline read-for-ownership path for partial stores")
+    parser.add_argument(
+        "--partial-store-granularity",
+        type=int,
+        choices=(1, 4, 8),
+        default=1,
+        help="valid-data granularity for permission-only partial stores")
     parser.set_defaults(enable_partial_writeback_allocate=None)
     parser.add_argument(
         "--enable-partial-writeback-allocate",

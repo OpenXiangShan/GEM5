@@ -4,7 +4,7 @@
 
 当前 classic cache 在 partial store miss 时发送 `ReadExReq`，同时取得写权限和完整 cacheline 数据。目标是在单核、无多核 snoop 的场景中，将该路径改为只申请权限，避免不必要的下层和 DDR 读流量。单核内 DTB walker 等 coherent client 发出的 shared read 仍需正确处理。
 
-当前实现只覆盖 classic timing L1D 的普通 cacheable StoreBuffer 写，不支持 Ruby、多核 snoop、AMO、LL/SC、uncacheable、压缩 cache 或 DMA coherence。
+当前实现只覆盖 classic timing L1D 的普通 cacheable StoreBuffer 写，不支持 Ruby、多核 snoop、AMO、LL/SC、uncacheable、压缩 cache 或 DMA coherence。权限请求的有效数据粒度可配置为 1、4 或 8 字节；默认 1 字节。
 
 ## 2. 建模合同
 
@@ -46,7 +46,7 @@ PartialModified + eviction -> masked WritebackDirty
 
 新增 `StorePermReq` 和 `StorePermResp`。`StorePermReq` 具有 upgrade/invalidate、needs-writable、needs-response 和 from-cache 属性，但没有 read 属性和数据 payload。
 
-L1D 仅在 block invalid 且 StoreBuffer 写未覆盖整行时生成 `StorePermReq`，代替 `ReadExReq`。已有完整 S/E/M block 上的写和 full-line write 保持现有行为。
+L1D 仅在 block invalid 且 StoreBuffer 写按配置粒度完整覆盖时生成 `StorePermReq`，代替 `ReadExReq`。如果写请求只覆盖某个粒度单元的一部分，则继续走 `ReadExReq`。已有完整 S/E/M block 上的写和 full-line write 保持现有行为。partial block 上只修改已有效粒度，或完整覆盖新粒度的写可以直接命中；部分覆盖无效粒度的写必须先补全 cacheline。
 
 下层 cache 按以下规则处理：
 
@@ -101,7 +101,7 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 - `src/mem/cache/base.cc`：同地址 masked writeback 合并。
 - `src/mem/packet.cc` 和 functional cache 路径：按 byte mask 组合 functional data，避免 queued partial writeback 被忽略。
 - `src/mem/abstract_mem.cc`、`mem_ctrl.cc` 和 `simple_mem.cc`：权限请求终止和 functional 数据合成。
-- `src/mem/cache/Cache.py`：增加 `enable_partial_store` 和 `partial_snoop_mshr_reserve`；仅在 `configs/example/kmhv3.py` 的 L1D 显式开启 partial store。
+- `src/mem/cache/Cache.py`：增加 `enable_partial_store`、`partial_store_granularity` 和 `partial_snoop_mshr_reserve`；仅在 `configs/example/kmhv3.py` 的 L1D 显式开启 partial store。
 
 启用时应检查单核、L1D 和非压缩 cache。下层 eviction 对 partial block
 发起的 presence-only snoop 只设置 `BLOCK_CACHED`，不提供数据或改变 block
@@ -121,6 +121,7 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 6. `enable_partial_store=False/True` A/B 功能结果一致；
 7. 开启后 `ReadExReq`、`bytesReadSys` 和 StoreBuffer DDR read 减少，延迟补全与 masked write 流量能由新增统计解释。
 8. DTB walker shared read 命中 partial block 时正确补全，且不产生 masked eviction writeback。
+9. `--partial-store-granularity=1/4/8` 下，不完整粒度覆盖使用 `ReadExReq`，完整粒度覆盖使用 `StorePermReq`。
 
 基础构建命令为：
 

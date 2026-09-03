@@ -156,6 +156,7 @@ def setKmhV3Params(args, system):
                 partial_store_default if args.enable_partial_store is None
                 else args.enable_partial_store
             )
+            cpu.dcache.partial_store_granularity = args.partial_store_granularity
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
