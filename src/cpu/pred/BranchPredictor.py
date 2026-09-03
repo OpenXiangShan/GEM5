@@ -1068,7 +1068,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
-    numDelay = 2
+    numDelay = 1
 
 class BTBTAGEUpperBound(BTBTAGE):
     type = 'BTBTAGEUpperBound'
