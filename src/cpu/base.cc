@@ -1530,6 +1530,102 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             DPRINTF(Diff, "At %s Ref value: %#lx, GEM5 value: %#lx\n",
                     reg_name[dest_tag], nemu_val, gem5_val);
 
+            // 128-bit AMO (amocas.q): handle both dest regs as a pair
+            // at dest_idx=0, then skip dest_idx=1 to handle the 128bit result as one pair.
+            if (diffInfo.effSize > 8 && diffInfo.inst->isAtomic() &&
+                dest_idx == 0 && diffInfo.inst->numDestRegs() >= 2) {
+
+                // high 64bit of 128bit AMO load
+                const auto &dest1 = diffInfo.inst->destRegIdx(dest_idx + 1);
+                auto dest1_tag = dest1.index() + dest1.isFloatReg() * 32;
+                uint64_t gem5_hi = diffInfo.scalarResults[dest_idx + 1];
+                uint64_t nemu_hi = diffAllStates->referenceRegFile[dest1_tag];
+
+                DPRINTF(Diff, "128-bit AMO pair: lo GEM5=%#lx REF=%#lx, "
+                        "hi GEM5=%#lx REF=%#lx\n",
+                        gem5_val, nemu_val, gem5_hi, nemu_hi);
+                if (gem5_val == nemu_val && gem5_hi == nemu_hi) {
+                    // skip dest_idx=1
+                    dest_idx++;
+                    continue;
+                }
+
+                // if not completely equal, need to be repaired or set diff_at
+                bool repaired = false;
+                if (system->multiContextDifftest() &&
+                    _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
+                    uint8_t current_golden[16] = {};
+                    _goldenMemManager->readGoldenMem(
+                        diffInfo.physEffAddr, current_golden, diffInfo.effSize);
+
+                    uint8_t gem5_pair[16];
+                    memcpy(gem5_pair,     &gem5_val, 8);
+                    memcpy(gem5_pair + 8, &gem5_hi,  8);
+
+                    DPRINTF(Diff, "128-bit AMO golden old: %#lx_%#lx, "
+                            "GEM5 pair: %#lx_%#lx\n",
+                            *(uint64_t *)(diffInfo.amoOldGoldenValue + 8),
+                            *(uint64_t *)diffInfo.amoOldGoldenValue,
+                            gem5_hi, gem5_val);
+                    DPRINTF(Diff, "128-bit AMO new golden: %#lx_%#lx\n",
+                            *(uint64_t *)(current_golden + 8),
+                            *(uint64_t *)current_golden);
+
+                    if (memcmp(diffInfo.amoOldGoldenValue, gem5_pair,
+                               diffInfo.effSize) == 0) {
+                        DPRINTF(Diff, "128-bit AMO old value matched. "
+                                "Sync golden memory and both regs to ref\n");
+                        diffAllStates->proxy->memcpy(
+                            diffInfo.physEffAddr, current_golden,
+                            diffInfo.effSize, DIFFTEST_TO_REF);
+                        diffAllStates->referenceRegFile[dest_tag]  = gem5_val;
+                        diffAllStates->referenceRegFile[dest1_tag] = gem5_hi;
+                        diffAllStates->proxy->regcpy(
+                            &(diffAllStates->referenceRegFile), DUT_TO_REF);
+                        repaired = true;
+                    }
+                }
+
+                // if amoOldGoldenValue != gem5_pair, diff_at = ValueDiff
+                if (!repaired) {
+                    diffMsg << csprintf("AMO addr: %#lx, size: %u\n",
+                                        diffInfo.physEffAddr, diffInfo.effSize);
+                    if (gem5_val != nemu_val && !diff_at) {
+                        diffMsg << csprintf("Inst [sn:%lli] pc: %#lx\n",
+                                            seq, diffInfo.pc->instAddr());
+                        diffMsg << csprintf(
+                            "Diff at \033[31m%s\033[0m Ref value: "
+                            "\033[31m%#lx\033[0m, GEM5 value: "
+                            "\033[31m%#lx\033[0m\n",
+                            reg_name[dest_tag], nemu_val, gem5_val);
+                        diffInfo.errorRegsValue[dest_tag] = 1;
+                        if (dest_tag < 32)
+                            diffAllStates->gem5RegFile.gpr[dest_tag]._64 =
+                                gem5_val;
+                        diffAllStates->gem5RegFile.pc = gem5_pc;
+                        diff_at = ValueDiff;
+                    }
+                    if (gem5_hi != nemu_hi && !diff_at) {
+                        diffMsg << csprintf("Inst [sn:%lli] pc: %#lx\n",
+                                            seq, diffInfo.pc->instAddr());
+                        diffMsg << csprintf(
+                            "Diff at \033[31m%s\033[0m Ref value: "
+                            "\033[31m%#lx\033[0m, GEM5 value: "
+                            "\033[31m%#lx\033[0m\n",
+                            reg_name[dest1_tag], nemu_hi, gem5_hi);
+                        diffInfo.errorRegsValue[dest1_tag] = 1;
+                        if (dest1_tag < 32)
+                            diffAllStates->gem5RegFile.gpr[dest1_tag]._64 =
+                                gem5_hi;
+                        diffAllStates->gem5RegFile.pc = gem5_pc;
+                        diff_at = ValueDiff;
+                    }
+                }
+
+                dest_idx++;
+                continue;
+            }
+
             if (gem5_val != nemu_val) {
                 if (diffInfo.inst->isMemRef()) {
                     diffMsg << csprintf("%s addr: %#lx, size: %u\n",
@@ -1569,7 +1665,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                 continue;
                             }
                             if (memcmp(it->data, &gem5_val,
-                                       std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
+                                       diffInfo.effSize) == 0) {
                                 matched_recent_store = &(*it);
                                 break;
                             }
@@ -1581,8 +1677,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             &(diffAllStates->referenceRegFile), DUT_TO_REF);
                     };
 
-                    // Sync both memory and register when the value is already
-                    // globally visible in golden memory.
                     auto sync_mem_reg = [&](const uint8_t *mem_src) {
                         diffAllStates->proxy->memcpy(diffInfo.physEffAddr,
                                                      const_cast<uint8_t *>(mem_src),
@@ -1593,7 +1687,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
                     if (diffInfo.inst->isLoad() &&
                                memcmp(golden_ptr, &gem5_val,
-                                      std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
+                                      diffInfo.effSize) == 0) {
                         DPRINTF(Diff,
                                 "Load content matched in golden memory. "
                                 "Sync from golden to ref\n");
@@ -1601,7 +1695,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         continue;
                     } else if (diffInfo.inst->isLoad() && exec_golden_ptr &&
                                memcmp(exec_golden_ptr, &gem5_val,
-                                      std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
+                                      diffInfo.effSize) == 0) {
                         DPRINTF(Diff,
                                 "Load content matched the execution-time "
                                 "golden snapshot. Sync from the recorded "
@@ -1618,12 +1712,16 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         sync_mem_reg(matched_recent_store->data);
                         continue;
                     } else if (diffInfo.inst->isAtomic()) {
-                        DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n", *(uint64_t*)diffInfo.amoOldGoldenValue,
+                        DPRINTF(Diff, "Golden mem old value: %#lx, "
+                                "GEM5 old value: %#lx\n",
+                                *(uint64_t *)diffInfo.amoOldGoldenValue,
                                 gem5_val);
-                        DPRINTF(Diff, "New golden value: %#lx\n", *(uint64_t *)golden_ptr);
-                        if (memcmp(&diffInfo.amoOldGoldenValue, &gem5_val,
-                                   std::min((uint64_t)diffInfo.effSize,(uint64_t)sizeof(gem5_val))) == 0) {
-                            DPRINTF(Diff, "Atomic encountered, old value matched. Sync from golden to ref\n");
+                        DPRINTF(Diff, "New golden value: %#lx\n",
+                                *(uint64_t *)golden_ptr);
+                        if (memcmp(diffInfo.amoOldGoldenValue, &gem5_val,
+                                   diffInfo.effSize) == 0) {
+                            DPRINTF(Diff, "Atomic encountered, old value "
+                                    "matched. Sync from golden to ref\n");
                             sync_mem_reg(golden_ptr);
                             continue;
                         }

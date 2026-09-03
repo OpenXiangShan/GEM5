@@ -80,7 +80,7 @@ GoldenGloablMem::updateGoldenMem(uint64_t addr, void *data, const std::vector<bo
 void
 GoldenGloablMem::readGoldenMem(uint64_t addr, void *data, uint64_t len)
 {
-    if (inPmem(addr)) {
+    if (inPmem(addr, len)) {
         void *p = &goldenMem[addr - pmemBase];
         std::memcpy(data, p, len);
     } else {
@@ -93,6 +93,12 @@ bool
 GoldenGloablMem::inPmem(uint64_t addr)
 {
     return (pmemBase <= addr) && (addr <= pmemBase + pmemSize - 1);
+}
+
+bool
+GoldenGloablMem::inPmem(uint64_t addr, uint64_t len)
+{
+    return (pmemBase <= addr) && (addr <= pmemBase + pmemSize - 1) && (len <= pmemSize - (addr - pmemBase));
 }
 
 uint64_t

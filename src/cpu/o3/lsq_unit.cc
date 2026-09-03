@@ -3103,10 +3103,15 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
         has_paddr &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
+
+        // adjust golden_mask according to the request->_size
+        // request->_size = 8 , mask = 0xff
+        // request->_size = 16 , mask = 0xffff
+        uint64_t golden_mask = (request->_size >= 64) ? ~0ULL :  ((1ULL << request->_size) - 1);
         if (!store_inst->isAtomic()) {
             DPRINTF(LSQUnit, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    paddr, *((uint64_t *)store_inst->memData), 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, 0xff,
+                    paddr, *((uint64_t *)store_inst->memData), golden_mask, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, golden_mask,
                                                      request->_size);
         } else {
             uint8_t tmp_data[16];
@@ -3122,8 +3127,8 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
 
             DPRINTF(LSQUnit, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    paddr, *((uint64_t *)(tmp_data)), 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
+                    paddr, *((uint64_t *)(tmp_data)), golden_mask, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, golden_mask,
                                                      request->_size);
         }
     }
