@@ -359,7 +359,8 @@ UBTB::refreshPredictionMeta(Addr startAddr,
 }
 
 UBTB::UBTBIter
-UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash)
+UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
+             LookupPort port)
 {
     if (startAddr & 0x1) {
         return ubtb.end();  // ignore false hit when lowest bit is 1
@@ -395,18 +396,57 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash)
         }
     }
 
-    ubtbStats.setLookups[set]++;
-    ubtbStats.setOccupancy.sample(occupancy);
+    if (port == LookupPort::Prediction) {
+        ubtbStats.setLookups[set]++;
+        ubtbStats.setOccupancy.sample(occupancy);
+    } else {
+        ubtbStats.checkerLookups++;
+        ubtbStats.checkerSetOccupancy.sample(occupancy);
+    }
     if (hit == rangeEnd) {
         if (occupancy == std::distance(rangeBegin, rangeEnd)) {
-            ubtbStats.setFullMisses[set]++;
+            if (port == LookupPort::Prediction) {
+                ubtbStats.setFullMisses[set]++;
+            } else {
+                ubtbStats.checkerFullMisses++;
+            }
+        }
+        if (port == LookupPort::Checker) {
+            ubtbStats.checkerMisses++;
         }
         return ubtb.end();
     }
 
-    ubtbStats.setHits[set]++;
+    if (port == LookupPort::Prediction) {
+        ubtbStats.setHits[set]++;
+    } else {
+        ubtbStats.checkerHits++;
+    }
     hit->tick = curTick();
     return hit;
+}
+
+BTBEntry
+UBTB::lookupForChecker(Addr startAddr, ThreadID tid, uint8_t asidHash)
+{
+    auto entry = lookup(startAddr, tid, asidHash, LookupPort::Checker);
+    return entry != ubtb.end() ? BTBEntry(*entry) : BTBEntry();
+}
+
+void
+UBTB::recordCheckerResult(bool hit, bool matches)
+{
+    if (hit) {
+        if (matches) {
+            ubtbStats.checkerHitAgreements++;
+        } else {
+            ubtbStats.checkerHitDisagreements++;
+        }
+    } else if (matches) {
+        ubtbStats.checkerMissFallThroughAgreements++;
+    } else {
+        ubtbStats.checkerMissFallThroughDisagreements++;
+    }
 }
 
 UBTB::TickedUBTBEntry
@@ -723,6 +763,28 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
                "uBTB prediction misses whose selected set has no free way"),
       ADD_STAT(setOccupancy, statistics::units::Count::get(),
                "Valid ways in the selected uBTB set at prediction time"),
+      ADD_STAT(checkerLookups, statistics::units::Count::get(),
+               "PairTAGE second-block reads issued on the uBTB checker port"),
+      ADD_STAT(checkerHits, statistics::units::Count::get(),
+               "uBTB checker-port reads that found a predicted exit"),
+      ADD_STAT(checkerMisses, statistics::units::Count::get(),
+               "uBTB checker-port reads that predicted fall-through"),
+      ADD_STAT(checkerFullMisses, statistics::units::Count::get(),
+               "uBTB checker-port misses whose selected set had no free way"),
+      ADD_STAT(checkerSetOccupancy, statistics::units::Count::get(),
+               "Valid ways in the checker-selected uBTB set"),
+      ADD_STAT(checkerHitAgreements, statistics::units::Count::get(),
+               "PairTAGE second blocks agreeing with a uBTB hit prediction"),
+      ADD_STAT(checkerHitDisagreements, statistics::units::Count::get(),
+               "PairTAGE second blocks disagreeing with a uBTB hit prediction"),
+      ADD_STAT(checkerMissFallThroughAgreements,
+               statistics::units::Count::get(),
+               "PairTAGE branchless second blocks agreeing with a uBTB miss "
+               "fall-through"),
+      ADD_STAT(checkerMissFallThroughDisagreements,
+               statistics::units::Count::get(),
+               "PairTAGE second blocks disagreeing with a uBTB miss "
+               "fall-through"),
 
       ADD_STAT(allBranchHits, statistics::units::Count::get(),
                "all types of branches committed that was predicted hit"),
@@ -802,6 +864,7 @@ UBTB::UBTBStats::init(unsigned num_sets, unsigned accessible_ways)
     setEvictions.init(num_sets);
     setFullMisses.init(num_sets);
     setOccupancy.init(0, accessible_ways, 1);
+    checkerSetOccupancy.init(0, accessible_ways, 1);
 
 #ifndef UNIT_TEST
     for (unsigned set = 0; set < num_sets; ++set) {

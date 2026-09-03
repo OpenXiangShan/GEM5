@@ -260,6 +260,15 @@ PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vec
     packet.startPC = startPC;
     packet.phase = phase;
 
+    // The uBTB checker defines a miss as its branchless fall-through
+    // prediction. Keep this distinct from a not-taken conditional branch.
+    if (btbEntries.empty()) {
+        packet.valid = true;
+        packet.branchPC = startPC;
+        packet.targetPC = getFallThrough(startPC);
+        return packet;
+    }
+
     const BTBEntry *trainEntry = nullptr;
     bool taken = false;
     for (const auto &entry : btbEntries) {
