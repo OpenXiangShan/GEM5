@@ -79,6 +79,9 @@ struct riscv64_CPU_regfile
     uint64_t vxsat, vxrm, vcsr;
     uint64_t vl, vtype, vlenb;
 
+    // Optional in NEMU, but enabled by riscv64-gem5-ref_defconfig.
+    uint64_t fcsr;
+
 
     uint64_t& operator[](int x) {
         assert(x<64);
