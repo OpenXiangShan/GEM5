@@ -20,7 +20,7 @@ namespace
 {
 
 constexpr int NumS1SourceBuckets = 3;
-constexpr int NumOverrideReasonBuckets = 4;
+constexpr int NumOverrideReasonBuckets = 5;
 
 constexpr const char *S1SourceLabels[NumS1SourceBuckets] = {
     "fallthrough",
@@ -32,6 +32,7 @@ constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
     "no_override",
     "fall_thru",
     "control_addr",
+    "attribute",
     "target"
 };
 
@@ -45,8 +46,10 @@ overrideReasonBucket(OverrideReason reason)
         return 1;
       case OverrideReason::CONTROL_ADDR:
         return 2;
-      case OverrideReason::TARGET:
+      case OverrideReason::ATTRIBUTE:
         return 3;
+      case OverrideReason::TARGET:
+        return 4;
     }
 
     return 0;
@@ -459,6 +462,30 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
     ADD_STAT(overrideBubbleNum,  statistics::units::Count::get(), "the number of override bubbles"),
     ADD_STAT(overrideCount, statistics::units::Count::get(), "the number of overrides"),
+    ADD_STAT(s2OverrideCount, statistics::units::Count::get(),
+    "prediction-time S2 overrides of the visible S1 prediction"),
+    ADD_STAT(s2ValidPrediction, statistics::units::Count::get(),
+    "prediction-time requests with a non-empty S2 BTB prediction"),
+    ADD_STAT(s2NoPrediction, statistics::units::Count::get(),
+    "prediction-time requests where an empty S2 BTB response has no opinion"),
+    ADD_STAT(s3OverrideCount, statistics::units::Count::get(),
+    "prediction-time S3 overrides of the prediction visible after S2"),
+    ADD_STAT(s2AndS3OverrideCount, statistics::units::Count::get(),
+    "prediction-time requests with both an S2 and an S3 override"),
+    ADD_STAT(s2UsefulOverride, statistics::units::Count::get(),
+    "S2 overrides where S1 differs from S3 and S2 matches S3"),
+    ADD_STAT(s2HarmfulOverride, statistics::units::Count::get(),
+    "S2 overrides where S1 matches S3 and S2 differs from S3"),
+    ADD_STAT(s2WrongToWrongOverride, statistics::units::Count::get(),
+    "S2 overrides where neither S1 nor S2 matches S3"),
+    ADD_STAT(s2SuppressedTargetOnly, statistics::units::Count::get(),
+    "S1/S2 target-only differences suppressed by the S2 target policy"),
+    ADD_STAT(s2SuppressedTargetWouldHelp, statistics::units::Count::get(),
+    "suppressed S2 target-only differences where S2 matches S3"),
+    ADD_STAT(s2SuppressedTargetWouldHarm, statistics::units::Count::get(),
+    "suppressed S2 target-only differences where S1 matches S3"),
+    ADD_STAT(s2SuppressedTargetWrongToWrong, statistics::units::Count::get(),
+    "suppressed S2 target-only differences where neither S1 nor S2 matches S3"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(),
     "the number of preds of each stage that account for a committed target"),
     ADD_STAT(commitOverrideBubbleNum, statistics::units::Count::get(),
@@ -468,6 +495,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "Number of overrides due to validity mismatches, on commit path"),
     ADD_STAT(overrideControlAddrMismatch, statistics::units::Count::get(),
     "Number of overrides due to control address mismatches, on commit path"),
+    ADD_STAT(overrideAttributeMismatch, statistics::units::Count::get(),
+    "Number of overrides due to branch attribute mismatches, on commit path"),
     ADD_STAT(overrideTargetMismatch, statistics::units::Count::get(),
     "Number of overrides due to target mismatches, on commit path"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
@@ -550,6 +579,9 @@ void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
                 break;
             case OverrideReason::CONTROL_ADDR:
                 dbpBtbStats.overrideControlAddrMismatch++;
+                break;
+            case OverrideReason::ATTRIBUTE:
+                dbpBtbStats.overrideAttributeMismatch++;
                 break;
             case OverrideReason::TARGET:
                 dbpBtbStats.overrideTargetMismatch++;

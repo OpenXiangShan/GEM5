@@ -47,12 +47,13 @@ namespace btb_pred
 namespace
 {
 
-constexpr int NumOverrideReasonBuckets = 3;
+constexpr int NumOverrideReasonBuckets = 4;
 constexpr int NumBoolBuckets = 2;
 
 constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
     "fall_thru",
     "control_addr",
+    "attribute",
     "target"
 };
 
@@ -74,8 +75,10 @@ overrideReasonBucket(OverrideReason reason)
         return 0;
       case OverrideReason::CONTROL_ADDR:
         return 1;
-      case OverrideReason::TARGET:
+      case OverrideReason::ATTRIBUTE:
         return 2;
+      case OverrideReason::TARGET:
+        return 3;
       case OverrideReason::NO_OVERRIDE:
         break;
     }

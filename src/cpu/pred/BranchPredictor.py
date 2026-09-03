@@ -1237,6 +1237,13 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")
+    modelThreeStageOverrides = Param.Bool(
+        False,
+        "Model visible S1-to-S2-to-S3 redirects instead of earliest-final-match timing",
+    )
+    s2CheckTarget = Param.Bool(
+        True, "Whether target differences can trigger an S2 override"
+    )
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.AheadBTB(AheadBTB(), "ABTB predictor")
     microtage = Param.MicroTAGE(MicroTAGE(), "MicroTAGE predictor to assist uBTB")

@@ -98,7 +98,8 @@ enum class OverrideReason
     NO_OVERRIDE,
     FALL_THRU,
     CONTROL_ADDR,
-    TARGET
+    TARGET,
+    ATTRIBUTE
 };
 
 enum class HistoryType
@@ -138,7 +139,9 @@ struct BranchInfo
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), target(0), resolved(false), isCond(false),
+          isIndirect(false), isDirect(false), isCall(false), isReturn(false),
+          size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
@@ -643,7 +646,9 @@ struct FullBTBPrediction
         return getTakenEntry().pc;
     }
 
-    std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
+    std::pair<bool, OverrideReason> match(
+        FullBTBPrediction &other, Addr predictWidth, bool checkTarget = true,
+        bool checkAttribute = false)
     {
         auto this_taken_entry = this->getTakenEntry();
         auto other_taken_entry = other.getTakenEntry();
@@ -655,7 +660,20 @@ struct FullBTBPrediction
                 if (this->controlAddr() != other.controlAddr()) {
                     return std::make_pair(false, OverrideReason::CONTROL_ADDR);
                 }
-                else if (this->getTarget(predictWidth) != other.getTarget(predictWidth)) {
+                else if (checkAttribute &&
+                         (this_taken_entry.isCond != other_taken_entry.isCond ||
+                          this_taken_entry.isIndirect !=
+                              other_taken_entry.isIndirect ||
+                          this_taken_entry.isDirect !=
+                              other_taken_entry.isDirect ||
+                          this_taken_entry.isCall != other_taken_entry.isCall ||
+                          this_taken_entry.isReturn !=
+                              other_taken_entry.isReturn)) {
+                    return std::make_pair(false, OverrideReason::ATTRIBUTE);
+                }
+                else if (checkTarget &&
+                         this->getTarget(predictWidth) !=
+                             other.getTarget(predictWidth)) {
                     return std::make_pair(false, OverrideReason::TARGET);
                 }
                 else {
@@ -730,6 +748,76 @@ struct FullBTBPrediction
     }
 
 };
+
+/**
+ * Result of applying the visible S1 -> S2 -> S3 override protocol.
+ *
+ * The correctness classifications compare complete frontend-visible
+ * predictions.  They are prediction-time diagnostics relative to S3, not
+ * committed accuracy.
+ */
+struct ThreeStageOverrideResult
+{
+    unsigned readyStage = 0;
+    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
+    bool s2Override = false;
+    bool s2Valid = false;
+    bool s3Override = false;
+    bool s2Useful = false;
+    bool s2Harmful = false;
+    bool s2WrongToWrong = false;
+    bool s2SuppressedTargetOnly = false;
+    bool s2SuppressedTargetWouldHelp = false;
+    bool s2SuppressedTargetWouldHarm = false;
+    bool s2SuppressedTargetWrongToWrong = false;
+};
+
+inline ThreeStageOverrideResult
+evaluateThreeStageOverrides(FullBTBPrediction &s1, FullBTBPrediction &s2,
+                            FullBTBPrediction &s3, Addr predictWidth,
+                            bool s2Valid, bool s2CheckTarget)
+{
+    ThreeStageOverrideResult result;
+    result.s2Valid = s2Valid;
+
+    const auto [s1MatchesS2Exactly, exactS1S2Reason] =
+        s1.match(s2, predictWidth, true, true);
+    const auto [s1MatchesS2ForOverride, s1S2Reason] =
+        s1.match(s2, predictWidth, s2CheckTarget, true);
+    result.s2Override = s2Valid && !s1MatchesS2ForOverride;
+
+    auto &visibleAfterS2 = result.s2Override ? s2 : s1;
+    const auto [visibleMatchesS3, visibleS3Reason] =
+        visibleAfterS2.match(s3, predictWidth, true, true);
+    result.s3Override = !visibleMatchesS3;
+
+    if (result.s3Override) {
+        result.readyStage = 2;
+        result.overrideReason = visibleS3Reason;
+    } else if (result.s2Override) {
+        result.readyStage = 1;
+        result.overrideReason = s1S2Reason;
+    }
+
+    const bool s1MatchesS3 = s1.match(s3, predictWidth, true, true).first;
+    const bool s2MatchesS3 = s2.match(s3, predictWidth, true, true).first;
+    result.s2Useful = result.s2Override && !s1MatchesS3 && s2MatchesS3;
+    result.s2Harmful = result.s2Override && s1MatchesS3 && !s2MatchesS3;
+    result.s2WrongToWrong =
+        result.s2Override && !s1MatchesS3 && !s2MatchesS3;
+
+    result.s2SuppressedTargetOnly =
+        s2Valid && !s2CheckTarget && s1MatchesS2ForOverride &&
+        !s1MatchesS2Exactly && exactS1S2Reason == OverrideReason::TARGET;
+    result.s2SuppressedTargetWouldHelp =
+        result.s2SuppressedTargetOnly && !s1MatchesS3 && s2MatchesS3;
+    result.s2SuppressedTargetWouldHarm =
+        result.s2SuppressedTargetOnly && s1MatchesS3 && !s2MatchesS3;
+    result.s2SuppressedTargetWrongToWrong =
+        result.s2SuppressedTargetOnly && !s1MatchesS3 && !s2MatchesS3;
+
+    return result;
+}
 
 struct TageMissTrace : public Record
 {

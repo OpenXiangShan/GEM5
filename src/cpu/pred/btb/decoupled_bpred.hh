@@ -124,6 +124,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     // std::vector<FullBTBPrediction> predsOfEachStage{};
     unsigned numComponents{};
     unsigned numStages{};
+    bool modelThreeStageOverrides;
+    bool s2CheckTarget;
     unsigned ftqEntries;
     SMTFTQMode ftqMode;
     SMTFTQPolicy ftqPolicy;
@@ -284,6 +286,18 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Vector predsOfEachStage;
         statistics::Scalar overrideBubbleNum;
         statistics::Scalar overrideCount;
+        statistics::Scalar s2OverrideCount;
+        statistics::Scalar s2ValidPrediction;
+        statistics::Scalar s2NoPrediction;
+        statistics::Scalar s3OverrideCount;
+        statistics::Scalar s2AndS3OverrideCount;
+        statistics::Scalar s2UsefulOverride;
+        statistics::Scalar s2HarmfulOverride;
+        statistics::Scalar s2WrongToWrongOverride;
+        statistics::Scalar s2SuppressedTargetOnly;
+        statistics::Scalar s2SuppressedTargetWouldHelp;
+        statistics::Scalar s2SuppressedTargetWouldHarm;
+        statistics::Scalar s2SuppressedTargetWrongToWrong;
 
         statistics::Vector commitPredsFromEachStage;
         statistics::Formula commitOverrideBubbleNum;
@@ -291,6 +305,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Track override reasons
         statistics::Scalar overrideFallThruMismatch;
         statistics::Scalar overrideControlAddrMismatch;
+        statistics::Scalar overrideAttributeMismatch;
         statistics::Scalar overrideTargetMismatch;
 
         statistics::Distribution fsqEntryDist;

@@ -112,6 +112,8 @@ def setKmhV3Params(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
+            cpu.branchPred.modelThreeStageOverrides = True
+            cpu.branchPred.s2CheckTarget = False
 
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(

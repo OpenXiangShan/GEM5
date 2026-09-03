@@ -52,6 +52,10 @@ GTest('history_manager.test',
     'history_manager.test.cc',
 )
 
+GTest('prediction_stage.test',
+    'prediction_stage.test.cc',
+)
+
 # add --unit-test to enable unit test mode for RAS
 # TODO: Fix RAS test
 # GTest('ras.test',
@@ -75,6 +79,7 @@ env.Append(UNITTESTS=['uras.test',
         'microtage.test',
         'folded_hist.test',
         'history_manager.test',
+        'prediction_stage.test',
         'jump_ahead.test',
         'fetch_target_queue.test',
         'decoupled_bpred.test'])

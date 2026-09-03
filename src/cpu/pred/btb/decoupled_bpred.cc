@@ -81,6 +81,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
+      modelThreeStageOverrides(p.modelThreeStageOverrides),
+      s2CheckTarget(p.s2CheckTarget),
       ftqEntries(p.ftq_size),
       ftqMode(p.smtFTQMode),
       ftqPolicy(p.smtFTQPolicy),
@@ -98,6 +100,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     panic_if(numPredictingThreads > 1 && pairtage->isEnabled(),
              "PairTAGE does not yet support concurrent SMT predictions; "
              "disable PairTAGE or set smtNumPredictingThreads to one");
+    panic_if(modelThreeStageOverrides && numStages < 3,
+             "Three-stage override modeling requires at least three stages");
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
              smtFTQThreshold > ftqEntries,
@@ -119,6 +123,14 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     if (ittage->isEnabled()) components.push_back(ittage);
     if (mgsc->isEnabled()) components.push_back(mgsc);
     numComponents = components.size();
+    if (modelThreeStageOverrides) {
+        for (auto *component : components) {
+            panic_if(component->getDelay() > 2,
+                     "Three-stage override modeling cannot represent a "
+                     "predictor component with delay %u",
+                     component->getDelay());
+        }
+    }
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
         if (components[i]->hasDB) {
@@ -525,14 +537,64 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     unsigned first_hit_stage = 0;
     OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
 
-    // Find first stage that matches the chosen prediction
-    while (first_hit_stage < numStages - 1) {
-        auto [matches, reason] = predsOfEachStage[first_hit_stage].match(*chosenPrediction, predictWidth);
-        if (matches) {
-            break;
+    if (modelThreeStageOverrides) {
+        // Preserve the existing GEM5 predictor contract: an empty later BTB
+        // response has no opinion, so final selection falls back to S1.
+        const bool s2HasPrediction =
+            !predsOfEachStage[1].btbEntries.empty();
+        auto transition = evaluateThreeStageOverrides(
+            predsOfEachStage[0], predsOfEachStage[1], *chosenPrediction,
+            predictWidth, s2HasPrediction, s2CheckTarget);
+        first_hit_stage = transition.readyStage;
+        overrideReason = transition.overrideReason;
+
+        if (transition.s2Valid) {
+            dbpBtbStats.s2ValidPrediction++;
+        } else {
+            dbpBtbStats.s2NoPrediction++;
         }
-        first_hit_stage++;
-        overrideReason = reason;
+        if (transition.s2Override) {
+            dbpBtbStats.s2OverrideCount++;
+        }
+        if (transition.s3Override) {
+            dbpBtbStats.s3OverrideCount++;
+        }
+        if (transition.s2Override && transition.s3Override) {
+            dbpBtbStats.s2AndS3OverrideCount++;
+        }
+        if (transition.s2Useful) {
+            dbpBtbStats.s2UsefulOverride++;
+        }
+        if (transition.s2Harmful) {
+            dbpBtbStats.s2HarmfulOverride++;
+        }
+        if (transition.s2WrongToWrong) {
+            dbpBtbStats.s2WrongToWrongOverride++;
+        }
+        if (transition.s2SuppressedTargetOnly) {
+            dbpBtbStats.s2SuppressedTargetOnly++;
+        }
+        if (transition.s2SuppressedTargetWouldHelp) {
+            dbpBtbStats.s2SuppressedTargetWouldHelp++;
+        }
+        if (transition.s2SuppressedTargetWouldHarm) {
+            dbpBtbStats.s2SuppressedTargetWouldHarm++;
+        }
+        if (transition.s2SuppressedTargetWrongToWrong) {
+            dbpBtbStats.s2SuppressedTargetWrongToWrong++;
+        }
+    } else {
+        // Legacy model: charge the earliest stage that already matches the
+        // final prediction, without exposing intermediate redirects.
+        while (first_hit_stage < numStages - 1) {
+            auto [matches, reason] = predsOfEachStage[first_hit_stage].match(
+                *chosenPrediction, predictWidth);
+            if (matches) {
+                break;
+            }
+            first_hit_stage++;
+            overrideReason = reason;
+        }
     }
 
     // Match RTL fastTrain: every valid S3 prediction is broadcast to the S1
