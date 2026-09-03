@@ -607,7 +607,7 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior) {
 
 TEST_F(BTBTAGETest, PreliminaryS2UsesFourTablesAndBypassesUseAlt) {
     BTBTAGE eightTableTage(8, 2, 1024, 4);
-    eightTableTage.setNumDelay(2);
+    eightTableTage.setNumDelay(1);
     std::vector<FullBTBPrediction> stage_preds(4);
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
     for (std::size_t stage = 1; stage < stage_preds.size(); ++stage) {
@@ -640,7 +640,7 @@ TEST_F(BTBTAGETest, PreliminaryS2UsesFourTablesAndBypassesUseAlt) {
 
 TEST_F(BTBTAGETest, PreliminaryS2IgnoresHigherTables) {
     BTBTAGE eightTableTage(8, 2, 1024, 4);
-    eightTableTage.setNumDelay(2);
+    eightTableTage.setNumDelay(1);
     std::vector<FullBTBPrediction> stage_preds(4);
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
     for (std::size_t stage = 1; stage < stage_preds.size(); ++stage) {
@@ -662,7 +662,7 @@ TEST_F(BTBTAGETest, PreliminaryS2IgnoresHigherTables) {
 
 TEST_F(BTBTAGETest, PreliminaryS2FallsBackToBaseCounter) {
     BTBTAGE eightTableTage(8, 2, 1024, 4);
-    eightTableTage.setNumDelay(2);
+    eightTableTage.setNumDelay(1);
     std::vector<FullBTBPrediction> stage_preds(4);
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
     for (std::size_t stage = 1; stage < stage_preds.size(); ++stage) {

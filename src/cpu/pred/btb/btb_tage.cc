@@ -538,8 +538,12 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     threadMeta[tid]->history = history;
 
     constexpr unsigned preliminary_stage = 1;
-    const bool has_preliminary_s2 =
-        getDelay() == preliminary_stage + 1 &&
+    // BTBTAGE is configured with delay=1, so keep S2 as a preview and
+    // perform the full lookup starting at S3.  The fallback preserves the
+    // compact two-stage unit-test setup, where S2 is also the final stage.
+    const unsigned full_stage = std::max(2u, getDelay());
+    const bool has_full_stage = full_stage < stagePreds.size();
+    const bool has_preliminary_s2 = has_full_stage &&
         preliminary_stage < stagePreds.size();
     if (has_preliminary_s2) {
         auto &stage_pred = stagePreds[preliminary_stage];
@@ -549,7 +553,8 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
                      asidHash, 4, true, false);
     }
 
-    for (int s = getDelay(); s < stagePreds.size(); s++) {
+    const unsigned lookup_start = has_full_stage ? full_stage : getDelay();
+    for (unsigned s = lookup_start; s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
@@ -559,9 +564,9 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
 
     // Keep a direct measure of how often the four-table S2 preview disagrees
     // with the original full S3 prediction. S3 remains the final direction.
-    if (has_preliminary_s2 && getDelay() < stagePreds.size()) {
+    if (has_preliminary_s2) {
         const auto &s2 = stagePreds[preliminary_stage];
-        const auto &s3 = stagePreds[getDelay()];
+        const auto &s3 = stagePreds[full_stage];
         for (const auto &entry : s2.btbEntries) {
             if (!(entry.isCond && entry.valid)) {
                 continue;
