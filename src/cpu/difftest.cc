@@ -117,9 +117,6 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
     regcpy = (void (*)(void *, bool))dlsym(handle, "difftest_regcpy");
     assert(regcpy);
 
-    csrcpy = (void (*)(void *, bool))dlsym(handle, "difftest_csrcpy");
-    assert(csrcpy);
-
     uarchstatus_cpy =
         (void (*)(void *, bool))dlsym(handle, "difftest_uarchstatus_cpy");
     assert(uarchstatus_cpy);
@@ -133,20 +130,11 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
     update_config = (vaddr_t(*)(void *))dlsym(handle, "update_dynamic_config");
     assert(update_config);
 
-    store_commit = (int (*)(uint64_t *, uint64_t *, uint8_t *))dlsym(
-        handle, "difftest_store_commit");
-    assert(store_commit);
-
     raise_intr = (void (*)(uint64_t))dlsym(handle, "difftest_raise_intr");
     assert(raise_intr);
 
     isa_reg_display = (void (*)(void))dlsym(handle, "isa_reg_display");
     assert(isa_reg_display);
-
-    query = (void (*)(void *, uint64_t))dlsym(handle, "difftest_query_ref");
-#ifdef ENABLE_RUNHEAD
-    assert(query);
-#endif
 
     multiCore = multi_core;
     if (multiCore) {
@@ -206,9 +194,6 @@ SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
     regcpy = (void (*)(void *, bool))dlsym(handle, "difftest_regcpy");
     assert(regcpy);
 
-    csrcpy = (void (*)(void *, bool))dlsym(handle, "difftest_csrcpy");
-    assert(csrcpy);
-
     uarchstatus_cpy =
         (void (*)(void *, bool))dlsym(handle, "difftest_uarchstatus_sync");
     assert(uarchstatus_cpy);
@@ -221,10 +206,6 @@ SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 
     update_config = (vaddr_t(*)(void *))dlsym(handle, "update_dynamic_config");
     assert(update_config);
-
-    store_commit = (int (*)(uint64_t *, uint64_t *, uint8_t *))dlsym(
-        handle, "difftest_store_commit");
-    assert(store_commit);
 
     raise_intr = (void (*)(uint64_t))dlsym(handle, "difftest_raise_intr");
     assert(raise_intr);

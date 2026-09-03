@@ -128,13 +128,13 @@ class CPUProgressEvent : public Event
 
 struct DiffAllStates
 {
+    riscv64_CPU_regfile initialDutState{};
     riscv64_CPU_regfile gem5RegFile{};
     riscv64_CPU_regfile referenceRegFile{};
     DiffState diff{};
     RefProxy *proxy{nullptr};
 
-    // Mirrors RTL difftest's first-commit reference initialization state.
-    bool hasCommit{false};
+    bool referenceInitialized{false};
 };
 
 class BaseCPU : public ClockedObject
@@ -718,16 +718,18 @@ class BaseCPU : public ClockedObject
       diffCsrNum = 36,
     };
 
-    virtual void readGem5Regs(ThreadID tid)
+    virtual void readDutRegs(
+        ThreadID tid, riscv64_CPU_regfile &state)
     {
-        panic("difftest:readGem5Regs() is not implemented\n");
+        panic("difftest:readDutRegs() is not implemented\n");
     }
 
     /**
      * Capture the DUT state from which the reference executes its first
      * instruction. This must run before the DUT retires any instruction.
      */
-    void captureDifftestState(ThreadID tid);
+    void captureInitialDifftestState(ThreadID tid);
+    void initializeDifftestReference(ThreadID tid, Addr first_pc);
 
     void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
                         std::string error_csr_name,int &diff_at);
@@ -781,13 +783,13 @@ class BaseCPU : public ClockedObject
 
     virtual RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid) const
     {
-        panic("difftest:readGem5Regs() is not implemented\n");
+        panic("difftest:readMiscRegNoEffect() is not implemented\n");
         return 0;
     }
 
     virtual RegVal readMiscReg(int misc_reg, ThreadID tid)
     {
-        panic("difftest:readGem5Regs() is not implemented\n");
+        panic("difftest:readMiscReg() is not implemented\n");
         return 0;
     }
 
