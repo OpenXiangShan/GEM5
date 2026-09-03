@@ -1,0 +1,5 @@
+{
+  "name": "XS-GEM5 (RISCV)",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh"
+}
