@@ -345,6 +345,9 @@ class CPU : public BaseCPU
 
     RegVal getReg(PhysRegIdPtr phys_reg);
     RegVal getReg(VirtRegId phys_reg);
+    /** Read a physical register without charging the architectural RF-read statistic. */
+    RegVal peekReg(PhysRegIdPtr phys_reg) const;
+    RegVal peekReg(VirtRegId virt_reg) const;
     void getReg(PhysRegIdPtr phys_reg, void *val);
     void getReg(VirtRegId phys_reg, void *val);
     void *getWritableReg(PhysRegIdPtr phys_reg);
