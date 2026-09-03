@@ -267,7 +267,10 @@ jobs:
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
           BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
+          VECTOR_TYPE_INPUT: ${{ inputs.vector_type }}
           EXTRA_ARGS_INPUT: ${{ inputs.extra_args }}
+          CHECKPOINT_LIST_INPUT: ${{ steps.config.outputs.checkpoint_list }}
+          CLUSTER_CONFIG_INPUT: ${{ steps.config.outputs.cluster_config }}
           DISTRIBUTED_SERVERS_RAW: ${{ inputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER_RAW: ${{ inputs.distributed_jobs_per_server }}
         run: |
@@ -303,15 +306,24 @@ jobs:
             echo "distributed_idle_probe_mode=$DISTRIBUTED_IDLE_PROBE_MODE"
           } >> "$GITHUB_OUTPUT"
 
-          echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
+          echo "archive_schema_version: 2" > "$TARGET_DIR/metadata.txt"
+          echo "timestamp: $TIMESTAMP" >> "$TARGET_DIR/metadata.txt"
           echo "commit: $(git rev-parse HEAD)" >> "$TARGET_DIR/metadata.txt"
           echo "commit_short: $COMMIT_SHORT" >> "$TARGET_DIR/metadata.txt"
           echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
+          echo "workflow_name: ${{ github.workflow }}" >> "$TARGET_DIR/metadata.txt"
+          echo "workflow_event: ${{ github.event_name }}" >> "$TARGET_DIR/metadata.txt"
           echo "config_path: $CONFIG_PATH_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "config_name: $CONFIG_NAME" >> "$TARGET_DIR/metadata.txt"
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: $BENCHMARK_TYPE_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: $SPECIFIC_BENCHMARKS_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "vector_type: ${VECTOR_TYPE_INPUT:-base}" >> "$TARGET_DIR/metadata.txt"
+          echo "checkpoint_list: $CHECKPOINT_LIST_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "cluster_config: $CLUSTER_CONFIG_INPUT" >> "$TARGET_DIR/metadata.txt"
+          if [ -f "$CHECKPOINT_LIST_INPUT" ]; then
+            echo "expected_checkpoint_count: $(grep -cve '^[[:space:]]*$' "$CHECKPOINT_LIST_INPUT")" >> "$TARGET_DIR/metadata.txt"
+          fi
           echo "distributed_servers_input: $DISTRIBUTED_SERVERS_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_servers: $DISTRIBUTED_SERVERS" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_server_domain: " >> "$TARGET_DIR/metadata.txt"
@@ -500,6 +512,10 @@ jobs:
           echo "Performance data archived successfully"
           ARCHIVE_SIZE=$(du -sh "$TARGET_DIR/spec_all" 2>/dev/null | cut -f1 || echo "missing")
           echo "Archive size: ${ARCHIVE_SIZE}"
+          echo "workflow_job_status: ${{ job.status }}" >> "$TARGET_DIR/metadata.txt"
+          if [ "${{ job.status }}" = "success" ] && [ -f "$TARGET_DIR/score.txt" ]; then
+            touch "$TARGET_DIR/PERF_COMPLETE"
+          fi
           {
             echo "### Archive output"
             echo "- Path: \`$TARGET_DIR\`"
