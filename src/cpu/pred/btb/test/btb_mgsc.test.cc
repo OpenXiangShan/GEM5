@@ -355,6 +355,41 @@ TEST(BTBMGSCTest, CanConstructAndCreateMetaOnEmptyInput)
     EXPECT_TRUE(stage_preds[1].condTakens.empty());
 }
 
+TEST(BTBMGSCTest, S3SCDoesNotOverwriteS2Direction)
+{
+    BTBMGSC mgsc;
+    mgsc.setNumDelay(2);
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    const auto entry = makeCondBTBEntry(branch_pc);
+    const TageInfoForMGSC tage_info(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/true,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+    boost::dynamic_bitset<> history(64, 0);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    for (auto &pred : stage_preds) {
+        pred.bbStart = start_pc;
+        pred.btbEntries = {entry};
+        pred.tageInfoForMgscs[branch_pc] = tage_info;
+    }
+    stage_preds[1].condTakens = {{branch_pc, true}};
+
+    mgsc.putPCHistory(start_pc, history, stage_preds);
+
+    auto [s2_found, s2_taken] = findCondTaken(
+        stage_preds[1].condTakens, branch_pc);
+    EXPECT_TRUE(s2_found);
+    EXPECT_TRUE(s2_taken)
+        << "SC must leave the preliminary S2 TAGE direction intact";
+    EXPECT_TRUE(findCondTaken(stage_preds[2].condTakens, branch_pc).first);
+    EXPECT_TRUE(findCondTaken(stage_preds[3].condTakens, branch_pc).first);
+}
+
 TEST(BTBMGSCTest, GateHighConfUsesSCWhenStrong)
 {
     BTBMGSC mgsc;

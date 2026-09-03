@@ -302,7 +302,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
-                                 uint8_t asidHash) const
+                                 uint8_t asidHash,
+                                 int maxTable,
+                                 bool ignore_use_alt) const
 {
     DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
     const auto &state = historyState(tid);
@@ -317,7 +319,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
 
-    for (int i = numPredictors - 1; i >= 0; --i) {
+    const int first_table = maxTable > 0
+        ? std::min(maxTable, static_cast<int>(numPredictors)) - 1
+        : numPredictors - 1;
+    for (int i = first_table; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(
@@ -360,7 +365,11 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 // First match becomes main prediction
                 main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
                 provided = true;
-            } else if (!alt_provided) {
+                if (ignore_use_alt) {
+                    // The preliminary S2 lookup only needs the highest matching table.
+                    break;
+                }
+            } else if (!alt_provided && !ignore_use_alt) {
                 // Second match becomes alternative prediction
                 alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
                 alt_provided = true;
@@ -382,19 +391,24 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     Addr use_alt_idx = getUseAltIdx(btb_entry.pc);
     short use_alt_ctr = useAlt[use_alt_idx];
 
-    // use_alt_on_na gating: when provider weak, consult per-PC counter
+    // use_alt_on_na gating: when provider weak, consult per-PC counter.
+    // The S2 preliminary lookup deliberately bypasses this selection.
     bool use_alt = false;
-    if (!provided) {
-        use_alt = true;
-    } else {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
-        if (main_weak) {
-            use_alt = (use_alt_ctr >= 0);
+    if (!ignore_use_alt) {
+        if (!provided) {
+            use_alt = true;
         } else {
-            use_alt = false;
+            bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+            if (main_weak) {
+                use_alt = (use_alt_ctr >= 0);
+            } else {
+                use_alt = false;
+            }
         }
     }
-    bool taken = use_alt ? alt_pred : main_taken;
+    bool taken = ignore_use_alt
+        ? (provided ? main_taken : base_taken)
+        : (use_alt ? alt_pred : main_taken);
     int final_provider_table = -1;
     bool final_provider_is_alt = false;
     if (!use_alt && provided) {
@@ -425,7 +439,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 void
 BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens& results, ThreadID tid, uint8_t asidHash)
+                      CondTakens& results, ThreadID tid, uint8_t asidHash,
+                      int maxTable, bool ignore_use_alt,
+                      bool record_full_prediction)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -433,9 +449,14 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
-            tageStats.updateStatsWithTagePrediction(pred, true);
+            auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash,
+                                                 maxTable, ignore_use_alt);
+            if (record_full_prediction) {
+                threadMeta[tid]->preds[btb_entry.pc] = pred;
+                tageStats.updateStatsWithTagePrediction(pred, true);
+            } else {
+                tageStats.preliminaryS2Predictions++;
+            }
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -516,12 +537,50 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
     threadMeta[tid]->history = history;
 
-    for (int s = getDelay(); s < stagePreds.size(); s++) {
+    constexpr unsigned preliminary_stage = 1;
+    // BTBTAGE is configured with delay=1, so keep S2 as a preview and
+    // perform the full lookup starting at S3.  The fallback preserves the
+    // compact two-stage unit-test setup, where S2 is also the final stage.
+    const unsigned full_stage = std::max(2u, getDelay());
+    const bool has_full_stage = full_stage < stagePreds.size();
+    const bool has_preliminary_s2 = has_full_stage &&
+        preliminary_stage < stagePreds.size();
+    if (has_preliminary_s2) {
+        auto &stage_pred = stagePreds[preliminary_stage];
+        stage_pred.condTakens.clear();
+        lookupHelper(startPC, stage_pred.btbEntries,
+                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid,
+                     asidHash, 4, true, false);
+    }
+
+    const unsigned lookup_start = has_full_stage ? full_stage : getDelay();
+    for (unsigned s = lookup_start; s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
         lookupHelper(startPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs,
                      stage_pred.condTakens, tid, asidHash);
+    }
+
+    // Keep a direct measure of how often the four-table S2 preview disagrees
+    // with the original full S3 prediction. S3 remains the final direction.
+    if (has_preliminary_s2) {
+        const auto &s2 = stagePreds[preliminary_stage];
+        const auto &s3 = stagePreds[full_stage];
+        for (const auto &entry : s2.btbEntries) {
+            if (!(entry.isCond && entry.valid)) {
+                continue;
+            }
+            const Addr branch_pc = entry.pc;
+            const auto s2_it = CondTakens_find(s2.condTakens, branch_pc);
+            const auto s3_it = CondTakens_find(s3.condTakens, branch_pc);
+            if (s2_it == s2.condTakens.end() || s3_it == s3.condTakens.end()) {
+                continue;
+            }
+            if (s2_it->second != s3_it->second) {
+                tageStats.preliminaryS2S3DirectionDiff++;
+            }
+        }
     }
 
 }
@@ -1444,7 +1503,12 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(condCorrect, statistics::units::Count::get(), "number of conditional branch correct predictions committed"),
     ADD_STAT(condMissNoTakens, statistics::units::Count::get(), "number of conditional branch correct predictions committed with no prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "number of conditional branch predictions that hit"),
-    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss")
+    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss"),
+    ADD_STAT(preliminaryS2Predictions, statistics::units::Count::get(),
+        "number of conditional branches with a preliminary S2 TAGE prediction"),
+    ADD_STAT(preliminaryS2S3DirectionDiff, statistics::units::Count::get(),
+        "number of conditional branches whose preliminary S2 direction differs "
+        "from the full S3 TAGE direction before SC")
 {
     init(numPredictors, numBanks);
 }
