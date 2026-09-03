@@ -193,7 +193,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                    CondTakens& results, ThreadID tid, uint8_t asidHash);
+                    CondTakens& results, ThreadID tid, uint8_t asidHash,
+                    int maxTable = -1, bool ignoreUseAlt = false,
+                    bool recordFullPrediction = true);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
@@ -419,6 +421,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar condMissNoTakens;
         Scalar predHit;
         Scalar predMiss;
+        Scalar preliminaryS2Predictions;
+        Scalar preliminaryS2S3DirectionDiff;
 
         Scalar s3PredwrongTage;
 
@@ -482,7 +486,9 @@ private:
                                            const Addr &startPC,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
                                            ThreadID tid = 0,
-                                           uint8_t asidHash = 0) const;
+                                           uint8_t asidHash = 0,
+                                           int maxTable = -1,
+                                           bool ignoreUseAlt = false) const;
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);

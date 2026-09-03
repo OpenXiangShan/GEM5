@@ -605,6 +605,77 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior) {
     EXPECT_FALSE(pred.taken) << "Alt prediction should be not taken";
 }
 
+TEST_F(BTBTAGETest, PreliminaryS2UsesFourTablesAndBypassesUseAlt) {
+    BTBTAGE eightTableTage(8, 2, 1024, 4);
+    eightTableTage.setNumDelay(2);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    for (std::size_t stage = 1; stage < stage_preds.size(); ++stage) {
+        stage_preds[stage].btbEntries = {entry};
+    }
+
+    setupTageEntry(&eightTableTage, entry.pc, 3, 0);
+    setupTageEntry(&eightTableTage, entry.pc, 1, -2);
+    eightTableTage.putPCHistory(entry.pc, history, stage_preds);
+
+    auto s2 = findCondTaken(stage_preds[1].condTakens, entry.pc);
+    auto s3 = findCondTaken(stage_preds[2].condTakens, entry.pc);
+    ASSERT_TRUE(s2.first);
+    ASSERT_TRUE(s3.first);
+    EXPECT_TRUE(s2.second) << "S2 should use the weak taken provider directly";
+    EXPECT_FALSE(s3.second) << "S3 should retain the normal useAlt result";
+
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        eightTableTage.getPredictionMeta());
+    const auto &pred = meta->preds.at(entry.pc);
+    EXPECT_EQ(pred.mainInfo.table, 3);
+    EXPECT_EQ(pred.altInfo.table, 1);
+    EXPECT_TRUE(pred.useAlt);
+    EXPECT_FALSE(pred.taken);
+    EXPECT_EQ(static_cast<uint64_t>(
+        eightTableTage.tageStats.preliminaryS2Predictions), 1);
+    EXPECT_EQ(static_cast<uint64_t>(
+        eightTableTage.tageStats.preliminaryS2S3DirectionDiff), 1);
+}
+
+TEST_F(BTBTAGETest, PreliminaryS2IgnoresHigherTables) {
+    BTBTAGE eightTableTage(8, 2, 1024, 4);
+    eightTableTage.setNumDelay(2);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    for (std::size_t stage = 1; stage < stage_preds.size(); ++stage) {
+        stage_preds[stage].btbEntries = {entry};
+    }
+
+    setupTageEntry(&eightTableTage, entry.pc, 6, -2);
+    setupTageEntry(&eightTableTage, entry.pc, 3, 2);
+    eightTableTage.putPCHistory(entry.pc, history, stage_preds);
+
+    EXPECT_TRUE(findCondTaken(stage_preds[1].condTakens, entry.pc).second);
+    EXPECT_FALSE(findCondTaken(stage_preds[2].condTakens, entry.pc).second);
+
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        eightTableTage.getPredictionMeta());
+    EXPECT_EQ(meta->preds.at(entry.pc).mainInfo.table, 6)
+        << "Training metadata must come from the full S3 lookup";
+}
+
+TEST_F(BTBTAGETest, PreliminaryS2FallsBackToBaseCounter) {
+    BTBTAGE eightTableTage(8, 2, 1024, 4);
+    eightTableTage.setNumDelay(2);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    for (std::size_t stage = 1; stage < stage_preds.size(); ++stage) {
+        stage_preds[stage].btbEntries = {entry};
+    }
+
+    eightTableTage.putPCHistory(entry.pc, history, stage_preds);
+
+    auto s2 = findCondTaken(stage_preds[1].condTakens, entry.pc);
+    ASSERT_TRUE(s2.first);
+    EXPECT_FALSE(s2.second);
+}
+
 // Test useful bit update mechanism
 TEST_F(BTBTAGETest, UsefulBitMechanism) {
     // Setup a test branch
