@@ -83,6 +83,51 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+bool
+isPdipBackendStallReason(StallReason reason)
+{
+    switch (reason) {
+      case DTlbStall:
+      case ScalarLongExecute:
+      case VectorLongExecute:
+      case InstNotReady:
+      case LoadL1Bound:
+      case LoadL2Bound:
+      case LoadL3Bound:
+      case LoadMemBound:
+      case StoreL1Bound:
+      case StoreL2Bound:
+      case StoreL3Bound:
+      case StoreMemBound:
+      case MemSquashed:
+      case Atomic:
+      case MemNotReady:
+      case MemCommitRateLimit:
+      case OtherMemStall:
+      case ScalarReadyButNotIssued:
+      case VectorReadyButNotIssued:
+      case OtherStall:
+      case OtherFragStall:
+        return true;
+      default:
+        return false;
+    }
+}
+
+bool
+hasPdipBackendStall(const TimeStruct::IewComm &info)
+{
+    return isPdipBackendStallReason(info.robHeadStallReason) ||
+           isPdipBackendStallReason(info.lqHeadStallReason) ||
+           isPdipBackendStallReason(info.sqHeadStallReason) ||
+           isPdipBackendStallReason(info.blockReason);
+}
+
+} // anonymous namespace
+
 Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
         RequestPort(_cpu->name() + ".icache_port", _cpu), fetch(_fetch)
 {}
@@ -108,6 +153,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       icachePort(this, _cpu),
       enableFdip(params.enableFdip),
       enablePdip(params.enablePdip),
+      enableUpstreamPdip(params.enableUpstreamPdip),
+      upstreamPdipMinStallCycles(params.upstreamPdipMinStallCycles),
       enableUdp(params.enableUdp),
       finishTranslationEvent(this), fetchStats(_cpu, this),
       valuePred(params.valuePred)
@@ -130,6 +177,11 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         delayedCommit[i] = false;
         lastIcacheStall[i] = 0;
         smtBorrowThrottleCycles[i] = 0;
+        pdipLookupId[i] = 0;
+        pdipBackendStallSeen[i] = false;
+        pdipMissCandidateValid[i] = false;
+        pdipMissCandidatePaddr[i] = 0;
+        pdipMissCandidateFtqId[i] = 0;
     }
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
@@ -151,6 +203,19 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
             branchPred);
     assert(dbpbtb);
     dbpbtb->setCpu(_cpu);
+
+    if (enableUpstreamPdip) {
+        UpstreamPDIP::Config pdipConfig;
+        pdipConfig.sets = params.upstreamPdipTableSets;
+        pdipConfig.assoc = params.upstreamPdipTableAssoc;
+        pdipConfig.targetsPerEntry = params.upstreamPdipTargetsPerEntry;
+        pdipConfig.queueSize = params.upstreamPdipPrefetchQueueSize;
+        pdipConfig.queueThreshold = params.upstreamPdipQueueThreshold;
+        pdipConfig.blockSize = cpu->cacheLineSize();
+        pdipConfig.tagBits = params.upstreamPdipTagBits;
+        pdipConfig.insertionProbability = params.upstreamPdipInsertionProbability;
+        upstreamPdip = std::make_unique<UpstreamPDIP>(pdipConfig);
+    }
 
     assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -248,6 +313,22 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of prefetches filtered by distance"),
     ADD_STAT(udpFilteredPrefetch, statistics::units::Count::get(),
              "Number of prefetches filtered by UDP"),
+    ADD_STAT(pdipFecPromotions, statistics::units::Count::get(),
+             "Number of instruction lines promoted to PDIP FEC"),
+    ADD_STAT(pdipFecMissCandidates, statistics::units::Count::get(),
+             "Number of L1-I miss candidates observed by PDIP"),
+    ADD_STAT(pdipFecStallCandidates, statistics::units::Count::get(),
+             "Number of PDIP candidates meeting the front-end stall threshold"),
+    ADD_STAT(pdipFecRetiredCandidates, statistics::units::Count::get(),
+             "Number of PDIP candidates whose originating FTQ entry retired"),
+    ADD_STAT(pdipFecBackendCandidates, statistics::units::Count::get(),
+             "Number of PDIP candidates that observed a backend stall"),
+    ADD_STAT(pdipTableHits, statistics::units::Count::get(),
+             "Number of PDIP trigger table hits"),
+    ADD_STAT(pdipPrefetches, statistics::units::Count::get(),
+             "Number of PDIP prefetches accepted by the fetch port"),
+    ADD_STAT(pdipQueueDrops, statistics::units::Count::get(),
+             "Number of PDIP candidates dropped by the prefetch queue"),
     ADD_STAT(icacheSquashes, statistics::units::Count::get(),
              "Number of outstanding Icache misses that were squashed"),
     ADD_STAT(tlbSquashes, statistics::units::Count::get(),
@@ -341,6 +422,22 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(distanceFilteredPrefetch);
         udpFilteredPrefetch
             .prereq(udpFilteredPrefetch);
+        pdipFecPromotions
+            .prereq(pdipFecPromotions);
+        pdipFecMissCandidates
+            .prereq(pdipFecMissCandidates);
+        pdipFecStallCandidates
+            .prereq(pdipFecStallCandidates);
+        pdipFecRetiredCandidates
+            .prereq(pdipFecRetiredCandidates);
+        pdipFecBackendCandidates
+            .prereq(pdipFecBackendCandidates);
+        pdipTableHits
+            .prereq(pdipTableHits);
+        pdipPrefetches
+            .prereq(pdipPrefetches);
+        pdipQueueDrops
+            .prereq(pdipQueueDrops);
         miscStallCycles
             .prereq(miscStallCycles);
         pendingDrainCycles
@@ -499,6 +596,13 @@ Fetch::clearStates(ThreadID tid)
     set(threads[tid].fetchpc, cpu->pcState(tid));
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
+    lastIcacheStall[tid] = 0;
+    pdipLookupId[tid] = 0;
+    pdipBackendStallSeen[tid] = false;
+    pdipMissCandidateValid[tid] = false;
+    pdipMissCandidatePaddr[tid] = 0;
+    pdipMissCandidateFtqId[tid] = 0;
+    pdipFecCandidates[tid].clear();
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
@@ -530,6 +634,13 @@ Fetch::resetStage()
         threads[tid].cacheReq.reset();
 
         threads[tid].reset();
+        lastIcacheStall[tid] = 0;
+        pdipLookupId[tid] = 0;
+        pdipBackendStallSeen[tid] = false;
+        pdipMissCandidateValid[tid] = false;
+        pdipMissCandidatePaddr[tid] = 0;
+        pdipMissCandidateFtqId[tid] = 0;
+        pdipFecCandidates[tid].clear();
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
@@ -563,6 +674,8 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     threads[tid].cacheReq.reset();
     threads[tid].cacheReq.baseAddr = vaddr;
     threads[tid].cacheReq.totalSize = fetchBufferSize;
+    threads[tid].cacheReq.pdipFtqId =
+        dbpbtb->ftqHasFetching(tid) ? dbpbtb->ftqHeadId(tid) : 0;
 
     Addr fetchPC = vaddr;
     unsigned fetchSize = cacheBlkSize - fetchPC % cacheBlkSize;  // Size for first cache line
@@ -669,6 +782,10 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
                         tid, queuedPkt->req->getVaddr());
                 updateCacheRequestStatusByRequest(tid, queuedPkt->req,
                                                   CacheWaitResponse);
+                if (enableUpstreamPdip && queuedPkt->req->isInstFetch() &&
+                    lastIcacheStall[tid] == 0) {
+                    lastIcacheStall[tid] = curTick();
+                }
                 ppFetchRequestSent->notify(queuedPkt->req);
                 retryPkt.erase(retryPkt.begin());
                 if (retryPkt.empty()) {
@@ -714,6 +831,14 @@ void
 Fetch::processCacheCompletion(PacketPtr pkt)
 {
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
+    if (enableUpstreamPdip && upstreamPdip &&
+        pkt->req->isInstFetchMiss() && pkt->req->hasPaddr()) {
+        // A split fetch may complete in either order.  Keep the physical line
+        // for whichever component actually missed in L1-I.
+        pdipMissCandidateValid[tid] = true;
+        pdipMissCandidatePaddr[tid] = pkt->req->getPaddr();
+        pdipMissCandidateFtqId[tid] = threads[tid].cacheReq.pdipFtqId;
+    }
     assert(pkt->req->isMisalignedFetch() && "Only multi-cacheline fetch is supported");
 
     bool allCompleted = processMultiCacheLineCompletion(tid, pkt);
@@ -728,6 +853,13 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     if (!hasPendingCacheRequests(tid) && cacheStatus != AccessComplete) {
         DPRINTF(Fetch, "[tid:%i] Thread not waiting for cache and no completion, ignoring\n", tid);
         ++fetchStats.icacheSquashes;
+        if (enableUpstreamPdip && upstreamPdip)
+            upstreamPdip->clearTrigger(tid);
+        lastIcacheStall[tid] = 0;
+        pdipBackendStallSeen[tid] = false;
+        pdipMissCandidateValid[tid] = false;
+        pdipMissCandidatePaddr[tid] = 0;
+        pdipMissCandidateFtqId[tid] = 0;
         return;
     }
 
@@ -735,6 +867,36 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     DPRINTF(Fetch, "[tid:%i] All misaligned packets received and merged.\n", tid);
 
     assert(!cpu->switchedOut());
+
+    if (enableUpstreamPdip && upstreamPdip && lastIcacheStall[tid] != 0 &&
+        pdipMissCandidateValid[tid]) {
+        ++fetchStats.pdipFecMissCandidates;
+        const Tick stall = curTick() - lastIcacheStall[tid];
+        const Tick min_stall = cpu->cyclesToTicks(
+            Cycles(upstreamPdipMinStallCycles));
+        const bool stalled = stall >= min_stall;
+        if (stalled)
+            ++fetchStats.pdipFecStallCandidates;
+        if (pdipBackendStallSeen[tid])
+            ++fetchStats.pdipFecBackendCandidates;
+        if (stalled && pdipBackendStallSeen[tid] &&
+            pdipMissCandidateFtqId[tid] != 0) {
+            const Addr trigger = upstreamPdip->currentTrigger(tid) != 0 ?
+                upstreamPdip->currentTrigger(tid) : dbpbtb->lastTakenBranch(tid);
+            if (trigger != 0) {
+                pdipFecCandidates[tid].push_back({
+                    pdipMissCandidatePaddr[tid], trigger,
+                    pdipMissCandidateFtqId[tid]});
+            }
+        }
+    }
+    if (enableUpstreamPdip && upstreamPdip)
+        upstreamPdip->clearTrigger(tid);
+    lastIcacheStall[tid] = 0;
+    pdipBackendStallSeen[tid] = false;
+    pdipMissCandidateValid[tid] = false;
+    pdipMissCandidatePaddr[tid] = 0;
+    pdipMissCandidateFtqId[tid] = 0;
 
     // Trace 按需消费：不在 icache 完成时写入 trace 指令码，避免批量消费。
     if (isTraceMode()) {
@@ -1158,6 +1320,13 @@ void
 Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
         ThreadID tid)
 {
+    if (enableUpstreamPdip && upstreamPdip) {
+        upstreamPdip->clearQueue(tid);
+        pdipBackendStallSeen[tid] = false;
+        pdipMissCandidateValid[tid] = false;
+        pdipMissCandidatePaddr[tid] = 0;
+        pdipMissCandidateFtqId[tid] = 0;
+    }
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s. seqNum: %lu\n",
             tid, new_pc, seqNum);
     if (squashInst) {
@@ -1253,6 +1422,8 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 void
 Fetch::flushFetchBuffer()
 {
+    if (enableUpstreamPdip && upstreamPdip)
+        upstreamPdip->clearQueue();
     for (ThreadID i = 0; i < numThreads; ++i) {
         threads[i].valid = false;
         if (enableFdip) {
@@ -1393,6 +1564,15 @@ Fetch::fetchAndProcessInstructions(bool status_change)
     // Pass stall reasons to decode stage
     toDecode->fetchStallReason = stallReason;
 
+    if (enableUpstreamPdip && upstreamPdip) {
+        for (ThreadID i = 0; i < numThreads; ++i) {
+            if (lastIcacheStall[i] != 0 &&
+                hasPdipBackendStall(fromIEW->iewInfo[i])) {
+                pdipBackendStallSeen[i] = true;
+            }
+        }
+    }
+
     // Record number of instructions fetched this cycle for distribution.
     fetchStats.nisnDist.sample(numInst);
 
@@ -1407,6 +1587,11 @@ Fetch::fetchAndProcessInstructions(bool status_change)
         for (ThreadID i = 0; i < numThreads; ++i) {
             handlePrefetch(i, fetchIsStall);
         }
+    }
+
+    if (enableUpstreamPdip) {
+        for (ThreadID i = 0; i < numThreads; ++i)
+            handleUpstreamPdip(i);
     }
 
     // Handle interrupt processing in full system mode
@@ -1763,6 +1948,10 @@ Fetch::handleCommitSignals(ThreadID tid)
         if (fromCommit->commitInfo[tid].doneFtqId) {
             DPRINTF(DecoupleBP, "Commit stream Id: %lu\n", fromCommit->commitInfo[tid].doneFtqId);
             assert(dbpbtb);
+            if (enableUpstreamPdip && upstreamPdip) {
+                promotePdipCandidatesThrough(
+                    fromCommit->commitInfo[tid].doneFtqId, tid);
+            }
             dbpbtb->commit(fromCommit->commitInfo[tid].doneFtqId, tid);
         }
         return false;
@@ -1798,6 +1987,8 @@ Fetch::handleCommitSignals(ThreadID tid)
 
     if (mispred_inst) {
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
+        if (enableUpstreamPdip && upstreamPdip)
+            upstreamPdip->notifyResteer(mispred_inst->pcState().instAddr(), tid);
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
@@ -1834,6 +2025,9 @@ Fetch::handleDecodeSquash(ThreadID tid)
                 "from decode.\n",tid);
 
         auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
+        const Addr resteerTrigger =
+            (fromDecode->decodeInfo[tid].branchMispredict && mispred_inst) ?
+            mispred_inst->pcState().instAddr() : 0;
         if (fromDecode->decodeInfo[tid].branchMispredict) {
             assert(dbpbtb);
             const auto next_pc =
@@ -1860,8 +2054,14 @@ Fetch::handleDecodeSquash(ThreadID tid)
                              fromDecode->decodeInfo[tid].doneSeqNum,
                              tid);
 
+            if (enableUpstreamPdip && upstreamPdip && resteerTrigger != 0)
+                upstreamPdip->notifyResteer(resteerTrigger, tid);
+
             return true;
         }
+
+        if (enableUpstreamPdip && upstreamPdip && resteerTrigger != 0)
+            upstreamPdip->notifyResteer(resteerTrigger, tid);
     }
 
     return false;
@@ -2296,6 +2496,10 @@ Fetch::retryPendingIcacheRequests()
 
         const ThreadID tid = cpu->contextToThread(pkt->req->contextId());
         updateCacheRequestStatusByRequest(tid, pkt->req, CacheWaitResponse);
+        if (enableUpstreamPdip && pkt->req->isInstFetch() &&
+            lastIcacheStall[tid] == 0) {
+            lastIcacheStall[tid] = curTick();
+        }
         ppFetchRequestSent->notify(pkt->req);
         retryPkt.erase(retryPkt.begin());
     }
@@ -2384,19 +2588,96 @@ Fetch::handlePrefetch(ThreadID tid, bool fetchIsStall)
     }
 }
 
-bool
-Fetch::sendPrefetchReq(Addr prefetchAddr, ThreadID tid, Addr pc)
+void
+Fetch::handleUpstreamPdip(ThreadID tid)
 {
-    RequestPtr mem_req = std::make_shared<Request>(
-        prefetchAddr, cacheBlkSize, Request::INST_FETCH,
-        cpu->instRequestorId(), pc, cpu->thread[tid]->contextId());
+    if (!upstreamPdip || !dbpbtb->ftqHasFetching(tid))
+        return;
+
+    const uint64_t id = dbpbtb->ftqHeadId(tid);
+    if (pdipLookupId[tid] != id) {
+        pdipLookupId[tid] = id;
+        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+        const Addr trigger = upstreamPdip->currentTrigger(tid) != 0 ?
+            upstreamPdip->currentTrigger(tid) : dbpbtb->lastTakenBranch(tid);
+        const auto targets = upstreamPdip->lookup(
+            trigger != 0 ? trigger : stream.startPC, tid);
+        if (!targets.empty())
+            ++fetchStats.pdipTableHits;
+        for (const Addr target : targets) {
+            if (!upstreamPdip->enqueue(target, tid))
+                ++fetchStats.pdipQueueDrops;
+        }
+    }
+
+    // A PDIP PQ entry is sent only when the existing FDIP request path accepts
+    // it.  Failed sends remain in the PQ for a later retry.
+    Addr target;
+    if (!upstreamPdip->empty(tid) && upstreamPdip->dequeue(target, tid)) {
+        if (sendPrefetchReq(target, tid,
+                dbpbtb->ftqFetchingTarget(tid).startPC, true, true)) {
+            ++fetchStats.pdipPrefetches;
+        } else {
+            upstreamPdip->enqueue(target, tid);
+        }
+    }
+}
+
+void
+Fetch::promotePdipCandidatesThrough(
+    branch_prediction::btb_pred::FetchTargetId ftqId, ThreadID tid)
+{
+    if (!upstreamPdip)
+        return;
+
+    auto &candidates = pdipFecCandidates[tid];
+    while (!candidates.empty() && candidates.front().ftqId <= ftqId) {
+        const auto candidate = candidates.front();
+        candidates.pop_front();
+
+        // A candidate is an FEC only after its originating fetch target has
+        // retired an instruction.  Check before DecoupledBPU::commit() drops
+        // the target from the FTQ.
+        if (!dbpbtb->ftqTargetHasRetired(candidate.ftqId, tid))
+            continue;
+
+        ++fetchStats.pdipFecRetiredCandidates;
+        if (upstreamPdip->promoteFec(candidate.paddr, candidate.trigger,
+                                     tid)) {
+            ++fetchStats.pdipFecPromotions;
+        }
+    }
+}
+
+bool
+Fetch::sendPrefetchReq(Addr prefetchAddr, ThreadID tid, Addr pc, bool pdip,
+                       bool physical)
+{
+    RequestPtr mem_req;
+    if (physical) {
+        mem_req = std::make_shared<Request>(
+            prefetchAddr, cacheBlkSize, Request::INST_FETCH,
+            cpu->instRequestorId());
+        mem_req->setContext(cpu->thread[tid]->contextId());
+        mem_req->setPC(pc);
+    } else {
+        mem_req = std::make_shared<Request>(
+            prefetchAddr, cacheBlkSize, Request::INST_FETCH,
+            cpu->instRequestorId(), pc, cpu->thread[tid]->contextId());
+    }
     mem_req->taskId(cpu->taskId());
+    if (pdip) {
+        mem_req->setXsMetadata(
+            Request::XsMetadata(PrefetchSourceType::PDIP));
+    }
     PacketPtr data_pkt = new Packet(mem_req, MemCmd::PFFetchReq);
     DPRINTF(FDIPPrefetch, "try send PFFetchReq req from fetch vaddr: 0x%#x\n",
             prefetchAddr);
     bool success = icachePort.sendTimingReq(data_pkt);
     DPRINTF(FDIPPrefetch, "send PFFetchReq vaddr: 0x%#x, success: %d\n",
             prefetchAddr, success);
+    if (!success)
+        delete data_pkt;
     return success;
 }
 

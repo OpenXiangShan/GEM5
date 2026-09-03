@@ -430,6 +430,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    bool ftqTargetHasRetired(FetchTargetId id, ThreadID tid) const
+    {
+        return ftq.hasTarget(id, tid) && ftq.get(id, tid).commitInstNum > 0;
+    }
 
     bool prefetchFilteredByUDP(ThreadID tid) const;
 
@@ -903,6 +907,10 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @param inst Dynamic instruction pointer of the committed instruction
      */
     void notifyInstCommit(const DynInstPtr &inst);
+    Addr lastTakenBranch(ThreadID tid) const
+    {
+        return tid < MaxThreads ? lastTakenBranchAddr[tid] : 0;
+    }
 
     /**
      * @brief Tracks mispredictions of indirect branches
@@ -910,6 +918,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * Maps indirect branch addresses to misprediction counts.
      */
     std::map<Addr, unsigned> topMispredIndirect;
+    Addr lastTakenBranchAddr[MaxThreads]{};
 
     /**
      * @brief Dump statistics on program exit

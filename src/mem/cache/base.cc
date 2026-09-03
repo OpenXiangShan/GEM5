@@ -722,6 +722,13 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         // access() will set the lat value.
         satisfied = access(pkt, blk, lat, writebacks);
 
+        // Record the L1 instruction-cache miss on the shared request so the
+        // execution-driven fetch stage can identify a real FEC candidate.
+        // PFFetchReq is handled above and never reaches this path.
+        if (cacheLevel == 1 && pkt->req->isInstFetch() && pkt->isRead()) {
+            pkt->req->setInstFetchMiss(!satisfied);
+        }
+
         // After the evicted blocks are selected, they must be forwarded
         // to the write buffer to ensure they logically precede anything
         // happening below

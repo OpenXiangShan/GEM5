@@ -38,11 +38,22 @@ FDIP::notify(const PacketPtr &pkt)
     assert(pkt->isFromFetchPF());
     if (pkt->cmd == MemCmd::PFFetchReq) {
         RequestPtr mem_req = std::make_shared<Request>(*(pkt->req));
-        auto *trans = new PrefetchTranslation(this);
-        DPRINTF(FDIPPrefetch, "receive PFFetchReq vaddr:%#x\n",
-                mem_req->getVaddr());
-        tlb->translateTiming(mem_req,
-            system->threads[mem_req->contextId()], trans, BaseMMU::Execute);
+        const bool physical_pdip =
+            mem_req->hasPaddr() && !mem_req->hasVaddr() &&
+            mem_req->hasXsMetadata() &&
+            mem_req->getXsMetadata().prefetchSource == PrefetchSourceType::PDIP;
+        if (physical_pdip) {
+            DPRINTF(FDIPPrefetch, "receive PDIP PFFetchReq paddr:%#x\n",
+                    mem_req->getPaddr());
+            insert(mem_req);
+        } else {
+            auto *trans = new PrefetchTranslation(this);
+            DPRINTF(FDIPPrefetch, "receive PFFetchReq vaddr:%#x\n",
+                    mem_req->getVaddr());
+            tlb->translateTiming(mem_req,
+                system->threads[mem_req->contextId()], trans,
+                BaseMMU::Execute);
+        }
     } else {
         DPRINTF(FDIPPrefetch, "receive PFFlushReq\n");
         flush();
@@ -88,10 +99,19 @@ FDIP::getPacket()
 
     RequestPtr req = prefetchMSHR.front().req;
     req->setFlags(Request::PREFETCH);
-    req->setXsMetadata(Request::XsMetadata(PrefetchSourceType::FDIP));
+    if (req->hasXsMetadata()) {
+        // Preserve PDIP (and any future source-specific) metadata through the
+        // FDIP delay queue while ensuring it remains marked valid.
+        auto metadata = req->getXsMetadata();
+        metadata.validXsMetadata = true;
+        req->setXsMetadata(metadata);
+    } else {
+        req->setXsMetadata(Request::XsMetadata(PrefetchSourceType::FDIP));
+    }
     PacketPtr pkt = new Packet(req, MemCmd::HardPFReq);
     prefetchMSHR.pop_front();
     prefetchStats.pfIssued++;
+    prefetchStats.pfIssued_srcs[req->getXsMetadata().prefetchSource]++;
     return pkt;
 }
 

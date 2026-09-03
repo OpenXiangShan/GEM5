@@ -398,6 +398,20 @@ def config_cache(options, system):
             icache.prefetcher.numPrefetchMSHR = 10
             system.cpu[i].enableFdip = not options.disable_fdip
             system.cpu[i].enablePdip = options.enable_pdip
+            system.cpu[i].enableUpstreamPdip = options.enable_upstream_pdip
+            system.cpu[i].upstreamPdipTableSets = options.upstream_pdip_table_sets
+            system.cpu[i].upstreamPdipTableAssoc = options.upstream_pdip_table_assoc
+            system.cpu[i].upstreamPdipTargetsPerEntry = options.upstream_pdip_targets_per_entry
+            system.cpu[i].upstreamPdipPrefetchQueueSize = options.upstream_pdip_prefetch_queue_size
+            system.cpu[i].upstreamPdipQueueThreshold = options.upstream_pdip_queue_threshold
+            system.cpu[i].upstreamPdipTagBits = options.upstream_pdip_tag_bits
+            system.cpu[i].upstreamPdipInsertionProbability = options.upstream_pdip_insertion_probability
+            system.cpu[i].upstreamPdipMinStallCycles = options.upstream_pdip_min_stall_cycles
+            if options.enable_upstream_pdip:
+                # Match the paper's two-entry demand-MSHR reserve.  The
+                # cache owns the actual resource arbitration; PDIP only
+                # supplies candidates to this existing prefetch interface.
+                icache.demand_mshr_reserve = options.upstream_pdip_queue_threshold
             system.cpu[i].enableUdp = options.enable_udp
             system.cpu[i].branchPred.useStaticPrefetchDistance = not options.fdip_no_use_static_distance
             system.cpu[i].branchPred.staticPrefetchDistance = options.fdip_static_distance

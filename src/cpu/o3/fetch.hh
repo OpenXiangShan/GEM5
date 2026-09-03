@@ -54,6 +54,8 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/smt_sched.hh"
+#include "cpu/o3/upstream_pdip.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -65,7 +67,6 @@
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
-#include "cpu/o3/smt_sched.hh"
 
 namespace gem5
 {
@@ -537,8 +538,12 @@ class Fetch
 
     /** handle fdip prefetch req to icache by IPrefetch port. */
     void handlePrefetch(ThreadID tid, bool fetchIsStall);
+    void handleUpstreamPdip(ThreadID tid);
+    void promotePdipCandidatesThrough(
+        branch_prediction::btb_pred::FetchTargetId ftqId, ThreadID tid);
 
-    bool sendPrefetchReq(Addr prefetchAddr, ThreadID tid, Addr pc);
+    bool sendPrefetchReq(Addr prefetchAddr, ThreadID tid, Addr pc,
+                         bool pdip = false, bool physical = false);
 
     bool sendFlushReq(ThreadID tid, Addr pc);
 
@@ -727,8 +732,12 @@ class Fetch
         /** Number of completed packets received */
         unsigned completedPackets;
 
+        /** FTQ entry that initiated this demand fetch. */
+        branch_prediction::btb_pred::FetchTargetId pdipFtqId;
+
         /** Constructor */
-        CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}
+        CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0),
+                         pdipFtqId(0) {}
 
         /** Check if all packets have been completed */
         bool allCompleted() const {
@@ -778,6 +787,7 @@ class Fetch
             baseAddr = 0;
             totalSize = 0;
             completedPackets = 0;
+            pdipFtqId = 0;
         }
 
         /** Add a new request */
@@ -977,7 +987,23 @@ class Fetch
     /** FDIP enable */
     bool enableFdip{true};
     bool enablePdip{false};
+    bool enableUpstreamPdip{false};
+    unsigned upstreamPdipMinStallCycles{1};
     bool enableUdp{false};
+    std::unique_ptr<UpstreamPDIP> upstreamPdip;
+    uint64_t pdipLookupId[MaxThreads]{};
+    bool pdipBackendStallSeen[MaxThreads]{};
+    bool pdipMissCandidateValid[MaxThreads]{};
+    Addr pdipMissCandidatePaddr[MaxThreads]{};
+    branch_prediction::btb_pred::FetchTargetId
+        pdipMissCandidateFtqId[MaxThreads]{};
+    struct PdipFecCandidate
+    {
+        Addr paddr;
+        Addr trigger;
+        branch_prediction::btb_pred::FetchTargetId ftqId;
+    };
+    std::deque<PdipFecCandidate> pdipFecCandidates[MaxThreads];
 
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;
@@ -1104,6 +1130,14 @@ class Fetch
         statistics::Scalar distanceFilteredPrefetch;
         /** Stat for total number of UDP-filtered prefetch requests. */
         statistics::Scalar udpFilteredPrefetch;
+        statistics::Scalar pdipFecPromotions;
+        statistics::Scalar pdipFecMissCandidates;
+        statistics::Scalar pdipFecStallCandidates;
+        statistics::Scalar pdipFecRetiredCandidates;
+        statistics::Scalar pdipFecBackendCandidates;
+        statistics::Scalar pdipTableHits;
+        statistics::Scalar pdipPrefetches;
+        statistics::Scalar pdipQueueDrops;
         /** Total number of outstanding icache accesses that were dropped
          * due to a squash.
          */

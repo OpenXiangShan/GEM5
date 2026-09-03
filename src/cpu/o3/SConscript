@@ -43,6 +43,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('decode.cc')
     Source('dyn_inst.cc')
     Source('fetch.cc')
+    Source('upstream_pdip.cc')
     Source('free_list.cc')
     Source('fu_pool.cc')
     Source('iew.cc')

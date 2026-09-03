@@ -86,6 +86,7 @@ enum PrefetchSourceType
     SOpt,
     FDIP,
     DespacitoStream,
+    PDIP,
     NUM_PF_SOURCES
 };
 
@@ -553,6 +554,10 @@ class Request
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
     bool misalignedFetch = false;
+    // Set by the L1 instruction cache for a demand instruction-fetch miss.
+    // This survives the cache response because the request object is shared
+    // by the response packet.
+    bool instFetchMiss = false;
 
     int reqNum = 1;
     bool forward_pre_tlb = false;
@@ -615,6 +620,7 @@ class Request
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _xsMetadata(other._xsMetadata),
           _localAccessor(other._localAccessor),
+          instFetchMiss(other.instFetchMiss),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth)
     {
@@ -643,6 +649,16 @@ class Request
     bool isMisalignedFetch()
     {
         return misalignedFetch;
+    }
+
+    void setInstFetchMiss(bool miss = true)
+    {
+        instFetchMiss = miss;
+    }
+
+    bool isInstFetchMiss() const
+    {
+        return instFetchMiss;
     }
 
     void setMisalignedFetch()

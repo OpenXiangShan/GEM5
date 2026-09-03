@@ -146,6 +146,22 @@ class BaseCPU(ClockedObject):
 
     enableFdip = Param.Bool(True, "Enable FDIP instruction prefetch.")
     enablePdip = Param.Bool(False, "Enable PDIP instruction prefetch.")
+    enableUpstreamPdip = Param.Bool(
+        False, "Enable paper-faithful Priority Directed Instruction Prefetching.")
+    upstreamPdipTableSets = Param.Unsigned(512, "Number of PDIP table sets.")
+    upstreamPdipTableAssoc = Param.Unsigned(8, "PDIP table associativity.")
+    upstreamPdipTargetsPerEntry = Param.Unsigned(
+        2, "Number of physical target records per PDIP table entry.")
+    upstreamPdipPrefetchQueueSize = Param.Unsigned(
+        40, "Number of entries in the PDIP prefetch queue.")
+    upstreamPdipQueueThreshold = Param.Unsigned(
+        2, "Entries reserved in the PDIP queue for demand traffic.")
+    upstreamPdipTagBits = Param.Unsigned(
+        10, "Number of tag bits in the PDIP trigger table.")
+    upstreamPdipInsertionProbability = Param.Percent(
+        25, "Probability of inserting a promoted FEC line into PDIP.")
+    upstreamPdipMinStallCycles = Param.Unsigned(
+        10, "Minimum high-cost I-cache miss stall duration to promote PDIP.")
     enableUdp = Param.Bool(False, "Enable UDP instruction prefetch.")
 
     _uncached_interrupt_response_ports = []

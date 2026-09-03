@@ -822,6 +822,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     // ---------- Track taken branches for statistics ----------
     if (taken) {
         trackTakenBranch(branchAddr);
+        lastTakenBranchAddr[inst->threadNumber] = branchAddr;
     }
 
     // ---------- Update predictor components ----------

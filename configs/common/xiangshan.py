@@ -976,6 +976,23 @@ def xiangshan_system_init():
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--enable-upstream-pdip",
+        action="store_true",
+        default=False,
+        help="Enable the paper-faithful Priority Directed Instruction Prefetcher",
+    )
+    parser.add_argument("--upstream-pdip-table-sets", type=int, default=512)
+    parser.add_argument("--upstream-pdip-table-assoc", type=int, default=8)
+    parser.add_argument("--upstream-pdip-targets-per-entry", type=int, default=2)
+    parser.add_argument("--upstream-pdip-prefetch-queue-size", type=int, default=40)
+    parser.add_argument("--upstream-pdip-queue-threshold", type=int, default=2)
+    parser.add_argument("--upstream-pdip-tag-bits", type=int, default=10)
+    parser.add_argument(
+        "--upstream-pdip-insertion-probability", type=int, default=25,
+        help="Percentage of FEC promotions inserted in the PDIP table",
+    )
+    parser.add_argument("--upstream-pdip-min-stall-cycles", type=int, default=10)
 
     parser.add_argument(
         "--l2-factor",
@@ -987,6 +1004,21 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+
+    positive_pdip_options = {
+        "--upstream-pdip-table-sets": args.upstream_pdip_table_sets,
+        "--upstream-pdip-table-assoc": args.upstream_pdip_table_assoc,
+        "--upstream-pdip-targets-per-entry": args.upstream_pdip_targets_per_entry,
+        "--upstream-pdip-prefetch-queue-size": args.upstream_pdip_prefetch_queue_size,
+        "--upstream-pdip-queue-threshold": args.upstream_pdip_queue_threshold,
+        "--upstream-pdip-tag-bits": args.upstream_pdip_tag_bits,
+        "--upstream-pdip-min-stall-cycles": args.upstream_pdip_min_stall_cycles,
+    }
+    for option, value in positive_pdip_options.items():
+        if value <= 0:
+            parser.error(f"{option} must be positive")
+    if not 0 <= args.upstream_pdip_insertion_probability <= 100:
+        parser.error("--upstream-pdip-insertion-probability must be in [0, 100]")
 
     if args.disable_dp:
         args.l1d_hwp_type = None
