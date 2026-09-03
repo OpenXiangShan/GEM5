@@ -183,6 +183,35 @@ TEST(PartialStoreTest, MaskedWritebackMissInstallsPartialData)
     }
 }
 
+TEST(PartialStoreTest, FullWritebackCompletesPartialBlock)
+{
+    std::vector<bool> initial_mask(BlkSize, false);
+    std::fill(initial_mask.begin(), initial_mask.begin() + 8, true);
+    std::unique_ptr<Packet> initial(makeWriteback(initial_mask, 0x11));
+    std::unique_ptr<Packet> full(
+        makeWriteback(std::vector<bool>(BlkSize, true), 0xd7));
+    ASSERT_TRUE(initial->isMaskedWrite());
+    ASSERT_FALSE(full->isMaskedWrite());
+
+    std::vector<uint8_t> block_data(BlkSize, 0x00);
+    CacheBlk blk;
+    blk.data = block_data.data();
+    blk.insert(TestAddr, false);
+    blk.markPartial(BlkSize);
+
+    initial->writeDataToBlock(blk.data, BlkSize);
+    blk.markValidData(initial.get(), BlkSize);
+    ASSERT_TRUE(blk.isPartial());
+
+    full->writeDataToBlock(blk.data, BlkSize);
+    blk.markValidData(full.get(), BlkSize);
+
+    EXPECT_FALSE(blk.isPartial());
+    EXPECT_TRUE(blk.hasValidData(0, BlkSize));
+    EXPECT_TRUE(std::all_of(block_data.begin(), block_data.end(),
+                            [](uint8_t byte) { return byte == 0xd7; }));
+}
+
 TEST(PartialStoreTest, NewerMaskedWritebackWinsInOverlay)
 {
     std::vector<bool> first_mask(BlkSize, false);

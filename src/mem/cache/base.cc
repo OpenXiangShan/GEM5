@@ -2289,8 +2289,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         assert(!pkt->needsResponse());
 
         updateBlockData(blk, pkt, has_old_data);
-        if (partialBlockEnabled() && pkt->isMaskedWrite() &&
-            blk->isPartial()) {
+        if (partialBlockEnabled() && blk->isPartial()) {
             const bool was_partial = blk->isPartial();
             blk->markValidData(pkt, blkSize);
             stats.partialWritebackHitMerges++;
@@ -3468,7 +3467,7 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of dirty victims evicted for partial writeback allocation"),
     ADD_STAT(partialWritebackHitMerges,
              statistics::units::Count::get(),
-             "number of partial writebacks merged into allocated blocks"),
+             "number of writebacks merged into partial blocks"),
     ADD_STAT(partialWritebackBecameFull,
              statistics::units::Count::get(),
              "number of partial blocks completed by writebacks"),
