@@ -53,8 +53,6 @@ class ConstantLVP : public VPUnit
     const unsigned confidenceBits;
     const unsigned usefulBits;
     const bool resetConfidence;
-    const bool usefulOnlyOnCorrectPrediction;
-    const unsigned probationaryUsefulConfidence;
     const uint16_t maxConfidence;
     const uint16_t confidenceThreshold;
     const unsigned confidencePenalty;
@@ -69,7 +67,6 @@ class ConstantLVP : public VPUnit
 
     Entry *findEntry(Addr pc, ThreadID tid, Location &location);
     void allocate(Entry &entry, uint64_t tag, RegVal value);
-    bool promoteProbationaryUseful(Entry &entry);
     bool tryDecUseful(Entry &entry);
 
   public:
@@ -103,9 +100,6 @@ class ConstantLVP : public VPUnit
         statistics::Scalar updateMisses;
         statistics::Scalar valueMatches;
         statistics::Scalar valueMismatches;
-        statistics::Scalar usefulIncrements;
-        statistics::Scalar usefulSuppressed;
-        statistics::Scalar probationaryUsefulPromotions;
         statistics::Scalar mismatchInvalidations;
         statistics::Scalar invalidAllocations;
         statistics::Scalar usefulReplacements;

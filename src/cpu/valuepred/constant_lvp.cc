@@ -27,8 +27,6 @@ ConstantLVP::ConstantLVP(const Params &params)
       confidenceBits(params.confidenceBits),
       usefulBits(params.usefulBits),
       resetConfidence(params.resetConfidence),
-      usefulOnlyOnCorrectPrediction(params.usefulOnlyOnCorrectPrediction),
-      probationaryUsefulConfidence(params.probationaryUsefulConfidence),
       maxConfidence(mask(confidenceBits)),
       confidenceThreshold(static_cast<uint16_t>(std::max<double>(1.0,
               std::ceil(params.thresholdPercent * maxConfidence / 100.0)))),
@@ -47,9 +45,6 @@ ConstantLVP::ConstantLVP(const Params &params)
     fatal_if(params.confidencePenalty > maxConfidence,
             "ConstantLVP confidencePenalty must be zero or no greater than "
             "the confidence counter maximum");
-    fatal_if(probationaryUsefulConfidence > maxConfidence,
-            "ConstantLVP probationaryUsefulConfidence must be zero or no "
-            "greater than the confidence counter maximum");
     fatal_if(usefulBits == 0 || usefulBits > 16,
             "ConstantLVP usefulBits must be in [1, 16]");
     fatal_if(params.thresholdPercent == 0 ||
@@ -67,13 +62,10 @@ ConstantLVP::ConstantLVP(const Params &params)
 
     DPRINTF(ConstantLVP,
             "params: ways=%u sets=%u tagBits=%u confidenceBits=%u "
-            "usefulBits=%u resetConfidence=%u usefulOnlyOnCorrectPrediction=%u "
-            "probationaryUsefulConfidence=%u confidenceThreshold=%u "
+            "usefulBits=%u resetConfidence=%u confidenceThreshold=%u "
             "confidencePenalty=%u\n",
             numWays, numSets, tagBits, confidenceBits, usefulBits,
-            resetConfidence, usefulOnlyOnCorrectPrediction,
-            probationaryUsefulConfidence, confidenceThreshold,
-            confidencePenalty);
+            resetConfidence, confidenceThreshold, confidencePenalty);
 }
 
 ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
@@ -96,13 +88,6 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
               "ConstantLVP hit updates whose value remains constant"),
       ADD_STAT(valueMismatches, statistics::units::Count::get(),
               "ConstantLVP hit updates whose value changes"),
-      ADD_STAT(usefulIncrements, statistics::units::Count::get(),
-              "ConstantLVP value-match updates that update useful"),
-      ADD_STAT(usefulSuppressed, statistics::units::Count::get(),
-              "ConstantLVP value-match updates that suppress useful updates"),
-      ADD_STAT(probationaryUsefulPromotions, statistics::units::Count::get(),
-              "ConstantLVP zero-useful entries promoted at the probationary "
-              "confidence threshold"),
       ADD_STAT(mismatchInvalidations, statistics::units::Count::get(),
               "ConstantLVP value mismatches that invalidate the entry"),
       ADD_STAT(invalidAllocations, statistics::units::Count::get(),
@@ -188,21 +173,6 @@ ConstantLVP::allocate(Entry &entry, uint64_t tag, RegVal value)
 }
 
 bool
-ConstantLVP::promoteProbationaryUseful(Entry &entry)
-{
-    if (probationaryUsefulConfidence == 0 ||
-            static_cast<uint16_t>(entry.useful) != 0 ||
-            static_cast<uint16_t>(entry.confidence) <
-                probationaryUsefulConfidence) {
-        return false;
-    }
-
-    ++entry.useful;
-    constantStats.probationaryUsefulPromotions++;
-    return true;
-}
-
-bool
 ConstantLVP::tryDecUseful(Entry &entry)
 {
     const uint16_t confidence = entry.confidence;
@@ -275,6 +245,7 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
         const VPPredictionRecord *record, const VPFeedback &feedback)
 {
     (void)record;
+    (void)feedback;
     assertValidTid(updateInfo.tid);
     constantStats.updates++;
 
@@ -285,26 +256,10 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
         if (entry->value == updateInfo.actualValue) {
             constantStats.valueMatches++;
             ++entry->confidence;
-            const bool correctPrediction =
-                feedback.applied && feedback.offeredPrediction &&
-                feedback.wouldHaveBeenCorrect;
-            if (usefulOnlyOnCorrectPrediction && correctPrediction) {
-                // A correct prediction is strong evidence: protect the entry
-                // immediately, even if it was only probationary before use.
+            ++entry->useful;
+            if (static_cast<uint16_t>(entry->confidence) >=
+                    confidenceThreshold) {
                 entry->useful.saturate();
-                constantStats.usefulIncrements++;
-            } else if (usefulOnlyOnCorrectPrediction &&
-                    promoteProbationaryUseful(*entry)) {
-                constantStats.usefulIncrements++;
-            } else if (!usefulOnlyOnCorrectPrediction) {
-                ++entry->useful;
-                if (static_cast<uint16_t>(entry->confidence) >=
-                        confidenceThreshold) {
-                    entry->useful.saturate();
-                }
-                constantStats.usefulIncrements++;
-            } else {
-                constantStats.usefulSuppressed++;
             }
         } else {
             constantStats.valueMismatches++;
