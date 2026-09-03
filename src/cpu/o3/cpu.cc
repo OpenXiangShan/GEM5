@@ -1211,6 +1211,18 @@ CPU::getReg(VirtRegId virt_reg)
     return regFile.getReg(virt_reg);
 }
 
+RegVal
+CPU::peekReg(PhysRegIdPtr phys_reg) const
+{
+    return regFile.getReg(phys_reg);
+}
+
+RegVal
+CPU::peekReg(VirtRegId virt_reg) const
+{
+    return regFile.getReg(virt_reg);
+}
+
 void
 CPU::getReg(PhysRegIdPtr phys_reg, void *val)
 {

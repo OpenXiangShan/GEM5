@@ -243,16 +243,14 @@ class KMHV3Scheduler(Scheduler):
     __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()],
-                      rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
-            IssuePort(fu=[FP_SLOW()],
-                      rp=[FpRD(2,1), FpRD(5,1)])
+                      rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)])
         ]),
         IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_SLOW()],
                       rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)])
         ]),
         IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_SLOW()],
                       rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
         ]),
         IssueQue(name='fpIQ3', inports=2, size=18, oports=[
