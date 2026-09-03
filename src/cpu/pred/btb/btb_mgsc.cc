@@ -13,7 +13,6 @@ namespace debug {
 }
 }
 #else
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/MGSC.hh"
 
 #endif
@@ -1491,14 +1490,16 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 
 #ifndef UNIT_TEST
 void
-BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBMGSC::commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome)
 {
-    if (!inst->isCondCtrl()) {
+    if (!outcome.isCond) {
         // tage olnly deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->getPC();
+    auto meta = std::static_pointer_cast<MgscMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto pc = outcome.pc;
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;
     bool sc_taken = false;
@@ -1508,7 +1509,7 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         tage_taken = pred_it->second.taken_before_sc;
         pred_hit = true;
     }
-    auto actual_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    auto actual_taken = outcome.taken;
     if (pred_hit) {
         mgscStats.predHit++;
         if (sc_taken == actual_taken) {

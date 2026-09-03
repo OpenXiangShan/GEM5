@@ -202,7 +202,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
                 const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 #endif
 
     void setTrace() override;

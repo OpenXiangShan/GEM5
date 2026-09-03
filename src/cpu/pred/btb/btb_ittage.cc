@@ -7,7 +7,6 @@
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
 #include "base/trace.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPUseful.hh"
@@ -704,15 +703,17 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
 }
 
 void
-BTBITTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBITTAGE::commitBranch(const PredictionUpdateContext &context,
+                        const BranchOutcome &outcome)
 {
-    if (!(inst->isIndirectCtrl() && !inst->isReturn())) {
+    if (!(outcome.isIndirect && !outcome.isReturn)) {
         // ittage only cares about indirect non-return branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
+    auto meta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto pc = outcome.pc;
+    auto npc = outcome.target;
     auto pred_it = meta->preds.find(pc);
     bool this_branch_hit = false;
     Addr pred_npc;
@@ -720,7 +721,7 @@ BTBITTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         this_branch_hit = true;
         pred_npc = (pred_it->second).target;
     }
-    bool iscalled = inst->isCall();
+    bool iscalled = outcome.isCall;
 
      // Update commit statistics
     if (this_branch_hit) {

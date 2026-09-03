@@ -12,7 +12,6 @@
     #include "base/statistics.hh"
     #include "base/types.hh"
     #include "cpu/inst_seq.hh"
-    #include "cpu/o3/dyn_inst_ptr.hh"
     #include "cpu/pred/btb/common.hh"
     #include "enums/TrainingStage.hh"
     #include "sim/sim_object.hh"
@@ -31,10 +30,6 @@ namespace btb_pred
 // Conditional namespace wrapper for testing
 #ifdef UNIT_TEST
 namespace test {
-#endif
-
-#ifndef UNIT_TEST
-using DynInstPtr = o3::DynInstPtr;
 #endif
 
 enum class PredictorTrainingStage
@@ -118,10 +113,9 @@ class TimedBaseBTBPredictor: public SimObject
     {
         this->update(context, update);
     }
-#ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
-    virtual void commitBranch(const FetchTarget &entry, const DynInstPtr &inst) {}
-#endif
+    virtual void commitBranch(const PredictionUpdateContext &context,
+                              const BranchOutcome &outcome) {}
 
     int componentIdx{0};
     unsigned aheadPipelinedStages{0};

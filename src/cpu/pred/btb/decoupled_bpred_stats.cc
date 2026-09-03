@@ -3,6 +3,7 @@
 #include <tuple>
 
 #include "base/output.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "debug/BTB.hh"
@@ -861,6 +862,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Extract branch information ----------
+    const auto outcome = o3::makeBranchOutcome(inst);
     Addr branchAddr = inst->pcState().instAddr();
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetAddr = rv_pc.npc();
@@ -877,19 +879,22 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Update predictor components ----------
+    const PredictionUpdateContext context(entry);
     for (auto component : components) {
-        component->commitBranch(entry, inst);
+        component->commitBranch(context, outcome);
     }
     //here add final counter
 
     if (mispred) {
-        commitPredWrongSource(entry);
+        commitPredWrongSource(entry, info, taken);
     }
 
 }
 
 void
-DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
+DecoupledBPUWithBTB::commitPredWrongSource(
+    const FetchTarget &entry, const BranchInfo &actualBranch,
+    bool actuallyTaken)
 {
     int ubtbid = ubtb->getComponentIdx();
     int abtbid = abtb->getComponentIdx();
@@ -901,9 +906,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     int s1PredSource = entry.s1Source;
     int s3PredSource = entry.s3Source;
 
-    auto exeBranchInfo = entry.exeBranchInfo;
-
-    bool onlyDirectionWrong = entry.exeTaken != entry.predTaken;
+    bool onlyDirectionWrong = actuallyTaken != entry.predTaken;
     int s1SourceBucket = 0;
 
     assert(s1PredSource < mbtbid);
@@ -921,23 +924,23 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
         [s1SourceBucket][overrideReasonBucket(entry.overrideReason)]++;
 
     if (s3PredSource == rasid) {
-        if (exeBranchInfo.isCond) {
+        if (actualBranch.isCond) {
             dbpBtbStats.s3PredWrongTage++;
-        } else if (exeBranchInfo.isReturn) {
+        } else if (actualBranch.isReturn) {
             dbpBtbStats.s3PredWrongRas++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == ittageid) {
-        if (exeBranchInfo.isIndirect) {
+        if (actualBranch.isIndirect) {
             dbpBtbStats.s3PredWrongIttage++;
-        } else if (exeBranchInfo.isCond) {
+        } else if (actualBranch.isCond) {
             dbpBtbStats.s3PredWrongTage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == tageid) {
-        if (exeBranchInfo.isCond) {
+        if (actualBranch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
@@ -947,13 +950,13 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
             dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == mbtbid) {
-        if (exeBranchInfo.isCond) {
+        if (actualBranch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
                 dbpBtbStats.s3PredWrongMbtb++;
             }
-        } else if (exeBranchInfo.isIndirect) {
+        } else if (actualBranch.isIndirect) {
             dbpBtbStats.s3PredWrongIttage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;

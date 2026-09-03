@@ -19,7 +19,6 @@ namespace debug {
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
 #endif
 namespace gem5 {
@@ -1533,14 +1532,16 @@ BTBTAGE::getNumWays(unsigned table) const
 #ifndef UNIT_TEST
 
 void
-BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBTAGE::commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome)
 {
-    if (!inst->isCondCtrl()) {
+    if (!outcome.isCond) {
         // tage olnly deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->pcState().instAddr();
+    auto meta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto pc = outcome.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;
@@ -1548,7 +1549,7 @@ BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = outcome.taken;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

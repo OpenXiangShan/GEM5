@@ -149,7 +149,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void setAbtbComponentIdx(int idx) { abtbComponentIdx = idx; }
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 #endif
 
     void setTrace() override;

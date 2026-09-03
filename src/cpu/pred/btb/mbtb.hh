@@ -128,7 +128,8 @@ class MBTB : public TimedBaseBTBPredictor
 
     void tick() override;
 
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif

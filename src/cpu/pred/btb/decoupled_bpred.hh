@@ -195,16 +195,13 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printTarget(const FetchTarget &e)
     {
-        if (!e.resolved) {
-            DPRINTFR(DecoupleBPProbe, "FSQ Predicted target: ");
-        } else {
-            DPRINTFR(DecoupleBPProbe, "FSQ Resolved target: ");
-        }
-        // TODO:fix this
+        DPRINTFR(DecoupleBPProbe, "FSQ Predicted target: ");
         DPRINTFR(DecoupleBPProbe,
                  "%#lx-[%#lx, %#lx) --> %#lx, taken: %lu\n",
-                 e.startPC, e.getBranchInfo().pc, e.getEndPC(),
-                 e.getTakenTarget(), e.getTaken());
+                 e.startPC, e.predBranchInfo.pc,
+                 e.predBranchInfo.pc + e.predBranchInfo.size,
+                 e.predBranchInfo.target,
+                 e.predTaken);
     }
 
     /**
@@ -849,7 +846,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     /**
      * @brief Process a branch instruction during commit
      *
-     * Updates branch prediction statistics and trains predictor components.
+     * Updates branch and component-level prediction statistics.
      *
      * @param inst Dynamic instruction pointer
      * @param miss Whether the branch was mispredicted
@@ -857,7 +854,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void commitBranch(const DynInstPtr &inst, bool miss);
 
 
-    void commitPredWrongSource(const FetchTarget &entry);
+    void commitPredWrongSource(
+        const FetchTarget &entry, const BranchInfo &actualBranch,
+        bool actuallyTaken);
 
     /**
      * @brief Process branch misprediction, determine type and update statistics

@@ -36,7 +36,6 @@
     #include "cpu/pred/btb/test/test_dprintf.hh"
 #else
     #include "base/trace.hh"
-    #include "cpu/o3/dyn_inst.hh"
     #include "debug/AheadPipeline.hh"
     #include "debug/Fetch.hh"
 #endif
@@ -931,13 +930,14 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 #ifndef UNIT_TEST
 
 void
-MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+MBTB::commitBranch(const PredictionUpdateContext &context,
+                   const BranchOutcome &outcome)
 {
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        context.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
-    // auto &static_inst = inst->staticInst();
+    auto pc = outcome.pc;
+    auto npc = outcome.target;
     bool this_branch_hit = false;
     auto entry = BTBEntry();
     for (auto e : hit_entries) {
@@ -947,9 +947,7 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
             break;
         }
     }
-    // bool this_branch_miss = !this_branch_hit;
-    bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc; // all uncond should be taken
+    bool this_branch_taken = outcome.taken || !outcome.isCond;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;
@@ -958,7 +956,7 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         } else {
             btbStats.allBranchHitNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (outcome.isCond) {
             btbStats.condHits++;
             if (this_branch_taken) {
                 btbStats.condHitTakens++;
@@ -974,26 +972,23 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
             }
 
         }
-        if (inst->isUncondCtrl()) {
+        if (!outcome.isCond) {
             btbStats.uncondHits++;
         }
-        // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
-                btbStats.indirectHits++;
-                Addr pred_target = entry.target;
-                if (pred_target == this_branch_target) {
-                    btbStats.indirectPredCorrect++;
-                } else {
-                    btbStats.indirectPredWrong++;
-                }
+        if (outcome.isIndirect) {
+            btbStats.indirectHits++;
+            Addr pred_target = entry.target;
+            if (pred_target == this_branch_target) {
+                btbStats.indirectPredCorrect++;
+            } else {
+                btbStats.indirectPredWrong++;
             }
-            if (inst->isCall()) {
-                btbStats.callHits++;
-            }
-            if (inst->isReturn()) {
-                btbStats.returnHits++;
-            }
+        }
+        if (outcome.isCall) {
+            btbStats.callHits++;
+        }
+        if (outcome.isReturn) {
+            btbStats.returnHits++;
         }
     } else {
         btbStats.allBranchMisses++;
@@ -1002,7 +997,7 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         } else {
             btbStats.allBranchMissNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (outcome.isCond) {
             btbStats.condMisses++;
             if (this_branch_taken) {
                 btbStats.condMissTakens++;
@@ -1013,21 +1008,18 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
                 btbStats.condPredCorrect++;
             }
         }
-        if (inst->isUncondCtrl()) {
+        if (!outcome.isCond) {
             btbStats.uncondMisses++;
         }
-        // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
-                btbStats.indirectMisses++;
-                btbStats.indirectPredWrong++;
-            }
-            if (inst->isCall()) {
-                btbStats.callMisses++;
-            }
-            if (inst->isReturn()) {
-                btbStats.returnMisses++;
-            }
+        if (outcome.isIndirect) {
+            btbStats.indirectMisses++;
+            btbStats.indirectPredWrong++;
+        }
+        if (outcome.isCall) {
+            btbStats.callMisses++;
+        }
+        if (outcome.isReturn) {
+            btbStats.returnMisses++;
         }
     }
 }

@@ -121,7 +121,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
 
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);

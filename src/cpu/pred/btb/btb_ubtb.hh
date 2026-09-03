@@ -139,7 +139,8 @@ class UBTB : public TimedBaseBTBPredictor
      * @param stream The fetch stream containing execution results
      * @param inst The dynamic instruction being committed
      */
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 
     /** Records fine-grained attribution for S1 override events whose source is
      *  uBTB. The counters are updated at override time rather than commit time.

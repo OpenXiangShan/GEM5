@@ -943,15 +943,10 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
             control_inst_size);
     }
 
-    // Keep the legacy execution mirror for commit-time statistics. Recovery
-    // below consumes the explicit actual facts instead of reading it back.
-    target.resolved = true;
-    target.exeTaken = actually_taken;
     target.squashPC = squash_pc.instAddr();
     target.squashType = squash_type;
 
     if (squash_type == SQUASH_CTRL && static_inst) {
-        target.exeBranchInfo = recovery_branch;
         dumpFsq("Before control squash");
     }
 
@@ -1101,10 +1096,9 @@ DecoupledBPUWithBTB::commit(
         auto &target = ftq.front(tid);
 
         DPRINTF(DecoupleBP,
-                "Commit target start %#lx, which is predicted, "
-                "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
+                "Commit target start %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
-                target.startPC, target.exeBranchInfo.pc, target.exeBranchInfo.target, target.predBranchInfo.pc,
+                target.startPC, target.predBranchInfo.pc,
                 target.predBranchInfo.target);
 
         while (block_idx < committedBlocks.size() &&
@@ -1351,9 +1345,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     for (int i = 0; i < numComponents; i++) {
         entry.predMetas[i] = components[i]->getPredictionMeta(tid);
     }
-
-    // Initialize default resolution state
-    entry.setDefaultResolve();
 
     return entry;
 }

@@ -18,7 +18,6 @@ namespace debug {
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/UTAGE.hh"
 
 #endif
@@ -1502,18 +1501,20 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
 
 #ifndef UNIT_TEST
 void
-MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+MicroTAGE::commitBranch(const PredictionUpdateContext &context,
+                        const BranchOutcome &outcome)
 {
-    if (!inst->isCondCtrl()) {
+    if (!outcome.isCond) {
         // tage only deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
     if (!meta) {
         DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
         return;
     }
-    auto pc = inst->pcState().instAddr();
+    auto pc = outcome.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;
@@ -1521,7 +1522,7 @@ MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = outcome.taken;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

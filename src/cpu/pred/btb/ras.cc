@@ -4,7 +4,6 @@
 #ifdef UNIT_TEST
     #include "cpu/pred/btb/test/test_dprintf.hh"
 #else
-    #include "cpu/o3/dyn_inst.hh"
 #endif
 
 namespace gem5 {
@@ -486,14 +485,16 @@ BTBRAS::getTopAddrFromMetas(const FetchTarget &stream)
 
 #ifndef UNIT_TEST
 void
-BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBRAS::commitBranch(const PredictionUpdateContext &context,
+                     const BranchOutcome &outcome)
 {
-    if (!inst->isReturn() || inst->isNop()) {
+    if (!outcome.isReturn) {
         // ras only cares about return instructions
         return;
     }
-    auto meta = std::static_pointer_cast<RASMeta>(stream.predMetas[getComponentIdx()]);
-    auto npc = inst->getNPC();
+    auto meta = std::static_pointer_cast<RASMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto npc = outcome.target;
     if (npc != meta->target) {
         rasStats.PredWrong++;
         if (meta->sctr) {
