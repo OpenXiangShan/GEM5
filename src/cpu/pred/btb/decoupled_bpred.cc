@@ -936,16 +936,22 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     // Get reference to the target
     auto &target = ftq.get(target_id, tid);
 
-    // Update target state
+    BranchInfo recovery_branch = target.predBranchInfo;
+    if (squash_type == SQUASH_CTRL && static_inst) {
+        recovery_branch = BranchInfo(
+            squash_pc.instAddr(), redirect_pc, static_inst,
+            control_inst_size);
+    }
+
+    // Keep the legacy execution mirror for commit-time statistics. Recovery
+    // below consumes the explicit actual facts instead of reading it back.
     target.resolved = true;
     target.exeTaken = actually_taken;
     target.squashPC = squash_pc.instAddr();
     target.squashType = squash_type;
 
-    // Special handling for control squash - create branch info
     if (squash_type == SQUASH_CTRL && static_inst) {
-        // Use full branch info with static_inst if available
-        target.exeBranchInfo = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
+        target.exeBranchInfo = recovery_branch;
         dumpFsq("Before control squash");
     }
 
@@ -957,9 +963,13 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
         squash_pc.instAddr(), is_conditional, actually_taken);
     const auto bwhist_update = recovery_target.getBwHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
-    const auto phist_update = recovery_target.getPHistUpdateDuringSquash(
-        squash_pc.instAddr(), actually_taken, redirect_pc);
-    const BranchInfo recovery_branch = recovery_target.exeBranchInfo;
+    PathHistoryUpdate phist_update;
+    phist_update.taken =
+        actually_taken && recovery_branch.pc == squash_pc.instAddr();
+    if (phist_update.taken) {
+        phist_update.pc = squash_pc.instAddr();
+        phist_update.target = redirect_pc;
+    }
     const HistoryRecoveryContext recovery_context(recovery_target);
 
     // Recover history using the extracted function
