@@ -21,10 +21,6 @@ on:
         type: string
         default: ""
         description: "Comma-separated benchmark filters. Empty means run all workloads in checkpoint list."
-      vector_type:
-        required: false
-        type: string
-        description: "Benchmark type: base, simple"
       gcbv_ref_so:
         required: false
         type: string
@@ -242,24 +238,8 @@ jobs:
             export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
             export GCB_MULTI_CORE_RESTORER=""
           fi
-          case "${{ inputs.vector_type }}" in
-            "base")
-              # use pgo profile to build gem5
-              bash util/pgo/basic_pgo_new.sh
-              ;;
-            "simple")
-              # use pgo profile to build gem5, use simple vector decode strategy in scons
-              bash util/pgo/basic_pgo_new_vector.sh
-              ;;
-            "")
-              # use pgo profile to build gem5
-              bash util/pgo/basic_pgo_new.sh
-              ;;
-            *)
-              echo "Error: Invalid vector_type '${{ inputs.vector_type }}'. Must be one of: base, simple"
-              exit 1
-              ;;
-          esac
+          # use pgo profile to build gem5
+          bash util/pgo/basic_pgo_new.sh
 
       - name: Prepare performance archive
         id: archive
