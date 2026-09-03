@@ -469,6 +469,17 @@ struct FetchTarget
 
 };
 
+/** Prediction result exposed to the Fetch stage for one FTQ entry. */
+struct FetchBlockPrediction
+{
+    FetchTargetId ftqId = 0;
+    Addr startPC = 0;
+    Addr endPC = 0;
+    bool taken = false;
+    Addr controlPC = 0;
+    Addr target = 0;
+};
+
 /**
  * Read-only prediction state required to build and apply predictor updates.
  *

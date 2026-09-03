@@ -794,10 +794,10 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     // Verify fetchBufferPC alignment with the supplying FSQ entry.
     if (threads[tid].valid && dbpbtb->ftqHasFetching(tid)) {
-        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
-        if (threads[tid].startPC != stream.startPC) {
+        const auto prediction = dbpbtb->ftqFetchBlock(tid);
+        if (threads[tid].startPC != prediction.startPC) {
             panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
-                  threads[tid].startPC, stream.startPC);
+                  threads[tid].startPC, prediction.startPC);
         }
     }
 
@@ -932,25 +932,25 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
     assert(dbpbtb->ftqHasFetching(tid));
-    const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+    const auto prediction = dbpbtb->ftqFetchBlock(tid);
 
     const Addr curr_pc = next_pc.instAddr();
-    assert(stream.startPC <= curr_pc && curr_pc < stream.predEndPC);
+    assert(prediction.startPC <= curr_pc && curr_pc < prediction.endPC);
 
     bool run_out = false;
 
     // Taken when the current PC matches the predicted control PC.
-    predict_taken = stream.predTaken && (curr_pc == stream.predBranchInfo.pc);
+    predict_taken = prediction.taken && (curr_pc == prediction.controlPC);
     if (predict_taken) {
         auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
-        rpc.pc(stream.predBranchInfo.target);
-        rpc.npc(stream.predBranchInfo.target + 4);
+        rpc.pc(prediction.target);
+        rpc.npc(prediction.target + 4);
         rpc.uReset();
         run_out = true;
     } else if (inst->staticInst->isMicroop()) {
         // Microops must advance uPC explicitly; they do not rely on decoder NPC.
         inst->staticInst->advancePC(next_pc);
-        run_out = next_pc.instAddr() >= stream.predEndPC;
+        run_out = next_pc.instAddr() >= prediction.endPC;
     } else {
         // Sequential fetch: decoder already computed npc with correct inst size.
         auto &rpc = next_pc.as<RiscvISA::PCState>();
@@ -959,21 +959,21 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         // Placeholder; decoder will overwrite npc on the next decode.
         rpc.npc(fall_thru + 4);
         rpc.uReset();
-        run_out = fall_thru >= stream.predEndPC;
+        run_out = fall_thru >= prediction.endPC;
     }
 
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
-    const bool false_hit = run_out && stream.predTaken && !predict_taken;
+    const bool false_hit = run_out && prediction.taken && !predict_taken;
     if (false_hit) {
         DPRINTF(DecoupleBP,
                 "False BTB hit at FTQ %lu: stream [%#lx, %#lx) "
                 "predicted control %#lx -> %#lx, fetched through %#lx; "
                 "redirect to fall-through %s\n",
-                dbpbtb->ftqHeadId(tid), stream.startPC, stream.predEndPC,
-                stream.predBranchInfo.pc, stream.predBranchInfo.target,
+                prediction.ftqId, prediction.startPC, prediction.endPC,
+                prediction.controlPC, prediction.target,
                 curr_pc, next_pc);
-        dbpbtb->nonControlSquash(dbpbtb->ftqHeadId(tid), next_pc,
+        dbpbtb->nonControlSquash(prediction.ftqId, next_pc,
                                  inst->seqNum, tid, currentLoopIter);
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
@@ -2035,9 +2035,10 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
             instruction->isMov());
     assert(dbpbtb);
+    const auto prediction = dbpbtb->ftqFetchBlock(tid);
     DPRINTF(DecoupleBP, "Set instruction %lu with fetch id %lu\n",
-            instruction->seqNum, dbpbtb->ftqHeadId(tid));
-    instruction->setFtqId(dbpbtb->ftqHeadId(tid));
+            instruction->seqNum, prediction.ftqId);
+    instruction->setFtqId(prediction.ftqId);
 
 #if TRACING_ON
     if (trace) {
@@ -2454,27 +2455,27 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     }
 
     assert(dbpbtb);
-    const auto &stream = dbpbtb->ftqFetchingTarget(tid);
-    const Addr start_pc = stream.startPC;
+    const auto prediction = dbpbtb->ftqFetchBlock(tid);
+    const Addr start_pc = prediction.startPC;
     const Addr current_pc = pc_state.instAddr();
     threads[tid].startPC = start_pc;
 
-    if (current_pc < stream.startPC ||
-        current_pc >= stream.predEndPC) {
+    if (current_pc < prediction.startPC ||
+        current_pc >= prediction.endPC) {
         auto &reset_pc = threads[tid].fetchpc->as<RiscvISA::PCState>();
-        reset_pc.pc(stream.startPC);
-        reset_pc.npc(stream.startPC + 4);
+        reset_pc.pc(prediction.startPC);
+        reset_pc.npc(prediction.startPC + 4);
         reset_pc.uReset();
         DPRINTF(Fetch,
                 "[tid:%i] Resetting fetch PC to new FTQ stream start %s "
                 "(previous PC %#lx outside [%#lx, %#lx))\n",
                 tid, *threads[tid].fetchpc, current_pc,
-                stream.startPC, stream.predEndPC);
+                prediction.startPC, prediction.endPC);
     }
 
     DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FSQ entry, "
                   "starting at PC %#x (endPC %#x; original PC %s)\n",
-            tid, start_pc, stream.predEndPC, pc_state);
+            tid, start_pc, prediction.endPC, pc_state);
     return fetchCacheLine(start_pc, tid, pc_state.instAddr());
 }
 

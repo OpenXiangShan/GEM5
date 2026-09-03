@@ -440,8 +440,14 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
-    FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
-    const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    FetchBlockPrediction ftqFetchBlock(ThreadID tid) const
+    {
+        assert(ftqHasFetching(tid));
+        const FetchTargetId id = ftq.fetchId(tid);
+        const auto &target = ftq.get(id, tid);
+        return {id, target.startPC, target.predEndPC, target.predTaken,
+                target.predBranchInfo.pc, target.predBranchInfo.target};
+    }
     int getTargetTid(const std::array<bool, MaxThreads> &eligible,
                      unsigned *ineligibleSkips)
     {
