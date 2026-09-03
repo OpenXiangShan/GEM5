@@ -603,38 +603,6 @@ AheadBTB::checkPredictionHit(
 }
 
 /**
- * Collect all entries that need to be updated
- * 1. Process old entries
- * 2. Add new entry if necessary
- */
-std::vector<BTBEntry>
-AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
-                                 const PreparedUpdate &update)
-{
-    auto all_entries = old_entries;
-
-    // since we don't want duplications in uBTB's entriesToUpdate,
-    // which causes its counter to update twice unintentionally
-    // we need to check if the new entry already exists in uBTB
-    if (update.btbEntryCandidate) {
-        bool pred_branch_hit = false;
-        for (auto &e: all_entries) {
-            if (*update.btbEntryCandidate == e) {
-                pred_branch_hit = true;
-                break;
-            }
-        }
-        if (!pred_branch_hit) {
-            all_entries.push_back(*update.btbEntryCandidate);
-        }
-    }
-
-    DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
-    dumpBTBEntries(all_entries);
-    return all_entries;
-}
-
-/**
  * Update or replace BTB entry
  * 1. Look for matching entry
  * 2. for cond entry, if found, use the one in btb, since we need the up-to-date counter
@@ -820,13 +788,6 @@ AheadBTB::update(
     checkPredictionHit(
         stream, meta, update);
 
-    std::vector<BTBEntry> commit_entries;
-    if (trainsAtCommit()) {
-        auto old_entries = processOldEntries(
-            meta->hit_entries, update.endInstPC);
-        commit_entries = collectEntriesToUpdate(old_entries, update);
-    }
-
     Addr previousPC = getPreviousPC(stream);
     if (previousPC == 0) {
         DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
@@ -837,46 +798,21 @@ AheadBTB::update(
         ? meta->lookupIndex
         : getIndex(previousPC, stream.asidHash, stream.tid);
 
-    if (trainsAtResolve()) {
-        // A resolve packet is partial. Train only branches whose execution
-        // outcomes are present instead of inferring a complete block by PC.
-        std::vector<Addr> updated_pcs;
-        for (const auto &branch : update.branches) {
-            if (!branch.resolvedThisAttempt) {
-                continue;
-            }
-            const bool hit_in_abtb = std::any_of(
-                meta->hit_entries.begin(), meta->hit_entries.end(),
-                [&branch](const BTBEntry &entry) {
-                    return entry.pc == branch.entry.pc;
-                });
-            const bool is_btb_candidate = update.btbEntryCandidate &&
-                update.btbEntryCandidate->pc == branch.entry.pc;
-            const bool already_updated = std::find(
-                updated_pcs.begin(), updated_pcs.end(),
-                branch.entry.pc) != updated_pcs.end();
-            if ((!hit_in_abtb && !is_btb_candidate) || already_updated) {
-                continue;
-            }
-            updated_pcs.push_back(branch.entry.pc);
-            auto entry = branch.entry;
-            entry.source = getComponentIdx();
-            updateBTBEntry(
-                btb_idx, btb_tag, entry,
-                branch.actualTaken, branch.actualTarget);
+    // Train from explicit branch outcomes. A resolve packet may contain only
+    // part of the block, while a commit packet contains all committed branches.
+    std::vector<Addr> updated_pcs;
+    for (const auto &branch : update.branches) {
+        if ((trainsAtResolve() && !branch.resolvedThisAttempt) ||
+            std::find(updated_pcs.begin(), updated_pcs.end(),
+                      branch.entry.pc) != updated_pcs.end()) {
+            continue;
         }
-        return;
-    }
-
-    // A commit packet describes a complete FetchBlock and retains the legacy
-    // block-boundary handling for predicted entries.
-    for (auto &entry : commit_entries) {
-        const bool entry_taken = update.outcome.valid &&
-            update.outcome.taken && update.outcome.branch.pc == entry.pc;
+        updated_pcs.push_back(branch.entry.pc);
+        auto entry = branch.entry;
         entry.source = getComponentIdx();
         updateBTBEntry(
             btb_idx, btb_tag, entry,
-            entry_taken, update.outcome.branch.target);
+            branch.actualTaken, branch.actualTarget);
     }
 }
 

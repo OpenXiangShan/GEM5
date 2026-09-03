@@ -373,15 +373,6 @@ class AheadBTB : public TimedBaseBTBPredictor
                             const BTBMeta* meta,
                             const PreparedUpdate &update);
 
-    /** Collect entries that need to be updated
-     *  @param old_entries Processed old entries
-     *  @param stream Fetch stream with update info
-     *  @return Vector of entries to update
-     */
-    std::vector<BTBEntry> collectEntriesToUpdate(
-        const std::vector<BTBEntry>& old_entries,
-        const PreparedUpdate &update);
-
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry
      *  @param btb_tag Tag of the BTB entry
