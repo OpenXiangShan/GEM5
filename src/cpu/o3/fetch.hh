@@ -230,6 +230,9 @@ class Fetch
     /** Fetch policy. */
     SMTFetchPolicy fetchPolicy;
 
+    /** Distinct SMT threads allowed to feed Decode in one cycle. */
+    unsigned numPreDispatchThreads;
+
     /**  Decode Policy: baseline fetch blocking policy */
     SMTDecodePolicy smtDecodePolicy;
     unsigned smtBorrowThrottleCycles[MaxThreads];
@@ -1134,6 +1137,10 @@ class Fetch
         statistics::Scalar tlbSquashes;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
+        /** Distinct SMT threads sent to Decode in one cycle. */
+        statistics::Distribution decodeThreadsPerCycle;
+        /** Instructions sent from per-thread fetch queues to Decode. */
+        statistics::Distribution instsSentToDecodePerCycle;
         /** Rate of how often fetch was idle. */
         statistics::Formula idleRate;
         /** Number of branch fetches per cycle. */

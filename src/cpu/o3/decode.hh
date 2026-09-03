@@ -142,7 +142,7 @@ class Decode
      * fetch, so this function mostly checks if PC-relative branches are
      * correct.
      */
-    void decodeInsts(ThreadID tid);
+    void decodeInsts(ThreadID tid, unsigned max_insts);
 
     void setIgnoreNextFusion(Addr pc) { ignoreFusionPC = pc; lastSetIgnoreTick = curTick(); }
 
@@ -265,6 +265,10 @@ class Decode
 
     /** The width of decode, in instructions. */
     unsigned decodeWidth;
+    /** Distinct SMT threads allowed to decode in one cycle. */
+    unsigned numPreDispatchThreads;
+    /** Aggregate Decode->Rename link capacity. */
+    unsigned aggregateDecodeWidth;
 
     /** Index of instructions being sent to rename. */
     unsigned toRenameIndex;
@@ -308,6 +312,10 @@ class Decode
         statistics::Scalar controlMispred;
         /** Stat for total number of decoded instructions. */
         statistics::Scalar decodedInsts;
+        /** Distinct SMT threads decoded in one cycle. */
+        statistics::Distribution threadsDecodedPerCycle;
+        /** Instructions decoded across all SMT threads in one cycle. */
+        statistics::Distribution instsDecodedPerCycle;
         /** Stat for total number of squashed instructions. */
         statistics::Scalar squashedInsts;
         /** stat for total number of instructions that mispredicted due to pc. */

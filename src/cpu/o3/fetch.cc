@@ -89,6 +89,7 @@ Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
 
 Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     : fetchPolicy(params.smtFetchPolicy),
+      numPreDispatchThreads(params.smtNumPreDispatchThreads),
       smtDecodePolicy(params.smtDecodePolicy),
       smtBorrowThrottleHoldCycles(params.smtBorrowThrottleCycles),
       delayedSchedulerDelay(params.smtFetchDelayedSchedulerDelay),
@@ -141,6 +142,15 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     panic_if(numFetchTargetThreads > 1 && numFetchingThreads > 1,
              "smtNumFetchTargetThreads and smtNumFetchingThreads cannot both "
              "exceed one because fetch() would be invoked multiple times");
+    panic_if(numPreDispatchThreads == 0 ||
+             numPreDispatchThreads > numThreads ||
+             numPreDispatchThreads > 2,
+             "smtNumPreDispatchThreads (%u) must be in [1, min(2, "
+             "numThreads (%u))]",
+             numPreDispatchThreads, numThreads);
+    panic_if(decodeWidth * numPreDispatchThreads > MaxWidth,
+             "aggregate SMT decode width (%u * %u) exceeds MaxWidth (%u)",
+             decodeWidth, numPreDispatchThreads, MaxWidth);
 
     finishTranslationEvents.reserve(numThreads);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
@@ -299,6 +309,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of outstanding ITLB misses that were squashed"),
     ADD_STAT(nisnDist, statistics::units::Count::get(),
              "Number of instructions fetched each cycle (Total)"),
+    ADD_STAT(decodeThreadsPerCycle, statistics::units::Count::get(),
+             "Distinct SMT threads sent to Decode in one cycle"),
+    ADD_STAT(instsSentToDecodePerCycle, statistics::units::Count::get(),
+             "Instructions sent from fetch queues to Decode in one cycle"),
     ADD_STAT(idleRate, statistics::units::Ratio::get(),
              "Ratio of cycles fetch was idle",
              idleCycles / cpu->baseStats.numCycles),
@@ -422,6 +436,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
               /* bucket size */ 1)
+            .flags(statistics::pdf);
+        decodeThreadsPerCycle
+            .init(0, fetch->numPreDispatchThreads, 1)
+            .flags(statistics::pdf);
+        instsSentToDecodePerCycle
+            .init(0, fetch->decodeWidth * fetch->numPreDispatchThreads, 1)
             .flags(statistics::pdf);
         idleRate
             .prereq(idleRate);
@@ -1729,47 +1749,65 @@ Fetch::sendInstructionsToDecode()
         for (int i = 0; i < numThreads; i++) {
             measureFrontendBubbles(0, i);
         }
+        fetchStats.decodeThreadsPerCycle.sample(0);
+        fetchStats.instsSentToDecodePerCycle.sample(0);
         return;
     }
 
-    ThreadID tid = selectUnstalledThread();
+    const ThreadID primary_tid = selectUnstalledThread();
 
-    if(tid == -1)
-    {
+    if (primary_tid == InvalidThreadID) {
         DPRINTF(Fetch, "All threads are stalled, no thread selected.\n");
         for (int i = 0; i < numThreads; i++) {
             measureFrontendBubbles(0, i);
         }
+        fetchStats.decodeThreadsPerCycle.sample(0);
+        fetchStats.instsSentToDecodePerCycle.sample(0);
         return;
     }
-    DPRINTF(Fetch, "select Unstalled [tid:%i]\n",tid);
 
-    // fetch totally stalled
-    if (stallSig->blockFetch[tid]) {
-        // If decode stalled, use decode's stall reason
-        DPRINTF(Fetch, "[tid:%i] Fetch stalled\n", tid);
-        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
+    std::vector<ThreadID> selected_tids{primary_tid};
+    const bool block_policy_active = isBlockPolicyActive();
+    for (ThreadID tid = 0;
+         tid < numThreads && selected_tids.size() < numPreDispatchThreads;
+         ++tid) {
+        if (tid != primary_tid && !stallSig->blockFetch[tid] &&
+            !fetchQueue[tid].empty() &&
+            !(block_policy_active && threadFetchBlocked[tid])) {
+            selected_tids.push_back(tid);
+        }
     }
 
-    int insts_to_decode = 0;
-    auto& insts = fetchQueue[tid];
-    while (!insts.empty() && insts_to_decode < decodeWidth) {
-        const auto& inst = insts.front();
-        toDecode->insts[toDecode->size++] = inst;
-        DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
-                "from fetch queue. Fetch queue size: %i.\n",
-                tid, inst->seqNum, insts.size());
+    unsigned total_insts_to_decode = 0;
+    for (const ThreadID tid : selected_tids) {
+        DPRINTF(Fetch, "select Unstalled [tid:%i]\n", tid);
 
-        wroteToTimeBuffer = true;
-        insts.pop_front();
-        insts_to_decode++;
+        unsigned thread_insts = 0;
+        auto &insts = fetchQueue[tid];
+        while (!insts.empty() && thread_insts < decodeWidth) {
+            assert(toDecode->size < MaxWidth);
+            const auto &inst = insts.front();
+            toDecode->insts[toDecode->size++] = inst;
+            DPRINTF(Fetch,
+                    "[tid:%i] [sn:%llu] Sending instruction to decode "
+                    "from fetch queue. Fetch queue size: %i.\n",
+                    tid, inst->seqNum, insts.size());
+
+            wroteToTimeBuffer = true;
+            insts.pop_front();
+            ++thread_insts;
+        }
+
+        total_insts_to_decode += thread_insts;
+        measureFrontendBubbles(thread_insts, tid);
     }
 
-    // Update stall reasons based on fetch/decode status
-    updateStallReasons(insts_to_decode, tid);
-
-    // Intel TopDown method for measuring frontend bubbles
-    measureFrontendBubbles(insts_to_decode, tid);
+    // Legacy stall-reason vectors describe one logical decode lane. Keep
+    // that attribution while the explicit distributions below expose the
+    // widened aggregate SMT transfer.
+    updateStallReasons(total_insts_to_decode, primary_tid);
+    fetchStats.decodeThreadsPerCycle.sample(selected_tids.size());
+    fetchStats.instsSentToDecodePerCycle.sample(total_insts_to_decode);
 
     // If there was activity this cycle, inform the CPU of it
     if (wroteToTimeBuffer) {

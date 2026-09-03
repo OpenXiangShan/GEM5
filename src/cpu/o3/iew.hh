@@ -330,14 +330,16 @@ class IEW
     void dispatchInsts();
     void setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos);
 
-    void dispatchInstFromRename(ThreadID tid);
+    unsigned dispatchInstFromRename(ThreadID tid, unsigned max_insts,
+                                    unsigned dispatch_offset);
 
     /** dispatchQueue is the buffer between rename and iq
      *  first, dispatch the inst from DispatchQueue to IQ
      *  second, receive new inst from rename, store it to DQ
      */
     void dispatchInstFromDispQue();
-    void classifyInstToDispQue(ThreadID tid);
+    unsigned classifyInstToDispQue(ThreadID tid, unsigned max_insts,
+                                   unsigned dispatch_offset);
 
     /** Executes instructions. In the case of memory operations, it informs the
      * LSQ to execute the instructions. Also handles any redirects that occur
@@ -482,6 +484,10 @@ class IEW
     bool enableDispatchStage;
 
     unsigned renameWidth;
+    /** Distinct SMT threads allowed to dispatch in one cycle. */
+    unsigned numPreDispatchThreads;
+    /** Aggregate dispatch admission width across SMT threads. */
+    unsigned aggregateDispatchWidth;
 
     /** Index into queue of instructions being written back. */
     unsigned wbNumInst;
@@ -552,6 +558,8 @@ class IEW
         statistics::Formula branchMispredicts;
 
         statistics::Distribution dispDist;
+        /** Distinct SMT threads dispatched in one cycle. */
+        statistics::Distribution dispatchThreadsPerCycle;
 
         struct ExecutedInstStats : public statistics::Group
         {

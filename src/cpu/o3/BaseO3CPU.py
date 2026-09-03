@@ -287,6 +287,9 @@ class BaseO3CPU(BaseCPU):
     smtNumFetchTargetThreads = Param.Unsigned(
         1, "Maximum number of distinct SMT threads starting an FTQ fetch "
            "per cycle")
+    smtNumPreDispatchThreads = Param.Unsigned(
+        1, "Maximum number of distinct SMT threads advanced per cycle from "
+           "the fetch queue through decode, rename, dispatch, and ROB insert")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
     smtLSQMode = Param.SMTLSQMode('Independent',
                                   "SMT LSQ mode: per-thread independent or shared quota")
