@@ -48,19 +48,36 @@ class RASPopPushTest : public ::testing::Test
         return pred;
     }
 
-    FetchTarget create_stream(Addr pc, Addr target, bool isCall, bool isReturn,
-                              std::shared_ptr<void> meta) {
+    BranchInfo create_branch(Addr pc, Addr target, bool isCall,
+                             bool isReturn) {
+        BranchInfo branch;
+        branch.pc = pc;
+        branch.target = target;
+        branch.size = 4;
+        branch.isIndirect = isReturn;
+        branch.isDirect = !branch.isIndirect;
+        branch.isCall = isCall;
+        branch.isReturn = isReturn;
+        return branch;
+    }
+
+    BranchOutcome create_outcome(const BranchInfo &branch, bool taken = true) {
+        BranchOutcome outcome;
+        outcome.pc = branch.pc;
+        outcome.target = branch.target;
+        outcome.taken = taken;
+        outcome.isCond = branch.isCond;
+        outcome.isIndirect = branch.isIndirect;
+        outcome.isDirect = branch.isDirect;
+        outcome.isCall = branch.isCall;
+        outcome.isReturn = branch.isReturn;
+        outcome.size = branch.size;
+        return outcome;
+    }
+
+    FetchTarget create_context(Addr pc, std::shared_ptr<void> meta) {
         FetchTarget stream;
         stream.startPC = pc;
-        stream.exeTaken = true;
-        stream.exeBranchInfo.pc = pc;
-        stream.exeBranchInfo.target = target;
-        stream.exeBranchInfo.size = 4;
-        stream.exeBranchInfo.isCond = false;
-        stream.exeBranchInfo.isIndirect = isReturn;
-        stream.exeBranchInfo.isDirect = !stream.exeBranchInfo.isIndirect;
-        stream.exeBranchInfo.isCall = isCall;
-        stream.exeBranchInfo.isReturn = isReturn;
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -69,8 +86,12 @@ class RASPopPushTest : public ::testing::Test
         auto meta = ras->getPredictionMeta();
         auto pred = create_prediction(pc, target, true, false);
         ras->specUpdateState(pred);
-        const auto stream = create_stream(pc, target, true, false, meta);
-        ras->update(PredictionUpdateContext(stream), PreparedUpdate());
+        const auto stream = create_context(pc, meta);
+        const auto branch = create_branch(pc, target, true, false);
+        const auto outcome = create_outcome(branch);
+        const PredictionUpdateContext context(stream);
+        const PreparedUpdate update(context, 64, {outcome});
+        ras->update(context, update);
     }
 
     std::unique_ptr<BTBRAS> ras;
@@ -90,16 +111,19 @@ TEST_F(RASPopPushTest, CallReturnPopsBeforePushingInAllPaths) {
 
     auto youngerCall = create_prediction(0x3004, 0x4000, true, false);
     ras->specUpdateState(youngerCall);
-    const auto recoveryStream =
-        create_stream(0x3000, 0x2004, true, true, popPushMeta);
+    const auto recoveryStream = create_context(0x3000, popPushMeta);
+    const auto actualBranch =
+        create_branch(0x3000, 0x2004, true, true);
     ras->recoverState(
         HistoryRecoveryContext(recoveryStream),
-        recoveryStream.exeBranchInfo, recoveryStream.exeTaken);
+        actualBranch, true);
     check_return_target(0x2004, 0x3004);
 
-    const auto stream =
-        create_stream(0x3000, 0x2004, true, true, popPushMeta);
-    ras->update(PredictionUpdateContext(stream), PreparedUpdate());
+    const auto stream = create_context(0x3000, popPushMeta);
+    const auto outcome = create_outcome(actualBranch);
+    const PredictionUpdateContext context(stream);
+    const PreparedUpdate update(context, 64, {outcome});
+    ras->update(context, update);
     check_return_target(0x2004, 0x3004);
 }
 

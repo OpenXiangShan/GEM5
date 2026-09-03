@@ -76,46 +76,35 @@ protected:
         EXPECT_EQ(stagePreds[0].returnTarget, expectedTarget);
     }
 
-    // Helper function to create a commit stream for call instructions
-    FetchTarget createCallCommitStream(Addr startPC, Addr branchPC, unsigned size,
-                                       std::shared_ptr<void> meta, bool taken = true) {
+    // Helper function to create the FTQ-owned prediction context.
+    FetchTarget createContext(Addr startPC, std::shared_ptr<void> meta) {
         FetchTarget stream;
         stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = true;
-        stream.exeBranchInfo.isReturn = false;
-        stream.exeBranchInfo.size = size;
         stream.predMetas[0] = meta;
         return stream;
     }
 
-    // Helper function to create a commit stream for return instructions
-    FetchTarget createReturnCommitStream(Addr startPC, Addr branchPC, unsigned size,
-                                         std::shared_ptr<void> meta, bool taken = true) {
-        FetchTarget stream;
-        stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = false;
-        stream.exeBranchInfo.isReturn = true;
-        stream.exeBranchInfo.size = size;
-        stream.predMetas[0] = meta;
-        return stream;
+    BranchInfo createCallBranch(Addr pc, unsigned size = 4) {
+        BranchInfo branch;
+        branch.pc = pc;
+        branch.isDirect = true;
+        branch.isCall = true;
+        branch.size = size;
+        return branch;
     }
 
-    // Helper function to create a recovery stream
-    FetchTarget createRecoveryStream(Addr startPC, Addr branchPC, bool isCall, unsigned size,
-                                     std::shared_ptr<void> meta, bool taken = false) {
-        FetchTarget stream;
-        stream.startPC = startPC;
-        stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
-        stream.exeBranchInfo.isCall = isCall;
-        stream.exeBranchInfo.isReturn = !isCall;
-        stream.exeBranchInfo.size = size;
-        stream.predMetas[0] = meta;
-        return stream;
+    BranchOutcome createOutcome(const BranchInfo &branch, bool taken) {
+        BranchOutcome outcome;
+        outcome.pc = branch.pc;
+        outcome.target = branch.target;
+        outcome.taken = taken;
+        outcome.isCond = branch.isCond;
+        outcome.isIndirect = branch.isIndirect;
+        outcome.isDirect = branch.isDirect;
+        outcome.isCall = branch.isCall;
+        outcome.isReturn = branch.isReturn;
+        outcome.size = branch.size;
+        return outcome;
     }
 
     // Helper function to perform speculative call and return metadata
@@ -129,8 +118,12 @@ protected:
 
     // Helper function to commit a call instruction
     void commitCall(Addr startPC, Addr branchPC, std::shared_ptr<void> meta, unsigned size = 4) {
-        auto commitStream = createCallCommitStream(startPC, branchPC, size, meta);
-        ras->update(PredictionUpdateContext(commitStream), PreparedUpdate());
+        auto contextTarget = createContext(startPC, meta);
+        auto branch = createCallBranch(branchPC, size);
+        auto outcome = createOutcome(branch, true);
+        const PredictionUpdateContext context(contextTarget);
+        const PreparedUpdate update(context, 64, {outcome});
+        ras->update(context, update);
     }
 
     std::unique_ptr<BTBRAS> ras;
@@ -221,16 +214,16 @@ TEST_F(RASTest, BasicRecovery) {
     auto callPred = createCallPrediction(0x1000, 0x1000, 0x2000);
     ras->specUpdateState(callPred);
 
-    // Create recovery stream
+    // Create recovery context and explicit actual branch facts.
     FetchTarget recoverStream;
     recoverStream.startPC = 0x1000;
-    recoverStream.exeTaken = false;  // Not taken, so no actual call
     recoverStream.predMetas[0] = initialMeta;
+    BranchInfo actualBranch;
 
     // Recover to initial state
     ras->recoverState(
         HistoryRecoveryContext(recoverStream),
-        recoverStream.exeBranchInfo, recoverStream.exeTaken);
+        actualBranch, false);
 
     // Check that we're back to initial state
     checkReturnTarget(0x1000, 0x80000000L);
@@ -406,18 +399,13 @@ TEST_F(RASTest, ComplexRecovery) {
     // Now we should have 3 entries on the stack
     checkReturnTarget(0x4000, 0x3004);
 
-    // Recover to the state after first call (simulate misprediction)
-    FetchTarget recoverStream;
-    recoverStream.startPC = 0x2000;
-    recoverStream.exeTaken = true;  // The first call was actually taken
-    recoverStream.exeBranchInfo.pc = 0x1000;
-    recoverStream.exeBranchInfo.isCall = true;
-    recoverStream.exeBranchInfo.size = 4;
-    recoverStream.predMetas[0] = meta1;
+    // Recover to the state after first call (simulate misprediction).
+    auto recoverStream = createContext(0x2000, meta1);
+    auto actualBranch = createCallBranch(0x1000);
 
     ras->recoverState(
         HistoryRecoveryContext(recoverStream),
-        recoverStream.exeBranchInfo, recoverStream.exeTaken);
+        actualBranch, true);
 
     // Should be back to state with just one call
     checkReturnTarget(0x2000, 0x1004);
@@ -450,10 +438,11 @@ TEST_F(RASTest, CommitFlow) {
 
     // Test recovery - should now use committed stack
     boost::dynamic_bitset<> history(8, 0);
-    auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, initialMeta, false);
+    auto recoverStream = createContext(0x1000, initialMeta);
+    auto actualBranch = createCallBranch(0x1000);
     ras->recoverState(
         HistoryRecoveryContext(recoverStream),
-        recoverStream.exeBranchInfo, recoverStream.exeTaken);
+        actualBranch, false);
 
     // After recovery, committed stack should be available
     checkReturnTarget(0x2000, 0x1004);
@@ -478,10 +467,11 @@ TEST_F(RASTest, MixedOperations) {
     checkReturnTarget(0x4000, 0x3004);
 
     // Step 3: Simulate misprediction and recovery
-    auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, meta0, true);
+    auto recoverStream = createContext(0x1000, meta0);
+    auto actualBranch = createCallBranch(0x1000);
     ras->recoverState(
         HistoryRecoveryContext(recoverStream),
-        recoverStream.exeBranchInfo, recoverStream.exeTaken);
+        actualBranch, true);
 
     // Should have committed call1, but lose speculative call2 and call3
     checkReturnTarget(0x2000, 0x1004);

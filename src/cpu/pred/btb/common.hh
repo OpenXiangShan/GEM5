@@ -328,7 +328,7 @@ struct PathHistoryUpdate
  * Key structure for decoupled frontend that contains:
  * - Stream boundaries (start PC, end PC)
  * - Prediction information (branch info, targets)
- * - Execution results for verification
+ * - Recovery and profiling bookkeeping
  * - Loop and jump-ahead prediction state
  * - Statistics for profiling
  */
@@ -344,12 +344,6 @@ struct FetchTarget
     bool isHit;          // whether the predicted btb entry is hit
     bool falseHit;       // not used
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
-
-    // for commit, write at redirect or fetch
-    bool exeTaken;         // whether the branch is taken(resolved)
-    BranchInfo exeBranchInfo; // executed branch info
-
-    bool resolved;  // whether the branch is resolved/executed
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
@@ -384,9 +378,6 @@ struct FetchTarget
          predBranchInfo(BranchInfo()),
          isHit(false),
          falseHit(false),
-         exeTaken(false),
-         exeBranchInfo(BranchInfo()),
-         resolved(false),
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),
          predSource(0),
@@ -404,20 +395,6 @@ struct FetchTarget
        predMetas.fill(nullptr);
        predBTBEntries.clear();
    }
-
-    // the default exe result should be consistent with prediction
-    void setDefaultResolve() {
-        resolved = false;
-        exeBranchInfo = predBranchInfo;
-        exeTaken = predTaken;
-    }
-
-    // bool getEnded() const { return resolved ? exeEnded : predEnded; }
-    BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
-    Addr getTaken() const { return resolved ? exeTaken : predTaken; }
-    Addr getTakenTarget() const { return getBranchInfo().target; }
 
     Addr getRealStartPC() const {
         return startPC;
@@ -451,18 +428,6 @@ struct FetchTarget
         if (is_cond) {
             update.shamt++;
             update.taken = actually_taken && (squash_pc > target);
-        }
-        return update;
-    }
-
-    PathHistoryUpdate getPHistUpdateDuringSquash(
-        Addr squash_pc, bool actually_taken, Addr target) const
-    {
-        PathHistoryUpdate update;
-        update.taken = actually_taken && getControlPC() == squash_pc;
-        if (update.taken) {
-            update.pc = squash_pc;
-            update.target = target;
         }
         return update;
     }
@@ -548,8 +513,8 @@ struct PredictionUpdateContext
 /**
  * Predictor update data derived from one FetchTarget.
  *
- * FetchTarget owns the immutable prediction snapshot.  The execution outcome
- * comes either from a BranchOutcome or the legacy commit-time digest.
+ * FetchTarget owns the immutable prediction snapshot. The execution outcome
+ * comes from stage-neutral BranchOutcome records.
  * PreparedUpdate owns the materialized branch facts used by predictor
  * components for one update attempt.  Keeping these values separate prevents
  * resolve and commit from communicating through mutable FTQ scratch.
@@ -583,32 +548,9 @@ struct PreparedUpdate
 
     PreparedUpdate() = default;
 
-    /** Build the legacy commit packet from mutable FetchTarget fields. */
-    PreparedUpdate(const FetchTarget &target, unsigned predictWidth)
-    {
-        outcome = makeLegacyControlFlowOutcome(target);
-
-        if (target.squashType != SQUASH_NONE) {
-            endInstPC = target.squashPC;
-        } else if (outcome.controlMispred || outcome.taken) {
-            endInstPC = outcome.branch.pc;
-        } else {
-            endInstPC = (target.startPC + predictWidth) &
-                ~mask(floorLog2(predictWidth) - 1);
-        }
-
-        for (const auto &entry : target.predBTBEntries) {
-            if (entry.valid && entry.pc >= target.startPC &&
-                entry.pc <= endInstPC) {
-                branches.push_back(
-                    makeBranchUpdate(entry, outcome, false));
-            }
-        }
-    }
-
     /**
      * Build a packet from actual outcomes. An empty vector is a valid
-     * complete branchless block and never falls back to FetchTarget::exe*.
+     * complete branchless block.
      */
     PreparedUpdate(
         const PredictionUpdateContext &context, unsigned predictWidth,
@@ -662,15 +604,6 @@ struct PreparedUpdate
         branches.push_back(makeBranchUpdate(entry, outcome, true));
     }
 
-    void markResolved(Addr resolvedInstPC)
-    {
-        for (auto &branch : branches) {
-            if (branch.entry.valid && branch.entry.pc == resolvedInstPC) {
-                branch.resolvedThisAttempt = true;
-            }
-        }
-    }
-
     void applyOutcome(const BranchOutcome &event)
     {
         for (auto &branch : branches) {
@@ -703,19 +636,6 @@ struct PreparedUpdate
         branch.actualTarget = event.target;
         branch.controlMispred = event.mispredicted;
         branch.resolvedThisAttempt = true;
-    }
-
-    static ControlFlowOutcome makeLegacyControlFlowOutcome(
-        const FetchTarget &target)
-    {
-        return ControlFlowOutcome{
-            target.exeBranchInfo,
-            target.exeTaken,
-            target.squashType == SQUASH_CTRL &&
-                target.squashPC == target.exeBranchInfo.pc,
-            false,
-            true
-        };
     }
 
     static ControlFlowOutcome makeControlFlowOutcome(

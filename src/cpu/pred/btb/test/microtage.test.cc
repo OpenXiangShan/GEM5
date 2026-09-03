@@ -34,6 +34,23 @@ makeCondEntry(Addr pc, int ctr = -1, bool always_taken = false)
     return entry;
 }
 
+BranchOutcome
+makeBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
+{
+    BranchOutcome outcome;
+    outcome.pc = entry.pc;
+    outcome.target = entry.target;
+    outcome.taken = taken;
+    outcome.mispredicted = mispredicted;
+    outcome.isCond = entry.isCond;
+    outcome.isIndirect = entry.isIndirect;
+    outcome.isDirect = entry.isDirect;
+    outcome.isCall = entry.isCall;
+    outcome.isReturn = entry.isReturn;
+    outcome.size = entry.size;
+    return outcome;
+}
+
 FullBTBPrediction
 makeStagePred(Addr start_pc, const std::vector<BTBEntry> &entries,
               const CondTakens &cond_takens)
@@ -92,12 +109,13 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.exeTaken = true;
-    stream.exeBranchInfo = entry;
     stream.predBTBEntries = {entry};
-    PreparedUpdate update(stream, 64);
+    const PredictionUpdateContext context(stream);
+    PreparedUpdate update(
+        context, 64,
+        std::vector<BranchOutcome>{makeBranchOutcome(entry, true, false)});
 
-    tage->update(PredictionUpdateContext(stream), update);
+    tage->update(context, update);
     EXPECT_FALSE(predictTaken(tage.get(), 0x1000, entry));
 }
 

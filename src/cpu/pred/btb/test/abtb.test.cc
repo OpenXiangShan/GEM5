@@ -31,13 +31,18 @@ FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) 
     return stream;
 }
 
-void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool isCond, int size=4) {
-    stream.resolved = true;
-    stream.exeBranchInfo.pc = brPc;
-    stream.exeBranchInfo.target = target;
-    stream.exeBranchInfo.isCond = isCond;
-    stream.exeBranchInfo.size = size;
-    stream.exeTaken = taken;
+BranchOutcome
+makeBranchOutcome(bool taken, Addr brPc, Addr target, bool isCond,
+                  int size = 4)
+{
+    BranchOutcome outcome;
+    outcome.pc = brPc;
+    outcome.target = target;
+    outcome.taken = taken;
+    outcome.mispredicted = false;
+    outcome.isCond = isCond;
+    outcome.size = size;
+    return outcome;
 }
 
 FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
@@ -58,13 +63,25 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
     abtb->recoverState(tid);
 }
 
-void updateABTB(FetchTarget &stream, AheadBTB *abtb) {
+void
+updateABTB(FetchTarget &stream, AheadBTB *abtb,
+           const BranchOutcome &outcome)
+{
     // ABTB and MBTB use different metadata types.  In UNIT_TEST builds both
     // components use index 0, so do not ask MBTB to read ABTB's metadata here.
-    PreparedUpdate update(stream, abtb->predictWidth);
-    update.setBTBEntryCandidate(
-        BTBEntry(stream.exeBranchInfo), false);
-    abtb->update(PredictionUpdateContext(stream), update);
+    const PredictionUpdateContext context(stream);
+    PreparedUpdate update(
+        context, abtb->predictWidth,
+        std::vector<BranchOutcome>{outcome});
+
+    BranchInfo actual_branch;
+    actual_branch.pc = outcome.pc;
+    actual_branch.target = outcome.target;
+    actual_branch.isCond = outcome.isCond;
+    actual_branch.size = outcome.size;
+    update.setBTBEntryCandidate(BTBEntry(actual_branch), false);
+    update.applyOutcome(outcome);
+    abtb->update(context, update);
 }
 
 
@@ -104,12 +121,13 @@ TEST_F(ABTBTest, BasicPredictionUpdateCycle){
     auto pred_B = makePrediction(startPC_B, abtb);
     auto stream_B = createStream(startPC_B, pred_B, abtb);
     stream_B.previousPCs.push(stream_A.startPC); // crucial! set previous PC for ahead pipelining
-    // resolve Fetch Stream (FS reached commit stage of backend)
-    resolveStream(stream_A, true, brPC_A, target_A, true);
-    resolveStream(stream_B, true, brPC_B, target_B, true);
     // update BTB with branch information
-    updateABTB(stream_A, abtb);
-    updateABTB(stream_B, abtb);
+    updateABTB(
+        stream_A, abtb,
+        makeBranchOutcome(true, brPC_A, target_A, true));
+    updateABTB(
+        stream_B, abtb,
+        makeBranchOutcome(true, brPC_B, target_B, true));
 
     // ---------------- testing phase ----------------
     // make predictions and check if BTB is updated correctly
@@ -148,13 +166,14 @@ TEST_F(ABTBTest, AliasAvoidance){
     auto pred_B = makePrediction(startPC_B, bigAbtb);
     auto stream_B = createStream(startPC_B, pred_B, bigAbtb);
     stream_B.previousPCs.push(stream_A.startPC); // crucial! set previous PC for ahead pipelining
-    // resolve Fetch Stream (FS reached commit stage of backend)
-    resolveStream(stream_A, true, brPC1_A, target1_A, true);
-    resolveStream(stream_B, true, brPC_B, target_B, true);
     // update BTB with branch information
     // now aBTB ought to have a entry, indexed by startPC_A, tagged with startPC_B
-    updateABTB(stream_A, bigAbtb);
-    updateABTB(stream_B, bigAbtb);
+    updateABTB(
+        stream_A, bigAbtb,
+        makeBranchOutcome(true, brPC1_A, target1_A, true));
+    updateABTB(
+        stream_B, bigAbtb,
+        makeBranchOutcome(true, brPC_B, target_B, true));
 
     // ---------------- testing phase ----------------
     // when we've arrived at Fetch Block C, aBTB shouldn't return the entry trained with Fetch Block B
@@ -178,8 +197,9 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
     auto pred_t0 = makePrediction(t0StartPC, &twoThreadAbtb, 0);
     auto stream_t0 = createStream(t0StartPC, pred_t0, &twoThreadAbtb);
     stream_t0.previousPCs.push(t0PrevPC);
-    resolveStream(stream_t0, true, t0BrPC, t0Target, true);
-    updateABTB(stream_t0, &twoThreadAbtb);
+    updateABTB(
+        stream_t0, &twoThreadAbtb,
+        makeBranchOutcome(true, t0BrPC, t0Target, true));
 
     clearAheadPipeline(&twoThreadAbtb, 0);
     clearAheadPipeline(&twoThreadAbtb, 1);
