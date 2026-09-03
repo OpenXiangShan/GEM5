@@ -172,6 +172,48 @@ TEST(UBTBSetAssociativeTest, SupportsNonPowerOfTwoWays)
     }
 }
 
+TEST(UBTBCheckerTest, ReturnsPredictedExitAndMissFallThroughSignal)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+
+    EXPECT_FALSE(ubtb.lookupForChecker(StartPc, 0, 0).valid);
+
+    trainTaken(ubtb, StartPc, 0x8000);
+    const auto hit = ubtb.lookupForChecker(StartPc, 0, 0);
+    ASSERT_TRUE(hit.valid);
+    EXPECT_EQ(hit.pc, StartPc + 4);
+    EXPECT_EQ(hit.target, 0x8000);
+}
+
+TEST(UBTBCheckerTest, DoesNotOverwritePrimaryPredictionState)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr PrimaryPc = 0x1000;
+    const Addr checkerPc = findAddressOutsideSet(
+        ubtb, ubtb.testSetIndex(PrimaryPc));
+
+    trainTaken(ubtb, PrimaryPc, 0x8000);
+    trainTaken(ubtb, checkerPc, 0x9000);
+
+    predict(ubtb, PrimaryPc);
+    ASSERT_TRUE(ubtb.lookupForChecker(checkerPc, 0, 0).valid);
+
+    BranchInfo branch;
+    branch.pc = PrimaryPc + 4;
+    branch.target = 0xa000;
+    branch.size = 4;
+    branch.isDirect = true;
+
+    FullBTBPrediction s3Pred;
+    s3Pred.bbStart = PrimaryPc;
+    s3Pred.btbEntries.emplace_back(branch);
+    ubtb.updateUsingS3Pred(s3Pred);
+
+    EXPECT_TRUE(hitsTarget(ubtb, PrimaryPc, 0xa000));
+    EXPECT_TRUE(hitsTarget(ubtb, checkerPc, 0x9000));
+}
+
 }  // namespace test
 }  // namespace btb_pred
 }  // namespace branch_prediction

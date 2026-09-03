@@ -156,6 +156,18 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
+    /** Read the independent checker port used for PairTAGE's second block.
+     * The returned entry is the uBTB's single predicted exit. An invalid
+     * entry represents the uBTB fall-through prediction.
+     */
+    BTBEntry lookupForChecker(Addr startAddr, ThreadID tid,
+                              uint8_t asidHash);
+
+    /** Attribute whether a produced PairTAGE second block agreed with the
+     * checker prediction returned by lookupForChecker().
+     */
+    void recordCheckerResult(bool hit, bool matches);
+
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
@@ -259,7 +271,14 @@ class UBTB : public TimedBaseBTBPredictor
      * @param startAddr The FB start address to look up
      * @return Iterator to the matching entry if found, or ubtb.end() if not found
      */
-    UBTBIter lookup(Addr startAddr, ThreadID tid, uint8_t asidHash);
+    enum class LookupPort
+    {
+        Prediction,
+        Checker
+    };
+
+    UBTBIter lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
+                    LookupPort port = LookupPort::Prediction);
     TickedUBTBEntry lookupNoSideEffect(Addr startAddr, ThreadID tid,
                                        uint8_t asidHash) const;
 
@@ -360,6 +379,16 @@ class UBTB : public TimedBaseBTBPredictor
         Vector setEvictions;
         Vector setFullMisses;
         Distribution setOccupancy;
+
+        Scalar checkerLookups;
+        Scalar checkerHits;
+        Scalar checkerMisses;
+        Scalar checkerFullMisses;
+        Distribution checkerSetOccupancy;
+        Scalar checkerHitAgreements;
+        Scalar checkerHitDisagreements;
+        Scalar checkerMissFallThroughAgreements;
+        Scalar checkerMissFallThroughDisagreements;
 
         // per branch statistics
         Scalar allBranchHits;
