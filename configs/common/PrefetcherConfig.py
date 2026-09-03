@@ -659,4 +659,11 @@ def create_prefetcher(cpu, cache_level, options):
     if cache_level == 'l3':
         _configure_l3_prefetcher(prefetcher, options)
 
+    if (cache_level == 'l1d' and
+            getattr(options, 'disable_l1_prefetch_pc', False) and
+            hasattr(prefetcher, 'tag_prefetch')):
+        # Keep the experiment scoped to L1 data prefetch packets.  L2/L3
+        # prefetch metadata and CPU demand PCs remain unchanged.
+        prefetcher.tag_prefetch = False
+
     return prefetcher

@@ -119,7 +119,7 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
 
     /* Create a prefetch memory request */
     RequestPtr req;
-    if (owner->useVirtualAddresses && pfInfo.hasPC()) {
+    if (owner->useVirtualAddresses && pfInfo.hasPC() && tag_prefetch) {
         if (pfInfo.hasContextId()) {
             req = std::make_shared<Request>(pfInfo.getAddr(), blk_size, 0,
                                             requestor_id, pfInfo.getPC(),
@@ -128,6 +128,15 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
             req = std::make_shared<Request>();
             req->setVirt(pfInfo.getAddr(), blk_size, 0, requestor_id,
                          pfInfo.getPC());
+        }
+        req->setPaddr(paddr);
+    } else if (owner->useVirtualAddresses) {
+        // Preserve the translated virtual address while intentionally hiding
+        // the producer PC from the downstream cache.
+        req = std::make_shared<Request>();
+        req->setVirtNoPC(pfInfo.getAddr(), blk_size, 0, requestor_id);
+        if (pfInfo.hasContextId()) {
+            req->setContext(pfInfo.contextId());
         }
         req->setPaddr(paddr);
     } else {

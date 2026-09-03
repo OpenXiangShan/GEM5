@@ -745,6 +745,35 @@ class Request
     }
 
     /**
+     * Set up a virtual request without attaching the generating PC.
+     *
+     * Hardware prefetches may need to retain their virtual address for
+     * translation while intentionally hiding the producer PC from the next
+     * cache level.  Keep this separate from setVirt() so normal CPU requests
+     * continue to require a valid PC.
+     */
+    void
+    setVirtNoPC(Addr vaddr, unsigned size, Flags flags, RequestorID id,
+                AtomicOpFunctorPtr amo_op=nullptr)
+    {
+        _vaddr = vaddr;
+        _size = size;
+        _requestorId = id;
+        _pc = 0;
+        _time = curTick();
+
+        _flags.clear(~STICKY_FLAGS);
+        _flags.set(flags);
+        privateFlags.clear(~STICKY_PRIVATE_FLAGS);
+        privateFlags.set(VALID_VADDR|VALID_SIZE);
+        depth = 0;
+        accessDelta = 0;
+        translateDelta = 0;
+        atomicOpFunctor = std::move(amo_op);
+        _localAccessor = nullptr;
+    }
+
+    /**
      * Set just the physical address. This usually used to record the
      * result of a translation.
      */
