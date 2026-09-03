@@ -658,17 +658,20 @@ BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
  */
 void
 BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-                        const FetchTarget &entry,
+                        const HistoryRecoveryContext &context,
                         const PathHistoryUpdate &update)
 {
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<TageMeta> predMeta =
+        std::static_pointer_cast<TageMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
+    doUpdateHist(
+        history, update.taken, update.pc, update.target, context.tid);
 }
 
 void

@@ -481,6 +481,36 @@ struct FetchBlockPrediction
 };
 
 /**
+ * Short-lived view of FTQ-owned prediction checkpoints required to recover
+ * speculative history. Components must not retain this context.
+ */
+struct HistoryRecoveryContext
+{
+    ThreadID tid;
+    uint8_t asidHash;
+    Addr startPC;
+    PairPhase pairPhase;
+
+    const std::array<std::shared_ptr<void>, 9> &predMetas;
+    const boost::dynamic_bitset<> &history;
+    const boost::dynamic_bitset<> &phistory;
+    const boost::dynamic_bitset<> &bwhistory;
+    const std::vector<boost::dynamic_bitset<>> &lhistory;
+
+    explicit HistoryRecoveryContext(const FetchTarget &target)
+        : tid(target.tid),
+          asidHash(target.asidHash),
+          startPC(target.startPC),
+          pairPhase(target.pairPhase),
+          predMetas(target.predMetas),
+          history(target.history),
+          phistory(target.phistory),
+          bwhistory(target.bwhistory),
+          lhistory(target.lhistory)
+    {}
+};
+
+/**
  * Read-only prediction state required to build and apply predictor updates.
  *
  * This is deliberately a view into an FTQ-owned FetchTarget.  It narrows the

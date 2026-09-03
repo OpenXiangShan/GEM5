@@ -181,16 +181,21 @@ class BTBMGSC : public TimedBaseBTBPredictor
                          const DirectionHistoryUpdate &update);
 
     // Recover all folded histories after a misprediction.
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
-    void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry,
+    void recoverHist(const boost::dynamic_bitset<> &history,
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update) override;
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
-    void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                       bool cond_taken);
-    void recoverIHist(const FetchTarget &entry, int shamt,
-                      bool cond_taken);
-    void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken);
+    void recoverBwHist(const boost::dynamic_bitset<> &history,
+                       const HistoryRecoveryContext &context,
+                       const DirectionHistoryUpdate &update);
+    void recoverIHist(const HistoryRecoveryContext &context,
+                      const DirectionHistoryUpdate &update);
+    void recoverLHist(
+        const std::vector<boost::dynamic_bitset<>> &history,
+        const HistoryRecoveryContext &context,
+        const DirectionHistoryUpdate &update);
 
     // Update predictor state based on actual branch outcomes
     void update(const PredictionUpdateContext &context,

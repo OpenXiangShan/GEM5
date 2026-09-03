@@ -743,13 +743,14 @@ class DecoupledBPUWithBTB : public BPredUnit
     // std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
 
     void recoverHistoryForSquash(
-        FetchTarget &target,
-        unsigned target_id,
-        const PCStateBase &squash_pc,
-        bool is_conditional,
-        bool actually_taken,
-        SquashType squash_type,
-        Addr redirect_pc);
+        const HistoryRecoveryContext &context,
+        FetchTargetId targetId,
+        const DirectionHistoryUpdate &ghistUpdate,
+        const DirectionHistoryUpdate &bwhistUpdate,
+        const PathHistoryUpdate &phistUpdate,
+        const BranchInfo &recoveryBranch,
+        bool actuallyTaken,
+        SquashType squashType);
 
     // Common logic for squash handling
     void handleSquash(ThreadID tid, unsigned target_id,

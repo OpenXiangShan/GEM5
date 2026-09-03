@@ -1275,17 +1275,22 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history,
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < gTableNum; i++) {
         state.indexGFoldedHist[i].recover(predMeta->indexGFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken, state.indexGFoldedHist);
+    doUpdateHist(
+        history, update.shamt, update.taken, state.indexGFoldedHist);
 }
 
 /**
@@ -1303,14 +1308,16 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
  */
 void
 BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < pTableNum; i++) {
         state.indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
@@ -1332,17 +1339,22 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history,
+                       const HistoryRecoveryContext &context,
+                       const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < bwTableNum; i++) {
         state.indexBwFoldedHist[i].recover(predMeta->indexBwFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken, state.indexBwFoldedHist);
+    doUpdateHist(
+        history, update.shamt, update.taken, state.indexBwFoldedHist);
 }
 
 /**
@@ -1359,19 +1371,23 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverIHist(const HistoryRecoveryContext &context,
+                      const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < iTableNum; i++) {
         state.indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
-    doUpdateHist(dummy, shamt, cond_taken, state.indexIFoldedHist);
+    doUpdateHist(
+        dummy, update.shamt, update.taken, state.indexIFoldedHist);
 }
 
 /**
@@ -1388,22 +1404,27 @@ BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken)
+BTBMGSC::recoverLHist(
+    const std::vector<boost::dynamic_bitset<>> &history,
+    const HistoryRecoveryContext &context,
+    const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
         for (int i = 0; i < lTableNum; i++) {
             state.indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
         }
     }
     const Addr localHistoryIndex =
-        getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories), entry.asidHash);
-    doUpdateHist(history[localHistoryIndex], shamt, cond_taken,
+        getPcIndex(context.startPC, log2(numEntriesFirstLocalHistories),
+                   context.asidHash);
+    doUpdateHist(history[localHistoryIndex], update.shamt, update.taken,
                  state.indexLFoldedHist[localHistoryIndex]);
 }
 

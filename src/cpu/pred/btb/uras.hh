@@ -49,7 +49,9 @@ class BTBuRAS : public TimedBaseBTBPredictor
 
         unsigned getDelay() override {return 0;}
 
-        void recoverState(const FetchTarget &entry);
+        void recoverState(const HistoryRecoveryContext &context,
+                          const BranchInfo &actualBranch,
+                          bool actuallyTaken);
 
         void update(const PredictionUpdateContext &context,
                     const PreparedUpdate &update) override;

@@ -90,7 +90,11 @@ TEST_F(RASPopPushTest, CallReturnPopsBeforePushingInAllPaths) {
 
     auto youngerCall = create_prediction(0x3004, 0x4000, true, false);
     ras->specUpdateState(youngerCall);
-    ras->recoverState(create_stream(0x3000, 0x2004, true, true, popPushMeta));
+    const auto recoveryStream =
+        create_stream(0x3000, 0x2004, true, true, popPushMeta);
+    ras->recoverState(
+        HistoryRecoveryContext(recoveryStream),
+        recoveryStream.exeBranchInfo, recoveryStream.exeTaken);
     check_return_target(0x2004, 0x3004);
 
     const auto stream =

@@ -228,7 +228,9 @@ TEST_F(RASTest, BasicRecovery) {
     recoverStream.predMetas[0] = initialMeta;
 
     // Recover to initial state
-    ras->recoverState(recoverStream);
+    ras->recoverState(
+        HistoryRecoveryContext(recoverStream),
+        recoverStream.exeBranchInfo, recoverStream.exeTaken);
 
     // Check that we're back to initial state
     checkReturnTarget(0x1000, 0x80000000L);
@@ -413,7 +415,9 @@ TEST_F(RASTest, ComplexRecovery) {
     recoverStream.exeBranchInfo.size = 4;
     recoverStream.predMetas[0] = meta1;
 
-    ras->recoverState(recoverStream);
+    ras->recoverState(
+        HistoryRecoveryContext(recoverStream),
+        recoverStream.exeBranchInfo, recoverStream.exeTaken);
 
     // Should be back to state with just one call
     checkReturnTarget(0x2000, 0x1004);
@@ -447,7 +451,9 @@ TEST_F(RASTest, CommitFlow) {
     // Test recovery - should now use committed stack
     boost::dynamic_bitset<> history(8, 0);
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, initialMeta, false);
-    ras->recoverState(recoverStream);
+    ras->recoverState(
+        HistoryRecoveryContext(recoverStream),
+        recoverStream.exeBranchInfo, recoverStream.exeTaken);
 
     // After recovery, committed stack should be available
     checkReturnTarget(0x2000, 0x1004);
@@ -473,7 +479,9 @@ TEST_F(RASTest, MixedOperations) {
 
     // Step 3: Simulate misprediction and recovery
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, meta0, true);
-    ras->recoverState(recoverStream);
+    ras->recoverState(
+        HistoryRecoveryContext(recoverStream),
+        recoverStream.exeBranchInfo, recoverStream.exeTaken);
 
     // Should have committed call1, but lose speculative call2 and call3
     checkReturnTarget(0x2000, 0x1004);

@@ -122,10 +122,12 @@ void recoverSelectedHistory(BTBTAGE* tage,
                             bool cond_taken,
                             const PathHistoryUpdate& path_update)
 {
+    const HistoryRecoveryContext context(stream);
     if (tage->usesPathHistory()) {
-        tage->recoverPHist(history, stream, path_update);
+        tage->recoverPHist(history, context, path_update);
     } else {
-        tage->recoverHist(history, stream, shamt, cond_taken);
+        tage->recoverHist(
+            history, context, DirectionHistoryUpdate{shamt, cond_taken});
     }
 }
 
@@ -1437,7 +1439,9 @@ TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
     FetchTarget stream = createStream(0x1000, entry, true, meta);
     stream = setMispredStream(stream);
 
-    tage->recoverHist(historyB, stream, 1, true);
+    tage->recoverHist(
+        historyB, HistoryRecoveryContext(stream),
+        DirectionHistoryUpdate{1, true});
     tage->update(
         PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
@@ -1562,7 +1566,8 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     EXPECT_EQ(phist.pc, entry.pc);
     EXPECT_EQ(phist.target, entry.target);
 
-    tage->recoverPHist(pathHistoryBefore, stream, phist);
+    tage->recoverPHist(
+        pathHistoryBefore, HistoryRecoveryContext(stream), phist);
     tage->checkFoldedHist(pathHistoryAfter, "recover taken control path");
 }
 

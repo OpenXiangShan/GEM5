@@ -299,17 +299,21 @@ struct MgscHarness
             recover_stream.exeBranchInfo = entry;
             recover_stream.exeTaken = actual_taken;
             recover_stream.squashPC = entry.pc;
+            const HistoryRecoveryContext context(recover_stream);
 
-            mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
+            const DirectionHistoryUpdate actual_ghist{
+                ghist.shamt, actual_taken};
+            mgsc.recoverHist(ghr, context, actual_ghist);
             const auto actual_phist = recover_stream.getPHistUpdateDuringSquash(
                 entry.pc, actual_taken, entry.target);
-            mgsc.recoverPHist(phr, recover_stream, actual_phist);
+            mgsc.recoverPHist(phr, context, actual_phist);
 
             bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
-            mgsc.recoverBwHist(bwhr, recover_stream,
-                               bwhist.shamt, actual_bw_taken);
-            mgsc.recoverIHist(recover_stream, bwhist.shamt, actual_bw_taken);
-            mgsc.recoverLHist(lhr, recover_stream, ghist.shamt, actual_taken);
+            const DirectionHistoryUpdate actual_bwhist{
+                bwhist.shamt, actual_bw_taken};
+            mgsc.recoverBwHist(bwhr, context, actual_bwhist);
+            mgsc.recoverIHist(context, actual_bwhist);
+            mgsc.recoverLHist(lhr, context, actual_ghist);
 
             // Apply correct external history update.
             histShiftIn(ghist.shamt, actual_taken, ghr);

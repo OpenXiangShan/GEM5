@@ -126,35 +126,45 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
 }
 
 void
-BTBuRAS::recoverState(const FetchTarget &entry)
+BTBuRAS::recoverState(const HistoryRecoveryContext &context,
+                      const BranchInfo &actualBranch,
+                      bool actuallyTaken)
 {
     auto &stack = specStack;
     auto &sp = specSp;
     printStack("before recoverState", stack, sp);
     // recover sp and tos first
-    auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenSlot = entry.exeBranchInfo;
+    auto meta_ptr = std::static_pointer_cast<uRASMeta>(
+        context.predMetas[getComponentIdx()]);
     if (enableDB) {
-        SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
+        SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, context.startPC,
+                         actualBranch.pc, 0, sp, stack[sp].retAddr,
+                         stack[sp].ctr);
         specRasTrace->write_record(rec);
     }
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
-    if (entry.exeTaken) {
+    if (actuallyTaken) {
         // do push & pops on control squash
-        if (takenSlot.isReturn) {
+        if (actualBranch.isReturn) {
             if (enableDB) {
-                SpecRASTrace rec(When::REDIRECT, RAS_OP::POP, entry.startPC, takenSlot.pc, stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+                SpecRASTrace rec(When::REDIRECT, RAS_OP::POP,
+                                 context.startPC, actualBranch.pc,
+                                 stack[sp].retAddr, sp, stack[sp].retAddr,
+                                 stack[sp].ctr);
                 specRasTrace->write_record(rec);
             }
-            DPRINTF(URAS, "recover stack pop at pc 0x%llx target %llx\n", entry.startPC, stack[sp].retAddr);
+            DPRINTF(URAS, "recover stack pop at pc 0x%llx target %llx\n",
+                    context.startPC, stack[sp].retAddr);
             pop(stack, sp);
         }
-        if (takenSlot.isCall) {
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+        if (actualBranch.isCall) {
+            Addr retAddr = actualBranch.pc + actualBranch.size;
             if (enableDB) {
-                SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
+                SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH,
+                                 context.startPC, actualBranch.pc, retAddr,
+                                 sp, stack[sp].retAddr, stack[sp].ctr);
                 specRasTrace->write_record(rec);
             }
             DPRINTF(URAS, "recover stack push addr 0x%llx\n", retAddr);

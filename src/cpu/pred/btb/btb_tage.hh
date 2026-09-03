@@ -165,10 +165,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
                          const PathHistoryUpdate &update) override;
 
     void recoverHist(const boost::dynamic_bitset<> &history,
-                     const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
@@ -230,7 +230,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Update branch history
     void doUpdateHist(const bitset &history, int shamt, bool taken,
                       Addr pc, Addr target, ThreadID tid);
-    void recoverFoldedHist(const FetchTarget &entry);
+    void recoverFoldedHist(const HistoryRecoveryContext &context);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;

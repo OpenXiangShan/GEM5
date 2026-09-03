@@ -1304,10 +1304,12 @@ MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
  */
 void
 MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, const PathHistoryUpdate &update)
+    const HistoryRecoveryContext &context, const PathHistoryUpdate &update)
 {
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<TageMeta> predMeta =
+        std::static_pointer_cast<TageMeta>(
+            context.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "recoverPHist: no prediction metadata, cannot recover\n");
         return;
@@ -1341,7 +1343,8 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
     }
-    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
+    doUpdateHist(
+        history, update.taken, update.pc, update.target, context.tid);
 }
 
 // Check folded history after speculative update and recovery

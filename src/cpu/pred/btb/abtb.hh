@@ -162,7 +162,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     bool lastPredHasEntries(ThreadID tid) const;
 
-    void recoverState(const FetchTarget &entry);
+    void recoverState(ThreadID tid);
 
 #ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per

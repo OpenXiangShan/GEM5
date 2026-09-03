@@ -134,7 +134,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // Recover path folded histories after a misprediction.
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes

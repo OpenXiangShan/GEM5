@@ -91,10 +91,10 @@ class TimedBaseBTBPredictor: public SimObject
                                  FullBTBPrediction &pred,
                                  const PathHistoryUpdate &update) {}
     virtual void recoverHist(const boost::dynamic_bitset<> &history,
-                             const FetchTarget &entry, int shamt,
-                             bool cond_taken) {}
+                             const HistoryRecoveryContext &context,
+                             const DirectionHistoryUpdate &update) {}
     virtual void recoverPHist(const boost::dynamic_bitset<> &history,
-                              const FetchTarget &entry,
+                              const HistoryRecoveryContext &context,
                               const PathHistoryUpdate &update) {}
     virtual void update(const PredictionUpdateContext &context,
                         const PreparedUpdate &update) {}

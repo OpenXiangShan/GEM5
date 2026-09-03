@@ -1264,14 +1264,18 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
 }
 
 void
-BTBTAGE::recoverFoldedHist(const FetchTarget &entry)
+BTBTAGE::recoverFoldedHist(const HistoryRecoveryContext &context)
 {
     auto predMeta =
-        std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+        std::static_pointer_cast<TageMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
-        threadHistory[entry.tid].tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        threadHistory[entry.tid].altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        threadHistory[entry.tid].indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        threadHistory[context.tid].tagFoldedHist[i].recover(
+            predMeta->tagFoldedHist[i]);
+        threadHistory[context.tid].altTagFoldedHist[i].recover(
+            predMeta->altTagFoldedHist[i]);
+        threadHistory[context.tid].indexFoldedHist[i].recover(
+            predMeta->indexFoldedHist[i]);
     }
 }
 
@@ -1290,27 +1294,28 @@ BTBTAGE::recoverFoldedHist(const FetchTarget &entry)
  */
 void
 BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, int shamt, bool cond_taken)
+    const HistoryRecoveryContext &context,
+    const DirectionHistoryUpdate &update)
 {
     if (usePathHistory) {
         return;
     }
 
-    recoverFoldedHist(entry);
-    doUpdateHist(history, shamt, cond_taken, 0, 0, entry.tid);
+    recoverFoldedHist(context);
+    doUpdateHist(history, update.shamt, update.taken, 0, 0, context.tid);
 }
 
 void
 BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, const PathHistoryUpdate &update)
+    const HistoryRecoveryContext &context, const PathHistoryUpdate &update)
 {
     if (!usePathHistory) {
         return;
     }
 
-    recoverFoldedHist(entry);
+    recoverFoldedHist(context);
     doUpdateHist(history, update.shamt, update.taken, update.pc,
-                 update.target, entry.tid);
+                 update.target, context.tid);
 }
 
 // Check folded history after speculative update and recovery

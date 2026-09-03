@@ -244,7 +244,7 @@ class PairTAGE : public TimedBaseBTBPredictor
                          FullBTBPrediction &pred,
                          const PathHistoryUpdate &update) override;
     void recoverPHist(const bitset &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
     PairBlockInfo getSecondPredBlock() const;
     bool secondBlockMatches(const TrainPacket &packet) const;

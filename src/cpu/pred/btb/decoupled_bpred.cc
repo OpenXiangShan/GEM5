@@ -952,8 +952,20 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     // Remove targets after the squashed one
     ftq.squashAfter(target_id, tid);
 
+    const auto &recovery_target = ftq.get(target_id, tid);
+    const auto ghist_update = recovery_target.getGHistUpdateDuringSquash(
+        squash_pc.instAddr(), is_conditional, actually_taken);
+    const auto bwhist_update = recovery_target.getBwHistUpdateDuringSquash(
+        squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
+    const auto phist_update = recovery_target.getPHistUpdateDuringSquash(
+        squash_pc.instAddr(), actually_taken, redirect_pc);
+    const BranchInfo recovery_branch = recovery_target.exeBranchInfo;
+    const HistoryRecoveryContext recovery_context(recovery_target);
+
     // Recover history using the extracted function
-    recoverHistoryForSquash(target, target_id, squash_pc, is_conditional, actually_taken, squash_type, redirect_pc);
+    recoverHistoryForSquash(
+        recovery_context, target_id, ghist_update, bwhist_update,
+        phist_update, recovery_branch, actually_taken, squash_type);
 
     // Clear predictions for next cycle
     clearPreds(tid);
@@ -1478,24 +1490,21 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
 /**
  * @brief Recovers branch history during a squash event
  *
- * @param target The target being squashed
- * @param target_id ID of the target being squashed
- * @param squash_pc PC where the squash occurred
- * @param is_conditional Whether the branch is conditional
- * @param actually_taken Whether the branch was actually taken
- * @param squash_type Type of squash (CTRL/OTHER/TRAP)
+ * The caller materializes the actual history updates before exposing the
+ * prediction-time checkpoint to component recovery.
  */
 void
 DecoupledBPUWithBTB::recoverHistoryForSquash(
-    FetchTarget &target,
-    unsigned target_id,
-    const PCStateBase &squash_pc,
-    bool is_conditional,
-    bool actually_taken,
-    SquashType squash_type,
-    Addr redirect_pc)
+    const HistoryRecoveryContext &context,
+    FetchTargetId targetId,
+    const DirectionHistoryUpdate &ghistUpdate,
+    const DirectionHistoryUpdate &bwhistUpdate,
+    const PathHistoryUpdate &phistUpdate,
+    const BranchInfo &recoveryBranch,
+    bool actuallyTaken,
+    SquashType squashType)
 {
-    ThreadID tid = target.tid;
+    ThreadID tid = context.tid;
     auto& s0History = threads[tid].s0History;
     auto& s0PHistory = threads[tid].s0PHistory;
     auto& s0BwHistory = threads[tid].s0BwHistory;
@@ -1503,71 +1512,58 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 
     //printf("recover target_id: %u\n", target_id);
     // Restore history from the target
-    s0History = target.history;
-    s0PHistory = target.phistory;
-    s0BwHistory = target.bwhistory;
-    s0LHistory = target.lhistory;
-    threads[tid].s0PairPhase = target.pairPhase;
-
-    // Get actual history update information.
-    const auto ghist_update = target.getGHistUpdateDuringSquash(
-        squash_pc.instAddr(), is_conditional, actually_taken);
-    const auto bwhist_update = target.getBwHistUpdateDuringSquash(
-        squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
-    const auto phist_update = target.getPHistUpdateDuringSquash(
-        squash_pc.instAddr(), actually_taken, redirect_pc);
+    s0History = context.history;
+    s0PHistory = context.phistory;
+    s0BwHistory = context.bwhistory;
+    s0LHistory = context.lhistory;
+    threads[tid].s0PairPhase = context.pairPhase;
 
     // RAS recovers its speculative stack, not folded history.
     if (ras->isEnabled()) {
-        ras->recoverState(target);
+        ras->recoverState(context, recoveryBranch, actuallyTaken);
     }
     if (abtb->isEnabled()) {
-        abtb->recoverState(target);
+        abtb->recoverState(tid);
     }
 
     // Recover component-local folded histories.
     for (int i = 0; i < numComponents; ++i) {
-        components[i]->recoverHist(s0History, target, ghist_update.shamt,
-                                   ghist_update.taken);
-        components[i]->recoverPHist(s0PHistory, target, phist_update);
+        components[i]->recoverHist(s0History, context, ghistUpdate);
+        components[i]->recoverPHist(s0PHistory, context, phistUpdate);
     }
     if (mgsc->isEnabled()) {
-        mgsc->recoverBwHist(s0BwHistory, target, bwhist_update.shamt,
-                            bwhist_update.taken);
-        mgsc->recoverIHist(target, bwhist_update.shamt,
-                           bwhist_update.taken);
-        mgsc->recoverLHist(s0LHistory, target, ghist_update.shamt,
-                           ghist_update.taken);
+        mgsc->recoverBwHist(s0BwHistory, context, bwhistUpdate);
+        mgsc->recoverIHist(context, bwhistUpdate);
+        mgsc->recoverLHist(s0LHistory, context, ghistUpdate);
     }
 
     // Update global history with actual outcome
-    histShiftIn(ghist_update.shamt, ghist_update.taken, s0History);
+    histShiftIn(ghistUpdate.shamt, ghistUpdate.taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(phist_update.shamt, phist_update.taken, s0PHistory,
-                 phist_update.pc, phist_update.target);
+    pHistShiftIn(phistUpdate.shamt, phistUpdate.taken, s0PHistory,
+                 phistUpdate.pc, phistUpdate.target);
 
     // Update global backward history with actual outcome
-    histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
+    histShiftIn(bwhistUpdate.shamt, bwhistUpdate.taken, s0BwHistory);
 
     // Update local history with actual outcome
     const Addr localHistoryIndex =
-        mgsc->getPcIndex(target.startPC,
+        mgsc->getPcIndex(context.startPC,
                          log2(mgsc->getNumEntriesFirstLocalHistories()),
-                         target.asidHash);
-    histShiftIn(ghist_update.shamt, ghist_update.taken,
+                         context.asidHash);
+    histShiftIn(ghistUpdate.shamt, ghistUpdate.taken,
                 s0LHistory[localHistoryIndex]);
 
     advancePairPhase(threads[tid].s0PairPhase);
 
     // Update history manager with appropriate branch info
-    if (squash_type == SQUASH_CTRL) {
-        historyManagers[tid].squash(target_id, ghist_update,
-                                    phist_update,
-                                    target.exeBranchInfo);
+    if (squashType == SQUASH_CTRL) {
+        historyManagers[tid].squash(targetId, ghistUpdate,
+                                    phistUpdate, recoveryBranch);
     } else {
-        historyManagers[tid].squash(target_id, ghist_update,
-                                    phist_update, BranchInfo());
+        historyManagers[tid].squash(targetId, ghistUpdate,
+                                    phistUpdate, BranchInfo());
     }
 
     // Perform history consistency checks when not a fast build variant
@@ -1576,23 +1572,23 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     if (tage->isEnabled()) {
         tage->checkFoldedHist(
             tage->usesPathHistory() ? s0PHistory : s0History, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+            squashType == SQUASH_CTRL ? "control squash" :
+            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
     if (ittage->isEnabled()) {
         ittage->checkFoldedHist(s0PHistory, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+            squashType == SQUASH_CTRL ? "control squash" :
+            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
     if (microtage->isEnabled()) {
         microtage->checkFoldedHist(s0PHistory, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+            squashType == SQUASH_CTRL ? "control squash" :
+            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
     if (mgsc->isEnabled()) {
         mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+            squashType == SQUASH_CTRL ? "control squash" :
+            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
 #endif
 }

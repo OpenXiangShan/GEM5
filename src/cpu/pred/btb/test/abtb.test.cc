@@ -55,9 +55,7 @@ FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
 }
 
 void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
-    FetchTarget stream;
-    stream.tid = tid;
-    abtb->recoverState(stream);
+    abtb->recoverState(tid);
 }
 
 void updateABTB(FetchTarget &stream, AheadBTB *abtb) {

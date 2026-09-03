@@ -171,49 +171,52 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
 }
 
 void
-BTBRAS::recoverState(const FetchTarget &entry)
+BTBRAS::recoverState(const HistoryRecoveryContext &context,
+                     const BranchInfo &actualBranch,
+                     bool actuallyTaken)
 {
-    const ThreadID tid = entry.tid;
+    const ThreadID tid = context.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
-    auto takenEntry = entry.exeBranchInfo;
     /*
     if (takenEntry.isCall || takenEntry.isReturn) {
         printStack("before recoverState", tid);
     }*/
     // recover sp and tos first
-    auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-    DPRINTF(RAS, "recover called, meta TOSR %d TOSW %d ssp %d sctr %u entry PC %lx end PC %lx\n",
-        meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp, meta_ptr->sctr, entry.startPC, entry.predEndPC);
+    auto meta_ptr = std::static_pointer_cast<RASMeta>(
+        context.predMetas[getComponentIdx()]);
+    DPRINTF(RAS, "recover called, meta TOSR %d TOSW %d ssp %d "
+            "sctr %u entry PC %lx\n",
+            meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp,
+            meta_ptr->sctr, context.startPC);
 
     state.TOSR = meta_ptr->TOSR;
     state.TOSW = meta_ptr->TOSW;
     state.ssp = meta_ptr->ssp;
     state.sctr = meta_ptr->sctr;
-    Addr retAddr = takenEntry.pc + takenEntry.size;
+    Addr retAddr = actualBranch.pc + actualBranch.size;
 
     // do push & pops on control squash
-    if (entry.exeTaken) {
+    if (actuallyTaken) {
         // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
-        if (takenEntry.isReturn) {
+        if (actualBranch.isReturn) {
             pop(tid);
             //TOSW = (TOSR + 1) % numInflightEntries;
         }
-        if (takenEntry.isCall) {
+        if (actualBranch.isCall) {
             push(tid, retAddr);
         }
     }
 
-    
-    if (entry.exeTaken) {
-        DPRINTF(RAS, "isCall %d, isRet %d\n", takenEntry.isCall, takenEntry.isReturn);
-        if (takenEntry.isReturn) {
-            DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
-                takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
+    if (actuallyTaken) {
+        DPRINTF(RAS, "isCall %d, isRet %d\n",
+                actualBranch.isCall, actualBranch.isReturn);
+        if (actualBranch.isReturn) {
+            DPRINTF(RAS, "IsRet expect target %lx, predicted %lx\n",
+                    actualBranch.target, meta_ptr->target);
         }
         printStack("after recoverState", tid);
     }
-
 }
 
 void

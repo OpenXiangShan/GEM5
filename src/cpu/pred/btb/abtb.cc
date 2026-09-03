@@ -396,9 +396,9 @@ AheadBTB::lastPredHasEntries(ThreadID tid) const
 }
 
 void
-AheadBTB::recoverState(const FetchTarget &entry)
+AheadBTB::recoverState(ThreadID tid)
 {
-    auto &state = threadState(entry.tid);
+    auto &state = threadState(tid);
     // Clear ahead pipeline after squash.
     while (!state.aheadReadBtbEntries.empty()) {
         state.aheadReadBtbEntries.pop();

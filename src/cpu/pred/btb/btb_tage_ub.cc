@@ -346,21 +346,20 @@ BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
 
 void
 BTBTAGEUpperBound::recoverHist(const boost::dynamic_bitset<> &history,
-                               const FetchTarget &entry, int shamt,
-                               bool cond_taken)
+                               const HistoryRecoveryContext &context,
+                               const DirectionHistoryUpdate &update)
 {
     (void)history;
-    (void)entry;
-    (void)shamt;
-    (void)cond_taken;
+    (void)context;
+    (void)update;
 }
 
 void
 BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
-                                const FetchTarget &entry,
+                                const HistoryRecoveryContext &context,
                                 const PathHistoryUpdate &update)
 {
-    (void)entry;
+    (void)context;
 
     if (historySource != HistorySource::PathHash) {
         return;
