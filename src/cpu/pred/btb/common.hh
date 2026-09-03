@@ -345,8 +345,6 @@ struct FetchTarget
     bool falseHit;       // not used
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
 
-    // Persistent cutoff for resolve updates that survive a non-control squash.
-    std::optional<Addr> nonControlEndPC;
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
     PairPhase pairPhase;   // PairTAGE logical phase of this block start
@@ -378,7 +376,6 @@ struct FetchTarget
          predBranchInfo(BranchInfo()),
          isHit(false),
          falseHit(false),
-         nonControlEndPC(std::nullopt),
          predSource(0),
          pairPhase(PairPhase::Even),
          predTick(0),
@@ -554,15 +551,11 @@ struct PreparedUpdate
     PreparedUpdate(
         const PredictionUpdateContext &context, unsigned predictWidth,
         const std::vector<BranchOutcome> &outcomeEvents,
-        std::optional<Addr> committedEndPC = std::nullopt,
-        std::optional<Addr> nonControlEndPC = std::nullopt)
+        std::optional<Addr> committedEndPC = std::nullopt)
     {
         outcome = makeControlFlowOutcome(outcomeEvents);
 
-        if (nonControlEndPC) {
-            endInstPC = *nonControlEndPC;
-        } else if (outcome.valid &&
-                   (outcome.controlMispred || outcome.taken)) {
+        if (outcome.valid && (outcome.controlMispred || outcome.taken)) {
             endInstPC = outcome.branch.pc;
         } else if (committedEndPC) {
             endInstPC = *committedEndPC;

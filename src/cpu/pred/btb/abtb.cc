@@ -602,7 +602,6 @@ AheadBTB::checkPredictionHit(
 
 }
 
-
 /**
  * Collect all entries that need to be updated
  * 1. Process old entries
@@ -644,8 +643,9 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
  * 5. Update MRU information
  */
 void
-AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
-                                        const BranchInfo takenbranchinfo,const bool isTaken)
+AheadBTB::updateBTBEntry(
+    Addr btb_idx, Addr btb_tag, const BTBEntry &entry,
+    bool actual_taken, Addr actual_target)
 {
 
     // Look for matching entry
@@ -663,17 +663,16 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {
-        bool this_cond_taken = isTaken && takenbranchinfo.pc == entry_to_write.pc;
-        if (!this_cond_taken) {
+        if (!actual_taken) {
             entry_to_write.alwaysTaken = false;
         }
         if (!entry_to_write.alwaysTaken) {
-            updateCtr(entry_to_write.ctr, this_cond_taken);
+            updateCtr(entry_to_write.ctr, actual_taken);
         }
     }
     // update indirect target if necessary
-    if (entry_to_write.isIndirect && isTaken && takenbranchinfo.pc == entry_to_write.pc) {
-        entry_to_write.target = takenbranchinfo.target;
+    if (entry_to_write.isIndirect && actual_taken) {
+        entry_to_write.target = actual_target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
@@ -759,12 +758,12 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
             return;
         }
         Addr btb_idx = state.lastPredLookupIndex;
-        BranchInfo takenbranchinfo;
-        takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
-        takenbranchinfo.target = s3Pred.getTakenEntry().target;
         entry.source = getComponentIdx();
 
-        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
+        const auto taken_entry = s3Pred.getTakenEntry();
+        const bool entry_taken = s3Pred.isTaken() && taken_entry.pc == entry.pc;
+        updateBTBEntry(
+            btb_idx, btb_tag, entry, entry_taken, taken_entry.target);
     }
 }
 std::vector<BTBEntry>
@@ -814,42 +813,70 @@ AheadBTB::update(
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
         return;
     }
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get();
-    Addr end_inst_pc = update.endInstPC;
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        stream.predMetas[getComponentIdx()]).get();
 
-    // 1. Process old entries
-    auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
-
-    // 2. Check prediction hit status, for stats recording
+    // 1. Check prediction hit status, for stats recording
     checkPredictionHit(
-        stream,
-        std::static_pointer_cast<BTBMeta>(
-            stream.predMetas[getComponentIdx()]).get(),
-        update);
+        stream, meta, update);
 
-    // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, update);
+    std::vector<BTBEntry> commit_entries;
+    if (trainsAtCommit()) {
+        auto old_entries = processOldEntries(
+            meta->hit_entries, update.endInstPC);
+        commit_entries = collectEntriesToUpdate(old_entries, update);
+    }
 
-    // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
-    for (auto &entry : entries_to_update) {
-        Addr startPC = stream.getRealStartPC();
-        Addr btb_tag = getTag(startPC, stream.asidHash);  // use current pc to get tag
+    Addr previousPC = getPreviousPC(stream);
+    if (previousPC == 0) {
+        DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
+        return;
+    }
+    const Addr btb_tag = getTag(stream.getRealStartPC(), stream.asidHash);
+    const Addr btb_idx = meta->lookupIndexValid
+        ? meta->lookupIndex
+        : getIndex(previousPC, stream.asidHash, stream.tid);
 
-        // AheadBTB always uses ahead-pipelined update logic
-        Addr previousPC = getPreviousPC(stream);
-        if (previousPC == 0) {
-            DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
-            return;
+    if (trainsAtResolve()) {
+        // A resolve packet is partial. Train only branches whose execution
+        // outcomes are present instead of inferring a complete block by PC.
+        std::vector<Addr> updated_pcs;
+        for (const auto &branch : update.branches) {
+            if (!branch.resolvedThisAttempt) {
+                continue;
+            }
+            const bool hit_in_abtb = std::any_of(
+                meta->hit_entries.begin(), meta->hit_entries.end(),
+                [&branch](const BTBEntry &entry) {
+                    return entry.pc == branch.entry.pc;
+                });
+            const bool is_btb_candidate = update.btbEntryCandidate &&
+                update.btbEntryCandidate->pc == branch.entry.pc;
+            const bool already_updated = std::find(
+                updated_pcs.begin(), updated_pcs.end(),
+                branch.entry.pc) != updated_pcs.end();
+            if ((!hit_in_abtb && !is_btb_candidate) || already_updated) {
+                continue;
+            }
+            updated_pcs.push_back(branch.entry.pc);
+            auto entry = branch.entry;
+            entry.source = getComponentIdx();
+            updateBTBEntry(
+                btb_idx, btb_tag, entry,
+                branch.actualTaken, branch.actualTarget);
         }
-        // Reuse the set accessed during prediction, including its PHR hash.
-        // Before the ahead pipeline fills, retain the legacy PC-only fallback.
-        Addr btb_idx = meta->lookupIndexValid
-            ? meta->lookupIndex
-            : getIndex(previousPC, stream.asidHash, stream.tid);
-        entry.source = getComponentIdx(); // mark the entry source as AheadBTB
+        return;
+    }
+
+    // A commit packet describes a complete FetchBlock and retains the legacy
+    // block-boundary handling for predicted entries.
+    for (auto &entry : commit_entries) {
+        const bool entry_taken = update.outcome.valid &&
+            update.outcome.taken && update.outcome.branch.pc == entry.pc;
+        entry.source = getComponentIdx();
         updateBTBEntry(
-            btb_idx, btb_tag, entry, update.outcome.branch,
-            update.outcome.valid && update.outcome.taken);
+            btb_idx, btb_tag, entry,
+            entry_taken, update.outcome.branch.target);
     }
 }
 

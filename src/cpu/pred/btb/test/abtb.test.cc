@@ -74,13 +74,15 @@ updateABTB(FetchTarget &stream, AheadBTB *abtb,
         context, abtb->predictWidth,
         std::vector<BranchOutcome>{outcome});
 
-    BranchInfo actual_branch;
-    actual_branch.pc = outcome.pc;
-    actual_branch.target = outcome.target;
-    actual_branch.isCond = outcome.isCond;
-    actual_branch.size = outcome.size;
-    update.setBTBEntryCandidate(BTBEntry(actual_branch), false);
-    update.applyOutcome(outcome);
+    if (update.branches.empty() && outcome.taken) {
+        BranchInfo actual_branch;
+        actual_branch.pc = outcome.pc;
+        actual_branch.target = outcome.target;
+        actual_branch.isCond = outcome.isCond;
+        actual_branch.size = outcome.size;
+        update.setBTBEntryCandidate(BTBEntry(actual_branch), false);
+        update.applyOutcome(outcome);
+    }
     abtb->update(context, update);
 }
 
@@ -216,6 +218,59 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
         EXPECT_EQ(pred_t0_test.btbEntries[0].pc, t0BrPC);
         EXPECT_EQ(pred_t0_test.btbEntries[0].target, t0Target);
     }
+}
+
+TEST_F(ABTBTest, ResolveUpdateOnlyTrainsExplicitBranch)
+{
+    constexpr Addr previous_pc = 0x1000;
+    constexpr Addr start_pc = 0x2000;
+    constexpr Addr branch_a_pc = 0x2004;
+    constexpr Addr branch_b_pc = 0x2008;
+
+    auto empty_pred = makePrediction(start_pc, abtb);
+    auto insert_a = createStream(start_pc, empty_pred, abtb);
+    insert_a.previousPCs.push(previous_pc);
+    updateABTB(
+        insert_a, abtb,
+        makeBranchOutcome(true, branch_a_pc, 0x3000, true));
+
+    auto pred_after_a = makePrediction(start_pc, abtb);
+    auto insert_b = createStream(start_pc, pred_after_a, abtb);
+    insert_b.previousPCs.push(previous_pc);
+    updateABTB(
+        insert_b, abtb,
+        makeBranchOutcome(true, branch_b_pc, 0x4000, true));
+
+    clearAheadPipeline(abtb, 0);
+    makePrediction(previous_pc, abtb);
+    auto both_pred = makePrediction(start_pc, abtb);
+    ASSERT_EQ(both_pred.btbEntries.size(), 2);
+
+    auto resolve_a = createStream(start_pc, both_pred, abtb);
+    resolve_a.previousPCs.push(previous_pc);
+    abtb->setTrainingStage(PredictorTrainingStage::Resolve);
+    const auto outcome =
+        makeBranchOutcome(false, branch_a_pc, branch_a_pc + 4, true);
+    PreparedUpdate update(
+        PredictionUpdateContext(resolve_a), abtb->predictWidth,
+        std::vector<BranchOutcome>{outcome});
+    BranchInfo duplicate_candidate;
+    duplicate_candidate.pc = outcome.pc;
+    duplicate_candidate.target = outcome.target;
+    duplicate_candidate.isCond = outcome.isCond;
+    duplicate_candidate.size = outcome.size;
+    update.setBTBEntryCandidate(BTBEntry(duplicate_candidate), false);
+    update.applyOutcome(outcome);
+    ASSERT_EQ(update.branches.size(), 2);
+    abtb->update(PredictionUpdateContext(resolve_a), update);
+
+    clearAheadPipeline(abtb, 0);
+    makePrediction(previous_pc, abtb);
+    auto updated_pred = makePrediction(start_pc, abtb);
+    ASSERT_EQ(updated_pred.btbEntries.size(), 2);
+    EXPECT_FALSE(updated_pred.btbEntries[0].alwaysTaken);
+    EXPECT_EQ(updated_pred.btbEntries[0].ctr, -1);
+    EXPECT_TRUE(updated_pred.btbEntries[1].alwaysTaken);
 }
 
 } // namespace test

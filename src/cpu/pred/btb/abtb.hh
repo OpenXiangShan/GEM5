@@ -386,10 +386,12 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param btb_idx Index of the BTB entry
      *  @param btb_tag Tag of the BTB entry
      *  @param entry Entry to update/replace
-     *  @param stream Fetch stream with update info
+     *  @param actual_taken Whether this entry was actually taken
+     *  @param actual_target Actual target when this entry was taken
      */
-    void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
-                                    const BranchInfo takenbranchinfo,const bool isTaken);
+    void updateBTBEntry(
+        Addr btb_idx, Addr btb_tag, const BTBEntry &entry,
+        bool actual_taken, Addr actual_target);
 
     /*
      * Comparator for MRU heap

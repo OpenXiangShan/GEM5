@@ -767,8 +767,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     PreparedUpdate prepareUpdate(
         const PredictionUpdateContext &context,
         const std::vector<BranchOutcome> &events,
-        std::optional<Addr> committedEndPC = std::nullopt,
-        std::optional<Addr> nonControlEndPC = std::nullopt);
+        std::optional<Addr> committedEndPC = std::nullopt);
     void updatePredictorComponents(const PredictionUpdateContext &context,
                                    const PreparedUpdate &update);
     void updateStatistics(const FetchTarget &target,

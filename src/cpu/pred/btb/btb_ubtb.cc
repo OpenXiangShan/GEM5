@@ -391,9 +391,6 @@ UBTB::update(
     const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
-    // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = update.endInstPC;
-
     auto pred_hit_entry = meta->hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
      // Use BTBEntry instead of BranchInfo; make it invalid when not taken
