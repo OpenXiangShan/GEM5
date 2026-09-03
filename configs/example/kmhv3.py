@@ -170,9 +170,9 @@ def setKmhV3Params(args, system):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
-                    # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    inner_cache = l2_wrapper.slices[j].inner_cache
+                    inner_cache.replacement_policy = TreePLRURP(
+                        num_leaves=inner_cache.assoc)
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
