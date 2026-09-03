@@ -193,6 +193,9 @@ class ROB
     /** Is the oldest group of instructions across a particular thread ready. */
     bool isHeadGroupReady(ThreadID tid);
 
+    /** Returns the first instruction preventing the head group from retiring. */
+    DynInstPtr getHeadGroupFirstNotReady(ThreadID tid);
+
     InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 
     /** Re-adjust ROB partitioning. */

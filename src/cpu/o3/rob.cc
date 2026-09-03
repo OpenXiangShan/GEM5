@@ -616,6 +616,22 @@ ROB::isHeadGroupReady(ThreadID tid)
     return false;
 }
 
+DynInstPtr
+ROB::getHeadGroupFirstNotReady(ThreadID tid)
+{
+    if (threadGroups[tid].empty() || threadGroups[tid].front() == 0) {
+        return nullptr;
+    }
+
+    auto it = instList[tid].begin();
+    for (unsigned i = 0; i < threadGroups[tid].front(); ++i, ++it) {
+        if (!(*it)->readyToCommit()) {
+            return *it;
+        }
+    }
+    return nullptr;
+}
+
 InstSeqNum
 ROB::getHeadGroupLastDoneSeq(ThreadID tid)
 {

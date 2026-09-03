@@ -108,6 +108,9 @@ def setKmhV3Params(args, system):
                     confidencePenalty=0,
                     resetConfidence=True,
                     thresholdPercent=100,
+                    enableCriticality=True,
+                    criticalCounterBits=2,
+                    criticalBlockCycleFactor=4,
                 ),
                 # ExampleValuePredictor(),
                 # EStride(logMaxConfidence=13, thresholdPercent=0.35)

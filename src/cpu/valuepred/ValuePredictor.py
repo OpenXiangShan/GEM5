@@ -172,3 +172,9 @@ class ConstantLVP(ValuePredictor):
         False, "Reset confidence and useful counters on a value mismatch")
     thresholdPercent = Param.Percent(
         100, "Minimum confidence percentage required to predict")
+    enableCriticality = Param.Bool(
+        False, "Lower the prediction threshold for ROB-head critical loads")
+    criticalCounterBits = Param.Unsigned(
+        2, "Width of the per-entry load criticality counter")
+    criticalBlockCycleFactor = Param.Unsigned(
+        4, "ROB-head blocked cycles represented by one critical increment")

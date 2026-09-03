@@ -1785,9 +1785,15 @@ class DynInst : public ExecContext, public RefCounted
     bool vpMisprediction = false;
     bool vpSupported = false;
 
+    void countRobHeadBlockedCycle() { ++robHeadBlockedCycles; }
+    uint64_t getRobHeadBlockedCycles() const { return robHeadBlockedCycles; }
+
     bool canLVP(){
         return isLoad() && !isVector() && !isLoadReserved();
     }
+
+  private:
+    uint64_t robHeadBlockedCycles = 0;
 };
 
 } // namespace o3

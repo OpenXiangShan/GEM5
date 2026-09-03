@@ -10,6 +10,7 @@
 #include "base/random.hh"
 #include "base/stats/units.hh"
 #include "base/trace.hh"
+#include "cpu/valuepred/constant_lvp_policy.hh"
 #include "debug/ConstantLVP.hh"
 
 namespace gem5
@@ -27,7 +28,11 @@ ConstantLVP::ConstantLVP(const Params &params)
       confidenceBits(params.confidenceBits),
       usefulBits(params.usefulBits),
       resetConfidence(params.resetConfidence),
+      enableCriticality(params.enableCriticality),
+      criticalCounterBits(params.criticalCounterBits),
+      criticalBlockCycleFactor(params.criticalBlockCycleFactor),
       maxConfidence(mask(confidenceBits)),
+      maxCritical(mask(criticalCounterBits)),
       confidenceThreshold(static_cast<uint16_t>(std::max<double>(1.0,
               std::ceil(params.thresholdPercent * maxConfidence / 100.0)))),
       confidencePenalty(params.confidencePenalty == 0 ?
@@ -47,6 +52,10 @@ ConstantLVP::ConstantLVP(const Params &params)
             "the confidence counter maximum");
     fatal_if(usefulBits == 0 || usefulBits > 16,
             "ConstantLVP usefulBits must be in [1, 16]");
+    fatal_if(criticalCounterBits == 0 || criticalCounterBits > 16,
+            "ConstantLVP criticalCounterBits must be in [1, 16]");
+    fatal_if(criticalBlockCycleFactor == 0,
+            "ConstantLVP criticalBlockCycleFactor must be nonzero");
     fatal_if(params.thresholdPercent == 0 ||
                     params.thresholdPercent > 100,
             "ConstantLVP thresholdPercent must be in [1, 100]");
@@ -56,16 +65,32 @@ ConstantLVP::ConstantLVP(const Params &params)
         threadTables.reserve(numWays);
         for (unsigned way = 0; way < numWays; ++way) {
             threadTables.emplace_back(
-                    numSets, Entry(confidenceBits, usefulBits));
+                    numSets, Entry(confidenceBits, usefulBits,
+                            criticalCounterBits));
         }
+    }
+
+    constantStats.criticalCounterValue
+        .init(maxCritical + 1)
+        .flags(statistics::total | statistics::pdf);
+    for (unsigned value = 0; value <= maxCritical; ++value) {
+        constantStats.criticalCounterValue.subname(
+                value, std::to_string(value));
     }
 
     DPRINTF(ConstantLVP,
             "params: ways=%u sets=%u tagBits=%u confidenceBits=%u "
-            "usefulBits=%u resetConfidence=%u confidenceThreshold=%u "
+            "usefulBits=%u resetConfidence=%u enableCriticality=%u "
+            "criticalCounterBits=%u criticalBlockCycleFactor=%llu "
+            "confidenceThreshold=%u thresholdReductionStep=%u "
             "confidencePenalty=%u\n",
             numWays, numSets, tagBits, confidenceBits, usefulBits,
-            resetConfidence, confidenceThreshold, confidencePenalty);
+            resetConfidence, enableCriticality, criticalCounterBits,
+            static_cast<unsigned long long>(criticalBlockCycleFactor),
+            confidenceThreshold,
+            static_cast<unsigned>(confidenceThreshold /
+                (static_cast<uint64_t>(1) << criticalCounterBits)),
+            confidencePenalty);
 }
 
 ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
@@ -88,6 +113,22 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
               "ConstantLVP hit updates whose value remains constant"),
       ADD_STAT(valueMismatches, statistics::units::Count::get(),
               "ConstantLVP hit updates whose value changes"),
+      ADD_STAT(criticalUpdates, statistics::units::Count::get(),
+              "ConstantLVP resident-entry criticality updates"),
+      ADD_STAT(criticalIncreaseUpdates, statistics::units::Count::get(),
+              "ConstantLVP criticality updates that increase the counter"),
+      ADD_STAT(criticalDecreaseUpdates, statistics::units::Count::get(),
+              "ConstantLVP criticality updates that decrease the counter"),
+      ADD_STAT(robHeadBlockedCycles, statistics::units::Cycle::get(),
+              "ROB-head blocked cycles observed by resident ConstantLVP "
+              "entries"),
+      ADD_STAT(criticalityEnabledPredictions, statistics::units::Count::get(),
+              "ConstantLVP predictions admitted only by criticality"),
+      ADD_STAT(criticalOnlyUpdateHits, statistics::units::Count::get(),
+              "ConstantLVP updates that recover a zero-confidence entry "
+              "retained by criticality"),
+      ADD_STAT(criticalCounterValue, statistics::units::Count::get(),
+              "Critical counter value after each resident-entry update"),
       ADD_STAT(mismatchInvalidations, statistics::units::Count::get(),
               "ConstantLVP value mismatches that invalidate the entry"),
       ADD_STAT(invalidAllocations, statistics::units::Count::get(),
@@ -95,8 +136,8 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
       ADD_STAT(usefulReplacements, statistics::units::Count::get(),
               "ConstantLVP replacements of valid zero-useful entries"),
       ADD_STAT(confidenceBasedReplacements, statistics::units::Count::get(),
-              "ConstantLVP replacements selected by minimum confidence "
-              "among zero-useful candidates"),
+              "ConstantLVP replacements selected by minimum criticality-"
+              "confidence score among zero-useful candidates"),
       ADD_STAT(allocationFailures, statistics::units::Count::get(),
               "ConstantLVP misses with no immediately replaceable entry"),
       ADD_STAT(usefulDecrements, statistics::units::Count::get(),
@@ -148,12 +189,16 @@ ConstantLVP::locationForWay(Addr pc, unsigned way) const
 }
 
 ConstantLVP::Entry *
-ConstantLVP::findEntry(Addr pc, ThreadID tid, Location &location)
+ConstantLVP::findEntry(Addr pc, ThreadID tid, Location &location,
+        bool include_critical_only)
 {
     for (unsigned way = 0; way < numWays; ++way) {
         const auto candidate = locationForWay(pc, way);
         auto &entry = tables[tid][way][candidate.index];
-        if (static_cast<uint16_t>(entry.confidence) != 0 &&
+        const bool resident = static_cast<uint16_t>(entry.confidence) != 0 ||
+            (include_critical_only && enableCriticality &&
+             static_cast<uint16_t>(entry.critical) != 0);
+        if (resident &&
                 entry.tag == candidate.tag) {
             location = candidate;
             return &entry;
@@ -170,6 +215,51 @@ ConstantLVP::allocate(Entry &entry, uint64_t tag, RegVal value)
     entry.confidence.reset();
     ++entry.confidence;
     entry.useful.reset();
+    entry.critical.reset();
+}
+
+uint16_t
+ConstantLVP::effectiveConfidenceThreshold(const Entry &entry) const
+{
+    if (!enableCriticality) {
+        return confidenceThreshold;
+    }
+
+    return constant_lvp::effectiveConfidenceThreshold(
+            confidenceThreshold, static_cast<uint16_t>(entry.critical),
+            criticalCounterBits);
+}
+
+void
+ConstantLVP::updateCriticality(
+        Entry &entry, const VPUpdateInfo &update_info)
+{
+    if (!enableCriticality) {
+        return;
+    }
+
+    const auto *criticality =
+        update_info.getExt<LoadCriticalityUpdateInfoExt>();
+    if (!criticality) {
+        return;
+    }
+
+    const uint16_t old_value = entry.critical;
+    const uint16_t new_value = constant_lvp::updatedCriticalCounter(
+            old_value, criticality->robHeadBlockedCycles,
+            criticalBlockCycleFactor, maxCritical);
+    if (new_value > old_value) {
+        entry.critical += new_value - old_value;
+        constantStats.criticalIncreaseUpdates++;
+    } else if (new_value < old_value) {
+        entry.critical -= old_value - new_value;
+        constantStats.criticalDecreaseUpdates++;
+    }
+
+    constantStats.criticalUpdates++;
+    constantStats.robHeadBlockedCycles +=
+        criticality->robHeadBlockedCycles;
+    constantStats.criticalCounterValue[new_value]++;
 }
 
 bool
@@ -208,33 +298,42 @@ ConstantLVP::predict(const VPPredictRequest &request)
     constantStats.lookupHits++;
     VPPredictionCandidate candidate;
     candidate.result.value = entry->value;
-    if (static_cast<uint16_t>(entry->confidence) < confidenceThreshold) {
+    const uint16_t effective_threshold =
+        effectiveConfidenceThreshold(*entry);
+    if (static_cast<uint16_t>(entry->confidence) < effective_threshold) {
         constantStats.lowConfidenceHits++;
         DPRINTF(ConstantLVP,
                 "[predict] tid=%u seq=%llu pc=%#llx way=%u set=%u "
-                "low confidence=%u threshold=%u value=%#llx\n",
+                "low confidence=%u critical=%u threshold=%u value=%#llx\n",
                 request.tid,
                 static_cast<unsigned long long>(request.seqNo),
                 static_cast<unsigned long long>(request.pc),
                 location.way, location.index,
                 static_cast<uint16_t>(entry->confidence),
-                confidenceThreshold,
+                static_cast<uint16_t>(entry->critical),
+                effective_threshold,
                 static_cast<unsigned long long>(entry->value));
         return candidate;
     }
 
+    if (effective_threshold < confidenceThreshold &&
+            static_cast<uint16_t>(entry->confidence) <
+                confidenceThreshold) {
+        constantStats.criticalityEnabledPredictions++;
+    }
     candidate.result.speculative = true;
     candidate.record = std::make_unique<VPPredictionRecord>();
     candidate.record->offeredPrediction = true;
     candidate.record->predictedValue = entry->value;
     DPRINTF(ConstantLVP,
             "[predict] tid=%u seq=%llu pc=%#llx way=%u set=%u "
-            "confidence=%u useful=%u value=%#llx\n",
+            "confidence=%u critical=%u threshold=%u useful=%u value=%#llx\n",
             request.tid,
             static_cast<unsigned long long>(request.seqNo),
             static_cast<unsigned long long>(request.pc),
             location.way, location.index,
             static_cast<uint16_t>(entry->confidence),
+            static_cast<uint16_t>(entry->critical), effective_threshold,
             static_cast<uint16_t>(entry->useful),
             static_cast<unsigned long long>(entry->value));
     return candidate;
@@ -248,17 +347,24 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
     (void)feedback;
     assertValidTid(updateInfo.tid);
     constantStats.updates++;
+    const auto *criticality =
+        updateInfo.getExt<LoadCriticalityUpdateInfoExt>();
 
     Location location;
-    Entry *entry = findEntry(updateInfo.pc, updateInfo.tid, location);
+    Entry *entry = findEntry(
+            updateInfo.pc, updateInfo.tid, location, true);
     if (entry) {
         constantStats.updateHits++;
+        if (static_cast<uint16_t>(entry->confidence) == 0) {
+            constantStats.criticalOnlyUpdateHits++;
+        }
+        updateCriticality(*entry, updateInfo);
         if (entry->value == updateInfo.actualValue) {
             constantStats.valueMatches++;
             ++entry->confidence;
             ++entry->useful;
             if (static_cast<uint16_t>(entry->confidence) >=
-                    confidenceThreshold) {
+                    effectiveConfidenceThreshold(*entry)) {
                 entry->useful.saturate();
             }
         } else {
@@ -277,13 +383,18 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
 
         DPRINTF(ConstantLVP,
                 "[update] tid=%u seq=%llu pc=%#llx hit way=%u set=%u "
-                "confidence=%u useful=%u value=%#llx\n",
+                "confidence=%u critical=%u threshold=%u useful=%u "
+                "blockedCycles=%llu value=%#llx\n",
                 updateInfo.tid,
                 static_cast<unsigned long long>(updateInfo.seqNo),
                 static_cast<unsigned long long>(updateInfo.pc),
                 location.way, location.index,
                 static_cast<uint16_t>(entry->confidence),
+                static_cast<uint16_t>(entry->critical),
+                effectiveConfidenceThreshold(*entry),
                 static_cast<uint16_t>(entry->useful),
+                static_cast<unsigned long long>(
+                    criticality ? criticality->robHeadBlockedCycles : 0),
                 static_cast<unsigned long long>(entry->value));
         return;
     }
@@ -314,6 +425,8 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
     Entry *victim = nullptr;
     Location victimLocation;
     uint16_t victimConfidence = 0;
+    uint16_t victimCritical = 0;
+    uint64_t victimScore = 0;
     for (unsigned offset = 0; offset < numWays; ++offset) {
         const unsigned way = (firstWay + offset) % numWays;
         const auto candidate = locationForWay(updateInfo.pc, way);
@@ -324,10 +437,19 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
         }
 
         const uint16_t candidateConfidence = candidateEntry.confidence;
-        if (!victim || candidateConfidence < victimConfidence) {
+        const uint16_t candidateCritical = candidateEntry.critical;
+        const uint64_t candidateScore = enableCriticality ?
+            constant_lvp::replacementScore(
+                candidateConfidence, candidateCritical) :
+            candidateConfidence;
+        if (!victim || candidateScore < victimScore ||
+                (candidateScore == victimScore &&
+                 candidateConfidence < victimConfidence)) {
             victim = &candidateEntry;
             victimLocation = candidate;
             victimConfidence = candidateConfidence;
+            victimCritical = candidateCritical;
+            victimScore = candidateScore;
         }
     }
 
@@ -337,11 +459,14 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
         constantStats.confidenceBasedReplacements++;
         DPRINTF(ConstantLVP,
                 "[update] tid=%u seq=%llu pc=%#llx replace unuseful "
-                "way=%u set=%u oldConfidence=%u value=%#llx\n",
+                "way=%u set=%u oldConfidence=%u oldCritical=%u "
+                "replacementScore=%llu value=%#llx\n",
                 updateInfo.tid,
                 static_cast<unsigned long long>(updateInfo.seqNo),
                 static_cast<unsigned long long>(updateInfo.pc),
                 victimLocation.way, victimLocation.index, victimConfidence,
+                victimCritical,
+                static_cast<unsigned long long>(victimScore),
                 static_cast<unsigned long long>(updateInfo.actualValue));
         return;
     }
@@ -355,12 +480,13 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
     }
     DPRINTF(ConstantLVP,
             "[update] tid=%u seq=%llu pc=%#llx allocation blocked "
-            "way=%u set=%u confidence=%u useful=%u\n",
+            "way=%u set=%u confidence=%u critical=%u useful=%u\n",
             updateInfo.tid,
             static_cast<unsigned long long>(updateInfo.seqNo),
             static_cast<unsigned long long>(updateInfo.pc),
             firstWay, candidate.index,
             static_cast<uint16_t>(candidateEntry.confidence),
+            static_cast<uint16_t>(candidateEntry.critical),
             static_cast<uint16_t>(candidateEntry.useful));
 }
 

@@ -26,6 +26,8 @@ Source('memory_renaming.cc')
 Source('ideal_constant_lvp.cc')
 Source('constant_lvp.cc')
 
+GTest('constant_lvp_policy.test', 'constant_lvp_policy.test.cc')
+
 DebugFlag('VPCOMMON')
 DebugFlag('EStride')
 DebugFlag('MemoryRenaming')

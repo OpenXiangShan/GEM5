@@ -153,6 +153,17 @@ class ProducerInfoExt : public VPUpdateInfoExtension
     Addr producerStorePC = 0;
 };
 
+class LoadCriticalityUpdateInfoExt : public VPUpdateInfoExtension
+{
+  public:
+    explicit LoadCriticalityUpdateInfoExt(uint64_t blocked_cycles)
+        : robHeadBlockedCycles(blocked_cycles)
+    {
+    }
+
+    uint64_t robHeadBlockedCycles = 0;
+};
+
 class VPSpecUpdateInfo
 {
   public:

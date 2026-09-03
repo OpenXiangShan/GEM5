@@ -18,8 +18,8 @@ namespace valuepred
 /**
  * A bounded, skewed-associative constant value predictor. Each PC has one
  * independently hashed candidate location per way. A zero confidence counter
- * encodes an invalid entry, so the logical entry contains only the hashed tag,
- * value, confidence counter, and useful counter.
+ * is not eligible to predict and is immediately replaceable. A critical entry
+ * retains its tag across a confidence reset so it can relearn in place.
  */
 class ConstantLVP : public VPUnit
 {
@@ -32,9 +32,12 @@ class ConstantLVP : public VPUnit
         RegVal value = 0;
         SatCounter16 confidence;
         SatCounter16 useful;
+        SatCounter16 critical;
 
-        Entry(unsigned confidence_bits, unsigned useful_bits)
-            : confidence(confidence_bits), useful(useful_bits)
+        Entry(unsigned confidence_bits, unsigned useful_bits,
+                unsigned critical_bits)
+            : confidence(confidence_bits), useful(useful_bits),
+              critical(critical_bits)
         {
         }
     };
@@ -53,7 +56,11 @@ class ConstantLVP : public VPUnit
     const unsigned confidenceBits;
     const unsigned usefulBits;
     const bool resetConfidence;
+    const bool enableCriticality;
+    const unsigned criticalCounterBits;
+    const uint64_t criticalBlockCycleFactor;
     const uint16_t maxConfidence;
+    const uint16_t maxCritical;
     const uint16_t confidenceThreshold;
     const unsigned confidencePenalty;
 
@@ -65,8 +72,11 @@ class ConstantLVP : public VPUnit
     uint64_t pcHashToTag(Addr pc, unsigned way) const;
     Location locationForWay(Addr pc, unsigned way) const;
 
-    Entry *findEntry(Addr pc, ThreadID tid, Location &location);
+    Entry *findEntry(Addr pc, ThreadID tid, Location &location,
+            bool include_critical_only = false);
     void allocate(Entry &entry, uint64_t tag, RegVal value);
+    uint16_t effectiveConfidenceThreshold(const Entry &entry) const;
+    void updateCriticality(Entry &entry, const VPUpdateInfo &update_info);
     bool tryDecUseful(Entry &entry);
 
   public:
@@ -100,6 +110,13 @@ class ConstantLVP : public VPUnit
         statistics::Scalar updateMisses;
         statistics::Scalar valueMatches;
         statistics::Scalar valueMismatches;
+        statistics::Scalar criticalUpdates;
+        statistics::Scalar criticalIncreaseUpdates;
+        statistics::Scalar criticalDecreaseUpdates;
+        statistics::Scalar robHeadBlockedCycles;
+        statistics::Scalar criticalityEnabledPredictions;
+        statistics::Scalar criticalOnlyUpdateHits;
+        statistics::Vector criticalCounterValue;
         statistics::Scalar mismatchInvalidations;
         statistics::Scalar invalidAllocations;
         statistics::Scalar usefulReplacements;

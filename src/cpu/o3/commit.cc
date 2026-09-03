@@ -290,6 +290,14 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "store-load related"),
       ADD_STAT(producerStable, statistics::units::Cycle::get(),
                "Loads whose producer store PC equals last time for same static load (PC)"),
+      ADD_STAT(lvpLoadRobHeadBlockedCycles,
+               statistics::units::Cycle::get(),
+               "Cycles a value-predictable load prevented its ROB head group "
+               "from committing"),
+      ADD_STAT(lvpLoadRobHeadBlockEpisodes,
+               statistics::units::Count::get(),
+               "Committed value-predictable loads with nonzero ROB-head "
+               "blocked cycles"),
       ADD_STAT(segUnitStrideNF, statistics::units::Count::get(),
                "Distribution of segment unit stride NF"),
       ADD_STAT(segStrideNF, statistics::units::Count::get(),
@@ -1357,6 +1365,15 @@ Commit::commitInsts()
             head_inst = rob->readHeadInst(commit_thread);
 
             if (!rob->isHeadGroupReady(commit_thread)) {
+                const auto blocking_inst =
+                    rob->getHeadGroupFirstNotReady(commit_thread);
+                if (valuePred && blocking_inst && blocking_inst->canLVP() &&
+                        !blocking_inst->strictlyOrdered() &&
+                        !blocking_inst->faulted() &&
+                        !blocking_inst->isSquashed()) {
+                    blocking_inst->countRobHeadBlockedCycle();
+                    stats.lvpLoadRobHeadBlockedCycles++;
+                }
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
@@ -2049,11 +2066,16 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         updateInfo.tid = tid;
         updateInfo.actualValue = head_inst->actualValue;
         updateInfo.isMisprediction = head_inst->vpMisprediction;
+        if (head_inst->getRobHeadBlockedCycles() != 0) {
+            stats.lvpLoadRobHeadBlockEpisodes++;
+        }
         // extra trainning info for specific value predictors
         updateInfo.emplaceExt<valuepred::ESUpdateInfoExt>(
                 head_inst->isLoad(),
                 curTick() - head_inst->fetchTick,
                 head_inst->staticInst->disassemble(head_inst->pcState().instAddr()));
+        updateInfo.emplaceExt<valuepred::LoadCriticalityUpdateInfoExt>(
+                head_inst->getRobHeadBlockedCycles());
         if (head_inst->hasProducerStorePC()) {
             updateInfo.emplaceExt<valuepred::ProducerInfoExt>(
                     head_inst->producerStorePC());

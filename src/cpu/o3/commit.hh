@@ -638,6 +638,8 @@ class Commit
         statistics::Scalar loadEAReused;
         statistics::Scalar loadsWithProducer;
         statistics::Scalar producerStable;
+        statistics::Scalar lvpLoadRobHeadBlockedCycles;
+        statistics::Scalar lvpLoadRobHeadBlockEpisodes;
 
         statistics::Distribution segUnitStrideNF;
         statistics::Distribution segStrideNF;
