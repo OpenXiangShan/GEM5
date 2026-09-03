@@ -179,12 +179,12 @@ jobs:
               echo "comment=run 100% coverage H SPEC06 checkpoints with FS0 NEMU, GCPT restore, DRAMsim3 and 40M maxinsts" >> $GITHUB_OUTPUT
               ;;
             "spec17-1.0c")
-              echo "checkpoint_list=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst" >> $GITHUB_OUTPUT
-              echo "checkpoint_root_node=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/" >> $GITHUB_OUTPUT
+              echo "checkpoint_list=/nfs/home/share/checkpoints_profiles/spec17_rate_gcc16_rv64gcb_260812/checkpoint/checkpoint.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec17_rate_gcc16_rv64gcb_260812/checkpoint" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci-17.sh" >> $GITHUB_OUTPUT
-              echo "cluster_config=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/cluster-0-0.json" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/checkpoints_profiles/spec17_rate_gcc16_rv64gcb_260812/json/checkpoints_all.json" >> $GITHUB_OUTPUT
               echo "artifact_name=performance-score-spec17-1.0c" >> $GITHUB_OUTPUT
-              echo "comment=run 100% coverage spec17 checkpoints" >> $GITHUB_OUTPUT
+              echo "comment=run 100% coverage GCC16 RV64GCB SPEC17 rate checkpoints" >> $GITHUB_OUTPUT
               ;;
             "spec06-rvv-1.0c")
               echo "checkpoint_list=/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint.lst" >> $GITHUB_OUTPUT
