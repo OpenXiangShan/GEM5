@@ -53,7 +53,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Test constructor
     BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2,
             unsigned tableSize = 1024, unsigned numBanks = 4,
-            bool usePathHistory = true);
+            bool usePathHistory = true, unsigned providerDelay = 1,
+            unsigned finalDelay = 1);
 #else
     // Production constructor
     typedef BTBTAGEParams Params;
@@ -193,7 +194,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                    CondTakens& results, ThreadID tid, uint8_t asidHash);
+                    CondTakens& results, ThreadID tid, uint8_t asidHash,
+                    CondTakens* providerResults = nullptr);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
@@ -254,6 +256,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::vector<unsigned> histLengths;
 
     const bool usePathHistory;
+
+    // The raw provider can be used before the complete provider/alt/base
+    // selection is available at getDelay().
+    const unsigned providerDelay;
 
     struct ThreadHistoryState
     {

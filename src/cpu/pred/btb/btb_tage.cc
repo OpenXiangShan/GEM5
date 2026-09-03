@@ -79,10 +79,12 @@ namespace test {
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
 BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
-                 unsigned tableSize, unsigned numBanks, bool usePathHistory)
+                 unsigned tableSize, unsigned numBanks, bool usePathHistory,
+                 unsigned providerDelay, unsigned finalDelay)
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
       usePathHistory(usePathHistory),
+      providerDelay(providerDelay),
       maxHistLen(0),
       numWays(numPredictors, numWaysPerTable),
       maxBranchPositions(32),
@@ -98,7 +100,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       lastPredBankId(0),
       predBankValid(false)
 {
-    setNumDelay(1);
+    setNumDelay(finalDelay);
 
     // Initialize with default parameters for testing
     tableSizes.resize(numPredictors, tableSize);
@@ -122,6 +124,7 @@ tableTagBits(p.TTagBitSizes),
 tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 usePathHistory(p.usePathHistory),
+providerDelay(p.providerDelay),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
 maxBranchPositions(p.maxBranchPositions),
@@ -148,6 +151,8 @@ tageStats(this, p.numPredictors, p.numBanks)
     if (numWays.size() == 1 && numPredictors > 1) {
         numWays.resize(numPredictors, numWays.front());
     }
+
+    assert(providerDelay <= getDelay());
 
     assert(numWays.size() >= numPredictors);
     tageTable.resize(numPredictors);
@@ -425,7 +430,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 void
 BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens& results, ThreadID tid, uint8_t asidHash)
+                      CondTakens& results, ThreadID tid, uint8_t asidHash,
+                      CondTakens* providerResults)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -436,6 +442,13 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
+            if (providerResults) {
+                const bool base_taken = btb_entry.ctr >= 0;
+                const bool provider_taken = pred.mainInfo.found ?
+                    pred.mainInfo.taken() : base_taken;
+                providerResults->push_back({btb_entry.pc, provider_taken ||
+                                            btb_entry.alwaysTaken});
+            }
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -516,12 +529,19 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
     threadMeta[tid]->history = history;
 
-    for (int s = getDelay(); s < stagePreds.size(); s++) {
-        // TODO: only lookup once for one btb entry in different stages
+    assert(providerDelay < stagePreds.size());
+    assert(getDelay() < stagePreds.size());
+
+    CondTakens provider_results;
+    CondTakens final_results;
+    std::unordered_map<Addr, TageInfoForMGSC> tage_info;
+    lookupHelper(startPC, stagePreds[providerDelay].btbEntries, tage_info,
+                 final_results, tid, asidHash, &provider_results);
+
+    for (unsigned s = providerDelay; s < stagePreds.size(); ++s) {
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
-        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs,
-                     stage_pred.condTakens, tid, asidHash);
+        stage_pred.condTakens = s < getDelay() ? provider_results : final_results;
+        stage_pred.tageInfoForMgscs = tage_info;
     }
 
 }

@@ -605,6 +605,31 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior) {
     EXPECT_FALSE(pred.taken) << "Alt prediction should be not taken";
 }
 
+TEST_F(BTBTAGETest, ProviderFastPathPrecedesAlternativeSelection) {
+    BTBTAGE split_tage(4, 2, 1024, 4, true, 1, 2);
+    std::vector<FullBTBPrediction> split_stage_preds(3);
+    BTBEntry entry = createBTBEntry(0x1000);
+
+    // The weak taken provider loses to the not-taken alternative in the final
+    // selection, but its raw direction is available one stage earlier.
+    setupTageEntry(&split_tage, 0x1000, 3, 0);
+    setupTageEntry(&split_tage, 0x1000, 1, -1);
+    split_stage_preds[1].btbEntries = {entry};
+    split_stage_preds[2].btbEntries = {entry};
+
+    split_tage.putPCHistory(0x1000, history, split_stage_preds);
+
+    EXPECT_EQ(findCondTaken(split_stage_preds[1].condTakens, entry.pc),
+              std::make_pair(true, true));
+    EXPECT_EQ(findCondTaken(split_stage_preds[2].condTakens, entry.pc),
+              std::make_pair(true, false));
+
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        split_tage.getPredictionMeta());
+    ASSERT_TRUE(meta->preds.at(entry.pc).useAlt);
+    EXPECT_FALSE(meta->preds.at(entry.pc).taken);
+}
+
 // Test useful bit update mechanism
 TEST_F(BTBTAGETest, UsefulBitMechanism) {
     // Setup a test branch

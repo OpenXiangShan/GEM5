@@ -1068,6 +1068,9 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
+    providerDelay = Param.Unsigned(
+        2, "Stage where the raw TAGE provider direction becomes available"
+    )
     numDelay = 2
 
 class BTBTAGEUpperBound(BTBTAGE):
@@ -1238,7 +1241,10 @@ class DecoupledBPUWithBTB(BranchPredictor):
     abtb = Param.AheadBTB(AheadBTB(), "ABTB predictor")
     microtage = Param.MicroTAGE(MicroTAGE(), "MicroTAGE predictor to assist uBTB")
     mbtb = Param.MBTB(MBTB(), "MBTB predictor")
-    tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
+    tage = Param.BTBTAGE(
+        BTBTAGE(providerDelay=1),
+        "TAGE predictor with an S2 provider and S3 final selection",
+    )
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
     mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
     ras = Param.BTBRAS(BTBRAS(), "RAS")
