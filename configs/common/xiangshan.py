@@ -331,6 +331,37 @@ def get_xiangshan_cpu_class(args: argparse.Namespace):
     return XiangshanCore
 
 
+# Default --maxinsts from Options.py; used when the user did not pass -I.
+_DEFAULT_MAXINSTS = 40 * 10**6
+# OpenSBI + Linux cold boot (hello) routinely exceeds 40M retired insts on O3.
+_RAW_CPT_DEFAULT_MAXINSTS = 200 * 10**6
+
+
+def is_xiangshan_linux_raw_cpt(path: str) -> bool:
+    """True for OpenSBI/Linux cold-boot raw images (by filename only).
+
+    Name-only keeps the auto-raise conservative: large bare-metal binaries are
+    not bumped. Callers that need size heuristics can extend later.
+    """
+    if not path:
+        return False
+    name = os.path.basename(path).lower()
+    return name == "linux.bin" or any(
+        k in name for k in ("linux", "fw_payload", "fw_jump", "opensbi"))
+
+
+def _should_raise_raw_cpt_maxinsts(args: argparse.Namespace) -> bool:
+    """Raise -I only for named cold-boot images when -I was not on the CLI."""
+    if not getattr(args, "raw_cpt", False):
+        return False
+    # Explicit `-I` (even `-I 40000000`) must win over the auto bump.
+    if getattr(args, "maxinsts_user_set", False):
+        return False
+    if args.maxinsts != _DEFAULT_MAXINSTS:
+        return False
+    return is_xiangshan_linux_raw_cpt(getattr(args, "generic_rv_cpt", None))
+
+
 def config_xiangshan_inputs(args: argparse.Namespace, sys):
     ref_so = None
 
@@ -338,6 +369,17 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         ref_so = resolve_xiangshan_ref_so(args)
 
     args.difftest_ref_so = ref_so
+
+    # Issue #393: default -I=40M is sized for checkpoints, not OpenSBI+Linux
+    # cold boot. Only named linux/opensbi raw images get the bump; coremark
+    # and other AM bins keep 40M. Explicit -I always wins.
+    if _should_raise_raw_cpt_maxinsts(args):
+        warn(
+            f"--raw-cpt with default --maxinsts={_DEFAULT_MAXINSTS}: "
+            f"raising to {_RAW_CPT_DEFAULT_MAXINSTS} for cold-boot workloads "
+            f"(OpenSBI/Linux). Pass -I explicitly to override."
+        )
+        args.maxinsts = _RAW_CPT_DEFAULT_MAXINSTS
 
     if args.gcpt_restorer is None:
         if args.raw_cpt:
