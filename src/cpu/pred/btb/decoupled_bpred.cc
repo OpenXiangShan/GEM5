@@ -943,8 +943,8 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
             control_inst_size);
     }
 
-    target.squashPC = squash_pc.instAddr();
-    target.squashType = squash_type;
+    target.nonControlEndPC = squash_type == SQUASH_CTRL ?
+        std::nullopt : std::optional<Addr>(squash_pc.instAddr());
 
     if (squash_type == SQUASH_CTRL && static_inst) {
         dumpFsq("Before control squash");
@@ -1154,12 +1154,8 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
 
     const auto &target = ftq.get(target_id, tid);
     const PredictionUpdateContext context(target);
-    const std::optional<Addr> non_control_end_pc =
-        target.squashType != SQUASH_NONE &&
-                target.squashType != SQUASH_CTRL ?
-            std::optional<Addr>(target.squashPC) : std::nullopt;
     auto update = prepareUpdate(
-        context, events, std::nullopt, non_control_end_pc);
+        context, events, std::nullopt, target.nonControlEndPC);
 
     // Update predictor components only if the target is hit or taken
     if (!(context.isHit || update.outcome.taken)) {

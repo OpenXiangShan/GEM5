@@ -345,8 +345,8 @@ struct FetchTarget
     bool falseHit;       // not used
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
 
-    int squashType;         // squash type
-    Addr squashPC;         // pc of the squash inst
+    // Persistent cutoff for resolve updates that survive a non-control squash.
+    std::optional<Addr> nonControlEndPC;
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
     PairPhase pairPhase;   // PairTAGE logical phase of this block start
@@ -378,8 +378,7 @@ struct FetchTarget
          predBranchInfo(BranchInfo()),
          isHit(false),
          falseHit(false),
-         squashType(SquashType::SQUASH_NONE),
-         squashPC(0),
+         nonControlEndPC(std::nullopt),
          predSource(0),
          pairPhase(PairPhase::Even),
          predTick(0),
