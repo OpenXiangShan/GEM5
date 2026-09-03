@@ -585,7 +585,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  */
 void
 AheadBTB::checkPredictionHit(
-    const FetchTarget &stream, const BTBMeta* meta,
+    const PredictionUpdateContext &stream, const BTBMeta* meta,
     const PreparedUpdate &update)
 {
     bool pred_branch_hit = false;
@@ -808,7 +808,8 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
  * 5. Update MRU information
  */
 void
-AheadBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
+AheadBTB::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     if (usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
@@ -859,7 +860,7 @@ AheadBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
  * @return Previous PC, 0 if the stream is not filled
  */
 Addr
-AheadBTB::getPreviousPC(const FetchTarget &stream)
+AheadBTB::getPreviousPC(const PredictionUpdateContext &stream)
 {
     // get pc from the nth previous block, the value of n is aheadPipelinedStages
     auto previous_pcs = stream.previousPCs;

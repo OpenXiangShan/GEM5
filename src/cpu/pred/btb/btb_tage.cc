@@ -851,7 +851,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
  */
 bool
 BTBTAGE::canResolveUpdate(
-    const FetchTarget &stream, const PreparedUpdate &update)
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
@@ -878,7 +878,7 @@ BTBTAGE::canResolveUpdate(
  */
 void
 BTBTAGE::doResolveUpdate(
-    const FetchTarget &stream, const PreparedUpdate &update)
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
@@ -893,7 +893,8 @@ BTBTAGE::doResolveUpdate(
  * @param stream The fetch stream containing branch execution information
  */
 void
-BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
+BTBTAGE::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -1042,7 +1043,7 @@ BTBTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
 
 void
 BTBTAGE::checkUtageUpdateMisspred(
-    const FetchTarget &stream, const PreparedUpdate &update) {
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch

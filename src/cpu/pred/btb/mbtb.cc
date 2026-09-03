@@ -536,7 +536,8 @@ MBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
  * Note: This is only called in L1 BTB during update
  */
 void
-MBTB::prepareUpdate(const FetchTarget &stream, PreparedUpdate &update)
+MBTB::prepareUpdate(
+    const PredictionUpdateContext &stream, PreparedUpdate &update)
 {
     DPRINTF(BTB, "prepareUpdate called for pc %#lx\n", stream.startPC);
     // Get prediction metadata from previous stages
@@ -590,7 +591,7 @@ MBTB::prepareUpdate(const FetchTarget &stream, PreparedUpdate &update)
  */
 void
 MBTB::checkPredictionHit(
-    const FetchTarget &stream, const BTBMeta* meta,
+    const PredictionUpdateContext &stream, const BTBMeta* meta,
     const PreparedUpdate &update)
 {
     bool pred_branch_hit = false;
@@ -620,7 +621,8 @@ MBTB::checkPredictionHit(
  * 5. Update MRU information
  */
 void
-MBTB::updateBTBEntry(const BranchUpdate &branch, const FetchTarget &stream)
+MBTB::updateBTBEntry(
+    const BranchUpdate &branch, const PredictionUpdateContext &stream)
 {
     const auto &entry = branch.entry;
     btbStats.updateTotal++;
@@ -680,7 +682,7 @@ MBTB::updateBTBEntry(const BranchUpdate &branch, const FetchTarget &stream)
 BTBEntry
 MBTB::buildUpdatedEntry(const BranchUpdate &branch,
                         const BTBEntry* existing_entry,
-                        const FetchTarget &stream)
+                        const PredictionUpdateContext &stream)
 {
     const auto &req_entry = branch.entry;
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
@@ -803,7 +805,8 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
  * 5. Update MRU information
  */
 void
-MBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
+MBTB::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     // 1. Check prediction hit status, for stats recording

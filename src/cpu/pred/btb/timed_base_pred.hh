@@ -96,7 +96,7 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void recoverPHist(const boost::dynamic_bitset<> &history,
                               const FetchTarget &entry,
                               const PathHistoryUpdate &update) {}
-    virtual void update(const FetchTarget &entry,
+    virtual void update(const PredictionUpdateContext &context,
                         const PreparedUpdate &update) {}
     virtual unsigned getDelay() {return numDelay;}
     bool trainsAtResolve() const
@@ -108,15 +108,15 @@ class TimedBaseBTBPredictor: public SimObject
         return trainingStage == PredictorTrainingStage::Commit;
     }
     // Two-phase resolved update: probe first, then apply
-    virtual bool canResolveUpdate(const FetchTarget &entry,
+    virtual bool canResolveUpdate(const PredictionUpdateContext &context,
                                   const PreparedUpdate &update)
     {
         return true;
     }
-    virtual void doResolveUpdate(const FetchTarget &entry,
+    virtual void doResolveUpdate(const PredictionUpdateContext &context,
                                  const PreparedUpdate &update)
     {
-        this->update(entry, update);
+        this->update(context, update);
     }
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis

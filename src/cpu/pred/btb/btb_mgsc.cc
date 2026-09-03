@@ -875,8 +875,9 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
  * @param stream The fetch stream containing update information
  */
 void
-BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream)
+BTBMGSC::updateSinglePredictor(
+    const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
+    const PredictionUpdateContext &stream)
 {
     // Extract prediction information
     auto total_sum = pred.total_sum;
@@ -971,7 +972,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 }
 
 void
-BTBMGSC::update(const FetchTarget &stream, const PreparedUpdate &update)
+BTBMGSC::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No update if disabled

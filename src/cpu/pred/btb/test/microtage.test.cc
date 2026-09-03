@@ -97,7 +97,7 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
     stream.predBTBEntries = {entry};
     PreparedUpdate update(stream, 64);
 
-    tage->update(stream, update);
+    tage->update(PredictionUpdateContext(stream), update);
     EXPECT_FALSE(predictTaken(tage.get(), 0x1000, entry));
 }
 

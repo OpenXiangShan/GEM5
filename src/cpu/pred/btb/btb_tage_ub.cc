@@ -497,7 +497,7 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
 
 void
 BTBTAGEUpperBound::update(
-    const FetchTarget &stream, const PreparedUpdate &update)
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);

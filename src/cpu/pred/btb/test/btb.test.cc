@@ -161,13 +161,13 @@ predictUpdateCycle(MBTB* btb,
         stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
     PreparedUpdate update(stream, btb->predictWidth);
-    btb->prepareUpdate(stream, update);
+    btb->prepareUpdate(PredictionUpdateContext(stream), update);
 
     for (auto &branch_update : update.branches) {
         branch_update.resolvedThisAttempt = true;
     }
 
-    btb->update(stream, update);
+    btb->update(PredictionUpdateContext(stream), update);
 
     // Return final predictions after update
     stagePreds.clear();
@@ -455,8 +455,8 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
     PreparedUpdate update(stream, mbtb->predictWidth);
-    mbtb->prepareUpdate(stream, update);
-    mbtb->update(stream, update);
+    mbtb->prepareUpdate(PredictionUpdateContext(stream), update);
+    mbtb->update(PredictionUpdateContext(stream), update);
 
     // Check final predictions
     stagePreds.clear();
@@ -565,7 +565,7 @@ TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
         createResolveEvent(1, 7, 10, resolved_a, false, false)
     };
 
-    PreparedUpdate update(target, 64, events);
+    PreparedUpdate update(PredictionUpdateContext(target), 64, events);
 
     EXPECT_TRUE(update.outcome.fromOutcomeEvent);
     EXPECT_TRUE(update.outcome.taken);
@@ -595,7 +595,8 @@ TEST(PreparedUpdateTest, EmptyOutcomeBlockDoesNotUseLegacyExecutionState)
     target.predBTBEntries = {BTBEntry(target.exeBranchInfo)};
 
     const std::vector<BranchOutcome> no_branches;
-    PreparedUpdate update(target, 64, no_branches, 0x101c);
+    PreparedUpdate update(
+        PredictionUpdateContext(target), 64, no_branches, 0x101c);
 
     EXPECT_FALSE(update.outcome.valid);
     EXPECT_FALSE(update.outcome.taken);
@@ -619,8 +620,9 @@ TEST_F(BTBTest, ResolveEventCreatesUnpredictedTakenCandidate)
     auto event = createResolveEvent(0, 9, 20, actual_branch, true, true);
     std::vector<BranchOutcome> events = {event};
 
-    PreparedUpdate update(target, mbtb->predictWidth, events);
-    mbtb->prepareUpdate(target, update);
+    PreparedUpdate update(
+        PredictionUpdateContext(target), mbtb->predictWidth, events);
+    mbtb->prepareUpdate(PredictionUpdateContext(target), update);
     update.applyOutcome(event);
 
     ASSERT_TRUE(update.btbEntryCandidate);
@@ -643,8 +645,8 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     auto meta = mbtb->getPredictionMeta();
     auto insert_b = setupStream(0x1000, branch_b, true, meta, branch_b.pc);
     PreparedUpdate insert_update(insert_b, mbtb->predictWidth);
-    mbtb->prepareUpdate(insert_b, insert_update);
-    mbtb->update(insert_b, insert_update);
+    mbtb->prepareUpdate(PredictionUpdateContext(insert_b), insert_update);
+    mbtb->update(PredictionUpdateContext(insert_b), insert_update);
 
     predictions.assign(4, FullBTBPrediction());
     mbtb->putPCHistory(0x1000, history, predictions);
@@ -654,10 +656,10 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     auto resolve_a = setupStream(0x1000, branch_b, true, meta, branch_b.pc);
     resolve_a.predBTBEntries = predictions[mbtb->getDelay()].btbEntries;
     PreparedUpdate resolve_update(resolve_a, mbtb->predictWidth);
-    mbtb->prepareUpdate(resolve_a, resolve_update);
+    mbtb->prepareUpdate(PredictionUpdateContext(resolve_a), resolve_update);
     resolve_update.markResolved(branch_a.pc);
     mbtb->setTrainingStage(PredictorTrainingStage::Resolve);
-    mbtb->update(resolve_a, resolve_update);
+    mbtb->update(PredictionUpdateContext(resolve_a), resolve_update);
 
     predictions.assign(4, FullBTBPrediction());
     mbtb->putPCHistory(0x1000, history, predictions);
@@ -679,13 +681,13 @@ TEST_F(BTBTest, PreparedUpdateDistinguishesMissingAndNewCandidate)
     auto not_taken = setupStream(
         start_pc, branch, false, meta, branch.pc);
     PreparedUpdate no_candidate(not_taken, mbtb->predictWidth);
-    mbtb->prepareUpdate(not_taken, no_candidate);
+    mbtb->prepareUpdate(PredictionUpdateContext(not_taken), no_candidate);
     EXPECT_FALSE(no_candidate.btbEntryCandidate);
     EXPECT_TRUE(no_candidate.branches.empty());
 
     auto taken = setupStream(start_pc, branch, true, meta, branch.pc);
     PreparedUpdate new_candidate(taken, mbtb->predictWidth);
-    mbtb->prepareUpdate(taken, new_candidate);
+    mbtb->prepareUpdate(PredictionUpdateContext(taken), new_candidate);
     ASSERT_TRUE(new_candidate.btbEntryCandidate);
     EXPECT_TRUE(new_candidate.btbEntryCandidate->valid);
     EXPECT_EQ(new_candidate.btbEntryCandidate->pc, branch.pc);
@@ -698,7 +700,8 @@ TEST_F(BTBTest, PreparedUpdateDistinguishesMissingAndNewCandidate)
     auto zero_pc_branch = createBranchInfo(0, 0x2000, true);
     auto zero_pc_taken = setupStream(0, zero_pc_branch, true, meta, 0);
     PreparedUpdate zero_pc_candidate(zero_pc_taken, mbtb->predictWidth);
-    mbtb->prepareUpdate(zero_pc_taken, zero_pc_candidate);
+    mbtb->prepareUpdate(
+        PredictionUpdateContext(zero_pc_taken), zero_pc_candidate);
     EXPECT_TRUE(zero_pc_candidate.btbEntryCandidate);
     zero_pc_candidate.markResolved(0);
     ASSERT_EQ(zero_pc_candidate.branches.size(), 1);

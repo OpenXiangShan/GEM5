@@ -388,7 +388,8 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
 
 
 void
-UBTB::update(const FetchTarget &stream, const PreparedUpdate &update)
+UBTB::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed

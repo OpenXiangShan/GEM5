@@ -172,11 +172,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry,
+    void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
-    bool canResolveUpdate(const FetchTarget &entry,
+    bool canResolveUpdate(const PredictionUpdateContext &context,
                           const PreparedUpdate &update) override;
-    void doResolveUpdate(const FetchTarget &entry,
+    void doResolveUpdate(const PredictionUpdateContext &context,
                          const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
@@ -305,7 +305,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // use for microtage updatemispred counting
     void checkUtageUpdateMisspred(
-        const FetchTarget &stream, const PreparedUpdate &update);
+        const PredictionUpdateContext &context,
+        const PreparedUpdate &update);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);

@@ -69,8 +69,8 @@ class RASPopPushTest : public ::testing::Test
         auto meta = ras->getPredictionMeta();
         auto pred = create_prediction(pc, target, true, false);
         ras->specUpdateState(pred);
-        ras->update(
-            create_stream(pc, target, true, false, meta), PreparedUpdate());
+        const auto stream = create_stream(pc, target, true, false, meta);
+        ras->update(PredictionUpdateContext(stream), PreparedUpdate());
     }
 
     std::unique_ptr<BTBRAS> ras;
@@ -93,9 +93,9 @@ TEST_F(RASPopPushTest, CallReturnPopsBeforePushingInAllPaths) {
     ras->recoverState(create_stream(0x3000, 0x2004, true, true, popPushMeta));
     check_return_target(0x2004, 0x3004);
 
-    ras->update(
-        create_stream(0x3000, 0x2004, true, true, popPushMeta),
-        PreparedUpdate());
+    const auto stream =
+        create_stream(0x3000, 0x2004, true, true, popPushMeta);
+    ras->update(PredictionUpdateContext(stream), PreparedUpdate());
     check_return_target(0x2004, 0x3004);
 }
 

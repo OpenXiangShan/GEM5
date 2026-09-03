@@ -328,7 +328,7 @@ struct MgscHarness
         update_stream.predBTBEntries = {entry};
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
         PreparedUpdate update(update_stream, 64);
-        mgsc.update(update_stream, update);
+        mgsc.update(PredictionUpdateContext(update_stream), update);
 
         return result;
     }
@@ -516,7 +516,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.predBTBEntries = {entry};
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         PreparedUpdate update(stream, 64);
-        mgsc.update(stream, update);
+        mgsc.update(PredictionUpdateContext(stream), update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
     }
 
@@ -530,7 +530,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.predBTBEntries = {entry};
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         PreparedUpdate update(stream, 64);
-        mgsc.update(stream, update);
+        mgsc.update(PredictionUpdateContext(stream), update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));
     }
 }

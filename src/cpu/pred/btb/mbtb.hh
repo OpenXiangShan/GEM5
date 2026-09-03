@@ -159,7 +159,8 @@ class MBTB : public TimedBaseBTBPredictor
                                FullBTBPrediction &pred) override;
 
     /** Derive the old/new BTB entry selected for this update attempt. */
-    void prepareUpdate(const FetchTarget &stream, PreparedUpdate &update);
+    void prepareUpdate(
+        const PredictionUpdateContext &context, PreparedUpdate &update);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
@@ -167,7 +168,7 @@ class MBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream,
+    void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
@@ -282,7 +283,7 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream,
+    void checkPredictionHit(const PredictionUpdateContext &context,
                             const BTBMeta* meta,
                             const PreparedUpdate &update);
 
@@ -290,12 +291,14 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(const BranchUpdate &branch, const FetchTarget &stream);
+    void updateBTBEntry(
+        const BranchUpdate &branch,
+        const PredictionUpdateContext &context);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BranchUpdate &branch,
                                const BTBEntry* existing_entry,
-                               const FetchTarget &stream);
+                               const PredictionUpdateContext &context);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,

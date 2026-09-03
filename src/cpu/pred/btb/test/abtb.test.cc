@@ -66,7 +66,7 @@ void updateABTB(FetchTarget &stream, AheadBTB *abtb) {
     PreparedUpdate update(stream, abtb->predictWidth);
     update.setBTBEntryCandidate(
         BTBEntry(stream.exeBranchInfo), false);
-    abtb->update(stream, update);
+    abtb->update(PredictionUpdateContext(stream), update);
 }
 
 

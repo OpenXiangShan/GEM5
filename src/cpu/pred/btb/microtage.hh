@@ -138,11 +138,11 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry,
+    void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
-    bool canResolveUpdate(const FetchTarget &entry,
+    bool canResolveUpdate(const PredictionUpdateContext &context,
                           const PreparedUpdate &update) override;
-    void doResolveUpdate(const FetchTarget &entry,
+    void doResolveUpdate(const PredictionUpdateContext &context,
                          const PreparedUpdate &update) override;
     // Train MicroTAGE from the final-stage teacher prediction instead of commit-time truth.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
@@ -238,7 +238,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // used for MicroTAGE update misprediction counting
     void checkUtageUpdateMisspred(
-        const FetchTarget &stream, const PreparedUpdate &update);
+        const PredictionUpdateContext &context,
+        const PreparedUpdate &update);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -391,7 +392,7 @@ public:
     void trainResolvedEntries(const PreparedUpdate &update,
                               const std::shared_ptr<TageMeta> &predMeta,
                               const Addr &startPC,
-                              const FetchTarget &stream);
+                              const PredictionUpdateContext &context);
 
 #ifdef UNIT_TEST
   public:

@@ -1092,12 +1092,13 @@ DecoupledBPUWithBTB::commit(
         if (block_idx < committedBlocks.size() &&
             committedBlocks[block_idx].ftqId == committed_id) {
             const auto &block = committedBlocks[block_idx];
+            const PredictionUpdateContext context(target);
             const auto update = prepareUpdate(
-                target, block.branches, block.lastCommittedPC);
+                context, block.branches, block.lastCommittedPC);
 
             // Training and retirement share a completion fact, not success.
             updateStatistics(target, update);
-            updatePredictorComponents(target, update);
+            updatePredictorComponents(context, update);
             block_idx++;
         }
 
@@ -1136,17 +1137,23 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
     }
 
     const auto &target = ftq.get(target_id, tid);
-    auto update = prepareUpdate(target, events);
+    const PredictionUpdateContext context(target);
+    const std::optional<Addr> non_control_end_pc =
+        target.squashType != SQUASH_NONE &&
+                target.squashType != SQUASH_CTRL ?
+            std::optional<Addr>(target.squashPC) : std::nullopt;
+    auto update = prepareUpdate(
+        context, events, std::nullopt, non_control_end_pc);
 
     // Update predictor components only if the target is hit or taken
-    if (!(target.isHit || update.outcome.taken)) {
+    if (!(context.isHit || update.outcome.taken)) {
         return true;
     }
 
     // Phase 1: probe all resolved-update components to ensure no blocker
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->trainsAtResolve()) {
-            if (!components[i]->canResolveUpdate(target, update)) {
+            if (!components[i]->canResolveUpdate(context, update)) {
                 return false;
             }
         }
@@ -1155,7 +1162,7 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
     // Phase 2: all clear, perform updates once
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->trainsAtResolve()) {
-            components[i]->doResolveUpdate(target, update);
+            components[i]->doResolveUpdate(context, update);
         }
     }
 
@@ -1192,23 +1199,16 @@ DecoupledBPUWithBTB::setRedirectPending(ThreadID tid, bool pending)
 }
 
 PreparedUpdate
-DecoupledBPUWithBTB::prepareUpdate(const FetchTarget &target)
-{
-    PreparedUpdate update(target, predictWidth);
-    if ((target.isHit || update.outcome.taken) && mbtb->isEnabled()) {
-        mbtb->prepareUpdate(target, update);
-    }
-    return update;
-}
-
-PreparedUpdate
 DecoupledBPUWithBTB::prepareUpdate(
-    const FetchTarget &target, const std::vector<BranchOutcome> &events,
-    std::optional<Addr> committedEndPC)
+    const PredictionUpdateContext &context,
+    const std::vector<BranchOutcome> &events,
+    std::optional<Addr> committedEndPC,
+    std::optional<Addr> nonControlEndPC)
 {
-    PreparedUpdate update(target, predictWidth, events, committedEndPC);
-    if ((target.isHit || update.outcome.taken) && mbtb->isEnabled()) {
-        mbtb->prepareUpdate(target, update);
+    PreparedUpdate update(
+        context, predictWidth, events, committedEndPC, nonControlEndPC);
+    if ((context.isHit || update.outcome.taken) && mbtb->isEnabled()) {
+        mbtb->prepareUpdate(context, update);
     }
     for (const auto &event : events) {
         update.applyOutcome(event);
@@ -1218,14 +1218,14 @@ DecoupledBPUWithBTB::prepareUpdate(
 
 void
 DecoupledBPUWithBTB::updatePredictorComponents(
-    const FetchTarget &target, const PreparedUpdate &update)
+    const PredictionUpdateContext &context, const PreparedUpdate &update)
 {
     // Update predictor components only if the target is hit or taken
-    if (target.isHit || update.outcome.taken) {
+    if (context.isHit || update.outcome.taken) {
         // Update predictor components
         for (int i = 0; i < numComponents; ++i) {
             if (components[i]->trainsAtCommit()) {
-                components[i]->update(target, update);
+                components[i]->update(context, update);
             }
         }
     }

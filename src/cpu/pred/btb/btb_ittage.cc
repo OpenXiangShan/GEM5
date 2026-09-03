@@ -316,7 +316,8 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
 }
 
 void
-BTBITTAGE::update(const FetchTarget &stream, const PreparedUpdate &update)
+BTBITTAGE::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     int &resetCnt = usesTidPartitionedStorage() ?
         usefulResetCntByThread[stream.tid] : usefulResetCnt;

@@ -424,7 +424,8 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     }
 
     // 7. Update predictor
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
     return predicted_taken;
 }
 
@@ -629,7 +630,8 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
 
     // Update with actual outcome matching main prediction (taken)
     FetchTarget stream = createStream(0x1000, entry, true, meta);
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
     // Verify useful bit is set (main prediction was correct and differed from alt)
     EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
@@ -641,7 +643,8 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
 
     // Update with actual outcome opposite to main prediction (not taken)
     stream = createStream(0x1000, entry, false, meta);
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
     // Verify useful bit is NOT cleared (policy is ++ only, no --)
     EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
@@ -661,7 +664,8 @@ TEST_F(BTBTAGETest, UsefulBitIgnoresStrongCorrectAlternative) {
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
     auto meta = tage->getPredictionMeta();
     FetchTarget stream = createStream(0x1000, entry, true, meta);
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
     EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
         << "Useful bit should not be cleared only because alt is also correct and strong";
@@ -679,7 +683,8 @@ TEST_F(BTBTAGETest, UsefulBitIgnoresWeakCounterTransition) {
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
     auto meta = tage->getPredictionMeta();
     FetchTarget stream = createStream(0x1000, entry, false, meta);
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
     EXPECT_EQ(tage->tageTable[3][mainIndex][0].counter, 0);
     EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
@@ -719,7 +724,8 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
 
     // Update the predictor. With RTL-aligned highest-table gating, this should
     // not report a final allocation failure.
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
     int alloc_failed_no_valid = tage->tageStats.updateAllocFailureNoValidTable;
     EXPECT_EQ(alloc_failed_no_valid, 0)
@@ -741,7 +747,8 @@ TEST_F(BTBTAGETest, HighestTableProviderSuppressesAllocation) {
     stream.squashPC = 0x1000;
 
     int alloc_failed_before = tage->tageStats.updateAllocFailureNoValidTable;
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
     EXPECT_EQ(tage->tageStats.updateAllocSuccess, 0);
     EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, alloc_failed_before)
@@ -813,13 +820,15 @@ TEST_F(BTBTAGETest, MultipleBranchSequence) {
 
     // Update first branch (correct prediction), no allocation
     FetchTarget stream1 = createStream(0x1000, btbEntries[0], first_pred, meta);
-    tage->update(stream1, createPreparedUpdate(stream1));
+    tage->update(
+        PredictionUpdateContext(stream1), createPreparedUpdate(stream1));
 
     // Update second branch (incorrect prediction), allocate 1 entry
     FetchTarget stream2 = createStream(0x1000, btbEntries[1], !second_pred, meta);
     stream2.squashType = SquashType::SQUASH_CTRL;
     stream2.squashPC = 0x1004;
-    tage->update(stream2, createPreparedUpdate(stream2));
+    tage->update(
+        PredictionUpdateContext(stream2), createPreparedUpdate(stream2));
 
     // Verify both branches have entries allocated
     EXPECT_EQ(findTableWithEntry(tage, 0x1000, 0x1000), -1) << "First branch should not have an entry";
@@ -844,7 +853,8 @@ TEST_F(BTBTAGETest, CounterUpdateMechanism) {
         auto meta = tage->getPredictionMeta();
 
         FetchTarget stream = createStream(0x1000, entry, true, meta);
-        tage->update(stream, createPreparedUpdate(stream));
+        tage->update(
+            PredictionUpdateContext(stream), createPreparedUpdate(stream));
     }
 
     // Verify counter saturates at maximum
@@ -857,7 +867,8 @@ TEST_F(BTBTAGETest, CounterUpdateMechanism) {
         auto meta = tage->getPredictionMeta();
 
         FetchTarget stream = createStream(0x1000, entry, false, meta);
-        tage->update(stream, createPreparedUpdate(stream));
+        tage->update(
+            PredictionUpdateContext(stream), createPreparedUpdate(stream));
     }
 
     // Verify counter saturates at minimum
@@ -1209,7 +1220,7 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
 
     PreparedUpdate update(stream, 64);
     update.setBTBEntryCandidate(newEntry, false);
-    tage->update(stream, update);
+    tage->update(PredictionUpdateContext(stream), update);
 
     int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
     EXPECT_GE(table, 0)
@@ -1240,7 +1251,7 @@ TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
     update.setBTBEntryCandidate(mbtbCandidate, false);
     update.markResolved(finalEntry.pc);
     tage->setTrainingStage(PredictorTrainingStage::Resolve);
-    tage->update(stream, update);
+    tage->update(PredictionUpdateContext(stream), update);
 
     EXPECT_GE(findTableWithEntry(tage, 0x1000, finalEntry.pc), 0);
 }
@@ -1281,7 +1292,8 @@ TEST_F(BTBTAGETest, BankConflict) {
         const auto before_probe = bankTage->tageTable[0][index][0];
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream, update);
+        bool can_update = bankTage->canResolveUpdate(
+            PredictionUpdateContext(stream), update);
 
         // Should detect conflict and defer update
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before + 1);
@@ -1295,10 +1307,11 @@ TEST_F(BTBTAGETest, BankConflict) {
 
         // The failed probe consumes the transient bank marker.  Retrying the
         // exact same packet succeeds and is applied once by the coordinator.
-        EXPECT_TRUE(bankTage->canResolveUpdate(stream, update));
+        EXPECT_TRUE(bankTage->canResolveUpdate(
+            PredictionUpdateContext(stream), update));
         EXPECT_EQ(bankTage->tageTable[0][index][0].counter,
                   before_probe.counter);
-        bankTage->doResolveUpdate(stream, update);
+        bankTage->doResolveUpdate(PredictionUpdateContext(stream), update);
         EXPECT_EQ(bankTage->tageTable[0][index][0].counter,
                   before_probe.counter + 1);
         EXPECT_EQ(bankTage->tageStats.updateBankConflict,
@@ -1316,9 +1329,10 @@ TEST_F(BTBTAGETest, BankConflict) {
         auto update = createPreparedUpdate(stream);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream, update);
+        bool can_update = bankTage->canResolveUpdate(
+            PredictionUpdateContext(stream), update);
         ASSERT_TRUE(can_update);
-        bankTage->doResolveUpdate(stream, update);
+        bankTage->doResolveUpdate(PredictionUpdateContext(stream), update);
 
         // Should not detect conflict
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
@@ -1337,9 +1351,10 @@ TEST_F(BTBTAGETest, BankConflict) {
         auto update = createPreparedUpdate(stream);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream, update);
+        bool can_update = bankTage->canResolveUpdate(
+            PredictionUpdateContext(stream), update);
         ASSERT_TRUE(can_update);
-        bankTage->doResolveUpdate(stream, update);
+        bankTage->doResolveUpdate(PredictionUpdateContext(stream), update);
 
         // No conflict even with same bank
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
@@ -1423,7 +1438,8 @@ TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
     stream = setMispredStream(stream);
 
     tage->recoverHist(historyB, stream, 1, true);
-    tage->update(stream, createPreparedUpdate(stream));
+    tage->update(
+        PredictionUpdateContext(stream), createPreparedUpdate(stream));
 
     EXPECT_TRUE(tage->hasExactEntry(0, entry.pc, historyA));
     EXPECT_FALSE(tage->hasExactEntry(0, entry.pc, historyB));
@@ -1447,7 +1463,7 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
 
     PreparedUpdate update(stream, 64);
     update.setBTBEntryCandidate(newEntry, false);
-    tage->update(stream, update);
+    tage->update(PredictionUpdateContext(stream), update);
 
     EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));
 }

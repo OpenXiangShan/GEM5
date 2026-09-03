@@ -193,7 +193,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       bool cond_taken);
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry,
+    void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
@@ -300,8 +300,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             const TageInfoForMGSC &tage_info,
                                             ThreadID tid, uint8_t asidHash);
 
-    void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream);
+    void updateSinglePredictor(
+        const BTBEntry &entry, bool actual_taken,
+        const MgscPrediction &pred,
+        const PredictionUpdateContext &context);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
                                bool tage_pred_taken);
 

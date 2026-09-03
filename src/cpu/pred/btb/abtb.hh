@@ -182,7 +182,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream,
+    void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
 
 
@@ -362,13 +362,13 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing prediction info
      *  @return Previous PC
      */
-    Addr getPreviousPC(const FetchTarget &stream);
+    Addr getPreviousPC(const PredictionUpdateContext &context);
 
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream,
+    void checkPredictionHit(const PredictionUpdateContext &context,
                             const BTBMeta* meta,
                             const PreparedUpdate &update);
 

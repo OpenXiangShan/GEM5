@@ -470,6 +470,41 @@ struct FetchTarget
 };
 
 /**
+ * Read-only prediction state required to build and apply predictor updates.
+ *
+ * This is deliberately a view into an FTQ-owned FetchTarget.  It narrows the
+ * component API without creating a second owner or extending the lifetime of
+ * prediction metadata beyond the FTQ entry.
+ */
+struct PredictionUpdateContext
+{
+    ThreadID tid;
+    uint8_t asidHash;
+    Addr startPC;
+    bool isHit;
+    Tick predTick;
+
+    const std::vector<BTBEntry> &predBTBEntries;
+    const std::array<std::shared_ptr<void>, 9> &predMetas;
+    const boost::dynamic_bitset<> &phistory;
+    const std::queue<Addr> &previousPCs;
+
+    explicit PredictionUpdateContext(const FetchTarget &target)
+        : tid(target.tid),
+          asidHash(target.asidHash),
+          startPC(target.startPC),
+          isHit(target.isHit),
+          predTick(target.predTick),
+          predBTBEntries(target.predBTBEntries),
+          predMetas(target.predMetas),
+          phistory(target.phistory),
+          previousPCs(target.previousPCs)
+    {}
+
+    Addr getRealStartPC() const { return startPC; }
+};
+
+/**
  * Predictor update data derived from one FetchTarget.
  *
  * FetchTarget owns the immutable prediction snapshot.  The execution outcome
@@ -535,28 +570,26 @@ struct PreparedUpdate
      * complete branchless block and never falls back to FetchTarget::exe*.
      */
     PreparedUpdate(
-        const FetchTarget &target, unsigned predictWidth,
+        const PredictionUpdateContext &context, unsigned predictWidth,
         const std::vector<BranchOutcome> &outcomeEvents,
-        std::optional<Addr> committedEndPC = std::nullopt)
+        std::optional<Addr> committedEndPC = std::nullopt,
+        std::optional<Addr> nonControlEndPC = std::nullopt)
     {
         outcome = makeControlFlowOutcome(outcomeEvents);
 
-        const bool legacyNonControlBoundary =
-            !committedEndPC && target.squashType != SQUASH_NONE &&
-            target.squashType != SQUASH_CTRL;
-        if (legacyNonControlBoundary) {
-            endInstPC = target.squashPC;
+        if (nonControlEndPC) {
+            endInstPC = *nonControlEndPC;
         } else if (outcome.valid &&
                    (outcome.controlMispred || outcome.taken)) {
             endInstPC = outcome.branch.pc;
         } else if (committedEndPC) {
             endInstPC = *committedEndPC;
         } else {
-            endInstPC = (target.startPC + predictWidth) &
+            endInstPC = (context.startPC + predictWidth) &
                 ~mask(floorLog2(predictWidth) - 1);
         }
 
-        for (const auto &entry : target.predBTBEntries) {
+        for (const auto &entry : context.predBTBEntries) {
             auto event = std::find_if(
                 outcomeEvents.begin(), outcomeEvents.end(),
                 [&entry](const BranchOutcome &resolved) {

@@ -819,7 +819,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
  */
 bool
 MicroTAGE::canResolveUpdate(
-    const FetchTarget &stream, const PreparedUpdate &update)
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     if (usingS3Pred) {
         return true;
@@ -857,7 +857,7 @@ MicroTAGE::canResolveUpdate(
  */
 void
 MicroTAGE::doResolveUpdate(
-    const FetchTarget &stream, const PreparedUpdate &update)
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     if (usingS3Pred) {
         return;
@@ -875,7 +875,8 @@ MicroTAGE::doResolveUpdate(
  * @param stream The fetch stream containing branch execution information
  */
 void
-MicroTAGE::update(const FetchTarget &stream, const PreparedUpdate &update) {
+MicroTAGE::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     if (usingS3Pred) {
         DPRINTF(UTAGE, "update bypassed because usingS3Pred is enabled\n");
         return;
@@ -1044,7 +1045,7 @@ MicroTAGE::trainResolvedEntries(
     const PreparedUpdate &update,
     const std::shared_ptr<TageMeta> &predMeta,
     const Addr &startPC,
-    const FetchTarget &stream)
+    const PredictionUpdateContext &stream)
 {
     std::vector<TrainingEntry> entries;
     entries.reserve(update.branches.size());
@@ -1064,7 +1065,7 @@ MicroTAGE::trainResolvedEntries(
 
 void
 MicroTAGE::checkUtageUpdateMisspred(
-    const FetchTarget &stream, const PreparedUpdate &update) {
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "checkUtageUpdateMisspred: no prediction meta, skip\n");
