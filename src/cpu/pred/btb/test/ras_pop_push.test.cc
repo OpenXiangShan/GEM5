@@ -90,7 +90,7 @@ class RASPopPushTest : public ::testing::Test
         const auto branch = create_branch(pc, target, true, false);
         const auto outcome = create_outcome(branch);
         const PredictionUpdateContext context(stream);
-        const PreparedUpdate update(context, 64, {outcome});
+        const PreparedUpdate update(context, {outcome});
         ras->update(context, update);
     }
 
@@ -122,7 +122,7 @@ TEST_F(RASPopPushTest, CallReturnPopsBeforePushingInAllPaths) {
     const auto stream = create_context(0x3000, popPushMeta);
     const auto outcome = create_outcome(actualBranch);
     const PredictionUpdateContext context(stream);
-    const PreparedUpdate update(context, 64, {outcome});
+    const PreparedUpdate update(context, {outcome});
     ras->update(context, update);
     check_return_target(0x2004, 0x3004);
 }

@@ -91,7 +91,7 @@ createPreparedUpdate(const FetchTarget &stream, const BTBEntry &entry,
                      bool taken, bool mispredicted = false)
 {
     return PreparedUpdate(
-        PredictionUpdateContext(stream), 64,
+        PredictionUpdateContext(stream),
         {createBranchOutcome(entry, taken, mispredicted)});
 }
 
@@ -1237,7 +1237,7 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
 
     const auto outcome = createBranchOutcome(newEntry, true, true);
     PreparedUpdate update(
-        PredictionUpdateContext(stream), 64, {outcome});
+        PredictionUpdateContext(stream), {outcome});
     update.setBTBEntryCandidate(newEntry, false);
     update.applyOutcome(outcome);
     tage->update(PredictionUpdateContext(stream), update);
@@ -1263,7 +1263,7 @@ TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
 
     const auto outcome = createBranchOutcome(finalEntry, true, true);
     PreparedUpdate update(
-        PredictionUpdateContext(stream), 64, {outcome});
+        PredictionUpdateContext(stream), {outcome});
     BTBEntry mbtbCandidate = finalEntry;
     mbtbCandidate.alwaysTaken = true;
     update.setBTBEntryCandidate(mbtbCandidate, false);
@@ -1480,7 +1480,7 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
 
     const auto outcome = createBranchOutcome(newEntry, true, true);
     PreparedUpdate update(
-        PredictionUpdateContext(stream), 64, {outcome});
+        PredictionUpdateContext(stream), {outcome});
     update.setBTBEntryCandidate(newEntry, false);
     update.applyOutcome(outcome);
     tage->update(PredictionUpdateContext(stream), update);

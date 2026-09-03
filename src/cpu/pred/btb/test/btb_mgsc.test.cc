@@ -347,7 +347,7 @@ struct MgscHarness
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext update_context(update_stream);
         PreparedUpdate update(
-            update_context, 64,
+            update_context,
             std::vector<BranchOutcome>{makeBranchOutcome(
                 entry, actual_taken, false)});
         mgsc.update(update_context, update);
@@ -536,7 +536,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext context(stream);
         PreparedUpdate update(
-            context, 64,
+            context,
             std::vector<BranchOutcome>{makeBranchOutcome(
                 entry, true, false)});
         mgsc.update(context, update);
@@ -551,7 +551,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext context(stream);
         PreparedUpdate update(
-            context, 64,
+            context,
             std::vector<BranchOutcome>{makeBranchOutcome(
                 entry, false, false)});
         mgsc.update(context, update);

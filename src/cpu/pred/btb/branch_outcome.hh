@@ -45,8 +45,6 @@ struct CommittedFetchBlock
 {
     ThreadID tid = 0;
     FetchTargetId ftqId = 0;
-    Addr lastCommittedPC = 0;
-    unsigned committedInstCount = 0;
     std::vector<BranchOutcome> branches;
 };
 

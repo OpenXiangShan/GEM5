@@ -71,8 +71,7 @@ updateABTB(FetchTarget &stream, AheadBTB *abtb,
     // components use index 0, so do not ask MBTB to read ABTB's metadata here.
     const PredictionUpdateContext context(stream);
     PreparedUpdate update(
-        context, abtb->predictWidth,
-        std::vector<BranchOutcome>{outcome});
+        context, std::vector<BranchOutcome>{outcome});
 
     if (update.branches.empty() && outcome.taken) {
         BranchInfo actual_branch;
@@ -252,7 +251,7 @@ TEST_F(ABTBTest, ResolveUpdateOnlyTrainsExplicitBranch)
     const auto outcome =
         makeBranchOutcome(false, branch_a_pc, branch_a_pc + 4, true);
     PreparedUpdate update(
-        PredictionUpdateContext(resolve_a), abtb->predictWidth,
+        PredictionUpdateContext(resolve_a),
         std::vector<BranchOutcome>{outcome});
     BranchInfo duplicate_candidate;
     duplicate_candidate.pc = outcome.pc;

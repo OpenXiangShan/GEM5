@@ -1318,11 +1318,9 @@ Commit::recordCommittedInst(const DynInstPtr &inst)
             static_cast<unsigned long long>(ftq_id));
 
         DPRINTF(Commit,
-                "Emit committed FetchBlock tid %u FTQ %llu: %u insts, "
-                "%zu branches, last PC %#lx\n",
+                "Emit committed FetchBlock tid %u FTQ %llu: %zu branches\n",
                 tid, static_cast<unsigned long long>(block.ftqId),
-                block.committedInstCount, block.branches.size(),
-                block.lastCommittedPC);
+                block.branches.size());
         toIEW->commitInfo[tid].committedFetchBlocks.push_back(
             std::move(block));
 
@@ -1331,8 +1329,6 @@ Commit::recordCommittedInst(const DynInstPtr &inst)
         block.ftqId = ftq_id;
     }
 
-    block.lastCommittedPC = inst->getPC();
-    block.committedInstCount++;
     if (inst->isControl() && !inst->isNonSpeculative()) {
         block.branches.push_back(makeBranchOutcome(inst));
     }

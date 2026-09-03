@@ -122,7 +122,7 @@ protected:
         auto branch = createCallBranch(branchPC, size);
         auto outcome = createOutcome(branch, true);
         const PredictionUpdateContext context(contextTarget);
-        const PreparedUpdate update(context, 64, {outcome});
+        const PreparedUpdate update(context, {outcome});
         ras->update(context, update);
     }
 

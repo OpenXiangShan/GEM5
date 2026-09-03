@@ -112,7 +112,7 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
     stream.predBTBEntries = {entry};
     const PredictionUpdateContext context(stream);
     PreparedUpdate update(
-        context, 64,
+        context,
         std::vector<BranchOutcome>{makeBranchOutcome(entry, true, false)});
 
     tage->update(context, update);

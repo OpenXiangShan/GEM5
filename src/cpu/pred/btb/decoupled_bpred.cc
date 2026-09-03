@@ -1106,8 +1106,7 @@ DecoupledBPUWithBTB::commit(
             committedBlocks[block_idx].ftqId == committed_id) {
             const auto &block = committedBlocks[block_idx];
             const PredictionUpdateContext context(target);
-            const auto update = prepareUpdate(
-                context, block.branches, block.lastCommittedPC);
+            const auto update = prepareUpdate(context, block.branches);
 
             // Training and retirement share a completion fact, not success.
             updateStatistics(target, update);
@@ -1209,11 +1208,9 @@ DecoupledBPUWithBTB::setRedirectPending(ThreadID tid, bool pending)
 PreparedUpdate
 DecoupledBPUWithBTB::prepareUpdate(
     const PredictionUpdateContext &context,
-    const std::vector<BranchOutcome> &events,
-    std::optional<Addr> committedEndPC)
+    const std::vector<BranchOutcome> &events)
 {
-    PreparedUpdate update(
-        context, predictWidth, events, committedEndPC);
+    PreparedUpdate update(context, events);
     if ((context.isHit || update.outcome.taken) && mbtb->isEnabled()) {
         mbtb->prepareUpdate(context, update);
     }

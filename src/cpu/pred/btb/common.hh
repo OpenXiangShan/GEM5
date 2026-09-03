@@ -537,7 +537,6 @@ struct ControlFlowOutcome
 
 struct PreparedUpdate
 {
-    Addr endInstPC = 0;
     std::vector<BranchUpdate> branches;
     std::optional<BTBEntry> btbEntryCandidate;
     ControlFlowOutcome outcome;
@@ -549,20 +548,10 @@ struct PreparedUpdate
      * complete branchless block.
      */
     PreparedUpdate(
-        const PredictionUpdateContext &context, unsigned predictWidth,
-        const std::vector<BranchOutcome> &outcomeEvents,
-        std::optional<Addr> committedEndPC = std::nullopt)
+        const PredictionUpdateContext &context,
+        const std::vector<BranchOutcome> &outcomeEvents)
     {
         outcome = makeControlFlowOutcome(outcomeEvents);
-
-        if (outcome.valid && (outcome.controlMispred || outcome.taken)) {
-            endInstPC = outcome.branch.pc;
-        } else if (committedEndPC) {
-            endInstPC = *committedEndPC;
-        } else {
-            endInstPC = (context.startPC + predictWidth) &
-                ~mask(floorLog2(predictWidth) - 1);
-        }
 
         for (const auto &entry : context.predBTBEntries) {
             auto event = std::find_if(
