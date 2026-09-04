@@ -107,6 +107,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            bool basePred;         // Base BTB direction at prediction time
             int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
             Addr useAltIdx;        // useAltOnNa index consulted at prediction time
@@ -115,15 +116,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
+                               basePred(false),
                                finalProviderTable(-1), finalProviderIsAlt(false),
                                useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
+                            bool basePred,
                             int finalProviderTable, bool finalProviderIsAlt,
                             Addr useAltIdx, short useAltCtr, uint64_t hitTableMask) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
                             useAlt(useAlt), taken(taken), altPred(altPred),
+                            basePred(basePred),
                             finalProviderTable(finalProviderTable),
                             finalProviderIsAlt(finalProviderIsAlt),
                             useAltIdx(useAltIdx), useAltCtr(useAltCtr),

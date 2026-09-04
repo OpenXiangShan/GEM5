@@ -300,7 +300,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     for (auto &e : selected_entries) {
         assert(e.valid);
         if (e.isCond) {
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
+            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
             DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
@@ -629,13 +629,12 @@ AheadBTB::updateBTBEntry(
     // else use the recorded entry
     auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
     entry_to_write.tag = btb_tag;   // update tag after found it!
-    // update saturating counter if necessary
+    // Keep a newly allocated conditional weakly taken, matching RTL.
     if (entry_to_write.isCond) {
-        if (!actual_taken) {
-            entry_to_write.alwaysTaken = false;
-        }
-        if (!entry_to_write.alwaysTaken) {
+        if (found) {
             updateCtr(entry_to_write.ctr, actual_taken);
+        } else {
+            entry_to_write.ctr = 0;
         }
     }
     // update indirect target if necessary
@@ -754,7 +753,6 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         new_entry.valid = true;
 
         if (new_entry.isCond) {
-            new_entry.alwaysTaken = true;
             new_entry.ctr = 0;
         }
         all_entries.push_back(new_entry);
@@ -802,17 +800,26 @@ AheadBTB::update(
     // part of the block, while a commit packet contains all committed branches.
     std::vector<Addr> updated_pcs;
     for (const auto &branch : update.branches) {
-        if ((trainsAtResolve() && !branch.resolvedThisAttempt) ||
-            std::find(updated_pcs.begin(), updated_pcs.end(),
-                      branch.entry.pc) != updated_pcs.end()) {
+        if (std::find(updated_pcs.begin(), updated_pcs.end(), branch.pc) !=
+            updated_pcs.end()) {
             continue;
         }
-        updated_pcs.push_back(branch.entry.pc);
-        auto entry = branch.entry;
+
+        auto hit = std::find_if(
+            meta->hit_entries.begin(), meta->hit_entries.end(),
+            [&branch](const BTBEntry &entry) {
+                return entry.pc == branch.pc;
+            });
+        if (hit == meta->hit_entries.end() && !branch.taken) {
+            continue;
+        }
+
+        updated_pcs.push_back(branch.pc);
+        auto entry = hit != meta->hit_entries.end() ?
+            *hit : BTBEntry(makeBranchInfo(branch));
+        static_cast<BranchInfo &>(entry) = makeBranchInfo(branch);
         entry.source = getComponentIdx();
-        updateBTBEntry(
-            btb_idx, btb_tag, entry,
-            branch.actualTaken, branch.actualTarget);
+        updateBTBEntry(btb_idx, btb_tag, entry, branch.taken, branch.target);
     }
 }
 

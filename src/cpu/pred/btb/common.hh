@@ -2,7 +2,6 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <algorithm>
-#include <optional>
 #include <queue>
 #include <string>
 
@@ -208,20 +207,19 @@ struct BranchInfo
  *
  * Contains branch information plus prediction state:
  * - Valid bit
- * - Always taken bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
 struct BTBEntry : BranchInfo
 {
     bool valid;
-    bool alwaysTaken;
     int ctr;
     Addr tag;
     int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(-1){}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(-1){}
+    BTBEntry() : BranchInfo(), valid(false), ctr(0), tag(0), source(-1) {}
+    BTBEntry(const BranchInfo &bi)
+        : BranchInfo(bi), valid(true), ctr(0), tag(0), source(-1) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
     int getsource() const {
@@ -230,40 +228,6 @@ struct BTBEntry : BranchInfo
 
     void setsource(int src) {
         source = src;
-    }
-};
-
-/**
- * Prediction-time BTB state that must survive until history recovery or
- * predictor training. Branch semantics and targets come from BranchOutcome.
- */
-struct PredictedBranchSnapshot
-{
-    Addr pc = 0;
-    bool valid = false;
-    bool alwaysTaken = false;
-    int ctr = 0;
-    int source = -1;
-
-    PredictedBranchSnapshot() = default;
-
-    explicit PredictedBranchSnapshot(const BTBEntry &entry)
-        : pc(entry.pc),
-          valid(entry.valid),
-          alwaysTaken(entry.alwaysTaken),
-          ctr(entry.ctr),
-          source(entry.source)
-    {}
-
-    BTBEntry materialize(const BranchInfo &actual) const
-    {
-        BTBEntry entry;
-        static_cast<BranchInfo &>(entry) = actual;
-        entry.valid = valid;
-        entry.alwaysTaken = alwaysTaken;
-        entry.ctr = ctr;
-        entry.source = source;
-        return entry;
     }
 };
 
@@ -377,7 +341,7 @@ struct FetchTarget
 
     bool isHit;          // whether the predicted btb entry is hit
     bool falseHit;       // not used
-    std::vector<PredictedBranchSnapshot> predictedBranches;
+    std::vector<Addr> predictedBranchPCs;
 
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
@@ -427,10 +391,12 @@ struct FetchTarget
 
     void setPredictedBranches(const std::vector<BTBEntry> &entries)
     {
-        predictedBranches.clear();
-        predictedBranches.reserve(entries.size());
+        predictedBranchPCs.clear();
+        predictedBranchPCs.reserve(entries.size());
         for (const auto &entry : entries) {
-            predictedBranches.emplace_back(entry);
+            if (entry.valid) {
+                predictedBranchPCs.push_back(entry.pc);
+            }
         }
     }
 
@@ -442,8 +408,8 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
         DirectionHistoryUpdate update;
-        for (const auto &entry : predictedBranches) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+        for (const auto pc : predictedBranchPCs) {
+            if (pc >= startPC && pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -458,8 +424,8 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
         DirectionHistoryUpdate update;
-        for (const auto &entry : predictedBranches) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+        for (const auto pc : predictedBranchPCs) {
+            if (pc >= startPC && pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -525,10 +491,8 @@ struct PredictionUpdateContext
     ThreadID tid;
     uint8_t asidHash;
     Addr startPC;
-    bool isHit;
     Tick predTick;
 
-    const std::vector<PredictedBranchSnapshot> &predictedBranches;
     const std::array<std::shared_ptr<void>, 9> &predMetas;
     const boost::dynamic_bitset<> &phistory;
     const std::queue<Addr> &previousPCs;
@@ -537,9 +501,7 @@ struct PredictionUpdateContext
         : tid(target.tid),
           asidHash(target.asidHash),
           startPC(target.startPC),
-          isHit(target.isHit),
           predTick(target.predTick),
-          predictedBranches(target.predictedBranches),
           predMetas(target.predMetas),
           phistory(target.phistory),
           previousPCs(target.previousPCs)
@@ -548,120 +510,50 @@ struct PredictionUpdateContext
     Addr getRealStartPC() const { return startPC; }
 };
 
-/**
- * Predictor update data derived from one FetchTarget.
- *
- * FetchTarget owns the immutable prediction snapshot. The execution outcome
- * comes from stage-neutral BranchOutcome records.
- * PreparedUpdate owns the materialized branch facts used by predictor
- * components for one update attempt.  Keeping these values separate prevents
- * resolve and commit from communicating through mutable FTQ scratch.
- */
-struct BranchUpdate
-{
-    BTBEntry entry;
-    bool actualTaken = false;
-    Addr actualTarget = 0;
-    bool controlMispred = false;
-    bool resolvedThisAttempt = false;
-    bool fromPrediction = true;
-    bool matchesMbtbMissCandidate = false;
-};
-
+/** Actual control-flow result selected from one predictor update packet. */
 struct ControlFlowOutcome
 {
     BranchInfo branch;
     bool taken = false;
     bool controlMispred = false;
-    bool fromOutcomeEvent = false;
     bool valid = false;
 };
 
+inline BranchInfo
+makeBranchInfo(const BranchOutcome &event)
+{
+    BranchInfo branch;
+    branch.pc = event.pc;
+    branch.target = event.target;
+    branch.isCond = event.isCond;
+    branch.isIndirect = event.isIndirect;
+    branch.isDirect = event.isDirect;
+    branch.isCall = event.isCall;
+    branch.isReturn = event.isReturn;
+    branch.size = event.size;
+    return branch;
+}
+
 struct PreparedUpdate
 {
-    std::vector<BranchUpdate> branches;
-    std::optional<BTBEntry> btbEntryCandidate;
+    std::vector<BranchOutcome> branches;
     ControlFlowOutcome outcome;
-
-    PreparedUpdate() = default;
 
     /**
      * Build a packet from actual outcomes. An empty vector is a valid
      * complete branchless block.
      */
-    PreparedUpdate(
-        const PredictionUpdateContext &context,
-        const std::vector<BranchOutcome> &outcomeEvents)
+    explicit PreparedUpdate(const std::vector<BranchOutcome> &outcomeEvents)
+        : branches(outcomeEvents), outcome(makeControlFlowOutcome(outcomeEvents))
     {
-        outcome = makeControlFlowOutcome(outcomeEvents);
-
-        for (const auto &prediction : context.predictedBranches) {
-            auto event = std::find_if(
-                outcomeEvents.begin(), outcomeEvents.end(),
-                [&prediction](const BranchOutcome &resolved) {
-                    return prediction.valid && prediction.pc == resolved.pc;
-                });
-            if (event == outcomeEvents.end()) {
-                continue;
-            }
-
-            const auto entry = prediction.materialize(branchInfo(*event));
-            auto branch = makeBranchUpdate(entry, outcome, false);
-            applyOutcome(branch, *event);
-            branches.push_back(std::move(branch));
-        }
-    }
-
-    void setBTBEntryCandidate(const BTBEntry &entry, bool isOld)
-    {
-        btbEntryCandidate = entry.valid ?
-            std::optional<BTBEntry>(entry) : std::nullopt;
-        if (!btbEntryCandidate || isOld) {
-            return;
-        }
-
-        for (auto &branch : branches) {
-            if (branch.entry.pc == entry.pc) {
-                branch.matchesMbtbMissCandidate = true;
-            }
-        }
-        branches.push_back(makeBranchUpdate(entry, outcome, true));
-    }
-
-    void applyOutcome(const BranchOutcome &event)
-    {
-        for (auto &branch : branches) {
-            if (branch.entry.valid && branch.entry.pc == event.pc) {
-                applyOutcome(branch, event);
-            }
-        }
+        std::stable_sort(
+            branches.begin(), branches.end(),
+            [](const BranchOutcome &lhs, const BranchOutcome &rhs) {
+                return lhs.seqNum < rhs.seqNum;
+            });
     }
 
   private:
-    static BranchInfo branchInfo(const BranchOutcome &event)
-    {
-        BranchInfo branch;
-        branch.pc = event.pc;
-        branch.target = event.target;
-        branch.isCond = event.isCond;
-        branch.isIndirect = event.isIndirect;
-        branch.isDirect = event.isDirect;
-        branch.isCall = event.isCall;
-        branch.isReturn = event.isReturn;
-        branch.size = event.size;
-        return branch;
-    }
-
-    static void applyOutcome(
-        BranchUpdate &branch, const BranchOutcome &event)
-    {
-        static_cast<BranchInfo &>(branch.entry) = branchInfo(event);
-        branch.actualTaken = event.taken;
-        branch.actualTarget = event.target;
-        branch.controlMispred = event.mispredicted;
-        branch.resolvedThisAttempt = true;
-    }
-
     static ControlFlowOutcome makeControlFlowOutcome(
         const std::vector<BranchOutcome> &outcomeEvents)
     {
@@ -683,28 +575,7 @@ struct PreparedUpdate
 
         const auto &primary = terminal ? *terminal : *frontier;
         return ControlFlowOutcome{
-            branchInfo(primary), primary.taken, primary.mispredicted, true,
-            true
-        };
-    }
-
-    static BranchUpdate makeBranchUpdate(
-        BTBEntry entry, const ControlFlowOutcome &outcome,
-        bool isMbtbMissCandidate)
-    {
-        const bool actualTaken =
-            outcome.taken && outcome.branch.pc == entry.pc;
-        if (isMbtbMissCandidate && !actualTaken) {
-            entry.alwaysTaken = false;
-        }
-        return BranchUpdate{
-            entry,
-            actualTaken,
-            outcome.branch.target,
-            outcome.controlMispred && outcome.branch.pc == entry.pc,
-            false,
-            !isMbtbMissCandidate,
-            isMbtbMissCandidate
+            makeBranchInfo(primary), primary.taken, primary.mispredicted, true
         };
     }
 };

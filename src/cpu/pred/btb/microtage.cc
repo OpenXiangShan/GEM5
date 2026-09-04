@@ -307,7 +307,7 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
                                                  tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -425,12 +425,10 @@ MicroTAGE::prepareS3UpdateEntries(const FullBTBPrediction &s3Pred)
         Addr branch_pc = entry.pc;
         auto teacher_it = CondTakens_find(s3Pred.condTakens, branch_pc);
         // Stop at the first control transfer the S3 teacher says is taken.
-        bool teacher_taken = entry.alwaysTaken ||
-            (teacher_it != s3Pred.condTakens.end() && teacher_it->second);
+        bool teacher_taken =
+            teacher_it != s3Pred.condTakens.end() && teacher_it->second;
 
-        if (!entry.alwaysTaken) {
-            entries.push_back(entry);
-        }
+        entries.push_back(entry);
 
         if (teacher_taken) {
             break;
@@ -589,8 +587,9 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Check if misprediction occurred
     bool this_fb_mispred = control_mispred;
-    // No allocation if no misprediction
-    if (!this_fb_mispred) {
+    // A control redirect can also come from a target/BTB miss.  Allocate
+    // direction state only when the stored direction itself was wrong.
+    if (!this_fb_mispred || pred.taken == actual_taken) {
         return false;
     }
 
@@ -1049,13 +1048,17 @@ MicroTAGE::trainResolvedEntries(
     std::vector<TrainingEntry> entries;
     entries.reserve(update.branches.size());
     for (const auto &branch : update.branches) {
-        const auto &entry = branch.entry;
-        if (!(entry.isCond && !entry.alwaysTaken) ||
-            (trainsAtResolve() && !branch.resolvedThisAttempt)) {
+        if (!branch.isCond) {
             continue;
         }
+        auto entry = BTBEntry(makeBranchInfo(branch));
+        auto pred = predMeta->preds.find(entry.pc);
+        if (pred == predMeta->preds.end()) {
+            continue;
+        }
+        entry.ctr = pred->second.basePred ? 0 : -1;
         entries.push_back(TrainingEntry{
-            entry, branch.actualTaken, branch.controlMispred});
+            entry, branch.taken, branch.mispredicted});
     }
 
     trainEntries(entries, predMeta, startPC, stream.tid, stream.asidHash,

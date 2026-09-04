@@ -477,7 +477,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 ||entry.alwaysTaken){
+            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0) {
                 finalPred.s1Source = entry.source;
                 break;
             }
@@ -488,7 +488,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     bool na_s3_taken_but_have_cond = false;
 
     for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0 || entry.alwaysTaken) {
+        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0) {
             found_s3_taken = true;
         }else if (entry.isCond){
             //only use when there's no taken prediction in s3
@@ -840,7 +840,7 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
         for (const auto &entry : btbEntries) {
             if (entry.valid && entry.isCond) {
                 condTakens.push_back(
-                    {entry.pc, entry.alwaysTaken || (entry.ctr >= 0)});
+                    {entry.pc, entry.ctr >= 0});
             }
         }
     }
@@ -1106,7 +1106,7 @@ DecoupledBPUWithBTB::commit(
             committedBlocks[block_idx].ftqId == committed_id) {
             const auto &block = committedBlocks[block_idx];
             const PredictionUpdateContext context(target);
-            const auto update = prepareUpdate(context, block.branches);
+            const PreparedUpdate update(block.branches);
 
             // Training and retirement share a completion fact, not success.
             updateStatistics(target, update);
@@ -1150,12 +1150,7 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
 
     const auto &target = ftq.get(target_id, tid);
     const PredictionUpdateContext context(target);
-    auto update = prepareUpdate(context, events);
-
-    // Update predictor components only if the target is hit or taken
-    if (!(context.isHit || update.outcome.taken)) {
-        return true;
-    }
+    const PreparedUpdate update(events);
 
     // Phase 1: probe all resolved-update components to ensure no blocker
     for (int i = 0; i < numComponents; ++i) {
@@ -1205,32 +1200,13 @@ DecoupledBPUWithBTB::setRedirectPending(ThreadID tid, bool pending)
     threads[tid].redirectPending = pending;
 }
 
-PreparedUpdate
-DecoupledBPUWithBTB::prepareUpdate(
-    const PredictionUpdateContext &context,
-    const std::vector<BranchOutcome> &events)
-{
-    PreparedUpdate update(context, events);
-    if ((context.isHit || update.outcome.taken) && mbtb->isEnabled()) {
-        mbtb->prepareUpdate(context, update);
-    }
-    for (const auto &event : events) {
-        update.applyOutcome(event);
-    }
-    return update;
-}
-
 void
 DecoupledBPUWithBTB::updatePredictorComponents(
     const PredictionUpdateContext &context, const PreparedUpdate &update)
 {
-    // Update predictor components only if the target is hit or taken
-    if (context.isHit || update.outcome.taken) {
-        // Update predictor components
-        for (int i = 0; i < numComponents; ++i) {
-            if (components[i]->trainsAtCommit()) {
-                components[i]->update(context, update);
-            }
+    for (int i = 0; i < numComponents; ++i) {
+        if (components[i]->trainsAtCommit()) {
+            components[i]->update(context, update);
         }
     }
 }
@@ -1304,11 +1280,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
     entry.falseHit = false;
     entry.setPredictedBranches(pred.btbEntries);
-    if (pairtageFallThroughHit && entry.predictedBranches.empty()) {
-        entry.predictedBranches.emplace_back(
-            pairMeta->predictedFirstBlock.buildBTBEntry(
-                pairtage->getComponentIdx()));
-    }
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
 

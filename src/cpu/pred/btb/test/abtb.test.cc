@@ -70,18 +70,7 @@ updateABTB(FetchTarget &stream, AheadBTB *abtb,
     // ABTB and MBTB use different metadata types.  In UNIT_TEST builds both
     // components use index 0, so do not ask MBTB to read ABTB's metadata here.
     const PredictionUpdateContext context(stream);
-    PreparedUpdate update(
-        context, std::vector<BranchOutcome>{outcome});
-
-    if (update.branches.empty() && outcome.taken) {
-        BranchInfo actual_branch;
-        actual_branch.pc = outcome.pc;
-        actual_branch.target = outcome.target;
-        actual_branch.isCond = outcome.isCond;
-        actual_branch.size = outcome.size;
-        update.setBTBEntryCandidate(BTBEntry(actual_branch), false);
-        update.applyOutcome(outcome);
-    }
+    PreparedUpdate update(std::vector<BranchOutcome>{outcome});
     abtb->update(context, update);
 }
 
@@ -250,26 +239,15 @@ TEST_F(ABTBTest, ResolveUpdateOnlyTrainsExplicitBranch)
     abtb->setTrainingStage(PredictorTrainingStage::Resolve);
     const auto outcome =
         makeBranchOutcome(false, branch_a_pc, branch_a_pc + 4, true);
-    PreparedUpdate update(
-        PredictionUpdateContext(resolve_a),
-        std::vector<BranchOutcome>{outcome});
-    BranchInfo duplicate_candidate;
-    duplicate_candidate.pc = outcome.pc;
-    duplicate_candidate.target = outcome.target;
-    duplicate_candidate.isCond = outcome.isCond;
-    duplicate_candidate.size = outcome.size;
-    update.setBTBEntryCandidate(BTBEntry(duplicate_candidate), false);
-    update.applyOutcome(outcome);
-    ASSERT_EQ(update.branches.size(), 2);
+    PreparedUpdate update(std::vector<BranchOutcome>{outcome});
     abtb->update(PredictionUpdateContext(resolve_a), update);
 
     clearAheadPipeline(abtb, 0);
     makePrediction(previous_pc, abtb);
     auto updated_pred = makePrediction(start_pc, abtb);
     ASSERT_EQ(updated_pred.btbEntries.size(), 2);
-    EXPECT_FALSE(updated_pred.btbEntries[0].alwaysTaken);
     EXPECT_EQ(updated_pred.btbEntries[0].ctr, -1);
-    EXPECT_TRUE(updated_pred.btbEntries[1].alwaysTaken);
+    EXPECT_EQ(updated_pred.btbEntries[1].ctr, 0);
 }
 
 } // namespace test

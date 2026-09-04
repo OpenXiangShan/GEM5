@@ -416,8 +416,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                                   const TageInfoForMGSC &tage_info,
                                   ThreadID tid, uint8_t asidHash)
 {
-    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n", btb_entry.pc,
-            btb_entry.alwaysTaken);
+    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx\n",
+            btb_entry.pc);
     const auto &state = historyState(tid);
 
     // Calculate indices for all tables
@@ -570,7 +570,7 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -986,18 +986,12 @@ BTBMGSC::update(
 
     // Process each BTB entry
     for (const auto &branch : update.branches) {
-        const auto &btb_entry = branch.entry;
-        const bool eligible_prediction_entry =
-            branch.fromPrediction &&
-            (btb_entry.isCond || btb_entry.alwaysTaken);
-        const bool eligible_new_entry =
-            !branch.fromPrediction && btb_entry.isCond &&
-            !btb_entry.alwaysTaken;
-        if (!(eligible_prediction_entry || eligible_new_entry)) {
+        if (!branch.isCond) {
             continue;
         }
-        const bool actual_taken = branch.actualTaken;
-        auto pred_it = preds.find(btb_entry.pc);
+        const auto btb_entry = BTBEntry(makeBranchInfo(branch));
+        const bool actual_taken = branch.taken;
+        auto pred_it = preds.find(branch.pc);
 
         if (pred_it == preds.end()) {
             continue;

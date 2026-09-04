@@ -241,8 +241,9 @@ BTBRAS::update(
             pop_stack(tid);
         }
         if (takenEntry.isCall) {
-            DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
-                entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
+            DPRINTF(RAS,
+                    "real update call meta TOSR %d TOSW %d entry PC %lx\n",
+                    meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
             push_stack(tid, retAddr);
             state.BOS = inflightPtrPlus1(meta_ptr->TOSW);

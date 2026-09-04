@@ -103,7 +103,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
             bool taken;           // Final prediction outcome
             bool basePred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), basePred(false) {}
+            TagePrediction() : btb_pc(0), mainprovided(false), taken(false),
+                               basePred(false) {}
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo,
                             bool mainprovided, bool taken, bool basePred) :
                             btb_pc(btb_pc), mainInfo(mainInfo),

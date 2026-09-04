@@ -774,16 +774,16 @@ DecoupledBPUWithBTB::updateStatistics(
         }
     }
 
-    if ((target.isHit || update.outcome.taken) && update.btbEntryCandidate) {
+    if ((target.isHit || update.outcome.taken) && update.outcome.valid) {
+        const BTBEntry btb_entry(update.outcome.branch);
         // Update BTB entry statistics
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            const auto &btb_entry = *update.btbEntryCandidate;
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = *update.btbEntryCandidate;
+            it->second.first = btb_entry;
         }
     }
 
@@ -1051,8 +1051,8 @@ DecoupledBPUWithBTB::processMisprediction(
         } else {
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
-            for (const auto &e : entry.predictedBranches) {
-                if (e.pc == branchAddr) {
+            for (const auto pc : entry.predictedBranchPCs) {
+                if (pc == branchAddr) {
                     predBranchInBTB = true;
                     break;
                 }

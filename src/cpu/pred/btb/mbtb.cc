@@ -292,7 +292,7 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         if (e.isCond) {
             // TODO: a performance bug here, mbtb should not update condTakens!
 
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
+            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
 
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
@@ -521,69 +521,6 @@ MBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
     return res;
 }
 
-/*
- * Generate a new BTB entry or update an existing one based on execution results
- * 
- * This function is called during BTB update to:
- * 1. Check if the executed branch was predicted (hit in BTB)
- * 2. If hit, prepare to update the existing entry
- * 3. If miss and branch was taken:
- *    - Create a new entry
- *    - For conditional branches, initialize as always taken with counter = 1
- * 4. Set the tag and packet metadata for later use in update()
- *
- * Note: This is only called in L1 BTB during update
- */
-void
-MBTB::prepareUpdate(
-    const PredictionUpdateContext &stream, PreparedUpdate &update)
-{
-    DPRINTF(BTB, "prepareUpdate called for pc %#lx\n", stream.startPC);
-    // Get prediction metadata from previous stages
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    auto &predBTBEntries = meta->hit_entries;
-
-    // Check if this branch was predicted (exists in BTB)
-    bool pred_branch_hit = false;
-    BTBEntry entry_to_write = BTBEntry();
-    for (auto &e: predBTBEntries) {
-        if (update.outcome.branch == e) {
-            pred_branch_hit = true;
-            entry_to_write = e;
-            break;
-        }
-    }
-    bool is_old_entry = pred_branch_hit;
-
-    // If branch was not predicted but was actually taken in execution, create new entry
-    if (!pred_branch_hit && update.outcome.taken) {
-        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n",
-                update.outcome.branch.pc);
-        BTBEntry new_entry = BTBEntry(update.outcome.branch);
-        new_entry.valid = true;
-        // For conditional branches, initialize as always taken
-        if (new_entry.isCond) {
-            new_entry.alwaysTaken = true;
-            new_entry.ctr = 0;  // Start with positive prediction
-            btbStats.newEntryWithCond++;
-        } else {
-            btbStats.newEntryWithUncond++;
-        }
-        btbStats.newEntry++;
-        entry_to_write = new_entry;
-        is_old_entry = false;
-    } else {
-        DPRINTF(BTB,
-                "Not creating new entry: pred_branch_hit=%d, taken=%d\n",
-                pred_branch_hit, update.outcome.taken);
-        // Existing entries will be updated in update()
-    }
-
-    // Set tag and update packet metadata for use in update().
-    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
-    update.setBTBEntryCandidate(entry_to_write, is_old_entry);
-}
-
 /**
  * Check if the branch was predicted correctly
  * Also check BTB prediction status
@@ -621,9 +558,9 @@ MBTB::checkPredictionHit(
  */
 void
 MBTB::updateBTBEntry(
-    const BranchUpdate &branch, const PredictionUpdateContext &stream)
+    const BTBEntry &entry, bool actual_taken, Addr actual_target,
+    const PredictionUpdateContext &stream)
 {
-    const auto &entry = branch.entry;
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
     Addr alignedPC = entry.pc & ~(blockSize - 1);
@@ -662,7 +599,8 @@ MBTB::updateBTBEntry(
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = buildUpdatedEntry(branch, existing_ptr, stream);
+    auto entry_to_write = buildUpdatedEntry(
+        entry, actual_taken, actual_target, existing_ptr, stream);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
@@ -679,32 +617,30 @@ MBTB::updateBTBEntry(
 }
 
 BTBEntry
-MBTB::buildUpdatedEntry(const BranchUpdate &branch,
+MBTB::buildUpdatedEntry(const BTBEntry &entry,
+                        bool actual_taken,
+                        Addr actual_target,
                         const BTBEntry* existing_entry,
                         const PredictionUpdateContext &stream)
 {
-    const auto &req_entry = branch.entry;
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
-    auto entry_to_write = (req_entry.isCond && existing_entry)
+    auto entry_to_write = (entry.isCond && existing_entry)
                               ? BTBEntry(*existing_entry)
-                              : req_entry;
+                              : entry;
     // Always recalculate tag based on the actual PC being written
     entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
-    // Update saturating counter and alwaysTaken
+    // Keep a newly allocated conditional weakly taken, matching RTL.
     if (entry_to_write.isCond) {
-        if (!branch.actualTaken) {
-            entry_to_write.alwaysTaken = false;
-            DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
-                    entry_to_write.pc, entry_to_write.alwaysTaken);
-        }
-        if (!entry_to_write.alwaysTaken) {
-            updateCtr(entry_to_write.ctr, branch.actualTaken);
+        if (existing_entry) {
+            updateCtr(entry_to_write.ctr, actual_taken);
+        } else {
+            entry_to_write.ctr = 0;
         }
     }
 
     // Update indirect target if necessary
-    if (entry_to_write.isIndirect && branch.actualTaken) {
-        entry_to_write.target = branch.actualTarget;
+    if (entry_to_write.isIndirect && actual_taken) {
+        entry_to_write.target = actual_target;
     }
     return entry_to_write;
 }
@@ -808,18 +744,34 @@ MBTB::update(
     const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        stream.predMetas[getComponentIdx()]);
     // 1. Check prediction hit status, for stats recording
-    checkPredictionHit(
-        stream,
-        std::static_pointer_cast<BTBMeta>(
-            stream.predMetas[getComponentIdx()]).get(),
-        update);
+    checkPredictionHit(stream, meta.get(), update);
 
     for (const auto &branch : update.branches) {
-        if (trainsAtResolve() && !branch.resolvedThisAttempt) {
+        auto hit = std::find_if(
+            meta->hit_entries.begin(), meta->hit_entries.end(),
+            [&branch](const BTBEntry &entry) {
+                return entry.pc == branch.pc;
+            });
+        if (hit == meta->hit_entries.end() && !branch.taken) {
             continue;
         }
-        updateBTBEntry(branch, stream);
+
+        auto entry = hit != meta->hit_entries.end() ?
+            *hit : BTBEntry(makeBranchInfo(branch));
+        if (hit != meta->hit_entries.end()) {
+            static_cast<BranchInfo &>(entry) = makeBranchInfo(branch);
+        } else {
+            btbStats.newEntry++;
+            if (branch.isCond) {
+                btbStats.newEntryWithCond++;
+            } else {
+                btbStats.newEntryWithUncond++;
+            }
+        }
+        updateBTBEntry(entry, branch.taken, branch.target, stream);
     }
 }
 

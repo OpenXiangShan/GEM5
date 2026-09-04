@@ -27,7 +27,6 @@ makeCondBTBEntry(Addr pc)
     entry.target = pc + 4;
     entry.isCond = true;
     entry.valid = true;
-    entry.alwaysTaken = false;
     entry.size = 4;
     return entry;
 }
@@ -346,10 +345,8 @@ struct MgscHarness
         update_stream.setPredictedBranches({entry});
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext update_context(update_stream);
-        PreparedUpdate update(
-            update_context,
-            std::vector<BranchOutcome>{makeBranchOutcome(
-                entry, actual_taken, false)});
+        PreparedUpdate update(std::vector<BranchOutcome>{makeBranchOutcome(
+            entry, actual_taken, false)});
         mgsc.update(update_context, update);
 
         return result;
@@ -535,10 +532,8 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.setPredictedBranches({entry});
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext context(stream);
-        PreparedUpdate update(
-            context,
-            std::vector<BranchOutcome>{makeBranchOutcome(
-                entry, true, false)});
+        PreparedUpdate update(std::vector<BranchOutcome>{makeBranchOutcome(
+            entry, true, false)});
         mgsc.update(context, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
     }
@@ -550,10 +545,8 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.setPredictedBranches({entry});
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         const PredictionUpdateContext context(stream);
-        PreparedUpdate update(
-            context,
-            std::vector<BranchOutcome>{makeBranchOutcome(
-                entry, false, false)});
+        PreparedUpdate update(std::vector<BranchOutcome>{makeBranchOutcome(
+            entry, false, false)});
         mgsc.update(context, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));
     }

@@ -104,7 +104,6 @@ class PairTAGE : public TimedBaseBTBPredictor
             entry.isIndirect = isIndirect;
             entry.isCall = isCall;
             entry.isReturn = isReturn;
-            entry.alwaysTaken = entry.valid && !isCond;
             entry.ctr = taken ? 0 : -1;
             entry.source = componentIdx;
 

@@ -30,19 +30,17 @@ namespace test
  * @param pc Branch instruction address
  * @param isCond Whether the branch is conditional
  * @param valid Whether the entry is valid
- * @param alwaysTaken Whether the branch is always taken
  * @param ctr Prediction counter value
  * @param target Branch target address (defaults to sequential PC)
  * @return BTBEntry Initialized branch entry
  */
 BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
-                        bool alwaysTaken = false, int ctr = 0, Addr target = 0) {
+                        int ctr = 0, Addr target = 0) {
     BTBEntry entry;
     entry.pc = pc;
     entry.target = target ? target : (pc + 4);
     entry.isCond = isCond;
     entry.valid = valid;
-    entry.alwaysTaken = alwaysTaken;
     entry.ctr = ctr;
     // Other fields are set to default
     return entry;
@@ -90,9 +88,7 @@ PreparedUpdate
 createPreparedUpdate(const FetchTarget &stream, const BTBEntry &entry,
                      bool taken, bool mispredicted = false)
 {
-    return PreparedUpdate(
-        PredictionUpdateContext(stream),
-        {createBranchOutcome(entry, taken, mispredicted)});
+    return PreparedUpdate({createBranchOutcome(entry, taken, mispredicted)});
 }
 
 void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,
@@ -205,7 +201,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         {
             "conditional not taken",
             {},
-            createBTBEntry(0x1008, true, true, false, -1, 0x2000),
+            createBTBEntry(0x1008, true, true, -1, 0x2000),
             0x1008,
             true,
             false,
@@ -221,7 +217,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         {
             "conditional taken forward",
             {},
-            createBTBEntry(0x1008, true, true, false, -1, 0x2000),
+            createBTBEntry(0x1008, true, true, -1, 0x2000),
             0x1008,
             true,
             true,
@@ -237,7 +233,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         {
             "conditional taken backward",
             {},
-            createBTBEntry(0x1008, true, true, false, -1, 0x0ff0),
+            createBTBEntry(0x1008, true, true, -1, 0x0ff0),
             0x1008,
             true,
             true,
@@ -253,7 +249,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         {
             "unconditional taken",
             {},
-            createBTBEntry(0x1008, false, true, true, -1, 0x2040),
+            createBTBEntry(0x1008, false, true, -1, 0x2040),
             0x1008,
             false,
             true,
@@ -269,7 +265,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         {
             "path update requires resolved control pc",
             {},
-            createBTBEntry(0x1010, false, true, true, -1, 0x3000),
+            createBTBEntry(0x1010, false, true, -1, 0x3000),
             0x1008,
             true,
             true,
@@ -285,10 +281,10 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         {
             "branches before squash contribute direction slots",
             {
-                createBTBEntry(0x1000, true, true, false, -1, 0x1800),
-                createBTBEntry(0x1004, true, true, false, -1, 0x1804),
+                createBTBEntry(0x1000, true, true, -1, 0x1800),
+                createBTBEntry(0x1004, true, true, -1, 0x1804),
             },
-            createBTBEntry(0x1008, true, true, false, -1, 0x2000),
+            createBTBEntry(0x1008, true, true, -1, 0x2000),
             0x1008,
             true,
             true,
@@ -534,7 +530,7 @@ protected:
 // Test basic prediction functionality
 TEST_F(BTBTAGETest, BasicPrediction) {
     // Create a conditional branch entry biased towards taken
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, 1);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, 1);
 
     // Predict and verify
     bool taken = predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
@@ -1225,36 +1221,32 @@ TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
         << "A strong but not-useful entry should be replaceable";
 }
 
-TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
+TEST_F(BTBTAGETest, MissingPredictionMetaDoesNotTrain) {
     stagePreds[1].btbEntries.clear();
     tage->putPCHistory(0x1000, history, stagePreds);
     auto meta = tage->getPredictionMeta();
 
-    BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
+    BTBEntry newEntry = createBTBEntry(0x1010, true, true, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
     stream.predMetas[0] = meta;
 
     const auto outcome = createBranchOutcome(newEntry, true, true);
-    PreparedUpdate update(
-        PredictionUpdateContext(stream), {outcome});
-    update.setBTBEntryCandidate(newEntry, false);
-    update.applyOutcome(outcome);
+    PreparedUpdate update({outcome});
     tage->update(PredictionUpdateContext(stream), update);
 
     int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
-    EXPECT_GE(table, 0)
-        << "New conditional entry should still allocate without prediction-time meta";
+    EXPECT_EQ(table, -1);
 }
 
-TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
+TEST_F(BTBTAGETest, FinalPredictionWithoutTageMetaDoesNotTrain)
 {
     stagePreds[1].btbEntries.clear();
     tage->putPCHistory(0x1000, history, stagePreds);
     auto meta = tage->getPredictionMeta();
 
     BTBEntry finalEntry =
-        createBTBEntry(0x1010, true, true, false, -1);
+        createBTBEntry(0x1010, true, true, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
     stream.predBranchInfo = finalEntry;
@@ -1262,16 +1254,26 @@ TEST_F(BTBTAGETest, MbtbMissMarksMatchingFinalPredictionAsNew)
     stream.predMetas[0] = meta;
 
     const auto outcome = createBranchOutcome(finalEntry, true, true);
-    PreparedUpdate update(
-        PredictionUpdateContext(stream), {outcome});
-    BTBEntry mbtbCandidate = finalEntry;
-    mbtbCandidate.alwaysTaken = true;
-    update.setBTBEntryCandidate(mbtbCandidate, false);
-    update.applyOutcome(outcome);
+    PreparedUpdate update({outcome});
     tage->setTrainingStage(PredictorTrainingStage::Resolve);
     tage->update(PredictionUpdateContext(stream), update);
 
-    EXPECT_GE(findTableWithEntry(tage, 0x1000, finalEntry.pc), 0);
+    EXPECT_EQ(findTableWithEntry(tage, 0x1000, finalEntry.pc), -1);
+}
+
+TEST_F(BTBTAGETest, TargetMispredictDoesNotAllocateDirectionEntry)
+{
+    BTBEntry entry = createBTBEntry(0x1010, true, true, 0, 0x2000);
+    EXPECT_TRUE(predictTAGE(tage, 0x1000, {entry}, history, stagePreds));
+    auto meta = tage->getPredictionMeta();
+    FetchTarget stream = createStream(0x1000, entry, meta);
+
+    // The redirect was caused by target prediction, while direction was right.
+    tage->update(
+        PredictionUpdateContext(stream),
+        createPreparedUpdate(stream, entry, true, true));
+
+    EXPECT_EQ(findTableWithEntry(tage, 0x1000, entry.pc), -1);
 }
 
 /**
@@ -1413,7 +1415,7 @@ class BTBTAGEUpperBoundPathHashTest : public ::testing::Test
 };
 
 TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, -1);
     boost::dynamic_bitset<> historyA(128, 0);
     boost::dynamic_bitset<> historyB(128, 0);
     historyB[0] = true;
@@ -1430,7 +1432,7 @@ TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
 }
 
 TEST_F(BTBTAGEUpperBoundTest, ProviderAltSelection) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, -1);
 
     ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, history, 0));
     ASSERT_TRUE(tage->insertExactEntry(1, entry.pc, history, -2));
@@ -1446,7 +1448,7 @@ TEST_F(BTBTAGEUpperBoundTest, ProviderAltSelection) {
 }
 
 TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, -1);
     boost::dynamic_bitset<> historyA(128, 0);
     boost::dynamic_bitset<> historyB(128, 0);
     historyB[0] = true;
@@ -1467,29 +1469,26 @@ TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
     EXPECT_FALSE(tage->hasExactEntry(0, entry.pc, historyB));
 }
 
-TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
+TEST_F(BTBTAGEUpperBoundTest, MissingPredictionMetaDoesNotTrain) {
     boost::dynamic_bitset<> historyA(128, 0);
     stagePreds[1].btbEntries.clear();
     tage->putPCHistory(0x1000, historyA, stagePreds);
     auto meta = tage->getPredictionMeta();
 
-    BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
+    BTBEntry newEntry = createBTBEntry(0x1010, true, true, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
     stream.predMetas[0] = meta;
 
     const auto outcome = createBranchOutcome(newEntry, true, true);
-    PreparedUpdate update(
-        PredictionUpdateContext(stream), {outcome});
-    update.setBTBEntryCandidate(newEntry, false);
-    update.applyOutcome(outcome);
+    PreparedUpdate update({outcome});
     tage->update(PredictionUpdateContext(stream), update);
 
-    EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(0, newEntry.pc, historyA));
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, -1, 0x2000);
     boost::dynamic_bitset<> pathHistoryA(128, 0);
     boost::dynamic_bitset<> pathHistoryB(128, 0);
     applyPathHistoryTaken(pathHistoryB, entry.pc, entry.target);
@@ -1507,7 +1506,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnapshot) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, -1, 0x2000);
     entry.isIndirect = true;
     const Addr indirectTarget = 0x3000;
 
@@ -1533,7 +1532,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnap
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapshot) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
+    BTBEntry entry = createBTBEntry(0x1000, true, true, -1, 0x2000);
     entry.isIndirect = true;
     entry.isReturn = true;
     const Addr returnTarget = 0x3400;
@@ -1560,7 +1559,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapsh
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
-    BTBEntry entry = createBTBEntry(0x1000, false, true, true, -1, 0x2040);
+    BTBEntry entry = createBTBEntry(0x1000, false, true, -1, 0x2040);
     boost::dynamic_bitset<> pathHistoryBefore(128, 0);
     boost::dynamic_bitset<> pathHistoryAfter(128, 0);
     applyPathHistoryTaken(pathHistoryAfter, entry.pc, entry.target);

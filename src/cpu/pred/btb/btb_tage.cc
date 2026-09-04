@@ -410,8 +410,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         btb_entry.pc, final_provider_table, final_provider_is_alt);
 
     return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
-        alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
-        use_alt_ctr, hit_table_mask);
+        alt_pred, base_taken, final_provider_table, final_provider_is_alt,
+        use_alt_idx, use_alt_ctr, hit_table_mask);
 }
 
 /**
@@ -435,7 +435,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -462,7 +462,7 @@ BTBTAGE::lookupNoSideEffect(const Addr &startPC,
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(
                 btb_entry, startPC, nullptr, tid, asidHash);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -699,8 +699,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         }
     }
 
-    // No allocation if no misprediction
-    if (!this_fb_mispred) {
+    // A control redirect can also come from a target/BTB miss.  Allocate
+    // direction state only when the stored direction itself was wrong.
+    if (!this_fb_mispred || pred.taken == actual_taken) {
         return false;
     }
 
@@ -910,47 +911,42 @@ BTBTAGE::update(
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (const auto &branch : update.branches) {
-        const auto &btb_entry = branch.entry;
-        if (!(btb_entry.isCond && !btb_entry.alwaysTaken) ||
-            (trainsAtResolve() && !branch.resolvedThisAttempt)) {
+        if (!branch.isCond) {
             continue;
         }
-        const bool actual_taken = branch.actualTaken;
-        const bool is_new_entry = branch.matchesMbtbMissCandidate;
+        auto btb_entry = BTBEntry(makeBranchInfo(branch));
+        const bool actual_taken = branch.taken;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
-        const bool has_original_pred = orig_it != predMeta->preds.end();
-        TagePrediction original_pred;
-        if (has_original_pred) {
-            original_pred = orig_it->second;
-        } else if (!is_new_entry) {
-            DPRINTF(TAGE, "update: missing original prediction for old entry pc %#lx, skip\n",
+        if (orig_it == predMeta->preds.end()) {
+            DPRINTF(TAGE,
+                    "update: branch pc %#lx was not trained at prediction, skip\n",
                     btb_entry.pc);
             continue;
-        } else {
-            DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
-                    btb_entry.pc);
         }
+        const auto &original_pred = orig_it->second;
+        btb_entry.ctr = original_pred.basePred ? 0 : -1;
 
-        if (has_original_pred && original_pred.finalProviderTable >= 0) {
+        if (original_pred.finalProviderTable >= 0) {
             if (original_pred.taken == actual_taken) {
                 tageStats.updateFinalSourceTableCorrect[original_pred.finalProviderTable]++;
             } else {
                 tageStats.updateFinalSourceTableWrong[original_pred.finalProviderTable]++;
             }
-        } else if (has_original_pred && original_pred.taken == actual_taken) {
+        } else if (original_pred.taken == actual_taken) {
             tageStats.updateFinalSourceBaseCorrect++;
-        } else if (has_original_pred) {
+        } else {
             tageStats.updateFinalSourceBaseWrong++;
         }
 
         TagePrediction recomputed;
-        if (updateOnRead || !has_original_pred) {
+        if (updateOnRead) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
                                                  stream.tid, stream.asidHash);
             // Track differences for statistics
             auto it = predMeta->preds.find(btb_entry.pc);
-            if (has_original_pred && it != predMeta->preds.end() && recomputed.taken != original_pred.taken) {
+            if (it != predMeta->preds.end() &&
+                recomputed.taken != original_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
         } else { // otherwise, use the prediction from the prediction-time main/alt
@@ -962,7 +958,7 @@ BTBTAGE::update(
 
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(
-            btb_entry, actual_taken, recomputed, branch.controlMispred);
+            btb_entry, actual_taken, recomputed, branch.mispredicted);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;

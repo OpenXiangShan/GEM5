@@ -109,7 +109,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
     std::vector<TagePrediction> preds;
     for (auto &btb_entry : btbEntries) {
         if (btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid) {
-            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx, always taken %d\n", btb_entry.pc, btb_entry.alwaysTaken);
+            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx\n", btb_entry.pc);
             bool provided = false;
             bool alt_provided = false;
 
@@ -335,18 +335,17 @@ BTBITTAGE::update(
     
     // update each branch
     for (const auto &branch : update.branches) {
-        const auto &btb_entry = branch.entry;
-        if (!(btb_entry.isIndirect && !btb_entry.isReturn) ||
-            (trainsAtResolve() && !branch.resolvedThisAttempt)) {
+        if (!(branch.isIndirect && !branch.isReturn)) {
             continue;
         }
+        const auto btb_entry = BTBEntry(makeBranchInfo(branch));
         auto pred_it = preds.find(btb_entry.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = branch.controlMispred;
-        Addr exe_target = branch.actualTarget;
+        bool mispred = branch.mispredicted;
+        Addr exe_target = branch.target;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics

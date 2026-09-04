@@ -21,7 +21,7 @@ namespace
 {
 
 BTBEntry
-makeCondEntry(Addr pc, int ctr = -1, bool always_taken = false)
+makeCondEntry(Addr pc, int ctr = -1)
 {
     BTBEntry entry;
     entry.valid = true;
@@ -30,7 +30,6 @@ makeCondEntry(Addr pc, int ctr = -1, bool always_taken = false)
     entry.size = 4;
     entry.isCond = true;
     entry.ctr = ctr;
-    entry.alwaysTaken = always_taken;
     return entry;
 }
 
@@ -112,7 +111,6 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
     stream.setPredictedBranches({entry});
     const PredictionUpdateContext context(stream);
     PreparedUpdate update(
-        context,
         std::vector<BranchOutcome>{makeBranchOutcome(entry, true, false)});
 
     tage->update(context, update);
