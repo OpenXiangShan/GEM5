@@ -704,6 +704,12 @@ def makeXiangshanPlatformSystem(mem_mode, mdesc=None, np=1, ruby=False,
     self.hartctrl.pio = self.iobus.mem_side_ports
     self.hartctrl.num_threads = num_threads
 
+    # add RTC device and connect to CLINT
+    from m5.objects.RTC import RiscvRTC
+    from m5.params import Frequency
+    self.rtc = RiscvRTC(frequency=Frequency("100MHz"))
+    self.lint.int_pin = self.rtc.int_pin
+
     self.mmcs = NemuMMC()
     self.mmcs.pio = self.iobus.mem_side_ports
 
