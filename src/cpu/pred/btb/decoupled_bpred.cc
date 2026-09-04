@@ -746,28 +746,37 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         }
     }
 
-    // Merge second block teacher's more btb entries
-    // TODO: This is not a real behavior on final design but it should be compatible with
-    // the current train datapath in BPU model, which stores every BTB entry in the FTQ
-    // entry and not lookup tables another time when training in every predictor.
-    if (secondBlock.valid && !secondBlock.isBranchlessFallthrough()) {
-        for (const auto &teacherEntry : thread.twoTakenBTBEntries) {
-            if (!teacherEntry.valid || !teacherEntry.isCond) {
-                continue;
-            }
-            if (teacherEntry.pc < secondPred.bbStart || teacherEntry.pc >= secondBlock.branchPC) {
-                continue;
-            }
-            if (teacherEntry.pc == secondBlock.branchPC) {
+    // The uBTB checker intentionally supplies only one exit.  Re-read MBTB
+    // here solely to preserve preceding conditional-branch metadata in the FTQ
+    // entry; the checker packet and the PairTAGE target remain
+    // uBTB/PairTAGE-owned.
+    if (mbtb && mbtb->isEnabled() && secondBlock.valid &&
+        !secondBlock.isBranchlessFallthrough()) {
+        const auto mbtbEntries = mbtb->getPredictedEntriesNoSideEffect(
+            secondPred.bbStart, tid, secondPred.asidHash);
+        unsigned metadataEntriesAdded = 0;
+        for (const auto &mbtbEntry : mbtbEntries) {
+            // Entries before the PairTAGE/uBTB exit are represented as
+            // not-taken metadata so the predicted exit remains selected.
+            if (!mbtbEntry.valid || !mbtbEntry.isCond ||
+                mbtbEntry.pc < secondPred.bbStart ||
+                mbtbEntry.pc >= secondBlock.branchPC) {
                 continue;
             }
 
-            secondPred.btbEntries.push_back(teacherEntry);
-            secondPred.condTakens.push_back({teacherEntry.pc, false});
+            secondPred.btbEntries.push_back(mbtbEntry);
+            secondPred.condTakens.push_back({mbtbEntry.pc, false});
+            metadataEntriesAdded++;
         }
 
         std::sort(secondPred.btbEntries.begin(), secondPred.btbEntries.end(),
-                  [](const BTBEntry &lhs, const BTBEntry &rhs) { return lhs.pc < rhs.pc; });
+                  [](const BTBEntry &lhs, const BTBEntry &rhs) {
+                      return lhs.pc < rhs.pc;
+                  });
+        DPRINTF(DecoupleBP,
+                "Added %u MBTB metadata entries before PairTAGE second "
+                "block exit for thread %u\n",
+                metadataEntriesAdded, tid);
     }
 
     refreshTwoTakenPredictionMetas(tid, secondPred);

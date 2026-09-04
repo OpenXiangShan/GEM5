@@ -144,6 +144,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         FullBTBPrediction finalPred;      ///< Final prediction
         PairTAGE::TrainPacket finalTrainPacket;
         PairTAGE::TrainPacket twoTakenTrainPacket;
+        // uBTB-only entries used to build the PairTAGE second-block checker.
         std::vector<BTBEntry> twoTakenBTBEntries;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
