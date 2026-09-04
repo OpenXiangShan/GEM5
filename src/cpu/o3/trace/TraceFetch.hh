@@ -31,6 +31,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -237,10 +238,13 @@ class TraceFetch
     /** Whether trace mode should honor decoupled frontend semantics */
     bool traceDecoupledFrontend = false;
 
-    /** Map to store trace instruction metadata for cache hierarchy integration */
-    std::unordered_map<InstSeqNum, std::shared_ptr<const o3::TraceInstruction>> traceInstMap;
+    /** Map to store trace instruction metadata for cache hierarchy integration.
+     * Ordered by seqNum: cleanup erases a contiguous key prefix (commit side,
+     * key < threshold) or suffix (squash side, key > seqNum), so an ordered
+     * map turns the former per-commit full scans into range-erases. */
+    std::map<InstSeqNum, std::shared_ptr<const o3::TraceInstruction>> traceInstMap;
     /** Map sequence numbers to trace instruction indices for rollback capability */
-    std::unordered_map<InstSeqNum, uint64_t> seqNumToTraceIndex;
+    std::map<InstSeqNum, uint64_t> seqNumToTraceIndex;
 
     uint64_t traceInstrConsumed = 1;
 

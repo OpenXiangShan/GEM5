@@ -427,7 +427,7 @@ TraceFetch::ensureTraceStreamFilled(ThreadID tid, size_t min_count)
         }
         DPRINTF(Fetch, "[TraceStream] Fetched PC=0x%lx (sn:%llu)\n",
                 ti.getPC(), (unsigned long long)ti.getSeqNum());
-        traceExpectedStream[tid].push_back(ti);
+        traceExpectedStream[tid].push_back(std::move(ti));
     }
 }
 
@@ -464,29 +464,31 @@ TraceFetch::fetchTraceInstruction(ThreadID tid, PCStateBase &this_pc)
                 tid, traceReader->isEOF());
         return StallReason::IcacheStall;
     }
-    auto head = traceExpectedStream[tid].front();
+    // Copy the expected-stream head straight into the pending slot (single
+    // copy; the former code copied to a local `head` first). All reads below
+    // see the same values the local copy exposed.
+    pendingTraceInstr = traceExpectedStream[tid].front();
+    pendingTraceValid = true;
     // 对非分支/异常类 ctrl-flow-change，在 decoupled + wrong-path 校验场景下，
     // 若缺乏可靠 nextPC，保守将长度标为 2B，避免后续进入 wrong-path 时跨过块内预测点。
     if (traceEnableWrongPath && traceBPValidation &&
-        head.isCtrlFlowChange() && !head.isAnyBranch()) {
-        head.setInstSizeBytes(2);
+        pendingTraceInstr.isCtrlFlowChange() && !pendingTraceInstr.isAnyBranch()) {
+        pendingTraceInstr.setInstSizeBytes(2);
     }
-    if (this_pc.instAddr() != head.getPC()) {
+    if (this_pc.instAddr() != pendingTraceInstr.getPC()) {
         DPRINTF(Fetch,
                 "[tid:%i] Trace on-demand: align fetch PC from 0x%#lx to "
                 "trace PC 0x%#lx\n",
                 tid, (unsigned long)this_pc.instAddr(),
-                (unsigned long)head.getPC());
+                (unsigned long)pendingTraceInstr.getPC());
         auto &rv_pc = this_pc.as<RiscvISA::PCState>();
-        rv_pc.pc(head.getPC());
-        rv_pc.npc(head.getPC() + sizeof(TheISA::MachInst));
+        rv_pc.pc(pendingTraceInstr.getPC());
+        rv_pc.npc(pendingTraceInstr.getPC() + sizeof(TheISA::MachInst));
         rv_pc.uReset();
         rv_pc.compressed(false);
     }
-    pendingTraceInstr = head;
-    pendingTraceValid = true;
-    TheISA::MachInst machInst = createMachInstFromTrace(head);
-    supplyTraceToDecoder(tid, this_pc, machInst, head.getPC(),
+    TheISA::MachInst machInst = createMachInstFromTrace(pendingTraceInstr);
+    supplyTraceToDecoder(tid, this_pc, machInst, pendingTraceInstr.getPC(),
                          "supplied 4B to decoder (from expected stream head)");
     return StallReason::NoStall;
 }
@@ -1028,30 +1030,18 @@ TraceFetch::isTraceInstruction(InstSeqNum seqNum) const
 void
 TraceFetch::cleanupTraceMetadata(InstSeqNum seqNum)
 {
-    // Remove trace metadata for all instructions with seqNum >= threshold
+    // Remove trace metadata for all instructions with seqNum > threshold.
+    // Both maps are ordered by seqNum and the victims form a contiguous key
+    // suffix, so a range-erase removes exactly the same entries the former
+    // full scans removed (count victims first: map range-erase returns an
+    // iterator, not a count).
     Counter removed = 0;
-    auto it = traceInstMap.begin();
-    while (it != traceInstMap.end()) {
-        if (it->first > seqNum) {
-            DPRINTF(Fetch, "[sn:%lli] Removing trace metadata due to squash\n", it->first);
-            it = traceInstMap.erase(it);
-            ++removed;
-        } else {
-            ++it;
-        }
-    }
-
-    // Also clean up sequence number to trace index mapping
-    auto seqIt = seqNumToTraceIndex.begin();
-    while (seqIt != seqNumToTraceIndex.end()) {
-        if (seqIt->first > seqNum) {
-            DPRINTF(Fetch, "[sn:%lli] Removing seqNum to trace index mapping due to squash\n", seqIt->first);
-            seqIt = seqNumToTraceIndex.erase(seqIt);
-            ++removed;
-        } else {
-            ++seqIt;
-        }
-    }
+    auto it = traceInstMap.upper_bound(seqNum);
+    removed += std::distance(it, traceInstMap.end());
+    traceInstMap.erase(it, traceInstMap.end());
+    auto seqIt = seqNumToTraceIndex.upper_bound(seqNum);
+    removed += std::distance(seqIt, seqNumToTraceIndex.end());
+    seqNumToTraceIndex.erase(seqIt, seqNumToTraceIndex.end());
 
     // Stats: record cleanup calls and total removed entries
     fetch.fetchStats.traceMetaCleanupSquashCalls++;
@@ -1077,24 +1067,17 @@ TraceFetch::cleanupTraceMetadataOnCommit(InstSeqNum /*seqNum*/)
 
     Counter removed = 0;
 
-    // Erase entries with seqNum strictly less than safe_threshold
-    for (auto it = traceInstMap.begin(); it != traceInstMap.end(); ) {
-        if (it->first < safe_threshold) {
-            it = traceInstMap.erase(it);
-            ++removed;
-        } else {
-            ++it;
-        }
-    }
-
-    for (auto it = seqNumToTraceIndex.begin(); it != seqNumToTraceIndex.end(); ) {
-        if (it->first < safe_threshold) {
-            it = seqNumToTraceIndex.erase(it);
-            ++removed;
-        } else {
-            ++it;
-        }
-    }
+    // Erase entries with seqNum strictly less than safe_threshold. Both maps
+    // are ordered by seqNum and the victims form a contiguous key prefix, so
+    // range-erase removes exactly the same entries the former per-commit full
+    // scans removed (count victims first: map range-erase returns an
+    // iterator, not a count).
+    auto it = traceInstMap.lower_bound(safe_threshold);
+    removed += std::distance(traceInstMap.begin(), it);
+    traceInstMap.erase(traceInstMap.begin(), it);
+    auto seqIt = seqNumToTraceIndex.lower_bound(safe_threshold);
+    removed += std::distance(seqNumToTraceIndex.begin(), seqIt);
+    seqNumToTraceIndex.erase(seqNumToTraceIndex.begin(), seqIt);
 
     DPRINTF(Fetch,
             "[TraceMetaCleanup] oldest_inflight=%llu wp_active=%d wp_boundary=%llu "
