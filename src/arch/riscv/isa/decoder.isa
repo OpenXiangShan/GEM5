@@ -2453,6 +2453,33 @@ decode QUADRANT {
                             return std::make_shared<BreakpointFault>(
                                 xc->pcState());
                         }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                        0xd: decode RS1 {
+                            0x0: decode RD {
+                                0x0: wrs_nto({{
+                                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                                    HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                                    int v = xc->readMiscReg(MISCREG_VIRMODE);
+                                    auto pm = (PrivilegeMode)xc->readMiscReg(
+                                        MISCREG_PRV);
+                                    if ( pm != PRV_M && status.tw == 1){
+                                        return std::make_shared<IllegalInstFault>(
+                                                    "wrs.nto not in machine mode with TW enabled",
+                                                    machInst);
+                                    }
+                                    if ( v && status.tw == 0 && hstatus.vtw == 1){
+                                        return std::make_shared<HVFault>();
+                                    }
+                                    // don't do anything for now in other cases
+                                }}, No_OpClass);
+                            }
+                        }
+                        0x1d: decode RS1 {
+                            0x0: decode RD {
+                                0x0: wrs_sto({{
+                                    // don't do anything for now in any cases
+                                }}, No_OpClass);
+                            }
+                        }
                     }
                     0x8: decode RS2 {
                         0x2: sret({{
