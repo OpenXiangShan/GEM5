@@ -1,7 +1,38 @@
 #include <gtest/gtest.h>
+
+#include <array>
+
 #include "cpu/pred/btb/folded_hist.hh"
 
 using namespace gem5::branch_prediction::btb_pred;
+
+namespace
+{
+
+uint64_t
+foldReference(const boost::dynamic_bitset<> &history, unsigned histLen,
+              unsigned foldedLen)
+{
+    uint64_t folded = 0;
+    for (unsigned i = 0; i < histLen; ++i) {
+        folded ^= static_cast<uint64_t>(history[i]) << (i % foldedLen);
+    }
+    return folded;
+}
+
+void
+initializeHistory(DirectionFoldedHist &folded,
+                  boost::dynamic_bitset<> &history, uint64_t value)
+{
+    for (int bit = history.size() - 1; bit >= 0; --bit) {
+        const bool taken = (value >> bit) & 1;
+        folded.update(history, 1, taken);
+        history <<= 1;
+        history[0] = taken;
+    }
+}
+
+}  // anonymous namespace
 
 class FoldedHistTest : public ::testing::Test {
 protected:
@@ -308,6 +339,45 @@ TEST_F(FoldedHistTest, MaxShift) {
     
     // Test shift amount less than maxShamt
     EXPECT_NO_THROW(hist.update(ghr, 1, true));
+}
+
+TEST_F(FoldedHistTest, ShiftWiderThanFoldedHistory) {
+    DirectionFoldedHist folded(16, 7, 16);
+    boost::dynamic_bitset<> history(16, 0);
+    initializeHistory(folded, history, 0x0051);
+
+    folded.update(history, 8, true);
+    history <<= 8;
+    history[0] = true;
+
+    EXPECT_EQ(history.to_ulong(), 0x5101);
+    EXPECT_EQ(folded.get(), 0x22);
+    EXPECT_EQ(folded.get(), foldReference(history, 16, 7));
+}
+
+TEST_F(FoldedHistTest, LargeShiftsMatchReferenceFold) {
+    constexpr std::array<uint64_t, 7> patterns = {
+        0x0000, 0x0001, 0x0051, 0x1234, 0x8001, 0xaaaa, 0xffff
+    };
+    constexpr std::array<int, 6> shifts = {7, 8, 9, 13, 14, 15};
+
+    for (const auto pattern : patterns) {
+        for (const auto shamt : shifts) {
+            for (const bool taken : {false, true}) {
+                DirectionFoldedHist folded(16, 7, 16);
+                boost::dynamic_bitset<> history(16, 0);
+                initializeHistory(folded, history, pattern);
+
+                folded.update(history, shamt, taken);
+                history <<= shamt;
+                history[0] = taken;
+
+                EXPECT_EQ(folded.get(), foldReference(history, 16, 7))
+                    << "pattern=" << pattern << " shamt=" << shamt
+                    << " taken=" << taken;
+            }
+        }
+    }
 }
 
 TEST_F(FoldedHistTest, BoundaryConditions) {

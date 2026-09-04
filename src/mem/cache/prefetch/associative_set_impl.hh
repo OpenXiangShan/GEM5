@@ -80,13 +80,16 @@ AssociativeSet<Entry>::accessEntry(Entry *entry)
 
 template<class Entry>
 Entry*
-AssociativeSet<Entry>::findVictim(Addr addr)
+AssociativeSet<Entry>::findVictim(Addr addr, bool *victim_secure)
 {
     // Get possible entries to be victimized
     const std::vector<ReplaceableEntry*> selected_entries =
         indexingPolicy->getPossibleEntries(addr);
     Entry* victim = static_cast<Entry*>(replacementPolicy->getVictim(
                             selected_entries));
+    if (victim_secure) {
+        *victim_secure = victim->isSecure();
+    }
     // There is only one eviction for this replacement
     invalidate(victim);
     return victim;

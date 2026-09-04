@@ -16,6 +16,7 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       badPreNum(0),
       enableAutoDepth(p.enable_auto_depth),
       enableL3StreamPre(p.enable_l3_stream_pre),
+      l2Depth(p.xs_stream_l2_depth),
       stream_array(p.xs_stream_entries, p.xs_stream_entries, p.xs_stream_indexing_policy,
                    p.xs_stream_replacement_policy, STREAMEntry()),
       streamBlkFilter(pfFilterSize)
@@ -27,6 +28,8 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
     PrefetchSourceType stream_type = PrefetchSourceType::SStream;
     bool in_active_page = false;
     bool decr = false;
@@ -34,7 +37,8 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
         stream_type = PrefetchSourceType::StoreStream;
         DPRINTF(XsStreamPrefetcher, "prefetch trigger come from store unit\n");
     }
-    if (pfi.isCacheMiss() && (streamBlkFilter.contains(block_addr))) {
+    if (pfi.isCacheMiss() &&
+        streamBlkFilter.contains(contextKey(block_addr, context_id))) {
         badPreNum++;
     }
     STREAMEntry *entry = streamLookup(pfi, in_active_page, decr);
@@ -55,8 +59,9 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
     if (in_active_page) {
         Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
         sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type, L1BLKDEGREE, 1, entry);
-        Addr pf_stream_l2 =
-            decr ? block_addr - (depth << l2Ratio) * blkSize : block_addr + (depth << l2Ratio) * blkSize;
+        const auto l2_depth = l2Depth ? l2Depth : (depth << l2Ratio);
+        Addr pf_stream_l2 = decr ? block_addr - l2_depth * blkSize :
+                                   block_addr + l2_depth * blkSize;
         sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type, L2BLKDEGREE, 2, entry);
         if (enableL3StreamPre) {
             Addr pf_stream_l3 =
@@ -74,10 +79,15 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     Addr vaddr_tag_num = tagAddress(vaddr);
     Addr vaddr_offset = tagOffset(vaddr);
     bool secure = pfi.isSecure();
+    ContextID context_id = pfi.hasContextId() ?
+        pfi.contextId() : InvalidContextID;
 
-    STREAMEntry *entry = stream_array.findEntry(regionHashTag(vaddr_tag_num), pfi.isSecure());
-    STREAMEntry *entry_plus = stream_array.findEntry(regionHashTag(vaddr_tag_num + 1), pfi.isSecure());
-    STREAMEntry *entry_min = stream_array.findEntry(regionHashTag(vaddr_tag_num - 1), pfi.isSecure());
+    STREAMEntry *entry = stream_array.findEntry(
+        contextKey(regionHashTag(vaddr_tag_num), context_id), secure);
+    STREAMEntry *entry_plus = stream_array.findEntry(
+        contextKey(regionHashTag(vaddr_tag_num + 1), context_id), secure);
+    STREAMEntry *entry_min = stream_array.findEntry(
+        contextKey(regionHashTag(vaddr_tag_num - 1), context_id), secure);
 
     bool entry_plus_active = entry_plus && entry_plus->active;
     bool entry_min_active = entry_min && entry_min->active;
@@ -97,7 +107,9 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         }
         return entry;
     }
-    entry = stream_array.findVictim(0);
+    Addr stream_key =
+        contextKey(regionHashTag(vaddr_tag_num), context_id);
+    entry = stream_array.findVictim(stream_key);
 
     in_active_page = (entry_plus_active || entry_min_active);
     decr = entry_plus != nullptr;
@@ -106,7 +118,8 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     entry->bitVec = 1UL << vaddr_offset;
     entry->cnt = 1;
     entry->active = in_active_page;
-    stream_array.insertEntry(regionHashTag(vaddr_tag_num), secure, entry);
+    entry->contextId = context_id;
+    stream_array.insertEntry(stream_key, secure, entry);
     return entry;
 }
 
@@ -122,15 +135,16 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
         // Count generated prefetch
         prefetchStats.pfGenerated++;
 
-        if (filter->contains(pf_addr)) {
+        Addr filter_key = sharedFilterKey(pfi, pf_addr);
+        if (filter->contains(filter_key)) {
             DPRINTF(XsStreamPrefetcher, "Skip recently prefetched: %lx\n", pf_addr);
             // Count filtered prefetch
             prefetchStats.pfFiltered++;
         } else {
             DPRINTF(XsStreamPrefetcher, "Send pf: %lx\n", pf_addr);
-            filter->insert(pf_addr, 0);
+            filter->insert(filter_key, 0);
             addresses.push_back(AddrPriority(pf_addr, prio, src));
-            streamBlkFilter.insert(pf_addr, 0);
+            streamBlkFilter.insert(filter_key, 0);
             if (ahead_level > 1) {
                 assert(ahead_level == 2 || ahead_level == 3);
                 addresses.back().pfahead_host = ahead_level;

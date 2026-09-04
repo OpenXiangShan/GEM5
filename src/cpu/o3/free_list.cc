@@ -29,8 +29,13 @@
 
 #include "cpu/o3/free_list.hh"
 
+#include <algorithm>
+#include <list>
+
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/FreeList.hh"
+#include "params/BaseO3CPU.hh"
 
 namespace gem5
 {
@@ -39,14 +44,155 @@ namespace o3
 {
 
 UnifiedFreeList::UnifiedFreeList(const std::string &_my_name,
-                                 PhysRegFile *_regFile)
-    : _name(_my_name), regFile(_regFile)
+                                 PhysRegFile *_regFile,
+                                 const BaseO3CPUParams &params)
+    : _name(_my_name), regFile(_regFile),
+      pregPolicy(params.smtPregPolicy),
+      donorReservePercent(params.smtPregDonorReservePercent),
+      fixedBase(params.smtPregFixedBase),
+      numThreads(params.numThreads)
 {
     DPRINTF(FreeList, "Creating new free list object.\n");
+
+    panic_if(pregPolicy == SMTQueuePolicy::Threshold,
+             "smtPregPolicy=Threshold is not implemented for the Preg free "
+             "list; use Partitioned or DynamicBorrowing instead.");
 
     // Have the register file initialize the free list since it knows
     // about its internal organization
     regFile->initFreeList(this);
+
+    // Capture each class' total capacity now, before any allocation
+    // happens; freeLists[i] has just been fully populated by initFreeList.
+    for (int i = 0; i <= RMiscRegClass; i++)
+        numPhysRegs[i] = freeLists[i].numFreeRegs();
+
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        donor[tid] = false;
+        for (int i = 0; i <= RMiscRegClass; i++) {
+            maxEntries[tid][i] = (pregPolicy == SMTQueuePolicy::Partitioned)
+                ? numPhysRegs[i] / numThreads
+                : numPhysRegs[i];
+        }
+    }
+    for (ThreadID tid = numThreads; tid < MaxThreads; tid++) {
+        for (int i = 0; i <= RMiscRegClass; i++)
+            maxEntries[tid][i] = 0;
+    }
+}
+
+void
+UnifiedFreeList::resetEntries()
+{
+    if (pregPolicy != SMTQueuePolicy::Partitioned || !activeThreads) {
+        return;
+    }
+
+    const unsigned active = std::max<size_t>(1, activeThreads->size());
+    for (ThreadID tid : *activeThreads) {
+        for (int i = 0; i <= RMiscRegClass; i++)
+            maxEntries[tid][i] = numPhysRegs[i] / active;
+    }
+}
+
+unsigned
+UnifiedFreeList::activeThreadCount() const
+{
+    if (!activeThreads || activeThreads->empty())
+        return numThreads == 0 ? 1 : numThreads;
+    return activeThreads->size();
+}
+
+unsigned
+UnifiedFreeList::base(RegClassType type) const
+{
+    if (fixedBase > 0)
+        return std::min(fixedBase, numPhysRegs[type] / activeThreadCount());
+    return std::max(1u, numPhysRegs[type] / activeThreadCount());
+}
+
+unsigned
+UnifiedFreeList::donorQuota(RegClassType type) const
+{
+    unsigned fairShare = numPhysRegs[type] / activeThreadCount();
+    return fairShare * donorReservePercent / 100;
+}
+
+unsigned
+UnifiedFreeList::borrowingLimit(RegClassType type, ThreadID tid) const
+{
+    unsigned reserved = 0;
+    if (activeThreads && !activeThreads->empty()) {
+        for (ThreadID other : *activeThreads) {
+            if (other == tid)
+                continue;
+            const unsigned reserve =
+                donor[other] ? donorQuota(type) : base(type);
+            reserved += std::max(threadUsed[other][type], reserve);
+        }
+    }
+    if (reserved >= numPhysRegs[type])
+        return 0;
+    return numPhysRegs[type] - reserved;
+}
+
+bool
+UnifiedFreeList::canAllocate(RegClassType type, ThreadID tid, unsigned n) const
+{
+    if (n > freeLists[type].numFreeRegs()) {
+        return false;
+    }
+
+    switch (pregPolicy) {
+      case SMTQueuePolicy::DynamicBorrowing:
+        return threadUsed[tid][type] + n <= borrowingLimit(type, tid);
+      case SMTQueuePolicy::Partitioned:
+        return threadUsed[tid][type] + n <= maxEntries[tid][type];
+      default:
+        // Dynamic: no per-thread cap beyond physical availability, which
+        // is already checked above.
+        return true;
+    }
+}
+
+unsigned
+UnifiedFreeList::numAllocatable(RegClassType type, ThreadID tid) const
+{
+    const unsigned free_regs = freeLists[type].numFreeRegs();
+
+    if (pregPolicy == SMTQueuePolicy::Dynamic) {
+        return free_regs;
+    }
+
+    const unsigned limit = (pregPolicy == SMTQueuePolicy::DynamicBorrowing)
+        ? borrowingLimit(type, tid)
+        : maxEntries[tid][type];
+    const unsigned used = threadUsed[tid][type];
+    const unsigned per_thread_limit = used >= limit ? 0 : limit - used;
+
+    return std::min(per_thread_limit, free_regs);
+}
+
+bool
+UnifiedFreeList::isPerThreadExhausted(RegClassType type, ThreadID tid,
+                                       unsigned n) const
+{
+    if (pregPolicy == SMTQueuePolicy::Dynamic) {
+        return false;
+    }
+
+    const unsigned free_regs = freeLists[type].numFreeRegs();
+    if (free_regs < n) {
+        return false;
+    }
+
+    const unsigned limit = (pregPolicy == SMTQueuePolicy::DynamicBorrowing)
+        ? borrowingLimit(type, tid)
+        : maxEntries[tid][type];
+    const unsigned used = threadUsed[tid][type];
+    const unsigned per_thread_avail = used >= limit ? 0 : limit - used;
+
+    return per_thread_avail < n;
 }
 
 } // namespace o3

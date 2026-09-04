@@ -82,14 +82,14 @@ public:
         // do push & pops on prediction
         pred.returnTarget = stack[sp].retAddr;
         auto takenSlot = pred.getTakenEntry();
-        if (takenSlot.isCall) { // call inst, push retAddr to spec stack
-            Addr retAddr = takenSlot.pc + takenSlot.size;
-            push(retAddr, stack, sp);
-        }
         if (takenSlot.isReturn) { // return inst, pop retAddr from spec stack
             // do pop
             auto retAddr = stack[sp].retAddr;
             pop(stack, sp);
+        }
+        if (takenSlot.isCall) { // call inst, push retAddr to spec stack
+            Addr retAddr = takenSlot.pc + takenSlot.size;
+            push(retAddr, stack, sp);
         }
     }
 
@@ -376,6 +376,29 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     EXPECT_EQ(sp, 0);
     // 2. returnTarget应该匹配call的下一条指令
     EXPECT_EQ(pred2.returnTarget, 0x1004);
+}
+
+TEST_F(URASTest, SpecUpdateStatePopThenPush) {
+    auto& stack = uras->getSpecStack();
+    auto& sp = uras->getSpecSp();
+    uras->push(0x1004, stack, sp);
+    uras->push(0x2004, stack, sp);
+
+    FullBTBPrediction pred;
+    pred.bbStart = 0x3000;
+    BTBEntry entry;
+    entry.valid = true;
+    entry.pc = 0x3000;
+    entry.size = 4;
+    entry.isCall = true;
+    entry.isReturn = true;
+    pred.btbEntries.push_back(entry);
+
+    uras->specUpdateState(pred);
+
+    EXPECT_EQ(pred.returnTarget, 0x2004);
+    EXPECT_EQ(sp, 2);
+    EXPECT_EQ(stack[sp].retAddr, 0x3004);
 }
 
 // Test basic recovery functionality

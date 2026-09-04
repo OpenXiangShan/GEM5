@@ -59,6 +59,9 @@ class VIPTSetAssociative(SetAssociative):
     cxx_header = "mem/cache/tags/indexing_policies/vipt_set_associative.hh"
 
     page_size = Param.Int(4096, "page size in bytes")
+    use_hash_index = Param.Bool(
+        False,
+        "Use XiangShan's hash(vaddr[47:12]) DCache set index")
 
 class SkewedAssociative(BaseIndexingPolicy):
     type = 'SkewedAssociative'

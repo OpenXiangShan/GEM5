@@ -93,8 +93,8 @@ boolBucket(bool value)
 
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
-      lastPred(),
-      meta(),
+      lastPred(o3::MaxThreads),
+      threadMeta(),
       ubtb(),
       mruList(),
       numEntries(p.numEntries),
@@ -118,6 +118,8 @@ UBTB::UBTB(const Params &p)
 
     hasDB = true;
     dbName = "ubtb";
+
+    threadMeta.resize(o3::MaxThreads);
 }
 
 
@@ -183,10 +185,12 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
 {
-    meta = std::make_shared<UBTBMeta>();
+    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
+    assert(tid < threadMeta.size());
+    threadMeta[tid] = std::make_shared<UBTBMeta>();
     const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
-    auto it = lookup(startAddr, asidHash);
-    auto& entry = meta->hit_entry;
+    auto it = lookup(startAddr, tid, asidHash);
+    auto& entry = threadMeta[tid]->hit_entry;
     entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
 
     PredStatistics(entry, startAddr);
@@ -195,11 +199,24 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
     fillStagePredictions(entry, stagePreds);
 
     // Update metadata for later stages
-    lastPred.hit_entry = it;
+    lastPred[tid].hit_entry = it;
+}
+
+void
+UBTB::refreshPredictionMeta(Addr startAddr,
+                            const boost::dynamic_bitset<> &history,
+                            FullBTBPrediction &pred)
+{
+    (void)history;
+    assert(pred.tid < threadMeta.size());
+    threadMeta[pred.tid] = std::make_shared<UBTBMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->hit_entry = lookupNoSideEffect(
+        startAddr, pred.tid, pred.asidHash);
 }
 
 UBTB::UBTBIter
-UBTB::lookup(Addr startAddr, uint8_t asidHash)
+UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash)
 {
     if (startAddr & 0x1) {
         return ubtb.end();  // ignore false hit when lowest bit is 1
@@ -210,20 +227,21 @@ UBTB::lookup(Addr startAddr, uint8_t asidHash)
 
     DPRINTF(UBTB, "UBTB: Doing tag comparison for tag %#lx\n", current_tag);
 
-    auto it = std::find_if(ubtb.begin(), ubtb.end(),
+    auto [rangeBegin, rangeEnd] = threadRange(tid);
+    auto it = std::find_if(rangeBegin, rangeEnd,
                            [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
                                return way.valid && way.tag == current_tag &&
                                       way.pc >= startAddr && way.pc < block_end;
                            });
 
-    if (it != ubtb.end()) {
+    if (it != rangeEnd) {
         // Found a hit - verify no duplicates
-        auto duplicate = std::find_if(std::next(it), ubtb.end(),
+        auto duplicate = std::find_if(std::next(it), rangeEnd,
                                       [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
             return way.valid && way.tag == current_tag &&
                    way.pc >= startAddr && way.pc < block_end;
         });
-        if (duplicate != ubtb.end()) {
+        if (duplicate != rangeEnd) {
             DPRINTF(UBTB, "UBTB: Multiple hits found in uBTB for the same tag %#lx\n", current_tag);
             duplicate->valid = false;  // invalidate the duplicate entry
         }
@@ -233,7 +251,31 @@ UBTB::lookup(Addr startAddr, uint8_t asidHash)
         std::make_heap(mruList.begin(), mruList.end(), older());
     }
 
-    return it;
+    return it == rangeEnd ? ubtb.end() : it;
+}
+
+UBTB::TickedUBTBEntry
+UBTB::lookupNoSideEffect(Addr startAddr, ThreadID tid,
+                         uint8_t asidHash) const
+{
+    if (startAddr & 0x1) {
+        return TickedUBTBEntry();
+    }
+
+    Addr current_tag = getTag(startAddr, asidHash);
+    Addr block_end = (startAddr + predictWidth) &
+        ~mask(floorLog2(predictWidth) - 1);
+    auto range_begin = ubtb.begin() + partitionBegin(numEntries, tid);
+    auto range_end = ubtb.begin() + partitionEnd(numEntries, tid);
+    auto it = std::find_if(range_begin, range_end,
+                           [current_tag, startAddr, block_end]
+                           (const TickedUBTBEntry &way) {
+                               return way.valid && way.tag == current_tag &&
+                                      way.pc >= startAddr &&
+                                      way.pc < block_end;
+                           });
+
+    return it != range_end ? *it : TickedUBTBEntry();
 }
 
 
@@ -266,17 +308,21 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         ubtbStats.s3UpdateMisses++;
     }
     auto startAddr = s3Pred.bbStart;
-    UBTBIter oldEntryIter = lastPred.hit_entry;
+    const ThreadID tid = s3Pred.tid;
+    UBTBIter oldEntryIter = lastPred[tid].hit_entry;
     takenEntry.source = getComponentIdx();
-    updateNewEntry(oldEntryIter, takenEntry, startAddr, s3Pred.asidHash);
+    updateNewEntry(oldEntryIter, takenEntry, startAddr, tid,
+                   s3Pred.asidHash);
 
 }
 
 
 
 void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
-                          const Addr startAddr, uint8_t asidHash)
+                          const Addr startAddr, ThreadID tid,
+                          uint8_t asidHash)
 {
+    auto [rangeBegin, rangeEnd] = threadRange(tid);
     //using the FB final taken branch to update uBTB
     if (oldEntryIter != ubtb.end()) {
         assert(oldEntryIter->valid); //lookup() should only return valid entry
@@ -298,7 +344,7 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
             // First try to find an invalid entry in the set
             bool foundInvalidEntry = false;
 
-            for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
+            for (auto it = rangeBegin; it != rangeEnd; ++it) {
                 if (!it->valid) {
                     toBeReplacedIter = it;
                     foundInvalidEntry = true;
@@ -310,8 +356,11 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
             // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
             if (!foundInvalidEntry) {
                 // Find the least recently used entry
-                std::make_heap(mruList.begin(), mruList.end(), older());
-                toBeReplacedIter = mruList.front();
+                toBeReplacedIter = std::min_element(
+                    rangeBegin, rangeEnd,
+                    [](const TickedUBTBEntry &a, const TickedUBTBEntry &b) {
+                        return a.tick < b.tick;
+                    });
             }
 
             // Replace the entry with the new prediction
@@ -353,13 +402,17 @@ UBTB::update(const FetchTarget &stream)
     Addr oldtag = getTag(startAddr, stream.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
+    auto [rangeBegin, rangeEnd] = threadRange(stream.tid);
     UBTBIter oldEntryIter = ubtb.end();
 
     oldEntryIter = meta->hit_entry.valid ?
-                    std::find_if(ubtb.begin(), ubtb.end(), [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
+                    std::find_if(rangeBegin, rangeEnd, [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
                         return e.valid && e.tag == oldtag &&
                                e.pc >= startAddr && e.pc < block_end;
-                    }) : ubtb.end();
+                    }) : rangeEnd;
+    if (oldEntryIter == rangeEnd) {
+        oldEntryIter = ubtb.end();
+    }
 
     if (stream.exeTaken) {
         if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
@@ -373,7 +426,8 @@ UBTB::update(const FetchTarget &stream)
     // Verify uBTB state
     assert(ubtb.size() <= numEntries);
     if (!usingS3Pred) {
-        updateNewEntry(oldEntryIter, takenEntry, startAddr, stream.asidHash);
+        updateNewEntry(oldEntryIter, takenEntry, startAddr, stream.tid,
+                       stream.asidHash);
     }
 }
 

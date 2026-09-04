@@ -60,8 +60,15 @@ GTest('history_manager.test',
 #     '../timed_base_pred.cc',
 # )
 
+GTest('ras_pop_push.test',
+    'ras_pop_push.test.cc',
+    '../ras.cc',
+    '../timed_base_pred.cc',
+)
+
 # Add the test to UNITTESTS target
 env.Append(UNITTESTS=['uras.test',
+        'ras_pop_push.test',
         'btb.test',
         'tage.test',
         'mgsc.test',

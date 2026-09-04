@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <ostream>
 
 #include "arch/riscv/insts/mem.hh"
 #include "arch/riscv/pcstate.hh"
@@ -59,6 +60,37 @@ namespace gem5
 
 namespace o3
 {
+
+std::ostream &
+operator<<(std::ostream &os, const branchInfo &b)
+{
+    os << "indirect: " << b.indirect
+       << ", taken: " << b.taken
+       << ", target: " << b.target
+       << ", seqNum: " << b.seqNum
+       << ", pc: " << b.pc;
+    return os;
+}
+
+bool
+operator==(const BranchHistory &a, const BranchHistory &b)
+{
+    if (a.size() != b.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].indirect != b[i].indirect ||
+            a[i].taken != b[i].taken ||
+            a[i].target != b[i].target ||
+            a[i].seqNum != b[i].seqNum ||
+            a[i].pc != b[i].pc) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
         const StaticInstPtr &_macroop, InstSeqNum seq_num, CPU *_cpu)
@@ -498,6 +530,41 @@ DynInst::trap(const Fault &fault)
     cpu->trap(fault, threadNumber, staticInst);
 }
 
+void
+DynInst::updateVectorMemCrossCacheBlock(
+        Addr addr, unsigned size, const std::vector<bool> &byte_enable)
+{
+    if (!isVector() || !isMemRef()) {
+        return;
+    }
+
+    instFlags[VectorMemCrossCacheBlockValid] = true;
+    instFlags[VectorMemCrossCacheBlock] = false;
+
+    if (size == 0 || byte_enable.empty()) {
+        return;
+    }
+
+    const auto first_enabled = std::find(
+            byte_enable.begin(), byte_enable.end(), true);
+    if (first_enabled == byte_enable.end()) {
+        return;
+    }
+
+    const auto last_enabled = std::find(
+            byte_enable.rbegin(), byte_enable.rend(), true);
+    assert(last_enabled != byte_enable.rend());
+
+    const Addr first_addr = addr +
+        std::distance(byte_enable.begin(), first_enabled);
+    const Addr last_addr = addr +
+        size - 1 - std::distance(byte_enable.rbegin(), last_enabled);
+
+    const Addr cache_line_size = cpu ? cpu->cacheLineSize() : 64;
+    instFlags[VectorMemCrossCacheBlock] =
+        (first_addr / cache_line_size) != (last_addr / cache_line_size);
+}
+
 Fault
 DynInst::initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
                                const std::vector<bool> &byte_enable)
@@ -514,6 +581,7 @@ DynInst::initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
             }
         }
     }
+    updateVectorMemCrossCacheBlock(addr, size, byte_enable);
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* ld */ true, nullptr, size, addr, flags, nullptr, nullptr,
@@ -546,6 +614,7 @@ DynInst::writeMem(uint8_t *data, unsigned size, Addr addr,
             }
         }
     }
+    updateVectorMemCrossCacheBlock(addr, size, byte_enable);
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* st */ false, data, size, addr, flags, res, nullptr,

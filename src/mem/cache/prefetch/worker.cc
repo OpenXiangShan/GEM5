@@ -38,11 +38,15 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     // ignore if pfahead_host > itself level
     if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true) &&
         (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
-        if (pfLRUFilter.contains(ptr->pfInfo.getAddr())) {
-            DPRINTF(WorkerPref, "Worker: offload: [%lx, %d] skip recently in localBuffer\n", ptr->pfInfo.getAddr(), ptr->pfahead_host);
+        Addr filter_key = sharedFilterKey(ptr->pfInfo, ptr->pfInfo.getAddr());
+        if (pfLRUFilter.contains(filter_key)) {
+            DPRINTF(WorkerPref,
+                    "Worker: offload: [%lx, %d] skip recently in "
+                    "localBuffer\n",
+                    ptr->pfInfo.getAddr(), ptr->pfahead_host);
             return;
         }
-        pfLRUFilter.insert(ptr->pfInfo.getAddr(),0);
+        pfLRUFilter.insert(filter_key, 0);
     }
 
     workerStats.hintsReceived++;
@@ -50,6 +54,10 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
             localBuffer.size());
     localBuffer.push_back(*ptr);
+
+    if (!transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 void
@@ -99,7 +107,9 @@ WorkerPrefetcher::transfer()
         count++;
         latestTransferTick = curTick();
     }
-    schedule(transferEvent, nextCycle());
+    if (!localBuffer.empty() && !transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 }  // namespace prefetch

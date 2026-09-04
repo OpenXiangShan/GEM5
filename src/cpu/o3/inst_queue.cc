@@ -751,7 +751,28 @@ InstructionQueue::resolveMdpAddrReplayStoreAddr(const DynInstPtr &store_inst)
             continue;
         }
 
-        it->storeSeqNums.erase(store_sn);
+        auto store_it = it->storeSeqNums.find(store_sn);
+        if (store_it != it->storeSeqNums.end()) {
+            if (it->inst->memDepInfo.predicted) {
+                auto &info = it->inst->memDepInfo;
+                if (info.predStoreSizes.first != 0 &&
+                    info.predStoreAddrs.first == store_inst->effAddr &&
+                    info.predStoreSizes.first == store_inst->effSize) {
+                    // Already recorded.
+                } else if (info.predStoreSizes.second != 0 &&
+                           info.predStoreAddrs.second == store_inst->effAddr &&
+                           info.predStoreSizes.second == store_inst->effSize) {
+                    // Already recorded.
+                } else if (info.predStoreSizes.first == 0) {
+                    info.predStoreAddrs.first = store_inst->effAddr;
+                    info.predStoreSizes.first = store_inst->effSize;
+                } else if (info.predStoreSizes.second == 0) {
+                    info.predStoreAddrs.second = store_inst->effAddr;
+                    info.predStoreSizes.second = store_inst->effSize;
+                }
+            }
+            it->storeSeqNums.erase(store_it);
+        }
         if (it->pipeDone && it->storeSeqNums.empty()) {
             DPRINTF(IQ, "Load[sn:%llu] MDP addr replay ready (store[sn:%llu] addr ready)\n",
                     it->inst->seqNum, store_sn);
@@ -1189,11 +1210,18 @@ InstructionQueue::hasPhysicalSQFullReplayInsts() const
 }
 
 void
-InstructionQueue::violation(const DynInstPtr &store,
-        const DynInstPtr &faulting_load)
+InstructionQueue::violation(InstSeqNum store_seq_num, Addr store_pc,
+        const DynInstPtr &faulting_load, const BranchHistory &branchHistory)
 {
     iqIOStats.intInstQueueWrites++;
-    memDepUnit[store->threadNumber].violation(store, faulting_load);
+    memDepUnit[faulting_load->threadNumber].violation(
+        store_seq_num, store_pc, faulting_load, branchHistory);
+}
+
+void
+InstructionQueue::commit(const DynInstPtr &inst)
+{
+    memDepUnit[inst->threadNumber].commit(inst);
 }
 
 void
@@ -1221,6 +1249,7 @@ InstructionQueue::doSquash(ThreadID tid)
 
     DPRINTF(IQ, "[tid:%i] Squashing until sequence number %i!\n",
             tid, squashedSeqNum[tid]);
+    cpu->getDecode()->squashBranchHistory(tid, squashedSeqNum[tid], false);
     squashInfo.squashTid = tid;
     squashInfo.squashSn  = squashedSeqNum[tid];
     scheduler->doSquash(squashInfo);

@@ -359,8 +359,12 @@ Fault
         return std::make_shared<IllegalInstFault>("VILL is set", machInst);
     }
 
-    const int32_t t_micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
-    const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
+    // Each widening micro-op writes one physical destination vector
+    // register. Since the destination element width is 2 * SEW, the
+    // number of destination elements handled by one micro-op is
+    // independent of LMUL. LMUL is represented by the number of
+    // generated micro-ops.
+    const int32_t micro_vlmax = VLEN / (2 * sew);
     [[maybe_unused]] const size_t offset =
         (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
     uint32_t elem_num_per_vreg = micro_vlmax;
@@ -586,8 +590,12 @@ Fault
 
     VRM_REQUIRED;
 
-    const int32_t t_micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
-    const int32_t micro_vlmax = vlmul < 0 ? t_micro_vlmax : t_micro_vlmax / 2;
+    // Each widening micro-op writes one physical destination vector
+    // register. Since the destination element width is 2 * SEW, the
+    // number of destination elements handled by one micro-op is
+    // independent of LMUL. LMUL is represented by the number of
+    // generated micro-ops.
+    const int32_t micro_vlmax = VLEN / (2 * sew);
     [[maybe_unused]] const size_t offset =
         (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
     uint32_t elem_num_per_vreg = micro_vlmax;
@@ -754,6 +762,42 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD()
     %(code)s;
+
+    // RVV viota agnostic fix.
+    //
+    // Apply tail- and mask-agnostic policy in architectural element
+    // space. vmi.rs is the global element base of this micro-op, while
+    // i is the local element index within its physical destination
+    // register. This covers normal tails, fractional-LMUL physical
+    // tails, and masked-off body elements.
+    const uint64_t viota_vstart =
+        xc->readMiscReg(MISCREG_VSTART);
+
+    if ((rVl != 0) && (viota_vstart < rVl)) {
+        for (uint32_t i = 0;
+             i < elem_num_per_vreg;
+             ++i) {
+            const uint32_t ei = vmi.rs + i;
+
+            if (ei < viota_vstart) {
+                continue;
+            }
+
+            const bool is_tail =
+                ei >= rVl;
+
+            const bool is_inactive =
+                (ei < rVl) &&
+                !this->vm &&
+                !elem_mask(v0, ei);
+
+            if ((is_tail && machInst.vtype8.vta) ||
+                (is_inactive && machInst.vtype8.vma)) {
+                Vd[i] = ~vu(0);
+            }
+        }
+    }
+
     %(op_wb)s;
     return NoFault;
 }
@@ -792,6 +836,35 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
     %(code)s;
+
+    // RVV mask-destination agnostic fix.
+    //
+    // Inactive body bits of a masked instruction follow vtype.vma.
+    // Use the deterministic all-ones representation expected by the
+    // reference model for mask-agnostic bits.
+    if ((rVl != 0) &&
+        !this->vm &&
+        machInst.vtype8.vma) {
+        for (uint32_t bit = 0; bit < rVl; ++bit) {
+            if (!elem_mask(v0, bit)) {
+                Vd[bit / 8] |= static_cast<uint8_t>(
+                    1U << (bit % 8));
+            }
+        }
+    }
+
+    // Mask-producing instructions always treat destination tail bits
+    // as tail-agnostic, regardless of vtype.vta. Use the deterministic
+    // all-ones representation expected by the reference model.
+    //
+    // When vl is zero, no destination elements may be updated.
+    if (rVl != 0) {
+        for (uint32_t bit = rVl; bit < VLEN; ++bit) {
+            Vd[bit / 8] |= static_cast<uint8_t>(
+                1U << (bit % 8));
+        }
+    }
+
     %(op_wb)s;
     return NoFault;
 };
@@ -1307,6 +1380,356 @@ template<typename ElemType>
 
 }};
 
+
+def template VectorReduceFloatMacroConstructor {{
+
+template<typename ElemType>
+%(class_name)s<ElemType>::%(class_name)s(ExtMachInst _machInst)
+    : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s)
+{
+    const uint32_t num_reduce_microops =
+        vflmul < 1 ? 1 : vflmul;
+
+    StaticInstPtr microop;
+
+    // Ordered reductions serialize through VecTempReg0.
+    //
+    // vfredusum instead writes one independent temporary vector
+    // register for each source-register chunk. The final micro-op
+    // later combines those temporaries using the XiangShan/NEMU
+    // unordered reduction tree.
+    for (uint32_t i = 0; i < num_reduce_microops; ++i) {
+        microop =
+            new %(class_name)sMicro<ElemType>(_machInst, i);
+        microop->setDelayedCommit();
+        this->microops.push_back(microop);
+    }
+
+    // Write architectural vd only after every source-register
+    // chunk has been renamed and consumed.
+    microop =
+        new %(class_name)sFinalMicro<ElemType>(
+            _machInst, num_reduce_microops);
+    microop->setDelayedCommit();
+    this->microops.push_back(microop);
+
+    this->microops.front()->setFirstMicroop();
+    this->microops.back()->setLastMicroop();
+}
+
+}};
+
+
+def template VectorReduceFloatFinalMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)sFinalMicro : public VectorArithMicroInst
+{
+  private:
+    RegId srcRegIdxArr[20];
+    RegId destRegIdxArr[1];
+
+    // Used only by the unordered vfredusum path.
+    uint8_t numReduceRegs = 0;
+    int8_t vs1SrcIdx = -1;
+    int8_t tempSrcBaseIdx = -1;
+    int8_t oldVdSrcIdx = -1;
+    int8_t vmSrcIdx = -1;
+
+  public:
+    %(class_name)sFinalMicro(
+        ExtMachInst _machInst,
+        uint8_t _microIdx);
+
+    Fault execute(
+        ExecContext *xc,
+        Trace::InstRecord *traceData) const override;
+
+    using VectorArithMicroInst::generateDisassembly;
+};
+
+}};
+
+
+def template VectorReduceFloatFinalMicroConstructor {{
+
+template<typename ElemType>
+%(class_name)sFinalMicro<ElemType>::%(class_name)sFinalMicro(
+    ExtMachInst _machInst,
+    uint8_t _microIdx)
+    : VectorArithMicroInst(
+          "%(mnemonic)s_final_micro",
+          _machInst,
+          %(op_class)s,
+          _microIdx)
+{
+    setRegIdxArrays(
+        reinterpret_cast<RegIdArrayPtr>(
+            &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+        reinterpret_cast<RegIdArrayPtr>(
+            &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
+
+    _numSrcRegs = 0;
+    _numDestRegs = 0;
+
+    // Architectural destination.
+    setDestRegIdx(
+        _numDestRegs++,
+        RegId(VecRegClass, _machInst.vd));
+    _numTypedDestRegs[VecRegClass]++;
+
+    if (%(unordered_reduction)s) {
+        // _microIdx equals the number of source VLEN chunks:
+        // 1, 2, 4, or 8.
+        numReduceRegs = _microIdx;
+
+        vs1SrcIdx = _numSrcRegs;
+        setSrcRegIdx(
+            _numSrcRegs++,
+            RegId(VecRegClass, _machInst.vs1));
+
+        tempSrcBaseIdx = _numSrcRegs;
+        for (uint32_t i = 0; i < numReduceRegs; ++i) {
+            setSrcRegIdx(
+                _numSrcRegs++,
+                RegId(VecRegClass, VecTempReg0 + i));
+        }
+
+        // Original architectural destination.
+        oldVdSrcIdx = _numSrcRegs;
+        setSrcRegIdx(
+            _numSrcRegs++,
+            RegId(VecRegClass, _machInst.vd));
+
+        SET_VL_SRC();
+
+        // Mask register used to determine whether any source element
+        // participates in the reduction.
+        vmSrcIdx = _numSrcRegs;
+        setSrcRegIdx(
+            _numSrcRegs++,
+            RegId(VecRegClass, 0));
+    } else {
+        // Existing ordered-reduction accumulator.
+        setSrcRegIdx(
+            _numSrcRegs++,
+            RegId(VecRegClass, VecTempReg0));
+
+        // Original architectural destination.
+        setSrcRegIdx(
+            _numSrcRegs++,
+            RegId(VecRegClass, _machInst.vd));
+
+        SET_VL_SRC();
+    }
+}
+
+}};
+
+
+def template VectorReduceFloatFinalMicroExecute {{
+
+template<typename ElemType>
+Fault
+%(class_name)sFinalMicro<ElemType>::execute(
+    ExecContext *xc,
+    Trace::InstRecord *traceData) const
+{
+    using et = ElemType;
+    using vu = decltype(et::v);
+
+    if (machInst.vill) {
+        return std::make_shared<IllegalInstFault>(
+            "VILL is set", machInst);
+    }
+
+    auto &tmp_d0 =
+        *(RiscvISAInst::VecRegContainer *)
+        xc->getWritableRegOperand(this, 0);
+    auto Vd = tmp_d0.as<vu>();
+
+    if (%(unordered_reduction)s) {
+        assert(numReduceRegs >= 1);
+        assert(numReduceRegs <= 8);
+
+        const uint32_t elems_per_reg = VLEN / sew;
+
+        // Start from old vd so vl=0 and vta=0 preserve the old value.
+        RiscvISAInst::VecRegContainer tmp_old;
+        xc->getRegOperand(this, oldVdSrcIdx, &tmp_old);
+        auto OldVd = tmp_old.as<vu>();
+
+        for (uint32_t i = 0; i < elems_per_reg; ++i) {
+            Vd[i] = OldVd[i];
+        }
+
+        uint64_t rVl = 0;
+        assert(vlsrcIdx > 0);
+        rVl = xc->getRegOperand(this, vlsrcIdx);
+
+        if (rVl != 0) {
+            RiscvISAInst::VecRegContainer tmp_vs1;
+            xc->getRegOperand(this, vs1SrcIdx, &tmp_vs1);
+            auto Vs1Final = tmp_vs1.as<vu>();
+
+            RiscvISAInst::VecRegContainer tmp_v0;
+            xc->getRegOperand(this, vmSrcIdx, &tmp_v0);
+            auto V0Final = tmp_v0.as<uint8_t>();
+
+            bool any_active = false;
+            for (uint32_t ei = 0; ei < rVl; ++ei) {
+                if (this->vm || elem_mask(V0Final, ei)) {
+                    any_active = true;
+                    break;
+                }
+            }
+
+            if (any_active) {
+                const uint_fast8_t frm =
+                    xc->readMiscReg(MISCREG_FRM);
+
+                softfloat_roundingMode = frm;
+                softfloat_exceptionFlags = 0;
+                feclearexcept(FE_ALL_EXCEPT);
+
+                RiscvISAInst::VecRegContainer partial[8];
+
+                for (uint32_t r = 0;
+                     r < numReduceRegs;
+                     ++r) {
+                    xc->getRegOperand(
+                        this,
+                        tempSrcBaseIdx + r,
+                        &partial[r]);
+                }
+
+                // Register-dimension tree:
+                //
+                // LMUL=8:
+                //   vtmp0 += vtmp1
+                //   vtmp2 += vtmp3
+                //   vtmp4 += vtmp5
+                //   vtmp6 += vtmp7
+                //
+                //   vtmp0 += vtmp2
+                //   vtmp4 += vtmp6
+                //
+                //   vtmp0 += vtmp4
+                for (uint32_t stride = 1;
+                     stride < numReduceRegs;
+                     stride <<= 1) {
+                    for (uint32_t base = 0;
+                         base < numReduceRegs;
+                         base += (stride << 1)) {
+                        auto lhs = partial[base].as<vu>();
+                        auto rhs =
+                            partial[base + stride].as<vu>();
+
+                        for (uint32_t i = 0;
+                             i < elems_per_reg;
+                             ++i) {
+                            lhs[i] =
+                                fadd<et>(
+                                    ftype<et>(lhs[i]),
+                                    ftype<et>(rhs[i])).v;
+                        }
+                    }
+                }
+
+                // NEMU float_reduction_step2():
+                // combine first half with second half and recursively
+                // reduce the surviving first half.
+                auto reduced = partial[0].as<vu>();
+
+                for (uint32_t width = elems_per_reg;
+                     width > 1;
+                     width >>= 1) {
+                    const uint32_t half = width >> 1;
+
+                    for (uint32_t i = 0; i < half; ++i) {
+                        reduced[i] =
+                            fadd<et>(
+                                ftype<et>(reduced[i]),
+                                ftype<et>(reduced[i + half])).v;
+                    }
+                }
+
+                // The scalar seed participates only after the unordered
+                // source tree has completed.
+                Vd[0] =
+                    fadd<et>(
+                        ftype<et>(Vs1Final[0]),
+                        ftype<et>(reduced[0])).v;
+
+                if (softfloat_exceptionFlags) {
+                    xc->setMiscReg(
+                        MISCREG_FFLAGS_EXE,
+                        softfloat_exceptionFlags);
+                    softfloat_exceptionFlags = 0;
+                }
+            } else {
+                // No active source element: copy vs1[0] without
+                // performing FP arithmetic.
+                Vd[0] = Vs1Final[0];
+            }
+
+            if (machInst.vtype8.vta) {
+                for (uint32_t i = 1;
+                     i < elems_per_reg;
+                     ++i) {
+                    Vd[i] = ~vu(0);
+                }
+            }
+        }
+
+        xc->setRegOperand(this, 0, &tmp_d0);
+
+        if (traceData) {
+            traceData->setData(tmp_d0);
+        }
+
+        return NoFault;
+    }
+
+    // Existing ordered reduction finalization.
+    RiscvISAInst::VecRegContainer tmp_old;
+    xc->getRegOperand(this, 1, &tmp_old);
+    auto OldVd = tmp_old.as<vu>();
+
+    for (uint32_t i = 0; i < VLEN / sew; ++i) {
+        Vd[i] = OldVd[i];
+    }
+
+    RiscvISAInst::VecRegContainer tmp_acc;
+    xc->getRegOperand(this, 0, &tmp_acc);
+    auto Acc = tmp_acc.as<vu>();
+
+    uint64_t rVl = 0;
+    assert(vlsrcIdx > 0);
+    rVl = xc->getRegOperand(this, vlsrcIdx);
+
+    if (rVl != 0) {
+        Vd[0] = Acc[0];
+
+        if (machInst.vtype8.vta) {
+            for (uint32_t i = 1; i < VLEN / sew; ++i) {
+                Vd[i] = ~vu(0);
+            }
+        }
+    }
+
+    xc->setRegOperand(this, 0, &tmp_d0);
+
+    if (traceData) {
+        traceData->setData(tmp_d0);
+    }
+
+    return NoFault;
+}
+
+}};
+
+
 def template VectorReduceMicroDeclare {{
 
 template<typename ElemType>
@@ -1316,6 +1739,7 @@ private:
     // vs2, vs1, vd, vm
     RegId srcRegIdxArr[8];
     RegId destRegIdxArr[1];
+    int8_t accSrcIdx = -1;
 public:
     %(class_name)s(ExtMachInst _machInst,
                    uint8_t _microIdx);
@@ -1384,37 +1808,101 @@ Fault
 
 def template VectorReduceFloatMicroExecute {{
 
-template <typename ElemType>
+template<typename ElemType>
 Fault
-%(class_name)s<ElemType>::execute(ExecContext* xc,
-                                  Trace::InstRecord* traceData) const
+%(class_name)s<ElemType>::execute(
+    ExecContext *xc,
+    Trace::InstRecord *traceData) const
 {
     softfloat_roundingMode = 0;
     %(type_def)s;
+
     if (machInst.vill) {
-        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+        return std::make_shared<IllegalInstFault>(
+            "VILL is set", machInst);
     }
 
     %(op_decl)s;
     %(op_rd)s;
     %(vm_decl_rd)s;
-    COPY_OLD_VD();
 
-    uint32_t micro_vlmax = VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+    if (%(unordered_reduction)s) {
+        const uint_fast8_t frm =
+            xc->readMiscReg(MISCREG_FRM);
+
+        // Match NEMU init_tmp_vreg():
+        // RDN uses +0.0, all other rounding modes use -0.0.
+        const vu negative_zero =
+            vu(1) << (sizeof(vu) * 8 - 1);
+
+        const vu identity =
+            (frm == softfloat_round_min)
+                ? vu(0)
+                : negative_zero;
+
+        const uint32_t elems_per_reg =
+            VLEN / sew;
+
+        for (uint32_t i = 0;
+             i < elems_per_reg;
+             ++i) {
+            const uint32_t ei =
+                this->microIdx * elems_per_reg + i;
+
+            Vd[i] = identity;
+
+            if ((ei < rVl) &&
+                (this->vm || elem_mask(v0, ei))) {
+                // Bitwise copy. Do not use fadd(identity, source),
+                // because that can change NaNs or exception flags.
+                Vd[i] = Vs2[i];
+            }
+        }
+
+        %(op_wb)s;
+        return NoFault;
+    }
+
+
+    const uint32_t micro_vlmax =
+        VLEN / sew * (vflmul > 0 ? 1 : vflmul);
+
+    // The first data micro-op starts with vs1[0].
+    // Later data micro-ops continue from the previous renamed
+    // VecTempReg0 version.
+    vu accumulator = Vs1[0];
+
+    if (accSrcIdx >= 0) {
+        RiscvISAInst::VecRegContainer tmp_acc;
+        xc->getRegOperand(this, accSrcIdx, &tmp_acc);
+        accumulator = tmp_acc.as<vu>()[0];
+    }
+
+    // Every statically generated micro-op must produce a new temp
+    // version, including chunks that are inactive because of vl.
+    Vd[0] = accumulator;
+
     if (micro_vlmax * this->microIdx < rVl) {
-        Vd[0] = this->microIdx != 0 ? old_Vd[0] : Vs1[0];
-
         auto reduce_loop =
-            [&, this](const auto& f, const auto* _, const auto* vs2) {
+            [&, this](
+                const auto& f,
+                const auto *,
+                const auto *vs2) {
                 vu tmp_val = Vd[0];
-                for (uint32_t i = 0; i < micro_vlmax; i++) {
-                    uint32_t ei = i + micro_vlmax * this->microIdx;
-                    if ((ei < rVl) && (this->vm || elem_mask(v0, ei))) {
-                        tmp_val = f(tmp_val, Vs2[i]).v;
+
+                for (uint32_t i = 0; i < micro_vlmax; ++i) {
+                    const uint32_t ei =
+                        i + micro_vlmax * this->microIdx;
+
+                    if ((ei < rVl) &&
+                        (this->vm || elem_mask(v0, ei))) {
+                        tmp_val = f(tmp_val, vs2[i]).v;
                     }
                 }
+
                 return tmp_val;
             };
+
         %(code)s;
     }
 
@@ -1423,6 +1911,7 @@ Fault
 }
 
 }};
+
 
 def template VectorReduceFloatWideningMicroExecute {{
 
@@ -1457,6 +1946,24 @@ Fault
                 return tmp_val;
             };
         %(code)s;
+
+        // RVV widening floating-point reduction tail-agnostic fix.
+        //
+        // A widening reduction writes its 2*SEW scalar result to vd[0].
+        // All remaining elements in the physical destination register are
+        // tail elements. Fill them only after the last active micro-op so
+        // that an overlapping source used by a later micro-op is not
+        // corrupted.
+        const uint32_t last_active_micro =
+            (rVl - 1) / micro_vlmax;
+
+        if (machInst.vtype8.vta &&
+            this->microIdx == last_active_micro) {
+            std::memset(
+                reinterpret_cast<uint8_t *>(Vd) + sizeof(Vd[0]),
+                0xff,
+                VLEN / 8 - sizeof(Vd[0]));
+        }
     }
 
     %(op_wb)s;
@@ -1595,6 +2102,65 @@ Fault
     uint32_t elem_num_per_vreg = VLENB / std::max(vd_eewb, vs1_eewb);
 
     %(code)s;
+
+    // RVV gather final agnostic fix.
+    //
+    // A gather instruction can contain multiple micro-ops
+    // for different vs2 source registers. Apply destination
+    // agnostic policy only after the last source-register
+    // micro-op for this destination chunk.
+    const uint64_t gather_vstart =
+        xc->readMiscReg(MISCREG_VSTART);
+
+    // Only architectural destination-register chunks may
+    // receive tail/mask agnostic updates. Gather decomposition
+    // can create extra micro-ops beyond the current LMUL group.
+    const uint32_t gather_vd_vregs =
+        vflmul < 1 ? 1 : vflmul;
+
+    if ((vd_idx < gather_vd_vregs) &&
+        (vs2_idx + 1 == vs2_vregs) &&
+        (gather_vstart < rVl)) {
+        // With fractional LMUL, the unused portion of the physical
+        // destination register also belongs to the tail.
+        const uint32_t gather_agnostic_elems =
+            vflmul < 1 ? vd_elems : elem_num_per_vreg;
+
+        for (uint32_t gather_i = 0;
+             gather_i < gather_agnostic_elems;
+             ++gather_i) {
+            // Tail and mask policies are properties of
+            // destination elements, not the vs1 index chunk.
+            const uint32_t gather_ei =
+                gather_i +
+                vd_idx * vd_elems +
+                vd_bias;
+
+            const uint32_t gather_vd_i =
+                gather_i + vd_bias;
+
+            if (gather_vd_i >= vd_elems) {
+                continue;
+            }
+
+            const bool gather_is_tail =
+                gather_ei >= rVl;
+
+            const bool gather_is_inactive =
+                (gather_ei >= gather_vstart) &&
+                (gather_ei < rVl) &&
+                !this->vm &&
+                !elem_mask(v0, gather_ei);
+
+            if ((gather_is_tail &&
+                 machInst.vtype8.vta) ||
+                (gather_is_inactive &&
+                 machInst.vtype8.vma)) {
+                Vd[gather_vd_i] = ~vu(0);
+            }
+        }
+    }
+
     %(op_wb)s;
 
     return NoFault;
@@ -1739,6 +2305,19 @@ Fault
             };
 
         %(code)s;
+    }
+
+    // A reduction only writes destination element 0. All remaining
+    // destination elements are tail elements. Apply tail-agnostic
+    // filling only on the final micro-op, after the reduction result
+    // has been accumulated.
+    if ((rVl != 0) &&
+        this->isLastMicroop() &&
+        machInst.vtype8.vta) {
+        std::memset(
+            reinterpret_cast<uint8_t *>(Vd) + sizeof(Vd[0]),
+            0xff,
+            VLEN / 8 - sizeof(Vd[0]));
     }
 
     %(op_wb)s;
@@ -1937,6 +2516,31 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
     %(code)s;
+
+    // Fill RVV tail-agnostic and mask-agnostic slide elements with ones.
+    for (uint32_t agnostic_i = 0;
+         agnostic_i < elem_num_per_vreg;
+         ++agnostic_i) {
+        const uint32_t agnostic_ei =
+            vmi.rs + agnostic_i;
+
+        const bool is_tail =
+            (rVl != 0) && (agnostic_ei >= rVl);
+        const bool is_masked_off =
+            agnostic_ei < rVl &&
+            !this->vm &&
+            !elem_mask(v0, agnostic_ei);
+
+        if ((is_tail && machInst.vtype8.vta) ||
+            (is_masked_off && machInst.vtype8.vma)) {
+            std::memset(
+                reinterpret_cast<uint8_t *>(Vd) +
+                    agnostic_i * sizeof(ElemType),
+                0xff,
+                sizeof(ElemType));
+        }
+    }
+
     %(op_wb)s;
 
     return NoFault;
@@ -1965,6 +2569,31 @@ Fault
     %(vm_decl_rd)s;
     COPY_OLD_VD();
     %(code)s;
+
+    // Fill RVV tail-agnostic and mask-agnostic slide elements with ones.
+    for (uint32_t agnostic_i = 0;
+         agnostic_i < elem_num_per_vreg;
+         ++agnostic_i) {
+        const uint32_t agnostic_ei =
+            vmi.rs + agnostic_i;
+
+        const bool is_tail =
+            (rVl != 0) && (agnostic_ei >= rVl);
+        const bool is_masked_off =
+            agnostic_ei < rVl &&
+            !this->vm &&
+            !elem_mask(v0, agnostic_ei);
+
+        if ((is_tail && machInst.vtype8.vta) ||
+            (is_masked_off && machInst.vtype8.vma)) {
+            std::memset(
+                reinterpret_cast<uint8_t *>(Vd) +
+                    agnostic_i * sizeof(ElemType),
+                0xff,
+                sizeof(ElemType));
+        }
+    }
+
     %(op_wb)s;
 
     return NoFault;

@@ -17,7 +17,8 @@ TimedBaseBTBPredictor::TimedBaseBTBPredictor()
       predictWidth(64),
       numDelay(0),
       resolvedUpdate(false),
-      enabled(true)
+      enabled(true),
+      smtTidPartitioned(false)
 {}
 }  // namespace test
 #else
@@ -27,7 +28,8 @@ TimedBaseBTBPredictor::TimedBaseBTBPredictor(const Params &p)
       predictWidth(p.predictWidth),
       numDelay(p.numDelay),
       resolvedUpdate(p.resolvedUpdate),
-      enabled(p.enabled)
+      enabled(p.enabled),
+      smtTidPartitioned(p.smtTidPartitioned)
 {
 }
 #endif

@@ -46,7 +46,6 @@ PF_SOURCE_BY_NAME.update({
 })
 
 PF_CONTROL_CONFIG_ENV = "GEM5_PF_CONTROL_CONFIG"
-PF_CONTROL_PROFILE_NAMES = ("off", "adaptive", "default")
 
 # Central Python-only configuration for prefetch admission control.
 # Batch scripts may point GEM5_PF_CONTROL_CONFIG at a Python file defining
@@ -84,34 +83,55 @@ PF_CONTROL_CONFIG = {
 }
 
 _LOADED_PF_CONTROL_CONFIG = None
-_PF_CONTROL_PROFILE = "off"
 
-PF_CONTROL_PROFILE_CONFIGS = {
-    "off": {
-        "control": {
-            "enabled": False,
-        },
-        "adaptive": {
-            "enabled": False,
-        },
+_ENABLE_DYNAMIC_PF = False
+
+_DYNAMIC_PF_DISABLED_CONFIG = {
+    "control": {
+        "enabled": False,
     },
     "adaptive": {
-        "control": {
-            "enabled": True,
-            "window": 8000,
-            "admit_pct": 100,
-        },
-        "adaptive": {
-            "enabled": True,
-            "pfbad_entries": {
-                "l1d": 128,
-                "l2": 512,
-                "l2_wrapper": 512,
-            },
+        "enabled": False,
+    },
+}
+
+_DYNAMIC_PF_ENABLED_CONFIG = {
+    "control": {
+        "enabled": True,
+        "window": 8000,
+        "admit_pct": 100,
+    },
+    "adaptive": {
+        "enabled": True,
+        "pfbad_entries": {
+            "l1d": 128,
+            "l2": 512,
+            "l2_wrapper": 512,
         },
     },
-    "default": {},
 }
+
+
+def _apply_dynamic_pf_config(config):
+    if _ENABLE_DYNAMIC_PF:
+        _deep_update_dict(config, _DYNAMIC_PF_ENABLED_CONFIG)
+    else:
+        _deep_update_dict(config, _DYNAMIC_PF_DISABLED_CONFIG)
+
+
+def _finalize_dynamic_pf_config(config):
+    control = config.setdefault("control", {})
+    adaptive = config.setdefault("adaptive", {})
+    control["enabled"] = _ENABLE_DYNAMIC_PF
+    adaptive["enabled"] = _ENABLE_DYNAMIC_PF
+
+
+def set_enable_dynamic_pf(enabled):
+    global _ENABLE_DYNAMIC_PF
+    global _LOADED_PF_CONTROL_CONFIG
+
+    _ENABLE_DYNAMIC_PF = bool(enabled)
+    _LOADED_PF_CONTROL_CONFIG = None
 
 
 def _get_hwp(hwp_option):
@@ -129,31 +149,13 @@ def _deep_update_dict(base, override):
             base[key] = value
 
 
-def set_pf_control_profile(profile):
-    global _PF_CONTROL_PROFILE
-    global _LOADED_PF_CONTROL_CONFIG
-
-    profile = str(profile).strip().lower()
-    if profile not in PF_CONTROL_PROFILE_NAMES:
-        valid = ", ".join(PF_CONTROL_PROFILE_NAMES)
-        fatal(f"Invalid prefetch control profile {profile!r}; valid: {valid}")
-
-    _PF_CONTROL_PROFILE = profile
-    _LOADED_PF_CONTROL_CONFIG = None
-
-
-def _apply_pf_control_profile(config):
-    profile_config = PF_CONTROL_PROFILE_CONFIGS[_PF_CONTROL_PROFILE]
-    _deep_update_dict(config, profile_config)
-
-
 def _load_pf_control_config():
     global _LOADED_PF_CONTROL_CONFIG
     if _LOADED_PF_CONTROL_CONFIG is not None:
         return _LOADED_PF_CONTROL_CONFIG
 
     config = copy.deepcopy(PF_CONTROL_CONFIG)
-    _apply_pf_control_profile(config)
+    _apply_dynamic_pf_config(config)
 
     config_path = os.environ.get(PF_CONTROL_CONFIG_ENV, "").strip()
     if config_path:
@@ -169,6 +171,7 @@ def _load_pf_control_config():
             )
         _deep_update_dict(config, override)
 
+    _finalize_dynamic_pf_config(config)
     _LOADED_PF_CONTROL_CONFIG = config
     return config
 
@@ -490,14 +493,31 @@ def _configure_l2_composite_default(prefetcher):
 
 def _configure_l2_composite_kmh_align(prefetcher):
     # RTL-aligned L2CompositeWithWorker profile.
-    prefetcher.enable_cmc = True
+    prefetcher.enable_cmc = False
     prefetcher.enable_bop = True
-    prefetcher.enable_cdp = False
+    prefetcher.enable_cdp = True
     prefetcher.enable_despacito_stream = False
     prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
                                              enable_adaptoffset=False)
     prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,
                                               enable_adaptoffset=False)
+
+
+def _configure_cdp(prefetcher, options):
+    if prefetcher == NULL or not hasattr(prefetcher, 'cdp'):
+        return
+
+    cdp = prefetcher.cdp
+    if hasattr(options, 'cdp_use_dynamic_degree'):
+        cdp.use_dynamic_degree = options.cdp_use_dynamic_degree
+    if hasattr(options, 'cdp_accuracy_threshold'):
+        cdp.accuracy_threshold = options.cdp_accuracy_threshold
+    if hasattr(options, 'cdp_use_accuracy_dependent_alignment'):
+        cdp.use_accuracy_dependent_alignment = (
+            options.cdp_use_accuracy_dependent_alignment)
+    if hasattr(options, 'cdp_use_sv48'):
+        cdp.cdp_use_sv48 = options.cdp_use_sv48
+
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
@@ -505,6 +525,8 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
         _configure_l2_composite_kmh_align(prefetcher)
     elif prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_composite_default(prefetcher)
+
+    _configure_cdp(prefetcher, options)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
@@ -527,7 +549,7 @@ def _configure_l2_wrapper_prefetcher(prefetcher, prefetcher_name, options,
         _configure_l2_composite(prefetcher, prefetcher_name, options)
         _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
         if options.l1_to_l2_pf_hint:
-            prefetcher.queue_size = 32
+            prefetcher.queue_size = 128
             prefetcher.max_prefetch_requests_with_pending_translation = 128
 
 def _configure_l3_prefetcher(prefetcher, options):

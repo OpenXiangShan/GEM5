@@ -47,6 +47,10 @@ class TimedBaseBTBPredictor: public SimObject
 #ifdef UNIT_TEST
     TimedBaseBTBPredictor();
     void setNumDelay(unsigned delay) { numDelay = delay; }
+    void setSmtTidPartitioned(bool partitioned)
+    {
+        smtTidPartitioned = partitioned;
+    }
 #else
     typedef TimedBaseBTBPredictorParams Params;
 
@@ -65,6 +69,9 @@ class TimedBaseBTBPredictor: public SimObject
     {
         return nullptr;
     }
+    virtual void refreshPredictionMeta(Addr startAddr,
+                                       const boost::dynamic_bitset<> &history,
+                                       FullBTBPrediction &pred) {}
 
     virtual void specUpdateGHist(const boost::dynamic_bitset<> &history,
                                 FullBTBPrediction &pred,
@@ -111,10 +118,53 @@ class TimedBaseBTBPredictor: public SimObject
     // Check if this component is enabled
     bool isEnabled() const { return enabled; }
 
+    /**
+     * Map an index into one of two equal per-thread storage partitions.
+     * The underlying vector keeps its original total size; only ownership and
+     * replacement domains change when partitioning is enabled.
+     */
+    unsigned partitionIndex(unsigned index, unsigned totalEntries,
+                            ThreadID tid) const
+    {
+        if (!smtTidPartitioned) {
+            return index % totalEntries;
+        }
+        assert(totalEntries >= 2 && totalEntries % 2 == 0);
+        assert(tid < 2);
+        const unsigned entriesPerThread = totalEntries / 2;
+        return tid * entriesPerThread + index % entriesPerThread;
+    }
+
+    unsigned partitionIndexBits(unsigned fullIndexBits) const
+    {
+        assert(!smtTidPartitioned || fullIndexBits > 0);
+        return fullIndexBits - (smtTidPartitioned ? 1 : 0);
+    }
+
+    unsigned partitionBegin(unsigned totalEntries, ThreadID tid) const
+    {
+        if (!smtTidPartitioned) {
+            return 0;
+        }
+        assert(totalEntries >= 2 && totalEntries % 2 == 0);
+        assert(tid < 2);
+        return tid * (totalEntries / 2);
+    }
+
+    unsigned partitionEnd(unsigned totalEntries, ThreadID tid) const
+    {
+        return smtTidPartitioned ?
+            partitionBegin(totalEntries, tid) + totalEntries / 2 :
+            totalEntries;
+    }
+
+    bool usesTidPartitionedStorage() const { return smtTidPartitioned; }
+
 private:
     unsigned numDelay;
     bool resolvedUpdate;
     bool enabled;
+    bool smtTidPartitioned;
 };
 
 // Close conditional namespace wrapper for testing

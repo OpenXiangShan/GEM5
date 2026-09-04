@@ -318,7 +318,7 @@ Ramulator2::drain()
 
 Ramulator2::MemorySystemPort::MemorySystemPort(const std::string& _name,
                                  Ramulator2& _ramulator2)
-    : ResponsePort(_name, & _ramulator2), ramulator2(_ramulator2)
+    : ResponsePort(_name), ramulator2(_ramulator2)
 { }
 
 

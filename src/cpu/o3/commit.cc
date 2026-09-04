@@ -147,7 +147,11 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       commitToIEWDelay(params.commitToIEWDelay),
       renameToROBDelay(params.renameToROBDelay),
       fetchToCommitDelay(params.commitToFetchDelay),
+      mdpViolationAtCommit(params.mdp_violation_timing == "atCommit"),
+      enableStoreSetTrain(params.enable_storeSet_train),
       renameWidth(params.renameWidth),
+      numPreDispatchThreads(params.smtNumPreDispatchThreads),
+      aggregateRenameWidth(renameWidth * numPreDispatchThreads),
       commitWidth(params.commitWidth),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
@@ -163,6 +167,15 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              commitWidth, static_cast<int>(MaxWidth));
+    panic_if(aggregateRenameWidth > MaxWidth,
+             "aggregate SMT ROB insert width (%u * %u) exceeds MaxWidth (%u)",
+             renameWidth, numPreDispatchThreads, MaxWidth);
+
+    if (params.mdp_violation_timing != "atResolve" &&
+        params.mdp_violation_timing != "atCommit") {
+        fatal("mdp_violation_timing must be atResolve or atCommit, got %s\n",
+              params.mdp_violation_timing.c_str());
+    }
 
     _status = Active;
     _nextStatus = Inactive;
@@ -182,6 +195,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         borrowingDonorCycles[tid] = 0;
         trapSquash[tid] = false;
         tcSquash[tid] = false;
+        curSquashCause[tid] = SquashCause::None;
         squashAfterInst[tid] = nullptr;
         pc[tid].reset(params.isa[0]->newPCState());
         youngestSeqNum[tid] = 0;
@@ -195,7 +209,9 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         traceCommitIndex[tid] = 0;
         committedTargetId[tid] = 1;
         committedLoopIter[tid] = 0;
-        fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
+        const unsigned capacity = renameWidth *
+            (numPreDispatchThreads > 1 ? 2 : 1);
+        fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(capacity);
     }
     interrupt = NoFault;
 
@@ -310,6 +326,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to order violation"),
       ADD_STAT(squashDueToValuePrediction, statistics::units::Count::get(),
                "Number of squash due to value prediction"),
+      ADD_STAT(mdpViolationSquashes, statistics::units::Count::get(),
+               "Number of RAW MDP recoveries triggered at Commit"),
       ADD_STAT(squashDueToTrap, statistics::units::Count::get(),
                "Number of squash due to trap"),
       ADD_STAT(squashDueToTC, statistics::units::Count::get(),
@@ -574,9 +592,11 @@ Commit::clearStates(ThreadID tid)
     committedStores[tid] = false;
     trapSquash[tid] = false;
     tcSquash[tid] = false;
+    curSquashCause[tid] = SquashCause::None;
     pc[tid].reset(cpu->tcBase(tid)->getIsaPtr()->newPCState());
     lastCommitedSeqNum[tid] = 0;
     squashAfterInst[tid] = NULL;
+    committedBranchHistory[tid].clear();
 }
 
 void Commit::drain() { drainPending = true; }
@@ -641,7 +661,9 @@ Commit::takeOverFrom()
         borrowingDonorCycles[tid] = 0;
         trapSquash[tid] = false;
         tcSquash[tid] = false;
+        curSquashCause[tid] = SquashCause::None;
         squashAfterInst[tid] = NULL;
+        committedBranchHistory[tid].clear();
     }
     rob->takeOverFrom();
 }
@@ -735,6 +757,11 @@ Commit::generateTrapEvent(ThreadID tid, Fault inst_fault)
 {
     DPRINTF(Commit, "Generating trap event for [tid:%i]\n", tid);
 
+    // TrapPending already blocks dispatch; latch Trap here so both the
+    // instruction-fault and interrupt paths attribute those slots correctly
+    // before squashFromTrap() runs.
+    curSquashCause[tid] = SquashCause::Trap;
+
     EventFunctionWrapper *trap = new EventFunctionWrapper(
         [this, tid]{ processTrapEvent(tid); },
         "Trap", true, Event::CPU_Tick_Pri);
@@ -798,6 +825,8 @@ Commit::squashAll(ThreadID tid)
     // the ROB is in the process of squashing.
     toIEW->commitInfo[tid].robSquashing = true;
 
+    toIEW->commitInfo[tid].squashCause = curSquashCause[tid];
+
     toIEW->commitInfo[tid].mispredictInst = NULL;
     toIEW->commitInfo[tid].squashInst = NULL;
 
@@ -820,6 +849,7 @@ Commit::squashFromTrap(ThreadID tid)
             (unsigned long long)curTick(),
             (unsigned long)committedPC[tid],
             *pc[tid]);
+    curSquashCause[tid] = SquashCause::Trap;
     squashAll(tid);
 
     toIEW->commitInfo[tid].isTrapSquash = true;
@@ -846,6 +876,7 @@ Commit::squashFromTC(ThreadID tid)
             tid,
             (unsigned long long)curTick(),
             *pc[tid]);
+    curSquashCause[tid] = SquashCause::ThreadContext;
     squashAll(tid);
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
@@ -878,6 +909,7 @@ Commit::squashFromSquashAfter(ThreadID tid)
                 *pc[tid]);
     }
 
+    curSquashCause[tid] = SquashCause::SquashAfter;
     squashAll(tid);
     // Make sure to inform the fetch stage of which instruction caused
     // the squash. It'll try to re-fetch an instruction executing in
@@ -898,6 +930,7 @@ Commit::squashAfter(ThreadID tid, const DynInstPtr &head_inst)
 
     assert(!squashAfterInst[tid] || squashAfterInst[tid] == head_inst);
     commitStatus[tid] = SquashAfterPending;
+    curSquashCause[tid] = SquashCause::SquashAfter;
     squashAfterInst[tid] = head_inst;
 }
 
@@ -947,6 +980,7 @@ Commit::tick()
                 rob->doSquash(tid);
                 changedROBNumEntries[tid] = true;
                 toIEW->commitInfo[tid].robSquashing = true;
+                toIEW->commitInfo[tid].squashCause = curSquashCause[tid];
                 wroteToTimeBuffer = true;
             }
         }
@@ -1143,16 +1177,19 @@ Commit::commit()
                     fromIEW->mispredictInst[tid]->pcState().instAddr(),
                     fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToBranch[tid]++;
+                curSquashCause[tid] = SquashCause::BranchMispredict;
             } else if (fromIEW->valuePredictionError[tid]) {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to value prediction error [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToValuePrediction[tid]++;
+                curSquashCause[tid] = SquashCause::ValuePrediction;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToOrderViolation[tid]++;
+                curSquashCause[tid] = SquashCause::MemOrderViolation;
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -1186,6 +1223,8 @@ Commit::commit()
             // Send back the rob squashing signal so other stages know that
             // the ROB is in the process of squashing.
             toIEW->commitInfo[tid].robSquashing = true;
+
+            toIEW->commitInfo[tid].squashCause = curSquashCause[tid];
 
             toIEW->commitInfo[tid].mispredictInst =
                 fromIEW->mispredictInst[tid];
@@ -1270,6 +1309,96 @@ Commit::updateMstatusSd(ThreadID tid){
     RiscvISA::STATUS mstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
     mstatus.sd = (mstatus.fs == 3) || (mstatus.vs == 3);
     cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, (RegVal)mstatus, tid);
+}
+
+void
+Commit::updateCommittedBranchHistory(ThreadID tid, const DynInstPtr &inst)
+{
+    if (!inst->isControl() ||
+        (inst->isDirectCtrl() && inst->isUncondCtrl())) {
+        return;
+    }
+
+    const auto &resolved_pc = inst->pcState().as<RiscvISA::PCState>();
+    branchInfo branch_info = {
+        inst->isIndirectCtrl(),
+        resolved_pc.branching(),
+        resolved_pc.npc(),
+        inst->seqNum,
+        resolved_pc.instAddr(),
+    };
+    committedBranchHistory[tid].push_front(branch_info);
+    if (committedBranchHistory[tid].size() > MAX_BRANCH_HISTORY) {
+        committedBranchHistory[tid].pop_back();
+    }
+}
+
+bool
+Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
+{
+    if (!mdpViolationAtCommit || !head_inst->isLoad() ||
+        !head_inst->memDepInfo.violationPending) {
+        return false;
+    }
+
+    const auto &mdp_info = head_inst->memDepInfo;
+    if (mdp_info.violatingStoreSeqNum == 0) {
+        // A malformed pending marker must not block the ROB forever.
+        head_inst->memDepInfo.violationPending = false;
+        return false;
+    }
+
+    DPRINTF(Commit,
+            "[tid:%i] [sn:%llu] Handling deferred RAW MDP violation at "
+            "Commit, store [sn:%llu] load PC %s\n",
+            tid, head_inst->seqNum, mdp_info.violatingStoreSeqNum,
+            head_inst->pcState());
+
+    // Commit-time PHAST training intentionally uses only resolved, committed
+    // branch outcomes. StoreSet training uses the same violation entry point.
+    if (iewStage->instQueue.usesPHAST(tid) || enableStoreSetTrain) {
+        iewStage->instQueue.violation(
+            mdp_info.violatingStoreSeqNum, mdp_info.violatingStorePC,
+            head_inst, committedBranchHistory[tid]);
+    }
+    head_inst->memDepInfo.violationPending = false;
+
+    // Do not retire the violating load. Keep the last older instruction in
+    // the ROB and refetch from the violating load's resolved PC.
+    const InstSeqNum squashed_inst = head_inst->seqNum - 1;
+    youngestSeqNum[tid] = squashed_inst;
+    rob->squash(squashed_inst, tid);
+    changedROBNumEntries[tid] = true;
+
+    if (valuePred) {
+        valuePred->squash(tid, squashed_inst);
+    }
+
+    toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
+    toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
+
+    traceUpdateSquashInfo(tid, squashed_inst);
+    toIEW->commitInfo[tid].isDeferedMDPSquash = true;
+    toIEW->commitInfo[tid].squash = true;
+    toIEW->commitInfo[tid].robSquashing = true;
+    toIEW->commitInfo[tid].mispredictInst = nullptr;
+    // Match the ordinary IEW order-violation path: squashInst identifies the
+    // last instruction retained in the ROB, while pc points at the load that
+    // must be refetched.  Passing the load itself would make Fetch treat the
+    // discarded instruction as the recovery anchor.
+    toIEW->commitInfo[tid].squashInst = rob->findInst(tid, squashed_inst);
+    toIEW->commitInfo[tid].squashedTargetId = head_inst->getFtqId();
+    toIEW->commitInfo[tid].squashedLoopIter = head_inst->getLoopIteration();
+    set(pc[tid], head_inst->pcState());
+    set(toIEW->commitInfo[tid].pc, pc[tid]);
+    squashInflightAndUpdateVersion(tid);
+
+    commitStatus[tid] = ROBSquashing;
+    ++stats.mdpViolationSquashes;
+    ++stats.squashDueToOrderViolation[tid];
+    wroteToTimeBuffer = true;
+    cpu->activityThisCycle();
+    return true;
 }
 
 void
@@ -1358,6 +1487,11 @@ Commit::commitInsts()
                     "Trying to commit head instruction, [tid:%i] [sn:%llu]\n",
                     tid, head_inst->seqNum);
 
+            if (!head_inst->isSquashed() &&
+                handleMdpViolation(head_inst, tid)) {
+                break;
+            }
+
             // If the head instruction is squashed, it is ready to retire
             // (be removed from the ROB) at any time.
             if (head_inst->isSquashed()) {
@@ -1366,6 +1500,19 @@ Commit::commitInsts()
                         "ROB.\n");
 
                 rob->drainSquashedHead(commit_thread);
+
+                if (!mdpViolationAtCommit && head_inst->isLoad() &&
+                    head_inst->memDepInfo.violatingStoreSeqNum &&
+                    !head_inst->memDepInfo.violationTrained &&
+                    iewStage->instQueue.usesPHAST(tid)) {
+                    iewStage->instQueue.violation(
+                        head_inst->memDepInfo.violatingStoreSeqNum,
+                        head_inst->memDepInfo.violatingStorePC,
+                        head_inst, committedBranchHistory[tid]);
+                }
+                if (mdpViolationAtCommit) {
+                    head_inst->memDepInfo.violationPending = false;
+                }
 
                 ++stats.commitSquashedInsts;
                 // Notify potential listeners that this instruction is squashed
@@ -1433,6 +1580,20 @@ Commit::commitInsts()
                         if (traceMaybeExitOnLastTraceInst(head_inst)) {
                             return;
                         }
+
+                      // Vector loads write architectural vector registers.
+                      // Mark mstatus.VS dirty when the instruction commits.
+                      if (head_inst->isVector() && head_inst->isLoad()) {
+                          RiscvISA::STATUS status =
+                              cpu->readMiscRegNoEffect(
+                                  RiscvISA::MiscRegIndex::MISCREG_STATUS,
+                                  tid);
+                          status.sd = 1;
+                          status.vs = 3;
+                          cpu->setMiscRegNoEffect(
+                              RiscvISA::MiscRegIndex::MISCREG_STATUS,
+                              (RegVal)status, tid);
+                      }
 
                     if (head_inst->isUpdateVsstatusSd()) {
                         auto v = cpu->readMiscRegNoEffect(
@@ -1889,6 +2050,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             head_inst->staticInst->disassemble(
                 head_inst->pcState().instAddr()).c_str(), inst_fault->name());
 
+        updateCommittedBranchHistory(tid, head_inst);
+
 
         if (head_inst->traceData) {
             // We ignore ReExecution "faults" here as they are not real
@@ -2099,13 +2262,20 @@ Commit::moveInstsToBuffer()
     DPRINTF(Commit, "Getting instructions from Rename stage.\n");
     int insts_from_rename = fromRename->size;
     if (insts_from_rename != 0) {
-        // move to buffer
-        ThreadID tid = fromRename->insts[0]->threadNumber;
-        assert(fixedbuffer[tid].empty());
         for (int i = 0; i < insts_from_rename; ++i) {
             const DynInstPtr &inst = fromRename->insts[i];
-            assert(inst->threadNumber == tid);
+            const ThreadID tid = inst->threadNumber;
+            // A Commit-time squash can be generated after this bundle has
+            // already left Rename.  Apply the same squash-version check used
+            // by Rename so that stale in-flight instructions cannot be
+            // inserted into the ROB after recovery completes.
+            if (localSquashVer[tid].largerThan(inst->getVersion())) {
+                inst->setSquashed();
+            }
             if (!inst->isSquashed()) {
+                panic_if(fixedbuffer[tid].full(),
+                         "Commit rename-input buffer overflow for SMT "
+                         "thread %u", tid);
                 fixedbuffer[tid].push_back(inst);
             }
         }
@@ -2132,17 +2302,21 @@ Commit::moveInstsToBuffer()
 
     // check threads stall & status
     SmtActiveThreadArbiter active_arbiter;
+    std::vector<ThreadID> active_tids;
     auto freezeActiveThread = [this](ThreadID tid) {
         stallSig->blockIEW[tid] = true;
         stallSig->iewBlockReason[tid] = StallReason::OtherFragStall;
     };
     for (int i = 0; i < numThreads; i++) {
-        bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
-        bool block = !rob->canAllocate(i, fixedbuffer[i].size()) || robblock;
+        bool robblock = commitStatus[i] == ROBSquashing ||
+                        commitStatus[i] == TrapPending;
+        const unsigned allocation =
+            std::min<unsigned>(fixedbuffer[i].size(), renameWidth);
+        bool block = !rob->canAllocate(i, allocation) || robblock;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (robblock) {
-            block_reason = StallReason::CommitSquash;
+            block_reason = squashCauseToStallReason(curSquashCause[i]);
         } else if (block) {
             block_reason = robInfoFromIEW->iewInfo[i].robHeadStallReason;
             stats.ROBFull[i]++;
@@ -2160,51 +2334,79 @@ Commit::moveInstsToBuffer()
         stallSig->blockIEW[i] = block;
         stallSig->iewBlockReason[i] = block ? block_reason : StallReason::NoStall;
         if (active) {
+            active_tids.push_back(i);
             const auto freeze = active_arbiter.observe(
                 i, smtBorrowPriority(robInfoFromIEW->iewInfo[i]));
-            if (freeze.previousActive != InvalidThreadID) {
-                freezeActiveThread(freeze.previousActive);
-            }
-            if (freeze.freezeCurrent) {
-                freezeActiveThread(i);
+            if (numPreDispatchThreads == 1) {
+                if (freeze.previousActive != InvalidThreadID) {
+                    freezeActiveThread(freeze.previousActive);
+                }
+                if (freeze.freezeCurrent) {
+                    freezeActiveThread(i);
+                }
             }
         }
     }
-    const ThreadID tid = active_arbiter.selected();
-    if (tid == InvalidThreadID) {
+    const ThreadID primary_tid = active_arbiter.selected();
+    if (primary_tid == InvalidThreadID) {
         DPRINTF(Commit, "No instructions from Rename stage.\n");
         return;
     }
 
-    // Read any renamed instructions and place them into the ROB.
-    int insts_to_process = fixedbuffer[tid].size();
-    for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
-        const DynInstPtr &inst = fixedbuffer[tid].front();
-        if (!inst->isSquashed() &&
-            commitStatus[tid] != ROBSquashing &&
-            commitStatus[tid] != TrapPending) {
-            changedROBNumEntries[tid] = true;
-
-            DPRINTF(Commit, "[tid:%i] [sn:%llu] Inserting PC %s into ROB.\n",
-                    tid, inst->seqNum, inst->pcState());
-
-            rob->insertInst(inst);
-
-            assert(rob->canAllocate(tid, 0));
-
-            youngestSeqNum[tid] = inst->seqNum;
-        } else {
-            DPRINTF(Commit, "[tid:%i] [sn:%llu] "
-                    "Instruction PC %s was squashed, skipping.\n",
-                    tid, inst->seqNum, inst->pcState());
+    std::vector<ThreadID> selected_tids{primary_tid};
+    for (const ThreadID tid : active_tids) {
+        if (tid != primary_tid &&
+            selected_tids.size() < numPreDispatchThreads) {
+            selected_tids.push_back(tid);
         }
-
-        fixedbuffer[tid].pop_front();
+    }
+    for (const ThreadID tid : active_tids) {
+        if (std::find(selected_tids.begin(), selected_tids.end(), tid) ==
+            selected_tids.end()) {
+            freezeActiveThread(tid);
+        }
     }
 
-    if (!fixedbuffer[tid].empty()) {
-        stallSig->blockIEW[tid] = true;
-        DPRINTF(Commit, "Not all instructions from Rename stage could be processed, blocking thread %i\n", tid);
+    for (const ThreadID tid : selected_tids) {
+        const unsigned insts_to_process =
+            std::min<unsigned>(fixedbuffer[tid].size(), renameWidth);
+        if (!rob->canAllocate(tid, insts_to_process)) {
+            stallSig->blockIEW[tid] = true;
+            stallSig->iewBlockReason[tid] = StallReason::ROBFull;
+            stats.ROBFull[tid]++;
+            continue;
+        }
+
+        for (unsigned inst_num = 0; inst_num < insts_to_process; ++inst_num) {
+            const DynInstPtr &inst = fixedbuffer[tid].front();
+            if (!inst->isSquashed() &&
+                commitStatus[tid] != ROBSquashing &&
+                commitStatus[tid] != TrapPending) {
+                changedROBNumEntries[tid] = true;
+
+                DPRINTF(Commit,
+                        "[tid:%i] [sn:%llu] Inserting PC %s into ROB.\n",
+                        tid, inst->seqNum, inst->pcState());
+
+                rob->insertInst(inst);
+                assert(rob->canAllocate(tid, 0));
+                youngestSeqNum[tid] = inst->seqNum;
+            } else {
+                DPRINTF(Commit, "[tid:%i] [sn:%llu] "
+                        "Instruction PC %s was squashed, skipping.\n",
+                        tid, inst->seqNum, inst->pcState());
+            }
+
+            fixedbuffer[tid].pop_front();
+        }
+
+        if (!fixedbuffer[tid].empty()) {
+            stallSig->blockIEW[tid] = true;
+            stallSig->iewBlockReason[tid] = StallReason::OtherFragStall;
+            DPRINTF(Commit,
+                    "Not all instructions from Rename stage could be "
+                    "processed, blocking thread %i\n", tid);
+        }
     }
 }
 
@@ -2254,7 +2456,7 @@ Commit::markCompletedInsts()
             fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
 
-            panic_if(!rob->findInst(inst->threadNumber, inst->seqNum),
+            panic_if(!inst->isInROB(),
                      "[tid:%i] [sn:%llu] Committed instruction not found in ROB",
                      inst->threadNumber,
                      inst->seqNum);
@@ -2292,6 +2494,7 @@ Commit::updateComInstStats(const DynInstPtr &inst)
             }
             branchLog.push_back(temp);
         }
+        updateCommittedBranchHistory(tid, inst);
         // tracing recent taken branches
         DPRINTF(DecoupleBP, "Control inst %lu, PC: %#lx -> target: %#lx\n",
                 inst->seqNum, inst->pcState().instAddr(),

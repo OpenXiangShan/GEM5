@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_ITTAGE_HH__
 #define __CPU_PRED_BTB_ITTAGE_HH__
 
+#include <array>
 #include <deque>
 #include <map>
 #include <memory>
@@ -103,6 +104,9 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // Speculatively update path folded histories.
     void specUpdatePHist(const boost::dynamic_bitset<> &history,
@@ -129,10 +133,12 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                       IndirectTargets& results, ThreadID tid, uint8_t asidHash);
 
     // use blockPC
-    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
+                      ThreadID tid = 0);
 
     // use blockPC (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist,
+                      uint8_t asidHash = 0, ThreadID tid = 0);
 
     // use blockPC
     Addr getTageTag(Addr pc, int table, uint8_t asidHash = 0);
@@ -196,6 +202,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     bool satDecrement(int min, short &counter);
 
     int usefulResetCnt;
+    std::array<int, MaxThreads> usefulResetCntByThread{};
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -286,7 +293,7 @@ public:
     bool debugFlag = false;
 
     void recoverFoldedHist(const bitset& history);
-    bool tageHit();
+    bool tageHit(ThreadID tid);
 
     // void checkFoldedHist(const bitset& history);
 };

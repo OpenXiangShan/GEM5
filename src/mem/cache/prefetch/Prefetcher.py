@@ -345,7 +345,11 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     on_write = False
     on_data  = True
     on_inst  = False
-    xs_stream_depth = Param.Int(32, "The depth of xs_stream_depth")
+    xs_stream_depth = Param.Int(64, "The depth of xs_stream_depth")
+    xs_stream_l2_depth = Param.Unsigned(
+        640,
+        "L2 stream lookahead in cache blocks; zero derives from depth << 2"
+    )
     enable_auto_depth = Param.Bool(False, "enable autp depth.")
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
     xs_stream_entries = Param.MemorySize(
@@ -615,6 +619,22 @@ class CDP(QueuedPrefetcher):
         "How many blks a region can track")
     filter_entry_granularity = Param.Unsigned(4096,
         "How many bytes a blk in a region can track")
+    use_dynamic_degree = Param.Bool(
+        True,
+        "Enable accuracy-based CDP degree control"
+    )
+    accuracy_threshold = Param.Float(
+        0.05,
+        "Accuracy threshold for CDP degree extensions"
+    )
+    use_accuracy_dependent_alignment = Param.Bool(
+        True,
+        "Use the legacy accuracy-dependent pointer alignment"
+    )
+    cdp_use_sv48 = Param.Bool(
+        False,
+        "Use Sv48 virtual-address recognition for CDP"
+    )
     throttle_aggressiveness = Param.Float(2.0,
         "A parameter to control the aggressiveness of throttling")
 

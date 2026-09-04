@@ -46,11 +46,13 @@
 #define __CPU_PRED_BTB_UBTB_HH__
 
 #include <queue>
+#include <vector>
 
 #include "arch/generic/pcstate.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "debug/UBTB.hh"
@@ -150,8 +152,14 @@ class UBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override
     {
-        return meta;
+        if (tid >= threadMeta.size()) {
+            return nullptr;
+        }
+        return threadMeta[tid];
     }
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     void reset();
     void setTrace() override;
@@ -186,7 +194,7 @@ class UBTB : public TimedBaseBTBPredictor
             // Default constructor - will be assigned proper value later
         }
     };
-    LastPred lastPred;
+    std::vector<LastPred> lastPred;
 
     /** this struct holds the metadata for uBTB,
      * note that unlike other predictors, the ubtb meta serves only statistical purpose
@@ -200,7 +208,7 @@ class UBTB : public TimedBaseBTBPredictor
             hit_entry = TickedUBTBEntry();
         }
     };
-    std::shared_ptr<UBTBMeta> meta;
+    std::vector<std::shared_ptr<UBTBMeta>> threadMeta;
 
     // helper methods
     /*
@@ -221,7 +229,7 @@ class UBTB : public TimedBaseBTBPredictor
      *  @param startPC The start address of the fetch block
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr startPC, uint8_t asidHash) {
+    inline Addr getTag(Addr startPC, uint8_t asidHash) const {
         Addr baseTag = (startPC >> 1) & tagMask;
         return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
@@ -235,7 +243,9 @@ class UBTB : public TimedBaseBTBPredictor
      * @param startAddr The FB start address to look up
      * @return Iterator to the matching entry if found, or ubtb.end() if not found
      */
-    UBTBIter lookup(Addr startAddr, uint8_t asidHash);
+    UBTBIter lookup(Addr startAddr, ThreadID tid, uint8_t asidHash);
+    TickedUBTBEntry lookupNoSideEffect(Addr startAddr, ThreadID tid,
+                                       uint8_t asidHash) const;
 
     /** helper method called by putPCHistory: Check uBTB entry pc range and update statistics
      * @param entry The uBTB entry to check
@@ -260,7 +270,20 @@ class UBTB : public TimedBaseBTBPredictor
 
     //using the FB final taken branch to update uBTB
     void updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
-                        const Addr startAddr, uint8_t asidHash);
+                        const Addr startAddr, ThreadID tid,
+                        uint8_t asidHash);
+
+    std::pair<UBTBIter, UBTBIter> threadRange(ThreadID tid)
+    {
+        if (!usesTidPartitionedStorage()) {
+            return {ubtb.begin(), ubtb.end()};
+        }
+        assert(numEntries >= 2 && numEntries % 2 == 0);
+        assert(tid < 2);
+        const auto entriesPerThread = numEntries / 2;
+        auto begin = ubtb.begin() + tid * entriesPerThread;
+        return {begin, begin + entriesPerThread};
+    }
 
 
     /** The uBTB structure:

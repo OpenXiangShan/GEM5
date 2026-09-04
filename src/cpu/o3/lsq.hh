@@ -1190,7 +1190,7 @@ class LSQ
         return (a >> dcacheBankOffsetBits) & (numBank - 1);
     }
 
-    bool loadBankConflictedCheck(Addr vaddr);
+    bool loadBankConflictedCheck(Addr vaddr, unsigned size);
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
@@ -1287,7 +1287,38 @@ class LSQ
 
     bool sharedLSQMode() const;
     unsigned activeLSQThreads() const;
-    unsigned sharedLSQAllocation(unsigned entries) const;
+
+    /** Returns whether the thread may borrow unused LQ/SQ capacity. */
+    bool canBorrowLQ(ThreadID tid) const;
+    bool canBorrowSQ(ThreadID tid) const;
+
+    /** Returns the borrowing limit for LQ entries. */
+    unsigned borrowingLimitLQ(ThreadID tid) const;
+
+    /** Returns the borrowing limit for SQ entries. */
+    unsigned borrowingLimitSQ(ThreadID tid) const;
+
+    /** Sets whether the thread may donate unused LQ/SQ capacity this cycle. */
+    void setLQBorrowingDonor(ThreadID tid, bool donor);
+    void setSQBorrowingDonor(ThreadID tid, bool donor);
+    
+    /** Returns whether the thread is currently an LQ/SQ borrowing donor. */
+    bool isLQBorrowingDonor(ThreadID tid) const { return lqBorrowingDonor[tid]; }
+    bool isSQBorrowingDonor(ThreadID tid) const { return sqBorrowingDonor[tid]; }
+    
+    /** Add cycle count for borrowing state holding cycle stats */
+    void addBorrowingStateHoldCycle();
+
+    /** Queue type for sharedLSQAllocation */
+    enum class LSQQueueType
+    {
+        LQ,
+        SQ,
+        RARQ,
+        RAWQ
+    };
+
+    unsigned sharedLSQAllocation(unsigned entries, LSQQueueType queueType) const;
     unsigned logicalMaxLoadEntries(ThreadID tid) const;
     unsigned logicalMaxStoreEntries(ThreadID tid) const;
     unsigned logicalFreeLoadEntries(ThreadID tid) const;
@@ -1496,25 +1527,58 @@ class LSQ
     /** The LSQ policy for SMT mode. */
     SMTLSQMode lsqMode;
 
-    /** The LSQ allocation policy used in shared mode. */
+    /** The LSQ allocation policy used in shared mode for LQ and SQ. */
     SMTQueuePolicy lsqPolicy;
 
-    /** The per-thread threshold used in shared threshold mode. */
-    unsigned smtLSQThreshold;
+    /** The RARQ allocation policy used in shared mode. */
+    SMTQueuePolicy rarqPolicy;
+
+    /** The RAWQ allocation policy used in shared mode. */
+    SMTQueuePolicy rawqPolicy;
+
+    /** The LQ threshold used in shared mode for Threshold policy. */
+    const unsigned smtLQThreshold;
+
+    /** The SQ threshold used in shared mode for Threshold policy. */
+    const unsigned smtSQThreshold;
+
+    /** Minimum LQ entries reserved for a borrowing base thread to resume. */
+    const unsigned lqBorrowBaseReserveEntries;
+
+    /** Minimum LQ entries reserved for a borrowing donor thread to resume. */
+    const unsigned lqBorrowDonorReserveEntries;
+
+    /** Minimum SQ entries reserved for a borrowing base thread to resume. */
+    const unsigned sqBorrowBaseReserveEntries;
+
+    /** Minimum SQ entries reserved for a borrowing donor thread to resume. */
+    const unsigned sqBorrowDonorReserveEntries;
+
+    /** Whether a thread may donate unused LQ capacity this cycle. */
+    bool lqBorrowingDonor[MaxThreads];
+
+    /** Whether a thread may donate unused SQ capacity this cycle. */
+    bool sqBorrowingDonor[MaxThreads];
+    
+    /** Cycle count for LQ borrowing state holding */
+    unsigned lqBorrowingStateHoldCycle[MaxThreads];
+    
+    /** Cycle count for SQ borrowing state holding */
+    unsigned sqBorrowingStateHoldCycle[MaxThreads];
 
     struct LSQStats : public statistics::Group
     {
-        LSQStats(statistics::Group *parent);
+        LSQStats(statistics::Group *parent, unsigned num_threads);
 
         /** Per-cycle occupancy samples for the aggregated LSQ structures. */
         statistics::Average lqAvgEntryNum;
         statistics::Average sqAvgEntryNum;
         statistics::Average sbufferAvgEntryNum;
-        /** Per-cycle full signals based on whether a full enqueue bundle fits. */
-        statistics::Scalar lqFullCycles;
-        statistics::Scalar sqFullCycles;
-        statistics::Scalar lsqFullCycles;
-        statistics::Scalar sbufferFullCycles;
+        /** Per-thread full signals based on whether an enqueue bundle fits. */
+        statistics::Vector lqFullCycles;
+        statistics::Vector sqFullCycles;
+        statistics::Vector lsqFullCycles;
+        statistics::Vector sbufferFullCycles;
         statistics::Scalar sbufferEvictDuetoFlush;
         statistics::Scalar sbufferEvictDuetoFull;
         statistics::Scalar sbufferEvictDuetoSQFull;

@@ -370,7 +370,7 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
 
     if args.num_cpus > 1 or args.smt:
         print("Simulating a multi-context system, demanding a larger GCPT restorer size (2M).")
-        sys.gcpt_restorer_size_limit = 2**20
+        sys.gcpt_restorer_size_limit = 2**21
     elif args.restore_rvv_cpt:
         print("Simulating single core with RVV, demanding GCPT restorer size of 0x1000.")
         sys.gcpt_restorer_size_limit = 0x1000
@@ -458,6 +458,13 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     for cpu in test_sys.cpu:
         if args.smt:
             cpu.numThreads = 2
+        # === Block Policy: pass SMT fetch block parameters ===
+        from m5.objects.BaseO3CPU import SMTDecodePolicy
+        cpu.smtDecodePolicy = SMTDecodePolicy(args.smt_decode_policy)
+        from m5.objects.BaseO3CPU import SMTFetchBlockPolicy
+        cpu.smtFetchBlockPolicy = SMTFetchBlockPolicy(args.smt_fetch_block_policy)
+        cpu.smtFetchBlockThreshold = args.smt_fetch_block_threshold
+        cpu.smtBorrowThrottleCycles = args.smt_fetch_throttle_cycles
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
@@ -839,6 +846,11 @@ def build_xiangshan_system(args):
     np = args.num_cpus
     assert buildEnv['TARGET_ISA'] == "riscv"
 
+    enable_dynamic_pf = getattr(args, 'enable_dynamic_pf', False)
+    PrefetcherConfig.set_enable_dynamic_pf(
+        enable_dynamic_pf is True or enable_dynamic_pf == "True"
+    )
+
     TestCPUClass = get_xiangshan_cpu_class(args)
     ruby = bool(hasattr(args, 'ruby') and args.ruby)
     num_threads = np * (2 if getattr(args, 'smt', False) else 1)
@@ -963,6 +975,36 @@ def xiangshan_system_init():
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
+
+    parser.add_argument(
+        "--smt-decode-policy",
+        type=str,
+        default="MultiPriority",
+        choices=["ICount", "DelayedICount", "MultiPriority", "RoundRobin"],
+        help="SMT decode select policy: ICount, DelayedICount, MultiPriority, RoundRobin",
+    )
+    parser.add_argument(
+        "--smt-fetch-block-policy",
+        type=str,
+        default="BaseLine",
+        choices=["BaseLine", "BlockPolicy"],
+        help="SMT fetch block policy for long-latency loads: "
+             "Baseline (no blocking) or BlockPolicy (stall fetch on long-latency load)",
+    )
+    parser.add_argument(
+        "--smt-fetch-block-threshold",
+        type=int,
+        default=15,
+        help="Number of consecutive cycles a thread's LQ head must be stalled on a "
+             "long-latency load before IEW signals Fetch to block (T15 from Tullsen & Brown)",
+    )
+    parser.add_argument(
+        "--smt-fetch-throttle-cycles",
+        type=int,
+        default=8,
+        help="Cycles to keep a backend-stalled SMT thread throttled at fetch, 0 means disable throttle",
+    )
+
     parser.add_argument(
         "--solver-problem-ref",
         type=str,
@@ -1029,8 +1071,6 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
-
-    PrefetcherConfig.set_pf_control_profile(args.pf_control_profile)
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)

@@ -100,12 +100,53 @@ enum StallReason {
     VectorReadyButNotIssued,  // B
     ScalarReadyButNotIssued,  // B
     ResumeUnblock,  // B
-    CommitSquash,  // BS
+    CommitSquash,  // BS, cause not attributable
+    ControlRecovery,  // BS
+    MemVioRecovery,  // BS
+    VPRecovery,  // BS
+    TrapRecovery,  // BS
     ROBFull,  // B
     RegFull,  // B
     OtherStall,  // B
     NumStallReasons
 };
+
+/**
+ * Why commit squashed. IEW cannot derive this itself: `squashAll()` clears
+ * `mispredictInst`, and nothing cause-bearing is live during the
+ * `robSquashing` tail.
+ *
+ * `None` must stay zero; TimeBuffer::advance() memsets new slots.
+ */
+enum class SquashCause
+{
+    None = 0,
+    BranchMispredict,
+    MemOrderViolation,
+    ValuePrediction,
+    Trap,
+    ThreadContext,
+    SquashAfter,
+};
+
+inline StallReason
+squashCauseToStallReason(SquashCause cause)
+{
+    switch (cause) {
+      case SquashCause::BranchMispredict:
+        return StallReason::ControlRecovery;
+      case SquashCause::MemOrderViolation:
+        return StallReason::MemVioRecovery;
+      case SquashCause::ValuePrediction:
+        return StallReason::VPRecovery;
+      case SquashCause::Trap:
+        return StallReason::TrapRecovery;
+      // TC writes / squash-after are simulator-side clears, not
+      // microarchitectural events worth their own bucket.
+      default:
+        return StallReason::CommitSquash;
+    }
+}
 
 /** Struct that defines the information passed from fetch to decode. */
 struct FetchStruct
@@ -322,8 +363,12 @@ struct TimeStruct
         unsigned squashedLoopIter; // F
 
         bool isTrapSquash;
+        bool isDeferedMDPSquash;
         bool squash; // *F, D, R, I
         bool robSquashing; // *F, D, R, I
+
+        /// Re-published on every `robSquashing` cycle, so IEW needs no copy.
+        SquashCause squashCause; // *I
 
         SquashVersion squashVersion; // *F, D, R, I
 
@@ -366,6 +411,10 @@ smtCanDonateRobHeadroom(StallReason reason)
       case VectorReadyButNotIssued:
       case ScalarReadyButNotIssued:
       case CommitSquash:
+      case ControlRecovery:
+      case MemVioRecovery:
+      case VPRecovery:
+      case TrapRecovery:
         return false;
       default:
         return true;
@@ -400,6 +449,18 @@ smtHasBorrowThrottleStall(const TimeStruct::IewComm &info)
     return smtCanDonateRobHeadroom(info.robHeadStallReason) ||
            smtCanDonateRobHeadroom(info.lqHeadStallReason) ||
            smtCanDonateRobHeadroom(info.sqHeadStallReason);
+}
+
+inline bool
+smtHasBorrowThrottleLQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.lqHeadStallReason);
+}
+
+inline bool
+smtHasBorrowThrottleSQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.sqHeadStallReason);
 }
 
 inline bool

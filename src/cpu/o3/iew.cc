@@ -45,6 +45,7 @@
 
 #include "cpu/o3/iew.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <queue>
 
@@ -97,11 +98,14 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       renameToIEWDelay(params.renameToIEWDelay),
       enableDispatchStage(params.enableDispatchStage),
       renameWidth(params.renameWidth),
+      numPreDispatchThreads(params.smtNumPreDispatchThreads),
+      aggregateDispatchWidth(renameWidth * numPreDispatchThreads),
       wbNumInst(0),
       wbCycle(0),
       iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       enableStoreSetTrain(params.enable_storeSet_train),
+      mdpViolationAtCommit(params.mdp_violation_timing == "atCommit"),
       numThreads(params.numThreads),
       iewStats(cpu)
 {
@@ -109,6 +113,24 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("wbWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              wbWidth, static_cast<int>(MaxWidth));
+    panic_if(numPreDispatchThreads == 0 ||
+             numPreDispatchThreads > numThreads ||
+             numPreDispatchThreads > 2,
+             "smtNumPreDispatchThreads (%u) must be in [1, min(2, "
+             "numThreads (%u))]",
+             numPreDispatchThreads, numThreads);
+    panic_if(aggregateDispatchWidth > MaxWidth,
+             "aggregate SMT dispatch width (%u * %u) exceeds MaxWidth (%u)",
+             renameWidth, numPreDispatchThreads, MaxWidth);
+    panic_if(numPreDispatchThreads > 1 && enableDispatchStage,
+             "widened SMT pre-dispatch admission does not support the "
+             "optional dispatch queue stage");
+
+    if (params.mdp_violation_timing != "atResolve" &&
+        params.mdp_violation_timing != "atCommit") {
+        fatal("mdp_violation_timing must be atResolve or atCommit, got %s\n",
+              params.mdp_violation_timing.c_str());
+    }
 
     _status = Active;
     exeStatus = Running;
@@ -165,11 +187,11 @@ IEW::regProbePoints()
 IEW::IEWStats::IEWStats(CPU *cpu)
     : statistics::Group(cpu, "iew"),
     ADD_STAT(idleCycles, statistics::units::Cycle::get(),
-             "Number of cycles IEW is idle"),
+             "Number of cycles IEW is idle per thread"),
     ADD_STAT(squashCycles, statistics::units::Cycle::get(),
-             "Number of cycles IEW is squashing"),
+             "Number of cycles IEW is squashing per thread"),
     ADD_STAT(blockCycles, statistics::units::Cycle::get(),
-             "Number of cycles IEW is blocking"),
+             "Number of cycles IEW is blocking per thread"),
     ADD_STAT(unblockCycles, statistics::units::Cycle::get(),
              "Number of cycles IEW is unblocking"),
     ADD_STAT(dispatchedInsts, statistics::units::Count::get(),
@@ -190,6 +212,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Late VP applies skipped because virtual SQ exceeds its threshold"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
+    ADD_STAT(mdpViolationDeferred, statistics::units::Count::get(),
+             "RAW MDP violations deferred until Commit"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
              "Number of branches that were predicted taken incorrectly"),
     ADD_STAT(predictedNotTakenIncorrect, statistics::units::Count::get(),
@@ -198,7 +222,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of branch mispredicts detected at execute",
              predictedTakenIncorrect + predictedNotTakenIncorrect),
     ADD_STAT(dispDist, statistics::units::Count::get(),
-             "Number of branch mispredicts detected at execute"),
+             "Number of instructions dispatched in one cycle"),
+    ADD_STAT(dispatchThreadsPerCycle, statistics::units::Count::get(),
+             "Distinct SMT threads dispatched in one cycle"),
     executedInstStats(cpu),
     ADD_STAT(instsToCommit, statistics::units::Count::get(),
              "Cumulative count of insts sent to commit"),
@@ -227,6 +253,18 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
              "Number of dispatch stall reasons each tick (Total)")
 {
+    idleCycles
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    squashCycles
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    blockCycles
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
     instsToCommit
         .init(cpu->numThreads)
         .flags(statistics::total);
@@ -264,7 +302,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         .flags(statistics::total);
 
 
-    dispDist.init(0,10,1).flags(statistics::nozero);
+    dispDist.init(0, MaxWidth, 1).flags(statistics::pdf);
+    dispatchThreadsPerCycle.init(0, MaxThreads, 1).flags(statistics::pdf);
 
     std::map < StallEvent, const char* > stall_event_str = {
         { CacheMiss, "CacheMiss" },
@@ -326,6 +365,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::Atomic,"Atomic"},
         {StallReason::ResumeUnblock, "ResumeUnblock"},
         {StallReason::CommitSquash, "CommitSquash"},
+        {StallReason::ControlRecovery, "ControlRecovery"},
+        {StallReason::MemVioRecovery, "MemVioRecovery"},
+        {StallReason::VPRecovery, "VPRecovery"},
+        {StallReason::TrapRecovery, "TrapRecovery"},
         {StallReason::ROBFull, "ROBFull"},
         {StallReason::RegFull, "RegFull"},
         {StallReason::OtherStall, "OtherStall"},
@@ -656,6 +699,8 @@ IEW::takeOverFrom()
 void
 IEW::squash(ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] Squashing all instructions.\n", tid);
 
     for (auto& dp : dispQue) {
@@ -687,6 +732,8 @@ IEW::squash(ThreadID tid)
 void
 IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] [sn:%llu] Squashing from a specific instruction,"
             " PC: %s "
             "\n", tid, inst->seqNum, inst->pcState() );
@@ -715,12 +762,16 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
                 toCommit->squashedLoopIter[tid]);
     }
 
+    cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
+
     stallSig->blockRename[tid] = true;
 }
 
 void
 IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] Memory violation, squashing violator and younger "
             "insts, PC: %s [sn:%llu].\n", tid, inst->pcState(), inst->seqNum);
     // Need to include inst->seqNum in the following comparison to cover the
@@ -752,12 +803,16 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
                 toCommit->squashedLoopIter[tid]);
     }
 
+    cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
+
     stallSig->blockRename[tid] = true;
 }
 
 void
 IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
 {
+    recordThreadSquash(tid);
+
     DPRINTF(IEW, "[tid:%i] value prediction error, squashing violator and younger "
             "insts, PC: %s [sn:%llu].\n",
             tid, inst->pcState(), inst->seqNum);
@@ -789,6 +844,8 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
                 toCommit->squashedTargetId[tid],
                 toCommit->squashedLoopIter[tid]);
     }
+
+    cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
 
     stallSig->blockRename[tid] = true;
 }
@@ -965,16 +1022,19 @@ IEW::checkSquash()
             fetchRedirect[i] = false;
             iewStats.stallEvents[ROBWalk]++;
             iewStats.smtStallEvents[ROBWalk].sample(i);
-            setAllStalls(StallReason::CommitSquash);
+            setAllStalls(
+                squashCauseToStallReason(fromCommit->commitInfo[i].squashCause));
         }
 
         if (fromCommit->commitInfo[i].robSquashing) {
+            recordThreadSquash(i);
             DPRINTF(IEW, "[tid:%i] ROB is still squashing.\n", i);
 
             wroteToTimeBuffer = true;
             iewStats.stallEvents[ROBWalk]++;
             iewStats.smtStallEvents[ROBWalk].sample(i);
-            setAllStalls(StallReason::CommitSquash);
+            setAllStalls(
+                squashCauseToStallReason(fromCommit->commitInfo[i].squashCause));
         }
     }
 }
@@ -987,11 +1047,9 @@ IEW::moveInstsToBuffer()
         DPRINTF(IEW, "No instructions from rename to move to buffer.\n");
         return;
     }
-    ThreadID tid = fromRename->insts[0]->threadNumber;
-    assert(fixedbuffer[tid].empty());
     for (int i = 0; i < insts_from_rename; ++i) {
         const DynInstPtr &inst = fromRename->insts[i];
-        assert(inst->threadNumber == tid);
+        const ThreadID tid = inst->threadNumber;
         if (localSquashVer[tid].largerThan(inst->getVersion())) {
             inst->setSquashed();
         } else {
@@ -1045,7 +1103,8 @@ IEW::canInsertLDSTQue(ThreadID tid)
 void
 IEW::setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos)
 {
-    constexpr uint64_t dispatchAgeScale = 8;
+    const uint64_t dispatchAgeScale =
+        std::max<uint64_t>(8, aggregateDispatchWidth);
 
     assert(dispatch_pos >= 0);
     assert(dispatch_pos < static_cast<int>(dispatchAgeScale));
@@ -1054,6 +1113,50 @@ IEW::setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos)
     DPRINTF(IEW, "[tid:%i] [sn:%llu] ageCtr=%llu at dispatch pos %d.\n",
             inst->threadNumber, inst->seqNum,
             static_cast<unsigned long long>(inst->ageCtr), dispatch_pos);
+}
+
+bool
+IEW::threadHasStageWork(ThreadID tid)
+{
+    if (!fixedbuffer[tid].empty() || scheduler->getIQInsts(tid) != 0 ||
+        ldstQueue.getCount(tid) != 0) {
+        return true;
+    }
+
+    for (const auto &queue : dispQue) {
+        for (const auto &inst : queue) {
+            if (inst->threadNumber == tid) {
+                return true;
+            }
+        }
+    }
+
+    for (int i = 0; i < fromIssue->size; ++i) {
+        if (fromIssue->insts[i] && fromIssue->insts[i]->threadNumber == tid) {
+            return true;
+        }
+    }
+
+    for (int i = 0; i < MaxWidth; ++i) {
+        if (toCommit->insts[i] && toCommit->insts[i]->threadNumber == tid) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void
+IEW::recordThreadWork(ThreadID tid)
+{
+    cycleThreadWork[tid] = true;
+}
+
+void
+IEW::recordThreadSquash(ThreadID tid)
+{
+    cycleThreadSquash[tid] = true;
+    recordThreadWork(tid);
 }
 
 void
@@ -1065,6 +1168,7 @@ IEW::dispatchInsts()
 
     // check threads stall & status
     SmtActiveThreadArbiter active_arbiter;
+    std::vector<ThreadID> active_tids;
     auto freezeActiveThread = [this](ThreadID tid) {
         stallSig->blockRename[tid] = true;
         stallSig->renameBlockReason[tid] = StallReason::OtherFragStall;
@@ -1104,50 +1208,85 @@ IEW::dispatchInsts()
         stallSig->renameBlockReason[i] =
             rename_block ? block_reason : StallReason::NoStall;
         if (active) {
+            active_tids.push_back(i);
             const auto freeze =
                 active_arbiter.observe(i, smtBorrowPriority(iew_info));
-            if (freeze.previousActive != InvalidThreadID) {
-                freezeActiveThread(freeze.previousActive);
-            }
-            if (freeze.freezeCurrent) {
-                freezeActiveThread(i);
+            if (numPreDispatchThreads == 1) {
+                if (freeze.previousActive != InvalidThreadID) {
+                    freezeActiveThread(freeze.previousActive);
+                }
+                if (freeze.freezeCurrent) {
+                    freezeActiveThread(i);
+                }
             }
         }
     }
-    const ThreadID tid = active_arbiter.selected();
+    const ThreadID primary_tid = active_arbiter.selected();
 
-    if (tid != InvalidThreadID) {
-        DPRINTF(IEW,"Processing [tid:%i]\n",tid);
-
-        // dispatch to IQ
-        if (enableDispatchStage) {
-            classifyInstToDispQue(tid);
-        } else {
-            dispatchInstFromRename(tid);
+    if (primary_tid != InvalidThreadID) {
+        std::vector<ThreadID> selected_tids{primary_tid};
+        for (const ThreadID tid : active_tids) {
+            if (tid != primary_tid &&
+                selected_tids.size() < numPreDispatchThreads) {
+                selected_tids.push_back(tid);
+            }
         }
-        // check stall again
-        if (!fixedbuffer[tid].empty()) {
-            stallSig->blockRename[tid] = true;
-            stallSig->renameBlockReason[tid] =
-                blockReason == StallReason::NoStall ?
-                    StallReason::OtherFragStall : blockReason;
-            DPRINTF(IEW, "Dispatch bandwidth full, blocking thread %i\n", tid);
+        for (const ThreadID tid : active_tids) {
+            if (std::find(selected_tids.begin(), selected_tids.end(), tid) ==
+                selected_tids.end()) {
+                freezeActiveThread(tid);
+            }
         }
 
-        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid, NumDQ, nullptr, -1);
-        toRename->iewInfo[tid].lqHeadStallReason =
-            ldstQueue.lqEmpty(tid) ? StallReason::NoStall : checkLSQStall(tid, true);
-        toRename->iewInfo[tid].sqHeadStallReason =
-            ldstQueue.sqEmpty(tid) ? StallReason::NoStall : checkLSQStall(tid, false);
-        toRename->iewInfo[tid].blockReason = blockReason;
-        toRename->iewInfo[tid].ldstqCount = ldstQueue.getCount(tid);
-        toRename->iewInfo[tid].robCount = rob->getThreadEntries(tid);
-        toRename->iewInfo[tid].iqCount = scheduler->getIQInsts(tid);
+        unsigned dispatched_total = 0;
+        unsigned threads_dispatched = 0;
+        for (const ThreadID tid : selected_tids) {
+            DPRINTF(IEW, "Processing [tid:%i]\n", tid);
+            blockReason = StallReason::NoStall;
+            const unsigned dispatched = enableDispatchStage ?
+                classifyInstToDispQue(tid, renameWidth, dispatched_total) :
+                dispatchInstFromRename(tid, renameWidth, dispatched_total);
+            dispatched_total += dispatched;
+            threads_dispatched += dispatched != 0;
+
+            if (!fixedbuffer[tid].empty()) {
+                stallSig->blockRename[tid] = true;
+                stallSig->renameBlockReason[tid] =
+                    blockReason == StallReason::NoStall ?
+                        StallReason::OtherFragStall : blockReason;
+                DPRINTF(IEW,
+                        "Dispatch bandwidth full, blocking thread %i\n", tid);
+            }
+
+            auto &iew_info = toRename->iewInfo[tid];
+            iew_info.robHeadStallReason =
+                checkDispatchStall(tid, NumDQ, nullptr, -1);
+            iew_info.lqHeadStallReason =
+                ldstQueue.lqEmpty(tid) ? StallReason::NoStall :
+                                         checkLSQStall(tid, true);
+            iew_info.sqHeadStallReason =
+                ldstQueue.sqEmpty(tid) ? StallReason::NoStall :
+                                         checkLSQStall(tid, false);
+            iew_info.blockReason = blockReason;
+            iew_info.ldstqCount = ldstQueue.getCount(tid);
+            iew_info.robCount = rob->getThreadEntries(tid);
+            iew_info.iqCount = scheduler->getIQInsts(tid);
+        }
+        if (!enableDispatchStage) {
+            iewStats.dispDist.sample(dispatched_total);
+        }
+        iewStats.dispatchThreadsPerCycle.sample(threads_dispatched);
+    } else {
+        if (!enableDispatchStage) {
+            iewStats.dispDist.sample(0);
+        }
+        iewStats.dispatchThreadsPerCycle.sample(0);
     }
 }
 
-void
-IEW::dispatchInstFromRename(ThreadID tid)
+unsigned
+IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
+                            unsigned dispatch_offset)
 {
     DynInstPtr inst;
 
@@ -1163,7 +1302,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
     int disp_seq = -1;
 
     scheduler->lookahead(insts_to_dispatch);
-    while (!insts_to_dispatch.empty()) {
+    while (!insts_to_dispatch.empty() && dispatched < max_insts) {
         bool add_to_iq = false;
         auto &inst = insts_to_dispatch.front();
         disp_seq++;
@@ -1225,7 +1364,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
             inst->clearHtmTransactionalState();
         }
 
-        setDispatchAgeCtr(inst, dispatched);
+        setDispatchAgeCtr(inst, dispatch_offset + dispatched);
 
         if (!inst->isNop() && !inst->isEliminated()) {
             scheduler->addProducer(inst);
@@ -1322,8 +1461,6 @@ IEW::dispatchInstFromRename(ThreadID tid)
         dispatched++;
     }
 
-    iewStats.dispDist.sample(dispatched);
-
     if (!dispatch_stalls.empty()) {
         setAllStalls(dispatch_stalls.front());
         dispatch_stalls.pop();
@@ -1358,10 +1495,12 @@ IEW::dispatchInstFromRename(ThreadID tid)
         
     }
 
+    return dispatched;
 }
 
-void
-IEW::classifyInstToDispQue(ThreadID tid)
+unsigned
+IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
+                           unsigned dispatch_offset)
 {
     auto &insts_to_dispatch = fixedbuffer[tid];
 
@@ -1371,7 +1510,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
     std::queue<StallReason> dispatch_stalls;
     StallReason breakDispatch = StallReason::NoStall;
     unsigned dispatched = 0;
-    while (!insts_to_dispatch.empty()) {
+    while (!insts_to_dispatch.empty() && dispatched < max_insts) {
         auto& inst = insts_to_dispatch.front();
         int ins = cpu->cpuStats.committedInsts.total();
         if (cpu->hasHintDownStream() && ins % 10000 == 1) {
@@ -1404,7 +1543,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
                 inst->clearHtmTransactionalState();
             }
 
-            setDispatchAgeCtr(inst, dispatched);
+            setDispatchAgeCtr(inst, dispatch_offset + dispatched);
 
             if (inst->isAtomic()) {
                 ++iewStats.dispStoreInsts;
@@ -1485,6 +1624,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
         iewStats.stallEvents[DispBWFull]++;
         iewStats.smtStallEvents[DispBWFull].sample(tid);
     }
+    return dispatched;
 }
 
 void
@@ -1718,16 +1858,51 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
                     violator->pcState(), violator->seqNum,
                     inst->pcState(), inst->seqNum, inst->physEffAddr);
 
-            fetchRedirect[tid] = true;
-
-            // Tell the instruction queue that a violation has occured.
-            if (enableStoreSetTrain) {
-                instQueue.violation(inst, violator);
-            }
             violator->setProducerStorePC(inst->pcState().instAddr());
 
-            // Squash.
-            squashDueToMemOrder(violator, tid);
+            const bool raw_mdp_violation =
+                (inst->isStore() || inst->isAtomic()) &&
+                // Once a load has a deferred RAW violation, keep all
+                // subsequent producer observations on the deferred path.
+                // The first producer remains the training target captured by
+                // LSQUnit::checkViolations().
+                (violator->memDepInfo.violationPending ||
+                 violator->memDepInfo.violatingStoreSeqNum == inst->seqNum);
+            if (mdpViolationAtCommit && raw_mdp_violation) {
+                if (!violator->memDepInfo.violationPending) {
+                    // Preserve the first concrete producer observed before
+                    // Commit.  The load may overlap multiple younger stores
+                    // while recovery is deferred, but the original model
+                    // trains on the first violation that triggers recovery.
+                    violator->memDepInfo.violationPending = true;
+                    ++iewStats.mdpViolationDeferred;
+                }
+                DPRINTF(IEW,
+                        "Deferring RAW MDP violation to Commit: load PC %s "
+                        "[sn:%llu], store PC %s [sn:%llu].\n",
+                        violator->pcState(), violator->seqNum,
+                        inst->pcState(), inst->seqNum);
+            } else {
+                fetchRedirect[tid] = true;
+
+                // Tell the instruction queue that a violation has occured.
+                if (instQueue.usesPHAST(tid)) {
+                    auto &mdp_history =
+                        cpu->getDecode()->getBranchHistory(tid);
+                    instQueue.violation(inst->seqNum,
+                                        inst->pcState().instAddr(),
+                                        violator, mdp_history);
+                } else if (enableStoreSetTrain) {
+                    auto &mdp_history =
+                        cpu->getCommit()->getBranchHistory(tid);
+                    instQueue.violation(inst->seqNum,
+                                        inst->pcState().instAddr(),
+                                        violator, mdp_history);
+                }
+
+                // Squash.
+                squashDueToMemOrder(violator, tid);
+            }
 
             ++iewStats.memOrderViolationEvents;
         }
@@ -1989,6 +2164,8 @@ IEW::tick()
 
     wroteToTimeBuffer = false;
     updatedQueues = false;
+    cycleThreadWork.fill(false);
+    cycleThreadSquash.fill(false);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         toFetch->iewInfo[tid].redirectPending = false;
         toFetch->iewInfo[tid].resolvedCFIs.clear();
@@ -1996,6 +2173,34 @@ IEW::tick()
 
     scheduler->tick();
     ldstQueue.tick();
+    
+    // Update LSQ borrowing donor status for LQ and SQ
+    // A thread becomes a donor if it has no buffered rename instructions and is stalled
+    // Use hold cycles to avoid frequent donor state transitions
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        bool has_buffered_rename = !fixedbuffer[tid].empty();
+        
+        // For LQ: determine if thread should be a donor
+        bool lq_donor = false;
+        lq_donor = smtHasBorrowThrottleLQStall(toFetch->iewInfo[tid]);
+        if (lq_donor) {
+            ldstQueue.setLQBorrowingDonor(tid, true);
+        } else {
+            ldstQueue.setLQBorrowingDonor(tid, false);
+        }
+        
+        // For SQ: determine if thread should be a donor
+        bool sq_donor = false;
+        sq_donor = smtHasBorrowThrottleSQStall(toFetch->iewInfo[tid]);
+        if (sq_donor) {
+            ldstQueue.setSQBorrowingDonor(tid, true);
+        } else {
+            ldstQueue.setSQBorrowingDonor(tid, false);
+        }
+    }
+    
+    // Add borrowing state hold cycle for LSQ
+    ldstQueue.addBorrowingStateHoldCycle();
 
     if (valuePred && vpFpcClearVirtSQNumer > 0 &&
         vpFpcClearVirtSQDenom > 0) {
@@ -2019,6 +2224,11 @@ IEW::tick()
 
     // dispatch
     moveInstsToBuffer();
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        cycleThreadWork[tid] = threadHasStageWork(tid);
+    }
+
     checkSquash();
     dispatchInsts();
 
@@ -2060,8 +2270,10 @@ IEW::tick()
         DPRINTF(IEW,"Commit processing [tid:%i]\n",tid);
 
         if (fromCommit->commitInfo[tid].doneMemSeqNum != 0 &&
-            !fromCommit->commitInfo[tid].squash &&
-            !fromCommit->commitInfo[tid].robSquashing) {
+            (fromCommit->commitInfo[tid].isDeferedMDPSquash ||
+              (!fromCommit->commitInfo[tid].squash &&
+               !fromCommit->commitInfo[tid].robSquashing))) {
+            recordThreadWork(tid);
 
             // Marks some of the entries in the store queue as canWB and
             // they will be moved to the store buffer when appropriate.
@@ -2073,6 +2285,7 @@ IEW::tick()
         if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
             !fromCommit->commitInfo[tid].squash &&
             !fromCommit->commitInfo[tid].robSquashing) {
+            recordThreadWork(tid);
 
             ldstQueue.commitLoads(fromCommit->commitInfo[tid].doneSeqNum,tid);
             updateLSQNextCycle = true;
@@ -2081,6 +2294,7 @@ IEW::tick()
         }
 
         if (fromCommit->commitInfo[tid].nonSpecSeqNum != 0) {
+            recordThreadWork(tid);
 
             //DPRINTF(IEW,"NonspecInst from thread %i",tid);
             if (fromCommit->commitInfo[tid].strictlyOrdered) {
@@ -2095,6 +2309,20 @@ IEW::tick()
 
         if (broadcast_free_entries) {
             wroteToTimeBuffer = true;
+        }
+    }
+
+    // Classify every thread once per cycle, using work and squash observed
+    // across the entire tick rather than only the pre-execute snapshot.
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        cycleThreadWork[tid] = cycleThreadWork[tid] || threadHasStageWork(tid);
+
+        if (cycleThreadSquash[tid]) {
+            ++iewStats.squashCycles[tid];
+        } else if (stallSig->blockRename[tid]) {
+            ++iewStats.blockCycles[tid];
+        } else if (!cycleThreadWork[tid]) {
+            ++iewStats.idleCycles[tid];
         }
     }
 
@@ -2397,8 +2625,6 @@ IEW::checkDispatchStall(ThreadID tid, int dq_stall, const DynInstPtr &dispatch_i
             }
         }
     }
-
-    return StallReason::OtherStall;
 }
 
 StallReason

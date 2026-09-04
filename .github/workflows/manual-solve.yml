@@ -27,15 +27,17 @@ on:
         description: "Built-in checkpoint group to use, or custom_bin to disable built-in slices and use the custom_bin field instead"
         required: true
         type: choice
-        default: "gcc15-spec06-0.3c"
+        default: "spec06-rva23-novec-gcc16-0.3c"
         options:
           - custom_bin
-          - gcc12-spec06-0.3c
-          - gcc12-spec06-0.8c
-          - gcc12-spec06-1.0c
+          - spec06-rva23-novec-gcc16-0.3c
+          - spec06-rva23-novec-gcc16-1.0c
           - gcc15-spec06-0.3c
           - gcc15-spec06-0.8c
           - gcc15-spec06-1.0c
+          - gcc12-spec06-0.3c
+          - gcc12-spec06-0.8c
+          - gcc12-spec06-1.0c
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
@@ -50,7 +52,7 @@ on:
         type: string
         default: "4"
       distributed_servers:
-        description: "Optional distributed server list. Empty runs only on the current CI runner; default uses node020-node034,node036-node039."
+        description: "Optional distributed server list. Empty runs only on the current CI runner; default uses node020-node029,node033-node034,node036-node039."
         required: false
         type: string
         default: ""
@@ -228,7 +230,6 @@ jobs:
             --max-parallel-workloads "${{ github.event.inputs.max_parallel_workloads }}"
             --distributed-servers "${{ github.event.inputs.distributed_servers }}"
             --distributed-jobs-per-server "${{ github.event.inputs.distributed_jobs_per_server }}"
-            --distributed-dispatch-host "ci-runner@172.28.9.101"
             --distributed-ssh-option StrictHostKeyChecking=accept-new
             --distributed-ssh-option UserKnownHostsFile="${{ needs.setup.outputs.run_dir }}/known_hosts"
             --distributed-ssh-option ConnectTimeout=10

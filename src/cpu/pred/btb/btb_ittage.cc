@@ -61,7 +61,8 @@ ittageStats(this, p.numPredictors)
             state.altTagFoldedHist.emplace_back(
                 (int)histLengths[i], (int)tableTagBits[i] - 1, (int)16);
             state.indexFoldedHist.emplace_back(
-                (int)histLengths[i], (int)tableIndexBits[i], (int)16);
+                (int)histLengths[i],
+                (int)partitionIndexBits(tableIndexBits[i]), (int)16);
         }
     }
     // useAlt.resize(128);
@@ -214,7 +215,8 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     // all btb entries should use the same lookup result
     // but each btb entry can use prediction from different tables
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get(), asidHash);
+        Addr index = getTageIndex(
+            stream_start, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
                               state.altTagFoldedHist[i].get(), asidHash);
         auto &entry = tageTable[i][index];
@@ -246,8 +248,78 @@ BTBITTAGE::getPredictionMeta(ThreadID tid) {
 }
 
 void
+BTBITTAGE::refreshPredictionMeta(Addr stream_start,
+                                 const bitset &history,
+                                 FullBTBPrediction &pred)
+{
+    (void)history;
+    auto &state = historyState(pred.tid);
+
+    threadMeta[pred.tid] = std::make_shared<TageMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->tagFoldedHist = state.tagFoldedHist;
+    meta->altTagFoldedHist = state.altTagFoldedHist;
+    meta->indexFoldedHist = state.indexFoldedHist;
+
+    lookupEntries.clear();
+    lookupIndices.clear();
+    lookupTags.clear();
+    bitset useful_mask(numPredictors, false);
+    for (int i = 0; i < numPredictors; ++i) {
+        Addr index = getTageIndex(
+            stream_start, i, state.indexFoldedHist[i].get(),
+            pred.asidHash, pred.tid);
+        Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
+                              state.altTagFoldedHist[i].get(), pred.asidHash);
+        auto &entry = tageTable[i][index];
+        lookupEntries.push_back(entry);
+        lookupIndices.push_back(index);
+        lookupTags.push_back(tag);
+        useful_mask[i] = entry.useful;
+    }
+    meta->usefulMask = std::move(useful_mask);
+
+    for (const auto &btb_entry : pred.btbEntries) {
+        if (!(btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid)) {
+            continue;
+        }
+
+        bool provided = false;
+        bool alt_provided = false;
+        TageTableInfo main_info, alt_info;
+
+        for (int i = numPredictors - 1; i >= 0; --i) {
+            auto &way = lookupEntries[i];
+            bool match = way.valid && lookupTags[i] == way.tag &&
+                btb_entry.pc == way.pc;
+            if (match) {
+                if (!provided) {
+                    main_info = TageTableInfo(true, way, i, lookupIndices[i],
+                                              lookupTags[i]);
+                    provided = true;
+                } else if (!alt_provided) {
+                    alt_info = TageTableInfo(true, way, i, lookupIndices[i],
+                                             lookupTags[i]);
+                    alt_provided = true;
+                    break;
+                }
+            }
+        }
+
+        bool main_weak = main_info.entry.counter == 0;
+        bool use_alt_provider = main_weak && alt_provided;
+        bool use_base = !provided || (provided && main_weak && !alt_provided);
+        bool use_alt = use_alt_provider || use_base;
+        meta->preds[btb_entry.pc] = TagePrediction(
+            btb_entry.pc, main_info, alt_info, use_alt, main_info.entry.target);
+    }
+}
+
+void
 BTBITTAGE::update(const FetchTarget &stream)
 {
+    int &resetCnt = usesTidPartitionedStorage() ?
+        usefulResetCntByThread[stream.tid] : usefulResetCnt;
     if (debugPC == stream.startPC || debugPC2 == stream.startPC) {
         debugFlag = true;
     }
@@ -354,27 +426,31 @@ BTBITTAGE::update(const FetchTarget &stream)
         bool canAllocate = num_tables_can_allocate > 0;
         if (needToAllocate) {
             if (canAllocate) {
-                usefulResetCnt -= 1;
-                if (usefulResetCnt <= 0) {
-                    usefulResetCnt = 0;
+                resetCnt -= 1;
+                if (resetCnt <= 0) {
+                    resetCnt = 0;
                 }
-                DPRINTF(ITTAGE, "can allocate, usefulResetCnt %d\n", usefulResetCnt);
+                DPRINTF(ITTAGE, "can allocate, usefulResetCnt %d\n", resetCnt);
             } else {
-                usefulResetCnt += 1;
-                if (usefulResetCnt >= 256) {
-                    usefulResetCnt = 256;
+                resetCnt += 1;
+                if (resetCnt >= 256) {
+                    resetCnt = 256;
                 }
-                DPRINTF(ITTAGE, "can not allocate, usefulResetCnt %d\n", usefulResetCnt);
+                DPRINTF(ITTAGE, "can not allocate, usefulResetCnt %d\n", resetCnt);
             }
-            if (usefulResetCnt == 256) {
+            if (resetCnt == 256) {
                 DPRINTF(ITTAGE, "reset useful bit of all entries\n");
                 for (auto &table : tageTable) {
-                    for (auto &entry : table) {
-                        entry.useful = 0;
+                    const unsigned begin = partitionBegin(
+                        table.size(), stream.tid);
+                    const unsigned end = partitionEnd(
+                        table.size(), stream.tid);
+                    for (unsigned index = begin; index < end; ++index) {
+                        table[index].useful = 0;
                     }
                 }
                 ittageStats.updateResetU++;
-                usefulResetCnt = 0;
+                resetCnt = 0;
             }
         }
 
@@ -405,7 +481,9 @@ BTBITTAGE::update(const FetchTarget &stream)
                 unsigned startTable = main_found ? main_info.table + 1 : 0;
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
-                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get(), stream.asidHash);
+                    Addr newIndex = getTageIndex(
+                        startAddr, ti, updateIndexFoldedHist[ti].get(),
+                        stream.asidHash, stream.tid);
                     Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(),
                                              updateAltTagFoldedHist[ti].get(), stream.asidHash);
                     assert(newIndex < tageTable[ti].size());
@@ -467,20 +545,24 @@ BTBITTAGE::getTageTag(Addr pc, int t, uint8_t asidHash)
 }
 
 Addr
-BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
+BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
+                        uint8_t asidHash, ThreadID tid)
 {
-    // Create mask for tableIndexBits[t]
-    uint64_t mask = ((1ULL << tableIndexBits[t]) - 1);
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
+    uint64_t mask = ((1ULL << localIndexBits) - 1);
 
     // Extract lower bits of PC and XOR with folded history
     uint64_t pcBits = (pc >> floorLog2(blockSize));
-    return xorAsidHashIntoIndex((pcBits ^ foldedHist) & mask, tableIndexBits[t], asidHash);
+    Addr localIndex = xorAsidHashIntoIndex(
+        (pcBits ^ foldedHist) & mask, localIndexBits, asidHash);
+    return partitionIndex(localIndex, tableSizes[t], tid);
 }
 
 Addr
-BTBITTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
+BTBITTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash, ThreadID tid)
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
+    return getTageIndex(pc, t, historyState(tid).indexFoldedHist[t].get(),
+                        asidHash, tid);
 }
 
 bool
@@ -548,9 +630,12 @@ BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken,
 }
 
 bool
-BTBITTAGE::tageHit()
+BTBITTAGE::tageHit(ThreadID tid)
 {
-    auto meta = getPredictionMeta(0);
+    auto meta = getPredictionMeta(tid);
+    if (!meta) {
+        return false;
+    }
     auto preds = std::static_pointer_cast<TageMeta>(meta)->preds;
     bool hit = false;
     for (auto & [pc, pred] : preds) {

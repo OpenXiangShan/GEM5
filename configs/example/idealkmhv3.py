@@ -1,12 +1,8 @@
-import argparse
 import sys
 
-import m5
-from m5.defines import buildEnv
 from m5.objects import *
 from m5.objects.ValuePredictor import *
-from m5.util import addToPath, fatal, warn
-from m5.util.fdthelper import *
+from m5.util import addToPath
 
 addToPath('../')
 addToPath('../../')
@@ -30,6 +26,7 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_level3_limit = args.ptw_level3_limit
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
+
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -42,6 +39,7 @@ def setKmhV3IdealParams(args, system):
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4  # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu
         cpu.fetchQueueSize = 64
+        cpu.enableTwoFetch = not args.smt
 
         # decode
         cpu.fetchToDecodeDelay = 3
@@ -53,6 +51,7 @@ def setKmhV3IdealParams(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
+        cpu.EnablePHASTMDP = True
 
         # dispatch
         cpu.enableDispatchStage = False

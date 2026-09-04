@@ -283,17 +283,20 @@ class LSQUnit
       uint32_t physicalSqEntries,
       uint32_t ldPipeStages, uint32_t stPipeStages, uint32_t maxRARQEntries, uint32_t maxRAWQEntries,
       unsigned rarDequeuePerCycle, unsigned rawDequeuePerCycle,
-      unsigned loadCompletionWidth, unsigned storeCompletionWidth);
+      unsigned loadCompletionWidth, unsigned storeCompletionWidth,
+      unsigned loadPipeCount, unsigned storePipeCount);
 
     /** We cannot copy LSQUnit because it has stats for which copy
      * contructor is deleted explicitly. However, STL vector requires
      * a valid copy constructor for the base type at compile time.
      */
-    LSQUnit(const LSQUnit &l) : physicalSQEntries(0),
+    LSQUnit(const LSQUnit &l) : loadPipeCount(0), storePipeCount(0),
+        physicalSQEntries(0),
         virtualSQEnabled(false), addrOrDataReadyNums(0),
         maxRARQEntries(0), maxRAWQEntries(0),
         rarDequeuePerCycle(0), rawDequeuePerCycle(0), loadCompletionWidth(0),
-        storeCompletionWidth(0), stats(nullptr)
+        storeCompletionWidth(0),
+        stats(nullptr, 1, 1)
     {
         panic("LSQUnit is not copy-able");
     }
@@ -400,7 +403,7 @@ class LSQUnit
     bool storeBufferEmpty(ThreadID tid) { return lsq->storeBufferEmpty(tid); }
     bool storeBufferSQWillFull() const
     {
-        return addrOrDataReadyNums > sqFullUpperLimit;
+        return storeQueue.size() > sqFullUpperLimit;
     }
     unsigned physicalStoreQueueEntries() const { return physicalSQEntries; }
     unsigned physicalStoreQueueUsed() const { return addrOrDataReadyNums; }
@@ -721,21 +724,30 @@ class LSQUnit
     /** Points to the last position of continuously completed instructions from the beginning in storeQueue */
     size_t storeCompletedIdx;
 
-    const static int MaxPipeWidth = 4;
+    /** Load pipeline lanes and PMU channels, derived from scheduler ports. */
+    const unsigned loadPipeCount;
+    /** Store S0 lanes, derived from scheduler STA+STD ports. */
+    const unsigned storePipeCount;
 
     /** Struct that defines the information passed through Load Pipeline. */
     struct LoadPipeStruct
     {
+        LoadPipeStruct() : size(0), insts() {}
+
+        // S0 is shared by all load issue sources in the current cycle.
         int size;
 
-        DynInstPtr insts[MaxPipeWidth];
+        std::vector<DynInstPtr> insts;
     };
     /** Struct that defines the information passed through Store Pipeline. */
     struct StorePipeStruct
     {
+        StorePipeStruct() : size(0), insts() {}
+
+        // S0 is shared by all store issue sources in the current cycle.
         int size;
 
-        DynInstPtr insts[MaxPipeWidth];
+        std::vector<DynInstPtr> insts;
     };
 
 
@@ -858,7 +870,8 @@ class LSQUnit
     // the appropriate number of times.
     struct LSQUnitStats : public statistics::Group
     {
-        LSQUnitStats(statistics::Group *parent);
+        LSQUnitStats(statistics::Group *parent, unsigned loadPipeCount,
+                     unsigned storePipeCount);
 
         /** Total number of loads forwaded from LSQ stores. */
         statistics::Scalar forwLoads;

@@ -55,8 +55,10 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
  * @return FetchTarget Initialized fetch stream
  */
 FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
-                       std::shared_ptr<void> meta, Addr endInstPC) {
+                       std::shared_ptr<void> meta, Addr endInstPC,
+                       ThreadID tid = 0) {
     FetchTarget stream;
+    stream.tid = tid;
     stream.startPC = startPC;
     stream.resolved = true;
     stream.exeBranchInfo = branch;
@@ -114,7 +116,8 @@ predictUpdateCycle(MBTB* btb,
      const BranchInfo& branch,
      bool taken,
      const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0),
-     Addr endInstPC = 0) {
+     Addr endInstPC = 0,
+     ThreadID tid = 0) {
     // If endInstPC not specified, use branch.pc + branch.size
     if (endInstPC == 0) {
         endInstPC = branch.pc + branch.size;
@@ -122,11 +125,15 @@ predictUpdateCycle(MBTB* btb,
 
     // Prediction phase
     std::vector<FullBTBPrediction> stagePreds(4);
+    for (auto &pred : stagePreds) {
+        pred.tid = tid;
+    }
     btb->putPCHistory(startPC, history, stagePreds);
-    auto meta = btb->getPredictionMeta();
+    auto meta = btb->getPredictionMeta(tid);
 
     // Update phase
-    FetchTarget stream = setupStream(startPC, branch, taken, meta, endInstPC);
+    FetchTarget stream = setupStream(
+        startPC, branch, taken, meta, endInstPC, tid);
     // Populate predicted BTB entries in stream from stage predictions
     // Use entries from the first valid stage (delay)
     if (btb->getDelay() < stagePreds.size()) {
@@ -145,6 +152,9 @@ predictUpdateCycle(MBTB* btb,
     // Return final predictions after update
     stagePreds.clear();
     stagePreds.resize(4);
+    for (auto &pred : stagePreds) {
+        pred.tid = tid;
+    }
     btb->putPCHistory(startPC, history, stagePreds);
 
     return stagePreds;
@@ -204,6 +214,63 @@ TEST_F(BTBTest, EmptyPrediction) {
     for (int i = 0; i < stagePreds.size(); i++) {
         EXPECT_TRUE(stagePreds[i].btbEntries.empty());
         EXPECT_FALSE(stagePreds[i].isTaken());
+    }
+}
+
+// Interleaved SMT predictions must retain each thread's metadata until the
+// corresponding FetchTarget is created.
+TEST_F(BTBTest, PredictionMetadataIsPerThread) {
+    boost::dynamic_bitset<> history(8, 0);
+    std::vector<FullBTBPrediction> thread0Preds(4);
+    std::vector<FullBTBPrediction> thread1Preds(4);
+
+    for (auto &pred : thread0Preds) {
+        pred.tid = 0;
+    }
+    for (auto &pred : thread1Preds) {
+        pred.tid = 1;
+    }
+
+    mbtb->putPCHistory(0x1000, history, thread0Preds);
+    auto thread0Meta = mbtb->getPredictionMeta(0);
+    ASSERT_NE(thread0Meta, nullptr);
+
+    mbtb->putPCHistory(0x2000, history, thread1Preds);
+    auto thread1Meta = mbtb->getPredictionMeta(1);
+    ASSERT_NE(thread1Meta, nullptr);
+
+    EXPECT_NE(thread0Meta, thread1Meta);
+    EXPECT_EQ(mbtb->getPredictionMeta(0), thread0Meta);
+    EXPECT_EQ(mbtb->getPredictionMeta(1), thread1Meta);
+}
+
+TEST_F(BTBTest, TidPartitionKeepsSamePcEntriesIndependent) {
+    MBTB partitionedBtb(16, 8, 4, 1);
+    partitionedBtb.setSmtTidPartitioned(true);
+
+    constexpr Addr startPC = 0x1000;
+    constexpr Addr branchPC = 0x1004;
+    auto thread0Branch = createBranchInfo(branchPC, 0x2000, true);
+    auto thread1Branch = createBranchInfo(branchPC, 0x3000, true);
+
+    predictUpdateCycle(
+        &partitionedBtb, startPC, thread0Branch, true,
+        boost::dynamic_bitset<>(8, 0), 0, 0);
+    predictUpdateCycle(
+        &partitionedBtb, startPC, thread1Branch, true,
+        boost::dynamic_bitset<>(8, 0), 0, 1);
+
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        std::vector<FullBTBPrediction> predictions(4);
+        for (auto &pred : predictions) {
+            pred.tid = tid;
+        }
+        partitionedBtb.putPCHistory(
+            startPC, boost::dynamic_bitset<>(8, 0), predictions);
+
+        ASSERT_EQ(predictions[partitionedBtb.getDelay()].btbEntries.size(), 1);
+        EXPECT_EQ(predictions[partitionedBtb.getDelay()].btbEntries[0].target,
+                  tid == 0 ? thread0Branch.target : thread1Branch.target);
     }
 }
 

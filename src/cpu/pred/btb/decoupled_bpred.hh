@@ -24,6 +24,7 @@
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
+#include "cpu/pred/btb/pairtage.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "cpu/pred/general_arch_db.hh"
@@ -76,6 +77,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     CPU *cpu;
     ThreadID nextPredictTid = 0;
+    const unsigned numPredictingThreads;
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
@@ -87,6 +89,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     AheadBTB *abtb{};
     MBTB *mbtb{};
     MicroTAGE *microtage{};
+    PairTAGE *pairtage{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
@@ -137,13 +140,19 @@ class DecoupledBPUWithBTB : public BPredUnit
         boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
+        PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
+        PairTAGE::TrainPacket finalTrainPacket;
+        PairTAGE::TrainPacket twoTakenTrainPacket;
+        std::vector<BTBEntry> twoTakenBTBEntries;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
         bool nextPredictionAfterSquash{false};
         bool blockPredictionPending{false};
         bool redirectPending{false};
+        bool twoTakenTrainReady{false};
+        bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
     std::vector<HistoryManager> historyManagers;
@@ -160,13 +169,19 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     bool isThreadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
-    ThreadID scheduleThread();
+    std::vector<ThreadID> scheduleThreads();
 
     void processNewPrediction(ThreadID tid);
+    void prepareTwoTakenTraining(ThreadID tid);
+    void processTwoTakenBlock(ThreadID tid);
+    void refreshTwoTakenPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
+    bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
+    bool pairtageFirstBlockNotOverriden(ThreadID tid) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
+    FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
 
-    void updateHistoryForPrediction(FetchTarget &entry);
+    void updateHistoryForPrediction(FetchTarget &entry, FullBTBPrediction &pred);
 
     void fillAheadPipeline(FetchTarget &entry);
 
@@ -312,6 +327,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar scheduleIneligibleThreadSkips;
         statistics::Scalar scheduleNoEligibleThread;
         statistics::Scalar redirectPendingPredictionSkips;
+        statistics::Distribution predictionsStartedPerCycle;
+        statistics::Vector predictionsStartedByThread;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -322,7 +339,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
 
-        DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
+        DBPBTBStats(statistics::Group* parent, unsigned numStages,
+                    unsigned fsqSize, unsigned maxInstsNum,
+                    unsigned numThreads);
     } dbpBtbStats;
 
   public:
@@ -421,10 +440,26 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    bool ftqHasNext(ThreadID tid) const
+    {
+        return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);
+    }
+    const FetchTarget &ftqNextTarget(ThreadID tid) const
+    {
+        assert(ftqHasNext(tid));
+        return ftq.get(ftq.fetchId(tid) + 1, tid);
+    }
     int getTargetTid(const std::array<bool, MaxThreads> &eligible,
                      unsigned *ineligibleSkips)
     {
         return ftq.getTargetTid(eligible, ineligibleSkips);
+    }
+    
+    int getTargetTidByFetchQueueSize(const std::array<bool, MaxThreads> &eligible,
+                                     unsigned *ineligibleSkips,
+                                     const std::array<unsigned, MaxThreads> &fetchQueueSizes)
+    {
+        return ftq.getTargetTidByFetchQueueSize(eligible, ineligibleSkips, fetchQueueSizes);
     }
 
     void dumpFsq(const char *when);

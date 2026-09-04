@@ -624,7 +624,14 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
         InstSeqNum seqnum = 0;
         for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
             auto& inst = *it;
-            if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted()) {
+            if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted() ||
+                 // If this inst contains a raw violation that is only 
+                 // handled during a commit, do not bypass it.
+                 inst->memDepInfo.violationPending ||
+                 // An external snoop can still turn a possible violation into a
+                 // ReExec fault. Keep younger stores out of the SBuffer until the
+                 // load either commits or is squashed.
+                 inst->possibleLoadViolation()) {
                 break;
             }
             seqnum = inst->seqNum;

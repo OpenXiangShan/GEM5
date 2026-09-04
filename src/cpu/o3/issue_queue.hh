@@ -124,8 +124,16 @@ class IssueQue : public SimObject
     int numLoadPipe = 0;
     int numStorePipe = 0;
     int loadPipeId = -1;
+
+    enum class VectorSplitKind
+    {
+        Load,
+        Store
+    };
+
     const unsigned vectorSplitUnits;
-    unsigned nextVectorSplitUnit = 0;
+    unsigned nextVectorLoadSplitUnit = 0;
+    unsigned nextVectorStoreSplitUnit = 0;
 
     struct select_policy
     {
@@ -183,9 +191,12 @@ class IssueQue : public SimObject
     };
 
     std::queue<DynInstPtr> replayQ;  // only for mem
-    std::queue<DynInstPtr> vectorReadyQ;
-    std::queue<bool> vectorReadyQReplay;
-    std::vector<VectorSplitUnitState> vectorSplitStates;
+    std::queue<DynInstPtr> vectorLoadReadyQ;
+    std::queue<bool> vectorLoadReadyQReplay;
+    std::queue<DynInstPtr> vectorStoreReadyQ;
+    std::queue<bool> vectorStoreReadyQReplay;
+    std::vector<VectorSplitUnitState> vectorLoadSplitStates;
+    std::vector<VectorSplitUnitState> vectorStoreSplitStates;
     std::queue<DynInstPtr> vectorDelayedReadyQ;
     std::queue<bool> vectorDelayedReadyQReplay;
     std::unordered_set<InstSeqNum> vectorReadyQSeqs;
@@ -219,13 +230,22 @@ class IssueQue : public SimObject
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
     bool isVectorMemInst(const DynInstPtr& inst) const;
+    bool needsVectorMemSplit(const DynInstPtr& inst) const;
+    VectorSplitKind vectorSplitKind(const DynInstPtr& inst) const;
+    const char* vectorSplitKindName(VectorSplitKind kind) const;
     bool isBlockingVectorSplitInst(const DynInstPtr& inst) const;
-    bool hasAvailableVectorSplitUnit() const;
-    int selectVectorSplitUnit();
+    std::vector<VectorSplitUnitState>& vectorSplitStatesFor(VectorSplitKind kind);
+    const std::vector<VectorSplitUnitState>& vectorSplitStatesFor(VectorSplitKind kind) const;
+    unsigned& nextVectorSplitUnitFor(VectorSplitKind kind);
+    bool hasAvailableVectorSplitUnit(VectorSplitKind kind) const;
+    int selectVectorSplitUnit(VectorSplitKind kind);
+    Tick nextVectorSplitReleaseTick(VectorSplitKind kind) const;
     Tick nextVectorSplitReleaseTick() const;
     void eraseVectorSplitBlocker(InstSeqNum seq_num);
     void enqueueVectorMemDelay(const DynInstPtr& inst, bool replay);
+    void tryStartVectorMemSplit(VectorSplitKind kind);
     void tryStartVectorMemSplit();
+    void releaseVectorSplitUnits(VectorSplitKind kind);
     void scheduleVectorReadyQEvent();
     void releaseVectorDelayedReadyQ();
     void issueToFu();
@@ -316,6 +336,10 @@ class Scheduler : public SimObject
     bool old_disp = false;
     const int intRegfileBanks;
 
+    /** Load/store pipe counts derived from scheduler issue ports. */
+    unsigned loadPipeCount = 0;
+    unsigned storePipeCount = 0;
+
     struct SchedulerStats : public statistics::Group
     {
         SchedulerStats(statistics::Group* parent);
@@ -335,7 +359,7 @@ class Scheduler : public SimObject
     };
     using IQGroup = std::vector<IssueQue*>;
 
-    std::vector<int> opExecTimeTable;
+    std::vector<uint32_t> opExecTimeTable;
     std::vector<bool> opPipelined;
     std::vector<IQGroup> dispTable;
     std::vector<IssueQue*> issueQues;
@@ -355,7 +379,7 @@ class Scheduler : public SimObject
     using OccupancyType = std::vector<std::pair<DynInstPtr, int>>;
     std::vector<OccupancyType> rdRfPortOccupancy;
     // typePortId : [inst : priority : time]
-    std::vector<std::tuple<DynInstPtr, int, int>> wrRfPortOccupancy;
+    std::vector<std::tuple<DynInstPtr, int, uint32_t>> wrRfPortOccupancy;
 
     struct NullStruct {};
 
@@ -376,6 +400,8 @@ class Scheduler : public SimObject
     PendingWakeEventsType specWakeEvents;
 
     Scheduler(const SchedulerParams& params);
+    unsigned getLoadPipeCount() const { return loadPipeCount; }
+    unsigned getStorePipeCount() const { return storePipeCount; }
     void setCPU(CPU* cpu, LSQ* lsq, IEW* iew);
     void resetDepGraph(uint64_t numPhysRegs);
     void setAllScoreBoard(PhysRegIdPtr reg);

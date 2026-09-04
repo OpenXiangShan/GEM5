@@ -44,12 +44,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdio>
 #include <deque>
 #include <list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "base/refcnt.hh"
 #include "base/trace.hh"
@@ -244,6 +246,8 @@ class DynInst : public ExecContext, public RefCounted
         IsStrictlyOrdered,
         ReqMade,
         MemOpDone,
+        VectorMemCrossCacheBlock,
+        VectorMemCrossCacheBlockValid,
         HtmFromTransaction,
         IsEmptyMov,
         IsConstantFolded,
@@ -470,7 +474,41 @@ class DynInst : public ExecContext, public RefCounted
     ssize_t sqIdx = -1;
     typename LSQUnit::SQIterator sqIt;
 
-    /** Store-set predicted producing stores (for replay-based MDP). */
+    /** PHAST metadata carried by each load. */
+    struct MemDepInfo
+    {
+        /** Store this load received forwarded data from, if any. */
+        InstSeqNum forwardedFrom = 0;
+
+        /** Store-load violation training target. */
+        InstSeqNum violatingStoreSeqNum = 0;
+        Addr violatingStorePC = 0;
+
+        /** Zero-based distance from the load to the violating older store. */
+        std::ptrdiff_t storeQueueDistance = -1;
+
+        /** Store addresses/sizes used to validate an MDP prediction. */
+        std::pair<Addr, Addr> predStoreAddrs = {0, 0};
+        std::pair<unsigned, unsigned> predStoreSizes = {0, 0};
+
+        /** PHAST table metadata used for confidence updates. */
+        unsigned predBranchHistLength = 0;
+        uint64_t predictorHash = 0;
+
+        /** True when this load received a valid concrete MDP prediction. */
+        bool predicted = false;
+
+        /** True after the RAW violation has been counted once. */
+        bool violationCounted = false;
+
+        /** True when a RAW violation is deferred until Commit. */
+        bool violationPending = false;
+
+        /** True after the RAW violation has trained PHAST once. */
+        bool violationTrained = false;
+    } memDepInfo;
+
+    /** Predicted producing stores (for replay-based MDP). */
     std::vector<InstSeqNum> mdpProducingStores;
 
     /** Whether this load is predicted to strictly wait for prior store addrs. */
@@ -517,6 +555,16 @@ class DynInst : public ExecContext, public RefCounted
     bool memOpDone() const { return instFlags[MemOpDone]; }
     void memOpDone(bool f) { instFlags[MemOpDone] = f; }
 
+    bool vectorMemCrossCacheBlock() const
+    {
+        return instFlags[VectorMemCrossCacheBlock];
+    }
+
+    bool vectorMemCrossCacheBlockValid() const
+    {
+        return instFlags[VectorMemCrossCacheBlockValid];
+    }
+
     bool notAnInst() const { return instFlags[NotAnInst]; }
     void setNotAnInst() { instFlags[NotAnInst] = true; }
 
@@ -535,6 +583,9 @@ class DynInst : public ExecContext, public RefCounted
     {
         cpu->demapPage(vaddr, asn);
     }
+
+    void updateVectorMemCrossCacheBlock(
+            Addr addr, unsigned size, const std::vector<bool> &byte_enable);
 
     Fault initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
             const std::vector<bool> &byte_enable) override;

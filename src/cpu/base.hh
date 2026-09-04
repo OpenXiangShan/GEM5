@@ -204,6 +204,10 @@ class BaseCPU : public ClockedObject
 
         statistics::Formula hostInstRate;
         statistics::Formula hostOpRate;
+
+      private:
+        Counter instsAtLastReset = 0;
+        Counter opsAtLastReset = 0;
     };
 
     /**

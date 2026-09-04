@@ -69,7 +69,8 @@ BTBMGSC::initStorage()
         auto &state = threadHistory[tid];
         for (unsigned int i = 0; i < bwTableNum; ++i) {
             state.indexBwFoldedHist.emplace_back(
-                bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16);
+                bwHistLen[i], partitionIndexBits(
+                    bwTableIdxWidth - numCtrsPerLineBits), 16);
         }
     }
     bwIndex.resize(bwTableNum);
@@ -81,7 +82,8 @@ BTBMGSC::initStorage()
         for (unsigned int i = 0; i < lTableNum; ++i) {
             for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
                 state.indexLFoldedHist[k].push_back(LocalFoldedHist(
-                    lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16));
+                    lHistLen[i], partitionIndexBits(
+                        lTableIdxWidth - numCtrsPerLineBits), 16));
             }
         }
     }
@@ -95,7 +97,8 @@ BTBMGSC::initStorage()
             assert(static_cast<unsigned>(iHistLen[i]) < 63);
             assert(pow2(static_cast<unsigned>(iHistLen[i])) <= iTableSize);
             state.indexIFoldedHist.emplace_back(
-                iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16);
+                iHistLen[i], partitionIndexBits(
+                    iTableIdxWidth - numCtrsPerLineBits), 16);
         }
     }
     iIndex.resize(iTableNum);
@@ -106,7 +109,8 @@ BTBMGSC::initStorage()
         for (unsigned int i = 0; i < gTableNum; ++i) {
             assert(gTable.size() >= gTableNum);
             state.indexGFoldedHist.emplace_back(
-                gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16);
+                gHistLen[i], partitionIndexBits(
+                    gTableIdxWidth - numCtrsPerLineBits), 16);
         }
     }
     gIndex.resize(gTableNum);
@@ -117,7 +121,8 @@ BTBMGSC::initStorage()
         for (unsigned int i = 0; i < pTableNum; ++i) {
             assert(pTable.size() >= pTableNum);
             state.indexPFoldedHist.emplace_back(
-                pHistLen[i], pTableIdxWidth - numCtrsPerLineBits, 2);
+                pHistLen[i], partitionIndexBits(
+                    pTableIdxWidth - numCtrsPerLineBits), 2);
         }
     }
     pIndex.resize(pTableNum);
@@ -419,7 +424,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // Calculate indices for all tables
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth - numCtrsPerLineBits,
-                                  state.indexBwFoldedHist[i].get(), asidHash);
+                                  state.indexBwFoldedHist[i].get(), asidHash,
+                                  tid);
     }
 
     const Addr localHistoryIndex =
@@ -427,7 +433,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     for (unsigned int i = 0; i < lTableNum; ++i) {
         lIndex[i] = getHistIndex(startPC, lTableIdxWidth - numCtrsPerLineBits,
                                  state.indexLFoldedHist[localHistoryIndex][i].get(),
-                                 asidHash);
+                                 asidHash, tid);
     }
     // std::string buf;
     // boost::to_string(indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][0].getAsBitset(), buf);
@@ -435,22 +441,26 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
         iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits,
-                                 state.indexIFoldedHist[i].get(), asidHash);
+                                 state.indexIFoldedHist[i].get(), asidHash,
+                                 tid);
     }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
         gIndex[i] = getHistIndex(startPC, gTableIdxWidth - numCtrsPerLineBits,
-                                 state.indexGFoldedHist[i].get(), asidHash);
+                                 state.indexGFoldedHist[i].get(), asidHash,
+                                 tid);
     }
 
     for (unsigned int i = 0; i < pTableNum; ++i) {
         pIndex[i] = getHistIndex(startPC, pTableIdxWidth - numCtrsPerLineBits,
-                                 state.indexPFoldedHist[i].get(), asidHash);
+                                 state.indexPFoldedHist[i].get(), asidHash,
+                                 tid);
     }
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
         biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - numCtrsPerLineBits, tage_info.tage_main_taken,
-                                    tage_info.tage_pred_conf_low, asidHash);
+                                    tage_info.tage_pred_conf_low, asidHash,
+                                    tid);
     }
 
     int bw_percsum = enableBwTable ? calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc) : 0;
@@ -620,6 +630,42 @@ BTBMGSC::getPredictionMeta(ThreadID tid)
         return nullptr;
     }
     return threadMeta[tid];
+}
+
+void
+BTBMGSC::refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred)
+{
+    (void)history;
+
+    if (!isEnabled()) {
+        return;
+    }
+
+    auto &state = historyState(pred.tid);
+    threadMeta[pred.tid] = std::make_shared<MgscMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->indexBwFoldedHist = state.indexBwFoldedHist;
+    meta->indexLFoldedHist = state.indexLFoldedHist;
+    meta->indexIFoldedHist = state.indexIFoldedHist;
+    meta->indexGFoldedHist = state.indexGFoldedHist;
+    meta->indexPFoldedHist = state.indexPFoldedHist;
+
+    for (const auto &btb_entry : pred.btbEntries) {
+        if (!(btb_entry.isCond && btb_entry.valid)) {
+            continue;
+        }
+
+        auto tage_info = pred.tageInfoForMgscs.find(btb_entry.pc);
+        if (tage_info == pred.tageInfoForMgscs.end()) {
+            continue;
+        }
+
+        meta->preds[btb_entry.pc] =
+            generateSinglePrediction(btb_entry, startAddr, tage_info->second,
+                                     pred.tid, pred.asidHash);
+    }
 }
 
 /**
@@ -1028,29 +1074,34 @@ BTBMGSC::updateCounter<uint64_t>(bool taken, unsigned width, uint64_t &counter);
 
 Addr
 BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
-                      uint8_t asidHash)
+                      uint8_t asidHash, ThreadID tid)
 {
-    // Create mask to limit result size to tableIndexBits
-    Addr mask = (1ULL << tableIndexBits) - 1;
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits);
+    Addr mask = (1ULL << localIndexBits) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
     Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return xorAsidHashIntoIndex(pcBits ^ foldedBits, tableIndexBits, asidHash);
+    const Addr localIndex = xorAsidHashIntoIndex(
+        pcBits ^ foldedBits, localIndexBits, asidHash);
+    return partitionIndex(localIndex, 1ULL << tableIndexBits, tid);
 }
 
 Addr
 BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0,
-                      bool lowbit1, uint8_t asidHash)
+                      bool lowbit1, uint8_t asidHash, ThreadID tid)
 {
-    // Create mask for tableIndexBits-2 to extract PC bits
-    Addr mask = (1ULL << (tableIndexBits - 2)) - 1;
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits);
+    assert(localIndexBits >= 2);
+    Addr mask = (1ULL << (localIndexBits - 2)) - 1;
 
     // Extract lower bits of PC directly and combine with low bits
     Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
     unsigned index = (pcBits << 2) + (lowbit1 << 1) + lowbit0;
-    return xorAsidHashIntoIndex(index, tableIndexBits, asidHash);
+    const Addr localIndex = xorAsidHashIntoIndex(
+        index, localIndexBits, asidHash);
+    return partitionIndex(localIndex, 1ULL << tableIndexBits, tid);
 }
 
 Addr

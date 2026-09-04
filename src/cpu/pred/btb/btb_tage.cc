@@ -183,7 +183,10 @@ tageStats(this, p.numPredictors, p.numBanks)
             auto &state = threadHistory[tid];
             state.tagFoldedHist.emplace_back((int)histLengths[i], (int)tableTagBits[i], 16, historyType);
             state.altTagFoldedHist.emplace_back((int)histLengths[i], (int)tableTagBits[i] - 1, 16, historyType);
-            state.indexFoldedHist.emplace_back((int)histLengths[i], (int)tableIndexBits[i], 16, historyType);
+            state.indexFoldedHist.emplace_back(
+                (int)histLengths[i],
+                (int)partitionIndexBits(tableIndexBits[i]), 16,
+                historyType);
         }
     }
     usefulResetCnt = 0;
@@ -299,7 +302,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
-                                 uint8_t asidHash) {
+                                 uint8_t asidHash) const
+{
     DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
     const auto &state = historyState(tid);
 
@@ -316,8 +320,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get(), asidHash)
-                          : getTageIndex(startPC, i, state.indexFoldedHist[i].get(), asidHash);
+        Addr index = predMeta ? getTageIndex(
+            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
+                              : getTageIndex(
+            startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(),
                             position, asidHash)
@@ -447,6 +453,22 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
 }
 
 void
+BTBTAGE::lookupNoSideEffect(const Addr &startPC,
+                            const std::vector<BTBEntry> &btbEntries,
+                            CondTakens &results,
+                            ThreadID tid,
+                            uint8_t asidHash) const
+{
+    for (const auto &btb_entry : btbEntries) {
+        if (btb_entry.isCond && btb_entry.valid) {
+            auto pred = generateSinglePrediction(
+                btb_entry, startPC, nullptr, tid, asidHash);
+            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+        }
+    }
+}
+
+void
 BTBTAGE::dryRunCycle(Addr startPC) {
     // No operation in dry run cycle for BTBTAGE
     // Record prediction bank for next tick's conflict detection
@@ -510,6 +532,45 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
         return nullptr;
     }
     return threadMeta[tid];
+}
+
+void
+BTBTAGE::refreshPredictionMeta(Addr startPC,
+                               const bitset &history,
+                               FullBTBPrediction &pred)
+{
+    auto &state = historyState(pred.tid);
+    threadMeta[pred.tid] = std::make_shared<TageMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->tagFoldedHist = state.tagFoldedHist;
+    meta->altTagFoldedHist = state.altTagFoldedHist;
+    meta->indexFoldedHist = state.indexFoldedHist;
+    meta->history = history;
+
+    pred.tageInfoForMgscs.clear();
+    for (const auto &btb_entry : pred.btbEntries) {
+        if (!(btb_entry.isCond && btb_entry.valid)) {
+            continue;
+        }
+
+        auto tage_pred = generateSinglePrediction(
+            btb_entry, startPC, nullptr, pred.tid, pred.asidHash);
+        meta->preds[btb_entry.pc] = tage_pred;
+
+        auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];
+        tage_info.tage_pred_taken = tage_pred.taken;
+        tage_info.tage_main_taken =
+            tage_pred.mainInfo.found ? tage_pred.mainInfo.taken() : false;
+        tage_info.tage_pred_conf_high = tage_pred.mainInfo.found &&
+            abs(tage_pred.mainInfo.entry.counter * 2 + 1) == 7;
+        tage_info.tage_pred_conf_mid = tage_pred.mainInfo.found &&
+            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) < 7 &&
+             abs(tage_pred.mainInfo.entry.counter * 2 + 1) > 1);
+        tage_info.tage_pred_conf_low = !tage_pred.mainInfo.found ||
+            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) <= 1);
+        tage_info.tage_pred_alt_diff = tage_pred.mainInfo.found &&
+            tage_pred.mainInfo.taken() != tage_pred.altPred;
+    }
 }
 
 /**
@@ -726,7 +787,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
+                                 ThreadID tid,
                                  AllocationTraceInfo &allocInfo) {
+    int &resetCnt = usesTidPartitionedStorage() ?
+        usefulResetCntByThread[tid] : usefulResetCnt;
     // Match RTL victim priority:
     // 1) invalid way
     // 2) weak and not-useful way
@@ -736,7 +800,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get(), asidHash);
+        Addr newIndex = getTageIndex(
+            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position, asidHash);
 
@@ -789,20 +854,22 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocInfo.victimPC = victim.pc;
             set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
-            usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+            resetCnt = resetCnt <= 0 ? 0 : resetCnt - 1;
             return true;
         }
         tageStats.updateAllocFailure++;
-        usefulResetCnt++;
+        resetCnt++;
     }
 
-    if (usefulResetCnt >= 256) {
-        usefulResetCnt = 0;
+    if (resetCnt >= 256) {
+        resetCnt = 0;
         tageStats.updateResetU++;
         DPRINTF(TAGE, "reset useful bit of all entries\n");
         for (auto &table : tageTable) {
-            for (auto &set : table) {
-                for (auto &way : set) {
+            const unsigned begin = partitionBegin(table.size(), tid);
+            const unsigned end = partitionEnd(table.size(), tid);
+            for (unsigned index = begin; index < end; ++index) {
+                for (auto &way : table[index]) {
                     way.useful = false;
                 }
             }
@@ -939,6 +1006,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             }
             handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
                                      start_table, predMeta, stream.asidHash,
+                                     stream.tid,
                                      allocInfo);
         }
 
@@ -1047,13 +1115,13 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
 BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
-                    Addr position, uint8_t asidHash)
+                    Addr position, uint8_t asidHash) const
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
     unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
-    pcShift += tableIndexBits[t] - 1;   // since tableIndexBits = log(2048) = 11, RTL is 10
+    pcShift += partitionIndexBits(tableIndexBits[t]) - 1;
     Addr pcBits = (pc >> pcShift) & mask;
 
     // Extract and prepare folded history bits
@@ -1068,7 +1136,7 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
 }
 
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash)
+BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash) const
 {
     const auto &state = historyState(0);
     return getTageTag(pc, t, state.tagFoldedHist[t].get(),
@@ -1076,26 +1144,30 @@ BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash)
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
+BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
+                      uint8_t asidHash, ThreadID tid) const
 {
-    // Create mask for tableIndexBits[t] to limit result size
-    Addr mask = (1ULL << tableIndexBits[t]) - 1;
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
+    Addr mask = (1ULL << localIndexBits) - 1;
 
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return xorAsidHashIntoIndex(pcBits ^ foldedBits, tableIndexBits[t], asidHash) % tableSizes[t];
+    Addr localIndex = xorAsidHashIntoIndex(
+        pcBits ^ foldedBits, localIndexBits, asidHash);
+    return partitionIndex(localIndex, tableSizes[t], tid);
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
+BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash, ThreadID tid) const
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
+    return getTageIndex(pc, t, historyState(tid).indexFoldedHist[t].get(),
+                        asidHash, tid);
 }
 
 bool
-BTBTAGE::matchTag(Addr expected, Addr found)
+BTBTAGE::matchTag(Addr expected, Addr found) const
 {
     return expected == found;
 }
@@ -1125,7 +1197,7 @@ BTBTAGE::getUseAltIdx(Addr pc) const {
 }
 
 unsigned
-BTBTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) {
+BTBTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) const {
     // Calculate branch position within the fetch block (0 .. maxBranchPositions-1)
     Addr alignedPC = startPC & ~(blockSize - 1);
     Addr offset = (branchPC - alignedPC) >> instShiftAmt;

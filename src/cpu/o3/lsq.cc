@@ -63,6 +63,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
+#include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
@@ -86,7 +87,7 @@ namespace o3
 {
 
 LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
-    RequestPort(_cpu->name() + ".dcache_port", _cpu), lsq(_lsq), cpu(_cpu)
+    RequestPort(_cpu->name() + ".dcache_port"), lsq(_lsq), cpu(_cpu)
 {}
 
 std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
@@ -382,7 +383,7 @@ LSQ::StoreBuffer::release(StoreBufferEntry *entry)
     }
 }
 
-LSQ::LSQStats::LSQStats(statistics::Group *parent)
+LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
     : statistics::Group(parent),
       ADD_STAT(lqAvgEntryNum, statistics::units::Count::get(),
                "Average number of entries in load queue"),
@@ -391,13 +392,16 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
       ADD_STAT(sbufferAvgEntryNum, statistics::units::Count::get(),
                "Average number of valid entries in store buffer"),
       ADD_STAT(lqFullCycles, statistics::units::Cycle::get(),
-               "Cycles that LQ cannot accept a full enqueue bundle"),
+               "Per-thread cycles that LQ cannot accept a full enqueue "
+               "bundle"),
       ADD_STAT(sqFullCycles, statistics::units::Cycle::get(),
-               "Cycles that SQ cannot accept a full enqueue bundle"),
+               "Per-thread cycles that SQ cannot accept a full enqueue "
+               "bundle"),
       ADD_STAT(lsqFullCycles, statistics::units::Cycle::get(),
-               "Cycles that LSQ cannot accept a full enqueue bundle"),
+               "Per-thread cycles that LSQ cannot accept a full enqueue "
+               "bundle"),
       ADD_STAT(sbufferFullCycles, statistics::units::Cycle::get(),
-               "Number of cycles that store buffer is physically full"),
+               "Per-thread cycles that store buffer cannot accept an entry"),
       ADD_STAT(sbufferEvictDuetoFlush, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoFull, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoSQFull, statistics::units::Count::get(), ""),
@@ -447,6 +451,17 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
                statistics::units::Count::get(),
                "Number of store buffer requests that miss and exit fake dcache mainpipe at S2")
 {
+    lqFullCycles.init(num_threads);
+    sqFullCycles.init(num_threads);
+    lsqFullCycles.init(num_threads);
+    sbufferFullCycles.init(num_threads);
+    for (ThreadID tid = 0; tid < num_threads; ++tid) {
+        const std::string thread_name = csprintf("thread%d", tid);
+        lqFullCycles.subname(tid, thread_name);
+        sqFullCycles.subname(tid, thread_name);
+        lsqFullCycles.subname(tid, thread_name);
+        sbufferFullCycles.subname(tid, thread_name);
+    }
 }
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
@@ -482,8 +497,15 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       staleTranslationWaitTxnId(0),
       lsqMode(params.smtLSQMode),
       lsqPolicy(params.smtLSQPolicy),
-      smtLSQThreshold(params.smtLSQThreshold),
-      stats(nullptr),
+      rarqPolicy(params.smtRARQPolicy),
+      rawqPolicy(params.smtRAWQPolicy),
+      smtLQThreshold(params.smtLQThreshold),
+      smtSQThreshold(params.smtSQThreshold),
+      lqBorrowBaseReserveEntries(params.smtLQBorrowBaseReserveEntries),
+      lqBorrowDonorReserveEntries(params.smtLQBorrowDonorReserveEntries),
+      sqBorrowBaseReserveEntries(params.smtSQBorrowBaseReserveEntries),
+      sqBorrowDonorReserveEntries(params.smtSQBorrowDonorReserveEntries),
+      stats(nullptr, params.numThreads),
       LQEntries(params.LQEntries),
       physicalSQEntries(params.SQEntries),
       storeQueueMultiple(params.StoreQueueMultiple),
@@ -496,6 +518,13 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       numThreads(params.numThreads)
 {
     assert(numThreads > 0 && numThreads <= MaxThreads);
+    // Initialize LSQ borrowing state for LQ and SQ separately
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        lqBorrowingDonor[tid] = false;
+        sqBorrowingDonor[tid] = false;
+        lqBorrowingStateHoldCycle[tid] = 0;
+        sqBorrowingStateHoldCycle[tid] = 0;
+    }
     panic_if(physicalSQEntries == 0,
              "SQEntries must be greater than zero\n");
     panic_if(storeQueueMultiple == 0 || !isPowerOf2(storeQueueMultiple),
@@ -559,20 +588,28 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
                 LQEntries, SQEntries, RARQEntries, RAWQEntries);
     } else if (lsqMode == SMTLSQMode::Shared) {
         panic_if(lsqPolicy == SMTQueuePolicy::Threshold &&
-                 smtLSQThreshold == 0,
-                 "SMT LSQ threshold must be non-zero in shared threshold mode");
+                 (smtLQThreshold == 0 || smtSQThreshold == 0),
+                 "SMT LQ/SQ thresholds must be non-zero in shared threshold mode");
 
-        if (lsqPolicy == SMTQueuePolicy::Dynamic ||
-            lsqPolicy == SMTQueuePolicy::DynamicBorrowing) {
-            DPRINTF(LSQ, "LSQ mode set to Shared/Dynamic: %u LQ and %u SQ "
-                    "entries are shared across active SMT threads, along "
-                    "with %u RARQ and %u RAWQ entries\n",
-                    LQEntries, SQEntries, RARQEntries, RAWQEntries);
+        // Print LQ/SQ policy
+        if (lsqPolicy == SMTQueuePolicy::Dynamic) {
+            DPRINTF(LSQ, "LSQ mode set to Shared: LQ/SQ use Dynamic policy, "
+                    "RARQ uses %s policy, RAWQ uses %s policy\n",
+                    SMTQueuePolicyStrings[static_cast<int>(rarqPolicy)],
+                    SMTQueuePolicyStrings[static_cast<int>(rawqPolicy)]);
+        } else if (lsqPolicy == SMTQueuePolicy::DynamicBorrowing) {
+            DPRINTF(LSQ, "LSQ mode set to Shared: LQ/SQ use DynamicBorrowing policy, "
+                    "RARQ uses %s policy, RAWQ uses %s policy\n",
+                    SMTQueuePolicyStrings[static_cast<int>(rarqPolicy)],
+                    SMTQueuePolicyStrings[static_cast<int>(rawqPolicy)]);
         } else if (lsqPolicy == SMTQueuePolicy::Partitioned) {
-            DPRINTF(LSQ, "LSQ mode set to Shared/Partitioned\n");
+            DPRINTF(LSQ, "LSQ mode set to Shared: LQ/SQ use Partitioned policy, "
+                    "RARQ uses %s policy, RAWQ uses %s policy\n",
+                    SMTQueuePolicyStrings[static_cast<int>(rarqPolicy)],
+                    SMTQueuePolicyStrings[static_cast<int>(rawqPolicy)]);
         } else if (lsqPolicy == SMTQueuePolicy::Threshold) {
-            DPRINTF(LSQ, "LSQ mode set to Shared/Threshold: threshold=%u\n",
-                    smtLSQThreshold);
+            DPRINTF(LSQ, "LSQ mode set to Shared/Threshold: LQ threshold=%u, SQ threshold=%u\n",
+                    smtLQThreshold, smtSQThreshold);
         } else {
             panic("Invalid LSQ sharing policy. Options are: Dynamic, "
                         "Partitioned, Threshold, DynamicBorrowing");
@@ -587,7 +624,8 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
         thread.emplace_back(LQEntries, SQEntries, physicalSQEntries,
             params.LdPipeStages, params.StPipeStages, params.RARQEntries, params.RAWQEntries,
             params.RARDequeuePerCycle, params.RAWDequeuePerCycle, params.LoadCompletionWidth,
-            params.StoreCompletionWidth);
+            params.StoreCompletionWidth, params.scheduler->getLoadPipeCount(),
+            params.scheduler->getStorePipeCount());
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
         _storeBufferFlushing[tid] = false;
@@ -670,6 +708,11 @@ LSQ::takeOverFrom()
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread[tid].takeOverFrom();
+        // Reset LSQ borrowing state
+        lqBorrowingDonor[tid] = false;
+        sqBorrowingDonor[tid] = false;
+        lqBorrowingStateHoldCycle[tid] = 0;
+        sqBorrowingStateHoldCycle[tid] = 0;
     }
 }
 
@@ -687,18 +730,23 @@ LSQ::tick()
     std::list<ThreadID>::iterator end = activeThreads->end();
     unsigned lq_entry_num = 0;
     unsigned sq_entry_num = 0;
-    bool lq_full = false;
-    bool sq_full = false;
-
     while (threads != end) {
         ThreadID tid = *threads++;
         lq_entry_num += thread[tid].numLoads();
         sq_entry_num += thread[tid].numStores();
-        // TODO: this per-thread OR is an approximation for SMT/shared-LSQ
-        // configurations. With multiple active threads it may not match the
-        // aggregate free-entry condition seen by rename/dispatch.
-        lq_full = lq_full || thread[tid].numFreeLoadEntries() < enqueueWidth;
-        sq_full = sq_full || thread[tid].numFreeStoreEntries() < enqueueWidth;
+        const bool thread_lq_full =
+            logicalFreeLoadEntries(tid) < enqueueWidth;
+        const bool thread_sq_full =
+            logicalFreeStoreEntries(tid) < enqueueWidth;
+        if (thread_lq_full) {
+            ++stats.lqFullCycles[tid];
+        }
+        if (thread_sq_full) {
+            ++stats.sqFullCycles[tid];
+        }
+        if (thread_lq_full || thread_sq_full) {
+            ++stats.lsqFullCycles[tid];
+        }
         thread[tid].tick();
     }
 
@@ -710,18 +758,10 @@ LSQ::tick()
 
     // Sample current store buffer occupancy once per cycle.
     stats.sbufferAvgEntryNum = storeBuffer.size();
-    if (storeBuffer.full()) {
-        ++stats.sbufferFullCycles;
-    }
-
-    if (lq_full) {
-        ++stats.lqFullCycles;
-    }
-    if (sq_full) {
-        ++stats.sqFullCycles;
-    }
-    if (lq_full || sq_full) {
-        ++stats.lsqFullCycles;
+    for (ThreadID tid : *activeThreads) {
+        if (storeBuffer.full(tid) || storeBuffer.full()) {
+            ++stats.sbufferFullCycles[tid];
+        }
     }
 
 }
@@ -1155,27 +1195,55 @@ LSQ::getDcacheDivBankSetKey(Addr vaddr) const
 }
 
 bool
-LSQ::loadBankConflictedCheck(Addr vaddr)
+LSQ::loadBankConflictedCheck(Addr vaddr, unsigned size)
 {
-    bool now_bank_conflict = false;
-    const unsigned bankIndex = bankNum(vaddr);
-    const unsigned div = getDcacheDiv(vaddr);
-    const uint64_t key = getDcacheDivBankSetKey(vaddr);
+    if (!enableBankConflictCheck || size == 0) {
+        return false;
+    }
 
-    if (enableBankConflictCheck) {
-        if (recentlyloadAddr.contains(key)) {
-            recentlyloadAddr.get(key);
-            return false;
-        }
-        if (bankOccupied[div][bankIndex]) {
-            now_bank_conflict = true;
+    struct TouchedBank
+    {
+        unsigned bankIndex;
+        unsigned div;
+        uint64_t key;
+        bool recentlyAccessed;
+    };
 
-        } else {
-            bankOccupied[div][bankIndex] = true;
-            recentlyloadAddr.insert(key, {});
+    // Collect all banks will be touched by the load request.
+    // Eg. Bank size = 2B, load size = 8B, address = 0x0, will touch bank 0,1,2,3.
+    std::vector<TouchedBank> touched_banks;
+    for (unsigned offset = 0; offset < size;) {
+        const Addr bank_vaddr = vaddr + offset;
+        touched_banks.push_back({
+            bankNum(bank_vaddr),
+            getDcacheDiv(bank_vaddr),
+            getDcacheDivBankSetKey(bank_vaddr),
+            false
+        });
+        // Take care of misaligned situation.
+        Addr offsetInc = dcacheBankBytes - (bank_vaddr & (dcacheBankBytes - 1));
+        offset += offsetInc;
+    }
+
+    // Probe every target bank before claiming any of them. A failed
+    // multi-bank load will not update bankOccupied and recentlyloadAddr.
+    for (auto &bank : touched_banks) {
+        bank.recentlyAccessed = recentlyloadAddr.contains(bank.key);
+        if (!bank.recentlyAccessed &&
+            bankOccupied[bank.div][bank.bankIndex]) {
+            return true;
         }
     }
-    return now_bank_conflict;
+
+    // Occupy the banks and insert new keys to recentlyloadAddr.
+    for (const auto &bank : touched_banks) {
+        bankOccupied[bank.div][bank.bankIndex] = true;
+        if (!bank.recentlyAccessed) {
+            recentlyloadAddr.insert(bank.key, {});
+        }
+    }
+
+    return false;
 }
 
 void
@@ -2126,48 +2194,194 @@ LSQ::activeLSQThreads() const
     return activeThreads->size();
 }
 
+/** Queue type enum for sharedLSQAllocation */
+enum class LSQQueueType
+{
+    LQ,
+    SQ,
+    RARQ,
+    RAWQ
+};
+
 unsigned
-LSQ::sharedLSQAllocation(unsigned entries) const
+LSQ::sharedLSQAllocation(unsigned entries, LSQQueueType queueType) const
 {
     const unsigned active_threads = std::max(1U, activeLSQThreads());
 
-    switch (lsqPolicy) {
+    // Select policy based on queue type
+    SMTQueuePolicy policy;
+    switch (queueType) {
+      case LSQQueueType::LQ:
+      case LSQQueueType::SQ:
+        policy = lsqPolicy;
+        break;
+      case LSQQueueType::RARQ:
+        policy = rarqPolicy;
+        break;
+      case LSQQueueType::RAWQ:
+        policy = rawqPolicy;
+        break;
+      default:
+        panic("Invalid LSQ queue type");
+    }
+
+    switch (policy) {
       case SMTQueuePolicy::Dynamic:
       case SMTQueuePolicy::DynamicBorrowing:
         return entries;
       case SMTQueuePolicy::Partitioned:
         return entries / active_threads;
       case SMTQueuePolicy::Threshold:
-        return active_threads == 1 ? entries :
-            std::min(entries, smtLSQThreshold);
+        // Use separate thresholds for LQ and SQ
+        if (queueType == LSQQueueType::LQ) {
+            return active_threads == 1 ? entries :
+                std::min(entries, smtLQThreshold);
+        } else if (queueType == LSQQueueType::SQ) {
+            return active_threads == 1 ? entries :
+                std::min(entries, smtSQThreshold);
+        } else {
+            // RARQ/RAWQ should not use Threshold policy through lsqPolicy
+            panic("Threshold policy for RARQ/RAWQ requires separate threshold parameters");
+        }
       default:
         panic("Invalid LSQ sharing policy. Options are: Dynamic, "
               "Partitioned, Threshold, DynamicBorrowing");
     }
 }
 
+bool
+LSQ::canBorrowLQ(ThreadID tid) const
+{
+    return lsqPolicy == SMTQueuePolicy::DynamicBorrowing &&
+           tid < numThreads;
+}
+
+bool
+LSQ::canBorrowSQ(ThreadID tid) const
+{
+    return lsqPolicy == SMTQueuePolicy::DynamicBorrowing &&
+           tid < numThreads;
+}
+
+unsigned
+LSQ::borrowingLimitLQ(ThreadID tid) const
+{
+    if (tid >= numThreads) {
+        return 0;
+    }
+
+    if (!canBorrowLQ(tid)) {
+        return logicalMaxLoadEntries(tid);
+    }
+
+    const unsigned active_threads = std::max(1U, activeLSQThreads());
+    const unsigned base = lqBorrowBaseReserveEntries;
+    const unsigned donor_resume_quota =
+        std::min(base, lqBorrowDonorReserveEntries);
+
+    unsigned reserved = 0;
+    for (ThreadID other = 0; other < numThreads; ++other) {
+        if (other == tid) {
+            continue;
+        }
+
+        const unsigned reserve =
+            lqBorrowingDonor[other] ? donor_resume_quota : base;
+        const unsigned used = thread[other].numLoads();
+        reserved += std::max(reserve, used);
+    }
+
+    if (reserved >= LQEntries) {
+        return 0;
+    }
+
+    return LQEntries - reserved;
+}
+
+unsigned
+LSQ::borrowingLimitSQ(ThreadID tid) const
+{
+    if (tid >= numThreads) {
+        return 0;
+    }
+
+    if (!canBorrowSQ(tid)) {
+        return logicalMaxStoreEntries(tid);
+    }
+
+    const unsigned active_threads = std::max(1U, activeLSQThreads());
+    const unsigned base = sqBorrowBaseReserveEntries;
+    const unsigned donor_resume_quota =
+        std::min(base, sqBorrowDonorReserveEntries);
+
+    unsigned reserved = 0;
+    for (ThreadID other = 0; other < numThreads; ++other) {
+        if (other == tid) {
+            continue;
+        }
+
+        const unsigned reserve =
+            sqBorrowingDonor[other] ? donor_resume_quota : base;
+        const unsigned used = thread[other].numStores();
+        reserved += std::max(reserve, used);
+    }
+
+    if (reserved >= SQEntries) {
+        return 0;
+    }
+
+    return SQEntries - reserved;
+}
+
+void
+LSQ::setLQBorrowingDonor(ThreadID tid, bool donor)
+{
+    if (lqBorrowingDonor[tid] != donor) {
+        lqBorrowingDonor[tid] = donor;
+        lqBorrowingStateHoldCycle[tid] = 0;
+    }
+}
+
+void
+LSQ::setSQBorrowingDonor(ThreadID tid, bool donor)
+{
+    if (sqBorrowingDonor[tid] != donor) {
+        sqBorrowingDonor[tid] = donor;
+        sqBorrowingStateHoldCycle[tid] = 0;
+    }
+}
+
+void
+LSQ::addBorrowingStateHoldCycle()
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        lqBorrowingStateHoldCycle[tid]++;
+        sqBorrowingStateHoldCycle[tid]++;
+    }
+}
+
 unsigned
 LSQ::logicalMaxLoadEntries(ThreadID tid) const
 {
-    return sharedLSQMode() ? sharedLSQAllocation(LQEntries) : LQEntries;
+    return sharedLSQMode() ? sharedLSQAllocation(LQEntries, LSQQueueType::LQ) : LQEntries;
 }
 
 unsigned
 LSQ::logicalMaxStoreEntries(ThreadID tid) const
 {
-    return sharedLSQMode() ? sharedLSQAllocation(SQEntries) : SQEntries;
+    return sharedLSQMode() ? sharedLSQAllocation(SQEntries, LSQQueueType::SQ) : SQEntries;
 }
 
 unsigned
 LSQ::logicalMaxRAREntries(ThreadID tid) const
 {
-    return sharedLSQMode() ? sharedLSQAllocation(RARQEntries) : RARQEntries;
+    return sharedLSQMode() ? sharedLSQAllocation(RARQEntries, LSQQueueType::RARQ) : RARQEntries;
 }
 
 unsigned
 LSQ::logicalMaxRAWEntries(ThreadID tid) const
 {
-    return sharedLSQMode() ? sharedLSQAllocation(RAWQEntries) : RAWQEntries;
+    return sharedLSQMode() ? sharedLSQAllocation(RAWQEntries, LSQQueueType::RAWQ) : RAWQEntries;
 }
 
 unsigned
@@ -2177,6 +2391,21 @@ LSQ::logicalFreeLoadEntries(ThreadID tid) const
         static_cast<int>(logicalMaxLoadEntries(tid)) - thread[tid].numLoads());
     if (!sharedLSQMode()) {
         return thread_free;
+    }
+
+    // For DynamicBorrowing policy, use borrowing limit
+    if (lsqPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        const unsigned limit = borrowingLimitLQ(tid);
+        const unsigned used = thread[tid].numLoads();
+        if (limit <= used) {
+            return 0;
+        }
+        const unsigned borrow_free = limit - used;
+        // Also ensure we don't exceed shared free space
+        const unsigned shared_used = numLoads();
+        const unsigned shared_free = std::max(
+            0, static_cast<int>(LQEntries) - static_cast<int>(shared_used));
+        return std::min(borrow_free, shared_free);
     }
 
     const unsigned shared_used = numLoads();
@@ -2192,6 +2421,21 @@ LSQ::logicalFreeStoreEntries(ThreadID tid) const
         static_cast<int>(logicalMaxStoreEntries(tid)) - thread[tid].numStores());
     if (!sharedLSQMode()) {
         return thread_free;
+    }
+
+    // For DynamicBorrowing policy, use borrowing limit
+    if (lsqPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        const unsigned limit = borrowingLimitSQ(tid);
+        const unsigned used = thread[tid].numStores();
+        if (limit <= used) {
+            return 0;
+        }
+        const unsigned borrow_free = limit - used;
+        // Also ensure we don't exceed shared free space
+        const unsigned shared_used = numStores();
+        const unsigned shared_free = std::max(
+            0, static_cast<int>(SQEntries) - static_cast<int>(shared_used));
+        return std::min(borrow_free, shared_free);
     }
 
     const unsigned shared_used = numStores();
@@ -3339,12 +3583,27 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     }
     // Dump inst num, request addr, and packet addr
     if (debug::LSQ) {
-        char buffer[8];
-        std::memcpy(buffer, pkt->getPtr<char>(), pkt->getSize());
-        DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
-                    "isLLSC: %d, isUncache: %d, isCachehit: %d, data: %d\n",
-                    pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
-                    mainReq()->isUncacheable(), cacheHit, *((uint64_t*)buffer));
+        uint64_t firstWord = 0;
+        const size_t copySize =
+            std::min<size_t>(pkt->getSize(), sizeof(firstWord));
+
+        std::memcpy(
+            &firstWord,
+            pkt->getPtr<uint8_t>(),
+            copySize);
+
+        DPRINTF(LSQ,
+                "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, "
+                "size: %u, isLoad: %d, isLLSC: %d, isUncache: %d, "
+                "isCachehit: %d, firstData: %#llx\n",
+                pkt->req->getReqInstSeqNum(),
+                pkt->getAddr(),
+                pkt->getSize(),
+                isLoad(),
+                mainReq()->isLLSC(),
+                mainReq()->isUncacheable(),
+                cacheHit,
+                static_cast<unsigned long long>(firstWord));
     }
 
     if (isLoad()) {
@@ -3649,11 +3908,35 @@ LSQ::SplitDataRequest::sendPacketToCache()
     bool mshr_alias_fail = false;
     bool hit_in_write_buffer = false;
     while (numReceivedPackets + _numOutstandingPackets < _packets.size()) {
-        bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(numReceivedPackets + _numOutstandingPackets),
-                                                bank_conflict, tag_read_fail, mshr_used,
-                                                mshr_alias_fail, hit_in_write_buffer);
+        const size_t pkt_idx =
+            numReceivedPackets + _numOutstandingPackets;
+        PacketPtr pkt = _packets.at(pkt_idx);
+
+        bool success = lsqUnit()->trySendPacket(
+            isLoad(), pkt,
+            bank_conflict, tag_read_fail, mshr_used,
+            mshr_alias_fail, hit_in_write_buffer);
+
+        DPRINTF(LSQ,
+                "Split send observe [sn:%llu] idx:%llu addr:%#lx "
+                "success:%d bankConflict:%d tagReadFail:%d "
+                "mshrUsed:%d mshrAliasFail:%d writeBuffer:%d "
+                "received:%llu outstanding:%llu total:%llu\n",
+                _inst->seqNum,
+                static_cast<unsigned long long>(pkt_idx),
+                pkt->getAddr(),
+                success,
+                bank_conflict,
+                tag_read_fail,
+                mshr_used,
+                mshr_alias_fail,
+                hit_in_write_buffer,
+                static_cast<unsigned long long>(numReceivedPackets),
+                static_cast<unsigned long long>(_numOutstandingPackets),
+                static_cast<unsigned long long>(_packets.size()));
+
         if (success) {
-            _packets[numReceivedPackets + _numOutstandingPackets]->setLSQPtr(lsqUnit()->getLsq());
+            pkt->setLSQPtr(lsqUnit()->getLsq());
             _numOutstandingPackets++;
         } else {
             break;

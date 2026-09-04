@@ -976,6 +976,9 @@ class TimedBaseBTBPredictor(SimObject):
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
     resolvedUpdate = Param.Bool(False, "Enable resolved update, no need to wait until commit")
     enabled = Param.Bool(True, "Enable this predictor component")
+    smtTidPartitioned = Param.Bool(
+        False,
+        "Partition predictor storage equally by tid in SMT mode")
 
 class MBTB(TimedBaseBTBPredictor):
     type = 'MBTB'
@@ -983,9 +986,7 @@ class MBTB(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/mbtb.hh'
 
     numEntries = Param.Unsigned(8192, "Number of entries in the MBTB")
-    tagBits = Param.Unsigned(20, "Number of bits in the tag")
-    instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
-    numThreads = Param.Unsigned(1, "Number of threads")
+    tagBits = Param.Unsigned(16, "Number of bits in the tag")
     numWays = Param.Unsigned(4, "Number of ways per set") # for 2 SRAMs, 4 ways per SRAM
     numDelay = 2
     blockSize = 32  # max 64 byte block, 32 byte aligned
@@ -998,12 +999,10 @@ class AheadBTB(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/abtb.hh'
 
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
-    tagBits = Param.Unsigned(38, "Number of bits in the tag")
-    instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
+    tagBits = Param.Unsigned(24, "Number of bits in the tag")
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
-    numWays = Param.Unsigned(8, "Number of ways per set")
+    numWays = Param.Unsigned(4, "Number of ways per set")
     aheadPipelinedStages = Param.Unsigned(1, "Number of stages ahead pipelined")
-    entryHalfAligned = Param.Bool(False, "Whether the entries are half-aligned")
     blockSize = 64
     numDelay = 0
     usingS3Pred = Param.Bool(True, "Whether using S3 predictor to update AheadBTB")
@@ -1014,9 +1013,8 @@ class UBTB(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/btb_ubtb.hh'
 
     numEntries = Param.Unsigned(32, "Number of entries in the uBTB")
-    tagBits = Param.Unsigned(38, "Number of bits in the tag")
+    tagBits = Param.Unsigned(22, "Number of bits in the tag")
 
-    aheadPipelinedStages = Param.Unsigned(0, "Number of stages ahead pipelined")
     numDelay = 0
     usingS3Pred = Param.Bool(True, "Whether using S3 predictor to update uBTB")
     # blockSize = 32  not used in uBTB
@@ -1028,9 +1026,9 @@ class BTBRAS(TimedBaseBTBPredictor):
     cxx_header = 'cpu/pred/btb/ras.hh'
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
-    numEntries = Param.Unsigned(32, "Number of entries in the RAS")
-    ctrWidth = Param.Unsigned(8, "Width of the counter")
-    numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
+    numEntries = Param.Unsigned(16, "Number of entries in the RAS")
+    ctrWidth = Param.Unsigned(3, "Width of the counter")
+    numInflightEntries = Param.Unsigned(32, "Number of inflight entries")
     numDelay = 2
 
 class BTBuRAS(TimedBaseBTBPredictor):
@@ -1082,27 +1080,46 @@ class MicroTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::MicroTAGE'
     cxx_header = "cpu/pred/btb/microtage.hh"
 
-    enableSC = Param.Bool(False, "Enable SC or not")
     updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
     usingS3Pred = Param.Bool(False, "Whether using final-stage prediction to teacher-update MicroTAGE")
     # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
-    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([512] * 4,"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
+    numPredictors = Param.Unsigned(2, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([512] * 2,"the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([16] * 2 ,"the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 2 ,"when the T0~Tn entry's tag generating, PC right shift")
     blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
 
-    histLengths = VectorParam.Unsigned([5,9,17,27] ,"the BTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([5,9] ,"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = Param.Unsigned(1, "Number of ways per set")
-    baseTableSize = Param.Unsigned(256,"Base table size")
     maxBranchPositions = Param.Unsigned(32,"Maximum branch positions per 64-byte block")
-    useAltOnNaSize = Param.Unsigned(128,"Size of the useAltOnNa table")
-    useAltOnNaWidth = Param.Unsigned(7,"Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
     numDelay = 0
+
+class PairTAGE(TimedBaseBTBPredictor):
+    """Pair-aware MicroTAGE storage skeleton for two-block emissions."""
+    type = 'PairTAGE'
+    cxx_class = 'gem5::branch_prediction::btb_pred::PairTAGE'
+    cxx_header = "cpu/pred/btb/pairtage.hh"
+
+    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([8192] * 4,"the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
+
+    histLengths = VectorParam.Unsigned([5,9,17,27] ,"the BTB TAGE T0~Tn history length")
+    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
+    numWays = Param.Unsigned(2, "Number of ways per set")
+    enableSecondBlock = Param.Bool(True, "Enable PairTAGE second-block emission and training")
+    allowOddPhase = Param.Bool(
+        True,
+        "Allow PairTAGE predict/train/second-block paths to operate on odd pair phase")
+    trainStandaloneFallThrough = Param.Bool(
+        True,
+        "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists")
+    numDelay = 2
+    enabled = False
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
@@ -1200,6 +1217,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
     smtFTQPolicy = Param.SMTFTQPolicy('Partitioned',
                                       "SMT shared FTQ allocation policy")
     smtFTQThreshold = Param.Int(100, "SMT FTQ Threshold Sharing Parameter")
+    smtNumPredictingThreads = Param.Unsigned(
+        1, "Maximum number of distinct SMT threads predicted per cycle")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
 
@@ -1213,6 +1232,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
     mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
     ras = Param.BTBRAS(BTBRAS(), "RAS")
+    pairtage = Param.PairTAGE(PairTAGE(), "PairTAGE predictor")
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")

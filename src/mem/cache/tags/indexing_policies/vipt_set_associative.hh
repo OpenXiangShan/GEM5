@@ -102,6 +102,9 @@ class VIPTSetAssociative : public SetAssociative
   protected:
     uint64_t aliasBits;
 
+    /** Whether to use XiangShan's hashed DCache alias index. */
+    const bool useHashIndex;
+
   public:
     /**
      * Convenience typedef.
@@ -113,6 +116,24 @@ class VIPTSetAssociative : public SetAssociative
      */
     VIPTSetAssociative(const Params &p);
 
+    /**
+     * Get the hashed set index for an address.
+     *
+     * With useHashIndex enabled, the non-alias set bits keep their
+     * untranslated address values and the alias bits are replaced with the
+     * RTL's XOR-folded hash of vaddr[47:12].  For the 64 KiB, 4-way, 64 B
+     * DCache this is:
+     *
+     *  vaddr[47:46] ^ vaddr[45:44] ^ ... ^ vaddr[13:12]
+     *         ┴───────────────────┬──────────────────┴
+     *                         set[7:6]
+     *                             │                     vaddr[11:6]
+     *                             │                     ┴────┬────┴
+     *                             │                      set[5:0]
+     *                             ┴─────────────┬─────────────┴
+     *                                        set[7:0]
+     */
+    uint32_t extractSet(const Addr addr) const override;
 
     /**
      * Regenerate an entry's address from its tag and assigned set.

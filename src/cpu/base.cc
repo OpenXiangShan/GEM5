@@ -877,9 +877,11 @@ BaseCPU::traceFunctionsInternal(Addr pc)
 BaseCPU::GlobalStats::GlobalStats(statistics::Group *parent)
     : statistics::Group(parent),
     ADD_STAT(simInsts, statistics::units::Count::get(),
-             "Number of instructions simulated"),
+             "Number of instructions simulated since the last statistics "
+             "reset"),
     ADD_STAT(simOps, statistics::units::Count::get(),
-             "Number of ops (including micro ops) simulated"),
+             "Number of ops (including micro ops) simulated since the last "
+             "statistics reset"),
     ADD_STAT(hostInstRate, statistics::units::Rate<
                 statistics::units::Count, statistics::units::Second>::get(),
              "Simulator instruction rate (inst/s)"),
@@ -888,13 +890,17 @@ BaseCPU::GlobalStats::GlobalStats(statistics::Group *parent)
              "Simulator op (including micro ops) rate (op/s)")
 {
     simInsts
-        .functor(BaseCPU::numSimulatedInsts)
+        .functor([this] {
+            return BaseCPU::numSimulatedInsts() - instsAtLastReset;
+        })
         .precision(0)
         .prereq(simInsts)
         ;
 
     simOps
-        .functor(BaseCPU::numSimulatedOps)
+        .functor([this] {
+            return BaseCPU::numSimulatedOps() - opsAtLastReset;
+        })
         .precision(0)
         .prereq(simOps)
         ;
@@ -911,6 +917,12 @@ BaseCPU::GlobalStats::GlobalStats(statistics::Group *parent)
 
     hostInstRate = simInsts / hostSeconds;
     hostOpRate = simOps / hostSeconds;
+
+    // Run after the complete statistics reset, including CPU-specific stats.
+    statistics::registerResetCallback([this] {
+        instsAtLastReset = BaseCPU::numSimulatedInsts();
+        opsAtLastReset = BaseCPU::numSimulatedOps();
+    });
 }
 
 int

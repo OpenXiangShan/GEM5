@@ -1049,7 +1049,7 @@ decode QUADRANT {
                     }
                     0x01: decode BS {
                         0x0: mul({{
-                            Rd = Rs1_sd * Rs2_sd;
+                            Rd = Rs1_ud * Rs2_ud;
                         }}, IntMultOp);
                     }
                     0x18: sm4ed({{
@@ -1773,6 +1773,45 @@ decode QUADRANT {
                         fd = freg(f16_to_f32(f16(freg(Fs1_bits))));
                         Fd_bits = fd.v;
                     }}, FloatCvtOp);
+                    0x4: fround_s({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f32_roundToInt(
+                            f32(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            false));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatCvtOp);
+
+                    0x5: froundnx_s({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f32_roundToInt(
+                            f32(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            true));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatCvtOp);
                 }
                 0x21: decode CONV_SGN {
                     0x0: fcvt_d_s({{
@@ -1793,6 +1832,45 @@ decode QUADRANT {
                         freg_t fd;
                         fd = freg(f16_to_f64(f16(freg(Fs1_bits))));
                         Fd_bits = fd.v;
+                    }}, FloatCvtOp);
+                    0x4: fround_d({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f64_roundToInt(
+                            f64(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            false));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatCvtOp);
+
+                    0x5: froundnx_d({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f64_roundToInt(
+                            f64(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            true));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
                     }}, FloatCvtOp);
                 }
                 0x22: decode CONV_SGN {
@@ -2088,30 +2166,211 @@ decode QUADRANT {
                         Rd = f16_classify(f16(freg(Fs1_bits)));
                     }}, FloatMiscOp);
                 }
-                0x78: fmv_w_x({{
-                    freg_t fd;
-                    fd = freg(f32(Rs1_uw));
-                    Fd_bits = fd.v;
-                    status.fs = 3;
-                    xc->setMiscReg(MISCREG_STATUS,status);
-                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                0x78: decode RS2 {
+                    0x0: fmv_w_x({{
+                        freg_t fd;
+                        fd = freg(f32(Rs1_uw));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
                             vsstatus.fs = 3;
-                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
-                    }
-                }}, FloatMvOp);
-                0x79: fmv_d_x({{
-                    freg_t fd;
-                    fd = freg(f64(Rs1));
-                    Fd_bits = fd.v;
-                    status.fs = 3;
-                    xc->setMiscReg(MISCREG_STATUS,status);
-                }}, FloatMvOp);
-                0x7a: fmv_h_x({{
-                    freg_t fd;
-                    fd = freg(f16(Rs1_uh));
-                    Fd_bits = fd.v;
-                }}, FloatMvOp);
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+
+                    0x1: fli_s({{
+                        static const uint32_t fliSTable[32] = {
+                            0xbf800000U, //  0: -1.0
+                            0x00800000U, //  1: min positive normal
+                            0x37800000U, //  2: 2^-16
+                            0x38000000U, //  3: 2^-15
+                            0x3b800000U, //  4: 2^-8
+                            0x3c000000U, //  5: 2^-7
+                            0x3d800000U, //  6: 2^-4
+                            0x3e000000U, //  7: 2^-3
+                            0x3e800000U, //  8: 0.25
+                            0x3ea00000U, //  9: 0.3125
+                            0x3ec00000U, // 10: 0.375
+                            0x3ee00000U, // 11: 0.4375
+                            0x3f000000U, // 12: 0.5
+                            0x3f200000U, // 13: 0.625
+                            0x3f400000U, // 14: 0.75
+                            0x3f600000U, // 15: 0.875
+                            0x3f800000U, // 16: 1.0
+                            0x3fa00000U, // 17: 1.25
+                            0x3fc00000U, // 18: 1.5
+                            0x3fe00000U, // 19: 1.75
+                            0x40000000U, // 20: 2.0
+                            0x40200000U, // 21: 2.5
+                            0x40400000U, // 22: 3.0
+                            0x40800000U, // 23: 4.0
+                            0x41000000U, // 24: 8.0
+                            0x41800000U, // 25: 16.0
+                            0x43000000U, // 26: 128.0
+                            0x43800000U, // 27: 256.0
+                            0x47000000U, // 28: 2^15
+                            0x47800000U, // 29: 2^16
+                            0x7f800000U, // 30: +infinity
+                            0x7fc00000U  // 31: canonical NaN
+                        };
+
+                        freg_t fd;
+                        fd = freg(f32(fliSTable[RS1]));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+                }
+                0x79: decode RS2 {
+                    0x0: fmv_d_x({{
+                        freg_t fd;
+                        fd = freg(f64(Rs1));
+                        Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+
+                    0x1: fli_d({{
+                        static const uint64_t fliDTable[32] = {
+                            0xbff0000000000000ULL,
+                            0x0010000000000000ULL,
+                            0x3ef0000000000000ULL,
+                            0x3f00000000000000ULL,
+                            0x3f70000000000000ULL,
+                            0x3f80000000000000ULL,
+                            0x3fb0000000000000ULL,
+                            0x3fc0000000000000ULL,
+                            0x3fd0000000000000ULL,
+                            0x3fd4000000000000ULL,
+                            0x3fd8000000000000ULL,
+                            0x3fdc000000000000ULL,
+                            0x3fe0000000000000ULL,
+                            0x3fe4000000000000ULL,
+                            0x3fe8000000000000ULL,
+                            0x3fec000000000000ULL,
+                            0x3ff0000000000000ULL,
+                            0x3ff4000000000000ULL,
+                            0x3ff8000000000000ULL,
+                            0x3ffc000000000000ULL,
+                            0x4000000000000000ULL,
+                            0x4004000000000000ULL,
+                            0x4008000000000000ULL,
+                            0x4010000000000000ULL,
+                            0x4020000000000000ULL,
+                            0x4030000000000000ULL,
+                            0x4060000000000000ULL,
+                            0x4070000000000000ULL,
+                            0x40e0000000000000ULL,
+                            0x40f0000000000000ULL,
+                            0x7ff0000000000000ULL,
+                            0x7ff8000000000000ULL
+                        };
+
+                        Fd_bits = fliDTable[RS1];
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+                }
+                0x7a: decode RS2 {
+                    0x0: fmv_h_x({{
+                        freg_t fd;
+                        fd = freg(f16(Rs1_uh));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+
+                    0x1: fli_h({{
+                        static const uint16_t fliHTable[32] = {
+                            0xbc00U, //  0: -1.0
+                            0x0400U, //  1: min positive normal
+                            0x0100U, //  2: 2^-16, subnormal
+                            0x0200U, //  3: 2^-15, subnormal
+                            0x1c00U, //  4: 2^-8
+                            0x2000U, //  5: 2^-7
+                            0x2c00U, //  6: 2^-4
+                            0x3000U, //  7: 2^-3
+                            0x3400U, //  8: 0.25
+                            0x3500U, //  9: 0.3125
+                            0x3600U, // 10: 0.375
+                            0x3700U, // 11: 0.4375
+                            0x3800U, // 12: 0.5
+                            0x3900U, // 13: 0.625
+                            0x3a00U, // 14: 0.75
+                            0x3b00U, // 15: 0.875
+                            0x3c00U, // 16: 1.0
+                            0x3d00U, // 17: 1.25
+                            0x3e00U, // 18: 1.5
+                            0x3f00U, // 19: 1.75
+                            0x4000U, // 20: 2.0
+                            0x4100U, // 21: 2.5
+                            0x4200U, // 22: 3.0
+                            0x4400U, // 23: 4.0
+                            0x4800U, // 24: 8.0
+                            0x4c00U, // 25: 16.0
+                            0x5800U, // 26: 128.0
+                            0x5c00U, // 27: 256.0
+                            0x7800U, // 28: 2^15
+                            0x7c00U, // 29: +infinity
+                            0x7c00U, // 30: +infinity
+                            0x7e00U  // 31: canonical NaN
+                        };
+
+                        freg_t fd;
+                        fd = freg(f16(fliHTable[RS1]));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+                }
             }
         }
 

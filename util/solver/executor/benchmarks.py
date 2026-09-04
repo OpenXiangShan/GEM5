@@ -88,6 +88,38 @@ _BENCHMARKS = {
         cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/gcc15/cluster-0-0.json",
         score_script="gem5-score-ci.sh",
     ),
+    "spec06-rva23-novec-gcc16-0.3c": BenchmarkConfig(
+        benchmark_type="spec06-rva23-novec-gcc16-0.3c",
+        checkpoint_list=(
+            "/nfs/home/share/gem5_ci/spec06_cpts/"
+            "gcc16_rva23_novec/spec06_0.3c.lst"
+        ),
+        checkpoint_root=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec06_gcc16_rva23_novec_260820/checkpoint"
+        ),
+        cluster_config=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec06_gcc16_rva23_novec_260820/json/checkpoints_cov0.3.json"
+        ),
+        score_script="gem5-score-ci.sh",
+    ),
+    "spec06-rva23-novec-gcc16-1.0c": BenchmarkConfig(
+        benchmark_type="spec06-rva23-novec-gcc16-1.0c",
+        checkpoint_list=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec06_gcc16_rva23_novec_260820/checkpoint/checkpoint.lst"
+        ),
+        checkpoint_root=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec06_gcc16_rva23_novec_260820/checkpoint"
+        ),
+        cluster_config=(
+            "/nfs/home/share/checkpoints_profiles/"
+            "spec06_gcc16_rva23_novec_260820/json/checkpoints_all.json"
+        ),
+        score_script="gem5-score-ci.sh",
+    ),
     "spec17-1.0c": BenchmarkConfig(
         benchmark_type="spec17-1.0c",
         checkpoint_list="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst",

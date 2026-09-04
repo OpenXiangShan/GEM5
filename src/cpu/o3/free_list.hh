@@ -45,21 +45,24 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <list>
 #include <queue>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "cpu/o3/comm.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/o3/regfile.hh"
 #include "debug/FreeList.hh"
+#include "enums/SMTQueuePolicy.hh"
 
 namespace gem5
 {
 
+struct BaseO3CPUParams;
+
 namespace o3
 {
-
-class UnifiedRenameMap;
 
 /**
  * Free list for a single class of registers (e.g., integer
@@ -142,45 +145,139 @@ class UnifiedFreeList
      */
     PhysRegFile *regFile;
 
-    /*
-     * We give UnifiedRenameMap internal access so it can get at the
-     * internal per-class free lists and associate those with its
-     * per-class rename maps. See UnifiedRenameMap::init().
-     */
-    friend class UnifiedRenameMap;
+    /** SMT resource sharing policy for the Preg free lists. */
+    SMTQueuePolicy pregPolicy;
+
+    /** Percentage (0-100) of per-thread fair share that a donor thread
+     *  reserves.  donorQuota(type) = numPhysRegs[type] / activeThreadCount
+     *  * donorReservePercent / 100.  Automatically scales with thread count. */
+    const unsigned donorReservePercent;
+
+    /** Fixed per-thread base quota override (0 = use numPhysRegs/activeThreads). */
+    const unsigned fixedBase;
+
+    ThreadID numThreads;
+
+    /** Pointer to the CPU's active-threads list, for DynamicBorrowing's
+     *  active-thread-count-based base quota and for Partitioned's
+     *  resetEntries(). */
+    std::list<ThreadID> *activeThreads = nullptr;
+
+    /** Total physical registers of each class, captured at construction
+     *  time (before any allocation happens). */
+    unsigned numPhysRegs[RMiscRegClass + 1] = {};
+
+    /** Per-thread, per-class static cap used by the Partitioned policy. */
+    unsigned maxEntries[MaxThreads][RMiscRegClass + 1] = {};
+
+    /** Per-thread, per-class occupancy accounting. Needed because
+     *  freeLists[] is a single shared queue per class with no notion of
+     *  which thread holds which register. */
+    unsigned threadUsed[MaxThreads][RMiscRegClass + 1] = {};
+
+    /** Whether a thread may donate unused headroom this cycle.  Set by
+     *  Rename::tick() every cycle via setBorrowingDonor() before any
+     *  thread's canRename() is evaluated. */
+    bool donor[MaxThreads] = {};
+
+    unsigned activeThreadCount() const;
+
+    /** Per-thread base quota for register class type. */
+    unsigned base(RegClassType type) const;
+
+    /** Reduced reserve quota used for a donor thread. */
+    unsigned donorQuota(RegClassType type) const;
+
+    /** Self-contained DynamicBorrowing limit for the given thread:
+     *  numPhysRegs[type] - sum_active_other(max(used[other], reserve[other])).
+     *  Only counts active threads to avoid deadlocking single-thread runs. */
+    unsigned borrowingLimit(RegClassType type, ThreadID tid) const;
 
   public:
     /** Constructs a free list.
-     *  @param _numPhysicalIntRegs Number of physical integer registers.
-     *  @param reservedIntRegs Number of integer registers already
-     *                         used by initial mappings.
-     *  @param _numPhysicalFloatRegs Number of physical fp registers.
-     *  @param reservedFloatRegs Number of fp registers already
-     *                           used by initial mappings.
+     *  @param _my_name Name of the free list, for DPRINTF.
+     *  @param _regFile The register file, used to populate the free list.
+     *  @param params CPU params, providing smtPregPolicy and friends.
      */
-    UnifiedFreeList(const std::string &_my_name, PhysRegFile *_regFile);
+    UnifiedFreeList(const std::string &_my_name, PhysRegFile *_regFile,
+                     const BaseO3CPUParams &params);
 
     /** Gives the name of the freelist. */
     std::string name() const { return _name; };
 
-    /** Gets a free register of type type. */
-    PhysRegIdPtr getReg(RegClassType type) { return freeLists[type].getReg(); }
+    /** Sets pointer to the list of active threads. */
+    void
+    setActiveThreads(std::list<ThreadID> *at_ptr)
+    {
+        activeThreads = at_ptr;
+    }
 
-    /** Adds a register back to the free list. */
+    /** Marks/unmarks a thread as a borrowing donor.  Called by
+     *  Rename::tick() every cycle for all threads before rename begins. */
+    void
+    setBorrowingDonor(ThreadID tid, bool val)
+    {
+        donor[tid] = val;
+    }
+
+    /** Recomputes the Partitioned policy's per-thread maxEntries when the
+     *  active thread count changes. */
+    void resetEntries();
+
+    /** Gets a free register of type type for thread tid, and records the
+     *  allocation against that thread's occupancy. */
+    PhysRegIdPtr
+    getReg(RegClassType type, ThreadID tid)
+    {
+        PhysRegIdPtr reg = freeLists[type].getReg();
+        threadUsed[tid][type]++;
+        return reg;
+    }
+
+    /** Adds a register back to the free list. Used only for the initial,
+     *  thread-agnostic population of the free lists at construction time;
+     *  does not touch threadUsed accounting. */
     template<class InputIt>
     void
     addRegs(InputIt first, InputIt last)
     {
-        std::for_each(first, last, [this](auto &reg) { addReg(&reg); });
+        std::for_each(first, last,
+                      [this](auto &reg) { this->addReg(&reg); });
     }
 
-    /** Adds a register back to the free list.
-        NOTE: freed_reg's refCnt must is 0
+    /** Adds a register back to the free list, without per-thread
+     *  accounting. Only meant for the initial bulk population via
+     *  addRegs() above.
+     *  NOTE: freed_reg's refCnt must is 0
      */
     void
     addReg(PhysRegIdPtr freed_reg)
     {
         freeLists[freed_reg->classValue()].addReg(freed_reg);
+    }
+
+    /** Adds a register back to the free list on behalf of thread tid,
+     *  releasing that thread's occupancy.
+     *  NOTE: freed_reg's refCnt must is 0
+     */
+    void
+    addReg(PhysRegIdPtr freed_reg, ThreadID tid)
+    {
+        assert(tid < MaxThreads &&
+               threadUsed[tid][freed_reg->classValue()] > 0);
+        threadUsed[tid][freed_reg->classValue()]--;
+        freeLists[freed_reg->classValue()].addReg(freed_reg);
+    }
+
+    /** Resets per-thread occupancy accounting on thread removal.
+     *  Called from CPU::removeThread() after the thread's mappings have
+     *  been released. */
+    void
+    resetThreadUsed(ThreadID tid)
+    {
+        for (int i = 0; i <= RMiscRegClass; i++)
+            threadUsed[tid][i] = 0;
+        donor[tid] = false;
     }
 
     /** Checks if there are any free registers of type type. */
@@ -196,6 +293,22 @@ class UnifiedFreeList
     {
         return freeLists[type].numFreeRegs();
     }
+
+    /** Whether thread tid may allocate n more registers of type type
+     *  under the configured smtPregPolicy. */
+    bool canAllocate(RegClassType type, ThreadID tid, unsigned n = 1) const;
+
+    /** Number of registers of type type thread tid may allocate right
+     *  now under the configured smtPregPolicy (bounded by the number of
+     *  physically free registers). Equivalent to the pre-SMT-partition
+     *  numFreeRegs() when smtPregPolicy is Dynamic. */
+    unsigned numAllocatable(RegClassType type, ThreadID tid) const;
+
+    /** Returns true when thread tid cannot allocate n registers of type
+     *  due to per-thread quota exhaustion (Partitioned or DynamicBorrowing),
+     *  while the global free list still has sufficient free registers.
+     *  Always returns false under the Dynamic policy. */
+    bool isPerThreadExhausted(RegClassType type, ThreadID tid, unsigned n) const;
 };
 
 } // namespace o3

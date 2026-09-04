@@ -1,5 +1,5 @@
 name: Manual Performance Test
-run-name: ${{ format('{0} - {1} - {2}{3} - pf:{4} - {5} - {6}{7}', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.pf_control_profile || 'off', github.event.inputs.branch || github.ref_name, github.event.inputs.vector_type, github.event.inputs.extra_args && format(' - {0}', github.event.inputs.extra_args) || '') }}
+run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5} - {6}', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name, github.event.inputs.vector_type, github.event.inputs.extra_args || 'no-extra-args') }}
 
 on:
   workflow_dispatch:
@@ -23,16 +23,18 @@ on:
         description: 'Benchmark coverage type'
         required: true
         type: choice
-        default: 'gcc15-spec06-1.0c'
+        default: 'spec06-rva23-novec-gcc16-1.0c'
         options:
+          - spec06-rva23-novec-gcc16-0.3c
+          - spec06-rva23-novec-gcc16-1.0c
+          - gcc15-spec06-0.3c
+          - gcc15-spec06-1.0c
           - gcc12-spec06-0.3c
           - gcc12-spec06-smt-0.3c
           - gcc12-spec06-smt-1.0c
           - gcc12-spec06-smt-int-1.0c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
-          - gcc15-spec06-0.3c
-          - gcc15-spec06-1.0c
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
@@ -51,22 +53,13 @@ on:
         options:
           - base
           - simple
-      pf_control_profile:
-        description: 'Prefetch control profile'
-        required: false
-        type: choice
-        default: 'off'
-        options:
-          - 'off'
-          - adaptive
-          - default
       extra_args:
-        description: 'Extra gem5 args appended to config runs, e.g. --dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini'
+        description: 'Extra gem5 args appended to config runs, e.g. --dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini --enable-dynamic-pf=True'
         required: false
         type: string
         default: ''
       distributed_servers:
-        description: 'Optional distributed server list. Use default for node020-node034,node036-node039; leave empty for old single-runner parallel path'
+        description: 'Optional distributed server list. Use default for node020-node029,node033-node034,node036-node039; leave empty for old single-runner parallel path'
         required: false
         type: string
         default: ''
@@ -110,7 +103,6 @@ jobs:
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       vector_type: ${{ github.event.inputs.vector_type }}
-      pf_control_profile: ${{ github.event.inputs.pf_control_profile }}
       extra_args: ${{ github.event.inputs.extra_args }}
       distributed_servers: ${{ github.event.inputs.distributed_servers }}
       distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}

@@ -46,8 +46,8 @@
 
 ### 支持的标签
 
-- `perf`: 触发 `idealkmhv3.py` + `gcc15-spec06-1.0c`
-- `perf-align`: 触发 `kmhv3.py` + `gcc15-spec06-0.3c`
+- `perf`: 触发 `idealkmhv3.py` + `spec06-rva23-novec-gcc16-0.3c`
+- `perf-align`: 触发 `kmhv3.py` + `spec06-rva23-novec-gcc16-0.3c`
 - `rvv`: 触发 `idealkmhv3.py` + `spec06int-rvv-0.8c`
 
 ### 权限控制
@@ -60,19 +60,20 @@
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
-- 需要动态预取 A/B 时，请使用 `manual-perf.yml` 的 `pf_control_profile` 输入；不要在 `extra_args` 中手写 `--pf-control-profile`
+- `manual-perf.yml` 和 `manual-solve.yml` 暂时保留 GCC15 SPEC06 选项供历史实验续跑；自动任务和默认选项使用 GCC16 RVA23 no-vector 切片
+- `idealkmhv3.py` 默认关闭动态预取；`smt_idealkmhv3.py` 保持当前默认行为
+- 需要手动切换动态预取时，请在 `manual-perf.yml` 的 `extra_args` 中直接写 `--enable-dynamic-pf=True|False`
 
-### Dynamic Prefetch Profile
+### Dynamic Prefetch Toggle
 
-`manual-perf.yml` 和性能测试模板支持 `pf_control_profile`：
+`manual-perf.yml` 不再提供独立的动态预取输入。相关行为由 `extra_args` 显式控制：
 
-| Profile | 语义 |
+| 开关值 | 语义 |
 | --- | --- |
-| `off` | 默认 base 行为，关闭内置动态预取控制 |
-| `adaptive` | 启用 CI 内置 adaptive profile，窗口为 8000 cycles，并打开 L1D/L2/L2Wrapper PFBad 表 |
-| `default` | 不套内置 profile，仅使用代码中的 `PF_CONTROL_CONFIG` 和可选的 `GEM5_PF_CONTROL_CONFIG` 覆盖 |
+| `False` | 显式关闭动态预取控制 |
+| `True` | 显式启用动态预取控制，窗口为 8000 cycles，并打开 L1D/L2/L2Wrapper PFBad 表 |
 
-动态预取 profile 会被模板统一追加到 gem5 config 参数。这样可以避免 manual 输入、weekly 配置和分布式 runner 之间出现参数口径不一致。
+如果 `extra_args` 没有显式传 `--enable-dynamic-pf`，`idealkmhv3.py` 会默认保持关闭。SMT 配置保持现有默认行为不变。
 
 ### 性能结果
 
@@ -93,26 +94,33 @@
 
 **目标**: 确保 `xs-dev` 分支永远健康、可发布
 
-**触发**: PR 合入 `xs-dev` 分支后自动运行
+**触发**:
+- PR 合入 `xs-dev` 分支后自动运行
+- 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签，合入前按 PR head commit 运行
 
 ### 包含的测试 Workflows
 
 #### 1. `gem5.yml` - 功能回归测试
-8个并行 jobs（遵循DRY原则，排除已在 Tier 1 运行的测试）
+5 个并行 jobs（遵循 DRY 原则，排除已在 Tier 1 运行的测试）
+
+维护者可以在 PR 上添加 `regression` 标签，提前运行与合入后相同的完整功能回归。为避免 `pull_request_target` 执行外部代码，该入口仅接受目标分支为 `xs-dev` 的同仓库 PR。
 
 **已移除**（避免重复）:
 - ~~`unit_tests`~~ → 在 `pr-quick-check.yml`
 - ~~`difftest_check`~~ → 在 `pr-quick-check.yml`
+- ~~legacy GC/GCB checkpoint suite~~ → 覆盖陈旧且失败定位成本高
+- ~~standalone RV64GCBV checkpoint smoke~~ → 已有 vector micro-tests 和 RVV checkpoint 性能回归
+- ~~L2TLB checkpoint regression~~ → 长期未发现测试本体失败
 
 #### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
-默认跑 `gcc15-spec06-1.0c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
+默认跑 `spec06-rva23-novec-gcc16-0.3c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
 
 #### 3. `gem5-align-btb-0.3c.yml` - Align 性能测试
-默认跑 `gcc15-spec06-0.3c`，在 `xs-dev`、`*-align` 分支和 PR `perf-align` 标签上自动触发
+默认跑 `spec06-rva23-novec-gcc16-0.3c`，在 `xs-dev`、`*-align` 分支和 PR `perf-align` 标签上自动触发
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
-- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 gcc15/spec17 常规回归、gcc12 `idealkmhv3.py` base/adaptive A/B，以及 SMT SPEC06 int-only dynamic prefetch 回归
+- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 gcc16 rva23-novec/spec17 常规回归、gcc12 `idealkmhv3.py` 动态预取回归，以及 SMT SPEC06 int-only dynamic prefetch 回归
 
 ---
 
@@ -152,20 +160,21 @@ git push origin xs-dev
 # 只需要通过 Tier 1 快速检查即可
 
 # 场景2: 性能相关改动
-# 在 PR 上添加 perf 标签，运行 Ideal BTB 性能测试（idealkmhv3.py / gcc15-spec06-1.0c）
-# 在 PR 上添加 perf-align 标签，运行 Align BTB 性能测试（kmhv3.py / gcc15-spec06-0.3c）
+# 在 PR 上添加 perf 标签，运行 Ideal BTB 性能测试（idealkmhv3.py / spec06-rva23-novec-gcc16-0.3c）
+# 在 PR 上添加 perf-align 标签，运行 Align BTB 性能测试（kmhv3.py / spec06-rva23-novec-gcc16-0.3c）
 
-# 或者把当前分支改名为*-perf, 每次 push 会自动运行 gcc15-spec06-1.0c。
-# 如果是对齐 RTL 的轻量评估，可使用 *-align, 每次 push 会自动运行 gcc15-spec06-0.3c。
+# 或者把当前分支改名为*-perf, 每次 push 会自动运行 spec06-rva23-novec-gcc16-0.3c。
+# 如果是对齐 RTL 的轻量评估，可使用 *-align, 每次 push 会自动运行 spec06-rva23-novec-gcc16-0.3c。
 ```
 
 ### 维护者
 
 1. 检查 Tier 1 快速检查结果
 2. 对于性能敏感的 PR，添加 `perf` 或 `perf-align` 标签
-3. 审查代码和性能影响
-4. 合入后监控 Tier 2 测试
-5. 如发现失败，立即回滚
+3. 对于可能影响 gem5 功能回归的 PR，添加 `regression` 标签
+4. 审查代码和性能影响
+5. 合入后监控 Tier 2 测试
+6. 如发现失败，立即回滚
 
 ---
 
@@ -197,7 +206,7 @@ python actions_gem5.py --token <github-token> --always-on
 
 - `.github/workflows/pr-quick-check.yml` - Tier 1
 - `.github/workflows/gem5-perf-template.yml` - 性能测试模板
-- `.github/workflows/gem5.yml` - Tier 2 功能测试
+- `.github/workflows/gem5.yml` - `xs-dev` 合入后或 `regression` 标签触发的完整功能回归
 - `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` / `perf` 标签默认性能测试
 - `.github/workflows/gem5-align-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
 - `.github/workflows/on-demand-spec-rvv.yml` - `rvv` 标签 RVV 性能测试
@@ -213,6 +222,9 @@ A: 性能测试耗时长，会拖慢 PR 审查。现在改为按需触发，既�
 **Q: 如何触发性能测试？**
 A: 在 PR 上添加 `perf` 或 `perf-align` 标签；需要自定义配置时使用 `manual-perf.yml`。
 
+**Q: 如何在合入前运行完整的 gem5 功能回归？**
+A: 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签。workflow 会按标签创建时的 PR head commit 运行，外部 fork PR 不会触发。
+
 **Q: 为什么外部 fork PR 加标签不会触发性能测试？**
 A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
 
@@ -220,7 +232,7 @@ A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_tar
 A: 只需修改 `gem5-perf-template.yml`
 
 **Q: 如何跑动态预取性能测试？**
-A: 使用 `manual-perf.yml`，把 `pf_control_profile` 设为 `adaptive`。base 对比使用默认的 `off`。模板会拒绝通过 `extra_args` 重复传 `--pf-control-profile`，防止一个 run 里出现两个互相冲突的 profile。
+A: 使用 `manual-perf.yml`，在 `extra_args` 里直接传 `--enable-dynamic-pf=True`。base 对比请显式传 `--enable-dynamic-pf=False`。`idealkmhv3.py` 默认关闭动态预取，SMT 配置保持当前默认行为不变。
 
 ---
 

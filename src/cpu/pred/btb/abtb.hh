@@ -40,6 +40,7 @@
 #ifndef __CPU_PRED_BTB_BTB_HH__
 #define __CPU_PRED_BTB_BTB_HH__
 
+#include <algorithm>
 #include <memory>
 #include <queue>
 #include <tuple>
@@ -152,6 +153,9 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Returns the prediction meta
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     /** Returns whether the last AheadBTB prediction produced any native hit
      *  entries before mixing with uBTB stage-0 output.
@@ -229,9 +233,29 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC, uint8_t asidHash) {
+    static constexpr unsigned AbtbHashHistoryLength = 5;
+    static constexpr unsigned AbtbHashFoldedLength = 5;
+    static constexpr unsigned AbtbHashBits = 4;
+
+    inline Addr foldAbtbPhrHash(const boost::dynamic_bitset<> &history) const {
+        Addr folded = 0;
+        const unsigned hist_len =
+            std::min<unsigned>(AbtbHashHistoryLength, history.size());
+        for (unsigned bit = 0; bit < hist_len; ++bit) {
+            if (history[bit]) {
+                folded ^= (1ULL << (bit % AbtbHashFoldedLength));
+            }
+        }
+        return folded & mask(AbtbHashBits);
+    }
+
+    inline Addr getIndex(Addr instPC, uint8_t asidHash, ThreadID tid,
+                         Addr phrHash = 0) const {
         Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
-        return xorAsidHashIntoIndex(baseIndex, floorLog2(numSets), asidHash);
+        baseIndex ^= phrHash & idxMask;
+        Addr index = xorAsidHashIntoIndex(
+            baseIndex, floorLog2(numSets), asidHash);
+        return partitionIndex(index, numSets, tid);
     }
 
     /** Returns the tag bits of a given address.
@@ -240,11 +264,12 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC, uint8_t asidHash) {
-        Addr baseTag = (instPC >> tagShiftAmt) & tagMask;
+    inline Addr getTag(Addr instPC, uint8_t asidHash) const {
+        const unsigned shift = tagShiftAmt -
+            (usesTidPartitionedStorage() ? 1 : 0);
+        Addr baseTag = (instPC >> shift) & tagMask;
         return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
-
 
     /** Update the 2-bit saturating counter for conditional branches
      *  Counter range: [-2, 1]
@@ -256,13 +281,17 @@ class AheadBTB : public TimedBaseBTBPredictor
         if (!taken && ctr > -2) {ctr--;}
     }
 
-        typedef struct BTBMeta
+    typedef struct BTBMeta
     {
+        bool valid;
+        Addr indexPhrHash;
+        Addr lookupIndex;
+        bool lookupIndexValid;
         std::vector<BTBEntry> hit_entries;
-        BTBMeta() {
-            std::vector<BTBEntry> es;
-            hit_entries = es;
-        }
+        BTBMeta()
+            : valid(false), indexPhrHash(0), lookupIndex(0),
+              lookupIndexValid(false)
+        {}
     }BTBMeta;
 
     /**
@@ -282,6 +311,11 @@ class AheadBTB : public TimedBaseBTBPredictor
         * cycle, we can use this instead of BTBMeta.
         */
         std::vector<BTBEntry> lastPredEntries;
+        Addr lastPredIndexPhrHash = 0;
+        Addr lastPredLookupIndex = 0;
+        bool lastPredLookupIndexValid = false;
+        Addr currentLookupIndex = 0;
+        bool currentLookupIndexValid = false;
 
         std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
     };
@@ -297,6 +331,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
                                               Addr startAddr);
+    std::vector<TickedBTBEntry> processEntriesNoSideEffect(
+        const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
     /** Fill predictions for pipeline stages
      *  @param entries Processed BTB entries
@@ -310,7 +346,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                std::vector<FullBTBPrediction>& stagePreds,
-                               ThreadID tid);
+                               ThreadID tid,
+                               Addr indexPhrHash);
 
     /** Process prediction metadata and old entries
      *  @param meta BTB metadata from prediction
@@ -389,14 +426,22 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Returns all hit BTB entries.
      */
     std::vector<TickedBTBEntry> lookup(Addr block_pc, ThreadID tid,
-                                       uint8_t asidHash);
+                                       uint8_t asidHash,
+                                       Addr indexPhrHash);
+    std::vector<TickedBTBEntry> lookupNoSideEffect(
+        Addr block_pc, ThreadID tid, uint8_t asidHash,
+        Addr indexPhrHash) const;
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
     std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, ThreadID tid,
-                                                  uint8_t asidHash);
+                                                  uint8_t asidHash,
+                                                  Addr indexPhrHash);
+    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(
+        Addr block_pc, ThreadID tid, uint8_t asidHash,
+        Addr indexPhrHash) const;
 
     /** The BTB structure:
      *  - Organized as numSets sets
