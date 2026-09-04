@@ -99,6 +99,146 @@ std::pair<bool, Addr> findIndirectTarget(const IndirectTargets& indirectTargets,
     return {false, 0};
 }
 
+TEST(FetchTargetTest, UsesPredictionLayoutForHistoryAndTraining)
+{
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.updateEndInstPC = 0x100c;
+
+    BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
+    stream.predBTBEntries = {
+        BTBEntry(createBranchInfo(0x1004, 0x1100, true)),
+        predictedExit,
+        BTBEntry(createBranchInfo(0x100c, 0x1200, true)),
+        BTBEntry(createBranchInfo(0x1014, 0x1300, true)),
+    };
+
+    const auto historyUpdate =
+        stream.getGHistUpdateDuringSquash(0x1010, false, false);
+    EXPECT_EQ(historyUpdate.shamt, 3);
+
+    stream.setUpdateBTBEntries();
+    ASSERT_EQ(stream.updateBTBEntries.size(), 3);
+    EXPECT_EQ(stream.updateBTBEntries[0].pc, 0x1004);
+    EXPECT_EQ(stream.updateBTBEntries[1].pc, 0x1008);
+    EXPECT_EQ(stream.updateBTBEntries[2].pc, 0x100c);
+}
+
+TEST(FullBTBPredictionTest, MergesLayoutAroundPredictedExit)
+{
+    FullBTBPrediction pred;
+    pred.bbStart = 0x1000;
+
+    BTBEntry before(createBranchInfo(0x1004, 0x1100, true));
+    before.alwaysTaken = true;
+    before.ctr = 1;
+    BTBEntry staleExit(createBranchInfo(0x1008, 0xdead, true));
+    BTBEntry afterTaken(createBranchInfo(0x100c, 0x1200, true));
+    afterTaken.alwaysTaken = false;
+    afterTaken.ctr = 0;
+    BTBEntry afterNotTaken(createBranchInfo(0x1010, 0x1300, true));
+    afterNotTaken.alwaysTaken = false;
+    afterNotTaken.ctr = -1;
+
+    BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
+    predictedExit.source = 7;
+    ASSERT_TRUE(pred.setBTBEntriesWithPredictedExit(
+        {afterNotTaken, staleExit, before, afterTaken}, predictedExit,
+        true));
+
+    ASSERT_EQ(pred.btbEntries.size(), 4);
+    EXPECT_EQ(pred.btbEntries[0].pc, before.pc);
+    EXPECT_FALSE(pred.btbEntries[0].alwaysTaken);
+    EXPECT_EQ(pred.btbEntries[1].pc, predictedExit.pc);
+    EXPECT_EQ(pred.btbEntries[1].target, predictedExit.target);
+    EXPECT_EQ(pred.btbEntries[1].source, predictedExit.source);
+    EXPECT_EQ(pred.btbEntries[2].pc, afterTaken.pc);
+    EXPECT_EQ(pred.btbEntries[3].pc, afterNotTaken.pc);
+
+    EXPECT_EQ(findCondTaken(pred.condTakens, before.pc),
+              std::make_pair(true, false));
+    EXPECT_EQ(findCondTaken(pred.condTakens, predictedExit.pc),
+              std::make_pair(true, true));
+    EXPECT_EQ(findCondTaken(pred.condTakens, afterTaken.pc),
+              std::make_pair(true, true));
+    EXPECT_EQ(findCondTaken(pred.condTakens, afterNotTaken.pc),
+              std::make_pair(true, false));
+    EXPECT_EQ(pred.getTakenEntry().pc, predictedExit.pc);
+    EXPECT_EQ(pred.getTarget(0x40), predictedExit.target);
+
+    ASSERT_TRUE(pred.setBTBEntriesWithPredictedExit(
+        {afterTaken, before}, predictedExit, false));
+    EXPECT_FALSE(pred.isTaken());
+    EXPECT_EQ(pred.getTarget(0x40), pred.getFallThrough(0x40));
+}
+
+TEST(FullBTBPredictionTest, RejectsUnconditionalBeforePredictedExit)
+{
+    FullBTBPrediction pred;
+    pred.bbStart = 0x1000;
+    BTBEntry unconditional(createBranchInfo(0x1004, 0x3000));
+    BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
+
+    EXPECT_FALSE(pred.setBTBEntriesWithPredictedExit(
+        {unconditional}, predictedExit, true));
+    EXPECT_TRUE(pred.btbEntries.empty());
+}
+
+TEST(FullBTBPredictionTest, PreservesPostExitIndirectTargetsWhenExitTaken)
+{
+    FullBTBPrediction pred;
+    pred.bbStart = 0x1000;
+    BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
+    BTBEntry indirect(createBranchInfo(0x100c, 0x3000, false, true));
+
+    ASSERT_TRUE(pred.setBTBEntriesWithPredictedExit(
+        {indirect}, predictedExit, true));
+    EXPECT_EQ(pred.getTakenEntry().pc, predictedExit.pc);
+    EXPECT_EQ(findIndirectTarget(pred.indirectTargets, indirect.pc),
+              std::make_pair(true, indirect.target));
+    EXPECT_EQ(pred.getTarget(0x40), predictedExit.target);
+
+    BTBEntry returnEntry(
+        createBranchInfo(0x1010, 0x4000, false, true, false, true));
+    ASSERT_TRUE(pred.setBTBEntriesWithPredictedExit(
+        {returnEntry}, predictedExit, true));
+    EXPECT_EQ(pred.getTakenEntry().pc, predictedExit.pc);
+    EXPECT_EQ(pred.returnTarget, returnEntry.target);
+    EXPECT_EQ(pred.getTarget(0x40), predictedExit.target);
+}
+
+TEST(FullBTBPredictionTest, MergesNotTakenLayoutAndSuppressesUnconditionalEntries)
+{
+    FullBTBPrediction pred;
+    pred.bbStart = 0x1000;
+
+    BTBEntry before(createBranchInfo(0x1004, 0x1100, true));
+    before.alwaysTaken = true;
+    before.ctr = 1;
+    BTBEntry beforeUnconditional(createBranchInfo(0x1002, 0x2f00));
+    BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
+    BTBEntry afterTaken(createBranchInfo(0x100c, 0x1200, true));
+    afterTaken.alwaysTaken = true;
+    afterTaken.ctr = 1;
+    BTBEntry afterUnconditional(createBranchInfo(0x1010, 0x3000));
+
+    ASSERT_TRUE(pred.setBTBEntriesWithPredictedExit(
+        {afterUnconditional, afterTaken, predictedExit, beforeUnconditional, before}, predictedExit, false));
+
+    ASSERT_EQ(pred.btbEntries.size(), 3);
+    EXPECT_EQ(pred.btbEntries[0].pc, before.pc);
+    EXPECT_EQ(pred.btbEntries[1].pc, predictedExit.pc);
+    EXPECT_EQ(pred.btbEntries[2].pc, afterTaken.pc);
+    EXPECT_TRUE(std::all_of(
+        pred.btbEntries.begin(), pred.btbEntries.end(),
+        [](const auto &entry) { return !entry.alwaysTaken && entry.ctr < 0; }));
+    EXPECT_TRUE(
+        std::all_of(pred.condTakens.begin(), pred.condTakens.end(), [](const auto &entry) { return !entry.second; }));
+    EXPECT_EQ(pred.getGHistUpdate().shamt, 3);
+    EXPECT_FALSE(pred.isTaken());
+    EXPECT_EQ(pred.getTarget(0x40), pred.getFallThrough(0x40));
+}
+
 /**
  * @brief Execute a complete BTB prediction-update cycle
  *

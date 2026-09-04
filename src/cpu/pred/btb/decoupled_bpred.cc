@@ -707,6 +707,14 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     const bool checkerMatches =
         pairtage->secondBlockMatches(thread.twoTakenTrainPacket);
     ubtb->recordCheckerResult(checkerHit, checkerMatches);
+    if (!checkerHit) {
+        dbpBtbStats.twoTakenUbtbMissDrops++;
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second block enqueue for thread %u because "
+                "the uBTB checker missed\n",
+                tid);
+        return;
+    }
     if (!checkerMatches) {
         const auto &teacherPacket = thread.twoTakenTrainPacket;
         const bool teacherValid = teacherPacket.valid;
@@ -734,41 +742,37 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     secondPred.s3Source = pairtage->getComponentIdx();
 
     BTBEntry secondEntry = secondBlock.buildBTBEntry(pairtage->getComponentIdx());
-    secondPred.btbEntries.push_back(secondEntry);
-    if (secondEntry.valid && secondEntry.isCond) {
-        secondPred.condTakens.push_back({secondEntry.pc, secondBlock.taken});
+    assert(secondEntry.valid);
+
+    std::vector<BTBEntry> mbtbEntries;
+    if (mbtb && mbtb->isEnabled() && secondBlock.valid) {
+        mbtbEntries = mbtb->getPredictedEntriesNoSideEffect(
+            secondPred.bbStart, tid, secondPred.asidHash);
     }
-    if (secondEntry.valid && secondEntry.isIndirect) {
-        if (secondEntry.isReturn) {
-            secondPred.returnTarget = secondEntry.target;
-        } else {
-            secondPred.indirectTargets.push_back({secondEntry.pc, secondEntry.target});
+
+    unsigned notTakenUncondDrops = 0;
+    if (!secondBlock.taken) {
+        for (const auto &entry : mbtbEntries) {
+            if (entry.valid && entry.pc >= secondPred.bbStart &&
+                entry.pc != secondEntry.pc && entry.isUncond()) {
+                notTakenUncondDrops++;
+            }
         }
     }
 
-    // Merge second block teacher's more btb entries
-    // TODO: This is not a real behavior on final design but it should be compatible with
-    // the current train datapath in BPU model, which stores every BTB entry in the FTQ
-    // entry and not lookup tables another time when training in every predictor.
-    if (secondBlock.valid && !secondBlock.isBranchlessFallthrough()) {
-        for (const auto &teacherEntry : thread.twoTakenBTBEntries) {
-            if (!teacherEntry.valid || !teacherEntry.isCond) {
-                continue;
-            }
-            if (teacherEntry.pc < secondPred.bbStart || teacherEntry.pc >= secondBlock.branchPC) {
-                continue;
-            }
-            if (teacherEntry.pc == secondBlock.branchPC) {
-                continue;
-            }
-
-            secondPred.btbEntries.push_back(teacherEntry);
-            secondPred.condTakens.push_back({teacherEntry.pc, false});
-        }
-
-        std::sort(secondPred.btbEntries.begin(), secondPred.btbEntries.end(),
-                  [](const BTBEntry &lhs, const BTBEntry &rhs) { return lhs.pc < rhs.pc; });
+    if (!secondPred.setBTBEntriesWithPredictedExit(
+            mbtbEntries, secondEntry, secondBlock.taken)) {
+        dbpBtbStats.twoTakenPreExitUncondDrops++;
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second block enqueue for thread %u because "
+                "MBTB contains an unconditional entry before checker exit "
+                "%#lx\n",
+                tid, secondEntry.pc);
+        return;
     }
+    dbpBtbStats.twoTakenNotTakenUncondDrops += notTakenUncondDrops;
+    dbpBtbStats.twoTakenSupplementalEntriesMerged +=
+        secondPred.btbEntries.size() - 1;
 
     refreshTwoTakenPredictionMetas(tid, secondPred);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
@@ -781,9 +785,10 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     advancePairPhase(thread.s0PairPhase);
 
     DPRINTF(DecoupleBP,
-            "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
-            ftq.backId(tid), tid, ftq.back(tid).startPC, secondBlock.branchPC,
-            secondBlock.targetPC, secondBlock.taken);
+            "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, "
+            "checker branchPC %#lx, checker target %#lx, checker taken %d\n",
+            ftq.backId(tid), tid, ftq.back(tid).startPC,
+            secondBlock.branchPC, secondBlock.targetPC, secondBlock.taken);
 
     printTarget(ftq.back(tid));
     dbpBtbStats.fsqEntryEnqueued++;

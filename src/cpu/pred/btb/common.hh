@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <queue>
 #include <string>
+#include <utility>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -504,7 +505,7 @@ struct FetchTarget
     void setUpdateBTBEntries()
     {
         updateBTBEntries.clear();
-        for (auto &entry : predBTBEntries) {
+        for (const auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
                 updateBTBEntries.push_back(entry);
             }
@@ -567,6 +568,100 @@ struct FullBTBPrediction
         predTick(0),
         s1Source(-1),
         s3Source(-1) {}
+
+    /**
+     * Combine a supplemental BTB layout with an authoritative predicted exit.
+     * A not-taken exit suppresses every supplemental unconditional entry,
+     * since FullBTBPrediction has no representation for an unconditional
+     * not-taken direction, and normalizes every retained conditional entry
+     * to a negative counter. Returns false when the authoritative exit is
+     * invalid or an unconditional exit is marked not taken.
+     */
+    bool setBTBEntriesWithPredictedExit(
+        const std::vector<BTBEntry> &supplementalEntries,
+        const BTBEntry &predictedExit, bool predictedExitTaken)
+    {
+        if (!predictedExit.valid ||
+            (predictedExit.isUncond() && !predictedExitTaken)) {
+            return false;
+        }
+
+        std::vector<BTBEntry> mergedEntries;
+        mergedEntries.reserve(supplementalEntries.size() + 1);
+        for (auto entry : supplementalEntries) {
+            if (!entry.valid || entry.pc < bbStart ||
+                entry.pc == predictedExit.pc) {
+                continue;
+            }
+            if (!predictedExitTaken && entry.isUncond()) {
+                continue;
+            }
+            if (!predictedExitTaken && entry.isCond) {
+                entry.alwaysTaken = false;
+                entry.ctr = -1;
+            }
+            if (entry.pc < predictedExit.pc) {
+                if (entry.isUncond()) {
+                    return false;
+                }
+                entry.alwaysTaken = false;
+            }
+            mergedEntries.push_back(entry);
+        }
+
+        auto exitEntry = predictedExit;
+        if (exitEntry.isCond) {
+            exitEntry.alwaysTaken = false;
+            if (!predictedExitTaken) {
+                exitEntry.ctr = -1;
+            }
+        }
+        mergedEntries.push_back(exitEntry);
+        std::stable_sort(
+            mergedEntries.begin(), mergedEntries.end(),
+            [](const BTBEntry &lhs, const BTBEntry &rhs) {
+                return lhs.pc < rhs.pc;
+            });
+        mergedEntries.erase(
+            std::unique(
+                mergedEntries.begin(), mergedEntries.end(),
+                [](const BTBEntry &lhs, const BTBEntry &rhs) {
+                    return lhs.pc == rhs.pc;
+                }),
+            mergedEntries.end());
+
+        CondTakens mergedCondTakens;
+        IndirectTargets mergedIndirectTargets;
+        Addr mergedReturnTarget = 0;
+        bool hasReturnTarget = false;
+        for (const auto &entry : mergedEntries) {
+            if (entry.isCond) {
+                bool taken = false;
+                if (entry.pc == predictedExit.pc) {
+                    taken = predictedExitTaken;
+                } else if (entry.pc > predictedExit.pc && predictedExitTaken) {
+                    taken = entry.alwaysTaken || entry.ctr >= 0;
+                }
+                mergedCondTakens.push_back({entry.pc, taken});
+            }
+            if (entry.isIndirect) {
+                if (entry.isReturn) {
+                    if (!hasReturnTarget) {
+                        mergedReturnTarget = entry.target;
+                        hasReturnTarget = true;
+                    }
+                } else {
+                    mergedIndirectTargets.push_back({entry.pc, entry.target});
+                }
+            }
+        }
+
+        btbEntries = std::move(mergedEntries);
+        condTakens = std::move(mergedCondTakens);
+        indirectTargets = std::move(mergedIndirectTargets);
+        returnTarget = mergedReturnTarget;
+        return true;
+    }
 
     BTBEntry getTakenEntry() {
         // IMPORTANT: assume entries are sorted
