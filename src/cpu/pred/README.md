@@ -139,7 +139,6 @@ struct BranchInfo {
 ```cpp
 struct BTBEntry : BranchInfo {
     bool valid;            // 表项是否有效
-    bool alwaysTaken;      // 是否总是跳转
     int ctr;              // 预测计数器
     Addr tag;             // BTB 标签
 };

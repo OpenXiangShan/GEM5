@@ -167,8 +167,7 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
     if (entry.valid) {
         FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
         if (entry.isCond) {
-            // the always taken field of BTBEntry is ignored in uBTB
-            // uBTB always assumes present entries to be taken
+            // uBTB always predicts present conditional entries as taken.
             FillStageLoop(s) stagePreds[s].condTakens.push_back({entry.pc, true});
         } else if (entry.isIndirect) {
             // Set predicted target for indirect branches

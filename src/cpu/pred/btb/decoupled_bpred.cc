@@ -734,10 +734,8 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         }
     }
 
-    // Merge second block teacher's more btb entries
-    // TODO: This is not a real behavior on final design but it should be compatible with
-    // the current train datapath in BPU model, which stores every BTB entry in the FTQ
-    // entry and not lookup tables another time when training in every predictor.
+    // Merge the second block teacher's additional conditional candidates into
+    // this prediction; component-local metadata records the training view.
     if (thread.twoTakenTrainReady && secondBlock.valid && !secondBlock.isBranchlessFallthrough()) {
         for (const auto &teacherEntry : thread.twoTakenBTBEntries) {
             if (!teacherEntry.valid || !teacherEntry.isCond) {

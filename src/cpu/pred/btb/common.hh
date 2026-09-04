@@ -541,7 +541,8 @@ struct PreparedUpdate
 
     /**
      * Build a packet from actual outcomes. An empty vector is a valid
-     * complete branchless block.
+     * complete branchless block. Each dynamic control instruction appears
+     * once; a repeated PC within one FTQ entry would violate that boundary.
      */
     explicit PreparedUpdate(const std::vector<BranchOutcome> &outcomeEvents)
         : branches(outcomeEvents), outcome(makeControlFlowOutcome(outcomeEvents))
