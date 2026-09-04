@@ -695,19 +695,30 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         return;
     }
 
-    if (thread.twoTakenTrainReady &&
-        !pairtage->secondBlockMatches(thread.twoTakenTrainPacket)) {
+    if (!thread.twoTakenTrainReady) {
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second block enqueue for thread %u because "
+                "the uBTB checker result is unavailable\n",
+                tid);
+        return;
+    }
+
+    const bool checkerHit = !thread.twoTakenBTBEntries.empty();
+    const bool checkerMatches =
+        pairtage->secondBlockMatches(thread.twoTakenTrainPacket);
+    ubtb->recordCheckerResult(checkerHit, checkerMatches);
+    if (!checkerMatches) {
         const auto &teacherPacket = thread.twoTakenTrainPacket;
         const bool teacherValid = teacherPacket.valid;
         DPRINTF(DecoupleBP,
-                "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
+                "Skip PairTAGE second block enqueue for thread %u because "
+                "uBTB checker disagrees: "
                 "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
                 "teacher(valid=%d pc=%#lx target=%#lx taken=%d)\n",
-                tid,
-                secondBlock.valid, secondBlock.branchPC,
-                secondBlock.targetPC, secondBlock.taken,
-                teacherValid, teacherPacket.branchPC,
-                teacherPacket.targetPC, teacherPacket.taken);
+                tid, secondBlock.valid, secondBlock.branchPC,
+                secondBlock.targetPC, secondBlock.taken, teacherValid,
+                teacherPacket.branchPC, teacherPacket.targetPC,
+                teacherPacket.taken);
         return;
     }
 
@@ -735,28 +746,37 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         }
     }
 
-    // Merge second block teacher's more btb entries
-    // TODO: This is not a real behavior on final design but it should be compatible with
-    // the current train datapath in BPU model, which stores every BTB entry in the FTQ
-    // entry and not lookup tables another time when training in every predictor.
-    if (thread.twoTakenTrainReady && secondBlock.valid && !secondBlock.isBranchlessFallthrough()) {
-        for (const auto &teacherEntry : thread.twoTakenBTBEntries) {
-            if (!teacherEntry.valid || !teacherEntry.isCond) {
-                continue;
-            }
-            if (teacherEntry.pc < secondPred.bbStart || teacherEntry.pc >= secondBlock.branchPC) {
-                continue;
-            }
-            if (teacherEntry.pc == secondBlock.branchPC) {
+    // The uBTB checker intentionally supplies only one exit.  Re-read MBTB
+    // here solely to preserve preceding conditional-branch metadata in the FTQ
+    // entry; the checker packet and the PairTAGE target remain
+    // uBTB/PairTAGE-owned.
+    if (mbtb && mbtb->isEnabled() && secondBlock.valid &&
+        !secondBlock.isBranchlessFallthrough()) {
+        const auto mbtbEntries = mbtb->getPredictedEntriesNoSideEffect(
+            secondPred.bbStart, tid, secondPred.asidHash);
+        unsigned metadataEntriesAdded = 0;
+        for (const auto &mbtbEntry : mbtbEntries) {
+            // Entries before the PairTAGE/uBTB exit are represented as
+            // not-taken metadata so the predicted exit remains selected.
+            if (!mbtbEntry.valid || !mbtbEntry.isCond ||
+                mbtbEntry.pc < secondPred.bbStart ||
+                mbtbEntry.pc >= secondBlock.branchPC) {
                 continue;
             }
 
-            secondPred.btbEntries.push_back(teacherEntry);
-            secondPred.condTakens.push_back({teacherEntry.pc, false});
+            secondPred.btbEntries.push_back(mbtbEntry);
+            secondPred.condTakens.push_back({mbtbEntry.pc, false});
+            metadataEntriesAdded++;
         }
 
         std::sort(secondPred.btbEntries.begin(), secondPred.btbEntries.end(),
-                  [](const BTBEntry &lhs, const BTBEntry &rhs) { return lhs.pc < rhs.pc; });
+                  [](const BTBEntry &lhs, const BTBEntry &rhs) {
+                      return lhs.pc < rhs.pc;
+                  });
+        DPRINTF(DecoupleBP,
+                "Added %u MBTB metadata entries before PairTAGE second "
+                "block exit for thread %u\n",
+                metadataEntriesAdded, tid);
     }
 
     refreshTwoTakenPredictionMetas(tid, secondPred);
@@ -806,7 +826,7 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
         return;
     }
 
-    if (!pairtage || !pairtage->isEnabled() || !mbtb || !mbtb->isEnabled()) {
+    if (!pairtage || !pairtage->isEnabled() || !ubtb || !ubtb->isEnabled()) {
         return;
     }
 
@@ -828,8 +848,17 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
     const Addr startPC = thread.s0PC;
     const uint8_t asidHash = thread.finalPred.asidHash;
     auto &btbEntries = thread.twoTakenBTBEntries;
-    btbEntries = mbtb->getPredictedEntriesNoSideEffect(
-        startPC, tid, asidHash);
+    auto checkerEntry = ubtb->lookupForChecker(startPC, tid, asidHash);
+    const bool checkerHit = checkerEntry.valid;
+    if (checkerHit) {
+        // The uBTB's normal fast prediction is always-taken. On the checker
+        // port, allow MainTAGE to override conditional direction; its base
+        // fallback remains taken because uBTB entries initialize ctr to zero.
+        if (checkerEntry.isCond) {
+            checkerEntry.alwaysTaken = false;
+        }
+        btbEntries.push_back(checkerEntry);
+    }
 
     CondTakens condTakens;
     condTakens.reserve(btbEntries.size());
@@ -851,9 +880,9 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
     thread.twoTakenTrainReady = true;
 
     DPRINTF(DecoupleBP,
-            "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
-            "cond takens\n",
-            tid, startPC, btbEntries.size(), condTakens.size());
+            "Prepared PairTAGE second-block uBTB checker prediction for thread %u: "
+            "startPC %#lx, hit %d, %zu BTB entries, %zu cond takens\n",
+            tid, startPC, checkerHit, btbEntries.size(), condTakens.size());
 }
 
 bool

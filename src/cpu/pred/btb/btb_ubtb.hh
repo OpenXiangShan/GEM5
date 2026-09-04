@@ -30,8 +30,8 @@
  * Micro Branch Target Buffer (uBTB) Implementation
  *
  * The uBTB is a cache-like structure that provides fast branch prediction:
- * - Fully associative organization
- * - MRU (Most Recently Used) replacement policy
+ * - Configurable set-associative organization
+ * - LRU replacement within each set
  *
  * Key Features:
  * - Fast lookup using tags from branch addresses
@@ -45,18 +45,26 @@
 #ifndef __CPU_PRED_BTB_UBTB_HH__
 #define __CPU_PRED_BTB_UBTB_HH__
 
-#include <queue>
+#include <memory>
+#include <utility>
 #include <vector>
 
-#include "arch/generic/pcstate.hh"
-#include "base/logging.hh"
 #include "base/types.hh"
-#include "config/the_isa.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
-#include "debug/UBTB.hh"
-#include "params/UBTB.hh"
+
+#ifdef UNIT_TEST
+    #include "cpu/pred/btb/test_stats.hh"
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+#else
+    #include "arch/generic/pcstate.hh"
+    #include "base/statistics.hh"
+    #include "base/logging.hh"
+    #include "config/the_isa.hh"
+    #include "debug/UBTB.hh"
+    #include "params/UBTB.hh"
+#endif
 
 namespace gem5
 {
@@ -67,20 +75,25 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+#ifdef UNIT_TEST
+namespace test
+{
+#endif
+
 class UBTB : public TimedBaseBTBPredictor
 {
   private:
 
   public:
 
+#ifdef UNIT_TEST
+    UBTB(unsigned num_sets, unsigned num_ways, unsigned tag_bits,
+         bool using_s3_pred = true, bool smt_tid_partitioned = false);
+#else
     typedef UBTBParams Params;
 
-    /** Creates a uBTB with the given number of entries, number of bits per
-     *  tag, and instruction offset amount.
-     *  @param numEntries Number of entries for the uBTB.
-     *  @param tagBits Number of bits for each tag in the uBTB.
-     */
     UBTB(const Params& p);
+#endif
 
     /*
      * Micro-BTB Entry with timestamp for MRU replacement
@@ -89,7 +102,7 @@ class UBTB : public TimedBaseBTBPredictor
      * - valid: validity bit for this entry
      * - uctr: 2-bit saturation counter used in replacement policy
      * - tag: tag bits from branch address [23:1]
-     * - tick: timestamp used for MRU (Most Recently Used) replacement policy
+     * - tick: timestamp used for LRU (Least Recently Used) replacement policy
      */
     typedef struct TickedUBTBEntry : public BTBEntry
     {
@@ -100,7 +113,21 @@ class UBTB : public TimedBaseBTBPredictor
     }TickedUBTBEntry;
 
     using UBTBIter = typename std::vector<TickedUBTBEntry>::iterator;
-    using UBTBHeap = std::vector<UBTBIter>; // for MRU tracking
+    using ConstUBTBIter =
+        typename std::vector<TickedUBTBEntry>::const_iterator;
+
+#ifdef UNIT_TEST
+    uint64_t testTick{0};
+    uint64_t curTick() { return testTick++; }
+
+    unsigned testSetIndex(Addr start_addr, uint8_t asid_hash = 0,
+                          ThreadID tid = 0) const
+    {
+        return getSet(start_addr, asid_hash, tid);
+    }
+
+    unsigned testValidEntriesInSet(unsigned set, ThreadID tid = 0) const;
+#endif
 
     void tickStart() override{};
     void tick() override{};
@@ -129,6 +156,18 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
+    /** Read the independent checker port used for PairTAGE's second block.
+     * The returned entry is the uBTB's single predicted exit. An invalid
+     * entry represents the uBTB fall-through prediction.
+     */
+    BTBEntry lookupForChecker(Addr startAddr, ThreadID tid,
+                              uint8_t asidHash);
+
+    /** Attribute whether a produced PairTAGE second block agreed with the
+     * checker prediction returned by lookupForChecker().
+     */
+    void recordCheckerResult(bool hit, bool matches);
+
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
@@ -138,7 +177,10 @@ class UBTB : public TimedBaseBTBPredictor
      * @param stream The fetch stream containing execution results
      * @param inst The dynamic instruction being committed
      */
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+#ifndef UNIT_TEST
+    void commitBranch(const FetchTarget &stream,
+                      const DynInstPtr &inst) override;
+#endif
 
     /** Records fine-grained attribution for S1 override events whose source is
      *  uBTB. The counters are updated at override time rather than commit time.
@@ -162,8 +204,10 @@ class UBTB : public TimedBaseBTBPredictor
                                FullBTBPrediction &pred) override;
 
     void reset();
+#ifndef UNIT_TEST
     void setTrace() override;
     TraceManager *ubtbTrace;
+#endif
 
     // for debuggin purpose
     void printTickedUBTBEntry(const TickedUBTBEntry &e) {
@@ -172,15 +216,6 @@ class UBTB : public TimedBaseBTBPredictor
             e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.tick);
     }
 
-    void dumpMruList() {
-        DPRINTF(UBTB, "MRU list:\n");
-        for (const auto &it: mruList) {
-            printTickedUBTBEntry(*it);
-        }
-    }
-
-
-
   private:
 
     /** this struct holds the lastest prediction made by uBTB,
@@ -188,11 +223,9 @@ class UBTB : public TimedBaseBTBPredictor
      */
     struct LastPred
     {
-        UBTBIter hit_entry; // this might point to ubtb.end()
-
-        LastPred() {
-            // Default constructor - will be assigned proper value later
-        }
+        bool valid{false};
+        unsigned set{0};
+        unsigned way{0};
     };
     std::vector<LastPred> lastPred;
 
@@ -211,18 +244,13 @@ class UBTB : public TimedBaseBTBPredictor
     std::vector<std::shared_ptr<UBTBMeta>> threadMeta;
 
     // helper methods
-    /*
-     * Comparator for MRU heap
-     * Returns true if a's timestamp is larger than b's
-     * This creates a min-heap where the oldest entry is at the top
-     */
-    struct older
-    {
-        bool operator()(const UBTBIter &a, const UBTBIter &b) const
-        {
-            return a->tick > b->tick;
-        }
-    };
+
+    unsigned getSet(Addr startAddr, uint8_t asidHash, ThreadID tid) const;
+    std::pair<UBTBIter, UBTBIter> setRange(unsigned set, ThreadID tid);
+    std::pair<ConstUBTBIter, ConstUBTBIter>
+    setRange(unsigned set, ThreadID tid) const;
+    void rememberLastPred(ThreadID tid, unsigned set, UBTBIter entry);
+    UBTBIter getLastPredEntry(ThreadID tid);
 
     /** Returns the tag bits of a given address.
      *  The tag is calculated as: (pc >> 1) & tagMask
@@ -243,7 +271,14 @@ class UBTB : public TimedBaseBTBPredictor
      * @param startAddr The FB start address to look up
      * @return Iterator to the matching entry if found, or ubtb.end() if not found
      */
-    UBTBIter lookup(Addr startAddr, ThreadID tid, uint8_t asidHash);
+    enum class LookupPort
+    {
+        Prediction,
+        Checker
+    };
+
+    UBTBIter lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
+                    LookupPort port = LookupPort::Prediction);
     TickedUBTBEntry lookupNoSideEffect(Addr startAddr, ThreadID tid,
                                        uint8_t asidHash) const;
 
@@ -273,97 +308,142 @@ class UBTB : public TimedBaseBTBPredictor
                         const Addr startAddr, ThreadID tid,
                         uint8_t asidHash);
 
-    std::pair<UBTBIter, UBTBIter> threadRange(ThreadID tid)
-    {
-        if (!usesTidPartitionedStorage()) {
-            return {ubtb.begin(), ubtb.end()};
-        }
-        assert(numEntries >= 2 && numEntries % 2 == 0);
-        assert(tid < 2);
-        const auto entriesPerThread = numEntries / 2;
-        auto begin = ubtb.begin() + tid * entriesPerThread;
-        return {begin, begin + entriesPerThread};
-    }
-
-
     /** The uBTB structure:
-     *  - Implemented as a fully associative table
+     *  - Stored flat as numSets consecutive groups of numWays entries
      *  - Each entry can store one branch
-     *  - Total size = numEntries
+     *  - Total size = numSets * numWays
      */
     std::vector<TickedUBTBEntry> ubtb;
 
-
-    /** MRU tracking:
-     *  - Uses a heap to track entry timestamps
-     *  - Oldest entry is at top of heap for fast replacement
-     */
-    UBTBHeap mruList;
-
     /** uBTB configuration parameters */
-    unsigned numEntries;    // Total number of entries
+    unsigned numSets;       // Number of sets
+    unsigned numWays;       // Number of ways per set
+    unsigned totalEntries;  // Derived total number of entries
 
     /** Address calculation masks and shifts */
+    Addr idxMask;          // Mask for extracting set index bits
+    unsigned idxShiftAmt;  // Remove the fetch-block alignment bits
     unsigned tagBits;      // Number of tag bits
     Addr tagMask;          // Mask for extracting tag bits
     bool usingS3Pred;    // using S3 prediction to update uBTB
 
+#ifdef UNIT_TEST
+    using Scalar = test_stats::Scalar;
+    using Vector = test_stats::Vector;
+    using Distribution = test_stats::Distribution;
 
-    struct UBTBStats : public statistics::Group
+    // The production Vector2d is only needed for override attribution. Keep
+    // its unit-test replacement local to uBTB rather than extending shared
+    // test statistics infrastructure.
+    class Vector2d
     {
+      private:
+        std::vector<std::vector<uint64_t>> values;
 
-        statistics::Scalar predMiss;
-        statistics::Scalar predHit;
-        statistics::Scalar updateMiss;
-        statistics::Scalar updateHit;
-        statistics::Scalar s3UpdateHits;
-        statistics::Scalar s3UpdateMisses;
+      public:
+        void init(std::size_t x_size, std::size_t y_size)
+        {
+            values.assign(x_size, std::vector<uint64_t>(y_size, 0));
+        }
+
+        std::vector<uint64_t> &operator[](std::size_t idx)
+        {
+            assert(idx < values.size());
+            return values[idx];
+        }
+    };
+#else
+    using Scalar = statistics::Scalar;
+    using Vector = statistics::Vector;
+    using Vector2d = statistics::Vector2d;
+    using Distribution = statistics::Distribution;
+#endif
+
+
+#ifdef UNIT_TEST
+    struct UBTBStats
+#else
+    struct UBTBStats : public statistics::Group
+#endif
+    {
+        Scalar predMiss;
+        Scalar predHit;
+        Scalar updateMiss;
+        Scalar updateHit;
+        Scalar s3UpdateHits;
+        Scalar s3UpdateMisses;
+
+        Vector setLookups;
+        Vector setHits;
+        Vector setAllocations;
+        Vector setEvictions;
+        Vector setFullMisses;
+        Distribution setOccupancy;
+
+        Scalar checkerLookups;
+        Scalar checkerHits;
+        Scalar checkerMisses;
+        Scalar checkerFullMisses;
+        Distribution checkerSetOccupancy;
+        Scalar checkerHitAgreements;
+        Scalar checkerHitDisagreements;
+        Scalar checkerMissFallThroughAgreements;
+        Scalar checkerMissFallThroughDisagreements;
 
         // per branch statistics
-        statistics::Scalar allBranchHits;
-        statistics::Scalar allBranchHitTakens;
-        statistics::Scalar allBranchHitNotTakens;
-        statistics::Scalar allBranchMisses;
-        statistics::Scalar allBranchMissTakens;
-        statistics::Scalar allBranchMissNotTakens;
+        Scalar allBranchHits;
+        Scalar allBranchHitTakens;
+        Scalar allBranchHitNotTakens;
+        Scalar allBranchMisses;
+        Scalar allBranchMissTakens;
+        Scalar allBranchMissNotTakens;
 
-        statistics::Scalar condHits;
-        statistics::Scalar condHitTakens;
-        statistics::Scalar condHitNotTakens;
-        statistics::Scalar condMisses;
-        statistics::Scalar condMissTakens;
-        statistics::Scalar condMissNotTakens;
-        statistics::Scalar condPredCorrect;
-        statistics::Scalar condPredWrong;
+        Scalar condHits;
+        Scalar condHitTakens;
+        Scalar condHitNotTakens;
+        Scalar condMisses;
+        Scalar condMissTakens;
+        Scalar condMissNotTakens;
+        Scalar condPredCorrect;
+        Scalar condPredWrong;
 
-        statistics::Scalar uncondHits;
-        statistics::Scalar uncondMisses;
+        Scalar uncondHits;
+        Scalar uncondMisses;
 
-        statistics::Scalar indirectHits;
-        statistics::Scalar indirectMisses;
-        statistics::Scalar indirectPredCorrect;
-        statistics::Scalar indirectPredWrong;
+        Scalar indirectHits;
+        Scalar indirectMisses;
+        Scalar indirectPredCorrect;
+        Scalar indirectPredWrong;
 
-        statistics::Scalar callHits;
-        statistics::Scalar callMisses;
+        Scalar callHits;
+        Scalar callMisses;
 
-        statistics::Scalar returnHits;
-        statistics::Scalar returnMisses;
+        Scalar returnHits;
+        Scalar returnMisses;
 
-        statistics::Scalar s1Hits3FallThrough;
-        statistics::Scalar s1Misses3Taken;
-        statistics::Scalar s1Hits3Taken;
-        statistics::Scalar s1Misses3FallThrough;
-        statistics::Scalar s1InvalidatedEntries;
-        statistics::Vector s1OverrideByReason;
-        statistics::Vector2d s1OverrideByReasonAndAbtbHit;
-        statistics::Vector2d s1OverrideByReasonAndAfterSquash;
+        Scalar s1Hits3FallThrough;
+        Scalar s1Misses3Taken;
+        Scalar s1Hits3Taken;
+        Scalar s1Misses3FallThrough;
+        Scalar s1InvalidatedEntries;
+        Vector s1OverrideByReason;
+        Vector2d s1OverrideByReasonAndAbtbHit;
+        Vector2d s1OverrideByReasonAndAfterSquash;
 
+#ifdef UNIT_TEST
+        UBTBStats() = default;
+#else
         UBTBStats(statistics::Group* parent);
+#endif
+        void init(unsigned num_sets, unsigned accessible_ways);
     } ubtbStats;
 
 
 };
+
+#ifdef UNIT_TEST
+} // namespace test
+#endif
 
 } // namespace btb_pred
 } // namespace branch_prediction

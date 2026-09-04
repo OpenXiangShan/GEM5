@@ -1012,7 +1012,8 @@ class UBTB(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::UBTB'
     cxx_header = 'cpu/pred/btb/btb_ubtb.hh'
 
-    numEntries = Param.Unsigned(32, "Number of entries in the uBTB")
+    numSets = Param.Unsigned(64, "Number of sets in the uBTB")
+    numWays = Param.Unsigned(4, "Number of ways per set in the uBTB")
     tagBits = Param.Unsigned(22, "Number of bits in the tag")
 
     numDelay = 0
@@ -1104,7 +1105,7 @@ class PairTAGE(TimedBaseBTBPredictor):
     cxx_header = "cpu/pred/btb/pairtage.hh"
 
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([8192] * 4,"the TAGE T0~Tn length")
+    tableSizes = VectorParam.Unsigned([1024] * 4,"the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
 

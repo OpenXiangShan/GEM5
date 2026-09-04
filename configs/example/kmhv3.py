@@ -42,6 +42,7 @@ def setKmhV3Params(args, system):
         cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4
         cpu.fetchQueueSize = 64
+        cpu.enableTwoFetch = not args.smt
 
         # decode
         cpu.fetchToDecodeDelay = 3
@@ -130,6 +131,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
+            cpu.branchPred.pairtage.enabled = True
+            cpu.branchPred.pairtage.enableSecondBlock = True
 
             if getattr(args, 'standalone_sc', False):
                 cpu.branchPred.microtage.enabled = False

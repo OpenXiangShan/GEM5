@@ -29,11 +29,21 @@
 
 #include "cpu/pred/btb/btb_ubtb.hh"
 
+#include <algorithm>
+#include <iterator>
+#include <limits>
+#include <string>
+
 #include "base/intmath.hh"
-#include "base/trace.hh"
 #include "common.hh"
-#include "cpu/o3/dyn_inst.hh"
-#include "debug/Fetch.hh"
+
+#ifdef UNIT_TEST
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+#else
+    #include "base/trace.hh"
+    #include "cpu/o3/dyn_inst.hh"
+    #include "debug/Fetch.hh"
+#endif
 
 namespace gem5
 {
@@ -43,6 +53,11 @@ namespace branch_prediction
 
 namespace btb_pred
 {
+
+#ifdef UNIT_TEST
+namespace test
+{
+#endif
 
 namespace
 {
@@ -91,38 +106,85 @@ boolBucket(bool value)
 
 } // namespace
 
+#ifdef UNIT_TEST
+UBTB::UBTB(unsigned num_sets, unsigned num_ways, unsigned tag_bits,
+           bool using_s3_pred, bool smt_tid_partitioned)
+    : TimedBaseBTBPredictor(),
+      lastPred(o3::MaxThreads),
+      threadMeta(),
+      ubtb(),
+      numSets(num_sets),
+      numWays(num_ways),
+      totalEntries(0),
+      idxMask(0),
+      idxShiftAmt(0),
+      tagBits(tag_bits),
+      tagMask(mask(tag_bits)),
+      usingS3Pred(using_s3_pred),
+      ubtbStats()
+{
+    setSmtTidPartitioned(smt_tid_partitioned);
+#else
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
       lastPred(o3::MaxThreads),
       threadMeta(),
       ubtb(),
-      mruList(),
-      numEntries(p.numEntries),
+      numSets(p.numSets),
+      numWays(p.numWays),
+      totalEntries(0),
+      idxMask(0),
+      idxShiftAmt(0),
       tagBits(p.tagBits),
-      tagMask((1UL << p.tagBits) - 1),
+      tagMask(mask(p.tagBits)),
       usingS3Pred(p.usingS3Pred),
       ubtbStats(this)
 {
-    if (!isPowerOf2(numEntries)) {
-        fatal("uBTB entries is not a power of 2!");
+#endif
+    if (numSets == 0 || !isPowerOf2(numSets)) {
+        fatal("uBTB sets must be non-zero and a power of 2");
+    }
+    if (numWays == 0) {
+        fatal("uBTB ways must be non-zero");
+    }
+    if (usesTidPartitionedStorage() &&
+        (numWays < 2 || numWays % 2 != 0)) {
+        fatal("tid-partitioned uBTB requires an even number of ways");
     }
 
-    // Initialize uBTB structure and MRU tracking
-    ubtb.resize(numEntries);
-    mruList.clear();  // Start with empty list
-    for (auto it = ubtb.begin(); it != ubtb.end(); it++) {
-        it->valid = false;
-        mruList.push_back(it);
+    const uint64_t capacity = static_cast<uint64_t>(numSets) * numWays;
+    if (capacity > std::numeric_limits<unsigned>::max()) {
+        fatal("uBTB total capacity is too large");
     }
-    std::make_heap(mruList.begin(), mruList.end(), older());
+    totalEntries = static_cast<unsigned>(capacity);
+    idxMask = numSets - 1;
+    if (!isPowerOf2(predictWidth) || predictWidth < 2) {
+        fatal("uBTB prediction width must be a power of 2 and at least 2");
+    }
+    idxShiftAmt = floorLog2(predictWidth) - 1;
 
+    // Entries belonging to a set are consecutive in the flat storage.
+    ubtb.resize(totalEntries);
+    for (auto &entry : ubtb) {
+        entry.valid = false;
+    }
+
+    const unsigned accessibleWays = usesTidPartitionedStorage() ?
+        numWays / 2 : numWays;
+    ubtbStats.init(numSets, accessibleWays);
+
+#ifndef UNIT_TEST
     hasDB = true;
     dbName = "ubtb";
+#endif
 
     threadMeta.resize(o3::MaxThreads);
+
+    DPRINTF(UBTB, "uBTB: entries=%u sets=%u ways=%u indexShift=%u\n",
+            totalEntries, numSets, numWays, idxShiftAmt);
 }
 
-
+#ifndef UNIT_TEST
 void
 UBTB::setTrace()
 {
@@ -134,6 +196,87 @@ UBTB::setTrace()
         ubtbTrace->init_table();
     }
 }
+#endif
+
+unsigned
+UBTB::getSet(Addr startAddr, uint8_t asidHash, ThreadID tid) const
+{
+    (void)tid;
+    const Addr blockNumber = startAddr >> idxShiftAmt;
+    const unsigned indexBits = floorLog2(numSets);
+    Addr folded = blockNumber;
+    if (indexBits != 0) {
+        folded ^= blockNumber >> indexBits;
+    }
+    return xorAsidHashIntoIndex(
+        folded & idxMask, indexBits, asidHash);
+}
+
+std::pair<UBTB::UBTBIter, UBTB::UBTBIter>
+UBTB::setRange(unsigned set, ThreadID tid)
+{
+    assert(set < numSets);
+    unsigned firstWay = 0;
+    unsigned ways = numWays;
+    if (usesTidPartitionedStorage()) {
+        assert(tid < 2);
+        ways /= 2;
+        firstWay = tid * ways;
+    }
+    auto begin = ubtb.begin() + set * numWays + firstWay;
+    return {begin, begin + ways};
+}
+
+std::pair<UBTB::ConstUBTBIter, UBTB::ConstUBTBIter>
+UBTB::setRange(unsigned set, ThreadID tid) const
+{
+    assert(set < numSets);
+    unsigned firstWay = 0;
+    unsigned ways = numWays;
+    if (usesTidPartitionedStorage()) {
+        assert(tid < 2);
+        ways /= 2;
+        firstWay = tid * ways;
+    }
+    auto begin = ubtb.begin() + set * numWays + firstWay;
+    return {begin, begin + ways};
+}
+
+void
+UBTB::rememberLastPred(ThreadID tid, unsigned set, UBTBIter entry)
+{
+    assert(tid < lastPred.size());
+    auto &last = lastPred[tid];
+    last.valid = entry != ubtb.end();
+    last.set = set;
+    last.way = last.valid ?
+        std::distance(ubtb.begin() + set * numWays, entry) : 0;
+}
+
+UBTB::UBTBIter
+UBTB::getLastPredEntry(ThreadID tid)
+{
+    assert(tid < lastPred.size());
+    const auto &last = lastPred[tid];
+    if (!last.valid) {
+        return ubtb.end();
+    }
+
+    auto entry = ubtb.begin() + last.set * numWays + last.way;
+    auto [rangeBegin, rangeEnd] = setRange(last.set, tid);
+    assert(entry >= rangeBegin && entry < rangeEnd);
+    return entry;
+}
+
+#ifdef UNIT_TEST
+unsigned
+UBTB::testValidEntriesInSet(unsigned set, ThreadID tid) const
+{
+    auto [begin, end] = setRange(set, tid);
+    return std::count_if(begin, end,
+                         [](const auto &entry) { return entry.valid; });
+}
+#endif
 
 void
 UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
@@ -199,7 +342,7 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
     fillStagePredictions(entry, stagePreds);
 
     // Update metadata for later stages
-    lastPred[tid].hit_entry = it;
+    rememberLastPred(tid, getSet(startAddr, asidHash, tid), it);
 }
 
 void
@@ -216,42 +359,94 @@ UBTB::refreshPredictionMeta(Addr startAddr,
 }
 
 UBTB::UBTBIter
-UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash)
+UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
+             LookupPort port)
 {
     if (startAddr & 0x1) {
         return ubtb.end();  // ignore false hit when lowest bit is 1
     }
 
+    const unsigned set = getSet(startAddr, asidHash, tid);
     Addr current_tag = getTag(startAddr, asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
-    DPRINTF(UBTB, "UBTB: Doing tag comparison for tag %#lx\n", current_tag);
+    DPRINTF(UBTB, "uBTB: compare tag %#lx in set %u\n",
+            current_tag, set);
 
-    auto [rangeBegin, rangeEnd] = threadRange(tid);
-    auto it = std::find_if(rangeBegin, rangeEnd,
-                           [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
-                               return way.valid && way.tag == current_tag &&
-                                      way.pc >= startAddr && way.pc < block_end;
-                           });
-
-    if (it != rangeEnd) {
-        // Found a hit - verify no duplicates
-        auto duplicate = std::find_if(std::next(it), rangeEnd,
-                                      [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
-            return way.valid && way.tag == current_tag &&
-                   way.pc >= startAddr && way.pc < block_end;
-        });
-        if (duplicate != rangeEnd) {
-            DPRINTF(UBTB, "UBTB: Multiple hits found in uBTB for the same tag %#lx\n", current_tag);
-            duplicate->valid = false;  // invalidate the duplicate entry
+    auto [rangeBegin, rangeEnd] = setRange(set, tid);
+    UBTBIter hit = rangeEnd;
+    unsigned occupancy = 0;
+    for (auto it = rangeBegin; it != rangeEnd; ++it) {
+        if (!it->valid) {
+            continue;
         }
-        // go on to update the mruList
-        it->tick = curTick();  // Update timestamp for MRU
-        // might be unnecessary, considering the heap is updated on every reaplacement
-        std::make_heap(mruList.begin(), mruList.end(), older());
+        occupancy++;
+        const bool matches = it->tag == current_tag &&
+            it->pc >= startAddr && it->pc < block_end;
+        if (!matches) {
+            continue;
+        }
+        if (hit == rangeEnd) {
+            hit = it;
+        } else {
+            DPRINTF(UBTB,
+                    "uBTB: duplicate hit for tag %#lx in set %u\n",
+                    current_tag, set);
+            it->valid = false;
+        }
     }
 
-    return it == rangeEnd ? ubtb.end() : it;
+    if (port == LookupPort::Prediction) {
+        ubtbStats.setLookups[set]++;
+        ubtbStats.setOccupancy.sample(occupancy);
+    } else {
+        ubtbStats.checkerLookups++;
+        ubtbStats.checkerSetOccupancy.sample(occupancy);
+    }
+    if (hit == rangeEnd) {
+        if (occupancy == std::distance(rangeBegin, rangeEnd)) {
+            if (port == LookupPort::Prediction) {
+                ubtbStats.setFullMisses[set]++;
+            } else {
+                ubtbStats.checkerFullMisses++;
+            }
+        }
+        if (port == LookupPort::Checker) {
+            ubtbStats.checkerMisses++;
+        }
+        return ubtb.end();
+    }
+
+    if (port == LookupPort::Prediction) {
+        ubtbStats.setHits[set]++;
+    } else {
+        ubtbStats.checkerHits++;
+    }
+    hit->tick = curTick();
+    return hit;
+}
+
+BTBEntry
+UBTB::lookupForChecker(Addr startAddr, ThreadID tid, uint8_t asidHash)
+{
+    auto entry = lookup(startAddr, tid, asidHash, LookupPort::Checker);
+    return entry != ubtb.end() ? BTBEntry(*entry) : BTBEntry();
+}
+
+void
+UBTB::recordCheckerResult(bool hit, bool matches)
+{
+    if (hit) {
+        if (matches) {
+            ubtbStats.checkerHitAgreements++;
+        } else {
+            ubtbStats.checkerHitDisagreements++;
+        }
+    } else if (matches) {
+        ubtbStats.checkerMissFallThroughAgreements++;
+    } else {
+        ubtbStats.checkerMissFallThroughDisagreements++;
+    }
 }
 
 UBTB::TickedUBTBEntry
@@ -262,11 +457,11 @@ UBTB::lookupNoSideEffect(Addr startAddr, ThreadID tid,
         return TickedUBTBEntry();
     }
 
+    const unsigned set = getSet(startAddr, asidHash, tid);
     Addr current_tag = getTag(startAddr, asidHash);
     Addr block_end = (startAddr + predictWidth) &
         ~mask(floorLog2(predictWidth) - 1);
-    auto range_begin = ubtb.begin() + partitionBegin(numEntries, tid);
-    auto range_end = ubtb.begin() + partitionEnd(numEntries, tid);
+    auto [range_begin, range_end] = setRange(set, tid);
     auto it = std::find_if(range_begin, range_end,
                            [current_tag, startAddr, block_end]
                            (const TickedUBTBEntry &way) {
@@ -309,7 +504,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     }
     auto startAddr = s3Pred.bbStart;
     const ThreadID tid = s3Pred.tid;
-    UBTBIter oldEntryIter = lastPred[tid].hit_entry;
+    UBTBIter oldEntryIter = getLastPredEntry(tid);
     takenEntry.source = getComponentIdx();
     updateNewEntry(oldEntryIter, takenEntry, startAddr, tid,
                    s3Pred.asidHash);
@@ -322,10 +517,12 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
                           const Addr startAddr, ThreadID tid,
                           uint8_t asidHash)
 {
-    auto [rangeBegin, rangeEnd] = threadRange(tid);
+    const unsigned set = getSet(startAddr, asidHash, tid);
+    auto [rangeBegin, rangeEnd] = setRange(set, tid);
     //using the FB final taken branch to update uBTB
     if (oldEntryIter != ubtb.end()) {
         assert(oldEntryIter->valid); //lookup() should only return valid entry
+        assert(oldEntryIter >= rangeBegin && oldEntryIter < rangeEnd);
     }
     if (oldEntryIter != ubtb.end() && !takenEntry.valid) {
             // S0 has a hit entry, but S3 predicts fall through
@@ -337,6 +534,7 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
             }
         } else if (oldEntryIter == ubtb.end() && takenEntry.valid) {
             ubtbStats.s1Misses3Taken++;
+            ubtbStats.setAllocations[set]++;
             /* S0 misses, but S3 predicts taken,
             * generate new entry and replace another using LRU
             */
@@ -356,6 +554,7 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
             // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
             if (!foundInvalidEntry) {
                 // Find the least recently used entry
+                ubtbStats.setEvictions[set]++;
                 toBeReplacedIter = std::min_element(
                     rangeBegin, rangeEnd,
                     [](const TickedUBTBEntry &a, const TickedUBTBEntry &b) {
@@ -402,7 +601,8 @@ UBTB::update(const FetchTarget &stream)
     Addr oldtag = getTag(startAddr, stream.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
-    auto [rangeBegin, rangeEnd] = threadRange(stream.tid);
+    const unsigned set = getSet(startAddr, stream.asidHash, stream.tid);
+    auto [rangeBegin, rangeEnd] = setRange(set, stream.tid);
     UBTBIter oldEntryIter = ubtb.end();
 
     oldEntryIter = meta->hit_entry.valid ?
@@ -424,13 +624,14 @@ UBTB::update(const FetchTarget &stream)
     }
 
     // Verify uBTB state
-    assert(ubtb.size() <= numEntries);
+    assert(ubtb.size() <= totalEntries);
     if (!usingS3Pred) {
         updateNewEntry(oldEntryIter, takenEntry, startAddr, stream.tid,
                        stream.asidHash);
     }
 }
 
+#ifndef UNIT_TEST
 void
 UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
@@ -521,6 +722,7 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         }
     }
 }
+#endif
 
 void
 UBTB::recordS1OverrideDetail(OverrideReason reason,
@@ -539,6 +741,7 @@ UBTB::recordS1OverrideDetail(OverrideReason reason,
         [reasonBucket][boolBucket(afterSquash)]++;
 }
 
+#ifndef UNIT_TEST
 // Initialize uBTB statistics
 UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
     : statistics::Group(parent),
@@ -548,6 +751,40 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
       ADD_STAT(s3UpdateHits, statistics::units::Count::get(), "hits encountered on S3 update"),
       ADD_STAT(s3UpdateMisses, statistics::units::Count::get(), "misses encountered on S3 update"),
+      ADD_STAT(setLookups, statistics::units::Count::get(),
+               "uBTB prediction lookups by set"),
+      ADD_STAT(setHits, statistics::units::Count::get(),
+               "uBTB prediction hits by set"),
+      ADD_STAT(setAllocations, statistics::units::Count::get(),
+               "uBTB allocations by set"),
+      ADD_STAT(setEvictions, statistics::units::Count::get(),
+               "uBTB valid-entry evictions by set"),
+      ADD_STAT(setFullMisses, statistics::units::Count::get(),
+               "uBTB prediction misses whose selected set has no free way"),
+      ADD_STAT(setOccupancy, statistics::units::Count::get(),
+               "Valid ways in the selected uBTB set at prediction time"),
+      ADD_STAT(checkerLookups, statistics::units::Count::get(),
+               "PairTAGE second-block reads issued on the uBTB checker port"),
+      ADD_STAT(checkerHits, statistics::units::Count::get(),
+               "uBTB checker-port reads that found a predicted exit"),
+      ADD_STAT(checkerMisses, statistics::units::Count::get(),
+               "uBTB checker-port reads that predicted fall-through"),
+      ADD_STAT(checkerFullMisses, statistics::units::Count::get(),
+               "uBTB checker-port misses whose selected set had no free way"),
+      ADD_STAT(checkerSetOccupancy, statistics::units::Count::get(),
+               "Valid ways in the checker-selected uBTB set"),
+      ADD_STAT(checkerHitAgreements, statistics::units::Count::get(),
+               "PairTAGE second blocks agreeing with a uBTB hit prediction"),
+      ADD_STAT(checkerHitDisagreements, statistics::units::Count::get(),
+               "PairTAGE second blocks disagreeing with a uBTB hit prediction"),
+      ADD_STAT(checkerMissFallThroughAgreements,
+               statistics::units::Count::get(),
+               "PairTAGE branchless second blocks agreeing with a uBTB miss "
+               "fall-through"),
+      ADD_STAT(checkerMissFallThroughDisagreements,
+               statistics::units::Count::get(),
+               "PairTAGE second blocks disagreeing with a uBTB miss "
+               "fall-through"),
 
       ADD_STAT(allBranchHits, statistics::units::Count::get(),
                "all types of branches committed that was predicted hit"),
@@ -616,6 +853,42 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
         s1OverrideByReasonAndAfterSquash.ysubname(i, AfterSquashLabels[i]);
     }
 }
+#endif
+
+void
+UBTB::UBTBStats::init(unsigned num_sets, unsigned accessible_ways)
+{
+    setLookups.init(num_sets);
+    setHits.init(num_sets);
+    setAllocations.init(num_sets);
+    setEvictions.init(num_sets);
+    setFullMisses.init(num_sets);
+    setOccupancy.init(0, accessible_ways, 1);
+    checkerSetOccupancy.init(0, accessible_ways, 1);
+
+#ifndef UNIT_TEST
+    for (unsigned set = 0; set < num_sets; ++set) {
+        const auto name = std::to_string(set);
+        setLookups.subname(set, name);
+        setHits.subname(set, name);
+        setAllocations.subname(set, name);
+        setEvictions.subname(set, name);
+        setFullMisses.subname(set, name);
+    }
+#endif
+
+#ifdef UNIT_TEST
+    s1OverrideByReason.init(NumOverrideReasonBuckets);
+    s1OverrideByReasonAndAbtbHit.init(
+        NumOverrideReasonBuckets, NumBoolBuckets);
+    s1OverrideByReasonAndAfterSquash.init(
+        NumOverrideReasonBuckets, NumBoolBuckets);
+#endif
+}
+
+#ifdef UNIT_TEST
+} // namespace test
+#endif
 
 }  // namespace btb_pred
 }  // namespace branch_prediction
