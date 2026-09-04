@@ -1961,6 +1961,18 @@ LSQUnit::executeLoadPipeSx()
                 }
                 iewStage->activityThisCycle();
                 inst->endPipelining();
+                if(inst->fault) {
+                    // commit if misalign fault
+                    auto addr_fault = std::dynamic_pointer_cast<gem5::RiscvISA::AddressFault>(inst->fault);
+                    if (addr_fault) {
+                        auto code = addr_fault->getCode();
+                        if (code == gem5::RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED ||
+                            code == gem5::RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED ||
+                            code == gem5::RiscvISA::ExceptionCode::AMO_ADDR_MISALIGNED) {
+                            inst->setCanCommit();
+                        }
+                    }
+                }
                 DPRINTF(LoadPipeline, "Load [sn:%llu] ready to finish\n",
                         inst->seqNum);
             }
