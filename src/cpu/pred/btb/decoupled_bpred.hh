@@ -144,6 +144,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         FullBTBPrediction finalPred;      ///< Final prediction
         PairTAGE::TrainPacket finalTrainPacket;
         PairTAGE::TrainPacket twoTakenTrainPacket;
+        // uBTB-only entries used to build the PairTAGE second-block checker.
         std::vector<BTBEntry> twoTakenBTBEntries;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
@@ -321,6 +322,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
+
+        statistics::Scalar twoTakenUbtbMissDrops;
+        statistics::Scalar twoTakenPreExitUncondDrops;
+        statistics::Scalar twoTakenNotTakenUncondDrops;
+        statistics::Scalar twoTakenSupplementalEntriesMerged;
 
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
