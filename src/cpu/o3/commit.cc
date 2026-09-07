@@ -2019,6 +2019,11 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // execution doesn't generate extra squashes.
         thread[tid]->noSquashFromTC = true;
 
+        if (cpu->difftestEnabled() && inst_fault->isFromISA()) {
+            cpu->ensure_difftest_reference(
+                tid, head_inst->pcState().instAddr());
+        }
+
         // Execute the trap.  Although it's slightly unrealistic in
         // terms of timing (as it doesn't wait for the full timing of
         // the trap event to complete before updating state), it's

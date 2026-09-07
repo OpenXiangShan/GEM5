@@ -134,6 +134,7 @@ struct DiffAllStates
     DiffState diff{};
     RefProxy *proxy{nullptr};
 
+    bool initialStateCaptured{false};
     bool referenceInitialized{false};
 };
 
@@ -729,7 +730,9 @@ class BaseCPU : public ClockedObject
      * instruction. This must run before the DUT retires any instruction.
      */
     void captureInitialDifftestState(ThreadID tid);
-    void initializeDifftestReference(ThreadID tid, Addr first_pc);
+    void step_difftest_reference(ThreadID tid);
+    std::pair<int, bool> compare_difftest_state(
+        ThreadID tid, InstSeqNum seq);
 
     void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
                         std::string error_csr_name,int &diff_at);
@@ -798,6 +801,12 @@ class BaseCPU : public ClockedObject
     {
         panic("difftest:setGem5Regs() is not implemented\n");
     }
+
+    /**
+     * Initialize REF once, before its first commit, trap or interrupt.
+     * event_pc is the PC before that event, not the trap-handler PC.
+     */
+    void ensure_difftest_reference(ThreadID tid, Addr event_pc);
 
     void difftestStep(ThreadID tid) { difftestStep(tid, 0);}
 

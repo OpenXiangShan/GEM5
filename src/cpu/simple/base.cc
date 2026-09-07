@@ -509,13 +509,13 @@ BaseSimpleCPU::advancePC(const Fault &fault)
 RegVal
 BaseSimpleCPU::readMiscRegNoEffect(int misc_reg, ThreadID tid) const
 {
-    return threadContexts[curThread]->readMiscRegNoEffect(misc_reg);
+    return threadContexts[tid]->readMiscRegNoEffect(misc_reg);
 }
 
 RegVal
 BaseSimpleCPU::readMiscReg(int misc_reg, ThreadID tid)
 {
-    return threadContexts[curThread]->readMiscReg(misc_reg);
+    return threadContexts[tid]->readMiscReg(misc_reg);
 }
 
 void
