@@ -1091,7 +1091,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     tableSizes = VectorParam.Unsigned([512] * 2,"the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([16] * 2 ,"the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 2 ,"when the T0~Tn entry's tag generating, PC right shift")
-    blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
+    blockSize = 32  # Override the inherited parameter without shadowing it.
 
     histLengths = VectorParam.Unsigned([5,9] ,"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
