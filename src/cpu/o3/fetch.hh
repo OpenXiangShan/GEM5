@@ -526,8 +526,14 @@ class Fetch
      */
     bool handleCommitSignals(ThreadID tid);
 
-    /** Merge IEW resolve events and train at most one queued FTQ group. */
+    /** Dispatch IEW notifications to scheduling and training consumers. */
     void handleIEWSignals();
+
+    /** Latch SMT scheduling hints until formal squash or timeout. */
+    void updateEarlyRedirectHints();
+
+    /** Filter and enqueue outcomes, then try training one queued FTQ group. */
+    void processResolveUpdates();
 
     /** Remove wrong-path resolve events after a redirect. */
     void squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum);

@@ -510,7 +510,10 @@ struct PredictionUpdateContext
     Addr getRealStartPC() const { return startPC; }
 };
 
-/** Actual control-flow result selected from one predictor update packet. */
+/**
+ * Representative control-flow result for training and statistics.
+ * A resolve packet may contain only part of a FetchBlock.
+ */
 struct ControlFlowOutcome
 {
     BranchInfo branch;
@@ -545,36 +548,34 @@ struct PreparedUpdate
      * once; a repeated PC within one FTQ entry would violate that boundary.
      */
     explicit PreparedUpdate(const std::vector<BranchOutcome> &outcomeEvents)
-        : branches(outcomeEvents), outcome(makeControlFlowOutcome(outcomeEvents))
+        : branches(outcomeEvents)
     {
         std::stable_sort(
             branches.begin(), branches.end(),
             [](const BranchOutcome &lhs, const BranchOutcome &rhs) {
                 return lhs.seqNum < rhs.seqNum;
             });
+        outcome = makeControlFlowOutcome(branches);
     }
 
   private:
     static ControlFlowOutcome makeControlFlowOutcome(
-        const std::vector<BranchOutcome> &outcomeEvents)
+        const std::vector<BranchOutcome> &sortedBranches)
     {
-        if (outcomeEvents.empty()) {
+        if (sortedBranches.empty()) {
             return {};
         }
 
-        const BranchOutcome *frontier = nullptr;
-        const BranchOutcome *terminal = nullptr;
-        for (const auto &event : outcomeEvents) {
-            if (!frontier || event.seqNum > frontier->seqNum) {
-                frontier = &event;
-            }
-            if ((event.taken || event.mispredicted) &&
-                (!terminal || event.seqNum < terminal->seqNum)) {
-                terminal = &event;
-            }
-        }
-
-        const auto &primary = terminal ? *terminal : *frontier;
+        // Select the first actual transfer or misprediction in program order.
+        // If all branches correctly fall through, describe the last one for
+        // statistics; taken remains false for training consumers.
+        const auto selected = std::find_if(
+            sortedBranches.begin(), sortedBranches.end(),
+            [](const BranchOutcome &branch) {
+                return branch.taken || branch.mispredicted;
+            });
+        const auto &primary = selected != sortedBranches.end() ?
+            *selected : sortedBranches.back();
         return ControlFlowOutcome{
             makeBranchInfo(primary), primary.taken, primary.mispredicted, true
         };

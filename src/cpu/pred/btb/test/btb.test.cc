@@ -615,6 +615,36 @@ TEST(PreparedUpdateTest, EmptyOutcomeBlockIgnoresPredictionSnapshot)
     EXPECT_TRUE(update.branches.empty());
 }
 
+TEST(PreparedUpdateTest, NotTakenMispredictionPrecedesYoungerTaken)
+{
+    const auto older = createBranchInfo(0x1004, 0x2000, true);
+    const auto younger = createBranchInfo(0x1008, 0x3000, true);
+    const PreparedUpdate update({
+        createResolveEvent(0, 7, 12, younger, true, false),
+        createResolveEvent(0, 7, 11, older, false, true)
+    });
+
+    EXPECT_TRUE(update.outcome.valid);
+    EXPECT_EQ(update.outcome.branch.pc, older.pc);
+    EXPECT_FALSE(update.outcome.taken);
+    EXPECT_TRUE(update.outcome.controlMispred);
+}
+
+TEST(PreparedUpdateTest, CorrectFallthroughUsesLastDynamicBranch)
+{
+    const auto older = createBranchInfo(0x1004, 0x2000, true);
+    const auto younger = createBranchInfo(0x1008, 0x3000, true);
+    const PreparedUpdate update({
+        createResolveEvent(0, 7, 12, younger, false, false),
+        createResolveEvent(0, 7, 11, older, false, false)
+    });
+
+    EXPECT_TRUE(update.outcome.valid);
+    EXPECT_EQ(update.outcome.branch.pc, younger.pc);
+    EXPECT_FALSE(update.outcome.taken);
+    EXPECT_FALSE(update.outcome.controlMispred);
+}
+
 TEST(PreparedUpdateTest, KeepsUnpredictedActualBranches)
 {
     FetchTarget target;

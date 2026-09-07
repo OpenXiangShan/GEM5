@@ -1980,11 +1980,34 @@ Fetch::checkLongLatencyLoads()
 void
 Fetch::handleIEWSignals()
 {
-    // Currently resolve stage training is a btb-only feature
+    // Both consumers use the IEW notification, but own independent state.
     if (!isBTBPred()) {
         return;
     }
 
+    updateEarlyRedirectHints();
+    processResolveUpdates();
+}
+
+void
+Fetch::updateEarlyRedirectHints()
+{
+    if (numThreads <= 1) {
+        return;
+    }
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (fromIEW->iewInfo[tid].redirectPending) {
+            redirectPending[tid] = true;
+            redirectPendingCycles[tid] = redirectPendingHoldCycles;
+            dbpbtb->setRedirectPending(tid, true);
+        }
+    }
+}
+
+void
+Fetch::processResolveUpdates()
+{
     const bool had_pending_resolve = !resolveQueue.empty();
     uint8_t enqueueCount = 0;
     uint8_t enqueueSize = 0;
@@ -1992,14 +2015,9 @@ Fetch::handleIEWSignals()
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         const auto &iewInfo = fromIEW->iewInfo[tid];
         if (iewInfo.redirectPending) {
-            if (numThreads > 1) {
-                redirectPending[tid] = true;
-                redirectPendingCycles[tid] = redirectPendingHoldCycles;
-                dbpbtb->setRedirectPending(tid, true);
-            }
             // The early redirect reaches Fetch before the formal Commit
-            // squash.  Prune now so wrong-path events cannot train in that
-            // delay window or consume resolve-queue capacity.
+            // squash. Apply its cutoff independently of the SMT scheduling
+            // hint, including for a single thread.
             squashResolveQueue(tid, iewInfo.redirectLastValidSeqNum);
         }
         for (const auto &resolved : iewInfo.resolvedCFIs) {
