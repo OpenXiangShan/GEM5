@@ -68,7 +68,8 @@ class XSStridePrefetcher : public Queued
               lateConf(4, 7),
               longStride(4, 7),
               pc(0),
-              contextId(InvalidContextID)
+              contextId(InvalidContextID),
+              matchedSinceAlloc(false)
         {}
     };
 

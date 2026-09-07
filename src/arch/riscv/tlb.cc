@@ -2513,21 +2513,30 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     auto recall = (double)all_used_forward_pre_num / (all_used_num + 1);
     RequestPtr pre_req = req;
 
+    // Probe directional prefetch state only when at least one direction is enabled.
+    const bool probe_directional_pre = openForwardPre || openBackPre;
+    Addr forward_pre_block = 0;
+    Addr vaddr_block = 0;
+    Addr back_pre_block = 0;
+    TlbEntry *pre_forward = nullptr;
+    TlbEntry *pre_back = nullptr;
 
-    Addr forward_pre_vaddr = vaddr + (l2tlbLineSize << PageShift);
-    Addr forward_pre_block = (forward_pre_vaddr >> (PageShift + L2TLB_BLK_OFFSET)) << (PageShift + L2TLB_BLK_OFFSET);
-    Addr vaddr_block = (vaddr >> (PageShift + L2TLB_BLK_OFFSET)) << (PageShift + L2TLB_BLK_OFFSET);
-    Addr back_pre_vaddr = vaddr - (l2tlbLineSize << PageShift);
-    Addr back_pre_block = (back_pre_vaddr >> (PageShift + L2TLB_BLK_OFFSET)) << (PageShift + L2TLB_BLK_OFFSET);
+    if (probe_directional_pre) {
+        const Addr block_shift = PageShift + L2TLB_BLK_OFFSET;
+        const Addr forward_pre_vaddr = vaddr + (l2tlbLineSize << PageShift);
+        forward_pre_block = (forward_pre_vaddr >> block_shift) << block_shift;
+        vaddr_block = (vaddr >> block_shift) << block_shift;
+        const Addr back_pre_vaddr = vaddr - (l2tlbLineSize << PageShift);
+        back_pre_block = (back_pre_vaddr >> block_shift) << block_shift;
 
-    l2tlb->lookupForwardPre(vaddr_block, satp.asid, false);
-    TlbEntry *pre_forward = l2tlb->lookupForwardPre(forward_pre_block, satp.asid, true);
+        l2tlb->lookupForwardPre(vaddr_block, satp.asid, false);
+        pre_forward = l2tlb->lookupForwardPre(forward_pre_block, satp.asid, true);
 
-    l2tlb->lookupBackPre(vaddr_block, satp.asid, false);
-    TlbEntry *pre_back = l2tlb->lookupBackPre(back_pre_block, satp.asid, true);
-    backPrePrecision = checkPrePrecision(l2tlb->removeNoUseBackPre, l2tlb->usedBackPre);
-    forwardPrePrecision = checkPrePrecision(l2tlb->removeNoUseForwardPre, l2tlb->forwardUsedPre);
-
+        l2tlb->lookupBackPre(vaddr_block, satp.asid, false);
+        pre_back = l2tlb->lookupBackPre(back_pre_block, satp.asid, true);
+        backPrePrecision = checkPrePrecision(l2tlb->removeNoUseBackPre, l2tlb->usedBackPre);
+        forwardPrePrecision = checkPrePrecision(l2tlb->removeNoUseForwardPre, l2tlb->forwardUsedPre);
+    }
 
     for (int i_e = 1; i_e < L_L2SUM; i_e++) {
         if ((satp.mode == AddrXlateMode::SV39) && (i_e == L_L2L3 || i_e == L_L2sp3))
@@ -2535,8 +2544,10 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         if (!e[0])
             e[i_e] = l2tlb->lookupL2TLB(vaddr, satp.asid, mode, false, i_e, true, direct);
 
-        forward_pre[i_e] = l2tlb->lookupL2TLB(forward_pre_block, satp.asid, mode, true, i_e, true, direct);
-        back_pre[i_e] = l2tlb->lookupL2TLB(back_pre_block, satp.asid, mode, true, i_e, true, direct);
+        if (probe_directional_pre) {
+            forward_pre[i_e] = l2tlb->lookupL2TLB(forward_pre_block, satp.asid, mode, true, i_e, true, direct);
+            back_pre[i_e] = l2tlb->lookupL2TLB(back_pre_block, satp.asid, mode, true, i_e, true, direct);
+        }
     }
     bool return_flag = false;
     if (archDBer && req->hasPC()) {

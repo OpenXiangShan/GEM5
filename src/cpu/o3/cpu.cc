@@ -186,6 +186,7 @@ CPU::CPU(const BaseO3CPUParams &params)
     commit.setIEWQueue(&iewTimebuffer);
     commit.setRenameQueue(&renameTimebuffer);
 
+    fetch.setIEWStage(&iew);
     decode.setFetchStage(&fetch);
     commit.setIEWStage(&iew);
     commit.setDecodeStage(&decode);

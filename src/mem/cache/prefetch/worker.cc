@@ -54,6 +54,10 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
             localBuffer.size());
     localBuffer.push_back(*ptr);
+
+    if (!transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 void
@@ -103,7 +107,9 @@ WorkerPrefetcher::transfer()
         count++;
         latestTransferTick = curTick();
     }
-    schedule(transferEvent, nextCycle());
+    if (!localBuffer.empty() && !transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 }  // namespace prefetch

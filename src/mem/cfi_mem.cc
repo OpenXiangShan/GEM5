@@ -456,7 +456,7 @@ CfiMemory::unserialize(CheckpointIn &cp)
 
 CfiMemory::MemoryPort::MemoryPort(const std::string& _name,
                                      CfiMemory& _memory)
-    : ResponsePort(_name, &_memory), mem(_memory)
+    : ResponsePort(_name), mem(_memory)
 { }
 
 AddrRangeList

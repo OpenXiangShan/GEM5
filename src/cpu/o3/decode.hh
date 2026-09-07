@@ -123,7 +123,14 @@ class Decode
     bool isDrained() const;
 
     /** Takes over from another CPU's thread. */
-    void takeOverFrom() { resetStage(); }
+    void
+    takeOverFrom()
+    {
+        resetStage();
+        for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+            decodedBranchHistory[tid].clear();
+        }
+    }
 
     /** Ticks decode, processing all input signals and decoding as many
      * instructions as possible.
@@ -135,7 +142,7 @@ class Decode
      * fetch, so this function mostly checks if PC-relative branches are
      * correct.
      */
-    void decodeInsts(ThreadID tid);
+    void decodeInsts(ThreadID tid, unsigned max_insts);
 
     void setIgnoreNextFusion(Addr pc) { ignoreFusionPC = pc; lastSetIgnoreTick = curTick(); }
 
@@ -172,6 +179,14 @@ class Decode
      * squashing and clears block/unblock signals as needed.
      */
     unsigned squash(ThreadID tid);
+
+    BranchHistory &getBranchHistory(ThreadID tid)
+    {
+        return decodedBranchHistory[tid];
+    }
+
+    void squashBranchHistory(ThreadID tid, InstSeqNum squash_seq_num,
+                             bool include_squash_inst);
 
     void setFetchStage(Fetch *fetch_stage)
     {
@@ -219,6 +234,9 @@ class Decode
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
+    /** Speculative branch history used by path-sensitive MDP lookup. */
+    BranchHistory decodedBranchHistory[MaxThreads];
+
     /** Per-thread stall buffers to avoid contention in SMT mode.
      * Each thread has its own FIFO queue for backpressure isolation.
      */
@@ -247,6 +265,10 @@ class Decode
 
     /** The width of decode, in instructions. */
     unsigned decodeWidth;
+    /** Distinct SMT threads allowed to decode in one cycle. */
+    unsigned numPreDispatchThreads;
+    /** Aggregate Decode->Rename link capacity. */
+    unsigned aggregateDecodeWidth;
 
     /** Index of instructions being sent to rename. */
     unsigned toRenameIndex;
@@ -290,6 +312,10 @@ class Decode
         statistics::Scalar controlMispred;
         /** Stat for total number of decoded instructions. */
         statistics::Scalar decodedInsts;
+        /** Distinct SMT threads decoded in one cycle. */
+        statistics::Distribution threadsDecodedPerCycle;
+        /** Instructions decoded across all SMT threads in one cycle. */
+        statistics::Distribution instsDecodedPerCycle;
         /** Stat for total number of squashed instructions. */
         statistics::Scalar squashedInsts;
         /** stat for total number of instructions that mispredicted due to pc. */

@@ -1,5 +1,6 @@
 #include "cpu/o3/issue_queue.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -383,6 +384,13 @@ IssueQue::isVectorMemInst(const DynInstPtr& inst) const
     return inst && inst->isVector() && inst->isMemRef() && !inst->isSquashed();
 }
 
+bool
+IssueQue::needsVectorMemSplit(const DynInstPtr& inst) const
+{
+    return isVectorMemInst(inst) &&
+           inst->opClass() != enums::VectorUnitStrideLoad;
+}
+
 IssueQue::VectorSplitKind
 IssueQue::vectorSplitKind(const DynInstPtr& inst) const
 {
@@ -423,7 +431,7 @@ IssueQue::nextVectorSplitUnitFor(VectorSplitKind kind)
 bool
 IssueQue::isBlockingVectorSplitInst(const DynInstPtr& inst) const
 {
-    return isVectorMemInst(inst) && inst->opClass() != enums::VectorUnitStrideLoad;
+    return needsVectorMemSplit(inst);
 }
 
 bool
@@ -676,6 +684,19 @@ IssueQue::releaseVectorSplitUnits(VectorSplitKind kind)
 void
 IssueQue::processVectorReadyQ()
 {
+    // Fast path for issue queues with no vector-split work in flight, which is
+    // all of them on scalar-only workloads. With the per-kind ready queues, the
+    // delayed-ready queue and every per-unit split queue empty, each step below
+    // is a no-op and scheduleVectorReadyQEvent() resolves to MaxTick and
+    // schedules nothing. Returning early is therefore bit-identical, including
+    // host-side event scheduling, while dropping the per-cycle vector
+    // bookkeeping every issue queue would otherwise run.
+    if (vectorLoadReadyQ.empty() && vectorStoreReadyQ.empty() &&
+        vectorDelayedReadyQ.empty() &&
+        nextVectorSplitReleaseTick() == MaxTick) {
+        return;
+    }
+
     tryStartVectorMemSplit();
 
     releaseVectorSplitUnits(VectorSplitKind::Load);
@@ -804,7 +825,7 @@ IssueQue::retryMem(const DynInstPtr& inst)
             DynInst::LoadPipeSource::ReplayQueue);
     }
     DPRINTF(Schedule, "retry %s [sn:%llu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
-    if (isVectorMemInst(inst)) {
+    if (needsVectorMemSplit(inst)) {
         enqueueVectorMemDelay(inst, true);
         return;
     }
@@ -924,7 +945,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            if (isVectorMemInst(inst)) {
+            if (needsVectorMemSplit(inst)) {
                 enqueueVectorMemDelay(inst, false);
             } else {
                 READYQ_PUSH(inst);
@@ -968,7 +989,7 @@ IssueQue::selectInst()
                 continue;
             }
 
-            int lat = scheduler->getCorrectedOpLat(inst);
+            uint32_t lat = scheduler->getCorrectedOpLat(inst);
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
@@ -1135,7 +1156,8 @@ IssueQue::insert(const DynInstPtr& inst)
      */
     if (inst->isMemRef()) {
         // insert and check memDep
-        scheduler->memDepUnit[inst->threadNumber].insert(inst);
+        scheduler->memDepUnit[inst->threadNumber].insert(
+            inst, cpu->getDecode()->getBranchHistory(inst->threadNumber));
     } else {
         addIfReady(inst);
     }
@@ -1755,7 +1777,9 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
     }
 
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
-        int oplat = getCorrectedOpLat(inst);
+        uint32_t oplat = getCorrectedOpLat(inst);
+        panic_if(oplat == 0, "[sn:%d] opClass:%d lat:%d\n",
+            inst->seqNum, (int)(inst->opClass()), oplat);
         int wakeDelay = oplat - 1;
         assert(oplat < 64);
         int diff = std::abs(from_issue_queue->getIssueStages() - to->getIssueStages());
@@ -1893,7 +1917,7 @@ Scheduler::useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
     auto& t_inst = std::get<0>(wrRfPortOccupancy[typePortId]);
     auto& t_pri = std::get<1>(wrRfPortOccupancy[typePortId]);
     auto& t_lat = std::get<2>(wrRfPortOccupancy[typePortId]);
-    int lat = getCorrectedOpLat(inst);
+    uint32_t lat = getCorrectedOpLat(inst);
 
     if (t_inst) {
         if ((t_lat == lat) && (t_pri < pri)) {  // smaller is higher priority

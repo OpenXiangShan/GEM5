@@ -358,6 +358,7 @@ struct TimeStruct
         unsigned squashedLoopIter; // F
 
         bool isTrapSquash;
+        bool isDeferedMDPSquash;
         bool squash; // *F, D, R, I
         bool robSquashing; // *F, D, R, I
 
@@ -443,6 +444,18 @@ smtHasBorrowThrottleStall(const TimeStruct::IewComm &info)
     return smtCanDonateRobHeadroom(info.robHeadStallReason) ||
            smtCanDonateRobHeadroom(info.lqHeadStallReason) ||
            smtCanDonateRobHeadroom(info.sqHeadStallReason);
+}
+
+inline bool
+smtHasBorrowThrottleLQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.lqHeadStallReason);
+}
+
+inline bool
+smtHasBorrowThrottleSQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.sqHeadStallReason);
 }
 
 inline bool

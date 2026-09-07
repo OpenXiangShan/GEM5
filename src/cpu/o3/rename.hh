@@ -219,7 +219,7 @@ class Rename
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
      */
-    void renameInsts(ThreadID tid);
+    unsigned renameInsts(ThreadID tid, unsigned max_insts);
 
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
     bool canRename(ThreadID tid);
@@ -404,6 +404,10 @@ class Rename
 
     /** Rename width, in instructions. */
     unsigned renameWidth;
+    /** Distinct SMT threads allowed to rename in one cycle. */
+    unsigned numPreDispatchThreads;
+    /** Aggregate Rename->backend link capacity. */
+    unsigned aggregateRenameWidth;
 
     unsigned releaseWidth;
 
@@ -462,6 +466,10 @@ class Rename
         // statistics::Scalar renamedInsts;
         /** Stat for total number of renamed instructions per thread. */
         statistics::Vector renamedInsts;
+        /** Distinct SMT threads renamed in one cycle. */
+        statistics::Distribution threadsRenamedPerCycle;
+        /** Instructions renamed across all SMT threads in one cycle. */
+        statistics::Distribution instsRenamedPerCycle;
         /** Stat for total number of squashed instructions that rename
          * discards. */
         statistics::Scalar squashedInsts;

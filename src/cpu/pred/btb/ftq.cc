@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <utility>
 
 #include "ftq.hh"
 
@@ -77,11 +78,11 @@ FetchTargetQueue::getTargetTidByFetchQueueSize(const std::array<bool, MaxThreads
 }
 
 void
-FetchTargetQueue::insert(FetchTarget& target)
+FetchTargetQueue::insert(FetchTarget&& target)
 {
     ThreadID tid = target.tid;
     assert(queue[tid].cap.size() < ftqSize[tid]);
-    queue[tid].cap.push_back(target);
+    queue[tid].cap.push_back(std::move(target));
 }
 
 void

@@ -939,7 +939,7 @@ class TableWalker : public ClockedObject
     class Port : public QueuedRequestPort
     {
       public:
-        Port(TableWalker* _walker, RequestorID id);
+        Port(TableWalker& _walker, RequestorID id);
 
         void sendFunctionalReq(Addr desc_addr, int size,
             uint8_t *data, Request::Flags flag);
@@ -961,6 +961,8 @@ class TableWalker : public ClockedObject
                                Tick delay, Event *event);
 
       private:
+        TableWalker& owner;
+
         /** Packet queue used to store outgoing requests. */
         ReqPacketQueue reqQueue;
 

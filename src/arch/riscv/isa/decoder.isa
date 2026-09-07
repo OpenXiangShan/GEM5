@@ -1049,7 +1049,7 @@ decode QUADRANT {
                     }
                     0x01: decode BS {
                         0x0: mul({{
-                            Rd = Rs1_sd * Rs2_sd;
+                            Rd = Rs1_ud * Rs2_ud;
                         }}, IntMultOp);
                     }
                     0x18: sm4ed({{

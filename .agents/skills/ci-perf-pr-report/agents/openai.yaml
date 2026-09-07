@@ -1,0 +1,4 @@
+interface:
+  display_name: "CI Perf PR Report"
+  short_description: "Compare gem5 CI runs and publish a PR report"
+  default_prompt: "Use $ci-perf-pr-report to compare a completed gem5 performance CI run with its baseline, analyze key counters, and post the result to the target PR."

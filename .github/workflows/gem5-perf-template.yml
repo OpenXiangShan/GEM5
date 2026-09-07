@@ -280,7 +280,7 @@ jobs:
           CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
           CONFIG_NAME=${CONFIG_NAME:-config}
           TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
-          DEFAULT_DISTRIBUTED_SERVERS="node020-node029,node033-node034,node036-node039"
+          DEFAULT_DISTRIBUTED_SERVERS="node003-node008,node020-node029,node033-node034,node036-node039"
           DISTRIBUTED_SERVERS_INPUT="$DISTRIBUTED_SERVERS_RAW"
           DISTRIBUTED_SERVERS=$(echo "$DISTRIBUTED_SERVERS_INPUT" | xargs)
           if [ "$DISTRIBUTED_SERVERS" = "default" ]; then
@@ -390,9 +390,20 @@ jobs:
             } >> "$PERF_ARCHIVE_DIR/metadata.txt"
           fi
 
+          run_local_parallel() {
+            echo "Using local parallel_sim.sh runner"
+            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+              "$CHECKPOINT_LIST" \
+              "$CHECKPOINT_ROOT_NODE" \
+              spec_all \
+              "$SPECIFIC_BENCHMARKS_INPUT" \
+              "$extra_args"
+          }
+
           distributed_servers="$DISTRIBUTED_SERVERS"
           if [ -n "$distributed_servers" ]; then
             echo "Using distributed gem5 runner on servers: $distributed_servers"
+            distributed_status=0
             python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
               --servers "$distributed_servers" \
               --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
@@ -410,15 +421,16 @@ jobs:
               "$CHECKPOINT_ROOT_NODE" \
               spec_all \
               "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
+              "$extra_args" || distributed_status=$?
+
+            if [ "$distributed_status" -eq 75 ]; then
+              echo "::warning title=Distributed servers unavailable::Falling back to local parallel_sim.sh"
+              run_local_parallel
+            elif [ "$distributed_status" -ne 0 ]; then
+              exit "$distributed_status"
+            fi
           else
-            echo "Using local parallel_sim.sh runner"
-            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-              "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" \
-              spec_all \
-              "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
+            run_local_parallel
           fi
       - name: Setup gem5_data_proc environment
         run: |

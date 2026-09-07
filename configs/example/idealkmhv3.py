@@ -39,6 +39,7 @@ def setKmhV3IdealParams(args, system):
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4  # maybe we need to change iewToFetchDelay to 4, but now we use commit update bpu
         cpu.fetchQueueSize = 64
+        cpu.enableTwoFetch = not args.smt
 
         # decode
         cpu.fetchToDecodeDelay = 3
@@ -50,6 +51,7 @@ def setKmhV3IdealParams(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
+        cpu.EnablePHASTMDP = True
 
         # dispatch
         cpu.enableDispatchStage = False

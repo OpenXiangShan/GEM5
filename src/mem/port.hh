@@ -83,12 +83,9 @@ class RequestPort: public Port, public AtomicRequestProtocol,
   private:
     ResponsePort *_responsePort;
 
-  protected:
-    SimObject &owner;
-
   public:
-    RequestPort(const std::string& name, SimObject* _owner,
-               PortID id=InvalidPortID);
+    RequestPort(const std::string& name, PortID id=InvalidPortID);
+
     virtual ~RequestPort();
 
     /**
@@ -256,9 +253,7 @@ class RequestPort: public Port, public AtomicRequestProtocol,
 class [[deprecated]] MasterPort : public RequestPort
 {
   public:
-    MasterPort(const std::string& name, SimObject* _owner,
-               PortID id=InvalidPortID) : RequestPort(name, _owner, id)
-               {}
+    using RequestPort::RequestPort;
 };
 
 /**
@@ -280,12 +275,9 @@ class ResponsePort : public Port, public AtomicResponseProtocol,
 
     bool defaultBackdoorWarned;
 
-  protected:
-    SimObject& owner;
-
   public:
-    ResponsePort(const std::string& name, SimObject* _owner,
-              PortID id=InvalidPortID);
+    ResponsePort(const std::string& name, PortID id=InvalidPortID);
+
     virtual ~ResponsePort();
 
     /**
@@ -481,9 +473,7 @@ class ResponsePort : public Port, public AtomicResponseProtocol,
 class [[deprecated]] SlavePort : public ResponsePort
 {
   public:
-    SlavePort(const std::string& name, SimObject* _owner,
-              PortID id=InvalidPortID) : ResponsePort(name, _owner, id)
-              {}
+    using ResponsePort::ResponsePort;
 };
 
 inline void

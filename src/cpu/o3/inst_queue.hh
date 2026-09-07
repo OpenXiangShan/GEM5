@@ -290,7 +290,14 @@ class InstructionQueue
     void cacheUnblocked();
 
     /** Indicates an ordering violation between a store and a load. */
-    void violation(const DynInstPtr &store, const DynInstPtr &faulting_load);
+    void violation(InstSeqNum store_seq_num, Addr store_pc,
+                   const DynInstPtr &faulting_load,
+                   const BranchHistory &branchHistory);
+
+    bool usesPHAST(ThreadID tid) const { return memDepUnit[tid].usesPHAST(); }
+
+    /** Updates the memory dependence predictor when a load commits. */
+    void commit(const DynInstPtr &inst);
 
     /**
      * Squashes instructions for a thread. Squashing information is obtained

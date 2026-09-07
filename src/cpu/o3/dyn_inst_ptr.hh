@@ -42,7 +42,13 @@
 #ifndef __CPU_O3_DYN_INST_PTR_HH__
 #define __CPU_O3_DYN_INST_PTR_HH__
 
+#include <cstddef>
+#include <cstdint>
+#include <deque>
+#include <iosfwd>
+
 #include "base/refcnt.hh"
+#include "cpu/inst_seq.hh"
 
 namespace gem5
 {
@@ -54,6 +60,23 @@ class DynInst;
 
 using DynInstPtr = RefCountingPtr<DynInst>;
 using DynInstConstPtr = RefCountingPtr<const DynInst>;
+
+struct branchInfo
+{
+    bool indirect = false;
+    bool taken = false;
+    uint64_t target = 0;
+    InstSeqNum seqNum = 0;
+    uint64_t pc = 0;
+};
+
+std::ostream &operator<<(std::ostream &os, const branchInfo &b);
+
+using BranchHistory = std::deque<branchInfo>;
+
+bool operator==(const BranchHistory &a, const BranchHistory &b);
+
+constexpr size_t MAX_BRANCH_HISTORY = 128;
 
 } // namespace o3
 } // namespace gem5

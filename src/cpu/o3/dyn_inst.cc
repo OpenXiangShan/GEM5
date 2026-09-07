@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <ostream>
 
 #include "arch/riscv/insts/mem.hh"
 #include "arch/riscv/pcstate.hh"
@@ -59,6 +60,37 @@ namespace gem5
 
 namespace o3
 {
+
+std::ostream &
+operator<<(std::ostream &os, const branchInfo &b)
+{
+    os << "indirect: " << b.indirect
+       << ", taken: " << b.taken
+       << ", target: " << b.target
+       << ", seqNum: " << b.seqNum
+       << ", pc: " << b.pc;
+    return os;
+}
+
+bool
+operator==(const BranchHistory &a, const BranchHistory &b)
+{
+    if (a.size() != b.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].indirect != b[i].indirect ||
+            a[i].taken != b[i].taken ||
+            a[i].target != b[i].target ||
+            a[i].seqNum != b[i].seqNum ||
+            a[i].pc != b[i].pc) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
         const StaticInstPtr &_macroop, InstSeqNum seq_num, CPU *_cpu)

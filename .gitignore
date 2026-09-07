@@ -33,6 +33,7 @@ m5out
 configs/example/memcheck.cfg
 configs/dram/lowp_sweep.cfg
 .pyenv
+.envrc
 .vscode
 typings
 .DS_Store

@@ -63,21 +63,7 @@ ProbeListenerObject::ProbeListenerObject(
 
 ProbeListenerObject::~ProbeListenerObject()
 {
-    for (auto l = listeners.begin(); l != listeners.end(); ++l) {
-        delete (*l);
-    }
     listeners.clear();
-}
-
-ProbeListener::ProbeListener(ProbeManager *_manager, const std::string &_name)
-    : manager(_manager), name(_name)
-{
-    manager->addListener(name, *this);
-}
-
-ProbeListener::~ProbeListener()
-{
-    manager->removeListener(name, *this);
 }
 
 bool
