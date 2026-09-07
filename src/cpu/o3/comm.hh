@@ -127,6 +127,7 @@ enum class SquashCause
     Trap,
     ThreadContext,
     SquashAfter,
+    LongLatencyFlush,
 };
 
 inline StallReason
@@ -200,6 +201,7 @@ struct IEWStruct
     bool includeSquashInst[MaxThreads];
 
     bool valuePredictionError[MaxThreads];
+    bool longLatencyFlush[MaxThreads];
 };
 
 struct IssueStruct

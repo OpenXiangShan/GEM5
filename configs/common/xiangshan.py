@@ -983,13 +983,21 @@ def xiangshan_system_init():
         choices=["ICount", "DelayedICount", "MultiPriority", "RoundRobin"],
         help="SMT decode select policy: ICount, DelayedICount, MultiPriority, RoundRobin",
     )
+    # BlockStallPolicy: block is an ADDITIONAL throttle source (OR with base throttle)
+    # BlockThrottlePolicy: block REPLACES base throttle, becoming the sole throttle driver
+    # FlushFromLoadPolicy: squash all instructions after the long-latency load
+    # FlushFromUsePolicy: squash from first consumer of load result (or ROB tail if none)
     parser.add_argument(
         "--smt-fetch-block-policy",
         type=str,
         default="BaseLine",
-        choices=["BaseLine", "BlockPolicy"],
-        help="SMT fetch block policy for long-latency loads: "
-             "Baseline (no blocking) or BlockPolicy (stall fetch on long-latency load)",
+        choices=["BaseLine", "BlockStallPolicy", "BlockThrottlePolicy",
+                 "FlushFromLoadPolicy", "FlushFromUsePolicy"],
+        help="SMT fetch block/flush policy for long-latency loads: "
+             "BaseLine (no blocking), BlockStallPolicy (block + base throttle), "
+             "BlockThrottlePolicy (block drives throttle), "
+             "FlushFromLoadPolicy (squash after load), "
+             "FlushFromUsePolicy (squash from first consumer)",
     )
     parser.add_argument(
         "--smt-fetch-block-threshold",

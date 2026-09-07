@@ -385,7 +385,14 @@ Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
     DPRINTF(Rename, "[tid:%i] [squash sn:%llu] Squashing instructions.\n",
         tid,squash_seq_num);
 
-    fixedbuffer[tid].clear();
+    // Selectively remove only instructions younger than squash boundary
+    for (auto it = fixedbuffer[tid].begin(); it != fixedbuffer[tid].end(); ) {
+        if ((*it)->seqNum > squash_seq_num) {
+            it = fixedbuffer[tid].erase(it);
+        } else {
+            ++it;
+        }
+    }
 
     doSquash(squash_seq_num, tid);
 }
