@@ -486,6 +486,7 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
 
 def _configure_l2_composite_default(prefetcher):
     # Normal L2CompositeWithWorker profile.
+    prefetcher.enable_berti = False
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = True
     prefetcher.enable_cmc = False
@@ -494,7 +495,8 @@ def _configure_l2_composite_default(prefetcher):
 def _configure_l2_composite_kmh_align(prefetcher):
     # RTL-aligned L2CompositeWithWorker profile.
     prefetcher.enable_cmc = False
-    prefetcher.enable_bop = True
+    prefetcher.enable_berti = True
+    prefetcher.enable_bop = False
     prefetcher.enable_cdp = True
     prefetcher.enable_despacito_stream = False
     prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
@@ -519,13 +521,16 @@ def _configure_cdp(prefetcher, options):
         cdp.cdp_use_sv48 = options.cdp_use_sv48
 
 
-def _configure_l2_composite(prefetcher, prefetcher_name, options):
+def _configure_l2_composite(prefetcher, prefetcher_name, options,
+                            pf_buffer_enabled):
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
         _configure_l2_composite_kmh_align(prefetcher)
     elif prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_composite_default(prefetcher)
 
+    if hasattr(prefetcher, 'berti'):
+        _configure_pf_buffer(prefetcher.berti, pf_buffer_enabled)
     _configure_cdp(prefetcher, options)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
@@ -533,7 +538,8 @@ def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
     # classic_l2 attaches the real L2 prefetcher directly to the L2 cache.
     # Aligned L2 uses this level only as a forwarder to l2_wrapper.
     if options.classic_l2:
-        _configure_l2_composite(prefetcher, prefetcher_name, options)
+        _configure_l2_composite(
+            prefetcher, prefetcher_name, options, pf_buffer_enabled)
         _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
         if options.l1_to_l2_pf_hint:
             prefetcher.queue_size = 64
@@ -546,7 +552,8 @@ def _configure_l2_wrapper_prefetcher(prefetcher, prefetcher_name, options,
     # Aligned L2 attaches the real L2 prefetcher to l2_wrapper.
     # Classic L2 has no wrapper-level real prefetcher.
     if not options.classic_l2:
-        _configure_l2_composite(prefetcher, prefetcher_name, options)
+        _configure_l2_composite(
+            prefetcher, prefetcher_name, options, pf_buffer_enabled)
         _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
         if options.l1_to_l2_pf_hint:
             prefetcher.queue_size = 128

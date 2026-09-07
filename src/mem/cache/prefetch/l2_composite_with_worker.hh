@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "mem/cache/prefetch/berti.hh"
 #include "mem/cache/prefetch/bop.hh"
 #include "mem/cache/prefetch/cdp.hh"
 #include "mem/cache/prefetch/cmc.hh"
@@ -52,11 +53,13 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
 
   private:
     CDP* cdp;
+    BertiPrefetcher *berti;
     BOP* largeBOP;
     BOP* smallBOP;
     CMCPrefetcher* cmc;
     DespacitoStreamPrefetcher* despacitoStream;
 
+    const bool enableBerti;
     const bool enableBOP;
     const bool enableCDP;
     const bool enableCMC;

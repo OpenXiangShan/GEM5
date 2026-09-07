@@ -1343,12 +1343,23 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
 
     cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
+    berti = Param.BertiPrefetcher(
+        BertiPrefetcher(
+            is_sub_prefetcher=True,
+            use_pf_buffer=True,
+            trigger_pht=False,
+            dump_top_deltas=False,
+        ),
+        "Berti used in the L2 composite prefetcher",
+    )
     bop_large = Param.BOPPrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
                                      "Large BOP used in composite prefetcher ")
     bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
+    use_pf_buffer = True
+    enable_berti = Param.Bool(False, "Enable Berti")
     enable_bop = Param.Bool(False, "Enable BOP")
     enable_cdp = Param.Bool(False, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
