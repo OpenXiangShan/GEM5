@@ -62,7 +62,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     const bool enableCMC;
     const bool enableDespacitoStream;
 
-    bool offloadLowAccuracy = true;
+    bool offloadLowAccuracy = false;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");
