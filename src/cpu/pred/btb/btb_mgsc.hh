@@ -307,7 +307,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             ThreadID tid, uint8_t asidHash);
 
     void updateSinglePredictor(
-        const BTBEntry &entry, bool actual_taken,
+        Addr pc, bool actual_taken,
         const MgscPrediction &pred,
         const PredictionUpdateContext &context);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,

@@ -868,14 +868,14 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
  * This function updates the MGSC predictor state based on the actual branch outcome
  * and allocates new entries in various tables if they don't already exist.
  *
- * @param entry The BTB entry being updated
+ * @param pc The branch PC being updated
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
  * @param stream The fetch stream containing update information
  */
 void
 BTBMGSC::updateSinglePredictor(
-    const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
+    Addr pc, bool actual_taken, const MgscPrediction &pred,
     const PredictionUpdateContext &stream)
 {
     // Extract prediction information
@@ -889,7 +889,7 @@ BTBMGSC::updateSinglePredictor(
 
 #ifndef UNIT_TEST
     // Write trace record
-    if (enableDB && (focusBranchPC == 0 || entry.pc == focusBranchPC)) {
+    if (enableDB && (focusBranchPC == 0 || pc == focusBranchPC)) {
         auto effective_gate = pred.tage_conf_high ? (total_thres / 2)
             : (pred.tage_conf_mid ? (total_thres / 4) : (total_thres / 8));
         auto margin = std::abs(total_sum) - effective_gate;
@@ -897,8 +897,8 @@ BTBMGSC::updateSinglePredictor(
             return idx < indices.size() ? indices[idx] : 0;
         };
         MgscTrace t;
-        t.set(entry.pc,
-            stream.startPC, getOffset(entry.pc),
+        t.set(pc,
+            stream.startPC, getOffset(pc),
             tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
             pred.bw_percsum, pred.l_percsum, pred.i_percsum,
             pred.g_percsum, pred.p_percsum, pred.bias_percsum,
@@ -930,43 +930,43 @@ BTBMGSC::updateSinglePredictor(
         }
 
         // Update BW tables
-        updatePredTable(bwTable, pred.bwIndex, bwTableNum, entry.pc, actual_taken);
-        updateWeightTable(bwWeightTable, weightTableIdx, entry.pc, pred.bw_weight_scale_diff,
+        updatePredTable(bwTable, pred.bwIndex, bwTableNum, pc, actual_taken);
+        updateWeightTable(bwWeightTable, weightTableIdx, pc, pred.bw_weight_scale_diff,
                           (pred.bw_percsum >= 0) == actual_taken);
 
         // Update L tables
-        updatePredTable(lTable, pred.lIndex, lTableNum, entry.pc, actual_taken);
-        updateWeightTable(lWeightTable, weightTableIdx, entry.pc, pred.l_weight_scale_diff,
+        updatePredTable(lTable, pred.lIndex, lTableNum, pc, actual_taken);
+        updateWeightTable(lWeightTable, weightTableIdx, pc, pred.l_weight_scale_diff,
                           (pred.l_percsum >= 0) == actual_taken);
 
         // Update I tables
-        updatePredTable(iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
-        updateWeightTable(iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
+        updatePredTable(iTable, pred.iIndex, iTableNum, pc, actual_taken);
+        updateWeightTable(iWeightTable, weightTableIdx, pc, pred.i_weight_scale_diff,
                           (pred.i_percsum >= 0) == actual_taken);
 
         // Update G tables
-        updatePredTable(gTable, pred.gIndex, gTableNum, entry.pc, actual_taken);
-        updateWeightTable(gWeightTable, weightTableIdx, entry.pc, pred.g_weight_scale_diff,
+        updatePredTable(gTable, pred.gIndex, gTableNum, pc, actual_taken);
+        updateWeightTable(gWeightTable, weightTableIdx, pc, pred.g_weight_scale_diff,
                           (pred.g_percsum >= 0) == actual_taken);
 
         // Update P tables
-        updatePredTable(pTable, pred.pIndex, pTableNum, entry.pc, actual_taken);
-        updateWeightTable(pWeightTable, weightTableIdx, entry.pc, pred.p_weight_scale_diff,
+        updatePredTable(pTable, pred.pIndex, pTableNum, pc, actual_taken);
+        updateWeightTable(pWeightTable, weightTableIdx, pc, pred.p_weight_scale_diff,
                           (pred.p_percsum >= 0) == actual_taken);
 
         // Update bias tables
-        updatePredTable(biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
-        updateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
+        updatePredTable(biasTable, pred.biasIndex, biasTableNum, pc, actual_taken);
+        updateWeightTable(biasWeightTable, weightTableIdx, pc, pred.bias_weight_scale_diff,
                           (pred.bias_percsum >= 0) == actual_taken);
 
         // Update PC-indexed threshold table (only if enabled)
         if (enablePCThreshold) {
-            updatePCThresholdTable(entry.pc, stream.asidHash,
+            updatePCThresholdTable(pc, stream.asidHash,
                                    sc_pred_taken != actual_taken);
         }
 
         // Update global threshold table
-        updateGlobalThreshold(entry.pc, sc_pred_taken != actual_taken);
+        updateGlobalThreshold(pc, sc_pred_taken != actual_taken);
     }
 }
 
@@ -989,7 +989,6 @@ BTBMGSC::update(
         if (!branch.isCond) {
             continue;
         }
-        const auto btb_entry = BTBEntry(makeBranchInfo(branch));
         const bool actual_taken = branch.taken;
         auto pred_it = preds.find(branch.pc);
 
@@ -998,7 +997,7 @@ BTBMGSC::update(
         }
 
         // Update predictor state and check if need to allocate new entry
-        updateSinglePredictor(btb_entry, actual_taken, pred_it->second, stream);
+        updateSinglePredictor(branch.pc, actual_taken, pred_it->second, stream);
     }
 
     DPRINTF(MGSC, "end update\n");

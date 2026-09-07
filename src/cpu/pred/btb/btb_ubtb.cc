@@ -102,6 +102,9 @@ UBTB::UBTB(const Params &p)
       usingS3Pred(p.usingS3Pred),
       ubtbStats(this)
 {
+    fatal_if(!usingS3Pred && trainsAtResolve(),
+             "uBTB outcome training requires trainingStage=Commit: "
+             "resolve packets do not describe a complete fetch block");
     if (!isPowerOf2(numEntries)) {
         fatal("uBTB entries is not a power of 2!");
     }

@@ -412,7 +412,6 @@ public:
                                            uint8_t asidHash = 0);
 
     // Build the reachable conditional prefix for S3 teacher update.
-    std::vector<BTBEntry> prepareS3UpdateEntries(const FullBTBPrediction &s3Pred);
     std::vector<BTBEntry> prepareS3UpdateEntriesFromAbtbMeta(
         const std::vector<BTBEntry> &abtbEntries,
         FullBTBPrediction &s3Pred,

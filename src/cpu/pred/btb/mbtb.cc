@@ -623,15 +623,14 @@ MBTB::buildUpdatedEntry(const BTBEntry &entry,
                         const BTBEntry* existing_entry,
                         const PredictionUpdateContext &stream)
 {
-    // For conditional branches, prefer the existing entry to preserve up-to-date ctr
-    auto entry_to_write = (entry.isCond && existing_entry)
-                              ? BTBEntry(*existing_entry)
-                              : entry;
+    // Execution facts replace old attributes; only the live counter survives.
+    auto entry_to_write = entry;
     // Always recalculate tag based on the actual PC being written
     entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
     // Keep a newly allocated conditional weakly taken, matching RTL.
     if (entry_to_write.isCond) {
         if (existing_entry) {
+            entry_to_write.ctr = existing_entry->ctr;
             updateCtr(entry_to_write.ctr, actual_taken);
         } else {
             entry_to_write.ctr = 0;
@@ -759,11 +758,9 @@ MBTB::update(
             continue;
         }
 
-        auto entry = hit != meta->hit_entries.end() ?
-            *hit : BTBEntry(makeBranchInfo(branch));
-        if (hit != meta->hit_entries.end()) {
-            static_cast<BranchInfo &>(entry) = makeBranchInfo(branch);
-        } else {
+        BTBEntry entry(makeBranchInfo(branch));
+        entry.source = getComponentIdx();
+        if (hit == meta->hit_entries.end()) {
             btbStats.newEntry++;
             if (branch.isCond) {
                 btbStats.newEntryWithCond++;

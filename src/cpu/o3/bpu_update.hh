@@ -28,7 +28,7 @@ makeBranchOutcome(const DynInstPtr &inst)
         inst->seqNum,
         inst->getPC(),
         resolved_target,
-        inst->branching(),
+        inst->isUncondCtrl() || inst->branching(),
         inst->mispredicted(),
         inst->staticInst->isCondCtrl(),
         inst->staticInst->isIndirectCtrl(),

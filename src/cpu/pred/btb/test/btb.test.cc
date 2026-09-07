@@ -358,6 +358,58 @@ TEST_F(BTBTest, ConditionalCounter) {
     }
 }
 
+TEST_F(BTBTest, ActualBranchAttributesReplaceExistingEntry)
+{
+    constexpr Addr start_pc = 0x1000;
+    auto old_branch = createBranchInfo(
+        0x1004, 0x2000, false, true, true, true, 4);
+    predictUpdateCycle(mbtb, start_pc, old_branch, true);
+
+    auto actual_branch = createBranchInfo(
+        old_branch.pc, 0x3000, true, false, false, false, 2);
+    actual_branch.isDirect = true;
+    const auto predictions =
+        predictUpdateCycle(mbtb, start_pc, actual_branch, false);
+    const auto &entries = predictions[mbtb->getDelay()].btbEntries;
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].pc, actual_branch.pc);
+    EXPECT_EQ(entries[0].target, actual_branch.target);
+    EXPECT_EQ(entries[0].size, actual_branch.size);
+    EXPECT_TRUE(entries[0].isCond);
+    EXPECT_TRUE(entries[0].isDirect);
+    EXPECT_FALSE(entries[0].isIndirect);
+    EXPECT_FALSE(entries[0].isCall);
+    EXPECT_FALSE(entries[0].isReturn);
+    EXPECT_EQ(entries[0].ctr, -1);
+}
+
+TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
+{
+    constexpr Addr start_pc = 0x1000;
+    const auto branch = createBranchInfo(0x1004, 0x2000, true);
+    predictUpdateCycle(mbtb, start_pc, branch, true);
+    auto stream = setupStream(
+        start_pc, branch, true, mbtb->getPredictionMeta());
+
+    // Both updates retain the prediction made at ctr=0. The second update
+    // must use the live ctr=1 produced by the first update.
+    mbtb->update(PredictionUpdateContext(stream),
+                 createPreparedUpdate(stream, branch, true));
+    auto actual_branch = branch;
+    actual_branch.target = 0x3000;
+    actual_branch.size = 2;
+    mbtb->update(PredictionUpdateContext(stream),
+                 createPreparedUpdate(stream, actual_branch, false));
+
+    std::vector<FullBTBPrediction> predictions(4);
+    mbtb->putPCHistory(start_pc, boost::dynamic_bitset<>(8, 0), predictions);
+    const auto &entries = predictions[mbtb->getDelay()].btbEntries;
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].ctr, 0);
+    EXPECT_EQ(entries[0].target, actual_branch.target);
+    EXPECT_EQ(entries[0].size, actual_branch.size);
+}
+
 // Test counter saturation behavior, for mBTB
 TEST_F(BTBTest, CounterSaturation) {
     // Create conditional branch info

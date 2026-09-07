@@ -625,13 +625,13 @@ AheadBTB::updateBTBEntry(
             break;
         }
     }
-    // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
-    // else use the recorded entry
-    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
+    // Execution facts replace old attributes; only the live counter survives.
+    auto entry_to_write = entry;
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // Keep a newly allocated conditional weakly taken, matching RTL.
     if (entry_to_write.isCond) {
         if (found) {
+            entry_to_write.ctr = it->ctr;
             updateCtr(entry_to_write.ctr, actual_taken);
         } else {
             entry_to_write.ctr = 0;
@@ -798,13 +798,7 @@ AheadBTB::update(
 
     // Train from explicit branch outcomes. A resolve packet may contain only
     // part of the block, while a commit packet contains all committed branches.
-    std::vector<Addr> updated_pcs;
     for (const auto &branch : update.branches) {
-        if (std::find(updated_pcs.begin(), updated_pcs.end(), branch.pc) !=
-            updated_pcs.end()) {
-            continue;
-        }
-
         auto hit = std::find_if(
             meta->hit_entries.begin(), meta->hit_entries.end(),
             [&branch](const BTBEntry &entry) {
@@ -814,10 +808,7 @@ AheadBTB::update(
             continue;
         }
 
-        updated_pcs.push_back(branch.pc);
-        auto entry = hit != meta->hit_entries.end() ?
-            *hit : BTBEntry(makeBranchInfo(branch));
-        static_cast<BranchInfo &>(entry) = makeBranchInfo(branch);
+        BTBEntry entry(makeBranchInfo(branch));
         entry.source = getComponentIdx();
         updateBTBEntry(btb_idx, btb_tag, entry, branch.taken, branch.target);
     }

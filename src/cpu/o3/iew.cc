@@ -1607,7 +1607,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             inst->pcState(*new_pc);
         }
 
-        if (inst->isControl()) {
+        if (inst->isControl() && !inst->isNonSpeculative()) {
             auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
             resolved_cfis.push_back(makeBranchOutcome(inst));
         }

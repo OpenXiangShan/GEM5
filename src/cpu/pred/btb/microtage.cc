@@ -405,38 +405,6 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
     return threadMeta[tid];
 }
 
-std::vector<BTBEntry>
-MicroTAGE::prepareS3UpdateEntries(const FullBTBPrediction &s3Pred)
-{
-    std::vector<BTBEntry> entries;
-    for (const auto &entry : s3Pred.btbEntries) {
-        if (!entry.valid) {
-            continue;
-        }
-
-        if (!entry.isCond) {
-            if (entry.isDirect || entry.isIndirect || entry.isReturn || entry.isCall ||
-                entry.isUncond()) {
-                break;
-            }
-            continue;
-        }
-
-        Addr branch_pc = entry.pc;
-        auto teacher_it = CondTakens_find(s3Pred.condTakens, branch_pc);
-        // Stop at the first control transfer the S3 teacher says is taken.
-        bool teacher_taken =
-            teacher_it != s3Pred.condTakens.end() && teacher_it->second;
-
-        entries.push_back(entry);
-
-        if (teacher_taken) {
-            break;
-        }
-    }
-    return entries;
-}
-
 bool
 MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
 {

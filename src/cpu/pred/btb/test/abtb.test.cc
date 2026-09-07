@@ -131,6 +131,82 @@ TEST_F(ABTBTest, BasicPredictionUpdateCycle){
 
 }
 
+TEST_F(ABTBTest, ActualBranchAttributesReplaceExistingEntry)
+{
+    constexpr Addr previous_pc = 0x1000;
+    constexpr Addr start_pc = 0x2000;
+    auto empty_pred = makePrediction(start_pc, abtb);
+    auto insert = createStream(start_pc, empty_pred, abtb);
+    insert.previousPCs.push(previous_pc);
+    auto old_branch = makeBranchOutcome(true, 0x2004, 0x3000, false);
+    old_branch.isIndirect = true;
+    old_branch.isCall = true;
+    old_branch.isReturn = true;
+    updateABTB(insert, abtb, old_branch);
+
+    clearAheadPipeline(abtb, 0);
+    makePrediction(previous_pc, abtb);
+    auto old_pred = makePrediction(start_pc, abtb);
+    ASSERT_EQ(old_pred.btbEntries.size(), 1);
+    auto stream = createStream(start_pc, old_pred, abtb);
+    stream.previousPCs.push(previous_pc);
+    auto actual_branch =
+        makeBranchOutcome(false, old_branch.pc, 0x4000, true, 2);
+    actual_branch.isDirect = true;
+    updateABTB(stream, abtb, actual_branch);
+
+    clearAheadPipeline(abtb, 0);
+    makePrediction(previous_pc, abtb);
+    const auto prediction = makePrediction(start_pc, abtb);
+    const auto &entries = prediction.btbEntries;
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].pc, actual_branch.pc);
+    EXPECT_EQ(entries[0].target, actual_branch.target);
+    EXPECT_EQ(entries[0].size, actual_branch.size);
+    EXPECT_TRUE(entries[0].isCond);
+    EXPECT_TRUE(entries[0].isDirect);
+    EXPECT_FALSE(entries[0].isIndirect);
+    EXPECT_FALSE(entries[0].isCall);
+    EXPECT_FALSE(entries[0].isReturn);
+    EXPECT_EQ(entries[0].ctr, -1);
+}
+
+TEST_F(ABTBTest, ActualBranchUpdatePreservesLiveCounter)
+{
+    constexpr Addr previous_pc = 0x1000;
+    constexpr Addr start_pc = 0x2000;
+    auto empty_pred = makePrediction(start_pc, abtb);
+    auto insert = createStream(start_pc, empty_pred, abtb);
+    insert.previousPCs.push(previous_pc);
+    const auto branch = makeBranchOutcome(true, 0x2004, 0x3000, true);
+    updateABTB(insert, abtb, branch);
+
+    clearAheadPipeline(abtb, 0);
+    makePrediction(previous_pc, abtb);
+    auto old_pred = makePrediction(start_pc, abtb);
+    ASSERT_EQ(old_pred.btbEntries.size(), 1);
+    EXPECT_EQ(old_pred.btbEntries[0].ctr, 0);
+    auto stream = createStream(start_pc, old_pred, abtb);
+    stream.previousPCs.push(previous_pc);
+
+    // Reuse the old prediction while the table's counter advances to 1.
+    updateABTB(stream, abtb, branch);
+    auto actual_branch = branch;
+    actual_branch.taken = false;
+    actual_branch.target = 0x4000;
+    actual_branch.size = 2;
+    updateABTB(stream, abtb, actual_branch);
+
+    clearAheadPipeline(abtb, 0);
+    makePrediction(previous_pc, abtb);
+    const auto prediction = makePrediction(start_pc, abtb);
+    const auto &entries = prediction.btbEntries;
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].ctr, 0);
+    EXPECT_EQ(entries[0].target, actual_branch.target);
+    EXPECT_EQ(entries[0].size, actual_branch.size);
+}
+
 TEST_F(ABTBTest, AliasAvoidance){
     // Some constants
     // Stream A addresses
