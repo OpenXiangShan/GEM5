@@ -496,7 +496,7 @@ def _configure_l2_composite_kmh_align(prefetcher):
     # RTL-aligned L2CompositeWithWorker profile.
     prefetcher.enable_cmc = False
     prefetcher.enable_berti = True
-    prefetcher.enable_bop = False
+    prefetcher.enable_bop = True
     prefetcher.enable_cdp = True
     prefetcher.enable_despacito_stream = False
     prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
