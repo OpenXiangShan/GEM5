@@ -10,13 +10,15 @@ L3CompositeWithWorkerPrefetcher::L3CompositeWithWorkerPrefetcher(
     const L3CompositeWithWorkerPrefetcherParams &p)
     : CompositeWithWorkerPrefetcher(p),
       cmc(p.cmc),
-      enableCMC(p.enable_cmc)
+      enableCMC(p.enable_cmc && p.cmc != nullptr)
 {
     // CMC shares the parent's bounded filter with the worker.  Qualifying the
     // key with ContextID prevents one SMT context from suppressing another.
     setSharedFilterContextQualified(true);
-    cmc->setSharedFilterContextQualified(true);
-    cmc->filter = &pfLRUFilter;
+    if (cmc) {
+        cmc->setSharedFilterContextQualified(true);
+        cmc->filter = &pfLRUFilter;
+    }
 }
 
 void
@@ -33,7 +35,9 @@ void
 L3CompositeWithWorkerPrefetcher::setParentInfo(
     System *sys, ProbeManager *pm, CacheAccessor *cache, unsigned blk_size)
 {
-    cmc->setParentInfo(sys, pm, cache, blk_size);
+    if (cmc) {
+        cmc->setParentInfo(sys, pm, cache, blk_size);
+    }
     CompositeWithWorkerPrefetcher::setParentInfo(sys, pm, cache, blk_size);
 }
 
@@ -61,13 +65,14 @@ L3CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(
 
     // CMC owns the delayed temporal sequence, so let it supply the next
     // candidate here.
-    return cmc->GetPFRequestsFromBuffer(addresses);
+    return enableCMC && cmc->GetPFRequestsFromBuffer(addresses);
 }
 
 bool
 L3CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer()
 {
-    return Queued::hasPFRequestsInBuffer() || cmc->hasPFRequestsInBuffer();
+    return Queued::hasPFRequestsInBuffer() ||
+        (enableCMC && cmc->hasPFRequestsInBuffer());
 }
 
 } // namespace prefetch

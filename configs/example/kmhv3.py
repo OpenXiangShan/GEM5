@@ -204,8 +204,14 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
-    # Use the L3 worker/CMC implementation for the SPEC checkpoint runs.
-    args.l3_hwp_type = 'L3CompositeWithWorkerPrefetcher'
+    # Use the L3 worker/CMC implementation by default for kmhv3 runs, while
+    # preserving an explicit command-line --l3-hwp-type A/B choice.
+    l3_hwp_type_explicit = any(
+        arg == '--l3-hwp-type' or arg.startswith('--l3-hwp-type=')
+        for arg in sys.argv[1:]
+    )
+    if not l3_hwp_type_explicit:
+        args.l3_hwp_type = 'L3CompositeWithWorkerPrefetcher'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.cdp_use_dynamic_degree = False
     args.cdp_accuracy_threshold = 0.05
@@ -217,8 +223,8 @@ if __name__ == '__m5_main__':
 
     test_sys = build_xiangshan_system(args)
     # The shared L3 has no CPU-local TLB by default.  CMC trains on virtual
-    # addresses, so bind the single-core SPEC experiment to its DTB to allow
-    # page-crossing candidates to be translated before issue.
+    # addresses, so bind the single-core run to its DTB for page-crossing
+    # candidates.
     if (args.l3cache and not args.no_pf and args.num_cpus == 1 and
             args.l3_hwp_type == 'L3CompositeWithWorkerPrefetcher' and
             hasattr(test_sys, 'l3') and test_sys.l3.prefetcher != NULL):
