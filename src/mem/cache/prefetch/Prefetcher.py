@@ -631,10 +631,6 @@ class CDP(QueuedPrefetcher):
         True,
         "Use the legacy accuracy-dependent pointer alignment"
     )
-    cdp_use_sv48 = Param.Bool(
-        False,
-        "Use Sv48 virtual-address recognition for CDP"
-    )
     throttle_aggressiveness = Param.Float(2.0,
         "A parameter to control the aggressiveness of throttling")
 

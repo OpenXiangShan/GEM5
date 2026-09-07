@@ -61,7 +61,7 @@ CDP::CDP(const CDPParams &p)
       useDynamicDegree(p.use_dynamic_degree),
       accuracyThreshold(p.accuracy_threshold),
       useAccuracyDependentAlignment(p.use_accuracy_dependent_alignment),
-      useSv48(p.cdp_use_sv48),
+      currentVaddrMode(CdpVaddrMode::Sv39),
       throttle_aggressiveness(p.throttle_aggressiveness),
       enable_thro(false),
       vpnTable(p.vpn_assoc, p.vpn_entries, p.vpn_indexing_policy,
@@ -97,6 +97,37 @@ CDP::shouldIssueDegreeExtension(float accuracy) const
     }
 
     return accuracy > accuracyThreshold;
+}
+
+void
+CDP::updateVaddrMode(Addr addr)
+{
+    CdpVaddrMode next_mode = currentVaddrMode;
+
+    switch (currentVaddrMode) {
+      case CdpVaddrMode::Sv39:
+        if ((addr >> 48) != 0) {
+            next_mode = CdpVaddrMode::Sv57;
+        } else if ((addr >> 39) != 0) {
+            next_mode = CdpVaddrMode::Sv48;
+        }
+        break;
+      case CdpVaddrMode::Sv48:
+        if ((addr >> 48) != 0) {
+            next_mode = CdpVaddrMode::Sv57;
+        }
+        break;
+      case CdpVaddrMode::Sv57:
+        break;
+    }
+
+    if (next_mode != currentVaddrMode) {
+        DPRINTF(CDPdebug,
+                "CDP virtual-address mode upgraded from Sv%u to Sv%u\n",
+                cdpVaddrBits(),
+                next_mode == CdpVaddrMode::Sv48 ? 48 : 57);
+        currentVaddrMode = next_mode;
+    }
 }
 
 Addr

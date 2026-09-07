@@ -80,7 +80,15 @@ class CDP : public Queued
     bool useDynamicDegree;
     float accuracyThreshold;
     bool useAccuracyDependentAlignment;
-    bool useSv48;
+
+    enum class CdpVaddrMode
+    {
+        Sv39,
+        Sv48,
+        Sv57
+    };
+
+    CdpVaddrMode currentVaddrMode;
     float throttle_aggressiveness;
     bool enable_thro;
 
@@ -88,9 +96,19 @@ class CDP : public Queued
 
     unsigned cdpVaddrBits() const
     {
-        return useSv48 ? 48 : 39;
+        switch (currentVaddrMode) {
+          case CdpVaddrMode::Sv39:
+            return 39;
+          case CdpVaddrMode::Sv48:
+            return 48;
+          case CdpVaddrMode::Sv57:
+            return 57;
+        }
+
+        panic("Invalid CDP virtual-address mode");
     }
 
+    void updateVaddrMode(Addr addr);
     Addr cdpVpnKey(Addr addr) const;
     bool cdpHighBitsAreZero(Addr addr) const;
 
