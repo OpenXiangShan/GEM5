@@ -1359,4 +1359,9 @@ class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     cxx_class = 'gem5::prefetch::L3CompositeWithWorkerPrefetcher'
     cxx_header = "mem/cache/prefetch/l3_composite_with_worker.hh"
 
-    bop = Param.BasePrefetcher(FallenBOPPrefetcher(is_sub_prefetcher=True), "")
+    # CMC records virtual-address sequences; kmhv3 binds the L3 TLB for them.
+    use_virtual_addresses = True
+    cmc = Param.CMCPrefetcher(
+        CMCPrefetcher(is_sub_prefetcher=True),
+        "CMC temporal prefetcher used by the L3 worker")
+    enable_cmc = Param.Bool(True, "Enable the L3 CMC prefetcher")

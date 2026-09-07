@@ -204,6 +204,8 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
+    # Use the L3 worker/CMC implementation for the SPEC checkpoint runs.
+    args.l3_hwp_type = 'L3CompositeWithWorkerPrefetcher'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.cdp_use_dynamic_degree = False
     args.cdp_accuracy_threshold = 0.05
@@ -214,6 +216,14 @@ if __name__ == '__m5_main__':
     TestMemClass = Simulation.setMemClass(args)
 
     test_sys = build_xiangshan_system(args)
+    # The shared L3 has no CPU-local TLB by default.  CMC trains on virtual
+    # addresses, so bind the single-core SPEC experiment to its DTB to allow
+    # page-crossing candidates to be translated before issue.
+    if (args.l3cache and not args.no_pf and args.num_cpus == 1 and
+            args.l3_hwp_type == 'L3CompositeWithWorkerPrefetcher' and
+            hasattr(test_sys, 'l3') and test_sys.l3.prefetcher != NULL):
+        test_sys.l3.prefetcher.registerTLB(
+            test_sys.cpu[0].mmu.dtb, test_sys.cpu[0].mmu.functional)
     if args.raw_cpt and args.generic_rv_cpt and os.path.basename(args.generic_rv_cpt) == "linux.bin":
         configure_xiangshan_linux_workload(test_sys, args)
     # Set ideal parameters here with the highest priority, over command-line arguments
