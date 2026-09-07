@@ -61,7 +61,7 @@ util/xs_scripts/perf_benchmarks.py
 本地检查 resolver：
 
 ```bash
-python3 util/xs_scripts/perf_benchmarks.py gcc15-spec06-0.3c
+python3 util/xs_scripts/perf_benchmarks.py spec06-rva23-novec-gcc16-0.3c
 ```
 
 不传 `--github-output` 时会打印 JSON，便于检查最终路径。性能 workflow 使用

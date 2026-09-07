@@ -132,26 +132,6 @@ _BENCHMARKS = _index_benchmarks(
             ),
         ),
         BenchmarkConfig(
-            benchmark_type="gcc15-spec06-0.3c",
-            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/gcc15_260604/spec06_0.3c.lst",
-            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint",
-            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_cov0.3.json",
-            comment=(
-                "run legacy 30% coverage gcc15 SPEC06 checkpoints from "
-                "spec06_gcc15_rv64gcb_base_260604"
-            ),
-        ),
-        BenchmarkConfig(
-            benchmark_type="gcc15-spec06-1.0c",
-            checkpoint_list="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint/checkpoint.lst",
-            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/checkpoint",
-            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260604/json/checkpoints_all.json",
-            comment=(
-                "run legacy 100% coverage gcc15 SPEC06 checkpoints from "
-                "spec06_gcc15_rv64gcb_base_260604"
-            ),
-        ),
-        BenchmarkConfig(
             benchmark_type="h-spec06-0.5c",
             checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c.lst",
             checkpoint_root="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0",
