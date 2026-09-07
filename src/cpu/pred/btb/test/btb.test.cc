@@ -44,6 +44,27 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
     return info;
 }
 
+BranchOutcome
+createResolveEvent(ThreadID tid, FetchTargetId ftqId, InstSeqNum seqNum,
+                   const BranchInfo &branch, bool taken, bool mispredicted)
+{
+    return BranchOutcome{
+        tid,
+        ftqId,
+        seqNum,
+        branch.pc,
+        branch.target,
+        taken,
+        mispredicted,
+        branch.isCond,
+        branch.isIndirect,
+        branch.isDirect,
+        branch.isCall,
+        branch.isReturn,
+        branch.size
+    };
+}
+
 /**
  * @brief Setup a FetchTarget with common parameters for BTB update
  *
@@ -51,22 +72,28 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
  * @param branch Branch information
  * @param taken Whether the branch was taken
  * @param meta Prediction metadata from previous prediction
- * @param endInstPC Last executed instruction PC, used for filtering entries
  * @return FetchTarget Initialized fetch stream
  */
 FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
-                       std::shared_ptr<void> meta, Addr endInstPC,
-                       ThreadID tid = 0) {
+                       std::shared_ptr<void> meta, ThreadID tid = 0) {
     FetchTarget stream;
     stream.tid = tid;
     stream.startPC = startPC;
-    stream.resolved = true;
-    stream.exeBranchInfo = branch;
-    stream.exeTaken = taken;
+    stream.predBranchInfo = branch;
+    stream.predTaken = taken;
     stream.predMetas[0] = meta;
-    stream.updateEndInstPC = endInstPC;
-    stream.squashType = SQUASH_CTRL; // mispredict default
     return stream;
+}
+
+PreparedUpdate
+createPreparedUpdate(const FetchTarget &stream, const BranchInfo &branch,
+                     bool taken,
+                     bool mispredicted = false)
+{
+    std::vector<BranchOutcome> events = {
+        createResolveEvent(stream.tid, 0, 1, branch, taken, mispredicted)
+    };
+    return PreparedUpdate(events);
 }
 
 /**
@@ -107,7 +134,6 @@ std::pair<bool, Addr> findIndirectTarget(const IndirectTargets& indirectTargets,
  * @param branch Branch information for update
  * @param taken Whether the branch was taken
  * @param history Branch history register value
- * @param endInstPC End instruction PC for update
  * @return std::vector<FullBTBPrediction> Final stage predictions
  */
 std::vector<FullBTBPrediction>
@@ -116,13 +142,7 @@ predictUpdateCycle(MBTB* btb,
      const BranchInfo& branch,
      bool taken,
      const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0),
-     Addr endInstPC = 0,
      ThreadID tid = 0) {
-    // If endInstPC not specified, use branch.pc + branch.size
-    if (endInstPC == 0) {
-        endInstPC = branch.pc + branch.size;
-    }
-
     // Prediction phase
     std::vector<FullBTBPrediction> stagePreds(4);
     for (auto &pred : stagePreds) {
@@ -132,22 +152,16 @@ predictUpdateCycle(MBTB* btb,
     auto meta = btb->getPredictionMeta(tid);
 
     // Update phase
-    FetchTarget stream = setupStream(
-        startPC, branch, taken, meta, endInstPC, tid);
+    FetchTarget stream = setupStream(startPC, branch, taken, meta, tid);
     // Populate predicted BTB entries in stream from stage predictions
     // Use entries from the first valid stage (delay)
     if (btb->getDelay() < stagePreds.size()) {
-        stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
+        stream.setPredictedBranches(
+            stagePreds[btb->getDelay()].btbEntries);
     }
-    stream.setUpdateBTBEntries();
-    btb->getAndSetNewBTBEntry(stream);
+    auto update = createPreparedUpdate(stream, branch, taken);
 
-    for (auto &entry : stream.updateBTBEntries) {
-        entry.resolved = true;
-    }
-    stream.updateNewBTBEntry.resolved = true;
-
-    btb->update(stream);
+    btb->update(PredictionUpdateContext(stream), update);
 
     // Return final predictions after update
     stagePreds.clear();
@@ -255,10 +269,10 @@ TEST_F(BTBTest, TidPartitionKeepsSamePcEntriesIndependent) {
 
     predictUpdateCycle(
         &partitionedBtb, startPC, thread0Branch, true,
-        boost::dynamic_bitset<>(8, 0), 0, 0);
+        boost::dynamic_bitset<>(8, 0), 0);
     predictUpdateCycle(
         &partitionedBtb, startPC, thread1Branch, true,
-        boost::dynamic_bitset<>(8, 0), 0, 1);
+        boost::dynamic_bitset<>(8, 0), 1);
 
     for (ThreadID tid = 0; tid < 2; ++tid) {
         std::vector<FullBTBPrediction> predictions(4);
@@ -277,7 +291,7 @@ TEST_F(BTBTest, TidPartitionKeepsSamePcEntriesIndependent) {
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]
-// 3. getAndSetNewBTBEntry, only L1 BTB has this function
+// 3. prepareUpdate, only L1 BTB derives the old/new entry candidate
 // 4. update, update btb entries
 
 // Test basic prediction after update
@@ -315,24 +329,85 @@ TEST_F(BTBTest, ConditionalCounter) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
-    // Counter should be initialized to 0 and stay at 0 after taken (since alwaysTaken=true)
+    // A newly allocated entry starts weakly taken, matching RTL.
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, 0);
-        EXPECT_TRUE(entries[0].alwaysTaken);
     }
     
-    // Then update with not taken
-    stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
-
-    // Counter should be reduced after not taken (0 -> -1)
+    // A second taken update makes the entry strongly taken.
+    stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, -1);
-        EXPECT_FALSE(entries[0].alwaysTaken);
+        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, 1);
     }
+
+    // The first not-taken update preserves a taken prediction.
+    stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
+    for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
+        ASSERT_FALSE(stagePreds[i].btbEntries.empty());
+        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, 0);
+    }
+
+    // A second not-taken update changes the prediction direction.
+    stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
+    for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
+        ASSERT_FALSE(stagePreds[i].btbEntries.empty());
+        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, -1);
+    }
+}
+
+TEST_F(BTBTest, ActualBranchAttributesReplaceExistingEntry)
+{
+    constexpr Addr start_pc = 0x1000;
+    auto old_branch = createBranchInfo(
+        0x1004, 0x2000, false, true, true, true, 4);
+    predictUpdateCycle(mbtb, start_pc, old_branch, true);
+
+    auto actual_branch = createBranchInfo(
+        old_branch.pc, 0x3000, true, false, false, false, 2);
+    actual_branch.isDirect = true;
+    const auto predictions =
+        predictUpdateCycle(mbtb, start_pc, actual_branch, false);
+    const auto &entries = predictions[mbtb->getDelay()].btbEntries;
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].pc, actual_branch.pc);
+    EXPECT_EQ(entries[0].target, actual_branch.target);
+    EXPECT_EQ(entries[0].size, actual_branch.size);
+    EXPECT_TRUE(entries[0].isCond);
+    EXPECT_TRUE(entries[0].isDirect);
+    EXPECT_FALSE(entries[0].isIndirect);
+    EXPECT_FALSE(entries[0].isCall);
+    EXPECT_FALSE(entries[0].isReturn);
+    EXPECT_EQ(entries[0].ctr, -1);
+}
+
+TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
+{
+    constexpr Addr start_pc = 0x1000;
+    const auto branch = createBranchInfo(0x1004, 0x2000, true);
+    predictUpdateCycle(mbtb, start_pc, branch, true);
+    auto stream = setupStream(
+        start_pc, branch, true, mbtb->getPredictionMeta());
+
+    // Both updates retain the prediction made at ctr=0. The second update
+    // must use the live ctr=1 produced by the first update.
+    mbtb->update(PredictionUpdateContext(stream),
+                 createPreparedUpdate(stream, branch, true));
+    auto actual_branch = branch;
+    actual_branch.target = 0x3000;
+    actual_branch.size = 2;
+    mbtb->update(PredictionUpdateContext(stream),
+                 createPreparedUpdate(stream, actual_branch, false));
+
+    std::vector<FullBTBPrediction> predictions(4);
+    mbtb->putPCHistory(start_pc, boost::dynamic_bitset<>(8, 0), predictions);
+    const auto &entries = predictions[mbtb->getDelay()].btbEntries;
+    ASSERT_EQ(entries.size(), 1);
+    EXPECT_EQ(entries[0].ctr, 0);
+    EXPECT_EQ(entries[0].target, actual_branch.target);
+    EXPECT_EQ(entries[0].size, actual_branch.size);
 }
 
 // Test counter saturation behavior, for mBTB
@@ -344,12 +419,11 @@ TEST_F(BTBTest, CounterSaturation) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
-    // Check counter is at 0 (alwaysTaken=true, so updateCtr not called)
+    // Check the weakly-taken allocation state.
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, 0);  // Counter should be at 0
-        EXPECT_TRUE(entries[0].alwaysTaken);
     }
     
     // Update multiple times with not taken to test negative saturation
@@ -362,7 +436,6 @@ TEST_F(BTBTest, CounterSaturation) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, -2);  // Counter should saturate at -2
-        EXPECT_FALSE(entries[0].alwaysTaken);
     }
 }
 
@@ -425,7 +498,9 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
 
     // Add first branch
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x1000, branch1, true, boost::dynamic_bitset<>(8, 0), 0x1008);
+        predictUpdateCycle(
+            mbtb, 0x1000, branch1, true,
+            boost::dynamic_bitset<>(8, 0));
 
     // Add second branch
     boost::dynamic_bitset<> history(8, 0);
@@ -433,10 +508,10 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     mbtb->putPCHistory(0x1000, history, tempPreds);
     auto meta = mbtb->getPredictionMeta();
 
-    FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
-    mbtb->getAndSetNewBTBEntry(stream);
-    mbtb->update(stream);
-    
+    FetchTarget stream = setupStream(0x1000, branch2, true, meta);
+    auto update = createPreparedUpdate(stream, branch2, true);
+    mbtb->update(PredictionUpdateContext(stream), update);
+
     // Check final predictions
     stagePreds.clear();
     stagePreds.resize(4);
@@ -445,6 +520,223 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
     verifyPrediction(stagePreds, mbtb->getDelay(), expectedBranches);
+}
+
+TEST(PreparedUpdateTest, SortsAndKeepsActualBranches)
+{
+    auto branch_a = BTBEntry(createBranchInfo(0x1000, 0x1010, true));
+    auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
+
+    std::vector<BranchOutcome> events = {
+        createResolveEvent(0, 0, 2, branch_b, true, true),
+        createResolveEvent(0, 0, 1, branch_a, false, false)
+    };
+    PreparedUpdate update(events);
+    ASSERT_EQ(update.branches.size(), 2);
+    EXPECT_EQ(update.branches[0].pc, branch_a.pc);
+    EXPECT_EQ(update.branches[1].pc, branch_b.pc);
+    EXPECT_FALSE(update.branches[0].taken);
+    EXPECT_TRUE(update.branches[1].taken);
+    EXPECT_TRUE(update.branches[1].mispredicted);
+    EXPECT_EQ(update.branches[1].target, branch_b.target);
+}
+
+TEST(PreparedUpdateTest, NotTakenBranchUsesActualBranchFacts)
+{
+    FetchTarget target;
+    target.startPC = 0x1000;
+
+    auto predictedIndirect =
+        BTBEntry(createBranchInfo(0x1004, 0xdead, false, true));
+    predictedIndirect.valid = true;
+    predictedIndirect.ctr = 2;
+    predictedIndirect.source = 3;
+    target.setPredictedBranches({predictedIndirect});
+    const auto actualBranch =
+        createBranchInfo(0x1004, 0x1008, true, false);
+
+    const auto update = createPreparedUpdate(target, actualBranch, false, true);
+    ASSERT_EQ(update.branches.size(), 1);
+    EXPECT_FALSE(update.branches[0].taken);
+    EXPECT_EQ(update.branches[0].target, 0x1008);
+    EXPECT_TRUE(update.branches[0].isCond);
+    EXPECT_FALSE(update.branches[0].isIndirect);
+}
+
+TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
+{
+    FetchTarget target;
+    target.tid = 1;
+    target.startPC = 0x1000;
+
+    auto branch_a = BTBEntry(
+        createBranchInfo(0x1000, 0x1010, false, true));
+    auto unresolved = BTBEntry(createBranchInfo(0x1002, 0x1800, true));
+    auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
+    auto branch_c = BTBEntry(createBranchInfo(0x1008, 0x3000, true));
+    target.setPredictedBranches(
+        {branch_a, unresolved, branch_b, branch_c});
+
+    auto resolved_a = createBranchInfo(0x1000, 0x5000, true);
+    auto resolved_b = createBranchInfo(0x1004, 0x4000, true);
+    std::vector<BranchOutcome> events = {
+        createResolveEvent(1, 7, 11, resolved_b, true, true),
+        createResolveEvent(1, 7, 10, resolved_a, false, false)
+    };
+
+    PreparedUpdate update(events);
+
+    EXPECT_TRUE(update.outcome.taken);
+    EXPECT_TRUE(update.outcome.controlMispred);
+    EXPECT_EQ(update.outcome.branch.pc, resolved_b.pc);
+    ASSERT_EQ(update.branches.size(), 2);
+    EXPECT_FALSE(update.branches[0].taken);
+    EXPECT_TRUE(update.branches[0].isCond);
+    EXPECT_FALSE(update.branches[0].isIndirect);
+    EXPECT_EQ(update.branches[0].target, resolved_a.target);
+    EXPECT_TRUE(update.branches[1].taken);
+    EXPECT_EQ(update.branches[1].target, 0x4000);
+
+}
+
+TEST(PreparedUpdateTest, EmptyOutcomeBlockIgnoresPredictionSnapshot)
+{
+    FetchTarget target;
+    target.startPC = 0x1000;
+    target.predTaken = true;
+    target.predBranchInfo = createBranchInfo(0x1004, 0x2000, true);
+    target.setPredictedBranches({BTBEntry(target.predBranchInfo)});
+
+    const std::vector<BranchOutcome> no_branches;
+    PreparedUpdate update(no_branches);
+
+    EXPECT_FALSE(update.outcome.valid);
+    EXPECT_FALSE(update.outcome.taken);
+    EXPECT_TRUE(update.branches.empty());
+}
+
+TEST(PreparedUpdateTest, NotTakenMispredictionPrecedesYoungerTaken)
+{
+    const auto older = createBranchInfo(0x1004, 0x2000, true);
+    const auto younger = createBranchInfo(0x1008, 0x3000, true);
+    const PreparedUpdate update({
+        createResolveEvent(0, 7, 12, younger, true, false),
+        createResolveEvent(0, 7, 11, older, false, true)
+    });
+
+    EXPECT_TRUE(update.outcome.valid);
+    EXPECT_EQ(update.outcome.branch.pc, older.pc);
+    EXPECT_FALSE(update.outcome.taken);
+    EXPECT_TRUE(update.outcome.controlMispred);
+}
+
+TEST(PreparedUpdateTest, CorrectFallthroughUsesLastDynamicBranch)
+{
+    const auto older = createBranchInfo(0x1004, 0x2000, true);
+    const auto younger = createBranchInfo(0x1008, 0x3000, true);
+    const PreparedUpdate update({
+        createResolveEvent(0, 7, 12, younger, false, false),
+        createResolveEvent(0, 7, 11, older, false, false)
+    });
+
+    EXPECT_TRUE(update.outcome.valid);
+    EXPECT_EQ(update.outcome.branch.pc, younger.pc);
+    EXPECT_FALSE(update.outcome.taken);
+    EXPECT_FALSE(update.outcome.controlMispred);
+}
+
+TEST(PreparedUpdateTest, KeepsUnpredictedActualBranches)
+{
+    FetchTarget target;
+    target.startPC = 0x1000;
+
+    auto branch = createBranchInfo(0x1004, 0x1008, true);
+    auto update = createPreparedUpdate(target, branch, false, true);
+
+    ASSERT_EQ(update.branches.size(), 1);
+    EXPECT_EQ(update.branches.front().pc, branch.pc);
+    EXPECT_FALSE(update.branches.front().taken);
+}
+
+TEST_F(BTBTest, UnpredictedTakenBranchAllocates)
+{
+    constexpr Addr start_pc = 0x1000;
+    auto actual_branch = createBranchInfo(0x1004, 0x3000, true);
+    boost::dynamic_bitset<> history(8, 0);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    mbtb->putPCHistory(start_pc, history, stage_preds);
+
+    FetchTarget target;
+    target.tid = 0;
+    target.startPC = start_pc;
+    target.predMetas[0] = mbtb->getPredictionMeta();
+    auto event = createResolveEvent(0, 9, 20, actual_branch, true, true);
+    std::vector<BranchOutcome> events = {event};
+
+    const PreparedUpdate update(events);
+    mbtb->update(PredictionUpdateContext(target), update);
+
+    stage_preds.assign(4, FullBTBPrediction());
+    mbtb->putPCHistory(start_pc, history, stage_preds);
+    ASSERT_EQ(stage_preds[mbtb->getDelay()].btbEntries.size(), 1);
+    EXPECT_EQ(stage_preds[mbtb->getDelay()].btbEntries.front().pc,
+              actual_branch.pc);
+}
+
+TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
+{
+    const auto branch_a = createBranchInfo(0x1000, 0x2000, true);
+    const auto branch_b = createBranchInfo(0x1004, 0x3000, true);
+    predictUpdateCycle(mbtb, 0x1000, branch_a, true);
+
+    boost::dynamic_bitset<> history(8, 0);
+    std::vector<FullBTBPrediction> predictions(4);
+    mbtb->putPCHistory(0x1000, history, predictions);
+    auto meta = mbtb->getPredictionMeta();
+    auto insert_b = setupStream(0x1000, branch_b, true, meta);
+    auto insert_update = createPreparedUpdate(
+        insert_b, branch_b, true, true);
+    mbtb->update(PredictionUpdateContext(insert_b), insert_update);
+
+    predictions.assign(4, FullBTBPrediction());
+    mbtb->putPCHistory(0x1000, history, predictions);
+    ASSERT_EQ(predictions[mbtb->getDelay()].btbEntries.size(), 2);
+    meta = mbtb->getPredictionMeta();
+
+    auto resolve_a = setupStream(0x1000, branch_b, true, meta);
+    resolve_a.setPredictedBranches(
+        predictions[mbtb->getDelay()].btbEntries);
+    std::vector<BranchOutcome> resolve_events = {
+        createResolveEvent(0, 0, 1, branch_a, false, false)
+    };
+    PreparedUpdate resolve_update(resolve_events);
+    mbtb->setTrainingStage(PredictorTrainingStage::Resolve);
+    mbtb->update(PredictionUpdateContext(resolve_a), resolve_update);
+
+    predictions.assign(4, FullBTBPrediction());
+    mbtb->putPCHistory(0x1000, history, predictions);
+    const auto &entries = predictions[mbtb->getDelay()].btbEntries;
+    ASSERT_EQ(entries.size(), 2);
+    EXPECT_EQ(entries[0].ctr, -1);
+    EXPECT_EQ(entries[1].ctr, 0);
+}
+
+TEST_F(BTBTest, UnpredictedNotTakenBranchDoesNotAllocate)
+{
+    constexpr Addr start_pc = 0x1000;
+    auto branch = createBranchInfo(0x1004, 0x2000, true);
+    boost::dynamic_bitset<> history(8, 0);
+    std::vector<FullBTBPrediction> stage_preds(4);
+    mbtb->putPCHistory(start_pc, history, stage_preds);
+    auto meta = mbtb->getPredictionMeta();
+
+    auto target = setupStream(start_pc, branch, false, meta);
+    const auto update = createPreparedUpdate(target, branch, false, true);
+    mbtb->update(PredictionUpdateContext(target), update);
+
+    stage_preds.assign(4, FullBTBPrediction());
+    mbtb->putPCHistory(start_pc, history, stage_preds);
+    EXPECT_TRUE(stage_preds[mbtb->getDelay()].btbEntries.empty());
 }
 
 // Test recovery from misprediction
@@ -464,7 +756,7 @@ TEST_F(BTBTest, MispredictionRecovery) {
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_FALSE(entries[0].alwaysTaken);
+        EXPECT_LT(entries[0].ctr, 0);
     }
 }
 
@@ -478,11 +770,11 @@ TEST_F(BTBTest, HalfAlignedBasicTest) {
     // Add first branch
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x100, branch1, true, 
-            boost::dynamic_bitset<>(64, 0), 0x140);
+            boost::dynamic_bitset<>(64, 0));
 
     // Add second branch
     stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true, 
-        boost::dynamic_bitset<>(64, 0), 0x140);
+        boost::dynamic_bitset<>(64, 0));
 
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
@@ -498,10 +790,14 @@ TEST_F(BTBTest, HalfAlignedUnalignedTest) {
 
     // Add first branch
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x104, branch1, true, boost::dynamic_bitset<>(64, 0), 0x144);
+        predictUpdateCycle(
+            mbtb, 0x104, branch1, true,
+            boost::dynamic_bitset<>(64, 0));
 
     // Add second branch
-    stagePreds = predictUpdateCycle(mbtb, 0x104, branch2, true, boost::dynamic_bitset<>(64, 0), 0x144);
+    stagePreds = predictUpdateCycle(
+        mbtb, 0x104, branch2, true,
+        boost::dynamic_bitset<>(64, 0));
 
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
@@ -516,7 +812,9 @@ TEST_F(BTBTest, HalfAlignedUpdateSecondBlock) {
 
     // Execute prediction-update cycle
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x100, branch, true, boost::dynamic_bitset<>(64, 0), 0x140);
+        predictUpdateCycle(
+            mbtb, 0x100, branch, true,
+            boost::dynamic_bitset<>(64, 0));
 
     // Verify branch is predicted from first block
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
@@ -540,10 +838,14 @@ TEST_F(BTBTest, HalfAlignedBothBlocks) {
 
     // Add first branch
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x100, branch1, true, boost::dynamic_bitset<>(64, 0), 0x140);
+        predictUpdateCycle(
+            mbtb, 0x100, branch1, true,
+            boost::dynamic_bitset<>(64, 0));
 
     // Add second branch
-    stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true, boost::dynamic_bitset<>(64, 0), 0x140);
+    stagePreds = predictUpdateCycle(
+        mbtb, 0x100, branch2, true,
+        boost::dynamic_bitset<>(64, 0));
 
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
@@ -558,7 +860,9 @@ TEST_F(BTBTest, HalfAlignedUnalignedStart) {
 
     // Execute prediction-update cycle from unaligned start address
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x10A, branch, true, boost::dynamic_bitset<>(64, 0), 0x140);
+        predictUpdateCycle(
+            mbtb, 0x10A, branch, true,
+            boost::dynamic_bitset<>(64, 0));
 
     // Verify branch is predicted
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
@@ -572,11 +876,15 @@ TEST_F(BTBTest, HalfAlignedMultipleUpdates) {
 
     // Execute first prediction-update cycle
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x100, branch, true, boost::dynamic_bitset<>(64, 0), 0x140);
+        predictUpdateCycle(
+            mbtb, 0x100, branch, true,
+            boost::dynamic_bitset<>(64, 0));
 
     // Update with new target
     branch.target = 0x300;
-    stagePreds = predictUpdateCycle(mbtb, 0x100, branch, true, boost::dynamic_bitset<>(64, 0), 0x140);
+    stagePreds = predictUpdateCycle(
+        mbtb, 0x100, branch, true,
+        boost::dynamic_bitset<>(64, 0));
 
     // Verify branch is predicted with new target
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
@@ -598,7 +906,7 @@ TEST_F(BTBTest, VictimCacheEffectivenessTest) {
     std::vector<FullBTBPrediction> stagePreds;
     for (int i = 0; i < 5; i++) {
         stagePreds = predictUpdateCycle(mbtb, 0x100, branches[i], true,
-            boost::dynamic_bitset<>(64, 0), 0x140);
+            boost::dynamic_bitset<>(64, 0));
     }
 
     // Check if victim cache had hits
@@ -670,19 +978,19 @@ TEST_F(BTBTest, UpdateFromVictimCachePath) {
     // Insert first 4 branches into MBTB
     for (int i = 0; i < 4; i++) {
         predictUpdateCycle(mbtb, 0x200, branches[i], true,
-            boost::dynamic_bitset<>(64, 0), 0x240);
+            boost::dynamic_bitset<>(64, 0));
     }
 
     // Insert 5th branch to evict one into VC
     predictUpdateCycle(mbtb, 0x200, branches[4], true,
-        boost::dynamic_bitset<>(64, 0), 0x240);
+        boost::dynamic_bitset<>(64, 0));
 
     // At this point, one of the earlier branches should be in VC. Force update on that branch.
     // We choose branches[0] which is likely evicted first.
     auto before_replace = mbtb->btbStats.updateReplace;
 
     auto stagePreds = predictUpdateCycle(mbtb, 0x200, branches[0], false,
-        boost::dynamic_bitset<>(64, 0), 0x240);
+        boost::dynamic_bitset<>(64, 0));
 
     // Ensure replacement path executed (entry was inserted back from VC to MBTB during update)
     // EXPECT_GE(mbtb->btbStats.updateReplace, before_replace + 1);

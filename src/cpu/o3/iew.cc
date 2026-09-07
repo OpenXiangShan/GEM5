@@ -54,6 +54,7 @@
 #include "base/stats/info.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -621,6 +622,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum;
         toCommit->squash[tid] = true;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
@@ -663,6 +665,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
     // the squash.
     if (!toCommit->squash[tid] || inst->seqNum <= toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum - 1;
         toCommit->squash[tid] = true;
 
         toCommit->squashedSeqNum[tid] = inst->seqNum;
@@ -699,6 +702,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
             tid, inst->pcState(), inst->seqNum);
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum;
         toCommit->squash[tid] = true;
 
         toCommit->valuePredictionError[tid] = true;
@@ -1657,14 +1661,6 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
-    if (inst->isControl()) {
-        auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
-        TimeStruct::IewComm::ResolvedCFIEntry entry;
-        entry.ftqId = inst->getFtqId();
-        entry.pc = inst->getPC();
-        resolved_cfis.push_back(entry);
-    }
-
     if (!fetchRedirect[tid] ||
         !toCommit->squash[tid] ||
         toCommit->squashedSeqNum[tid] > inst->seqNum) {
@@ -1677,6 +1673,11 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
             new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
             inst->pcState(*new_pc);
+        }
+
+        if (inst->isControl() && !inst->isNonSpeculative()) {
+            auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
+            resolved_cfis.push_back(makeBranchOutcome(inst));
         }
 
         if (inst->mispredicted() && !loadNotExecuted &&
@@ -2025,18 +2026,19 @@ IEW::tick()
     cycleThreadSquash.fill(false);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         toFetch->iewInfo[tid].redirectPending = false;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = 0;
         toFetch->iewInfo[tid].resolvedCFIs.clear();
     }
 
     scheduler->tick();
     ldstQueue.tick();
-    
+
     // Update LSQ borrowing donor status for LQ and SQ
     // A thread becomes a donor if it has no buffered rename instructions and is stalled
     // Use hold cycles to avoid frequent donor state transitions
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         bool has_buffered_rename = !fixedbuffer[tid].empty();
-        
+
         // For LQ: determine if thread should be a donor
         bool lq_donor = false;
         lq_donor = smtHasBorrowThrottleLQStall(toFetch->iewInfo[tid]);
@@ -2045,7 +2047,7 @@ IEW::tick()
         } else {
             ldstQueue.setLQBorrowingDonor(tid, false);
         }
-        
+
         // For SQ: determine if thread should be a donor
         bool sq_donor = false;
         sq_donor = smtHasBorrowThrottleSQStall(toFetch->iewInfo[tid]);
@@ -2055,7 +2057,7 @@ IEW::tick()
             ldstQueue.setSQBorrowingDonor(tid, false);
         }
     }
-    
+
     // Add borrowing state hold cycle for LSQ
     ldstQueue.addBorrowingStateHoldCycle();
 

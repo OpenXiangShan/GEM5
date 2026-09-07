@@ -107,6 +107,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            bool basePred;         // Base BTB direction at prediction time
             int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
             Addr useAltIdx;        // useAltOnNa index consulted at prediction time
@@ -115,15 +116,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
+                               basePred(false),
                                finalProviderTable(-1), finalProviderIsAlt(false),
                                useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
+                            bool basePred,
                             int finalProviderTable, bool finalProviderIsAlt,
                             Addr useAltIdx, short useAltCtr, uint64_t hitTableMask) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
                             useAlt(useAlt), taken(taken), altPred(altPred),
+                            basePred(basePred),
                             finalProviderTable(finalProviderTable),
                             finalProviderIsAlt(finalProviderIsAlt),
                             useAltIdx(useAltIdx), useAltCtr(useAltCtr),
@@ -165,19 +169,23 @@ class BTBTAGE : public TimedBaseBTBPredictor
                          const PathHistoryUpdate &update) override;
 
     void recoverHist(const boost::dynamic_bitset<> &history,
-                     const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
-    bool canResolveUpdate(const FetchTarget &entry) override;
-    void doResolveUpdate(const FetchTarget &entry) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
+    bool canResolveUpdate(const PredictionUpdateContext &context,
+                          const PreparedUpdate &update) override;
+    void doResolveUpdate(const PredictionUpdateContext &context,
+                         const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 #endif
 
     void setTrace() override;
@@ -227,7 +235,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Update branch history
     void doUpdateHist(const bitset &history, int shamt, bool taken,
                       Addr pc, Addr target, ThreadID tid);
-    void recoverFoldedHist(const FetchTarget &entry);
+    void recoverFoldedHist(const HistoryRecoveryContext &context);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -301,7 +309,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned instShiftAmt {1};
 
     // use for microtage updatemispred counting
-    void checkUtageUpdateMisspred(const FetchTarget &stream);
+    void checkUtageUpdateMisspred(
+        const PredictionUpdateContext &context,
+        const PreparedUpdate &update);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -484,14 +494,11 @@ private:
                                            ThreadID tid = 0,
                                            uint8_t asidHash = 0) const;
 
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
-
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                 bool control_mispred);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,

@@ -18,7 +18,6 @@ namespace debug {
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/UTAGE.hh"
 
 #endif
@@ -308,7 +307,7 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
                                                  tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -432,74 +431,6 @@ MicroTAGE::refreshPredictionMeta(Addr startPC,
     threadMeta[tid] = std::move(meta);
 }
 
-/**
- * @brief Prepare BTB entries for update by filtering and processing
- *
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
-std::vector<BTBEntry>
-MicroTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
-}
-
-std::vector<BTBEntry>
-MicroTAGE::prepareS3UpdateEntries(const FullBTBPrediction &s3Pred)
-{
-    std::vector<BTBEntry> entries;
-    for (const auto &entry : s3Pred.btbEntries) {
-        if (!entry.valid) {
-            continue;
-        }
-
-        if (!entry.isCond) {
-            if (entry.isDirect || entry.isIndirect || entry.isReturn || entry.isCall ||
-                entry.isUncond()) {
-                break;
-            }
-            continue;
-        }
-
-        Addr branch_pc = entry.pc;
-        auto teacher_it = CondTakens_find(s3Pred.condTakens, branch_pc);
-        // Stop at the first control transfer the S3 teacher says is taken.
-        bool teacher_taken = entry.alwaysTaken ||
-            (teacher_it != s3Pred.condTakens.end() && teacher_it->second);
-
-        if (!entry.alwaysTaken) {
-            entries.push_back(entry);
-        }
-
-        if (teacher_taken) {
-            break;
-        }
-    }
-    return entries;
-}
-
 bool
 MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
 {
@@ -568,7 +499,7 @@ bool
 MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             bool control_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -649,10 +580,10 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
-    // No allocation if no misprediction
-    if (!this_fb_mispred) {
+    bool this_fb_mispred = control_mispred;
+    // A control redirect can also come from a target/BTB miss.  Allocate
+    // direction state only when the stored direction itself was wrong.
+    if (!this_fb_mispred || pred.taken == actual_taken) {
         return false;
     }
 
@@ -879,7 +810,9 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
  * update backpressure and always lets the caller proceed.
  */
 bool
-MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
+MicroTAGE::canResolveUpdate(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
+{
     if (usingS3Pred) {
         return true;
     }
@@ -915,7 +848,9 @@ MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
  * predictor state is updated by updateUsingS3Pred().
  */
 void
-MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
+MicroTAGE::doResolveUpdate(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
+{
     if (usingS3Pred) {
         return;
     }
@@ -923,7 +858,7 @@ MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
     }
-    update(stream);
+    this->update(stream, update);
 }
 
 /**
@@ -932,7 +867,8 @@ MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
  * @param stream The fetch stream containing branch execution information
  */
 void
-MicroTAGE::update(const FetchTarget &stream) {
+MicroTAGE::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     if (usingS3Pred) {
         DPRINTF(UTAGE, "update bypassed because usingS3Pred is enabled\n");
         return;
@@ -943,10 +879,6 @@ MicroTAGE::update(const FetchTarget &stream) {
 
     DPRINTF(UTAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
-    // ========== Normal Update Logic ==========
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
-
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -954,9 +886,8 @@ MicroTAGE::update(const FetchTarget &stream) {
         return;
     }
 
-    trainEntries(entries_to_update, predMeta, startAddr, stream.tid, stream.asidHash,
-                 TrainingMode::Resolved, &stream, nullptr);
-    checkUtageUpdateMisspred(stream);
+    trainResolvedEntries(update, predMeta, startAddr, stream);
+    checkUtageUpdateMisspred(stream, update);
     DPRINTF(UTAGE, "end update\n");
 }
 
@@ -984,21 +915,29 @@ MicroTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     // Only train the conditional prefix that remains reachable under the
     // final-stage teacher prediction for this fetch block.
     CondTakens teacher_cond_takens;
-    auto entries_to_update = prepareS3UpdateEntriesFromAbtbMeta(
+    auto btb_entries = prepareS3UpdateEntriesFromAbtbMeta(
         predMeta->abtbEntries, s3Pred, teacher_cond_takens);
+    std::vector<TrainingEntry> entries_to_update;
+    entries_to_update.reserve(btb_entries.size());
+    for (const auto &entry : btb_entries) {
+        Addr branch_pc = entry.pc;
+        auto teacher_it = CondTakens_find(teacher_cond_takens, branch_pc);
+        const bool actual_taken =
+            teacher_it != teacher_cond_takens.end() && teacher_it->second;
+        entries_to_update.push_back(
+            TrainingEntry{entry, actual_taken, false});
+    }
     trainEntries(entries_to_update, predMeta, startAddr, tid, s3Pred.asidHash,
-                 TrainingMode::S3Update, nullptr, &teacher_cond_takens);
+                 TrainingMode::S3Update);
 }
 
 void
-MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
+MicroTAGE::trainEntries(const std::vector<TrainingEntry> &entries_to_update,
                         const std::shared_ptr<TageMeta> &predMeta,
                         const Addr &startPC,
                         ThreadID tid,
                         uint8_t asidHash,
-                        TrainingMode mode,
-                        const FetchTarget *stream,
-                        const CondTakens *teacherCondTakens)
+                        TrainingMode mode)
 {
     const bool isS3Update = mode == TrainingMode::S3Update;
     bool utage_hit = false;
@@ -1022,24 +961,14 @@ MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
                 btb_entry, startPC, predMeta, tid, asidHash);
         };
 
-    for (const auto &btb_entry : entries_to_update) {
+    for (const auto &training_entry : entries_to_update) {
+        const auto &btb_entry = training_entry.entry;
         if (isS3Update) {
             tageStats.s3UpdateEntries++;
         }
 
-        bool actual_taken = false;
-        if (isS3Update) {
-            assert(teacherCondTakens != nullptr);
-            const auto &teacher_cond_takens = *teacherCondTakens;
-            Addr branch_pc = btb_entry.pc;
-            auto teacher_it = CondTakens_find(teacher_cond_takens, branch_pc);
-            if (teacher_it != teacher_cond_takens.end()) {
-                actual_taken = teacher_it->second;
-            }
-        } else {
-            assert(stream != nullptr);
-            actual_taken = stream->exeTaken && stream->exeBranchInfo == btb_entry;
-        }
+        const bool actual_taken = training_entry.actualTaken;
+        const bool control_mispred = training_entry.controlMispred;
 
         auto recomputed = get_prediction_for_training(btb_entry);
 
@@ -1049,7 +978,8 @@ MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
 
         bool need_allocate = isS3Update
             ? updatePredictorStateAndCheckAllocationS3(btb_entry, actual_taken, recomputed)
-            : updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, *stream);
+            : updatePredictorStateAndCheckAllocation(
+                btb_entry, actual_taken, recomputed, control_mispred);
 
         if (!need_allocate) {
             continue;
@@ -1103,7 +1033,35 @@ MicroTAGE::trainEntries(const std::vector<BTBEntry> &entries_to_update,
 }
 
 void
-MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
+MicroTAGE::trainResolvedEntries(
+    const PreparedUpdate &update,
+    const std::shared_ptr<TageMeta> &predMeta,
+    const Addr &startPC,
+    const PredictionUpdateContext &stream)
+{
+    std::vector<TrainingEntry> entries;
+    entries.reserve(update.branches.size());
+    for (const auto &branch : update.branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        auto entry = BTBEntry(makeBranchInfo(branch));
+        auto pred = predMeta->preds.find(entry.pc);
+        if (pred == predMeta->preds.end()) {
+            continue;
+        }
+        entry.ctr = pred->second.basePred ? 0 : -1;
+        entries.push_back(TrainingEntry{
+            entry, branch.taken, branch.mispredicted});
+    }
+
+    trainEntries(entries, predMeta, startPC, stream.tid, stream.asidHash,
+                 TrainingMode::Resolved);
+}
+
+void
+MicroTAGE::checkUtageUpdateMisspred(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "checkUtageUpdateMisspred: no prediction meta, skip\n");
@@ -1131,10 +1089,11 @@ MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (!has_taken_pred && stream.exeTaken) ||
-                                (has_taken_pred && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && has_taken_pred &&
-                          first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred =
+        (!has_taken_pred && update.outcome.taken) ||
+        (has_taken_pred && !update.outcome.taken);
+    bool branch_mispred = update.outcome.taken && has_taken_pred &&
+        first_taken_pc != update.outcome.branch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -1341,10 +1300,12 @@ MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
  */
 void
 MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, const PathHistoryUpdate &update)
+    const HistoryRecoveryContext &context, const PathHistoryUpdate &update)
 {
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<TageMeta> predMeta =
+        std::static_pointer_cast<TageMeta>(
+            context.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "recoverPHist: no prediction metadata, cannot recover\n");
         return;
@@ -1378,7 +1339,8 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
     }
-    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
+    doUpdateHist(
+        history, update.taken, update.pc, update.target, context.tid);
 }
 
 // Check folded history after speculative update and recovery
@@ -1536,18 +1498,20 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
 
 #ifndef UNIT_TEST
 void
-MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+MicroTAGE::commitBranch(const PredictionUpdateContext &context,
+                        const BranchOutcome &outcome)
 {
-    if (!inst->isCondCtrl()) {
+    if (!outcome.isCond) {
         // tage only deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
     if (!meta) {
         DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
         return;
     }
-    auto pc = inst->pcState().instAddr();
+    auto pc = outcome.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;
@@ -1555,7 +1519,7 @@ MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = outcome.taken;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

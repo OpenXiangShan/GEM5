@@ -21,7 +21,7 @@ namespace
 {
 
 BTBEntry
-makeCondEntry(Addr pc, int ctr = -1, bool always_taken = false)
+makeCondEntry(Addr pc, int ctr = -1)
 {
     BTBEntry entry;
     entry.valid = true;
@@ -30,8 +30,24 @@ makeCondEntry(Addr pc, int ctr = -1, bool always_taken = false)
     entry.size = 4;
     entry.isCond = true;
     entry.ctr = ctr;
-    entry.alwaysTaken = always_taken;
     return entry;
+}
+
+BranchOutcome
+makeBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
+{
+    BranchOutcome outcome;
+    outcome.pc = entry.pc;
+    outcome.target = entry.target;
+    outcome.taken = taken;
+    outcome.mispredicted = mispredicted;
+    outcome.isCond = entry.isCond;
+    outcome.isIndirect = entry.isIndirect;
+    outcome.isDirect = entry.isDirect;
+    outcome.isCall = entry.isCall;
+    outcome.isReturn = entry.isReturn;
+    outcome.size = entry.size;
+    return outcome;
 }
 
 FullBTBPrediction
@@ -92,11 +108,12 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.updateBTBEntries = {entry};
-    stream.exeTaken = true;
-    stream.exeBranchInfo = entry;
+    stream.setPredictedBranches({entry});
+    const PredictionUpdateContext context(stream);
+    PreparedUpdate update(
+        std::vector<BranchOutcome>{makeBranchOutcome(entry, true, false)});
 
-    tage->update(stream);
+    tage->update(context, update);
     EXPECT_FALSE(predictTaken(tage.get(), 0x1000, entry));
 }
 

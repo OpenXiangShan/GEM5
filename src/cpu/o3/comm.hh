@@ -50,6 +50,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/pred/btb/branch_outcome.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -253,13 +254,6 @@ struct SquashVersion
     SquashVersion() : version(0) {}
 };
 
-struct ResolveQueueEntry
-{
-    ThreadID resolvedTid;
-    uint64_t resolvedFTQId;
-    std::vector<uint64_t> resolvedInstPC;
-};
-
 /** Struct that defines all backwards communication. */
 struct TimeStruct
 {
@@ -296,16 +290,14 @@ struct TimeStruct
         StallReason lqHeadStallReason;
         StallReason sqHeadStallReason;
 
-        struct ResolvedCFIEntry
-        {
-            uint64_t ftqId;
-            uint64_t pc;
-        };
-        /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
-        std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
+        /** Resolved control-flow facts produced this cycle. */
+        std::vector<branch_prediction::btb_pred::BranchOutcome>
+            resolvedCFIs;  // *F
 
         /** IEW detected a redirect before the delayed formal squash reaches Fetch. */
         bool redirectPending = false;  // *F
+        /** Youngest sequence number that remains valid after that redirect. */
+        InstSeqNum redirectLastValidSeqNum = 0;  // *F
 
         unsigned iqCount;
         unsigned ldstqCount;
@@ -359,6 +351,9 @@ struct TimeStruct
         InstSeqNum robheadSeqNum;
 
         uint64_t doneFtqId; // F
+        /** Complete FetchBlocks produced at the doneFtqId boundary. */
+        std::vector<branch_prediction::btb_pred::CommittedFetchBlock>
+            committedFetchBlocks; // *F
         uint64_t squashedTargetId; // F
         unsigned squashedLoopIter; // F
 

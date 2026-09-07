@@ -1292,11 +1292,11 @@ class LSQ
     /** Sets whether the thread may donate unused LQ/SQ capacity this cycle. */
     void setLQBorrowingDonor(ThreadID tid, bool donor);
     void setSQBorrowingDonor(ThreadID tid, bool donor);
-    
+
     /** Returns whether the thread is currently an LQ/SQ borrowing donor. */
     bool isLQBorrowingDonor(ThreadID tid) const { return lqBorrowingDonor[tid]; }
     bool isSQBorrowingDonor(ThreadID tid) const { return sqBorrowingDonor[tid]; }
-    
+
     /** Add cycle count for borrowing state holding cycle stats */
     void addBorrowingStateHoldCycle();
 
@@ -1550,10 +1550,10 @@ class LSQ
 
     /** Whether a thread may donate unused SQ capacity this cycle. */
     bool sqBorrowingDonor[MaxThreads];
-    
+
     /** Cycle count for LQ borrowing state holding */
     unsigned lqBorrowingStateHoldCycle[MaxThreads];
-    
+
     /** Cycle count for SQ borrowing state holding */
     unsigned sqBorrowingStateHoldCycle[MaxThreads];
 

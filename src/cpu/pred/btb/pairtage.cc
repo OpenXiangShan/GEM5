@@ -584,10 +584,12 @@ PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
 }
 
 void
-PairTAGE::recoverPHist(const bitset &history, const FetchTarget &entry,
+PairTAGE::recoverPHist(const bitset &history,
+                       const HistoryRecoveryContext &context,
                        const PathHistoryUpdate &update)
 {
-    auto predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    auto predMeta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
     if (!predMeta) {
         return;
     }

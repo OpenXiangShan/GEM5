@@ -19,7 +19,6 @@ namespace debug {
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
 #endif
 namespace gem5 {
@@ -411,8 +410,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         btb_entry.pc, final_provider_table, final_provider_is_alt);
 
     return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
-        alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
-        use_alt_ctr, hit_table_mask);
+        alt_pred, base_taken, final_provider_table, final_provider_is_alt,
+        use_alt_idx, use_alt_ctr, hit_table_mask);
 }
 
 /**
@@ -436,7 +435,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -463,7 +462,7 @@ BTBTAGE::lookupNoSideEffect(const Addr &startPC,
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(
                 btb_entry, startPC, nullptr, tid, asidHash);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -574,40 +573,6 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
 }
 
 /**
- * @brief Prepare BTB entries for update by filtering and processing
- * 
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
-std::vector<BTBEntry>
-BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
-}
-
-/**
  * @brief Update predictor state for a single entry
  * 
  * @param entry The BTB entry being updated
@@ -620,14 +585,13 @@ bool
 BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             bool control_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
     auto &alt_info = pred.altInfo;
     bool used_alt = pred.useAlt;
     // Use base table instead of entry.ctr for fallback prediction
-    Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
     bool use_provider = main_info.found && !used_alt;
@@ -712,8 +676,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
+    bool this_fb_mispred = control_mispred;
     if (this_fb_mispred) {
         tageStats.mispredictBranchHasProvider += main_info.found;
         tageStats.mispredictBranchUseProvider += use_provider;
@@ -736,8 +699,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         }
     }
 
-    // No allocation if no misprediction
-    if (!this_fb_mispred) {
+    // A control redirect can also come from a target/BTB miss.  Allocate
+    // direction state only when the stored direction itself was wrong.
+    if (!this_fb_mispred || pred.taken == actual_taken) {
         return false;
     }
 
@@ -886,7 +850,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
  * Returns false if the update cannot proceed due to a bank conflict.
  */
 bool
-BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
+BTBTAGE::canResolveUpdate(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
+{
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -911,12 +877,14 @@ BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
  * @brief Perform resolved update after probe success.
  */
 void
-BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
+BTBTAGE::doResolveUpdate(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
+{
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
     }
-    update(stream);
+    this->update(stream, update);
 }
 
 /**
@@ -925,16 +893,13 @@ BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
  * @param stream The fetch stream containing branch execution information
  */
 void
-BTBTAGE::update(const FetchTarget &stream) {
+BTBTAGE::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
     DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
-    // ========== Normal Update Logic ==========
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
-    
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -945,43 +910,43 @@ BTBTAGE::update(const FetchTarget &stream) {
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.pc == stream.updateNewBTBEntry.pc;
+    for (const auto &branch : update.branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        auto btb_entry = BTBEntry(makeBranchInfo(branch));
+        const bool actual_taken = branch.taken;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
-        const bool has_original_pred = orig_it != predMeta->preds.end();
-        TagePrediction original_pred;
-        if (has_original_pred) {
-            original_pred = orig_it->second;
-        } else if (!is_new_entry) {
-            DPRINTF(TAGE, "update: missing original prediction for old entry pc %#lx, skip\n",
+        if (orig_it == predMeta->preds.end()) {
+            DPRINTF(TAGE,
+                    "update: branch pc %#lx was not trained at prediction, skip\n",
                     btb_entry.pc);
             continue;
-        } else {
-            DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
-                    btb_entry.pc);
         }
+        const auto &original_pred = orig_it->second;
+        btb_entry.ctr = original_pred.basePred ? 0 : -1;
 
-        if (has_original_pred && original_pred.finalProviderTable >= 0) {
+        if (original_pred.finalProviderTable >= 0) {
             if (original_pred.taken == actual_taken) {
                 tageStats.updateFinalSourceTableCorrect[original_pred.finalProviderTable]++;
             } else {
                 tageStats.updateFinalSourceTableWrong[original_pred.finalProviderTable]++;
             }
-        } else if (has_original_pred && original_pred.taken == actual_taken) {
+        } else if (original_pred.taken == actual_taken) {
             tageStats.updateFinalSourceBaseCorrect++;
-        } else if (has_original_pred) {
+        } else {
             tageStats.updateFinalSourceBaseWrong++;
         }
 
         TagePrediction recomputed;
-        if (updateOnRead || !has_original_pred) {
+        if (updateOnRead) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
                                                  stream.tid, stream.asidHash);
             // Track differences for statistics
             auto it = predMeta->preds.find(btb_entry.pc);
-            if (has_original_pred && it != predMeta->preds.end() && recomputed.taken != original_pred.taken) {
+            if (it != predMeta->preds.end() &&
+                recomputed.taken != original_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
         } else { // otherwise, use the prediction from the prediction-time main/alt
@@ -992,7 +957,8 @@ BTBTAGE::update(const FetchTarget &stream) {
         }
 
         // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, actual_taken, recomputed, branch.mispredicted);
 
         // Handle new entry allocation if needed
         AllocationTraceInfo allocInfo;
@@ -1065,13 +1031,14 @@ BTBTAGE::update(const FetchTarget &stream) {
         tageStats.recomputedVsOriginalDiff++;
     }
     if (getDelay() <2){
-        checkUtageUpdateMisspred(stream);
+        checkUtageUpdateMisspred(stream, update);
     }
     DPRINTF(TAGE, "end update\n");
 }
 
 void
-BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
+BTBTAGE::checkUtageUpdateMisspred(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch
@@ -1092,9 +1059,11 @@ BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                (first_taken_pc != 0 && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred =
+        (first_taken_pc == 0 && update.outcome.taken) ||
+        (first_taken_pc != 0 && !update.outcome.taken);
+    bool branch_mispred = update.outcome.taken &&
+        first_taken_pc != update.outcome.branch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -1290,14 +1259,18 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
 }
 
 void
-BTBTAGE::recoverFoldedHist(const FetchTarget &entry)
+BTBTAGE::recoverFoldedHist(const HistoryRecoveryContext &context)
 {
     auto predMeta =
-        std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+        std::static_pointer_cast<TageMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
-        threadHistory[entry.tid].tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        threadHistory[entry.tid].altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        threadHistory[entry.tid].indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        threadHistory[context.tid].tagFoldedHist[i].recover(
+            predMeta->tagFoldedHist[i]);
+        threadHistory[context.tid].altTagFoldedHist[i].recover(
+            predMeta->altTagFoldedHist[i]);
+        threadHistory[context.tid].indexFoldedHist[i].recover(
+            predMeta->indexFoldedHist[i]);
     }
 }
 
@@ -1316,27 +1289,28 @@ BTBTAGE::recoverFoldedHist(const FetchTarget &entry)
  */
 void
 BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, int shamt, bool cond_taken)
+    const HistoryRecoveryContext &context,
+    const DirectionHistoryUpdate &update)
 {
     if (usePathHistory) {
         return;
     }
 
-    recoverFoldedHist(entry);
-    doUpdateHist(history, shamt, cond_taken, 0, 0, entry.tid);
+    recoverFoldedHist(context);
+    doUpdateHist(history, update.shamt, update.taken, 0, 0, context.tid);
 }
 
 void
 BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, const PathHistoryUpdate &update)
+    const HistoryRecoveryContext &context, const PathHistoryUpdate &update)
 {
     if (!usePathHistory) {
         return;
     }
 
-    recoverFoldedHist(entry);
+    recoverFoldedHist(context);
     doUpdateHist(history, update.shamt, update.taken, update.pc,
-                 update.target, entry.tid);
+                 update.target, context.tid);
 }
 
 // Check folded history after speculative update and recovery
@@ -1554,14 +1528,16 @@ BTBTAGE::getNumWays(unsigned table) const
 #ifndef UNIT_TEST
 
 void
-BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBTAGE::commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome)
 {
-    if (!inst->isCondCtrl()) {
+    if (!outcome.isCond) {
         // tage olnly deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->pcState().instAddr();
+    auto meta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto pc = outcome.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;
@@ -1569,7 +1545,7 @@ BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = outcome.taken;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

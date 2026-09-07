@@ -965,6 +965,9 @@ class SMTFTQMode(ScopedEnum):
 class SMTFTQPolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
 
+class TrainingStage(ScopedEnum):
+    vals = [ 'Commit', 'Resolve' ]
+
 class TimedBaseBTBPredictor(SimObject):
     type = 'TimedBaseBTBPredictor'
     cxx_class = 'gem5::branch_prediction::btb_pred::TimedBaseBTBPredictor'
@@ -974,7 +977,8 @@ class TimedBaseBTBPredictor(SimObject):
     blockSize = Param.Unsigned(Parent.predictWidth, "Block size in bytes")
     predictWidth = Param.Unsigned(Parent.predictWidth, "Maximum range in bytes that a single prediction can cover")
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
-    resolvedUpdate = Param.Bool(False, "Enable resolved update, no need to wait until commit")
+    trainingStage = Param.TrainingStage(
+        'Commit', "Pipeline stage that supplies actual outcomes for training")
     enabled = Param.Bool(True, "Enable this predictor component")
     smtTidPartitioned = Param.Bool(
         False,
@@ -1087,7 +1091,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     tableSizes = VectorParam.Unsigned([512] * 2,"the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([16] * 2 ,"the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 2 ,"when the T0~Tn entry's tag generating, PC right shift")
-    blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
+    blockSize = 32  # Override the inherited parameter without shadowing it.
 
     histLengths = VectorParam.Unsigned([5,9] ,"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
