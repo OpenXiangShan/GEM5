@@ -92,6 +92,29 @@ operator==(const BranchHistory &a, const BranchHistory &b)
     return true;
 }
 
+RegVal
+DynInst::read_pending_vstart(RegVal committed_val) const
+{
+    // Serialized CSR writes leave only speculative vset resets to forward.
+    for (auto it = cpu->instList.rbegin(); it != cpu->instList.rend(); ++it) {
+        const auto &inst = *it;
+        if (inst->seqNum >= seqNum || inst->threadNumber != threadNumber ||
+            inst->isSquashed()) {
+            continue;
+        }
+        for (size_t i = 0; i < inst->_destMiscRegIdx.size(); ++i) {
+            if (inst->_destMiscRegIdx[i] == RiscvISA::MISCREG_VSTART) {
+                DPRINTF(RiscvMisc,
+                        "[tid:%i] [sn:%llu] Forward VSTART from [sn:%llu]: "
+                        "%#lx\n", threadNumber, seqNum, inst->seqNum,
+                        inst->_destMiscRegVal[i]);
+                return inst->_destMiscRegVal[i];
+            }
+        }
+    }
+    return committed_val;
+}
+
 DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
         const StaticInstPtr &_macroop, InstSeqNum seq_num, CPU *_cpu)
     : seqNum(seq_num), staticInst(static_inst),
