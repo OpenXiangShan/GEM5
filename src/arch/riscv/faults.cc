@@ -200,10 +200,8 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             tc->setMiscReg(epc, tc->pcState().instAddr());
         }
 
-        if (_cause == INST_ILLEGAL)
-            tc->setMiscReg(tval, 0);
-        else
-            tc->setMiscReg(tval, trap_value());
+        // Preserve the faulting instruction encoding for illegal-instruction traps.
+        tc->setMiscReg(tval, trap_value());
         if (_code == INST_G_PAGE || _code == LOAD_G_PAGE || _code == STORE_G_PAGE) {
             if (prv == PRV_S && (g_trap_value() != 0)) {
                 tc->setMiscReg(MISCREG_HTVAL, g_trap_value() >> 2);

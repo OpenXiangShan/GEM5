@@ -54,19 +54,23 @@ namespace gem5
 namespace o3
 {
 
-SimpleRenameMap::SimpleRenameMap() : freeList(NULL)
+SimpleRenameMap::SimpleRenameMap()
+    : freeList(NULL), regClass(InvalidRegClass), tid(InvalidThreadID)
 {
 }
 
 
 void
-SimpleRenameMap::init(const RegClass &reg_class, SimpleFreeList *_freeList)
+SimpleRenameMap::init(const RegClass &reg_class, RegClassType reg_class_type,
+                       UnifiedFreeList *_freeList, ThreadID _tid)
 {
     assert(freeList == NULL);
     assert(map.empty());
 
     map.resize(reg_class.numRegs());
     freeList = _freeList;
+    regClass = reg_class_type;
+    tid = _tid;
 }
 
 SimpleRenameMap::RenameInfo
@@ -107,7 +111,12 @@ SimpleRenameMap::rename(const RegId &arch_reg, const VirtRegId& bypass_reg)
         renamed_reg = prev_reg;
         renamed_reg.PhyReg()->decrNumPinnedWrites();
     } else {
-        renamed_reg.setPhyReg(freeList->getReg());
+        if (!freeList->canAllocate(regClass, tid)) {
+            panic("SimpleRenameMap::rename: [tid:%i] no free %s register "
+                  "available; should have been blocked by canRename() "
+                  "upstream", tid, RegId(regClass, 0).className());
+        }
+        renamed_reg.setPhyReg(freeList->getReg(regClass, tid));
         DPRINTF(Scoreboard, "Get free reg p%i\n", renamed_reg.PhyReg()->flatIndex());
         map[arch_reg.index()] = renamed_reg;
         renamed_reg.PhyReg()->setNumPinnedWrites(arch_reg.getNumPinnedWrites());
@@ -130,12 +139,12 @@ SimpleRenameMap::rename(const RegId &arch_reg, const VirtRegId& bypass_reg)
 
 void
 UnifiedRenameMap::init(const BaseISA::RegClasses &regClasses,
-        PhysRegFile *_regFile, UnifiedFreeList *freeList)
+        PhysRegFile *_regFile, UnifiedFreeList *freeList, ThreadID tid)
 {
     regFile = _regFile;
 
     for (int i = 0; i < renameMaps.size(); i++)
-        renameMaps[i].init(regClasses.at(i), &(freeList->freeLists[i]));
+        renameMaps[i].init(regClasses.at(i), (RegClassType)i, freeList, tid);
 }
 
 bool

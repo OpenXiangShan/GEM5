@@ -48,13 +48,36 @@
 
 #include <cassert>
 
+#include "base/logging.hh"
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
 
 namespace gem5
 {
 
+namespace
+{
+
+// XiangShan's hashBitPairs(vaddr, hi=47, lo=12, step=2).
+constexpr unsigned DCACHE_HASH_LOW_BIT = 12;
+constexpr unsigned DCACHE_HASH_HIGH_BIT = 47;
+constexpr unsigned DCACHE_HASH_WIDTH = 2;
+constexpr uint32_t DCACHE_HASH_MASK = (1U << DCACHE_HASH_WIDTH) - 1;
+
+uint32_t
+hash_dcache_alias(const Addr addr)
+{
+    uint32_t hash = 0;
+    for (unsigned bit = DCACHE_HASH_LOW_BIT; bit <= DCACHE_HASH_HIGH_BIT;
+         bit += DCACHE_HASH_WIDTH) {
+        hash ^= static_cast<uint32_t>((addr >> bit) & DCACHE_HASH_MASK);
+    }
+    return hash;
+}
+
+} // anonymous namespace
+
 VIPTSetAssociative::VIPTSetAssociative(const Params &p)
-    : SetAssociative(p)
+    : SetAssociative(p), useHashIndex(p.use_hash_index)
 {
     assert(sliceShift == 0);
     if (tagShift > floorLog2(p.page_size)) {
@@ -65,6 +88,38 @@ VIPTSetAssociative::VIPTSetAssociative(const Params &p)
 
     assert(tagShift > aliasBits);
     assert(p.page_size % 2 == 0);
+
+    // The RTL function hashes two-bit lanes from vaddr[47:12].  Refuse an
+    // unsupported geometry instead of silently using a different policy.
+    fatal_if(useHashIndex && p.page_size != (1U << DCACHE_HASH_LOW_BIT),
+             "VIPT hashed index requires a 4 KiB page, got %d bytes",
+             p.page_size);
+    fatal_if(useHashIndex && setShift != 6,
+             "VIPT hashed index requires 64 B cache blocks, got %u B",
+             1U << setShift);
+    fatal_if(useHashIndex && aliasBits > DCACHE_HASH_WIDTH,
+             "VIPT hashed index provides %u alias bits, but this cache "
+             "requires %llu",
+             DCACHE_HASH_WIDTH,
+             static_cast<unsigned long long>(aliasBits));
+}
+
+uint32_t
+VIPTSetAssociative::extractSet(const Addr addr) const
+{
+    if (!useHashIndex || aliasBits == 0) {
+        return SetAssociative::extractSet(addr);
+    }
+
+    // Keep the page-offset (non-alias) part of the set index unchanged, and
+    // replace only the virtual-page-dependent alias part with the RTL hash.
+    const uint32_t directSet = SetAssociative::extractSet(addr);
+    const uint32_t nonAliasMask = setMask >> aliasBits;
+    const uint32_t aliasMask = (1U << aliasBits) - 1;
+    const uint32_t aliasShift = tagShift - aliasBits - setShift;
+    const uint32_t hashedAlias = hash_dcache_alias(addr) & aliasMask;
+
+    return (directSet & nonAliasMask) | (hashedAlias << aliasShift);
 }
 
 Addr

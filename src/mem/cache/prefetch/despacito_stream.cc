@@ -156,12 +156,13 @@ DespacitoStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, 
         pfi.hasPC(), pfi.isCacheMiss(), false);
     }
     InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
-    if (filter->contains(addr)) {
+    Addr filter_key = sharedFilterKey(pfi, addr);
+    if (filter->contains(filter_key)) {
         DPRINTF(DespacitoStreamPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(DespacitoStreamPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(filter_key, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
         return true;
     }

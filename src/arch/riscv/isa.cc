@@ -632,6 +632,26 @@ ISA::readMiscReg(int misc_reg)
         auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
         return (ic->readIP() & NEMU_HVIP_MASK);
     }
+    if (misc_reg == MISCREG_HIDELEG) {
+        return readMiscRegNoEffect(MISCREG_HIDELEG) & NEMU_HIDELEG_MASK &
+               readMiscRegNoEffect(MISCREG_MIDELEG);
+    }
+    if (misc_reg == MISCREG_VSIE) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(
+                tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        RegVal mask = readMiscReg(MISCREG_HIDELEG) &
+                      (readMiscRegNoEffect(MISCREG_MIDELEG) |
+                       NEMU_MIDELEG_FORCED_MASK);
+        return (ic->readIE() & mask & NEMU_VS_MASK) >> 1;
+    }
+    if (misc_reg == MISCREG_VSIP) {
+        auto ic = dynamic_cast<RiscvISA::Interrupts *>(
+                tc->getCpuPtr()->getInterruptController(tc->threadId()));
+        RegVal mask = readMiscReg(MISCREG_HIDELEG) &
+                      (readMiscRegNoEffect(MISCREG_MIDELEG) |
+                       NEMU_MIDELEG_FORCED_MASK);
+        return (ic->readIP() & mask & NEMU_VS_MASK) >> 1;
+    }
     switch (misc_reg) {
       case MISCREG_HARTID:
         return tc->contextId();
@@ -882,6 +902,16 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 RegVal writeVal = ((old & ~(NEMU_HVIP_MASK)) | (val & NEMU_HVIP_MASK));
                 ic->setIP(writeVal);
             } break;
+            case MISCREG_VSIP: {
+                auto ic = dynamic_cast<RiscvISA::Interrupts *>(
+                    tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                RegVal old = readMiscReg(MISCREG_IP);
+                RegVal mask = NEMU_VSIP_WMASK & readMiscReg(MISCREG_HIDELEG) &
+                              (readMiscReg(MISCREG_MIDELEG) |
+                               NEMU_MIDELEG_FORCED_MASK);
+                RegVal writeVal = (old & ~mask) | ((val << 1) & mask);
+                ic->setIP(writeVal);
+            } break;
 
           case MISCREG_IP:
             {
@@ -902,6 +932,18 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 RegVal hip_Mask = NEMU_HIE_WMASK & (readMiscReg(MISCREG_MIDELEG) | NEMU_MIDELEG_FORCED_MASK);
                 write_val = ((old & ~(hip_Mask)) |(val & hip_Mask));
                 ic->setIE(write_val);
+            }
+            break;
+          case MISCREG_VSIE:
+            {
+                auto ic = dynamic_cast<RiscvISA::Interrupts *>(
+                    tc->getCpuPtr()->getInterruptController(tc->threadId()));
+                RegVal old = readMiscReg(MISCREG_IE);
+                RegVal mask = NEMU_VS_MASK & readMiscReg(MISCREG_HIDELEG) &
+                              (readMiscReg(MISCREG_MIDELEG) |
+                               NEMU_MIDELEG_FORCED_MASK);
+                RegVal writeVal = (old & ~mask) | ((val << 1) & mask);
+                ic->setIE(writeVal);
             }
             break;
           case MISCREG_IE:
@@ -1029,6 +1071,15 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                setMiscRegNoEffect(misc_reg, writeVal);
             }
             break;
+          case MISCREG_HIDELEG:
+            {
+                RegVal writeVal = val & NEMU_HIDELEG_MASK;
+                setMiscRegNoEffect(misc_reg, writeVal);
+            }
+            break;
+          case MISCREG_SENVCFG:
+            setMiscRegNoEffect(misc_reg, val & NEMU_SENVCFG_WMASK);
+            break;
           case MISCREG_HSTATUS:
             {
                 RegVal oldVal = readMiscRegNoEffect(MISCREG_HSTATUS);
@@ -1061,6 +1112,8 @@ ISA::unserialize(CheckpointIn &cp)
 {
     DPRINTF(Checkpoint, "Unserializing Riscv Misc Registers\n");
     UNSERIALIZE_CONTAINER(miscRegFile);
+    if (miscRegFile.size() < NUM_MISCREGS)
+        miscRegFile.resize(NUM_MISCREGS, 0);
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);

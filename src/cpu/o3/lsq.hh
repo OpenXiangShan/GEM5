@@ -910,6 +910,21 @@ class LSQ
     /** Iq issues a store to store pipeline. */
     void issueToStorePipe(const DynInstPtr &inst);
 
+    /** Whether a store uop may update its physical SQ window. */
+    bool storeQueueWriteReady(const DynInstPtr &inst) const;
+
+    /** Record the first address/data-ready transition for an SQ entry. */
+    void recordAddrOrDataReady(const DynInstPtr &inst);
+
+    /** Decrement the address/data-ready count when an SQ entry is removed. */
+    void recordAddrOrDataDequeue(const DynInstPtr &inst);
+
+    /** Whether a physical-SQ-full replay may enter its IQ replayQ. */
+    bool phySQFullReplayReady(const DynInstPtr &inst);
+
+    /** Record a post-issue replay caused by the physical SQ window. */
+    void recordStoreQueueReplay(const DynInstPtr &inst);
+
     /** Process instructions in each load/store pipeline stages. */
     void executePipeSx();
 
@@ -1161,9 +1176,12 @@ class LSQ
     uint64_t
     getDcacheDivBankSetKey(Addr vaddr) const;
 
-    Addr bankNum(Addr a) const { return (a >> 3) & 0x7; };
+    unsigned bankNum(Addr a) const
+    {
+        return (a >> dcacheBankOffsetBits) & (numBank - 1);
+    }
 
-    bool loadBankConflictedCheck(Addr vaddr);
+    bool loadBankConflictedCheck(Addr vaddr, unsigned size);
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
@@ -1260,7 +1278,38 @@ class LSQ
 
     bool sharedLSQMode() const;
     unsigned activeLSQThreads() const;
-    unsigned sharedLSQAllocation(unsigned entries) const;
+
+    /** Returns whether the thread may borrow unused LQ/SQ capacity. */
+    bool canBorrowLQ(ThreadID tid) const;
+    bool canBorrowSQ(ThreadID tid) const;
+
+    /** Returns the borrowing limit for LQ entries. */
+    unsigned borrowingLimitLQ(ThreadID tid) const;
+
+    /** Returns the borrowing limit for SQ entries. */
+    unsigned borrowingLimitSQ(ThreadID tid) const;
+
+    /** Sets whether the thread may donate unused LQ/SQ capacity this cycle. */
+    void setLQBorrowingDonor(ThreadID tid, bool donor);
+    void setSQBorrowingDonor(ThreadID tid, bool donor);
+
+    /** Returns whether the thread is currently an LQ/SQ borrowing donor. */
+    bool isLQBorrowingDonor(ThreadID tid) const { return lqBorrowingDonor[tid]; }
+    bool isSQBorrowingDonor(ThreadID tid) const { return sqBorrowingDonor[tid]; }
+
+    /** Add cycle count for borrowing state holding cycle stats */
+    void addBorrowingStateHoldCycle();
+
+    /** Queue type for sharedLSQAllocation */
+    enum class LSQQueueType
+    {
+        LQ,
+        SQ,
+        RARQ,
+        RAWQ
+    };
+
+    unsigned sharedLSQAllocation(unsigned entries, LSQQueueType queueType) const;
     unsigned logicalMaxLoadEntries(ThreadID tid) const;
     unsigned logicalMaxStoreEntries(ThreadID tid) const;
     unsigned logicalFreeLoadEntries(ThreadID tid) const;
@@ -1287,9 +1336,7 @@ class LSQ
     int storeWbStage() const { return _storeWbStage; }
 
   public:
-    static constexpr unsigned DcacheBankCount = 8;
-
-    using DcacheBankMask = std::array<bool, DcacheBankCount>;
+    using DcacheBankMask = std::vector<bool>;
     using DcacheMainPipeCompleteCallback = std::function<void(Tick)>;
     using DcacheMainPipeS2Callback =
         std::function<DcacheMainPipeS2Result(Tick)>;
@@ -1368,7 +1415,8 @@ class LSQ
     dcacheMainPipeStage(DcacheMainPipeStage stage) const;
 
     DcacheBankMask fullDcacheBankMask() const;
-    DcacheBankMask storeMaskToDcacheBanks(const std::vector<bool> &mask) const;
+    DcacheBankMask storeMaskToDcacheBanks(
+        Addr block_addr, const std::vector<bool> &mask) const;
 
     DcacheMainPipeRequest makeDcacheRefillMainPipeRequest(
         Addr addr, bool need_data_read,
@@ -1426,7 +1474,7 @@ class LSQ
     /** The number of used cache ports in this cycle by loads. */
     int usedLoadPorts;
 
-    const int numBank = DcacheBankCount;
+    const unsigned numBank;
     bool dcacheWriteStall = false;
     const uint32_t sbufferEvictThreshold;
     const uint32_t sbufferEntries;
@@ -1451,6 +1499,9 @@ class LSQ
     const unsigned dcacheSetBits;
     const unsigned dcacheSetDivNum;
     const unsigned dcacheLineBits;
+    const unsigned dcacheBankBytes;
+    const unsigned dcacheBankOffsetBits;
+    const unsigned dcacheBankIndexBits;
     const unsigned dcacheSetBankBits;
 
     bool _enableLdMissReplay;
@@ -1467,25 +1518,58 @@ class LSQ
     /** The LSQ policy for SMT mode. */
     SMTLSQMode lsqMode;
 
-    /** The LSQ allocation policy used in shared mode. */
+    /** The LSQ allocation policy used in shared mode for LQ and SQ. */
     SMTQueuePolicy lsqPolicy;
 
-    /** The per-thread threshold used in shared threshold mode. */
-    unsigned smtLSQThreshold;
+    /** The RARQ allocation policy used in shared mode. */
+    SMTQueuePolicy rarqPolicy;
+
+    /** The RAWQ allocation policy used in shared mode. */
+    SMTQueuePolicy rawqPolicy;
+
+    /** The LQ threshold used in shared mode for Threshold policy. */
+    const unsigned smtLQThreshold;
+
+    /** The SQ threshold used in shared mode for Threshold policy. */
+    const unsigned smtSQThreshold;
+
+    /** Minimum LQ entries reserved for a borrowing base thread to resume. */
+    const unsigned lqBorrowBaseReserveEntries;
+
+    /** Minimum LQ entries reserved for a borrowing donor thread to resume. */
+    const unsigned lqBorrowDonorReserveEntries;
+
+    /** Minimum SQ entries reserved for a borrowing base thread to resume. */
+    const unsigned sqBorrowBaseReserveEntries;
+
+    /** Minimum SQ entries reserved for a borrowing donor thread to resume. */
+    const unsigned sqBorrowDonorReserveEntries;
+
+    /** Whether a thread may donate unused LQ capacity this cycle. */
+    bool lqBorrowingDonor[MaxThreads];
+
+    /** Whether a thread may donate unused SQ capacity this cycle. */
+    bool sqBorrowingDonor[MaxThreads];
+
+    /** Cycle count for LQ borrowing state holding */
+    unsigned lqBorrowingStateHoldCycle[MaxThreads];
+
+    /** Cycle count for SQ borrowing state holding */
+    unsigned sqBorrowingStateHoldCycle[MaxThreads];
 
     struct LSQStats : public statistics::Group
     {
-        LSQStats(statistics::Group *parent);
+        LSQStats(statistics::Group *parent, unsigned num_threads);
 
         /** Per-cycle occupancy samples for the aggregated LSQ structures. */
         statistics::Average lqAvgEntryNum;
         statistics::Average sqAvgEntryNum;
         statistics::Average sbufferAvgEntryNum;
-        /** Per-cycle full signals based on whether a full enqueue bundle fits. */
-        statistics::Scalar lqFullCycles;
-        statistics::Scalar sqFullCycles;
-        statistics::Scalar lsqFullCycles;
-        statistics::Scalar sbufferFullCycles;
+        /** Per-thread full signals based on whether an enqueue bundle fits. */
+        statistics::Vector lqFullCycles;
+        statistics::Vector sqFullCycles;
+        statistics::Vector lsqFullCycles;
+        statistics::Vector sbufferFullCycles;
         statistics::Scalar sbufferEvictDuetoFlush;
         statistics::Scalar sbufferEvictDuetoFull;
         statistics::Scalar sbufferEvictDuetoSQFull;
@@ -1516,7 +1600,13 @@ class LSQ
 
     /** Total Size of LQ Entries. */
     unsigned LQEntries;
-    /** Total Size of SQ Entries. */
+    /** Number of physical SQ entries available to STA/STD. */
+    unsigned physicalSQEntries;
+    /** Virtual-to-physical SQ capacity multiplier. */
+    unsigned storeQueueMultiple;
+    /** Whether a physical-SQ-full replay waits for physical SQ space. */
+    bool phySQFullCheckAtReplay;
+    /** Total number of virtual SQ entries. */
     unsigned SQEntries;
 
     /** Max number of memory instructions that may enter LSQ in one cycle. */

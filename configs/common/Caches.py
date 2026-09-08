@@ -85,7 +85,7 @@ class L1_DCache(L1Cache):
     wpu = MMRUWpu(use_virtual = True)
 
     tags = VIPTSetAssoc()
-    tags.indexing_policy = VIPTSetAssociative()
+    tags.indexing_policy = VIPTSetAssociative(use_hash_index = True)
 
     force_hit = False
 
@@ -93,7 +93,7 @@ class L1_DCache(L1Cache):
 
     # Per-cycle MSHR arbitration for L1 DCache.
     # -1 means unlimited (disabled); set to 1/2/... to enable.
-    mshr_alloc_per_cycle = 1
+    mshr_alloc_per_cycle = 4 # 3 load & 1 mainpipe
 
 class L2Cache(Cache):
     mshrs = 64

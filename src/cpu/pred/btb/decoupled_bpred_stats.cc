@@ -3,6 +3,7 @@
 #include <tuple>
 
 #include "base/output.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "debug/BTB.hh"
@@ -15,6 +16,44 @@ namespace branch_prediction
 {
 namespace btb_pred
 {
+
+namespace
+{
+
+constexpr int NumS1SourceBuckets = 3;
+constexpr int NumOverrideReasonBuckets = 4;
+
+constexpr const char *S1SourceLabels[NumS1SourceBuckets] = {
+    "fallthrough",
+    "ubtb",
+    "abtb"
+};
+
+constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
+    "no_override",
+    "fall_thru",
+    "control_addr",
+    "target"
+};
+
+int
+overrideReasonBucket(OverrideReason reason)
+{
+    switch (reason) {
+      case OverrideReason::NO_OVERRIDE:
+        return 0;
+      case OverrideReason::FALL_THRU:
+        return 1;
+      case OverrideReason::CONTROL_ADDR:
+        return 2;
+      case OverrideReason::TARGET:
+        return 3;
+    }
+
+    return 0;
+}
+
+} // namespace
 
 void
 DecoupledBPUWithBTB::initDB()
@@ -401,7 +440,8 @@ classifyBranchImpl(const InstPtr &inst)
 } // anonymous namespace
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
-    statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum):
+    statistics::Group* parent, unsigned numStages, unsigned fsqSize,
+    unsigned maxInstsNum, unsigned numThreads):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -431,10 +471,6 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "Number of overrides due to control address mismatches, on commit path"),
     ADD_STAT(overrideTargetMismatch, statistics::units::Count::get(),
     "Number of overrides due to target mismatches, on commit path"),
-    ADD_STAT(overrideEndMismatch, statistics::units::Count::get(),
-    "Number of overrides due to end address mismatches, on commit path"),
-    ADD_STAT(overrideHistInfoMismatch, statistics::units::Count::get(),
-    "Number of overrides due to history info mismatches, on commit path"),
     ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
     ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
     ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
@@ -464,9 +500,15 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "round-robin BPU scheduler found no thread eligible to start a new prediction"),
     ADD_STAT(redirectPendingPredictionSkips, statistics::units::Count::get(),
     "round-robin BPU scheduler skipped prediction because a redirect was pending"),
+    ADD_STAT(predictionsStartedPerCycle, statistics::units::Count::get(),
+    "number of distinct SMT thread predictions started in one cycle"),
+    ADD_STAT(predictionsStartedByThread, statistics::units::Count::get(),
+    "number of predictions started for each SMT thread"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
+    ADD_STAT(s1PredWrongBySourceAndReason, statistics::units::Count::get(),
+             "committed S1 mispredictions bucketed by S1 source and override reason"),
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
     ADD_STAT(s3PredWrongTage, statistics::units::Count::get(), "S3pred wrong blame tage "),
     ADD_STAT(s3PredWrongIttage, statistics::units::Count::get(), "S3pred wrong blame ittage "),
@@ -480,9 +522,18 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+    s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
     branchClassCounts.init(NumBranchClasses);
+    predictionsStartedPerCycle.init(0, numThreads, 1);
+    predictionsStartedByThread.init(numThreads);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
+    for (int i = 0; i < NumS1SourceBuckets; ++i) {
+        s1PredWrongBySourceAndReason.subname(i, S1SourceLabels[i]);
+    }
+    for (int i = 0; i < NumOverrideReasonBuckets; ++i) {
+        s1PredWrongBySourceAndReason.ysubname(i, OverrideReasonLabels[i]);
+    }
     for (size_t i = 0; i < NumBranchClasses; ++i) {
         branchClassCounts.subname(i, BranchClassLabels[i]);
         branchClassMisses.subname(i, BranchClassLabels[i]);
@@ -503,12 +554,6 @@ void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
                 break;
             case OverrideReason::TARGET:
                 dbpBtbStats.overrideTargetMismatch++;
-                break;
-            case OverrideReason::END:
-                dbpBtbStats.overrideEndMismatch++;
-                break;
-            case OverrideReason::HIST_INFO:
-                dbpBtbStats.overrideHistInfoMismatch++;
                 break;
             default:
                 break;
@@ -698,12 +743,13 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 }
 
 void
-DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
+DecoupledBPUWithBTB::updateStatistics(
+    const FetchTarget &target, const PreparedUpdate &update)
 {
     // Check if this target was mispredicted
-    bool miss_predicted = target.squashType == SQUASH_CTRL;
+    const bool miss_predicted = update.outcome.controlMispred;
     // Track indirect mispredictions
-    if (miss_predicted && target.exeBranchInfo.isIndirect) {
+    if (miss_predicted && update.outcome.branch.isIndirect) {
         topMispredIndirect[target.startPC]++;
     }
 
@@ -713,11 +759,11 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
         dbpBtbStats.btbHit++;
     } else {
         // Count BTB misses for taken branches
-        if (target.exeTaken) {
+        if (update.outcome.taken) {
             dbpBtbStats.btbMiss++;
             DPRINTF(BTB, "BTB miss detected when update, target start %#lx, predTick %lu, printing branch info:\n",
                     target.startPC, target.predTick);
-            auto &slot = target.exeBranchInfo;
+            const auto &slot = update.outcome.branch;
             DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
         }
@@ -728,16 +774,16 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
         }
     }
 
-    if (target.isHit || target.exeTaken) {
+    if ((target.isHit || update.outcome.taken) && update.outcome.valid) {
+        const BTBEntry btb_entry(update.outcome.branch);
         // Update BTB entry statistics
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            auto &btb_entry = target.updateNewBTBEntry;
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = target.updateNewBTBEntry;
+            it->second.first = btb_entry;
         }
     }
 
@@ -750,7 +796,8 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
     if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
         commitFsqEntryHasInstsVector[target.commitInstNum]++;
-        if (target.commitInstNum == 1 && target.exeBranchInfo.isUncond()) {
+        if (target.commitInstNum == 1 &&
+            update.outcome.valid && update.outcome.branch.isUncond()) {
             dbpBtbStats.commitFsqEntryOnlyHasOneJump++;
         }
     }
@@ -763,11 +810,13 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
 
     // --- Misprediction Statistics ---
     // Track control squashes (mispredictions)
-    if (target.squashType == SQUASH_CTRL) {
+    if (update.outcome.controlMispred) {
         // Record mispredict pair (start PC, branch PC)
-        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.exeBranchInfo.pc));
+        auto find_it = topMispredicts.find(
+            std::make_pair(target.startPC, update.outcome.branch.pc));
         if (find_it == topMispredicts.end()) {
-            topMispredicts[std::make_pair(target.startPC, target.exeBranchInfo.pc)] = 1;
+            topMispredicts[
+                std::make_pair(target.startPC, update.outcome.branch.pc)] = 1;
         } else {
             find_it->second++;
         }
@@ -813,6 +862,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Extract branch information ----------
+    const auto outcome = o3::makeBranchOutcome(inst);
     Addr branchAddr = inst->pcState().instAddr();
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetAddr = rv_pc.npc();
@@ -829,19 +879,22 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Update predictor components ----------
+    const PredictionUpdateContext context(entry);
     for (auto component : components) {
-        component->commitBranch(entry, inst);
+        component->commitBranch(context, outcome);
     }
     //here add final counter
 
     if (mispred) {
-        commitPredWrongSource(entry);
+        commitPredWrongSource(entry, info, taken);
     }
 
 }
 
 void
-DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
+DecoupledBPUWithBTB::commitPredWrongSource(
+    const FetchTarget &entry, const BranchInfo &actualBranch,
+    bool actuallyTaken)
 {
     int ubtbid = ubtb->getComponentIdx();
     int abtbid = abtb->getComponentIdx();
@@ -853,37 +906,41 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     int s1PredSource = entry.s1Source;
     int s3PredSource = entry.s3Source;
 
-    auto exeBranchInfo = entry.exeBranchInfo;
-
-    bool onlyDirectionWrong = entry.exeTaken != entry.predTaken;
+    bool onlyDirectionWrong = actuallyTaken != entry.predTaken;
+    int s1SourceBucket = 0;
 
     assert(s1PredSource < mbtbid);
     if (s1PredSource == ubtbid) {
         dbpBtbStats.s1PredWrongUbtb++;
+        s1SourceBucket = 1;
     } else if (s1PredSource == abtbid) {
         dbpBtbStats.s1PredWrongAbtb++;
+        s1SourceBucket = 2;
     }else {
         dbpBtbStats.s1PredWrongFallthrough++;
     }
 
+    dbpBtbStats.s1PredWrongBySourceAndReason
+        [s1SourceBucket][overrideReasonBucket(entry.overrideReason)]++;
+
     if (s3PredSource == rasid) {
-        if (exeBranchInfo.isCond) {
+        if (actualBranch.isCond) {
             dbpBtbStats.s3PredWrongTage++;
-        } else if (exeBranchInfo.isReturn) {
+        } else if (actualBranch.isReturn) {
             dbpBtbStats.s3PredWrongRas++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == ittageid) {
-        if (exeBranchInfo.isIndirect) {
+        if (actualBranch.isIndirect) {
             dbpBtbStats.s3PredWrongIttage++;
-        } else if (exeBranchInfo.isCond) {
+        } else if (actualBranch.isCond) {
             dbpBtbStats.s3PredWrongTage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == tageid) {
-        if (exeBranchInfo.isCond) {
+        if (actualBranch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
@@ -893,13 +950,13 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
             dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == mbtbid) {
-        if (exeBranchInfo.isCond) {
+        if (actualBranch.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
                 dbpBtbStats.s3PredWrongMbtb++;
             }
-        } else if (exeBranchInfo.isIndirect) {
+        } else if (actualBranch.isIndirect) {
             dbpBtbStats.s3PredWrongIttage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
@@ -994,8 +1051,8 @@ DecoupledBPUWithBTB::processMisprediction(
         } else {
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
-            for (auto &e: entry.predBTBEntries) {
-                if (e.pc == branchAddr) {
+            for (const auto pc : entry.predictedBranchPCs) {
+                if (pc == branchAddr) {
                     predBranchInBTB = true;
                     break;
                 }

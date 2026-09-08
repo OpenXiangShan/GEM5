@@ -160,6 +160,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // Speculatively update all folded histories.
     void specUpdateGHist(const boost::dynamic_bitset<> &history,
@@ -178,22 +181,29 @@ class BTBMGSC : public TimedBaseBTBPredictor
                          const DirectionHistoryUpdate &update);
 
     // Recover all folded histories after a misprediction.
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
-    void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry,
+    void recoverHist(const boost::dynamic_bitset<> &history,
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update) override;
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
-    void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                       bool cond_taken);
-    void recoverIHist(const FetchTarget &entry, int shamt,
-                      bool cond_taken);
-    void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken);
+    void recoverBwHist(const boost::dynamic_bitset<> &history,
+                       const HistoryRecoveryContext &context,
+                       const DirectionHistoryUpdate &update);
+    void recoverIHist(const HistoryRecoveryContext &context,
+                      const DirectionHistoryUpdate &update);
+    void recoverLHist(
+        const std::vector<boost::dynamic_bitset<>> &history,
+        const HistoryRecoveryContext &context,
+        const DirectionHistoryUpdate &update);
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 #endif
 
     void setTrace() override;
@@ -265,11 +275,11 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Calculate MGSC history index with folded history
     Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
-                      uint8_t asidHash = 0);
+                      uint8_t asidHash = 0, ThreadID tid = 0);
 
     // Calculate MGSC bias index
     Addr getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1,
-                      uint8_t asidHash = 0);
+                      uint8_t asidHash = 0, ThreadID tid = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
@@ -296,11 +306,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             const TageInfoForMGSC &tage_info,
                                             ThreadID tid, uint8_t asidHash);
 
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
-
-    void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream);
+    void updateSinglePredictor(
+        Addr pc, bool actual_taken,
+        const MgscPrediction &pred,
+        const PredictionUpdateContext &context);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
                                bool tage_pred_taken);
 

@@ -63,7 +63,9 @@
 #ifndef __SIM_PROBE_PROBE_HH__
 #define __SIM_PROBE_PROBE_HH__
 
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/compiler.hh"
@@ -96,50 +98,27 @@ namespace probing
 }
 
 /**
- * This class is a minimal wrapper around SimObject. It is used to declare
- * a python derived object that can be added as a ProbeListener to any other
- * SimObject.
- *
- * It instantiates manager from a call to Parent.any.
- * The vector of listeners is used simply to hold onto listeners until the
- * ProbeListenerObject is destroyed.
- */
-class ProbeListenerObject : public SimObject
-{
-  protected:
-    ProbeManager *manager;
-    std::vector<ProbeListener *> listeners;
-
-  public:
-    ProbeListenerObject(const ProbeListenerObjectParams &params);
-    virtual ~ProbeListenerObject();
-    ProbeManager* getProbeManager() { return manager; }
-};
-
-/**
  * ProbeListener base class; here to simplify things like containers
  * containing multiple types of ProbeListener.
- *
- * Note a ProbeListener is added to the ProbePoint in constructor by
- * using the ProbeManager passed in.
  */
 class ProbeListener
 {
   public:
-    ProbeListener(ProbeManager *manager, const std::string &name);
-    virtual ~ProbeListener();
+    ProbeListener(std::string _name) : name(std::move(_name)) {}
+
+    virtual ~ProbeListener() = default;
     ProbeListener(const ProbeListener& other) = delete;
     ProbeListener& operator=(const ProbeListener& other) = delete;
     ProbeListener(ProbeListener&& other) noexcept = delete;
-    ProbeListener& operator=(ProbeListener&& other) noexcept = delete;
+    ProbeListener &operator=(ProbeListener &&other) noexcept = delete;
+    const std::string &getName() const { return name; }
 
   protected:
-    ProbeManager *const manager;
     const std::string name;
 };
 
 /**
- * ProbeListener base class; again used to simplify use of ProbePoints
+ * ProbePoint base class; again used to simplify use of ProbePoints
  * in containers and used as to define interface for adding removing
  * listeners to the ProbePoint.
  */
@@ -153,8 +132,30 @@ class ProbePoint
 
     virtual void addListener(ProbeListener *listener) = 0;
     virtual void removeListener(ProbeListener *listener) = 0;
-    std::string getName() const { return name; }
+    const std::string &getName() const { return name; }
 };
+
+struct ProbeListenerCleanup
+{
+    ProbeListenerCleanup() : manager(nullptr) {};
+    explicit ProbeListenerCleanup(ProbeManager *m) : manager(m) {};
+    void operator()(ProbeListener *listener) const;
+
+  private:
+    ProbeManager *manager;
+};
+
+/**
+ * This typedef should be used instead of a raw std::unique_ptr<> since
+ * we have to disconnect the listener from the manager before calling
+ * the ProbeListener destructor. If we were to use a raw
+ * std::unique_ptr<Listener> and call disconnect() inside the
+ * ProbeListener destructor, we would end up accessing a partially
+ * destructed object inside disconnect(), which undefined behaviour and
+ * therefore is likely to crash or behave incorrectly.
+ */
+template <typename Listener = ProbeListener>
+using ProbeListenerPtr = std::unique_ptr<Listener, ProbeListenerCleanup>;
 
 /**
  * ProbeManager is a conduit class that lives on each SimObject,
@@ -198,6 +199,52 @@ class ProbeManager
      * @param point the ProbePoint to add.
      */
     void addPoint(ProbePoint &point);
+
+    template <typename Listener, typename... Args>
+    ProbeListenerPtr<Listener> connect(Args &&...args)
+    {
+        ProbeListenerPtr<Listener> result(
+            new Listener(std::forward<Args>(args)...),
+            ProbeListenerCleanup(this));
+        addListener(result->getName(), *result);
+        return result;
+    }
+};
+
+inline void
+ProbeListenerCleanup::operator()(ProbeListener *listener) const
+{
+    manager->removeListener(listener->getName(), *listener);
+    delete listener;
+}
+
+/**
+ * This class is a minimal wrapper around SimObject. It is used to declare
+ * a python derived object that can be added as a ProbeListener to any other
+ * SimObject.
+ *
+ * It instantiates manager from a call to Parent.any.
+ * The vector of listeners is used simply to hold onto listeners until the
+ * ProbeListenerObject is destroyed.
+ */
+class ProbeListenerObject : public SimObject
+{
+  protected:
+    ProbeManager *manager;
+    std::vector<ProbeListenerPtr<>> listeners;
+
+  public:
+    ProbeListenerObject(const ProbeListenerObjectParams &params);
+    virtual ~ProbeListenerObject();
+    ProbeManager *getProbeManager() { return manager; }
+
+    template <typename T, typename... Args>
+    void
+    connectListener(Args &&...args)
+    {
+        listeners.push_back(
+            getProbeManager()->connect<T>(std::forward<Args>(args)...));
+    }
 };
 
 /**
@@ -211,9 +258,7 @@ template <class Arg>
 class ProbeListenerArgBase : public ProbeListener
 {
   public:
-    ProbeListenerArgBase(ProbeManager *pm, const std::string &name)
-        : ProbeListener(pm, name)
-    {}
+    ProbeListenerArgBase(std::string name) : ProbeListener(std::move(name)) {}
     virtual void notify(const Arg &val) = 0;
 };
 
@@ -237,9 +282,8 @@ class ProbeListenerArg : public ProbeListenerArgBase<Arg>
      * @param name the name of the ProbePoint to add this listener to.
      * @param func a pointer to the function on obj (called on notify).
      */
-    ProbeListenerArg(T *obj, const std::string &name,
-        void (T::* func)(const Arg &))
-        : ProbeListenerArgBase<Arg>(obj->getProbeManager(), name),
+    ProbeListenerArg(T *obj, std::string name, void (T::*func)(const Arg &))
+        : ProbeListenerArgBase<Arg>(std::move(name)),
           object(obj),
           function(func)
     {}

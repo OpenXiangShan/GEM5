@@ -45,7 +45,8 @@ if env['CONF']['TARGET_ISA'] == 'null':
 
 SimObject('Serial.py', sim_objects=['SerialDevice', 'SerialNullDevice'])
 SimObject('Terminal.py', sim_objects=['Terminal'], enums=['TerminalDump'])
-SimObject('Uart.py', sim_objects=['Uart', 'SimpleUart', 'Uart8250','UartLite'])
+SimObject('Uart.py', sim_objects=[
+    'Uart', 'SimpleUart', 'Uart8250', 'UartLite', 'Uart16550'])
 
 Source('serial.cc')
 Source('simple.cc')
@@ -53,6 +54,7 @@ Source('terminal.cc')
 Source('uart.cc')
 Source('uart8250.cc')
 Source('uartlite.cc')
+Source('uart16550.cc')
 
 DebugFlag('Terminal')
 DebugFlag('TerminalVerbose')

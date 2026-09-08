@@ -14,6 +14,7 @@ InstMeta::reset(const DynInstPtr inst)
     posTick.resize((int)PerfRecord::AtCommit + 1, 0);
     disasm = inst->staticInst->disassemble(inst->pcState().instAddr());
     pc = inst->pcState().instAddr();
+    tid = inst->threadNumber;
     value = 0;
 
     isload = inst->isLoad();
@@ -34,6 +35,7 @@ PerfCCT::PerfCCT(bool enable, ArchDBer* db) : enableCCT(enable), archdb(db)
         for (int i=1; i < (int)PerfRecord::Num_PerfRecord; i++) {
             ss << "," << PerfRecordStrings[i];
         }
+        ss << ",TID";
         ss << ") VALUES(";
         sql_insert_cmd = ss.str();
         ss.str(std::string());
@@ -117,6 +119,7 @@ PerfCCT::commitMeta(InstSeqNum sn)
     ss << "," << (meta->value & 0x0fffffffffffffffllu);
     ss << ",\'" << meta->disasm << "\'";
     ss << "," << (meta->pc & 0x0fffffffffffffffllu);
+    ss << "," << meta->tid;
     ss << ");";
     archdb->execmd(ss.str());
     ss.str(std::string());

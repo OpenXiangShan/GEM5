@@ -226,6 +226,15 @@ class InstructionQueue
      */
     DynInstPtr getBlockedMemInstToExecute();
 
+    /** Insert a failed STA/STD into the physical-SQ replay wait queue. */
+    void deferPhysicalSQFullReplay(const DynInstPtr &inst);
+
+    /** Whether an STA/STD may write its current physical SQ window. */
+    bool storeQueueWriteReady(const DynInstPtr &inst) const;
+
+    /** Record the first address/data-ready transition for an SQ entry. */
+    void recordAddrOrDataReady(const DynInstPtr &inst);
+
     /** Process FU completion event. */
     void processFUCompletion(const DynInstPtr &inst, int fu_idx);
 
@@ -281,7 +290,14 @@ class InstructionQueue
     void cacheUnblocked();
 
     /** Indicates an ordering violation between a store and a load. */
-    void violation(const DynInstPtr &store, const DynInstPtr &faulting_load);
+    void violation(InstSeqNum store_seq_num, Addr store_pc,
+                   const DynInstPtr &faulting_load,
+                   const BranchHistory &branchHistory);
+
+    bool usesPHAST(ThreadID tid) const { return memDepUnit[tid].usesPHAST(); }
+
+    /** Updates the memory dependence predictor when a load commits. */
+    void commit(const DynInstPtr &inst);
 
     /**
      * Squashes instructions for a thread. Squashing information is obtained
@@ -379,6 +395,20 @@ class InstructionQueue
     size_t mdpStoreCompletedIdx[MaxThreads] = {};
 
     bool hasMdpAddrReplayInsts() const;
+
+    struct PhysicalSQFullReplayOrder
+    {
+        bool operator()(const DynInstPtr &lhs, const DynInstPtr &rhs) const;
+    };
+
+    using PhysicalSQFullReplayQueue = std::priority_queue<
+        DynInstPtr, std::vector<DynInstPtr>, PhysicalSQFullReplayOrder>;
+
+    std::array<PhysicalSQFullReplayQueue, MaxThreads>
+        physicalSQFullReplayQs;
+
+    DynInstPtr getPhysicalSQFullReplayInstToExecute();
+    bool hasPhysicalSQFullReplayInsts() const;
 
     /** List of instructions that have been cache blocked. */
     std::list<DynInstPtr> blockedMemInsts;

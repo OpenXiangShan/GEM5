@@ -104,6 +104,7 @@ class BertiPrefetcher : public Queued
       public:
         bool hysteresis = false;
         Addr pc = ~(0UL);
+        ContextID contextId = InvalidContextID;
         /** FIFO of demand miss history. */
         std::list<HistoryInfo> history;
 
@@ -192,6 +193,8 @@ class BertiPrefetcher : public Queued
     void notifyFill(const PacketPtr &pkt) override;
 
     bool shouldTrain(bool is_miss, const PrefetchInfo &pfi) {
+        ContextID context_id = pfi.hasContextId() ?
+            pfi.contextId() : InvalidContextID;
         if (is_miss) {
             // Currently, XSCompositePrefetcher lets multiple accesses to the same block be seen by prefetchers.
             // Maybe, we should filter them out
@@ -201,7 +204,9 @@ class BertiPrefetcher : public Queued
             // This is to let multiple accessses into the same block be seen by different PC entryeis
             // return !trainBlockFilter.contains(blockIndex(pfi.getAddr())) &&
             //        historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure()) != nullptr;
-            return historyTable.findEntry(pcHash(pfi.getPC()), pfi.isSecure()) != nullptr;
+            return historyTable.findEntry(
+                contextKey(pcHash(pfi.getPC()), context_id),
+                pfi.isSecure()) != nullptr;
         }
     }
 

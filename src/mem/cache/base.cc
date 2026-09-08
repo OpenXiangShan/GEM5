@@ -124,10 +124,11 @@ BaseCache::SendCustomEvent::description() const
 }
 
 BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
-                                          BaseCache *_cache,
+                                          BaseCache& _cache,
                                           const std::string &_label)
-    : QueuedResponsePort(_name, _cache, queue),
-      queue(*_cache, *this, true, _label),
+    : QueuedResponsePort(_name, queue),
+      cache{_cache},
+      queue(_cache, *this, true, _label),
       blocked(false), mustSendRetry(false),
       sendRetryEvent([this]{ processSendRetry(); }, _name)
 {
@@ -135,7 +136,7 @@ BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
 
 BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     : ClockedObject(p),
-      cpuSidePort (p.name + ".cpu_side_port", this, "CpuSidePort"),
+      cpuSidePort (p.name + ".cpu_side_port", *this, "CpuSidePort"),
       memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
       mshrQueue("MSHRs", p.mshrs, 0, p.demand_mshr_reserve, p.name),
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
@@ -266,7 +267,7 @@ BaseCache::CacheResponsePort::setBlocked()
     // if we already scheduled a retry in this cycle, but it has not yet
     // happened, cancel it
     if (sendRetryEvent.scheduled()) {
-        owner.deschedule(sendRetryEvent);
+        cache.deschedule(sendRetryEvent);
         DPRINTF(CachePort, "Port descheduled retry\n");
         mustSendRetry = true;
     }
@@ -280,7 +281,7 @@ BaseCache::CacheResponsePort::clearBlocked()
     blocked = false;
     if (mustSendRetry) {
         // @TODO: need to find a better time (next cycle?)
-        owner.schedule(sendRetryEvent, curTick() + 1);
+        cache.schedule(sendRetryEvent, curTick() + 1);
     }
 }
 
@@ -589,8 +590,10 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
         // no MSHR
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).mshrMisses[pkt->req->requestorId()]++;
-        if (prefetcher && pkt->isDemand())
+        if (prefetcher && pkt->isDemand()) {
             prefetcher->incrDemandMhsrMisses();
+            prefetcher->notifyDemandMshrMiss(pkt->getAddr(), pkt->isSecure());
+        }
 
         if (pkt->isEviction() || pkt->cmd == MemCmd::WriteClean) {
             // We use forward_time here because there is an
@@ -815,6 +818,14 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             calculateSliceBusy(pkt);
         }
 
+        if (prefetcher && pkt->req && !pkt->isEviction() &&
+            !pkt->isWriteback() &&
+            !pkt->req->isUncacheable() &&
+            !pkt->req->isCacheMaintenance()) {
+            prefetcher->notifyCacheMissRequest(
+                pkt->getAddr(), pkt->isSecure());
+        }
+
         // ArchDB: for now we only track packet which has PC
         // and is normal load/store
         // TODO: for now there are some bugs in vaddrs
@@ -980,6 +991,15 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     // write
     if (pkt->isWrite() && pkt->cmd != MemCmd::LockedRMWWriteResp) {
         assert(pkt->req->isUncacheable());
+        outstandingUncacheableWrites.erase(pkt);
+        handleUncacheableWriteResp(pkt);
+        return;
+    }
+
+    // Error commands do not retain the IsWrite attribute. Recover the path
+    // from the packet tracked when this cache forwarded it.
+    if (is_error && outstandingUncacheableWrites.erase(pkt) != 0) {
+        assert(pkt->req->isUncacheable());
         handleUncacheableWriteResp(pkt);
         return;
     }
@@ -1014,6 +1034,21 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     bool is_fill = !mshr->isForward &&
         (pkt->isRead() || pkt->cmd == MemCmd::UpgradeResp ||
          mshr->wasWholeLineWrite);
+    const bool pure_prefetch_fill =
+        mshr->hasFromPref() && !mshr->hasFromCPU();
+    if (pure_prefetch_fill) {
+        const PrefetchSourceType pf_source = mshr->getPFSource();
+        const int pf_depth = mshr->getPFDepth();
+        pkt->req->setPFSource(pf_source);
+        pkt->req->setPFDepth(pf_depth);
+        Request::XsMetadata xs_meta =
+            pkt->req->hasXsMetadata() ?
+            pkt->req->getXsMetadata() :
+            Request::XsMetadata(pf_source, pf_depth);
+        xs_meta.prefetchSource = pf_source;
+        xs_meta.prefetchDepth = pf_depth;
+        pkt->req->setXsMetadata(xs_meta);
+    }
 
     // make sure that if the mshr was due to a whole line write then
     // the response is an invalidation
@@ -1057,8 +1092,13 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         }
         blk = handleFill(
             pkt, blk, writebacks, allocate,
+            pure_prefetch_fill ? mshr->getPFSource() :
+                PrefetchSourceType::PF_NONE,
             &dcache_refill_need_data_read);
         assert(blk != nullptr);
+        if (prefetcher) {
+            prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
+        }
         ppFill->notify(pkt);
     }
 
@@ -2210,8 +2250,9 @@ BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 }
 
 CacheBlk*
-BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
-                      bool allocate, bool *refill_need_data_read)
+BaseCache::handleFill(
+    PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
+    PrefetchSourceType prefetch_fill_source, bool *refill_need_data_read)
 {
     assert(pkt->isResponse());
     Addr addr = pkt->getAddr();
@@ -2234,8 +2275,9 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         // need to do a replacement if allocating, otherwise we stick
         // with the temporary storage
         blk = allocate ?
-            allocateBlock(pkt, writebacks, refill_need_data_read) :
-            nullptr;
+            allocateBlock(
+                pkt, writebacks, prefetch_fill_source,
+                refill_need_data_read) : nullptr;
 
         if (!blk) {
             // No replaceable block or a mostly exclusive
@@ -2324,17 +2366,28 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     }
 
     Request::XsMetadata blk_meta = blk->getXsMetadata();
-    blk_meta.prefetchSource = pkt->req->getPFSource();
+    if (prefetch_fill_source != PrefetchSourceType::PF_NONE) {
+        blk_meta.prefetchSource = prefetch_fill_source;
+        if (pkt->req && pkt->req->hasXsMetadata()) {
+            blk_meta.prefetchDepth =
+                pkt->req->getXsMetadata().prefetchDepth;
+        }
+    } else {
+        blk_meta.prefetchSource = PrefetchSourceType::PF_NONE;
+        blk_meta.prefetchDepth = 0;
+    }
     blk->setXsMetadata(blk_meta);
-    DPRINTF(Cache, "%s: Mark blk as prefetched by source %i, form req %p\n", __func__,
-            pkt->req->getPFSource(), pkt->req);
+    DPRINTF(Cache, "%s: Mark blk prefetch source %i depth %i from req %p\n",
+            __func__, blk_meta.prefetchSource, blk_meta.prefetchDepth,
+            pkt->req);
 
     return blk;
 }
 
 CacheBlk*
-BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks,
-                         bool *evicted_dirty)
+BaseCache::allocateBlock(
+    const PacketPtr pkt, PacketList &writebacks,
+    PrefetchSourceType prefetch_fill_source, bool *evicted_dirty)
 {
     // Get address
     const Addr addr = pkt->getAddr();
@@ -2372,9 +2425,30 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks,
     // Print victim block's information
     DPRINTF(CacheRepl, "Replacement victim: %s\n", victim->print());
 
+    struct PfBadVictim
+    {
+        Addr addr;
+        bool secure;
+    };
+    std::vector<PfBadVictim> pfbad_victims;
+    if (prefetcher && prefetch_fill_source != PrefetchSourceType::PF_NONE) {
+        for (const auto &evict_blk : evict_blks) {
+            if (!evict_blk->isValid()) {
+                continue;
+            }
+            pfbad_victims.push_back(
+                {regenerateBlkAddr(evict_blk), evict_blk->isSecure()});
+        }
+    }
+
     // Try to evict blocks; if it fails, give up on allocation
     if (!handleEvictions(evict_blks, writebacks, evicted_dirty)) {
         return nullptr;
+    }
+
+    for (const auto &victim_info : pfbad_victims) {
+        prefetcher->notifyPrefetchEvictsDemand(
+            victim_info.addr, victim_info.secure, prefetch_fill_source);
     }
 
     // Insert new block at victimized entry
@@ -2729,8 +2803,20 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
 
     DPRINTF(Cache, "%s: write %s\n", __func__, tgt_pkt->print());
 
+    const bool track_response =
+        tgt_pkt->req->isUncacheable() && tgt_pkt->needsResponse();
+    if (track_response) {
+        assert(tgt_pkt->isWrite());
+        const bool inserted =
+            outstandingUncacheableWrites.insert(tgt_pkt).second;
+        panic_if(!inserted, "%s: uncacheable write packet already tracked",
+                 name());
+    }
+
     // forward as is, both for evictions and uncacheable writes
     if (!memSidePort.sendTimingReq(tgt_pkt)) {
+        if (track_response)
+            outstandingUncacheableWrites.erase(tgt_pkt);
         // note that we have now masked any requestBus and
         // schedSendEvent (we will wait for a retry before
         // doing anything), and this is so even if we do not
@@ -3371,12 +3457,12 @@ bool
 BaseCache::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
 {
     // Snoops shouldn't happen when bypassing caches
-    assert(!cache->system->bypassCaches());
+    assert(!cache.system->bypassCaches());
 
     assert(pkt->isResponse());
 
     // Express snoop responses from requestor to responder, e.g., from L1 to L2
-    cache->recvTimingSnoopResp(pkt);
+    cache.recvTimingSnoopResp(pkt);
     return true;
 }
 
@@ -3384,7 +3470,7 @@ BaseCache::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
 bool
 BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
 {
-    if (cache->system->bypassCaches() || pkt->isExpressSnoop()
+    if (cache.system->bypassCaches() || pkt->isExpressSnoop()
         || pkt->isStorePFTrain()) {
         // always let express snoop packets through even if blocked
         return true;
@@ -3393,18 +3479,18 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
         mustSendRetry = true;
         return false;
     }
-    if (!cache->tryAccessTag(pkt)) {
+    if (!cache.tryAccessTag(pkt)) {
         DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
         return false;
     }
-    int sliceidx = cache->getSliceIdx(pkt->getAddr());
-    if (sliceidx >= 0 && cache->cacheLevel != 1) {
-        if (cache->checkSLiceBusy(pkt, sliceidx)) {
+    int sliceidx = cache.getSliceIdx(pkt->getAddr());
+    if (sliceidx >= 0 && cache.cacheLevel != 1) {
+        if (cache.checkSLiceBusy(pkt, sliceidx)) {
             //no more buffer
             if (sendRetryEvent.scheduled()) {
-                owner.reschedule(sendRetryEvent, cache->nextCycle());
+                cache.reschedule(sendRetryEvent, cache.nextCycle());
             } else {
-                owner.schedule(sendRetryEvent, cache->nextCycle());
+                cache.schedule(sendRetryEvent, cache.nextCycle());
             }
             return false;
         }
@@ -3419,25 +3505,25 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
 {
     assert(pkt->isRequest());
 
-    if (cache->system->bypassCaches()) {
+    if (cache.system->bypassCaches()) {
         // Just forward the packet if caches are disabled.
         // @todo This should really enqueue the packet rather
-        [[maybe_unused]] bool success = cache->memSidePort.sendTimingReq(pkt);
+        [[maybe_unused]] bool success = cache.memSidePort.sendTimingReq(pkt);
         assert(success);
         return true;
     } else if (tryTiming(pkt)) {
         pkt->clearMshrArbFailed();
         pkt->clearMshrAliasFailed();
         pkt->clearHitInWriteBuffer();
-        cache->recvTimingReq(pkt);
+        cache.recvTimingReq(pkt);
         if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
             pkt->isHitInWriteBuffer()) {
             // If the MSHR arbitration failed, we need to retry later.
             // We will schedule a retry event to try again.
             if (sendRetryEvent.scheduled()) {
-                owner.reschedule(sendRetryEvent, cache->nextCycle());
+                cache.reschedule(sendRetryEvent, cache.nextCycle());
             } else {
-                owner.schedule(sendRetryEvent, cache->nextCycle());
+                cache.schedule(sendRetryEvent, cache.nextCycle());
             }
             DPRINTF(Cache, "MSHR arbitration failed for pkt %s, retrying later\n",
                     pkt->print());
@@ -3451,39 +3537,39 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
 Tick
 BaseCache::CpuSidePort::recvAtomic(PacketPtr pkt)
 {
-    if (cache->system->bypassCaches()) {
+    if (cache.system->bypassCaches()) {
         // Forward the request if the system is in cache bypass mode.
-        return cache->memSidePort.sendAtomic(pkt);
+        return cache.memSidePort.sendAtomic(pkt);
     } else {
-        return cache->recvAtomic(pkt);
+        return cache.recvAtomic(pkt);
     }
 }
 
 void
 BaseCache::CpuSidePort::recvFunctional(PacketPtr pkt)
 {
-    if (cache->system->bypassCaches()) {
+    if (cache.system->bypassCaches()) {
         // The cache should be flushed if we are in cache bypass mode,
         // so we don't need to check if we need to update anything.
-        cache->memSidePort.sendFunctional(pkt);
+        cache.memSidePort.sendFunctional(pkt);
         return;
     }
 
     // functional request
-    cache->functionalAccess(pkt, true);
+    cache.functionalAccess(pkt, true);
 }
 
 AddrRangeList
 BaseCache::CpuSidePort::getAddrRanges() const
 {
-    return cache->getAddrRanges();
+    return cache.getAddrRanges();
 }
 
 
 BaseCache::
-CpuSidePort::CpuSidePort(const std::string &_name, BaseCache *_cache,
+CpuSidePort::CpuSidePort(const std::string &_name, BaseCache& _cache,
                          const std::string &_label)
-    : CacheResponsePort(_name, _cache, _label), cache(_cache)
+    : CacheResponsePort(_name, _cache, _label)
 {
 }
 
@@ -3594,7 +3680,7 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
 BaseCache::MemSidePort::MemSidePort(const std::string &_name,
                                     BaseCache *_cache,
                                     const std::string &_label)
-    : CacheRequestPort(_name, _cache, _reqQueue, _snoopRespQueue),
+    : CacheRequestPort(_name, _reqQueue, _snoopRespQueue),
       _reqQueue(*_cache, *this, _snoopRespQueue, _label),
       _snoopRespQueue(*_cache, *this, true, _label), cache(_cache)
 {

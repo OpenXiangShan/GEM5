@@ -92,6 +92,9 @@ Useful supporting documents already inside the repository:
 - `docs/design-docs/frontend/README.md`
   - Design-oriented Kunminghu v3 frontend/BPU notes.
   - Prefer this directory when you need "why / constraints / tradeoffs".
+- `docs/design-docs/smt/README.md`
+  - Design-oriented SMT notes covering thread isolation, shared resources,
+    recovery, memory visibility, and full-system validation.
 - `docs/Gem5_Docs/`
   - More detailed implementation notes and local deep dives.
 

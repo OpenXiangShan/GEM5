@@ -88,3 +88,12 @@ class UartLite(BasicPioDevice):
     cxx_class = 'gem5::UartLite'
     pio_addr = 0x40600000
     pio_size = Param.Addr(0xd, "Size of address range")
+
+class Uart16550(BasicPioDevice):
+    type = 'Uart16550'
+    cxx_header = "dev/serial/uart16550.hh"
+    cxx_class = 'gem5::Uart16550'
+    pio_addr = 0x310b0000
+    pio_size = Param.Addr(0x20, "Size of address range")
+    enable_fifo = Param.Bool(True, "Enable UART16550 FIFO support")
+    fifo_depth = Param.Unsigned(16, "UART16550 RX and TX FIFO depth")

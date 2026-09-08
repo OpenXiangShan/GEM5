@@ -3,9 +3,11 @@
 
 #include <cstdint>
 #include <list>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
 #include <boost/dynamic_bitset/dynamic_bitset.hpp>
@@ -123,6 +125,16 @@ class IssueQue : public SimObject
     int numStorePipe = 0;
     int loadPipeId = -1;
 
+    enum class VectorSplitKind
+    {
+        Load,
+        Store
+    };
+
+    const unsigned vectorSplitUnits;
+    unsigned nextVectorLoadSplitUnit = 0;
+    unsigned nextVectorStoreSplitUnit = 0;
+
     struct select_policy
     {
         bool operator()(const DynInstPtr& a, const DynInstPtr& b) const;
@@ -168,16 +180,26 @@ class IssueQue : public SimObject
     // srcIdx : inst
     std::vector<std::vector<std::pair<uint8_t, DynInstPtr>>> subDepGraph;
 
+    struct VectorSplitUnitState
+    {
+        std::queue<DynInstPtr> splitQ;
+        std::queue<Tick> splitQReleaseTicks;
+        std::queue<bool> splitQReplay;
+        std::unordered_set<InstSeqNum> blockingSeqs;
+
+        bool blocked() const { return !blockingSeqs.empty(); }
+    };
+
     std::queue<DynInstPtr> replayQ;  // only for mem
-    std::queue<DynInstPtr> vectorReadyQ;
-    std::queue<bool> vectorReadyQReplay;
-    std::queue<DynInstPtr> vectorSplitQ;
-    std::queue<Tick> vectorSplitQReleaseTicks;
-    std::queue<bool> vectorSplitQReplay;
+    std::queue<DynInstPtr> vectorLoadReadyQ;
+    std::queue<bool> vectorLoadReadyQReplay;
+    std::queue<DynInstPtr> vectorStoreReadyQ;
+    std::queue<bool> vectorStoreReadyQReplay;
+    std::vector<VectorSplitUnitState> vectorLoadSplitStates;
+    std::vector<VectorSplitUnitState> vectorStoreSplitStates;
     std::queue<DynInstPtr> vectorDelayedReadyQ;
     std::queue<bool> vectorDelayedReadyQReplay;
     std::unordered_set<InstSeqNum> vectorReadyQSeqs;
-    std::unordered_set<InstSeqNum> vectorBlockingSplitSeqs;
     EventFunctionWrapper vectorReadyQEvent;
 
     CPU* cpu = nullptr;
@@ -208,9 +230,22 @@ class IssueQue : public SimObject
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
     bool isVectorMemInst(const DynInstPtr& inst) const;
+    bool needsVectorMemSplit(const DynInstPtr& inst) const;
+    VectorSplitKind vectorSplitKind(const DynInstPtr& inst) const;
+    const char* vectorSplitKindName(VectorSplitKind kind) const;
     bool isBlockingVectorSplitInst(const DynInstPtr& inst) const;
+    std::vector<VectorSplitUnitState>& vectorSplitStatesFor(VectorSplitKind kind);
+    const std::vector<VectorSplitUnitState>& vectorSplitStatesFor(VectorSplitKind kind) const;
+    unsigned& nextVectorSplitUnitFor(VectorSplitKind kind);
+    bool hasAvailableVectorSplitUnit(VectorSplitKind kind) const;
+    int selectVectorSplitUnit(VectorSplitKind kind);
+    Tick nextVectorSplitReleaseTick(VectorSplitKind kind) const;
+    Tick nextVectorSplitReleaseTick() const;
+    void eraseVectorSplitBlocker(InstSeqNum seq_num);
     void enqueueVectorMemDelay(const DynInstPtr& inst, bool replay);
+    void tryStartVectorMemSplit(VectorSplitKind kind);
     void tryStartVectorMemSplit();
+    void releaseVectorSplitUnits(VectorSplitKind kind);
     void scheduleVectorReadyQEvent();
     void releaseVectorDelayedReadyQ();
     void issueToFu();
@@ -220,6 +255,7 @@ class IssueQue : public SimObject
     void addIfReady(const DynInstPtr& inst);
     void cancel(const DynInstPtr& inst);
     void processVectorReadyQ();
+    bool issueHasOlderInsts(const DynInstPtr& replay_inst) const;
 
   public:
     inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
@@ -245,6 +281,7 @@ class IssueQue : public SimObject
     void markMemDepDone(const DynInstPtr& inst);
     /** move the mem inst to readyQ, and try it again. */
     void retryMem(const DynInstPtr& inst);
+
     bool idle();
 
     void doCommit(const InstSeqNum inst, ThreadID tid);
@@ -298,6 +335,10 @@ class Scheduler : public SimObject
     bool old_disp = false;
     const int intRegfileBanks;
 
+    /** Load/store pipe counts derived from scheduler issue ports. */
+    unsigned loadPipeCount = 0;
+    unsigned storePipeCount = 0;
+
     struct SchedulerStats : public statistics::Group
     {
         SchedulerStats(statistics::Group* parent);
@@ -317,7 +358,7 @@ class Scheduler : public SimObject
     };
     using IQGroup = std::vector<IssueQue*>;
 
-    std::vector<int> opExecTimeTable;
+    std::vector<uint32_t> opExecTimeTable;
     std::vector<bool> opPipelined;
     std::vector<IQGroup> dispTable;
     std::vector<IssueQue*> issueQues;
@@ -337,7 +378,7 @@ class Scheduler : public SimObject
     using OccupancyType = std::vector<std::pair<DynInstPtr, int>>;
     std::vector<OccupancyType> rdRfPortOccupancy;
     // typePortId : [inst : priority : time]
-    std::vector<std::tuple<DynInstPtr, int, int>> wrRfPortOccupancy;
+    std::vector<std::tuple<DynInstPtr, int, uint32_t>> wrRfPortOccupancy;
 
     struct NullStruct {};
 
@@ -358,6 +399,8 @@ class Scheduler : public SimObject
     PendingWakeEventsType specWakeEvents;
 
     Scheduler(const SchedulerParams& params);
+    unsigned getLoadPipeCount() const { return loadPipeCount; }
+    unsigned getStorePipeCount() const { return storePipeCount; }
     void setCPU(CPU* cpu, LSQ* lsq);
     void resetDepGraph(uint64_t numPhysRegs);
     void setAllScoreBoard(PhysRegIdPtr reg);

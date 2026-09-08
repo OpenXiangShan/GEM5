@@ -279,11 +279,11 @@ def template JumpConstructor {{
                     // If RD is link and RS1 is link and rd != rs1
                     else if (rs1_link) {
                         if (RS1 != RD) {
-                            // Both are link and RS1 == RD, pop then push
+                            // Both are link and RS1 != RD, pop then push
                             flags[IsReturn] = true;
                             flags[IsCall] = true;
                         } else {
-                            // Both are link and RS1 != RD, push RAS
+                            // Both are link and RS1 == RD, push RAS
                             flags[IsCall] = true;
                         }
                     }

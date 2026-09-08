@@ -8,6 +8,7 @@ from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
 addToPath('../')
+addToPath('../../')
 
 from ruby import Ruby
 
@@ -17,6 +18,7 @@ from common.Benchmarks import *
 from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
+from util.solver.runtime.integration import maybe_handle_solver_runtime
 
 if __name__ == '__m5_main__':
 
@@ -44,5 +46,7 @@ if __name__ == '__m5_main__':
     test_sys = build_xiangshan_system(args)
 
     root = Root(full_system=True, system=test_sys)
+    if maybe_handle_solver_runtime(root, args):
+        sys.exit(0)
 
     Simulation.run_vanilla(args, root, test_sys, FutureClass)

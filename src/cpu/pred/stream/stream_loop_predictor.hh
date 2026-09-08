@@ -64,7 +64,7 @@ public:
     void updateTripCount(unsigned fsqId, Addr branchAddr);
 
     bool getLoopPredValid(Addr branchAddr) {
-        defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+        defer _(nullptr, [this](void *) { debugFlagOn = false; });
         if (branchAddr == ObservingPC) {
             debugFlagOn = true;
         }
@@ -78,7 +78,7 @@ public:
     }
 
     int getTripCount(Addr branchAddr) {
-        defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+        defer _(nullptr, [this](void *) { debugFlagOn = false; });
         if (branchAddr == ObservingPC) {
             debugFlagOn = true;
         }

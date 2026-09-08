@@ -179,8 +179,10 @@ ArchDBer::strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit,
 
   sprintf(memTraceSQLBuf,
           "INSERT INTO StrideTrainTrace(Tick,Addr,PC,HashPC,QueryHit,IsFirstShot,Miss,IsTrain,SITE) "
-          "VALUES(%ld,%ld,%ld,%ld,%d,%d,%d,%d,'%s');",
-          tick, addr, PC, hashPC, hit, isFirstShot, miss, is_train, "StrideTrain");
+          "VALUES(%lld,%lld,%lld,%lld,%d,%d,%d,%d,'%s');",
+          sqliteSignedInt(tick), sqliteSignedInt(addr),
+          sqliteSignedInt(PC), sqliteSignedInt(hashPC),
+          hit, isFirstShot, miss, is_train, "StrideTrain");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -194,8 +196,11 @@ ArchDBer::despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool h
 
   sprintf(memTraceSQLBuf,
           "INSERT INTO DespacitoTrainTrace(Tick,vAddr,pAddr,PC,hasPC,Miss,IsTrain,SITE) "
-          "VALUES(%ld,%ld,%ld,%ld,%d,%d,%d,'%s');",
-          tick, vaddr, paddr, PC, hasPC, miss, is_train, is_train?"DespacitoTrain":"DespacitoPrefetch");
+          "VALUES(%lld,%lld,%lld,%lld,%d,%d,%d,'%s');",
+          sqliteSignedInt(tick), sqliteSignedInt(vaddr),
+          sqliteSignedInt(paddr), sqliteSignedInt(PC),
+          hasPC, miss, is_train,
+          is_train ? "DespacitoTrain" : "DespacitoPrefetch");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);

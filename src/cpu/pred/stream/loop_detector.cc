@@ -75,7 +75,7 @@ StreamLoopDetector::adjustLoopEntry(bool taken_backward, DetectorEntry &entry, A
 
 void
 StreamLoopDetector::insertEntry(Addr branchAddr, DetectorEntry loopEntry) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }
@@ -98,7 +98,7 @@ StreamLoopDetector::insertEntry(Addr branchAddr, DetectorEntry loopEntry) {
 
 void
 StreamLoopDetector::update(Addr branchAddr, Addr targetAddr, Addr fallThruPC) {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branchAddr == ObservingPC || branchAddr == ObservingPC2) {
         debugFlagOn = true;
     }

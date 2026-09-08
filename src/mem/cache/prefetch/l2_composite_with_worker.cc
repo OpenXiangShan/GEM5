@@ -22,6 +22,12 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream)
 {
+    setSharedFilterContextQualified(true);
+    cdp->setSharedFilterContextQualified(true);
+    largeBOP->setSharedFilterContextQualified(true);
+    smallBOP->setSharedFilterContextQualified(true);
+    cmc->setSharedFilterContextQualified(true);
+    despacitoStream->setSharedFilterContextQualified(true);
     cdp->pfLRUFilter = &pfLRUFilter;
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;
@@ -79,9 +85,10 @@ L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     if (offloadLowAccuracy) {
         auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
         float cdp_ratio =
-            (prefetchStats.pfIssued_srcs[PrefetchSourceType::CDP].value()) / (prefetchStats.pfIssued.total());
+            (prefetchStats.pfDequeued_srcs[PrefetchSourceType::CDP].value()) /
+            (prefetchStats.pfDequeued.value());
         float acc = (prefetchStats.pfUseful_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value()) /
-                    (prefetchStats.pfIssued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
+                    (prefetchStats.pfDequeued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
 
         if (hasHintDownStream() && cdp_ratio > 0.5 && acc < 0.5) {
             hintDownStream->rxHint(dpp);
@@ -112,7 +119,11 @@ L2CompositeWithWorkerPrefetcher::pfHitNotify(float accuracy, PrefetchSourceType 
         cdp->pfHitNotify(accuracy, pf_source, pkt, addressGenBuffer);
     }
 
-    if (addressGenBuffer.size()) {
+    if (usePFBuffer) {
+        if (cdp->hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
+            schedule(PFReqSendEvent, nextCycle());
+        }
+    } else if (addressGenBuffer.size()) {
         assert(pkt->req->hasVaddr());
         postNotifyInsert(pkt, addressGenBuffer);
     }
@@ -138,7 +149,11 @@ L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
         cdp->notifyFill(pkt, addressGenBuffer);
     }
 
-    if (addressGenBuffer.size()) {
+    if (usePFBuffer) {
+        if (cdp->hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
+            schedule(PFReqSendEvent, nextCycle());
+        }
+    } else if (addressGenBuffer.size()) {
         assert(pkt->req->hasVaddr());
         postNotifyInsert(pkt, addressGenBuffer);
     }

@@ -18,7 +18,6 @@ namespace debug {
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/UTAGE.hh"
 
 #endif
@@ -40,15 +39,17 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
       numWays(numWays),
       maxBranchPositions(32),
       updateOnRead(false),
+      usingS3Pred(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
       bankBaseShift(instShiftAmt),
       indexShift(bankBaseShift + ceilLog2(numBanks)),
       enableBankConflict(false),
       lastPredBankId(0),
-      predBankValid(false)
+      predBankValid(false),
+      tageStats()
 {
-    setNumDelay(1);
+    setNumDelay(0);
 
     // Initialize with default parameters for testing
     tableSizes.resize(numPredictors, tableSize);
@@ -61,25 +62,26 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
     maxHistLen = histLengths[numPredictors-1];
 #else
 // Constructor: Initialize TAGE predictor with given parameters
-MicroTAGE::MicroTAGE(const Params& p):
-TimedBaseBTBPredictor(p),
-numPredictors(p.numPredictors),
-tableSizes(p.tableSizes),
-tableTagBits(p.TTagBitSizes),
-tablePcShifts(p.TTagPcShifts),
-histLengths(p.histLengths),
-maxHistLen(p.maxHistLen),
-numWays(p.numWays),
-maxBranchPositions(p.maxBranchPositions),
-updateOnRead(p.updateOnRead),
-numBanks(p.numBanks),
-bankIdWidth(ceilLog2(p.numBanks)),
-bankBaseShift(instShiftAmt), // strip instruction alignment bits before indexing
-indexShift(bankBaseShift + ceilLog2(p.numBanks)),
-enableBankConflict(p.enableBankConflict),
-lastPredBankId(0),
-predBankValid(false),
-tageStats(this, p.numPredictors, p.numBanks)
+MicroTAGE::MicroTAGE(const Params& p)
+    : TimedBaseBTBPredictor(p),
+      numPredictors(p.numPredictors),
+      tableSizes(p.tableSizes),
+      tableTagBits(p.TTagBitSizes),
+      tablePcShifts(p.TTagPcShifts),
+      histLengths(p.histLengths),
+      maxHistLen(p.maxHistLen),
+      numWays(p.numWays),
+      maxBranchPositions(p.maxBranchPositions),
+      updateOnRead(p.updateOnRead),
+      usingS3Pred(p.usingS3Pred),
+      numBanks(p.numBanks),
+      bankIdWidth(ceilLog2(p.numBanks)),
+      bankBaseShift(instShiftAmt), // strip instruction alignment bits before indexing
+      indexShift(bankBaseShift + ceilLog2(p.numBanks)),
+      enableBankConflict(p.enableBankConflict),
+      lastPredBankId(0),
+      predBankValid(false),
+      tageStats(this, p.numPredictors, p.numBanks)
 {
     // Warn if updateOnRead is disabled (bank simulation works better with it enabled)
     if (!p.updateOnRead) {
@@ -121,7 +123,8 @@ tageStats(this, p.numPredictors, p.numBanks)
             state.altTagFoldedHist.emplace_back(
                 (int)histLengths[i], (int)tableTagBits[i] - 1, 16);
             state.indexFoldedHist.emplace_back(
-                (int)histLengths[i], (int)tableIndexBits[i], 16);
+                (int)histLengths[i],
+                (int)partitionIndexBits(tableIndexBits[i]), 16);
         }
     }
     usefulResetCnt = 0;
@@ -227,9 +230,10 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(startPC, i,
-                            predMeta->indexFoldedHist[i].get(), asidHash)
-                          : getTageIndex(startPC, i, state.indexFoldedHist[i].get(), asidHash);
+        Addr index = predMeta ? getTageIndex(
+            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
+                              : getTageIndex(
+            startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(),
                             position, asidHash)
@@ -303,7 +307,7 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
                                                  tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -366,11 +370,28 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     }
     threadMeta[tid]->history = history;
 
+    if (getDelay() < stagePreds.size()) {
+        threadMeta[tid]->abtbEntries =
+            getAbtbConditionalEntries(stagePreds[getDelay()].btbEntries);
+    }
+
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
-        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens,
+        auto abtb_entries = getAbtbConditionalEntries(stage_pred.btbEntries);
+        if (abtb_entries.empty()) {
+            continue;
+        }
+        for (const auto &entry : abtb_entries) {
+            stage_pred.condTakens.erase(
+                std::remove_if(stage_pred.condTakens.begin(),
+                               stage_pred.condTakens.end(),
+                               [&entry](const auto &taken) {
+                                   return taken.first == entry.pc;
+                               }),
+                stage_pred.condTakens.end());
+        }
+        lookupHelper(startPC, abtb_entries, stage_pred.condTakens,
                      tid, asidHash);
     }
 
@@ -384,38 +405,85 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
     return threadMeta[tid];
 }
 
-/**
- * @brief Prepare BTB entries for update by filtering and processing
- *
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
+void
+MicroTAGE::refreshPredictionMeta(Addr startPC,
+                                 const bitset &history,
+                                 FullBTBPrediction &pred)
+{
+    const ThreadID tid = pred.tid;
+    const auto &state = historyState(tid);
+    auto meta = std::make_shared<TageMeta>();
+    meta->tagFoldedHist = state.tagFoldedHist;
+    meta->altTagFoldedHist = state.altTagFoldedHist;
+    meta->indexFoldedHist = state.indexFoldedHist;
+    meta->aheadIndexFoldedHistValid = !state.aheadIndexFoldedHist.empty();
+    if (meta->aheadIndexFoldedHistValid) {
+        meta->aheadIndexFoldedHist = state.aheadIndexFoldedHist.front();
+    }
+    meta->history = history;
+    meta->abtbEntries = getAbtbConditionalEntries(pred.btbEntries);
+
+    for (const auto &btb_entry : meta->abtbEntries) {
+        meta->preds[btb_entry.pc] = generateSinglePrediction(
+            btb_entry, startPC, nullptr, tid, pred.asidHash);
+    }
+
+    threadMeta[tid] = std::move(meta);
+}
+
+bool
+MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
+{
+#ifdef UNIT_TEST
+    if (abtbComponentIdx < 0) {
+        return true;
+    }
+#endif
+    return abtbComponentIdx >= 0 && entry.source == abtbComponentIdx;
+}
+
 std::vector<BTBEntry>
-MicroTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
+MicroTAGE::getAbtbConditionalEntries(const std::vector<BTBEntry> &btbEntries) const
+{
+    std::vector<BTBEntry> entries;
+    for (const auto &entry : btbEntries) {
+        if (entry.valid && entry.isCond && isAbtbEntry(entry)) {
+            entries.push_back(entry);
         }
-        all_entries.push_back(potential_new_entry);
+    }
+    return entries;
+}
+
+std::vector<BTBEntry>
+MicroTAGE::prepareS3UpdateEntriesFromAbtbMeta(
+    const std::vector<BTBEntry> &abtbEntries,
+    FullBTBPrediction &s3Pred,
+    CondTakens &teacherCondTakens)
+{
+    std::vector<BTBEntry> entries;
+    auto taken_entry = s3Pred.getTakenEntry();
+
+    for (const auto &entry : abtbEntries) {
+        if (!entry.valid || !entry.isCond) {
+            continue;
+        }
+
+        if (taken_entry.valid && entry.pc > taken_entry.pc) {
+            break;
+        }
+
+        const bool actual_taken =
+            taken_entry.valid && taken_entry.isCond &&
+            entry.pc == taken_entry.pc;
+        entries.push_back(entry);
+        teacherCondTakens.push_back({entry.pc, actual_taken});
+
+        if (taken_entry.valid && entry.pc == taken_entry.pc) {
+            break;
+        }
     }
 
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
+    return entries;
 }
 
 /**
@@ -431,7 +499,7 @@ bool
 MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             bool control_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -512,14 +580,102 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
-    // No allocation if no misprediction
-    if (!this_fb_mispred) {
+    bool this_fb_mispred = control_mispred;
+    // A control redirect can also come from a target/BTB miss.  Allocate
+    // direction state only when the stored direction itself was wrong.
+    if (!this_fb_mispred || pred.taken == actual_taken) {
         return false;
     }
 
     // All other cases: allocate longer history table
+    return true;
+}
+
+bool
+MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
+                             bool actual_taken,
+                             const TagePrediction &pred) {
+    // Mirror the normal update path, but interpret mismatch against the S3 teacher
+    // instead of a resolved squash/commit outcome.
+    auto &main_info = pred.mainInfo;
+    bool used_base = !pred.mainprovided;
+    if (!main_info.found) {
+        tageStats.s3UpdateNoHitUseBim++;
+    }
+    if (!main_info.found || used_base) {
+        tageStats.s3UpdateUseAlt++;
+    }
+    bool base_taken = entry.ctr >= 0;
+
+    if (main_info.found) {
+        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+        if (main_weak) {
+            tageStats.s3UpdateProviderNa++;
+            bool base_correct = (base_taken == actual_taken);
+            tageStats.s3UpdateUseAltOnNaUpdated++;
+            if (base_correct) {
+                tageStats.s3UpdateUseAltOnNaCorrect++;
+            } else {
+                tageStats.s3UpdateUseAltOnNaWrong++;
+            }
+        }
+    }
+
+    if (main_info.found) {
+        DPRINTF(UTAGE, "S3 teacher-update provided by table %d, idx %lu, way %u\n",
+            main_info.table, main_info.index, main_info.way);
+
+        auto &way = tageTable[main_info.table][main_info.index][main_info.way];
+        updateCounter(actual_taken, 3, way.counter);
+
+        bool main_is_correct = main_info.taken() == actual_taken;
+        bool base_is_correct_and_strong =
+                                     (base_taken == actual_taken) &&
+                                     (abs(2 * entry.ctr + 1) == 5);
+
+        if (base_is_correct_and_strong && main_is_correct) {
+            way.useful = 0;
+            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
+        } else if (main_info.taken() != base_taken) {
+            if (main_is_correct) {
+                way.useful = 1;
+            }
+        }
+
+        if (way.counter == 0 || way.counter == -1) {
+            way.useful = 0;
+            DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
+        }
+        DPRINTF(UTAGE, "useful bit is now %d\n", way.useful);
+
+        if (!main_is_correct) {
+            tageStats.s3UpdateUtageHitWrong++;
+        }
+    }
+
+    if (used_base) {
+        bool base_correct = base_taken == actual_taken;
+        if (base_correct) {
+            tageStats.s3UpdateUseAltCorrect++;
+        } else {
+            tageStats.s3UpdateUseAltWrong++;
+        }
+        if (main_info.found && main_info.taken() != base_taken) {
+            tageStats.s3UpdateAltDiffers++;
+        }
+    }
+
+    bool teacher_mismatch = pred.taken != actual_taken;
+    if (!teacher_mismatch) {
+        return false;
+    }
+
+    tageStats.s3UpdateMispred++;
+
+    if (main_info.found && main_info.table == numPredictors - 1) {
+        return false;
+    }
+
     return true;
 }
 
@@ -540,20 +696,53 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
+                                 TrainingMode mode,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
-                                 uint64_t &allocated_way) {
+                                 uint64_t &allocated_way,
+                                 ThreadID tid) {
+    int &resetCnt = usesTidPartitionedStorage() ?
+        usefulResetCntByThread[tid] : usefulResetCnt;
     // Simple set-associative allocation (no LFSR, no per-way table gating):
     // - For each table from start_table upward, check the set at computed index.
     // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
     // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
+    const bool isS3Update = mode == TrainingMode::S3Update;
+    auto count_alloc_success = [&]() {
+        if (isS3Update) {
+            tageStats.s3UpdateAllocSuccess++;
+        } else {
+            tageStats.updateAllocSuccess++;
+        }
+    };
+    auto count_alloc_failure = [&]() {
+        if (isS3Update) {
+            tageStats.s3UpdateAllocFailure++;
+        } else {
+            tageStats.updateAllocFailure++;
+        }
+    };
+    auto count_reset_u = [&]() {
+        if (isS3Update) {
+            tageStats.s3UpdateResetU++;
+        } else {
+            tageStats.updateResetU++;
+        }
+    };
+    auto count_no_valid_table = [&]() {
+        if (isS3Update) {
+            tageStats.s3UpdateAllocFailureNoValidTable++;
+        } else {
+            tageStats.updateAllocFailureNoValidTable++;
+        }
+    };
 
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti,
-            meta->indexFoldedHist[ti].get(), asidHash);
+        Addr newIndex = getTageIndex(
+            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(),
             position, asidHash);
@@ -569,11 +758,11 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                 DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
                 cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
-                tageStats.updateAllocSuccess++;
+                count_alloc_success();
                 allocated_table = ti;
                 allocated_index = newIndex;
                 allocated_way = way;
-                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                resetCnt = resetCnt <= 0 ? 0 : resetCnt - 1;
                 return true;
             }
         }
@@ -590,17 +779,19 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
             }
         }
 
-        tageStats.updateAllocFailure++;
-        usefulResetCnt++;
+        count_alloc_failure();
+        resetCnt++;
     }
 
-    if (usefulResetCnt >= 256) {
-        usefulResetCnt = 0;
-        tageStats.updateResetU++;
+    if (resetCnt >= 256) {
+        resetCnt = 0;
+        count_reset_u();
         DPRINTF(UTAGE, "reset useful bit of all entries\n");
         for (auto &table : tageTable) {
-            for (auto &set : table) {
-                for (auto &way : set) {
+            const unsigned begin = partitionBegin(table.size(), tid);
+            const unsigned end = partitionEnd(table.size(), tid);
+            for (unsigned index = begin; index < end; ++index) {
+                for (auto &way : table[index]) {
                     way.useful = false;
                 }
             }
@@ -608,16 +799,24 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     }
 
     DPRINTF(UTAGE, "no eligible way found for allocation starting from table %d\n", start_table);
-    tageStats.updateAllocFailureNoValidTable++;
+    count_no_valid_table();
     return false;
 }
 
 /**
- * @brief Probe resolved update for bank conflicts without mutating state.
- * Returns false if the update cannot proceed due to a bank conflict.
+ * @brief Probe whether the resolved-update path may proceed this cycle.
+ *
+ * In S3 teacher-update mode, MicroTAGE no longer participates in resolved
+ * update backpressure and always lets the caller proceed.
  */
 bool
-MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
+MicroTAGE::canResolveUpdate(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
+{
+    if (usingS3Pred) {
+        return true;
+    }
+
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -644,14 +843,22 @@ MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
 
 /**
  * @brief Perform resolved update after probe success.
+ *
+ * In S3 teacher-update mode this callback becomes a no-op because functional
+ * predictor state is updated by updateUsingS3Pred().
  */
 void
-MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
+MicroTAGE::doResolveUpdate(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
+{
+    if (usingS3Pred) {
+        return;
+    }
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
     }
-    update(stream);
+    this->update(stream, update);
 }
 
 /**
@@ -660,15 +867,17 @@ MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
  * @param stream The fetch stream containing branch execution information
  */
 void
-MicroTAGE::update(const FetchTarget &stream) {
+MicroTAGE::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
+    if (usingS3Pred) {
+        DPRINTF(UTAGE, "update bypassed because usingS3Pred is enabled\n");
+        return;
+    }
+
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
     DPRINTF(UTAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
-
-    // ========== Normal Update Logic ==========
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
 
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
@@ -677,52 +886,124 @@ MicroTAGE::update(const FetchTarget &stream) {
         return;
     }
 
+    trainResolvedEntries(update, predMeta, startAddr, stream);
+    checkUtageUpdateMisspred(stream, update);
+    DPRINTF(UTAGE, "end update\n");
+}
+
+void
+MicroTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
+{
+    if (!usingS3Pred) {
+        return;
+    }
+
+    const ThreadID tid = s3Pred.tid;
+    if (tid >= threadMeta.size()) {
+        DPRINTF(UTAGE, "S3 teacher-update: invalid tid %u\n", tid);
+        return;
+    }
+
+    auto predMeta = threadMeta[tid];
+    if (!predMeta) {
+        DPRINTF(UTAGE, "S3 teacher-update: no prediction meta for tid %u, skip\n", tid);
+        tageStats.s3UpdateNoMeta++;
+        return;
+    }
+
+    const Addr startAddr = s3Pred.bbStart;
+    // Only train the conditional prefix that remains reachable under the
+    // final-stage teacher prediction for this fetch block.
+    CondTakens teacher_cond_takens;
+    auto btb_entries = prepareS3UpdateEntriesFromAbtbMeta(
+        predMeta->abtbEntries, s3Pred, teacher_cond_takens);
+    std::vector<TrainingEntry> entries_to_update;
+    entries_to_update.reserve(btb_entries.size());
+    for (const auto &entry : btb_entries) {
+        Addr branch_pc = entry.pc;
+        auto teacher_it = CondTakens_find(teacher_cond_takens, branch_pc);
+        const bool actual_taken =
+            teacher_it != teacher_cond_takens.end() && teacher_it->second;
+        entries_to_update.push_back(
+            TrainingEntry{entry, actual_taken, false});
+    }
+    trainEntries(entries_to_update, predMeta, startAddr, tid, s3Pred.asidHash,
+                 TrainingMode::S3Update);
+}
+
+void
+MicroTAGE::trainEntries(const std::vector<TrainingEntry> &entries_to_update,
+                        const std::shared_ptr<TageMeta> &predMeta,
+                        const Addr &startPC,
+                        ThreadID tid,
+                        uint8_t asidHash,
+                        TrainingMode mode)
+{
+    const bool isS3Update = mode == TrainingMode::S3Update;
     bool utage_hit = false;
-    // Process each BTB entry
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        TagePrediction recomputed;
-        if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
-            // Re-read providers using snapshot (do not rely on prediction-time main/alt)
-            recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                 stream.tid, stream.asidHash);
-        } else { // otherwise, use the prediction from the prediction-time main/alt
+    const char *context = isS3Update ? "S3 teacher-update" : "update";
+    auto get_prediction_for_training =
+        [&](const BTBEntry &btb_entry) -> TagePrediction {
+            if (updateOnRead) {
+                return generateSinglePrediction(
+                    btb_entry, startPC, predMeta, tid, asidHash);
+            }
+
             auto pred_it = predMeta->preds.find(btb_entry.pc);
             if (pred_it != predMeta->preds.end()) {
-                recomputed = pred_it->second;
-            } else {
-                DPRINTF(UTAGE, "update: missing predMeta entry for pc %#lx, recompute with snapshot\n",
-                        btb_entry.pc);
-                recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                     stream.tid, stream.asidHash);
+                return pred_it->second;
             }
+
+            DPRINTF(UTAGE,
+                    "%s: missing predMeta entry for pc %#lx, recompute with snapshot\n",
+                    context, btb_entry.pc);
+            return generateSinglePrediction(
+                btb_entry, startPC, predMeta, tid, asidHash);
+        };
+
+    for (const auto &training_entry : entries_to_update) {
+        const auto &btb_entry = training_entry.entry;
+        if (isS3Update) {
+            tageStats.s3UpdateEntries++;
         }
+
+        const bool actual_taken = training_entry.actualTaken;
+        const bool control_mispred = training_entry.controlMispred;
+
+        auto recomputed = get_prediction_for_training(btb_entry);
+
         if (recomputed.mainprovided) {
             utage_hit = true;
         }
-        // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
 
-        // Handle new entry allocation if needed
-        bool alloc_success = false;
+        bool need_allocate = isS3Update
+            ? updatePredictorStateAndCheckAllocationS3(btb_entry, actual_taken, recomputed)
+            : updatePredictorStateAndCheckAllocation(
+                btb_entry, actual_taken, recomputed, control_mispred);
+
+        if (!need_allocate) {
+            continue;
+        }
+
         uint64_t allocated_table = 0;
         uint64_t allocated_index = 0;
         uint64_t allocated_way = 0;
-        if (need_allocate) {
-
-            // Handle allocation of new entries
-            uint start_table = 0;
-            auto &main_info = recomputed.mainInfo;
-            if (main_info.found) {
-                start_table = main_info.table + 1; // start from the table after the main prediction table
-            }
-            alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, stream.asidHash,
-                                   allocated_table, allocated_index, allocated_way);
+        unsigned start_table = 0;
+        auto &main_info = recomputed.mainInfo;
+        if (main_info.found) {
+            start_table = main_info.table + 1;
         }
 
+        handleNewEntryAllocation(startPC, btb_entry, actual_taken,
+                                 start_table, predMeta, asidHash, mode,
+                                 allocated_table, allocated_index,
+                                 allocated_way, tid);
+
 #ifndef UNIT_TEST
-        // if (enableDB) {
+        // Optional per-entry miss tracing is only kept for the resolved update path.
+        // The S3 teacher-update path shares the same provider/allocation mechanics,
+        // but does not currently feed the miss-trace database.
+        // if (!isS3Update && enableDB) {
         //     TageMissTrace t;
         //     std::string history_str;
         //     boost::dynamic_bitset<> history_low50 = predMeta->history;
@@ -731,7 +1012,7 @@ MicroTAGE::update(const FetchTarget &stream) {
         //     }
         //     boost::to_string(history_low50, history_str);
         //     auto main_info = recomputed.mainInfo;
-        //     t.set(startAddr, btb_entry.pc, main_info.way,
+        //     t.set(startPC, btb_entry.pc, main_info.way,
         //         main_info.found, main_info.entry.counter, main_info.entry.useful,
         //         main_info.table, main_info.index,
         //         recomputed.useAlt, recomputed.taken, actual_taken, alloc_success,
@@ -741,15 +1022,46 @@ MicroTAGE::update(const FetchTarget &stream) {
         // }
 #endif
     }
-    if (utage_hit){
-        tageStats.updateUtageHit++;//for RTL align pred Accuracy
+
+    if (utage_hit) {
+        if (isS3Update) {
+            tageStats.s3UpdateUtageHit++;
+        } else {
+            tageStats.updateUtageHit++;
+        }
     }
-    checkUtageUpdateMisspred(stream);
-    DPRINTF(UTAGE, "end update\n");
 }
 
 void
-MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
+MicroTAGE::trainResolvedEntries(
+    const PreparedUpdate &update,
+    const std::shared_ptr<TageMeta> &predMeta,
+    const Addr &startPC,
+    const PredictionUpdateContext &stream)
+{
+    std::vector<TrainingEntry> entries;
+    entries.reserve(update.branches.size());
+    for (const auto &branch : update.branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        auto entry = BTBEntry(makeBranchInfo(branch));
+        auto pred = predMeta->preds.find(entry.pc);
+        if (pred == predMeta->preds.end()) {
+            continue;
+        }
+        entry.ctr = pred->second.basePred ? 0 : -1;
+        entries.push_back(TrainingEntry{
+            entry, branch.taken, branch.mispredicted});
+    }
+
+    trainEntries(entries, predMeta, startPC, stream.tid, stream.asidHash,
+                 TrainingMode::Resolved);
+}
+
+void
+MicroTAGE::checkUtageUpdateMisspred(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "checkUtageUpdateMisspred: no prediction meta, skip\n");
@@ -777,10 +1089,11 @@ MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (!has_taken_pred && stream.exeTaken) ||
-                                (has_taken_pred && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && has_taken_pred &&
-                          first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred =
+        (!has_taken_pred && update.outcome.taken) ||
+        (has_taken_pred && !update.outcome.taken);
+    bool branch_mispred = update.outcome.taken && has_taken_pred &&
+        first_taken_pc != update.outcome.branch.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -821,22 +1134,26 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
 }
 
 Addr
-MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
+MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
+                        uint8_t asidHash, ThreadID tid)
 {
-    // Create mask for tableIndexBits[t] to limit result size
-    Addr mask = (1ULL << tableIndexBits[t]) - 1;
+    const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
+    Addr mask = (1ULL << localIndexBits) - 1;
 
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return xorAsidHashIntoIndex(pcBits ^ foldedBits, tableIndexBits[t], asidHash);
+    Addr localIndex = xorAsidHashIntoIndex(
+        pcBits ^ foldedBits, localIndexBits, asidHash);
+    return partitionIndex(localIndex, tableSizes[t], tid);
 }
 
 Addr
-MicroTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
+MicroTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash, ThreadID tid)
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
+    return getTageIndex(pc, t, historyState(tid).indexFoldedHist[t].get(),
+                        asidHash, tid);
 }
 
 bool
@@ -983,10 +1300,12 @@ MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
  */
 void
 MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, const PathHistoryUpdate &update)
+    const HistoryRecoveryContext &context, const PathHistoryUpdate &update)
 {
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<TageMeta> predMeta =
+        std::static_pointer_cast<TageMeta>(
+            context.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "recoverPHist: no prediction metadata, cannot recover\n");
         return;
@@ -1020,7 +1339,8 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
     }
-    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
+    doUpdateHist(
+        history, update.taken, update.pc, update.target, context.tid);
 }
 
 // Check folded history after speculative update and recovery
@@ -1079,6 +1399,43 @@ MicroTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, in
 
     ADD_STAT(updateUtageHit, statistics::units::Count::get(), "number of updates where utage provided the main prediction"),
     ADD_STAT(updateUtageHitWrong, statistics::units::Count::get(), "number of updates where utage prediction was wrong"),
+
+    ADD_STAT(s3UpdateEntries, statistics::units::Count::get(),
+             "number of conditional entries trained by S3 teacher update"),
+    ADD_STAT(s3UpdateNoMeta, statistics::units::Count::get(),
+             "number of S3 teacher updates skipped due to missing prediction metadata"),
+    ADD_STAT(s3UpdateNoHitUseBim, statistics::units::Count::get(),
+             "use bimodal when no hit on S3 teacher update"),
+    ADD_STAT(s3UpdateUseAlt, statistics::units::Count::get(),
+             "use alt on S3 teacher update"),
+    ADD_STAT(s3UpdateUseAltCorrect, statistics::units::Count::get(),
+             "use alt on S3 teacher update and correct"),
+    ADD_STAT(s3UpdateUseAltWrong, statistics::units::Count::get(),
+             "use alt on S3 teacher update and wrong"),
+    ADD_STAT(s3UpdateAltDiffers, statistics::units::Count::get(),
+             "alt differs on S3 teacher update"),
+    ADD_STAT(s3UpdateUseAltOnNaUpdated, statistics::units::Count::get(),
+             "use alt on na ctr updated during S3 teacher update"),
+    ADD_STAT(s3UpdateProviderNa, statistics::units::Count::get(),
+             "provider weak during S3 teacher update"),
+    ADD_STAT(s3UpdateUseAltOnNaCorrect, statistics::units::Count::get(),
+             "use alt on na correct during S3 teacher update"),
+    ADD_STAT(s3UpdateUseAltOnNaWrong, statistics::units::Count::get(),
+             "use alt on na wrong during S3 teacher update"),
+    ADD_STAT(s3UpdateAllocFailure, statistics::units::Count::get(),
+             "alloc failure during S3 teacher update"),
+    ADD_STAT(s3UpdateAllocFailureNoValidTable, statistics::units::Count::get(),
+             "alloc failure with no valid table during S3 teacher update"),
+    ADD_STAT(s3UpdateAllocSuccess, statistics::units::Count::get(),
+             "alloc success during S3 teacher update"),
+    ADD_STAT(s3UpdateMispred, statistics::units::Count::get(),
+             "teacher mismatch during S3 teacher update"),
+    ADD_STAT(s3UpdateResetU, statistics::units::Count::get(),
+             "reset u during S3 teacher update"),
+    ADD_STAT(s3UpdateUtageHit, statistics::units::Count::get(),
+             "number of S3 teacher updates where utage provided the main prediction"),
+    ADD_STAT(s3UpdateUtageHitWrong, statistics::units::Count::get(),
+             "number of S3 teacher updates where utage prediction disagreed with the S3 teacher"),
 
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
     ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
@@ -1141,18 +1498,20 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
 
 #ifndef UNIT_TEST
 void
-MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+MicroTAGE::commitBranch(const PredictionUpdateContext &context,
+                        const BranchOutcome &outcome)
 {
-    if (!inst->isCondCtrl()) {
+    if (!outcome.isCond) {
         // tage only deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
     if (!meta) {
         DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
         return;
     }
-    auto pc = inst->pcState().instAddr();
+    auto pc = outcome.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;
@@ -1160,7 +1519,7 @@ MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = outcome.taken;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

@@ -38,11 +38,15 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     // ignore if pfahead_host > itself level
     if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true) &&
         (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
-        if (pfLRUFilter.contains(ptr->pfInfo.getAddr())) {
-            DPRINTF(WorkerPref, "Worker: offload: [%lx, %d] skip recently in localBuffer\n", ptr->pfInfo.getAddr(), ptr->pfahead_host);
+        Addr filter_key = sharedFilterKey(ptr->pfInfo, ptr->pfInfo.getAddr());
+        if (pfLRUFilter.contains(filter_key)) {
+            DPRINTF(WorkerPref,
+                    "Worker: offload: [%lx, %d] skip recently in "
+                    "localBuffer\n",
+                    ptr->pfInfo.getAddr(), ptr->pfahead_host);
             return;
         }
-        pfLRUFilter.insert(ptr->pfInfo.getAddr(),0);
+        pfLRUFilter.insert(filter_key, 0);
     }
 
     workerStats.hintsReceived++;
@@ -50,6 +54,10 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
     DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
             localBuffer.size());
     localBuffer.push_back(*ptr);
+
+    if (!transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 void
@@ -59,29 +67,49 @@ WorkerPrefetcher::transfer()
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
+        auto drop_local_packet = [&dpp_it]() {
+            if (dpp_it->pkt != nullptr) {
+                delete dpp_it->pkt;
+                dpp_it->pkt = nullptr;
+            }
+        };
         if (queueFilter) {
             if (alreadyInQueue(pfq, dpp_it->pfInfo, dpp_it->priority)) {
+                drop_local_packet();
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
             } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo,
                                       dpp_it->priority)) {
+                drop_local_packet();
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
+            } else if (!admitPfControlDeferredPacket(*dpp_it)) {
+                drop_local_packet();
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] dropped by PF control admission\n",
+                        dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
             } else {
                 addToQueue(pfq, *dpp_it);
                 DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
             }
         } else {
-            addToQueue(pfq, *dpp_it);
-            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
-                    dpp_it->pfahead_host);
+            if (!admitPfControlDeferredPacket(*dpp_it)) {
+                drop_local_packet();
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] dropped by PF control admission\n",
+                        dpp_it->pfInfo.getAddr(), dpp_it->pfahead_host);
+            } else {
+                addToQueue(pfq, *dpp_it);
+                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
+                        dpp_it->pfahead_host);
+            }
         }
         dpp_it = localBuffer.erase(dpp_it);
         count++;
         latestTransferTick = curTick();
     }
-    schedule(transferEvent, nextCycle());
+    if (!localBuffer.empty() && !transferEvent->scheduled()) {
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 }  // namespace prefetch

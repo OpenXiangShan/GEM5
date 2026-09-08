@@ -64,7 +64,7 @@ class DefaultRequestPort : public RequestPort
     }
 
   public:
-    DefaultRequestPort() : RequestPort("default_request_port", nullptr) {}
+    DefaultRequestPort() : RequestPort("default_request_port") {}
 
     // Atomic protocol.
     Tick recvAtomicSnoop(PacketPtr) override { blowUp(); }
@@ -89,7 +89,7 @@ class DefaultResponsePort : public ResponsePort
     }
 
   public:
-    DefaultResponsePort() : ResponsePort("default_response_port", nullptr) {}
+    DefaultResponsePort() : ResponsePort("default_response_port") {}
 
     // Atomic protocol.
     Tick recvAtomic(PacketPtr) override { blowUp(); }
@@ -112,12 +112,8 @@ DefaultResponsePort defaultResponsePort;
 
 } // anonymous namespace
 
-/**
- * Request port
- */
-RequestPort::RequestPort(const std::string& name, SimObject* _owner,
-    PortID _id) : Port(name, _id), _responsePort(&defaultResponsePort),
-    owner(*_owner)
+RequestPort::RequestPort(const std::string &name, PortID _id)
+    : Port(name, _id), _responsePort(&defaultResponsePort)
 {
 }
 
@@ -170,9 +166,11 @@ RequestPort::printAddr(Addr a)
 /**
  * Response port
  */
-ResponsePort::ResponsePort(const std::string& name, SimObject* _owner,
-    PortID id) : Port(name, id), _requestPort(&defaultRequestPort),
-    defaultBackdoorWarned(false), owner(*_owner)
+
+ResponsePort::ResponsePort(const std::string &name, PortID id)
+    : Port(name, id),
+      _requestPort(&defaultRequestPort),
+      defaultBackdoorWarned(false)
 {
 }
 

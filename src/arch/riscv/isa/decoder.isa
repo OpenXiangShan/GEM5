@@ -194,7 +194,7 @@ decode QUADRANT {
                     return std::make_shared<IllegalInstFault>(
                             "source reg x0", machInst);
                 }
-                Rc1_sw = (int32_t)(Rc1_sw + imm);
+                Rc1 = szext<32>(Rc1 + imm);
             }});
             0x2: c_li({{
                 imm = CIMM5;
@@ -285,10 +285,10 @@ decode QUADRANT {
                     }
                     0x1: decode CFUNCT2LOW {
                         0x0: c_subw({{
-                            Rp1_sd = (int32_t)Rp1_sd - Rp2_sw;
+                            Rp1 = szext<32>(Rp1 - Rp2);
                         }});
                         0x1: c_addw({{
-                            Rp1_sd = (int32_t)Rp1_sd + Rp2_sw;
+                            Rp1 = szext<32>(Rp1 + Rp2);
                         }});
                         0x2: c_mul({{
                             Rp1_sd = (Rp1_sd * Rp2_sd);
@@ -737,11 +737,11 @@ decode QUADRANT {
         0x06: decode FUNCT3 {
             format IOp {
                 0x0: addiw({{
-                    Rd_sw = (int32_t)(Rs1_sw + imm);
+                    Rd = szext<32>(Rs1 + imm);
                 }}, int32_t);
                 0x1: decode FS3 {
                     0x0: slliw({{
-                        Rd_sd = Rs1_sw << imm;
+                        Rd = szext<32>(Rs1 << imm);
                     }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT5; }});
                     0x1: slli_uw({{
                         Rd = ((uint64_t)(Rs1_uw)) << imm;
@@ -852,9 +852,9 @@ decode QUADRANT {
                 0x0: AtomicMemOp::amoadd_w({{
                     Rd_sd = Mem_sw;
                 }}, {{
-                    TypedAtomicOpFunctor<int32_t> *amo_op =
-                          new AtomicGenericOp<int32_t>(Rs2_sw,
-                                  [](int32_t* b, int32_t a){ *b += a; });
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGenericOp<uint32_t>(Rs2_sw,
+                                  [](uint32_t* b, uint32_t a){ *b += a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x1: AtomicMemOp::amoswap_w({{
                     Rd_sd = Mem_sw;
@@ -862,6 +862,17 @@ decode QUADRANT {
                     TypedAtomicOpFunctor<uint32_t> *amo_op =
                           new AtomicGenericOp<uint32_t>(Rs2_uw,
                                   [](uint32_t* b, uint32_t a){ *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+                0x5: AtomicMemOp::amocas_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGeneric3Op<uint32_t>(Rs2_uw, Rd_sd,
+                                  [](uint32_t* b, uint32_t desired,
+                                     uint32_t expected) {
+                                      if (*b == expected)
+                                          *b = desired;
+                                  });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x4: AtomicMemOp::amoxor_w({{
                     Rd_sd = Mem_sw;
@@ -936,6 +947,17 @@ decode QUADRANT {
                           new AtomicGenericOp<uint64_t>(Rs2_ud,
                                   [](uint64_t* b, uint64_t a){ *b = a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+                0x5: AtomicMemOp::amocas_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                          new AtomicGeneric3Op<uint64_t>(Rs2_ud, Rd_sd,
+                                  [](uint64_t* b, uint64_t desired,
+                                     uint64_t expected) {
+                                      if (*b == expected)
+                                          *b = desired;
+                                  });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x4: AtomicMemOp::amoxor_d({{
                     Rd_sd = Mem_sd;
                 }}, {{
@@ -986,6 +1008,33 @@ decode QUADRANT {
                         [](uint64_t* b, uint64_t a){ if (a > *b) *b = a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
             }
+            0x4: decode AMOFUNCT {
+                0x5: AtomicMemOp::amocas_q({{
+                    Rd = Mem_tud[0];
+                    RdHi = Mem_tud[1];
+                }}, {{
+                    if ((RD & 1) || (RS2 & 1)) {
+                        return std::make_shared<IllegalInstFault>(
+                                "AMOCAS.Q requires even rd and rs2",
+                                machInst);
+                    }
+
+                    Mem_tud = {Rd, RdHi};
+                    std::array<uint64_t, 2> desired = {Rs2, Rs2Hi};
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                        new AtomicGenericPair3Op<uint64_t>(
+                                Mem_tud, desired,
+                                [](uint64_t *memory,
+                                   std::array<uint64_t, 2> &expected,
+                                   std::array<uint64_t, 2> desired) {
+                                    if (memory[0] == expected[0] &&
+                                        memory[1] == expected[1]) {
+                                        memory[0] = desired[0];
+                                        memory[1] = desired[1];
+                                    }
+                                });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+            }
         }
         0x0c: decode FUNCT3 {
             format ROp {
@@ -1000,7 +1049,7 @@ decode QUADRANT {
                     }
                     0x01: decode BS {
                         0x0: mul({{
-                            Rd = Rs1_sd * Rs2_sd;
+                            Rd = Rs1_ud * Rs2_ud;
                         }}, IntMultOp);
                     }
                     0x18: sm4ed({{
@@ -1118,6 +1167,10 @@ decode QUADRANT {
                             Rd_sd = Rs1_sd/Rs2_sd;
                         }
                     }}, IntDivOp);
+                    0x4: pack({{
+                        Rd = (bits(Rs2, 31, 0) << 32) | bits(Rs1, 31, 0);
+
+                    }});
                     0x5: min({{
                         Rd = (((int64_t) Rs1) < ((int64_t) Rs2)) ? Rs1 : Rs2;
                     }});
@@ -1196,6 +1249,10 @@ decode QUADRANT {
                             Rd = Rs1%Rs2;
                         }
                     }}, IntDivOp);
+                    0x4: packh({{
+                        // It doesn't need to sign ext as MSB is always 0
+                        Rd = (Rs2_ub << 8) | Rs1_ub;
+                    }});
                     0x5: maxu({{
                         Rd = Rs1 > Rs2 ? Rs1 : Rs2;
                     }});
@@ -1217,21 +1274,21 @@ decode QUADRANT {
             format ROp {
                 0x0: decode FUNCT7 {
                     0x0: addw({{
-                        Rd_sd = Rs1_sw + Rs2_sw;
+                        Rd = szext<32>(Rs1 + Rs2);
                     }});
                     0x1: mulw({{
-                        Rd_sd = (int32_t)(Rs1_sw*Rs2_sw);
+                        Rd = szext<32>(Rs1 * Rs2);
                     }}, IntMultOp);
                     0x4: add_uw({{
                         Rd = Rs1_uw + Rs2;
                     }});
                     0x20: subw({{
-                        Rd_sd = Rs1_sw - Rs2_sw;
+                        Rd = szext<32>(Rs1 - Rs2);
                     }});
                 }
                 0x1: decode FUNCT7 {
                     0x0: sllw({{
-                        Rd_sd = Rs1_sw << Rs2<4:0>;
+                        Rd = szext<32>(Rs1 << Rs2<4:0>);
                     }});
                     0x30: rolw({{
                         int shamt = Rs2 & (32 - 1);
@@ -1254,9 +1311,17 @@ decode QUADRANT {
                             Rd_sd = Rs1_sw/Rs2_sw;
                         }
                     }}, IntDivOp);
-                    0x4: zext_h({{
-                        Rd = Rs1_uh;
-                    }});
+                    0x4: decode RS2 {
+                        0x0: zext_h({{
+                            Rd = Rs1_uh;
+                        }});
+                        // In terms of functionality, we can execute zext.h like packw (Rs2_uh = 0).
+                        // However, instruction fusion relies on zext.h, so we do a 'decode RS2' to distinct them.
+                        // refer to src/arch/riscv/insts/fusion.cc.
+                        default: packw({{
+                            Rd_sd = szext<32>((static_cast<uint32_t>(Rs2_uh) << 16) | static_cast<uint32_t>(Rs1_uh));
+                        }});
+                    }
                     0x10: sh2add_uw({{
                         Rd = (((uint64_t)Rs1_uw) << 2) + Rs2;
                     }});
@@ -1708,6 +1773,45 @@ decode QUADRANT {
                         fd = freg(f16_to_f32(f16(freg(Fs1_bits))));
                         Fd_bits = fd.v;
                     }}, FloatCvtOp);
+                    0x4: fround_s({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f32_roundToInt(
+                            f32(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            false));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatCvtOp);
+
+                    0x5: froundnx_s({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f32_roundToInt(
+                            f32(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            true));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatCvtOp);
                 }
                 0x21: decode CONV_SGN {
                     0x0: fcvt_d_s({{
@@ -1728,6 +1832,45 @@ decode QUADRANT {
                         freg_t fd;
                         fd = freg(f16_to_f64(f16(freg(Fs1_bits))));
                         Fd_bits = fd.v;
+                    }}, FloatCvtOp);
+                    0x4: fround_d({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f64_roundToInt(
+                            f64(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            false));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatCvtOp);
+
+                    0x5: froundnx_d({{
+                        RM_REQUIRED;
+                        freg_t fd;
+                        fd = freg(f64_roundToInt(
+                            f64(freg(Fs1_bits)),
+                            softfloat_roundingMode,
+                            true));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
                     }}, FloatCvtOp);
                 }
                 0x22: decode CONV_SGN {
@@ -2023,30 +2166,211 @@ decode QUADRANT {
                         Rd = f16_classify(f16(freg(Fs1_bits)));
                     }}, FloatMiscOp);
                 }
-                0x78: fmv_w_x({{
-                    freg_t fd;
-                    fd = freg(f32(Rs1_uw));
-                    Fd_bits = fd.v;
-                    status.fs = 3;
-                    xc->setMiscReg(MISCREG_STATUS,status);
-                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                0x78: decode RS2 {
+                    0x0: fmv_w_x({{
+                        freg_t fd;
+                        fd = freg(f32(Rs1_uw));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
                             vsstatus.fs = 3;
-                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
-                    }
-                }}, FloatMvOp);
-                0x79: fmv_d_x({{
-                    freg_t fd;
-                    fd = freg(f64(Rs1));
-                    Fd_bits = fd.v;
-                    status.fs = 3;
-                    xc->setMiscReg(MISCREG_STATUS,status);
-                }}, FloatMvOp);
-                0x7a: fmv_h_x({{
-                    freg_t fd;
-                    fd = freg(f16(Rs1_uh));
-                    Fd_bits = fd.v;
-                }}, FloatMvOp);
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+
+                    0x1: fli_s({{
+                        static const uint32_t fliSTable[32] = {
+                            0xbf800000U, //  0: -1.0
+                            0x00800000U, //  1: min positive normal
+                            0x37800000U, //  2: 2^-16
+                            0x38000000U, //  3: 2^-15
+                            0x3b800000U, //  4: 2^-8
+                            0x3c000000U, //  5: 2^-7
+                            0x3d800000U, //  6: 2^-4
+                            0x3e000000U, //  7: 2^-3
+                            0x3e800000U, //  8: 0.25
+                            0x3ea00000U, //  9: 0.3125
+                            0x3ec00000U, // 10: 0.375
+                            0x3ee00000U, // 11: 0.4375
+                            0x3f000000U, // 12: 0.5
+                            0x3f200000U, // 13: 0.625
+                            0x3f400000U, // 14: 0.75
+                            0x3f600000U, // 15: 0.875
+                            0x3f800000U, // 16: 1.0
+                            0x3fa00000U, // 17: 1.25
+                            0x3fc00000U, // 18: 1.5
+                            0x3fe00000U, // 19: 1.75
+                            0x40000000U, // 20: 2.0
+                            0x40200000U, // 21: 2.5
+                            0x40400000U, // 22: 3.0
+                            0x40800000U, // 23: 4.0
+                            0x41000000U, // 24: 8.0
+                            0x41800000U, // 25: 16.0
+                            0x43000000U, // 26: 128.0
+                            0x43800000U, // 27: 256.0
+                            0x47000000U, // 28: 2^15
+                            0x47800000U, // 29: 2^16
+                            0x7f800000U, // 30: +infinity
+                            0x7fc00000U  // 31: canonical NaN
+                        };
+
+                        freg_t fd;
+                        fd = freg(f32(fliSTable[RS1]));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+                }
+                0x79: decode RS2 {
+                    0x0: fmv_d_x({{
+                        freg_t fd;
+                        fd = freg(f64(Rs1));
+                        Fd_bits = fd.v;
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+
+                    0x1: fli_d({{
+                        static const uint64_t fliDTable[32] = {
+                            0xbff0000000000000ULL,
+                            0x0010000000000000ULL,
+                            0x3ef0000000000000ULL,
+                            0x3f00000000000000ULL,
+                            0x3f70000000000000ULL,
+                            0x3f80000000000000ULL,
+                            0x3fb0000000000000ULL,
+                            0x3fc0000000000000ULL,
+                            0x3fd0000000000000ULL,
+                            0x3fd4000000000000ULL,
+                            0x3fd8000000000000ULL,
+                            0x3fdc000000000000ULL,
+                            0x3fe0000000000000ULL,
+                            0x3fe4000000000000ULL,
+                            0x3fe8000000000000ULL,
+                            0x3fec000000000000ULL,
+                            0x3ff0000000000000ULL,
+                            0x3ff4000000000000ULL,
+                            0x3ff8000000000000ULL,
+                            0x3ffc000000000000ULL,
+                            0x4000000000000000ULL,
+                            0x4004000000000000ULL,
+                            0x4008000000000000ULL,
+                            0x4010000000000000ULL,
+                            0x4020000000000000ULL,
+                            0x4030000000000000ULL,
+                            0x4060000000000000ULL,
+                            0x4070000000000000ULL,
+                            0x40e0000000000000ULL,
+                            0x40f0000000000000ULL,
+                            0x7ff0000000000000ULL,
+                            0x7ff8000000000000ULL
+                        };
+
+                        Fd_bits = fliDTable[RS1];
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+                }
+                0x7a: decode RS2 {
+                    0x0: fmv_h_x({{
+                        freg_t fd;
+                        fd = freg(f16(Rs1_uh));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+
+                    0x1: fli_h({{
+                        static const uint16_t fliHTable[32] = {
+                            0xbc00U, //  0: -1.0
+                            0x0400U, //  1: min positive normal
+                            0x0100U, //  2: 2^-16, subnormal
+                            0x0200U, //  3: 2^-15, subnormal
+                            0x1c00U, //  4: 2^-8
+                            0x2000U, //  5: 2^-7
+                            0x2c00U, //  6: 2^-4
+                            0x3000U, //  7: 2^-3
+                            0x3400U, //  8: 0.25
+                            0x3500U, //  9: 0.3125
+                            0x3600U, // 10: 0.375
+                            0x3700U, // 11: 0.4375
+                            0x3800U, // 12: 0.5
+                            0x3900U, // 13: 0.625
+                            0x3a00U, // 14: 0.75
+                            0x3b00U, // 15: 0.875
+                            0x3c00U, // 16: 1.0
+                            0x3d00U, // 17: 1.25
+                            0x3e00U, // 18: 1.5
+                            0x3f00U, // 19: 1.75
+                            0x4000U, // 20: 2.0
+                            0x4100U, // 21: 2.5
+                            0x4200U, // 22: 3.0
+                            0x4400U, // 23: 4.0
+                            0x4800U, // 24: 8.0
+                            0x4c00U, // 25: 16.0
+                            0x5800U, // 26: 128.0
+                            0x5c00U, // 27: 256.0
+                            0x7800U, // 28: 2^15
+                            0x7c00U, // 29: +infinity
+                            0x7c00U, // 30: +infinity
+                            0x7e00U  // 31: canonical NaN
+                        };
+
+                        freg_t fd;
+                        fd = freg(f16(fliHTable[RS1]));
+                        Fd_bits = fd.v;
+
+                        status.fs = 3;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            STATUS vsstatus =
+                                xc->readMiscReg(MISCREG_VSSTATUS);
+                            vsstatus.fs = 3;
+                            xc->setMiscReg(
+                                MISCREG_VSSTATUS, vsstatus);
+                        }
+                    }}, FloatMvOp);
+                }
             }
         }
 
@@ -2229,6 +2553,52 @@ decode QUADRANT {
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
                     }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
                         IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    0xb: sinval_vma({{
+                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                        HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                        int v = xc->readMiscReg(MISCREG_VIRMODE);
+                        auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                        if (v &&
+                            (pm == PRV_U ||
+                             (pm == PRV_S && hstatus.vtvm == 1))) {
+                            return std::make_shared<HVFault>();
+                        }
+                        if (!v &&
+                            (pm == PRV_U ||
+                             (pm == PRV_S && status.tvm == 1))) {
+                            return std::make_shared<IllegalInstFault>(
+                                "sinval_vma in user mode or TVM enabled",
+                                machInst);
+                        }
+                        xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+                    }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                        IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    0xc: decode RS2 {
+                        0x0: sfence_w_inval({{
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                            if (v && pm == PRV_U) {
+                                return std::make_shared<HVFault>();
+                            }
+                            if (!v && pm == PRV_U) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "sfence_w_inval in user mode", machInst);
+                            }
+                        }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                        0x1: sfence_inval_ir({{
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                            if (v && pm == PRV_U) {
+                                return std::make_shared<HVFault>();
+                            }
+                            if (!v && pm == PRV_U) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "sfence_inval_ir in user mode", machInst);
+                            }
+                        }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    }
                     0x18: mret({{
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             return std::make_shared<IllegalInstFault>(

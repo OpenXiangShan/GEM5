@@ -86,13 +86,14 @@ FTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullFTBPrediction
     auto takenSlot = pred.getTakenSlot();
     DPRINTFR(RAS, "Do specUpdate for PC %x pred target %x ", pred.bbStart, pred.returnTarget);
 
-    if (takenSlot.isCall) {
-        Addr retAddr = takenSlot.pc + takenSlot.size;
-        push(retAddr);
-    }
+    // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
     if (takenSlot.isReturn) {
         // do pop
         pop();
+    }
+    if (takenSlot.isCall) {
+        Addr retAddr = takenSlot.pc + takenSlot.size;
+        push(retAddr);
     }
     if (takenSlot.isCall) {
         DPRINTFR(RAS, "IsCall spec PC %x\n", takenSlot.pc);
@@ -126,12 +127,13 @@ FTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &e
 
     // do push & pops on control squash
     if (entry.exeTaken) {
-        if (takenSlot.isCall) {
-            push(retAddr);
-        }
+        // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
         if (takenSlot.isReturn) {
             pop();
             //TOSW = (TOSR + 1) % numInflightEntries;
+        }
+        if (takenSlot.isCall) {
+            push(retAddr);
         }
     }
 
@@ -157,15 +159,16 @@ FTBRAS::update(const FetchStream &entry)
             nsp = meta_ptr->ssp;
         } else
             DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n", meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
+        // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
+        if (takenSlot.isReturn) {
+            DPRINTF(RAS, "update ret entry PC %x\n", entry.startPC);
+            pop_stack();
+        }
         if (takenSlot.isCall) {
             DPRINTF(RAS, "real update call FTB hit %d meta TOSR %d TOSW %d\n entry PC %x", entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenSlot.pc + takenSlot.size;
             push_stack(retAddr);
             BOS = inflightPtrPlus1(meta_ptr->TOSW);
-        }
-        if (takenSlot.isReturn) {
-            DPRINTF(RAS, "update ret entry PC %x\n", entry.startPC);
-            pop_stack();
         }
     }
     if (takenSlot.isCall || takenSlot.isReturn) {

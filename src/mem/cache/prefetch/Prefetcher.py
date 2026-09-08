@@ -188,6 +188,52 @@ class QueuedPrefetcher(BasePrefetcher):
     throttle_control_percentage = Param.Percent(0, "Percentage of requests \
         that can be throttled depending on the accuracy of the prefetcher.")
 
+    pf_control = Param.Bool(False,
+        "Enable windowed prefetch admission control")
+    pf_control_window = Param.Cycles(100000,
+        "Cycles per prefetch control window")
+    pf_control_admit_pct = Param.Percent(100,
+        "Fallback prefetch admission percentage for prefetch control")
+    pf_control_sweep = VectorParam.Unsigned([],
+        "Optional list of admission percentages to sweep, each in [0, 100]")
+    pf_control_source_admit_pcts = VectorParam.Int([],
+        "Optional per-PrefetchSourceType admission percentages; -1 means use "
+        "the global prefetch control action")
+    pf_control_sweep_windows = Param.Unsigned(1,
+        "Number of windows to hold each prefetch control action")
+    pf_control_warmup_windows = Param.Unsigned(0,
+        "Number of initial windows using the fallback admission percentage")
+    pf_adaptive = Param.Bool(False,
+        "Enable online PFBad-guided prefetch adaptive admission")
+    pf_adaptive_min_pct = Param.Percent(5,
+        "Minimum per-source admission percentage for adaptive mode")
+    pf_adaptive_pct_quantum = Param.Percent(10,
+        "Adaptive admission percentage quantization step")
+    pf_adaptive_gradient_step = Param.Int(10,
+        "Adaptive per-source gradient step in percentage points")
+    pf_adaptive_pfbad_weight_numer = Param.Unsigned(3,
+        "PFBad penalty weight numerator")
+    pf_adaptive_pfbad_weight_denom = Param.Unsigned(2,
+        "PFBad penalty weight denominator")
+    pf_adaptive_dpf_min_samples = Param.Unsigned(1,
+        "Minimum useful+bad samples before trusting adaptive gradient")
+    pf_adaptive_dpf_deadband = Param.Int(0,
+        "Deadband around zero useful-bad adaptive gradient score")
+    pf_adaptive_improve_margin_bps = Param.Unsigned(0,
+        "Required demand miss-rate improvement in basis points")
+    pf_adaptive_history_fallback = Param.Bool(True,
+        "Use historical best miss-rate samples as adaptive fallback")
+    pf_adaptive_best_topk = Param.Unsigned(1,
+        "Number of best FIFO samples averaged for adaptive fallback pct")
+    pf_adaptive_table_entries = Param.Unsigned(32,
+        "Adaptive FIFO experience table entries")
+    pf_adaptive_pfbad_entries = Param.Unsigned(0,
+        "Adaptive PFBad detection table entries")
+    pf_adaptive_warmup_windows = Param.Unsigned(1,
+        "Initial completed windows before adaptive threshold updates")
+    pf_adaptive_max_source_step = Param.Percent(10,
+        "Maximum per-source admission movement per adaptive update")
+
     max_pfahead_recv = Param.Int(1,"Maximum number of pfahead received")
     use_pf_buffer = Param.Bool(False, "use prefetch buffer to filter prefetches")
     max_pf_buffer_size = Param.Int(16, "size of prefetch buffer")
@@ -299,7 +345,11 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     on_write = False
     on_data  = True
     on_inst  = False
-    xs_stream_depth = Param.Int(32, "The depth of xs_stream_depth")
+    xs_stream_depth = Param.Int(64, "The depth of xs_stream_depth")
+    xs_stream_l2_depth = Param.Unsigned(
+        640,
+        "L2 stream lookahead in cache blocks; zero derives from depth << 2"
+    )
     enable_auto_depth = Param.Bool(False, "enable autp depth.")
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
     xs_stream_entries = Param.MemorySize(
@@ -569,6 +619,22 @@ class CDP(QueuedPrefetcher):
         "How many blks a region can track")
     filter_entry_granularity = Param.Unsigned(4096,
         "How many bytes a blk in a region can track")
+    use_dynamic_degree = Param.Bool(
+        True,
+        "Enable accuracy-based CDP degree control"
+    )
+    accuracy_threshold = Param.Float(
+        0.05,
+        "Accuracy threshold for CDP degree extensions"
+    )
+    use_accuracy_dependent_alignment = Param.Bool(
+        True,
+        "Use the legacy accuracy-dependent pointer alignment"
+    )
+    cdp_use_sv48 = Param.Bool(
+        False,
+        "Use Sv48 virtual-address recognition for CDP"
+    )
     throttle_aggressiveness = Param.Float(2.0,
         "A parameter to control the aggressiveness of throttling")
 

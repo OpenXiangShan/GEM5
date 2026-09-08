@@ -40,6 +40,7 @@
 #ifndef __CPU_PRED_BTB_BTB_HH__
 #define __CPU_PRED_BTB_BTB_HH__
 
+#include <algorithm>
 #include <memory>
 #include <queue>
 #include <tuple>
@@ -103,7 +104,6 @@ class AheadBTB : public TimedBaseBTBPredictor
      * - target: branch target address
      * - size: branch instruction size
      * - isCond/isIndirect/isCall/isReturn: branch type flags
-     * - alwaysTaken: whether this conditional branch is always taken
      * - ctr: 2-bit counter for conditional branch prediction
      */
     typedef struct TickedBTBEntry : public BTBEntry
@@ -129,7 +129,8 @@ class AheadBTB : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
@@ -152,8 +153,16 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Returns the prediction meta
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
-    void recoverState(const FetchTarget &entry);
+    /** Returns whether the last AheadBTB prediction produced any native hit
+     *  entries before mixing with uBTB stage-0 output.
+     */
+    bool lastPredHasEntries(ThreadID tid) const;
+
+    void recoverState(ThreadID tid);
 
 #ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per
@@ -173,14 +182,16 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
 
 
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
-            cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
+            cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
+            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect,
+            e.isCall, e.isReturn, tick);
     }
 
     std::vector<BTBEntry> collectEntriesToUpdateFromS3Pred(
@@ -224,9 +235,29 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC, uint8_t asidHash) {
+    static constexpr unsigned AbtbHashHistoryLength = 5;
+    static constexpr unsigned AbtbHashFoldedLength = 5;
+    static constexpr unsigned AbtbHashBits = 4;
+
+    inline Addr foldAbtbPhrHash(const boost::dynamic_bitset<> &history) const {
+        Addr folded = 0;
+        const unsigned hist_len =
+            std::min<unsigned>(AbtbHashHistoryLength, history.size());
+        for (unsigned bit = 0; bit < hist_len; ++bit) {
+            if (history[bit]) {
+                folded ^= (1ULL << (bit % AbtbHashFoldedLength));
+            }
+        }
+        return folded & mask(AbtbHashBits);
+    }
+
+    inline Addr getIndex(Addr instPC, uint8_t asidHash, ThreadID tid,
+                         Addr phrHash = 0) const {
         Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
-        return xorAsidHashIntoIndex(baseIndex, floorLog2(numSets), asidHash);
+        baseIndex ^= phrHash & idxMask;
+        Addr index = xorAsidHashIntoIndex(
+            baseIndex, floorLog2(numSets), asidHash);
+        return partitionIndex(index, numSets, tid);
     }
 
     /** Returns the tag bits of a given address.
@@ -235,11 +266,12 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC, uint8_t asidHash) {
-        Addr baseTag = (instPC >> tagShiftAmt) & tagMask;
+    inline Addr getTag(Addr instPC, uint8_t asidHash) const {
+        const unsigned shift = tagShiftAmt -
+            (usesTidPartitionedStorage() ? 1 : 0);
+        Addr baseTag = (instPC >> shift) & tagMask;
         return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
-
 
     /** Update the 2-bit saturating counter for conditional branches
      *  Counter range: [-2, 1]
@@ -251,13 +283,17 @@ class AheadBTB : public TimedBaseBTBPredictor
         if (!taken && ctr > -2) {ctr--;}
     }
 
-        typedef struct BTBMeta
+    typedef struct BTBMeta
     {
+        bool valid;
+        Addr indexPhrHash;
+        Addr lookupIndex;
+        bool lookupIndexValid;
         std::vector<BTBEntry> hit_entries;
-        BTBMeta() {
-            std::vector<BTBEntry> es;
-            hit_entries = es;
-        }
+        BTBMeta()
+            : valid(false), indexPhrHash(0), lookupIndex(0),
+              lookupIndexValid(false)
+        {}
     }BTBMeta;
 
     /**
@@ -277,6 +313,11 @@ class AheadBTB : public TimedBaseBTBPredictor
         * cycle, we can use this instead of BTBMeta.
         */
         std::vector<BTBEntry> lastPredEntries;
+        Addr lastPredIndexPhrHash = 0;
+        Addr lastPredLookupIndex = 0;
+        bool lastPredLookupIndexValid = false;
+        Addr currentLookupIndex = 0;
+        bool currentLookupIndexValid = false;
 
         std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
     };
@@ -292,6 +333,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
                                               Addr startAddr);
+    std::vector<TickedBTBEntry> processEntriesNoSideEffect(
+        const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
     /** Fill predictions for pipeline stages
      *  @param entries Processed BTB entries
@@ -305,7 +348,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                std::vector<FullBTBPrediction>& stagePreds,
-                               ThreadID tid);
+                               ThreadID tid,
+                               Addr indexPhrHash);
 
     /** Process prediction metadata and old entries
      *  @param meta BTB metadata from prediction
@@ -319,32 +363,26 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing prediction info
      *  @return Previous PC
      */
-    Addr getPreviousPC(const FetchTarget &stream);
+    Addr getPreviousPC(const PredictionUpdateContext &context);
 
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream,
-                           const BTBMeta* meta);
-
-    /** Collect entries that need to be updated
-     *  @param old_entries Processed old entries
-     *  @param stream Fetch stream with update info
-     *  @return Vector of entries to update
-     */
-    std::vector<BTBEntry> collectEntriesToUpdate(
-        const std::vector<BTBEntry>& old_entries,
-        const FetchTarget &stream);
+    void checkPredictionHit(const PredictionUpdateContext &context,
+                            const BTBMeta* meta,
+                            const PreparedUpdate &update);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry
      *  @param btb_tag Tag of the BTB entry
      *  @param entry Entry to update/replace
-     *  @param stream Fetch stream with update info
+     *  @param actual_taken Whether this entry was actually taken
+     *  @param actual_target Actual target when this entry was taken
      */
-    void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
-                                    const BranchInfo takenbranchinfo,const bool isTaken);
+    void updateBTBEntry(
+        Addr btb_idx, Addr btb_tag, const BTBEntry &entry,
+        bool actual_taken, Addr actual_target);
 
     /*
      * Comparator for MRU heap
@@ -384,14 +422,22 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Returns all hit BTB entries.
      */
     std::vector<TickedBTBEntry> lookup(Addr block_pc, ThreadID tid,
-                                       uint8_t asidHash);
+                                       uint8_t asidHash,
+                                       Addr indexPhrHash);
+    std::vector<TickedBTBEntry> lookupNoSideEffect(
+        Addr block_pc, ThreadID tid, uint8_t asidHash,
+        Addr indexPhrHash) const;
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
     std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, ThreadID tid,
-                                                  uint8_t asidHash);
+                                                  uint8_t asidHash,
+                                                  Addr indexPhrHash);
+    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(
+        Addr block_pc, ThreadID tid, uint8_t asidHash,
+        Addr indexPhrHash) const;
 
     /** The BTB structure:
      *  - Organized as numSets sets

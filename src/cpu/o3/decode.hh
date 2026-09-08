@@ -123,7 +123,14 @@ class Decode
     bool isDrained() const;
 
     /** Takes over from another CPU's thread. */
-    void takeOverFrom() { resetStage(); }
+    void
+    takeOverFrom()
+    {
+        resetStage();
+        for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+            decodedBranchHistory[tid].clear();
+        }
+    }
 
     /** Ticks decode, processing all input signals and decoding as many
      * instructions as possible.
@@ -135,7 +142,7 @@ class Decode
      * fetch, so this function mostly checks if PC-relative branches are
      * correct.
      */
-    void decodeInsts(ThreadID tid);
+    void decodeInsts(ThreadID tid, unsigned max_insts);
 
     void setIgnoreNextFusion(Addr pc) { ignoreFusionPC = pc; lastSetIgnoreTick = curTick(); }
 
@@ -145,6 +152,9 @@ class Decode
 
     /** Updates overall decode status based on all of the threads' statuses. */
     void updateActivate();
+
+    /** Measure decode bubbles (unutilized decode slots) for performance analysis */
+    void measureDecodeBubbles(unsigned insts_decoded, ThreadID tid);
 
     /** Separates instructions from fetch into individual lists of instructions
      * sorted by thread.
@@ -169,6 +179,14 @@ class Decode
      * squashing and clears block/unblock signals as needed.
      */
     unsigned squash(ThreadID tid);
+
+    BranchHistory &getBranchHistory(ThreadID tid)
+    {
+        return decodedBranchHistory[tid];
+    }
+
+    void squashBranchHistory(ThreadID tid, InstSeqNum squash_seq_num,
+                             bool include_squash_inst);
 
     void setFetchStage(Fetch *fetch_stage)
     {
@@ -216,8 +234,14 @@ class Decode
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
-    boost::circular_buffer<DynInstPtr> stallBuffer;
-    boost::circular_buffer<int> eachstallSize;
+    /** Speculative branch history used by path-sensitive MDP lookup. */
+    BranchHistory decodedBranchHistory[MaxThreads];
+
+    /** Per-thread stall buffers to avoid contention in SMT mode.
+     * Each thread has its own FIFO queue for backpressure isolation.
+     */
+    boost::circular_buffer<DynInstPtr> stallBuffer[MaxThreads];
+    boost::circular_buffer<int> eachstallSize[MaxThreads];
 
     /** Variable that tracks if decode has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
@@ -241,6 +265,10 @@ class Decode
 
     /** The width of decode, in instructions. */
     unsigned decodeWidth;
+    /** Distinct SMT threads allowed to decode in one cycle. */
+    unsigned numPreDispatchThreads;
+    /** Aggregate Decode->Rename link capacity. */
+    unsigned aggregateDecodeWidth;
 
     /** Index of instructions being sent to rename. */
     unsigned toRenameIndex;
@@ -284,12 +312,30 @@ class Decode
         statistics::Scalar controlMispred;
         /** Stat for total number of decoded instructions. */
         statistics::Scalar decodedInsts;
+        /** Distinct SMT threads decoded in one cycle. */
+        statistics::Distribution threadsDecodedPerCycle;
+        /** Instructions decoded across all SMT threads in one cycle. */
+        statistics::Distribution instsDecodedPerCycle;
         /** Stat for total number of squashed instructions. */
         statistics::Scalar squashedInsts;
         /** stat for total number of instructions that mispredicted due to pc. */
         statistics::Scalar mispredictedByPC;
         /** stat for total number of instructions that mispredicted due to npc. */
         statistics::Scalar mispredictedByNPC;
+        
+        // Decode bubbles statistics (analogous to fetchBubbles)
+        /** Unutilized decode pipeline slots while there is no backend-stall */
+        statistics::Scalar decodeBubbles;
+        /** Cycles that decode 0 instructions while there is no backend-stall */
+        statistics::Scalar decodeBubbles_max;
+        /** Per-thread decode bubbles for SMT analysis */
+        statistics::Vector smtDecodeBubbles;
+        /** Per-thread max decode bubbles for SMT analysis */
+        statistics::Vector smtDecodeBubbles_max;
+        /** Distribution of decoded instructions per cycle */
+        //statistics::Distribution decodedInstsDist;
+        /** Decode efficiency: actual decoded insts vs ideal width */
+        statistics::Formula decodeEfficiency;
     } stats;
 
     std::vector<StallReason> decodeStalls;

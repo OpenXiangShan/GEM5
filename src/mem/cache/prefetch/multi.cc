@@ -88,8 +88,11 @@ Multi::getPacket()
         if (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick()) {
             PacketPtr pkt = prefetchers[pf_turn]->getPacket();
             panic_if(!pkt, "Prefetcher is ready but didn't return a packet.");
-            prefetchStats.pfIssued++;
-            issuedPrefetches++;
+            if (issueStatsAreAtForwarder()) {
+                recordPrefetchDequeued(pkt);
+            } else {
+                recordIssuedPrefetch(pkt);
+            }
             return pkt;
         }
         pf_turn = (pf_turn + 1) % prefetchers.size();

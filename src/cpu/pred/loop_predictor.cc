@@ -278,7 +278,7 @@ bool
 LoopPredictor::loopPredict(ThreadID tid, Addr branch_pc, bool cond_branch,
                    BranchInfo* bi, bool prev_pred_taken, unsigned instShiftAmt)
 {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branch_pc == ObservingPC) {
         debugFlagOn = true;
     }
@@ -339,7 +339,7 @@ LoopPredictor::condBranchUpdate(ThreadID tid, Addr branch_pc, bool taken,
                                 unsigned instShiftAmt)
 {
 
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branch_pc == ObservingPC) {
         debugFlagOn = true;
     }

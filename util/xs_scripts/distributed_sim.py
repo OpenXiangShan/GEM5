@@ -32,7 +32,12 @@ DEFAULT_MARKER_TIMEOUT_SEC = 30.0
 DEFAULT_LAUNCH_RETRIES = 2
 DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
 DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
+NO_ELIGIBLE_SERVERS_EXIT_CODE = 75
 ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+class NoEligibleServersError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -192,7 +197,7 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         default=DEFAULT_LAUNCH_INTERVAL_SEC,
         help=(
             "Seconds to wait between starting jobs. This avoids large SSH "
-            "connection bursts through a dispatch host."
+            "connection bursts."
         ),
     )
     parser.add_argument(
@@ -212,16 +217,6 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         help=(
             "Optional SSH user for worker servers. If omitted, ssh uses its "
             "normal user/config resolution."
-        ),
-    )
-    parser.add_argument(
-        "--dispatch-host",
-        default="",
-        help=(
-            "Optional SSH host used as a dispatch point. When set, worker "
-            "commands are launched by first ssh'ing to this host, then ssh'ing "
-            "from there to the worker server. This is useful when compute nodes "
-            "are only reachable from a login host."
         ),
     )
     parser.add_argument(
@@ -533,7 +528,6 @@ def launch_job(
     ssh_config: str,
     ssh_options: list[str],
     ssh_user: str,
-    dispatch_host: str,
     attempt: int,
 ) -> PendingJob:
     if server.name == "local":
@@ -557,13 +551,6 @@ def launch_job(
                 "ServerAliveCountMax=576",
             ],
         )
-        if dispatch_host:
-            ssh_cmd = wrap_with_dispatch_host(
-                ssh_cmd=ssh_cmd,
-                dispatch_host=dispatch_host,
-                ssh_config=ssh_config,
-                ssh_options=ssh_options,
-            )
         proc = subprocess.Popen(
             ssh_cmd,
             stdout=subprocess.PIPE,
@@ -588,7 +575,6 @@ def run_host_command(
     ssh_config: str,
     ssh_options: list[str],
     ssh_user: str,
-    dispatch_host: str,
     timeout: float,
 ) -> subprocess.CompletedProcess[bytes]:
     if server_name == "local":
@@ -611,13 +597,6 @@ def run_host_command(
             "TCPKeepAlive=yes",
         ],
     )
-    if dispatch_host:
-        ssh_cmd = wrap_with_dispatch_host(
-            ssh_cmd=ssh_cmd,
-            dispatch_host=dispatch_host,
-            ssh_config=ssh_config,
-            ssh_options=ssh_options,
-        )
     return subprocess.run(
         ssh_cmd,
         stdout=subprocess.PIPE,
@@ -625,6 +604,48 @@ def run_host_command(
         timeout=timeout,
         check=False,
     )
+
+
+def _format_seconds(value: float) -> str:
+    return f"{value:g}s"
+
+
+def _compact_message(text: str, *, limit: int = 240) -> str:
+    compact = " ".join(text.strip().split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def _cluster_node_ip(server_name: str) -> str | None:
+    match = re.fullmatch(r"node0*(\d+)(?:\..*)?", server_name)
+    if match is None:
+        return None
+    node_id = int(match.group(1))
+    if not 1 <= node_id <= 254:
+        return None
+    return f"172.19.20.{node_id}"
+
+
+def _idle_probe_target(server_name: str, ssh_user: str) -> str:
+    if server_name == "local":
+        return "local"
+    target = make_ssh_target(server_name, ssh_user)
+    ip = _cluster_node_ip(server_name)
+    if ip is not None:
+        return f"{target} ({ip})"
+    return target
+
+
+def _idle_probe_context(
+    *,
+    server_name: str,
+    ssh_user: str,
+) -> str:
+    if server_name == "local":
+        return "locally"
+    target = _idle_probe_target(server_name, ssh_user)
+    return f"to {target}"
 
 
 def make_ssh_target(server_name: str, ssh_user: str) -> str:
@@ -655,27 +676,6 @@ def build_ssh_command(
     return ssh_cmd
 
 
-def wrap_with_dispatch_host(
-    ssh_cmd: list[str],
-    dispatch_host: str,
-    ssh_config: str,
-    ssh_options: list[str],
-) -> list[str]:
-    validate_ssh_target_name(dispatch_host, "--dispatch-host")
-    dispatch_script = "exec " + " ".join(shlex.quote(part) for part in ssh_cmd)
-    return build_ssh_command(
-        target=dispatch_host,
-        remote_command=["bash", "-lc", dispatch_script],
-        ssh_config=ssh_config,
-        ssh_options=ssh_options,
-        fixed_options=[
-            "BatchMode=yes",
-            "ConnectionAttempts=1",
-            "TCPKeepAlive=yes",
-        ],
-    )
-
-
 def probe_idle_cpus(
     server_name: str,
     idle_probe_mode: str,
@@ -683,7 +683,6 @@ def probe_idle_cpus(
     ssh_config: str,
     ssh_options: list[str],
     ssh_user: str,
-    dispatch_host: str,
     timeout: float = 10.0,
 ) -> tuple[int | None, str]:
     script = (
@@ -759,16 +758,31 @@ def probe_idle_cpus(
             ssh_config=ssh_config,
             ssh_options=ssh_options,
             ssh_user=ssh_user,
-            dispatch_host=dispatch_host,
             timeout=timeout,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return None, str(exc)
+    except subprocess.TimeoutExpired:
+        context = _idle_probe_context(
+            server_name=server_name,
+            ssh_user=ssh_user,
+        )
+        return None, f"idle probe {context} timed out after {_format_seconds(timeout)}"
+    except OSError as exc:
+        context = _idle_probe_context(
+            server_name=server_name,
+            ssh_user=ssh_user,
+        )
+        detail = _compact_message(str(exc))
+        return None, f"idle probe {context} failed: {detail}"
 
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         stdout = result.stdout.decode(errors="replace").strip()
-        return None, stderr or stdout or f"probe exited with {result.returncode}"
+        context = _idle_probe_context(
+            server_name=server_name,
+            ssh_user=ssh_user,
+        )
+        detail = _compact_message(stderr or stdout or "no output")
+        return None, f"idle probe {context} failed: exit={result.returncode}, {detail}"
 
     text = result.stdout.decode(errors="replace").strip()
     match = re.search(r"(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([0-9.]+)", text)
@@ -799,7 +813,6 @@ def filter_servers_by_idle(
     ssh_config: str,
     ssh_options: list[str],
     ssh_user: str,
-    dispatch_host: str,
 ) -> list[ServerState]:
     if require_idle_cpus <= 0:
         return servers
@@ -813,7 +826,6 @@ def filter_servers_by_idle(
             ssh_config=ssh_config,
             ssh_options=ssh_options,
             ssh_user=ssh_user,
-            dispatch_host=dispatch_host,
         )
         server.idle_cpus = idle_cpus
         if idle_cpus is None:
@@ -834,7 +846,7 @@ def filter_servers_by_idle(
             f"{server.name}: {server.idle_probe_error or server.idle_cpus}"
             for server in servers
         )
-        raise RuntimeError(
+        raise NoEligibleServersError(
             f"no servers satisfy --require-idle-cpus={require_idle_cpus}. {details}"
         )
     return selected
@@ -859,16 +871,20 @@ def append_launcher_output(job: PendingJob, stdout: bytes, stderr: bytes) -> Non
                 handle.write(b"\n")
 
 
-def mark_launcher_failure(job: PendingJob, message: str) -> None:
-    job.work_dir.mkdir(parents=True, exist_ok=True)
-    (job.work_dir / "running").unlink(missing_ok=True)
-    (job.work_dir / "completed").unlink(missing_ok=True)
-    (job.work_dir / "abort").touch()
-    with (job.work_dir / "log.txt").open("a", encoding="utf-8") as handle:
-        handle.write("\n===== distributed_sim launcher failure =====\n")
+def mark_work_dir_failure(work_dir: Path, header: str, message: str) -> None:
+    work_dir.mkdir(parents=True, exist_ok=True)
+    (work_dir / "running").unlink(missing_ok=True)
+    (work_dir / "completed").unlink(missing_ok=True)
+    (work_dir / "abort").touch()
+    with (work_dir / "log.txt").open("a", encoding="utf-8") as handle:
+        handle.write(f"\n===== distributed_sim {header} =====\n")
         handle.write(message)
         if not message.endswith("\n"):
             handle.write("\n")
+
+
+def mark_launcher_failure(job: PendingJob, message: str) -> None:
+    mark_work_dir_failure(job.work_dir, "launcher failure", message)
 
 
 def wait_for_visible_marker(job: PendingJob, timeout: float) -> str:
@@ -1029,28 +1045,43 @@ def run_scheduler(
     ssh_config: str,
     ssh_options: list[str],
     ssh_user: str,
-    dispatch_host: str,
     launch_retries: int,
     launch_retry_delay: float,
     launch_interval: float,
     force: bool,
 ) -> int:
-    pending_workloads = [ScheduledWorkload(workload) for workload in workloads]
-    total = len(pending_workloads)
+    total = len(workloads)
     skipped = 0
     first_launches = 0
     launch_attempts = 0
     completed = 0
     failed = 0
     last_launch_at = 0.0
+    pending_workloads: list[ScheduledWorkload] = []
     checkpoint_by_workload: dict[Workload, Path] = {}
     for workload in workloads:
         work_dir = full_work_dir / workload.name
         if (work_dir / "completed").exists() and not force:
+            pending_workloads.append(ScheduledWorkload(workload))
             continue
-        checkpoint_by_workload[workload] = find_checkpoint(
-            cpt_dir, workload.checkpoint_key
-        )
+        try:
+            checkpoint_by_workload[workload] = find_checkpoint(
+                cpt_dir, workload.checkpoint_key
+            )
+        except FileNotFoundError as exc:
+            clear_stale_markers(work_dir, force=force)
+            mark_work_dir_failure(
+                work_dir,
+                "checkpoint failure",
+                (
+                    f"Failed to resolve checkpoint for workload {workload.name!r}: "
+                    f"{exc}"
+                ),
+            )
+            failed += 1
+            print(f"[fail] {workload.name} checkpoint: {exc}", flush=True)
+            continue
+        pending_workloads.append(ScheduledWorkload(workload))
 
     try:
         while pending_workloads or any(server.pending for server in servers):
@@ -1113,7 +1144,6 @@ def run_scheduler(
                     ssh_config=ssh_config,
                     ssh_options=ssh_options,
                     ssh_user=ssh_user,
-                    dispatch_host=dispatch_host,
                     attempt=scheduled.attempt,
                 )
                 launch_attempts += 1
@@ -1179,8 +1209,6 @@ def run_scheduler(
 
 def main(argv: list[str]) -> int:
     args, rest = parse_launcher_args(argv)
-    if args.dispatch_host:
-        validate_ssh_target_name(args.dispatch_host, "--dispatch-host")
 
     first_param = rest[0]
     workload_list = Path(rest[1]).resolve()
@@ -1208,7 +1236,6 @@ def main(argv: list[str]) -> int:
         ssh_config=args.ssh_config,
         ssh_options=args.ssh_option,
         ssh_user=args.ssh_user,
-        dispatch_host=args.dispatch_host,
     )
 
     full_work_dir = Path.cwd().resolve() / tag
@@ -1268,7 +1295,6 @@ def main(argv: list[str]) -> int:
         ssh_config=args.ssh_config,
         ssh_options=args.ssh_option,
         ssh_user=args.ssh_user,
-        dispatch_host=args.dispatch_host,
         launch_retries=args.launch_retries,
         launch_retry_delay=args.launch_retry_delay,
         launch_interval=args.launch_interval,
@@ -1279,6 +1305,9 @@ def main(argv: list[str]) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main(sys.argv[1:]))
+    except NoEligibleServersError as exc:
+        print(f"distributed_sim.py: error: {exc}", file=sys.stderr)
+        raise SystemExit(NO_ELIGIBLE_SERVERS_EXIT_CODE)
     except Exception as exc:
         print(f"distributed_sim.py: error: {exc}", file=sys.stderr)
         raise SystemExit(1)

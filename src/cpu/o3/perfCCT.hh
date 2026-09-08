@@ -54,6 +54,7 @@ class InstMeta
     std::vector<Tick> posTick;
     std::string disasm;
     Addr pc;
+    ThreadID tid;
     uint64_t value;
 
     bool isload;

@@ -376,7 +376,7 @@ class CacheBlk : public TaggedEntry
         assert(pkt->isLLSC());
         auto l = lockList.begin();
         while (l != lockList.end()) {
-            if (l->intersects(pkt->req))
+            if (l->matches(pkt->req))
                 l = lockList.erase(l);
             else
                 ++l;
@@ -487,7 +487,8 @@ class CacheBlk : public TaggedEntry
             req->setExtraData(success ? 1 : 0);
             // clear any intersected locks from other contexts (our LL
             // should already have cleared them)
-            clearLoadLocks(req);
+            if (success)
+                clearLoadLocks(req);
             return success;
         } else {
             // a normal write, if there is any lock not from this

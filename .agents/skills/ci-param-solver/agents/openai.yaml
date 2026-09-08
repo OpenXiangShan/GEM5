@@ -1,0 +1,4 @@
+interface:
+  display_name: "CI 参数求解"
+  short_description: "根据需求生成并校验求解 spec，并安全触发 CI 参数搜索任务"
+  default_prompt: "使用 $ci-param-solver 将我的参数搜索需求整理成经过校验的求解 spec，并在得到授权后触发 CI 求解工作流。"

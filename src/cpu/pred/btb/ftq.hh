@@ -48,9 +48,16 @@ public:
     inline FetchTargetId backId(ThreadID tid) const { return queue[tid].baseTargetId + queue[tid].cap.size() - 1; }
     inline FetchTargetId fetchId(ThreadID tid) const { return queue[tid].fetchptr; }
     inline FetchTarget& front(ThreadID tid) { return queue[tid].cap.front(); }
+    inline const FetchTarget& front(ThreadID tid) const { return queue[tid].cap.front(); }
     inline FetchTarget& back(ThreadID tid) { return queue[tid].cap.back(); }
+    inline const FetchTarget& back(ThreadID tid) const { return queue[tid].cap.back(); }
     inline FetchTarget& fetching(ThreadID tid) { return get(queue[tid].fetchptr, tid); }
     inline FetchTarget& get(FetchTargetId targetId, ThreadID tid) {
+        assert(targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size());
+        return queue[tid].cap[targetId - queue[tid].baseTargetId];
+    }
+    inline const FetchTarget& get(FetchTargetId targetId, ThreadID tid) const {
         assert(targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size());
         return queue[tid].cap[targetId - queue[tid].baseTargetId];
@@ -80,7 +87,21 @@ public:
     int getTargetTid();
     int getTargetTid(const std::array<bool, MaxThreads> &eligible,
                      unsigned *ineligibleSkips);
-    void insert(FetchTarget& target);
+    /**
+     * @brief Select thread with minimum fetch queue entries (load-balancing)
+     * 
+     * Prioritizes threads with fewer fetched-but-not-decoded instructions
+     * to prevent fetch queue overflow and balance decode pressure.
+     * 
+     * @param eligible Bitmask of eligible threads
+     * @param ineligibleSkips Output counter for skipped ineligible threads
+     * @param fetchQueueSizes Array of fetch queue sizes for each thread
+     * @return ThreadID of selected thread, or -1 if no eligible thread
+     */
+    int getTargetTidByFetchQueueSize(const std::array<bool, MaxThreads> &eligible,
+                                     unsigned *ineligibleSkips,
+                                     const std::array<unsigned, MaxThreads> &fetchQueueSizes);
+    void insert(FetchTarget&& target);
     void finishTarget(ThreadID tid);
     void commitTarget(ThreadID tid);
     void squashAfter(FetchTargetId targetId, ThreadID tid);

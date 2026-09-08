@@ -81,9 +81,17 @@ class SimpleRenameMap
 
     /**
      * Pointer to the free list from which new physical registers
-     * should be allocated in rename()
+     * should be allocated in rename(). A UnifiedFreeList* (rather than
+     * just the class-specific SimpleFreeList*) so that allocation can go
+     * through the SMT-partition-aware canAllocate()/getReg(type, tid).
      */
-    SimpleFreeList *freeList;
+    UnifiedFreeList *freeList;
+
+    /** Which register class this map is responsible for. */
+    RegClassType regClass;
+
+    /** Which thread this map belongs to. */
+    ThreadID tid;
 
   public:
 
@@ -94,7 +102,8 @@ class SimpleRenameMap
      * it's awkward to initialize this object via the constructor.
      * Instead, this method is used for initialization.
      */
-    void init(const RegClass &reg_class, SimpleFreeList *_freeList);
+    void init(const RegClass &reg_class, RegClassType reg_class_type,
+              UnifiedFreeList *_freeList, ThreadID _tid);
 
     /**
      * Pair of a physical register and a physical register.  Used to
@@ -138,8 +147,9 @@ class SimpleRenameMap
         map[arch_reg.index()] = phys_reg;
     }
 
-    /** Return the number of free entries on the associated free list. */
-    unsigned numFreeEntries() const { return freeList->numFreeRegs(); }
+    /** Return the number of registers of this class this thread may
+     *  allocate right now under the configured smtPregPolicy. */
+    unsigned numFreeEntries() const { return freeList->numAllocatable(regClass, tid); }
 
     size_t numArchRegs() const { return map.size(); }
 
@@ -192,7 +202,7 @@ class UnifiedRenameMap
 
     /** Initializes rename map with given parameters. */
     void init(const BaseISA::RegClasses &regClasses,
-              PhysRegFile *_regFile, UnifiedFreeList *freeList);
+              PhysRegFile *_regFile, UnifiedFreeList *freeList, ThreadID tid);
 
     /**
      * Tell rename map to get a new free physical register to remap

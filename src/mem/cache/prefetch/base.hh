@@ -56,6 +56,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/cache_probe_arg.hh"
+#include "mem/cache/prefetch/context_key.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "sim/arch_db.hh"
@@ -89,11 +90,13 @@ class Base : public ClockedObject
     class PrefetchListener : public ProbeListenerArgBase<PacketPtr>
     {
       public:
-        PrefetchListener(Base &_parent, ProbeManager *pm,
-                         const std::string &name, bool _isFill = false,
+        PrefetchListener(Base &_parent, std::string name,
+                         bool _isFill = false,
                          bool _miss = false, bool _pftrain = false)
-            : ProbeListenerArgBase(pm, name),
-              parent(_parent), isFill(_isFill), miss(_miss), coreDirectNotify(_pftrain) {}
+            : ProbeListenerArgBase(std::move(name)),
+              parent(_parent), isFill(_isFill), miss(_miss),
+              coreDirectNotify(_pftrain)
+        {}
         void notify(const PacketPtr &pkt) override;
       protected:
         Base& parent;
@@ -104,7 +107,7 @@ class Base : public ClockedObject
         const bool coreDirectNotify;
     };
 
-    std::vector<PrefetchListener *> listeners;
+    std::vector<ProbeListenerPtr<PrefetchListener>> listeners;
 
   public:
     struct PFtriggerInfo{
@@ -887,6 +890,18 @@ class Base : public ClockedObject
     /** Use Virtual Addresses for prefetching */
     const bool useVirtualAddresses;
 
+    /** Qualify keys inserted into a parent-owned shared filter. */
+    bool sharedFilterContextQualified{false};
+
+    Addr
+    sharedFilterKey(const PrefetchInfo &pfi, Addr addr) const
+    {
+        ContextID context_id = pfi.hasContextId() ?
+            pfi.contextId() : InvalidContextID;
+        return sharedFilterContextQualified ?
+            contextKey(addr, context_id) : addr;
+    }
+
     /**
      * Determine if this access should be observed
      * @param pkt The memory request causing the event
@@ -919,6 +934,10 @@ class Base : public ClockedObject
     {
         StatGroup(statistics::Group *parent);
         statistics::Scalar demandMshrMisses;
+        /** Prefetches dequeued from this prefetcher's local queue. */
+        statistics::Scalar pfDequeued;
+        statistics::Vector pfDequeued_srcs;
+        /** Prefetches that reached this prefetcher's cache issue boundary. */
         statistics::Scalar pfIssued;
         statistics::Vector pfIssued_srcs;
 
@@ -930,6 +949,9 @@ class Base : public ClockedObject
          * reference. */
         statistics::Scalar pfUnused;
         statistics::Vector pfUnused_srcs;
+        /** The number of cache miss requests hitting the PFBad table. */
+        statistics::Scalar pfBad;
+        statistics::Vector pfBad_srcs;
         /** The number of times a HW-prefetch is useful. */
         statistics::Scalar pfUseful;
 
@@ -960,17 +982,27 @@ class Base : public ClockedObject
         /** The number of prefetch requests filtered before issuing. */
         statistics::Scalar pfFiltered;
 
+        /** Same-VA requests retained because they belong to other contexts. */
+        statistics::Scalar trainFilterContextAliases;
+
         /** The number of times a HW-prefetch is late
          * (hit in cache, MSHR, WB). */
         statistics::Formula pfLate;
     } prefetchStats;
 
-    /** Total prefetches issued */
+    /** Total local prefetch dequeues used for runtime feedback. */
     uint64_t issuedPrefetches;
     /** Total prefetches that has been useful */
     uint64_t usefulPrefetches;
 
     uint64_t streamlatenum;
+
+    /**
+     * A forwarder owns the cache-side issue boundary for this prefetcher.
+     * This is set by PrefetcherForwarder::setRealPrefetcher(), rather than
+     * by a user-visible configuration parameter.
+     */
+    bool issueStatsAtForwarder{false};
 
     /** Registered tlb for address translations */
     BaseTLB * tlb;
@@ -980,6 +1012,12 @@ class Base : public ClockedObject
     virtual ~Base() = default;
 
     virtual void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size);
+
+    void
+    setSharedFilterContextQualified(bool enabled)
+    {
+        sharedFilterContextQualified = enabled;
+    }
 
     /**
      * Notify prefetcher of cache access (may be any access or just
@@ -999,6 +1037,87 @@ class Base : public ClockedObject
 
     virtual void recvPrefetchFromCache(const PacketPtr &pkt) {}
 
+    virtual bool admitIncomingPrefetchPacket(const PacketPtr &pkt)
+    {
+        return true;
+    }
+
+    virtual bool ownsPrefetchRequest(const PacketPtr &pkt) const
+    {
+        return pkt && pkt->req && pkt->req->requestorId() == requestorId;
+    }
+
+    void
+    setIssueStatsAtForwarder()
+    {
+        issueStatsAtForwarder = true;
+    }
+
+    bool
+    issueStatsAreAtForwarder() const
+    {
+        return issueStatsAtForwarder;
+    }
+
+    virtual void recordPrefetchDequeued(PrefetchSourceType source)
+    {
+        const int source_idx = int(source);
+        if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
+            source = PrefetchSourceType::PF_NONE;
+        }
+        prefetchStats.pfDequeued++;
+        prefetchStats.pfDequeued_srcs[source]++;
+        issuedPrefetches += 1;
+    }
+
+    virtual void recordPrefetchDequeued(const PacketPtr &pkt)
+    {
+        PrefetchSourceType source = PrefetchSourceType::PF_NONE;
+        if (pkt && pkt->req) {
+            if (pkt->req->hasXsMetadata()) {
+                source = pkt->req->getXsMetadata().prefetchSource;
+            } else {
+                source = pkt->getPFSource();
+            }
+        }
+        recordPrefetchDequeued(source);
+    }
+
+    virtual void recordIssuedPrefetchStats(PrefetchSourceType source)
+    {
+        const int source_idx = int(source);
+        if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
+            source = PrefetchSourceType::PF_NONE;
+        }
+        prefetchStats.pfIssued++;
+        prefetchStats.pfIssued_srcs[source]++;
+    }
+
+    virtual void recordIssuedPrefetchStats(const PacketPtr &pkt)
+    {
+        PrefetchSourceType source = PrefetchSourceType::PF_NONE;
+        if (pkt && pkt->req) {
+            if (pkt->req->hasXsMetadata()) {
+                source = pkt->req->getXsMetadata().prefetchSource;
+            } else {
+                source = pkt->getPFSource();
+            }
+        }
+        recordIssuedPrefetchStats(source);
+    }
+
+    virtual void recordIssuedPrefetch(PrefetchSourceType source)
+    {
+        recordPrefetchDequeued(source);
+        recordIssuedPrefetchStats(source);
+    }
+
+    virtual void recordIssuedPrefetch(const PacketPtr &pkt)
+    {
+        recordPrefetchDequeued(pkt);
+        recordIssuedPrefetchStats(pkt);
+    }
+
     virtual void
     prefetchUnused(PrefetchSourceType pfSource)
     {
@@ -1008,11 +1127,35 @@ class Base : public ClockedObject
 
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
 
+    virtual void recordPfBadHit(PrefetchSourceType source)
+    {
+        const int source_idx = int(source);
+        if (source_idx < 0 || source_idx >= NUM_PF_SOURCES) {
+            source = PrefetchSourceType::PF_NONE;
+        }
+        prefetchStats.pfBad++;
+        prefetchStats.pfBad_srcs[source]++;
+    }
+
     virtual void
     incrDemandMhsrMisses()
     {
         prefetchStats.demandMshrMisses++;
     }
+
+    virtual void notifyDemandMshrMiss(Addr paddr, bool is_secure) {}
+
+    virtual void notifyDemandAccess(Addr paddr, bool is_secure, bool miss) {}
+
+    virtual void notifyCacheMissRequest(Addr paddr, bool is_secure) {}
+
+    virtual void notifyPrefetchUseful(PrefetchSourceType source) {}
+
+    virtual void notifyPrefetchEvictsDemand(
+        Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
+    {}
+
+    virtual void notifyCachelineRefill(Addr paddr, bool is_secure) {}
 
     virtual void
     pfHitInCache(PrefetchSourceType pf_type)

@@ -50,6 +50,12 @@ from m5.SimObject import *
 class SMTFetchPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'Branch', 'IQCount', 'LSQCount' ]
 
+class SMTDecodePolicy(ScopedEnum):
+    vals = [ 'ICount', 'DelayedICount', 'MultiPriority', 'RoundRobin' ]
+
+class SMTFetchBlockPolicy(ScopedEnum):
+    vals = [ 'BaseLine', 'BlockPolicy' ]
+
 class SMTQueuePolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
 
@@ -128,6 +134,10 @@ class BaseO3CPU(BaseCPU):
         "Backend redirect to fetch/BPU delay")
     fetchWidth = Param.Unsigned(16, "Fetch width")
     fetchBufferSize = Param.Unsigned(66, "Fetch buffer size in bytes")
+    enableTwoFetch = Param.Bool(False,
+        "Enable two consecutive FTQ targets from one fetch buffer")
+    twoFetchMaxBytes = Param.Unsigned(64,
+        "Maximum fetch-buffer window covered by two-fetch")
     fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
                                     "per-thread")
 
@@ -163,6 +173,13 @@ class BaseO3CPU(BaseCPU):
     squashWidth = Param.Unsigned(8, "Squash width with rollback/redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
+    numMaxRatSnapshot = Param.Unsigned(4,
+        "Number of rename-map (RAT) checkpoints for NaiveCpt recovery")
+    ratSnapshotDistance = Param.Unsigned(32,
+        "Minimum instructions between successive RAT checkpoints")
+    robWalkByDestRegs = Param.Bool(True,
+        "Size the recovery walk by destination-register reclaim, "
+        "not by instruction count")
 
     trapLatency = Param.Cycles(13, "Trap latency")
     fetchTrapLatency = Param.Cycles(1, "Fetch trap latency")
@@ -173,10 +190,14 @@ class BaseO3CPU(BaseCPU):
             "Time buffer size for forward communication")
 
     LQEntries = Param.Unsigned(72, "Number of load queue entries")
-    SQEntries = Param.Unsigned(56, "Number of store queue entries")
+    SQEntries = Param.Unsigned(56, "Number of physical store queue entries")
+    StoreQueueMultiple = Param.Unsigned(1,
+        "Virtual-to-physical store queue capacity multiplier (power of two)")
+    phySQFullCheckAtReplay = Param.Bool(True,
+        "Wait for physical store queue space before starting a full-SQ replay")
 
-    LdPipeStages = Param.Unsigned(4, "Number of load pipeline stages")
-    StPipeStages = Param.Unsigned(5, "Number of store pipeline stages")
+    LdPipeStages = Param.Unsigned(4, "Number of stages in the load pipeline")
+    StPipeStages = Param.Unsigned(5, "Number of stages in the store pipeline")
 
     RARQEntries = Param.Unsigned(72, "Number of RAR queue entries")
     RAWQEntries = Param.Unsigned(32, "Number of RAW queue entries")
@@ -204,9 +225,37 @@ class BaseO3CPU(BaseCPU):
     LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
+    EnablePHASTMDP = Param.Bool(True,
+        "Use PHAST memory dependence prediction instead of StoreSets")
+    mdp_violation_timing = Param.String(
+        "atResolve",
+        "When to recover from and train a detected MDP RAW violation: "
+        "atResolve or atCommit")
+    phast_num_rows = Param.Unsigned(64, "PHAST rows per history table")
+    phast_associativity = Param.Unsigned(4, "PHAST table associativity")
+    phast_tag_bits = Param.Unsigned(16, "PHAST tag bits")
+    phast_max_counter = Param.Unsigned(16, "PHAST confidence counter max")
+    phast_counter_threshold = Param.Unsigned(
+        1, "Minimum PHAST confidence required to issue a prediction")
+    phast_counter_increment = Param.Unsigned(
+        0,
+        "PHAST confidence increment after a correct prediction; 0 restores max confidence")
+    phast_counter_decrement = Param.Unsigned(
+        1, "PHAST confidence decrement after an incorrect prediction")
+    phast_selected_target_bits = Param.Unsigned(
+        5, "Target-address bits included in the PHAST path hash")
+    phast_history_lengths = VectorParam.Unsigned(
+        [0, 2, 4, 6, 8, 12, 16, 32],
+        "Branch-history lengths for PHAST path tables, shortest to longest")
+    phast_second_target_max_distance = Param.Unsigned(
+        0,
+        "Exclusive maximum SQ distance for a PHAST second target; 0 uses half of the virtual SQ capacity")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
+    DcacheBankBytes = Param.Unsigned(
+        2,
+        "Dcache bank interleave granularity in bytes for LSQ bank conflict model")
     DcacheSetBits = Param.Unsigned(8, "Dcache set bits for LSQ bank conflict model")
     DcacheSetDivNum = Param.Unsigned(1, "Dcache set div num for LSQ bank conflict model (power of two)")
     EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQueue if True")
@@ -238,12 +287,24 @@ class BaseO3CPU(BaseCPU):
     phyregReleaseWidth = Param.Unsigned(6, "Physical register dealloc width")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
+    smtNumFetchTargetThreads = Param.Unsigned(
+        1, "Maximum number of distinct SMT threads starting an FTQ fetch "
+           "per cycle")
+    smtNumPreDispatchThreads = Param.Unsigned(
+        1, "Maximum number of distinct SMT threads advanced per cycle from "
+           "the fetch queue through decode, rename, dispatch, and ROB insert")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
     smtLSQMode = Param.SMTLSQMode('Independent',
                                   "SMT LSQ mode: per-thread independent or shared quota")
     smtLSQPolicy    = Param.SMTQueuePolicy('Partitioned',
                                            "SMT shared LSQ allocation policy")
-    smtLSQThreshold = Param.Int(100, "SMT LSQ Threshold Sharing Parameter")
+    smtLQThreshold = Param.Int(108, "SMT LQ Threshold Sharing Parameter")
+    smtSQThreshold = Param.Int(56, "SMT SQ Threshold Sharing Parameter")
+
+    smtRARQPolicy   = Param.SMTQueuePolicy('Dynamic',
+                                           "SMT shared RARQ allocation policy")
+    smtRAWQPolicy   = Param.SMTQueuePolicy('Dynamic',
+                                           "SMT shared RAWQ allocation policy")
     smtIQPolicy    = Param.SMTQueuePolicy('Partitioned',
                                           "SMT IQ Sharing Policy")
     smtIQThreshold = Param.Int(100, "SMT IQ Threshold Sharing Parameter")
@@ -251,8 +312,6 @@ class BaseO3CPU(BaseCPU):
                                           "SMT ROB Sharing Policy")
     smtROBThreshold = Param.Int(100, "SMT ROB Threshold Sharing Parameter")
     smtCommitPolicy = Param.CommitPolicy('RoundRobin', "SMT Commit Policy")
-    smtBorrowThrottleCycles = Param.Unsigned(
-        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch")
     smtBorrowLdstqHighWater = Param.Unsigned(
         0, "Explicit SMT borrowing LSQ high-water threshold; 0 uses percentage")
     smtBorrowLdstqHighWaterPercent = Param.Percent(
@@ -261,6 +320,45 @@ class BaseO3CPU(BaseCPU):
         8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
     smtBorrowDonorReserveEntries = Param.Unsigned(
         8, "Minimum ROB entries reserved for a borrowing donor to resume")
+
+    smtDecodePolicy = Param.SMTDecodePolicy('MultiPriority',
+        "SMT decode select policy: ICount, DelayedICount, MultiPriority, RoundRobin")
+    smtFetchBlockPolicy = Param.SMTFetchBlockPolicy('BaseLine',
+        "SMT fetch block policy for long-latency loads: "
+        "Baseline (no blocking) or BlockPolicy (stall fetch on long-latency load)")
+    smtFetchBlockThreshold = Param.Unsigned(15,
+        "Number of cycles a load must wait in the LQ before it is considered "
+        "long-latency and triggers fetch blocking (T15 from Tullsen & Brown's paper)")
+    smtFetchDelayedSchedulerDelay = Param.Unsigned(2,
+        "Number of cycles the DelayedICount Policy delayed")
+    smtBorrowThrottleCycles = Param.Unsigned(
+        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch, 0 means disable throttle")
+
+    smtPregPolicy = Param.SMTQueuePolicy('Dynamic',
+                                         "SMT Preg (physical register) Sharing Policy")
+    smtPregFixedBase = Param.Unsigned(0,
+        "Fixed per-thread base quota for DynamicBorrowing (0 = numPhysRegs/activeThreads)")
+    smtPregDonorReservePercent = Param.Unsigned(
+        43, "Percentage (0-100) of per-thread fair share reserved for a "
+            "donor thread.  donorQuota = numPhysRegs/activeThreads * pct/100")
+    smtPregBackendBackpressureDonor = Param.Bool(True,
+        "Also treat a thread as a Preg borrowing donor when it is stalled "
+        "on ROB/dispatch-queue-bandwidth backpressure (a resource other "
+        "than Preg itself); when false, only actual Preg demand this "
+        "cycle drives donor status")
+    smtPregBackendBackpressureDonorHoldCycles = Param.Unsigned(
+        8, "Cycles to keep a backend-backpressure-triggered Preg donor "
+           "marking held after the triggering condition clears")
+    smtBorrowBaseReserveEntries = Param.Unsigned(
+        80, "Minimum ROB entries reserved for a borrowing base to resume")
+    smtLQBorrowBaseReserveEntries = Param.Unsigned(
+        60, "Minimum LQ entries reserved for a borrowing base thread to resume")
+    smtLQBorrowDonorReserveEntries = Param.Unsigned(
+        6, "Minimum LQ entries reserved for a borrowing donor thread to resume")
+    smtSQBorrowBaseReserveEntries = Param.Unsigned(
+        32, "Minimum SQ entries reserved for a borrowing base thread to resume")
+    smtSQBorrowDonorReserveEntries = Param.Unsigned(
+        4, "Minimum SQ entries reserved for a borrowing donor thread to resume")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")

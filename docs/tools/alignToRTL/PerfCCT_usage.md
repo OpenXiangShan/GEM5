@@ -74,6 +74,8 @@ gem5生成出数据库后，使用以下命令来dump出可读数据
 
 --period (-p) tick per cycle, RTL上是1, GEM5上3GHz设置为333, （若是2Ghz设置为500）
 
+--tid 只显示指定 hardware thread 的指令，例如 `--tid 0`。该选项要求数据库的 `LifeTimeCommitTrace` 包含 `TID` 列。
+
 举例：
 
 python3 util/perfcct.py test.db --z 1.5 -p 333

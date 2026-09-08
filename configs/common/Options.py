@@ -98,6 +98,7 @@ class ListPlatform(argparse.Action):
         ObjectList.platform_list.print()
         sys.exit(0)
 
+
 # Add the very basic options that work also in the case of the no ISA
 # being used, and consequently no CPUs, but rather various types of
 # testers and traffic generators.
@@ -645,6 +646,13 @@ def addXiangshanCommonOptions(parser):
                         default=None, help="The path of mmc img")
     parser.add_argument("--mmc-cptbin", action="store",
                         type=str, default=None, help="The path of mmc cptbin")
+    parser.add_argument(
+        "--enable-dynamic-pf",
+        type=str,
+        choices=("True", "False"),
+        default=None,
+        metavar="{True,False}",
+        help="Enable dynamic prefetch control (True/False).")
 
     # Difftest option
     parser.set_defaults(enable_difftest=None)

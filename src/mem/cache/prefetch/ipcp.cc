@@ -58,12 +58,13 @@ IPCP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPrior
 {
     assert(rrf);
     InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
-    if (rrf->contains(addr)) {
+    Addr filter_key = sharedFilterKey(pfi, addr);
+    if (rrf->contains(filter_key)) {
         DPRINTF(IPCP, "IPCP PF filtered\n");
         ipcpStats.pf_filtered++;
         return false;
     } else {
-        rrf->insert(addr, 0);
+        rrf->insert(filter_key, 0);
         addresses.push_back(AddrPriority(addr, prio, pfSource));
         return true;
     }

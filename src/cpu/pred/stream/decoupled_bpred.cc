@@ -340,7 +340,7 @@ DecoupledStreamBPU::controlSquash(unsigned target_id, unsigned stream_id,
     auto &stream = squashing_stream_it->second;
 
     auto pc = stream.streamStart;
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (pc == ObservingPC) {
         debugFlagOn = true;
     }
@@ -681,7 +681,7 @@ void DecoupledStreamBPU::update(unsigned stream_id, ThreadID tid)
     if (fetchStreamQueue.empty())
         return;
     auto it = fetchStreamQueue.begin();
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     while (it != fetchStreamQueue.end() && stream_id >= it->first) {
         auto &stream = it->second;
         storeLoopInfo(it->first, stream);
@@ -842,7 +842,7 @@ DecoupledStreamBPU::dumpFsq(const char *when)
 void
 DecoupledStreamBPU::tryEnqFetchStream()
 {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
@@ -1117,7 +1117,7 @@ DecoupledStreamBPU::processNewPrediction(bool create_new_stream)
     auto back = fetchStreamQueue.rbegin();
     auto &entry = create_new_stream ? entry_new : back->second;
     entry.streamStart = s0StreamStartPC;
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (s0StreamStartPC == ObservingPC) {
         debugFlagOn = true;
     }
@@ -1302,7 +1302,7 @@ DecoupledStreamBPU::pushRAS(FetchStreamId stream_id, const char *when, Addr ra)
 void
 DecoupledStreamBPU::updateTAGE(FetchStream &stream)
 {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (stream.streamStart == ObservingPC) {
         debugFlagOn = true;
     }

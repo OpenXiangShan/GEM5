@@ -44,12 +44,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdio>
 #include <deque>
 #include <list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "base/refcnt.hh"
 #include "base/trace.hh"
@@ -86,6 +88,7 @@ namespace o3
 {
 
 class IssueQue;
+class InstructionQueue;
 
 class DynInst : public ExecContext, public RefCounted
 {
@@ -220,6 +223,7 @@ class DynInst : public ExecContext, public RefCounted
                                  /// instructions ahead of it
         SerializeAfter,          /// Needs to serialize instructions behind it
         SerializeHandled,        /// Serialization has been handled
+        RatSnapshotted,          /// Instruction owns a RAT checkpoint
         NumStatus
     };
 
@@ -242,6 +246,8 @@ class DynInst : public ExecContext, public RefCounted
         IsStrictlyOrdered,
         ReqMade,
         MemOpDone,
+        VectorMemCrossCacheBlock,
+        VectorMemCrossCacheBlockValid,
         HtmFromTransaction,
         IsEmptyMov,
         IsConstantFolded,
@@ -468,7 +474,41 @@ class DynInst : public ExecContext, public RefCounted
     ssize_t sqIdx = -1;
     typename LSQUnit::SQIterator sqIt;
 
-    /** Store-set predicted producing stores (for replay-based MDP). */
+    /** PHAST metadata carried by each load. */
+    struct MemDepInfo
+    {
+        /** Store this load received forwarded data from, if any. */
+        InstSeqNum forwardedFrom = 0;
+
+        /** Store-load violation training target. */
+        InstSeqNum violatingStoreSeqNum = 0;
+        Addr violatingStorePC = 0;
+
+        /** Zero-based distance from the load to the violating older store. */
+        std::ptrdiff_t storeQueueDistance = -1;
+
+        /** Store addresses/sizes used to validate an MDP prediction. */
+        std::pair<Addr, Addr> predStoreAddrs = {0, 0};
+        std::pair<unsigned, unsigned> predStoreSizes = {0, 0};
+
+        /** PHAST table metadata used for confidence updates. */
+        unsigned predBranchHistLength = 0;
+        uint64_t predictorHash = 0;
+
+        /** True when this load received a valid concrete MDP prediction. */
+        bool predicted = false;
+
+        /** True after the RAW violation has been counted once. */
+        bool violationCounted = false;
+
+        /** True when a RAW violation is deferred until Commit. */
+        bool violationPending = false;
+
+        /** True after the RAW violation has trained PHAST once. */
+        bool violationTrained = false;
+    } memDepInfo;
+
+    /** Predicted producing stores (for replay-based MDP). */
     std::vector<InstSeqNum> mdpProducingStores;
 
     /** Whether this load is predicted to strictly wait for prior store addrs. */
@@ -495,6 +535,7 @@ class DynInst : public ExecContext, public RefCounted
     RequestPtr reqToVerify;
 
     IssueQue* issueQue = nullptr;
+    InstructionQueue* instQueue = nullptr;
     int issueportid = -1;
     int iqtag = -1;
 
@@ -514,6 +555,16 @@ class DynInst : public ExecContext, public RefCounted
     bool memOpDone() const { return instFlags[MemOpDone]; }
     void memOpDone(bool f) { instFlags[MemOpDone] = f; }
 
+    bool vectorMemCrossCacheBlock() const
+    {
+        return instFlags[VectorMemCrossCacheBlock];
+    }
+
+    bool vectorMemCrossCacheBlockValid() const
+    {
+        return instFlags[VectorMemCrossCacheBlockValid];
+    }
+
     bool notAnInst() const { return instFlags[NotAnInst]; }
     void setNotAnInst() { instFlags[NotAnInst] = true; }
 
@@ -532,6 +583,9 @@ class DynInst : public ExecContext, public RefCounted
     {
         cpu->demapPage(vaddr, asn);
     }
+
+    void updateVectorMemCrossCacheBlock(
+            Addr addr, unsigned size, const std::vector<bool> &byte_enable);
 
     Fault initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
             const std::vector<bool> &byte_enable) override;
@@ -890,6 +944,15 @@ class DynInst : public ExecContext, public RefCounted
      */
     bool isSerializeHandled() { return status[SerializeHandled]; }
 
+    /** Returns whether the instruction owns a RAT checkpoint. */
+    bool isRatSnapshotted() const { return status[RatSnapshotted]; }
+    /** Records that the instruction owns a RAT checkpoint. Does not capture
+     *  any alias-table state; it only marks the instruction so the ROB can
+     *  find the nearest checkpoint during a squash. */
+    void setRatSnapshotted() { status.set(RatSnapshotted); }
+    /** Clears the RAT-checkpoint mark. */
+    void clearRatSnapshotted() { status.reset(RatSnapshotted); }
+
     /** Returns the opclass of this instruction. */
     OpClass opClass() const { return staticInst->opClass(); }
 
@@ -1163,6 +1226,11 @@ class DynInst : public ExecContext, public RefCounted
 
     void setRescheduleReplay() { setReplay(LdStReplayType::RescheduleReplay); }
     bool needRescheduleReplay() const { return getReplayType() == LdStReplayType::RescheduleReplay; }
+
+    void setPhysicalSQFullReplay() { setReplay(LdStReplayType::PhysicalSQFullReplay); }
+    bool needPhysicalSQFullReplay() const {
+        return getReplayType() == LdStReplayType::PhysicalSQFullReplay;
+    }
 
     void setSTLFReplay() { setReplay(LdStReplayType::STLFReplay); }
     bool needSTLFReplay() const { return getReplayType() == LdStReplayType::STLFReplay; }

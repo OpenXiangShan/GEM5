@@ -50,6 +50,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/pred/btb/branch_outcome.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -100,12 +101,53 @@ enum StallReason {
     VectorReadyButNotIssued,  // B
     ScalarReadyButNotIssued,  // B
     ResumeUnblock,  // B
-    CommitSquash,  // BS
+    CommitSquash,  // BS, cause not attributable
+    ControlRecovery,  // BS
+    MemVioRecovery,  // BS
+    VPRecovery,  // BS
+    TrapRecovery,  // BS
     ROBFull,  // B
     RegFull,  // B
     OtherStall,  // B
     NumStallReasons
 };
+
+/**
+ * Why commit squashed. IEW cannot derive this itself: `squashAll()` clears
+ * `mispredictInst`, and nothing cause-bearing is live during the
+ * `robSquashing` tail.
+ *
+ * `None` must stay zero; TimeBuffer::advance() memsets new slots.
+ */
+enum class SquashCause
+{
+    None = 0,
+    BranchMispredict,
+    MemOrderViolation,
+    ValuePrediction,
+    Trap,
+    ThreadContext,
+    SquashAfter,
+};
+
+inline StallReason
+squashCauseToStallReason(SquashCause cause)
+{
+    switch (cause) {
+      case SquashCause::BranchMispredict:
+        return StallReason::ControlRecovery;
+      case SquashCause::MemOrderViolation:
+        return StallReason::MemVioRecovery;
+      case SquashCause::ValuePrediction:
+        return StallReason::VPRecovery;
+      case SquashCause::Trap:
+        return StallReason::TrapRecovery;
+      // TC writes / squash-after are simulator-side clears, not
+      // microarchitectural events worth their own bucket.
+      default:
+        return StallReason::CommitSquash;
+    }
+}
 
 /** Struct that defines the information passed from fetch to decode. */
 struct FetchStruct
@@ -212,13 +254,6 @@ struct SquashVersion
     SquashVersion() : version(0) {}
 };
 
-struct ResolveQueueEntry
-{
-    ThreadID resolvedTid;
-    uint64_t resolvedFTQId;
-    std::vector<uint64_t> resolvedInstPC;
-};
-
 /** Struct that defines all backwards communication. */
 struct TimeStruct
 {
@@ -255,16 +290,14 @@ struct TimeStruct
         StallReason lqHeadStallReason;
         StallReason sqHeadStallReason;
 
-        struct ResolvedCFIEntry
-        {
-            uint64_t ftqId;
-            uint64_t pc;
-        };
-        /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
-        std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
+        /** Resolved control-flow facts produced this cycle. */
+        std::vector<branch_prediction::btb_pred::BranchOutcome>
+            resolvedCFIs;  // *F
 
         /** IEW detected a redirect before the delayed formal squash reaches Fetch. */
         bool redirectPending = false;  // *F
+        /** Youngest sequence number that remains valid after that redirect. */
+        InstSeqNum redirectLastValidSeqNum = 0;  // *F
 
         unsigned iqCount;
         unsigned ldstqCount;
@@ -318,12 +351,19 @@ struct TimeStruct
         InstSeqNum robheadSeqNum;
 
         uint64_t doneFtqId; // F
+        /** Complete FetchBlocks produced at the doneFtqId boundary. */
+        std::vector<branch_prediction::btb_pred::CommittedFetchBlock>
+            committedFetchBlocks; // *F
         uint64_t squashedTargetId; // F
         unsigned squashedLoopIter; // F
 
         bool isTrapSquash;
+        bool isDeferedMDPSquash;
         bool squash; // *F, D, R, I
         bool robSquashing; // *F, D, R, I
+
+        /// Re-published on every `robSquashing` cycle, so IEW needs no copy.
+        SquashCause squashCause; // *I
 
         SquashVersion squashVersion; // *F, D, R, I
 
@@ -366,6 +406,10 @@ smtCanDonateRobHeadroom(StallReason reason)
       case VectorReadyButNotIssued:
       case ScalarReadyButNotIssued:
       case CommitSquash:
+      case ControlRecovery:
+      case MemVioRecovery:
+      case VPRecovery:
+      case TrapRecovery:
         return false;
       default:
         return true;
@@ -400,6 +444,18 @@ smtHasBorrowThrottleStall(const TimeStruct::IewComm &info)
     return smtCanDonateRobHeadroom(info.robHeadStallReason) ||
            smtCanDonateRobHeadroom(info.lqHeadStallReason) ||
            smtCanDonateRobHeadroom(info.sqHeadStallReason);
+}
+
+inline bool
+smtHasBorrowThrottleLQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.lqHeadStallReason);
+}
+
+inline bool
+smtHasBorrowThrottleSQStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.sqHeadStallReason);
 }
 
 inline bool

@@ -121,19 +121,31 @@ DirectionFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool 
     }
     // Case 3: When folded length < history length
     else {
+        assert(shamt <= maxShamt);
         // Step 1: Handle the bits that would be lost in shift
         for (int i = 0; i < shamt; i++) {
             // XOR the highest bits from GHR with corresponding positions in folded history
             temp ^= (ghr[posHighestBitsInGhr[i]] << posHighestBitsInOldFoldedHist[i]);
         }
 
-        // Step 2: Perform the shift
-        temp <<= shamt;
+        if (shamt > foldedLen) {
+            // A shift wider than the folded history can wrap the retained
+            // bits more than once. Rotate by the effective shift instead of
+            // using the single-wrap fast path below.
+            const auto rotate = shamt % foldedLen;
+            if (rotate != 0) {
+                temp = ((temp << rotate) |
+                        (temp >> (foldedLen - rotate))) & foldedMask;
+            }
+        } else {
+            // Step 2: Perform the shift
+            temp <<= shamt;
 
-        // Step 3: Copy the XORed bits back to lower positions
-        for (int i = 0; i < shamt; i++) {
-            uint64_t highBit = (temp >> (foldedLen + i)) & 1;
-            temp |= (highBit << i);
+            // Step 3: Copy the XORed bits back to lower positions
+            for (int i = 0; i < shamt; i++) {
+                uint64_t highBit = (temp >> (foldedLen + i)) & 1;
+                temp |= (highBit << i);
+            }
         }
 
         // Step 4: Add new branch outcome

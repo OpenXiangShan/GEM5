@@ -66,7 +66,7 @@ LTAGE::init()
 bool
 LTAGE::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void* &b)
 {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branch_pc == ObservingPC) {
         debugFlagOn = true;
     }
@@ -103,7 +103,7 @@ void
 LTAGE::update(ThreadID tid, Addr branch_pc, bool taken, void* bp_history,
               bool squashed, const StaticInstPtr & inst, Addr corrTarget)
 {
-    defer _(nullptr, std::bind([this]{ debugFlagOn = false; }));
+    defer _(nullptr, [this](void *) { debugFlagOn = false; });
     if (branch_pc == ObservingPC) {
         debugFlagOn = true;
     }

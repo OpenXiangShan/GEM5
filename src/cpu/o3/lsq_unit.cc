@@ -39,6 +39,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <algorithm>
 #include <cassert>
 
 #include "arch/generic/debugfaults.hh"
@@ -419,9 +420,12 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 }
 
 LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
+    uint32_t physicalSqEntries,
     uint32_t ldPipeStages, uint32_t stPipeStages,
     uint32_t maxRARQEntries, uint32_t maxRAWQEntries, unsigned rarDequeuePerCycle,
-    unsigned rawDequeuePerCycle, unsigned loadCompletionWidth, unsigned storeCompletionWidth)
+    unsigned rawDequeuePerCycle, unsigned loadCompletionWidth,
+    unsigned storeCompletionWidth, unsigned loadPipeCount,
+    unsigned storePipeCount)
     : numSBufferRequest(0),
       numSingleRequest(0),
       numSplitRequest(0),
@@ -432,8 +436,13 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
       loadCompletedIdx(loadQueue.head() - 1),
       // Use head-1 as a sentinel: no completed entry yet; advance must verify head.
       storeCompletedIdx(storeQueue.head() - 1),
+      loadPipeCount(loadPipeCount),
+      storePipeCount(storePipeCount),
       loadPipe(ldPipeStages - 1, 0),
       storePipe(stPipeStages - 1, 0),
+      physicalSQEntries(physicalSqEntries),
+      virtualSQEnabled(physicalSqEntries < sqEntries),
+      addrOrDataReadyNums(0),
       storesToWB(0),
       htmStarts(0),
       htmStops(0),
@@ -450,8 +459,14 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
       rawDequeuePerCycle(rawDequeuePerCycle),
       loadCompletionWidth(loadCompletionWidth),
       storeCompletionWidth(storeCompletionWidth),
-      stats(nullptr)
+      stats(nullptr, loadPipeCount ? loadPipeCount : 1,
+            storePipeCount ? storePipeCount : 1)
 {
+    fatal_if(loadPipeCount == 0,
+             "Scheduler must provide at least one load pipe\n");
+    fatal_if(storePipeCount == 0,
+             "Scheduler must provide at least one store pipe\n");
+
     // reserve space, we want if sq will be full, sbuffer will start evicting
     sqFullUpperLimit = sqEntries - 4;
 
@@ -573,7 +588,9 @@ LSQUnit::name() const
     }
 }
 
-LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
+LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent,
+                                    unsigned loadPipeCount,
+                                    unsigned storePipeCount)
     : statistics::Group(parent),
       ADD_STAT(forwLoads, statistics::units::Count::get(),
                "Number of loads that had data forwarded from stores"),
@@ -658,6 +675,10 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of store replay events at the store pipe replay exit"),
       ADD_STAT(storeReplayTlbMiss, statistics::units::Count::get(),
                "Number of store TLB miss replay events at the store pipe replay exit"),
+      ADD_STAT(storeReplayPhysicalSQFull, statistics::units::Count::get(),
+               "Number of post-issue store replays caused by a full physical SQ window"),
+      ADD_STAT(storePhysicalSQReplayBlocked, statistics::units::Count::get(),
+               "Number of physical-SQ replay checks blocked by the physical SQ window"),
       ADD_STAT(loadPipeReplayAccepted, statistics::units::Count::get(),
                "Number of replayQ load requests accepted by load pipe"),
       ADD_STAT(loadPipeFastReplayAccepted, statistics::units::Count::get(),
@@ -680,32 +701,28 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     RAWQueueLatency
         .init(0, 500, 20)
         .flags(statistics::nozero);
-    // TODO: load-pipe PMU vectors currently assume exactly three load pipes.
-    // Extend the vector sizing and IssueQue loadPipeId mapping together if the
-    // model grows more load pipes; the replay pipe counters below share this
-    // same assumption.
     loadPipeAccepted
-        .init(3)
+        .init(loadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < loadPipeCount; i++) {
         loadPipeAccepted.subname(i, csprintf("pipe%d", i));
     }
     storePipeAccepted
-        .init(MaxPipeWidth)
+        .init(storePipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < MaxPipeWidth; i++) {
+    for (unsigned i = 0; i < storePipeCount; i++) {
         storePipeAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadPipeReplayAccepted
-        .init(3)
+        .init(loadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < loadPipeCount; i++) {
         loadPipeReplayAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadPipeFastReplayAccepted
-        .init(3)
+        .init(loadPipeCount)
         .flags(statistics::total | statistics::nozero);
-    for (int i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < loadPipeCount; i++) {
         loadPipeFastReplayAccepted.subname(i, csprintf("pipe%d", i));
     }
     loadReplayEvents
@@ -736,6 +753,7 @@ LSQUnit::drainSanityCheck() const
         assert(!loadQueue[i].valid());
 
     assert(storesToWB == 0);
+    assert(addrOrDataReadyNums == 0);
     assert(!retryPkt);
 }
 
@@ -1168,6 +1186,9 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 
         bool done_checking_load = false;
         for (auto req0 : inst_request->_reqs) {
+            if (!req0 || !req0->hasPaddr()) {
+                continue;
+            }
             Addr inst_eff_addr1 = req0->getPaddr() >> depCheckShift;
             Addr inst_eff_addr2 =
                 (req0->getPaddr() + req0->getSize() - 1) >> depCheckShift;
@@ -1176,6 +1197,9 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                     inst->seqNum, req0->getPaddr());
 
             for (auto req1 : load_request->_reqs) {
+                    if (!req1 || !req1->hasPaddr()) {
+                        continue;
+                    }
                 Addr ld_eff_addr1 = req1->getPaddr() >> depCheckShift;
                 Addr ld_eff_addr2 = (req1->getPaddr() + req1->getSize() - 1) >> depCheckShift;
 
@@ -1246,6 +1270,17 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                 "[sn:%lli] at address %#x\n",
                                 inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
                         memDepViolator = ld_inst;
+                        // Preserve the concrete RAW target for both MDP
+                        // implementations. PHAST additionally consumes the
+                        // SQ distance and path metadata captured at issue.
+                        if (!ld_inst->memDepInfo.violationPending) {
+                            ld_inst->memDepInfo.violatingStoreSeqNum =
+                                inst->seqNum;
+                            ld_inst->memDepInfo.violatingStorePC =
+                                inst->pcState().instAddr();
+                            ld_inst->memDepInfo.storeQueueDistance =
+                                (ld_inst->sqIt - inst->sqIt) - 1;
+                        }
 
                         ++stats.memOrderViolation;
                         if (inst->isStore() && !countedStLdViolationThisCycle) {
@@ -1301,25 +1336,58 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
 }
 
 void
+LSQUnit::storeSetReplay(const DynInstPtr& inst, LSQRequest* request)
+{
+    inst->effAddrValid(false);
+    inst->translationStarted(false);
+    inst->translationCompleted(false);
+    inst->savedRequest = nullptr;
+    storeQueue[inst->sqIdx].setRequest(nullptr);
+    if (inst->memData) {
+        delete [] inst->memData;
+        inst->memData = nullptr;
+    }
+    if (request) {
+        request->discard();
+    }
+
+    DPRINTF(StorePipeline,
+            "Store [sn:%llu] resets translation/request for physical SQ replay\n",
+            inst->seqNum);
+}
+
+void
 LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 {
-    // S0 is the single load-pipe entry point. First issues, slow replays, and
+    // S0 is shared by all load issue sources. First issues, slow replays, and
     // fast replays all enter here; LoadPipeSource records which path fed the
     // pipe for RTL-aligned stats.
-    assert(loadPipeSx[0]->size < MaxPipeWidth);
+    panic_if(loadPipeSx[0]->size >= loadPipeCount,
+             "load pipe S0 exceeds configured pipe count (%u)\n",
+             loadPipeCount);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
     inst->setSkipRawCheck();
 
-    int idx = loadPipeSx[0]->size;
-    loadPipeSx[0]->insts[idx] = inst;
-    loadPipeSx[0]->size++;
+    loadPipeSx[0]->insts.push_back(inst);
+    loadPipeSx[0]->size = static_cast<int>(loadPipeSx[0]->insts.size());
+    // Order S0 by age so older loads have higher priority when S1 performs
+    // the bank-conflict check.
+    std::stable_sort(
+        loadPipeSx[0]->insts.begin(),
+        loadPipeSx[0]->insts.end(),
+        [](const DynInstPtr &lhs, const DynInstPtr &rhs) {
+            return lhs->seqNum < rhs->seqNum;
+        });
 
     const int load_pipe_id = inst->issueQue->getLoadPipeId();
-    panic_if(load_pipe_id < 0,
-        "Per-load-pipe PMU stats require dedicated load IQ naming; "
-        "unsupported issue queue %s for load [sn:%llu]\n",
-        inst->issueQue->getName().c_str(), inst->seqNum);
+    panic_if(load_pipe_id < 0 ||
+                 static_cast<unsigned>(load_pipe_id) >= loadPipeCount,
+        "Per-load-pipe PMU stats require a scheduler-assigned load pipe ID; "
+        "unsupported or out-of-range issue queue %s for load [sn:%llu] "
+        "(id=%d, count=%u)\n",
+        inst->issueQue->getName().c_str(), inst->seqNum, load_pipe_id,
+        loadPipeCount);
     stats.loadPipeAccepted[load_pipe_id]++;
     const auto load_pipe_source = inst->getLoadPipeSource();
     if (load_pipe_source == DynInst::LoadPipeSource::ReplayQueue) {
@@ -1334,17 +1402,102 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
 void
 LSQUnit::issueToStorePipe(const DynInstPtr &inst)
 {
-    // push to storePipeS0
-    assert(storePipeSx[0]->size < MaxPipeWidth);
+    // S0 is shared by all store issue sources in the current cycle.
+    panic_if(storePipeSx[0]->size >= storePipeCount,
+             "store pipe S0 exceeds scheduler-derived pipe count (%u)\n",
+             storePipeCount);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
 
-    int idx = storePipeSx[0]->size;
-    storePipeSx[0]->insts[idx] = inst;
-    storePipeSx[0]->size++;
+    const int idx = storePipeSx[0]->size;
+    storePipeSx[0]->insts.push_back(inst);
+    storePipeSx[0]->size = static_cast<int>(storePipeSx[0]->insts.size());
     stats.storePipeAccepted[idx]++;
 
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
+}
+
+bool
+LSQUnit::storeQueueWriteReady(const DynInstPtr &inst) const
+{
+    assert(inst);
+    if (!virtualSQEnabled) {
+        return true;
+    }
+
+    assert(inst->sqIdx >= 0);
+    const size_t store_idx = static_cast<size_t>(inst->sqIdx);
+    assert(storeQueue.isValidIdx(store_idx));
+    assert(store_idx >= storeQueue.head());
+    assert(physicalSQEntries <= storeQueue.capacity());
+
+    return store_idx - storeQueue.head() < physicalSQEntries;
+}
+
+void
+LSQUnit::recordAddrOrDataReady(const DynInstPtr &inst)
+{
+    assert(inst);
+    assert(inst->sqIdx >= 0);
+    auto &entry = storeQueue[inst->sqIdx];
+    assert(entry.valid());
+    assert(entry.addrReady() || entry.dataReady());
+
+    if (!entry.addrOrDataReadyCounted()) {
+        entry.addrOrDataReadyCounted(true);
+        ++addrOrDataReadyNums;
+        assert(addrOrDataReadyNums <= physicalSQEntries);
+        DPRINTF(StorePipeline,
+                "SQ addr/data ready count increments to %u: [sn:%llu] "
+                "sqIdx=%llu physical=%u\n",
+                addrOrDataReadyNums, inst->seqNum,
+                static_cast<unsigned long long>(inst->sqIdx),
+                physicalSQEntries);
+    }
+}
+
+void
+LSQUnit::recordAddrOrDataDequeue(const DynInstPtr &inst)
+{
+    assert(inst);
+    assert(inst->sqIdx >= 0);
+    auto &entry = storeQueue[inst->sqIdx];
+    assert(entry.valid());
+
+    if (entry.addrOrDataReadyCounted()) {
+        assert(addrOrDataReadyNums > 0);
+        entry.addrOrDataReadyCounted(false);
+        --addrOrDataReadyNums;
+        DPRINTF(StorePipeline,
+                "SQ addr/data ready count decrements to %u: [sn:%llu] "
+                "sqIdx=%llu\n",
+                addrOrDataReadyNums, inst->seqNum,
+                static_cast<unsigned long long>(inst->sqIdx));
+    }
+}
+
+void
+LSQUnit::recordPhysicalSQReplayBlocked(const DynInstPtr &inst)
+{
+    assert(!storeQueueWriteReady(inst));
+    ++stats.storePhysicalSQReplayBlocked;
+    DPRINTF(StorePipeline,
+            "Store [sn:%llu] waits before replay: sqIdx=%llu head=%llu "
+            "physical=%u\n",
+            inst->seqNum, static_cast<unsigned long long>(inst->sqIdx),
+            static_cast<unsigned long long>(storeQueue.head()),
+            physicalSQEntries);
+}
+
+void
+LSQUnit::recordStoreQueueReplay(const DynInstPtr &inst)
+{
+    ++stats.storeReplayPhysicalSQFull;
+    DPRINTF(StorePipeline,
+            "Store [sn:%llu] replays: sqIdx=%llu head=%llu physical=%u\n",
+            inst->seqNum, static_cast<unsigned long long>(inst->sqIdx),
+            static_cast<unsigned long long>(storeQueue.head()),
+            physicalSQEntries);
 }
 
 Fault
@@ -1845,6 +1998,15 @@ LSQUnit::storeDoWriteSQ(const DynInstPtr &inst)
 
     DPRINTF(StorePipeline, "storeDoWriteSQ: Store [sn:%lli]\n", inst->seqNum);
 
+    // If no space left in the physical SQ,
+    // then defer the STA operation, will be replayed by IQ.
+    if (!storeQueueWriteReady(inst)) {
+        inst->setPhysicalSQFullReplay();
+        storeSetReplay(inst, request);
+        return NoFault;
+    }
+    assert(storeQueueWriteReady(inst));
+
     // Check the recently completed loads to see if any match this store's
     // address.  If so, then we have a memory ordering violation.
     typename LoadQueue::iterator loadIt = inst->lqIt;
@@ -1880,6 +2042,7 @@ LSQUnit::storeDoWriteSQ(const DynInstPtr &inst)
     if (!inst->isSplitStoreAddr()) {
         inst->sqIt->setStatus(SplitStoreStatus::DataReady);
     }
+    recordAddrOrDataReady(inst);
 
     if (inst->sqIt->canForwardToLoad()) {
         stats.STDReadyFirst++;
@@ -1955,8 +2118,10 @@ LSQUnit::executeStorePipeSx()
                     case 1:
                         fault = storeDoWriteSQ(inst);
 
-                        iewStage->notifyExecuted(inst);
-                        iewStage->SquashCheckAfterExe(inst);
+                        if (!inst->needReplay()) {
+                            iewStage->notifyExecuted(inst);
+                            iewStage->SquashCheckAfterExe(inst);
+                        }
                         break;
                     case 2:
                     case 3:
@@ -1974,6 +2139,11 @@ LSQUnit::executeStorePipeSx()
                 if (inst->needTLBMissReplay()) {
                     iewStage->deferMemInst(inst);
                     stats.storeReplayTlbMiss++;
+                } else if (inst->needPhysicalSQFullReplay()) {
+                    iewStage->instQueue.deferPhysicalSQFullReplay(inst);
+                } else {
+                    warn("Unsupported store replay type for [sn:%llu]",
+                          inst->seqNum);
                 }
                 inst->endPipelining();
                 inst = nullptr;
@@ -2045,6 +2215,7 @@ LSQUnit::executeAmo(const DynInstPtr &amo_inst)
     // Make sure that a store exists.
     assert(storeQueue.size() != 0);
     assert(!amo_inst->staticInst->isSplitStoreAddr());
+    assert(storeQueueWriteReady(amo_inst));
 
     ssize_t amo_idx = amo_inst->sqIdx;
 
@@ -2087,6 +2258,12 @@ LSQUnit::executeAmo(const DynInstPtr &amo_inst)
 
     assert(amo_fault == NoFault);
 
+    // AMOs materialize the address/data request directly rather than through
+    // STA/STD, but still occupy one valid SQ entry for the counter invariant.
+    storeQueue[amo_idx].setStatus(SplitStoreStatus::AddressReady);
+    storeQueue[amo_idx].setStatus(SplitStoreStatus::DataReady);
+    recordAddrOrDataReady(amo_inst);
+
     // Atomics need to set themselves as able to writeback if we haven't had a fault by here.
     storeQueue[amo_idx].canWB() = true;
     ++storesToWB;
@@ -2103,6 +2280,10 @@ LSQUnit::commitLoad()
 
     DPRINTF(LSQUnit, "Committing head load instruction, PC %s, [sn:%lu]\n",
             inst->pcState(), inst->seqNum);
+
+    if (inst->memDepInfo.predicted) {
+        iewStage->instQueue.commit(inst);
+    }
 
     // Update histogram with memory latency from load
     // Only take latency from load demand that where issued and did not fault
@@ -2586,6 +2767,10 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
               htmStarts, htmStops);
         }
 
+        // A deferred MDP violation only applies while this dynamic load
+        // remains on the architecturally valid path.
+        loadQueue.back().instruction()->memDepInfo.violationPending = false;
+
         // Clear the smart pointer to make sure it is decremented.
         loadQueue.back().instruction()->setSquashed();
         loadQueue.back().clear();
@@ -2695,6 +2880,7 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         }
 
         // Clear the smart pointer to make sure it is decremented.
+        recordAddrOrDataDequeue(storeQueue.back().instruction());
         storeQueue.back().instruction()->setSquashed();
 
         // Must delete request now that it wasn't handed off to
@@ -2947,6 +3133,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
 
     if (store_idx == storeQueue.begin()) {
         do {
+            recordAddrOrDataDequeue(storeQueue.front().instruction());
             storeQueue.front().clear();
             storeQueue.pop_front();
             lastClockSQPopEntries++;
@@ -3002,7 +3189,8 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool cache_got_blocked = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
     if (isLoad) {
-        bank_conflict = lsq->loadBankConflictedCheck(data_pkt->req->getVaddr());
+        bank_conflict = lsq->loadBankConflictedCheck(
+            data_pkt->req->getVaddr(), data_pkt->req->getSize());
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
@@ -3362,12 +3550,30 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         }
     }
 
-    if (load_inst->getFault() != NoFault) {
-        // If the instruction has an outstanding fault, we cannot complete
-        // the access as this discards the current fault.
-        DPRINTF(LoadPipeline, "Not completing instruction [sn:%lli] access "
-                "due to pending fault.\n", load_inst->seqNum);
+    /*
+     * A split load can have a PartialFault: an earlier fragment translated
+     * successfully while a later fragment faulted.  The translated prefix
+     * must still be sent to memory.  Keep the architectural fault attached
+     * to the instruction, but do not block the successful fragments here.
+     */
+    const bool partial_fault_load =
+        request->isSplit() && request->isPartialFault();
+
+    if (load_inst->getFault() != NoFault &&
+        !partial_fault_load) {
+        // A full translation fault has no valid memory fragment to access.
+        DPRINTF(LoadPipeline,
+                "Not completing instruction [sn:%lli] access "
+                "due to pending fault.\n",
+                load_inst->seqNum);
         return load_inst->getFault();
+    }
+
+    if (partial_fault_load) {
+        DPRINTF(LoadPipeline,
+                "Continuing partial-fault split load [sn:%lli]; "
+                "sending successfully translated prefix fragments.\n",
+                load_inst->seqNum);
     }
 
     load_entry.setRequest(request);
@@ -3432,6 +3638,30 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         } else {
             std::vector<InstSeqNum> wait_stores;
             wait_stores.reserve(load_inst->mdpProducingStores.size());
+            auto rememberPredStore = [&](const DynInstPtr &st_inst) {
+                if (!load_inst->memDepInfo.predicted) {
+                    return;
+                }
+                auto &info = load_inst->memDepInfo;
+                if (info.predStoreSizes.first != 0 &&
+                    info.predStoreAddrs.first == st_inst->effAddr &&
+                    info.predStoreSizes.first == st_inst->effSize) {
+                    return;
+                }
+                if (info.predStoreSizes.second != 0 &&
+                    info.predStoreAddrs.second == st_inst->effAddr &&
+                    info.predStoreSizes.second == st_inst->effSize) {
+                    return;
+                }
+                if (info.predStoreSizes.first == 0) {
+                    info.predStoreAddrs.first = st_inst->effAddr;
+                    info.predStoreSizes.first = st_inst->effSize;
+                } else if (info.predStoreSizes.second == 0) {
+                    info.predStoreAddrs.second = st_inst->effAddr;
+                    info.predStoreSizes.second = st_inst->effSize;
+                }
+            };
+
             for (auto st_it = storeQueue.begin(); st_it != storeQueue.end(); ++st_it) {
                 if (!st_it->valid() || !st_it->instruction()) {
                     continue;
@@ -3440,14 +3670,20 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 if (st_inst->seqNum >= load_inst->seqNum) {
                     break;
                 }
-                if (st_it->addrReady()) {
+
+                const bool predicted_store =
+                    std::find(load_inst->mdpProducingStores.begin(),
+                              load_inst->mdpProducingStores.end(),
+                              st_inst->seqNum) !=
+                    load_inst->mdpProducingStores.end();
+                if (!predicted_store) {
                     continue;
                 }
-                if (std::find(load_inst->mdpProducingStores.begin(),
-                              load_inst->mdpProducingStores.end(),
-                              st_inst->seqNum) != load_inst->mdpProducingStores.end()) {
-                    wait_stores.push_back(st_inst->seqNum);
+                if (st_it->addrReady()) {
+                    rememberPredStore(st_inst);
+                    continue;
                 }
+                wait_stores.push_back(st_inst->seqNum);
             }
 
             if (!wait_stores.empty()) {
@@ -3692,6 +3928,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;
                 load_inst->setProducerStorePC(store_it->instruction()->pcState().instAddr());
+                load_inst->memDepInfo.forwardedFrom =
+                    store_it->instruction()->seqNum;
 
                 return NoFault;
             } else if (

@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_TAGE_HH__
 #define __CPU_PRED_BTB_TAGE_HH__
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -106,6 +107,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            bool basePred;         // Base BTB direction at prediction time
             int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
             Addr useAltIdx;        // useAltOnNa index consulted at prediction time
@@ -114,15 +116,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
+                               basePred(false),
                                finalProviderTable(-1), finalProviderIsAlt(false),
                                useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
+                            bool basePred,
                             int finalProviderTable, bool finalProviderIsAlt,
                             Addr useAltIdx, short useAltCtr, uint64_t hitTableMask) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
                             useAlt(useAlt), taken(taken), altPred(altPred),
+                            basePred(basePred),
                             finalProviderTable(finalProviderTable),
                             finalProviderIsAlt(finalProviderIsAlt),
                             useAltIdx(useAltIdx), useAltCtr(useAltCtr),
@@ -143,8 +148,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
+    void lookupNoSideEffect(const Addr &startPC,
+                            const std::vector<BTBEntry> &btbEntries,
+                            CondTakens &results,
+                            ThreadID tid = 0,
+                            uint8_t asidHash = 0) const;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // Update folded history from GHR when configured in direction-history mode.
     void specUpdateGHist(const boost::dynamic_bitset<> &history,
@@ -156,19 +169,23 @@ class BTBTAGE : public TimedBaseBTBPredictor
                          const PathHistoryUpdate &update) override;
 
     void recoverHist(const boost::dynamic_bitset<> &history,
-                     const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
-    bool canResolveUpdate(const FetchTarget &entry) override;
-    void doResolveUpdate(const FetchTarget &entry) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
+    bool canResolveUpdate(const PredictionUpdateContext &context,
+                          const PreparedUpdate &update) override;
+    void doResolveUpdate(const PredictionUpdateContext &context,
+                         const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 #endif
 
     void setTrace() override;
@@ -187,27 +204,29 @@ class BTBTAGE : public TimedBaseBTBPredictor
                     CondTakens& results, ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
-    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
+                      ThreadID tid = 0) const;
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist,
+                      uint8_t asidHash = 0, ThreadID tid = 0) const;
 
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, Addr position = 0, uint8_t asidHash = 0);
+    Addr getTageTag(Addr pc, int table, Addr position = 0, uint8_t asidHash = 0) const;
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist,
-                    Addr position = 0, uint8_t asidHash = 0);
+                    Addr position = 0, uint8_t asidHash = 0) const;
 
     // Get offset within a block for a given PC
-    Addr getOffset(Addr pc) {
+    Addr getOffset(Addr pc) const {
         return (pc & (blockSize - 1)) >> 1;
     }
 
     // Get branch index within a prediction block
-    unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
+    unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC) const;
 
     // Get bank ID from PC (after removing instruction alignment bits)
     // Extract bits [bankBaseShift + bankIdWidth - 1 : bankBaseShift]
@@ -216,7 +235,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Update branch history
     void doUpdateHist(const bitset &history, int shamt, bool taken,
                       Addr pc, Addr target, ThreadID tid);
-    void recoverFoldedHist(const FetchTarget &entry);
+    void recoverFoldedHist(const HistoryRecoveryContext &context);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -275,9 +294,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
     int usefulResetCnt{0};
+    std::array<int, MaxThreads> usefulResetCntByThread{};
 
     // Check if a tag matches
-    bool matchTag(Addr expected, Addr found);
+    bool matchTag(Addr expected, Addr found) const;
 
     // Set tag bits for a given table
     void setTag(Addr &dest, Addr src, int table);
@@ -289,7 +309,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned instShiftAmt {1};
 
     // use for microtage updatemispred counting
-    void checkUtageUpdateMisspred(const FetchTarget &stream);
+    void checkUtageUpdateMisspred(
+        const PredictionUpdateContext &context,
+        const PreparedUpdate &update);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -470,16 +492,13 @@ private:
                                            const Addr &startPC,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
                                            ThreadID tid = 0,
-                                           uint8_t asidHash = 0);
-
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+                                           uint8_t asidHash = 0) const;
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                 bool control_mispred);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
@@ -488,6 +507,7 @@ private:
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
+                                 ThreadID tid,
                                  AllocationTraceInfo &allocInfo);
 
 

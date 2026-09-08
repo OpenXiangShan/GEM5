@@ -82,41 +82,42 @@ public:
         // do push & pops on prediction
         pred.returnTarget = stack[sp].retAddr;
         auto takenSlot = pred.getTakenEntry();
-        if (takenSlot.isCall) { // call inst, push retAddr to spec stack
-            Addr retAddr = takenSlot.pc + takenSlot.size;
-            push(retAddr, stack, sp);
-        }
         if (takenSlot.isReturn) { // return inst, pop retAddr from spec stack
             // do pop
             auto retAddr = stack[sp].retAddr;
             pop(stack, sp);
         }
+        if (takenSlot.isCall) { // call inst, push retAddr to spec stack
+            Addr retAddr = takenSlot.pc + takenSlot.size;
+            push(retAddr, stack, sp);
+        }
     }
 
-    // recover state, from entry.predMetas[0] to recover sp and tos
-    // then if exeTaken, do push & pops on control squash
-    // input: only entry is used.
+    // Recover state from prediction metadata, then apply explicit actual
+    // branch facts for a control squash.
     // used when branch prediction error
     // two steps:
-    // 1. recover sp and tos from entry.predMetas[0]
+    // 1. recover sp and tos from context.predMetas[0]
     // 2. do push & pops on control squash based on the actual branch type (call/return)
-    void recoverState(const FetchTarget &entry)
+    void recoverState(const HistoryRecoveryContext &context,
+                      const BranchInfo &actualBranch,
+                      bool actuallyTaken)
     {
         auto &stack = specStack;
         auto &sp = specSp;
         // recover sp and tos first
-        auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[0]);
-        auto takenSlot = entry.exeBranchInfo;
+        auto meta_ptr = std::static_pointer_cast<uRASMeta>(
+            context.predMetas[0]);
         sp = meta_ptr->sp;
         stack[sp] = meta_ptr->tos;
 
-        if (entry.exeTaken) {
+        if (actuallyTaken) {
             // do push & pops on control squash
-            if (takenSlot.isReturn) {
+            if (actualBranch.isReturn) {
                 pop(stack, sp);
             }
-            if (takenSlot.isCall) {
-                Addr retAddr = takenSlot.pc + takenSlot.size;
+            if (actualBranch.isCall) {
+                Addr retAddr = actualBranch.pc + actualBranch.size;
                 push(retAddr, stack, sp);
             }
         }
@@ -160,6 +161,18 @@ protected:
     
     void TearDown() override {
         delete uras;
+    }
+
+    BranchInfo createBranch(Addr pc, bool isCall, bool isReturn,
+                            unsigned size = 4) {
+        BranchInfo branch;
+        branch.pc = pc;
+        branch.isIndirect = isReturn;
+        branch.isDirect = !branch.isIndirect;
+        branch.isCall = isCall;
+        branch.isReturn = isReturn;
+        branch.size = size;
+        return branch;
     }
     
     MockuRAS* uras;
@@ -378,6 +391,29 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     EXPECT_EQ(pred2.returnTarget, 0x1004);
 }
 
+TEST_F(URASTest, SpecUpdateStatePopThenPush) {
+    auto& stack = uras->getSpecStack();
+    auto& sp = uras->getSpecSp();
+    uras->push(0x1004, stack, sp);
+    uras->push(0x2004, stack, sp);
+
+    FullBTBPrediction pred;
+    pred.bbStart = 0x3000;
+    BTBEntry entry;
+    entry.valid = true;
+    entry.pc = 0x3000;
+    entry.size = 4;
+    entry.isCall = true;
+    entry.isReturn = true;
+    pred.btbEntries.push_back(entry);
+
+    uras->specUpdateState(pred);
+
+    EXPECT_EQ(pred.returnTarget, 0x2004);
+    EXPECT_EQ(sp, 2);
+    EXPECT_EQ(stack[sp].retAddr, 0x3004);
+}
+
 // Test basic recovery functionality
 TEST_F(URASTest, RecoverStateBasic) {
     boost::dynamic_bitset<> history(8, 0);
@@ -395,7 +431,9 @@ TEST_F(URASTest, RecoverStateBasic) {
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
     
     // recover
-    uras->recoverState(entry);
+    BranchInfo actualBranch;
+    uras->recoverState(
+        HistoryRecoveryContext(entry), actualBranch, false);
 
     // verify recovery result
     EXPECT_EQ(sp, 0);  // sp should be restored
@@ -419,12 +457,11 @@ TEST_F(URASTest, RecoverStateReturn) {
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
     
     // 设置return指令信息
-    entry.exeTaken = true;
-    entry.exeBranchInfo.isReturn = true;
-    entry.exeBranchInfo.pc = 0x2000;
-    
+    auto actualBranch = createBranch(0x2000, false, true);
+
     // 执行恢复
-    uras->recoverState(entry);
+    uras->recoverState(
+        HistoryRecoveryContext(entry), actualBranch, true);
 
     // 验证：应该先恢复sp和tos，然后执行pop
     EXPECT_EQ(sp, 0);  // 1(恢复) -> 0(pop)
@@ -447,13 +484,11 @@ TEST_F(URASTest, RecoverStateCall) {
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
     
     // 设置call指令信息
-    entry.exeTaken = true;
-    entry.exeBranchInfo.isCall = true;
-    entry.exeBranchInfo.pc = 0x1000;
-    entry.exeBranchInfo.size = 4;
-    
+    auto actualBranch = createBranch(0x1000, true, false);
+
     // 执行恢复
-    uras->recoverState(entry);
+    uras->recoverState(
+        HistoryRecoveryContext(entry), actualBranch, true);
 
     // 验证：应该先恢复sp和tos，然后执行push
     EXPECT_EQ(sp, 1);  // 0(恢复) -> 1(push)
@@ -474,12 +509,10 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     meta1.tos = uRASEntry(0x80000000L);
     entry1.predMetas[0] = std::make_shared<uRASMeta>(meta1);
     
-    entry1.exeTaken = true;
-    entry1.exeBranchInfo.isCall = true;
-    entry1.exeBranchInfo.pc = 0x1000;
-    entry1.exeBranchInfo.size = 4;
-    
-    uras->recoverState(entry1);
+    auto actualCall = createBranch(0x1000, true, false);
+
+    uras->recoverState(
+        HistoryRecoveryContext(entry1), actualCall, true);
 
     // 验证call的结果
     EXPECT_EQ(sp, 1);
@@ -491,11 +524,10 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     meta2.tos = uRASEntry(0x1004);
     entry2.predMetas[0] = std::make_shared<uRASMeta>(meta2);
     
-    entry2.exeTaken = true;
-    entry2.exeBranchInfo.isReturn = true;
-    entry2.exeBranchInfo.pc = 0x2000;
-    
-    uras->recoverState(entry2);
+    auto actualReturn = createBranch(0x2000, false, true);
+
+    uras->recoverState(
+        HistoryRecoveryContext(entry2), actualReturn, true);
 
     // 验证return的结果
     EXPECT_EQ(sp, 0);

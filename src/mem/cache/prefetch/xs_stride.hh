@@ -56,6 +56,7 @@ class XSStridePrefetcher : public Queued
         SatCounter8 lateConf;
         SatCounter8 longStride;
         Addr pc;
+        ContextID contextId;
         std::list<Addr> histStrides;
         bool matchedSinceAlloc;
         StrideEntry()
@@ -66,7 +67,9 @@ class XSStridePrefetcher : public Queued
               depth(1),
               lateConf(4, 7),
               longStride(4, 7),
-              pc(0)
+              pc(0),
+              contextId(InvalidContextID),
+              matchedSinceAlloc(false)
         {}
     };
 
@@ -92,15 +95,18 @@ class XSStridePrefetcher : public Queued
     {
       public:
         Addr pc;
-        NonStrideEntry() : TaggedEntry(), pc(0) {}
+        ContextID contextId;
+        NonStrideEntry()
+            : TaggedEntry(), pc(0), contextId(InvalidContextID)
+        {}
     };
 
     AssociativeSet<NonStrideEntry> nonStridePCs;
 
-    void markNonStridePC(Addr pc);
+    void markNonStridePC(Addr pc, ContextID context_id);
 
 
-    bool isNonStridePC(Addr pc);
+    bool isNonStridePC(Addr pc, ContextID context_id);
 
     Addr nonStrideHash(Addr pc) { return pc >> 1; }
 

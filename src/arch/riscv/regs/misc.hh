@@ -914,12 +914,15 @@ const uint64_t NEMU_COUNTER_MASK = 0xffffffffULL;
 
 const uint64_t NEMU_VS_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
 const uint64_t NEMU_HS_MASK = ((1 << 12) | NEMU_VS_MASK);
+const uint64_t NEMU_HIDELEG_MASK = NEMU_VS_MASK;
 const uint64_t NEMU_HIE_WMASK = NEMU_HS_MASK;
 const uint64_t NEMU_HIE_RMASK = NEMU_HS_MASK;
 
 const uint64_t NEMU_HIP_RMASK = NEMU_HS_MASK;
 const uint64_t NEMU_HVIP_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
+const uint64_t NEMU_VSIP_WMASK = (1 << 2);
 const uint64_t NEMU_MIDELEG_FORCED_MASK = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
+const uint64_t NEMU_SENVCFG_WMASK = 0;
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
 const RegVal STATUS_UXL_MASK = 3ULL << UXL_OFFSET;

@@ -89,6 +89,25 @@ TEST_F(TrieTestData, TwoOverlappingEntriesReversed)
     EXPECT_EQ(trie.lookup(0x123456789ab0000), ptr(2)) << dumpTrie();
 }
 
+TEST_F(TrieTestData, LookupExactOverlappingEntries)
+{
+    trie.insert(0x0123456789abcdef, 36, ptr(1));
+    trie.insert(0x0123456789abcdef, 40, ptr(2));
+
+    EXPECT_EQ(trie.lookup(0x0123456789abcdef, 36), ptr(1)) << dumpTrie();
+    EXPECT_EQ(trie.lookup(0x0123456789abcdef, 40), ptr(2)) << dumpTrie();
+    EXPECT_EQ(trie.lookup(0x0123456789abcdef, 44), nullptr) << dumpTrie();
+}
+
+TEST_F(TrieTestData, LookupExactOverlappingEntriesReversed)
+{
+    trie.insert(0x0123456789abcdef, 40, ptr(2));
+    trie.insert(0x0123456789abcdef, 36, ptr(1));
+
+    EXPECT_EQ(trie.lookup(0x0123456789abcdef, 36), ptr(1)) << dumpTrie();
+    EXPECT_EQ(trie.lookup(0x0123456789abcdef, 40), ptr(2)) << dumpTrie();
+}
+
 TEST_F(TrieTestData, TwoIndependentEntries)
 {
     trie.insert(0x0123456789abcdef, 40, ptr(2));

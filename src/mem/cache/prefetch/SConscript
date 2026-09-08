@@ -60,6 +60,8 @@ DebugFlag('CDPdepth')
 DebugFlag('CMCPrefetcher')
 DebugFlag('DespacitoStreamPrefetcher')
 
+GTest('context_key.test', 'context_key.test.cc')
+
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
 Source('multi.cc')

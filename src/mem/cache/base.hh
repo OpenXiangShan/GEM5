@@ -52,6 +52,7 @@
 #include <cstdint>
 #include <queue>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "base/addr_range.hh"
@@ -181,10 +182,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
       protected:
 
-        CacheRequestPort(const std::string &_name, BaseCache *_cache,
+        CacheRequestPort(const std::string &_name,
                         ReqPacketQueue &_reqQueue,
                         SnoopRespPacketQueue &_snoopRespQueue) :
-            QueuedRequestPort(_name, _cache, _reqQueue, _snoopRespQueue)
+            QueuedRequestPort(_name, _reqQueue, _snoopRespQueue)
         { }
 
         /**
@@ -310,8 +311,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
       protected:
 
-        CacheResponsePort(const std::string &_name, BaseCache *_cache,
+        CacheResponsePort(const std::string &_name, BaseCache& _cache,
                        const std::string &_label);
+
+        BaseCache& cache;
 
         /** A normal packet queue used to store responses. */
         RespPacketQueue queue;
@@ -332,11 +335,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     class CpuSidePort : public CacheResponsePort
     {
-      private:
-
-        // a pointer to our specific cache implementation
-        BaseCache *cache;
-
       protected:
         virtual bool recvTimingSnoopResp(PacketPtr pkt) override;
 
@@ -352,7 +350,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
       public:
 
-        CpuSidePort(const std::string &_name, BaseCache *_cache,
+        CpuSidePort(const std::string &_name, BaseCache& _cache,
                     const std::string &_label);
 
     };
@@ -911,9 +909,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param allocate Whether to allocate a block or use the temp block
      * @return Pointer to the new cache block.
      */
-    CacheBlk *handleFill(PacketPtr pkt, CacheBlk *blk,
-                         PacketList &writebacks, bool allocate,
-                         bool *refill_need_data_read = nullptr);
+    CacheBlk *handleFill(
+        PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
+        PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
+        bool *refill_need_data_read = nullptr);
 
     /**
      * Allocate a new block and perform any necessary writebacks
@@ -927,8 +926,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param writebacks A list of writeback packets for the evicted blocks
      * @return the allocated block
      */
-    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks,
-                            bool *evicted_dirty = nullptr);
+    CacheBlk *allocateBlock(
+        const PacketPtr pkt, PacketList &writebacks,
+        PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
+        bool *evicted_dirty = nullptr);
     /**
      * Evict a cache block.
      *
@@ -1647,6 +1648,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void unserialize(CheckpointIn &cp) override;
 
   private:
+
+    /** Packets forwarded as uncacheable writes and awaiting a response. */
+    std::unordered_set<PacketPtr> outstandingUncacheableWrites;
 
     const unsigned cacheLevel{0};
 

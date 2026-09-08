@@ -500,14 +500,15 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
     InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
-    if (filter->contains(addr)) {
+    Addr filter_key = sharedFilterKey(pfi, addr);
+    if (filter->contains(filter_key)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
         // Count filtered prefetch
         prefetchStats.pfFiltered++;
         return false;
     } else {
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(filter_key, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
         return true;
     }

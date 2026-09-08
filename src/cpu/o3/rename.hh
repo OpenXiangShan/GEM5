@@ -54,6 +54,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
+#include "enums/ROBWalkPolicy.hh"
 #include "sim/probe/probe.hh"
 
 namespace gem5
@@ -218,10 +219,23 @@ class Rename
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
      */
-    void renameInsts(ThreadID tid);
+    unsigned renameInsts(ThreadID tid, unsigned max_insts);
 
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
     bool canRename(ThreadID tid);
+
+    /** Whether any non-squashed, buffered instruction for this thread still
+     *  needs a new physical register this cycle. Used to decide whether the
+     *  thread is a Preg SMT-DynamicBorrowing donor candidate (see
+     *  UnifiedFreeList::setBorrowingDonor()). */
+    bool hasPregDemand(ThreadID tid) const;
+
+    /** Whether this thread is currently stalled on a per-thread backend
+     *  queue running out of quota (ROB full, or dispatch-queue bandwidth
+     *  full) -- i.e. a resource other than Preg itself. Deliberately
+     *  excludes RegFull, since that IS Preg being the bottleneck. Used as
+     *  an additional Preg donor trigger alongside hasPregDemand(). */
+    bool hasBackendQuotaFullStall(ThreadID tid);
 
     void releasePhysRegs();
 
@@ -281,7 +295,44 @@ class Rename
 
     InstSeqNum releaseSeq[MaxThreads] = {};
 
-    void tryFreePReg(PhysRegIdPtr phys_reg);
+    /** Hold-cycle countdown for the backend-backpressure-triggered Preg
+     *  donor marking (see hasBackendQuotaFullStall()/smtPregBackendBackpressureDonor). */
+    unsigned pregBackendDonorHoldRemaining[MaxThreads] = {};
+
+    void tryFreePReg(PhysRegIdPtr phys_reg, ThreadID tid);
+    /** RAT checkpoint records, per thread: sequence numbers of in-flight
+     *  control-flow instructions that currently own a checkpoint. Newest at
+     *  front, oldest at back (strictly descending by sequence number). */
+    std::list<InstSeqNum> ratSnapshotBuffer[MaxThreads];
+
+    /** True when the active recovery policy consumes RAT checkpoints
+     *  (NaiveCpt). Derived from robWalkPolicy at construction. */
+    bool ratSnapshotActive;
+    /** Maximum number of live checkpoints (slots). */
+    int numMaxRatSnapshot;
+    /** Minimum instructions between successive checkpoints. */
+    unsigned ratSnapshotDistance;
+    /** Live checkpoints across all threads (checkpoints are thread-shared). */
+    int numRatSnapshotInUse{0};
+    /** Instructions renamed since the last checkpoint was taken. */
+    unsigned lastRatSnapshotDistance{0};
+
+    /** Total live checkpoints across threads (invariant check). */
+    int countRatSnapshots();
+    size_t countRatSnapshots(ThreadID tid);
+    /** Whether a free checkpoint slot exists. */
+    bool ratSnapshotAvailable() {
+        assert(numRatSnapshotInUse == countRatSnapshots());
+        return numRatSnapshotInUse < numMaxRatSnapshot;
+    }
+    /** Record a checkpoint on this instruction. */
+    void takeSnapshot(const DynInstPtr &inst, ThreadID tid);
+    /** Release checkpoints at or older than the committed sequence number. */
+    void commitSnapshot(InstSeqNum commit_seq_num, ThreadID tid);
+    /** Release checkpoints strictly younger than the squash point. */
+    void squashSnapshot(InstSeqNum squash_seq_num, ThreadID tid);
+    /** Whether the instruction may carry a checkpoint. */
+    bool suitableForRatSnapshot(const DynInstPtr &inst);
 
     /** Pointer to CPU. */
     CPU *cpu;
@@ -353,6 +404,10 @@ class Rename
 
     /** Rename width, in instructions. */
     unsigned renameWidth;
+    /** Distinct SMT threads allowed to rename in one cycle. */
+    unsigned numPreDispatchThreads;
+    /** Aggregate Rename->backend link capacity. */
+    unsigned aggregateRenameWidth;
 
     unsigned releaseWidth;
 
@@ -362,6 +417,15 @@ class Rename
 
     /** The number of threads active in rename. */
     ThreadID numThreads;
+
+    /** Whether a thread stalled on ROB/dispatch-queue-bandwidth backpressure
+     *  (a resource other than Preg itself) should also be treated as a Preg
+     *  borrowing donor. When false, only hasPregDemand() drives donor status. */
+    const bool pregBackendBackpressureDonorEnabled;
+
+    /** Cycles to keep a backend-backpressure-triggered Preg donor marking
+     *  held after the triggering condition clears. */
+    const unsigned pregBackendBackpressureDonorHoldCycles;
 
     /** Enum to record the source of a structure full stall.  Can come from
      * either ROB, IQ, LSQ, and it is priortized in that order.
@@ -402,6 +466,10 @@ class Rename
         // statistics::Scalar renamedInsts;
         /** Stat for total number of renamed instructions per thread. */
         statistics::Vector renamedInsts;
+        /** Distinct SMT threads renamed in one cycle. */
+        statistics::Distribution threadsRenamedPerCycle;
+        /** Instructions renamed across all SMT threads in one cycle. */
+        statistics::Distribution instsRenamedPerCycle;
         /** Stat for total number of squashed instructions that rename
          * discards. */
         statistics::Scalar squashedInsts;
@@ -420,6 +488,9 @@ class Rename
         /** Stat for total number of times that rename runs out of free
          *  registers to use to rename. */
         statistics::Vector fullRegistersEvents;
+        /** Stat for per-thread Preg exhaustion: thread hits its quota limit
+         *  (Partitioned/DynamicBorrowing) while global free list still has regs. */
+        statistics::Vector perThreadPregFullEvents;
         /** Stat for total number of renamed destination registers. */
         statistics::Scalar renamedOperands;
         /** Stat for total number of source register rename lookups. */
@@ -446,12 +517,25 @@ class Rename
         statistics::Vector stallEvents;
 
         statistics::VectorDistribution smtStallEvents;
-        
+
+        /** Per-thread cycles where the thread was a Preg borrowing donor. */
+        statistics::Vector pregDonorCycles;
+        /** Per-thread cycles where ROB-full backpressure triggered donor. */
+        statistics::Vector pregBackendDonorCycles;
+        statistics::Scalar assignedRatSnapshot;
+        statistics::Scalar committedRatSnapshot;
+        statistics::Scalar squashedRatSnapshot;
+        statistics::Distribution distanceRatSnapshot;
+
     } stats;
 
     std::vector<StallReason> renameStalls;
 
     StallReason blockReason{NoStall};
+
+    /** Set within tick() when any thread stalls on RegFull this cycle;
+     *  used to avoid double-incrementing stallEvents[RegFull]. */
+    bool regFullThisCycle{false};
 
     void setAllStalls(StallReason renameStall);
 

@@ -37,7 +37,6 @@
     #include "cpu/pred/btb/test/test_dprintf.hh"
 #else
     #include "base/trace.hh"
-    #include "cpu/o3/dyn_inst.hh"
     #include "debug/AheadPipeline.hh"
     #include "debug/Fetch.hh"
     #include "debug/ABTB.hh"
@@ -233,6 +232,20 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
     return processed_entries;
 }
 
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::processEntriesNoSideEffect(const std::vector<TickedBTBEntry>& entries,
+                                     Addr startAddr) const
+{
+    (void)startAddr;
+
+    auto processed_entries = entries;
+    std::sort(processed_entries.begin(), processed_entries.end(),
+             [](const BTBEntry &a, const BTBEntry &b) {
+                 return a.pc < b.pc;
+             });
+    return processed_entries;
+}
+
 /**
  * Fill predictions for each pipeline stage:
  * 1. Copy BTB entries
@@ -244,51 +257,36 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
                                     std::vector<FullBTBPrediction>& stagePreds)
 {    // S0 prediction source statistic is tracked by AheadBTB
     // AheadBTB always has aheadPipelinedStages > 0
-    BTBEntry ubtb_pred_entry;
-    std::vector<TickedBTBEntry> mixed_entries;
+    std::vector<TickedBTBEntry> selected_entries;
+    bool selected_abtb_entries = false;
 
-    // if ubtb has prediction, add ubtb entry to aBTB entries
-    if (stagePreds[0].btbEntries.size() > 0) {
-        DPRINTF(ABTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
+    if (!entries.empty()) {
+        // RTL S1 arbitration gives ABTB exclusive priority once ABTB is valid.
+        // If these entries later predict not-taken, S1 falls through instead of
+        // falling back to an earlier uBTB taken prediction.
+        selected_entries = entries;
+        selected_abtb_entries = true;
+        btbStats.S0PredUseABTB++;
+    } else if (stagePreds[0].btbEntries.size() > 0) {
+        DPRINTF(ABTB, "AheadBTB: ABTB miss, keeping uBTB prediction\n");
         btbStats.S0PredUseUBTB++;
-        //if ubtb has prediction, add ubtb entry to aBTB entries
-        ubtb_pred_entry = stagePreds[0].btbEntries[0];
+        const auto &ubtb_pred_entry = stagePreds[0].btbEntries[0];
         assert(ubtb_pred_entry.valid);
-        mixed_entries = entries;
-        for (auto &entry : mixed_entries) {
-            if (entry.pc == ubtb_pred_entry.pc) {
-                entry.valid = false; // invalidate duplicated entry from aBTB (only use for align counter)
-                break;
-            }
-        }
-        mixed_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
-        // Deduplicate entries by pc (order can change)
-        std::sort(mixed_entries.begin(), mixed_entries.end(),
-              [](const TickedBTBEntry& a, const TickedBTBEntry& b) {
-                  return a.pc < b.pc;
-              });
-        // Drop entries invalidated during deduplication above
-        mixed_entries.erase(std::remove_if(mixed_entries.begin(), mixed_entries.end(),
-              [](const TickedBTBEntry& entry) {
-                  return !entry.valid;
-              }),
-              mixed_entries.end());
-        // return;
-    } else {// no uBTB prediction, only use aBTB prediction
-        mixed_entries = entries;
-        if (entries.size() > 0) {
-            btbStats.S0PredUseABTB++;
-        } else {
-            btbStats.S0Predmiss++;
-        }
+        selected_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
+    } else {
+        btbStats.S0Predmiss++;
     }
 
     FillStageLoop(s) {
         DPRINTF(ABTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
-        for (auto e : mixed_entries) {
-            stagePreds[s].btbEntries.push_back(BTBEntry(e));
+        for (auto e : selected_entries) {
+            auto pred_entry = BTBEntry(e);
+            if (selected_abtb_entries) {
+                pred_entry.source = getComponentIdx();
+            }
+            stagePreds[s].btbEntries.push_back(pred_entry);
         }
         checkAscending(stagePreds[s].btbEntries);
         dumpBTBEntries(stagePreds[s].btbEntries);
@@ -299,10 +297,10 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     }
 
     // Set predictions for each branch
-    for (auto &e : mixed_entries) {
+    for (auto &e : selected_entries) {
         assert(e.valid);
         if (e.isCond) {
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
+            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
             DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
@@ -326,9 +324,17 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
 void
 AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                    std::vector<FullBTBPrediction>& stagePreds,
-                                   ThreadID tid)
+                                   ThreadID tid,
+                                   Addr indexPhrHash)
 {
     auto &state = threadState(tid);
+
+    state.meta->valid = !entries.empty();
+    state.meta->indexPhrHash = indexPhrHash;
+    state.meta->lookupIndex = state.currentLookupIndex;
+    // The lookup set remains meaningful even on a miss; S3 update may need it
+    // to allocate a fresh ABTB entry for a newly taken branch.
+    state.meta->lookupIndexValid = state.currentLookupIndexValid;
 
     // Save current BTB entries
     for (auto e: entries) {
@@ -336,6 +342,9 @@ AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
     }
 
     state.lastPredEntries = state.meta->hit_entries;
+    state.lastPredIndexPhrHash = state.meta->indexPhrHash;
+    state.lastPredLookupIndex = state.meta->lookupIndex;
+    state.lastPredLookupIndexValid = state.meta->lookupIndexValid;
 }
 
 void
@@ -347,8 +356,9 @@ AheadBTB::putPCHistory(Addr startAddr,
     auto &state = threadState(tid);
     state.meta = std::make_shared<BTBMeta>();
     const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
+    const Addr indexPhrHash = foldAbtbPhrHash(history);
     // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr, tid, asidHash);
+    auto find_entries = lookup(startAddr, tid, asidHash, indexPhrHash);
 
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
@@ -357,7 +367,7 @@ AheadBTB::putPCHistory(Addr startAddr,
     fillStagePredictions(processed_entries, stagePreds);
     
     // Update metadata for later stages
-    updatePredictionMeta(processed_entries, stagePreds, tid);
+    updatePredictionMeta(processed_entries, stagePreds, tid, indexPhrHash);
 }
 
 std::shared_ptr<void>
@@ -375,16 +385,42 @@ AheadBTB::getPredictionMeta(ThreadID tid)
     return state.meta;
 }
 
-void
-AheadBTB::recoverState(const FetchTarget &entry)
+bool
+AheadBTB::lastPredHasEntries(ThreadID tid) const
 {
-    auto &state = threadState(entry.tid);
+    if (tid >= threadStates.size()) {
+        return false;
+    }
+    return !threadState(tid).lastPredEntries.empty();
+}
+
+void
+AheadBTB::recoverState(ThreadID tid)
+{
+    auto &state = threadState(tid);
     // Clear ahead pipeline after squash.
     while (!state.aheadReadBtbEntries.empty()) {
         state.aheadReadBtbEntries.pop();
     }
+    state.currentLookupIndexValid = false;
+    state.lastPredLookupIndexValid = false;
 }
 
+void
+AheadBTB::refreshPredictionMeta(Addr startAddr,
+                                const boost::dynamic_bitset<> &history,
+                                FullBTBPrediction &pred)
+{
+    auto &state = threadState(pred.tid);
+    state.meta = std::make_shared<BTBMeta>();
+    const Addr indexPhrHash = foldAbtbPhrHash(history);
+    auto found_entries = lookupNoSideEffect(
+        startAddr, pred.tid, pred.asidHash, indexPhrHash);
+    auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
+    for (const auto &entry : processed_entries) {
+        state.meta->hit_entries.push_back(BTBEntry(entry));
+    }
+}
 
 /**
  * Helper function to lookup entries in a single block
@@ -392,14 +428,16 @@ AheadBTB::recoverState(const FetchTarget &entry)
  * @return Vector of matching BTB entries
  */
 std::vector<AheadBTB::TickedBTBEntry>
-AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
+AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash,
+                            Addr indexPhrHash)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
         return res; // ignore false hit when lowest bit is 1
     }
     auto &state = threadState(tid);
-    Addr btb_idx = getIndex(block_pc, asidHash);
+    state.currentLookupIndexValid = false;
+    Addr btb_idx = getIndex(block_pc, asidHash, tid, indexPhrHash);
     auto btb_set = btb[btb_idx];
     assert(btb_idx < numSets);
     // AheadBTB always uses ahead-pipelined implementation:
@@ -420,6 +458,8 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
         // in case there are push without corresponding pop
         assert(state.aheadReadBtbEntries.size() == aheadPipelinedStages+1);
         std::tie(pc, idx_prvStartpc, set) = state.aheadReadBtbEntries.front();
+        state.currentLookupIndex = idx_prvStartpc;
+        state.currentLookupIndexValid = true;
         DPRINTF(AheadPipeline,
             "AheadBTB: [tid:%u] ahead-pipeline filled, using set %ld from pc %#lx\n",
             tid, idx_prvStartpc, pc);
@@ -440,14 +480,54 @@ AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
         if (way.valid && way.tag == tag_curStartpc) {
             res.push_back(way);
             way.tick = curTick();  // Update timestamp for MRU
-            std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
+            if (state.currentLookupIndexValid) {
+                std::make_heap(mruList[idx_prvStartpc].begin(),
+                               mruList[idx_prvStartpc].end(), older());
+            }
         }
     }
     return res;
 }
 
 std::vector<AheadBTB::TickedBTBEntry>
-AheadBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash)
+AheadBTB::lookupSingleBlockNoSideEffect(Addr block_pc, ThreadID tid,
+                                        uint8_t asidHash,
+                                        Addr indexPhrHash) const
+{
+    std::vector<TickedBTBEntry> res;
+    if (block_pc & 0x1) {
+        return res;
+    }
+
+    Addr btb_idx = getIndex(block_pc, asidHash, tid, indexPhrHash);
+    auto btb_set = btb[btb_idx];
+    assert(btb_idx < numSets);
+
+    const auto &state = threadState(tid);
+    auto queued_sets = state.aheadReadBtbEntries;
+    queued_sets.push(std::make_tuple(block_pc, btb_idx, btb_set));
+
+    Addr tag_curStartpc = getTag(block_pc, asidHash);
+    BTBSet set;
+    if (queued_sets.size() >= aheadPipelinedStages + 1) {
+        assert(queued_sets.size() == aheadPipelinedStages + 1);
+        Addr pc = 0;
+        Addr idx_prvStartpc = 0;
+        std::tie(pc, idx_prvStartpc, set) = queued_sets.front();
+        queued_sets.pop();
+    }
+
+    for (const auto &way : set) {
+        if (way.valid && way.tag == tag_curStartpc) {
+            res.push_back(way);
+        }
+    }
+    return res;
+}
+
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash,
+                 Addr indexPhrHash)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -455,8 +535,22 @@ AheadBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash)
     }
 
     // AheadBTB always uses single block lookup
-    res = lookupSingleBlock(block_pc, tid, asidHash);
+    res = lookupSingleBlock(block_pc, tid, asidHash, indexPhrHash);
     return res;
+}
+
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
+                             uint8_t asidHash,
+                             Addr indexPhrHash) const
+{
+    std::vector<TickedBTBEntry> res;
+    if (block_pc & 0x1) {
+        return res;
+    }
+
+    return lookupSingleBlockNoSideEffect(
+        block_pc, tid, asidHash, indexPhrHash);
 }
 
 
@@ -469,9 +563,6 @@ std::vector<BTBEntry>
 AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
                             Addr end_inst_pc)
 {
-    // auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    // // hit entries whose corresponding insts are acutally executed
-    // Addr end_inst_pc = stream.updateEndInstPC;
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
     auto old_entries = hit_entries;
@@ -492,51 +583,23 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  * Check if the branch was predicted correctly
  */
 void
-AheadBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(
+    const PredictionUpdateContext &stream, const BTBMeta* meta,
+    const PreparedUpdate &update)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e) {
+        if (update.outcome.valid && update.outcome.branch == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (!pred_branch_hit && update.outcome.taken) {
+        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n",
+                update.outcome.branch.pc, stream.predTick);
         btbStats.updateMiss++;
     }
 
-}
-
-
-/**
- * Collect all entries that need to be updated
- * 1. Process old entries
- * 2. Add new entry if necessary
- */
-std::vector<BTBEntry>
-AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
-                                     const FetchTarget &stream)
-{
-    auto all_entries = old_entries;
-
-    // since we don't want duplications in uBTB's entriesToUpdate,
-    // which causes its counter to update twice unintentionally
-    // we need to check if the new entry already exists in uBTB
-    bool pred_branch_hit = false;
-    for (auto &e: all_entries) {
-        if (stream.updateNewBTBEntry == e) {
-            pred_branch_hit = true;
-            break;
-        }
-    }
-    if (!pred_branch_hit) {
-        all_entries.push_back(stream.updateNewBTBEntry);
-    }
-
-    DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
-    dumpBTBEntries(all_entries);
-    return all_entries;
 }
 
 /**
@@ -548,8 +611,9 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
  * 5. Update MRU information
  */
 void
-AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
-                                        const BranchInfo takenbranchinfo,const bool isTaken)
+AheadBTB::updateBTBEntry(
+    Addr btb_idx, Addr btb_tag, const BTBEntry &entry,
+    bool actual_taken, Addr actual_target)
 {
 
     // Look for matching entry
@@ -561,24 +625,21 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
             break;
         }
     }
-    // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
-    // else use the recorded entry
-    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
-    entry_to_write.resolved = false; // reset resolved bit on update
+    // Execution facts replace old attributes; only the live counter survives.
+    auto entry_to_write = entry;
     entry_to_write.tag = btb_tag;   // update tag after found it!
-    // update saturating counter if necessary
+    // Keep a newly allocated conditional weakly taken, matching RTL.
     if (entry_to_write.isCond) {
-        bool this_cond_taken = isTaken && takenbranchinfo.pc == entry_to_write.pc;
-        if (!this_cond_taken) {
-            entry_to_write.alwaysTaken = false;
-        }
-        if (!entry_to_write.alwaysTaken) {
-            updateCtr(entry_to_write.ctr, this_cond_taken);
+        if (found) {
+            entry_to_write.ctr = it->ctr;
+            updateCtr(entry_to_write.ctr, actual_taken);
+        } else {
+            entry_to_write.ctr = 0;
         }
     }
     // update indirect target if necessary
-    if (entry_to_write.isIndirect && isTaken && takenbranchinfo.pc == entry_to_write.pc) {
-        entry_to_write.target = takenbranchinfo.target;
+    if (entry_to_write.isIndirect && actual_taken) {
+        entry_to_write.target = actual_target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
@@ -639,29 +700,37 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         return;
     }
 
-    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
-                            (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
-
-    // AheadBTB use S3 prediction for update
     auto &state = threadState(s3Pred.tid);
-    auto old_entries= processOldEntries(state.lastPredEntries, end_inst_pc);
+    if (!state.lastPredLookupIndexValid) {
+        DPRINTF(ABTB,
+                "AheadBTB: S3 update skipped, hit entries %lu, "
+                "lookup index valid %d\n",
+                state.lastPredEntries.size(),
+                state.lastPredLookupIndexValid);
+        return;
+    }
 
-    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries,s3Pred);
+    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
+                            (s3Pred.bbStart + predictWidth) &
+                                ~mask(floorLog2(predictWidth) - 1);
+    auto old_entries = processOldEntries(state.lastPredEntries, end_inst_pc);
+
+    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries, s3Pred);
 
     for (auto &entry : entries_to_update) {
         Addr startPC = s3Pred.bbStart;
-        Addr btb_tag = getTag(startPC, s3Pred.asidHash);  // use last pc to get tag
+        Addr btb_tag = getTag(startPC, s3Pred.asidHash);
         if (previousPC == 0) {
             DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
             return;
         }
-        Addr btb_idx = getIndex(previousPC, s3Pred.asidHash);  // use last pc to get idx
-        BranchInfo takenbranchinfo;
-        takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
-        takenbranchinfo.target = s3Pred.getTakenEntry().target;
-        entry.source = getComponentIdx(); // mark the entry source as AheadBTB
+        Addr btb_idx = state.lastPredLookupIndex;
+        entry.source = getComponentIdx();
 
-        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
+        const auto taken_entry = s3Pred.getTakenEntry();
+        const bool entry_taken = s3Pred.isTaken() && taken_entry.pc == entry.pc;
+        updateBTBEntry(
+            btb_idx, btb_tag, entry, entry_taken, taken_entry.target);
     }
 }
 std::vector<BTBEntry>
@@ -684,7 +753,6 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         new_entry.valid = true;
 
         if (new_entry.isCond) {
-            new_entry.alwaysTaken = true;
             new_entry.ctr = 0;
         }
         all_entries.push_back(new_entry);
@@ -704,39 +772,45 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
  * 5. Update MRU information
  */
 void
-AheadBTB::update(const FetchTarget &stream)
+AheadBTB::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     if (usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
         return;
     }
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get();
-    Addr end_inst_pc = stream.updateEndInstPC;
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        stream.predMetas[getComponentIdx()]).get();
 
-    // 1. Process old entries
-    auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
+    // 1. Check prediction hit status, for stats recording
+    checkPredictionHit(
+        stream, meta, update);
 
-    // 2. Check prediction hit status, for stats recording
-    checkPredictionHit(stream,
-        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
+    Addr previousPC = getPreviousPC(stream);
+    if (previousPC == 0) {
+        DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
+        return;
+    }
+    const Addr btb_tag = getTag(stream.getRealStartPC(), stream.asidHash);
+    const Addr btb_idx = meta->lookupIndexValid
+        ? meta->lookupIndex
+        : getIndex(previousPC, stream.asidHash, stream.tid);
 
-    // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-    
-    // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
-    for (auto &entry : entries_to_update) {
-        Addr startPC = stream.getRealStartPC();
-        Addr btb_tag = getTag(startPC, stream.asidHash);  // use current pc to get tag
-
-        // AheadBTB always uses ahead-pipelined update logic
-        Addr previousPC = getPreviousPC(stream);
-        if (previousPC == 0) {
-            DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
-            return;
+    // Train from explicit branch outcomes. A resolve packet may contain only
+    // part of the block, while a commit packet contains all committed branches.
+    for (const auto &branch : update.branches) {
+        auto hit = std::find_if(
+            meta->hit_entries.begin(), meta->hit_entries.end(),
+            [&branch](const BTBEntry &entry) {
+                return entry.pc == branch.pc;
+            });
+        if (hit == meta->hit_entries.end() && !branch.taken) {
+            continue;
         }
-        Addr btb_idx = getIndex(previousPC, stream.asidHash);  // use last pc to get idx
-        entry.source = getComponentIdx(); // mark the entry source as AheadBTB
-        updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
+
+        BTBEntry entry(makeBranchInfo(branch));
+        entry.source = getComponentIdx();
+        updateBTBEntry(btb_idx, btb_tag, entry, branch.taken, branch.target);
     }
 }
 
@@ -746,7 +820,7 @@ AheadBTB::update(const FetchTarget &stream)
  * @return Previous PC, 0 if the stream is not filled
  */
 Addr
-AheadBTB::getPreviousPC(const FetchTarget &stream)
+AheadBTB::getPreviousPC(const PredictionUpdateContext &stream)
 {
     // get pc from the nth previous block, the value of n is aheadPipelinedStages
     auto previous_pcs = stream.previousPCs;
@@ -769,13 +843,14 @@ AheadBTB::getPreviousPC(const FetchTarget &stream)
 #ifndef UNIT_TEST
 
 void
-AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+AheadBTB::commitBranch(const PredictionUpdateContext &context,
+                       const BranchOutcome &outcome)
 {
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        context.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
-    // auto &static_inst = inst->staticInst();
+    auto pc = outcome.pc;
+    auto npc = outcome.target;
     bool this_branch_hit = false;
     auto entry = BTBEntry();
     for (auto e : hit_entries) {
@@ -785,9 +860,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
             break;
         }
     }
-    // bool this_branch_miss = !this_branch_hit;
-    bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc; // all uncond should be taken
+    bool this_branch_taken = outcome.taken || !outcome.isCond;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;
@@ -796,7 +869,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         } else {
             btbStats.allBranchHitNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (outcome.isCond) {
             btbStats.condHits++;
             if (this_branch_taken) {
                 btbStats.condHitTakens++;
@@ -810,26 +883,23 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
                     btbStats.condPredWrong++;
                 }
         }
-        if (inst->isUncondCtrl()) {
+        if (!outcome.isCond) {
             btbStats.uncondHits++;
         }
-        // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
-                btbStats.indirectHits++;
-                Addr pred_target = entry.target;
-                if (pred_target == this_branch_target) {
-                    btbStats.indirectPredCorrect++;
-                } else {
-                    btbStats.indirectPredWrong++;
-                }
+        if (outcome.isIndirect) {
+            btbStats.indirectHits++;
+            Addr pred_target = entry.target;
+            if (pred_target == this_branch_target) {
+                btbStats.indirectPredCorrect++;
+            } else {
+                btbStats.indirectPredWrong++;
             }
-            if (inst->isCall()) {
-                btbStats.callHits++;
-            }
-            if (inst->isReturn()) {
-                btbStats.returnHits++;
-            }
+        }
+        if (outcome.isCall) {
+            btbStats.callHits++;
+        }
+        if (outcome.isReturn) {
+            btbStats.returnHits++;
         }
     } else {
         btbStats.allBranchMisses++;
@@ -838,7 +908,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         } else {
             btbStats.allBranchMissNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (outcome.isCond) {
             btbStats.condMisses++;
             if (this_branch_taken) {
                 btbStats.condMissTakens++;
@@ -848,21 +918,18 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
                 btbStats.condPredCorrect++;
             }
         }
-        if (inst->isUncondCtrl()) {
+        if (!outcome.isCond) {
             btbStats.uncondMisses++;
         }
-        // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
-                btbStats.indirectMisses++;
-                btbStats.indirectPredWrong++;
-            }
-            if (inst->isCall()) {
-                btbStats.callMisses++;
-            }
-            if (inst->isReturn()) {
-                btbStats.returnMisses++;
-            }
+        if (outcome.isIndirect) {
+            btbStats.indirectMisses++;
+            btbStats.indirectPredWrong++;
+        }
+        if (outcome.isCall) {
+            btbStats.callMisses++;
+        }
+        if (outcome.isReturn) {
+            btbStats.returnMisses++;
         }
     }
 }
