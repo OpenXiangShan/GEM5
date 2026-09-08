@@ -115,6 +115,7 @@ class IssueQue : public SimObject
     const int iqsize;
     const int replayQsize = 32;
     const int scheduleToExecDelay;
+    const bool deferNewEnqueueSelection;
     const std::string iqname;
     std::vector<std::bitset<Num_OpClasses>> portFuDescs;
     std::vector<FUDesc*> fuDescs;
