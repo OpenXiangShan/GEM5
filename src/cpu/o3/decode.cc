@@ -44,6 +44,7 @@
 
 #include "arch/generic/pcstate.hh"
 #include "arch/riscv/insts/fusion.hh"
+#include "arch/riscv/insts/vector.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
@@ -892,13 +893,17 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         }
 #endif
 
-        if (inst->staticInst->isVectorConfig()) {
+        // Only register-based vtype needs a serialization barrier.
+        if (inst->staticInst->isVectorConfig() &&
+            !static_cast<RiscvISA::VConfOp *>(
+                inst->staticInst.get())->vtypeIsImm) {
             inst->setSerializeBefore();
             inst->setSerializeAfter();
             decode_stalls.push(StallReason::SerializeStall);
             breakDecode = StallReason::SerializeStall;
             DPRINTF(Decode,
-                    "[tid:%i] [sn:%llu] Vector config decoded, set serialize barrier and stop decoding younger "
+                    "[tid:%i] [sn:%llu] vsetvl decoded, set serialize "
+                    "barrier and stop decoding younger "
                     "instructions.\n",
                     tid, inst->seqNum);
             break;
