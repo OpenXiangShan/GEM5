@@ -539,6 +539,14 @@ class DynInst : public ExecContext, public RefCounted
     int issueportid = -1;
     int iqtag = -1;
 
+    // Cached semantic latency for a dynamic floating-point divide.  The
+    // value is computed after the renamed source operands are available and
+    // reused by issue-port arbitration, execution, and wakeup scheduling.
+    mutable int fdivLatency = -1;
+
+    int getFdivLatency() const { return fdivLatency; }
+    void setFdivLatency(int latency) const { fdivLatency = latency; }
+
   public:
     /** Records changes to result? */
     void recordResult(bool f) { instFlags[RecordResult] = f; }
