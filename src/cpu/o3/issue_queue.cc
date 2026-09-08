@@ -197,6 +197,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
       outports(params.oports.size()),
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
+      deferNewEnqueueSelection(params.deferNewEnqueueSelection),
       iqname(params.name),
       vectorSplitUnits(params.vectorSplitUnits),
       nextVectorLoadSplitUnit(0),
@@ -210,6 +211,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
 {
     panic_if(vectorSplitUnits == 0,
              "%s: vectorSplitUnits must be greater than 0\n", iqname);
+
+    if (deferNewEnqueueSelection) {
+        enqueuedThisCycle.reserve(inports);
+    }
 
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
@@ -989,6 +994,16 @@ IssueQue::selectInst()
                 continue;
             }
 
+            // Registered entries cannot participate in their enqueue cycle.
+            if (deferNewEnqueueSelection &&
+                std::find(enqueuedThisCycle.begin(), enqueuedThisCycle.end(),
+                          inst->seqNum) != enqueuedThisCycle.end()) {
+                DPRINTF(Schedule, "[sn:%llu] defer selection after enqueue\n",
+                        inst->seqNum);
+                ++it;
+                continue;
+            }
+
             uint32_t lat = scheduler->getCorrectedOpLat(inst);
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
@@ -1086,6 +1101,7 @@ IssueQue::tick()
         iqstats->insertDist[instNumInsert]++;
     }
     instNumInsert = 0;
+    enqueuedThisCycle.clear();
 
     scheduleInst();
     processVectorReadyQ();
@@ -1117,6 +1133,9 @@ IssueQue::insert(const DynInstPtr& inst)
     (*instNumClassify[inst->opClass()])++;
     instNum++;
     instNumInsert++;
+    if (deferNewEnqueueSelection) {
+        enqueuedThisCycle.push_back(inst->seqNum);
+    }
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 
