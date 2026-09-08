@@ -122,9 +122,16 @@ CDP::updateVaddrMode(Addr addr)
     }
 
     if (next_mode != currentVaddrMode) {
+        const unsigned previous_vaddr_bits = cdpVaddrBits();
+        if (next_mode == CdpVaddrMode::Sv48) {
+            cdpStats.vaddrModeUpgradeSv48++;
+        } else {
+            assert(next_mode == CdpVaddrMode::Sv57);
+            cdpStats.vaddrModeUpgradeSv57++;
+        }
         DPRINTF(CDPdebug,
                 "CDP virtual-address mode upgraded from Sv%u to Sv%u\n",
-                cdpVaddrBits(),
+                previous_vaddr_bits,
                 next_mode == CdpVaddrMode::Sv48 ? 48 : 57);
         currentVaddrMode = next_mode;
     }
@@ -178,7 +185,11 @@ CDP::CDPStats::CDPStats(statistics::Group *parent)
       ADD_STAT(pfHitCDP, statistics::units::Count::get(),
                "Number of times demand access hits cdp prefetched block"),
       ADD_STAT(passedFilter, statistics::units::Count::get(), "Number of prefetch requests passed the filter"),
-      ADD_STAT(inserted, statistics::units::Count::get(), "Number of prefetches inserted")
+      ADD_STAT(inserted, statistics::units::Count::get(), "Number of prefetches inserted"),
+      ADD_STAT(vaddrModeUpgradeSv48, statistics::units::Count::get(),
+               "Number of CDP virtual-address mode upgrades to Sv48"),
+      ADD_STAT(vaddrModeUpgradeSv57, statistics::units::Count::get(),
+               "Number of CDP virtual-address mode upgrades to Sv57")
 {
     ThrottlingActionDist.init(0, 5, 1).flags(statistics::nozero);
 }
@@ -446,6 +457,7 @@ CDP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
 void
 CDP::addToVpnTable(Addr addr, bool pf_hit_cdp)
 {
+    updateVaddrMode(addr);
     Addr vpn_key = cdpVpnKey(addr);
     int vpn0 = BITS(addr, 20, 12);
     int page_offset = BITS(addr, 11, 0);

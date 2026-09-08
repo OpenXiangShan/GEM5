@@ -584,6 +584,8 @@ class CDP : public Queued
         statistics::Scalar pfHitCDP;
         statistics::Scalar passedFilter;
         statistics::Scalar inserted;
+        statistics::Scalar vaddrModeUpgradeSv48;
+        statistics::Scalar vaddrModeUpgradeSv57;
     } cdpStats;
 };
 
