@@ -1349,17 +1349,24 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // restore vtype
     uint8_t restored_vtype = cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
+    bool vtype_ready = true;
     for (auto& it : cpu->instList) {
-        if (!it->isSquashed() &&
+        if (it->threadNumber == tid && !it->isSquashed() &&
             it->seqNum <= seqNum &&
             it->staticInst->isVectorConfig()) {
             auto vset = static_cast<RiscvISA::VConfOp*>(it->staticInst.get());
-            if (vset->vtypeIsImm) {
+            vtype_ready = vset->vtypeIsImm;
+            if (vtype_ready) {
                 restored_vtype = vset->earlyVtype;
             }
         }
     }
     decoder[tid]->as<RiscvISA::Decoder>().setVtype(restored_vtype);
+    // Only surviving unresolved vsetvl instructions keep fetch waiting.
+    if (!vtype_ready) {
+        decoder[tid]->as<RiscvISA::Decoder>().clearVtype();
+    }
+    waitForVsetvl[tid] = !vtype_ready;
 
     // align PC to 2 bytes
     // This handles cases where PC might be odd due to speculative execution,
@@ -1565,7 +1572,9 @@ Fetch::initializeTickState()
         bool updated_status = checkSignalsAndUpdate(tid);
         status_change =  status_change || updated_status;
         if (fromCommit->commitInfo[tid].emptyROB) {
-            waitForVsetvl[tid] = false;
+            // A decoded vsetvl may not have reached the ROB yet.
+            waitForVsetvl[tid] =
+                decoder[tid]->as<RiscvISA::Decoder>().stall();
         }
     }
 
