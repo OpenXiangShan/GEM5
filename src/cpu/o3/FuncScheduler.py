@@ -84,9 +84,6 @@ class IssueQue(SimObject):
     size = Param.Int(16, "")
     inports = Param.Int(2, "")
     scheduleToExecDelay = Param.Cycles(2, "")
-    deferNewEnqueueSelection = Param.Bool(
-        False, "Delay selection of newly enqueued instructions until the next cycle"
-    )
     vectorSplitUnits = Param.Unsigned(
         2, "Number of independent vector load/store split units per direction")
     oports = VectorParam.IssuePort("")

@@ -197,7 +197,6 @@ IssueQue::IssueQue(const IssueQueParams& params)
       outports(params.oports.size()),
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
-      deferNewEnqueueSelection(params.deferNewEnqueueSelection),
       iqname(params.name),
       vectorSplitUnits(params.vectorSplitUnits),
       nextVectorLoadSplitUnit(0),
@@ -212,9 +211,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
     panic_if(vectorSplitUnits == 0,
              "%s: vectorSplitUnits must be greater than 0\n", iqname);
 
-    if (deferNewEnqueueSelection) {
-        enqueuedThisCycle.reserve(inports);
-    }
+    enqueuedThisCycle.reserve(inports);
 
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
@@ -994,9 +991,9 @@ IssueQue::selectInst()
                 continue;
             }
 
-            // Registered entries cannot participate in their enqueue cycle.
-            if (deferNewEnqueueSelection &&
-                std::find(enqueuedThisCycle.begin(), enqueuedThisCycle.end(),
+            // The dispatch input becomes selectable only after the enqueue
+            // register boundary. Resident entries keep their wakeup timing.
+            if (std::find(enqueuedThisCycle.begin(), enqueuedThisCycle.end(),
                           inst->seqNum) != enqueuedThisCycle.end()) {
                 DPRINTF(Schedule, "[sn:%llu] defer selection after enqueue\n",
                         inst->seqNum);
@@ -1133,9 +1130,7 @@ IssueQue::insert(const DynInstPtr& inst)
     (*instNumClassify[inst->opClass()])++;
     instNum++;
     instNumInsert++;
-    if (deferNewEnqueueSelection) {
-        enqueuedThisCycle.push_back(inst->seqNum);
-    }
+    enqueuedThisCycle.push_back(inst->seqNum);
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 

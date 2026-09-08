@@ -64,8 +64,6 @@ def setKmhV3Params(args, system):
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
         cpu.scheduler.disableAllRegArb()
-        for iq in cpu.scheduler.IQs:
-            iq.deferNewEnqueueSelection = True
         cpu.scheduler.enableMainRdpOpt = False
         cpu.scheduler.intRegfileBanks = 1
         # intiq0
