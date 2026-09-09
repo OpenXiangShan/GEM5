@@ -3543,7 +3543,14 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     bool isNormalLd = this->isNormalLd();
     bool enableLdMissReplay = lsq->enableLdMissReplay();
     // All responses received in 1 cycle are cache hit.
-    bool cacheHit = LSQRequest::_inst->getCpuPtr()->ticksToCycles(curTick() - pkt->sendTick) <= 1;
+    const auto observedLatencyCycles =
+        static_cast<uint32_t>(LSQRequest::_inst->getCpuPtr()->ticksToCycles(
+                curTick() - pkt->sendTick));
+    bool cacheHit = observedLatencyCycles <= 1;
+    if (isLoad() && instruction()->canLVP()) {
+        instruction()->recordVPObservedLoadResult(
+                observedLatencyCycles, cacheHit);
+    }
     // Dump inst num, request addr, and packet addr
     if (debug::LSQ) {
         uint64_t firstWord = 0;
@@ -3622,6 +3629,14 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
     assert(pktIdx < _packets.size());
     numReceivedPackets++;
     if (numReceivedPackets == _packets.size()) {
+        const auto observedLatencyCycles =
+            static_cast<uint32_t>(LSQRequest::_inst->getCpuPtr()->ticksToCycles(
+                    curTick() - pkt->sendTick));
+        const bool cacheHit = observedLatencyCycles <= 1;
+        if (isLoad() && instruction()->canLVP()) {
+            instruction()->recordVPObservedLoadResult(
+                    observedLatencyCycles, cacheHit);
+        }
         flags.set(Flag::Complete);
         assemblePackets();
         _hasStaleTranslation = false;
