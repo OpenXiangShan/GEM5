@@ -161,6 +161,8 @@ class BaseO3CPU(BaseCPU):
     dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
 
     wbWidth = Param.Unsigned(20, "Writeback width")
+    vectorMemCompletionDelay = Param.Cycles(0,
+        "Extra delay from vector memory completion to IEW writeback")
 
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")

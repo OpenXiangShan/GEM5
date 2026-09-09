@@ -354,6 +354,24 @@ class IEW
      */
     void writebackInsts();
 
+    /** Returns true for vector memory operations covered by completion delay. */
+    bool isVectorMemCompletionDelayInst(const DynInstPtr &inst) const;
+
+    /** Returns whether a completed instruction should wait before writeback. */
+    bool shouldDelayVectorMemCompletion(const DynInstPtr &inst) const;
+
+    /** Queues a completed vector memory instruction for delayed writeback. */
+    void enqueueVectorMemCompletionDelay(const DynInstPtr &inst);
+
+    /** Releases vector memory completions whose delay has elapsed. */
+    void processDelayedVectorMemCompletions();
+
+    /** Original readyToFinish body after optional completion delay filtering. */
+    void enqueueWritebackNow(const DynInstPtr &inst);
+
+    /** Removes delayed vector memory completions squashed for one thread. */
+    void squashDelayedVectorMemCompletions(ThreadID tid);
+
     bool checkSerialize(const DynInstPtr& inst);
 
     /** Processes inputs and changes state accordingly. */
@@ -505,6 +523,19 @@ class IEW
     /** Writeback width. */
     unsigned wbWidth;
 
+    /** Extra delay after vector memory completion before IEW writeback. */
+    const Cycles vectorMemCompletionDelay;
+
+    struct DelayedVectorMemCompletion
+    {
+        Tick readyTick;
+        Tick enqueueTick;
+        DynInstPtr inst;
+    };
+
+    std::deque<DelayedVectorMemCompletion> delayedVectorMemCompletionQ;
+    std::array<unsigned, MaxThreads> delayedVectorMemCompletionCount{};
+
     bool enableStoreSetTrain;
 
     /** Defer RAW MDP recovery/training until the violating load is at Commit. */
@@ -590,6 +621,18 @@ class IEW
         statistics::Vector instsToCommit;
         /** Number of instructions that writeback. */
         statistics::Vector writebackCount;
+        /** Number of vector memory instructions delayed before writeback. */
+        statistics::Scalar vectorMemCompletionDelayedInsts;
+        /** Number of vector memory loads delayed before writeback. */
+        statistics::Scalar vectorMemCompletionDelayedLoads;
+        /** Number of vector memory stores delayed before writeback. */
+        statistics::Scalar vectorMemCompletionDelayedStores;
+        /** Total cycles spent in vector memory completion delay. */
+        statistics::Scalar vectorMemCompletionDelayCycles;
+        /** Sum of delayed vector memory completion queue occupancy per cycle. */
+        statistics::Scalar vectorMemCompletionDelayQueueOccupancy;
+        /** Number of delayed vector memory completions dropped on squash. */
+        statistics::Scalar vectorMemCompletionDelaySquashedInsts;
         /** Number of instructions that wake consumers. */
         statistics::Vector producerInst;
         /** Number of instructions that wake up from producers. */
