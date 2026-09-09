@@ -1,361 +1,97 @@
-# GEM5 Difftest 流程分析
+# GEM5 Difftest 的状态与事件边界
 
-## 概述
+Difftest 在架构指令边界推进参考模型，并检查选定的架构状态。
+它不是逐周期比较，也不保证每次提交都检查全部寄存器。
 
-GEM5的difftest（差分测试）是一个验证CPU正确性的机制，通过与参考模型（如NEMU或Spike）逐周期比较所有架构状态来检测实现错误。本文档详细分析difftest的工作流程，特别关注异常处理和RISC-V CSR不一致的处理机制。
+## 源码入口
 
-## 架构组件
+| 文件 | 职责 |
+| --- | --- |
+| `src/cpu/base.cc` | 创建各 hart 的 REF，在 CPU startup 时捕获初态，接管 CPU 时移交 difftest 状态 |
+| `src/cpu/difftest_cpu.cc` | DUT 状态采集、首次同步、REF 推进、比较、错误报告和共享内存差异处理 |
+| `src/cpu/difftest.hh`、`difftest.cc` | NEMU/Spike ABI 缓冲区、动态符号加载和寄存器复制接口 |
+| `src/cpu/o3/commit.cc` | 提供已提交结果，在异常改变 DUT 状态前建立 REF 初态 |
+| `src/cpu/simple/base.cc` | SimpleCPU 的寄存器采集和提交入口 |
 
-### 1. 代理模型（Proxy）
-```cpp
-// src/cpu/difftest.hh
-class RefProxy {
-    void (*memcpy)(paddr_t nemu_addr, void *dut_buf, size_t n, bool direction);
-    void (*regcpy)(void *dut, bool direction);
-    void (*csrcpy)(void *dut, bool direction);
-    void (*exec)(uint64_t n);
-    vaddr_t (*guided_exec)(void *disambiguate_para);
-    void (*raise_intr)(uint64_t no);
-    void (*isa_reg_display)();
-};
+## 每个 hart 的状态
+
+`DiffAllStates` 中的缓冲区各有用途：
+
+- `initialDutState`：startup 捕获的 DUT 初态，后续比较不修改它。
+- `initialStateCaptured`：初态是否已捕获，避免使用未初始化或遗漏的快照。
+- `referenceInitialized`：内存和初始寄存器是否已同步到 REF。
+- `referenceRegFile`：从 REF 读回的架构状态；允许的 skip/reconciliation 会修改它并写回 REF。
+- `gem5RegFile`：用于比较与诊断的 DUT 工作缓冲区，并非每一步都完整刷新的快照。
+
+GPR、FPR、vector 的读取由 CPU 实现；O3 使用 committed rename map，
+SimpleCPU 使用指定 `tid` 的 ThreadContext。启动 CSR 的导出包括特权状态，
+并区分原始 CSR 与合成值：`MIP/MIE` 来自中断控制器，`VCSR/VLENB`
+使用 ISA 的架构读取接口，`FCSR` 由 `FFLAGS/FRM` 合成。
+不能把这些读取统一替换成 `readMiscRegNoEffect()`。
+
+## 首次同步
+
+正常提交路径的时序是：
+
+```text
+startup：捕获 DUT S0
+DUT：    S0 --指令 I--> S1
+REF：    写入 S0 --指令 I--> R1
+检查：   S1 与 R1 的选定状态
 ```
 
-支持两种参考模型：
-- **NemuProxy**: 使用NEMU作为参考模型，支持多核
-- **SpikeProxy**: 使用Spike作为参考模型，仅支持单核
+`ensure_difftest_reference(tid, event_pc)` 是幂等入口：首次调用复制内存和
+保存的 S0 到 REF，读回 REF 的规范化状态，并标记初始化完成。
+`event_pc` 必须对应首次事件之前的 PC，与保存的初态 PC 一致。
 
-### 2. 寄存器文件结构
-```cpp
-struct riscv64_CPU_regfile {
-    union { uint64_t _64; } gpr[32];      // 通用寄存器
-    union { uint64_t _64; } fpr[32];      // 浮点寄存器
-    
-    // CSR寄存器
-    uint64_t mode;                        // 特权模式
-    uint64_t mstatus, sstatus;           // 状态寄存器
-    uint64_t mepc, sepc;                 // 异常PC
-    uint64_t mtval, stval;               // 异常值
-    uint64_t mcause, scause;             // 异常原因
-    uint64_t satp, mip, mie;             // 地址转换和中断
-    
-    // 虚拟化扩展
-    uint64_t mtval2, mtinst, hstatus;
-    uint64_t hideleg, hedeleg;
-    
-    // 向量扩展
-    union { uint64_t _64[VENUM64]; } vr[32];
-    uint64_t vtype, vl, vstart;
-};
-```
+首次架构事件不一定是普通提交：
 
-## 主要工作流程
+- 普通提交在 `difftestStep()` 中确保初始化。
+- O3 架构异常在 DUT 执行 trap 之前确保初始化。
+- O3 中断通过 `difftestRaiseIntr()`，在 REF 接收中断之前确保初始化。
 
-### 1. 初始化阶段
-```cpp
-// src/cpu/base.cc:209
-if (enableDifftest) {
-    // 选择参考模型
-    if (params().difftest_ref_so.find("spike") != std::string::npos) {
-        diffAllStates->proxy = new SpikeProxy(...);
-    } else {
-        diffAllStates->proxy = new NemuProxy(...);
-    }
-    
-    // 初始化参考模型状态
-    diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), REF_TO_DUT);
-}
-```
+异常后的 handler PC 不用于初始 PC 校验，也不会用异常后的 DUT 状态
+重新覆盖 S0。页故障使用原有 guided execution，ECALL 使用原有指令比较路径；
+其他异常的重试策略保持不变。
 
-### 2. 指令执行与状态收集
-在O3 CPU的commit阶段，每条指令都会调用`diffInst`收集执行信息：
+内存仍在首次事件时建立 REF 副本，保留普通内存、NoHype 和 COW 分支的
+既有策略；这不是新增的多核内存一致性协议。
 
-```cpp
-// src/cpu/o3/commit.cc:1429
-void Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
-    // 收集指令基本信息
-    cpu->diffInfo.inst = inst->staticInst;
-    cpu->diffInfo.pc = &inst->pcState();
-    
-    // 收集目标寄存器值
-    for (int i = 0; i < inst->numDestRegs(); i++) {
-        const auto &dest = inst->destRegIdx(i);
-        if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {
-            cpu->diffInfo.scalarResults.at(i) = cpu->getArchReg(dest, tid);
-        } else if (dest.isVecReg()) {
-            cpu->getArchReg(dest, &(cpu->diffInfo.vecResult), tid);
-        }
-    }
-    
-    // 收集内存访问信息
-    cpu->diffInfo.physEffAddr = inst->physEffAddr;
-    cpu->diffInfo.effSize = inst->effSize;
-    
-    // 执行difftest步骤
-    cpu->difftestStep(tid, inst->seqNum);
-}
-```
+## 推进、比较与允许的同步
 
-### 3. Difftest执行逻辑
-```cpp
-// src/cpu/base.cc:1431
-void BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq) {
-    // 判断哪些指令需要进行difftest
-    bool fence_should_diff = is_fence && !diffInfo.inst->isMicroop();
-    bool lr_should_diff = diffInfo.inst->isLoadReserved();
-    bool amo_should_diff = diffInfo.inst->isAtomic() && diffInfo.inst->numDestRegs() > 0;
-    bool is_sc = diffInfo.inst->isStoreConditional() && diffInfo.inst->isDelayedCommit();
-    bool other_should_diff = !diffInfo.inst->isAtomic() && !is_fence && !is_sc &&
-                             (!diffInfo.inst->isMicroop() || diffInfo.inst->isLastMicroop());
+`difftestStep()` 先筛选架构指令边界，再调用 `diffWithNEMU()`：
 
-    if (should_diff) {
-        // 首次执行时初始化内存和寄存器状态
-        if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
-            initializeDifftest();
-        }
-        
-        // 执行difftest比较
-        auto [diff_at, npc_match] = diffWithNEMU(tid, seq);
-        handleDiffResult(diff_at, npc_match, tid, seq);
-    }
-}
-```
+1. `step_difftest_reference()` 推进 REF。普通指令执行一次，fusion 执行两次；
+   SC 按既有接口同步结果，已注入中断的 REF PC 在执行前读回。
+2. 严格有序访问沿用 MMIO skip 策略：先读 REF，更新下一 PC 和有效的标量
+   目的寄存器，再写回。其余 REF 状态保留，写 x0 的结果不回灌。
+3. 普通路径调用 `compare_difftest_state()`，检查 PC、目的寄存器和选定 CSR。
+4. `difftestStep()` 根据结果执行既有 PC 重试策略，或报告并终止。
 
-## 异常处理机制
+比较中仍保留部分显式同步：向量 agnostic 差异、允许跳过的计数器 CSR、
+有 golden-memory 证据支持的共享内存 load/AMO 差异。
+这些路径会修改 REF，不能把 `compare_difftest_state()` 当成纯函数。
 
-### 1. 异常引导执行
-当GEM5遇到异常时，需要通过引导执行让参考模型也产生相同的异常：
+## 当前检查范围与限制
 
-```cpp
-// src/cpu/base.cc:1639
-void BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, 
-                                       uint64_t stval, bool force_set_jump_target,
-                                       uint64_t jump_target, ThreadID tid) {
-    auto &gd = diffAllStates->diff.guide;
-    
-    // 设置异常信息
-    gd.force_raise_exception = true;
-    gd.exception_num = exception_num;
-    gd.mtval = mtval;
-    gd.stval = stval;
-    
-    // 虚拟化扩展相关异常值
-    gd.mtval2 = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL2, tid);
-    gd.htval = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HTVAL, tid);
-    gd.vstval = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTVAL, tid);
-    
-    // 执行引导执行，让参考模型产生相同异常
-    diffAllStates->proxy->guided_exec(&(diffAllStates->diff.guide));
-    
-    // 同步参考模型状态
-    diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
-    diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg->pc;
-}
-```
+- 初态中包含某个 CSR，不代表运行时会检查它。例如 `fcsr` 当前用于初始同步，
+  尚未加入运行时比较。
+- `mstatus` 等差异会让比较失败；`mip` 有 mask，`mip/mepc` 的现有差异路径
+  仅记录和报告，不单独设置失败返回值。改变这些规则需要单独验证。
+- `riscv64_CPU_regfile` 是对接 REF 的 ABI 布局，字段顺序与可选状态必须匹配
+  REF 构建配置。PMP 等不在 compact snapshot 中，任意 S/VS 初态的测试还需
+  配置相应的 REF 权限前提。当前 NEMU 加载仍使用旧 `difftest_init()`，尚未接入大小协商。
+- 本次异常初始化入口针对 O3。SimpleCPU 的 CSR 读取已按 `tid` 选择，
+  但不因此宣称其异常、MMIO 或多线程全流程与 O3 等价。
+- CPU 接管保留既有 difftest 状态移交；完整 native checkpoint 恢复和多核
+  首次事件时序仍需独立覆盖。
 
-### 2. 异常提交处理
-在commit阶段发现异常时的处理：
+## 验证重点
 
-```cpp
-// src/cpu/o3/commit.cc:1571
-if (cpu->difftestEnabled() && inst_fault->isFromISA()) {
-    auto priv = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_PRV, tid);
-    RegVal cause = 0;
-    
-    // 根据特权级别读取异常原因
-    if (priv == RiscvISA::PRV_M) {
-        cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
-    } else if (priv == RiscvISA::PRV_S) {
-        cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_SCAUSE, tid);
-    } else {
-        cause = cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
-    }
-    
-    // 设置异常引导信息
-    cpu->setExceptionGuideExecInfo(
-        exception_no, 
-        cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
-        cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid), 
-        false, 0, tid);
-}
-```
+优先用首条 `addi t0, t0, 1` 验证没有从提交后的状态重复执行；用非标准
+reset PC 验证入口没有写死；用首个事件为页故障、中断或 MMIO 的场景验证
+初始化时序。普通 CoreMark smoke 检查正常路径并比较 guest 指令数和周期数。
 
-## CSR状态比较与处理
-
-### 1. 跳过性能计数器CSR
-某些CSR在不同实现中表现不一致，需要跳过比较：
-
-```cpp
-// src/cpu/difftest.cc:47
-void skipPerfCntCsr() {
-    // 跳过周期和指令计数器
-    skipCSRs.push_back(GetCSROPInstCode(gem5::RiscvISA::CSR_MCYCLE));
-    skipCSRs.push_back(GetCSROPInstCode(gem5::RiscvISA::CSR_MINSTRET));
-    
-    // 跳过性能监控计数器
-    for (uint64_t counter = gem5::RiscvISA::CSR_MMHPMCOUNTER3;
-                  counter <= gem5::RiscvISA::CSR_MMHPMCOUNTER31; counter++) {
-        skipCSRs.push_back(GetCSROPInstCode(counter));
-    }
-}
-```
-
-### 2. CSR值比较
-在`diffWithNEMU`中逐一比较所有重要的CSR：
-
-```cpp
-// src/cpu/base.cc:1041
-std::pair<int, bool> BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq) {
-    // 比较基本CSR
-    
-    // 1. mstatus比较
-    auto gem5_val = readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
-    auto ref_val = diffAllStates->referenceRegFile.mstatus;
-    if (gem5_val != ref_val) {
-        csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mstatus, 
-                      diffAllStates->gem5RegFile.mstatus, seq, "mstatus", diff_at);
-    }
-    
-    // 2. 异常相关CSR
-    // mtval, stval, mcause, scause, mepc, sepc
-    
-    // 3. 地址转换CSR
-    // satp
-    
-    // 4. 中断相关CSR  
-    // mip, mie
-    
-    // 5. 虚拟化扩展CSR (如果启用)
-    if (enableRVHDIFF) {
-        // mtval2, mtinst, hstatus, hideleg, hedeleg等
-    }
-    
-    // 6. 向量扩展CSR (如果启用)
-    if (enableRVV) {
-        // vtype, vl, vstart, vcsr等
-    }
-}
-```
-
-### 3. CSR差异报告
-发现CSR不一致时的报告机制：
-
-```cpp
-// src/cpu/base.cc:859
-void BaseCPU::csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, 
-                            uint64_t &error_reg, InstSeqNum seq,
-                            std::string error_csr_name, int &diff_at) {
-    DPRINTF(DiffValue, "Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-    DPRINTF(DiffValue, "Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, "
-                      "GEM5 value: \033[31m%#lx\033[0m\n",
-            error_csr_name, ref_val, gem5_val);
-    
-    // 标记错误CSR
-    diffInfo.errorCsrsValue[error_num] = 1;
-    error_reg = gem5_val;
-    if (!diff_at)
-        diff_at = ValueDiff;
-}
-```
-
-## 特殊情况处理
-
-### 1. PC不匹配的恢复机制
-```cpp
-// src/cpu/base.cc:1472
-if (diff_at != NoneDiff) {
-    if (npc_match && diff_at == PCDiff) {
-        // PC不匹配但下一PC匹配，让NEMU再执行一条指令
-        std::tie(diff_at, npc_match) = diffWithNEMU(tid, 0);
-        if (diff_at != NoneDiff) {
-            reportDiffMismatch(tid, seq);
-            panic("Difftest failed again!\n");
-        } else {
-            clearDiffMismatch(tid, seq);
-            DPRINTF(Diff, "Difftest matched again, NEMU seems to commit the failed mem instruction\n");
-        }
-    } else {
-        reportDiffMismatch(tid, seq);
-        panic("Difftest failed!\n");
-    }
-}
-```
-
-### 2. MMIO指令处理
-对于MMIO访问，跳过参考模型执行：
-
-```cpp
-// src/cpu/base.cc:883
-if (is_mmio) {
-    DPRINTF(Diff, "Skip step NEMU due to mmio access\n");
-    // 直接更新参考模型的PC和寄存器，不执行指令
-    diffAllStates->referenceRegFile.pc = diffInfo.pc->as<RiscvISA::PCState>().npc();
-    if (diffInfo.inst->numDestRegs() > 0) {
-        const auto &dest = diffInfo.inst->destRegIdx(0);
-        unsigned index = dest.index() + (dest.isFloatReg() ? FPRegIndexBase : IntRegIndexBase);
-        diffAllStates->referenceRegFile[index] = diffInfo.scalarResults[0];
-    }
-    diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
-    return std::make_pair(NoneDiff, true);
-}
-```
-
-### 3. 性能计数器CSR跳过
-在寄存器比较时检查是否为需要跳过的CSR指令：
-
-```cpp
-// src/cpu/base.cc:1360
-bool skipCSR = false;
-for (auto iter : skipCSRs) {
-    if ((machInst & 0xfff00073) == iter) {
-        skipCSR = true;
-        DPRINTF(Diff, "This is an csr instruction, skip!\n");
-        // 强制同步参考模型的值
-        diffAllStates->referenceRegFile[dest_tag] = gem5_val;
-        diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
-        break;
-    }
-}
-```
-
-## 错误报告与调试
-
-### 1. 错误报告函数
-```cpp
-// src/cpu/base.cc:1405
-void BaseCPU::reportDiffMismatch(ThreadID tid, InstSeqNum seq) {
-    warn("%s", diffMsg.str());                    // 输出差异信息
-    diffAllStates->proxy->isa_reg_display();      // 显示参考模型寄存器
-    displayGem5Regs();                            // 显示GEM5寄存器
-    
-    // 输出最近提交的指令历史
-    warn("start dump last %lu committed msg\n", diffInfo.lastCommittedMsg.size());
-    while (diffInfo.lastCommittedMsg.size()) {
-        auto &inst = diffInfo.lastCommittedMsg.front();
-        warn("V %s\n", inst->genDisassembly());
-        diffInfo.lastCommittedMsg.pop();
-    }
-}
-```
-
-### 2. 状态清理
-```cpp
-// src/cpu/base.cc:1399
-void BaseCPU::clearDiffMismatch(ThreadID tid, InstSeqNum seq) {
-    diffMsg.str(std::string());                                    // 清空消息缓冲
-    memset(diffInfo.errorRegsValue, 0, sizeof(diffInfo.errorRegsValue));  // 清空寄存器错误标记
-    memset(diffInfo.errorCsrsValue, 0, sizeof(diffInfo.errorCsrsValue));  // 清空CSR错误标记
-    diffInfo.errorPcValue = 0;                                     // 清空PC错误标记
-}
-```
-
-## 总结
-
-GEM5的difftest机制通过以下关键特性确保CPU实现的正确性：
-
-1. **逐指令比较**: 每条提交的指令都与参考模型进行状态比较
-2. **异常同步**: 通过引导执行机制确保异常在两个模型中一致产生
-3. **CSR精确比较**: 重点关注架构状态CSR，跳过实现相关的性能计数器
-4. **错误恢复**: 针对某些特殊情况（如PC不匹配）提供恢复机制
-5. **详细调试**: 提供丰富的错误报告和状态显示功能
-
-这套机制为RISC-V处理器的验证提供了强有力的保障，特别是在异常处理和特权级状态管理方面。
+旧/新 REF 的初始 CSR 可以不同，初始化后必须从同一个 DUT 状态开始。
+扩展 CSR 检查范围时还应主动注入 mismatch，验证错误确实导致失败；
+仅有正常程序通过不足以证明检查能力。

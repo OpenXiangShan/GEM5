@@ -509,26 +509,25 @@ BaseSimpleCPU::advancePC(const Fault &fault)
 RegVal
 BaseSimpleCPU::readMiscRegNoEffect(int misc_reg, ThreadID tid) const
 {
-    return threadContexts[curThread]->readMiscRegNoEffect(misc_reg);
+    return threadContexts[tid]->readMiscRegNoEffect(misc_reg);
 }
 
 RegVal
 BaseSimpleCPU::readMiscReg(int misc_reg, ThreadID tid)
 {
-    return threadContexts[curThread]->readMiscReg(misc_reg);
+    return threadContexts[tid]->readMiscReg(misc_reg);
 }
 
 void
-BaseSimpleCPU::readGem5Regs(ThreadID tid)
+BaseSimpleCPU::readDutRegs(ThreadID tid, riscv64_CPU_regfile &state)
 {
-    auto diffAllStates = this->diffAllStates[tid];
     for (int i = 0; i < 32; i++) {
-        diffAllStates->gem5RegFile[i] =
+        state[i] =
             threadContexts[tid]->getReg(RegId(IntRegClass, i));
-        diffAllStates->gem5RegFile[i + 32] =
+        state[i + 32] =
             threadContexts[tid]->getReg(RegId(FloatRegClass, i));
         threadContexts[tid]->getReg(
-            RegId(VecRegClass, i), &diffAllStates->gem5RegFile.vr[i]);
+            RegId(VecRegClass, i), &state.vr[i]);
     }
 }
 

@@ -15,15 +15,9 @@
 enum
 {
     DIFFTEST_TO_DUT, DIFFTEST_TO_REF };
-enum { REF_TO_DUT, DUT_TO_REF };
-enum { REF_TO_DIFFTEST, DUT_TO_DIFFTEST };
-
-typedef uint64_t rtlreg_t;
 
 typedef uint64_t paddr_t;
 typedef uint64_t vaddr_t;
-
-typedef uint16_t ioaddr_t;
 
 #include "nemu_macro.hh"
 
@@ -90,33 +84,6 @@ struct riscv64_CPU_regfile
 
 };
 
-// 0~31: GPRs, 32~63 FPRs
-//
-// enum
-// {
-//     DIFFTEST_THIS_PC = 64,
-//     DIFFTEST_MSTATUS,
-//     DIFFTEST_MCAUSE,
-//     DIFFTEST_MEPC,
-//     DIFFTEST_SSTATUS,
-//     DIFFTEST_SCAUSE,
-//     DIFFTEST_SEPC,
-//     DIFFTEST_SATP,
-//     DIFFTEST_MIP,
-//     DIFFTEST_MIE,
-//     DIFFTEST_MSCRATCH,
-//     DIFFTEST_SSCRATCH,
-//     DIFFTEST_MIDELEG,
-//     DIFFTEST_MEDELEG,
-//     DIFFTEST_MTVAL,
-//     DIFFTEST_STVAL,
-//     DIFFTEST_MTVEC,
-//     DIFFTEST_STVEC,
-//     DIFFTEST_MODE,
-//     DIFFTEST_NR_REG
-// };
-
-
 struct SyncState
 {
     uint64_t lrscValid;
@@ -146,20 +113,6 @@ struct ExecutionGuide {
 
 struct DiffState
 {
-    // Regs and mode for single step difftest
-    int commit;
-    riscv64_CPU_regfile *nemu_reg;
-    riscv64_CPU_regfile *gem5_reg;
-    uint32_t this_inst;
-    int skip;
-    int isRVC;
-    uint64_t *wpc;
-    uint64_t *wdata;
-    uint32_t *wdst;
-    int wen;
-    uint64_t intrNO;
-    uint64_t cause;  // for disambiguate_exec
-    int priviledgeMode;
     uint64_t npc;
 
     // Microarchitucural signal needed to sync status
@@ -167,7 +120,6 @@ struct DiffState
 
     uint64_t nemu_this_pc;
     uint64_t nemu_commit_inst_pc;
-    int cpu_id;
     struct DynamicConfig dynamic_config;
     bool will_handle_intr;
 
@@ -183,24 +135,30 @@ class RefProxy
                    bool direction) = nullptr;
     void (*memcpy)(paddr_t nemu_addr, void *dut_buf, size_t n,
                    bool direction) = nullptr;
-    void (*regcpy)(void *dut, bool direction) = nullptr;
-    void (*csrcpy)(void *dut, bool direction) = nullptr;
     void (*uarchstatus_cpy)(void *dut, bool direction) = nullptr;
-    int (*store_commit)(uint64_t *saddr, uint64_t *sdata,
-                        uint8_t *smask) = nullptr;
     void (*exec)(uint64_t n) = nullptr;
     vaddr_t (*guided_exec)(void *disambiguate_para) = nullptr;
     vaddr_t (*update_config)(void *config) = nullptr;
     void (*raise_intr)(uint64_t no) = nullptr;
     void (*isa_reg_display)() = nullptr;
-    void (*query)(void *result_buffer, uint64_t type) = nullptr;
-    void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = nullptr;
     void (*sdcard_init)(const char *img_path,
                         const char *sd_cpt_bin_path) = nullptr;
+
+    void copyRegsToRef(riscv64_CPU_regfile &state)
+    {
+        regcpy(&state, DIFFTEST_TO_REF);
+    }
+
+    void copyRegsFromRef(riscv64_CPU_regfile &state)
+    {
+        regcpy(&state, DIFFTEST_TO_DUT);
+    }
+
     virtual void initState(int coreid, uint8_t *golden_mem) = 0;
     virtual void setHartId(int coreid) = 0;
 
   protected:
+    void (*regcpy)(void *dut, bool direction) = nullptr;
     bool multiCore;
 
     void *handle;
@@ -228,8 +186,6 @@ class SpikeProxy : public RefProxy
     void initState(int coreid, uint8_t *golden_mem) override { panic("Not implemented\n"); }
     void setHartId(int coreid) override { panic("Not implemented\n"); }
 };
-
-#define DIFFTEST_WIDTH 8
 
 enum DiffAt
 {
