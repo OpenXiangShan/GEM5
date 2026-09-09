@@ -986,9 +986,12 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter, const bool fromCommit)
+                            const unsigned &currentLoopIter, const bool fromCommit,
+                            bool fromPredecode)
 {
-    if (fromCommit) {
+    if (fromPredecode) {
+        dbpBtbStats.controlSquashFromPredecode++;
+    } else if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
         auto branchClass = classifyBranch(static_inst);
         addControlSquashCommitStat(branchClass);

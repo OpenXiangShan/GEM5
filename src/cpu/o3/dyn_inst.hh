@@ -437,6 +437,10 @@ class DynInst : public ExecContext, public RefCounted
 
     Addr fallThruPC;
 
+    // Fetch-side RISC-V predecode already owned the recovery for this
+    // instruction. Decode must not generate a second squash for it.
+    bool predecodeRedirectHandled = false;
+
     /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
     unsigned ftqId;
@@ -733,6 +737,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Returns whether the instruction was predicted taken or not. */
     bool readPredTaken() { return instFlags[PredTaken]; }
+
+    void setPredecodeRedirectHandled() { predecodeRedirectHandled = true; }
+    bool isPredecodeRedirectHandled() const
+    {
+        return predecodeRedirectHandled;
+    }
 
     void
     setPredTaken(bool predicted_taken)

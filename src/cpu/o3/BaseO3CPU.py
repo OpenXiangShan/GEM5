@@ -137,6 +137,8 @@ class BaseO3CPU(BaseCPU):
         "Maximum fetch-buffer window covered by two-fetch")
     fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
                                     "per-thread")
+    enablePredecode = Param.Bool(False,
+        "Enable the RISC-V frontend predecode pipeline")
 
     renameToDecodeDelay = Param.Cycles(1, "Rename to decode delay")
     iewToDecodeDelay = Param.Cycles(1, "Issue/Execute/Writeback to decode "

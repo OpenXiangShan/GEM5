@@ -49,6 +49,7 @@
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/predecoder.hh"
 #include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
@@ -577,6 +578,14 @@ class Fetch
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
             const PCStateBase &next_pc, bool trace);
 
+    bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
+                          const StaticInstPtr &curMacroop) const;
+    void enqueueFetchedInst(ThreadID tid, const DynInstPtr &instruction);
+    bool isPredecodeFault(const RiscvISA::PredecodeInfo &info,
+                          bool predictedTaken) const;
+    void handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
+                              const RiscvISA::PredecodeInfo &info);
+
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
 
@@ -1018,6 +1027,9 @@ class Fetch
     /** Maximum number of threads that may start an FTQ fetch each cycle. */
     const unsigned numFetchTargetThreads;
 
+    /** Optional RISC-V predecode owner, disabled by default. */
+    bool enablePredecode;
+
     /** Thread ID being fetched. */
     ThreadID threadFetched;
 
@@ -1113,6 +1125,12 @@ class Fetch
         statistics::Scalar branches;
         /** Stat for total number of predicted branches. */
         statistics::Scalar predictedBranches;
+        /** RISC-V predecode-owned recovery events. */
+        statistics::Scalar predecodeFaults;
+        statistics::Scalar predecodeDirectNotTaken;
+        statistics::Scalar predecodeNonCfiTaken;
+        statistics::Scalar predecodeReturnNotTaken;
+        statistics::Scalar predecodeRedirects;
         /** Stat for total number of cycles spent fetching. */
         statistics::Scalar cycles;
         /** Stat for total number of cycles spent squashing. */

@@ -114,6 +114,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       numFetchTargetThreads(params.smtNumFetchTargetThreads),
+      enablePredecode(params.enablePredecode),
       icachePort(this, _cpu),
       finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
@@ -273,6 +274,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of branches that fetch encountered"),
     ADD_STAT(predictedBranches, statistics::units::Count::get(),
              "Number of branches that fetch has predicted taken"),
+    ADD_STAT(predecodeFaults, statistics::units::Count::get(),
+             "Number of faults owned by the RISC-V predecode stage"),
+    ADD_STAT(predecodeDirectNotTaken, statistics::units::Count::get(),
+             "Direct jumps predicted not taken by predecode"),
+    ADD_STAT(predecodeNonCfiTaken, statistics::units::Count::get(),
+             "Non-control instructions predicted taken by predecode"),
+    ADD_STAT(predecodeReturnNotTaken, statistics::units::Count::get(),
+             "Returns predicted not taken by predecode"),
+    ADD_STAT(predecodeRedirects, statistics::units::Count::get(),
+             "Redirects issued by predecode"),
     ADD_STAT(cycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has run and was not squashing or "
              "blocked"),
@@ -2297,24 +2308,93 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     instruction->traceData = NULL;
 #endif
 
-    // Add instruction to the CPU's list of instructions.
-    instruction->setInstListIt(cpu->addInst(instruction));
-
-    // Write the instruction to the first slot in the queue
-    // that heads to decode.
-    assert(numInst < fetchWidth);
-    fetchQueue[tid].push_back(instruction);
-    assert(fetchQueue[tid].size() <= fetchQueueSize);
-    DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
-            tid, fetchQueue[tid].size(), fetchQueueSize);
-    //toDecode->insts[toDecode->size++] = instruction;
-
-    // Keep track of if we can take an interrupt at this boundary
-    delayedCommit[tid] = instruction->isDelayedCommit();
+    enqueueFetchedInst(tid, instruction);
 
     instruction->fallThruPC = this_pc.getFallThruPC();
 
     return instruction;
+}
+
+void
+Fetch::enqueueFetchedInst(ThreadID tid, const DynInstPtr &instruction)
+{
+    instruction->setInstListIt(cpu->addInst(instruction));
+    fetchQueue[tid].push_back(instruction);
+    assert(fetchQueue[tid].size() <= fetchQueueSize);
+    delayedCommit[tid] = instruction->isDelayedCommit();
+    DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
+            tid, fetchQueue[tid].size(), fetchQueueSize);
+}
+
+bool
+Fetch::predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
+                        const StaticInstPtr &curMacroop) const
+{
+    return enablePredecode && tid < numThreads && !isTraceMode() &&
+        !curMacroop && staticInst && !staticInst->isMacroop() &&
+        !staticInst->isVectorConfig();
+}
+
+bool
+Fetch::isPredecodeFault(const RiscvISA::PredecodeInfo &info,
+                        bool predictedTaken) const
+{
+    const auto type = info.branchType;
+    return (type == RiscvISA::PredecodeInfo::BranchType::Direct &&
+            !predictedTaken) ||
+        (type == RiscvISA::PredecodeInfo::BranchType::None &&
+         predictedTaken) ||
+        (info.isReturn && !predictedTaken);
+}
+
+void
+Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
+                            const RiscvISA::PredecodeInfo &info)
+{
+    RiscvISA::PCState target = instruction->pcState().as<RiscvISA::PCState>();
+    bool actuallyTaken = true;
+    if (info.branchType ==
+            RiscvISA::PredecodeInfo::BranchType::Direct) {
+        target = instruction->branchTarget()->as<RiscvISA::PCState>();
+        ++fetchStats.predecodeDirectNotTaken;
+    } else if (info.isReturn) {
+        target.set(getPreservedReturnAddr(instruction));
+        ++fetchStats.predecodeReturnNotTaken;
+    } else {
+        target.set(instruction->pcState().getFallThruPC());
+        actuallyTaken = false;
+        ++fetchStats.predecodeNonCfiTaken;
+    }
+
+    instruction->setPredTaken(actuallyTaken);
+    instruction->setPredTarg(target);
+    instruction->setPredecodeRedirectHandled();
+
+    assert(dbpbtb);
+    dbpbtb->controlSquash(
+        instruction->getFtqId(), instruction->pcState(), target,
+        instruction->staticInst, instruction->getInstBytes(), actuallyTaken,
+        instruction->seqNum, tid, instruction->getLoopIteration(), false, true);
+
+    // The faulting instruction is already registered. Preserve older entries
+    // that may still be waiting for Decode; squash only removes younger work.
+    std::deque<DynInstPtr> olderFetchEntries;
+    for (const auto &queued : fetchQueue[tid]) {
+        if (queued->seqNum < instruction->seqNum)
+            olderFetchEntries.push_back(queued);
+    }
+
+    // Squash removes younger instructions from the same thread, while
+    // doSquash redirects Fetch to the corrected target.
+    doSquash(target, instruction, instruction->seqNum, tid);
+    if (!cpu->instList.empty())
+        cpu->removeInstsUntil(instruction->seqNum, tid);
+    fetchQueue[tid] = std::move(olderFetchEntries);
+    fetchQueue[tid].push_back(instruction);
+    delayedCommit[tid] = instruction->isDelayedCommit();
+    localSquashVer[tid].update(localSquashVer[tid].nextVersion());
+    ++fetchStats.predecodeFaults;
+    ++fetchStats.predecodeRedirects;
 }
 
 bool
@@ -2518,6 +2598,9 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                 bool &continued_to_next_target)
 {
     auto *dec_ptr = decoder[tid];
+    RiscvISA::MachInst rawInst = 0;
+    if (!curMacroop)
+        std::memcpy(&rawInst, dec_ptr->moreBytesPtr(), sizeof(rawInst));
     bool predictedBranch = false;
     bool newMacroop = false;
 
@@ -2544,7 +2627,10 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         newMacroop = staticInst->isLastMicroop();
     }
 
-    // Build the dynamic instruction and add it to the fetch queue
+    const bool usePredecode = predecodeEnabled(tid, staticInst, curMacroop);
+
+    // Predecode is a synchronous Fetch-side owner; no extra pipeline delay is
+    // modeled until the recovery semantics are extended further.
     DynInstPtr instruction =
         buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
 
@@ -2611,6 +2697,15 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 curTick(), instruction->opClass());
         instruction->vpResult =
             valuePred->valuePredict(predictRequest, instruction->vpRecord);
+    }
+
+    if (usePredecode) {
+        const auto info = RiscvISA::RiscvPredecoder::decode(rawInst);
+        if (isPredecodeFault(info, instruction->readPredTaken())) {
+            handlePredecodeFault(tid, instruction, info);
+            // Stop the current Fetch burst after the owner redirects PC.
+            return true;
+        }
     }
 
     return predictedBranch;
