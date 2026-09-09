@@ -1243,6 +1243,11 @@ public:
 
   private:
 
+    /** Delay the first post-squash vector-config batch in the fetch queue. */
+    bool deferVsetvlDecode[MaxThreads];
+    /** Number of instructions in the first post-squash fetch batch. */
+    unsigned postSquashFetchBatchSize[MaxThreads];
+
     bool waitForVsetvl [MaxThreads];
 
     /** Value predictor */
