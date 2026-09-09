@@ -196,6 +196,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       partialStoreGranularityBytes(p.partial_store_granularity),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
+      enableMSHRStoreToLoadForwarding(
+          p.enable_mshr_store_to_load_forwarding),
       doFastWriteline(p.do_fast_writeline),
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
@@ -604,7 +606,8 @@ BaseCache::handleSplitStorePermGrant(PacketPtr pkt)
 
 void
 BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
-                               Tick forward_time, Tick request_time)
+                               Tick forward_time, Tick request_time,
+                               const MSHR::StoreForwardData *store_forward)
 {
     if (writeAllocator &&
         pkt && pkt->isWrite() && !pkt->req->isUncacheable()) {
@@ -719,7 +722,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // delay of the xbar.
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd),
-                                     defer_partial_store);
+                                     defer_partial_store, store_forward);
                 if (mshr->getNumTargets() >= numTarget) {
                     noTargetMSHR = mshr;
                     setBlocked(Blocked_NoTargets);
@@ -751,8 +754,10 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // write miss, the read could return stale data
                 // out of the cache block... a more aggressive
                 // system could detect the overlap (if any) and
-                // forward data out of the MSHRs, but we don't do
-                // that yet.  Note that we do need to leave the
+                // forward data out of the MSHRs. L1D can optionally
+                // do this for same-thread StoreBuffer targets, but the
+                // block must remain unreadable for all uncovered bytes
+                // and other requestors. Note that we do need to leave the
                 // block valid so that it stays in the cache, in
                 // case we get an upgrade response (and hence no
                 // new data) when the write miss completes.
@@ -3702,6 +3707,15 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),
              "number of hits in write buffer when missing in cache"),
+    ADD_STAT(mshrStoreToLoadFullForwards, statistics::units::Count::get(),
+             "number of loads fully forwarded from StoreBuffer targets in "
+             "L1D MSHRs"),
+    ADD_STAT(mshrStoreToLoadFillForwards, statistics::units::Count::get(),
+             "number of loads overlaid with StoreBuffer target data when "
+             "their L1D MSHR fill returned"),
+    ADD_STAT(mshrStoreToLoadForwardedBytes, statistics::units::Count::get(),
+             "number of load bytes forwarded from StoreBuffer targets in "
+             "L1D MSHRs"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),

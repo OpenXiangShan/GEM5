@@ -36,6 +36,7 @@ Source('base.cc')
 Source('cache.cc')
 Source('cache_blk.cc')
 Source('mshr.cc')
+Source('mshr_store_forward.cc')
 Source('mshr_queue.cc')
 Source('noncoherent_cache.cc')
 Source('write_queue.cc')
@@ -46,6 +47,9 @@ GTest('partial_store.test',
       '../packet.cc',
       '../../sim/bufval.cc',
       with_tag('gem5 trace'))
+
+GTest('mshr_store_forward.test', 'mshr_store_forward.test.cc',
+      'mshr_store_forward.cc')
 
 DebugFlag('Cache')
 DebugFlag('CacheComp')

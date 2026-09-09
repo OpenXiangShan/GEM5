@@ -119,6 +119,17 @@ MSHR::TargetList::TargetList(const std::string &name)
         canMergeWrites(true), writesBitmap(0)
 {}
 
+size_t
+MSHR::Target::applyStoreForward() const
+{
+    if (!storeForward.hasData()) {
+        return 0;
+    }
+    assert(pkt->isRead());
+    assert(storeForward.data.size() == pkt->getSize());
+    return applyMSHRStoreForwardData(pkt->getPtr<uint8_t>(), storeForward);
+}
+
 
 void
 MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
@@ -225,7 +236,8 @@ MSHR::TargetList::updateWriteFlags(PacketPtr pkt)
 inline void
 MSHR::TargetList::add(PacketPtr pkt, Tick readyTime,
                       Counter order, Target::Source source, bool markPending,
-                      bool alloc_on_fill)
+                      bool alloc_on_fill,
+                      const StoreForwardData *store_forward)
 {
     updateFlags(pkt, source, alloc_on_fill);
     if (markPending) {
@@ -242,7 +254,8 @@ MSHR::TargetList::add(PacketPtr pkt, Tick readyTime,
         }
     }
 
-    emplace_back(pkt, readyTime, order, source, markPending, alloc_on_fill);
+    emplace_back(pkt, readyTime, order, source, markPending, alloc_on_fill,
+                 store_forward);
 
     DPRINTF(MSHR, "New target allocated: %s\n", pkt->print());
 }
@@ -447,7 +460,8 @@ MSHR::deallocate()
  */
 void
 MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
-                     bool alloc_on_fill, bool force_defer)
+                     bool alloc_on_fill, bool force_defer,
+                     const StoreForwardData *store_forward)
 {
     // assume we'd never issue a prefetch when we've got an
     // outstanding miss
@@ -482,14 +496,18 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
         if (inService && hasPostInvalidate())
             replaceUpgrade(pkt);
         deferredTargets.add(pkt, whenReady, _order, Target::FromCPU, true,
-                            alloc_on_fill);
+                            alloc_on_fill, store_forward);
     } else {
         // No request outstanding, or still OK to append to
         // outstanding request: append to regular target list.  Only
         // mark pending if current request hasn't been issued yet
         // (isn't in service).
         targets.add(pkt, whenReady, _order, Target::FromCPU, !inService,
-                    alloc_on_fill);
+                    alloc_on_fill, store_forward);
+    }
+
+    if (pkt->isWrite() && pkt->isDcacheMainPipeSbufferReq()) {
+        refreshStoreForwardData();
     }
 
     DPRINTF(MSHR, "After target allocation: %s", print());
@@ -501,6 +519,62 @@ MSHR::allocateSnoopTarget(PacketPtr pkt, Tick when_ready, Counter _order)
     targets.add(pkt, when_ready, _order, Target::FromSnoop, !inService,
                 false);
     DPRINTF(MSHR, "After snoop target allocation: %s", print());
+}
+
+MSHR::StoreForwardData
+MSHR::getStoreForwardData(const PacketPtr load) const
+{
+    if (!load->isRead() || !load->req->hasContextId() ||
+        !load->req->hasInstSeqNum() || load->req->isUncacheable() ||
+        load->req->isStrictlyOrdered() || load->req->isLLSC() ||
+        load->req->isAtomic() || load->req->isCacheMaintenance()) {
+        return StoreForwardData{
+            std::vector<uint8_t>(load->getSize()),
+            std::vector<bool>(load->getSize(), false)};
+    }
+
+    std::vector<MSHRStoreForwardSource> sources;
+
+    auto collect = [&](const TargetList &list) {
+        for (const auto &target : list) {
+            const PacketPtr store = target.pkt;
+            if (target.source != Target::FromCPU || !store->isWrite() ||
+                !store->isDcacheMainPipeSbufferReq() ||
+                !store->req->hasContextId() ||
+                !store->req->hasInstSeqNum() ||
+                store->req->isUncacheable() ||
+                store->req->isStrictlyOrdered() || store->req->isLLSC() ||
+                store->req->isAtomic() || store->req->isCacheMaintenance()) {
+                continue;
+            }
+            const auto &byte_enable = store->req->getByteEnable();
+            sources.push_back({
+                store->getAddr(), store->getSize(), store->req->contextId(),
+                store->req->getReqInstSeqNum(),
+                store->getConstPtr<uint8_t>(), &byte_enable});
+        }
+    };
+
+    collect(targets);
+    collect(deferredTargets);
+    return selectMSHRStoreForwardData(
+        load->getAddr(), load->getSize(), load->req->contextId(),
+        load->req->getReqInstSeqNum(), sources);
+}
+
+void
+MSHR::refreshStoreForwardData()
+{
+    auto refresh = [this](TargetList &list) {
+        for (auto &target : list) {
+            if (target.source == Target::FromCPU && target.pkt->isRead()) {
+                target.storeForward = getStoreForwardData(target.pkt);
+            }
+        }
+    };
+
+    refresh(targets);
+    refresh(deferredTargets);
 }
 
 bool
@@ -640,9 +714,6 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
 void
 MSHR::pushReadyTargets(TargetList &ready_targets, Target &tgt)
 {
-    // in the case when sbuffer store and load missed at the same block
-    // make sure write packet is processed before read packet
-    // so that load can get the right data after sbuffer store has updated the cache
     if (tgt.pkt->isWrite()) {
         auto first_non_write = std::find_if(
             ready_targets.begin(), ready_targets.end(),

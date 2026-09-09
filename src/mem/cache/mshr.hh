@@ -56,6 +56,7 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "debug/MSHR.hh"
+#include "mem/cache/mshr_store_forward.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
@@ -129,6 +130,8 @@ class MSHR : public QueueEntry, public Printable
     };
 
 
+    using StoreForwardData = MSHRStoreForwardData;
+
     /** Track if we sent this as a whole line write or not */
     bool wasWholeLineWrite;
 
@@ -181,12 +184,21 @@ class MSHR : public QueueEntry, public Printable
         const bool allocOnFill;   //!< Should the response servicing this
                                   //!< target list allocate in the cache?
 
+        StoreForwardData storeForward;
+
         Target(PacketPtr _pkt, Tick _readyTime, Counter _order,
-               Source _source, bool _markedPending, bool alloc_on_fill)
+               Source _source, bool _markedPending, bool alloc_on_fill,
+               const StoreForwardData *store_forward = nullptr)
             : QueueEntry::Target(_pkt, _readyTime, _order),
               lldpHint(_pkt->lldpHint), source(_source),
               markedPending(_markedPending), allocOnFill(alloc_on_fill)
-        {}
+        {
+            if (store_forward) {
+                storeForward = *store_forward;
+            }
+        }
+
+        size_t applyStoreForward() const;
     };
 
     class TargetList : public std::list<Target>, public Named
@@ -294,7 +306,8 @@ class MSHR : public QueueEntry, public Printable
          * @param alloc_on_fill Whether it should allocate on a fill
          */
         void add(PacketPtr pkt, Tick readyTime, Counter order,
-                 Target::Source source, bool markPending, bool alloc_on_fill);
+                 Target::Source source, bool markPending, bool alloc_on_fill,
+                 const StoreForwardData *store_forward = nullptr);
 
         /**
          * Convert upgrades to the equivalent request if the cache line they
@@ -525,8 +538,13 @@ class MSHR : public QueueEntry, public Printable
      * @param target The target.
      */
     void allocateTarget(PacketPtr target, Tick when, Counter order,
-                        bool alloc_on_fill, bool force_defer = false);
+                        bool alloc_on_fill, bool force_defer = false,
+                        const StoreForwardData *store_forward = nullptr);
     void allocateSnoopTarget(PacketPtr target, Tick when, Counter order);
+
+    StoreForwardData getStoreForwardData(const PacketPtr load) const;
+
+    void refreshStoreForwardData();
     bool handleSnoop(PacketPtr target, Counter order);
 
     /** A simple constructor. */

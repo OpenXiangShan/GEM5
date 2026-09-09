@@ -46,8 +46,10 @@
 
 #include "mem/cache/cache.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <cstring>
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -449,7 +451,35 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
 
 
 
-    BaseCache::handleTimingReqMiss(pkt, mshr, blk, forward_time, request_time);
+    MSHR::StoreForwardData store_forward;
+    if (mshr && mshrStoreToLoadForwardingEnabled() && level() == 1 &&
+        !isReadOnly && pkt->isRead()) {
+        store_forward = mshr->getStoreForwardData(pkt);
+        const auto forwarded_bytes = std::count(
+            store_forward.valid.begin(), store_forward.valid.end(), true);
+        if (store_forward.isFull()) {
+            if (!checkAndAllocateMSHRCycle(pkt)) {
+                return;
+            }
+
+            assert(store_forward.data.size() == pkt->getSize());
+            std::memcpy(pkt->getPtr<uint8_t>(), store_forward.data.data(),
+                        pkt->getSize());
+            stats.cmdStats(pkt).mshrHits[pkt->req->requestorId()]++;
+            ++stats.mshrStoreToLoadFullForwards;
+            stats.mshrStoreToLoadForwardedBytes += forwarded_bytes;
+            pkt->coalescingMSHR = true;
+            DPRINTF(Cache,
+                    "Full-forward load %s from StoreBuffer targets in MSHR\n",
+                    pkt->print());
+            handleTimingReqHit(pkt, nullptr, request_time, false);
+            return;
+        }
+    }
+
+    BaseCache::handleTimingReqMiss(
+        pkt, mshr, blk, forward_time, request_time,
+        store_forward.hasData() ? &store_forward : nullptr);
 }
 
 void
@@ -803,11 +833,18 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         initial_tgt = nullptr;
     }
 
+    const bool targets_use_block_data =
+        blk && blk->isValid() && (!mshr->isForward || !pkt->hasData());
+    std::vector<uint8_t> pre_target_block_data;
+    if (targets_use_block_data) {
+        pre_target_block_data.assign(blk->data, blk->data + blkSize);
+    }
+
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
         Packet *tgt_pkt = target.pkt;
         switch (target.source) {
-          case MSHR::Target::FromCPU:
+          case MSHR::Target::FromCPU: {
             if (tgt_pkt->isStorePermRespSent()) {
                 assert(tgt_pkt->cmd == MemCmd::StorePermReq);
                 DPRINTF(PartialStore,
@@ -993,6 +1030,17 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 // carried over to cache above
                 tgt_pkt->copyResponderFlags(pkt);
             }
+            if (target.storeForward.hasData() && targets_use_block_data) {
+                const auto offset = tgt_pkt->getOffset(blkSize);
+                assert(offset + tgt_pkt->getSize() <=
+                       pre_target_block_data.size());
+                tgt_pkt->setData(pre_target_block_data.data() + offset);
+            }
+            const size_t forwarded_bytes = target.applyStoreForward();
+            if (forwarded_bytes != 0) {
+                ++stats.mshrStoreToLoadFillForwards;
+                stats.mshrStoreToLoadForwardedBytes += forwarded_bytes;
+            }
             tgt_pkt->makeTimingResponse();
             // if this packet is an error copy that to the new packet
             if (is_error)
@@ -1013,6 +1061,7 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                     tgt_pkt->getAddr(), tgt_pkt->senderState, completion_time);
             cpuSidePort.schedTimingResp(tgt_pkt, completion_time);
             break;
+          }
 
           case MSHR::Target::FromPrefetcher:
             assert(tgt_pkt->cmd == MemCmd::HardPFReq);

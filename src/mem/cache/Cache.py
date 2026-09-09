@@ -190,6 +190,10 @@ class BaseCache(ClockedObject):
         False,
         "If true, simulate Dcache refill behavior (LSQ pending flag/stats) on L1 fills",
     )
+    enable_mshr_store_to_load_forwarding = Param.Bool(
+        False,
+        "Forward accepted StoreBuffer data from an L1D MSHR to younger loads",
+    )
 
     enable_partial_store = Param.Bool(
         False,

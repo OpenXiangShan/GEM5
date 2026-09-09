@@ -111,6 +111,7 @@ def setKmhV3Params(args, system):
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 16
         cpu.SbufferEvictThreshold = 8
+        cpu.releaseSbufferOnDcacheAccept = True
         cpu.store_prefetch_train = False
 
         # branch predictor
@@ -151,6 +152,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.mshrs = 16
             cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
+            cpu.dcache.enable_mshr_store_to_load_forwarding = True
             partial_store_default = args.num_cpus == 1
             cpu.dcache.enable_partial_store = (
                 partial_store_default if args.enable_partial_store is None

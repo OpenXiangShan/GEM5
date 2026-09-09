@@ -630,8 +630,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param forward_time The tick at which we can process dependent requests
      * @param request_time The tick at which the block lookup is compete
      */
-    void handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
-                             Tick forward_time, Tick request_time);
+    void handleTimingReqMiss(
+        PacketPtr pkt, MSHR *mshr, CacheBlk *blk, Tick forward_time,
+        Tick request_time,
+        const MSHR::StoreForwardData *store_forward = nullptr);
 
     /**
      * Performs the access specified by the request.
@@ -1394,6 +1396,13 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         statistics::Scalar FindHitInWriteBuffer;
 
+        /** Loads fully satisfied by StoreBuffer data in an L1D MSHR. */
+        statistics::Scalar mshrStoreToLoadFullForwards;
+        /** Loads with StoreBuffer bytes overlaid when their fill returns. */
+        statistics::Scalar mshrStoreToLoadFillForwards;
+        /** Total load bytes supplied by StoreBuffer targets in MSHRs. */
+        statistics::Scalar mshrStoreToLoadForwardedBytes;
+
         /** Number of prefetch req Tag read fail because of load. */
         mutable statistics::Scalar prefetchTagReadFails;
 
@@ -1745,9 +1754,18 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     const bool forceHit;
     const bool simulateDcacheRefill;
+
+    /** Enable StoreBuffer-store forwarding from L1D MSHRs. */
+    const bool enableMSHRStoreToLoadForwarding;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
 
 public:
+    bool
+    mshrStoreToLoadForwardingEnabled() const
+    {
+        return enableMSHRStoreToLoadForwarding;
+    }
+
     /**
      * This cache should allocate a block on a line-sized write miss.
      */
