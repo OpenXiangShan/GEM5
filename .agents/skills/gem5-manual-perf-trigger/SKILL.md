@@ -32,7 +32,6 @@ gh workflow view manual-perf.yml \
 - `configuration`
 - `benchmark_type`
 - `specific_benchmarks`
-- `vector_type`
 - `extra_args`
 - `distributed_servers`
 - `distributed_jobs_per_server`
@@ -77,7 +76,6 @@ gh workflow run manual-perf.yml \
   -f configuration=<configuration> \
   -f benchmark_type=<benchmark_type> \
   -f specific_benchmarks=<specific_benchmarks> \
-  -f vector_type=<vector_type> \
   -f 'extra_args=<extra_args>' \
   -f distributed_servers=<servers> \
   -f distributed_jobs_per_server=<jobs> \
