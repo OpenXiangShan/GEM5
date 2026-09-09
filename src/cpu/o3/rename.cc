@@ -1118,6 +1118,7 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
                                         ->regClasses()
                                         .at(flat_reg.classValue())
                                         .numRegs();
+            /*
             panic_if(flat_reg.index() >= map_size,
                 "Rename source register out of range:\n"
                 "  tick=%llu\n"
@@ -1139,6 +1140,7 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
                 flat_reg.className(), flat_reg.index(), map_size,
                 inst->isSquashed(), inst->isMacroop(), inst->isMicroop(),
                 inst->isFirstMicroop(), inst->isLastMicroop());
+            */
         }
 
         renamed_reg = map->lookup(flat_reg);
