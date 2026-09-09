@@ -12,8 +12,8 @@
     #include "base/statistics.hh"
     #include "base/types.hh"
     #include "cpu/inst_seq.hh"
-    #include "cpu/o3/dyn_inst_ptr.hh"
     #include "cpu/pred/btb/common.hh"
+    #include "enums/TrainingStage.hh"
     #include "sim/sim_object.hh"
     #include "params/TimedBaseBTBPredictor.hh"
 #endif
@@ -32,9 +32,11 @@ namespace btb_pred
 namespace test {
 #endif
 
-#ifndef UNIT_TEST
-using DynInstPtr = o3::DynInstPtr;
-#endif
+enum class PredictorTrainingStage
+{
+    Commit,
+    Resolve,
+};
 
 #ifdef UNIT_TEST
 class TimedBaseBTBPredictor
@@ -47,6 +49,10 @@ class TimedBaseBTBPredictor: public SimObject
 #ifdef UNIT_TEST
     TimedBaseBTBPredictor();
     void setNumDelay(unsigned delay) { numDelay = delay; }
+    void setTrainingStage(PredictorTrainingStage stage)
+    {
+        trainingStage = stage;
+    }
     void setSmtTidPartitioned(bool partitioned)
     {
         smtTidPartitioned = partitioned;
@@ -80,21 +86,36 @@ class TimedBaseBTBPredictor: public SimObject
                                  FullBTBPrediction &pred,
                                  const PathHistoryUpdate &update) {}
     virtual void recoverHist(const boost::dynamic_bitset<> &history,
-                             const FetchTarget &entry, int shamt,
-                             bool cond_taken) {}
+                             const HistoryRecoveryContext &context,
+                             const DirectionHistoryUpdate &update) {}
     virtual void recoverPHist(const boost::dynamic_bitset<> &history,
-                              const FetchTarget &entry,
+                              const HistoryRecoveryContext &context,
                               const PathHistoryUpdate &update) {}
-    virtual void update(const FetchTarget &entry) {}
+    virtual void update(const PredictionUpdateContext &context,
+                        const PreparedUpdate &update) {}
     virtual unsigned getDelay() {return numDelay;}
-    virtual bool getResolvedUpdate() {return resolvedUpdate;}
+    bool trainsAtResolve() const
+    {
+        return trainingStage == PredictorTrainingStage::Resolve;
+    }
+    bool trainsAtCommit() const
+    {
+        return trainingStage == PredictorTrainingStage::Commit;
+    }
     // Two-phase resolved update: probe first, then apply
-    virtual bool canResolveUpdate(const FetchTarget &entry) { return true; }
-    virtual void doResolveUpdate(const FetchTarget &entry) { update(entry); }
-#ifndef UNIT_TEST
+    virtual bool canResolveUpdate(const PredictionUpdateContext &context,
+                                  const PreparedUpdate &update)
+    {
+        return true;
+    }
+    virtual void doResolveUpdate(const PredictionUpdateContext &context,
+                                 const PreparedUpdate &update)
+    {
+        this->update(context, update);
+    }
     // do some statistics on a per-branch and per-predictor basis
-    virtual void commitBranch(const FetchTarget &entry, const DynInstPtr &inst) {}
-#endif
+    virtual void commitBranch(const PredictionUpdateContext &context,
+                              const BranchOutcome &outcome) {}
 
     int componentIdx{0};
     unsigned aheadPipelinedStages{0};
@@ -162,7 +183,7 @@ class TimedBaseBTBPredictor: public SimObject
 
 private:
     unsigned numDelay;
-    bool resolvedUpdate;
+    PredictorTrainingStage trainingStage;
     bool enabled;
     bool smtTidPartitioned;
 };

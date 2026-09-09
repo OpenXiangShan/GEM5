@@ -317,7 +317,7 @@ class DynInst : public ExecContext, public RefCounted
     // Whether or not the source register is ready, one bit per register.
     uint8_t *_readySrcIdx;
 
-    uint64_t amoOldGoldenValue;
+    uint8_t amoOldGoldenValue[16];
 
   public:
     size_t numSrcs() const { return _numSrcs; }
@@ -515,7 +515,7 @@ class DynInst : public ExecContext, public RefCounted
     bool mdpPredStrictWait = false;
 
     /** If load data is from cache then it must be golden */
-    uint8_t goldenData[8] = {0};
+    uint8_t goldenData[16] = {0};
 
     int pf_source  = -1; // if load cache line is prefetched
     /////////////////////// TLB Miss //////////////////////
@@ -538,6 +538,14 @@ class DynInst : public ExecContext, public RefCounted
     InstructionQueue* instQueue = nullptr;
     int issueportid = -1;
     int iqtag = -1;
+
+    // Cached semantic latency for a dynamic floating-point divide.  The
+    // value is computed after the renamed source operands are available and
+    // reused by issue-port arbitration, execution, and wakeup scheduling.
+    mutable int fdivLatency = -1;
+
+    int getFdivLatency() const { return fdivLatency; }
+    void setFdivLatency(int latency) const { fdivLatency = latency; }
 
   public:
     /** Records changes to result? */
@@ -987,7 +995,7 @@ class DynInst : public ExecContext, public RefCounted
     /** Returns the logical register index of the i'th source register. */
     const RegId& srcRegIdx(int i) const { return staticInst->srcRegIdx(i); }
 
-    uint64_t getAmoOldGoldenValue() const { return amoOldGoldenValue; }
+    uint64_t getAmoOldGoldenValue() const { return *(const uint64_t *)amoOldGoldenValue; }
 
     void *getAmoOldGoldenValuePtr() { return (void *) &amoOldGoldenValue; }
 

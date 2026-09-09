@@ -83,6 +83,14 @@ class CPU;
 class TraceFetch;
 class TraceInstruction;
 
+/** One group of resolved control-flow events for the same FTQ entry. */
+struct ResolveQueueEntry
+{
+    ThreadID tid;
+    branch_prediction::btb_pred::FetchTargetId ftqId;
+    std::vector<branch_prediction::btb_pred::BranchOutcome> events;
+};
+
 /**
  * Fetch class handles both single threaded and SMT fetch. Its
  * width is specified by the parameters; each cycle it tries to fetch
@@ -229,6 +237,9 @@ class Fetch
 
     /** Fetch policy. */
     SMTFetchPolicy fetchPolicy;
+
+    /** Distinct SMT threads allowed to feed Decode in one cycle. */
+    unsigned numPreDispatchThreads;
 
     /**  Decode Policy: baseline fetch blocking policy */
     SMTDecodePolicy smtDecodePolicy;
@@ -515,10 +526,20 @@ class Fetch
      */
     bool handleCommitSignals(ThreadID tid);
 
-    /** Handles iew signals including resolved cfi, mark their btb entries
-     *  and train predictors if they are configured to update in resolve stage.
-     */
+    /** Dispatch IEW notifications to scheduling and training consumers. */
     void handleIEWSignals();
+
+    /** Latch SMT scheduling hints until formal squash or timeout. */
+    void updateEarlyRedirectHints();
+
+    /** Filter and enqueue outcomes, then try training one queued FTQ group. */
+    void processResolveUpdates();
+
+    /** Remove wrong-path resolve events after a redirect. */
+    void squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum);
+
+    /** Remove all resolve events owned by one thread. */
+    void clearResolveQueue(ThreadID tid);
 
     /** Handles decode squash signals.
      *  @return: Returns true if squash occurred and immediate return needed.
@@ -1134,6 +1155,10 @@ class Fetch
         statistics::Scalar tlbSquashes;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
+        /** Distinct SMT threads sent to Decode in one cycle. */
+        statistics::Distribution decodeThreadsPerCycle;
+        /** Instructions sent from per-thread fetch queues to Decode. */
+        statistics::Distribution instsSentToDecodePerCycle;
         /** Rate of how often fetch was idle. */
         statistics::Formula idleRate;
         /** Number of branch fetches per cycle. */
@@ -1165,8 +1190,13 @@ class Fetch
         /** Stat for total number of resolve enqueue fail events. */
         statistics::Scalar resolveEnqueueFailEvent;
 
+        /** Resolved events discarded because of a squash. */
+        statistics::Scalar resolveSquashedEvents;
+
         /** Stat for total number of resolve dequeue events. */
         statistics::Scalar resolveDequeueCount;
+        /** Number of individual resolved events successfully consumed. */
+        statistics::Scalar resolveDequeueEventCount;
         /** Stat for total number of resolve enqueue events. */
         statistics::Distribution resolveEnqueueCount;
         /** Stat for entry occupancy distribution of the resolve queue. */

@@ -330,14 +330,16 @@ class IEW
     void dispatchInsts();
     void setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos);
 
-    void dispatchInstFromRename(ThreadID tid);
+    unsigned dispatchInstFromRename(ThreadID tid, unsigned max_insts,
+                                    unsigned dispatch_offset);
 
     /** dispatchQueue is the buffer between rename and iq
      *  first, dispatch the inst from DispatchQueue to IQ
      *  second, receive new inst from rename, store it to DQ
      */
     void dispatchInstFromDispQue();
-    void classifyInstToDispQue(ThreadID tid);
+    unsigned classifyInstToDispQue(ThreadID tid, unsigned max_insts,
+                                   unsigned dispatch_offset);
 
     /** Executes instructions. In the case of memory operations, it informs the
      * LSQ to execute the instructions. Also handles any redirects that occur
@@ -351,6 +353,24 @@ class IEW
      * the scoreboard of registers becoming ready.
      */
     void writebackInsts();
+
+    /** Returns true for vector memory operations covered by completion delay. */
+    bool isVectorMemCompletionDelayInst(const DynInstPtr &inst) const;
+
+    /** Returns whether a completed instruction should wait before writeback. */
+    bool shouldDelayVectorMemCompletion(const DynInstPtr &inst) const;
+
+    /** Queues a completed vector memory instruction for delayed writeback. */
+    void enqueueVectorMemCompletionDelay(const DynInstPtr &inst);
+
+    /** Releases vector memory completions whose delay has elapsed. */
+    void processDelayedVectorMemCompletions();
+
+    /** Original readyToFinish body after optional completion delay filtering. */
+    void enqueueWritebackNow(const DynInstPtr &inst);
+
+    /** Removes delayed vector memory completions squashed for one thread. */
+    void squashDelayedVectorMemCompletions(ThreadID tid);
 
     bool checkSerialize(const DynInstPtr& inst);
 
@@ -482,6 +502,10 @@ class IEW
     bool enableDispatchStage;
 
     unsigned renameWidth;
+    /** Distinct SMT threads allowed to dispatch in one cycle. */
+    unsigned numPreDispatchThreads;
+    /** Aggregate dispatch admission width across SMT threads. */
+    unsigned aggregateDispatchWidth;
 
     /** Index into queue of instructions being written back. */
     unsigned wbNumInst;
@@ -498,6 +522,19 @@ class IEW
 
     /** Writeback width. */
     unsigned wbWidth;
+
+    /** Extra delay after vector memory completion before IEW writeback. */
+    const Cycles vectorMemCompletionDelay;
+
+    struct DelayedVectorMemCompletion
+    {
+        Tick readyTick;
+        Tick enqueueTick;
+        DynInstPtr inst;
+    };
+
+    std::deque<DelayedVectorMemCompletion> delayedVectorMemCompletionQ;
+    std::array<unsigned, MaxThreads> delayedVectorMemCompletionCount{};
 
     bool enableStoreSetTrain;
 
@@ -552,6 +589,8 @@ class IEW
         statistics::Formula branchMispredicts;
 
         statistics::Distribution dispDist;
+        /** Distinct SMT threads dispatched in one cycle. */
+        statistics::Distribution dispatchThreadsPerCycle;
 
         struct ExecutedInstStats : public statistics::Group
         {
@@ -582,6 +621,18 @@ class IEW
         statistics::Vector instsToCommit;
         /** Number of instructions that writeback. */
         statistics::Vector writebackCount;
+        /** Number of vector memory instructions delayed before writeback. */
+        statistics::Scalar vectorMemCompletionDelayedInsts;
+        /** Number of vector memory loads delayed before writeback. */
+        statistics::Scalar vectorMemCompletionDelayedLoads;
+        /** Number of vector memory stores delayed before writeback. */
+        statistics::Scalar vectorMemCompletionDelayedStores;
+        /** Total cycles spent in vector memory completion delay. */
+        statistics::Scalar vectorMemCompletionDelayCycles;
+        /** Sum of delayed vector memory completion queue occupancy per cycle. */
+        statistics::Scalar vectorMemCompletionDelayQueueOccupancy;
+        /** Number of delayed vector memory completions dropped on squash. */
+        statistics::Scalar vectorMemCompletionDelaySquashedInsts;
         /** Number of instructions that wake consumers. */
         statistics::Vector producerInst;
         /** Number of instructions that wake up from producers. */

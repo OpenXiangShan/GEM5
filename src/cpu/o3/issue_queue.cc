@@ -197,6 +197,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
       outports(params.oports.size()),
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
+      deferNewEnqueueSelection(params.deferNewEnqueueSelection),
       iqname(params.name),
       vectorSplitUnits(params.vectorSplitUnits),
       nextVectorLoadSplitUnit(0),
@@ -210,6 +211,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
 {
     panic_if(vectorSplitUnits == 0,
              "%s: vectorSplitUnits must be greater than 0\n", iqname);
+
+    if (deferNewEnqueueSelection) {
+        enqueuedThisCycle.reserve(inports);
+    }
 
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
@@ -384,6 +389,13 @@ IssueQue::isVectorMemInst(const DynInstPtr& inst) const
     return inst && inst->isVector() && inst->isMemRef() && !inst->isSquashed();
 }
 
+bool
+IssueQue::needsVectorMemSplit(const DynInstPtr& inst) const
+{
+    return isVectorMemInst(inst) &&
+           inst->opClass() != enums::VectorUnitStrideLoad;
+}
+
 IssueQue::VectorSplitKind
 IssueQue::vectorSplitKind(const DynInstPtr& inst) const
 {
@@ -424,7 +436,7 @@ IssueQue::nextVectorSplitUnitFor(VectorSplitKind kind)
 bool
 IssueQue::isBlockingVectorSplitInst(const DynInstPtr& inst) const
 {
-    return isVectorMemInst(inst) && inst->opClass() != enums::VectorUnitStrideLoad;
+    return needsVectorMemSplit(inst);
 }
 
 bool
@@ -818,7 +830,7 @@ IssueQue::retryMem(const DynInstPtr& inst)
             DynInst::LoadPipeSource::ReplayQueue);
     }
     DPRINTF(Schedule, "retry %s [sn:%llu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
-    if (isVectorMemInst(inst)) {
+    if (needsVectorMemSplit(inst)) {
         enqueueVectorMemDelay(inst, true);
         return;
     }
@@ -938,7 +950,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            if (isVectorMemInst(inst)) {
+            if (needsVectorMemSplit(inst)) {
                 enqueueVectorMemDelay(inst, false);
             } else {
                 READYQ_PUSH(inst);
@@ -979,6 +991,17 @@ IssueQue::selectInst()
             if (inst->canceled()) {
                 inst->clearInReadyQ();
                 it = readyQ->erase(it);
+                continue;
+            }
+
+            // The dispatch input becomes selectable only after the enqueue
+            // register boundary. Resident entries keep their wakeup timing.
+            if (deferNewEnqueueSelection &&
+                std::find(enqueuedThisCycle.begin(), enqueuedThisCycle.end(),
+                          inst->seqNum) != enqueuedThisCycle.end()) {
+                DPRINTF(Schedule, "[sn:%llu] defer selection after enqueue\n",
+                        inst->seqNum);
+                ++it;
                 continue;
             }
 
@@ -1079,6 +1102,7 @@ IssueQue::tick()
         iqstats->insertDist[instNumInsert]++;
     }
     instNumInsert = 0;
+    enqueuedThisCycle.clear();
 
     scheduleInst();
     processVectorReadyQ();
@@ -1110,6 +1134,9 @@ IssueQue::insert(const DynInstPtr& inst)
     (*instNumClassify[inst->opClass()])++;
     instNum++;
     instNumInsert++;
+    if (deferNewEnqueueSelection) {
+        enqueuedThisCycle.push_back(inst->seqNum);
+    }
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 
@@ -2062,6 +2089,76 @@ uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
     if (inst->opClass() == FloatDivOp) [[unlikely]] {
+        if (inst->staticInst->operWid() == 64) {
+            const int cached = inst->getFdivLatency();
+            if (cached >= 0) {
+                return cached;
+            }
+
+            // Speculative wakeup can make an instruction selectable before a
+            // producer has placed its value in the physical register file.
+            // Do not classify stale data; use the normal path until both
+            // source registers are architecturally available, then cache the
+            // semantic result for all subsequent timing decisions.
+            for (int i = 0; i < inst->numSrcRegs(); ++i) {
+                const auto src = inst->renamedSrcIdx(i);
+                if (!src->isFixedMapping() &&
+                    !bypassScoreboard[src->flatIndex()]) {
+                    return 12;
+                }
+            }
+
+            // Read the renamed physical registers so an out-of-order
+            // producer is observed at the same point as normal execution.
+            const uint64_t opa = cpu->peekReg(inst->renamedSrcIdx(0));
+            const uint64_t opb = cpu->peekReg(inst->renamedSrcIdx(1));
+            const uint64_t opaExp = (opa >> 52) & 0x7ff;
+            const uint64_t opbExp = (opb >> 52) & 0x7ff;
+            const uint64_t opaFrac = opa & ((uint64_t(1) << 52) - 1);
+            const uint64_t opbFrac = opb & ((uint64_t(1) << 52) - 1);
+
+            const bool opaZero = opaExp == 0 && opaFrac == 0;
+            const bool opbZero = opbExp == 0 && opbFrac == 0;
+            const bool opaInf = opaExp == 0x7ff && opaFrac == 0;
+            const bool opbInf = opbExp == 0x7ff && opbFrac == 0;
+            const bool opaNan = opaExp == 0x7ff && opaFrac != 0;
+            const bool opbNan = opbExp == 0x7ff && opbFrac != 0;
+
+            // This is the same early-finish partition used by the RTL:
+            // NaN, invalid (Inf/Inf or 0/0), Inf result, or exact zero.
+            const bool invalid = (opaInf && opbInf) ||
+                                 (opaZero && opbZero);
+            const bool earlyFinish = opaNan || opbNan || invalid ||
+                                     opaInf || opbZero || opaZero || opbInf;
+
+            uint32_t latency = 12;
+            if (earlyFinish || (!opbInf && !opbZero && opbFrac == 0)) {
+                latency = 4;
+            } else if (opaExp == 0 || opbExp == 0) {
+                latency = 13;
+            } else {
+                // For normal finite operands, the quotient exponent is
+                // determined by the unbiased exponent difference and the
+                // significand comparison.  An exponent below -1022 means
+                // the RTL takes its extra denormal post-processing cycle.
+                const uint64_t opaSig = (uint64_t(1) << 52) | opaFrac;
+                const uint64_t opbSig = (uint64_t(1) << 52) | opbFrac;
+                int quotientExp = static_cast<int>(opaExp) - 1023 -
+                                   (static_cast<int>(opbExp) - 1023);
+                if (opaSig < opbSig) {
+                    --quotientExp;
+                }
+                if (quotientExp < -1022) {
+                    latency = 13;
+                }
+            }
+            inst->setFdivLatency(latency);
+            DPRINTF(Schedule,
+                    "[sn:%llu] semantic fdiv latency opLat=%u "
+                    "(AtFU->bypass=%u), opa=%#lx opb=%#lx\n",
+                    inst->seqNum, latency, latency - 1, opa, opb);
+            return latency;
+        }
         if (inst->staticInst->operWid() == 32) {
             return 11;
         }

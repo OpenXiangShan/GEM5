@@ -161,6 +161,8 @@ class BaseO3CPU(BaseCPU):
     dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
 
     wbWidth = Param.Unsigned(20, "Writeback width")
+    vectorMemCompletionDelay = Param.Cycles(0,
+        "Extra delay from vector memory completion to IEW writeback")
 
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")
@@ -287,12 +289,21 @@ class BaseO3CPU(BaseCPU):
     smtNumFetchTargetThreads = Param.Unsigned(
         1, "Maximum number of distinct SMT threads starting an FTQ fetch "
            "per cycle")
+    smtNumPreDispatchThreads = Param.Unsigned(
+        1, "Maximum number of distinct SMT threads advanced per cycle from "
+           "the fetch queue through decode, rename, dispatch, and ROB insert")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
     smtLSQMode = Param.SMTLSQMode('Independent',
                                   "SMT LSQ mode: per-thread independent or shared quota")
     smtLSQPolicy    = Param.SMTQueuePolicy('Partitioned',
                                            "SMT shared LSQ allocation policy")
-    smtLSQThreshold = Param.Int(100, "SMT LSQ Threshold Sharing Parameter")
+    smtLQThreshold = Param.Int(108, "SMT LQ Threshold Sharing Parameter")
+    smtSQThreshold = Param.Int(56, "SMT SQ Threshold Sharing Parameter")
+
+    smtRARQPolicy   = Param.SMTQueuePolicy('Dynamic',
+                                           "SMT shared RARQ allocation policy")
+    smtRAWQPolicy   = Param.SMTQueuePolicy('Dynamic',
+                                           "SMT shared RAWQ allocation policy")
     smtIQPolicy    = Param.SMTQueuePolicy('Partitioned',
                                           "SMT IQ Sharing Policy")
     smtIQThreshold = Param.Int(100, "SMT IQ Threshold Sharing Parameter")
@@ -339,6 +350,14 @@ class BaseO3CPU(BaseCPU):
            "marking held after the triggering condition clears")
     smtBorrowBaseReserveEntries = Param.Unsigned(
         80, "Minimum ROB entries reserved for a borrowing base to resume")
+    smtLQBorrowBaseReserveEntries = Param.Unsigned(
+        60, "Minimum LQ entries reserved for a borrowing base thread to resume")
+    smtLQBorrowDonorReserveEntries = Param.Unsigned(
+        6, "Minimum LQ entries reserved for a borrowing donor thread to resume")
+    smtSQBorrowBaseReserveEntries = Param.Unsigned(
+        32, "Minimum SQ entries reserved for a borrowing base thread to resume")
+    smtSQBorrowDonorReserveEntries = Param.Unsigned(
+        4, "Minimum SQ entries reserved for a borrowing donor thread to resume")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")

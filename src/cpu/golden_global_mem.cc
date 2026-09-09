@@ -15,6 +15,7 @@
  ***************************************************************************************/
 
 #include "cpu/golden_global_mem.hh"
+#include <cstring>
 
 #include <sys/mman.h>
 
@@ -79,13 +80,25 @@ GoldenGloablMem::updateGoldenMem(uint64_t addr, void *data, const std::vector<bo
 void
 GoldenGloablMem::readGoldenMem(uint64_t addr, void *data, uint64_t len)
 {
-    *(uint64_t *)data = pmemReadCheck(addr, len);
+    if (inPmem(addr, len)) {
+        void *p = &goldenMem[addr - pmemBase];
+        std::memcpy(data, p, len);
+    } else {
+        warn("[Hint] read not in pmem, maybe in speculative state! addr: %lx\n", addr);
+        std::memset(data, 0, len);
+    }
 }
 
 bool
 GoldenGloablMem::inPmem(uint64_t addr)
 {
     return (pmemBase <= addr) && (addr <= pmemBase + pmemSize - 1);
+}
+
+bool
+GoldenGloablMem::inPmem(uint64_t addr, uint64_t len)
+{
+    return (pmemBase <= addr) && (addr <= pmemBase + pmemSize - 1) && (len <= pmemSize - (addr - pmemBase));
 }
 
 uint64_t

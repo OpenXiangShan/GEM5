@@ -21,10 +21,6 @@ on:
         type: string
         default: ""
         description: "Comma-separated benchmark filters. Empty means run all workloads in checkpoint list."
-      vector_type:
-        required: false
-        type: string
-        description: "Benchmark type: base, simple"
       gcbv_ref_so:
         required: false
         type: string
@@ -77,7 +73,7 @@ jobs:
         with:
           ref: ${{ inputs.pr_sha || github.sha }}
           persist-credentials: false
-      
+
       - name: Set benchmark configuration
         id: config
         env:
@@ -96,6 +92,22 @@ jobs:
             echo "profile_extra_args=--enable-h-gcpt --restore-rvh-cpt --gcpt-restorer=$H_RESTORER --difftest-ref-so=$H_REF_SO --maxinsts=40000000 --dramsim3-ini=$H_DRAM_INI" >> "$GITHUB_OUTPUT"
           fi
 
+          case "${{ inputs.config_path }}" in
+            */kmhv3.py|*/kmhv2.py)
+              artifact_name_prefix="score"
+              ;;
+            */idealkmhv3.py)
+              artifact_name_prefix="score-ideal"
+              ;;
+            */smt_idealkmhv3.py)
+              artifact_name_prefix="score-smt-ideal"
+              ;;
+            *)
+              artifact_name_prefix="score-unknown"
+              ;;
+          esac
+          echo "artifact_name=${artifact_name_prefix}-${{ inputs.benchmark_type }}" >> "$GITHUB_OUTPUT"
+
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 fast
         run: |
@@ -105,24 +117,8 @@ jobs:
             export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
             export GCB_MULTI_CORE_RESTORER=""
           fi
-          case "${{ inputs.vector_type }}" in
-            "base")
-              # use pgo profile to build gem5
-              bash util/pgo/basic_pgo_new.sh
-              ;;
-            "simple")
-              # use pgo profile to build gem5, use simple vector decode strategy in scons
-              bash util/pgo/basic_pgo_new_vector.sh
-              ;;
-            "")
-              # use pgo profile to build gem5
-              bash util/pgo/basic_pgo_new.sh
-              ;;
-            *)
-              echo "Error: Invalid vector_type '${{ inputs.vector_type }}'. Must be one of: base, simple"
-              exit 1
-              ;;
-          esac
+          # use pgo profile to build gem5
+          bash util/pgo/basic_pgo_new.sh
 
       - name: Prepare performance archive
         id: archive
@@ -143,7 +139,7 @@ jobs:
           CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
           CONFIG_NAME=${CONFIG_NAME:-config}
           TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
-          DEFAULT_DISTRIBUTED_SERVERS="node020-node029,node033-node034,node036-node039"
+          DEFAULT_DISTRIBUTED_SERVERS="node003-node008,node020-node029,node033-node034,node036-node039"
           DISTRIBUTED_SERVERS_INPUT="$DISTRIBUTED_SERVERS_RAW"
           DISTRIBUTED_SERVERS=$(echo "$DISTRIBUTED_SERVERS_INPUT" | xargs)
           if [ "$DISTRIBUTED_SERVERS" = "default" ]; then
@@ -253,9 +249,20 @@ jobs:
             } >> "$PERF_ARCHIVE_DIR/metadata.txt"
           fi
 
+          run_local_parallel() {
+            echo "Using local parallel_sim.sh runner"
+            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+              "$CHECKPOINT_LIST" \
+              "$CHECKPOINT_ROOT_NODE" \
+              spec_all \
+              "$SPECIFIC_BENCHMARKS_INPUT" \
+              "$extra_args"
+          }
+
           distributed_servers="$DISTRIBUTED_SERVERS"
           if [ -n "$distributed_servers" ]; then
             echo "Using distributed gem5 runner on servers: $distributed_servers"
+            distributed_status=0
             python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
               --servers "$distributed_servers" \
               --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
@@ -273,15 +280,16 @@ jobs:
               "$CHECKPOINT_ROOT_NODE" \
               spec_all \
               "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
+              "$extra_args" || distributed_status=$?
+
+            if [ "$distributed_status" -eq 75 ]; then
+              echo "::warning title=Distributed servers unavailable::Falling back to local parallel_sim.sh"
+              run_local_parallel
+            elif [ "$distributed_status" -ne 0 ]; then
+              exit "$distributed_status"
+            fi
           else
-            echo "Using local parallel_sim.sh runner"
-            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-              "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" \
-              spec_all \
-              "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
+            run_local_parallel
           fi
       - name: Setup gem5_data_proc environment
         run: |
@@ -373,8 +381,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.config.outputs.artifact_name }}${{ steps.config.outputs.pf_artifact_suffix }}
+          name: ${{ steps.config.outputs.artifact_name }}
           path: score.txt
           if-no-files-found: warn
           retention-days: 30
-      

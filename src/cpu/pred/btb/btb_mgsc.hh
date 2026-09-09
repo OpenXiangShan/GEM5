@@ -181,22 +181,29 @@ class BTBMGSC : public TimedBaseBTBPredictor
                          const DirectionHistoryUpdate &update);
 
     // Recover all folded histories after a misprediction.
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
-    void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry,
+    void recoverHist(const boost::dynamic_bitset<> &history,
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update) override;
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
-    void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                       bool cond_taken);
-    void recoverIHist(const FetchTarget &entry, int shamt,
-                      bool cond_taken);
-    void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken);
+    void recoverBwHist(const boost::dynamic_bitset<> &history,
+                       const HistoryRecoveryContext &context,
+                       const DirectionHistoryUpdate &update);
+    void recoverIHist(const HistoryRecoveryContext &context,
+                      const DirectionHistoryUpdate &update);
+    void recoverLHist(
+        const std::vector<boost::dynamic_bitset<>> &history,
+        const HistoryRecoveryContext &context,
+        const DirectionHistoryUpdate &update);
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 #endif
 
     void setTrace() override;
@@ -299,11 +306,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
                                             const TageInfoForMGSC &tage_info,
                                             ThreadID tid, uint8_t asidHash);
 
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
-
-    void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream);
+    void updateSinglePredictor(
+        Addr pc, bool actual_taken,
+        const MgscPrediction &pred,
+        const PredictionUpdateContext &context);
     void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
                                bool tage_pred_taken);
 

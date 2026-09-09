@@ -115,6 +115,7 @@ class IssueQue : public SimObject
     const int iqsize;
     const int replayQsize = 32;
     const int scheduleToExecDelay;
+    const bool deferNewEnqueueSelection;
     const std::string iqname;
     std::vector<std::bitset<Num_OpClasses>> portFuDescs;
     std::vector<FUDesc*> fuDescs;
@@ -155,6 +156,8 @@ class IssueQue : public SimObject
 
     std::list<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
+    // Bounded by this IQ's enqueue bandwidth; cleared before dispatch each tick.
+    std::vector<InstSeqNum> enqueuedThisCycle;
 
     std::vector<uint8_t*> instNumClassify;
     uint64_t instNum = 0;
@@ -230,6 +233,7 @@ class IssueQue : public SimObject
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
     bool isVectorMemInst(const DynInstPtr& inst) const;
+    bool needsVectorMemSplit(const DynInstPtr& inst) const;
     VectorSplitKind vectorSplitKind(const DynInstPtr& inst) const;
     const char* vectorSplitKindName(VectorSplitKind kind) const;
     bool isBlockingVectorSplitInst(const DynInstPtr& inst) const;

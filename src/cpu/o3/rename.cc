@@ -41,6 +41,7 @@
 
 #include "cpu/o3/rename.hh"
 
+#include <algorithm>
 #include <list>
 
 #include "cpu/o3/cpu.hh"
@@ -67,6 +68,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       decodeToRenameDelay(params.decodeToRenameDelay),
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
+      numPreDispatchThreads(params.smtNumPreDispatchThreads),
+      aggregateRenameWidth(renameWidth * numPreDispatchThreads),
       releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
       pregBackendBackpressureDonorEnabled(
@@ -77,13 +80,20 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       valuePred(params.valuePred),
       enableSelectiveVPFlush(params.enableSelectiveVPFlush)
 {
-    if (renameWidth > MaxWidth)
-        fatal("renameWidth (%d) is larger than compiled limit (%d),\n"
-             "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
-             renameWidth, static_cast<int>(MaxWidth));
+    panic_if(numPreDispatchThreads == 0 ||
+             numPreDispatchThreads > numThreads ||
+             numPreDispatchThreads > 2,
+             "smtNumPreDispatchThreads (%u) must be in [1, min(2, "
+             "numThreads (%u))]",
+             numPreDispatchThreads, numThreads);
+    panic_if(aggregateRenameWidth > MaxWidth,
+             "aggregate SMT rename width (%u * %u) exceeds MaxWidth (%u)",
+             renameWidth, numPreDispatchThreads, MaxWidth);
 
     for (uint32_t tid = 0; tid < MaxThreads; tid++) {
-        fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
+        const unsigned capacity = renameWidth *
+            (numPreDispatchThreads > 1 ? 2 : 1);
+        fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(capacity);
         renameMap[tid] = nullptr;
         stalls[tid] = {false, false};
         finalCommitSeq[tid] = 0;
@@ -117,6 +127,10 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
                "Number of cycles rename is unblocking"),
       ADD_STAT(renamedInsts, statistics::units::Count::get(),
                "Number of instructions processed by rename per thread"),
+      ADD_STAT(threadsRenamedPerCycle, statistics::units::Count::get(),
+               "Distinct SMT threads renamed in one cycle"),
+      ADD_STAT(instsRenamedPerCycle, statistics::units::Count::get(),
+               "Instructions renamed across all SMT threads in one cycle"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
                "Number of squashed instructions processed by rename"),
       ADD_STAT(ROBFullEvents, statistics::units::Count::get(),
@@ -182,6 +196,12 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
     unblockCycles.prereq(unblockCycles);
 
     squashedInsts.prereq(squashedInsts);
+    threadsRenamedPerCycle
+        .init(0, rename->numPreDispatchThreads, 1)
+        .flags(statistics::pdf);
+    instsRenamedPerCycle
+        .init(0, rename->aggregateRenameWidth, 1)
+        .flags(statistics::pdf);
 
     ROBFullEvents.prereq(ROBFullEvents);
     IQFullEvents.prereq(IQFullEvents);
@@ -410,6 +430,7 @@ Rename::tick()
     // check threads stall & status
     ThreadID blocked_tid = InvalidThreadID;
     SmtActiveThreadArbiter active_arbiter;
+    std::vector<ThreadID> active_tids;
     auto freezeActiveThread = [this](ThreadID tid) {
         stallSig->blockDecode[tid] = true;
         stallSig->decodeBlockReason[tid] = StallReason::OtherFragStall;
@@ -463,13 +484,16 @@ Rename::tick()
             stallSig->blockDecode[i] ? block_reason : StallReason::NoStall;
         toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];
         if (active) {
+            active_tids.push_back(i);
             const auto freeze = active_arbiter.observe(
                 i, smtBorrowPriority(fromIEW->iewInfo[i]));
-            if (freeze.previousActive != InvalidThreadID) {
-                freezeActiveThread(freeze.previousActive);
-            }
-            if (freeze.freezeCurrent) {
-                freezeActiveThread(i);
+            if (numPreDispatchThreads == 1) {
+                if (freeze.previousActive != InvalidThreadID) {
+                    freezeActiveThread(freeze.previousActive);
+                }
+                if (freeze.freezeCurrent) {
+                    freezeActiveThread(i);
+                }
             }
         } else if (stallSig->blockDecode[i] && blocked_tid == InvalidThreadID) {
             blocked_tid = i;
@@ -477,24 +501,72 @@ Rename::tick()
     }
     if (regFullThisCycle)
         stats.stallEvents[RegFull]++;
-    const ThreadID tid = active_arbiter.selected();
+    const ThreadID primary_tid = active_arbiter.selected();
 
-    if (tid == InvalidThreadID) {
+    if (primary_tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         if (blocked_tid != InvalidThreadID) {
             setAllStalls(stallSig->decodeBlockReason[blocked_tid]);
             blockReason = stallSig->decodeBlockReason[blocked_tid];
         }
         toIEW->renameStallReason = renameStalls;
+        stats.threadsRenamedPerCycle.sample(0);
+        stats.instsRenamedPerCycle.sample(0);
         updateActivate();
         return;
     }
-    DPRINTF(Rename, "Processing [tid:%i]\n", tid);
 
-    renameInsts(tid);
-    if (stallSig->blockRename[tid]) {
-        setAllStalls(stallSig->renameBlockReason[tid]);
-        stats.smtStallEvents[stallSig->renameBlockReason[tid]].sample(tid);
+    std::vector<ThreadID> selected_tids{primary_tid};
+    for (const ThreadID tid : active_tids) {
+        if (tid != primary_tid &&
+            selected_tids.size() < numPreDispatchThreads) {
+            selected_tids.push_back(tid);
+        }
+    }
+    for (const ThreadID tid : active_tids) {
+        if (std::find(selected_tids.begin(), selected_tids.end(), tid) ==
+            selected_tids.end()) {
+            freezeActiveThread(tid);
+        }
+    }
+
+    unsigned renamed_this_cycle = 0;
+    unsigned threads_renamed = 0;
+    for (const ThreadID tid : selected_tids) {
+        if (toIEW->size >= aggregateRenameWidth) {
+            freezeActiveThread(tid);
+            continue;
+        }
+
+        // The first thread may consume shared physical registers, so recheck
+        // the next thread against the updated free-list state.
+        if (!canRename(tid)) {
+            stallSig->blockDecode[tid] = true;
+            stallSig->decodeBlockReason[tid] = StallReason::RegFull;
+            toDecode->renameInfo[tid].blockReason = StallReason::RegFull;
+            continue;
+        }
+
+        DPRINTF(Rename, "Processing [tid:%i]\n", tid);
+        const unsigned renamed = renameInsts(tid, renameWidth);
+        renamed_this_cycle += renamed;
+        threads_renamed += renamed != 0;
+
+        if (stallSig->blockRename[tid]) {
+            setAllStalls(stallSig->renameBlockReason[tid]);
+            stats.smtStallEvents[stallSig->renameBlockReason[tid]].sample(tid);
+        }
+        stallSig->decodeBlockReason[tid] =
+            stallSig->blockDecode[tid] ? blockReason : StallReason::NoStall;
+        toDecode->renameInfo[tid].blockReason =
+            stallSig->decodeBlockReason[tid];
+    }
+
+    stats.threadsRenamedPerCycle.sample(threads_renamed);
+    stats.instsRenamedPerCycle.sample(renamed_this_cycle);
+
+    if (stallSig->blockRename[primary_tid]) {
+        setAllStalls(stallSig->renameBlockReason[primary_tid]);
     } else if (toIEW->size > 0 && renameStalls[0] == StallReason::NoStall) {
         for (int i = 0; i < renameStalls.size(); i++) {
             if (i < toIEW->size) {
@@ -504,10 +576,6 @@ Rename::tick()
             }
         }
     }
-
-    stallSig->decodeBlockReason[tid] =
-        stallSig->blockDecode[tid] ? blockReason : StallReason::NoStall;
-    toDecode->renameInfo[tid].blockReason = stallSig->decodeBlockReason[tid];
 
     toIEW->renameStallReason = renameStalls;
 
@@ -563,7 +631,7 @@ Rename::canRename(ThreadID tid)
 {
     std::vector<int> demand_phy_regs(RMiscRegClass + 1, 0);
     auto& insts_to_rename = fixedbuffer[tid];
-    int num_insts = insts_to_rename.size();
+    int num_insts = std::min<unsigned>(insts_to_rename.size(), renameWidth);
 
     // calculate physical registers needed by these `num_insts` instructions
     for (int i = 0; i < num_insts; i++) {
@@ -638,8 +706,8 @@ Rename::hasBackendQuotaFullStall(ThreadID tid)
     }
 }
 
-void
-Rename::renameInsts(ThreadID tid)
+unsigned
+Rename::renameInsts(ThreadID tid, unsigned max_insts)
 {
     // Instructions can be either in the skid buffer or the queue of
     // instructions coming from decode, depending on the status.
@@ -647,18 +715,21 @@ Rename::renameInsts(ThreadID tid)
     int insts_available = insts_to_rename.size();
 
     int renamed_insts = 0;
-    int toIEWIndex = 0;
+    int toIEWIndex = toIEW->size;
 
     std::queue<StallReason> rename_stalls;
 
     StallReason breakRename = StallReason::NoStall;
-    while (insts_available > 0) {
+    unsigned processed_insts = 0;
+    while (insts_available > 0 && processed_insts < max_insts &&
+           toIEWIndex < aggregateRenameWidth) {
 
         assert(!insts_to_rename.empty());
 
         DynInstPtr inst = insts_to_rename.front();
 
         insts_to_rename.pop_front();
+        ++processed_insts;
 
         if (inst->isSquashed()) {
             DPRINTF(Rename, "[sn:%llu] instruction  with PC %s is squashed, skipping.\n",
@@ -714,7 +785,11 @@ Rename::renameInsts(ThreadID tid)
     if (!fixedbuffer[tid].empty()) {
         stallSig->blockDecode[tid] = true;
         if (breakRename == StallReason::NoStall) {
-            breakRename = checkRenameStallFromIEW(tid);
+            if (processed_insts >= max_insts) {
+                breakRename = StallReason::OtherFragStall;
+            } else {
+                breakRename = checkRenameStallFromIEW(tid);
+            }
             if (breakRename == StallReason::NoStall) {
                 breakRename = StallReason::RegFull;
                 ++stats.fullRegistersEvents[tid];
@@ -758,9 +833,11 @@ Rename::renameInsts(ThreadID tid)
     }
 
     // If we wrote to the time buffer, record this.
-    if (toIEWIndex) {
+    if (renamed_insts) {
         wroteToTimeBuffer = true;
     }
+
+    return renamed_insts;
 }
 
 void
@@ -770,14 +847,14 @@ Rename::moveInstsToBuffer()
     if (insts_from_decode == 0) {
         return;
     }
-    ThreadID tid = fromDecode->insts[0]->threadNumber;
     for (int i = 0; i < insts_from_decode; ++i) {
         const DynInstPtr &inst = fromDecode->insts[i];
-        assert(inst->threadNumber == tid);
+        const ThreadID tid = inst->threadNumber;
         if (localSquashVer[tid].largerThan(inst->getVersion())) {
             inst->setSquashed();
         } else {
-            assert(!fixedbuffer[tid].full());
+            panic_if(fixedbuffer[tid].full(),
+                     "Rename input buffer overflow for SMT thread %u", tid);
             fixedbuffer[tid].push_back(inst);
         }
 
