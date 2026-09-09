@@ -290,6 +290,8 @@ Decode::drainSanityCheck() const
 {
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         assert(fixedbuffer[tid].empty());
+        assert(stallBuffer[tid].empty());
+        assert(eachstallSize[tid].empty());
     }
 }
 
@@ -297,8 +299,10 @@ bool
 Decode::isDrained() const
 {
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (!fixedbuffer[tid].empty())
+        if (!fixedbuffer[tid].empty() || !stallBuffer[tid].empty()) {
             return false;
+        }
+        assert(eachstallSize[tid].empty());
     }
     return true;
 }
@@ -498,41 +502,48 @@ Decode::updateActivate()
 void
 Decode::moveInstsToBuffer()
 {
-    // Helper lambda: try to move head group from a specific thread's stallBuffer
-    auto tryMoveHeadGroupFromThread = [&](ThreadID tid) -> bool {
-        if (stallBuffer[tid].empty()) {
-            return false;
-        }
+    // Fill one decode packet in FIFO order. A packet may span fetch bundles,
+    // and a bundle that crosses the packet boundary remains at the head with
+    // its unconsumed size recorded in eachstallSize.
+    auto fillFixedBuffer = [&](ThreadID tid) -> unsigned {
+        unsigned insts_moved = 0;
+        while (!stallBuffer[tid].empty() && !fixedbuffer[tid].full()) {
+            assert(!eachstallSize[tid].empty());
+            const unsigned free_slots =
+                fixedbuffer[tid].capacity() - fixedbuffer[tid].size();
+            const unsigned insts_from_stall =
+                std::min<unsigned>(eachstallSize[tid].front(), free_slots);
 
-        // stallbuffer moves to fixedbuffer in strict FIFO order.
-        if (!fixedbuffer[tid].empty()) {
-            return false;
-        }
-
-        int insts_from_stall = eachstallSize[tid].front();
-        eachstallSize[tid].pop_front();
-        for (int i = 0; i < insts_from_stall; ++i) {
-            const DynInstPtr &inst = stallBuffer[tid].front();
-            assert(tid == inst->threadNumber);
-            if (localSquashVer[tid].largerThan(inst->getVersion())) {
-                inst->setSquashed();
+            for (unsigned i = 0; i < insts_from_stall; ++i) {
+                const DynInstPtr &inst = stallBuffer[tid].front();
+                assert(tid == inst->threadNumber);
+                if (localSquashVer[tid].largerThan(inst->getVersion())) {
+                    inst->setSquashed();
+                }
+                fixedbuffer[tid].push_back(inst);
+                stallBuffer[tid].pop_front();
+                ++insts_moved;
             }
-            assert(!fixedbuffer[inst->threadNumber].full());
-            fixedbuffer[inst->threadNumber].push_back(inst);
-            stallBuffer[tid].pop_front();
+
+            if (insts_from_stall == eachstallSize[tid].front()) {
+                eachstallSize[tid].pop_front();
+            } else {
+                eachstallSize[tid].front() -= insts_from_stall;
+            }
         }
 
-        return true;
+        assert(stallBuffer[tid].empty() == eachstallSize[tid].empty());
+        return insts_moved;
     };
 
     // Model one stage advance before latching the next cycle's input so a
     // full stall buffer can still accept a new fetch bundle when its head
     // group moves forward in the same cycle.
-    // In SMT mode, we check all threads independently rather than strict FIFO
-    // to maximize decode utilization
-    std::vector<bool> thread_moved(numThreads, false);
+    // In SMT mode, check all threads independently to maximize utilization.
+    // Only bundles already buffered at the start of the cycle move here.
+    std::vector<unsigned> thread_moved(numThreads, 0);
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        thread_moved[tid] = tryMoveHeadGroupFromThread(tid);
+        thread_moved[tid] = fillFixedBuffer(tid);
     }
 
     int insts_from_fetch = fromFetch->size;
@@ -583,18 +594,17 @@ Decode::moveInstsToBuffer()
         return;
     }
 
-    // Second attempt: if any thread didn't move before accepting new fetch,
-    // try again for those threads that didn't move
-    // This allows newly arrived instructions to potentially move directly to fixedbuffer
-    // if their thread's fixedbuffer is empty
-    // Note: We only retry threads that had instructions in stallBuffer but couldn't move
-    // (i.e., thread_moved[tid] == false AND stallBuffer was non-empty at first check)
-    // Newly arrived instructions will be handled in the next cycle
+    // Append newly arrived instructions when they can complete a packet that
+    // already contains older instructions. A full-width fresh bundle may keep
+    // the existing same-cycle bypass. A short fresh bundle waits one cycle so
+    // the following bundle can be merged with it instead of emitting a bubble.
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        // Only retry if this thread had instructions but couldn't move them
-        // Don't process newly arrived instructions here - they'll be handled next cycle
-        if (!thread_moved[tid] && !stallBuffer[tid].empty()) {
-            tryMoveHeadGroupFromThread(tid);
+        const bool has_partial_packet = !fixedbuffer[tid].empty();
+        const bool has_full_fresh_bundle =
+            fixedbuffer[tid].empty() && !eachstallSize[tid].empty() &&
+            eachstallSize[tid].front() >= fixedbuffer[tid].capacity();
+        if (has_partial_packet || has_full_fresh_bundle) {
+            thread_moved[tid] += fillFixedBuffer(tid);
         }
     }
 }
@@ -829,20 +839,11 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
     DPRINTF(Decode, "[tid:%i] Sending instruction to rename.\n",tid);
 
 
-    bool vec_decode_limit = false;
-
-    if (!insts_to_decode.front()->isVector()) {
-        vec_decode_limit = true;
-    }
-
     std::vector<DynInstPtr> fusionInst;
     unsigned processed_insts = 0;
     while (insts_available > 0 && toRenameIndex < aggregateDecodeWidth &&
            processed_insts < max_insts) {
         assert(!insts_to_decode.empty());
-        if (vec_decode_limit && insts_to_decode.front()->isVector()) {
-            break;
-        }
 
         DynInstPtr inst = std::move(insts_to_decode.front());
 
