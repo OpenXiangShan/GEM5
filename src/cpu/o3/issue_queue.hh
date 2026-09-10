@@ -232,8 +232,7 @@ class IssueQue : public SimObject
     void replay(const DynInstPtr& inst);
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
-    bool isVectorMemInst(const DynInstPtr& inst) const;
-    bool needsVectorMemSplit(const DynInstPtr& inst) const;
+    bool isVectorNonContinuousMemInst(const DynInstPtr& inst) const;
     VectorSplitKind vectorSplitKind(const DynInstPtr& inst) const;
     const char* vectorSplitKindName(VectorSplitKind kind) const;
     bool isBlockingVectorSplitInst(const DynInstPtr& inst) const;
