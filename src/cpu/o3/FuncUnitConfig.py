@@ -103,7 +103,7 @@ class FP_MISC(FUDesc):
                OpDesc(opClass='FloatMv', opLat=4)]
 
 class FP_MAC(FUDesc):
-    opList = [ OpDesc(opClass='FloatMultAcc', opLat=4)]
+    opList = [ OpDesc(opClass='FloatMultAcc', opLat=3)]
 
 class SIMD_Unit(FUDesc):
     opList = [ OpDesc(opClass='VectorIntegerArith'),
