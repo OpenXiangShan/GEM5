@@ -206,6 +206,8 @@ class BaseO3CPU(BaseCPU):
     StoreCompletionWidth = Param.Unsigned(4, "Number of stores to complete per cycle")
 
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
+    sbufferReleaseOnMiss = Param.Bool(
+        True, "Release store buffer entries when a miss is accepted by L1D")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
 
