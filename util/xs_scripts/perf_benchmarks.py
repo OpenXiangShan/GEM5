@@ -144,11 +144,20 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="spec17-1.0c",
-            checkpoint_list="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst",
-            checkpoint_root="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/",
-            cluster_config="/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/cluster-0-0.json",
+            checkpoint_list=(
+                "/nfs/home/share/checkpoints_profiles/"
+                "spec17_rate_gcc16_rva23_novec_260904/checkpoint/checkpoint.lst"
+            ),
+            checkpoint_root=(
+                "/nfs/home/share/checkpoints_profiles/"
+                "spec17_rate_gcc16_rva23_novec_260904/checkpoint"
+            ),
+            cluster_config=(
+                "/nfs/home/share/checkpoints_profiles/"
+                "spec17_rate_gcc16_rva23_novec_260904/json/checkpoints_all.json"
+            ),
             score_script="gem5-score-ci-17.sh",
-            comment="run 100% coverage spec17 checkpoints",
+            comment="run 100% coverage GCC16 RVA23 no-vector SPEC17 rate checkpoints",
         ),
         BenchmarkConfig(
             benchmark_type="spec06-rvv-1.0c",

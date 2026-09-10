@@ -32,7 +32,8 @@ jobs:
 
       - name: Difftest smoke test
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          GCBV_REF_SO="$(python3 util/nemu_ref/resolve.py normal)"
+          export GCBV_REF_SO
           
           exit_code=0
           ./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
@@ -50,7 +51,6 @@ jobs:
       
       - name: Test base branch for comparison
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           
           # 保存当前分支
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -58,6 +58,14 @@ jobs:
           # 切换到目标分支
           git fetch origin ${{ github.base_ref }}
           git checkout origin/${{ github.base_ref }}
+
+          # A historical base without FCSR support must retain its own ABI.
+          if [[ -f util/nemu_ref/resolve.py ]]; then
+            GCBV_REF_SO="$(python3 util/nemu_ref/resolve.py normal)"
+          else
+            GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          fi
+          export GCBV_REF_SO
           
           # 重新编译基线分支，如果失败则重试一次(scons 依赖处理不好)
           if ! CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64; then

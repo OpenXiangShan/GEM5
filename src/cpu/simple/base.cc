@@ -522,6 +522,9 @@ void
 BaseSimpleCPU::readGem5Regs(ThreadID tid)
 {
     auto diffAllStates = this->diffAllStates[tid];
+    diffAllStates->gem5RegFile.fcsr =
+        (readMiscRegNoEffect(RiscvISA::MISCREG_FRM, tid) & 0x7) << 5 |
+        (readMiscRegNoEffect(RiscvISA::MISCREG_FFLAGS, tid) & 0x1f);
     for (int i = 0; i < 32; i++) {
         diffAllStates->gem5RegFile[i] =
             threadContexts[tid]->getReg(RegId(IntRegClass, i));

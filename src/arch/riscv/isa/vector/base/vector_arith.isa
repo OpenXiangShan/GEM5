@@ -1316,6 +1316,7 @@ def format VectorReduceFloatFormat(code, category, *flags) {{
 }};
 
 def format VectorReduceFloatWideningFormat(code, category, *flags) {{
+    code = fflags_wrapper(code)
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
     inst_name, inst_suffix = name.split("_", maxsplit=1)
