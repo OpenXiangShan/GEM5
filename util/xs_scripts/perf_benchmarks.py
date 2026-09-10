@@ -24,10 +24,12 @@ class BenchmarkConfig:
     cluster_config: str
     comment: str
     score_script: str = "gem5-score-ci.sh"
+    archive_subdir: str = ""
 
     def as_dict(self) -> dict[str, str]:
         return {
             "benchmark_type": self.benchmark_type,
+            "archive_subdir": self.archive_subdir or self.benchmark_type,
             "checkpoint_list": self.checkpoint_list,
             "checkpoint_root": self.checkpoint_root,
             "cluster_config": self.cluster_config,
@@ -38,6 +40,7 @@ class BenchmarkConfig:
     def github_outputs(self) -> dict[str, str]:
         return {
             "benchmark_type": self.benchmark_type,
+            "archive_subdir": self.archive_subdir or self.benchmark_type,
             "checkpoint_list": self.checkpoint_list,
             "checkpoint_root_node": self.checkpoint_root,
             "score_script": self.score_script,
@@ -312,12 +315,20 @@ def resolve_custom_benchmark(
         (str(root) + "\n" + str(cluster)).encode() + cluster.read_bytes()
     ).hexdigest()[:12]
     resolved_type = f"custom-spec{suite}-{identity}"
+    profile_root = (
+        root.parent
+        if root.name in ("checkpoint", "checkpoint-0-0-0")
+        else root
+    )
+    profile_name = re.sub(r"[^A-Za-z0-9_.-]", "_", profile_root.name)
+    profile_name = profile_name.strip(".") or "profile"
     destination = Path(output_dir).resolve()
     destination.mkdir(parents=True, exist_ok=True)
     checkpoint_list = destination / f"{resolved_type}.lst"
     checkpoint_list.write_text("".join(rows), encoding="utf-8")
     return BenchmarkConfig(
         benchmark_type=resolved_type,
+        archive_subdir=f"custom/{profile_name}",
         checkpoint_list=str(checkpoint_list),
         checkpoint_root=str(root),
         cluster_config=str(cluster),

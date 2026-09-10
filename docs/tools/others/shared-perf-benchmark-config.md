@@ -120,7 +120,9 @@ python3 util/xs_scripts/perf_benchmarks.py custom \
 ```
 
 预检在 CI 构建前执行；缺镜像或歧义会直接报错。归档目录使用
-`custom-specXX-<路径与JSON内容摘要>`，避免混入内建 profile 的 baseline。
+`custom/<profile目录名>/<时间_SHA_配置_run编号>`，内建类型仍使用原路径。
+路径与 JSON 内容摘要保留在 metadata 的 `benchmark_type` 中，用于区分同名
+profile 或权重更新；目录名相同不代表结果可以直接作为 baseline 比较。
 归档保存实际运行列表 `checkpoints.lst`、权重 `cluster.json` 和源路径 metadata；
 同一 SPEC 类型的不同 profile 仍需显式匹配后再做性能比较。
 此入口只扩展手动性能 CI，不扩展 solver 的可选类型。

@@ -41,6 +41,9 @@ class CustomBenchmarkTest(unittest.TestCase):
 
     def test_profile_and_checkpoint_root(self):
         config = self.resolve()
+        self.assertEqual(
+            config.github_outputs()["archive_subdir"], "custom/spec17_example"
+        )
         self.assertEqual(config, self.resolve(root=self.root))
         self.assertEqual(config.score_script, "gem5-score-ci-17.sh")
         self.assertEqual(
@@ -109,6 +112,7 @@ class CustomBenchmarkTest(unittest.TestCase):
         for name in MODULE.benchmark_types():
             config = MODULE.resolve_benchmark(name)
             self.assertEqual(config.benchmark_type, name)
+            self.assertEqual(config.github_outputs()["archive_subdir"], name)
             self.assertEqual(config.github_outputs()["benchmark_type"], name)
 
 

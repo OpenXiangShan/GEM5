@@ -147,6 +147,7 @@ jobs:
         env:
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
           BENCHMARK_TYPE_INPUT: ${{ steps.config.outputs.benchmark_type }}
+          ARCHIVE_SUBDIR_INPUT: ${{ steps.config.outputs.archive_subdir }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_ARGS_INPUT: ${{ inputs.extra_args }}
           CHECKPOINT_LIST_INPUT: ${{ steps.config.outputs.checkpoint_list }}
@@ -156,7 +157,7 @@ jobs:
           DISTRIBUTED_JOBS_PER_SERVER_RAW: ${{ inputs.distributed_jobs_per_server }}
         run: |
           ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
-          BENCHMARK_DIR="${ARCHIVE_ROOT}/${BENCHMARK_TYPE_INPUT}"
+          BENCHMARK_DIR="${ARCHIVE_ROOT}/${ARCHIVE_SUBDIR_INPUT}"
           TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
           COMMIT_SHORT=$(git rev-parse --short HEAD)
           RUN_NUMBER="${{ github.run_number }}"
