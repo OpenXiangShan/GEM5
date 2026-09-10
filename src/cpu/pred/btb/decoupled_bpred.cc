@@ -696,6 +696,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     }
 
     if (!thread.twoTakenTrainReady) {
+        dbpBtbStats.twoTakenUbtbMissDrops++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block enqueue for thread %u because "
                 "the uBTB checker result is unavailable\n",
@@ -703,18 +704,9 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         return;
     }
 
-    const bool checkerHit = !thread.twoTakenBTBEntries.empty();
     const bool checkerMatches =
         pairtage->secondBlockMatches(thread.twoTakenTrainPacket);
-    ubtb->recordCheckerResult(checkerHit, checkerMatches);
-    if (!checkerHit) {
-        dbpBtbStats.twoTakenUbtbMissDrops++;
-        DPRINTF(DecoupleBP,
-                "Skip PairTAGE second block enqueue for thread %u because "
-                "the uBTB checker missed\n",
-                tid);
-        return;
-    }
+    ubtb->recordCheckerResult(checkerMatches);
     if (!checkerMatches) {
         const auto &teacherPacket = thread.twoTakenTrainPacket;
         const bool teacherValid = teacherPacket.valid;
@@ -742,17 +734,24 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     secondPred.s3Source = pairtage->getComponentIdx();
 
     BTBEntry secondEntry = secondBlock.buildBTBEntry(pairtage->getComponentIdx());
-    assert(secondEntry.valid);
+    assert(secondEntry.valid ||
+           (secondBlock.isBranchlessFallthrough() &&
+            thread.twoTakenBTBEntries.empty()));
 
-    std::vector<BTBEntry> mbtbEntries;
-    if (mbtb && mbtb->isEnabled() && secondBlock.valid) {
-        mbtbEntries = mbtb->getPredictedEntriesNoSideEffect(
+    // Retain every checked slot for history recovery, even if MBTB has
+    // replaced it since the uBTB snapshot was filled. Keep the existing
+    // MBTB supplement for the simulator's backend training metadata.
+    auto layoutEntries = thread.twoTakenBTBEntries;
+    if (mbtb && mbtb->isEnabled() && secondEntry.valid) {
+        const auto mbtbEntries = mbtb->getPredictedEntriesNoSideEffect(
             secondPred.bbStart, tid, secondPred.asidHash);
+        layoutEntries.insert(layoutEntries.end(), mbtbEntries.begin(),
+                             mbtbEntries.end());
     }
 
     unsigned notTakenUncondDrops = 0;
     if (!secondBlock.taken) {
-        for (const auto &entry : mbtbEntries) {
+        for (const auto &entry : layoutEntries) {
             if (entry.valid && entry.pc >= secondPred.bbStart &&
                 entry.pc != secondEntry.pc && entry.isUncond()) {
                 notTakenUncondDrops++;
@@ -760,8 +759,8 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         }
     }
 
-    if (!secondPred.setBTBEntriesWithPredictedExit(
-            mbtbEntries, secondEntry, secondBlock.taken)) {
+    if (secondEntry.valid && !secondPred.setBTBEntriesWithPredictedExit(
+            layoutEntries, secondEntry, secondBlock.taken)) {
         dbpBtbStats.twoTakenPreExitUncondDrops++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block enqueue for thread %u because "
@@ -772,7 +771,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     }
     dbpBtbStats.twoTakenNotTakenUncondDrops += notTakenUncondDrops;
     dbpBtbStats.twoTakenSupplementalEntriesMerged +=
-        secondPred.btbEntries.size() - 1;
+        secondEntry.valid ? secondPred.btbEntries.size() - 1 : 0;
 
     refreshTwoTakenPredictionMetas(tid, secondPred);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
@@ -844,16 +843,18 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
     const Addr startPC = thread.s0PC;
     const uint8_t asidHash = thread.finalPred.asidHash;
     auto &btbEntries = thread.twoTakenBTBEntries;
-    auto checkerEntry = ubtb->lookupForChecker(startPC, tid, asidHash);
-    const bool checkerHit = checkerEntry.valid;
-    if (checkerHit) {
-        // The uBTB's normal fast prediction is always-taken. On the checker
-        // port, allow MainTAGE to override conditional direction; its base
-        // fallback remains taken because uBTB entries initialize ctr to zero.
-        if (checkerEntry.isCond) {
-            checkerEntry.alwaysTaken = false;
+    auto checkerLayout = ubtb->lookupForChecker(startPC, tid, asidHash);
+    if (!checkerLayout.usable()) {
+        // Missing and overflow layouts are not fall-through teachers.
+        return;
+    }
+    btbEntries = std::move(checkerLayout.slots);
+    for (auto &slot : btbEntries) {
+        // MainTAGE may override every conditional slot. Its base fallback
+        // uses the direction counter retained in the layout snapshot.
+        if (slot.isCond) {
+            slot.alwaysTaken = false;
         }
-        btbEntries.push_back(checkerEntry);
     }
 
     CondTakens condTakens;
@@ -877,8 +878,8 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
 
     DPRINTF(DecoupleBP,
             "Prepared PairTAGE second-block uBTB checker prediction for thread %u: "
-            "startPC %#lx, hit %d, %zu BTB entries, %zu cond takens\n",
-            tid, startPC, checkerHit, btbEntries.size(), condTakens.size());
+            "startPC %#lx, %zu BTB entries, %zu cond takens\n",
+            tid, startPC, btbEntries.size(), condTakens.size());
 }
 
 bool

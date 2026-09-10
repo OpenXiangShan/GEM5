@@ -313,7 +313,8 @@ class PairTAGE : public TimedBaseBTBPredictor
     bool blockIdentityMatches(const PairBlockInfo &lhs,
                               const PairBlockInfo &rhs) const;
     bool entryMatchesTraining(const PairTAGEEntry &entry, const PairBlockInfo &firstBlock,
-                              const PairBlockInfo &secondBlock) const;
+                              const PairBlockInfo &secondBlock,
+                              bool secondBlockKnown) const;
     void updateCounter(bool taken, unsigned width, short &counter);
     bool satIncrement(int max, short &counter);
     bool satDecrement(int min, short &counter);
