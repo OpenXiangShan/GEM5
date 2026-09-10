@@ -88,6 +88,24 @@ stockfish 从 4.302 降至 2.405 GiB（44.08%），四项模拟统计仍完全�
 
 ## 发布与验证边界
 
+### 后续 CI 发现：虚拟指令异常的 tval
+
+完整功能 CI `34441444812` 的 legacy H 脚本在 `open09` 失败：
+虚拟指令异常后 NEMU `stval=0xc0102573`，GEM5 `stval=0`。
+两机房的 `gcbh_test.zstd` 和外部 `gcpt.bin` SHA256 均一致；不是权限问题。
+`HVFault` 原先没有保存指令编码。修复为保存编码并在八个创建点传入 `machInst`，
+不关闭 tval 比较，也不修改 REF。
+
+此前 `h_legacy_smoke` 使用 `kmhv3.py` 并额外传入 `--enable-h-gcpt`，
+不等同于 CI 的 `kmhv2.py --restore-rvh-cpt` 恢复路径，不能当作该脚本的通过证据。
+按 CI 配置本地复现了相同 tick `5281380` 的失败；修复后相同配置运行到 1M 指令通过。
+日志：`/tmp/h-ci-exact-after/simout`；新增修复的 RISCV 二进制 SHA256：
+`76d36a29b8a56a9be4eb4a374303f397a0c7fb4a3652a45c625b1ee39a0c58a3`。
+这是有指令上限的定点验证，不代表无上限的完整 CI 已通过；此前各项测试仍对应
+文首所列旧二进制，不自动继承为本次新增修复的覆盖。
+
+### 发布状态
+
 - 四个最终产物已新增到
   `/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3/`。
   本机 node037 和远端 node020 均通过四份 manifest/SHA 校验及动态库加载检查。

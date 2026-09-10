@@ -398,7 +398,7 @@ def template CSRExecute {{
             HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
             int v = xc->readMiscReg(MISCREG_VIRMODE);
             if (v && pm == PRV_S && hstatus.vtvm == 1) {
-                return std::make_shared<HVFault>();
+                return std::make_shared<HVFault>(machInst);
             }
             if (!v && pm == PRV_S && status.tvm == 1) {
                 return std::make_shared<IllegalInstFault>(
@@ -409,7 +409,7 @@ def template CSRExecute {{
           }
           case CSR_TIME: {
             if (!isa->hpmCounterEnabled(MISCREG_TIME)) {
-                return std::make_shared<HVFault>();
+                return std::make_shared<HVFault>(machInst);
             }
             break;
           }
