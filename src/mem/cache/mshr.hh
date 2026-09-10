@@ -137,6 +137,8 @@ class MSHR : public QueueEntry, public Printable
             FromPrefetcher
         };
 
+        lldp::Hint lldpHint;
+
         const Source source;  //!< Request from cpu, memory, or prefetcher?
 
         /**
@@ -161,7 +163,8 @@ class MSHR : public QueueEntry, public Printable
 
         Target(PacketPtr _pkt, Tick _readyTime, Counter _order,
                Source _source, bool _markedPending, bool alloc_on_fill)
-            : QueueEntry::Target(_pkt, _readyTime, _order), source(_source),
+            : QueueEntry::Target(_pkt, _readyTime, _order),
+              lldpHint(_pkt->lldpHint), source(_source),
               markedPending(_markedPending), allocOnFill(alloc_on_fill)
         {}
     };
