@@ -148,6 +148,8 @@ class VectorMacroInst : public RiscvMacroInst
     {
         this->flags[IsVector] = true;
     }
+
+    void finalizeMicroops(bool is_segment = false);
 };
 
 class VectorMicroInst : public RiscvMicroInst
@@ -180,10 +182,19 @@ protected:
 
 class VectorNopMicroInst : public RiscvMicroInst
 {
+  private:
+    const StaticInstPtr paddedTail;
+
 public:
-    VectorNopMicroInst(ExtMachInst _machInst)
-        : RiscvMicroInst("vnop", _machInst, No_OpClass)
-    {}
+    VectorNopMicroInst(ExtMachInst _machInst, StaticInstPtr _paddedTail)
+        : RiscvMicroInst("vnop", _machInst, No_OpClass),
+          paddedTail(_paddedTail)
+    {
+        this->flags[IsNop] = true;
+        this->flags[IsVector] = true;
+    }
+
+    const StaticInstPtr &paddedTailInst() const { return paddedTail; }
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
         const override

@@ -41,6 +41,55 @@ namespace gem5
 namespace RiscvISA
 {
 
+namespace
+{
+
+constexpr size_t
+paddedVectorUopCount(size_t count)
+{
+    return count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 4 : 8;
+}
+
+static_assert(paddedVectorUopCount(1) == 1);
+static_assert(paddedVectorUopCount(2) == 2);
+static_assert(paddedVectorUopCount(3) == 4);
+static_assert(paddedVectorUopCount(4) == 4);
+static_assert(paddedVectorUopCount(5) == 8);
+static_assert(paddedVectorUopCount(6) == 8);
+static_assert(paddedVectorUopCount(7) == 8);
+static_assert(paddedVectorUopCount(8) == 8);
+
+} // anonymous namespace
+
+void
+VectorMacroInst::finalizeMicroops(bool is_segment)
+{
+    assert(!microops.empty());
+
+    // Segment expansion follows NF and is not subject to decode-slot padding.
+    if (is_segment) {
+        microops.front()->setFirstMicroop();
+        microops.back()->setLastMicroop();
+        return;
+    }
+
+    panic_if(microops.size() > 8,
+             "Non-segment vector macro-op %s expands to %zu uops; the "
+             "supported decode packet sizes are 1, 2, 4, and 8",
+             mnemonic, microops.size());
+
+    const size_t padded_size = paddedVectorUopCount(microops.size());
+    const StaticInstPtr padded_tail = microops.back();
+    while (microops.size() < padded_size) {
+        StaticInstPtr nop = new VectorNopMicroInst(machInst, padded_tail);
+        nop->setDelayedCommit();
+        microops.push_back(nop);
+    }
+
+    microops.front()->setFirstMicroop();
+    microops.back()->setLastMicroop();
+}
+
 std::string
 VConfOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
