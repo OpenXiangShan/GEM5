@@ -2634,7 +2634,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 {
     auto *dec_ptr = decoder[tid];
     bool newMacroop = false;
-    const RiscvISA::PCState fetchPc = pc.as<RiscvISA::PCState>();
+    RiscvISA::PCState fetchPc = pc.as<RiscvISA::PCState>();
     const InstSeqNum seq = cpu->getAndIncrementInstSeq();
 
     // Create a copy of the current PC state to calculate the next PC.
