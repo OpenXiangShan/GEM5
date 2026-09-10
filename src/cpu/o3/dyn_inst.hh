@@ -53,6 +53,7 @@
 #include <string>
 #include <utility>
 
+#include "arch/riscv/regs/misc.hh"
 #include "base/refcnt.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -1546,13 +1547,19 @@ class DynInst : public ExecContext, public RefCounted
     Tick RARQueueEntryTick = -1;
     Tick RAWQueueEntryTick = -1;
 
+    RegVal read_pending_vstart(RegVal committed_val) const;
+
     /** Reads a misc. register, including any side-effects the read
      * might have as defined by the architecture.
      */
     RegVal
     readMiscReg(int misc_reg) override
     {
-        return cpu->readMiscReg(misc_reg, threadNumber);
+        RegVal val = cpu->readMiscReg(misc_reg, threadNumber);
+        if (misc_reg == RiscvISA::MISCREG_VSTART && val != 0) {
+            return read_pending_vstart(val);
+        }
+        return val;
     }
 
     /** Sets a misc. register, including any side-effects the write

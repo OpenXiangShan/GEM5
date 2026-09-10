@@ -571,7 +571,7 @@ template<typename ElemType>
 class VMaskMergeMicroInst : public VectorArithMicroInst
 {
   private:
-    RegId srcRegIdxArr[NumVecInternalRegs];
+    RegId srcRegIdxArr[NumVecInternalRegs + 1];
     RegId destRegIdxArr[1];
 
   public:
@@ -594,6 +594,8 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         for (uint8_t i=0; i<_numSrcs; i++) {
             setSrcRegIdx(_numSrcRegs++, RegId(VecRegClass, VecTempReg0 + i));
         }
+        vlsrcIdx = _numSrcRegs;
+        setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
     }
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
@@ -610,7 +612,7 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
 
         // cp the first result and tail
         memcpy(Vd, s, VLENB);
-        for (uint8_t i = 1; i < this->_numSrcRegs; i++) {
+        for (uint8_t i = 1; i < vlsrcIdx; i++) {
             xc->getRegOperand(this, i, &tmp_s);
             s = tmp_s.as<uint8_t>();
             if constexpr (elems_per_vreg < 8) {
@@ -627,7 +629,7 @@ class VMaskMergeMicroInst : public VectorArithMicroInst
         }
         // Fill mask destination tail bits with ones.
         // Mask-producing instructions always treat their tail as agnostic.
-        const uint64_t rVl = xc->readMiscReg(MISCREG_VL);
+        const uint64_t rVl = xc->getRegOperand(this, vlsrcIdx);
         const uint64_t vstart = xc->readMiscReg(MISCREG_VSTART);
 
         // If vstart >= vl, no destination elements, including tail

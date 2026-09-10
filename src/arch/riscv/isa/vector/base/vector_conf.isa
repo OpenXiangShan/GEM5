@@ -93,8 +93,6 @@ def template VConfExecute {{
     %(class_name)s::execute(ExecContext *xc,
         Trace::InstRecord *traceData) const
     {
-        auto tc = xc->tcBase();
-
         // All vector configuration instructions are illegal when the
         // vector context is disabled. This check must happen before
         // writing vstart, vtype or vl, because those writes may mark
@@ -120,7 +118,8 @@ def template VConfExecute {{
         assert(vtypesrcIdx > 0);
         VTYPE current_vtype = xc->getRegOperand(this, vtypesrcIdx);
 
-        tc->setMiscReg(MISCREG_VSTART, 0);
+        // Defer architectural updates until commit on speculative CPUs.
+        xc->setMiscReg(MISCREG_VSTART, 0);
 
         uint32_t vlen = xc->readMiscReg(MISCREG_VLENB) * 8;
         uint32_t vlmax = getVlmax(requested_vtype, vlen);
