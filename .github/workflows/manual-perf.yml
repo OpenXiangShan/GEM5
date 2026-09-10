@@ -38,6 +38,20 @@ on:
           - spec06int-rvv-0.8c
           - gcc15-spec26-0.3c
           - gcc15-spec26-1.0c
+          - custom
+          - custom-spec06
+          - custom-spec17
+          - custom-spec26
+      checkpoint_path:
+        description: 'Custom profile/checkpoint directory (custom auto-detects SPEC06/17/26 from path; all JSON points run by default)'
+        required: false
+        type: string
+        default: ''
+      json_path:
+        description: 'Custom weights JSON (empty: discover checkpoints_all.json or cluster-0-0.json in the profile)'
+        required: false
+        type: string
+        default: ''
       specific_benchmarks:
         description: 'Specific benchmarks to run (comma-separated, eg. "mcf,gcc"), leave empty to run all'
         required: false
@@ -96,6 +110,8 @@ jobs:
     with:
       config_path: ${{ needs.setup.outputs.config_path }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
+      checkpoint_path: ${{ github.event.inputs.checkpoint_path }}
+      json_path: ${{ github.event.inputs.json_path }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       extra_args: ${{ github.event.inputs.extra_args }}
       gcbv_ref_so: ${{ github.event.inputs.gcbv_ref_so }}

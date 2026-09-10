@@ -16,6 +16,16 @@ on:
         required: true
         type: string
         description: "Benchmark type registered in util/xs_scripts/perf_benchmarks.py"
+      checkpoint_path:
+        required: false
+        type: string
+        default: ""
+        description: "Custom profile or checkpoint directory."
+      json_path:
+        required: false
+        type: string
+        default: ""
+        description: "Custom weights JSON; empty discovers the full-coverage JSON."
       specific_benchmarks:
         required: false
         type: string
@@ -78,11 +88,16 @@ jobs:
         id: config
         env:
           BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
+          CHECKPOINT_PATH_INPUT: ${{ inputs.checkpoint_path }}
+          JSON_PATH_INPUT: ${{ inputs.json_path }}
           GCBV_REF_INPUT: ${{ inputs.gcbv_ref_so }}
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
         run: |
           python3 util/xs_scripts/perf_benchmarks.py \
             "$BENCHMARK_TYPE" \
+            --checkpoint-path "$CHECKPOINT_PATH_INPUT" \
+            --json-path "$JSON_PATH_INPUT" \
+            --output-dir "$GITHUB_WORKSPACE/.perf-inputs" \
             --github-output "$GITHUB_OUTPUT"
 
           if [[ "$BENCHMARK_TYPE" == h-spec06-* ]]; then
@@ -131,9 +146,12 @@ jobs:
         id: archive
         env:
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
-          BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
+          BENCHMARK_TYPE_INPUT: ${{ steps.config.outputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_ARGS_INPUT: ${{ inputs.extra_args }}
+          CHECKPOINT_LIST_INPUT: ${{ steps.config.outputs.checkpoint_list }}
+          CHECKPOINT_ROOT_INPUT: ${{ steps.config.outputs.checkpoint_root_node }}
+          CLUSTER_CONFIG_INPUT: ${{ steps.config.outputs.cluster_config }}
           DISTRIBUTED_SERVERS_RAW: ${{ inputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER_RAW: ${{ inputs.distributed_jobs_per_server }}
         run: |
@@ -156,6 +174,8 @@ jobs:
           DISTRIBUTED_IDLE_PROBE_MODE="physical"
 
           mkdir -p "$TARGET_DIR"
+          cp "$CHECKPOINT_LIST_INPUT" "$TARGET_DIR/checkpoints.lst"
+          cp "$CLUSTER_CONFIG_INPUT" "$TARGET_DIR/cluster.json"
 
           {
             echo "benchmark_dir=$BENCHMARK_DIR"
@@ -177,6 +197,9 @@ jobs:
           echo "config_name: $CONFIG_NAME" >> "$TARGET_DIR/metadata.txt"
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: $BENCHMARK_TYPE_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "checkpoint_root: $CHECKPOINT_ROOT_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "checkpoint_list: $CHECKPOINT_LIST_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "cluster_config: $CLUSTER_CONFIG_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: $SPECIFIC_BENCHMARKS_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_servers_input: $DISTRIBUTED_SERVERS_INPUT" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_servers: $DISTRIBUTED_SERVERS" >> "$TARGET_DIR/metadata.txt"
@@ -207,10 +230,10 @@ jobs:
           GEM5_BUILD_TYPE: fast
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
-          BENCHMARK_TYPE_INPUT: ${{ inputs.benchmark_type }}
+          BENCHMARK_TYPE_INPUT: ${{ steps.config.outputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
-          CHECKPOINT_LIST: ${{ steps.config.outputs.checkpoint_list }}
+          CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
@@ -321,7 +344,7 @@ jobs:
           export GEM5_HOME=$GITHUB_WORKSPACE
 
           cd $GITHUB_WORKSPACE/gem5_data_proc
-          CLUSTER_CONFIG="${{ steps.config.outputs.cluster_config }}"
+          CLUSTER_CONFIG="$PERF_ARCHIVE_DIR/cluster.json"
           if [[ "$CLUSTER_CONFIG" != /* ]]; then
             CLUSTER_CONFIG="$GEM5_HOME/$CLUSTER_CONFIG"
           fi
