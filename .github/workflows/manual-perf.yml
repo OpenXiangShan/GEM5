@@ -1,5 +1,5 @@
 name: Manual Performance Test
-run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5} - {6}', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name, github.event.inputs.vector_type, github.event.inputs.extra_args || 'no-extra-args') }}
+run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5}', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name, github.event.inputs.extra_args || 'no-extra-args') }}
 
 on:
   workflow_dispatch:
@@ -27,8 +27,6 @@ on:
         options:
           - spec06-rva23-novec-gcc16-0.3c
           - spec06-rva23-novec-gcc16-1.0c
-          - gcc15-spec06-0.3c
-          - gcc15-spec06-1.0c
           - gcc12-spec06-0.3c
           - gcc12-spec06-smt-0.3c
           - gcc12-spec06-smt-1.0c
@@ -45,14 +43,6 @@ on:
         required: false
         type: string
         default: ''
-      vector_type:
-        description: 'Vector decode strategy (only for rvv benchmarks)'
-        required: false
-        type: choice
-        default: 'base'
-        options:
-          - base
-          - simple
       extra_args:
         description: 'Extra gem5 args appended to config runs, e.g. --dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini --enable-dynamic-pf=True'
         required: false
@@ -107,7 +97,6 @@ jobs:
       config_path: ${{ needs.setup.outputs.config_path }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
-      vector_type: ${{ github.event.inputs.vector_type }}
       extra_args: ${{ github.event.inputs.extra_args }}
       gcbv_ref_so: ${{ github.event.inputs.gcbv_ref_so }}
       distributed_servers: ${{ github.event.inputs.distributed_servers }}

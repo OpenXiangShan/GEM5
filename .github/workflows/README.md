@@ -60,7 +60,7 @@
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
-- `manual-perf.yml` 和 `manual-solve.yml` 暂时保留 GCC15 SPEC06 选项供历史实验续跑；自动任务和默认选项使用 GCC16 RVA23 no-vector 切片
+- 手动性能和 solver workflow 使用 GCC16 RVA23 no-vector 切片，不再暴露旧的 GCC15 SPEC06 选项
 - `idealkmhv3.py` 默认关闭动态预取；`smt_idealkmhv3.py` 保持当前默认行为
 - 需要手动切换动态预取时，请在 `manual-perf.yml` 的 `extra_args` 中直接写 `--enable-dynamic-pf=True|False`
 
@@ -86,7 +86,7 @@
 
 - 只在需要时运行，节省资源
 - 支持多种 benchmark 类型
-- 添加新 benchmark 类型只需修改 template
+- 切片路径只在 `util/xs_scripts/perf_benchmarks.py` 维护，性能模板和 solver 共用
 
 ---
 
@@ -229,7 +229,8 @@ A: 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签。w
 A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
 
 **Q: 新增 benchmark 类型需要修改哪些文件？**
-A: 只需修改 `gem5-perf-template.yml`
+A: 在 `util/xs_scripts/perf_benchmarks.py` 增加配置，并在需要暴露它的手动 workflow
+静态 `choice` 中增加类型名。只修改已有切片路径时只需改共享配置文件。
 
 **Q: 如何跑动态预取性能测试？**
 A: 使用 `manual-perf.yml`，在 `extra_args` 里直接传 `--enable-dynamic-pf=True`。base 对比请显式传 `--enable-dynamic-pf=False`。`idealkmhv3.py` 默认关闭动态预取，SMT 配置保持当前默认行为不变。
