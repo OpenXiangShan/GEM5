@@ -416,6 +416,16 @@ class CPU : public BaseCPU
     /** Remove all instructions younger than the given sequence number. */
     void removeInstsUntil(const InstSeqNum &seq_num, ThreadID tid);
 
+    /**
+     * Remove younger front-end instructions which have not entered the ROB.
+     *
+     * A delayed front-end recovery can run after younger instructions have
+     * already reached the ROB.  Those ROB entries must remain in the CPU
+     * instruction list until ROB squash/retirement removes them, otherwise
+     * their list iterators become invalid.
+     */
+    void removeInstsUntilNotInROB(const InstSeqNum &seq_num, ThreadID tid);
+
     /** Removes the instruction pointed to by the iterator. */
     ListIt squashInstIt(ListIt &instIt, ThreadID tid);
 

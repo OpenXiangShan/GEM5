@@ -2572,7 +2572,7 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
     // doSquash redirects Fetch to the corrected target.
     doSquash(target, instruction, instruction->seqNum, tid);
     if (!cpu->instList.empty())
-        cpu->removeInstsUntil(instruction->seqNum, tid);
+        cpu->removeInstsUntilNotInROB(instruction->seqNum, tid);
     fetchQueue[tid] = std::move(olderFetchEntries);
     fetchQueue[tid].push_back(instruction);
     delayedCommit[tid] = instruction->isDelayedCommit();

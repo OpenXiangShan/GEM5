@@ -1511,6 +1511,47 @@ CPU::removeInstsUntil(const InstSeqNum &seq_num, ThreadID tid)
     }
 }
 
+void
+CPU::removeInstsUntilNotInROB(const InstSeqNum &seq_num, ThreadID tid)
+{
+    DPRINTF(O3CPU, "Deleting non-ROB instructions from [tid:%i] above "
+            "[sn:%lli].\n", tid, seq_num);
+
+    if (instList.empty()) {
+        return;
+    }
+
+    removeInstsThisCycle = true;
+
+    // Walk backwards because the instruction list is ordered by sequence
+    // number.  Keep ROB entries in place; ROB::doSquash() owns their removal
+    // and still needs each entry's CPU-list iterator to be valid.
+    auto it = instList.end();
+    while (it != instList.begin()) {
+        auto current = std::prev(it);
+        const auto &inst = *current;
+        if (inst->threadNumber == tid && inst->seqNum > seq_num) {
+            if (inst->isInROB()) {
+                // Keep the list node for ROB-owned cleanup, but make the
+                // entry drain as a squashed instruction.  Removing it here
+                // would invalidate ROB::retireHead's iterator.
+                inst->setSquashed();
+                inst->setCanCommit();
+                it = current;
+                continue;
+            }
+            DPRINTF(O3CPU, "Squashing non-ROB instruction [tid:%i] "
+                    "[sn:%lli].\n", tid, inst->seqNum);
+            inst->setSquashed();
+            // erase() returns the iterator that followed current, which is
+            // the correct cursor for the next backwards step.
+            it = instList.erase(current);
+            continue;
+        }
+        it = current;
+    }
+}
+
 CPU::ListIt
 CPU::squashInstIt(ListIt &instIt, ThreadID tid)
 {
