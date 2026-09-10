@@ -75,6 +75,45 @@
 
 如果 `extra_args` 没有显式传 `--enable-dynamic-pf`，`idealkmhv3.py` 会默认保持关闭。SMT 配置保持现有默认行为不变。
 
+### LLDP 与 kmhv3 预取器组合
+
+`manual-perf.yml` 的 `configuration` 选择 `kmhv3.py` 后，将下面整行分别填入
+`Extra gem5 args appended to config runs`。`-P` 参数不包含空格，因此可直接被
+workflow 的并行 runner 传递。
+
+1. 仅打开 L1 stream/stride，关闭其他 L1/L2/L3 预取器：
+
+```text
+--l1d-hwp-type=XSCompositePrefetcher --l2-hwp-type=PrefetcherForwarder --l2-wrapper-hwp-type=PrefetcherForwarder --l3-hwp-type=PrefetcherForwarder -P system.cpu.dcache.prefetcher.enable_activepage=False -P system.cpu.dcache.prefetcher.enable_pht=False -P system.cpu.dcache.prefetcher.enable_berti=False -P system.cpu.dcache.prefetcher.enable_bop=False -P system.cpu.dcache.prefetcher.enable_temporal=False -P system.cpu.dcache.prefetcher.enable_sstride=True -P system.cpu.dcache.prefetcher.enable_xsstream=True -P system.cpu.dcache.prefetcher.enable_spp=False -P system.cpu.dcache.prefetcher.enable_cplx=False -P system.cpu.dcache.prefetcher.enable_opt=False
+```
+
+2. 仅打开 L1 stream/stride + LLDP，关闭其他 L2 预取器：
+
+```text
+--l1d-hwp-type=XSCompositePrefetcher --l1d-enable-lldp --l2-hwp-type=PrefetcherForwarder --l2-wrapper-hwp-type=LLDPrefetcher --l3-hwp-type=PrefetcherForwarder -P system.cpu.dcache.prefetcher.enable_activepage=False -P system.cpu.dcache.prefetcher.enable_pht=False -P system.cpu.dcache.prefetcher.enable_berti=False -P system.cpu.dcache.prefetcher.enable_bop=False -P system.cpu.dcache.prefetcher.enable_temporal=False -P system.cpu.dcache.prefetcher.enable_sstride=True -P system.cpu.dcache.prefetcher.enable_xsstream=True -P system.cpu.dcache.prefetcher.enable_spp=False -P system.cpu.dcache.prefetcher.enable_cplx=False -P system.cpu.dcache.prefetcher.enable_opt=False
+```
+
+需要单独 L2 LLDP 时保留这组 L1 参数，把 `--l2-wrapper-hwp-type=LLDPrefetcher`
+作为独立 L2 LLDP；需要保留 kmhv3 L2 composite 并叠加 LLDP 时改回
+`--l2-wrapper-hwp-type=L2CompositeWithWorkerPrefetcher --l2-enable-lldp`。
+
+3. 保留 kmhv3 的 L1/L2 预取配置，额外打开 L1 LLDP：
+
+```text
+--l1d-enable-lldp
+```
+
+如果同时要在 kmhv3 的 L2 composite 中打开 LLDP，使用：
+
+```text
+--l1d-enable-lldp --l2-enable-lldp
+```
+
+如果需要保留 L2 composite 并同时打开 L2 LLDP，将 `--l2-wrapper-hwp-type=LLDPrefetcher`
+换成 `--l2-enable-lldp`；这会启用 L2 composite 内嵌的 LLDP 子组件。使用
+`--l1d-hwp-type=MultiPrefetcher --l1d-enable-lldp` 可启用 Multi 中的 LLDP 与其他
+子预取器，Multi 会把 CPU 的 `dependenceTrain`、TLB 和 PFQ ready 回调传给 LLDP 子组件。
+
 ### 性能结果
 
 由现有的性能评论机器人 (`actions_gem5.py`) 自动处理；label workflow 本身不再发送触发提示评论：

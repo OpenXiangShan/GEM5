@@ -41,6 +41,8 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     }
     if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), &sliced_cache_accessor, 1 << block_bits);
+        prefetcher->setPacketReadyCallback(
+            [this](Tick) { scheduleSendPrefetch(); });
     }
 }
 

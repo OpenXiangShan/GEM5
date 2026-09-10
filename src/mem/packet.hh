@@ -1666,6 +1666,8 @@ class Packet : public Printable
 
     bool coalescingMSHR{false};
 
+    // Per-cache hint: a newly created downstream packet gets a fresh hint.
+    lldp::Hint lldpHint;
     int pfSource{PrefetchSourceType::PF_NONE};
 
     int pfDepth = 0;

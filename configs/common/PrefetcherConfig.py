@@ -25,6 +25,7 @@ PF_SOURCE_NAMES = [
     "CDP",
     "SOpt",
     "DespacitoStream",
+    "LLDP",
 ]
 
 
@@ -481,6 +482,10 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
         prefetcher.enable_spp = True
     if options.l1d_enable_cplx:
         prefetcher.enable_cplx = True
+    if hasattr(options, 'l1d_enable_lldp'):
+        prefetcher.enable_lldp = options.l1d_enable_lldp
+        if options.l1d_enable_lldp and hasattr(prefetcher, 'lldp'):
+            prefetcher.lldp.training_cpu = options._lldp_training_cpu
 
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
@@ -528,6 +533,9 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
 
     _configure_cdp(prefetcher, options)
 
+    if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
+        prefetcher.enable_lldp = options.l2_enable_lldp
+
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
     # classic_l2 attaches the real L2 prefetcher directly to the L2 cache.
@@ -572,11 +580,36 @@ def create_prefetcher(cpu, cache_level, options):
     if prefetcher == NULL:
         return NULL
 
+    # Nested LLDP components need the O3 CPU probe source. Keep this as a
+    # private configuration attribute so existing public command-line options
+    # remain compatible with older configuration scripts.
+    try:
+        options._lldp_training_cpu = cpu
+    except AttributeError:
+        pass
+
     pf_control_config = _load_pf_control_config()
     _apply_pf_control(prefetcher, pf_control_config)
     _apply_pf_adaptive(prefetcher, cache_level, pf_control_config)
 
     _register_prefetcher_tlb(prefetcher, cpu)
+
+    if prefetcher_name == 'LLDPrefetcher':
+        prefetcher.use_pf_buffer = False
+        if cache_level == 'l1d':
+            prefetcher.training_cpu = cpu
+        return prefetcher
+
+    if prefetcher_name == 'MultiPrefetcher':
+        for child in prefetcher.prefetchers:
+            if hasattr(child, 'training_cpu'):
+                child.training_cpu = cpu if cache_level == 'l1d' else NULL
+            if hasattr(child, 'enable_lldp'):
+                child.enable_lldp = (
+                    getattr(options, 'l1d_enable_lldp', False)
+                    if cache_level == 'l1d' else
+                    getattr(options, 'l2_enable_lldp', False))
+
 
     if prefetcher_name == 'XSCompositePrefetcher':
         _configure_xs_composite(prefetcher, options, pf_buffer_enabled)

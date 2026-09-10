@@ -62,6 +62,11 @@ class Multi : public Base
     bool hasPendingPacket() override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;
+    lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
+    void hintData(const lldp::Hint &hint, const PacketPtr &demand,
+                  const uint8_t *data, unsigned size) override;
+    void regProbeListeners() override;
+    void setPacketReadyCallback(std::function<void(Tick)> callback) override;
 
     /** @{ */
     /**

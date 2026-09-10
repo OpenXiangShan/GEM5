@@ -42,6 +42,15 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
 
     void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
+    void addTLB(BaseTLB *tlb, bool functional) override;
+    void regProbeListeners() override;
+    void setPacketReadyCallback(std::function<void(Tick)> callback) override;
+    bool hasPendingPacket() override;
+    PacketPtr getPacket() override;
+    Tick nextPrefetchReadyTime() const override;
+    lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
+    void hintData(const lldp::Hint &hint, const PacketPtr &demand,
+                  const uint8_t *data, unsigned size) override;
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
@@ -61,6 +70,8 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     const bool enableCDP;
     const bool enableCMC;
     const bool enableDespacitoStream;
+    LLDPrefetcher *lldp;
+    const bool enableLLDP;
 
     bool offloadLowAccuracy = true;
     protected:

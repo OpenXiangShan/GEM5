@@ -774,6 +774,20 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
+            if (prefetcher && target.lldpHint.valid && !is_error) {
+                const uint8_t *line = nullptr;
+                unsigned bytes = 0;
+                if (blk && blk->isValid() && (!mshr->isForward || !pkt->hasData())) {
+                    line = blk->data;
+                    bytes = blkSize;
+                } else if (pkt->hasData() && pkt->getSize() == blkSize) {
+                    line = pkt->getConstPtr<uint8_t>();
+                    bytes = pkt->getSize();
+                }
+                prefetcher->hintData(target.lldpHint, tgt_pkt, line, bytes);
+                target.lldpHint.valid = false;
+            }
+
 
             Tick completion_time;
             // Here we charge on completion_time the delay of the xbar if the

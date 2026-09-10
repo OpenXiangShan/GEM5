@@ -1,8 +1,12 @@
 #include "mem/cache/prefetch/l2_composite_with_worker.hh"
 
+#include <algorithm>
+#include <utility>
+
 #include "debug/CDPFilter.hh"
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/prefetch/composite_with_worker.hh"
+#include "mem/cache/prefetch/lldp.hh"
 
 namespace gem5
 {
@@ -20,7 +24,9 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       enableBOP(p.enable_bop),
       enableCDP(p.enable_cdp),
       enableCMC(p.enable_cmc),
-      enableDespacitoStream(p.enable_despacito_stream)
+      enableDespacitoStream(p.enable_despacito_stream),
+      lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
+      enableLLDP(p.enable_lldp)
 {
     setSharedFilterContextQualified(true);
     cdp->setSharedFilterContextQualified(true);
@@ -33,6 +39,7 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     smallBOP->filter = &pfLRUFilter;
     cmc->filter = &pfLRUFilter;
     despacitoStream->filter = &pfLRUFilter;
+    assert(lldp);
     cdp->parentRid = p.sys->getRequestorId(this);
 }
 
@@ -139,7 +146,67 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
     cmc->setParentInfo(sys, pm, _cache, blk_size);
     despacitoStream->setParentInfo(sys, pm, _cache, blk_size);
+    lldp->setParentInfo(sys, pm, _cache, blk_size);
     CompositeWithWorkerPrefetcher::setParentInfo(sys, pm, _cache, blk_size);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::addTLB(BaseTLB *tlb, bool functional)
+{
+    Base::addTLB(tlb, functional);
+    lldp->addTLB(tlb, functional);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::regProbeListeners()
+{
+    CompositeWithWorkerPrefetcher::regProbeListeners();
+    lldp->regProbeListeners();
+}
+
+void
+L2CompositeWithWorkerPrefetcher::setPacketReadyCallback(
+    std::function<void(Tick)> callback)
+{
+    lldp->setPacketReadyCallback(callback);
+    Base::setPacketReadyCallback(std::move(callback));
+}
+
+bool
+L2CompositeWithWorkerPrefetcher::hasPendingPacket()
+{
+    return Queued::hasPendingPacket() ||
+        (enableLLDP && lldp->hasPendingPacket());
+}
+
+PacketPtr
+L2CompositeWithWorkerPrefetcher::getPacket()
+{
+    if (enableLLDP && lldp->nextPrefetchReadyTime() <= curTick())
+        return lldp->getPacket();
+    return Queued::getPacket();
+}
+
+Tick
+L2CompositeWithWorkerPrefetcher::nextPrefetchReadyTime() const
+{
+    const Tick parent = Queued::nextPrefetchReadyTime();
+    return enableLLDP ? std::min(parent, lldp->nextPrefetchReadyTime()) : parent;
+}
+
+lldp::Hint
+L2CompositeWithWorkerPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
+{
+    return enableLLDP ? lldp->loadTrain(pkt, miss) : lldp::Hint();
+}
+
+void
+L2CompositeWithWorkerPrefetcher::hintData(const lldp::Hint &hint,
+                                           const PacketPtr &demand,
+                                           const uint8_t *data, unsigned size)
+{
+    if (enableLLDP)
+        lldp->hintData(hint, demand, data, size);
 }
 
 void

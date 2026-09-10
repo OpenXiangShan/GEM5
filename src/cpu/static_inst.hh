@@ -367,6 +367,12 @@ class StaticInst : public RefCounted, public StaticInstFlags
         const loader::SymbolTable *symtab=nullptr) const;
 
 
+    // LLDP's scalar operation/load decoding currently describes RISC-V.
+    // Other ISAs keep their existing getImm() contract and do not opt in.
+    virtual bool supportsLldp() const { return false; }
+    // Operand form is independent of whether LLDP supports replaying the op.
+    virtual bool isLldpImmediate() const { return false; }
+
     virtual int64_t getImm() const
     {
         panic("imm is not defined, trying to get immediate \

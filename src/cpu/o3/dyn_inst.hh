@@ -158,6 +158,16 @@ class DynInst : public ExecContext, public RefCounted
     /** the xs metadata for this instruction */
     const XsDynInstMetaPtr xsMeta;
 
+    // One chain per source prevents an unrelated operand wake/cancel from
+    // overwriting the address dependency. Populated only for IQ wakeups.
+    std::vector<lldp::Chain> lldpInputs;
+    lldp::Chain lldpChain;
+    int lldpSource{-1};
+    bool lldpIssued{false};
+    bool lldpCounted{false};
+    void selectLldpChain();
+
+
     /** Pointer to the Impl's CPU object. */
     CPU *cpu = nullptr;
 

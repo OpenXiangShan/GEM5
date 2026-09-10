@@ -237,6 +237,23 @@ DynInst::operator delete(void *ptr)
     ::operator delete(ptr);
 }
 
+void
+DynInst::selectLldpChain()
+{
+    lldpChain = {};
+    lldpSource = -1;
+    for (unsigned i = 0; i < lldpInputs.size(); ++i) {
+        // Scalar RISC-V loads use source zero for the address base.
+        if (isLoad() && i != 0)
+            continue;
+        if (lldpInputs[i].valid && readySrcIdx(i)) {
+            lldpChain = lldpInputs[i];
+            lldpSource = i;
+            break;
+        }
+    }
+}
+
 DynInst::~DynInst()
 {
     /*

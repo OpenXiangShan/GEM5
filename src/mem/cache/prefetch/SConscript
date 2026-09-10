@@ -39,7 +39,8 @@ SimObject('Prefetcher.py', sim_objects=[
     'IrregularStreamBufferPrefetcher', 'SlimAMPMPrefetcher',
     'WorkerPrefetcher', 'DespacitoStreamPrefetcher',
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
-    'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher', 'PrefetcherForwarder'])
+    'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher', 'PrefetcherForwarder',
+    'LLDPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -59,8 +60,10 @@ DebugFlag('CDPdebug')
 DebugFlag('CDPdepth')
 DebugFlag('CMCPrefetcher')
 DebugFlag('DespacitoStreamPrefetcher')
+DebugFlag('LLDPrefetcher')
 
 GTest('context_key.test', 'context_key.test.cc')
+GTest('lldp_logic.test', 'lldp_logic.test.cc')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
@@ -92,3 +95,4 @@ Source('l2_composite_with_worker.cc')
 Source('despacito_stream.cc')
 Source('forwarder.cc')
 Source('prefetch_filter.cc')
+Source('lldp.cc')

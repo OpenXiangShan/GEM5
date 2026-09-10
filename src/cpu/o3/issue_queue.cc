@@ -905,6 +905,55 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
                 }
                 consumer->markSrcRegReady(srcIdx);
 
+                scheduler->stats.lldpWakeups++;
+                const bool arithmetic = !inst->isMemRef() &&
+                    !inst->isControl() && inst->numDestRegs() != 0;
+                const bool eligible = consumer->isLoad() ||
+                    (!consumer->isMemRef() && !consumer->isControl() &&
+                     consumer->numDestRegs() != 0);
+                if (eligible && !consumer->isSquashed()) {
+                    if (consumer->lldpInputs.empty())
+                        consumer->lldpInputs.resize(consumer->numSrcRegs());
+                    auto &chain = consumer->lldpInputs[srcIdx];
+                    chain = {};
+                    if (inst->isLoad() && !inst->isAtomic()) {
+                        chain = lldp::Chain::start(inst->pcState().instAddr());
+                        chain.replayable = !inst->isVector() &&
+                            !inst->isFloating() && !inst->isLoadReserved();
+                    } else if (arithmetic && inst->lldpChain.valid) {
+                        const auto form = lldp::sourceForm(
+                            inst->staticInst->numSrcRegs(),
+                            inst->staticInst->isLldpImmediate());
+                        if (form == lldp::SourceForm::SingleImmediate) {
+                            auto op = lldp::decodeOperation(
+                                inst->staticInst->getName(),
+                                inst->staticInst->getImm());
+                            op.replayable &= inst->staticInst->supportsLldp() &&
+                                inst->lldpSource == 0 && !inst->isVector() &&
+                                !inst->isFloating();
+                            chain = inst->lldpChain.extend(op);
+                        } else {
+                            // Dual-source operations never decode/store an
+                            // op, immediate, or either register value.
+                            chain = inst->lldpChain.extendDependencyOnly(form);
+                        }
+                    }
+                    consumer->selectLldpChain();
+                    if (consumer->isLoad() && consumer->lldpChain.valid &&
+                        !consumer->lldpCounted) {
+                        consumer->lldpCounted = true;
+                        scheduler->stats.lldpChains++;
+                        scheduler->stats.lldpChainLengths.sample(
+                            consumer->lldpChain.length);
+                        for (unsigned c = 0; c < 5; ++c)
+                            scheduler->stats.lldpArithmeticTypes[c] +=
+                                consumer->lldpChain.categories[c];
+                        scheduler->stats.lldpSingleSrcImmediateArithmetic +=
+                            consumer->lldpChain.singleSrcImmediateOps;
+                        scheduler->stats.lldpDualSrcRegisterArithmetic +=
+                            consumer->lldpChain.dualSrcRegisterOps;
+                    }
+                }
 
                 DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
                 addIfReady(consumer);
@@ -979,7 +1028,7 @@ IssueQue::selectInst()
             DPRINTF(Schedule, "readyQ for port %d has [sn:%llu] %s [tid:%u]\n", pi, (*it)->seqNum,
                     (*it)->genDisassembly(), (*it)->threadNumber);
         }
-        
+
         selector->begin(readyQ);
         for (auto it = selector->select(readyQ->begin(), pi); it != readyQ->end(); it = selector->select(it, pi)) {
             auto& inst = *it;
@@ -1285,7 +1334,7 @@ IssueQue::incInIQInstsCounter(ThreadID tid)
         iqstats->instsNum[tid]++;
     }
 }
-    
+
 void
 IssueQue::decInIQInstsCounter(ThreadID tid)
 {
@@ -1325,8 +1374,27 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
       ADD_STAT(memstall_l2miss,
                "Cycles with no uops executed and at least X in-flight load that has missed the L2-cache"),
       ADD_STAT(memstall_l3miss,
-               "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache")
+               "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache"),
+      ADD_STAT(lldpWakeups, statistics::units::Count::get(),
+               "IQ source operands successfully woken"),
+      ADD_STAT(lldpChains, statistics::units::Count::get(),
+               "Complete load-arithmetic-load dependency chains"),
+      ADD_STAT(lldpSingleSrcImmediateArithmetic,
+               statistics::units::Count::get(),
+               "Single-source immediate occurrences summed over complete LLDP chains"),
+      ADD_STAT(lldpDualSrcRegisterArithmetic,
+               statistics::units::Count::get(),
+               "Dual-register occurrences summed over complete LLDP chains"),
+      ADD_STAT(lldpChainLengths, statistics::units::Count::get(),
+               "Complete LLDP chains by length"),
+      ADD_STAT(lldpArithmeticTypes, statistics::units::Count::get(),
+               "Arithmetic operation classes in LLDP chains")
 {
+    lldpChainLengths.init(1, 64, 1).flags(statistics::nozero);
+    lldpArithmeticTypes.init(5).flags(statistics::nozero);
+    const char *names[] = {"add_sub", "shift", "logic", "mul_div", "other"};
+    for (unsigned i = 0; i < 5; ++i)
+        lldpArithmeticTypes.subname(i, names[i]);
 }
 
 bool
@@ -1562,6 +1630,27 @@ Scheduler::addToFU(const DynInstPtr& inst)
 #endif
     inst->clearCancel();
     DPRINTF(Schedule, "%s [sn:%llu] add to FUs\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
+    if (inst->isLoad() && !inst->isSquashed() && !inst->lldpIssued) {
+        inst->lldpIssued = true;
+        auto &meta = *inst->xsMeta;
+        meta.instAddr = inst->pcState().instAddr();
+        meta.lldpContext = inst->contextId();
+        meta.lldpChain = inst->lldpChain;
+        meta.lldpLoadImm = inst->staticInst->supportsLldp() ?
+            inst->staticInst->getImm() : 0;
+        const std::string name = inst->staticInst->getName();
+        meta.lldpLoad = inst->staticInst->supportsLldp() &&
+            !inst->isVector() && !inst->isFloating() &&
+            !inst->isAtomic() && !inst->isLoadReserved();
+        meta.lldpSize = (name == "ld" || name == "c_ld" || name == "c_ldsp") ? 8 :
+            (name == "lw" || name == "lwu" || name == "c_lw" || name == "c_lwsp") ? 4 :
+            (name == "lh" || name == "lhu") ? 2 : (name == "lb" || name == "lbu") ? 1 : 0;
+        meta.lldpSigned = name == "lb" || name == "lh" || name == "lw" ||
+            name == "c_lw" || name == "c_lwsp";
+        meta.lldpLoad &= meta.lldpSize != 0;
+        if (meta.lldpChain.valid)
+            cpu->ppLldpDependenceTrain->notify(inst->xsMeta);
+    }
     instsToFu.push_back(inst);
 }
 
@@ -1986,6 +2075,10 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                                     // Mark canceled and propagate to its dependents.
                                     depInst->setCancel();
                                     depInst->clearSrcRegReady(srcIdx);
+                                    if (!depInst->lldpInputs.empty()) {
+                                        depInst->lldpInputs[srcIdx] = {};
+                                        depInst->selectLldpChain();
+                                    }
                                     dfs.push(depInst);
                                     needSquashFallback = true;
                                 }
@@ -1994,6 +2087,10 @@ Scheduler::loadCancel(const DynInstPtr& inst)
 
                             depInst->issueQue->cancel(depInst);
                             depInst->clearSrcRegReady(srcIdx);
+                            if (!depInst->lldpInputs.empty()) {
+                                depInst->lldpInputs[srcIdx] = {};
+                                depInst->selectLldpChain();
+                            }
                             dfs.push(depInst);
                         }
                     }
@@ -2141,7 +2238,7 @@ Scheduler::getIQInsts(ThreadID tid)
 {
     uint32_t total = 0;
     for (auto iq : issueQues) {
-        total += iq->getInstsCounter()->getCounter(tid);;   
+        total += iq->getInstsCounter()->getCounter(tid);;
     }
     return total;
 }
