@@ -2645,7 +2645,6 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 {
     auto *dec_ptr = decoder[tid];
     bool newMacroop = false;
-    RiscvISA::PCState fetchPc = pc.as<RiscvISA::PCState>();
     const InstSeqNum seq = cpu->getAndIncrementInstSeq();
 
     // Create a copy of the current PC state to calculate the next PC.
@@ -2671,6 +2670,9 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         newMacroop = staticInst->isLastMicroop();
     }
 
+    // Decoder updates the instruction PC state (npc/compressed) while
+    // decoding. Preserve the post-decode state used by the legacy Fetch path.
+    RiscvISA::PCState fetchPc = pc.as<RiscvISA::PCState>();
     const StaticInstPtr instructionMacroop = curMacroop;
     DynInstPtr instruction = buildInst(
         tid, staticInst, instructionMacroop, fetchPc, *next_pc, true, seq,
