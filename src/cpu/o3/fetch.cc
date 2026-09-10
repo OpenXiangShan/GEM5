@@ -2438,7 +2438,6 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
     fetchQueue[tid].push_back(instruction);
     delayedCommit[tid] = !fetchQueue[tid].empty() &&
         fetchQueue[tid].back()->isDelayedCommit();
-    localSquashVer[tid].update(localSquashVer[tid].nextVersion());
     ++fetchStats.predecodeRedirects;
 }
 
