@@ -1642,17 +1642,6 @@ Fetch::selectUnstalledThread()
         candidate[tid] = true;
         throttled[tid] = false;
 
-        // === Flush Policy: initiate flush after asymmetric check passes ===
-        if (isFlushFromPolicy() && block_active &&
-            threadFetchBlocked[tid] && !flushFromInitiated[tid]) {
-            InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
-            DynInstPtr loadInst = iewStage->findRobInst(tid, loadSeqNum);
-            if (loadInst && loadInst->isLoad()) {
-                bool fromUse = (smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy);
-                flushFromInitiateFlush(loadInst, tid, fromUse);
-            }
-        }
-
         // update throttle status
         //
         // Policy differences:
@@ -1693,6 +1682,15 @@ Fetch::selectUnstalledThread()
 
         // thread can not candidate has lowest priv, should not be chosen
         if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
+            smtBorrowThrottleCycles[tid] = 0;
+            lsqCounter->setCounter(tid, UINT64_MAX);
+            iqCounter->setCounter(tid, UINT64_MAX);
+            robCounter->setCounter(tid, UINT64_MAX);
+            candidate[tid] = false;
+            continue;
+        }
+        // flush policy: should not pipedown insts
+        if (isFlushFromPolicy() && block_active && threadFetchBlocked[tid]) {
             smtBorrowThrottleCycles[tid] = 0;
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
@@ -1780,6 +1778,17 @@ Fetch::sendInstructionsToDecode()
             //break;
         }else{
             fetchStats.smtdecodeStalls[i]++; 
+        }
+
+        // === Flush Policy: initiate flush after asymmetric check passes ===
+        if (isFlushFromPolicy() && isBlockPolicyActive() &&
+            threadFetchBlocked[i] && !flushFromInitiated[i]) {
+            InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
+            DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
+            if (loadInst && loadInst->isLoad()) {
+                bool fromUse = (smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy);
+                flushFromInitiateFlush(loadInst, i, fromUse);
+            }
         }
     }
 
@@ -1985,12 +1994,16 @@ Fetch::findFirstUse(const DynInstPtr &loadInst, ThreadID tid)
 
     auto& instList = iewStage->getRobInstList(tid);
     bool foundLoad = false;
+    DynInstPtr lastNonControl = loadInst;  // fallback: load itself
     for (auto it = instList.begin(); it != instList.end(); ++it) {
         if (!foundLoad) {
             if ((*it)->seqNum == loadInst->seqNum) foundLoad = true;
             continue;
         }
         const auto &candidate = *it;
+        if (!candidate->isControl()) {
+            lastNonControl = candidate;
+        }
         for (int s = 0; s < candidate->numSrcRegs(); s++) {
             PhysRegIdPtr srcReg = candidate->renamedSrcIdx(s);
             if (srcReg) {
@@ -2001,7 +2014,14 @@ Fetch::findFirstUse(const DynInstPtr &loadInst, ThreadID tid)
                                 "[sn:%llu] reads phys reg %u from load [sn:%llu]\n",
                                 tid, candidate->pcState().instAddr(),
                                 candidate->seqNum, srcFlat, loadInst->seqNum);
-                        return candidate;
+                        // Avoid selecting a control instruction as squash boundary
+                        // to prevent predictor state corruption at commit.
+                        if (candidate->isControl()) {
+                            DPRINTF(Fetch, "[tid:%i] FlushFromUse: first use is control, "
+                                    "falling back to last non-control before it\n", tid);
+                        }
+                        assert(foundLoad);
+                        return lastNonControl;
                     }
                 }
             }
@@ -2009,6 +2029,7 @@ Fetch::findFirstUse(const DynInstPtr &loadInst, ThreadID tid)
     }
     DPRINTF(Fetch, "[tid:%i] FlushFromUse: no consumer found for load [sn:%llu], "
             "no consumer, will squash from ROB tail\n", tid, loadInst->seqNum);
+    assert(foundLoad);
     return nullptr;
 }
 
@@ -2029,25 +2050,45 @@ Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fro
         // FlushFromUse: try to find first consumer and flush from there
         squashFromInst = findFirstUse(loadInst, tid);
         if (squashFromInst) {
-            includeSquashInst = true;
-            DPRINTF(Fetch, "[tid:%i] FlushFromUse: load PC=%#x [sn:%llu], "
-                    "squash from first-use PC=%#x [sn:%llu]\n",
-                    tid, loadInst->pcState().instAddr(), loadInst->seqNum,
-                    squashFromInst->pcState().instAddr(), squashFromInst->seqNum);
+            if (squashFromInst == loadInst) {
+                squashFromInst = loadInst;
+                includeSquashInst = false;  // do not include the load itself
+                DPRINTF(Fetch, "[tid:%i] FlushFromUse: load PC=%#x [sn:%llu], "
+                        "squash all after load\n",
+                        tid, loadInst->pcState().instAddr(), loadInst->seqNum);
+            } else {
+                includeSquashInst = true;
+                DPRINTF(Fetch, "[tid:%i] FlushFromUse: load PC=%#x [sn:%llu], "
+                        "squash from first-use PC=%#x [sn:%llu]\n",
+                        tid, loadInst->pcState().instAddr(), loadInst->seqNum,
+                        squashFromInst->pcState().instAddr(), squashFromInst->seqNum);
+            }
             fetchStats.flushFromFirstUseFound++;
         } else {
-            DynInstPtr robTail = iewStage->readRobTailInst(tid);
-            if (!robTail || robTail->seqNum == loadInst->seqNum) {
+            // Find the last non-control instruction in ROB (after load)
+            // to avoid predictor state corruption when preserving a branch.
+            DynInstPtr safeTail = nullptr;
+            auto& instList2 = iewStage->getRobInstList(tid);
+            for (auto it = instList2.rbegin(); it != instList2.rend(); ++it) {
+                if ((*it)->seqNum <= loadInst->seqNum) break;
+                if (!(*it)->isControl()) {
+                    safeTail = *it;
+                    break;
+                }
+            }
+            if (!safeTail) {
+                // All instructions after load are control, or ROB only has load
                 squashFromInst = loadInst;
                 includeSquashInst = false;
-                DPRINTF(Fetch, "[tid:%i] FlushFromUse: no consumer, ROB only has load, "
-                        "fallback squash from load [sn:%llu]\n", tid, loadInst->seqNum);
+                DPRINTF(Fetch, "[tid:%i] FlushFromUse: no consumer, no non-control "
+                        "inst after load, fallback squash from load [sn:%llu]\n",
+                        tid, loadInst->seqNum);
             } else {
-                squashFromInst = robTail;
+                squashFromInst = safeTail;
                 includeSquashInst = false;
                 DPRINTF(Fetch, "[tid:%i] FlushFromUse: no consumer, "
-                        "squash from ROB tail [sn:%llu] next (preserve ROB)\n",
-                        tid, robTail->seqNum);
+                        "squash from non-control [sn:%llu] next (preserve ROB)\n",
+                        tid, safeTail->seqNum);
             }
             fetchStats.flushFromFirstUseNoConsumer++;
         }

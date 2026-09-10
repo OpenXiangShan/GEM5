@@ -773,8 +773,19 @@ IEW::squashDueToLongLatencyLoad(const DynInstPtr &loadInst,
             tid, loadInst->seqNum, squashFromInst->seqNum,
             (int)includeSquashInst);
 
+    // Long-latency flush is a non-essential, lowest-priority squash.
+    // It proceeds when ANY of the following holds:
+    //   (a) No other squash is pending;
+    //   (b) This flush has an older boundary than the existing squash;
+    //   (c) Same boundary as the existing squash, but the existing squash does
+    //       NOT include the boundary instruction (!toCommit->includeSquashInst).
+    //       In this case the flush is strictly more aggressive and can override.
+    // Conversely, if an existing squash already includes the boundary instruction
+    // (e.g., branch mispredict or mem-order violation), it has higher priority
+    // and this flush must yield.
     if (!toCommit->squash[tid] || squashFromInst->seqNum < toCommit->squashedSeqNum[tid] ||
-        (squashFromInst->seqNum == toCommit->squashedSeqNum[tid] && includeSquashInst)) {
+        (squashFromInst->seqNum == toCommit->squashedSeqNum[tid] &&
+         includeSquashInst && !toCommit->includeSquashInst[tid])) {
         toFetch->iewInfo[tid].redirectPending = true;
         toCommit->squash[tid] = true;
         toCommit->squashedSeqNum[tid] = squashFromInst->seqNum;
