@@ -1168,6 +1168,21 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
 }
 
 bool
+Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
+                             bool allow_two_fetch,
+                             bool &continued_to_next_target)
+{
+    FetchPrediction prediction;
+    const bool predict_taken = lookupAndUpdateNextPC(
+        inst->threadNumber, inst->staticInst, inst->pcState(), inst->seqNum,
+        next_pc, allow_two_fetch, continued_to_next_target, prediction);
+    inst->setPredTaken(prediction.taken);
+    inst->setPredTarg(prediction.target);
+    inst->setLoopIteration(prediction.loopIteration);
+    return predict_taken;
+}
+
+bool
 Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 {
     assert(!cpu->switchedOut());
@@ -2761,17 +2776,102 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
 }
 
 bool
+Fetch::processSingleInstructionLegacy(ThreadID tid, PCStateBase &pc,
+                                      StaticInstPtr &curMacroop,
+                                      bool allow_two_fetch,
+                                      bool &continued_to_next_target)
+{
+    auto *dec_ptr = decoder[tid];
+    bool newMacroop = false;
+    std::unique_ptr<PCStateBase> next_pc(pc.clone());
+
+    StaticInstPtr staticInst = nullptr;
+    if (!curMacroop) {
+        staticInst = dec_ptr->decode(pc);
+        ++fetchStats.insts;
+        if (staticInst->isMacroop()) {
+            curMacroop = staticInst;
+            DPRINTF(Fetch, "[tid:%i] Macroop instruction decoded\n", tid);
+        }
+    }
+    if (curMacroop) {
+        staticInst = curMacroop->fetchMicroop(pc.microPC());
+        DPRINTF(Fetch, "[tid:%i] Fetched macroop microop\n", tid);
+        newMacroop = staticInst->isLastMicroop();
+    }
+
+    DynInstPtr instruction = buildInst(
+        tid, staticInst, curMacroop, pc, *next_pc, true,
+        cpu->getAndIncrementInstSeq(), dbpbtb->ftqFetchBlock(tid).ftqId);
+
+    o3::TraceInstruction traceForThisInst;
+    if (isTraceMode()) {
+        assert(traceFetch);
+        traceFetch->bindPendingTraceMetadata(
+            tid, instruction, pc, traceForThisInst);
+    }
+
+    if (staticInst->isVectorConfig()) {
+        waitForVsetvl[tid] = dec_ptr->stall();
+        DPRINTF(Fetch,
+                "[tid:%i] Vector config instruction, "
+                "waitForVsetvl[tid]=%d\n",
+                tid, waitForVsetvl[tid]);
+    }
+
+    instruction->setVersion(localSquashVer[tid]);
+    ppFetch->notify(instruction);
+    numInst++;
+
+#if TRACING_ON
+    if (debug::O3PipeView)
+        instruction->fetchTick = curTick();
+#endif
+
+    set(next_pc, pc);
+    const bool predictedBranch = lookupAndUpdateNextPC(
+        instruction, *next_pc, allow_two_fetch, continued_to_next_target);
+
+    if (predictedBranch) {
+        DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
+                instruction->threadNumber, pc, *next_pc);
+    }
+
+    if (isTraceMode()) {
+        assert(traceFetch);
+        traceFetch->postBranchPredict(
+            tid, instruction, traceForThisInst, pc, *next_pc,
+            predictedBranch);
+    }
+
+    newMacroop |= pc.instAddr() != next_pc->instAddr();
+    if (newMacroop) {
+        curMacroop = NULL;
+        DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n", tid, pc);
+    }
+    set(pc, *next_pc);
+    applyValuePrediction(instruction);
+    return predictedBranch;
+}
+
+bool
 Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                 StaticInstPtr &curMacroop,
                                 bool allow_two_fetch,
                                 bool &continued_to_next_target)
 {
+    if (!predecodePipelineEnabled(tid)) {
+        return processSingleInstructionLegacy(
+            tid, pc, curMacroop, allow_two_fetch,
+            continued_to_next_target);
+    }
+
     auto *dec_ptr = decoder[tid];
     RiscvISA::MachInst rawInst = 0;
     if (!curMacroop)
         std::memcpy(&rawInst, dec_ptr->moreBytesPtr(), sizeof(rawInst));
     bool newMacroop = false;
-    const bool pipelineActive = predecodePipelineEnabled(tid);
+    const bool pipelineActive = true;
     const RiscvISA::PCState fetchPc = pc.as<RiscvISA::PCState>();
     const InstSeqNum seq = cpu->getAndIncrementInstSeq();
 
