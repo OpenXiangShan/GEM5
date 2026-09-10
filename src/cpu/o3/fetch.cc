@@ -1325,7 +1325,6 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     DynInstPtr instruction = buildInst(
             tid, nopStaticInstPtr, nullptr, fetch_pc, fetch_pc, false,
             cpu->getAndIncrementInstSeq(), prediction.ftqId);
-    enqueueFetchedInst(tid, instruction);
     instruction->setVersion(localSquashVer[tid]);
     instruction->setNotAnInst();
 
@@ -2302,7 +2301,7 @@ DynInstPtr
 Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
         StaticInstPtr curMacroop, const PCStateBase &this_pc,
         const PCStateBase &next_pc, bool trace, InstSeqNum seq,
-        unsigned ftqId)
+        unsigned ftqId, bool enqueue)
 {
     DynInst::Arrays arrays;
     arrays.numSrcs = staticInst->numSrcRegs();
@@ -2339,6 +2338,9 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 #endif
 
     instruction->fallThruPC = this_pc.getFallThruPC();
+
+    if (enqueue)
+        enqueueFetchedInst(tid, instruction);
 
     return instruction;
 }
@@ -2413,7 +2415,7 @@ Fetch::processPredecodeStage(ThreadID tid)
 
         DynInstPtr instruction = buildInst(
             tid, entry.staticInst, entry.curMacroop, entry.pc, entry.pc,
-            false, entry.seqNum, entry.ftqId);
+            false, entry.seqNum, entry.ftqId, false);
         instruction->setPredTaken(entry.predictedTaken);
         instruction->setPredTarg(entry.predictedTarget);
         instruction->setLoopIteration(entry.loopIteration);
@@ -2799,6 +2801,9 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     const bool usePredecode = predecodeEnabled(tid, staticInst, curMacroop);
 
     const StaticInstPtr instructionMacroop = curMacroop;
+    DynInstPtr instruction;
+    o3::TraceInstruction traceForThisInst;
+    RiscvISA::PCState tracePc = fetchPc;
 
     // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
@@ -2809,6 +2814,26 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     numInst++;
 
+    // Preserve the legacy Fetch ordering when the fixed predecode pipeline is
+    // disabled. In particular, false-hit recovery observes the instruction
+    // already registered in the Fetch queue.
+    if (!pipelineActive) {
+        instruction = buildInst(
+            tid, staticInst, instructionMacroop, fetchPc, *next_pc, true, seq,
+            dbpbtb->ftqFetchBlock(tid).ftqId);
+        instruction->setVersion(localSquashVer[tid]);
+        if (isTraceMode()) {
+            assert(traceFetch);
+            traceFetch->bindPendingTraceMetadata(
+                tid, instruction, fetchPc, traceForThisInst);
+        }
+#if TRACING_ON
+        if (debug::O3PipeView)
+            instruction->fetchTick = curTick();
+#endif
+        ppFetch->notify(instruction);
+    }
+
     // Save current PC to next_pc first
     set(next_pc, pc);
 
@@ -2817,6 +2842,12 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     const bool predictedBranch = lookupAndUpdateNextPC(
         tid, staticInst, fetchPc, seq, *next_pc, allow_two_fetch,
         continued_to_next_target, prediction);
+
+    if (instruction) {
+        instruction->setPredTaken(prediction.taken);
+        instruction->setPredTarg(prediction.target);
+        instruction->setLoopIteration(prediction.loopIteration);
+    }
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
@@ -2851,30 +2882,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         entry.loopIteration = prediction.loopIteration;
         entry.fetchTick = curTick();
     } else {
-        DynInstPtr instruction = buildInst(
-            tid, staticInst, instructionMacroop, fetchPc, fetchPc, true, seq,
-            prediction.ftqId);
-        instruction->setPredTaken(prediction.taken);
-        instruction->setPredTarg(prediction.target);
-        instruction->setLoopIteration(prediction.loopIteration);
-        instruction->setVersion(localSquashVer[tid]);
-
-        o3::TraceInstruction traceForThisInst;
-        RiscvISA::PCState tracePc = fetchPc;
-        if (isTraceMode()) {
-            assert(traceFetch);
-            traceFetch->bindPendingTraceMetadata(
-                tid, instruction, fetchPc, traceForThisInst);
-        }
-
-#if TRACING_ON
-        if (debug::O3PipeView)
-            instruction->fetchTick = curTick();
-#endif
         applyValuePrediction(instruction);
-        ppFetch->notify(instruction);
-        enqueueFetchedInst(tid, instruction);
-
         if (isTraceMode()) {
             assert(traceFetch);
             traceFetch->postBranchPredict(

@@ -588,7 +588,7 @@ class Fetch
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
             const PCStateBase &next_pc, bool trace, InstSeqNum seq,
-            unsigned ftqId);
+            unsigned ftqId, bool enqueue = true);
 
     bool predecodePipelineEnabled(ThreadID tid) const;
     bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
