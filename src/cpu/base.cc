@@ -51,6 +51,7 @@
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/static_inst.hh"
+#include "arch/riscv/insts/vector.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/utility.hh"
 #include "base/cprintf.hh"
@@ -1042,6 +1043,14 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             const uint32_t regs_per_group = RiscvISA::vtype_regs_per_group(vtype);
             const uint32_t elems_per_reg = RiscvISA::VLENB / sew_bytes;
             const uint32_t vlmax = RiscvISA::vtype_VLMAX(vtype);
+            const StaticInst *tail_check_inst = diffInfo.inst.get();
+            if (const auto *padding_nop =
+                    dynamic_cast<const RiscvISA::VectorNopMicroInst *>(
+                        diffInfo.inst.get())) {
+                // Preserve the original tail-agnostic register scope when
+                // the synthetic padding nop closes the vector macro-op.
+                tail_check_inst = padding_nop->paddedTailInst().get();
+            }
             auto is_tail_agnostic_byte = [&](int byte_idx) {
                 if (!tail_agnostic || vl >= vlmax)
                     return false;
@@ -1060,14 +1069,18 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         byte_in_reg / sew_bytes;
                     return elem_idx >= vl;
                 };
-                for (int dest_idx = 0; dest_idx < diffInfo.inst->numDestRegs();
+                for (int dest_idx = 0;
+                     dest_idx < tail_check_inst->numDestRegs();
                      dest_idx++) {
-                    if (reg_is_in_group(diffInfo.inst->destRegIdx(dest_idx)))
+                    if (reg_is_in_group(
+                            tail_check_inst->destRegIdx(dest_idx)))
                         return true;
                 }
-                for (int src_idx = 0; src_idx < diffInfo.inst->numSrcRegs();
+                for (int src_idx = 0;
+                     src_idx < tail_check_inst->numSrcRegs();
                      src_idx++) {
-                    if (reg_is_in_group(diffInfo.inst->srcRegIdx(src_idx)))
+                    if (reg_is_in_group(
+                            tail_check_inst->srcRegIdx(src_idx)))
                         return true;
                 }
                 return false;

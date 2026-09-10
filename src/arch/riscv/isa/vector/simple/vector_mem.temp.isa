@@ -97,8 +97,7 @@ def template VleConstructor {{
         }
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops(nf > 1);
 }
 
 }};
@@ -348,8 +347,7 @@ def template VleffConstructor {{
     microop = new VleffEndMicroInst(_machInst, num_microops);
     this->microops.push_back(microop);
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -455,8 +453,7 @@ def template VlWholeConstructor {{
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -555,8 +552,7 @@ def template VlStrideConstructor {{
         }
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops(nf > 1);
 }
 
 }};
@@ -686,8 +682,7 @@ template<typename ElemType>
         }
     }
 
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
+    this->finalizeMicroops(nf > 1);
     this->flags[IsVector] = true;
 }
 
@@ -843,8 +838,7 @@ def template VseConstructor {{
         }
     }
 
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
+    this->finalizeMicroops(nf > 1);
 }
 
 }};
@@ -1072,8 +1066,7 @@ def template VlmConstructor {{
     }
     this->microops.push_back(microop);
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -1185,8 +1178,7 @@ def template VsmConstructor {{
     }
     this->microops.push_back(microop);
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -1243,8 +1235,7 @@ def template VsWholeConstructor {{
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -1309,8 +1300,7 @@ def template VsStrideConstructor {{
         }
     }
 
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
+    this->finalizeMicroops(nf > 1);
 }
 
 }};
@@ -1385,8 +1375,7 @@ template<typename ElemType>
             this->microops.push_back(microop);
         }
     }
-    this->microops.front()->setFlag(IsFirstMicroop);
-    this->microops.back()->setFlag(IsLastMicroop);
+    this->finalizeMicroops(nf > 1);
     this->flags[IsVector] = true;
 }
 

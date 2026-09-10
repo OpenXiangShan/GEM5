@@ -2506,9 +2506,11 @@ Commit::updateComInstStats(const DynInstPtr &inst)
         stats.instsCommitted[tid]++;
     stats.opsCommitted[tid]++;
 
-    // To match the old model, don't count nops and instruction
-    // prefetches towards the total commit count.
-    if (!inst->isNop() &&
+    // A vector padding nop closes its macro-op and therefore retires the
+    // original architectural instruction even though the uop itself is a nop.
+    const bool is_vector_padding_nop =
+        inst->isNop() && inst->isVector() && inst->isLastMicroop();
+    if ((!inst->isNop() || is_vector_padding_nop) &&
         !inst->isInstPrefetch()) {
         cpu->instDone(tid, inst);
     }
