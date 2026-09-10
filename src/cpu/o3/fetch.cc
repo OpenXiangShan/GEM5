@@ -1136,6 +1136,17 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
 }
 
 bool
+Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
+                             bool allow_two_fetch,
+                             bool &continued_to_next_target,
+                             FetchPrediction &prediction)
+{
+    return lookupAndUpdateNextPC(
+        inst->threadNumber, inst->staticInst, inst->pcState(), inst->seqNum,
+        next_pc, allow_two_fetch, continued_to_next_target, prediction);
+}
+
+bool
 Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
 {
     assert(!cpu->switchedOut());
@@ -2693,8 +2704,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     // Handle branch prediction and update next_pc for both modes
     FetchPrediction prediction;
     const bool predictedBranch = lookupAndUpdateNextPC(
-        tid, staticInst, fetchPc, seq, *next_pc, allow_two_fetch,
-        continued_to_next_target, prediction);
+        instruction, *next_pc, allow_two_fetch, continued_to_next_target,
+        prediction);
     instruction->setPredTaken(prediction.taken);
     instruction->setPredTarg(prediction.target);
     instruction->setLoopIteration(prediction.loopIteration);

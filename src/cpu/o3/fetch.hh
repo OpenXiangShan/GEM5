@@ -434,6 +434,10 @@ class Fetch
                                PCStateBase &next_pc, bool allow_two_fetch,
                                bool &continued_to_next_target,
                                FetchPrediction &prediction);
+    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
+                               bool allow_two_fetch,
+                               bool &continued_to_next_target,
+                               FetchPrediction &prediction);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
