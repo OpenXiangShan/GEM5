@@ -49,10 +49,10 @@ on:
         type: string
         default: ''
       gcbv_ref_so:
-        description: 'Path to the GCBV reference model shared object'
+        description: 'Custom single-core REF (empty: pinned REF with memdedup; custom dedup REF also needs --enable-mem-dedup in extra_args)'
         required: false
         type: string
-        default: '/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so'
+        default: ''
       distributed_servers:
         description: 'Optional distributed server list. Use default for node020-node029,node033-node034,node036-node039; leave empty for old single-runner parallel path'
         required: false

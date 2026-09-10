@@ -39,8 +39,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          REF="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-h-so"
-          EXPECTED_SHA256="03b47cc49c0c15605805ab04ab7edd74805fe2fa892715027ec44944c169dd6e"
+          REF="$(python3 util/nemu_ref/resolve.py h)"
 
           echo "===== runner information ====="
           hostname
@@ -54,12 +53,7 @@ jobs:
           ls -lh "$REF"
           file "$REF"
 
-          ACTUAL_SHA256="$(sha256sum "$REF" | awk '{print $1}')"
-
-          echo "expected SHA256: $EXPECTED_SHA256"
-          echo "actual SHA256:   $ACTUAL_SHA256"
-
-          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          sha256sum "$REF"
 
           echo "===== compiled configuration ====="
           grep -qx '#define CONFIG_TVAL_EX_II 1' \
@@ -205,7 +199,8 @@ jobs:
           CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
+          GCBV_MULTI_CORE_REF_SO="$(python3 util/nemu_ref/resolve.py multi)"
+          export GCBV_MULTI_CORE_REF_SO
           export GCB_MULTI_CORE_RESTORER="/nfs/home/share/gem5_ci/tools/gcb-2core-restorer.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core
@@ -230,7 +225,8 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          GCBH_REF_SO="$(python3 util/nemu_ref/resolve.py h)"
+          export GCBH_REF_SO
           export GCBH_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_h

@@ -10,6 +10,7 @@ import threading
 import time
 
 from util.solver.executor.base import BaseExecutor
+from util.nemu_ref.resolve import ref_path
 from util.solver.executor.benchmarks import (
     iter_workload_entries,
     locate_checkpoint,
@@ -27,7 +28,7 @@ from util.solver.runtime.overlay import write_overlay
 from util.solver.types import ParsedProblem, TrialExecutionResult, TrialRequest
 
 
-DEFAULT_GCBV_REF_SO = "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+DEFAULT_GCBV_REF_SO = str(ref_path("normal"))
 DEFAULT_GEM5_DATA_PROC = "/nfs/home/share/gem5_ci/gem5_data_proc"
 
 

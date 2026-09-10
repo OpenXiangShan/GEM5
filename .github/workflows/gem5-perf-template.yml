@@ -24,8 +24,8 @@ on:
       gcbv_ref_so:
         required: false
         type: string
-        default: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
-        description: "Path to the GCBV reference model shared object."
+        default: ""
+        description: "Custom single-core REF; empty selects the pinned memdedup REF."
       check_result:
         required: false
         type: boolean
@@ -78,19 +78,28 @@ jobs:
         id: config
         env:
           BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
+          GCBV_REF_INPUT: ${{ inputs.gcbv_ref_so }}
+          CONFIG_PATH_INPUT: ${{ inputs.config_path }}
         run: |
           python3 util/xs_scripts/perf_benchmarks.py \
             "$BENCHMARK_TYPE" \
             --github-output "$GITHUB_OUTPUT"
 
           if [[ "$BENCHMARK_TYPE" == h-spec06-* ]]; then
-            H_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-v2026.07.r5-gem5-ref-fs0-so"
+            H_REF_SO="$(python3 util/nemu_ref/resolve.py h)"
             H_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
             H_DRAM_INI="$GITHUB_WORKSPACE/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
             echo "profile_ref_so=$H_REF_SO" >> "$GITHUB_OUTPUT"
             echo "profile_restorer=$H_RESTORER" >> "$GITHUB_OUTPUT"
             echo "profile_extra_args=--enable-h-gcpt --restore-rvh-cpt --gcpt-restorer=$H_RESTORER --difftest-ref-so=$H_REF_SO --maxinsts=40000000 --dramsim3-ini=$H_DRAM_INI" >> "$GITHUB_OUTPUT"
+          elif [[ "$BENCHMARK_TYPE" == gcc12-spec06-smt-* || "$CONFIG_PATH_INPUT" == */smt_idealkmhv3.py ]]; then
+            MULTI_REF_SO="$(python3 util/nemu_ref/resolve.py multi)"
+            echo "multi_ref_so=$MULTI_REF_SO" >> "$GITHUB_OUTPUT"
+          elif [[ -z "$GCBV_REF_INPUT" ]]; then
+            GCBV_REF_INPUT="$(python3 util/nemu_ref/resolve.py normal-dedup)"
+            echo "profile_extra_args=--enable-mem-dedup" >> "$GITHUB_OUTPUT"
           fi
+          echo "gcbv_ref_so=$GCBV_REF_INPUT" >> "$GITHUB_OUTPUT"
 
           case "${{ inputs.config_path }}" in
             */kmhv3.py|*/kmhv2.py)
@@ -112,11 +121,9 @@ jobs:
       - name: Build GEM5 fast
         run: |
           export GEM5_HOME=$(pwd)
-          export GCBV_REF_SO="${{ inputs.gcbv_ref_so }}"
-          if [[ "${{ inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
-            export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
-            export GCB_MULTI_CORE_RESTORER=""
-          fi
+          # PGO always uses a single-core raw CoreMark image.
+          GCBV_REF_SO="$(python3 util/nemu_ref/resolve.py normal)"
+          export GCBV_REF_SO
           # use pgo profile to build gem5
           bash util/pgo/basic_pgo_new.sh
 
@@ -194,7 +201,8 @@ jobs:
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
-          GCBV_REF_SO: ${{ inputs.gcbv_ref_so }}
+          GCBV_REF_SO: ${{ steps.config.outputs.gcbv_ref_so }}
+          GCBV_MULTI_CORE_REF_SO: ${{ steps.config.outputs.multi_ref_so }}
           GEM5_HOME: ${{ github.workspace }}
           GEM5_BUILD_TYPE: fast
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
@@ -226,8 +234,7 @@ jobs:
           fi
 
           CONFIG_PATH="$GEM5_HOME/$CONFIG_PATH"
-          if [[ "$BENCHMARK_TYPE_INPUT" == gcc12-spec06-smt-* ]]; then
-            export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
+          if [[ -n "$GCBV_MULTI_CORE_REF_SO" ]]; then
             export GCB_MULTI_CORE_RESTORER=""
           fi
 
@@ -238,6 +245,14 @@ jobs:
           extra_args="$(echo "$extra_args $PROFILE_EXTRA_ARGS" | xargs)"
           echo "Resolved extra gem5 args: $extra_args"
           printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+
+          ref_so="${GCBV_MULTI_CORE_REF_SO:-${GCBH_REF_SO:-$GCBV_REF_SO}}"
+          test -r "$ref_so"
+          printf 'ref_so: %s\n' "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+          sha256sum "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+          if [[ -f "$(dirname "$ref_so")/manifest.json" ]]; then
+            cp "$(dirname "$ref_so")/manifest.json" "$PERF_ARCHIVE_DIR/ref-manifest.json"
+          fi
 
           if [ -n "$GCBH_REF_SO" ]; then
             test -r "$GCBH_REF_SO"
