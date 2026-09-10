@@ -260,6 +260,14 @@ class Fetch
     /** Block Policy: per-thread state tracking for statistics */
     uint64_t blockStateHoldCycles[MaxThreads];
 
+    // === FlushFrom Policy state ===
+    bool flushFromInitiated[MaxThreads];
+
+    // FlushFrom Policy methods
+    bool isFlushFromPolicy() const;
+    DynInstPtr findFirstUse(const DynInstPtr &loadInst, ThreadID tid);
+    void flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse);
+
     /** List that has the threads organized by priority. */
     std::list<ThreadID> priorityList;
 
@@ -1234,6 +1242,11 @@ class Fetch
         statistics::Vector fetchBlockState;
         statistics::Vector fetchThrottleState;
         statistics::VectorDistribution fetchBlockHoldCycle;  // [0]=Unblocked [1]=Blocked
+
+        // === FlushFrom Policy statistics ===
+        statistics::Vector flushForFlushPolicy;
+        statistics::Scalar flushFromFirstUseFound;
+        statistics::Scalar flushFromFirstUseNoConsumer;
     } fetchStats;
 
     SquashVersion localSquashVer[MaxThreads];

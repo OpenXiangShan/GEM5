@@ -184,6 +184,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         blockStateHoldCycles[i] = 0;
         longLatencyStallCycles[i] = 0;
         lastLoadHeadSeqNum[i] = UINT64_MAX;
+        flushFromInitiated[i] = false;
     }
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
@@ -398,7 +399,13 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Decode policy thread state combination per cycle, Th means "
              "uncandidated or throttled. (0=both not Th, 1=tid0 Th, 2=tid1 Th, 3=both Th)"),
     ADD_STAT(fetchBlockHoldCycle, statistics::units::Count::get(),
-             "Per-thread block/unblock state holding cycle distribution")
+             "Per-thread block/unblock state holding cycle distribution"),
+    ADD_STAT(flushForFlushPolicy, statistics::units::Count::get(),
+             "Number of long-latency load flush events per thread"),
+    ADD_STAT(flushFromFirstUseFound, statistics::units::Count::get(),
+             "FlushFromUse: first-use consumer found, squash initiated"),
+    ADD_STAT(flushFromFirstUseNoConsumer, statistics::units::Count::get(),
+             "FlushFromUse: no consumer found, squash from ROB tail")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -528,6 +535,13 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .flags(statistics::pdf);
         fetchBlockHoldCycle.subname(0, "Unblocked");
         fetchBlockHoldCycle.subname(1, "Blocked");
+        flushForFlushPolicy
+            .init(cpu->numThreads)
+            .flags(statistics::total);
+        flushForFlushPolicy
+            .prereq(flushForFlushPolicy);
+        flushFromFirstUseNoConsumer
+            .prereq(flushFromFirstUseNoConsumer);
 }
 
 void
@@ -1629,18 +1643,61 @@ Fetch::selectUnstalledThread()
     bool throttled[MaxThreads];
 
     // update smtBorrowThrottleCycles and check whether has candidate
+    const bool block_active = isBlockPolicyActive();
+
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         candidate[tid] = true;
         throttled[tid] = false;
-        const bool throttle_now =
-            smtHasBorrowThrottleStall(fromIEW->iewInfo[tid]) ||
-            smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater);
-        if (throttle_now) {
-            smtBorrowThrottleCycles[tid] = smtBorrowThrottleHoldCycles;
-        } else if (smtBorrowThrottleCycles[tid] > 0) {
-            --smtBorrowThrottleCycles[tid];
+
+        // update throttle status
+        //
+        // Policy differences:
+        //   BlockStallPolicy (Hold):
+        //     - throttle_now uses BASE throttle (ROB/IQ full, memory pressure)
+        //     - block is an ADDITIONAL throttle source: when isBlockPolicyActive()
+        //       and thread is blocked, throttled[tid] is set directly (OR with base)
+        //   BlockThrottlePolicy (Drive):
+        //     - throttle_now = threadFetchBlocked[tid] (block REPLACES base throttle)
+        //     - the block signal continuously refreshes smtBorrowThrottleCycles hold counter
+        //   FlushFromLoadPolicy / FlushFromUsePolicy:
+        //     - same throttle behavior as BlockThrottlePolicy (block drives throttle)
+        //     - additionally initiates a squash to free pipeline resources
+        {
+            bool throttle_now = false;
+            if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockThrottlePolicy) {
+                // BlockThrottlePolicy completely replaces base throttle policy
+                throttle_now = threadFetchBlocked[tid];
+            } else {
+                // base throttle policy
+                throttle_now =
+                    smtHasBorrowThrottleStall(fromIEW->iewInfo[tid]) ||
+                    smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater);
+            }
+            if (throttle_now) {
+                smtBorrowThrottleCycles[tid] = smtBorrowThrottleHoldCycles;
+            } else if (smtBorrowThrottleCycles[tid] > 0) {
+                --smtBorrowThrottleCycles[tid];
+            }
+            // BlockStallPolicy and Flush*Policy will directly set throttled[tid]
+            if ((smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockStallPolicy ||
+                 isFlushFromPolicy()) &&
+                block_active && threadFetchBlocked[tid]) {
+                throttled[tid] = true;
+            }
+            throttled[tid] |= smtBorrowThrottleCycles[tid] > 0;
         }
+
+        // thread can not candidate has lowest priv, should not be chosen
         if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
+            smtBorrowThrottleCycles[tid] = 0;
+            lsqCounter->setCounter(tid, UINT64_MAX);
+            iqCounter->setCounter(tid, UINT64_MAX);
+            robCounter->setCounter(tid, UINT64_MAX);
+            candidate[tid] = false;
+            continue;
+        }
+        // flush policy: should not pipedown insts
+        if (isFlushFromPolicy() && block_active && threadFetchBlocked[tid]) {
             smtBorrowThrottleCycles[tid] = 0;
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
@@ -1656,21 +1713,12 @@ Fetch::selectUnstalledThread()
             lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
             iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
             robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
-            if (isBlockPolicyActive() && threadFetchBlocked[tid]) {
-                // === Block Policy: skip blocked thread when policy is active ===
-                throttled[tid] = true;
+            if (throttled[tid]) {
                 lsqCounter->setCounter(tid, UINT64_MAX - 1);
                 iqCounter->setCounter(tid, UINT64_MAX - 1);
                 robCounter->setCounter(tid, UINT64_MAX - 1);
             } else {
-                if (smtBorrowThrottleCycles[tid] > 0) {
-                    throttled[tid] = true;
-                    lsqCounter->setCounter(tid, UINT64_MAX - 1);
-                    iqCounter->setCounter(tid, UINT64_MAX - 1);
-                    robCounter->setCounter(tid, UINT64_MAX - 1);
-                } else {
-                    has_unthrottled_candidate = true;
-                }
+                has_unthrottled_candidate = true;
             }
             DPRINTF(Fetch,
                     "[tid:%i] block=%u mem_pressure=%u hold=%u throttled=%u lsq=%u iq=%u rob=%u\n",
@@ -1703,7 +1751,10 @@ Fetch::selectUnstalledThread()
 bool
 Fetch::isBlockPolicyActive() const
 {
-    if (smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockPolicy) {
+    if (smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockStallPolicy &&
+        smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockThrottlePolicy &&
+        smtFetchBlockPolicy != SMTFetchBlockPolicy::FlushFromLoadPolicy &&
+        smtFetchBlockPolicy != SMTFetchBlockPolicy::FlushFromUsePolicy) {
         return false;
     }
     int blocked_count = 0;
@@ -1734,6 +1785,17 @@ Fetch::sendInstructionsToDecode()
             //break;
         }else{
             fetchStats.smtdecodeStalls[i]++; 
+        }
+
+        // === Flush Policy: initiate flush after asymmetric check passes ===
+        if (isFlushFromPolicy() && isBlockPolicyActive() &&
+            threadFetchBlocked[i] && !flushFromInitiated[i]) {
+            InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
+            DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
+            if (loadInst && loadInst->isLoad()) {
+                bool fromUse = (smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy);
+                flushFromInitiateFlush(loadInst, i, fromUse);
+            }
         }
     }
 
@@ -1917,57 +1979,189 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 
+
+bool
+Fetch::isFlushFromPolicy() const
+{
+    return smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromLoadPolicy ||
+           smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy;
+}
+
+DynInstPtr
+Fetch::findFirstUse(const DynInstPtr &loadInst, ThreadID tid)
+{
+    if (loadInst->numDestRegs() == 0) return nullptr;
+
+    std::vector<RegIndex> destPhysRegs;
+    for (int d = 0; d < loadInst->numDestRegs(); d++) {
+        PhysRegIdPtr r = loadInst->renamedDestIdx(d);
+        if (r) destPhysRegs.push_back(r->flatIndex());
+    }
+    if (destPhysRegs.empty()) return nullptr;
+
+    auto& instList = iewStage->getRobInstList(tid);
+    bool foundLoad = false;
+    DynInstPtr lastNonControl = loadInst;  // fallback: load itself
+    for (auto it = instList.begin(); it != instList.end(); ++it) {
+        if (!foundLoad) {
+            if ((*it)->seqNum == loadInst->seqNum) foundLoad = true;
+            continue;
+        }
+        const auto &candidate = *it;
+        if (!candidate->isControl()) {
+            lastNonControl = candidate;
+        }
+        for (int s = 0; s < candidate->numSrcRegs(); s++) {
+            PhysRegIdPtr srcReg = candidate->renamedSrcIdx(s);
+            if (srcReg) {
+                RegIndex srcFlat = srcReg->flatIndex();
+                for (RegIndex destFlat : destPhysRegs) {
+                    if (srcFlat == destFlat) {
+                        DPRINTF(Fetch, "[tid:%i] FlushFromUse: first use PC=%#x "
+                                "[sn:%llu] reads phys reg %u from load [sn:%llu]\n",
+                                tid, candidate->pcState().instAddr(),
+                                candidate->seqNum, srcFlat, loadInst->seqNum);
+                        // Avoid selecting a control instruction as squash boundary
+                        // to prevent predictor state corruption at commit.
+                        if (candidate->isControl()) {
+                            DPRINTF(Fetch, "[tid:%i] FlushFromUse: first use is control, "
+                                    "falling back to last non-control before it\n", tid);
+                        }
+                        assert(foundLoad);
+                        return lastNonControl;
+                    }
+                }
+            }
+        }
+    }
+    DPRINTF(Fetch, "[tid:%i] FlushFromUse: no consumer found for load [sn:%llu], "
+            "no consumer, will squash from ROB tail\n", tid, loadInst->seqNum);
+    assert(foundLoad);
+    return nullptr;
+}
+
+void
+Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse)
+{
+    DynInstPtr squashFromInst = nullptr;
+    bool includeSquashInst = true;
+
+    if (!fromUse) {
+        // FlushFromLoad: squash all instructions after the load (including pipeline in-flight)
+        squashFromInst = loadInst;
+        includeSquashInst = false;  // do not include the load itself
+        DPRINTF(Fetch, "[tid:%i] FlushFromLoad: load PC=%#x [sn:%llu], "
+                "squash all after load\n",
+                tid, loadInst->pcState().instAddr(), loadInst->seqNum);
+    } else {
+        // FlushFromUse: try to find first consumer and flush from there
+        squashFromInst = findFirstUse(loadInst, tid);
+        if (squashFromInst) {
+            if (squashFromInst == loadInst) {
+                squashFromInst = loadInst;
+                includeSquashInst = false;  // do not include the load itself
+                DPRINTF(Fetch, "[tid:%i] FlushFromUse: load PC=%#x [sn:%llu], "
+                        "squash all after load\n",
+                        tid, loadInst->pcState().instAddr(), loadInst->seqNum);
+            } else {
+                includeSquashInst = true;
+                DPRINTF(Fetch, "[tid:%i] FlushFromUse: load PC=%#x [sn:%llu], "
+                        "squash from first-use PC=%#x [sn:%llu]\n",
+                        tid, loadInst->pcState().instAddr(), loadInst->seqNum,
+                        squashFromInst->pcState().instAddr(), squashFromInst->seqNum);
+            }
+            fetchStats.flushFromFirstUseFound++;
+        } else {
+            // Find the last non-control instruction in ROB (after load)
+            // to avoid predictor state corruption when preserving a branch.
+            DynInstPtr safeTail = nullptr;
+            auto& instList2 = iewStage->getRobInstList(tid);
+            for (auto it = instList2.rbegin(); it != instList2.rend(); ++it) {
+                if ((*it)->seqNum <= loadInst->seqNum) break;
+                if (!(*it)->isControl()) {
+                    safeTail = *it;
+                    break;
+                }
+            }
+            if (!safeTail) {
+                // All instructions after load are control, or ROB only has load
+                squashFromInst = loadInst;
+                includeSquashInst = false;
+                DPRINTF(Fetch, "[tid:%i] FlushFromUse: no consumer, no non-control "
+                        "inst after load, fallback squash from load [sn:%llu]\n",
+                        tid, loadInst->seqNum);
+            } else {
+                squashFromInst = safeTail;
+                includeSquashInst = false;
+                DPRINTF(Fetch, "[tid:%i] FlushFromUse: no consumer, "
+                        "squash from non-control [sn:%llu] next (preserve ROB)\n",
+                        tid, safeTail->seqNum);
+            }
+            fetchStats.flushFromFirstUseNoConsumer++;
+        }
+    }
+
+    flushFromInitiated[tid] = true;
+    fetchStats.flushForFlushPolicy[tid]++;
+
+    iewStage->squashDueToLongLatencyLoad(loadInst, squashFromInst, tid,
+                                          includeSquashInst);
+}
+
 void
 Fetch::checkLongLatencyLoads()
 {
-    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockPolicy) {
-        for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            blockStateHoldCycles[tid]++;
+    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
+        return;
+    }
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        blockStateHoldCycles[tid]++;
 
-            // Get LQ head stall reason for this thread
-            StallReason lqReason = iewStage->ldstQueue.lqEmpty(tid)
-                ? StallReason::NoStall
-                : iewStage->checkLsqStall(tid, true);
+        // Get LQ head stall reason for this thread
+        StallReason lqReason = iewStage->ldstQueue.lqEmpty(tid)
+            ? StallReason::NoStall
+            : iewStage->checkLsqStall(tid, true);
 
-            // Check if LQ head is stuck on a long-latency load
-            bool is_long_latency =
-                (lqReason == StallReason::LoadL2Bound ||
-                lqReason == StallReason::LoadL3Bound ||
-                lqReason == StallReason::LoadMemBound);
+        // Check if LQ head is stuck on a long-latency load
+        bool is_long_latency =
+            (lqReason == StallReason::LoadL2Bound ||
+            lqReason == StallReason::LoadL3Bound ||
+            lqReason == StallReason::LoadMemBound);
 
-            if (is_long_latency) {
-                InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
-                if (newLoadHead == lastLoadHeadSeqNum[tid]) {
-                    if (!threadFetchBlocked[tid] &&
-                        longLatencyStallCycles[tid] >= longLatencyThreshold) {
-                        threadFetchBlocked[tid] = true;
-                        fetchStats.fetchBlockHoldCycle[0].sample(blockStateHoldCycles[tid]);
-                        blockStateHoldCycles[tid] = 0;
-                        DPRINTF(Fetch, "[tid:%i] Long-latency load detected: "
-                            "LQ head stalled for %llu cycles (reason=%d)\n",
-                            tid, longLatencyStallCycles[tid], (int)lqReason);
-                    }
-                    longLatencyStallCycles[tid]++;
-                } else {
-                    if (threadFetchBlocked[tid]) {
-                        threadFetchBlocked[tid] = false;
-                        fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
-                        blockStateHoldCycles[tid] = 0;
-                        DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
-                    }
-                    longLatencyStallCycles[tid] = 0;
-                    lastLoadHeadSeqNum[tid] = newLoadHead;
+        if (is_long_latency) {
+            InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
+            if (newLoadHead == lastLoadHeadSeqNum[tid]) {
+                if (!threadFetchBlocked[tid] &&
+                    longLatencyStallCycles[tid] >= longLatencyThreshold) {
+                    threadFetchBlocked[tid] = true;
+                    fetchStats.fetchBlockHoldCycle[0].sample(blockStateHoldCycles[tid]);
+                    blockStateHoldCycles[tid] = 0;
+                    DPRINTF(Fetch, "[tid:%i] Long-latency load detected: "
+                        "LQ head stalled for %llu cycles (reason=%d)\n",
+                        tid, longLatencyStallCycles[tid], (int)lqReason);
                 }
+                longLatencyStallCycles[tid]++;
             } else {
                 if (threadFetchBlocked[tid]) {
                     threadFetchBlocked[tid] = false;
+                    flushFromInitiated[tid] = false;
                     fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
                     blockStateHoldCycles[tid] = 0;
                     DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
                 }
                 longLatencyStallCycles[tid] = 0;
-                lastLoadHeadSeqNum[tid] = UINT64_MAX;
+                lastLoadHeadSeqNum[tid] = newLoadHead;
             }
+        } else {
+            if (threadFetchBlocked[tid]) {
+                threadFetchBlocked[tid] = false;
+                flushFromInitiated[tid] = false;
+                fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
+                blockStateHoldCycles[tid] = 0;
+                DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
+            }
+            longLatencyStallCycles[tid] = 0;
+            lastLoadHeadSeqNum[tid] = UINT64_MAX;
         }
     }
     int blockState = 0;

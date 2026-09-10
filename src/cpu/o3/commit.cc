@@ -334,6 +334,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to TC"),
       ADD_STAT(squashDueToSquashAfter, statistics::units::Count::get(),
                "Number of squash due to squash after"),
+      ADD_STAT(squashDueToLongLatencyFlush, statistics::units::Count::get(),
+               "Number of squash due to long-latency flush policy"),
       ADD_STAT(totalSquash, statistics::units::Count::get(),
                "Total number of squash"),
       ADD_STAT(ROBFull, statistics::units::Count::get(),
@@ -458,9 +460,13 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .init(cpu->numThreads)
         .flags(total);
 
+    squashDueToLongLatencyFlush
+        .init(cpu->numThreads)
+        .flags(total);
+
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
         squashDueToValuePrediction + squashDueToTrap + squashDueToTC + \
-        squashDueToSquashAfter;
+        squashDueToSquashAfter + squashDueToLongLatencyFlush;
 
     ROBFull
         .init(cpu->numThreads)
@@ -1165,8 +1171,10 @@ Commit::commit()
         // Squashed sequence number must be older than youngest valid
         // instruction in the ROB. This prevents squashes from younger
         // instructions overriding squashes from older instructions.
-        DPRINTF(Commit, "fromIEW->squash %d, commitStatus %d, fromIEW->squashedSeqNum %d, youngestSeqNum %d\n",
-            fromIEW->squash[tid], commitStatus[tid], fromIEW->squashedSeqNum[tid], youngestSeqNum[tid]);
+        DPRINTF(Commit, "fromIEW->squash %d, commitStatus %d, fromIEW->squashedSeqNum %d, "
+                "includeSquashInst %d, youngestSeqNum %d\n",
+                fromIEW->squash[tid], commitStatus[tid], fromIEW->squashedSeqNum[tid],
+                fromIEW->includeSquashInst[tid], youngestSeqNum[tid]);
         if (fromIEW->squash[tid] &&
             commitStatus[tid] != TrapPending &&
             fromIEW->squashedSeqNum[tid] <= youngestSeqNum[tid]) {
@@ -1186,6 +1194,12 @@ Commit::commit()
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToValuePrediction[tid]++;
                 curSquashCause[tid] = SquashCause::ValuePrediction;
+            } else if (fromIEW->longLatencyFlush[tid]) {
+                DPRINTF(Commit,
+                    "[tid:%i] Squashing due to long-latency flush [sn:%llu]\n",
+                    tid, fromIEW->squashedSeqNum[tid]);
+                stats.squashDueToLongLatencyFlush[tid]++;
+                curSquashCause[tid] = SquashCause::LongLatencyFlush;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
@@ -2463,7 +2477,17 @@ Commit::squashInflightAndUpdateVersion(ThreadID tid)
         inst->setSquashed();
     }
 
-    fixedbuffer[tid].clear();
+    // Selectively remove only instructions younger than squash boundary
+    {
+        InstSeqNum squash_seq = toIEW->commitInfo[tid].doneSeqNum;
+        for (auto it = fixedbuffer[tid].begin(); it != fixedbuffer[tid].end(); ) {
+            if ((*it)->seqNum > squash_seq) {
+                it = fixedbuffer[tid].erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 
     localSquashVer[tid].update(localSquashVer[tid].nextVersion());
     toIEW->commitInfo[tid].squashVersion = localSquashVer[tid];

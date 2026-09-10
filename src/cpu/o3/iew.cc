@@ -639,7 +639,17 @@ IEW::squash(ThreadID tid)
     squashDelayedVectorMemCompletions(tid);
     updatedQueues = true;
 
-    fixedbuffer[tid].clear();
+    // Selectively remove only instructions younger than squash boundary
+    {
+        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+        for (auto it = fixedbuffer[tid].begin(); it != fixedbuffer[tid].end(); ) {
+            if ((*it)->seqNum > squash_seq) {
+                it = fixedbuffer[tid].erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 
     stallSig->blockRename[tid] = true;
 
@@ -770,6 +780,85 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
     }
 
     cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
+
+    stallSig->blockRename[tid] = true;
+}
+
+
+std::list<DynInstPtr>&
+IEW::getRobInstList(ThreadID tid)
+{
+    return rob->getInstList(tid);
+}
+
+DynInstPtr
+IEW::readRobTailInst(ThreadID tid)
+{
+    return rob->readTailInst(tid);
+}
+
+DynInstPtr
+IEW::findRobInst(ThreadID tid, InstSeqNum seqNum)
+{
+    return rob->findInst(tid, seqNum);
+}
+
+void
+IEW::squashDueToLongLatencyLoad(const DynInstPtr &loadInst,
+                                const DynInstPtr &squashFromInst,
+                                ThreadID tid,
+                                bool includeSquashInst)
+{
+    recordThreadSquash(tid);
+
+    DPRINTF(IEW, "[tid:%i] Long-latency flush: load [sn:%llu], "
+            "squash from [sn:%llu], includeSquashInst=%d\n",
+            tid, loadInst->seqNum, squashFromInst->seqNum,
+            (int)includeSquashInst);
+
+    // Long-latency flush is a non-essential, lowest-priority squash.
+    // It proceeds when ANY of the following holds:
+    //   (a) No other squash is pending;
+    //   (b) This flush has an older boundary than the existing squash;
+    //   (c) Same boundary as the existing squash, but the existing squash does
+    //       NOT include the boundary instruction (!toCommit->includeSquashInst).
+    //       In this case the flush is strictly more aggressive and can override.
+    // Conversely, if an existing squash already includes the boundary instruction
+    // (e.g., branch mispredict or mem-order violation), it has higher priority
+    // and this flush must yield.
+    if (!toCommit->squash[tid] || squashFromInst->seqNum < toCommit->squashedSeqNum[tid] ||
+        (squashFromInst->seqNum == toCommit->squashedSeqNum[tid] &&
+         includeSquashInst && !toCommit->includeSquashInst[tid])) {
+        toFetch->iewInfo[tid].redirectPending = true;
+        toCommit->squash[tid] = true;
+        toCommit->squashedSeqNum[tid] = squashFromInst->seqNum;
+        toCommit->squashedTargetId[tid] = squashFromInst->getFtqId();
+        toCommit->squashedLoopIter[tid] = squashFromInst->getLoopIteration();
+        set(toCommit->pc[tid], squashFromInst->pcState());
+        if (!includeSquashInst) {
+            // squashFromInst itself is NOT squashed
+            if (squashFromInst->isControl() && !(squashFromInst->isExecuted())) {
+                // Control instruction: use predicted PC from frontend
+                set(toCommit->pc[tid], squashFromInst->readPredTarg());
+            } else {
+                // Non-control instruction: sequential next PC
+                squashFromInst->staticInst->advancePC(*toCommit->pc[tid]);
+            }
+        }
+        toCommit->mispredictInst[tid] = NULL;
+        toCommit->branchTaken[tid] = false;
+        toCommit->valuePredictionError[tid] = false;
+        toCommit->includeSquashInst[tid] = includeSquashInst;
+        toCommit->longLatencyFlush[tid] = true;
+        wroteToTimeBuffer = true;
+
+        DPRINTF(DecoupleBP,
+                "long-latency flush (pc=%#lx) set target id "
+                "to %lu, loop iter to %u\n",
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
+    }
 
     stallSig->blockRename[tid] = true;
 }
