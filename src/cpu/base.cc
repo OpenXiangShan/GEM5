@@ -1384,6 +1384,20 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         diffAllStates->referenceRegFile.vl, "vl");
     }
 
+    if (diffAllStates->proxy->hasFcsr()) {
+        const auto fcsr =
+            (readMiscRegNoEffect(RiscvISA::MISCREG_FRM, tid) & 0x7) << 5 |
+            (readMiscRegNoEffect(RiscvISA::MISCREG_FFLAGS, tid) & 0x1f);
+        diffAllStates->gem5RegFile.fcsr = fcsr;
+        const auto ref_fcsr = diffAllStates->referenceRegFile.fcsr;
+        if (fcsr != ref_fcsr) {
+            diffMsg << csprintf("Diff at fcsr: REF %#lx, GEM5 %#lx\n",
+                                ref_fcsr, fcsr);
+            if (!diff_at)
+                diff_at = ValueDiff;
+        }
+    }
+
     // always check some CSR regs
     {
         // mstatus
@@ -2064,12 +2078,11 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             } else if (enableMemDedup) {
                 if (system->multiContextDifftest()) {
                     assert(goldenMemPtr);
-                    assert(diffAllStates->proxy->ref_get_backed_memory);
-                    diffAllStates->proxy->ref_get_backed_memory(
+                    diffAllStates->proxy->attachBackedMemory(
                         system->createCopyOnWriteBranch(), pmemSize);
                 } else {
-                    assert(diffAllStates->proxy->ref_get_backed_memory);
-                    diffAllStates->proxy->ref_get_backed_memory(system->createCopyOnWriteBranch(), pmemSize);
+                    diffAllStates->proxy->attachBackedMemory(
+                        system->createCopyOnWriteBranch(), pmemSize);
                 }
             } else {
                 diffAllStates->proxy->memcpy_init(0x80000000u, pmemStart, pmemSize, DUT_TO_REF);

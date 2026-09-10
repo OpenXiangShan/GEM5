@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <cassert>
+#include <cstddef>
 #include <cstring>
 
 
@@ -78,7 +79,7 @@ struct riscv64_CPU_regfile
     uint64_t vstart;
     uint64_t vxsat, vxrm, vcsr;
     uint64_t vl, vtype, vlenb;
-
+    uint64_t fcsr;
 
     uint64_t& operator[](int x) {
         assert(x<64);
@@ -174,6 +175,8 @@ struct DiffState
 class RefProxy
 {
   public:
+    bool hasFcsr() const { return refHasFcsr; }
+    void attachBackedMemory(void *memory, size_t size);
     // public callable functions
     void (*ref_get_backed_memory)(void *backed_mem, size_t n) = nullptr;
     void (*memcpy_init)(paddr_t nemu_addr, void *dut_buf, size_t n,
@@ -198,6 +201,8 @@ class RefProxy
     virtual void setHartId(int coreid) = 0;
 
   protected:
+    uint8_t *(*refGetPmem)() = nullptr;
+    bool refHasFcsr = false;
     bool multiCore;
 
     void *handle;

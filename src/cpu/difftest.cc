@@ -96,10 +96,26 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
         assert(0);
     }
 
+    const auto *reg_size = static_cast<const unsigned *>(
+        dlsym(handle, "DIFFTEST_REG_SIZE"));
+    fatal_if(!reg_size,
+             "NEMU REF %s does not export DIFFTEST_REG_SIZE", ref_so);
+    fatal_if(*reg_size != sizeof(riscv64_CPU_regfile),
+             "NEMU REF register size %u does not match GEM5 (%u). "
+             "Rebuild with the pinned util/nemu_ref configuration, "
+             "including CONFIG_DIFFTEST_CHECK_FCSR=y",
+             *reg_size, sizeof(riscv64_CPU_regfile));
+    // The separate Spike backend does not implement this NEMU CSR layout.
+    refHasFcsr = true;
+    inform("NEMU register state: %u bytes, FCSR comparison enabled\n",
+           *reg_size);
+
+    refGetPmem = (uint8_t *(*)())dlsym(handle, "get_pmem");
     if (enable_mem_dedup) {
         this->ref_get_backed_memory =
             (void (*)(void *backed_mem, size_t n))dlsym(handle, "difftest_get_backed_memory");
-        assert(this->ref_get_backed_memory);
+        fatal_if(!ref_get_backed_memory || !refGetPmem,
+                 "NEMU REF lacks the memory attachment verification API");
     }
 
     this->memcpy = (void (*)(paddr_t, void *, size_t, bool))dlsym(
@@ -168,6 +184,20 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
     assert(nemu_init);
 
     nemu_init();
+    fatal_if(!enable_mem_dedup && refGetPmem && !refGetPmem(),
+             "NEMU REF requires external memory; enable memory deduplication "
+             "or select a non-dedup REF");
+}
+
+void
+RefProxy::attachBackedMemory(void *memory, size_t size)
+{
+    fatal_if(!ref_get_backed_memory || !refGetPmem,
+             "REF does not support verified memory attachment");
+    ref_get_backed_memory(memory, size);
+    fatal_if(refGetPmem() != memory,
+             "NEMU REF did not attach GEM5 backing memory; rebuild the REF "
+             "with CONFIG_ENABLE_MEM_DEDUP=y and CONFIG_USE_MMAP=n");
 }
 
 void
