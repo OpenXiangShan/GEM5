@@ -7,6 +7,18 @@ on:
   pull_request_target:
     types: [labeled]
   workflow_dispatch:
+    inputs:
+      test_job:
+        description: 'Run all functional jobs or select one for targeted validation'
+        type: choice
+        default: all
+        options:
+          - all
+          - paralel_cpt_h_test
+          - sanitizer_check
+          - new_sim_script_test_gcb_multi_core
+          - new_sim_script_test_gcbh
+          - raw_linux_boot_test
 
 permissions:
   contents: read
@@ -16,10 +28,12 @@ jobs:
 
   paralel_cpt_h_test:
     if: |
-      github.event_name != 'pull_request_target' ||
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.test_job == 'all' || inputs.test_job == 'paralel_cpt_h_test') &&
+      (github.event_name != 'pull_request_target' ||
       (github.event.label.name == 'regression' &&
        github.event.pull_request.base.ref == 'xs-dev' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository))
     # 使用 open runner 可见的固定 H/V NEMU reference
     runs-on: [self-hosted, open]
     continue-on-error: false
@@ -134,10 +148,12 @@ jobs:
 
   sanitizer_check:
     if: |
-      github.event_name != 'pull_request_target' ||
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.test_job == 'all' || inputs.test_job == 'sanitizer_check') &&
+      (github.event_name != 'pull_request_target' ||
       (github.event.label.name == 'regression' &&
        github.event.pull_request.base.ref == 'xs-dev' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - ASan + UBSan smoke test
@@ -183,10 +199,12 @@ jobs:
 
   new_sim_script_test_gcb_multi_core:
     if: |
-      github.event_name != 'pull_request_target' ||
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.test_job == 'all' || inputs.test_job == 'new_sim_script_test_gcb_multi_core') &&
+      (github.event_name != 'pull_request_target' ||
       (github.event.label.name == 'regression' &&
        github.event.pull_request.base.ref == 'xs-dev' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Test Multi-core + RV64GCB
@@ -209,10 +227,12 @@ jobs:
 
   new_sim_script_test_gcbh:
     if: |
-      github.event_name != 'pull_request_target' ||
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.test_job == 'all' || inputs.test_job == 'new_sim_script_test_gcbh') &&
+      (github.event_name != 'pull_request_target' ||
       (github.event.label.name == 'regression' &&
        github.event.pull_request.base.ref == 'xs-dev' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: [self-hosted, open]
     continue-on-error: false
     name: XS-GEM5 - Test new simulation script on RV64GCBH
@@ -235,10 +255,12 @@ jobs:
 
   raw_linux_boot_test:
     if: |
-      github.event_name != 'pull_request_target' ||
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.test_job == 'all' || inputs.test_job == 'raw_linux_boot_test') &&
+      (github.event_name != 'pull_request_target' ||
       (github.event.label.name == 'regression' &&
        github.event.pull_request.base.ref == 'xs-dev' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: [self-hosted, open]
     continue-on-error: false
     timeout-minutes: 30
