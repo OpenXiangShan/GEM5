@@ -2860,6 +2860,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         instruction->setVersion(localSquashVer[tid]);
 
         o3::TraceInstruction traceForThisInst;
+        RiscvISA::PCState tracePc = fetchPc;
         if (isTraceMode()) {
             assert(traceFetch);
             traceFetch->bindPendingTraceMetadata(
@@ -2877,7 +2878,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         if (isTraceMode()) {
             assert(traceFetch);
             traceFetch->postBranchPredict(
-                tid, instruction, traceForThisInst, fetchPc, *next_pc,
+                tid, instruction, traceForThisInst, tracePc, *next_pc,
                 predictedBranch);
         }
     }
