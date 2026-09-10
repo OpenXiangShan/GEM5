@@ -193,6 +193,36 @@ python actions_gem5.py --token <github-token> --always-on
 
 ---
 
+## 🔍 性能 CI 自动监测
+
+`perf-monitor.yml` 使用 `workflow_run: completed` 监听 Ideal BTB、Align BTB、SMT 和
+`manual-perf.yml`。它不轮询正在运行的 job，也不会把未结束的 archive 当成有效结果。
+
+确定性分析由 `util/ci/perf_monitor.py` 完成：
+
+- 从 Actions job log 定位 NFS archive，并校验 run 状态、abort、score、coverage 和完成标记；
+- 按 config、benchmark、checkpoint/weighting profile、workload filter、vector 类型和完整
+  extra args 选择最近的兼容 `xs-dev` push baseline；
+- 复用 `/nfs/home/share/gem5_ci/gem5_data_proc/run.py` 生成 weighted score 和关键计数器；
+- 默认阈值为 overall 绝对变化 0.5%、overall 严重回退 1%、单 workload
+  绝对变化 2%、单 workload 严重回退 5%，配置在 `.github/perf-monitor-policy.json`；
+- `normal` 只保留 Actions summary/artifact，不调用模型；`warning` 或 `critical` 才调用
+  公司 CRS Responses API 的 `gpt-5.6-sol` 生成简短中文总结。
+
+模型只接收 `analysis.json` 中经过裁剪和脱敏的确定性结果，包括完整性、score delta、
+counter delta 和失败步骤；它不能访问 checkout、NFS、shell 或 GitHub token。AI 调用失败
+不会影响确定性分析。首版不创建 issue、评论、commit 或 PR，输出位置只有同一个 Actions
+job summary 和 `perf-monitor-analysis` artifact。部署要求：
+
+- 仓库 Actions Secret：`CRS_OPENAI_API_KEY`；
+- `[self-hosted, node]` runner 能读取性能 NFS，并能直接访问公司 CRS 地址；不需要 Docker。
+
+手动回放已完成的 run 可从 Actions 页面触发 `Performance CI Monitor`，传入
+`source_run_id`，必要时再指定严格兼容的 `baseline_run_id`。可以关闭 `trigger_ai` 只跑
+Python 分析，或用 `force_ai` 为正常结果生成一次预览。
+
+---
+
 ## 🎯 设计原则
 
 - **DRY**: 测试不重复，配置单一来源
@@ -209,6 +239,10 @@ python actions_gem5.py --token <github-token> --always-on
 - `.github/workflows/gem5.yml` - `xs-dev` 合入后或 `regression` 标签触发的完整功能回归
 - `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` / `perf` 标签默认性能测试
 - `.github/workflows/gem5-align-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
+- `.github/workflows/gem5-smt-spec06-0.3c.yml` - `xs-dev` / `perf-smt` 标签 SMT 性能测试
+- `.github/workflows/perf-monitor.yml` - 已完成性能 run 的确定性分析和异常分流
+- `util/ci/perf_monitor.py` - baseline、完整性、阈值和 counter delta 分析
+- `util/ci/crs_perf_summary.py` - 脱敏并调用 CRS 生成异常总结
 - `.github/workflows/on-demand-spec-rvv.yml` - `rvv` 标签 RVV 性能测试
 - `env-scripts/github/actions_gem5.py` - 性能评论机器人
 

@@ -1,0 +1,8 @@
+{
+  "overall_warning_abs_pct": 0.5,
+  "overall_critical_regression_pct": -1.0,
+  "workload_warning_abs_pct": 2.0,
+  "workload_critical_regression_pct": -5.0,
+  "max_counter_deltas_per_workload": 8,
+  "max_baseline_candidates": 50
+}
