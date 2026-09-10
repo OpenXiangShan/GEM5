@@ -31,9 +31,10 @@ TEST(RiscvPredecoder, CompressedPriorityAndSize)
     EXPECT_EQ(ebreak.branchType, PredecodeInfo::BranchType::None);
     EXPECT_EQ(ebreak.instSize, 2);
 
-    const auto cjump = RiscvPredecoder::decode(0xa001);
+    const auto cjump = RiscvPredecoder::decode(0xbffd);
     EXPECT_EQ(cjump.branchType, PredecodeInfo::BranchType::Direct);
     EXPECT_EQ(cjump.instSize, 2);
+    EXPECT_EQ(cjump.targetOffset, -2);
 
     const auto cjr = RiscvPredecoder::decode(0x8082);
     EXPECT_EQ(cjr.branchType, PredecodeInfo::BranchType::Indirect);

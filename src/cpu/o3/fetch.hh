@@ -49,6 +49,7 @@
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/pcstate.hh"
 #include "arch/riscv/predecoder.hh"
 #include "arch/riscv/types.hh"
 #include "base/statistics.hh"
@@ -418,9 +419,19 @@ class Fetch
      *        for the next FTQ target.
      * @return true if a branch was predicted taken.
      */
-    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
-                               bool allow_two_fetch,
-                               bool &continued_to_next_target);
+    struct FetchPrediction
+    {
+        bool taken = false;
+        unsigned ftqId = 0;
+        unsigned loopIteration = 0;
+        RiscvISA::PCState target;
+    };
+
+    bool lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
+                               const PCStateBase &inst_pc, InstSeqNum seq,
+                               PCStateBase &next_pc, bool allow_two_fetch,
+                               bool &continued_to_next_target,
+                               FetchPrediction &prediction);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -576,13 +587,21 @@ class Fetch
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
-            const PCStateBase &next_pc, bool trace);
+            const PCStateBase &next_pc, bool trace, InstSeqNum seq,
+            unsigned ftqId);
 
+    bool predecodePipelineEnabled(ThreadID tid) const;
     bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
                           const StaticInstPtr &curMacroop) const;
     void enqueueFetchedInst(ThreadID tid, const DynInstPtr &instruction);
+    void applyValuePrediction(const DynInstPtr &instruction);
+    void advancePredecodePipeline();
+    void processPredecodeStage(ThreadID tid);
+    void applyPendingPredecodeFault(ThreadID tid);
+    void clearPredecodePipeline(ThreadID tid);
     bool isPredecodeFault(const RiscvISA::PredecodeInfo &info,
-                          bool predictedTaken) const;
+                          bool predictedTaken, Addr pc,
+                          Addr predictedTarget) const;
     void handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
                               const RiscvISA::PredecodeInfo &info);
 
@@ -1010,6 +1029,49 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
+    struct PredecodePipeEntry
+    {
+        bool valid = false;
+        RiscvISA::MachInst rawInst = 0;
+        bool predecode = true;
+        StaticInstPtr staticInst;
+        StaticInstPtr curMacroop;
+        RiscvISA::PCState pc;
+        RiscvISA::PCState predictedTarget;
+        bool predictedTaken = false;
+        unsigned ftqId = 0;
+        InstSeqNum seqNum = 0;
+        unsigned loopIteration = 0;
+        Tick fetchTick = 0;
+        RiscvISA::PredecodeInfo info;
+
+        ~PredecodePipeEntry();
+    };
+
+    struct PredecodePipe
+    {
+        std::array<PredecodePipeEntry, MaxWidth> entries{};
+        unsigned size = 0;
+
+        ~PredecodePipe();
+        void clear();
+    };
+
+    struct PendingPredecodeFault
+    {
+        bool valid = false;
+        RiscvISA::PredecodeInfo info;
+        DynInstPtr instruction;
+
+        ~PendingPredecodeFault();
+        void clear();
+    };
+
+    /** Fixed-depth raw predecode pipeline, one instance per thread. */
+    PredecodePipe predecodeStage0[MaxThreads];
+    PredecodePipe predecodeStage1[MaxThreads];
+    PendingPredecodeFault pendingPredecodeFault[MaxThreads];
+
     unsigned currentLoopIter{0};  // todo: remove this
 
     /** Icache stall statistics. */
@@ -1128,6 +1190,7 @@ class Fetch
         /** RISC-V predecode-owned recovery events. */
         statistics::Scalar predecodeFaults;
         statistics::Scalar predecodeDirectNotTaken;
+        statistics::Scalar predecodeDirectTargetMismatch;
         statistics::Scalar predecodeNonCfiTaken;
         statistics::Scalar predecodeReturnNotTaken;
         statistics::Scalar predecodeRedirects;
