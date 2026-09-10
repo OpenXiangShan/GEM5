@@ -128,11 +128,12 @@ class CPUProgressEvent : public Event
 
 struct DiffAllStates
 {
-    riscv64_CPU_regfile gem5RegFile;
-    riscv64_CPU_regfile referenceRegFile;
-    DiffState diff;
-    RefProxy *proxy;
+    riscv64_CPU_regfile gem5RegFile{};
+    riscv64_CPU_regfile referenceRegFile{};
+    DiffState diff{};
+    RefProxy *proxy{nullptr};
 
+    // Mirrors RTL difftest's first-commit reference initialization state.
     bool hasCommit{false};
 };
 
@@ -721,6 +722,12 @@ class BaseCPU : public ClockedObject
     {
         panic("difftest:readGem5Regs() is not implemented\n");
     }
+
+    /**
+     * Capture the DUT state from which the reference executes its first
+     * instruction. This must run before the DUT retires any instruction.
+     */
+    void captureDifftestState(ThreadID tid);
 
     void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
                         std::string error_csr_name,int &diff_at);
