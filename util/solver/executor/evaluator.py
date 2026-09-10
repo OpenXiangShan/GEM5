@@ -25,7 +25,11 @@ class StatsMetricExtractionError(ValueError):
 
 
 def _spec_version_from_score_script(score_script: str) -> str:
-    return "17" if score_script.endswith("-17.sh") else "06"
+    if score_script.endswith("-26.sh"):
+        return "26"
+    if score_script.endswith("-17.sh"):
+        return "17"
+    return "06"
 
 
 def _parse_stats_value(raw_line: str) -> tuple[str, float] | None:

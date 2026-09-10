@@ -36,7 +36,6 @@ util/xs_scripts/perf_benchmarks.py
 | `checkpoint_root` | `checkpoint_root_node` | 定位 `.gz` / `.zstd` checkpoint |
 | `cluster_config` | `cluster_config` | weighted stats 和 score 聚合 |
 | `score_script` | `score_script` | 生成 `score.txt` |
-| `artifact_name` | `artifact_name` | 性能 CI artifact 名称 |
 | `comment` | `comment` | 性能任务说明 |
 
 ## 职责边界
@@ -44,7 +43,7 @@ util/xs_scripts/perf_benchmarks.py
 共享 catalog 只描述 benchmark 数据，不表示每个消费者都支持其中的全部类型。
 
 - `gem5-perf-template.yml` 可以使用完整 catalog，并继续负责 H-profile、SMT 环境、构建、
-  执行、归档和算分。
+  执行、归档、算分和基于 config 类型生成 artifact 名称。
 - solver 复用路径，但继续在 `util/solver/types.py` 中维护自身能力限制。例如 catalog
   包含 `gcc12-spec06-smt-*` 和 `h-spec06-*`，solver 当前仍会明确拒绝这些类型。
 - `manual-perf.yml` 和 `manual-solve.yml` 中的 `choice` 是 GitHub Actions 要求的静态 UI

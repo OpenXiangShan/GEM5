@@ -21,13 +21,6 @@ class BenchmarkConfig:
     cluster_config: str
     comment: str
     score_script: str = "gem5-score-ci.sh"
-    artifact_name_override: str = ""
-
-    @property
-    def artifact_name(self) -> str:
-        if self.artifact_name_override:
-            return self.artifact_name_override
-        return f"performance-score-{self.benchmark_type}"
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -36,7 +29,6 @@ class BenchmarkConfig:
             "checkpoint_root": self.checkpoint_root,
             "cluster_config": self.cluster_config,
             "score_script": self.score_script,
-            "artifact_name": self.artifact_name,
             "comment": self.comment,
         }
 
@@ -46,7 +38,6 @@ class BenchmarkConfig:
             "checkpoint_root_node": self.checkpoint_root,
             "score_script": self.score_script,
             "cluster_config": self.cluster_config,
-            "artifact_name": self.artifact_name,
             "comment": self.comment,
         }
 
@@ -164,7 +155,6 @@ _BENCHMARKS = _index_benchmarks(
             checkpoint_list="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint.lst",
             checkpoint_root="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/",
             cluster_config="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster-0-0.json",
-            artifact_name_override="performance-score-spec06-1.0c-with-rvv-extension",
             comment="run 100% coverage spec06 rvv checkpoints",
         ),
         BenchmarkConfig(
@@ -172,7 +162,6 @@ _BENCHMARKS = _index_benchmarks(
             checkpoint_list="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint_0.8c_int.lst",
             checkpoint_root="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/",
             cluster_config="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster_0.8c_int.json",
-            artifact_name_override="performance-score-spec06int-0.8c-with-rvv-extension",
             comment="run 80% coverage spec06 int rvv checkpoints",
         ),
         BenchmarkConfig(
