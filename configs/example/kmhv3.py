@@ -42,15 +42,11 @@ def setKmhV3Params(args, system):
         cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4
         cpu.fetchQueueSize = 64
-        predecode_enabled = not getattr(args, "smt", False) and not getattr(
-            args, "enable_trace_mode", False
-        )
+        predecode_enabled = not getattr(args, "enable_trace_mode", False)
         cpu.enablePredecode = predecode_enabled
 
         # decode
-        # The fixed predecode pipeline contributes two cycles before the
-        # existing Fetch -> Decode transfer.
-        cpu.fetchToDecodeDelay = 1 if predecode_enabled else 3
+        cpu.fetchToDecodeDelay = 3
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False

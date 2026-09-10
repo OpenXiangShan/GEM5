@@ -44,8 +44,6 @@
 Import('*')
 
 Source('decoder.cc', tags='riscv isa')
-Source('predecoder.cc', tags='riscv isa')
-GTest('predecoder.test', 'predecoder.test.cc', 'predecoder.cc')
 Source('faults.cc', tags='riscv isa')
 Source('isa.cc', tags='riscv isa')
 Source('process.cc', tags='riscv isa')

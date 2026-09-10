@@ -229,28 +229,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     }
 }
 
-Fetch::PredecodePipeEntry::~PredecodePipeEntry() = default;
-
-Fetch::PredecodePipe::~PredecodePipe() = default;
-
-Fetch::PendingPredecodeFault::~PendingPredecodeFault() = default;
-
-void
-Fetch::PredecodePipe::clear()
-{
-    for (auto &entry : entries)
-        entry = PredecodePipeEntry{};
-    size = 0;
-}
-
-void
-Fetch::PendingPredecodeFault::clear()
-{
-    valid = false;
-    info = RiscvISA::PredecodeInfo{};
-    instruction = nullptr;
-}
-
 Fetch::~Fetch() = default;
 
 void
@@ -296,16 +274,6 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of branches that fetch encountered"),
     ADD_STAT(predictedBranches, statistics::units::Count::get(),
              "Number of branches that fetch has predicted taken"),
-    ADD_STAT(predecodeFaults, statistics::units::Count::get(),
-             "Number of faults owned by the RISC-V predecode stage"),
-    ADD_STAT(predecodeDirectNotTaken, statistics::units::Count::get(),
-             "Direct jumps predicted not taken by predecode"),
-    ADD_STAT(predecodeDirectTargetMismatch, statistics::units::Count::get(),
-             "Direct jump target mismatches detected by predecode"),
-    ADD_STAT(predecodeNonCfiTaken, statistics::units::Count::get(),
-             "Non-control instructions predicted taken by predecode"),
-    ADD_STAT(predecodeReturnNotTaken, statistics::units::Count::get(),
-             "Returns predicted not taken by predecode"),
     ADD_STAT(predecodeRedirects, statistics::units::Count::get(),
              "Redirects issued by predecode"),
     ADD_STAT(cycles, statistics::units::Cycle::get(),
@@ -661,7 +629,6 @@ Fetch::clearStates(ThreadID tid)
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
-    clearPredecodePipeline(tid);
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -695,7 +662,6 @@ Fetch::resetStage()
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
-        clearPredecodePipeline(tid);
 
         priorityList.push_back(tid);
         waitForVsetvl[tid] = false;
@@ -1047,6 +1013,7 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
     // this function updates it.
     bool predict_taken = false;
     continued_to_next_target = false;
+    prediction.falseHit = false;
 
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     assert(dbpbtb);
@@ -1097,6 +1064,7 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
                                  seq, tid, currentLoopIter);
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
+        prediction.falseHit = true;
     } else if (run_out) {
         if (enableTwoFetch && !isTraceMode() &&
             allow_two_fetch && predict_taken) {
@@ -1164,21 +1132,6 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
         ++fetchStats.predictedBranches;
     }
 
-    return predict_taken;
-}
-
-bool
-Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
-                             bool allow_two_fetch,
-                             bool &continued_to_next_target)
-{
-    FetchPrediction prediction;
-    const bool predict_taken = lookupAndUpdateNextPC(
-        inst->threadNumber, inst->staticInst, inst->pcState(), inst->seqNum,
-        next_pc, allow_two_fetch, continued_to_next_target, prediction);
-    inst->setPredTaken(prediction.taken);
-    inst->setPredTarg(prediction.target);
-    inst->setLoopIteration(prediction.loopIteration);
     return predict_taken;
 }
 
@@ -1473,7 +1426,6 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Empty fetch queue
     fetchQueue[tid].clear();
-    clearPredecodePipeline(tid);
 
     // microops are being squashed, it is not known wheather the
     // youngest non-squashed microop was  marked delayed commit
@@ -1638,8 +1590,6 @@ Fetch::initializeTickState()
 void
 Fetch::fetchAndProcessInstructions(bool status_change)
 {
-    advancePredecodePipeline();
-
     // Fetch instructions from active threads
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
@@ -2389,168 +2339,68 @@ Fetch::applyValuePrediction(const DynInstPtr &instruction)
         valuePred->valuePredict(predictRequest, instruction->vpRecord);
 }
 
-void
-Fetch::clearPredecodePipeline(ThreadID tid)
-{
-    predecodeStage0[tid].clear();
-    predecodeStage1[tid].clear();
-    pendingPredecodeFault[tid].clear();
-}
-
-void
-Fetch::processPredecodeStage(ThreadID tid)
-{
-    auto &stage = predecodeStage1[tid];
-    if (!stage.size)
-        return;
-
-    unsigned first_fault = stage.size;
-    for (unsigned i = 0; i < stage.size; ++i) {
-        auto &entry = stage.entries[i];
-        if (!entry.valid || !entry.predecode)
-            continue;
-
-        entry.info = RiscvISA::RiscvPredecoder::decode(entry.rawInst);
-        const Addr predictedTarget = entry.predictedTarget.instAddr();
-        if (first_fault == stage.size &&
-            isPredecodeFault(entry.info, entry.predictedTaken,
-                             entry.pc.instAddr(), predictedTarget)) {
-            first_fault = i;
-        }
-    }
-
-    // Only entries through the first fault are allowed to become DynInsts in
-    // the architectural Fetch queue. Younger raw entries are discarded.
-    const unsigned kept = first_fault < stage.size ? first_fault + 1 : stage.size;
-    DynInstPtr fault_instruction;
-    for (unsigned i = 0; i < kept; ++i) {
-        auto &entry = stage.entries[i];
-        if (!entry.valid)
-            continue;
-
-        DynInstPtr instruction = buildInst(
-            tid, entry.staticInst, entry.curMacroop, entry.pc, entry.pc,
-            false, entry.seqNum, entry.ftqId, false);
-        instruction->setPredTaken(entry.predictedTaken);
-        instruction->setPredTarg(entry.predictedTarget);
-        instruction->setLoopIteration(entry.loopIteration);
-        instruction->setVersion(localSquashVer[tid]);
-        if (entry.predecode)
-            instruction->setPredecodeChecked();
-        applyValuePrediction(instruction);
-#if TRACING_ON
-        if (debug::O3PipeView)
-            instruction->fetchTick = entry.fetchTick;
-#endif
-        ppFetch->notify(instruction);
-        enqueueFetchedInst(tid, instruction);
-        if (i == first_fault)
-            fault_instruction = instruction;
-    }
-
-    if (first_fault < stage.size) {
-        auto &fault_entry = stage.entries[first_fault];
-        pendingPredecodeFault[tid].valid = true;
-        pendingPredecodeFault[tid].info = fault_entry.info;
-        pendingPredecodeFault[tid].instruction = fault_instruction;
-    }
-
-    stage.clear();
-}
-
-void
-Fetch::applyPendingPredecodeFault(ThreadID tid)
-{
-    auto &pending = pendingPredecodeFault[tid];
-    if (!pending.valid)
-        return;
-
-    const auto info = pending.info;
-    const DynInstPtr instruction = pending.instruction;
-    pending.clear();
-    handlePredecodeFault(tid, instruction, info);
-}
-
-void
-Fetch::advancePredecodePipeline()
-{
-    if (!predecodePipelineEnabled(0))
-        return;
-
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (pendingPredecodeFault[tid].valid) {
-            applyPendingPredecodeFault(tid);
-            continue;
-        }
-
-        processPredecodeStage(tid);
-
-        predecodeStage1[tid] = std::move(predecodeStage0[tid]);
-        predecodeStage0[tid].clear();
-    }
-}
-
-bool
-Fetch::predecodePipelineEnabled(ThreadID tid) const
-{
-    return enablePredecode && numThreads == 1 && tid < numThreads &&
-        !isTraceMode();
-}
-
 bool
 Fetch::predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
                         const StaticInstPtr &curMacroop) const
 {
-    return predecodePipelineEnabled(tid) &&
+    return enablePredecode && tid < numThreads && !isTraceMode() &&
         !curMacroop && staticInst && !staticInst->isMacroop() &&
         !staticInst->isVectorConfig();
 }
 
-bool
-Fetch::isPredecodeFault(const RiscvISA::PredecodeInfo &info,
-                        bool predictedTaken, Addr pc,
-                        Addr predictedTarget) const
+Fetch::PredecodeFault
+Fetch::classifyPredecodeFault(const DynInstPtr &instruction,
+                              const StaticInstPtr &staticInst) const
 {
-    const auto type = info.branchType;
-    if (type == RiscvISA::PredecodeInfo::BranchType::Direct) {
-        if (!predictedTaken)
-            return true;
-
-        const Addr target = static_cast<Addr>(
-            static_cast<int64_t>(pc) + info.targetOffset);
-        return target != predictedTarget;
+    if (instruction->readPredTaken() && !staticInst->isControl())
+        return PredecodeFault::NonCfiTaken;
+    if (staticInst->isReturn() && !instruction->readPredTaken())
+        return PredecodeFault::ReturnNotTaken;
+    if (staticInst->isDirectCtrl()) {
+        if (!instruction->readPredTaken() && staticInst->isUncondCtrl())
+            return PredecodeFault::DirectNotTaken;
+        if (instruction->readPredTaken()) {
+            const auto target = instruction->branchTarget();
+            if (target->instAddr() != instruction->readPredTarg().instAddr())
+                return PredecodeFault::DirectTargetMismatch;
+        }
     }
-
-    return
-        (type == RiscvISA::PredecodeInfo::BranchType::None &&
-         predictedTaken) ||
-        (info.isReturn && !predictedTaken);
+    return PredecodeFault::None;
 }
 
 void
 Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
-                            const RiscvISA::PredecodeInfo &info)
+                            PredecodeFault fault)
 {
     RiscvISA::PCState target = instruction->pcState().as<RiscvISA::PCState>();
     bool actuallyTaken = true;
-    if (info.branchType ==
-            RiscvISA::PredecodeInfo::BranchType::Direct) {
-        const Addr targetAddr = static_cast<Addr>(
-            static_cast<int64_t>(instruction->pcState().instAddr()) +
-            info.targetOffset);
-        target = RiscvISA::PCState(targetAddr);
-        if (instruction->readPredTaken())
-            ++fetchStats.predecodeDirectTargetMismatch;
-        else
-            ++fetchStats.predecodeDirectNotTaken;
-    } else if (info.isReturn) {
+    const char *faultName = "unknown";
+    switch (fault) {
+      case PredecodeFault::DirectNotTaken:
+        faultName = "direct-not-taken";
+        target = instruction->branchTarget()->as<RiscvISA::PCState>();
+        break;
+      case PredecodeFault::DirectTargetMismatch:
+        faultName = "direct-target-mismatch";
+        target = instruction->branchTarget()->as<RiscvISA::PCState>();
+        break;
+      case PredecodeFault::ReturnNotTaken:
+        faultName = "return-not-taken";
         target.set(getPreservedReturnAddr(instruction));
-        ++fetchStats.predecodeReturnNotTaken;
-    } else {
+        break;
+      case PredecodeFault::NonCfiTaken:
+        faultName = "taken-non-cfi";
         target.set(instruction->pcState().getFallThruPC());
         actuallyTaken = false;
-        ++fetchStats.predecodeNonCfiTaken;
+        break;
+      case PredecodeFault::None:
+        return;
     }
+
+    DPRINTF(Fetch,
+            "[tid:%i] Predecode redirect (%s) at PC %#lx to %#lx, seq=%llu\n",
+            tid, faultName, instruction->pcState().instAddr(),
+            target.instAddr(), instruction->seqNum);
 
     instruction->setPredTaken(actuallyTaken);
     instruction->setPredTarg(target);
@@ -2575,9 +2425,9 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
         cpu->removeInstsUntilNotInROB(instruction->seqNum, tid);
     fetchQueue[tid] = std::move(olderFetchEntries);
     fetchQueue[tid].push_back(instruction);
-    delayedCommit[tid] = instruction->isDelayedCommit();
+    delayedCommit[tid] = !fetchQueue[tid].empty() &&
+        fetchQueue[tid].back()->isDelayedCommit();
     localSquashVer[tid].update(localSquashVer[tid].nextVersion());
-    ++fetchStats.predecodeFaults;
     ++fetchStats.predecodeRedirects;
 }
 
@@ -2776,102 +2626,14 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
 }
 
 bool
-Fetch::processSingleInstructionLegacy(ThreadID tid, PCStateBase &pc,
-                                      StaticInstPtr &curMacroop,
-                                      bool allow_two_fetch,
-                                      bool &continued_to_next_target)
-{
-    auto *dec_ptr = decoder[tid];
-    bool newMacroop = false;
-    std::unique_ptr<PCStateBase> next_pc(pc.clone());
-
-    StaticInstPtr staticInst = nullptr;
-    if (!curMacroop) {
-        staticInst = dec_ptr->decode(pc);
-        ++fetchStats.insts;
-        if (staticInst->isMacroop()) {
-            curMacroop = staticInst;
-            DPRINTF(Fetch, "[tid:%i] Macroop instruction decoded\n", tid);
-        }
-    }
-    if (curMacroop) {
-        staticInst = curMacroop->fetchMicroop(pc.microPC());
-        DPRINTF(Fetch, "[tid:%i] Fetched macroop microop\n", tid);
-        newMacroop = staticInst->isLastMicroop();
-    }
-
-    DynInstPtr instruction = buildInst(
-        tid, staticInst, curMacroop, pc, *next_pc, true,
-        cpu->getAndIncrementInstSeq(), dbpbtb->ftqFetchBlock(tid).ftqId);
-
-    o3::TraceInstruction traceForThisInst;
-    if (isTraceMode()) {
-        assert(traceFetch);
-        traceFetch->bindPendingTraceMetadata(
-            tid, instruction, pc, traceForThisInst);
-    }
-
-    if (staticInst->isVectorConfig()) {
-        waitForVsetvl[tid] = dec_ptr->stall();
-        DPRINTF(Fetch,
-                "[tid:%i] Vector config instruction, "
-                "waitForVsetvl[tid]=%d\n",
-                tid, waitForVsetvl[tid]);
-    }
-
-    instruction->setVersion(localSquashVer[tid]);
-    ppFetch->notify(instruction);
-    numInst++;
-
-#if TRACING_ON
-    if (debug::O3PipeView)
-        instruction->fetchTick = curTick();
-#endif
-
-    set(next_pc, pc);
-    const bool predictedBranch = lookupAndUpdateNextPC(
-        instruction, *next_pc, allow_two_fetch, continued_to_next_target);
-
-    if (predictedBranch) {
-        DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
-                instruction->threadNumber, pc, *next_pc);
-    }
-
-    if (isTraceMode()) {
-        assert(traceFetch);
-        traceFetch->postBranchPredict(
-            tid, instruction, traceForThisInst, pc, *next_pc,
-            predictedBranch);
-    }
-
-    newMacroop |= pc.instAddr() != next_pc->instAddr();
-    if (newMacroop) {
-        curMacroop = NULL;
-        DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n", tid, pc);
-    }
-    set(pc, *next_pc);
-    applyValuePrediction(instruction);
-    return predictedBranch;
-}
-
-bool
 Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                 StaticInstPtr &curMacroop,
                                 bool allow_two_fetch,
-                                bool &continued_to_next_target)
+                                bool &continued_to_next_target,
+                                bool &predecodeRedirected)
 {
-    if (!predecodePipelineEnabled(tid)) {
-        return processSingleInstructionLegacy(
-            tid, pc, curMacroop, allow_two_fetch,
-            continued_to_next_target);
-    }
-
     auto *dec_ptr = decoder[tid];
-    RiscvISA::MachInst rawInst = 0;
-    if (!curMacroop)
-        std::memcpy(&rawInst, dec_ptr->moreBytesPtr(), sizeof(rawInst));
     bool newMacroop = false;
-    const bool pipelineActive = true;
     const RiscvISA::PCState fetchPc = pc.as<RiscvISA::PCState>();
     const InstSeqNum seq = cpu->getAndIncrementInstSeq();
 
@@ -2898,12 +2660,16 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         newMacroop = staticInst->isLastMicroop();
     }
 
-    const bool usePredecode = predecodeEnabled(tid, staticInst, curMacroop);
-
     const StaticInstPtr instructionMacroop = curMacroop;
-    DynInstPtr instruction;
+    DynInstPtr instruction = buildInst(
+        tid, staticInst, instructionMacroop, fetchPc, *next_pc, true, seq,
+        dbpbtb->ftqFetchBlock(tid).ftqId);
     o3::TraceInstruction traceForThisInst;
-    RiscvISA::PCState tracePc = fetchPc;
+    if (isTraceMode()) {
+        assert(traceFetch);
+        traceFetch->bindPendingTraceMetadata(
+            tid, instruction, fetchPc, traceForThisInst);
+    }
 
     // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
@@ -2914,25 +2680,12 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     numInst++;
 
-    // Preserve the legacy Fetch ordering when the fixed predecode pipeline is
-    // disabled. In particular, false-hit recovery observes the instruction
-    // already registered in the Fetch queue.
-    if (!pipelineActive) {
-        instruction = buildInst(
-            tid, staticInst, instructionMacroop, fetchPc, *next_pc, true, seq,
-            dbpbtb->ftqFetchBlock(tid).ftqId);
-        instruction->setVersion(localSquashVer[tid]);
-        if (isTraceMode()) {
-            assert(traceFetch);
-            traceFetch->bindPendingTraceMetadata(
-                tid, instruction, fetchPc, traceForThisInst);
-        }
+    instruction->setVersion(localSquashVer[tid]);
 #if TRACING_ON
-        if (debug::O3PipeView)
-            instruction->fetchTick = curTick();
+    if (debug::O3PipeView)
+        instruction->fetchTick = curTick();
 #endif
-        ppFetch->notify(instruction);
-    }
+    ppFetch->notify(instruction);
 
     // Save current PC to next_pc first
     set(next_pc, pc);
@@ -2942,12 +2695,9 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     const bool predictedBranch = lookupAndUpdateNextPC(
         tid, staticInst, fetchPc, seq, *next_pc, allow_two_fetch,
         continued_to_next_target, prediction);
-
-    if (instruction) {
-        instruction->setPredTaken(prediction.taken);
-        instruction->setPredTarg(prediction.target);
-        instruction->setLoopIteration(prediction.loopIteration);
-    }
+    instruction->setPredTaken(prediction.taken);
+    instruction->setPredTarg(prediction.target);
+    instruction->setLoopIteration(prediction.loopIteration);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
@@ -2962,33 +2712,26 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 tid, pc);
     }
 
-    // Update the main PC state for the next instruction.
-    set(pc, *next_pc);
-
-    if (pipelineActive) {
-        auto &stage = predecodeStage0[tid];
-        assert(stage.size < MaxWidth);
-        auto &entry = stage.entries[stage.size++];
-        entry.valid = true;
-        entry.predecode = usePredecode;
-        entry.rawInst = rawInst;
-        entry.staticInst = staticInst;
-        entry.curMacroop = instructionMacroop;
-        entry.pc = fetchPc;
-        entry.predictedTarget = prediction.target;
-        entry.predictedTaken = prediction.taken;
-        entry.ftqId = prediction.ftqId;
-        entry.seqNum = seq;
-        entry.loopIteration = prediction.loopIteration;
-        entry.fetchTick = curTick();
-    } else {
-        applyValuePrediction(instruction);
-        if (isTraceMode()) {
-            assert(traceFetch);
-            traceFetch->postBranchPredict(
-                tid, instruction, traceForThisInst, tracePc, *next_pc,
-                predictedBranch);
+    predecodeRedirected = false;
+    if (predecodeEnabled(tid, staticInst, instructionMacroop) &&
+        !prediction.falseHit) {
+        const auto fault = classifyPredecodeFault(instruction, staticInst);
+        instruction->setPredecodeChecked();
+        if (fault != PredecodeFault::None) {
+            handlePredecodeFault(tid, instruction, fault);
+            predecodeRedirected = true;
+            return predictedBranch;
         }
+    }
+
+    // Update the main PC state only after predecode accepts the prediction.
+    set(pc, *next_pc);
+    applyValuePrediction(instruction);
+    if (isTraceMode()) {
+        assert(traceFetch);
+        traceFetch->postBranchPredict(
+            tid, instruction, traceForThisInst, fetchPc, *next_pc,
+            predictedBranch);
     }
 
     return predictedBranch;
@@ -3015,19 +2758,6 @@ Fetch::performInstructionFetch(ThreadID tid)
     // Main instruction fetch loop - process until fetch width or other limits
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
-    const bool pipelineActive = predecodePipelineEnabled(tid);
-    const bool predecodeQueueSpace =
-        !pipelineActive ||
-        fetchQueue[tid].size() + predecodeStage1[tid].size + fetchWidth <=
-            fetchQueueSize;
-    if (pipelineActive && !predecodeQueueSpace) {
-        setAllFetchStalls(StallReason::OtherFetchStall);
-        return;
-    }
-    if (pipelineActive && pendingPredecodeFault[tid].valid) {
-        setAllFetchStalls(StallReason::OtherFetchStall);
-        return;
-    }
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !stopFetchThisCycle && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
 
@@ -3043,12 +2773,14 @@ Fetch::performInstructionFetch(ThreadID tid)
         do {
             // Process a single instruction, from decoding to PC update.
             bool continued_to_next_target = false;
+            bool predecode_redirected = false;
             const bool predicted_taken = processSingleInstruction(
                 tid, pc_state, curMacroop,
                 !threads[tid].usedForTwoFetch,
-                continued_to_next_target);
+                continued_to_next_target, predecode_redirected);
             stopFetchThisCycle =
-                predicted_taken && !continued_to_next_target;
+                predecode_redirected ||
+                (predicted_taken && !continued_to_next_target);
 
         } while (curMacroop &&
                  numInst < fetchWidth &&
@@ -3068,7 +2800,9 @@ Fetch::performInstructionFetch(ThreadID tid)
 
     // Log why fetch stopped
     if (stopFetchThisCycle) {
-        DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch instruction encountered.\n", tid);
+        DPRINTF(Fetch,
+                "[tid:%i] Done fetching, predicted branch or predecode "
+                "redirect encountered.\n", tid);
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);
     } else if (stall != StallReason::NoStall) {

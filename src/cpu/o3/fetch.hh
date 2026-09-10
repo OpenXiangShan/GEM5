@@ -42,6 +42,7 @@
 #define __CPU_O3_FETCH_HH__
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -50,7 +51,6 @@
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
 #include "arch/riscv/pcstate.hh"
-#include "arch/riscv/predecoder.hh"
 #include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
@@ -417,11 +417,13 @@ class Fetch
      * @param allow_two_fetch Whether this buffer may cross an FTQ boundary.
      * @param continued_to_next_target Whether the current buffer was retained
      *        for the next FTQ target.
+     * @param prediction receives the prediction and false-BTB-hit result.
      * @return true if a branch was predicted taken.
      */
     struct FetchPrediction
     {
         bool taken = false;
+        bool falseHit = false;
         unsigned ftqId = 0;
         unsigned loopIteration = 0;
         RiscvISA::PCState target;
@@ -432,9 +434,6 @@ class Fetch
                                PCStateBase &next_pc, bool allow_two_fetch,
                                bool &continued_to_next_target,
                                FetchPrediction &prediction);
-    bool lookupAndUpdateNextPC(const DynInstPtr &inst,
-                               PCStateBase &next_pc, bool allow_two_fetch,
-                               bool &continued_to_next_target);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -593,20 +592,24 @@ class Fetch
             const PCStateBase &next_pc, bool trace, InstSeqNum seq,
             unsigned ftqId, bool enqueue = true);
 
-    bool predecodePipelineEnabled(ThreadID tid) const;
+    enum class PredecodeFault : uint8_t
+    {
+        None,
+        DirectNotTaken,
+        DirectTargetMismatch,
+        NonCfiTaken,
+        ReturnNotTaken
+    };
+
     bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
                           const StaticInstPtr &curMacroop) const;
     void enqueueFetchedInst(ThreadID tid, const DynInstPtr &instruction);
     void applyValuePrediction(const DynInstPtr &instruction);
-    void advancePredecodePipeline();
-    void processPredecodeStage(ThreadID tid);
-    void applyPendingPredecodeFault(ThreadID tid);
-    void clearPredecodePipeline(ThreadID tid);
-    bool isPredecodeFault(const RiscvISA::PredecodeInfo &info,
-                          bool predictedTaken, Addr pc,
-                          Addr predictedTarget) const;
+    PredecodeFault classifyPredecodeFault(
+            const DynInstPtr &instruction,
+            const StaticInstPtr &staticInst) const;
     void handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
-                              const RiscvISA::PredecodeInfo &info);
+                              PredecodeFault fault);
 
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
@@ -652,16 +655,14 @@ class Fetch
      * @param allow_two_fetch Whether this buffer may cross an FTQ boundary.
      * @param continued_to_next_target Whether the current buffer was retained
      *        for the next FTQ target.
+     * @param predecodeRedirected Whether Fetch issued an early recovery.
      * @return true if a branch was predicted.
      */
     bool processSingleInstruction(ThreadID tid, PCStateBase &pc,
-                                  StaticInstPtr &curMacroop,
-                                  bool allow_two_fetch,
-                                  bool &continued_to_next_target);
-    bool processSingleInstructionLegacy(ThreadID tid, PCStateBase &pc,
                                         StaticInstPtr &curMacroop,
                                         bool allow_two_fetch,
-                                        bool &continued_to_next_target);
+                                        bool &continued_to_next_target,
+                                        bool &predecodeRedirected);
 
     /**
      * Checks if the decoder requires more memory to proceed and fetches
@@ -1036,49 +1037,6 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
-    struct PredecodePipeEntry
-    {
-        bool valid = false;
-        RiscvISA::MachInst rawInst = 0;
-        bool predecode = true;
-        StaticInstPtr staticInst;
-        StaticInstPtr curMacroop;
-        RiscvISA::PCState pc;
-        RiscvISA::PCState predictedTarget;
-        bool predictedTaken = false;
-        unsigned ftqId = 0;
-        InstSeqNum seqNum = 0;
-        unsigned loopIteration = 0;
-        Tick fetchTick = 0;
-        RiscvISA::PredecodeInfo info;
-
-        ~PredecodePipeEntry();
-    };
-
-    struct PredecodePipe
-    {
-        std::array<PredecodePipeEntry, MaxWidth> entries{};
-        unsigned size = 0;
-
-        ~PredecodePipe();
-        void clear();
-    };
-
-    struct PendingPredecodeFault
-    {
-        bool valid = false;
-        RiscvISA::PredecodeInfo info;
-        DynInstPtr instruction;
-
-        ~PendingPredecodeFault();
-        void clear();
-    };
-
-    /** Fixed-depth raw predecode pipeline, one instance per thread. */
-    PredecodePipe predecodeStage0[MaxThreads];
-    PredecodePipe predecodeStage1[MaxThreads];
-    PendingPredecodeFault pendingPredecodeFault[MaxThreads];
-
     unsigned currentLoopIter{0};  // todo: remove this
 
     /** Icache stall statistics. */
@@ -1195,11 +1153,6 @@ class Fetch
         /** Stat for total number of predicted branches. */
         statistics::Scalar predictedBranches;
         /** RISC-V predecode-owned recovery events. */
-        statistics::Scalar predecodeFaults;
-        statistics::Scalar predecodeDirectNotTaken;
-        statistics::Scalar predecodeDirectTargetMismatch;
-        statistics::Scalar predecodeNonCfiTaken;
-        statistics::Scalar predecodeReturnNotTaken;
         statistics::Scalar predecodeRedirects;
         /** Stat for total number of cycles spent fetching. */
         statistics::Scalar cycles;

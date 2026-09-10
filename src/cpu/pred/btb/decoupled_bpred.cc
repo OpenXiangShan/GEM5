@@ -989,16 +989,6 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
                             const unsigned &currentLoopIter, const bool fromCommit,
                             bool fromPredecode)
 {
-    if (fromPredecode) {
-        dbpBtbStats.controlSquashFromPredecode++;
-    } else if (fromCommit) {
-        dbpBtbStats.controlSquashFromCommit++;
-        auto branchClass = classifyBranch(static_inst);
-        addControlSquashCommitStat(branchClass);
-    } else {
-        dbpBtbStats.controlSquashFromDecode++;
-    }
-
     // Get branch type information
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
@@ -1007,6 +997,16 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
         threads[tid].redirectPending = false;
         DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
         return;
+    }
+
+    if (fromPredecode) {
+        dbpBtbStats.controlSquashFromPredecode++;
+    } else if (fromCommit) {
+        dbpBtbStats.controlSquashFromCommit++;
+        auto branchClass = classifyBranch(static_inst);
+        addControlSquashCommitStat(branchClass);
+    } else {
+        dbpBtbStats.controlSquashFromDecode++;
     }
     auto &target = ftq.get(target_id, tid);
     // Get target address
