@@ -54,6 +54,30 @@ hitsTarget(UBTB &ubtb, Addr start_pc, Addr target, ThreadID tid = 0, uint8_t asi
     return pred.btbEntries.size() == 1 && pred.btbEntries.front().target == target;
 }
 
+BTBEntry
+makeSlot(Addr pc, Addr target, bool conditional = true, int counter = -1)
+{
+    BTBEntry slot;
+    slot.valid = true;
+    slot.pc = pc;
+    slot.target = target;
+    slot.size = 4;
+    slot.isCond = conditional;
+    slot.isDirect = true;
+    slot.ctr = counter;
+    return slot;
+}
+
+void
+fillLayout(UBTB &ubtb, Addr start_pc, const std::vector<BTBEntry> &slots)
+{
+    predict(ubtb, start_pc);
+    FullBTBPrediction pred;
+    pred.bbStart = start_pc;
+    pred.btbEntries = slots;
+    ubtb.updateUsingS3Pred(pred);
+}
+
 std::vector<Addr>
 findAddressesForSet(const UBTB &ubtb, unsigned set, unsigned count)
 {
@@ -172,7 +196,7 @@ TEST(UBTBSetAssociativeTest, SupportsNonPowerOfTwoWays)
     }
 }
 
-TEST(UBTBCheckerTest, ReturnsPredictedExitAndMissFallThroughSignal)
+TEST(UBTBCheckerTest, ReturnsLayoutAndExplicitMiss)
 {
     UBTB ubtb(4, 2, 38);
     constexpr Addr StartPc = 0x1000;
@@ -182,8 +206,10 @@ TEST(UBTBCheckerTest, ReturnsPredictedExitAndMissFallThroughSignal)
     trainTaken(ubtb, StartPc, 0x8000);
     const auto hit = ubtb.lookupForChecker(StartPc, 0, 0);
     ASSERT_TRUE(hit.valid);
-    EXPECT_EQ(hit.pc, StartPc + 4);
-    EXPECT_EQ(hit.target, 0x8000);
+    ASSERT_TRUE(hit.usable());
+    ASSERT_EQ(hit.slots.size(), 1);
+    EXPECT_EQ(hit.slots.front().pc, StartPc + 4);
+    EXPECT_EQ(hit.slots.front().target, 0x8000);
 }
 
 TEST(UBTBCheckerTest, DoesNotOverwritePrimaryPredictionState)
@@ -212,6 +238,177 @@ TEST(UBTBCheckerTest, DoesNotOverwritePrimaryPredictionState)
 
     EXPECT_TRUE(hitsTarget(ubtb, PrimaryPc, 0xa000));
     EXPECT_TRUE(hitsTarget(ubtb, checkerPc, 0x9000));
+}
+
+TEST(UBTBLayoutTest, PreservesAllSlotsAndSelectsFirstTaken)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    const auto first = makeSlot(0x1004, 0x2000, true, -2);
+    const auto second = makeSlot(0x1008, 0x3000, true, 0);
+    const auto third = makeSlot(0x100c, 0x4000, true, 1);
+    const auto jump = makeSlot(0x1010, 0x5000, false);
+    fillLayout(ubtb, StartPc, {jump, third, first, second});
+
+    const auto layout = ubtb.lookupForChecker(StartPc, 0, 0);
+    ASSERT_TRUE(layout.usable());
+    ASSERT_EQ(layout.slots.size(), 4);
+    EXPECT_EQ(layout.slots[0].pc, first.pc);
+    EXPECT_EQ(layout.slots[0].ctr, -2);
+    EXPECT_EQ(layout.slots[1].ctr, 0);
+    EXPECT_EQ(layout.slots[2].ctr, 1);
+    EXPECT_EQ(layout.slots[3].pc, jump.pc);
+    EXPECT_EQ(layout.getTakenEntry().pc, second.pc);
+
+    auto pred = predict(ubtb, StartPc);
+    EXPECT_EQ(pred.btbEntries.size(), 4);
+    EXPECT_EQ(pred.getTakenEntry().pc, second.pc);
+    EXPECT_EQ(pred.getTarget(64), second.target);
+    EXPECT_EQ(pred.getGHistUpdate().shamt, 2);
+}
+
+TEST(UBTBLayoutTest, KeepsNotTakenAndEmptyLayoutsAsHits)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    EXPECT_FALSE(ubtb.lookupForChecker(StartPc, 0, 0).usable());
+    fillLayout(ubtb, StartPc,
+               {makeSlot(0x1004, 0x2000), makeSlot(0x1008, 0x3000)});
+    auto pred = predict(ubtb, StartPc);
+    EXPECT_FALSE(pred.isTaken());
+    EXPECT_EQ(pred.getTarget(64), 0x1040);
+    EXPECT_EQ(pred.getGHistUpdate().shamt, 2);
+    ASSERT_EQ(ubtb.lookupForChecker(StartPc, 0, 0).slots.size(), 2);
+
+    fillLayout(ubtb, StartPc, {});
+    const auto empty = ubtb.lookupForChecker(StartPc, 0, 0);
+    EXPECT_TRUE(empty.usable());
+    EXPECT_TRUE(empty.slots.empty());
+    EXPECT_EQ(ubtb.testValidEntriesInSet(ubtb.testSetIndex(StartPc)), 1);
+    pred = predict(ubtb, StartPc);
+    EXPECT_FALSE(pred.isTaken());
+    EXPECT_EQ(pred.getGHistUpdate().shamt, 0);
+}
+
+TEST(UBTBLayoutTest, OverflowCannotSupplyAPartialPrediction)
+{
+    UBTB ubtb(4, 2, 38, true, false, 2);
+    constexpr Addr StartPc = 0x1000;
+    fillLayout(ubtb, StartPc, {makeSlot(0x1004, 0x2000, true, 1),
+                              makeSlot(0x1008, 0x3000),
+                              makeSlot(0x100c, 0x4000)});
+    const auto overflow = ubtb.lookupForChecker(StartPc, 0, 0);
+    EXPECT_TRUE(overflow.valid);
+    EXPECT_TRUE(overflow.overflow);
+    EXPECT_FALSE(overflow.usable());
+    EXPECT_EQ(overflow.slots.size(), 2);
+    EXPECT_FALSE(overflow.getTakenEntry().valid);
+    auto pred = predict(ubtb, StartPc);
+    EXPECT_TRUE(pred.btbEntries.empty());
+    EXPECT_FALSE(pred.isTaken());
+
+    fillLayout(ubtb, StartPc, {makeSlot(0x1004, 0x2000, true, 1)});
+    const auto complete = ubtb.lookupForChecker(StartPc, 0, 0);
+    EXPECT_TRUE(complete.usable());
+    EXPECT_FALSE(complete.overflow);
+    EXPECT_EQ(complete.getTakenEntry().pc, 0x1004);
+    EXPECT_EQ(ubtb.testValidEntriesInSet(ubtb.testSetIndex(StartPc)), 1);
+}
+
+TEST(UBTBLayoutTest, FiltersWindowAndDeduplicatesBeforeOverflow)
+{
+    UBTB ubtb(4, 2, 38, true, false, 2);
+    constexpr Addr StartPc = 0x1010;
+    const auto first = makeSlot(0x1014, 0x2000);
+    const auto last = makeSlot(0x103e, 0x3000, true, 1);
+    auto invalid = makeSlot(0x1018, 0x4000);
+    invalid.valid = false;
+    fillLayout(ubtb, StartPc,
+               {makeSlot(0x100c, 0x5000), last, first, invalid, first,
+                makeSlot(0x1040, 0x6000)});
+    const auto layout = ubtb.lookupForChecker(StartPc, 0, 0);
+    ASSERT_TRUE(layout.usable());
+    ASSERT_EQ(layout.slots.size(), 2);
+    EXPECT_EQ(layout.slots.front().pc, first.pc);
+    EXPECT_EQ(layout.slots.back().pc, last.pc);
+}
+
+TEST(UBTBLayoutTest, UpdatesBaseCountersWithoutTakingFinalDirections)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    fillLayout(ubtb, StartPc, {makeSlot(0x1004, 0x2000, true, 1)});
+
+    FullBTBPrediction s3;
+    s3.bbStart = StartPc;
+    s3.btbEntries = {makeSlot(0x1004, 0x2000, true, -2),
+                     makeSlot(0x1008, 0x3000, true, 0)};
+    // TAGE overrides the base directions in S3; the layout keeps the bases.
+    s3.condTakens = {{0x1004, true}, {0x1008, false}};
+    ubtb.updateUsingS3Pred(s3);
+    auto pred = predict(ubtb, StartPc);
+    ASSERT_EQ(pred.btbEntries.size(), 2);
+    EXPECT_EQ(pred.btbEntries.front().ctr, -2);
+    EXPECT_EQ(pred.getTakenEntry().pc, 0x1008);
+}
+
+TEST(UBTBLayoutTest, PreservesIndirectAndReturnTargets)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    auto indirect = makeSlot(0x1008, 0x3000, false);
+    indirect.isDirect = false;
+    indirect.isIndirect = true;
+    fillLayout(ubtb, StartPc, {makeSlot(0x1004, 0x2000), indirect});
+    auto pred = predict(ubtb, StartPc);
+    EXPECT_EQ(pred.getTarget(64), 0x3000);
+
+    indirect.isReturn = true;
+    indirect.size = 2;
+    auto youngerReturn = indirect;
+    youngerReturn.pc = 0x1010;
+    youngerReturn.target = 0x4000;
+    fillLayout(ubtb, StartPc,
+               {makeSlot(0x1004, 0x2000), youngerReturn, indirect});
+    pred = predict(ubtb, StartPc);
+    EXPECT_EQ(pred.getTarget(64), 0x3000);
+    EXPECT_EQ(pred.getTakenEntry().size, 2);
+    EXPECT_TRUE(pred.indirectTargets.empty());
+}
+
+TEST(UBTBLayoutTest, DistinguishesOverlappingBlockStarts)
+{
+    UBTB ubtb(1, 4, 38);
+    fillLayout(ubtb, 0x1000, {makeSlot(0x1004, 0x2000)});
+    fillLayout(ubtb, 0x1002, {});
+    EXPECT_EQ(ubtb.lookupForChecker(0x1000, 0, 0).slots.size(), 1);
+    const auto empty = ubtb.lookupForChecker(0x1002, 0, 0);
+    EXPECT_TRUE(empty.usable());
+    EXPECT_TRUE(empty.slots.empty());
+    EXPECT_FALSE(ubtb.lookupForChecker(0x1001, 0, 0).valid);
+}
+
+TEST(UBTBLayoutTest, BackendTrainingRetainsSlotsAfterTakenExit)
+{
+    UBTB ubtb(4, 2, 38, false);
+    constexpr Addr StartPc = 0x1000;
+    predict(ubtb, StartPc);
+    FetchTarget stream;
+    stream.startPC = StartPc;
+    stream.predMetas[ubtb.getComponentIdx()] = ubtb.getPredictionMeta();
+    stream.predBTBEntries = {makeSlot(0x1004, 0x2000, true, 1),
+                             makeSlot(0x1008, 0x3000),
+                             makeSlot(0x100c, 0x4000, true, -2)};
+    stream.exeTaken = true;
+    stream.exeBranchInfo = stream.predBTBEntries[1];
+    stream.updateEndInstPC = 0x1008;
+    ubtb.update(stream);
+    const auto layout = ubtb.lookupForChecker(StartPc, 0, 0);
+    ASSERT_TRUE(layout.usable());
+    ASSERT_EQ(layout.slots.size(), 3);
+    EXPECT_EQ(layout.slots[0].ctr, 0);
+    EXPECT_EQ(layout.slots[1].ctr, 0);
+    EXPECT_EQ(layout.slots[2].ctr, -2);
 }
 
 }  // namespace test

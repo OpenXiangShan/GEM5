@@ -108,13 +108,13 @@ boolBucket(bool value)
 
 #ifdef UNIT_TEST
 UBTB::UBTB(unsigned num_sets, unsigned num_ways, unsigned tag_bits,
-           bool using_s3_pred, bool smt_tid_partitioned)
+           bool using_s3_pred, bool smt_tid_partitioned, unsigned num_slots)
     : TimedBaseBTBPredictor(),
-      lastPred(o3::MaxThreads),
       threadMeta(),
       ubtb(),
       numSets(num_sets),
       numWays(num_ways),
+      numSlots(num_slots),
       totalEntries(0),
       idxMask(0),
       idxShiftAmt(0),
@@ -127,11 +127,11 @@ UBTB::UBTB(unsigned num_sets, unsigned num_ways, unsigned tag_bits,
 #else
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
-      lastPred(o3::MaxThreads),
       threadMeta(),
       ubtb(),
       numSets(p.numSets),
       numWays(p.numWays),
+      numSlots(p.numSlots),
       totalEntries(0),
       idxMask(0),
       idxShiftAmt(0),
@@ -143,6 +143,9 @@ UBTB::UBTB(const Params &p)
 #endif
     if (numSets == 0 || !isPowerOf2(numSets)) {
         fatal("uBTB sets must be non-zero and a power of 2");
+    }
+    if (numSlots == 0) {
+        fatal("uBTB branch slots must be non-zero");
     }
     if (numWays == 0) {
         fatal("uBTB ways must be non-zero");
@@ -171,7 +174,7 @@ UBTB::UBTB(const Params &p)
 
     const unsigned accessibleWays = usesTidPartitionedStorage() ?
         numWays / 2 : numWays;
-    ubtbStats.init(numSets, accessibleWays);
+    ubtbStats.init(numSets, accessibleWays, numSlots);
 
 #ifndef UNIT_TEST
     hasDB = true;
@@ -242,30 +245,17 @@ UBTB::setRange(unsigned set, ThreadID tid) const
     return {begin, begin + ways};
 }
 
-void
-UBTB::rememberLastPred(ThreadID tid, unsigned set, UBTBIter entry)
+BTBEntry
+UBTB::BlockEntry::getTakenEntry() const
 {
-    assert(tid < lastPred.size());
-    auto &last = lastPred[tid];
-    last.valid = entry != ubtb.end();
-    last.set = set;
-    last.way = last.valid ?
-        std::distance(ubtb.begin() + set * numWays, entry) : 0;
-}
-
-UBTB::UBTBIter
-UBTB::getLastPredEntry(ThreadID tid)
-{
-    assert(tid < lastPred.size());
-    const auto &last = lastPred[tid];
-    if (!last.valid) {
-        return ubtb.end();
+    if (usable()) {
+        for (const auto &slot : slots) {
+            if (slot.isUncond() || slot.alwaysTaken || slot.ctr >= 0) {
+                return slot;
+            }
+        }
     }
-
-    auto entry = ubtb.begin() + last.set * numWays + last.way;
-    auto [rangeBegin, rangeEnd] = setRange(last.set, tid);
-    assert(entry >= rangeBegin && entry < rangeEnd);
-    return entry;
+    return BTBEntry();
 }
 
 #ifdef UNIT_TEST
@@ -279,11 +269,10 @@ UBTB::testValidEntriesInSet(unsigned set, ThreadID tid) const
 #endif
 
 void
-UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
+UBTB::PredStatistics(const TickedUBTBEntry &entry, Addr startAddr)
 {
-    if (entry.valid) {
-        Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-        assert(entry.pc >= startAddr && entry.pc < mbtb_end);
+    if (entry.usable()) {
+        assert(entry.startPC == startAddr);
         DPRINTF(UBTB, "UBTB: lookup hit: \n");
         ubtbStats.predHit += 1;
         printTickedUBTBEntry(entry);
@@ -295,31 +284,35 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
 }
 
 void
-UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPrediction> &stagePreds)
+UBTB::fillStagePredictions(const TickedUBTBEntry &entry,
+                          std::vector<FullBTBPrediction> &stagePreds)
 {
     FillStageLoop(s) {
-        DPRINTF(UBTB, "UBTB: assigning prediction for stage %d\n", s);
-
-        // Copy uBTB entries to stage prediction
-        stagePreds[s].btbEntries.clear();
-        stagePreds[s].condTakens.clear();  // TODO: consider moving this to another place -- the uBTB shouldn't need to
-                                           // take care of this
-        // Set predictions for each branch
-        stagePreds[s].predTick = curTick();
-    }
-
-    if (entry.valid) {
-        FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
-        if (entry.isCond) {
-            // the always taken field of BTBEntry is ignored in uBTB
-            // uBTB always assumes present entries to be taken
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({entry.pc, true});
-        } else if (entry.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n", entry.pc, entry.target);
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({entry.pc, entry.target});
-            if (entry.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = entry.target;
+        auto &pred = stagePreds[s];
+        pred.btbEntries.clear();
+        pred.condTakens.clear();
+        pred.indirectTargets.clear();
+        pred.returnTarget = 0;
+        pred.predTick = curTick();
+        if (!entry.usable()) {
+            continue;
+        }
+        pred.btbEntries = entry.slots;
+        bool hasReturn = false;
+        for (const auto &slot : entry.slots) {
+            if (slot.isCond) {
+                pred.condTakens.push_back(
+                    {slot.pc, slot.alwaysTaken || slot.ctr >= 0});
+            }
+            if (slot.isIndirect) {
+                if (slot.isReturn) {
+                    if (!hasReturn) {
+                        pred.returnTarget = slot.target;
+                        hasReturn = true;
+                    }
+                } else {
+                    pred.indirectTargets.push_back({slot.pc, slot.target});
+                }
             }
         }
     }
@@ -341,8 +334,6 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
     // Fill predictions for each pipeline stage
     fillStagePredictions(entry, stagePreds);
 
-    // Update metadata for later stages
-    rememberLastPred(tid, getSet(startAddr, asidHash, tid), it);
 }
 
 void
@@ -368,7 +359,6 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
 
     const unsigned set = getSet(startAddr, asidHash, tid);
     Addr current_tag = getTag(startAddr, asidHash);
-    Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
     DPRINTF(UBTB, "uBTB: compare tag %#lx in set %u\n",
             current_tag, set);
@@ -382,7 +372,7 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
         }
         occupancy++;
         const bool matches = it->tag == current_tag &&
-            it->pc >= startAddr && it->pc < block_end;
+            it->startPC == startAddr;
         if (!matches) {
             continue;
         }
@@ -417,7 +407,14 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
         return ubtb.end();
     }
 
-    if (port == LookupPort::Prediction) {
+    if (hit->overflow) {
+        if (port == LookupPort::Prediction) {
+            ubtbStats.predOverflowMisses++;
+        } else {
+            ubtbStats.checkerMisses++;
+            ubtbStats.checkerOverflowMisses++;
+        }
+    } else if (port == LookupPort::Prediction) {
         ubtbStats.setHits[set]++;
     } else {
         ubtbStats.checkerHits++;
@@ -426,26 +423,20 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash,
     return hit;
 }
 
-BTBEntry
+UBTB::BlockEntry
 UBTB::lookupForChecker(Addr startAddr, ThreadID tid, uint8_t asidHash)
 {
     auto entry = lookup(startAddr, tid, asidHash, LookupPort::Checker);
-    return entry != ubtb.end() ? BTBEntry(*entry) : BTBEntry();
+    return entry != ubtb.end() ? BlockEntry(*entry) : BlockEntry();
 }
 
 void
-UBTB::recordCheckerResult(bool hit, bool matches)
+UBTB::recordCheckerResult(bool matches)
 {
-    if (hit) {
-        if (matches) {
-            ubtbStats.checkerHitAgreements++;
-        } else {
-            ubtbStats.checkerHitDisagreements++;
-        }
-    } else if (matches) {
-        ubtbStats.checkerMissFallThroughAgreements++;
+    if (matches) {
+        ubtbStats.checkerHitAgreements++;
     } else {
-        ubtbStats.checkerMissFallThroughDisagreements++;
+        ubtbStats.checkerHitDisagreements++;
     }
 }
 
@@ -459,15 +450,12 @@ UBTB::lookupNoSideEffect(Addr startAddr, ThreadID tid,
 
     const unsigned set = getSet(startAddr, asidHash, tid);
     Addr current_tag = getTag(startAddr, asidHash);
-    Addr block_end = (startAddr + predictWidth) &
-        ~mask(floorLog2(predictWidth) - 1);
     auto [range_begin, range_end] = setRange(set, tid);
     auto it = std::find_if(range_begin, range_end,
-                           [current_tag, startAddr, block_end]
+                           [current_tag, startAddr]
                            (const TickedUBTBEntry &way) {
                                return way.valid && way.tag == current_tag &&
-                                      way.pc >= startAddr &&
-                                      way.pc < block_end;
+                                      way.startPC == startAddr;
                            });
 
     return it != range_end ? *it : TickedUBTBEntry();
@@ -475,19 +463,63 @@ UBTB::lookupNoSideEffect(Addr startAddr, ThreadID tid,
 
 
 void
-UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry,
-                      Addr startAddr, uint8_t asidHash)
+UBTB::fillLayout(Addr startAddr, ThreadID tid, uint8_t asidHash,
+                 const std::vector<BTBEntry> &entries)
 {
-    assert(newTakenEntry.valid);
-    TickedUBTBEntry newEntry = TickedUBTBEntry(newTakenEntry, curTick());
-    // important! this is so that target set by RAS or ITTAGE is used
-    newEntry.target = newTakenEntry.target;
-    newEntry.ctr = 0; // have a bug here:ubtb will accept ctr from mbtb, reset it to 0 at here
-    // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
-    newEntry.tag = getTag(startAddr, asidHash);
-    *oldEntryIter = newEntry;
-}
+    if (startAddr & 1) {
+        return;
+    }
 
+    TickedUBTBEntry layout;
+    layout.valid = true;
+    layout.startPC = startAddr;
+    layout.tag = getTag(startAddr, asidHash);
+    layout.tick = curTick();
+    const Addr end = (startAddr + predictWidth) &
+        ~mask(floorLog2(predictWidth) - 1);
+
+    // The input is bounded by the supplying BTB's capacity. Normalize the
+    // whole window before truncation, retaining branches after the exit.
+    for (auto slot : entries) {
+        if (slot.valid && slot.pc >= startAddr && slot.pc < end) {
+            slot.source = getComponentIdx();
+            layout.slots.push_back(slot);
+        }
+    }
+    std::stable_sort(layout.slots.begin(), layout.slots.end(),
+        [](const BTBEntry &a, const BTBEntry &b) { return a.pc < b.pc; });
+    layout.slots.erase(std::unique(layout.slots.begin(), layout.slots.end(),
+        [](const BTBEntry &a, const BTBEntry &b) { return a.pc == b.pc; }),
+        layout.slots.end());
+    layout.overflow = layout.slots.size() > numSlots;
+    if (layout.overflow) {
+        layout.slots.resize(numSlots);
+        ubtbStats.layoutOverflowFills++;
+    }
+    ubtbStats.layoutFills++;
+    ubtbStats.layoutSlots.sample(layout.slots.size());
+
+    const unsigned set = getSet(startAddr, asidHash, tid);
+    auto [begin, endWay] = setRange(set, tid);
+    auto dest = std::find_if(begin, endWay,
+        [&layout](const TickedUBTBEntry &way) {
+            return way.valid && way.tag == layout.tag &&
+                way.startPC == layout.startPC;
+        });
+    if (dest == endWay) {
+        ubtbStats.setAllocations[set]++;
+        dest = std::find_if(begin, endWay,
+            [](const TickedUBTBEntry &way) { return !way.valid; });
+        if (dest == endWay) {
+            ubtbStats.setEvictions[set]++;
+            dest = std::min_element(begin, endWay,
+                [](const TickedUBTBEntry &a, const TickedUBTBEntry &b) {
+                    return a.tick < b.tick;
+                });
+        }
+    }
+    *dest = std::move(layout);
+}
 
 void
 UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
@@ -495,139 +527,73 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     if (!usingS3Pred) {
         return;
     }
-
-    auto takenEntry = s3Pred.getTakenEntry();
-    if (takenEntry.valid) {
+    const bool taken = s3Pred.isTaken();
+    const auto &meta = threadMeta[s3Pred.tid];
+    const bool hit = meta && meta->hit_entry.usable();
+    if (taken) {
         ubtbStats.s3UpdateHits++;
-    }else {
-        ubtbStats.s3UpdateMisses++;
-    }
-    auto startAddr = s3Pred.bbStart;
-    const ThreadID tid = s3Pred.tid;
-    UBTBIter oldEntryIter = getLastPredEntry(tid);
-    takenEntry.source = getComponentIdx();
-    updateNewEntry(oldEntryIter, takenEntry, startAddr, tid,
-                   s3Pred.asidHash);
-
-}
-
-
-
-void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
-                          const Addr startAddr, ThreadID tid,
-                          uint8_t asidHash)
-{
-    const unsigned set = getSet(startAddr, asidHash, tid);
-    auto [rangeBegin, rangeEnd] = setRange(set, tid);
-    //using the FB final taken branch to update uBTB
-    if (oldEntryIter != ubtb.end()) {
-        assert(oldEntryIter->valid); //lookup() should only return valid entry
-        assert(oldEntryIter >= rangeBegin && oldEntryIter < rangeEnd);
-    }
-    if (oldEntryIter != ubtb.end() && !takenEntry.valid) {
-            // S0 has a hit entry, but S3 predicts fall through
-            ubtbStats.s1Hits3FallThrough++;
-            updateUCtr(oldEntryIter->uctr, false);
-            if (oldEntryIter->uctr == 0) {
-                ubtbStats.s1InvalidatedEntries++;
-                oldEntryIter->valid = false;
-            }
-        } else if (oldEntryIter == ubtb.end() && takenEntry.valid) {
-            ubtbStats.s1Misses3Taken++;
-            ubtbStats.setAllocations[set]++;
-            /* S0 misses, but S3 predicts taken,
-            * generate new entry and replace another using LRU
-            */
-            UBTBIter toBeReplacedIter;
-            // First try to find an invalid entry in the set
-            bool foundInvalidEntry = false;
-
-            for (auto it = rangeBegin; it != rangeEnd; ++it) {
-                if (!it->valid) {
-                    toBeReplacedIter = it;
-                    foundInvalidEntry = true;
-                    break;
-                }
-            }
-
-            // If no invalid entry found, use LRU policy
-            // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
-            if (!foundInvalidEntry) {
-                // Find the least recently used entry
-                ubtbStats.setEvictions[set]++;
-                toBeReplacedIter = std::min_element(
-                    rangeBegin, rangeEnd,
-                    [](const TickedUBTBEntry &a, const TickedUBTBEntry &b) {
-                        return a.tick < b.tick;
-                    });
-            }
-
-            // Replace the entry with the new prediction
-            replaceOldEntry(toBeReplacedIter, takenEntry, startAddr, asidHash);
-
-        } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
+        if (hit) {
             ubtbStats.s1Hits3Taken++;
-            // both S0 and S3 predict taken
-            if (oldEntryIter->pc != takenEntry.pc || oldEntryIter->target != takenEntry.target) {
-                // S0 and S3 predict different branch instruction
-                updateUCtr(oldEntryIter->uctr, false);
-                if (oldEntryIter->uctr == 0) {
-                    // replace the old entry with the new one
-                    replaceOldEntry(oldEntryIter, takenEntry, startAddr, asidHash);
-                }
-            } else {
-                // S0 and S3 predict the same (brpc and target)
-                updateUCtr(oldEntryIter->uctr, true);
-            }
+        } else {
+            ubtbStats.s1Misses3Taken++;
+        }
+    } else {
+        ubtbStats.s3UpdateMisses++;
+        if (hit) {
+            ubtbStats.s1Hits3FallThrough++;
         } else {
             ubtbStats.s1Misses3FallThrough++;
-            // both S0 and S3 predict fall through, do nothing
         }
+    }
+    // Copy BTB layout and base counters, not the final predicted exit or
+    // conditional directions produced by TAGE/SC.
+    fillLayout(s3Pred.bbStart, s3Pred.tid, s3Pred.asidHash,
+               s3Pred.btbEntries);
 }
-
 
 void
 UBTB::update(const FetchTarget &stream)
 {
-    auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
-    // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = stream.updateEndInstPC;
-
-    auto pred_hit_entry = meta->hit_entry;
-    // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
-     // Use BTBEntry instead of BranchInfo; make it invalid when not taken
-    BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
-    auto startAddr = stream.getRealStartPC();
-    Addr oldtag = getTag(startAddr, stream.asidHash);
-    Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-
-    const unsigned set = getSet(startAddr, stream.asidHash, stream.tid);
-    auto [rangeBegin, rangeEnd] = setRange(set, stream.tid);
-    UBTBIter oldEntryIter = ubtb.end();
-
-    oldEntryIter = meta->hit_entry.valid ?
-                    std::find_if(rangeBegin, rangeEnd, [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
-                        return e.valid && e.tag == oldtag &&
-                               e.pc >= startAddr && e.pc < block_end;
-                    }) : rangeEnd;
-    if (oldEntryIter == rangeEnd) {
-        oldEntryIter = ubtb.end();
-    }
-
+    const auto meta = std::static_pointer_cast<UBTBMeta>(
+        stream.predMetas[getComponentIdx()]);
+    const auto predictedExit = meta->hit_entry.getTakenEntry();
     if (stream.exeTaken) {
-        if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
-            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+        if (!predictedExit.valid || predictedExit != stream.exeBranchInfo) {
             ubtbStats.updateMiss++;
-        }else {
+        } else {
             ubtbStats.updateHit++;
         }
     }
 
-    // Verify uBTB state
-    assert(ubtb.size() <= totalEntries);
     if (!usingS3Pred) {
-        updateNewEntry(oldEntryIter, takenEntry, startAddr, stream.tid,
-                       stream.asidHash);
+        // Preserve the legacy backend training option with a whole-window
+        // snapshot. Only executed slots train their base direction counters.
+        auto entries = stream.predBTBEntries;
+        if (stream.exeTaken) {
+            auto it = std::find_if(entries.begin(), entries.end(),
+                [&stream](const BTBEntry &entry) {
+                    return entry.pc == stream.exeBranchInfo.pc;
+                });
+            if (it == entries.end()) {
+                entries.emplace_back(stream.exeBranchInfo);
+            } else {
+                static_cast<BranchInfo &>(*it) = stream.exeBranchInfo;
+                it->valid = true;
+            }
+        }
+        for (auto &slot : entries) {
+            if (slot.valid && slot.isCond &&
+                slot.pc >= stream.getRealStartPC() &&
+                slot.pc <= stream.updateEndInstPC) {
+                const bool taken = stream.exeTaken &&
+                    slot.pc == stream.exeBranchInfo.pc;
+                slot.alwaysTaken = slot.alwaysTaken && taken;
+                slot.ctr = taken ? std::min(slot.ctr + 1, 1) :
+                                   std::max(slot.ctr - 1, -2);
+            }
+        }
+        fillLayout(stream.getRealStartPC(), stream.tid, stream.asidHash,
+                   entries);
     }
 }
 
@@ -639,9 +605,12 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     auto &hit_entry = meta->hit_entry;
     auto pc = inst->getPC();
     auto npc = inst->getNPC();
-    bool this_branch_hit = hit_entry.pc == pc;
+    const auto slot = std::find_if(
+        hit_entry.slots.begin(), hit_entry.slots.end(),
+        [pc](const BTBEntry &entry) { return entry.pc == pc; });
+    const bool this_branch_hit = hit_entry.usable() &&
+        slot != hit_entry.slots.end();
 
-    bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
     bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc;  // all uncond should be taken
     Addr this_branch_target = npc;
     if (this_branch_hit) {
@@ -658,9 +627,8 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
             } else {
                 ubtbStats.condHitNotTakens++;
             }
-            // TODO: for now we assume uBTB hit means the branch is taken, this might change later
-            // bool pred_taken = hit_entry.ctr >= 0;
-            if (this_branch_taken) {
+            const bool predictedTaken = slot->alwaysTaken || slot->ctr >= 0;
+            if (predictedTaken == this_branch_taken) {
                 ubtbStats.condPredCorrect++;
             } else {
                 ubtbStats.condPredWrong++;
@@ -673,7 +641,7 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         if (!inst->isNonSpeculative()) {
             if (inst->isIndirectCtrl()) {
                 ubtbStats.indirectHits++;
-                Addr pred_target = hit_entry.target;
+                Addr pred_target = slot->target;
                 if (pred_target == this_branch_target) {
                     ubtbStats.indirectPredCorrect++;
                 } else {
@@ -766,9 +734,9 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(checkerLookups, statistics::units::Count::get(),
                "PairTAGE second-block reads issued on the uBTB checker port"),
       ADD_STAT(checkerHits, statistics::units::Count::get(),
-               "uBTB checker-port reads that found a predicted exit"),
+               "uBTB checker-port reads that found a complete block layout"),
       ADD_STAT(checkerMisses, statistics::units::Count::get(),
-               "uBTB checker-port reads that predicted fall-through"),
+               "uBTB checker-port misses, including overflow layouts"),
       ADD_STAT(checkerFullMisses, statistics::units::Count::get(),
                "uBTB checker-port misses whose selected set had no free way"),
       ADD_STAT(checkerSetOccupancy, statistics::units::Count::get(),
@@ -777,14 +745,16 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
                "PairTAGE second blocks agreeing with a uBTB hit prediction"),
       ADD_STAT(checkerHitDisagreements, statistics::units::Count::get(),
                "PairTAGE second blocks disagreeing with a uBTB hit prediction"),
-      ADD_STAT(checkerMissFallThroughAgreements,
-               statistics::units::Count::get(),
-               "PairTAGE branchless second blocks agreeing with a uBTB miss "
-               "fall-through"),
-      ADD_STAT(checkerMissFallThroughDisagreements,
-               statistics::units::Count::get(),
-               "PairTAGE second blocks disagreeing with a uBTB miss "
-               "fall-through"),
+      ADD_STAT(predOverflowMisses, statistics::units::Count::get(),
+               "uBTB prediction misses caused by layout overflow"),
+      ADD_STAT(checkerOverflowMisses, statistics::units::Count::get(),
+               "uBTB checker misses caused by layout overflow"),
+      ADD_STAT(layoutFills, statistics::units::Count::get(),
+               "uBTB block layout fills, including empty and overflow layouts"),
+      ADD_STAT(layoutOverflowFills, statistics::units::Count::get(),
+               "uBTB fills with more branches than the slot capacity"),
+      ADD_STAT(layoutSlots, statistics::units::Count::get(),
+               "Stored slots per uBTB layout fill, capped at numSlots"),
 
       ADD_STAT(allBranchHits, statistics::units::Count::get(),
                "all types of branches committed that was predicted hit"),
@@ -829,7 +799,6 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(s1Misses3Taken, statistics::units::Count::get(), "s1 misses s3 predicted taken"),
       ADD_STAT(s1Hits3Taken, statistics::units::Count::get(), "s1 hits s3 predicted taken"),
       ADD_STAT(s1Misses3FallThrough, statistics::units::Count::get(), "s1 misses s3 predicted fall through"),
-      ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries"),
       ADD_STAT(s1OverrideByReason, statistics::units::Count::get(),
                "uBTB-sourced S1 override events bucketed by override reason"),
       ADD_STAT(s1OverrideByReasonAndAbtbHit, statistics::units::Count::get(),
@@ -856,7 +825,8 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
 #endif
 
 void
-UBTB::UBTBStats::init(unsigned num_sets, unsigned accessible_ways)
+UBTB::UBTBStats::init(unsigned num_sets, unsigned accessible_ways,
+                       unsigned num_slots)
 {
     setLookups.init(num_sets);
     setHits.init(num_sets);
@@ -865,6 +835,7 @@ UBTB::UBTBStats::init(unsigned num_sets, unsigned accessible_ways)
     setFullMisses.init(num_sets);
     setOccupancy.init(0, accessible_ways, 1);
     checkerSetOccupancy.init(0, accessible_ways, 1);
+    layoutSlots.init(0, num_slots, 1);
 
 #ifndef UNIT_TEST
     for (unsigned set = 0; set < num_sets; ++set) {

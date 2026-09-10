@@ -1018,6 +1018,7 @@ class UBTB(TimedBaseBTBPredictor):
 
     numSets = Param.Unsigned(64, "Number of sets in the uBTB")
     numWays = Param.Unsigned(4, "Number of ways per set in the uBTB")
+    numSlots = Param.Unsigned(4, "Maximum branch slots per uBTB block layout")
     tagBits = Param.Unsigned(22, "Number of bits in the tag")
 
     numDelay = 0

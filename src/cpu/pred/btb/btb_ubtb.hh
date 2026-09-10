@@ -35,11 +35,8 @@
  *
  * Key Features:
  * - Fast lookup using tags from branch addresses
- * - Each entry contains:
- *   - Branch type (conditional, unconditional, indirect, call, return)
- *   - Branch target address
- *   - 2-bit saturation counters for replacement policy
- *   - Timestamp for MRU tracking
+ * - Each entry stores a bounded block layout with branch types, targets and
+ *   base direction counters. Overflow layouts cannot supply predictions.
  */
 
 #ifndef __CPU_PRED_BTB_UBTB_HH__
@@ -88,29 +85,34 @@ class UBTB : public TimedBaseBTBPredictor
 
 #ifdef UNIT_TEST
     UBTB(unsigned num_sets, unsigned num_ways, unsigned tag_bits,
-         bool using_s3_pred = true, bool smt_tid_partitioned = false);
+         bool using_s3_pred = true, bool smt_tid_partitioned = false,
+         unsigned num_slots = 4);
 #else
     typedef UBTBParams Params;
 
     UBTB(const Params& p);
 #endif
 
-    /*
-     * Micro-BTB Entry with timestamp for MRU replacement
-     *
-     * This structure extends BTBEntry to implement a uBTB entry with:
-     * - valid: validity bit for this entry
-     * - uctr: 2-bit saturation counter used in replacement policy
-     * - tag: tag bits from branch address [23:1]
-     * - tick: timestamp used for LRU (Least Recently Used) replacement policy
+    /** A snapshot of the whole prediction window, including not-taken slots.
+     * An empty usable layout is a known branchless block, distinct from miss.
+     * Slots are sorted by PC and bounded by numSlots, even on overflow.
      */
-    typedef struct TickedUBTBEntry : public BTBEntry
+    struct BlockEntry
     {
-        unsigned uctr; //2-bit saturation counter used in replacement policy
-        uint64_t tick;  // timestamp for MRU replacement
-        TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0) {}
-        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick) {}
-    }TickedUBTBEntry;
+        bool valid{false};
+        bool overflow{false};
+        Addr startPC{0};
+        Addr tag{0};
+        std::vector<BTBEntry> slots;
+
+        bool usable() const { return valid && !overflow; }
+        BTBEntry getTakenEntry() const;
+    };
+
+    struct TickedUBTBEntry : public BlockEntry
+    {
+        uint64_t tick{0};
+    };
 
     using UBTBIter = typename std::vector<TickedUBTBEntry>::iterator;
     using ConstUBTBIter =
@@ -146,27 +148,21 @@ class UBTB : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
-    /** Updates the uBTB predictions based on S3 prediction results.
-     * This function is called from decoupled_bpred during S3 prediction
-     * specifically, it reconciles differences between S1 (uBTB) and S3 predictions,
-     * adjusting the uBTB's confidence in its predictions and updating entries
-     * when necessary to improve future predictions.
-     *
-     * @param s3Pred The S3 prediction containing branch information and target
+    /** Fill the complete BTB layout carried by S3, preserving base counters.
+     * Final TAGE/SC directions and RAS/ITTAGE targets are not stored here.
      */
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
-    /** Read the independent checker port used for PairTAGE's second block.
-     * The returned entry is the uBTB's single predicted exit. An invalid
-     * entry represents the uBTB fall-through prediction.
+    /** Read a layout without overwriting the primary prediction metadata.
+     * Only usable() layouts may be used as a second-block teacher.
      */
-    BTBEntry lookupForChecker(Addr startAddr, ThreadID tid,
-                              uint8_t asidHash);
+    BlockEntry lookupForChecker(Addr startAddr, ThreadID tid,
+                               uint8_t asidHash);
 
     /** Attribute whether a produced PairTAGE second block agreed with the
      * checker prediction returned by lookupForChecker().
      */
-    void recordCheckerResult(bool hit, bool matches);
+    void recordCheckerResult(bool matches);
 
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
@@ -211,23 +207,13 @@ class UBTB : public TimedBaseBTBPredictor
 
     // for debuggin purpose
     void printTickedUBTBEntry(const TickedUBTBEntry &e) {
-        DPRINTF(UBTB, "uBTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
-            cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.tick);
+        DPRINTF(UBTB,
+                "uBTB layout: valid %d, startPC %#lx, tag %#lx, "
+                "slots %zu, overflow %d, tick %lu\n",
+                e.valid, e.startPC, e.tag, e.slots.size(), e.overflow, e.tick);
     }
 
   private:
-
-    /** this struct holds the lastest prediction made by uBTB,
-     * it's set in putPCHistory, and used in updateUsingS3Pred
-     */
-    struct LastPred
-    {
-        bool valid{false};
-        unsigned set{0};
-        unsigned way{0};
-    };
-    std::vector<LastPred> lastPred;
 
     /** this struct holds the metadata for uBTB,
      * note that unlike other predictors, the ubtb meta serves only statistical purpose
@@ -249,8 +235,6 @@ class UBTB : public TimedBaseBTBPredictor
     std::pair<UBTBIter, UBTBIter> setRange(unsigned set, ThreadID tid);
     std::pair<ConstUBTBIter, ConstUBTBIter>
     setRange(unsigned set, ThreadID tid) const;
-    void rememberLastPred(ThreadID tid, unsigned set, UBTBIter entry);
-    UBTBIter getLastPredEntry(ThreadID tid);
 
     /** Returns the tag bits of a given address.
      *  The tag is calculated as: (pc >> 1) & tagMask
@@ -260,11 +244,6 @@ class UBTB : public TimedBaseBTBPredictor
     inline Addr getTag(Addr startPC, uint8_t asidHash) const {
         Addr baseTag = (startPC >> 1) & tagMask;
         return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
-    }
-
-    void updateUCtr(unsigned &ctr, bool inc) {
-        if (inc && ctr < 3) {ctr++;}
-        if (!inc && ctr > 0) {ctr--;}
     }
 
     /** helper method called by putPCHistory: Searches for a entry in the uBTB.
@@ -286,7 +265,7 @@ class UBTB : public TimedBaseBTBPredictor
      * @param entry The uBTB entry to check
      * @param startAddr The start address of the fetch block
      */
-    void PredStatistics(const TickedUBTBEntry entry, Addr startAddr);
+    void PredStatistics(const TickedUBTBEntry &entry, Addr startAddr);
 
     /** helper method called by putPCHistory: Fill predictions for each pipeline stage based on uBTB entries
      *  @param entry The BTB entry containing branch info
@@ -295,22 +274,12 @@ class UBTB : public TimedBaseBTBPredictor
     void fillStagePredictions(const TickedUBTBEntry& entry,
                               std::vector<FullBTBPrediction>& stagePreds);
 
-    /** helper method called in updateUsingS3Pred: This function replaces an existing uBTB entry with new prediction
-     *
-     * @param oldEntry Iterator to the entry to replace
-     * @param newPrediction The new prediction to store
-     */
-    void replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry,
-                         Addr startAddr, uint8_t asidHash);
-
-    //using the FB final taken branch to update uBTB
-    void updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
-                        const Addr startAddr, ThreadID tid,
-                        uint8_t asidHash);
+    void fillLayout(Addr startAddr, ThreadID tid, uint8_t asidHash,
+                    const std::vector<BTBEntry> &entries);
 
     /** The uBTB structure:
      *  - Stored flat as numSets consecutive groups of numWays entries
-     *  - Each entry can store one branch
+     *  - Each entry stores at most numSlots branches in one prediction window
      *  - Total size = numSets * numWays
      */
     std::vector<TickedUBTBEntry> ubtb;
@@ -318,6 +287,7 @@ class UBTB : public TimedBaseBTBPredictor
     /** uBTB configuration parameters */
     unsigned numSets;       // Number of sets
     unsigned numWays;       // Number of ways per set
+    unsigned numSlots;      // Maximum branches per block layout
     unsigned totalEntries;  // Derived total number of entries
 
     /** Address calculation masks and shifts */
@@ -387,8 +357,11 @@ class UBTB : public TimedBaseBTBPredictor
         Distribution checkerSetOccupancy;
         Scalar checkerHitAgreements;
         Scalar checkerHitDisagreements;
-        Scalar checkerMissFallThroughAgreements;
-        Scalar checkerMissFallThroughDisagreements;
+        Scalar predOverflowMisses;
+        Scalar checkerOverflowMisses;
+        Scalar layoutFills;
+        Scalar layoutOverflowFills;
+        Distribution layoutSlots;
 
         // per branch statistics
         Scalar allBranchHits;
@@ -425,7 +398,6 @@ class UBTB : public TimedBaseBTBPredictor
         Scalar s1Misses3Taken;
         Scalar s1Hits3Taken;
         Scalar s1Misses3FallThrough;
-        Scalar s1InvalidatedEntries;
         Vector s1OverrideByReason;
         Vector2d s1OverrideByReasonAndAbtbHit;
         Vector2d s1OverrideByReasonAndAfterSquash;
@@ -435,7 +407,8 @@ class UBTB : public TimedBaseBTBPredictor
 #else
         UBTBStats(statistics::Group* parent);
 #endif
-        void init(unsigned num_sets, unsigned accessible_ways);
+        void init(unsigned num_sets, unsigned accessible_ways,
+                  unsigned num_slots);
     } ubtbStats;
 
 

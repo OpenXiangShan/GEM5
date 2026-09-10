@@ -1,171 +1,129 @@
 # Kunminghu uBTB 设计说明
 
-## 1. 文档范围
+## 1. 定位与建模范围
 
-本文档说明 Kunminghu v3 中 `uBTB` 的设计定位和几个关键取舍，重点回答：
+uBTB 在 S1 提供快速单块预测，并通过独立的 checker 查询为 PairTAGE 的第二块提供布局。
+它保留 redirect 后立即提供预测的能力：ahead 预测器尚在恢复时，uBTB 仍可按当前 PC 查询。
 
-- 为什么在 Kunminghu v3 中仍然保留 `uBTB`
-- 为什么 `uBTB` 只存 taken branch
-- 为什么 `uBTB` 默认使用 `S3` 最终预测结果更新
+当前表项保存整个预测窗口内的分支布局，包含 not-taken 分支以及预测出口之后的分支。
+本阶段实现布局快照；MainBTB 训练 write-through、换出 invalidate，以及 MainTAGE 双块共享
+set 的协议尚未实现。因此，完整命中表示快照没有因 slot 容量被截断，不保证快照与
+MainBTB 当前内容严格一致。
 
-本文档不展开：
+## 2. 参数与存储
 
-- `AheadBTB`
-- `MicroTAGE`
-- `2taken` 新方案细节
+| 参数 | 默认值 | 含义 |
+|---|---|---|
+| `numSets` | 64 | set 数，非零且为 2 的幂 |
+| `numWays` | 4 | 每组 way 数；SMT 按线程切分时须为偶数 |
+| `numSlots` | 4 | 每项最大分支 slot 数，非零 |
+| `tagBits` | 22 | uBTB tag 位宽 |
+| `numDelay` | 0 | 快速预测级延迟 |
+| `usingS3Pred` | true | 从正常预测的 S3 BTB 布局回填 |
 
-这些应由单独文档说明。
+默认容量为 256 个块，每块至多 4 个分支；调整 set/way 不改变每块 slot 容量。
+配置入口为 `src/cpu/pred/BranchPredictor.py`，运行配置可分别覆盖这些参数。
 
-## 2. 基本定位
+每个块项保存：
 
-`uBTB` 基本继承自 Kunminghu v2 时代的思路，本质上是一个非常靠前、非常轻量的 taken-target predictor。
+- `valid`、`startPC`、块 tag、组内 LRU 时间戳；
+- 按 PC 升序排列的 `slots`，每个 slot 保存分支类型、指令长度、目标和基础方向计数器；
+- `overflow`：完整输入布局的去重分支数超过 `numSlots`。
 
-从实现上看，它的结构很直接：
+位置和目标用模拟器已有的完整地址表示。slot 向量长度限制在 `numSlots`；
+overflow 时只保留有限前缀，任何预测消费者都必须先检查 `usable()`。
+组内查找和替换为 O(numWays)，返回布局和方向选择为 O(numSlots)，不扫描整个 uBTB。
+回填在容量有界的输入布局上排序、去重并截断。
 
-- 默认组织为 `1 set × 32 ways`，等价于原来的 32 路全相连
-- 也可以通过 `numSets` 和 `numWays` 配置为规则的组相连结构
-- `S1` 零延迟预测
-- 只存一个 taken branch 的基本信息
+## 3. 查询与方向选择
 
-这里最重要的不是它“预测得有多准”，而是它“出结果足够快”。
+快速预测与 checker 共享存储，各自统计查询；checker 不覆盖主预测的 metadata。
+两条读路径都区分三种状态：
 
-如果只保留最粗的一层理解，可以把 `uBTB` 看成：
+| 状态 | 快速预测 | 第二块 checker |
+|---|---|---|
+| 完整非空布局 | 按基础方向选择 first-taken | 对各条件 slot 查询 MainTAGE，选择 first-taken |
+| 完整空布局 | fall-through | 已知无分支的 fall-through |
+| miss 或 overflow | fall-through 兜底 | 不可验证，不提供训练真值 |
 
-- 前端最早可用的 target 候选提供者
-- 在更重预测器尚未完成前，先给出一个很快的 taken-target 方向
+快速预测对条件 slot 使用 `alwaysTaken || ctr >= 0`，无条件分支恒 taken；
+按 PC 顺序选择第一个 taken，全部条件分支 not-taken 时走块边界。
+间接跳转和 return 的基础目标来自对应 slot，后级仍可通过 ITTAGE/RAS 覆盖。
 
-## 3. 为什么 Kunminghu v3 仍然保留 uBTB
+checker 将完整布局交给现有 MainTAGE 查询接口，允许覆盖每个条件 slot 的方向；
+TAGE 无 provider 时使用保留下来的 slot 计数器。它仍沿用当前模型的独立 TAGE 查询，
+尚不表示草案中的 H1-index/H2-tag 共享 SRAM 读已经实现。
 
-在 Kunminghu v3 中，更强的早期预测器其实已经存在，例如：
+## 4. 回填与更新
 
-- `AheadBTB`
-- `MicroTAGE`
+默认通过 `updateUsingS3Pred()` 保存 S3 携带的 `btbEntries`：
 
-因此，单从“正常预测路径上的精度和覆盖能力”看，`uBTB` 并不是唯一的早期预测来源。
+1. 保留当前预测窗口内所有有效 slot，包括最终出口之后的 slot；
+2. 排序、按分支 PC 去重，保留 BTB 基础计数器和目标；
+3. 超过 slot 容量则标记 overflow；
+4. 按当前块身份更新已有项，否则在对应 set 内分配空 way 或替换 LRU。
 
-但 `uBTB` 仍然保留，最核心的原因不是它比 `AheadBTB` 更强，而是它在 redirect 场景下更快。
+回填不再依赖单出口置信度，也不把 S3 的 TAGE/SC 最终方向写成基础计数器。
+空布局同样可以分配；从非空布局更新为空布局时不会残留旧出口。
+回填重新匹配块身份，避免主预测之后的替换导致使用过期 way。
 
-这是因为：
+关闭 `usingS3Pred` 时保留后端更新选项：从 FTQ 的布局快照补入实际 taken 分支，
+更新已执行条件 slot 的基础计数器，保留出口之后的 slot。这是兼容训练模式，
+同样不提供 MainBTB 严格包含性保证。
 
-- `AheadBTB` 和 `MicroTAGE` 属于 ahead pipeline 结构
-- 它们依赖前面若干拍已经铺好的预测流水
-- 当发生 predecode redirect 或 resolve redirect 时，它们无法在 redirect 当拍立即重新给出预测结果
+## 5. PairTAGE 与 FTQ 适配
 
-而 `uBTB` 是真正的 `S1` 直接预测器，因此在 redirect 发生后，它仍然可以立即给出一个 target 候选。
+checker miss/overflow 时，第二块不入队，也不生成 fall-through 教师包。
+P1 未改变时，PairTAGE 保留已有 P2；不可验证样本不计入第二块准确率。
 
-所以，Kunminghu v3 保留 `uBTB` 的首要原因，不是“它本身预测最好”，而是：
+完整空布局可作为独立的 fall-through 教师。第二块入队支持这种无分支表示，
+不伪造 BTB 分支 slot。非空布局保留真实指令长度，包括压缩分支。
 
-- 在最早时刻提供 taken target
-- 尤其在 redirect 场景下提供单拍可用的快速恢复能力
+第二块 FTQ 保存已检查的全部 slot，以支持历史恢复和训练。当前仍保留从 MBTB
+补充布局的模拟器兼容路径，待严格一致性协议完成后再统一数据来源。
+现有入队 gating、pair override 时序和 pending-pair 训练机制不属于本阶段实现。
 
-`uBTB` 还有一个附带动机，是历史上便于做 `2taken` 扩展；但在当前文档里，这不是主线。
+## 6. 统计与验证
 
-## 4. uBTB 的 set-way 组织
+- `predHit/predMiss`、`checkerHits/checkerMisses` 按完整布局可用性计数；
+  空布局计 hit，overflow 计 miss。
+- `predOverflowMisses/checkerOverflowMisses` 单独归因容量不足。
+- `layoutFills/layoutOverflowFills/layoutSlots` 观察回填次数、溢出及 slot 使用量。
+- `checkerHitAgreements/checkerHitDisagreements` 只统计有完整教师布局的比较。
+- `twoTakenUbtbMissDrops` 包含 miss 和 overflow 导致的第二块丢弃。
+- commit 分支统计按完整布局中的 slot 判断命中，条件方向正确性使用基础计数器。
 
-当前默认配置是 `1 set × 32 ways`，因此保持了原有的 32 路全相连行为；实验配置可以显式指定规则的 `numSets × numWays` 组织，例如 `8 sets × 4 ways`。
+针对性单测覆盖多条件 first-taken、空布局、全 not-taken、overflow 与恢复、
+半对齐窗口、去重、目标/类型/指令长度、组内 LRU、ASID、SMT 和 checker metadata 隔离。
 
-参数语义是：
-
-- `numSets`：索引集合数，必须是 2 的幂，以便使用 mask 提取 set index
-- `numWays`：每个 set 的 way 数，只要为正数即可；SMT 按线程切分 way 时需要为偶数
-- 总容量由 `numSets × numWays` 派生，不再单独配置 `numEntries`
-
-这样组织的原因是：
-
-- `uBTB` 位于最早预测阶段，默认配置仍保持最短的全相连访问路径
-- 需要研究容量冲突时，可以增加 set 数或调整相联度，而不引入不整除的容量参数
-- 组内查找和替换只遍历目标 set 的有限 ways，热路径复杂度为 `O(numWays)`
-
-相联度变大时，tag 比较和替换的代价也会随 `numWays` 上升，因此它并不是一个适合无限扩张的方向。
-
-也正因为如此，Kunminghu v3 里更大、更复杂的块级预测能力并没有继续堆到 `uBTB` 上，而是交给了后面的 `AheadBTB`、`mBTB` 和 `TAGE` 系列。
-
-## 5. 为什么 uBTB 只存 taken branch
-
-这是 `uBTB` 最重要的容量取舍。
-
-当前 `uBTB` 并不试图把一个 fetch block 内所有 branch 都存下来。它只保留这个 block 当前代表性的 taken branch。
-
-这样设计的原因是：
-
-- `uBTB` 容量很小
-- 又要保持全相连和极短延迟
-- 如果同时存 not-taken branch，entry 很快就会不够用
-
-因此，`uBTB` 的基本哲学是：
-
-- 它不是完整的 block 结构缓存
-- 它只是最早阶段的 taken-target 候选缓存
-
-从预测语义上看：
-
-- 如果 `uBTB` 命中一个条件分支 entry，它默认把它视为 taken
-- `uBTB` 不负责细致的方向判定
-- 更重的方向预测和最终选择由后级预测器完成
-
-所以，`uBTB` 的优势是快，而不是细。
-
-## 6. 只存一个 taken branch 带来的代价
-
-一个 fetch block 在 `uBTB` 中只保留一个 taken branch，确实节省了容量，但也天然带来代价。
-
-如果同一个 fetch block 的“代表 taken branch”发生变化，那么 `uBTB` 里的旧 entry 就需要被替换掉。
-
-这意味着：
-
-- 不同 taken branch 可能围绕同一个 block entry 来回替换
-- 从而出现 ping-pong 效应
-
-换句话说，`uBTB` 的容量节省不是没有代价的。它用“只保留一个 taken branch”换来了更小、更快的结构，但也接受了某些场景下稳定性更差的问题。
-
-## 7. 为什么默认使用 S3 结果更新
-
-当前 `uBTB` 默认启用 `usingS3Pred`。
-
-这意味着，`uBTB` 的主要更新来源不是简单依赖 commit / resolve 更新通路，而是优先使用 `S3` 的最终预测结果来修正自己。
-
-这样做的好处是：
-
-- `uBTB` 可以更直接地对齐当前顶层预测链最终选择出来的 taken branch
-- 更快地修正自己在 `S1` 做出的粗预测
-
-这与 `uBTB` 的职责是匹配的。因为它本来就不是最终裁决者，而是：
-
-- 在前面先给一个足够快的候选
-- 再由后级更强预测器给出最终结论
-- 然后 `uBTB` 用这个最终结论来校正自己
-
-当然，`uBTB` 也仍然支持普通 update 通路：
-
-- 如果关闭 `usingS3Pred`
-- 它可以走 commit / resolve 相关的更新路径
-
-目前从经验上看，这几种更新方式的性能差异并不大。因此，当前默认采用 `S3` 更新，更像是让 `uBTB` 与顶层最终预测保持一致的工程选择，而不是决定性性能来源。
-
-## 8. 设计总结
-
-`uBTB` 当前设计可以概括成四句话：
-
-1. 它是 Kunminghu v3 中最早、最快的 taken-target 候选提供者。
-2. 它保留的核心原因，是 redirect 场景下仍能单拍给出预测。
-3. 它只存一个 taken branch，并默认使用 `1 set × 32 ways` 保持轻量的全相连结构，同时支持组相联实验。
-4. 它默认使用 `S3` 最终预测结果更新，使自己持续对齐顶层最终选择。
-
-所以，`uBTB` 不应被理解成一个“小号 mBTB”，而更像是：
-
-- 一个非常快的前级 taken-target 缓冲
-- 为更强但更晚的预测器争取时间
-
-## 9. 实现锚点
-
-当前最相关的实现文件有：
-
-- `src/cpu/pred/btb/btb_ubtb.hh`
-- `src/cpu/pred/btb/btb_ubtb.cc`
-- `src/cpu/pred/BranchPredictor.py`
-
-## 10. 参考资料
-
-- `docs/design-docs/frontend/bpu_top_level.md`
-- `docs/design-docs/frontend/mbtb_design.md`
-- `docs/design-docs/frontend/btb_tage_design.md`
+```bash
+scons build/RISCV/cpu/pred/btb/test/ubtb.test.opt --unit-test --gold-linker -j64
+build/RISCV/cpu/pred/btb/test/ubtb.test.opt
+scons build/RISCV/gem5.opt --gold-linker -j64
+```
+
+端到端验证应使用默认 64×4×4 配置运行带 difftest 的 CoreMark，并检查布局溢出、
+checker 命中率、第二块入队及历史恢复。容量变化带来的趋势需在相同配置与工作负载下比较。
+
+2026-09-10 本地验证：16 项 uBTB 测试、5 项 FTQ 布局/历史测试通过，
+修改区域的 gem5 样式检查和 `git diff --check` 通过；完整 gem5.opt 以 `-j64` 构建成功。
+
+```bash
+GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so \
+build/RISCV/gem5.opt -d out/coremark-ubtb-block-layout-20260910 \
+configs/example/kmhv3.py --raw-cpt \
+--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin
+```
+
+该运行启用 difftest，以 m5_exit 正常结束，执行 3,151,499 条指令。
+配置确认是 64 sets、4 ways、4 slots。checker 共查询 593,086 次，
+其中完整命中 508,129 次、miss 84,957 次（含 overflow 83,529 次），
+第二块成功入队 216,537 次。overflow 占据大部分 checker miss，说明 slot 容量
+限制已进入实际控制路径；此处只验证功能及计数，不据此推断相对旧模型的性能收益。
+
+## 7. 实现锚点
+
+- `src/cpu/pred/btb/btb_ubtb.hh`、`btb_ubtb.cc`：表项、查询、回填与统计
+- `src/cpu/pred/btb/decoupled_bpred.cc`：第二块 checker 和 FTQ 适配
+- `src/cpu/pred/btb/pairtage.cc`：教师包与不可验证时的训练处理
+- `src/cpu/pred/btb/test/ubtb.test.cc`：组相联和整块布局测试
