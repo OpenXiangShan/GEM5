@@ -32,6 +32,8 @@
 + **函数**: `SbufferRequest::recvTimingResp`
     - 确认响应的`Packet`与请求匹配。
     - 调用`completeSbufferEvict()`完成数据写回。
+    - 默认开启 `sbufferReleaseOnMiss`：miss 被 L1D/MSHR 接收时已释放物理 SBuffer 表项，最终响应只清理在途写请求并完成可见性更新；hit 和关闭开关的旧模式仍在响应时释放表项。
+    - 提前释放不等于写数据已经可见；MSHR 数据转发、fence/flush/drain 的等待条件见 [SBuffer 与 MSHR 生命周期](sbuffer-mshr-lifetime.md)。
 
 ---
 
