@@ -131,6 +131,10 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
                "Distinct SMT threads renamed in one cycle"),
       ADD_STAT(instsRenamedPerCycle, statistics::units::Count::get(),
                "Instructions renamed across all SMT threads in one cycle"),
+      ADD_STAT(eligibleCycles, statistics::units::Cycle::get(),
+               "Cycles with rename input and no backend stall"),
+      ADD_STAT(eligibleFullWidthCycles, statistics::units::Cycle::get(),
+               "Eligible cycles that rename the complete configured width"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
                "Number of squashed instructions processed by rename"),
       ADD_STAT(ROBFullEvents, statistics::units::Count::get(),
@@ -564,6 +568,18 @@ Rename::tick()
 
     stats.threadsRenamedPerCycle.sample(threads_renamed);
     stats.instsRenamedPerCycle.sample(renamed_this_cycle);
+
+    // Measure bandwidth only when rename has input, backend capacity, and no
+    // rename-side stall. This excludes idle and blocked cycles from the
+    // denominator used to assess decode-to-rename packet formation.
+    const bool eligible = fromDecode->size > 0 &&
+        !stallSig->blockRename[primary_tid] &&
+        toIEW->size < aggregateRenameWidth;
+    if (eligible) {
+        ++stats.eligibleCycles;
+        if (renamed_this_cycle == aggregateRenameWidth)
+            ++stats.eligibleFullWidthCycles;
+    }
 
     if (stallSig->blockRename[primary_tid]) {
         setAllStalls(stallSig->renameBlockReason[primary_tid]);
