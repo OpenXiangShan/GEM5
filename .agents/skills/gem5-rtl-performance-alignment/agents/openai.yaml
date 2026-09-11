@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEM5 / RTL Performance Alignment"
+  short_description: "Trace and close GEM5-to-RTL performance gaps"
+  default_prompt: "Use $gem5-rtl-performance-alignment to compare these GEM5 and RTL results; keep manual mode unless I explicitly request autonomous GEM5-only iteration."
