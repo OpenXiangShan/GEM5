@@ -277,6 +277,17 @@ Export('base_dir')
 # the ext directory should be on the #includes path
 main.Append(CPPPATH=[Dir('ext')])
 
+# vendored sqlite3 amalgamation headers (arch_db needs sqlite3.h; used when
+# the system doesn't ship libsqlite3-dev, version-matched to libsqlite3-0)
+main.Append(CPPPATH=[Dir('ext/sqlite3/include')])
+# unversioned .so symlink for -lsqlite3 (libsqlite3-dev normally provides it)
+main.Append(LIBPATH=[Dir('ext/sqlite3/lib')])
+
+# vendored boost headers (o3 uses boost::circular_buffer; used when the
+# system doesn't ship libboost-dev). -isystem so gem5's -Wundef/-Werror do
+# not fire inside boost's preprocessor machinery.
+main.Append(CCFLAGS=['-isystem', Dir('ext/boost/include').abspath])
+
 # Add shared top-level headers
 main.Prepend(CPPPATH=Dir('include'))
 
@@ -435,8 +446,11 @@ for variant_path in variant_paths:
                             '-Wno-unused-but-set-variable',
                             ])
 
-        # We always compile using C++17
-        env.Append(CXXFLAGS=['-std=c++17'])
+        # We always compile using C++20 (bumped from C++17 for the CCHI
+        # integration, which needs C++20 concepts/consteval from CHIron).
+        # Strict ISO mode (not gnu++20): the gnu dialect predefines 'linux'
+        # as a macro, which collides with gem5::linux namespaces.
+        env.Append(CXXFLAGS=['-std=c++20'])
 
         if sys.platform.startswith('freebsd'):
             env.Append(CCFLAGS=['-I/usr/local/include'])

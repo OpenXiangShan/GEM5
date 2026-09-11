@@ -148,8 +148,8 @@ def setKmhV3Params(args, system):
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
-    # l2 caches
-    if args.l2cache:
+    # l2 caches (absent in CCHI mode: the fabric/home replaces tol2bus/L2/L3)
+    if args.l2cache and not args.cchi:
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 4
@@ -184,8 +184,8 @@ def setKmhV3Params(args, system):
                 LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
             ]
 
-    # l3 cache
-    if args.l3cache:
+    # l3 cache (absent in CCHI mode)
+    if args.l3cache and not args.cchi:
         system.l3.mshrs = 64
         system.l3.do_fast_writeline = True
         system.l3.prefetch_can_offload = False

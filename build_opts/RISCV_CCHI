@@ -1,0 +1,5 @@
+TARGET_ISA = 'riscv'
+PROTOCOL = 'MI_example'
+
+# CCHI (CHIron Cohestra) integration enabled in this variant.
+WITH_CCHI = True

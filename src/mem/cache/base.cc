@@ -653,7 +653,14 @@ BaseCache::calReqInterval(PacketPtr pkt)
 {
     RequestorID reqId = pkt->requestorId();
     size_t sliceId = (getActualSliceNum() == 1) ? 0 : getSliceIdx(pkt->getAddr());
-    auto& prev = prevReqCycles[sliceId][reqId];
+    auto& sliceReqs = prevReqCycles[sliceId];
+    // RequestorIDs are assigned during port binding (init), after this
+    // vector was sized at construction with system->maxRequestors();
+    // requestors registered later (e.g. testers) would otherwise index
+    // out of bounds.
+    if (reqId >= sliceReqs.size())
+        sliceReqs.resize(reqId + 1, Cycles{0});
+    auto& prev = sliceReqs[reqId];
     if (prev == 0) {
         // first request
         prev = curCycle();
