@@ -41,6 +41,7 @@ def setKmhV3Params(args, system):
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4
+        cpu.redirectToFetchDelay = 4
         cpu.fetchQueueSize = 64
 
         # decode
