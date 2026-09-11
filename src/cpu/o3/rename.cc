@@ -534,6 +534,13 @@ Rename::tick()
         }
     }
 
+    // Sample eligibility before rename consumes input or fills the outgoing
+    // time-buffer slot. A valid primary thread already guarantees non-empty
+    // input and no incoming backend/free-register stall.
+    const bool eligible = !fixedbuffer[primary_tid].empty() &&
+        !stallSig->blockRename[primary_tid] && canRename(primary_tid) &&
+        toIEW->size == 0;
+
     unsigned renamed_this_cycle = 0;
     unsigned threads_renamed = 0;
     for (const ThreadID tid : selected_tids) {
@@ -569,12 +576,6 @@ Rename::tick()
     stats.threadsRenamedPerCycle.sample(threads_renamed);
     stats.instsRenamedPerCycle.sample(renamed_this_cycle);
 
-    // Measure bandwidth only when rename has input, backend capacity, and no
-    // rename-side stall. This excludes idle and blocked cycles from the
-    // denominator used to assess decode-to-rename packet formation.
-    const bool eligible = fromDecode->size > 0 &&
-        !stallSig->blockRename[primary_tid] &&
-        toIEW->size < aggregateRenameWidth;
     if (eligible) {
         ++stats.eligibleCycles;
         if (renamed_this_cycle == aggregateRenameWidth)

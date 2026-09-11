@@ -73,11 +73,6 @@ VectorMacroInst::finalizeMicroops(bool is_segment)
         return;
     }
 
-    panic_if(microops.size() > 8,
-             "Non-segment vector macro-op %s expands to %u uops; the "
-             "supported decode packet sizes are 1, 2, 4, and 8",
-             mnemonic, static_cast<unsigned>(microops.size()));
-
     const size_t padded_size = paddedVectorUopCount(microops.size());
     const StaticInstPtr padded_tail = microops.back();
     while (microops.size() < padded_size) {
