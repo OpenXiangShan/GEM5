@@ -124,11 +124,25 @@ if env['CONF']['TARGET_ISA'] == 'null':
           '../../base/stats/info.cc',
           '../../base/stats/storage.cc',
           '../../base/statistics.cc',
-          # bring in tracing/logger and helpers
+          # bring in tracing/logger and helpers (this also provides
+          # cur_tick.cc, which carries the 'gem5 trace' tag — do NOT list it
+          # explicitly as well, or the object appears twice on the link
+          # line and _curTickPtr gets multiply defined)
           with_tag('gem5 trace'),
-          # curTick reference + Stats Root for tests
-          '../../sim/cur_tick.cc',
-          '../../sim/root.cc')
+          # Stats Root for tests
+          '../../sim/root.cc',
+          # Root pulls in the SimObject/Globals/time infrastructure; without
+          # these objects the NULL-variant link fails with undefined
+          # references to gem5::SimObject::*, vtable for gem5::Globals,
+          # gem5::memUsage() and gem5::Time (mirrors the real-ISA branch
+          # below, which already lists exactly these sources).
+          '../../base/time.cc',
+          '../../base/hostinfo.cc',
+          '../../base/output.cc',
+          '../../sim/core.cc',
+          '../../sim/sim_object.cc',
+          '../../sim/globals.cc',
+          '../../sim/tags.cc')
 else:
     # Under real ISAs, link against common trace infra and avoid duplicate
     # compilation of cur_tick and stats glue (already provided by libs).
