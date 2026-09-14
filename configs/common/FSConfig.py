@@ -687,6 +687,10 @@ def makeXiangshanPlatformSystem(mem_mode, mdesc=None, np=1, ruby=False,
         self.bridge.cpu_side_port = self.membus.mem_side_ports
 
     self.uartlite  = UartLite()
+    # Keep debug console output from dominating short bare-metal runs.
+    # We do not study UART timing here, so prefer a near-functional UART for
+    # printf-heavy debug/program output.
+    self.uartlite.pio_latency = '1ns'
     self.uartlite.pio = self.iobus.mem_side_ports
 
     self.uart16550 = Uart16550(enable_fifo=True)
