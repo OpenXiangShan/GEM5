@@ -22,9 +22,9 @@ $ci-param-solver 帮我做一个 L2 BOP 参数求解并跑 CI。
 
 预期行为：
 
-- 不创建 spec，也不调用 `gh workflow run`。
-- 只询问仍缺少的语义信息：配置、目标路径、搜索域、参数约束、工作负载模式、目标指标、
-  停止预算、CI 并行度、远端引用，以及当前是否授权触发。
+- 不创建可执行的猜测性搜索，也不调用 `gh workflow run`。
+- 先调查现有 L2 BOP spec、配置路径和类型；只询问仍需用户决定的目标、搜索域、约束、
+  工作负载和预算。CI 引用缺失只阻塞触发；“并跑 CI”已提供触发授权，不重复确认。
 - 不自行编造检查点组、指标名称、参数范围或分支。
 
 ## 场景 2：信息互相矛盾
@@ -45,7 +45,7 @@ specific_benchmarks=mcf，solver_kind=bayes，max_parallel_trials=0；现在触�
 - 拒绝 `custom_bin + specific_benchmarks`。
 - 拒绝让这个七目标 spec 使用 `bayes`，并建议改用 `nsga2`。
 - 拒绝将候选试验并行度设置为零。
-- 在用户解决所有冲突前，不创建文件，也不触发任务。
+- 不触发有冲突的任务；继续解析现有 spec 并指出冲突来源，只暂停依赖未决选择的修改。
 
 ## 场景 3：完整的内建 BOP 请求
 
@@ -177,3 +177,9 @@ python3 .agents/skills/ci-param-solver/scripts/self_test.py
 
 如当前 agent 提供 Agent Skills validator，再用该 validator 检查
 `.agents/skills/ci-param-solver`；不要依赖某个用户 home 下的 validator 路径。
+
+## 已授权触发与本地任务边界
+
+- 场景 3 若改为“现在触发”，且目标远端含 spec：完成 dry-run 后直接执行一次 dispatch 并回查，不重复索要确认。
+- 用户只要求生成 spec，实验语义齐全但未给 CI 分支：完成 spec 和可用的本地预检，不为 CI 分支阻塞本地工作。
+- 用户给出明确要改的参数但未写对象路径：先查配置和源码；不能把可查明的技术事实一律交回用户。
