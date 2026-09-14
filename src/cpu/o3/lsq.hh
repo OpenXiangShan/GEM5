@@ -51,6 +51,7 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -852,6 +853,7 @@ class LSQ
         LSQ* lsq;
       public:
         StoreBufferEntry* sbuffer_entry=nullptr;
+        std::unique_ptr<StoreBufferEntry> releasedEntry;
         SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
         virtual ~SbufferRequest();
 
@@ -1088,6 +1090,8 @@ class LSQ
     StoreBufferEntry *findForwardingStoreBufferEntry(Addr block_paddr,
                                                      ThreadID load_tid,
                                                      InstSeqNum load_seq) const;
+    StoreBufferEntry *find_inflight_store_buffer_entry(
+        Addr block_paddr, ThreadID load_tid) const;
     void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
                                         const std::vector<bool> &byte_enable);
 
@@ -1186,14 +1190,19 @@ class LSQ
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
     StoreBuffer &getStoreBuffer() { return storeBuffer; }
-    bool storeBufferEmpty() const { return storeBuffer.size() == 0; }
+    bool storeBufferEmpty() const
+    {
+        return storeBuffer.size() == 0 && sbufferMissRequests.empty();
+    }
     bool storeBufferEmpty(ThreadID tid) const
     {
-        return storeBuffer.size(tid) == 0;
+        return storeBuffer.size(tid) == 0 && sbufferMissSeqs[tid].empty();
     }
     bool storeBufferEmpty(ThreadID tid, InstSeqNum seq_num) const
     {
-        return storeBuffer.size(tid, seq_num) == 0;
+        return storeBuffer.size(tid, seq_num) == 0 &&
+            (sbufferMissSeqs[tid].empty() ||
+             *sbufferMissSeqs[tid].begin() >= seq_num);
     }
     bool storeBufferFlushing(ThreadID tid) const { return _storeBufferFlushing[tid]; }
     bool storeBufferFlushing() const
@@ -1478,9 +1487,13 @@ class LSQ
     bool dcacheWriteStall = false;
     const uint32_t sbufferEvictThreshold;
     const uint32_t sbufferEntries;
+    const bool sbufferReleaseOnMiss;
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
+    std::unordered_map<Addr, SbufferRequest *> sbufferMissRequests;
+    std::multiset<InstSeqNum> sbufferMissSeqs[MaxThreads];
+    void release_sbuffer_miss_entry(SbufferRequest *request);
     bool _storeBufferFlushing[MaxThreads] = {false};
     InstSeqNum _storeBufferFlushBeforeSeq[MaxThreads] = {
         static_cast<InstSeqNum>(-1)
@@ -1576,6 +1589,10 @@ class LSQ
         statistics::Scalar sbufferEvictDuetoTimeout;
         /** Handshake-level sbuffer to dcache request outcomes. */
         statistics::Scalar sbufferDcacheReqFire;
+        statistics::Scalar sbufferMissEntriesReleased;
+        statistics::Average sbufferMissPending;
+        statistics::Scalar sbufferMissSameLineReplay;
+        statistics::Scalar sbufferMissForward;
         statistics::Scalar sbufferDcacheReqBlocked;
         statistics::Scalar sbufferDcacheReqBlockedByMainPipe;
         statistics::Scalar dcacheMainPipeRefillEnter;
