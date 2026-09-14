@@ -27,6 +27,30 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 
+def make_value_predictor(vp_type):
+    if vp_type == "egdiff":
+        return EgDiff()
+    if vp_type == "vtage":
+        return VTAGE()
+    if vp_type == "estride":
+        return EStride(logMaxConfidence=13, thresholdPercent=0.35)
+    if vp_type == "ideal-constant":
+        return IdealConstantLVP()
+    fatal("unsupported value predictor type: %s" % vp_type)
+
+
+def make_value_predictor_arbiter(arb_type):
+    if arb_type == "fixed-priority":
+        return CVPFixedPriorityArb()
+    if arb_type == "random":
+        return CVPRandomArb()
+    if arb_type == "round-robin":
+        return CVPRRArb()
+    if arb_type == "confidence":
+        return CVPConfidenceArb()
+    fatal("unsupported value predictor arbiter: %s" % arb_type)
+
+
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -83,16 +107,26 @@ def setKmhV3IdealParams(args, system):
         # value predictor
         if args.enable_vp:
             vp_type = getattr(args, "vp_type", "vtage")
-            if vp_type == "egdiff":
-                predictors = [EgDiff()]
-            elif vp_type == "vtage":
-                predictors = [VTAGE()]
+            if vp_type == "all":
+                # Keep this order stable: it defines the fixed-priority order
+                # and the tie-break order for confidence arbitration.
+                predictor_types = [
+                    "egdiff",
+                    "vtage",
+                    "estride",
+                    "ideal-constant",
+                ]
             else:
-                fatal("unsupported --vp-type: %s" % vp_type)
+                predictor_types = [vp_type]
+
+            predictors = [
+                make_value_predictor(kind) for kind in predictor_types
+            ]
+            arb_type = getattr(args, "vp_arb", "fixed-priority")
             cpu.valuePred = CompositeValuePredictor(
-                                predictors=predictors,
-                                arb=CVPFixedPriorityArb()
-                            )
+                predictors=predictors,
+                arb=make_value_predictor_arbiter(arb_type),
+            )
             frac = getattr(args, "vp_throttle_virt_sq", None)
             if getattr(args, "vp_throttle_virt_sq_full", False) and not frac:
                 frac = "1/1"

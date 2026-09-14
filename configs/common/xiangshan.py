@@ -1041,9 +1041,17 @@ def xiangshan_system_init():
         "--vp-type",
         type=str,
         default="vtage",
-        choices=["vtage", "egdiff"],
-        help="Value predictor used when --enable-vp is set "
-             "(default: vtage).",
+        choices=["vtage", "egdiff", "estride", "ideal-constant", "all"],
+        help="Value predictor used when --enable-vp is set. Use 'all' to "
+             "enable all composable predictors (default: vtage).",
+    )
+    parser.add_argument(
+        "--vp-arb",
+        type=str,
+        default="fixed-priority",
+        choices=["fixed-priority", "random", "round-robin", "confidence"],
+        help="Arbiter used by the composite value predictor "
+             "(default: fixed-priority).",
     )
     parser.add_argument(
         "--vp-throttle-virt-sq",
