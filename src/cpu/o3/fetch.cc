@@ -2429,11 +2429,9 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
             olderFetchEntries.push_back(queued);
     }
 
-    // Squash removes younger instructions from the same thread, while
-    // doSquash redirects Fetch to the corrected target.
+    // Recovery is Fetch-local: redirect to the corrected target and discard
+    // younger front-end work without modifying ROB-owned state.
     doSquash(target, instruction, instruction->seqNum, tid);
-    if (!cpu->instList.empty())
-        cpu->removeInstsUntilNotInROB(instruction->seqNum, tid);
     fetchQueue[tid] = std::move(olderFetchEntries);
     fetchQueue[tid].push_back(instruction);
     delayedCommit[tid] = !fetchQueue[tid].empty() &&
