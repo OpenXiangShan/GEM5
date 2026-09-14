@@ -2098,7 +2098,8 @@ IEW::executeInsts()
             // commit any squashed instructions.  I like the latter a bit more.
             inst->setCanCommit();
 
-            // avoid "not a load cancel" for using the squashed instruction's data
+            // Release any execution resource without publishing the squashed
+            // instruction's destination as bypass-ready.
             scheduler->bypassWriteback(inst);
 
             ++iewStats.executedInstStats.numSquashedInsts;
