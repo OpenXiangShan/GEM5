@@ -1002,42 +1002,41 @@ Fetch::deactivateThread(ThreadID tid)
 }
 
 bool
-Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
-                             const PCStateBase &inst_pc, InstSeqNum seq,
-                             PCStateBase &next_pc, bool allow_two_fetch,
+Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
+                             bool allow_two_fetch,
                              bool &continued_to_next_target,
-                             FetchPrediction &prediction)
+                             bool &false_hit)
 {
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
     // this function updates it.
     bool predict_taken = false;
     continued_to_next_target = false;
-    prediction.falseHit = false;
+    false_hit = false;
 
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
+    ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
     assert(dbpbtb->ftqHasFetching(tid));
-    const auto ftq_prediction = dbpbtb->ftqFetchBlock(tid);
+    const auto prediction = dbpbtb->ftqFetchBlock(tid);
 
     const Addr curr_pc = next_pc.instAddr();
-    assert(ftq_prediction.startPC <= curr_pc && curr_pc < ftq_prediction.endPC);
+    assert(prediction.startPC <= curr_pc && curr_pc < prediction.endPC);
 
     bool run_out = false;
 
     // Taken when the current PC matches the predicted control PC.
-    predict_taken = ftq_prediction.taken &&
-        (curr_pc == ftq_prediction.controlPC);
+    predict_taken = prediction.taken && (curr_pc == prediction.controlPC);
     if (predict_taken) {
         auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
-        rpc.pc(ftq_prediction.target);
-        rpc.npc(ftq_prediction.target + 4);
+        rpc.pc(prediction.target);
+        rpc.npc(prediction.target + 4);
         rpc.uReset();
         run_out = true;
-    } else if (staticInst->isMicroop()) {
+    } else if (inst->staticInst->isMicroop()) {
         // Microops must advance uPC explicitly; they do not rely on decoder NPC.
-        staticInst->advancePC(next_pc);
-        run_out = next_pc.instAddr() >= ftq_prediction.endPC;
+        inst->staticInst->advancePC(next_pc);
+        run_out = next_pc.instAddr() >= prediction.endPC;
     } else {
         // Sequential fetch: decoder already computed npc with correct inst size.
         auto &rpc = next_pc.as<RiscvISA::PCState>();
@@ -1046,25 +1045,24 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
         // Placeholder; decoder will overwrite npc on the next decode.
         rpc.npc(fall_thru + 4);
         rpc.uReset();
-        run_out = fall_thru >= ftq_prediction.endPC;
+        run_out = fall_thru >= prediction.endPC;
     }
 
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
-    const bool false_hit = run_out && ftq_prediction.taken && !predict_taken;
+    false_hit = run_out && prediction.taken && !predict_taken;
     if (false_hit) {
         DPRINTF(DecoupleBP,
                 "False BTB hit at FTQ %lu: stream [%#lx, %#lx) "
                 "predicted control %#lx -> %#lx, fetched through %#lx; "
                 "redirect to fall-through %s\n",
-                ftq_prediction.ftqId, ftq_prediction.startPC, ftq_prediction.endPC,
-                ftq_prediction.controlPC, ftq_prediction.target,
+                prediction.ftqId, prediction.startPC, prediction.endPC,
+                prediction.controlPC, prediction.target,
                 curr_pc, next_pc);
-        dbpbtb->nonControlSquash(ftq_prediction.ftqId, next_pc,
-                                 seq, tid, currentLoopIter);
+        dbpbtb->nonControlSquash(prediction.ftqId, next_pc,
+                                 inst->seqNum, tid, currentLoopIter);
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
-        prediction.falseHit = true;
     } else if (run_out) {
         if (enableTwoFetch && !isTraceMode() &&
             allow_two_fetch && predict_taken) {
@@ -1075,10 +1073,10 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
                 const bool target_matches =
                     next_pc.instAddr() == next_prediction.startPC;
                 const bool valid_range =
-                    next_prediction.startPC >= ftq_prediction.startPC &&
+                    next_prediction.startPC >= prediction.startPC &&
                     next_prediction.endPC >= next_prediction.startPC;
                 const bool fits_window = valid_range &&
-                    next_prediction.endPC - ftq_prediction.startPC <=
+                    next_prediction.endPC - prediction.startPC <=
                         twoFetchMaxBytes;
                 const bool has_fetch_capacity =
                     numInst < fetchWidth &&
@@ -1107,24 +1105,22 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
         }
     }
 
+    inst->setLoopIteration(currentLoopIter);
+
     // For decoupled frontend, the instruction type is predicted with BTB
     if (!predict_taken) {
-        prediction.taken = false;
-        prediction.target = next_pc.as<RiscvISA::PCState>();
-        prediction.ftqId = ftq_prediction.ftqId;
-        prediction.loopIteration = currentLoopIter;
+        inst->setPredTarg(next_pc);
+        inst->setPredTaken(false);
         return false;
     }
 
     DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x predicted to be taken to %s\n",
-            tid, seq, inst_pc.instAddr(), next_pc);
+            tid, inst->seqNum, inst->pcState().instAddr(), next_pc);
     DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
             "predicted to go to %s\n",
-            tid, seq, inst_pc.instAddr(), next_pc);
-    prediction.taken = true;
-    prediction.target = next_pc.as<RiscvISA::PCState>();
-    prediction.ftqId = ftq_prediction.ftqId;
-    prediction.loopIteration = currentLoopIter;
+            tid, inst->seqNum, inst->pcState().instAddr(), next_pc);
+    inst->setPredTarg(next_pc);
+    inst->setPredTaken(predict_taken);
 
     ++fetchStats.branches;
 
@@ -1133,17 +1129,6 @@ Fetch::lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
     }
 
     return predict_taken;
-}
-
-bool
-Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
-                             bool allow_two_fetch,
-                             bool &continued_to_next_target,
-                             FetchPrediction &prediction)
-{
-    return lookupAndUpdateNextPC(
-        inst->threadNumber, inst->staticInst, inst->pcState(), inst->seqNum,
-        next_pc, allow_two_fetch, continued_to_next_target, prediction);
 }
 
 bool
@@ -2701,13 +2686,10 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     set(next_pc, pc);
 
     // Handle branch prediction and update next_pc for both modes
-    FetchPrediction prediction;
+    bool false_hit = false;
     const bool predictedBranch = lookupAndUpdateNextPC(
         instruction, *next_pc, allow_two_fetch, continued_to_next_target,
-        prediction);
-    instruction->setPredTaken(prediction.taken);
-    instruction->setPredTarg(prediction.target);
-    instruction->setLoopIteration(prediction.loopIteration);
+        false_hit);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
@@ -2724,7 +2706,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     predecodeRedirected = false;
     if (predecodeEnabled(tid, staticInst, instructionMacroop) &&
-        !prediction.falseHit) {
+        !false_hit) {
         const auto fault = classifyPredecodeFault(instruction, staticInst);
         instruction->setPredecodeChecked();
         if (fault != PredecodeFault::None) {

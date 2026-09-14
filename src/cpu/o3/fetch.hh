@@ -420,24 +420,10 @@ class Fetch
      * @param prediction receives the prediction and false-BTB-hit result.
      * @return true if a branch was predicted taken.
      */
-    struct FetchPrediction
-    {
-        bool taken = false;
-        bool falseHit = false;
-        unsigned ftqId = 0;
-        unsigned loopIteration = 0;
-        RiscvISA::PCState target;
-    };
-
-    bool lookupAndUpdateNextPC(ThreadID tid, const StaticInstPtr &staticInst,
-                               const PCStateBase &inst_pc, InstSeqNum seq,
-                               PCStateBase &next_pc, bool allow_two_fetch,
-                               bool &continued_to_next_target,
-                               FetchPrediction &prediction);
     bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                                bool allow_two_fetch,
                                bool &continued_to_next_target,
-                               FetchPrediction &prediction);
+                               bool &false_hit);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
