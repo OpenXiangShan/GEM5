@@ -1811,6 +1811,7 @@ LSQUnit::executeLoadPipeSx()
                 DPRINTF(LoadPipeline, "Instruction was squashed. PC: %s, [tid:%i]"
                     " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
                     inst->seqNum);
+                lsq->complete_load_bank_wait(inst);
                 inst->setExecuted();
                 inst->setCanCommit();
                 inst = nullptr;
@@ -1952,6 +1953,9 @@ LSQUnit::executeLoadPipeSx()
             if (i == loadPipeStages - 1 && !inst->needReplay()) {
                 // Terminal path 4: only a non-replayed load at the last pipe
                 // stage can finish the IEW side and become ready to commit.
+                // This also releases a bank-conflict waiter that completed
+                // through forwarding or another non-cache path.
+                lsq->complete_load_bank_wait(inst);
                 if (inst->isExecuted() &&
                     (inst->isNormalLd() || !inst->readMemAccPredicate())) {
                     iewStage->readyToFinish(inst);
@@ -3190,16 +3194,15 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool ret = true;
     bool cache_got_blocked = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
+    auto inst = request->instruction();
     if (isLoad) {
         bank_conflict = lsq->loadBankConflictedCheck(
-            data_pkt->req->getVaddr(), data_pkt->req->getSize());
+            inst, data_pkt->req->getVaddr(), data_pkt->req->getSize());
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
     data_pkt->sendTick = curTick();
     PacketPtr pkt = data_pkt;
-
-    auto inst = dynamic_cast<LSQRequest *>(data_pkt->senderState)->instruction();
 
     DPRINTF(LSQUnit, "Attempting to send packet for inst [sn:%llu], addr: %#x\n",
             inst->seqNum, data_pkt->getAddr());
@@ -3262,6 +3265,9 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     }
 
     if (ret) {
+        if (isLoad) {
+            lsq->complete_load_bank_wait(inst);
+        }
         if (!isLoad) {
             isStoreBlocked = false;
         }
