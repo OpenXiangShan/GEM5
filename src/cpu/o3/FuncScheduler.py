@@ -87,6 +87,11 @@ class IssueQue(SimObject):
     deferNewEnqueueSelection = Param.Bool(
         False, "Delay selection of newly enqueued instructions until the next cycle"
     )
+    emptyEnqueueBypass = Param.Bool(
+        False,
+        "Allow one new enqueue into an empty IQ to select in the same cycle "
+        "when deferNewEnqueueSelection is enabled; retain normal readiness checks",
+    )
     vectorSplitUnits = Param.Unsigned(
         2, "Number of independent vector load/store split units per direction")
     oports = VectorParam.IssuePort("")

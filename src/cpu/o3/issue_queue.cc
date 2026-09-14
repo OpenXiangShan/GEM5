@@ -170,6 +170,10 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(canceledInst, statistics::units::Count::get(), "count of canceled insts"),
       ADD_STAT(loadmiss, statistics::units::Count::get(), "count of load miss"),
       ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
+      ADD_STAT(emptyEnqueueBypassCandidates, statistics::units::Count::get(),
+               "First enqueues into an empty IQ eligible for same-cycle selection"),
+      ADD_STAT(emptyEnqueueBypassSelected, statistics::units::Count::get(),
+               "Empty-IQ bypass candidates selected in their enqueue cycle"),
       ADD_STAT(tagRefillBlock, statistics::units::Count::get(), "count of blocked due to tag refill"),
       ADD_STAT(issueOccupy, statistics::units::Count::get(), "count of replayQ blocked"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
@@ -198,6 +202,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
       deferNewEnqueueSelection(params.deferNewEnqueueSelection),
+      emptyEnqueueBypass(params.emptyEnqueueBypass),
       iqname(params.name),
       vectorSplitUnits(params.vectorSplitUnits),
       nextVectorLoadSplitUnit(0),
@@ -989,8 +994,10 @@ IssueQue::selectInst()
             }
 
             // The dispatch input becomes selectable only after the enqueue
-            // register boundary. Resident entries keep their wakeup timing.
+            // register boundary unless eligible for the empty-IQ probe.
+            // Resident entries keep their wakeup timing.
             if (deferNewEnqueueSelection &&
+                emptyEnqueueBypassSeq != inst->seqNum &&
                 std::find(enqueuedThisCycle.begin(), enqueuedThisCycle.end(),
                           inst->seqNum) != enqueuedThisCycle.end()) {
                 DPRINTF(Schedule, "[sn:%llu] defer selection after enqueue\n",
@@ -1039,6 +1046,11 @@ IssueQue::selectInst()
                     }
                 }
 
+                if (emptyEnqueueBypassSeq == inst->seqNum) {
+                    iqstats->emptyEnqueueBypassSelected++;
+                    DPRINTF(Schedule, "[sn:%llu] empty IQ enqueue bypass selected\n",
+                            inst->seqNum);
+                }
                 selectQ.push_back(std::make_pair(pi, inst));
                 inst->clearInReadyQ();
                 readyQ->erase(it);
@@ -1097,6 +1109,7 @@ IssueQue::tick()
     }
     instNumInsert = 0;
     enqueuedThisCycle.clear();
+    emptyEnqueueBypassSeq.reset();
 
     scheduleInst();
     processVectorReadyQ();
@@ -1125,6 +1138,16 @@ void
 IssueQue::insert(const DynInstPtr& inst)
 {
     assert(instNum < iqsize);
+    // Consume the opportunity at insertion, even if this instruction is not
+    // ready. Do not pass it to a later enqueue. instNum is the existing IQ
+    // occupancy, including instructions not yet released to a FU.
+    if (deferNewEnqueueSelection && emptyEnqueueBypass &&
+        instNum == 0 && instNumInsert == 0) {
+        emptyEnqueueBypassSeq = inst->seqNum;
+        iqstats->emptyEnqueueBypassCandidates++;
+        DPRINTF(Schedule, "[sn:%llu] empty IQ enqueue bypass candidate\n",
+                inst->seqNum);
+    }
     (*instNumClassify[inst->opClass()])++;
     instNum++;
     instNumInsert++;

@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <list>
+#include <optional>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -116,6 +117,7 @@ class IssueQue : public SimObject
     const int replayQsize = 32;
     const int scheduleToExecDelay;
     const bool deferNewEnqueueSelection;
+    const bool emptyEnqueueBypass;
     const std::string iqname;
     std::vector<std::bitset<Num_OpClasses>> portFuDescs;
     std::vector<FUDesc*> fuDescs;
@@ -158,6 +160,7 @@ class IssueQue : public SimObject
     uint64_t instNumInsert = 0;
     // Bounded by this IQ's enqueue bandwidth; cleared before dispatch each tick.
     std::vector<InstSeqNum> enqueuedThisCycle;
+    std::optional<InstSeqNum> emptyEnqueueBypassSeq;
 
     std::vector<uint8_t*> instNumClassify;
     uint64_t instNum = 0;
@@ -219,6 +222,8 @@ class IssueQue : public SimObject
         statistics::Scalar canceledInst;
         statistics::Scalar loadmiss;
         statistics::Scalar arbFailed;
+        statistics::Scalar emptyEnqueueBypassCandidates;
+        statistics::Scalar emptyEnqueueBypassSelected;
         statistics::Scalar tagRefillBlock;
         statistics::Scalar issueOccupy;
         statistics::Vector insertDist;
