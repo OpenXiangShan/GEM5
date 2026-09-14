@@ -849,14 +849,6 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
         return;
     }
     btbEntries = std::move(checkerLayout.slots);
-    for (auto &slot : btbEntries) {
-        // MainTAGE may override every conditional slot. Its base fallback
-        // uses the direction counter retained in the layout snapshot.
-        if (slot.isCond) {
-            slot.alwaysTaken = false;
-        }
-    }
-
     CondTakens condTakens;
     condTakens.reserve(btbEntries.size());
 

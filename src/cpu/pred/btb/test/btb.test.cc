@@ -130,25 +130,16 @@ TEST(FetchTargetTest, UsesPredictionLayoutForHistoryAndTraining)
 {
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.updateEndInstPC = 0x100c;
-
     BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
-    stream.predBTBEntries = {
-        BTBEntry(createBranchInfo(0x1004, 0x1100, true)),
-        predictedExit,
+    stream.setPredictedBranches({
+        BTBEntry(createBranchInfo(0x1004, 0x1100, true)), predictedExit,
         BTBEntry(createBranchInfo(0x100c, 0x1200, true)),
-        BTBEntry(createBranchInfo(0x1014, 0x1300, true)),
-    };
+        BTBEntry(createBranchInfo(0x1014, 0x1300, true))});
 
     const auto historyUpdate =
         stream.getGHistUpdateDuringSquash(0x1010, false, false);
     EXPECT_EQ(historyUpdate.shamt, 3);
 
-    stream.setUpdateBTBEntries();
-    ASSERT_EQ(stream.updateBTBEntries.size(), 3);
-    EXPECT_EQ(stream.updateBTBEntries[0].pc, 0x1004);
-    EXPECT_EQ(stream.updateBTBEntries[1].pc, 0x1008);
-    EXPECT_EQ(stream.updateBTBEntries[2].pc, 0x100c);
 }
 
 TEST(FullBTBPredictionTest, MergesLayoutAroundPredictedExit)
@@ -157,14 +148,11 @@ TEST(FullBTBPredictionTest, MergesLayoutAroundPredictedExit)
     pred.bbStart = 0x1000;
 
     BTBEntry before(createBranchInfo(0x1004, 0x1100, true));
-    before.alwaysTaken = true;
     before.ctr = 1;
     BTBEntry staleExit(createBranchInfo(0x1008, 0xdead, true));
     BTBEntry afterTaken(createBranchInfo(0x100c, 0x1200, true));
-    afterTaken.alwaysTaken = false;
     afterTaken.ctr = 0;
     BTBEntry afterNotTaken(createBranchInfo(0x1010, 0x1300, true));
-    afterNotTaken.alwaysTaken = false;
     afterNotTaken.ctr = -1;
 
     BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
@@ -175,7 +163,6 @@ TEST(FullBTBPredictionTest, MergesLayoutAroundPredictedExit)
 
     ASSERT_EQ(pred.btbEntries.size(), 4);
     EXPECT_EQ(pred.btbEntries[0].pc, before.pc);
-    EXPECT_FALSE(pred.btbEntries[0].alwaysTaken);
     EXPECT_EQ(pred.btbEntries[1].pc, predictedExit.pc);
     EXPECT_EQ(pred.btbEntries[1].target, predictedExit.target);
     EXPECT_EQ(pred.btbEntries[1].source, predictedExit.source);
@@ -240,12 +227,10 @@ TEST(FullBTBPredictionTest, MergesNotTakenLayoutAndSuppressesUnconditionalEntrie
     pred.bbStart = 0x1000;
 
     BTBEntry before(createBranchInfo(0x1004, 0x1100, true));
-    before.alwaysTaken = true;
     before.ctr = 1;
     BTBEntry beforeUnconditional(createBranchInfo(0x1002, 0x2f00));
     BTBEntry predictedExit(createBranchInfo(0x1008, 0x2000, true));
     BTBEntry afterTaken(createBranchInfo(0x100c, 0x1200, true));
-    afterTaken.alwaysTaken = true;
     afterTaken.ctr = 1;
     BTBEntry afterUnconditional(createBranchInfo(0x1010, 0x3000));
 
@@ -258,7 +243,7 @@ TEST(FullBTBPredictionTest, MergesNotTakenLayoutAndSuppressesUnconditionalEntrie
     EXPECT_EQ(pred.btbEntries[2].pc, afterTaken.pc);
     EXPECT_TRUE(std::all_of(
         pred.btbEntries.begin(), pred.btbEntries.end(),
-        [](const auto &entry) { return !entry.alwaysTaken && entry.ctr < 0; }));
+        [](const auto &entry) { return entry.ctr < 0; }));
     EXPECT_TRUE(
         std::all_of(pred.condTakens.begin(), pred.condTakens.end(), [](const auto &entry) { return !entry.second; }));
     EXPECT_EQ(pred.getGHistUpdate().shamt, 3);

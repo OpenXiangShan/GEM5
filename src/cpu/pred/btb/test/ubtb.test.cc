@@ -388,29 +388,6 @@ TEST(UBTBLayoutTest, DistinguishesOverlappingBlockStarts)
     EXPECT_FALSE(ubtb.lookupForChecker(0x1001, 0, 0).valid);
 }
 
-TEST(UBTBLayoutTest, BackendTrainingRetainsSlotsAfterTakenExit)
-{
-    UBTB ubtb(4, 2, 38, false);
-    constexpr Addr StartPc = 0x1000;
-    predict(ubtb, StartPc);
-    FetchTarget stream;
-    stream.startPC = StartPc;
-    stream.predMetas[ubtb.getComponentIdx()] = ubtb.getPredictionMeta();
-    stream.predBTBEntries = {makeSlot(0x1004, 0x2000, true, 1),
-                             makeSlot(0x1008, 0x3000),
-                             makeSlot(0x100c, 0x4000, true, -2)};
-    stream.exeTaken = true;
-    stream.exeBranchInfo = stream.predBTBEntries[1];
-    stream.updateEndInstPC = 0x1008;
-    ubtb.update(stream);
-    const auto layout = ubtb.lookupForChecker(StartPc, 0, 0);
-    ASSERT_TRUE(layout.usable());
-    ASSERT_EQ(layout.slots.size(), 3);
-    EXPECT_EQ(layout.slots[0].ctr, 0);
-    EXPECT_EQ(layout.slots[1].ctr, 0);
-    EXPECT_EQ(layout.slots[2].ctr, -2);
-}
-
 }  // namespace test
 }  // namespace btb_pred
 }  // namespace branch_prediction

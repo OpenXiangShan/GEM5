@@ -656,21 +656,18 @@ struct FullBTBPrediction
                 continue;
             }
             if (!predictedExitTaken && entry.isCond) {
-                entry.alwaysTaken = false;
                 entry.ctr = -1;
             }
             if (entry.pc < predictedExit.pc) {
                 if (entry.isUncond()) {
                     return false;
                 }
-                entry.alwaysTaken = false;
             }
             mergedEntries.push_back(entry);
         }
 
         auto exitEntry = predictedExit;
         if (exitEntry.isCond) {
-            exitEntry.alwaysTaken = false;
             if (!predictedExitTaken) {
                 exitEntry.ctr = -1;
             }
@@ -699,7 +696,7 @@ struct FullBTBPrediction
                 if (entry.pc == predictedExit.pc) {
                     taken = predictedExitTaken;
                 } else if (entry.pc > predictedExit.pc && predictedExitTaken) {
-                    taken = entry.alwaysTaken || entry.ctr >= 0;
+                    taken = entry.ctr >= 0;
                 }
                 mergedCondTakens.push_back({entry.pc, taken});
             }

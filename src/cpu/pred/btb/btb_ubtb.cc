@@ -250,7 +250,7 @@ UBTB::BlockEntry::getTakenEntry() const
 {
     if (usable()) {
         for (const auto &slot : slots) {
-            if (slot.isUncond() || slot.alwaysTaken || slot.ctr >= 0) {
+            if (slot.isUncond() || slot.ctr >= 0) {
                 return slot;
             }
         }
@@ -302,7 +302,7 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry,
         for (const auto &slot : entry.slots) {
             if (slot.isCond) {
                 pred.condTakens.push_back(
-                    {slot.pc, slot.alwaysTaken || slot.ctr >= 0});
+                    {slot.pc, slot.ctr >= 0});
             }
             if (slot.isIndirect) {
                 if (slot.isReturn) {
@@ -552,13 +552,16 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 }
 
 void
-UBTB::update(const FetchTarget &stream)
+UBTB::update(const PredictionUpdateContext &context,
+             const PreparedUpdate &prepared)
 {
     const auto meta = std::static_pointer_cast<UBTBMeta>(
-        stream.predMetas[getComponentIdx()]);
+        context.predMetas[getComponentIdx()]);
     const auto predictedExit = meta->hit_entry.getTakenEntry();
-    if (stream.exeTaken) {
-        if (!predictedExit.valid || predictedExit != stream.exeBranchInfo) {
+    const auto &outcome = prepared.outcome;
+    if (outcome.valid && outcome.taken) {
+        const BTBEntry actual(outcome.branch);
+        if (!predictedExit.valid || predictedExit != actual) {
             ubtbStats.updateMiss++;
         } else {
             ubtbStats.updateHit++;
@@ -568,50 +571,52 @@ UBTB::update(const FetchTarget &stream)
     if (!usingS3Pred) {
         // Preserve the legacy backend training option with a whole-window
         // snapshot. Only executed slots train their base direction counters.
-        auto entries = stream.predBTBEntries;
-        if (stream.exeTaken) {
+        auto entries = std::vector<BTBEntry>();
+        for (const auto &branch : prepared.branches) {
+            entries.emplace_back(makeBranchInfo(branch));
+        }
+        if (outcome.valid && outcome.taken) {
             auto it = std::find_if(entries.begin(), entries.end(),
-                [&stream](const BTBEntry &entry) {
-                    return entry.pc == stream.exeBranchInfo.pc;
+                [&outcome](const BTBEntry &entry) {
+                    return entry.pc == outcome.branch.pc;
                 });
             if (it == entries.end()) {
-                entries.emplace_back(stream.exeBranchInfo);
+                entries.emplace_back(outcome.branch);
             } else {
-                static_cast<BranchInfo &>(*it) = stream.exeBranchInfo;
+                static_cast<BranchInfo &>(*it) = outcome.branch;
                 it->valid = true;
             }
         }
         for (auto &slot : entries) {
             if (slot.valid && slot.isCond &&
-                slot.pc >= stream.getRealStartPC() &&
-                slot.pc <= stream.updateEndInstPC) {
-                const bool taken = stream.exeTaken &&
-                    slot.pc == stream.exeBranchInfo.pc;
-                slot.alwaysTaken = slot.alwaysTaken && taken;
+                slot.pc >= context.getRealStartPC()) {
+                const bool taken = outcome.valid && outcome.taken &&
+                    slot.pc == outcome.branch.pc;
                 slot.ctr = taken ? std::min(slot.ctr + 1, 1) :
                                    std::max(slot.ctr - 1, -2);
             }
         }
-        fillLayout(stream.getRealStartPC(), stream.tid, stream.asidHash,
+        fillLayout(context.getRealStartPC(), context.tid, context.asidHash,
                    entries);
     }
 }
 
-#ifndef UNIT_TEST
 void
-UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+UBTB::commitBranch(const PredictionUpdateContext &context,
+                   const BranchOutcome &outcome)
 {
-    auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
+    auto meta = std::static_pointer_cast<UBTBMeta>(
+        context.predMetas[getComponentIdx()]);
     auto &hit_entry = meta->hit_entry;
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
+    auto pc = outcome.pc;
+    auto npc = outcome.target;
     const auto slot = std::find_if(
         hit_entry.slots.begin(), hit_entry.slots.end(),
         [pc](const BTBEntry &entry) { return entry.pc == pc; });
     const bool this_branch_hit = hit_entry.usable() &&
         slot != hit_entry.slots.end();
 
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc;  // all uncond should be taken
+    bool this_branch_taken = outcome.taken || !outcome.isCond;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         ubtbStats.allBranchHits++;
@@ -620,26 +625,26 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         } else {
             ubtbStats.allBranchHitNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (outcome.isCond) {
             ubtbStats.condHits++;
             if (this_branch_taken) {
                 ubtbStats.condHitTakens++;
             } else {
                 ubtbStats.condHitNotTakens++;
             }
-            const bool predictedTaken = slot->alwaysTaken || slot->ctr >= 0;
+            const bool predictedTaken = slot->ctr >= 0;
             if (predictedTaken == this_branch_taken) {
                 ubtbStats.condPredCorrect++;
             } else {
                 ubtbStats.condPredWrong++;
             }
         }
-        if (inst->isUncondCtrl()) {
+        if (!outcome.isCond) {
             ubtbStats.uncondHits++;
         }
         // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
+        {
+            if (outcome.isIndirect) {
                 ubtbStats.indirectHits++;
                 Addr pred_target = slot->target;
                 if (pred_target == this_branch_target) {
@@ -648,10 +653,10 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
                     ubtbStats.indirectPredWrong++;
                 }
             }
-            if (inst->isCall()) {
+            if (outcome.isCall) {
                 ubtbStats.callHits++;
             }
-            if (inst->isReturn()) {
+            if (outcome.isReturn) {
                 ubtbStats.returnHits++;
             }
         }
@@ -662,7 +667,7 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         } else {
             ubtbStats.allBranchMissNotTakens++;
         }
-        if (inst->isCondCtrl()) {
+        if (outcome.isCond) {
             ubtbStats.condMisses++;
             if (this_branch_taken) {
                 ubtbStats.condMissTakens++;
@@ -672,25 +677,24 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
                 ubtbStats.condPredCorrect++;
             }
         }
-        if (inst->isUncondCtrl()) {
+        if (!outcome.isCond) {
             ubtbStats.uncondMisses++;
         }
         // ignore non-speculative branches (e.g. syscall)
-        if (!inst->isNonSpeculative()) {
-            if (inst->isIndirectCtrl()) {
+        {
+            if (outcome.isIndirect) {
                 ubtbStats.indirectMisses++;
                 ubtbStats.indirectPredWrong++;
             }
-            if (inst->isCall()) {
+            if (outcome.isCall) {
                 ubtbStats.callMisses++;
             }
-            if (inst->isReturn()) {
+            if (outcome.isReturn) {
                 ubtbStats.returnMisses++;
             }
         }
     }
 }
-#endif
 
 void
 UBTB::recordS1OverrideDetail(OverrideReason reason,
