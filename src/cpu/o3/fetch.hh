@@ -579,8 +579,7 @@ class Fetch
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
-            const PCStateBase &next_pc, bool trace, InstSeqNum seq,
-            unsigned ftqId, bool enqueue = true);
+            const PCStateBase &next_pc, bool trace);
 
     enum class PredecodeFault : uint8_t
     {
@@ -593,8 +592,6 @@ class Fetch
 
     bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
                           const StaticInstPtr &curMacroop) const;
-    void enqueueFetchedInst(ThreadID tid, const DynInstPtr &instruction);
-    void applyValuePrediction(const DynInstPtr &instruction);
     PredecodeFault classifyPredecodeFault(
             const DynInstPtr &instruction,
             const StaticInstPtr &staticInst) const;

@@ -1284,11 +1284,8 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 
     DPRINTF(Fetch, "[tid:%i] Translation faulted, building noop.\n", tid);
     // We will use a nop in order to carry the fault.
-    assert(dbpbtb);
-    const auto prediction = dbpbtb->ftqFetchBlock(tid);
-    DynInstPtr instruction = buildInst(
-            tid, nopStaticInstPtr, nullptr, fetch_pc, fetch_pc, false,
-            cpu->getAndIncrementInstSeq(), prediction.ftqId);
+    DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
+            fetch_pc, fetch_pc, false);
     instruction->setVersion(localSquashVer[tid]);
     instruction->setNotAnInst();
 
@@ -2261,9 +2258,11 @@ Fetch::handleDecodeSquash(ThreadID tid)
 DynInstPtr
 Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
         StaticInstPtr curMacroop, const PCStateBase &this_pc,
-        const PCStateBase &next_pc, bool trace, InstSeqNum seq,
-        unsigned ftqId, bool enqueue)
+        const PCStateBase &next_pc, bool trace)
 {
+    // Get a sequence number.
+    InstSeqNum seq = cpu->getAndIncrementInstSeq();
+
     DynInst::Arrays arrays;
     arrays.numSrcs = staticInst->numSrcRegs();
     arrays.numDests = staticInst->numDestRegs();
@@ -2273,6 +2272,9 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             arrays, staticInst, curMacroop, this_pc, next_pc, seq, cpu);
 
     instruction->setTid(tid);
+
+    cpu->perfCCT->createMeta(instruction);
+    cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);
 
     instruction->setThreadState(cpu->thread[tid]);
 
@@ -2284,9 +2286,11 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
             instruction->isMov());
+    assert(dbpbtb);
+    const auto prediction = dbpbtb->ftqFetchBlock(tid);
     DPRINTF(DecoupleBP, "Set instruction %lu with fetch id %lu\n",
-            instruction->seqNum, ftqId);
-    instruction->setFtqId(ftqId);
+            instruction->seqNum, prediction.ftqId);
+    instruction->setFtqId(prediction.ftqId);
 
 #if TRACING_ON
     if (trace) {
@@ -2298,41 +2302,24 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     instruction->traceData = NULL;
 #endif
 
-    instruction->fallThruPC = this_pc.getFallThruPC();
-
-    if (enqueue)
-        enqueueFetchedInst(tid, instruction);
-
-    return instruction;
-}
-
-void
-Fetch::enqueueFetchedInst(ThreadID tid, const DynInstPtr &instruction)
-{
-    cpu->perfCCT->createMeta(instruction);
-    cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);
+    // Add instruction to the CPU's list of instructions.
     instruction->setInstListIt(cpu->addInst(instruction));
+
+    // Write the instruction to the first slot in the queue
+    // that heads to decode.
+    assert(numInst < fetchWidth);
     fetchQueue[tid].push_back(instruction);
     assert(fetchQueue[tid].size() <= fetchQueueSize);
-    delayedCommit[tid] = instruction->isDelayedCommit();
     DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
             tid, fetchQueue[tid].size(), fetchQueueSize);
-}
+    //toDecode->insts[toDecode->size++] = instruction;
 
-void
-Fetch::applyValuePrediction(const DynInstPtr &instruction)
-{
-    if (!valuePred || !instruction->canLVP())
-        return;
+    // Keep track of if we can take an interrupt at this boundary
+    delayedCommit[tid] = instruction->isDelayedCommit();
 
-    valuepred::VPPredictRequest predictRequest;
-    predictRequest.pc = instruction->getPC();
-    predictRequest.seqNo = instruction->seqNum;
-    predictRequest.tid = instruction->threadNumber;
-    predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
-            curTick(), instruction->opClass());
-    instruction->vpResult =
-        valuePred->valuePredict(predictRequest, instruction->vpRecord);
+    instruction->fallThruPC = this_pc.getFallThruPC();
+
+    return instruction;
 }
 
 bool
@@ -2626,8 +2613,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                 bool &predecodeRedirected)
 {
     auto *dec_ptr = decoder[tid];
+    bool predictedBranch = false;
     bool newMacroop = false;
-    const InstSeqNum seq = cpu->getAndIncrementInstSeq();
 
     // Create a copy of the current PC state to calculate the next PC.
     std::unique_ptr<PCStateBase> next_pc(pc.clone());
@@ -2652,18 +2639,14 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         newMacroop = staticInst->isLastMicroop();
     }
 
-    // Decoder updates the instruction PC state (npc/compressed) while
-    // decoding. Preserve the post-decode state used by the legacy Fetch path.
-    RiscvISA::PCState fetchPc = pc.as<RiscvISA::PCState>();
-    const StaticInstPtr instructionMacroop = curMacroop;
-    DynInstPtr instruction = buildInst(
-        tid, staticInst, instructionMacroop, fetchPc, *next_pc, true, seq,
-        dbpbtb->ftqFetchBlock(tid).ftqId);
+    // Build the dynamic instruction and add it to the fetch queue
+    DynInstPtr instruction =
+        buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
+
     o3::TraceInstruction traceForThisInst;
     if (isTraceMode()) {
         assert(traceFetch);
-        traceFetch->bindPendingTraceMetadata(
-            tid, instruction, fetchPc, traceForThisInst);
+        traceFetch->bindPendingTraceMetadata(tid, instruction, pc, traceForThisInst);
     }
 
     // Special handling for RISC-V vector configuration instructions.
@@ -2673,39 +2656,32 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 tid, waitForVsetvl[tid]);
     }
 
+    instruction->setVersion(localSquashVer[tid]);
+    ppFetch->notify(instruction);
     numInst++;
 
-    instruction->setVersion(localSquashVer[tid]);
 #if TRACING_ON
-    if (debug::O3PipeView)
+    if (debug::O3PipeView) {
         instruction->fetchTick = curTick();
+    }
 #endif
-    ppFetch->notify(instruction);
 
     // Save current PC to next_pc first
     set(next_pc, pc);
 
     // Handle branch prediction and update next_pc for both modes
     bool false_hit = false;
-    const bool predictedBranch = lookupAndUpdateNextPC(
+    predictedBranch = lookupAndUpdateNextPC(
         instruction, *next_pc, allow_two_fetch, continued_to_next_target,
         false_hit);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
-                tid, pc, *next_pc);
-    }
-
-    // A new macro-op also begins if the PC changes discontinuously.
-    newMacroop |= pc.instAddr() != next_pc->instAddr();
-    if (newMacroop) {
-        curMacroop = NULL;
-        DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n",
-                tid, pc);
+                instruction->threadNumber, pc, *next_pc);
     }
 
     predecodeRedirected = false;
-    if (predecodeEnabled(tid, staticInst, instructionMacroop) &&
+    if (predecodeEnabled(tid, staticInst, curMacroop) &&
         !false_hit) {
         const auto fault = classifyPredecodeFault(instruction, staticInst);
         instruction->setPredecodeChecked();
@@ -2716,14 +2692,34 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         }
     }
 
-    // Update the main PC state only after predecode accepts the prediction.
-    set(pc, *next_pc);
-    applyValuePrediction(instruction);
     if (isTraceMode()) {
         assert(traceFetch);
-        traceFetch->postBranchPredict(
-            tid, instruction, traceForThisInst, fetchPc, *next_pc,
-            predictedBranch);
+        traceFetch->postBranchPredict(tid, instruction, traceForThisInst, pc, *next_pc, predictedBranch);
+    }
+
+    // A new macro-op also begins if the PC changes discontinuously.
+    newMacroop |= pc.instAddr() != next_pc->instAddr();
+    if (newMacroop) {
+        curMacroop = NULL;
+        DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n",
+                tid, pc);
+    }
+
+    // Update the main PC state for the next instruction.
+    set(pc, *next_pc);
+
+    // Do the value prediction
+    if (valuePred && instruction->canLVP()) {
+        valuepred::VPPredictRequest predictRequest;
+        predictRequest.pc = instruction->getPC();
+        predictRequest.seqNo = instruction->seqNum;
+        predictRequest.tid = tid;
+        // ExampleValuePredictor shows how a predictor can extend the public
+        // request with extra fetch-time inputs without changing core fields.
+        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
+                curTick(), instruction->opClass());
+        instruction->vpResult =
+            valuePred->valuePredict(predictRequest, instruction->vpRecord);
     }
 
     return predictedBranch;
