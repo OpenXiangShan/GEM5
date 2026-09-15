@@ -330,6 +330,38 @@ jobs:
           else
             run_local_parallel
           fi
+      - name: Check guest kernel logs
+        env:
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          archive = Path(os.environ["PERF_ARCHIVE_DIR"])
+          stats_dir = archive / "spec_all"
+          if not stats_dir.is_dir():
+              raise SystemExit(f"Missing performance directory: {stats_dir}")
+          failures = []
+          for log in sorted(stats_dir.glob("*/log.txt")):
+              with log.open("rb") as stream:
+                  if not any(b"Kernel panic - not syncing:" in line for line in stream):
+                      continue
+              (log.parent / "completed").unlink(missing_ok=True)
+              (log.parent / "abort").touch()
+              failures.append(log)
+          if failures:
+              message = f"Guest kernel panic in {len(failures)} workloads; refusing to score."
+              print(message)
+              for log in failures[:10]:
+                  print(log)
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+                  summary.write(message + "\n")
+                  for log in failures[:10]:
+                      summary.write(f"- `{log.parent.name}`\n")
+              raise SystemExit(1)
+          PY
+
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
