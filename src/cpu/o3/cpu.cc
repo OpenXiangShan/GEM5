@@ -42,6 +42,7 @@
 
 #include "cpu/o3/cpu.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
 
@@ -480,7 +481,11 @@ CPU::CPUStats::CPUStats(CPU *cpu)
         .precision(6);
     totalIpc = sum(committedInsts) / cpu->baseStats.numCycles;
 
-    baseRetiring = committedInsts / (cpu->issueWidth * cpu->baseStats.numCycles);
+    // Topdown slots count backend ops, so use committedOps to match the
+    // dispatchedOps population below. Architectural instructions which do
+    // not enter an issue queue must not make retiring exceed dispatch.
+    baseRetiring = committedOps /
+        (cpu->issueWidth * cpu->baseStats.numCycles);
 
     frontendBound = cpu->fetch.getFetchStats().fetchBubbles /
         (cpu->issueWidth * cpu->baseStats.numCycles);
@@ -489,12 +494,51 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
     frontendBandwidthBound = frontendBound - frontendLatencyBound;
 
-    // badSpecBound = (INST_SPEC - INST_RETIRED + RECOVERY_BUBBLE)/(IssueBW * CPU_CYCLES)
-    badSpecBound = (cpu->iew.getIEWStats().dispatchedInsts - committedInsts + cpu->commit.getCommitStats().recovery_bubble) /
-         (cpu->issueWidth * cpu->baseStats.numCycles);
+    // badSpecBound =
+    //   (OPS_SPEC - OPS_RETIRED + RECOVERY_BUBBLE) / available slots.
+    // Clamp only reset-boundary skew: ops already in flight when a stats
+    // reset occurs may retire before their dispatch is counted in the
+    // new interval.
+    badSpecBound
+        .init(cpu->numThreads)
+        .flags(statistics::total)
+        .precision(6);
+    branchMissPrediction
+        .init(cpu->numThreads)
+        .flags(statistics::total)
+        .precision(6);
 
-    // branchMissPrediction = Bad Speculation * BR_MIS_PRED/TOTAL_FLUSH
-    branchMissPrediction = badSpecBound * cpu->commit.getCommitStats().branchMispredicts / cpu->commit.getCommitStats().totalSquash;
+    // These guarded values cannot be expressed by the Formula interface.
+    // Calculate them before each dump while preserving the original
+    // per-thread shape used by SMT stats consumers.
+    statistics::registerDumpCallback([this, cpu] {
+        auto &iew_stats = cpu->iew.getIEWStats();
+        auto &commit_stats = cpu->commit.getCommitStats();
+        statistics::VResult dispatched_ops;
+        statistics::VResult committed_ops;
+        statistics::VResult recovery_bubbles;
+        statistics::VResult branch_mispredicts;
+        statistics::VResult total_squashes;
+        iew_stats.dispatchedOps.result(dispatched_ops);
+        committedOps.result(committed_ops);
+        commit_stats.recovery_bubble.result(recovery_bubbles);
+        commit_stats.branchMispredicts.result(branch_mispredicts);
+        commit_stats.totalSquash.result(total_squashes);
+
+        const auto cycles = cpu->baseStats.numCycles.value();
+        const auto available_slots = cpu->issueWidth * cycles;
+        for (ThreadID tid = 0; tid < cpu->numThreads; ++tid) {
+            const auto bad_spec_slots = dispatched_ops[tid] -
+                committed_ops[tid] + recovery_bubbles[tid];
+            badSpecBound[tid] = available_slots == 0 ?
+                0.0 : std::max(0.0, bad_spec_slots / available_slots);
+
+            const auto squashes = total_squashes[tid];
+            branchMissPrediction[tid] = squashes == 0 ?
+                0.0 : badSpecBound[tid].value() *
+                    branch_mispredicts[tid] / squashes;
+        }
+    });
 
     machineClears = badSpecBound - branchMissPrediction;
 
