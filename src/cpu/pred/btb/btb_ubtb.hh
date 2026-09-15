@@ -159,6 +159,11 @@ class UBTB : public TimedBaseBTBPredictor
     BlockEntry lookupForChecker(Addr startAddr, ThreadID tid,
                                uint8_t asidHash);
 
+    void writeThroughMainBTBEntry(const BTBEntry &entry,
+                                  ThreadID tid = 0, uint8_t asidHash = 0);
+    void invalidateMainBTBEntry(Addr pc,
+                                ThreadID tid = 0, uint8_t asidHash = 0);
+
     /** Attribute whether a produced PairTAGE second block agreed with the
      * checker prediction returned by lookupForChecker().
      */
@@ -275,6 +280,12 @@ class UBTB : public TimedBaseBTBPredictor
 
     void fillLayout(Addr startAddr, ThreadID tid, uint8_t asidHash,
                     const std::vector<BTBEntry> &entries);
+
+    Addr layoutEnd(Addr startAddr) const
+    {
+        return (startAddr + predictWidth) &
+            ~mask(floorLog2(predictWidth) - 1);
+    }
 
     /** The uBTB structure:
      *  - Stored flat as numSets consecutive groups of numWays entries

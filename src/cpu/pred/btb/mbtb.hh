@@ -72,6 +72,12 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+#ifdef UNIT_TEST
+namespace test { class UBTB; }
+#else
+class UBTB;
+#endif
+
 // Conditional namespace wrapper for testing
 #ifdef UNIT_TEST
 namespace test {
@@ -149,6 +155,8 @@ class MBTB : public TimedBaseBTBPredictor
 
     std::vector<BTBEntry> getPredictedEntriesNoSideEffect(
         Addr startAddr, ThreadID tid, uint8_t asidHash) const;
+
+    void setUbtbObserver(UBTB *observer) { ubtbObserver = observer; }
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
@@ -305,16 +313,20 @@ class MBTB : public TimedBaseBTBPredictor
     void updateExistingInSRAMSet(Addr btb_idx,
                                  BTBHeap &heap,
                                  BTBSetIter it_found,
-                                 const TickedBTBEntry &ticked_entry);
+                                 const TickedBTBEntry &ticked_entry,
+                                 ThreadID tid, uint8_t asidHash);
 
     // Helper: replace the oldest entry in SRAM set
     void replaceOldestInSRAMSet(int sram_id,
                                 Addr btb_idx,
                                 BTBHeap &heap,
-                                const TickedBTBEntry &ticked_entry);
+                                const TickedBTBEntry &ticked_entry,
+                                ThreadID tid, uint8_t asidHash);
 
     // Helper: commit/update an entry in victim cache at given index
     void commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry);
+
+    UBTB *ubtbObserver{nullptr};
 
     /*
      * Comparator for MRU heap

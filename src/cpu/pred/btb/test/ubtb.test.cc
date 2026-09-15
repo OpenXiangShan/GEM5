@@ -78,6 +78,19 @@ fillLayout(UBTB &ubtb, Addr start_pc, const std::vector<BTBEntry> &slots)
     ubtb.updateUsingS3Pred(pred);
 }
 
+void
+fillLayoutForContext(UBTB &ubtb, Addr start_pc, ThreadID tid,
+                     uint8_t asid_hash, const std::vector<BTBEntry> &slots)
+{
+    predict(ubtb, start_pc, tid, asid_hash);
+    FullBTBPrediction pred;
+    pred.tid = tid;
+    pred.asidHash = asid_hash;
+    pred.bbStart = start_pc;
+    pred.btbEntries = slots;
+    ubtb.updateUsingS3Pred(pred);
+}
+
 std::vector<Addr>
 findAddressesForSet(const UBTB &ubtb, unsigned set, unsigned count)
 {
@@ -238,6 +251,67 @@ TEST(UBTBCheckerTest, DoesNotOverwritePrimaryPredictionState)
 
     EXPECT_TRUE(hitsTarget(ubtb, PrimaryPc, 0xa000));
     EXPECT_TRUE(hitsTarget(ubtb, checkerPc, 0x9000));
+}
+
+TEST(UBTBConsistencyTest, WritesThroughUpdatesToExistingBranch)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    fillLayout(ubtb, StartPc,
+               {makeSlot(0x1004, 0x2000, true, -1),
+                makeSlot(0x1008, 0x3000, true, 0)});
+
+    auto updated = makeSlot(0x1004, 0x2800, true, 1);
+    updated.source = 23;
+    ubtb.writeThroughMainBTBEntry(updated);
+
+    const auto layout = ubtb.lookupForChecker(StartPc, 0, 0);
+    ASSERT_TRUE(layout.usable());
+    ASSERT_EQ(layout.slots.size(), 2);
+    EXPECT_EQ(layout.slots.front().target, 0x2800);
+    EXPECT_EQ(layout.slots.front().ctr, 1);
+    EXPECT_EQ(layout.slots.front().source, ubtb.getComponentIdx());
+}
+
+TEST(UBTBConsistencyTest, InvalidatesWhenMainBTBAddsBranchToLayout)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    fillLayout(ubtb, StartPc, {makeSlot(0x1004, 0x2000)});
+
+    ubtb.writeThroughMainBTBEntry(makeSlot(0x1008, 0x3000));
+
+    EXPECT_FALSE(ubtb.lookupForChecker(StartPc, 0, 0).valid);
+}
+
+TEST(UBTBConsistencyTest, InvalidatesWhenMainBTBRemovesBranch)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    fillLayout(ubtb, StartPc, {makeSlot(0x1004, 0x2000)});
+
+    ubtb.invalidateMainBTBEntry(0x1004);
+
+    EXPECT_FALSE(ubtb.lookupForChecker(StartPc, 0, 0).valid);
+}
+
+TEST(UBTBConsistencyTest, KeepsAsidLayoutsIndependent)
+{
+    UBTB ubtb(4, 2, 38);
+    constexpr Addr StartPc = 0x1000;
+    fillLayoutForContext(ubtb, StartPc, 0, 1,
+                         {makeSlot(0x1004, 0x2000)});
+    fillLayoutForContext(ubtb, StartPc, 0, 2,
+                         {makeSlot(0x1004, 0x3000)});
+
+    ubtb.writeThroughMainBTBEntry(makeSlot(0x1004, 0x2800), 0, 1);
+
+    const auto asid1 = ubtb.lookupForChecker(StartPc, 0, 1);
+    const auto asid2 = ubtb.lookupForChecker(StartPc, 0, 2);
+    ASSERT_TRUE(asid1.usable());
+    ASSERT_TRUE(asid2.usable());
+    EXPECT_EQ(asid1.slots.front().target, 0x2800);
+    EXPECT_EQ(asid2.slots.front().target, 0x3000);
 }
 
 TEST(UBTBLayoutTest, PreservesAllSlotsAndSelectsFirstTaken)

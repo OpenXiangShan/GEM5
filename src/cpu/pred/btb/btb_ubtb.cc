@@ -431,6 +431,64 @@ UBTB::lookupForChecker(Addr startAddr, ThreadID tid, uint8_t asidHash)
 }
 
 void
+UBTB::writeThroughMainBTBEntry(const BTBEntry &entry,
+                               ThreadID tid, uint8_t asidHash)
+{
+    if (!entry.valid) {
+        invalidateMainBTBEntry(entry.pc, tid, asidHash);
+        return;
+    }
+
+    for (unsigned set = 0; set < numSets; ++set) {
+        auto [begin, end] = setRange(set, tid);
+        for (auto it = begin; it != end; ++it) {
+            auto &layout = *it;
+            if (!layout.valid ||
+                layout.tag != getTag(layout.startPC, asidHash) ||
+                entry.pc < layout.startPC ||
+                entry.pc >= layoutEnd(layout.startPC)) {
+                continue;
+            }
+            auto slot = std::find_if(
+                layout.slots.begin(), layout.slots.end(),
+                [&entry](const BTBEntry &candidate) {
+                    return candidate.valid && candidate.pc == entry.pc;
+                });
+            if (slot != layout.slots.end()) {
+                const int source = slot->source;
+                *slot = entry;
+                slot->source = source;
+            } else {
+                layout.valid = false;
+            }
+        }
+    }
+}
+
+void
+UBTB::invalidateMainBTBEntry(Addr pc, ThreadID tid, uint8_t asidHash)
+{
+    for (unsigned set = 0; set < numSets; ++set) {
+        auto [begin, end] = setRange(set, tid);
+        for (auto it = begin; it != end; ++it) {
+            auto &layout = *it;
+            if (!layout.valid ||
+                layout.tag != getTag(layout.startPC, asidHash)) {
+                continue;
+            }
+            const bool contains = std::any_of(
+                layout.slots.begin(), layout.slots.end(),
+                [pc](const BTBEntry &candidate) {
+                    return candidate.valid && candidate.pc == pc;
+                });
+            if (contains) {
+                layout.valid = false;
+            }
+        }
+    }
+}
+
+void
 UBTB::recordCheckerResult(bool matches)
 {
     if (matches) {
@@ -475,8 +533,7 @@ UBTB::fillLayout(Addr startAddr, ThreadID tid, uint8_t asidHash,
     layout.startPC = startAddr;
     layout.tag = getTag(startAddr, asidHash);
     layout.tick = curTick();
-    const Addr end = (startAddr + predictWidth) &
-        ~mask(floorLog2(predictWidth) - 1);
+    const Addr end = layoutEnd(startAddr);
 
     // The input is bounded by the supplying BTB's capacity. Normalize the
     // whole window before truncation, retaining branches after the exit.

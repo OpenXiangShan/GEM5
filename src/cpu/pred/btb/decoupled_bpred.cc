@@ -108,6 +108,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         initDB();
     }
     bpType = DecoupledBTBType;
+    if (mbtb->isEnabled() && ubtb->isEnabled()) {
+        mbtb->setUbtbObserver(ubtb);
+    }
     // Only add enabled components to the list
     if (ubtb->isEnabled()) components.push_back(ubtb);
     if (abtb->isEnabled()) components.push_back(abtb);
