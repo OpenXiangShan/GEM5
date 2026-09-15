@@ -334,6 +334,7 @@ DecoupledBPUWithBTB::tick()
         thread.twoTakenBTBEntries.clear();
         thread.firstBlockProcessedThisTick = false;
         thread.twoTakenTrainReady = false;
+        thread.twoTakenTageContextReady = false;
     }
 
     const auto scheduledTids = scheduleThreads();
@@ -776,7 +777,10 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     dbpBtbStats.twoTakenSupplementalEntriesMerged +=
         secondEntry.valid ? secondPred.btbEntries.size() - 1 : 0;
 
-    refreshTwoTakenPredictionMetas(tid, secondPred);
+    refreshTwoTakenPredictionMetas(
+        tid, secondPred,
+        thread.twoTakenTageContextReady ? &thread.twoTakenTageContext :
+                                          nullptr);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
 
     thread.s0PC = secondPred.getTarget(predictWidth);
@@ -798,7 +802,8 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
 
 void
 DecoupledBPUWithBTB::refreshTwoTakenPredictionMetas(
-    ThreadID tid, FullBTBPrediction &pred)
+    ThreadID tid, FullBTBPrediction &pred,
+    const BTBTAGE::SecondBlockLookupContext *tageContext)
 {
     auto &thread = threads[tid];
 
@@ -808,7 +813,13 @@ DecoupledBPUWithBTB::refreshTwoTakenPredictionMetas(
 
     pred.tageInfoForMgscs.clear();
     for (int i = 0; i < numComponents; ++i) {
-        components[i]->refreshPredictionMeta(thread.s0PC, thread.s0History, pred);
+        if (tageContext && components[i] == tage) {
+            tage->refreshSecondBlockPredictionMeta(
+                thread.s0PC, thread.s0History, pred, *tageContext);
+        } else {
+            components[i]->refreshPredictionMeta(
+                thread.s0PC, thread.s0History, pred);
+        }
     }
 }
 
@@ -862,6 +873,8 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
         const auto tageContext = tage->makeSecondBlockLookupContext(
             thread.finalPred, block1Start, startPC, tid, asidHash,
             &block1History);
+        thread.twoTakenTageContext = tageContext;
+        thread.twoTakenTageContextReady = true;
         tage->lookupSecondBlockNoSideEffect(
             tageContext, btbEntries, condTakens);
     } else {

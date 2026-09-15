@@ -630,6 +630,21 @@ TEST_F(BTBTAGETest, SecondBlockLookupUsesH1IndexAndH2Tag)
     ASSERT_EQ(results.size(), 1U);
     EXPECT_EQ(results.front().first, secondEntry.pc);
     EXPECT_TRUE(results.front().second);
+
+    FullBTBPrediction secondPred;
+    secondPred.tid = 0;
+    secondPred.bbStart = block2Start;
+    secondPred.btbEntries = {secondEntry};
+    tage->refreshSecondBlockPredictionMeta(
+        block2Start, history, secondPred, context);
+    const auto secondMeta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        tage->getPredictionMeta());
+    ASSERT_TRUE(secondMeta);
+    EXPECT_TRUE(secondMeta->hasSecondBlockContext);
+    EXPECT_EQ(secondMeta->secondBlockContext.indexPC, block1Start);
+    EXPECT_EQ(secondMeta->secondBlockContext.tagPC, block2Start);
+    ASSERT_TRUE(secondMeta->preds.count(secondEntry.pc));
+    EXPECT_TRUE(secondMeta->preds.at(secondEntry.pc).taken);
 }
 
 // Test main and alternative prediction mechanism by direct setup

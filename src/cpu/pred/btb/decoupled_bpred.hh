@@ -146,6 +146,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         PairTAGE::TrainPacket twoTakenTrainPacket;
         // uBTB-only entries used to build the PairTAGE second-block checker.
         std::vector<BTBEntry> twoTakenBTBEntries;
+        BTBTAGE::SecondBlockLookupContext twoTakenTageContext;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
@@ -153,6 +154,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool blockPredictionPending{false};
         bool redirectPending{false};
         bool twoTakenTrainReady{false};
+        bool twoTakenTageContextReady{false};
         bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
@@ -175,7 +177,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void processNewPrediction(ThreadID tid);
     void prepareTwoTakenTraining(ThreadID tid);
     void processTwoTakenBlock(ThreadID tid);
-    void refreshTwoTakenPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
+    void refreshTwoTakenPredictionMetas(
+        ThreadID tid, FullBTBPrediction &pred,
+        const BTBTAGE::SecondBlockLookupContext *tageContext = nullptr);
     bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
     bool pairtageFirstBlockNotOverriden(ThreadID tid) const;
 

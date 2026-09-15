@@ -656,12 +656,32 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
                                const bitset &history,
                                FullBTBPrediction &pred)
 {
+    refreshPredictionMetaInternal(startPC, history, pred, nullptr);
+}
+
+void
+BTBTAGE::refreshSecondBlockPredictionMeta(
+    Addr startPC, const bitset &history, FullBTBPrediction &pred,
+    const SecondBlockLookupContext &lookupContext)
+{
+    refreshPredictionMetaInternal(startPC, history, pred, &lookupContext);
+}
+
+void
+BTBTAGE::refreshPredictionMetaInternal(
+    Addr startPC, const bitset &history, FullBTBPrediction &pred,
+    const SecondBlockLookupContext *lookupContext)
+{
     auto &state = historyState(pred.tid);
     threadMeta[pred.tid] = std::make_shared<TageMeta>();
     auto &meta = threadMeta[pred.tid];
     meta->tagFoldedHist = state.tagFoldedHist;
     meta->altTagFoldedHist = state.altTagFoldedHist;
     meta->indexFoldedHist = state.indexFoldedHist;
+    if (lookupContext) {
+        meta->hasSecondBlockContext = true;
+        meta->secondBlockContext = *lookupContext;
+    }
     meta->history = history;
 
     pred.tageInfoForMgscs.clear();
@@ -671,7 +691,8 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
         }
 
         auto tage_pred = generateSinglePrediction(
-            btb_entry, startPC, nullptr, pred.tid, pred.asidHash);
+            btb_entry, startPC, nullptr, pred.tid, pred.asidHash,
+            lookupContext);
         meta->preds[btb_entry.pc] = tage_pred;
 
         auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];
@@ -878,14 +899,28 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     // 2) weak and not-useful way
     // 3) any not-useful way
 
-    // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    // Second-block entries share block1's set index and use block2's tag
+    // context. The same context was used to produce the FTQ prediction meta.
+    const Addr indexPC = meta->hasSecondBlockContext ?
+        meta->secondBlockContext.indexPC : startPC;
+    const Addr tagPC = meta->hasSecondBlockContext ?
+        meta->secondBlockContext.tagPC : startPC;
+    unsigned position = getBranchIndexInBlock(entry.pc, tagPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
+        const uint64_t indexFolded = meta->hasSecondBlockContext ?
+            meta->secondBlockContext.indexFoldedHist[ti] :
+            meta->indexFoldedHist[ti].get();
+        const uint64_t tagFolded = meta->hasSecondBlockContext ?
+            meta->secondBlockContext.tagFoldedHist[ti] :
+            meta->tagFoldedHist[ti].get();
+        const uint64_t altTagFolded = meta->hasSecondBlockContext ?
+            meta->secondBlockContext.altTagFoldedHist[ti] :
+            meta->altTagFoldedHist[ti].get();
         Addr newIndex = getTageIndex(
-            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
-        Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position, asidHash);
+            indexPC, ti, indexFolded, asidHash, tid);
+        Addr newTag = getTageTag(tagPC, ti, tagFolded, altTagFolded,
+                                 position, asidHash);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -1060,7 +1095,10 @@ BTBTAGE::update(
         if (updateOnRead) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                 stream.tid, stream.asidHash);
+                                                 stream.tid, stream.asidHash,
+                                                 predMeta->hasSecondBlockContext ?
+                                                     &predMeta->secondBlockContext :
+                                                     nullptr);
             // Track differences for statistics
             auto it = predMeta->preds.find(btb_entry.pc);
             if (it != predMeta->preds.end() &&

@@ -184,6 +184,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
                                const boost::dynamic_bitset<> &history,
                                FullBTBPrediction &pred) override;
 
+    // Refresh metadata for a second-block prediction whose MainTAGE lookup
+    // uses block1's index context and block2's tag context.
+    void refreshSecondBlockPredictionMeta(
+        Addr startAddr, const boost::dynamic_bitset<> &history,
+        FullBTBPrediction &pred,
+        const SecondBlockLookupContext &lookupContext);
+
     // Update folded history from GHR when configured in direction-history mode.
     void specUpdateGHist(const boost::dynamic_bitset<> &history,
                         FullBTBPrediction &pred,
@@ -490,6 +497,10 @@ public:
         std::vector<TageFoldedHist> tagFoldedHist;
         std::vector<TageFoldedHist> altTagFoldedHist;
         std::vector<TageFoldedHist> indexFoldedHist;
+        // Second-block lookup histories differ from the speculative history
+        // checkpoint used when recovering after a squash. Keep both views.
+        bool hasSecondBlockContext{false};
+        SecondBlockLookupContext secondBlockContext;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;
@@ -535,6 +546,11 @@ private:
                                  uint8_t asidHash,
                                  ThreadID tid,
                                  AllocationTraceInfo &allocInfo);
+
+    void refreshPredictionMetaInternal(
+        Addr startAddr, const boost::dynamic_bitset<> &history,
+        FullBTBPrediction &pred,
+        const SecondBlockLookupContext *lookupContext);
 
 
     // Helper methods for LRU management
