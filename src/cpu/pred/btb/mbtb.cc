@@ -30,6 +30,7 @@
 #include "cpu/pred/btb/mbtb.hh"
 
 #include "base/intmath.hh"
+#include "cpu/pred/btb/btb_ubtb.hh"
 
 // Additional conditional includes based on build mode
 #ifdef UNIT_TEST
@@ -605,14 +606,22 @@ MBTB::updateBTBEntry(
 
     if (found) {
         // Update in-place in SRAM set
-        updateExistingInSRAMSet(btb_idx, target_mru[btb_idx], it, ticked_entry);
+        updateExistingInSRAMSet(btb_idx, target_mru[btb_idx], it, ticked_entry,
+                                stream.tid, stream.asidHash);
     } else if (found_in_vc) {
         // In-place update in victim cache to avoid ping-ponging between MBTB and VC
+#ifndef UNIT_TEST
+        if (ubtbObserver) {
+            ubtbObserver->invalidateMainBTBEntry(ticked_entry.pc,
+                                                 stream.tid, stream.asidHash);
+        }
+#endif
         commitToVictimCache(vc_idx, ticked_entry);
         return;
     } else {
         // Not found anywhere, replace oldest in SRAM set
-        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
+        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx],
+                               ticked_entry, stream.tid, stream.asidHash);
     }
 }
 
@@ -648,7 +657,8 @@ void
 MBTB::updateExistingInSRAMSet(Addr btb_idx,
                               BTBHeap &heap,
                               BTBSetIter it_found,
-                              const TickedBTBEntry &ticked_entry)
+                              const TickedBTBEntry &ticked_entry,
+                              ThreadID tid, uint8_t asidHash)
 {
     if (it_found->target != ticked_entry.target) {
         btbStats.updateFixTarget++;
@@ -664,6 +674,11 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
     }
 #endif
     btbStats.updateExisting++;
+#ifndef UNIT_TEST
+    if (ubtbObserver) {
+        ubtbObserver->writeThroughMainBTBEntry(ticked_entry, tid, asidHash);
+    }
+#endif
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
@@ -676,7 +691,8 @@ void
 MBTB::replaceOldestInSRAMSet(int sram_id,
                              Addr btb_idx,
                              BTBHeap &heap,
-                             const TickedBTBEntry &ticked_entry)
+                             const TickedBTBEntry &ticked_entry,
+                             ThreadID tid, uint8_t asidHash)
 {
     // Replace oldest entry in the set
     DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
@@ -698,11 +714,22 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
 
         // Insert evicted entry into victim cache
         insertVictimCache(*entry_in_btb_now);
+#ifndef UNIT_TEST
+        if (ubtbObserver) {
+            ubtbObserver->invalidateMainBTBEntry(entry_in_btb_now->pc,
+                                                 tid, asidHash);
+        }
+#endif
     }
     btbStats.updateReplace++;
     DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
             entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
     *entry_in_btb_now = ticked_entry;
+#ifndef UNIT_TEST
+    if (ubtbObserver) {
+        ubtbObserver->writeThroughMainBTBEntry(ticked_entry, tid, asidHash);
+    }
+#endif
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;

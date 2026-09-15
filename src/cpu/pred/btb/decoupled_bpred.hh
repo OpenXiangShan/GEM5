@@ -144,7 +144,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         FullBTBPrediction finalPred;      ///< Final prediction
         PairTAGE::TrainPacket finalTrainPacket;
         PairTAGE::TrainPacket twoTakenTrainPacket;
+        // uBTB-only entries used to build the PairTAGE second-block checker.
         std::vector<BTBEntry> twoTakenBTBEntries;
+        BTBTAGE::SecondBlockLookupContext twoTakenTageContext;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
@@ -152,6 +154,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool blockPredictionPending{false};
         bool redirectPending{false};
         bool twoTakenTrainReady{false};
+        bool twoTakenTageContextReady{false};
         bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
@@ -174,7 +177,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void processNewPrediction(ThreadID tid);
     void prepareTwoTakenTraining(ThreadID tid);
     void processTwoTakenBlock(ThreadID tid);
-    void refreshTwoTakenPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
+    void refreshTwoTakenPredictionMetas(
+        ThreadID tid, FullBTBPrediction &pred,
+        const BTBTAGE::SecondBlockLookupContext *tageContext = nullptr);
     bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
     bool pairtageFirstBlockNotOverriden(ThreadID tid) const;
 
@@ -321,6 +326,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
+
+        statistics::Scalar twoTakenUbtbMissDrops;
+        statistics::Scalar twoTakenPreExitUncondDrops;
+        statistics::Scalar twoTakenNotTakenUncondDrops;
+        statistics::Scalar twoTakenSupplementalEntriesMerged;
 
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority

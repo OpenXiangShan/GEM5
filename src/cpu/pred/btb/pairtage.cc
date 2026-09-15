@@ -260,6 +260,15 @@ PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vec
     packet.startPC = startPC;
     packet.phase = phase;
 
+    // The caller supplies only complete layouts. An empty layout therefore
+    // represents a known branchless block, not a uBTB miss or overflow.
+    if (btbEntries.empty()) {
+        packet.valid = true;
+        packet.branchPC = startPC;
+        packet.targetPC = getFallThrough(startPC);
+        return packet;
+    }
+
     const BTBEntry *trainEntry = nullptr;
     bool taken = false;
     for (const auto &entry : btbEntries) {
@@ -303,7 +312,7 @@ PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vec
     packet.taken = taken;
     packet.branchFlags =
         TrainPacket::branchFlag(BranchFlag::Conditional) | TrainPacket::branchFlag(BranchFlag::Direct);
-    packet.size = 4;
+    packet.size = trainEntry->size;
     return packet;
 }
 
@@ -424,7 +433,7 @@ PairTAGE::selectMatchingReplacementWay(
             if (!entry.valid || entry.tag != tag ||
                 !blockIdentityMatches(entry.firstBlock(), trainedBlock) ||
                 entryMatchesTraining(entry, trainedBlock,
-                                     trainedSecondBlock) ||
+                                     trainedSecondBlock, true) ||
                 !predicate(entry)) {
                 continue;
             }
@@ -810,12 +819,13 @@ PairTAGE::blockIdentityMatches(const PairBlockInfo &lhs,
 bool
 PairTAGE::entryMatchesTraining(const PairTAGEEntry &entry,
                                const PairBlockInfo &firstBlock,
-                               const PairBlockInfo &secondBlock) const
+                               const PairBlockInfo &secondBlock,
+                               bool secondBlockKnown) const
 {
     if (!blocksMatch(entry.firstBlock(), firstBlock)) {
         return false;
     }
-    if (!enableSecondBlock) {
+    if (!enableSecondBlock || !secondBlockKnown) {
         return true;
     }
     return blocksMatch(entry.secondBlock(), secondBlock);
@@ -883,13 +893,17 @@ PairTAGE::trainFromS3Pred(
     }
 
     const bool providerMatchesTraining = provider.found &&
-        entryMatchesTraining(provider.entry, trainedFirstBlock, secondBlockTrainInfo);
+        entryMatchesTraining(provider.entry, trainedFirstBlock,
+                             secondBlockTrainInfo,
+                             twoTakenTrainPacket != nullptr);
     const bool providerFirstBlockMatches = provider.found &&
         blocksMatch(provider.entry.firstBlock(), trainedFirstBlock);
     const bool providerFirstBlockIdentityMatches = provider.found &&
         blockIdentityMatches(provider.entry.firstBlock(), trainedFirstBlock);
     const bool altMatchesTraining = altProvider.found &&
-        entryMatchesTraining(altProvider.entry, trainedFirstBlock, secondBlockTrainInfo);
+        entryMatchesTraining(altProvider.entry, trainedFirstBlock,
+                             secondBlockTrainInfo,
+                             twoTakenTrainPacket != nullptr);
     const bool canAllocHigher = provider.found &&
         provider.table < numPredictors - 1;
     bool preserveProviderOnMismatch = provider.found &&
@@ -962,7 +976,9 @@ PairTAGE::trainFromS3Pred(
         newEntry.setBlock(0, trainedFirstBlock);
         if (secondBlockTrainInfo.valid) {
             newEntry.setBlock(1, secondBlockTrainInfo);
-        } else {
+        } else if (twoTakenTrainPacket || !providerFirstBlockMatches) {
+            // An unavailable checker says nothing about a still-valid P2.
+            // Preserve it when P1's context has not changed.
             newEntry.clearBlock(1);
         }
 
