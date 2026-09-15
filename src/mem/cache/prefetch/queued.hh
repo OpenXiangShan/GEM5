@@ -68,6 +68,7 @@ class Queued : public Base
     {
         Addr addr;
         int32_t priority;
+        bool forceTranslation{false};
         bool isVA;
         bool isBOP;
         int pfahead_host = 0; // which level should process pfahead (e.g 2 is l2...)

@@ -19,6 +19,7 @@
 #include "mem/cache/prefetch/bop.hh"
 #include "mem/cache/prefetch/cmc.hh"
 #include "mem/cache/prefetch/ipcp.hh"
+#include "mem/cache/prefetch/lldp.hh"
 #include "mem/cache/prefetch/opt.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/signature_path.hh"
@@ -178,6 +179,19 @@ class XSCompositePrefetcher : public Queued
     /** Update the RR right table after a prefetch fill */
     void notifyFill(const PacketPtr& pkt) override;
 
+    // LLDP is a side-band component of the composite.  Forwarding these
+    // callbacks keeps its hint attached to the original cache request while
+    // all ordinary candidates continue through this composite's queue.
+    lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
+    void hintData(const lldp::Hint &hint, const PacketPtr &demand,
+                  const uint8_t *data, unsigned size) override;
+    void addTLB(BaseTLB *tlb, bool functional) override;
+    void regProbeListeners() override;
+    void setPacketReadyCallback(std::function<void(Tick)> callback) override;
+    bool hasPendingPacket() override;
+    PacketPtr getPacket() override;
+    Tick nextPrefetchReadyTime() const override;
+
   private:
     const unsigned pfFilterSize{256};
     const unsigned pfPageFilterSize{16};
@@ -213,6 +227,7 @@ class XSCompositePrefetcher : public Queued
     XSStridePrefetcher *Sstride;
     OptPrefetcher *Opt;
     XsStreamPrefetcher *Xsstream;
+    LLDPrefetcher *lldp;
 
 
     const bool enableActivepage;
@@ -225,6 +240,7 @@ class XSCompositePrefetcher : public Queued
     const bool enableBOP;
     const bool enableOpt;
     const bool enableXsstream;
+    const bool enableLLDP;
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
 

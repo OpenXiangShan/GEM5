@@ -1,7 +1,10 @@
 #include "mem/cache/prefetch/sms.hh"
+
+#include <algorithm>
+#include <climits>
 #include <cstdint>
 #include <iterator>
-#include <climits>
+#include <utility>
 
 #include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
@@ -57,6 +60,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       Sstride(p.sstride),
       Opt(p.opt),
       Xsstream(p.xsstream),
+      lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
       enableActivepage(p.enable_activepage),
       enablePht(p.enable_pht),
       enableCPLX(p.enable_cplx),
@@ -67,6 +71,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableBOP(p.enable_bop),
       enableOpt(p.enable_opt),
       enableXsstream(p.enable_xsstream),
+      enableLLDP(p.enable_lldp),
       phtEarlyUpdate(p.pht_early_update),
       neighborPhtUpdate(p.neighbor_pht_update),
       phtSentPrefetch(),
@@ -77,6 +82,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(largeBOP);
     assert(smallBOP);
     assert(learnedBOP);
+    assert(lldp);
     assert(isPowerOf2(regionSize));
 
     setSharedFilterContextQualified(true);
@@ -116,6 +122,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
         Xsstream->setSharedFilterContextQualified(true);
         Xsstream->filter = &this->pfBlockLRUFilter;
     }
+    lldp->setSharedFilterContextQualified(true);
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
@@ -843,6 +850,67 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
 
     if (ipcp)
         ipcp->setParentInfo(sys, pm, _cache, blk_size);
+
+    lldp->setParentInfo(sys, pm, _cache, blk_size);
+}
+
+void
+XSCompositePrefetcher::addTLB(BaseTLB *tlb, bool functional)
+{
+    Base::addTLB(tlb, functional);
+    lldp->addTLB(tlb, functional);
+}
+
+void
+XSCompositePrefetcher::regProbeListeners()
+{
+    Queued::regProbeListeners();
+    lldp->regProbeListeners();
+}
+
+void
+XSCompositePrefetcher::setPacketReadyCallback(
+    std::function<void(Tick)> callback)
+{
+    lldp->setPacketReadyCallback(callback);
+    Base::setPacketReadyCallback(std::move(callback));
+}
+
+bool
+XSCompositePrefetcher::hasPendingPacket()
+{
+    return Queued::hasPendingPacket() ||
+        (enableLLDP && lldp->hasPendingPacket());
+}
+
+PacketPtr
+XSCompositePrefetcher::getPacket()
+{
+    if (enableLLDP && lldp->nextPrefetchReadyTime() <= curTick())
+        return lldp->getPacket();
+    return Queued::getPacket();
+}
+
+Tick
+XSCompositePrefetcher::nextPrefetchReadyTime() const
+{
+    const Tick parent = Queued::nextPrefetchReadyTime();
+    return enableLLDP ? std::min(parent, lldp->nextPrefetchReadyTime()) : parent;
+}
+
+lldp::Hint
+XSCompositePrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
+{
+    return enableLLDP ? lldp->loadTrain(pkt, miss) : lldp::Hint();
+}
+
+void
+XSCompositePrefetcher::hintData(const lldp::Hint &hint,
+                                 const PacketPtr &demand,
+                                 const uint8_t *data, unsigned size)
+{
+    if (enableLLDP)
+        lldp->hintData(hint, demand, data, size);
 }
 bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
 {

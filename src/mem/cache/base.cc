@@ -207,8 +207,12 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
             wayPreTable[i].push_back(DEFAULTWAYPRE);
     }
 
-    if (prefetcher)
+    if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), this, getBlockSize());
+        prefetcher->setPacketReadyCallback([this](Tick ready) {
+            schedMemSideSendEvent(std::max(ready, clockEdge()));
+        });
+    }
 
     fatal_if(compressor && !dynamic_cast<CompressedTags*>(tags),
         "The tags of compressed cache %s must derive from CompressedTags",
@@ -786,6 +790,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             }
         }
     }
+
+    // Resolve this packet's hint after the tag result, before allocating or
+    // merging its MSHR target. No global pipeline-indexed hint state is used.
+    pkt->lldpHint = prefetcher ? prefetcher->loadTrain(pkt, !satisfied) : lldp::Hint();
 
     if (satisfied) {
         // notify before anything else as later handleTimingReqHit might turn

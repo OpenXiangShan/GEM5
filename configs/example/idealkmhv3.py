@@ -169,6 +169,8 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
+    args.l1d_enable_lldp = True
+    args.l2_enable_lldp = True
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 

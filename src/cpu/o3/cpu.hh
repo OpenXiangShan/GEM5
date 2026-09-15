@@ -191,6 +191,7 @@ class CPU : public BaseCPU
     /** Constructs a CPU with the given parameters. */
     CPU(const BaseO3CPUParams &params);
 
+    ProbePointArg<XsDynInstMetaPtr> *ppLldpDependenceTrain;
     ProbePointArg<PacketPtr> *ppInstAccessComplete;
     ProbePointArg<std::pair<DynInstPtr, PacketPtr> > *ppDataAccessComplete;
 
