@@ -1056,6 +1056,11 @@ class Fetch
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
 
+    /** fetch cut reason */
+    enum class FetchCut { None, Stream, Buf, Icache };
+    FetchCut fetchCut[MaxThreads]{};
+    static StallReason fragReasonFromCut(FetchCut cut);
+
     /**
      * Check if the thread can fetch instructions
      * @param tid Thread ID
