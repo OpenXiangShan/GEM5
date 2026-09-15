@@ -41,6 +41,8 @@
 #ifndef __CPU_O3_ROB_HH__
 #define __CPU_O3_ROB_HH__
 
+#include <cassert>
+#include <list>
 #include <queue>
 #include <string>
 #include <utility>
@@ -88,6 +90,73 @@ class ROB
         ROBSquashing
     };
 
+    /** Types exist only in a batch plan and allocation statistics. */
+    enum class HybridGroupType
+    {
+        NormalS,
+        NormalC,
+        NormalN,
+        CC,
+        CS,
+        SC,
+        NumTypes
+    };
+
+    struct HybridGroup
+    {
+        unsigned length;
+        HybridGroupType type;
+    };
+    using HybridPlan = std::vector<HybridGroup>;
+
+    enum class HybridInstClass { Simple, Complex, NoCompress };
+
+    /** One constant-time transition of the temporary batch planner. */
+    static void
+    appendHybridClass(HybridPlan &plan, HybridInstClass inst_class,
+                      unsigned group_limit)
+    {
+        assert(group_limit > 0);
+        bool append = false;
+        if (!plan.empty() && plan.back().length < group_limit) {
+            auto &group = plan.back();
+            switch (group.type) {
+              case HybridGroupType::NormalS:
+                if (inst_class == HybridInstClass::Simple) {
+                    append = true;
+                } else if (inst_class == HybridInstClass::Complex) {
+                    group.type = HybridGroupType::SC;
+                    append = true;
+                }
+                break;
+              case HybridGroupType::NormalC:
+                if (inst_class == HybridInstClass::Simple) {
+                    group.type = HybridGroupType::CS;
+                    append = true;
+                } else if (inst_class == HybridInstClass::Complex) {
+                    group.type = HybridGroupType::CC;
+                    append = true;
+                }
+                break;
+              case HybridGroupType::CS:
+                append = inst_class == HybridInstClass::Simple;
+                break;
+              default:
+                break;
+            }
+        }
+
+        if (append) {
+            ++plan.back().length;
+        } else {
+            const auto type = inst_class == HybridInstClass::Simple ?
+                HybridGroupType::NormalS :
+                inst_class == HybridInstClass::Complex ?
+                HybridGroupType::NormalC : HybridGroupType::NormalN;
+            plan.push_back({1, type});
+        }
+    }
+
   private:
     /** Per-thread ROB status. */
     Status robStatus[MaxThreads];
@@ -107,6 +176,12 @@ class ROB
     unsigned borrowingStateHoldCycle[MaxThreads];
 
     ROBWalkPolicy robWalkPolicy;
+
+    const bool hybrid;
+
+    HybridInstClass classifyHybridInst(const DynInstPtr &inst) const;
+    void insertInstWithGroup(const DynInstPtr &inst, bool new_group);
+    void assertHybridInvariants(ThreadID tid) const;
 
     bool allocateGroup_none(const DynInstPtr inst, ThreadID tid);
     bool allocateGroup_kmhv2(const DynInstPtr inst, ThreadID tid);
@@ -144,6 +219,17 @@ class ROB
      *  @param inst The instruction being inserted into the ROB.
      */
     void insertInst(const DynInstPtr &inst);
+
+    bool isHybrid() const { return hybrid; }
+
+    /** Plan only the effective instructions in one fixedbuffer window.
+     *  The number of new physical entries required is the plan's size.
+     */
+    HybridPlan planHybridBatch(const std::vector<DynInstPtr> &insts) const;
+
+    /** Consume the admitted plan without recomputing group boundaries. */
+    void insertHybridBatch(const std::vector<DynInstPtr> &insts,
+                           const HybridPlan &plan);
 
     /** Returns pointer to the head instruction within the ROB.  There is
      *  no guarantee as to the return value if the ROB is empty.
@@ -399,7 +485,7 @@ class ROB
 
     struct ROBStats : public statistics::Group
     {
-        ROBStats(statistics::Group *parent);
+        ROBStats(statistics::Group *parent, unsigned group_limit);
 
         // The number of rob_reads
         statistics::Scalar reads;
@@ -407,6 +493,12 @@ class ROB
         statistics::Scalar writes;
 
         statistics::Distribution instPergroup;
+
+        statistics::Scalar hybridAllocatedGroups;
+        statistics::Scalar hybridAllocatedInsts;
+        statistics::Vector hybridGroupType;
+        statistics::Distribution hybridGroupLength;
+        statistics::Formula hybridAllocationCompressionRatio;
 
         statistics::Scalar robRatSnapshotHits;
         statistics::Distribution snapshotSquashWidth;

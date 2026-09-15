@@ -131,11 +131,137 @@ ROB::allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid)
     return alloc;
 }
 
+ROB::HybridInstClass
+ROB::classifyHybridInst(const DynInstPtr &inst) const
+{
+    // DynInst's serialize-before/after queries include dynamic status bits.
+    // Classification observes enqueue-time state, including fused DynInsts.
+    if (inst->faulted() || inst->isSerializing() ||
+        inst->isSerializeBefore() || inst->isSerializeAfter() ||
+        inst->isNonSpeculative() || inst->isSquashAfter() ||
+        inst->isReadBarrier() || inst->isWriteBarrier() ||
+        inst->isAtomic() || inst->isLoadReserved() ||
+        inst->isStoreConditional() || inst->isVector() ||
+        inst->opClass() == VectorConfigOp ||
+        inst->isMicroop() || inst->isMacroop()) {
+        return HybridInstClass::NoCompress;
+    }
+
+    if (inst->isLoad() || inst->isStore() || inst->isControl() ||
+        inst->opClass() == IntJpOp) {
+        return HybridInstClass::Complex;
+    }
+
+    // Use decoded semantics, including RVC and hints decoded as IntAluOp.
+    switch (inst->opClass()) {
+      case IntAluOp:
+      case IntMultOp:
+      case IntDivOp:
+      case Int2FpOp:
+      case FloatAddOp:
+      case FloatMultOp:
+      case FloatMultAccOp:
+      case FloatDivOp:
+      case FloatSqrtOp:
+      case FloatCmpOp:
+      case FloatCvtOp:
+      case FloatMvOp:
+      case FloatMiscOp:
+        return HybridInstClass::Simple;
+      default:
+        DPRINTF(ROB, "Hybrid N [sn:%llu]: uncovered decoded OpClass %s\n",
+                inst->seqNum, enums::OpClassStrings[inst->opClass()]);
+        return HybridInstClass::NoCompress;
+    }
+}
+
+ROB::HybridPlan
+ROB::planHybridBatch(const std::vector<DynInstPtr> &insts) const
+{
+    assert(isHybrid());
+    HybridPlan plan;
+    plan.reserve(insts.size());
+
+    for (const auto &inst : insts) {
+        assert(inst && !inst->isSquashed() && inst->threadNumber == 0);
+        appendHybridClass(plan, classifyHybridInst(inst), instsPerGroup);
+    }
+    return plan;
+}
+
+void
+ROB::insertHybridBatch(const std::vector<DynInstPtr> &insts,
+                      const HybridPlan &plan)
+{
+    assert(isHybrid());
+    assert(canAllocate(0, plan.size()));
+#ifndef NDEBUG
+    size_t planned_insts = 0;
+    for (const auto &group : plan) {
+        assert(group.length > 0 && group.length <= instsPerGroup);
+        planned_insts += group.length;
+    }
+    assert(planned_insts == insts.size());
+#endif
+
+    size_t next_inst = 0;
+    for (const auto &group : plan) {
+        for (unsigned offset = 0; offset < group.length; ++offset) {
+            const auto &inst = insts[next_inst++];
+            assert(inst && !inst->isSquashed() && inst->threadNumber == 0);
+            insertInstWithGroup(inst, offset == 0);
+        }
+    }
+
+    // Sample final groups only after all admitted instructions are inserted.
+    stats.hybridAllocatedGroups += plan.size();
+    stats.hybridAllocatedInsts += insts.size();
+    for (const auto &group : plan) {
+        stats.hybridGroupType[static_cast<unsigned>(group.type)]++;
+        stats.hybridGroupLength.sample(group.length);
+        stats.instPergroup.sample(group.length);
+        DPRINTF(ROB, "Hybrid allocated group type=%u length=%u\n",
+                static_cast<unsigned>(group.type), group.length);
+    }
+    assertHybridInvariants(0);
+}
+
+void
+ROB::assertHybridInvariants(ThreadID tid) const
+{
+    if (!isHybrid()) {
+        return;
+    }
+    assert(tid == 0);
+    const auto &groups = threadGroups[tid];
+    assert(groups.size() <= numEntries);
+    assert(groups.empty() == instList[tid].empty());
+    assert(numInstsInROB >= 0 &&
+           static_cast<size_t>(numInstsInROB) == instList[tid].size());
+    assert(groups.empty() ||
+           (groups.front() > 0 && groups.front() <= instsPerGroup &&
+            groups.back() > 0 && groups.back() <= instsPerGroup));
+#ifndef NDEBUG
+    // Full scans are explicit ROB-trace validation, never a normal hot path.
+    if (debug::ROB) {
+        size_t count = 0;
+        for (unsigned length : groups) {
+            assert(length > 0 && length <= instsPerGroup);
+            count += length;
+        }
+        assert(count == instList[tid].size());
+        DPRINTF(ROB, "Hybrid invariant groups=%u dynInsts=%u sum=%u\n",
+                groups.size(), instList[tid].size(), count);
+    }
+#endif
+}
+
 ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     : robPolicy(params.smtROBPolicy),
       borrowingDonorReserveEntries(params.smtBorrowDonorReserveEntries),
       borrowingBaseReserveEntries(params.smtBorrowBaseReserveEntries),
       robWalkPolicy(params.robWalkPolicy),
+      hybrid(params.RobCompressPolicy == ROBCompressPolicy::hybrid),
       cpu(_cpu),
       numEntries(params.numROBEntries),
       instsPerGroup(params.CROB_instPerGroup),
@@ -145,8 +271,21 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       robWalkByDestRegs(params.robWalkByDestRegs),
       numInstsInROB(0),
       numThreads(params.numThreads),
-      stats(_cpu)
+      stats(_cpu, params.CROB_instPerGroup)
 {
+    if (isHybrid()) {
+        fatal_if(params.numThreads != 1,
+                 "Hybrid CROB requires numThreads = 1");
+        fatal_if(params.valuePred != nullptr,
+                 "Hybrid CROB requires valuePred = NULL");
+        fatal_if(params.enable_loadFusion,
+                 "Hybrid CROB requires enable_loadFusion = False");
+        fatal_if(params.enableConstantFolding || params.enableMoveElimination ||
+                 params.enableMovImmElimination,
+                 "Hybrid CROB requires all Rename elimination options off");
+        fatal_if(instsPerGroup == 0,
+                 "Hybrid CROB requires CROB_instPerGroup > 0");
+    }
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
         borrowingDonor[tid] = false;
         borrowingStateHoldCycle[tid] = 0;
@@ -213,6 +352,10 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
             break;
         case ROBCompressPolicy::kmhv3:
             allocateNewGroup = &ROB::allocateGroup_kmhv3;
+            break;
+        case ROBCompressPolicy::hybrid:
+            // Hybrid insertion consumes explicit batch boundaries.
+            allocateNewGroup = nullptr;
             break;
         default:
             panic("Unknown ROB compression policy");
@@ -398,6 +541,10 @@ ROB::canAllocate(ThreadID tid, unsigned entries) const
 
     const unsigned used = threadGroups[tid].size();
 
+    if (isHybrid() && used + entries > numEntries) {
+        return false;
+    }
+
     if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
         if (totalEntries() + entries > numEntries) {
             return false;
@@ -474,6 +621,16 @@ void
 ROB::insertInst(const DynInstPtr &inst)
 {
     assert(inst);
+    assert(!isHybrid());
+    assert(canAllocate(inst->threadNumber, 1));
+    const bool alloc = (this->*allocateNewGroup)(inst, inst->threadNumber);
+    insertInstWithGroup(inst, alloc);
+}
+
+void
+ROB::insertInstWithGroup(const DynInstPtr &inst, bool new_group)
+{
+    assert(inst);
 
     stats.writes++;
 
@@ -482,13 +639,12 @@ ROB::insertInst(const DynInstPtr &inst)
     assert(numInstsInROB <= numEntries * instsPerGroup);
 
     ThreadID tid = inst->threadNumber;
-    assert(canAllocate(tid, 1));
 
     // allocate group
-    bool alloc = (this->*allocateNewGroup)(inst, tid);
     lastInsertCycle = cpu->curCycle();
-    if (alloc) {
-        if (!threadGroups[tid].empty()) [[likely]] {
+    if (new_group) {
+        assert(canAllocate(tid, 1));
+        if (!isHybrid() && !threadGroups[tid].empty()) [[likely]] {
             stats.instPergroup.sample(threadGroups[tid].back());
         }
         threadGroups[tid].push_back(1);
@@ -518,6 +674,7 @@ ROB::insertInst(const DynInstPtr &inst)
 
     DPRINTF(ROB, "[tid:%i] Now has %d instructions.\n", tid,
             threadGroups[tid].size());
+    assertHybridInvariants(tid);
 }
 
 void
@@ -544,6 +701,7 @@ ROB::retireHead(ThreadID tid)
 
     //Update Group Size
     commitGroup(head_inst, tid);
+    assertHybridInvariants(tid);
 
     head_inst->clearInROB();
     head_inst->setCommitted();
@@ -579,6 +737,7 @@ ROB::drainSquashedHead(ThreadID tid)
     --numInstsInROB;
 
     commitGroup(head_inst, tid);
+    assertHybridInvariants(tid);
 
     head_inst->clearInROB();
 
@@ -653,7 +812,9 @@ ROB::numFreeEntries(ThreadID tid)
         return limit - used;
     }
 
-    return maxEntries[tid] - threadGroups[tid].size();
+    const unsigned limit = isHybrid() ?
+        std::min(maxEntries[tid], numEntries) : maxEntries[tid];
+    return limit - threadGroups[tid].size();
 }
 
 void
@@ -707,7 +868,10 @@ ROB::doSquash(ThreadID tid)
 
         // printf("[ROB] squash seqNum %ld\n", (*squashIt[tid])->seqNum);
 
-        auto prevIt = std::prev(squashIt[tid]);
+        // A Hybrid flush may remove the last DynInst of its final group.
+        // There is no predecessor when that instruction is list.begin().
+        auto prevIt = isHybrid() && squashIt[tid] == instList[tid].begin() ?
+            instList[tid].end() : std::prev(squashIt[tid]);
         --numInstsInROB;
 
         //Update Group Size
@@ -723,6 +887,12 @@ ROB::doSquash(ThreadID tid)
 
             instList[tid].erase(squashIt[tid]);
 
+            if (isHybrid()) {
+                updateHead();
+                updateTail();
+                assertHybridInvariants(tid);
+            }
+
             squashIt[tid] = instList[tid].end();
 
             doneSquashing[tid] = true;
@@ -737,6 +907,7 @@ ROB::doSquash(ThreadID tid)
             robTailUpdate = true;
 
         instList[tid].erase(squashIt[tid]);
+        assertHybridInvariants(tid);
 
         squashIt[tid] = prevIt;
     }
@@ -975,19 +1146,45 @@ ROB::readTailInst(ThreadID tid)
     return *tail_thread;
 }
 
-ROB::ROBStats::ROBStats(statistics::Group *parent)
+ROB::ROBStats::ROBStats(statistics::Group *parent, unsigned group_limit)
   : statistics::Group(parent, "rob"),
     ADD_STAT(reads, statistics::units::Count::get(),
         "The number of ROB reads"),
     ADD_STAT(writes, statistics::units::Count::get(),
         "The number of ROB writes"),
     ADD_STAT(instPergroup, statistics::units::Count::get()),
+    ADD_STAT(hybridAllocatedGroups, statistics::units::Count::get(),
+        "Physical ROB groups allocated by successful Hybrid batches"),
+    ADD_STAT(hybridAllocatedInsts, statistics::units::Count::get(),
+        "DynInsts inserted by successful Hybrid batches, including wrong path"),
+    ADD_STAT(hybridGroupType, statistics::units::Count::get(),
+        "Final group types at successful Hybrid batch allocation"),
+    ADD_STAT(hybridGroupLength, statistics::units::Count::get(),
+        "Final DynInst group lengths at successful Hybrid batch allocation"),
+    ADD_STAT(hybridAllocationCompressionRatio, statistics::units::Rate<
+        statistics::units::Count, statistics::units::Count>::get(),
+        "Successfully allocated Hybrid DynInsts per physical ROB group"),
     ADD_STAT(robRatSnapshotHits, statistics::units::Count::get(),
         "Squashes that landed exactly on a RAT checkpoint (NaiveCpt)"),
     ADD_STAT(snapshotSquashWidth, statistics::units::Count::get(),
         "Distribution of NaiveCpt dynamic squash width")
 {
     instPergroup.init(0, 8, 1).flags(statistics::nozero);
+    hybridGroupType.init(static_cast<unsigned>(HybridGroupType::NumTypes))
+        .flags(statistics::pdf);
+    hybridGroupType.subname(static_cast<unsigned>(HybridGroupType::NormalS),
+                            "NORMAL-S");
+    hybridGroupType.subname(static_cast<unsigned>(HybridGroupType::NormalC),
+                            "NORMAL-C");
+    hybridGroupType.subname(static_cast<unsigned>(HybridGroupType::NormalN),
+                            "NORMAL-N");
+    hybridGroupType.subname(static_cast<unsigned>(HybridGroupType::CC), "CC");
+    hybridGroupType.subname(static_cast<unsigned>(HybridGroupType::CS), "CS");
+    hybridGroupType.subname(static_cast<unsigned>(HybridGroupType::SC), "SC");
+    hybridGroupLength.init(1, std::max(1U, group_limit), 1)
+        .flags(statistics::pdf);
+    hybridAllocationCompressionRatio =
+        hybridAllocatedInsts / hybridAllocatedGroups;
     snapshotSquashWidth.init(0, 256, 6).flags(statistics::pdf);
 }
 

@@ -63,6 +63,9 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('issue_queue.cc')
     Source('perfCCT.cc')
 
+    # Exercise the exact planner transition used by ROB::planHybridBatch.
+    GTest('rob_hybrid.test', 'rob_hybrid.test.cc')
+
     # Trace reader sources for trace-driven simulation
     Source('trace/TraceReader.cc')
     Source('trace/ChampSimTraceReader.cc')

@@ -153,6 +153,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
       aggregateRenameWidth(renameWidth * numPreDispatchThreads),
       commitWidth(params.commitWidth),
+      commitInstWidth(params.commitInstWidth),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
       drainPending(false),
@@ -298,6 +299,9 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
                "number cycles where commit BW limit reached"),
+      ADD_STAT(commitInstWidthFullCycles, statistics::units::Cycle::get(),
+               "Cycles reaching commitInstWidth successful DynInst retirements; "
+               "does not imply additional ready instructions were blocked"),
       ADD_STAT(loadTriple, statistics::units::Cycle::get(),
                "load trip number"),
       ADD_STAT(loadEAReused, statistics::units::Cycle::get(),
@@ -1536,6 +1540,13 @@ Commit::commitInsts()
                     "Trying to commit head instruction, [tid:%i] [sn:%llu]\n",
                     tid, head_inst->seqNum);
 
+            // Squashed objects do not use the successful-retirement quota.
+            // Keep the existing group-window and squash-draining semantics.
+            if (!head_inst->isSquashed() && commitInstWidth != 0 &&
+                num_committed >= commitInstWidth) {
+                break;
+            }
+
             if (!head_inst->isSquashed() &&
                 handleMdpViolation(head_inst, tid)) {
                 break;
@@ -1578,6 +1589,12 @@ Commit::commitInsts()
                                                 num_committed_per_thread[tid]);
 
                 if (commit_success) {
+                    // Sample here so the final trace instruction also counts
+                    // if trace completion exits before the loop epilogue.
+                    if (commitInstWidth != 0 &&
+                        num_committed + 1 == commitInstWidth) {
+                        stats.commitInstWidthFullCycles++;
+                    }
                     recordCommittedInst(head_inst);
                     cpu->perfCCT->updateInstPos(head_inst->seqNum,
                                                 PerfRecord::AtCommit);
@@ -1914,6 +1931,8 @@ Commit::commitInsts()
 
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
+
+    assert(commitInstWidth == 0 || num_committed <= commitInstWidth);
 
     if (num_committed == commitWidth) {
         stats.commitEligibleSamples++;
@@ -2333,6 +2352,26 @@ Commit::moveInstsToBuffer()
         rob->setBorrowingDonor(i, donor, this);
     }
 
+    // Hybrid is single-threaded. The plan lives only for this invocation:
+    // failed admission leaves the window intact and retries reclassify it.
+    // Count positions before filtering squash marks; never refill the window.
+    const unsigned hybrid_window = rob->isHybrid() ?
+        std::min<unsigned>(fixedbuffer[0].size(), renameWidth) : 0;
+    std::vector<DynInstPtr> hybrid_insts;
+    ROB::HybridPlan hybrid_plan;
+    if (rob->isHybrid()) {
+        hybrid_insts.reserve(hybrid_window);
+        for (unsigned pos = 0; pos < hybrid_window; ++pos) {
+            const auto &inst = fixedbuffer[0][pos];
+            if (!inst->isSquashed()) {
+                hybrid_insts.push_back(inst);
+            }
+        }
+        hybrid_plan = rob->planHybridBatch(hybrid_insts);
+        DPRINTF(Commit, "Hybrid window=%u valid=%u requiredGroups=%u\n",
+                hybrid_window, hybrid_insts.size(), hybrid_plan.size());
+    }
+
     // check threads stall & status
     SmtActiveThreadArbiter active_arbiter;
     std::vector<ThreadID> active_tids;
@@ -2343,7 +2382,7 @@ Commit::moveInstsToBuffer()
     for (int i = 0; i < numThreads; i++) {
         bool robblock = commitStatus[i] == ROBSquashing ||
                         commitStatus[i] == TrapPending;
-        const unsigned allocation =
+        const unsigned allocation = rob->isHybrid() ? hybrid_plan.size() :
             std::min<unsigned>(fixedbuffer[i].size(), renameWidth);
         bool block = !rob->canAllocate(i, allocation) || robblock;
         bool active = !block && !fixedbuffer[i].empty();
@@ -2403,34 +2442,50 @@ Commit::moveInstsToBuffer()
     for (const ThreadID tid : selected_tids) {
         const unsigned insts_to_process =
             std::min<unsigned>(fixedbuffer[tid].size(), renameWidth);
-        if (!rob->canAllocate(tid, insts_to_process)) {
+        const unsigned required_groups = rob->isHybrid() ?
+            hybrid_plan.size() : insts_to_process;
+        if (!rob->canAllocate(tid, required_groups)) {
             stallSig->blockIEW[tid] = true;
             stallSig->iewBlockReason[tid] = StallReason::ROBFull;
             stats.ROBFull[tid]++;
             continue;
         }
 
-        for (unsigned inst_num = 0; inst_num < insts_to_process; ++inst_num) {
-            const DynInstPtr &inst = fixedbuffer[tid].front();
-            if (!inst->isSquashed() &&
-                commitStatus[tid] != ROBSquashing &&
-                commitStatus[tid] != TrapPending) {
+        if (rob->isHybrid()) {
+            assert(tid == 0 && insts_to_process == hybrid_window);
+            assert(commitStatus[tid] != ROBSquashing &&
+                   commitStatus[tid] != TrapPending);
+            rob->insertHybridBatch(hybrid_insts, hybrid_plan);
+            if (!hybrid_insts.empty()) {
                 changedROBNumEntries[tid] = true;
-
-                DPRINTF(Commit,
-                        "[tid:%i] [sn:%llu] Inserting PC %s into ROB.\n",
-                        tid, inst->seqNum, inst->pcState());
-
-                rob->insertInst(inst);
-                assert(rob->canAllocate(tid, 0));
-                youngestSeqNum[tid] = inst->seqNum;
-            } else {
-                DPRINTF(Commit, "[tid:%i] [sn:%llu] "
-                        "Instruction PC %s was squashed, skipping.\n",
-                        tid, inst->seqNum, inst->pcState());
+                youngestSeqNum[tid] = hybrid_insts.back()->seqNum;
             }
+            for (unsigned pos = 0; pos < hybrid_window; ++pos) {
+                fixedbuffer[tid].pop_front();
+            }
+        } else {
+            for (unsigned inst_num = 0; inst_num < insts_to_process; ++inst_num) {
+                const DynInstPtr &inst = fixedbuffer[tid].front();
+                if (!inst->isSquashed() &&
+                    commitStatus[tid] != ROBSquashing &&
+                    commitStatus[tid] != TrapPending) {
+                    changedROBNumEntries[tid] = true;
 
-            fixedbuffer[tid].pop_front();
+                    DPRINTF(Commit,
+                            "[tid:%i] [sn:%llu] Inserting PC %s into ROB.\n",
+                            tid, inst->seqNum, inst->pcState());
+
+                    rob->insertInst(inst);
+                    assert(rob->canAllocate(tid, 0));
+                    youngestSeqNum[tid] = inst->seqNum;
+                } else {
+                    DPRINTF(Commit, "[tid:%i] [sn:%llu] "
+                            "Instruction PC %s was squashed, skipping.\n",
+                            tid, inst->seqNum, inst->pcState());
+                }
+
+                fixedbuffer[tid].pop_front();
+            }
         }
 
         if (!fixedbuffer[tid].empty()) {

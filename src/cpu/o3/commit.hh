@@ -523,8 +523,11 @@ class Commit
     /** Aggregate Rename->ROB admission width across SMT threads. */
     const unsigned aggregateRenameWidth;
 
-    /** Commit width, in instructions. */
+    /** Number of physical ROB groups expanded into the commit window. */
     const unsigned commitWidth;
+
+    /** Successful DynInst retirements per cycle; zero keeps legacy behavior. */
+    const unsigned commitInstWidth;
 
     /** Number of Active Threads */
     const ThreadID numThreads;
@@ -666,6 +669,8 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+        /** Cycles using the full successful-retirement quota (not stalls). */
+        statistics::Scalar commitInstWidthFullCycles;
         /** Number of load get the same pc && addr && value*/
         statistics::Scalar loadTriple;
         statistics::Scalar loadEAReused;
