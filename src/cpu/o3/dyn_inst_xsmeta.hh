@@ -72,6 +72,9 @@ class XsDynInstMeta : public RefCounted
     bool lldpLoad{false};
     bool lldpSigned{false};
     uint8_t lldpSize{0};
+    Addr lldpLoadLine{0};
+    uint8_t lldpLoadOffset{0};
+    bool lldpLoadAddressValid{false};
 
   public:
     XsDynInstMeta(): squashed(false), instAddr(0), seqNum(0) {}

@@ -377,7 +377,8 @@ class Queued : public Base
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
-    void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio);
+    bool insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
+                const AddrPriority &addr_prio);
 
     virtual void calculatePrefetch(const PrefetchInfo &pfi,
                                    std::vector<AddrPriority> &addresses) = 0;
@@ -422,6 +423,12 @@ class Queued : public Base
      * @param failed whether the translation was successful
      */
     void translationComplete(DeferredPacket *dp, bool failed);
+    virtual bool rejectTranslatedPrefetch(const DeferredPacket &dpp,
+                                          Addr paddr)
+    { return false; }
+    virtual bool rejectPrefetchCandidate(const PrefetchInfo &pfi,
+                                         const AddrPriority &addr_prio)
+    { return false; }
 
     /**
      * Checks whether the specified prefetch request is already in the

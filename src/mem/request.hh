@@ -391,36 +391,69 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+        // Provenance for hardware-prefetch requests.  The producer PC is
+        // the PC of the demand which triggered a spatial prefetch; the
+        // remaining fields identify one LLDP candidate across its lifetime.
+        Addr prefetchProducerPC;
+        uint64_t prefetchGeneration;
+        uint64_t prefetchCandidateId;
+        uint16_t prefetchDataOffset;
+        uint8_t prefetchDataSize;
+        bool prefetchDataSignExtend;
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0) {}
+            prefetchDepth(0), prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
-            prefetchSource(PF_NONE) ,
-            prefetchDepth(0) {}
+            prefetchSource(PF_NONE), prefetchDepth(0),
+            prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
-            prefetchSource(pfSource) ,
-            prefetchDepth(0) {}
+            prefetchSource(pfSource), prefetchDepth(0),
+            prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
-            prefetchSource(pfSource) ,
-            prefetchDepth(pfDepth) {}
+            prefetchSource(pfSource), prefetchDepth(pfDepth),
+            prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchDataSize(0), prefetchDataSignExtend(false) {}
+
+        XsMetadata(PrefetchSourceType pfSource, int pfDepth,
+                   Addr producer_pc, uint64_t generation,
+                   uint64_t candidate_id)
+            : validXsMetadata(true), instXsMetadata(nullptr),
+              prefetchSource(pfSource), prefetchDepth(pfDepth),
+              prefetchProducerPC(producer_pc),
+              prefetchGeneration(generation),
+              prefetchCandidateId(candidate_id), prefetchDataOffset(0),
+              prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         void invalidate() {
             validXsMetadata = false;
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
             prefetchDepth = 0;
+            prefetchProducerPC = 0;
+            prefetchGeneration = 0;
+            prefetchCandidateId = 0;
+            prefetchDataOffset = 0;
+            prefetchDataSize = 0;
+            prefetchDataSignExtend = false;
         }
     } XsMetadata;
 

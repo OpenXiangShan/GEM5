@@ -1138,6 +1138,12 @@ class Base : public ClockedObject
     }
 
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
+    virtual void prefetchUnused(PrefetchSourceType pfSource,
+                                uint64_t candidate_id)
+    { prefetchUnused(pfSource); }
+    virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource,
+                                uint64_t candidate_id)
+    { prefetchUnused(paddr, pfSource); }
 
     virtual void recordPfBadHit(PrefetchSourceType source)
     {
@@ -1162,6 +1168,12 @@ class Base : public ClockedObject
     virtual void notifyCacheMissRequest(Addr paddr, bool is_secure) {}
 
     virtual void notifyPrefetchUseful(PrefetchSourceType source) {}
+    virtual void notifyPrefetchUseful(PrefetchSourceType source,
+                                      uint64_t candidate_id)
+    { notifyPrefetchUseful(source); }
+    virtual void notifyPrefetchMerged(uint64_t candidate_id) {}
+    virtual void notifyCandidateDemand(uint64_t candidate_id,
+                                       const PacketPtr &demand) {}
 
     virtual void notifyPrefetchEvictsDemand(
         Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
@@ -1176,6 +1188,8 @@ class Base : public ClockedObject
         prefetchStats.pfHitInCache_srcs[pf_type]++;
         prefetchStats.late_srcs[pf_type]++;
     }
+    virtual void pfHitInCache(PrefetchSourceType pf_type, uint64_t candidate_id)
+    { pfHitInCache(pf_type); }
 
     virtual void
     pfHitInMSHR(PrefetchSourceType pf_type)
@@ -1184,6 +1198,8 @@ class Base : public ClockedObject
         prefetchStats.pfHitInMSHR_srcs[pf_type]++;
         prefetchStats.late_srcs[pf_type]++;
     }
+    virtual void pfHitInMSHR(PrefetchSourceType pf_type, uint64_t candidate_id)
+    { pfHitInMSHR(pf_type); }
 
     virtual void
     pfHitInWB(PrefetchSourceType pf_type)
@@ -1192,6 +1208,8 @@ class Base : public ClockedObject
         prefetchStats.pfHitInWB_srcs[pf_type]++;
         prefetchStats.late_srcs[pf_type]++;
     }
+    virtual void pfHitInWB(PrefetchSourceType pf_type, uint64_t candidate_id)
+    { pfHitInWB(pf_type); }
     void streamPflate() { streamlatenum++; }
 
     /**

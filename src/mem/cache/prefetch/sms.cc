@@ -912,7 +912,70 @@ XSCompositePrefetcher::hintData(const lldp::Hint &hint,
     if (enableLLDP)
         lldp->hintData(hint, demand, data, size);
 }
-bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
+
+void
+XSCompositePrefetcher::notifyPrefetchUseful(PrefetchSourceType source,
+                                             uint64_t candidate_id)
+{
+    Queued::notifyPrefetchUseful(source);
+    if (enableLLDP)
+        lldp->notifyPrefetchUseful(source, candidate_id);
+}
+
+void
+XSCompositePrefetcher::notifyPrefetchMerged(uint64_t candidate_id)
+{
+    if (enableLLDP)
+        lldp->notifyPrefetchMerged(candidate_id);
+}
+
+void
+XSCompositePrefetcher::notifyCandidateDemand(
+    uint64_t candidate_id, const PacketPtr &demand)
+{
+    if (enableLLDP)
+        lldp->notifyCandidateDemand(candidate_id, demand);
+}
+
+void
+XSCompositePrefetcher::pfHitInCache(PrefetchSourceType source,
+                                     uint64_t candidate_id)
+{
+    Queued::pfHitInCache(source);
+    if (enableLLDP)
+        lldp->pfHitInCache(source, candidate_id);
+}
+
+void
+XSCompositePrefetcher::pfHitInMSHR(PrefetchSourceType source,
+                                    uint64_t candidate_id)
+{
+    Queued::pfHitInMSHR(source);
+    if (enableLLDP)
+        lldp->pfHitInMSHR(source, candidate_id);
+}
+
+void
+XSCompositePrefetcher::pfHitInWB(PrefetchSourceType source,
+                                  uint64_t candidate_id)
+{
+    Queued::pfHitInWB(source);
+    if (enableLLDP)
+        lldp->pfHitInWB(source, candidate_id);
+}
+
+void
+XSCompositePrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType source,
+                                       uint64_t candidate_id)
+{
+    Base::prefetchUnused(paddr, source);
+    if (enableLLDP)
+        lldp->prefetchUnused(paddr, source, candidate_id);
+}
+
+bool
+XSCompositePrefetcher::GetPFRequestsFromBuffer(
+    std::vector<AddrPriority> &addresses)
 {
     //here we decide which to send for this cycle
     //L1 Streamstride>berti>SMS>CMC>learnedBOP>smallBOP>largeBOP

@@ -970,6 +970,22 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             assert(tgt_pkt->cmd == MemCmd::HardPFReq);
             from_pref = true;
 
+            if (prefetcher && target.lldpHint.valid && !is_error) {
+                const uint8_t *line = nullptr;
+                unsigned bytes = 0;
+                if (blk && blk->isValid() &&
+                    (!mshr->isForward || !pkt->hasData())) {
+                    line = blk->data;
+                    bytes = blkSize;
+                } else if (pkt->hasData() && pkt->getSize() == blkSize) {
+                    line = pkt->getConstPtr<uint8_t>();
+                    bytes = pkt->getSize();
+                }
+                prefetcher->hintData(
+                    target.lldpHint, tgt_pkt, line, bytes);
+                target.lldpHint.valid = false;
+            }
+
             delete tgt_pkt;
             break;
 

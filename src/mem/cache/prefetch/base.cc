@@ -118,7 +118,7 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), data_ptr(nullptr)
 {
 }
 Base::PrefetchInfo::PrefetchInfo(PrefetchInfo_old const &pfi)
@@ -126,7 +126,7 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo_old const &pfi)
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), data_ptr(nullptr)
 {
 }
 Base::PrefetchInfo_old::PrefetchInfo_old(PacketPtr pkt, Addr addr, bool miss)
@@ -185,7 +185,7 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &other)
     _contextId(other._contextId), validContextId(other.validContextId),
     validPC(other.validPC), secure(other.secure), size(other.size),
     write(other.write), paddress(other.paddress), cacheMiss(other.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(other.xsMetadata), data_ptr(nullptr)
 {
 
 }
@@ -194,7 +194,7 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &pfi, Addr addr)
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), data_ptr(nullptr)
 {
 }
 Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo const &pfi)
@@ -202,7 +202,7 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo const &pfi)
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), data_ptr(nullptr)
 {
 }
 void
@@ -506,7 +506,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         prefetchStats.pfUseful++;
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
         prefetchStats.pfUseful_srcs[pf_source]++;
-        notifyPrefetchUseful(pf_source);
+        const auto hit_meta = cache->getHitBlkXsMetadata(pkt);
+        notifyCandidateDemand(hit_meta.prefetchCandidateId, pkt);
+        notifyPrefetchUseful(pf_source, hit_meta.prefetchCandidateId);
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.

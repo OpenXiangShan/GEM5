@@ -112,6 +112,61 @@ Multi::hintData(const lldp::Hint &hint, const PacketPtr &demand,
         pf->hintData(hint, demand, data, size);
 }
 
+void
+Multi::notifyPrefetchUseful(PrefetchSourceType source, uint64_t candidate_id)
+{
+    Base::notifyPrefetchUseful(source);
+    for (auto pf : prefetchers)
+        pf->notifyPrefetchUseful(source, candidate_id);
+}
+
+void
+Multi::notifyPrefetchMerged(uint64_t candidate_id)
+{
+    for (auto pf : prefetchers)
+        pf->notifyPrefetchMerged(candidate_id);
+}
+
+void
+Multi::notifyCandidateDemand(uint64_t candidate_id, const PacketPtr &demand)
+{
+    for (auto pf : prefetchers)
+        pf->notifyCandidateDemand(candidate_id, demand);
+}
+
+void
+Multi::pfHitInCache(PrefetchSourceType source, uint64_t candidate_id)
+{
+    Base::pfHitInCache(source);
+    for (auto pf : prefetchers)
+        pf->pfHitInCache(source, candidate_id);
+}
+
+void
+Multi::pfHitInMSHR(PrefetchSourceType source, uint64_t candidate_id)
+{
+    Base::pfHitInMSHR(source);
+    for (auto pf : prefetchers)
+        pf->pfHitInMSHR(source, candidate_id);
+}
+
+void
+Multi::pfHitInWB(PrefetchSourceType source, uint64_t candidate_id)
+{
+    Base::pfHitInWB(source);
+    for (auto pf : prefetchers)
+        pf->pfHitInWB(source, candidate_id);
+}
+
+void
+Multi::prefetchUnused(Addr paddr, PrefetchSourceType source,
+                      uint64_t candidate_id)
+{
+    Base::prefetchUnused(paddr, source);
+    for (auto pf : prefetchers)
+        pf->prefetchUnused(paddr, source, candidate_id);
+}
+
 Tick
 Multi::nextPrefetchReadyTime() const
 {

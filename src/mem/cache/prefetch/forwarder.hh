@@ -72,15 +72,28 @@ class PrefetcherForwarder : public Base
     void notifyCacheMissRequest(Addr paddr, bool is_secure) override;
     void notifyDemandMshrMiss(Addr paddr, bool is_secure) override;
     void notifyPrefetchUseful(PrefetchSourceType source) override;
+    void notifyPrefetchUseful(PrefetchSourceType source,
+                              uint64_t candidate_id) override;
+    void notifyPrefetchMerged(uint64_t candidate_id) override;
+    void notifyCandidateDemand(uint64_t candidate_id,
+                               const PacketPtr &demand) override;
     void notifyPrefetchEvictsDemand(
         Addr victim_paddr, bool is_secure,
         PrefetchSourceType evictor_source) override;
     void notifyCachelineRefill(Addr paddr, bool is_secure) override;
     void prefetchUnused(PrefetchSourceType pf_type) override;
     void prefetchUnused(Addr paddr, PrefetchSourceType pf_type) override;
+    void prefetchUnused(Addr paddr, PrefetchSourceType pf_type,
+                        uint64_t candidate_id) override;
     void pfHitInMSHR(PrefetchSourceType pf_type) override;
     void pfHitInCache(PrefetchSourceType pf_type) override;
+    void pfHitInCache(PrefetchSourceType pf_type,
+                      uint64_t candidate_id) override;
     void pfHitInWB(PrefetchSourceType pf_type) override;
+    void pfHitInWB(PrefetchSourceType pf_type,
+                   uint64_t candidate_id) override;
+    void pfHitInMSHR(PrefetchSourceType pf_type,
+                     uint64_t candidate_id) override;
 
     void recvPrefetchFromCache(const PacketPtr &pkt) override;
 };

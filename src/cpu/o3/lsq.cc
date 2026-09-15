@@ -3011,6 +3011,9 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             inst->effAddr = request->getVaddr();
             inst->effSize = size;
             inst->effAddrValid(true);
+            inst->xsMeta->lldpLoadLine = inst->effAddr & ~(Addr(cacheLineSize) - 1);
+            inst->xsMeta->lldpLoadOffset = inst->effAddr & (cacheLineSize - 1);
+            inst->xsMeta->lldpLoadAddressValid = true;
 
             if (cpu->checker) {
                 inst->reqToVerify = std::make_shared<Request>(*request->req());

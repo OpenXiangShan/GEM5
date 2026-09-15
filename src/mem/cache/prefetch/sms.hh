@@ -185,6 +185,19 @@ class XSCompositePrefetcher : public Queued
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void hintData(const lldp::Hint &hint, const PacketPtr &demand,
                   const uint8_t *data, unsigned size) override;
+    void notifyPrefetchUseful(PrefetchSourceType source,
+                              uint64_t candidate_id) override;
+    void notifyPrefetchMerged(uint64_t candidate_id) override;
+    void notifyCandidateDemand(uint64_t candidate_id,
+                               const PacketPtr &demand) override;
+    void pfHitInCache(PrefetchSourceType source,
+                      uint64_t candidate_id) override;
+    void pfHitInMSHR(PrefetchSourceType source,
+                     uint64_t candidate_id) override;
+    void pfHitInWB(PrefetchSourceType source,
+                   uint64_t candidate_id) override;
+    void prefetchUnused(Addr paddr, PrefetchSourceType source,
+                        uint64_t candidate_id) override;
     void addTLB(BaseTLB *tlb, bool functional) override;
     void regProbeListeners() override;
     void setPacketReadyCallback(std::function<void(Tick)> callback) override;

@@ -5,6 +5,9 @@
 #include <array>
 #include <deque>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "mem/cache/prefetch/queued.hh"
@@ -26,8 +29,23 @@ class LLDPrefetcher : public Queued
         Addr consumerPC{0};
         lldp::Chain chain;
         int64_t loadImm{0};
+        int64_t immLine{0};
+        int64_t loadLine{0};
+        uint8_t immOffset{0};
+        uint8_t loadSize{0};
+        bool loadAddressValid{false};
         uint8_t immConf{0};
+        uint8_t lineConf{0};
+        uint8_t offsetConf{0};
         uint8_t cConf{0};
+        uint64_t updateCount{0};
+        uint64_t replacementCount{0};
+        uint64_t exactImmStableCount{0};
+        uint64_t lineImmStableCount{0};
+        uint64_t candidateCount{0};
+        uint64_t usefulCount{0};
+        uint64_t lateCount{0};
+        uint64_t demandHitCount{0};
     };
     struct Entry
     {
@@ -36,6 +54,18 @@ class LLDPrefetcher : public Queued
         ContextID context{InvalidContextID};
         uint64_t generation{0};
         uint8_t pConf{0};
+        uint64_t updateCount{0};
+        uint64_t replacementCount{0};
+        uint64_t candidateCount{0};
+        uint64_t usefulCount{0};
+        uint64_t lateCount{0};
+        uint64_t activePeak{0};
+        uint64_t consumerReplacement{0};
+        uint64_t consumerOverflow{0};
+        Addr lastDemandPC{0};
+        uint64_t lastDemandChainId{0};
+        PrefetchSourceType lastDemandSource{PrefetchSourceType::PF_NONE};
+        uint64_t demandHitCount{0};
         std::array<SubEntry, SubEntries> consumers{};
         lldp::PLRU<SubEntries> replacement;
     };
@@ -46,6 +76,10 @@ class LLDPrefetcher : public Queued
         Addr consumerPC;
         ContextID context;
         int64_t loadImm;
+        uint8_t loadSize{0};
+        int64_t loadLine{0};
+        uint8_t loadOffset{0};
+        bool loadAddressValid{false};
         int producer{-1};
         int consumer{-1};
         uint64_t version{0};
@@ -59,8 +93,20 @@ class LLDPrefetcher : public Queued
     std::array<Entry, TableEntries> table{};
     lldp::PLRU<TableEntries> replacement;
     uint64_t generation{0};
+    uint64_t candidateId{0};
     uint64_t version{0};
     std::deque<Training> input;
+    static constexpr unsigned TlbFilterEntries = 64;
+    std::deque<Addr> tlbFilter;
+    std::unordered_set<Addr> tlbFilterSet;
+    struct CandidateOwner
+    {
+        unsigned row;
+        unsigned col;
+        uint64_t generation;
+        Addr consumerPC;
+    };
+    std::unordered_map<uint64_t, CandidateOwner> candidateOwners;
     std::optional<Training> s0;
     std::optional<Update> s1;
     EventFunctionWrapper learningEvent;
@@ -91,10 +137,33 @@ class LLDPrefetcher : public Queued
         statistics::Scalar dualSourceTrainRejected;
         statistics::Scalar producerWrites, producerReplacements;
         statistics::Scalar producerMatches, pipelineBypasses;
+        statistics::Scalar spatialLoadTrain, spatialHints;
         statistics::Scalar lengthChanges, opChanges, immChanges;
-        statistics::Scalar hints, hitHintsDiscarded, returnedHints, staleHints;
-        statistics::Scalar candidates, duplicates, unsupported;
+        statistics::Scalar exactImmStable, lineImmStable, offsetImmStable;
+        statistics::Scalar sameLineImmUpdates, nextLineImmUpdates,
+            otherLineImmUpdates;
+        statistics::Vector immValueHist, lineDeltaHist, offsetDeltaHist,
+            byteOffsetHist;
+        statistics::Scalar hints, hitHintsDiscarded, hitHintsRetained,
+            returnedHints, staleHints;
+        statistics::Scalar candidates, filtered, duplicates, unsupported;
+        statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
+            candidateMerged, candidateUseful, candidateUnused, candidateLate;
+        statistics::Scalar candidateCacheHit, candidateMshrHit, candidateWbHit;
         statistics::Vector childrenAtReplacement, childrenAtDump;
+        statistics::Vector pcpActiveHistogram;
+        statistics::Vector pcpActivePeak, pcpConsumerReplacement,
+            pcpConsumerOverflow, pcpCandidate, pcpUseful, pcpLate;
+        statistics::Vector pcpProducerPC, pcpContext, pcpValid, pcpConf;
+        statistics::Vector pcpDemandPC, pcpDemandChainId, pcpDemandSource,
+            pcpDemandHits;
+        statistics::Vector consumerValid, consumerPC, consumerLength,
+            consumerOp1, consumerOp2, consumerImmLoad, consumerImmConf,
+            consumerLineConf, consumerOffsetConf, consumerConf,
+            consumerUpdates, consumerReplacements, consumerExactImmStable,
+            consumerLineImmStable,
+            consumerCandidates, consumerUseful, consumerLate,
+            consumerDemandHits;
         statistics::Scalar validProducers;
     } stats;
 
@@ -105,6 +174,12 @@ class LLDPrefetcher : public Queued
     void commitUpdate(const Update &update);
     unsigned validChildren(const Entry &entry) const;
     lldp::Hint pfHint(const PacketPtr &pkt);
+    bool isSpatialPrefetch(const PacketPtr &pkt) const;
+    bool filterCandidate(Addr line);
+    bool rejectTranslatedPrefetch(const DeferredPacket &dpp,
+                                  Addr paddr) override;
+    bool rejectPrefetchCandidate(const PrefetchInfo &pfi,
+                                 const AddrPriority &addr_prio) override;
 
   public:
     LLDPrefetcher(const LLDPrefetcherParams &p);
@@ -114,6 +189,27 @@ class LLDPrefetcher : public Queued
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void hintData(const lldp::Hint &hint, const PacketPtr &demand,
                   const uint8_t *data, unsigned size) override;
+    void notifyPrefetchUseful(PrefetchSourceType source) override;
+    void notifyPrefetchUseful(PrefetchSourceType source,
+                              uint64_t candidate_id) override;
+    void prefetchUnused(PrefetchSourceType source) override;
+    void prefetchUnused(PrefetchSourceType source,
+                        uint64_t candidate_id) override;
+    void prefetchUnused(Addr paddr, PrefetchSourceType source,
+                        uint64_t candidate_id) override;
+    void notifyPrefetchMerged(uint64_t candidate_id) override;
+    void notifyCandidateDemand(uint64_t candidate_id,
+                               const PacketPtr &demand) override;
+    void pfHitInCache(PrefetchSourceType source) override;
+    void pfHitInCache(PrefetchSourceType source,
+                      uint64_t candidate_id) override;
+    void pfHitInMSHR(PrefetchSourceType source) override;
+    void pfHitInMSHR(PrefetchSourceType source,
+                     uint64_t candidate_id) override;
+    void pfHitInWB(PrefetchSourceType source) override;
+    void pfHitInWB(PrefetchSourceType source,
+                   uint64_t candidate_id) override;
+    void recordIssuedPrefetchStats(const PacketPtr &pkt) override;
     void calculatePrefetch(const PrefetchInfo &,
                            std::vector<AddrPriority> &) override {}
     void addToQueue(std::list<DeferredPacket> &queue,

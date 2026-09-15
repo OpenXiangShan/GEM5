@@ -552,6 +552,17 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     pkt->pfSource = mshr->getPFSource();
                     pkt->pfDepth = mshr->getPFDepth();
 
+                    uint64_t candidate_id = 0;
+                    if (mshr->hasTargets() && mshr->getTarget()->pkt &&
+                        mshr->getTarget()->pkt->req->hasXsMetadata()) {
+                        candidate_id = mshr->getTarget()->pkt->req->
+                            getXsMetadata().prefetchCandidateId;
+                    }
+                    if (pkt->isDemand() && candidate_id) {
+                        prefetcher->notifyCandidateDemand(candidate_id, pkt);
+                        prefetcher->notifyPrefetchMerged(candidate_id);
+                    }
+
                     // Demand request merging into prefetch-only MSHR
                     if (pkt->isDemand()) {
                         stats.demandMergedIntoPfMSHR++;
@@ -796,6 +807,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     pkt->lldpHint = prefetcher ? prefetcher->loadTrain(pkt, !satisfied) : lldp::Hint();
 
     if (satisfied) {
+        if (prefetcher && pkt->lldpHint.valid && blk && !pkt->isWrite()) {
+            prefetcher->hintData(pkt->lldpHint, pkt, blk->data, blkSize);
+            pkt->lldpHint.valid = false;
+        }
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
         if (blk && !pkt->isWrite()) {
@@ -1538,10 +1553,20 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            CacheBlk *pf_blk = tags->findBlock(pf_addr, pkt->isSecure());
+            if (pf_blk) {
+                pkt->lldpHint = prefetcher->loadTrain(pkt, false);
+                if (pkt->lldpHint.valid) {
+                    prefetcher->hintData(
+                        pkt->lldpHint, pkt, pf_blk->data, blkSize);
+                    pkt->lldpHint.valid = false;
+                }
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
-                prefetcher->pfHitInCache(pf_type);
+                const uint64_t candidate_id =
+                    pkt->req->hasXsMetadata() ?
+                    pkt->req->getXsMetadata().prefetchCandidateId : 0;
+                prefetcher->pfHitInCache(pf_type, candidate_id);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
@@ -1549,7 +1574,10 @@ BaseCache::getNextQueueEntry()
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
-                prefetcher->pfHitInMSHR(pf_type);
+                const uint64_t candidate_id =
+                    pkt->req->hasXsMetadata() ?
+                    pkt->req->getXsMetadata().prefetchCandidateId : 0;
+                prefetcher->pfHitInMSHR(pf_type, candidate_id);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
@@ -1557,12 +1585,16 @@ BaseCache::getNextQueueEntry()
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
-                prefetcher->pfHitInWB(pf_type);
+                const uint64_t candidate_id =
+                    pkt->req->hasXsMetadata() ?
+                    pkt->req->getXsMetadata().prefetchCandidateId : 0;
+                prefetcher->pfHitInWB(pf_type, candidate_id);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
             } else {
+                pkt->lldpHint = prefetcher->loadTrain(pkt, true);
                 // Update statistic on number of prefetches issued
                 // (hwpf_mshr_misses)
                 assert(pkt->req->requestorId() < system->maxRequestors());
@@ -2484,7 +2516,10 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     }
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
-        prefetcher->prefetchUnused(regenerateBlkAddr(blk), blk->getXsMetadata().prefetchSource);
+        const auto metadata = blk->getXsMetadata();
+        prefetcher->prefetchUnused(
+            regenerateBlkAddr(blk), metadata.prefetchSource,
+            metadata.prefetchCandidateId);
     }
 
     // Notify that the data contents for this address are no longer present

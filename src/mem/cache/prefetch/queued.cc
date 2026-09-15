@@ -140,7 +140,20 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     req->setFlags(Request::PREFETCH);
     const PrefetchSourceType safe_pf_src =
         owner->sanitizePfControlSourceType(pf_src);
-    req->setXsMetadata(Request::XsMetadata(safe_pf_src, prf_depth));
+    auto metadata = pfInfo.getXsMetadata();
+    metadata.validXsMetadata = true;
+    metadata.instXsMetadata = nullptr;
+    metadata.prefetchSource = safe_pf_src;
+    metadata.prefetchDepth = prf_depth;
+    if (!metadata.prefetchProducerPC && pfInfo.hasPC())
+        metadata.prefetchProducerPC = pfInfo.getPC();
+    metadata.prefetchDataOffset = pfInfo.getPaddr() & (blk_size - 1);
+    metadata.prefetchDataSize = pfInfo.getSize() <= 255 ? pfInfo.getSize() : 0;
+    if (pfInfo.getXsMetadata().instXsMetadata) {
+        metadata.prefetchDataSignExtend =
+            pfInfo.getXsMetadata().instXsMetadata->lldpSigned;
+    }
+    req->setXsMetadata(metadata);
     DPRINTFR(HWPrefetch, "Create prefetch request for paddr %lx from prefetcher %i\n", paddr, safe_pf_src);
 
     if (pfInfo.isSecure()) {
@@ -153,8 +166,9 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
     pkt = new Packet(req, MemCmd::HardPFReq);
     pkt->allocate();
-    if (tag_prefetch && pfInfo.hasPC()) {
-        // Tag prefetch packet with  accessing pc
+    if (pfInfo.hasPC()) {
+        // Preserve the load PC which triggered this spatial prefetch.  LLDP
+        // uses it as the producer lookup key even when tag_prefetch is off.
         pkt->req->setPC(pfInfo.getPC());
     }
     tick = t;
@@ -1364,6 +1378,10 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                     it->translationRequest->getVaddr(),
                     it->translationRequest->getPaddr());
             Addr target_paddr = it->translationRequest->getPaddr();
+            if (rejectTranslatedPrefetch(*it, target_paddr)) {
+                pfqMissingTranslation.erase(it);
+                return;
+            }
             // check if this prefetch is already redundant
             if (cacheSnoop && queueFilter && (inCache(target_paddr, it->pfInfo.isSecure()) ||
                         inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
@@ -1468,16 +1486,19 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
     return translation_req;
 }
 
-void
+bool
 Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio)
 {
     int32_t priority = addr_prio.priority;
+    if (rejectPrefetchCandidate(new_pfi, addr_prio)) {
+        return false;
+    }
     if (queueFilter) {
         if (alreadyInQueue(pfq, new_pfi, priority)) {
-            return;
+            return false;
         }
         if (alreadyInQueue(pfqMissingTranslation, new_pfi, priority)) {
-            return;
+            return false;
         }
     }
 
@@ -1493,7 +1514,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
      *     translate the resulting address
      */
 
-    Addr orig_addr = useVirtualAddresses ?
+    Addr orig_addr = useVirtualAddresses && pkt->req->hasVaddr() ?
         pkt->req->getVaddr() : pkt->req->getPaddr();
     bool positive_stride = new_pfi.getAddr() >= orig_addr;
     Addr stride = positive_stride ?
@@ -1503,8 +1524,8 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     bool has_target_pa = false;
     RequestPtr translation_req = nullptr;
     if (addr_prio.forceTranslation) {
-        if (!tlb || !pkt->req->hasContextId() || !pkt->req->hasVaddr())
-            return;
+        if (!tlb || !pkt->req->hasContextId())
+            return false;
         translation_req = createPrefetchRequest(new_pfi.getAddr(), new_pfi,
             pkt, addr_prio.pfSource, addr_prio.depth);
     } else if (samePage(orig_addr, new_pfi.getAddr())) {
@@ -1523,7 +1544,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
 
         // ContextID is needed for translation
         if (!pkt->req->hasContextId()) {
-            return;
+            return false;
         }
         if (useVirtualAddresses) {
             has_target_pa = false;
@@ -1538,7 +1559,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         } else {
             // Using PA for training but the request does not have a VA,
             // unable to process this page crossing prefetch.
-            return;
+            return false;
         }
     }
     if (has_target_pa && cacheSnoop && queueFilter &&
@@ -1547,11 +1568,11 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         statsQueued.pfInCache++;
         DPRINTF(HWPrefetch, "Dropping redundant in "
                 "cache/MSHR prefetch addr:%#x\n", target_paddr);
-        return;
+        return false;
     }
     if (has_target_pa && !system->isMemAddr(target_paddr)) {
         DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
-        return;
+        return false;
     }
 
     /* Create the packet and find the spot to insert it */
@@ -1580,6 +1601,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
             schedule(tlbReqEvent, nextCycle());
         }
     }
+    return true;
 }
 
 void

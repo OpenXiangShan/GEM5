@@ -210,6 +210,66 @@ L2CompositeWithWorkerPrefetcher::hintData(const lldp::Hint &hint,
 }
 
 void
+L2CompositeWithWorkerPrefetcher::notifyPrefetchUseful(
+    PrefetchSourceType source, uint64_t candidate_id)
+{
+    CompositeWithWorkerPrefetcher::notifyPrefetchUseful(source);
+    if (enableLLDP)
+        lldp->notifyPrefetchUseful(source, candidate_id);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::notifyPrefetchMerged(uint64_t candidate_id)
+{
+    if (enableLLDP)
+        lldp->notifyPrefetchMerged(candidate_id);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::notifyCandidateDemand(
+    uint64_t candidate_id, const PacketPtr &demand)
+{
+    if (enableLLDP)
+        lldp->notifyCandidateDemand(candidate_id, demand);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::pfHitInCache(
+    PrefetchSourceType source, uint64_t candidate_id)
+{
+    CompositeWithWorkerPrefetcher::pfHitInCache(source);
+    if (enableLLDP)
+        lldp->pfHitInCache(source, candidate_id);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::pfHitInMSHR(
+    PrefetchSourceType source, uint64_t candidate_id)
+{
+    CompositeWithWorkerPrefetcher::pfHitInMSHR(source);
+    if (enableLLDP)
+        lldp->pfHitInMSHR(source, candidate_id);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::pfHitInWB(
+    PrefetchSourceType source, uint64_t candidate_id)
+{
+    CompositeWithWorkerPrefetcher::pfHitInWB(source);
+    if (enableLLDP)
+        lldp->pfHitInWB(source, candidate_id);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::prefetchUnused(
+    Addr paddr, PrefetchSourceType source, uint64_t candidate_id)
+{
+    L2CompositeWithWorkerPrefetcher::prefetchUnused(paddr, source);
+    if (enableLLDP)
+        lldp->prefetchUnused(paddr, source, candidate_id);
+}
+
+void
 L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
 {
     if (enableCDP) {

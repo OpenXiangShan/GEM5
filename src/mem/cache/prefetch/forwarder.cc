@@ -211,6 +211,29 @@ PrefetcherForwarder::notifyPrefetchUseful(PrefetchSourceType source)
 }
 
 void
+PrefetcherForwarder::notifyPrefetchUseful(PrefetchSourceType source,
+                                           uint64_t candidate_id)
+{
+    if (real_pf)
+        real_pf->notifyPrefetchUseful(source, candidate_id);
+}
+
+void
+PrefetcherForwarder::notifyPrefetchMerged(uint64_t candidate_id)
+{
+    if (real_pf)
+        real_pf->notifyPrefetchMerged(candidate_id);
+}
+
+void
+PrefetcherForwarder::notifyCandidateDemand(
+    uint64_t candidate_id, const PacketPtr &demand)
+{
+    if (real_pf)
+        real_pf->notifyCandidateDemand(candidate_id, demand);
+}
+
+void
 PrefetcherForwarder::notifyPrefetchEvictsDemand(
     Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
 {
@@ -245,11 +268,27 @@ PrefetcherForwarder::prefetchUnused(Addr paddr, PrefetchSourceType pf_type)
 }
 
 void
+PrefetcherForwarder::prefetchUnused(Addr paddr, PrefetchSourceType pf_type,
+                                    uint64_t candidate_id)
+{
+    if (real_pf)
+        real_pf->prefetchUnused(paddr, pf_type, candidate_id);
+}
+
+void
 PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type)
 {
     if (real_pf) {
         real_pf->pfHitInMSHR(pf_type);
     }
+}
+
+void
+PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type,
+                                 uint64_t candidate_id)
+{
+    if (real_pf)
+        real_pf->pfHitInMSHR(pf_type, candidate_id);
 }
 
 void
@@ -261,11 +300,27 @@ PrefetcherForwarder::pfHitInCache(PrefetchSourceType pf_type)
 }
 
 void
+PrefetcherForwarder::pfHitInCache(PrefetchSourceType pf_type,
+                                   uint64_t candidate_id)
+{
+    if (real_pf)
+        real_pf->pfHitInCache(pf_type, candidate_id);
+}
+
+void
 PrefetcherForwarder::pfHitInWB(PrefetchSourceType pf_type)
 {
     if (real_pf) {
         real_pf->pfHitInWB(pf_type);
     }
+}
+
+void
+PrefetcherForwarder::pfHitInWB(PrefetchSourceType pf_type,
+                                uint64_t candidate_id)
+{
+    if (real_pf)
+        real_pf->pfHitInWB(pf_type, candidate_id);
 }
 
 } // namespace prefetch
