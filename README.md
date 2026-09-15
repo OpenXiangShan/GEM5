@@ -94,8 +94,9 @@ Because XS-GEM5 is currently under internal development, we have several branche
 - SE mode does not support online Difftest with NEMU. RISC-V Linux user-space
   ELF files can be run with `configs/example/se.py`; statically linked binaries
   are the recommended starting point. Its default KmhV3-like profile matches
-  major core/cache capacities but is not FS/GCPT performance-equivalent. See the
-  [quick-start guide](docs/quick_start.md).
+  major core/cache capacities but is not FS/GCPT performance-equivalent. The
+  entry point can also download upstream gem5 SE workloads by resource ID. See
+  the [quick-start guide](docs/quick_start.md).
 - Atomic-to-O3 fast-forward is not supported by `configs/example/se.py` yet.
   The configuration currently supports `DerivO3CPU` and its subclasses. Use
   the default O3 CPU directly and `--warmup-insts-no-switch` when O3 warmup

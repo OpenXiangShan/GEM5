@@ -89,6 +89,51 @@ cat m5out/se-smoke/program.out
 # SE smoke passed: argc=2 env=works file=read-ok
 ```
 
+### 直接运行上游gem5 workload资源
+
+`se.py`可以按上游gem5资源目录中的binary或workload ID自动解析二进制、参数
+和输入文件，并下载到本地缓存。例如：
+
+```bash
+./build/RISCV/gem5.opt -d m5out/riscv-matrix-multiply \
+    configs/example/se.py \
+    --workload=riscv-matrix-multiply-run \
+    --maxinsts=10000000
+```
+
+默认缓存目录是`$GEM5_RESOURCE_DIR`，未设置时使用`~/.cache/gem5`；也可以显式
+指定：
+
+```bash
+./build/RISCV/gem5.opt -d m5out/riscv-bfs \
+    configs/example/se.py \
+    --workload=riscv-gapbs-bfs-run \
+    --resource-directory=/path/to/gem5-resources \
+    --maxinsts=10000000
+```
+
+目前可直接使用的上游RISC-V SE套件包括
+`riscv-vertical-microbenchmarks`和
+`riscv-getting-started-benchmark-suite`。一次gem5仿真仍只运行一个workload；
+从suite中选择时应使用稳定的成员ID，而不是依赖目录顺序：
+
+```bash
+./build/RISCV/gem5.opt -d m5out/riscv-cca \
+    configs/example/se.py \
+    --suite=riscv-vertical-microbenchmarks \
+    --suite-workload=riscv-cca-run \
+    --maxinsts=10000000
+```
+
+`--resource-version`可以固定workload或suite版本。`--resource-json`可以指定
+flat-list格式的本地现代资源目录，供离线CI或内部镜像使用；它不会改变旧
+`GEM5_RESOURCE_JSON`和`Resource(...)`路径的行为。
+
+这一入口有意只兼容上游`binary`、`file`、`workload`、`suite`资源，以及
+`set_se_binary_workload`所需的参数。完整suite回归应让每个workload独立启动
+一次gem5并保留各自的`m5out`。这批小测试适合功能bring-up和机制A/B，但
+SE结果仍不能替代`kmhv3.py`的FS/GCPT性能结果。
+
 ## 最简单运行起来
 
 以下为运行单个workload（二进制文件）的简单流程：
