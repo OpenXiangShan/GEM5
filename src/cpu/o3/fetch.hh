@@ -590,8 +590,29 @@ class Fetch
         ReturnNotTaken
     };
 
+    struct PredecodeEntry
+    {
+        DynInstPtr instruction;
+
+        PredecodeEntry();
+        ~PredecodeEntry();
+    };
+
+    struct PredecodeStage
+    {
+        std::array<PredecodeEntry, MaxWidth> entries;
+        unsigned size = 0;
+
+        ~PredecodeStage();
+        void clear();
+    };
+
+    bool predecodePipelineEnabled(ThreadID tid) const;
     bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
                           const StaticInstPtr &curMacroop) const;
+    void advancePredecodePipeline();
+    bool processPredecodeStage(ThreadID tid);
+    void clearPredecodePipeline(ThreadID tid);
     PredecodeFault classifyPredecodeFault(
             const DynInstPtr &instruction,
             const StaticInstPtr &staticInst) const;
@@ -642,14 +663,12 @@ class Fetch
      * @param allow_two_fetch Whether this buffer may cross an FTQ boundary.
      * @param continued_to_next_target Whether the current buffer was retained
      *        for the next FTQ target.
-     * @param predecodeRedirected Whether Fetch issued an early recovery.
      * @return true if a branch was predicted.
      */
     bool processSingleInstruction(ThreadID tid, PCStateBase &pc,
-                                        StaticInstPtr &curMacroop,
-                                        bool allow_two_fetch,
-                                        bool &continued_to_next_target,
-                                        bool &predecodeRedirected);
+                                  StaticInstPtr &curMacroop,
+                                  bool allow_two_fetch,
+                                  bool &continued_to_next_target);
 
     /**
      * Checks if the decoder requires more memory to proceed and fetches
@@ -1023,6 +1042,10 @@ class Fetch
 
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
+
+    /** Fixed two-cycle check pipeline; it neither queues nor backpressures. */
+    PredecodeStage predecodeStage0[MaxThreads];
+    PredecodeStage predecodeStage1[MaxThreads];
 
     unsigned currentLoopIter{0};  // todo: remove this
 

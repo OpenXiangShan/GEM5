@@ -231,6 +231,18 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
 Fetch::~Fetch() = default;
 
+Fetch::PredecodeEntry::PredecodeEntry() = default;
+Fetch::PredecodeEntry::~PredecodeEntry() = default;
+Fetch::PredecodeStage::~PredecodeStage() = default;
+
+void
+Fetch::PredecodeStage::clear()
+{
+    for (unsigned i = 0; i < size; ++i)
+        entries[i].instruction = nullptr;
+    size = 0;
+}
+
 void
 Fetch::clearRedirectPending(ThreadID tid)
 {
@@ -629,6 +641,7 @@ Fetch::clearStates(ThreadID tid)
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
+    clearPredecodePipeline(tid);
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -662,6 +675,7 @@ Fetch::resetStage()
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
+        clearPredecodePipeline(tid);
 
         priorityList.push_back(tid);
         waitForVsetvl[tid] = false;
@@ -1419,6 +1433,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Empty fetch queue
     fetchQueue[tid].clear();
+    clearPredecodePipeline(tid);
 
     // microops are being squashed, it is not known wheather the
     // youngest non-squashed microop was  marked delayed commit
@@ -1583,6 +1598,8 @@ Fetch::initializeTickState()
 void
 Fetch::fetchAndProcessInstructions(bool status_change)
 {
+    advancePredecodePipeline();
+
     // Fetch instructions from active threads
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
@@ -2323,12 +2340,66 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 }
 
 bool
+Fetch::predecodePipelineEnabled(ThreadID tid) const
+{
+    return enablePredecode && numThreads == 1 && tid < numThreads &&
+        !isTraceMode();
+}
+
+bool
 Fetch::predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
                         const StaticInstPtr &curMacroop) const
 {
-    return enablePredecode && tid < numThreads && !isTraceMode() &&
+    return predecodePipelineEnabled(tid) &&
         !curMacroop && staticInst && !staticInst->isMacroop() &&
         !staticInst->isVectorConfig();
+}
+
+void
+Fetch::clearPredecodePipeline(ThreadID tid)
+{
+    predecodeStage0[tid].clear();
+    predecodeStage1[tid].clear();
+}
+
+bool
+Fetch::processPredecodeStage(ThreadID tid)
+{
+    auto &stage = predecodeStage1[tid];
+    for (unsigned i = 0; i < stage.size; ++i) {
+        const DynInstPtr instruction = stage.entries[i].instruction;
+        if (!instruction || instruction->isSquashed())
+            continue;
+
+        const auto fault = classifyPredecodeFault(
+            instruction, instruction->staticInst);
+        instruction->setPredecodeChecked();
+        DPRINTF(Fetch,
+                "[tid:%i] Predecode checker at PC %#lx, seq=%llu, fault=%u\n",
+                tid, instruction->pcState().instAddr(), instruction->seqNum,
+                static_cast<unsigned>(fault));
+        if (fault != PredecodeFault::None) {
+            handlePredecodeFault(tid, instruction, fault);
+            return true;
+        }
+    }
+    stage.clear();
+    return false;
+}
+
+void
+Fetch::advancePredecodePipeline()
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!predecodePipelineEnabled(tid))
+            continue;
+
+        if (processPredecodeStage(tid))
+            continue;
+
+        predecodeStage1[tid] = std::move(predecodeStage0[tid]);
+        predecodeStage0[tid].clear();
+    }
 }
 
 Fetch::PredecodeFault
@@ -2345,7 +2416,8 @@ Fetch::classifyPredecodeFault(const DynInstPtr &instruction,
             return PredecodeFault::DirectNotTaken;
         if (instruction->readPredTaken()) {
             const auto target = instruction->branchTarget();
-            if (*target != instruction->readPredTarg())
+            if (target->instAddr() !=
+                instruction->readPredTarg().instAddr())
                 return PredecodeFault::DirectTargetMismatch;
         }
     }
@@ -2403,17 +2475,17 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
 
     // The faulting instruction is already registered. Preserve older entries
     // that may still be waiting for Decode; squash only removes younger work.
-    std::deque<DynInstPtr> olderFetchEntries;
+    std::deque<DynInstPtr> preservedFetchEntries;
     for (const auto &queued : fetchQueue[tid]) {
-        if (queued->seqNum < instruction->seqNum)
-            olderFetchEntries.push_back(queued);
+        if (queued->seqNum <= instruction->seqNum)
+            preservedFetchEntries.push_back(queued);
     }
 
-    // Recovery is Fetch-local: redirect to the corrected target and discard
-    // younger front-end work without modifying ROB-owned state.
+    // Redirect Fetch and mark younger in-flight front-end instructions as
+    // squashed. At this point they cannot have reached the ROB yet.
     doSquash(target, instruction, instruction->seqNum, tid);
-    fetchQueue[tid] = std::move(olderFetchEntries);
-    fetchQueue[tid].push_back(instruction);
+    cpu->removeInstsUntil(instruction->seqNum, tid);
+    fetchQueue[tid] = std::move(preservedFetchEntries);
     delayedCommit[tid] = !fetchQueue[tid].empty() &&
         fetchQueue[tid].back()->isDelayedCommit();
     ++fetchStats.predecodeRedirects;
@@ -2617,8 +2689,7 @@ bool
 Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                 StaticInstPtr &curMacroop,
                                 bool allow_two_fetch,
-                                bool &continued_to_next_target,
-                                bool &predecodeRedirected)
+                                bool &continued_to_next_target)
 {
     auto *dec_ptr = decoder[tid];
     bool predictedBranch = false;
@@ -2702,16 +2773,14 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
             valuePred->valuePredict(predictRequest, instruction->vpRecord);
     }
 
-    predecodeRedirected = false;
     if (predecodeEnabled(tid, staticInst, curMacroop) &&
         !false_hit) {
-        const auto fault = classifyPredecodeFault(instruction, staticInst);
-        instruction->setPredecodeChecked();
-        if (fault != PredecodeFault::None) {
-            handlePredecodeFault(tid, instruction, fault);
-            predecodeRedirected = true;
-            return predictedBranch;
-        }
+        auto &stage = predecodeStage0[tid];
+        assert(stage.size < MaxWidth);
+        stage.entries[stage.size++].instruction = instruction;
+        DPRINTF(Fetch,
+                "[tid:%i] Predecode stage0 at PC %#lx, seq=%llu\n",
+                tid, instruction->pcState().instAddr(), instruction->seqNum);
     }
 
     if (isTraceMode()) {
@@ -2769,14 +2838,12 @@ Fetch::performInstructionFetch(ThreadID tid)
         do {
             // Process a single instruction, from decoding to PC update.
             bool continued_to_next_target = false;
-            bool predecode_redirected = false;
             const bool predicted_taken = processSingleInstruction(
                 tid, pc_state, curMacroop,
                 !threads[tid].usedForTwoFetch,
-                continued_to_next_target, predecode_redirected);
+                continued_to_next_target);
             stopFetchThisCycle =
-                predecode_redirected ||
-                (predicted_taken && !continued_to_next_target);
+                predicted_taken && !continued_to_next_target;
 
         } while (curMacroop &&
                  numInst < fetchWidth &&
@@ -2797,8 +2864,8 @@ Fetch::performInstructionFetch(ThreadID tid)
     // Log why fetch stopped
     if (stopFetchThisCycle) {
         DPRINTF(Fetch,
-                "[tid:%i] Done fetching, predicted branch or predecode "
-                "redirect encountered.\n", tid);
+                "[tid:%i] Done fetching, predicted branch instruction "
+                "encountered.\n", tid);
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);
     } else if (stall != StallReason::NoStall) {
