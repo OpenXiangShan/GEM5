@@ -154,6 +154,31 @@ class BTBTAGE : public TimedBaseBTBPredictor
                             ThreadID tid = 0,
                             uint8_t asidHash = 0) const;
 
+    /** Explicit lookup context for a second block that shares block1's set
+     * index but uses block2's PC/history in the tag.
+     */
+    struct SecondBlockLookupContext
+    {
+        Addr indexPC{0};
+        Addr tagPC{0};
+        ThreadID tid{0};
+        uint8_t asidHash{0};
+        bitset history;
+        std::vector<uint64_t> indexFoldedHist;
+        std::vector<uint64_t> tagFoldedHist;
+        std::vector<uint64_t> altTagFoldedHist;
+    };
+
+    SecondBlockLookupContext makeSecondBlockLookupContext(
+        const FullBTBPrediction &firstPred, Addr block1Start,
+        Addr block2Start, ThreadID tid = 0, uint8_t asidHash = 0,
+        const bitset *historyOverride = nullptr) const;
+
+    void lookupSecondBlockNoSideEffect(
+        const SecondBlockLookupContext &context,
+        const std::vector<BTBEntry> &btbEntries,
+        CondTakens &results) const;
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
@@ -492,7 +517,8 @@ private:
                                            const Addr &startPC,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
                                            ThreadID tid = 0,
-                                           uint8_t asidHash = 0) const;
+                                           uint8_t asidHash = 0,
+                                           const SecondBlockLookupContext *lookupContext = nullptr) const;
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,

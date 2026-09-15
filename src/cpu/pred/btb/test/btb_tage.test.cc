@@ -586,6 +586,52 @@ TEST_F(BTBTAGETest, GlobalHistoryModeUpdate) {
         << "GHR mode should still shift history on not-taken branches";
 }
 
+TEST_F(BTBTAGETest, SecondBlockLookupUsesH1IndexAndH2Tag)
+{
+    BTBEntry firstEntry = createBTBEntry(0x1008, true, true, 1, 0x1040);
+    const Addr block1Start = 0x1000;
+    const Addr block2Start = 0x1040;
+
+    stagePreds[1].btbEntries = {firstEntry};
+    tage->putPCHistory(block1Start, history, stagePreds);
+    auto firstPred = stagePreds[1];
+    const auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        tage->getPredictionMeta());
+
+    auto expectedTag = meta->tagFoldedHist[0];
+    auto expectedAltTag = meta->altTagFoldedHist[0];
+    const auto pathUpdate = firstPred.getPHistUpdate();
+    ASSERT_TRUE(pathUpdate.taken);
+    expectedTag.update(history, pathUpdate.shamt, true,
+                       pathUpdate.pc, pathUpdate.target);
+    expectedAltTag.update(history, pathUpdate.shamt, true,
+                          pathUpdate.pc, pathUpdate.target);
+
+    const auto context = tage->makeSecondBlockLookupContext(
+        firstPred, block1Start, block2Start, 0, 0, &history);
+    ASSERT_EQ(context.indexFoldedHist.size(), tage->numPredictors);
+    EXPECT_EQ(context.indexFoldedHist[0], meta->indexFoldedHist[0].get());
+    EXPECT_EQ(context.tagFoldedHist[0], expectedTag.get());
+    EXPECT_EQ(context.altTagFoldedHist[0], expectedAltTag.get());
+
+    BTBEntry secondEntry = createBTBEntry(0x1048, true, true, -1, 0x1080);
+    const unsigned position = tage->getBranchIndexInBlock(
+        secondEntry.pc, block2Start);
+    const Addr index = tage->getTageIndex(
+        block1Start, 0, context.indexFoldedHist[0]);
+    const Addr tag = tage->getTageTag(
+        block2Start, 0, context.tagFoldedHist[0],
+        context.altTagFoldedHist[0], position);
+    auto &entry = tage->tageTable[0][index][0];
+    entry = BTBTAGE::TageEntry(tag, 2, secondEntry.pc);
+
+    CondTakens results;
+    tage->lookupSecondBlockNoSideEffect(context, {secondEntry}, results);
+    ASSERT_EQ(results.size(), 1U);
+    EXPECT_EQ(results.front().first, secondEntry.pc);
+    EXPECT_TRUE(results.front().second);
+}
+
 // Test main and alternative prediction mechanism by direct setup
 TEST_F(BTBTAGETest, MainAltPredictionBehavior) {
     // Create a branch entry for testing

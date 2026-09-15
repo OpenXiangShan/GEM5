@@ -856,8 +856,14 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
     condTakens.reserve(btbEntries.size());
 
     if (tage && tage->isEnabled()) {
-        tage->lookupNoSideEffect(startPC, btbEntries, condTakens, tid,
-                                 asidHash);
+        const Addr block1Start = ftq.back(tid).startPC;
+        const auto &block1History = tage->usesPathHistory() ?
+            ftq.back(tid).phistory : ftq.back(tid).history;
+        const auto tageContext = tage->makeSecondBlockLookupContext(
+            thread.finalPred, block1Start, startPC, tid, asidHash,
+            &block1History);
+        tage->lookupSecondBlockNoSideEffect(
+            tageContext, btbEntries, condTakens);
     } else {
         for (const auto &entry : btbEntries) {
             if (entry.valid && entry.isCond) {
