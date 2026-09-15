@@ -70,6 +70,17 @@ def _get_cache_opts(cpu, level, options):
     if hasattr(options, prefetcher_attr) and (not options.no_pf):
         opts['prefetcher'] = create_prefetcher(cpu, level, options)
 
+    if level == 'l1d':
+        opts.update({
+            'pdb_enable': options.pdb_enable,
+            'pdb_entries': options.pdb_entries,
+            'pdb_replacement_policy': options.pdb_replacement_policy,
+            'pdb_lookup_latency': options.pdb_lookup_latency,
+            'pdb_move_slots': options.pdb_move_slots,
+            'pdb_move_latency': options.pdb_move_latency,
+            'pdb_db_enable': options.pdb_db_enable,
+        })
+
     return opts
 
 def config_classic_l2(options, system, l2_cache_class):

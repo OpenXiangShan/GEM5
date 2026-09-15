@@ -149,6 +149,13 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       mshrAllocPerCycle(p.mshr_alloc_per_cycle),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
+      pdbEnabled(p.pdb_enable && p.pdb_entries > 0 && p.cache_level == 1),
+      pdbCapacity(p.pdb_entries),
+      pdbReplacementPolicy(p.pdb_replacement_policy),
+      pdbLookupLatency(p.pdb_lookup_latency),
+      pdbMoveSlots(p.pdb_move_slots),
+      pdbMoveLatency(p.pdb_move_latency),
+      pdbDbEnable(p.pdb_db_enable && p.cache_level == 1),
       writeAllocator(p.write_allocator),
       writebackClean(p.writeback_clean),
       tempBlockWriteback(nullptr),
@@ -201,6 +208,23 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // whether the connected requestor is actually snooping or not
 
     tempBlock = new TempCacheBlk(blkSize);
+    if (pdbEnabled) {
+        pdbEntries.resize(pdbCapacity);
+        for (auto &entry : pdbEntries)
+            entry.data.resize(blkSize);
+
+        if (pdbDbEnable && archDBer) {
+            std::vector<std::pair<std::string, DataType>> fields = {
+                {"EVENT", UINT64}, {"ADDR", UINT64},
+                {"SECURE", UINT64}, {"OCCUPANCY", UINT64},
+                {"VALUE", UINT64}};
+            std::string table = "PDBTrace_" + name();
+            std::replace(table.begin(), table.end(), '.', '_');
+            std::replace(table.begin(), table.end(), '/', '_');
+            pdbDbTrace = archDBer->addAndGetTrace(table.c_str(), fields);
+            pdbDbTrace->init_table();
+        }
+    }
     tags->tagsInit();
     for (int i = 0; i < size / assoc / blkSize; i++) {
         for (int j = 0; j < assoc; j++)
@@ -256,6 +280,286 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 BaseCache::~BaseCache()
 {
     delete tempBlock;
+}
+
+int
+BaseCache::findPdbEntry(Addr block_addr, bool secure) const
+{
+    if (!pdbEnabled)
+        return -1;
+    for (unsigned i = 0; i < pdbEntries.size(); ++i) {
+        const auto &entry = pdbEntries[i];
+        if (entry.state != PdbEntryState::Invalid &&
+            entry.blockAddr == block_addr && entry.secure == secure) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void
+BaseCache::writePdbDbRecord(uint64_t event, Addr block_addr, bool secure,
+                            uint64_t value)
+{
+    if (!pdbDbTrace)
+        return;
+    Record record;
+    record._tick = curTick();
+    record._uint64_data["EVENT"] = event;
+    record._uint64_data["ADDR"] = block_addr;
+    record._uint64_data["SECURE"] = secure;
+    record._uint64_data["OCCUPANCY"] = stats.pdbOccupancy.value();
+    record._uint64_data["VALUE"] = value;
+    pdbDbTrace->write_record(record);
+}
+
+int
+BaseCache::choosePdbVictim() const
+{
+    for (unsigned i = 0; i < pdbEntries.size(); ++i) {
+        if (pdbEntries[i].state == PdbEntryState::Invalid)
+            return i;
+    }
+
+    int victim = -1;
+    Tick oldest = MaxTick;
+    for (unsigned i = 0; i < pdbEntries.size(); ++i) {
+        const auto &entry = pdbEntries[i];
+        if (entry.state == PdbEntryState::Reserved ||
+            entry.state == PdbEntryState::MovePending)
+            continue;
+        Tick key = entry.lastUse;
+        if (pdbReplacementPolicy == "fifo")
+            key = entry.fillTick;
+        if (pdbReplacementPolicy == "random")
+            continue;
+        if (key < oldest) {
+            oldest = key;
+            victim = i;
+        }
+    }
+    if (pdbReplacementPolicy == "random") {
+        const unsigned start = pdbEntries.empty() ? 0 :
+            (curTick() % pdbEntries.size());
+        for (unsigned offset = 0; offset < pdbEntries.size(); ++offset) {
+            const unsigned index = (start + offset) % pdbEntries.size();
+            if (pdbEntries[index].state == PdbEntryState::Resident)
+                return index;
+        }
+        return -1;
+    }
+    return victim;
+}
+
+void
+BaseCache::updatePdbOccupancyStats()
+{
+    if (!pdbEnabled)
+        return;
+    unsigned occupancy = 0;
+    for (const auto &entry : pdbEntries) {
+        if (entry.state != PdbEntryState::Invalid)
+            ++occupancy;
+    }
+    stats.pdbOccupancy = occupancy;
+    if (occupancy > stats.pdbOccupancyMax.value())
+        stats.pdbOccupancyMax = occupancy;
+}
+
+bool
+BaseCache::reservePdbEntry(PacketPtr pkt)
+{
+    if (!pdbEnabled)
+        return false;
+    const Addr block_addr = pkt->getBlockAddr(blkSize);
+    const bool secure = pkt->isSecure();
+    const int existing = findPdbEntry(block_addr, secure);
+    if (existing >= 0) {
+        stats.pdbPrefetchDuplicates++;
+        return false;
+    }
+    const int victim = choosePdbVictim();
+    if (victim < 0) {
+        stats.pdbPrefetchReservationFails++;
+        return false;
+    }
+    auto &entry = pdbEntries[victim];
+    const bool reusing = entry.state != PdbEntryState::Invalid;
+    if (entry.state == PdbEntryState::Resident) {
+        if (entry.used)
+            stats.pdbUsedEvictions++;
+        else
+            stats.pdbUnusedEvictions++;
+        stats.pdbBytesEvicted += blkSize;
+    }
+    entry.state = PdbEntryState::Reserved;
+    entry.blockAddr = block_addr;
+    entry.secure = secure;
+    entry.used = false;
+    entry.fillTick = curTick();
+    entry.lastUse = curTick();
+    const Request::XsMetadata xs_meta = pkt->req->hasXsMetadata() ?
+        pkt->req->getXsMetadata() : Request::XsMetadata();
+    entry.source = xs_meta.prefetchSource;
+    entry.depth = xs_meta.prefetchDepth;
+    ++entry.generation;
+    stats.pdbPrefetchReservations++;
+    stats.pdbEntryReuse += reusing;
+    updatePdbOccupancyStats();
+    writePdbDbRecord(1, block_addr, secure, entry.source);
+    return true;
+}
+
+bool
+BaseCache::storePdbFill(PacketPtr pkt)
+{
+    const Addr block_addr = pkt->getBlockAddr(blkSize);
+    const bool secure = pkt->isSecure();
+    const int index = findPdbEntry(block_addr, secure);
+    if (index < 0 || !pkt->hasData() || pkt->getSize() != blkSize) {
+        stats.pdbFillDrops++;
+        if (index >= 0)
+            cancelPdbReservation(block_addr, secure);
+        return false;
+    }
+    auto &entry = pdbEntries[index];
+    std::copy(pkt->getConstPtr<uint8_t>(),
+              pkt->getConstPtr<uint8_t>() + blkSize,
+              entry.data.begin());
+    entry.state = PdbEntryState::Resident;
+    entry.lastUse = curTick();
+    stats.pdbPurePrefetchFills++;
+    stats.pdbBytesIn += blkSize;
+    updatePdbOccupancyStats();
+    writePdbDbRecord(2, entry.blockAddr, entry.secure, blkSize);
+    return true;
+}
+
+void
+BaseCache::cancelPdbReservation(Addr block_addr, bool secure)
+{
+    const int index = findPdbEntry(block_addr, secure);
+    if (index < 0 || pdbEntries[index].state != PdbEntryState::Reserved)
+        return;
+    pdbEntries[index].state = PdbEntryState::Invalid;
+    stats.pdbReservationCanceled++;
+    updatePdbOccupancyStats();
+    writePdbDbRecord(3, block_addr, secure);
+}
+
+void
+BaseCache::invalidatePdbEntry(Addr block_addr, bool secure)
+{
+    const int index = findPdbEntry(block_addr, secure);
+    if (index < 0)
+        return;
+
+    const auto state = pdbEntries[index].state;
+    if (state == PdbEntryState::MovePending) {
+        assert(pdbMovesInFlight > 0);
+        --pdbMovesInFlight;
+        stats.pdbMoveCanceled++;
+    } else if (state == PdbEntryState::Reserved) {
+        stats.pdbReservationCanceled++;
+    } else if (state == PdbEntryState::Resident) {
+        stats.pdbCoherenceInvalidations++;
+    }
+    pdbEntries[index].state = PdbEntryState::Invalid;
+    updatePdbOccupancyStats();
+    writePdbDbRecord(7, block_addr, secure,
+                     static_cast<uint64_t>(state));
+}
+
+bool
+BaseCache::tryPdbHit(PacketPtr pkt, Cycles &lat)
+{
+    pdbHitLastAccess = false;
+    if (!pdbEnabled || !pkt->isDemand() || !pkt->isRead() ||
+        pkt->req->isUncacheable())
+        return false;
+    stats.pdbLookups++;
+    const Addr block_addr = pkt->getBlockAddr(blkSize);
+    const bool secure = pkt->isSecure();
+    if (mshrQueue.findMatch(block_addr, secure) ||
+        writeBuffer.findMatch(block_addr, secure)) {
+        stats.pdbLookupBlocked++;
+        return false;
+    }
+    const int index = findPdbEntry(block_addr, secure);
+    if (index < 0 || (pdbEntries[index].state != PdbEntryState::Resident &&
+                      pdbEntries[index].state != PdbEntryState::MovePending))
+    {
+        stats.pdbLookupMisses++;
+        return false;
+    }
+
+    auto &entry = pdbEntries[index];
+    pkt->setDataFromBlock(entry.data.data(), blkSize);
+    entry.used = true;
+    entry.lastUse = curTick();
+    stats.pdbHits++;
+    stats.pdbLoadResponses++;
+    stats.pdbDcacheMissesServed++;
+    stats.pdbBytesOut += pkt->getSize();
+    lat = std::max(calculateTagOnlyLatency(pkt->headerDelay, lookupLatency),
+                   pdbLookupLatency);
+    stats.pdbHitLatency += cyclesToTicks(lat);
+    pdbHitLastAccess = true;
+    writePdbDbRecord(4, entry.blockAddr, entry.secure, pkt->getSize());
+    schedulePdbMove(index);
+    return true;
+}
+
+void
+BaseCache::schedulePdbMove(unsigned entry)
+{
+    if (!pdbEnabled || entry >= pdbEntries.size() ||
+        pdbEntries[entry].state != PdbEntryState::Resident)
+        return;
+    if (pdbMovesInFlight >= pdbMoveSlots) {
+        stats.pdbMoveDeferred++;
+        stats.pdbMoveSlotStalls++;
+        return;
+    }
+    stats.pdbMoveRequests++;
+    writePdbDbRecord(5, pdbEntries[entry].blockAddr,
+                     pdbEntries[entry].secure, pdbMoveLatency);
+    schedule(new PdbMoveEvent(this, entry, pdbEntries[entry].generation),
+             clockEdge(pdbMoveLatency));
+    pdbEntries[entry].state = PdbEntryState::MovePending;
+    ++pdbMovesInFlight;
+}
+
+void
+BaseCache::processPdbMove(unsigned entry, uint64_t generation)
+{
+    if (!pdbEnabled || entry >= pdbEntries.size() ||
+        pdbEntries[entry].state != PdbEntryState::MovePending ||
+        pdbEntries[entry].generation != generation)
+        return;
+    assert(pdbMovesInFlight > 0);
+    --pdbMovesInFlight;
+    auto &pdb_entry = pdbEntries[entry];
+    Request::Flags flags = pdb_entry.secure ?
+        Request::Flags(Request::SECURE) : Request::Flags(0);
+    RequestPtr req = std::make_shared<Request>(pdb_entry.blockAddr, blkSize,
+                                                flags, Request::wbRequestorId);
+    PacketPtr pkt = new Packet(req, MemCmd::ReadResp);
+    pkt->allocate();
+    std::copy(pdb_entry.data.begin(), pdb_entry.data.end(),
+              pkt->getPtr<uint8_t>());
+    PacketList writebacks;
+    CacheBlk *blk = tags->findBlock(pdb_entry.blockAddr, pdb_entry.secure);
+    blk = handleFill(pkt, blk, writebacks, true);
+    if (blk == tempBlock && tempBlock->isValid())
+        evictBlock(blk, writebacks);
+    doWritebacks(writebacks, clockEdge(fillLatency));
+    stats.pdbMoveCompleted++;
+    stats.pdbBytesMoved += blkSize;
+    pdb_entry.state = PdbEntryState::Invalid;
+    updatePdbOccupancyStats();
+    writePdbDbRecord(6, pdb_entry.blockAddr, pdb_entry.secure, blkSize);
+    delete pkt;
 }
 
 void
@@ -551,6 +855,22 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     // Demand request merging into prefetch-only MSHR
                     if (pkt->isDemand()) {
                         stats.demandMergedIntoPfMSHR++;
+                        // The cache does not receive a reliable callback if
+                        // an O3 load is later squashed.  Release the PDB
+                        // reservation at merge time rather than retaining a
+                        // stale Reserved entry until the response arrives.
+                        if (pdbEnabled) {
+                            const int pdb_index = findPdbEntry(
+                                pkt->getBlockAddr(blkSize), pkt->isSecure());
+                            if (pdb_index >= 0 &&
+                                pdbEntries[pdb_index].state ==
+                                    PdbEntryState::Reserved) {
+                                stats.pdbDemandMerges++;
+                                cancelPdbReservation(
+                                    pkt->getBlockAddr(blkSize),
+                                    pkt->isSecure());
+                            }
+                        }
                         DPRINTF(Cache, "Demand request %#lx merged into prefetch MSHR\n",
                                 pkt->getAddr());
                     }
@@ -1036,6 +1356,16 @@ BaseCache::recvTimingResp(PacketPtr pkt)
          mshr->wasWholeLineWrite);
     const bool pure_prefetch_fill =
         mshr->hasFromPref() && !mshr->hasFromCPU();
+    if (pdbEnabled && mshr->hasFromPref() && mshr->hasFromCPU()) {
+        // A late demand takes ownership of the response and therefore the
+        // reserved PDB entry must not retain a second copy of the line.
+        const int pdb_index = findPdbEntry(pkt->getBlockAddr(blkSize),
+                                           pkt->isSecure());
+        if (pdb_index >= 0 &&
+            pdbEntries[pdb_index].state == PdbEntryState::Reserved)
+            stats.pdbDemandMerges++;
+        cancelPdbReservation(pkt->getBlockAddr(blkSize), pkt->isSecure());
+    }
     if (pure_prefetch_fill) {
         const PrefetchSourceType pf_source = mshr->getPFSource();
         const int pf_depth = mshr->getPFDepth();
@@ -1055,11 +1385,19 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     assert(doFastWriteline ? !mshr->wasWholeLineWrite || pkt->isInvalidate() : true);
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    const bool pdb_only_fill = pdbEnabled && pure_prefetch_fill && is_fill;
+    if (pdb_only_fill && !is_error) {
+        storePdbFill(pkt);
+    } else if (pdb_only_fill && is_error) {
+        cancelPdbReservation(pkt->getBlockAddr(blkSize), pkt->isSecure());
+    }
+    if (pdb_only_fill)
+        blk = nullptr;
     o3::LSQ *dcache_refill_lsq = nullptr;
     Addr dcache_refill_addr = 0;
     bool dcache_refill_need_data_read = false;
 
-    if (is_fill && !is_error) {
+    if (is_fill && !is_error && !pdb_only_fill) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
 
@@ -1099,6 +1437,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         if (prefetcher) {
             prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
         }
+        ppFill->notify(pkt);
+    } else if (pdb_only_fill && !is_error) {
+        if (prefetcher)
+            prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
         ppFill->notify(pkt);
     }
 
@@ -1555,6 +1897,12 @@ BaseCache::getNextQueueEntry()
                 // free the request and packet
                 delete pkt;
             } else {
+                if (pdbEnabled && !reservePdbEntry(pkt)) {
+                    // A full PDB rejects this candidate while preserving the
+                    // existing prefetcher and DCache MSHR flow.
+                    delete pkt;
+                    return nullptr;
+                }
                 // Update statistic on number of prefetches issued
                 // (hwpf_mshr_misses)
                 assert(pkt->req->requestorId() < system->maxRequestors());
@@ -1951,6 +2299,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             blk ? "hit " + blk->print() : "miss", tag_latency);
 
     if (pkt->req->isCacheMaintenance()) {
+        if (pdbEnabled)
+            invalidatePdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure());
         // A cache maintenance operation is always forwarded to the
         // memory below even if the block is found in dirty state.
 
@@ -1964,6 +2314,12 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         return false;
     }
+
+    // A write or ownership-changing request supersedes a clean prefetched
+    // copy. Drop it before allocating/servicing the demand request so a
+    // delayed PDB move cannot reintroduce stale data.
+    if (pdbEnabled && pkt->isWrite())
+        invalidatePdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure());
 
     if (pkt->isEviction()) {
         // We check for presence of block in above caches before issuing
@@ -2213,6 +2569,14 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // Can't satisfy access normally... need writable
         DPRINTF(Cache, "%s: %#lx wants writable but is not\n", __func__,
                 regenerateBlkAddr(blk));
+    }
+
+    // A demand can be satisfied by the data buffer after the normal DCache
+    // lookup misses.  This keeps the PDB path out of ordinary cache-hit
+    // accounting while preserving the cache's response timing path.
+    if (!blk && tryPdbHit(pkt, lat)) {
+        blk = nullptr;
+        return true;
     }
 
     // Can't satisfy access normally... either no block (blk == nullptr)
@@ -3157,6 +3521,64 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR completions with only prefetch (no demand merge)"),
     ADD_STAT(demandMergedIntoPfMSHR, statistics::units::Count::get(),
              "number of demand requests that merged into prefetch MSHR"),
+    ADD_STAT(pdbLookups, statistics::units::Count::get(),
+             "number of demand lookups performed in the prefetch data buffer"),
+    ADD_STAT(pdbLookupMisses, statistics::units::Count::get(),
+             "number of PDB lookups that did not find a resident entry"),
+    ADD_STAT(pdbLookupBlocked, statistics::units::Count::get(),
+             "number of PDB lookups blocked by an outstanding MSHR/writeback"),
+    ADD_STAT(pdbHits, statistics::units::Count::get(),
+             "number of demand hits in the prefetch data buffer"),
+    ADD_STAT(pdbLoadResponses, statistics::units::Count::get(),
+             "number of load responses served by the prefetch data buffer"),
+    ADD_STAT(pdbDcacheMissesServed, statistics::units::Count::get(),
+             "number of DCache misses served by the prefetch data buffer"),
+    ADD_STAT(pdbPrefetchReservations, statistics::units::Count::get(),
+             "number of PDB reservations for prefetch requests"),
+    ADD_STAT(pdbPrefetchReservationFails, statistics::units::Count::get(),
+             "number of prefetch reservations rejected by a full PDB"),
+    ADD_STAT(pdbPrefetchDuplicates, statistics::units::Count::get(),
+             "number of prefetches duplicated in the PDB"),
+    ADD_STAT(pdbPurePrefetchFills, statistics::units::Count::get(),
+             "number of pure prefetch responses stored in the PDB"),
+    ADD_STAT(pdbFillDrops, statistics::units::Count::get(),
+             "number of prefetch responses dropped by the PDB"),
+    ADD_STAT(pdbDemandMerges, statistics::units::Count::get(),
+             "number of demand merges that cancel PDB reservations"),
+    ADD_STAT(pdbReservationCanceled, statistics::units::Count::get(),
+             "number of reserved PDB entries canceled before fill"),
+    ADD_STAT(pdbCoherenceInvalidations, statistics::units::Count::get(),
+             "number of resident PDB entries invalidated by writes/maintenance"),
+    ADD_STAT(pdbMoveRequests, statistics::units::Count::get(),
+             "number of PDB-to-DCache move requests"),
+    ADD_STAT(pdbMoveCompleted, statistics::units::Count::get(),
+             "number of completed PDB-to-DCache moves"),
+    ADD_STAT(pdbMoveDeferred, statistics::units::Count::get(),
+             "number of PDB moves deferred by the move-slot limit"),
+    ADD_STAT(pdbMoveCanceled, statistics::units::Count::get(),
+             "number of scheduled PDB moves canceled by a conflicting write"),
+    ADD_STAT(pdbMoveSlotStalls, statistics::units::Count::get(),
+             "number of PDB hits that could not schedule a move"),
+    ADD_STAT(pdbUsedEvictions, statistics::units::Count::get(),
+             "number of used PDB entries evicted"),
+    ADD_STAT(pdbUnusedEvictions, statistics::units::Count::get(),
+             "number of unused PDB entries evicted"),
+    ADD_STAT(pdbEntryReuse, statistics::units::Count::get(),
+             "number of PDB entry allocations reusing an old entry"),
+    ADD_STAT(pdbOccupancy, statistics::units::Count::get(),
+             "current PDB occupancy"),
+    ADD_STAT(pdbOccupancyMax, statistics::units::Count::get(),
+             "maximum PDB occupancy"),
+    ADD_STAT(pdbBytesIn, statistics::units::Byte::get(),
+             "bytes entering the PDB"),
+    ADD_STAT(pdbBytesOut, statistics::units::Byte::get(),
+             "bytes served directly from the PDB"),
+    ADD_STAT(pdbBytesMoved, statistics::units::Byte::get(),
+             "bytes moved from the PDB into the DCache"),
+    ADD_STAT(pdbBytesEvicted, statistics::units::Byte::get(),
+             "bytes evicted from the PDB"),
+    ADD_STAT(pdbHitLatency, statistics::units::Tick::get(),
+             "total latency charged to PDB-served demand loads"),
     ADD_STAT(squashedDemandHits, statistics::units::Count::get(),
              "number of squashed inst block demand hits"),
     ADD_STAT(loadTagReadFails, statistics::units::Count::get(),
@@ -3418,9 +3840,16 @@ BaseCache::CacheStats::regStats()
     overallAvgMshrUncacheableLatency =
         overallMshrUncacheableLatency / overallMshrUncacheable;
     for (int i = 0; i < max_requestors; i++) {
-        overallAvgMshrUncacheableLatency.subname(i,
+    overallAvgMshrUncacheableLatency.subname(i,
             system->getRequestorName(i));
     }
+
+    pdbHitRate.flags(total | nozero | nonan);
+    pdbHitRate = pdbHits / pdbLookups;
+    pdbDcacheMissCoverage.flags(total | nozero | nonan);
+    pdbDcacheMissCoverage = pdbDcacheMissesServed / demandMisses;
+    pdbMoveCompletionRate.flags(total | nozero | nonan);
+    pdbMoveCompletionRate = pdbMoveCompleted / pdbMoveRequests;
 
     mshrAvgEntryNum
         .flags(nonan)

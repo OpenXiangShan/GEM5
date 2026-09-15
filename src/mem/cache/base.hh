@@ -50,6 +50,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <memory>
 #include <queue>
 #include <string>
 #include <unordered_set>
@@ -382,6 +383,43 @@ class BaseCache : public ClockedObject, public CacheAccessor
         const char* description() const override;
     };
 
+    enum class PdbEntryState : uint8_t
+    {
+        Invalid,
+        Reserved,
+        Resident,
+        MovePending
+    };
+
+    struct PdbEntry
+    {
+        PdbEntryState state = PdbEntryState::Invalid;
+        Addr blockAddr = 0;
+        bool secure = false;
+        bool used = false;
+        Tick fillTick = 0;
+        Tick lastUse = 0;
+        PrefetchSourceType source = PrefetchSourceType::PF_NONE;
+        int depth = 0;
+        uint64_t generation = 0;
+        std::vector<uint8_t> data;
+    };
+
+    class PdbMoveEvent : public Event
+    {
+      private:
+        BaseCache *cache;
+        unsigned entry;
+        uint64_t generation;
+
+      public:
+        PdbMoveEvent(BaseCache *cache, unsigned entry, uint64_t generation) :
+            Event(Minimum_Pri, AutoDelete), cache(cache), entry(entry),
+            generation(generation) {}
+        void process() override { cache->processPdbMove(entry, generation); }
+        const char *description() const override { return "PDB move"; }
+    };
+
 
   protected:
 
@@ -426,6 +464,32 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     /** Prefetcher */
     prefetch::Base *prefetcher;
+
+    /** First-stage prefetch data buffer state. */
+    const bool pdbEnabled;
+    const unsigned pdbCapacity;
+    const std::string pdbReplacementPolicy;
+    const Cycles pdbLookupLatency;
+    const unsigned pdbMoveSlots;
+    const Cycles pdbMoveLatency;
+    const bool pdbDbEnable;
+    DBTraceManager *pdbDbTrace = nullptr;
+    std::vector<PdbEntry> pdbEntries;
+    unsigned pdbMovesInFlight = 0;
+    bool pdbHitLastAccess = false;
+
+    int findPdbEntry(Addr block_addr, bool secure) const;
+    int choosePdbVictim() const;
+    bool reservePdbEntry(PacketPtr pkt);
+    bool storePdbFill(PacketPtr pkt);
+    void cancelPdbReservation(Addr block_addr, bool secure);
+    void invalidatePdbEntry(Addr block_addr, bool secure);
+    bool tryPdbHit(PacketPtr pkt, Cycles &lat);
+    void schedulePdbMove(unsigned entry);
+    void processPdbMove(unsigned entry, uint64_t generation);
+    void updatePdbOccupancyStats();
+    void writePdbDbRecord(uint64_t event, Addr block_addr, bool secure,
+                          uint64_t value = 0);
 
     /** To probe when a cache hit occurs */
     ProbePointArg<PacketPtr> *ppHit;
@@ -1343,6 +1407,41 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar pfOnlyFill;
         /** Number of demand requests that merged into prefetch MSHR */
         statistics::Scalar demandMergedIntoPfMSHR;
+
+        /** First-stage prefetch data buffer counters. */
+        statistics::Scalar pdbLookups;
+        statistics::Scalar pdbLookupMisses;
+        statistics::Scalar pdbLookupBlocked;
+        statistics::Scalar pdbHits;
+        statistics::Scalar pdbLoadResponses;
+        statistics::Scalar pdbDcacheMissesServed;
+        statistics::Scalar pdbPrefetchReservations;
+        statistics::Scalar pdbPrefetchReservationFails;
+        statistics::Scalar pdbPrefetchDuplicates;
+        statistics::Scalar pdbPurePrefetchFills;
+        statistics::Scalar pdbFillDrops;
+        statistics::Scalar pdbDemandMerges;
+        statistics::Scalar pdbReservationCanceled;
+        statistics::Scalar pdbCoherenceInvalidations;
+        statistics::Scalar pdbMoveRequests;
+        statistics::Scalar pdbMoveCompleted;
+        statistics::Scalar pdbMoveDeferred;
+        statistics::Scalar pdbMoveCanceled;
+        statistics::Scalar pdbMoveSlotStalls;
+        statistics::Scalar pdbUsedEvictions;
+        statistics::Scalar pdbUnusedEvictions;
+        statistics::Scalar pdbEntryReuse;
+        statistics::Scalar pdbOccupancy;
+        statistics::Scalar pdbOccupancyMax;
+        statistics::Scalar pdbBytesIn;
+        statistics::Scalar pdbBytesOut;
+        statistics::Scalar pdbBytesMoved;
+        statistics::Scalar pdbBytesEvicted;
+        statistics::Scalar pdbHitLatency;
+
+        statistics::Formula pdbHitRate;
+        statistics::Formula pdbDcacheMissCoverage;
+        statistics::Formula pdbMoveCompletionRate;
 
         /** Number of demand hits that accessed squashed inst blocks. */
         statistics::Scalar squashedDemandHits;

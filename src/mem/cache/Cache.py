@@ -98,6 +98,21 @@ class BaseCache(ClockedObject):
     # python configs, e.g. only enable for DCache.
     mshr_alloc_per_cycle = Param.Int(-1,
         "Max number of MSHR allocations/merges allowed per cycle; -1 = unlimited")
+
+    # First-stage decoupled prefetch data buffer.  Prefetch requests still
+    # use this cache's MSHRs and downstream path; only the response residency
+    # is separated from the L1 data array.
+    pdb_enable = Param.Bool(True, "Enable the prefetch data buffer")
+    pdb_entries = Param.Unsigned(16, "Number of entries in the prefetch data buffer")
+    pdb_replacement_policy = Param.String("lru",
+        "PDB replacement policy: lru, fifo, or random")
+    pdb_lookup_latency = Param.Cycles(1, "PDB lookup latency")
+    pdb_move_slots = Param.Unsigned(1,
+        "Maximum number of PDB-to-DCache moves in flight")
+    pdb_move_latency = Param.Cycles(1,
+        "Latency before an on-demand PDB move updates the DCache")
+    pdb_db_enable = Param.Bool(False,
+        "Enable optional ArchDB records for PDB events")
     write_buffers = Param.Unsigned(8, "Number of write buffers")
     do_fast_writeline = Param.Bool(True, "Write whole line do not read")
 

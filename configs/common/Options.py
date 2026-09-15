@@ -170,6 +170,30 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--cacheline_size", type=int, default=64)
     parser.add_argument("--ideal-cache", action="store_true")
 
+    pdb_group = parser.add_mutually_exclusive_group()
+    pdb_group.add_argument("--pdb-enable", dest="pdb_enable",
+                           action="store_true",
+                           help="Enable the first-stage prefetch data buffer")
+    pdb_group.add_argument("--pdb-disable", dest="pdb_enable",
+                           action="store_false",
+                           help="Disable the first-stage prefetch data buffer (baseline)")
+    parser.set_defaults(pdb_enable=True)
+    parser.add_argument("--pdb-entries", type=int, default=16,
+                        help="Number of entries in the prefetch data buffer")
+    parser.add_argument("--pdb-replacement-policy", type=str, default="lru",
+                        choices=["lru", "fifo", "random"],
+                        help="PDB replacement policy")
+    parser.add_argument("--pdb-lookup-latency", type=int, default=1,
+                        help="PDB lookup latency in cycles")
+    parser.add_argument("--pdb-move-slots", "--pdb-refill-slots",
+                        dest="pdb_move_slots", type=int, default=1,
+                        help="Maximum concurrent PDB-to-DCache moves")
+    parser.add_argument("--pdb-move-latency", "--pdb-to-dcache-latency",
+                        dest="pdb_move_latency", type=int, default=1,
+                        help="PDB-to-DCache move latency in cycles")
+    parser.add_argument("--pdb-db-enable", action="store_true", default=False,
+                        help="Record PDB events in the optional ArchDB")
+
     parser.add_argument("--no-pf", default=False,
                         action="store_true", help="L1 icache hardware prefetcher")
     parser.add_argument("--l1i-hwp-type", default=None,

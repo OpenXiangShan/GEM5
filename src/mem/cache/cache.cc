@@ -1403,6 +1403,13 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), is_secure);
 
     Addr blk_addr = pkt->getBlockAddr(blkSize);
+
+    // The PDB stores clean prefetched data outside the tag/data array. A
+    // snoop that requests ownership or invalidation must retire that copy as
+    // well, otherwise a later demand refill could observe stale data.
+    if (pdbEnabled && (pkt->isInvalidate() || pkt->needsWritable()))
+        invalidatePdbEntry(blk_addr, is_secure);
+
     MSHR *mshr = mshrQueue.findMatch(blk_addr, is_secure);
 
     // Update the latency cost of the snoop so that the crossbar can
