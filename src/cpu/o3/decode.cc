@@ -401,7 +401,17 @@ Decode::squash(ThreadID tid)
 {
     DPRINTF(Decode, "[tid:%i] Squashing.\n",tid);
 
-    fixedbuffer[tid].clear();
+    // Selectively remove only instructions younger than squash boundary
+    {
+        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+        for (auto it = fixedbuffer[tid].begin(); it != fixedbuffer[tid].end(); ) {
+            if ((*it)->seqNum > squash_seq) {
+                it = fixedbuffer[tid].erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
     squashBranchHistory(tid, fromCommit->commitInfo[tid].doneSeqNum, false);
 
     // Clear per-thread stallBuffer for the squashed thread

@@ -104,7 +104,6 @@ class PairTAGE : public TimedBaseBTBPredictor
             entry.isIndirect = isIndirect;
             entry.isCall = isCall;
             entry.isReturn = isReturn;
-            entry.alwaysTaken = entry.valid && !isCond;
             entry.ctr = taken ? 0 : -1;
             entry.source = componentIdx;
 
@@ -244,7 +243,7 @@ class PairTAGE : public TimedBaseBTBPredictor
                          FullBTBPrediction &pred,
                          const PathHistoryUpdate &update) override;
     void recoverPHist(const bitset &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
     PairBlockInfo getSecondPredBlock() const;
     bool secondBlockMatches(const TrainPacket &packet) const;

@@ -1211,6 +1211,18 @@ CPU::getReg(VirtRegId virt_reg)
     return regFile.getReg(virt_reg);
 }
 
+RegVal
+CPU::peekReg(PhysRegIdPtr phys_reg) const
+{
+    return regFile.getReg(phys_reg);
+}
+
+RegVal
+CPU::peekReg(VirtRegId virt_reg) const
+{
+    return regFile.getReg(virt_reg);
+}
+
 void
 CPU::getReg(PhysRegIdPtr phys_reg, void *val)
 {
@@ -1754,6 +1766,9 @@ void
 CPU::readGem5Regs(ThreadID tid)
 {
     auto diffAllStates = this->diffAllStates[tid];
+    diffAllStates->gem5RegFile.fcsr =
+        (readMiscRegNoEffect(RiscvISA::MISCREG_FRM, tid) & 0x7) << 5 |
+        (readMiscRegNoEffect(RiscvISA::MISCREG_FFLAGS, tid) & 0x1f);
     for (int i = 0; i < 32; i++) {
         diffAllStates->gem5RegFile[i] = readArchIntReg(i, tid);
         diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, tid);

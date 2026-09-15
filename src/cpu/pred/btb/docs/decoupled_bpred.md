@@ -41,7 +41,6 @@ Extends BranchInfo with BTB-specific fields:
 ```cpp
 struct BTBEntry : BranchInfo {
     bool valid;       // Entry validity
-    bool alwaysTaken; // Always taken flag
     int ctr;          // Prediction counter
     Addr tag;         // BTB tag
 };

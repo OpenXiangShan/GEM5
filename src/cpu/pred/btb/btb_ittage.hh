@@ -115,12 +115,14 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     // Recover path folded histories after a misprediction.
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
 
-    void update(const FetchTarget &entry) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
 
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);

@@ -255,8 +255,9 @@ BTBTAGEUpperBound::lookupExactPrediction(
     }
 
     return TagePrediction(btbEntry.pc, mainInfo, altInfo, useAltPred, taken,
-                          altPred, finalProviderTable, finalProviderIsAlt,
-                          useAltIdx, useAltCtr, hitTableMask);
+                          altPred, baseTaken, finalProviderTable,
+                          finalProviderIsAlt, useAltIdx, useAltCtr,
+                          hitTableMask);
 }
 
 void
@@ -266,7 +267,7 @@ BTBTAGEUpperBound::notePredictionResult(
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
     CondTakens &results) const
 {
-    results.push_back({btbEntry.pc, pred.taken || btbEntry.alwaysTaken});
+    results.push_back({btbEntry.pc, pred.taken});
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -346,21 +347,20 @@ BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
 
 void
 BTBTAGEUpperBound::recoverHist(const boost::dynamic_bitset<> &history,
-                               const FetchTarget &entry, int shamt,
-                               bool cond_taken)
+                               const HistoryRecoveryContext &context,
+                               const DirectionHistoryUpdate &update)
 {
     (void)history;
-    (void)entry;
-    (void)shamt;
-    (void)cond_taken;
+    (void)context;
+    (void)update;
 }
 
 void
 BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
-                                const FetchTarget &entry,
+                                const HistoryRecoveryContext &context,
                                 const PathHistoryUpdate &update)
 {
-    (void)entry;
+    (void)context;
 
     if (historySource != HistorySource::PathHash) {
         return;
@@ -374,7 +374,7 @@ BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
 bool
 BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     const BTBEntry &entry, bool actualTaken, const TagePrediction &pred,
-    const BranchPredictionMeta &meta, const FetchTarget &stream)
+    const BranchPredictionMeta &meta, bool controlMispred)
 {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
@@ -442,9 +442,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
         }
     }
 
-    const bool thisFbMispred =
-        stream.squashType == SquashType::SQUASH_CTRL &&
-        stream.squashPC == entry.pc;
+    const bool thisFbMispred = controlMispred;
     if (getDelay() == 2 && thisFbMispred) {
         tageStats.updateMispred++;
         if (!usedAlt && mainInfo.found) {
@@ -454,7 +452,9 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
         }
     }
 
-    if (!thisFbMispred) {
+    // A control redirect can also come from a target/BTB miss.  Allocate
+    // direction state only when the stored direction itself was wrong.
+    if (!thisFbMispred || pred.taken == actualTaken) {
         return false;
     }
 
@@ -491,40 +491,6 @@ BTBTAGEUpperBound::allocateExactEntry(
     return false;
 }
 
-std::vector<BTBEntry>
-BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
-{
-    auto allEntries = stream.updateBTBEntries;
-
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potentialNewEntry = stream.updateNewBTBEntry;
-        bool newEntryTaken =
-            stream.exeTaken && stream.getControlPC() == potentialNewEntry.pc;
-        if (!newEntryTaken) {
-            potentialNewEntry.alwaysTaken = false;
-        }
-        allEntries.push_back(potentialNewEntry);
-    }
-
-    if (getResolvedUpdate()) {
-        auto removeIt = std::remove_if(
-            allEntries.begin(), allEntries.end(),
-            [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken && e.resolved);
-            });
-        allEntries.erase(removeIt, allEntries.end());
-    } else {
-        auto removeIt = std::remove_if(
-            allEntries.begin(), allEntries.end(),
-            [](const BTBEntry &e) {
-                return !(e.isCond && !e.alwaysTaken);
-            });
-        allEntries.erase(removeIt, allEntries.end());
-    }
-
-    return allEntries;
-}
-
 void
 BTBTAGEUpperBound::refreshContextStats(unsigned table)
 {
@@ -532,9 +498,9 @@ BTBTAGEUpperBound::refreshContextStats(unsigned table)
 }
 
 void
-BTBTAGEUpperBound::update(const FetchTarget &stream)
+BTBTAGEUpperBound::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
-    auto entriesToUpdate = prepareUpperBoundUpdateEntries(stream);
     auto predMeta = std::static_pointer_cast<UpperBoundMeta>(
         stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -542,31 +508,29 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
     }
 
     bool hasStoredVsActualDiff = false;
-    for (auto &btbEntry : entriesToUpdate) {
+    for (const auto &branch : update.branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        auto btbEntry = BTBEntry(makeBranchInfo(branch));
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
-        const bool actualTaken =
-            stream.exeTaken && stream.exeBranchInfo == btbEntry;
-        TagePrediction storedPred;
-        BranchPredictionMeta storedMeta;
-        if (predIt != predMeta->preds.end() &&
-            metaIt != predMeta->branchMeta.end()) {
-            storedPred = predIt->second;
-            storedMeta = metaIt->second;
-        } else {
-            // BTB miss / new conditional branches are absent from prediction-time
-            // maps, but they still must be trained using the prediction-time
-            // history snapshot carried in predMeta.
-            storedPred = lookupExactPrediction(
-                btbEntry, predMeta->historyWords, &storedMeta);
+        if (predIt == predMeta->preds.end() ||
+            metaIt == predMeta->branchMeta.end()) {
+            continue;
         }
+        const bool actualTaken = branch.taken;
+        const auto &storedPred = predIt->second;
+        const auto &storedMeta = metaIt->second;
+        btbEntry.ctr = storedPred.basePred ? 0 : -1;
 
         if (storedPred.taken != actualTaken) {
             hasStoredVsActualDiff = true;
         }
 
         bool needAllocate = updatePredictorStateAndCheckAllocation(
-            btbEntry, actualTaken, storedPred, storedMeta, stream);
+            btbEntry, actualTaken, storedPred, storedMeta,
+            branch.mispredicted);
 
         if (needAllocate) {
             uint64_t allocatedTable = 0;
@@ -583,7 +547,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
         tageStats.recomputedVsActualDiff++;
     }
     if (getDelay() < 2) {
-        checkUtageUpdateMisspred(stream);
+        checkUtageUpdateMisspred(stream, update);
     }
 }
 

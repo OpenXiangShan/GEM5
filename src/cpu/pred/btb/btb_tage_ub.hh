@@ -101,13 +101,13 @@ class BTBTAGEUpperBound : public BTBTAGE
                          FullBTBPrediction &pred,
                          const PathHistoryUpdate &update) override;
     void recoverHist(const boost::dynamic_bitset<> &history,
-                     const FetchTarget &entry,
-                     int shamt,
-                     bool cond_taken) override;
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
-    void update(const FetchTarget &entry) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 
 #ifdef UNIT_TEST
@@ -166,13 +166,11 @@ class BTBTAGEUpperBound : public BTBTAGE
                                                 bool actualTaken,
                                                 const TagePrediction &pred,
                                                 const BranchPredictionMeta &meta,
-                                                const FetchTarget &stream);
+                                                bool controlMispred);
     bool allocateExactEntry(const BTBEntry &entry, bool actualTaken,
                             unsigned startTable,
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,
                             uint64_t &allocatedTable);
-    std::vector<BTBEntry> prepareUpperBoundUpdateEntries(
-        const FetchTarget &stream);
     void refreshContextStats(unsigned table);
     void notePredictionResult(const BTBEntry &btbEntry,
                               const TagePrediction &pred,

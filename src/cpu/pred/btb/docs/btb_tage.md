@@ -90,7 +90,7 @@ std::map<Addr, bool> lookupHelper(const Addr &startPC, const std::vector<BTBEntr
             // Look up all TAGE tables and generate predictions
             auto pred = generateSinglePrediction(btb_entry, table_result);
             meta.preds[btb_entry.pc] = pred;
-            cond_takens[btb_entry.pc] = pred.taken || btb_entry.alwaysTaken;
+            cond_takens[btb_entry.pc] = pred.taken;
         }
     }
     return cond_takens;

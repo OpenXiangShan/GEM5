@@ -103,7 +103,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
             bool taken;           // Final prediction outcome
             bool basePred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), basePred(false) {}
+            TagePrediction() : btb_pc(0), mainprovided(false), taken(false),
+                               basePred(false) {}
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo,
                             bool mainprovided, bool taken, bool basePred) :
                             btb_pc(btb_pc), mainInfo(mainInfo),
@@ -137,19 +138,23 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // Recover path folded histories after a misprediction.
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchTarget &entry) override;
-    bool canResolveUpdate(const FetchTarget &entry) override;
-    void doResolveUpdate(const FetchTarget &entry) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
+    bool canResolveUpdate(const PredictionUpdateContext &context,
+                          const PreparedUpdate &update) override;
+    void doResolveUpdate(const PredictionUpdateContext &context,
+                         const PreparedUpdate &update) override;
     // Train MicroTAGE from the final-stage teacher prediction instead of commit-time truth.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
     void setAbtbComponentIdx(int idx) { abtbComponentIdx = idx; }
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
 #endif
 
     void setTrace() override;
@@ -237,7 +242,9 @@ class MicroTAGE : public TimedBaseBTBPredictor
     unsigned instShiftAmt {1};
 
     // used for MicroTAGE update misprediction counting
-    void checkUtageUpdateMisspred(const FetchTarget &stream);
+    void checkUtageUpdateMisspred(
+        const PredictionUpdateContext &context,
+        const PreparedUpdate &update);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -374,14 +381,23 @@ public:
         S3Update
     };
 
-    void trainEntries(const std::vector<BTBEntry> &entries_to_update,
+    struct TrainingEntry
+    {
+        BTBEntry entry;
+        bool actualTaken;
+        bool controlMispred;
+    };
+
+    void trainEntries(const std::vector<TrainingEntry> &entries_to_update,
                       const std::shared_ptr<TageMeta> &predMeta,
                       const Addr &startPC,
                       ThreadID tid,
                       uint8_t asidHash,
-                      TrainingMode mode,
-                      const FetchTarget *stream,
-                      const CondTakens *teacherCondTakens);
+                      TrainingMode mode);
+    void trainResolvedEntries(const PreparedUpdate &update,
+                              const std::shared_ptr<TageMeta> &predMeta,
+                              const Addr &startPC,
+                              const PredictionUpdateContext &context);
 
 #ifdef UNIT_TEST
   public:
@@ -398,10 +414,7 @@ public:
                                            ThreadID tid = 0,
                                            uint8_t asidHash = 0);
 
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
     // Build the reachable conditional prefix for S3 teacher update.
-    std::vector<BTBEntry> prepareS3UpdateEntries(const FullBTBPrediction &s3Pred);
     std::vector<BTBEntry> prepareS3UpdateEntriesFromAbtbMeta(
         const std::vector<BTBEntry> &abtbEntries,
         FullBTBPrediction &s3Pred,
@@ -414,7 +427,7 @@ public:
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                 bool control_mispred);
     // Reuse the provider/allocation policy under an S3-teacher mismatch definition.
     bool updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
                                  bool actual_taken,

@@ -54,7 +54,29 @@ class SMTDecodePolicy(ScopedEnum):
     vals = [ 'ICount', 'DelayedICount', 'MultiPriority', 'RoundRobin' ]
 
 class SMTFetchBlockPolicy(ScopedEnum):
-    vals = [ 'BaseLine', 'BlockPolicy' ]
+    # BaseLine:
+    #   No blocking or flushing. Normal multi-priority scheduling.
+    #
+    # BlockStallPolicy (Stall):
+    #   When a thread is blocked by a long-latency load, it is directly marked as
+    #   throttled (stalled). This acts as an ADDITIONAL throttle source on top of the
+    #   base throttle (ROB/IQ full, memory pressure). The two are OR'd together.
+    #
+    # BlockThrottlePolicy (Throttle):
+    #   The block signal REPLACES the base throttle entirely. throttle_now is driven
+    #   solely by threadFetchBlocked[tid]. The block state continuously refreshes the
+    #   smtBorrowThrottleCycles hold counter, keeping the thread throttled.
+    #
+    # FlushFromLoadPolicy (Flush V1):
+    #   Squash ALL instructions after the long-latency load (including pipeline in-flight).
+    #   Same throttle behavior as BlockThrottlePolicy, plus resource reclamation via squash.
+    #
+    # FlushFromUsePolicy (Flush V2):
+    #   Squash from the first consumer of the load's result. If no consumer exists in the
+    #   ROB, squash from ROB tail (preserving independent instructions). Same throttle
+    #   behavior as BlockThrottlePolicy.
+    vals = [ 'BaseLine', 'BlockStallPolicy', 'BlockThrottlePolicy',
+             'FlushFromLoadPolicy', 'FlushFromUsePolicy' ]
 
 class SMTQueuePolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
@@ -161,6 +183,8 @@ class BaseO3CPU(BaseCPU):
     dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
 
     wbWidth = Param.Unsigned(20, "Writeback width")
+    vectorMemCompletionDelay = Param.Cycles(0,
+        "Extra delay from vector memory completion to IEW writeback")
 
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")
@@ -204,6 +228,8 @@ class BaseO3CPU(BaseCPU):
     StoreCompletionWidth = Param.Unsigned(4, "Number of stores to complete per cycle")
 
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
+    sbufferReleaseOnMiss = Param.Bool(
+        True, "Release store buffer entries when a miss is accepted by L1D")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
 
@@ -321,8 +347,7 @@ class BaseO3CPU(BaseCPU):
     smtDecodePolicy = Param.SMTDecodePolicy('MultiPriority',
         "SMT decode select policy: ICount, DelayedICount, MultiPriority, RoundRobin")
     smtFetchBlockPolicy = Param.SMTFetchBlockPolicy('BaseLine',
-        "SMT fetch block policy for long-latency loads: "
-        "Baseline (no blocking) or BlockPolicy (stall fetch on long-latency load)")
+        "SMT fetch block policy for long-latency loads")
     smtFetchBlockThreshold = Param.Unsigned(15,
         "Number of cycles a load must wait in the LQ before it is considered "
         "long-latency and triggers fetch blocking (T15 from Tullsen & Brown's paper)")

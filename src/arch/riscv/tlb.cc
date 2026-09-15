@@ -3266,13 +3266,13 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                readAccesses + writeAccesses)
 {
     l2tlbRemove
-        .init(L_L2sp3 + 1)
+        .init(L_L2SUM)
         .flags(gem5::statistics::total);
     l2tlbUsedRemove
-        .init(L_L2sp3 + 1)
+        .init(L_L2SUM)
         .flags(gem5::statistics::total);
     l2tlbUnusedRemove
-        .init(L_L2sp3 + 1)
+        .init(L_L2SUM)
         .flags(gem5::statistics::total);
     l1CompressPotentialPagesPerBlock
         .init(l2tlbLineSize + 1)

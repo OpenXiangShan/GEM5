@@ -60,6 +60,7 @@
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/exetrace.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
@@ -334,6 +335,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to TC"),
       ADD_STAT(squashDueToSquashAfter, statistics::units::Count::get(),
                "Number of squash due to squash after"),
+      ADD_STAT(squashDueToLongLatencyFlush, statistics::units::Count::get(),
+               "Number of squash due to long-latency flush policy"),
       ADD_STAT(totalSquash, statistics::units::Count::get(),
                "Total number of squash"),
       ADD_STAT(ROBFull, statistics::units::Count::get(),
@@ -458,9 +461,13 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .init(cpu->numThreads)
         .flags(total);
 
+    squashDueToLongLatencyFlush
+        .init(cpu->numThreads)
+        .flags(total);
+
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
         squashDueToValuePrediction + squashDueToTrap + squashDueToTC + \
-        squashDueToSquashAfter;
+        squashDueToSquashAfter + squashDueToLongLatencyFlush;
 
     ROBFull
         .init(cpu->numThreads)
@@ -596,6 +603,7 @@ Commit::clearStates(ThreadID tid)
     pc[tid].reset(cpu->tcBase(tid)->getIsaPtr()->newPCState());
     lastCommitedSeqNum[tid] = 0;
     squashAfterInst[tid] = NULL;
+    clearCommittedFetchBlock(tid);
     committedBranchHistory[tid].clear();
 }
 
@@ -663,6 +671,7 @@ Commit::takeOverFrom()
         tcSquash[tid] = false;
         curSquashCause[tid] = SquashCause::None;
         squashAfterInst[tid] = NULL;
+        clearCommittedFetchBlock(tid);
         committedBranchHistory[tid].clear();
     }
     rob->takeOverFrom();
@@ -1163,8 +1172,10 @@ Commit::commit()
         // Squashed sequence number must be older than youngest valid
         // instruction in the ROB. This prevents squashes from younger
         // instructions overriding squashes from older instructions.
-        DPRINTF(Commit, "fromIEW->squash %d, commitStatus %d, fromIEW->squashedSeqNum %d, youngestSeqNum %d\n",
-            fromIEW->squash[tid], commitStatus[tid], fromIEW->squashedSeqNum[tid], youngestSeqNum[tid]);
+        DPRINTF(Commit, "fromIEW->squash %d, commitStatus %d, fromIEW->squashedSeqNum %d, "
+                "includeSquashInst %d, youngestSeqNum %d\n",
+                fromIEW->squash[tid], commitStatus[tid], fromIEW->squashedSeqNum[tid],
+                fromIEW->includeSquashInst[tid], youngestSeqNum[tid]);
         if (fromIEW->squash[tid] &&
             commitStatus[tid] != TrapPending &&
             fromIEW->squashedSeqNum[tid] <= youngestSeqNum[tid]) {
@@ -1184,6 +1195,12 @@ Commit::commit()
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToValuePrediction[tid]++;
                 curSquashCause[tid] = SquashCause::ValuePrediction;
+            } else if (fromIEW->longLatencyFlush[tid]) {
+                DPRINTF(Commit,
+                    "[tid:%i] Squashing due to long-latency flush [sn:%llu]\n",
+                    tid, fromIEW->squashedSeqNum[tid]);
+                stats.squashDueToLongLatencyFlush[tid]++;
+                curSquashCause[tid] = SquashCause::LongLatencyFlush;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
@@ -1304,6 +1321,53 @@ Commit::commit()
 
     }
 }
+
+void
+Commit::clearCommittedFetchBlock(ThreadID tid)
+{
+    committedFetchBlockValid[tid] = false;
+    committedFetchBlocks[tid] = {};
+}
+
+void
+Commit::recordCommittedInst(const DynInstPtr &inst)
+{
+    if (!bp->isBTB()) {
+        return;
+    }
+
+    const ThreadID tid = inst->threadNumber;
+    const auto ftq_id = inst->getFtqId();
+    auto &block = committedFetchBlocks[tid];
+
+    if (!committedFetchBlockValid[tid]) {
+        committedFetchBlockValid[tid] = true;
+        block.tid = tid;
+        block.ftqId = ftq_id;
+    } else if (block.ftqId != ftq_id) {
+        panic_if(
+            ftq_id < block.ftqId,
+            "Committed FTQ ID moved backwards for tid %u: %llu -> %llu",
+            tid, static_cast<unsigned long long>(block.ftqId),
+            static_cast<unsigned long long>(ftq_id));
+
+        DPRINTF(Commit,
+                "Emit committed FetchBlock tid %u FTQ %llu: %zu branches\n",
+                tid, static_cast<unsigned long long>(block.ftqId),
+                block.branches.size());
+        toIEW->commitInfo[tid].committedFetchBlocks.push_back(
+            std::move(block));
+
+        block = {};
+        block.tid = tid;
+        block.ftqId = ftq_id;
+    }
+
+    if (inst->isControl() && !inst->isNonSpeculative()) {
+        block.branches.push_back(makeBranchOutcome(inst));
+    }
+}
+
 void
 Commit::updateMstatusSd(ThreadID tid){
     RiscvISA::STATUS mstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, tid);
@@ -1529,6 +1593,7 @@ Commit::commitInsts()
                                                 num_committed_per_thread[tid]);
 
                 if (commit_success) {
+                    recordCommittedInst(head_inst);
                     cpu->perfCCT->updateInstPos(head_inst->seqNum,
                                                 PerfRecord::AtCommit);
                     auto res = head_inst->getResult();
@@ -1894,7 +1959,7 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
     cpu->diffInfo.physEffAddr = inst->physEffAddr;
     cpu->diffInfo.effSize = inst->effSize;
     cpu->diffInfo.goldenValue = inst->getGolden();
-    cpu->diffInfo.amoOldGoldenValue = inst->getAmoOldGoldenValue();
+    std::memcpy(cpu->diffInfo.amoOldGoldenValue, inst->getAmoOldGoldenValuePtr(), std::min((uint32_t)inst->effSize, (uint32_t)sizeof(cpu->diffInfo.amoOldGoldenValue)));
     cpu->recordCommittedStore(tid, inst);
     cpu->difftestStep(tid, inst->seqNum);
 }
@@ -2430,7 +2495,17 @@ Commit::squashInflightAndUpdateVersion(ThreadID tid)
         inst->setSquashed();
     }
 
-    fixedbuffer[tid].clear();
+    // Selectively remove only instructions younger than squash boundary
+    {
+        InstSeqNum squash_seq = toIEW->commitInfo[tid].doneSeqNum;
+        for (auto it = fixedbuffer[tid].begin(); it != fixedbuffer[tid].end(); ) {
+            if ((*it)->seqNum > squash_seq) {
+                it = fixedbuffer[tid].erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 
     localSquashVer[tid].update(localSquashVer[tid].nextVersion());
     toIEW->commitInfo[tid].squashVersion = localSquashVer[tid];

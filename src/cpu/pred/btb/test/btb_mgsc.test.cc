@@ -27,9 +27,25 @@ makeCondBTBEntry(Addr pc)
     entry.target = pc + 4;
     entry.isCond = true;
     entry.valid = true;
-    entry.alwaysTaken = false;
     entry.size = 4;
     return entry;
+}
+
+BranchOutcome
+makeBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
+{
+    BranchOutcome outcome;
+    outcome.pc = entry.pc;
+    outcome.target = entry.target;
+    outcome.taken = taken;
+    outcome.mispredicted = mispredicted;
+    outcome.isCond = entry.isCond;
+    outcome.isIndirect = entry.isIndirect;
+    outcome.isDirect = entry.isDirect;
+    outcome.isCall = entry.isCall;
+    outcome.isReturn = entry.isReturn;
+    outcome.size = entry.size;
+    return outcome;
 }
 
 std::pair<unsigned, unsigned>
@@ -295,21 +311,25 @@ struct MgscHarness
             FetchTarget recover_stream;
             recover_stream.startPC = start_pc;
             recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
-            recover_stream.resolved = true;
-            recover_stream.exeBranchInfo = entry;
-            recover_stream.exeTaken = actual_taken;
-            recover_stream.squashPC = entry.pc;
+            const HistoryRecoveryContext context(recover_stream);
 
-            mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
-            const auto actual_phist = recover_stream.getPHistUpdateDuringSquash(
-                entry.pc, actual_taken, entry.target);
-            mgsc.recoverPHist(phr, recover_stream, actual_phist);
+            const DirectionHistoryUpdate actual_ghist{
+                ghist.shamt, actual_taken};
+            mgsc.recoverHist(ghr, context, actual_ghist);
+            PathHistoryUpdate actual_phist;
+            actual_phist.taken = actual_taken;
+            if (actual_phist.taken) {
+                actual_phist.pc = entry.pc;
+                actual_phist.target = entry.target;
+            }
+            mgsc.recoverPHist(phr, context, actual_phist);
 
             bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
-            mgsc.recoverBwHist(bwhr, recover_stream,
-                               bwhist.shamt, actual_bw_taken);
-            mgsc.recoverIHist(recover_stream, bwhist.shamt, actual_bw_taken);
-            mgsc.recoverLHist(lhr, recover_stream, ghist.shamt, actual_taken);
+            const DirectionHistoryUpdate actual_bwhist{
+                bwhist.shamt, actual_bw_taken};
+            mgsc.recoverBwHist(bwhr, context, actual_bwhist);
+            mgsc.recoverIHist(context, actual_bwhist);
+            mgsc.recoverLHist(lhr, context, actual_ghist);
 
             // Apply correct external history update.
             histShiftIn(ghist.shamt, actual_taken, ghr);
@@ -322,13 +342,12 @@ struct MgscHarness
         // Training update using prediction meta
         FetchTarget update_stream;
         update_stream.startPC = start_pc;
-        update_stream.updateBTBEntries = {entry};
-        update_stream.updateIsOldEntry = true;
-        update_stream.resolved = true;
-        update_stream.exeBranchInfo = entry;
-        update_stream.exeTaken = actual_taken;
+        update_stream.setPredictedBranches({entry});
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(update_stream);
+        const PredictionUpdateContext update_context(update_stream);
+        PreparedUpdate update(std::vector<BranchOutcome>{makeBranchOutcome(
+            entry, actual_taken, false)});
+        mgsc.update(update_context, update);
 
         return result;
     }
@@ -510,13 +529,12 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
-        stream.resolved = true;
-        stream.exeBranchInfo = entry;
-        stream.exeTaken = true;
+        stream.setPredictedBranches({entry});
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(stream);
+        const PredictionUpdateContext context(stream);
+        PreparedUpdate update(std::vector<BranchOutcome>{makeBranchOutcome(
+            entry, true, false)});
+        mgsc.update(context, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
     }
 
@@ -524,13 +542,12 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
-        stream.resolved = true;
-        stream.exeBranchInfo = entry;
-        stream.exeTaken = false;
+        stream.setPredictedBranches({entry});
         stream.predMetas[mgsc.getComponentIdx()] = meta;
-        mgsc.update(stream);
+        const PredictionUpdateContext context(stream);
+        PreparedUpdate update(std::vector<BranchOutcome>{makeBranchOutcome(
+            entry, false, false)});
+        mgsc.update(context, update);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));
     }
 }

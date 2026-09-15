@@ -16,7 +16,7 @@ TimedBaseBTBPredictor::TimedBaseBTBPredictor()
     : blockSize(32),
       predictWidth(64),
       numDelay(0),
-      resolvedUpdate(false),
+      trainingStage(PredictorTrainingStage::Commit),
       enabled(true),
       smtTidPartitioned(false)
 {}
@@ -27,7 +27,10 @@ TimedBaseBTBPredictor::TimedBaseBTBPredictor(const Params &p)
       blockSize(p.blockSize),
       predictWidth(p.predictWidth),
       numDelay(p.numDelay),
-      resolvedUpdate(p.resolvedUpdate),
+      trainingStage(
+          p.trainingStage == TrainingStage::Resolve ?
+              PredictorTrainingStage::Resolve :
+              PredictorTrainingStage::Commit),
       enabled(p.enabled),
       smtTidPartitioned(p.smtTidPartitioned)
 {

@@ -6,7 +6,6 @@
 #ifdef UNIT_TEST
     #include "cpu/pred/btb/test/test_dprintf.hh"
 #else
-    #include "cpu/o3/dyn_inst.hh"
 #endif
 
 namespace gem5 {
@@ -184,22 +183,25 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
 }
 
 void
-BTBRAS::recoverState(const FetchTarget &entry)
+BTBRAS::recoverState(const HistoryRecoveryContext &context,
+                     const BranchInfo &actualBranch,
+                     bool actuallyTaken)
 {
-    const ThreadID tid = entry.tid;
+    const ThreadID tid = context.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
-    auto takenEntry = entry.exeBranchInfo;
     /*
     if (takenEntry.isCall || takenEntry.isReturn) {
         printStack("before recoverState", tid);
     }*/
     // recover sp and tos first
-    auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-    DPRINTF(RAS, "recover called, meta TOSR %lld TOSW %lld ssp %d sctr %u entry PC %lx end PC %lx\n",
-        static_cast<long long>(meta_ptr->TOSR),
-        static_cast<long long>(meta_ptr->TOSW), meta_ptr->ssp,
-        meta_ptr->sctr, entry.startPC, entry.predEndPC);
+    auto meta_ptr = std::static_pointer_cast<RASMeta>(
+        context.predMetas[getComponentIdx()]);
+    DPRINTF(RAS, "recover called, meta TOSR %lld TOSW %lld ssp %d "
+            "sctr %u entry PC %lx\n",
+            static_cast<long long>(meta_ptr->TOSR),
+            static_cast<long long>(meta_ptr->TOSW), meta_ptr->ssp,
+            meta_ptr->sctr, context.startPC);
 
     // RTL only accepts a redirect near overflow when it rolls the speculative
     // write pointer back. This prevents a redirect on the current queue head
@@ -214,41 +216,41 @@ BTBRAS::recoverState(const FetchTarget &entry)
     state.TOSW = meta_ptr->TOSW;
     state.ssp = meta_ptr->ssp;
     state.sctr = meta_ptr->sctr;
-    Addr retAddr = takenEntry.pc + takenEntry.size;
+    Addr retAddr = actualBranch.pc + actualBranch.size;
 
     // do push & pops on control squash
-    if (entry.exeTaken) {
+    if (actuallyTaken) {
         // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
-        if (takenEntry.isReturn) {
+        if (actualBranch.isReturn) {
             pop(tid);
             //TOSW = (TOSR + 1) % numInflightEntries;
         }
-        if (takenEntry.isCall) {
+        if (actualBranch.isCall) {
             push(tid, retAddr);
         }
     }
 
-    
-    if (entry.exeTaken) {
-        DPRINTF(RAS, "isCall %d, isRet %d\n", takenEntry.isCall, takenEntry.isReturn);
-        if (takenEntry.isReturn) {
-            DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
-                takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
+    if (actuallyTaken) {
+        DPRINTF(RAS, "isCall %d, isRet %d\n",
+                actualBranch.isCall, actualBranch.isReturn);
+        if (actualBranch.isReturn) {
+            DPRINTF(RAS, "IsRet expect target %lx, predicted %lx\n",
+                    actualBranch.target, meta_ptr->target);
         }
         printStack("after recoverState", tid);
     }
-
 }
 
 void
-BTBRAS::update(const FetchTarget &entry)
+BTBRAS::update(
+    const PredictionUpdateContext &entry, const PreparedUpdate &update)
 {
     const ThreadID tid = entry.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenEntry = entry.exeBranchInfo;
-    if (entry.exeTaken) {
+    const auto &takenEntry = update.outcome.branch;
+    if (update.outcome.valid && update.outcome.taken) {
         if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
             DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
@@ -262,9 +264,10 @@ BTBRAS::update(const FetchTarget &entry)
             pop_stack(tid);
         }
         if (takenEntry.isCall) {
-            DPRINTF(RAS, "real update call BTB hit %d meta TOSR %lld TOSW %lld\n entry PC %lx",
-                entry.isHit, static_cast<long long>(meta_ptr->TOSR),
-                static_cast<long long>(meta_ptr->TOSW), entry.startPC);
+            DPRINTF(RAS,
+                    "real update call meta TOSR %lld TOSW %lld entry PC %lx\n",
+                    static_cast<long long>(meta_ptr->TOSR),
+                    static_cast<long long>(meta_ptr->TOSW), entry.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
             push_stack(tid, retAddr);
         }
@@ -274,7 +277,7 @@ BTBRAS::update(const FetchTarget &entry)
     // available as the oldest speculative entry because younger entries may
     // still name it as their parent. Other commits may reclaim all but one
     // predecessor once their prediction metadata has moved far enough ahead.
-    if (entry.exeTaken && takenEntry.isCall) {
+    if (update.outcome.valid && update.outcome.taken && takenEntry.isCall) {
         state.BOS = std::max(state.BOS, meta_ptr->TOSW);
     } else if (meta_ptr->TOSW - state.BOS > 2) {
         state.BOS = std::max(state.BOS, meta_ptr->TOSW - 1);
@@ -523,14 +526,16 @@ BTBRAS::getTopAddrFromMetas(const FetchTarget &stream)
 
 #ifndef UNIT_TEST
 void
-BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBRAS::commitBranch(const PredictionUpdateContext &context,
+                     const BranchOutcome &outcome)
 {
-    if (!inst->isReturn() || inst->isNop()) {
+    if (!outcome.isReturn) {
         // ras only cares about return instructions
         return;
     }
-    auto meta = std::static_pointer_cast<RASMeta>(stream.predMetas[getComponentIdx()]);
-    auto npc = inst->getNPC();
+    auto meta = std::static_pointer_cast<RASMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto npc = outcome.target;
     if (npc != meta->target) {
         rasStats.PredWrong++;
         if (meta->sctr) {

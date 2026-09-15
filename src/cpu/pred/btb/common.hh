@@ -10,6 +10,7 @@
 // #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/branch_outcome.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/static_inst.hh"
 
@@ -116,7 +117,6 @@ enum class HistoryType
  *
  * Stores essential information about a branch instruction including:
  * - PC and target address
- * - Resolved bit
  * - Branch type (conditional, indirect, call, return)
  * - Instruction size
  */
@@ -124,11 +124,6 @@ struct BranchInfo
 {
     Addr pc;
     Addr target;
-    // An independent resolved bit to indicate whether CFI is resolved
-    // or not for training, which is trained in resolve stage so
-    // it's necessary to know whether the branch is resolved and skip
-    // the BTB entry or not.
-    bool resolved;
     bool isCond;
     bool isIndirect;
     bool isDirect;
@@ -138,7 +133,8 @@ struct BranchInfo
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), target(0), isCond(false), isIndirect(false), isDirect(false),
+          isCall(false), isReturn(false), size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
@@ -146,7 +142,6 @@ struct BranchInfo
     BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
         : pc(control_pc),
           target(target_pc),
-          resolved(false),
           isCond(static_inst->isCondCtrl()),
           isIndirect(static_inst->isIndirectCtrl()),
           isDirect(static_inst->isDirectCtrl()),
@@ -212,20 +207,19 @@ struct BranchInfo
  *
  * Contains branch information plus prediction state:
  * - Valid bit
- * - Always taken bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
 struct BTBEntry : BranchInfo
 {
     bool valid;
-    bool alwaysTaken;
     int ctr;
     Addr tag;
     int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(-1){}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(-1){}
+    BTBEntry() : BranchInfo(), valid(false), ctr(0), tag(0), source(-1) {}
+    BTBEntry(const BranchInfo &bi)
+        : BranchInfo(bi), valid(true), ctr(0), tag(0), source(-1) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
     int getsource() const {
@@ -290,8 +284,6 @@ struct LFSR64
     }
 };
 
-using FetchTargetId = uint64_t;
-
 enum class PairPhase : uint8_t
 {
     Even = 0,
@@ -334,7 +326,7 @@ struct PathHistoryUpdate
  * Key structure for decoupled frontend that contains:
  * - Stream boundaries (start PC, end PC)
  * - Prediction information (branch info, targets)
- * - Execution results for verification
+ * - Recovery and profiling bookkeeping
  * - Loop and jump-ahead prediction state
  * - Statistics for profiling
  */
@@ -349,24 +341,8 @@ struct FetchTarget
 
     bool isHit;          // whether the predicted btb entry is hit
     bool falseHit;       // not used
-    std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
+    std::vector<Addr> predictedBranchPCs;
 
-    // for commit, write at redirect or fetch
-    bool exeTaken;         // whether the branch is taken(resolved)
-    BranchInfo exeBranchInfo; // executed branch info
-
-    BTBEntry updateNewBTBEntry; // the possible new entry, set by L1BTB.getAndSetNewBTBEntry, used by L1BTB/L0BTB.update
-    bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
-    bool resolved;  // whether the branch is resolved/executed
-
-    // below two should be set before components update
-    // used to decide which branches to update (don't update if not actually executed)
-    Addr updateEndInstPC;   // end pc of the squash inst/taken inst
-    // for components to decide which entries to update
-    std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
-
-    int squashType;         // squash type
-    Addr squashPC;         // pc of the squash inst
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
     PairPhase pairPhase;   // PairTAGE logical phase of this block start
@@ -398,14 +374,6 @@ struct FetchTarget
          predBranchInfo(BranchInfo()),
          isHit(false),
          falseHit(false),
-         exeTaken(false),
-         exeBranchInfo(BranchInfo()),
-         updateNewBTBEntry(BTBEntry()),
-         updateIsOldEntry(false),
-         resolved(false),
-         updateEndInstPC(0),
-         squashType(SquashType::SQUASH_NONE),
-         squashPC(0),
          predSource(0),
          pairPhase(PairPhase::Even),
          predTick(0),
@@ -419,23 +387,18 @@ struct FetchTarget
          s3Source(-1)
    {
        predMetas.fill(nullptr);
-       predBTBEntries.clear();
-       updateBTBEntries.clear();
    }
 
-    // the default exe result should be consistent with prediction
-    void setDefaultResolve() {
-        resolved = false;
-        exeBranchInfo = predBranchInfo;
-        exeTaken = predTaken;
+    void setPredictedBranches(const std::vector<BTBEntry> &entries)
+    {
+        predictedBranchPCs.clear();
+        predictedBranchPCs.reserve(entries.size());
+        for (const auto &entry : entries) {
+            if (entry.valid) {
+                predictedBranchPCs.push_back(entry.pc);
+            }
+        }
     }
-
-    // bool getEnded() const { return resolved ? exeEnded : predEnded; }
-    BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
-    Addr getTaken() const { return resolved ? exeTaken : predTaken; }
-    Addr getTakenTarget() const { return getBranchInfo().target; }
 
     Addr getRealStartPC() const {
         return startPC;
@@ -445,8 +408,8 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+        for (const auto pc : predictedBranchPCs) {
+            if (pc >= startPC && pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -461,8 +424,8 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+        for (const auto pc : predictedBranchPCs) {
+            if (pc >= startPC && pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -473,53 +436,149 @@ struct FetchTarget
         return update;
     }
 
-    PathHistoryUpdate getPHistUpdateDuringSquash(
-        Addr squash_pc, bool actually_taken, Addr target) const
+};
+
+/** Prediction result exposed to the Fetch stage for one FTQ entry. */
+struct FetchBlockPrediction
+{
+    FetchTargetId ftqId = 0;
+    Addr startPC = 0;
+    Addr endPC = 0;
+    bool taken = false;
+    Addr controlPC = 0;
+    Addr target = 0;
+};
+
+/**
+ * Short-lived view of FTQ-owned prediction checkpoints required to recover
+ * speculative history. Components must not retain this context.
+ */
+struct HistoryRecoveryContext
+{
+    ThreadID tid;
+    uint8_t asidHash;
+    Addr startPC;
+    PairPhase pairPhase;
+
+    const std::array<std::shared_ptr<void>, 9> &predMetas;
+    const boost::dynamic_bitset<> &history;
+    const boost::dynamic_bitset<> &phistory;
+    const boost::dynamic_bitset<> &bwhistory;
+    const std::vector<boost::dynamic_bitset<>> &lhistory;
+
+    explicit HistoryRecoveryContext(const FetchTarget &target)
+        : tid(target.tid),
+          asidHash(target.asidHash),
+          startPC(target.startPC),
+          pairPhase(target.pairPhase),
+          predMetas(target.predMetas),
+          history(target.history),
+          phistory(target.phistory),
+          bwhistory(target.bwhistory),
+          lhistory(target.lhistory)
+    {}
+};
+
+/**
+ * Read-only prediction state required to build and apply predictor updates.
+ *
+ * This is deliberately a view into an FTQ-owned FetchTarget.  It narrows the
+ * component API without creating a second owner or extending the lifetime of
+ * prediction metadata beyond the FTQ entry.
+ */
+struct PredictionUpdateContext
+{
+    ThreadID tid;
+    uint8_t asidHash;
+    Addr startPC;
+    Tick predTick;
+
+    const std::array<std::shared_ptr<void>, 9> &predMetas;
+    const boost::dynamic_bitset<> &phistory;
+    const std::queue<Addr> &previousPCs;
+
+    explicit PredictionUpdateContext(const FetchTarget &target)
+        : tid(target.tid),
+          asidHash(target.asidHash),
+          startPC(target.startPC),
+          predTick(target.predTick),
+          predMetas(target.predMetas),
+          phistory(target.phistory),
+          previousPCs(target.previousPCs)
+    {}
+
+    Addr getRealStartPC() const { return startPC; }
+};
+
+/**
+ * Representative control-flow result for training and statistics.
+ * A resolve packet may contain only part of a FetchBlock.
+ */
+struct ControlFlowOutcome
+{
+    BranchInfo branch;
+    bool taken = false;
+    bool controlMispred = false;
+    bool valid = false;
+};
+
+inline BranchInfo
+makeBranchInfo(const BranchOutcome &event)
+{
+    BranchInfo branch;
+    branch.pc = event.pc;
+    branch.target = event.target;
+    branch.isCond = event.isCond;
+    branch.isIndirect = event.isIndirect;
+    branch.isDirect = event.isDirect;
+    branch.isCall = event.isCall;
+    branch.isReturn = event.isReturn;
+    branch.size = event.size;
+    return branch;
+}
+
+struct PreparedUpdate
+{
+    std::vector<BranchOutcome> branches;
+    ControlFlowOutcome outcome;
+
+    /**
+     * Build a packet from actual outcomes. An empty vector is a valid
+     * complete branchless block. Each dynamic control instruction appears
+     * once; a repeated PC within one FTQ entry would violate that boundary.
+     */
+    explicit PreparedUpdate(const std::vector<BranchOutcome> &outcomeEvents)
+        : branches(outcomeEvents)
     {
-        PathHistoryUpdate update;
-        update.taken = actually_taken && getControlPC() == squash_pc;
-        if (update.taken) {
-            update.pc = squash_pc;
-            update.target = target;
-        }
-        return update;
+        std::stable_sort(
+            branches.begin(), branches.end(),
+            [](const BranchOutcome &lhs, const BranchOutcome &rhs) {
+                return lhs.seqNum < rhs.seqNum;
+            });
+        outcome = makeControlFlowOutcome(branches);
     }
 
-    // should be called before components update
-    void setUpdateInstEndPC(unsigned predictWidth)
+  private:
+    static ControlFlowOutcome makeControlFlowOutcome(
+        const std::vector<BranchOutcome> &sortedBranches)
     {
-        if (squashType == SQUASH_NONE) {
-            if (exeTaken) { // taken inst pc
-                updateEndInstPC = getControlPC();
-            } else { // natural fall through, align to the next block
-                // assert(halfAligned);
-                updateEndInstPC = (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-            }
-        } else {
-            updateEndInstPC = squashPC;
+        if (sortedBranches.empty()) {
+            return {};
         }
-    }
 
-    // should be called before components update, after setUpdateInstEndPC
-    void setUpdateBTBEntries()
-    {
-        updateBTBEntries.clear();
-        for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
-                updateBTBEntries.push_back(entry);
-            }
-        }
-    }
-
-    // Argument resolved pc could not match any BTB entry branch pc,
-    // Just ignore it in that case.
-    void markBTBEntryResolved(Addr resolvedInstPC)
-    {
-        for (auto &entry : updateBTBEntries) {
-            if (entry.valid && entry.pc == resolvedInstPC) {
-                entry.resolved = true;
-            }
-        }
+        // Select the first actual transfer or misprediction in program order.
+        // If all branches correctly fall through, describe the last one for
+        // statistics; taken remains false for training consumers.
+        const auto selected = std::find_if(
+            sortedBranches.begin(), sortedBranches.end(),
+            [](const BranchOutcome &branch) {
+                return branch.taken || branch.mispredicted;
+            });
+        const auto &primary = selected != sortedBranches.end() ?
+            *selected : sortedBranches.back();
+        return ControlFlowOutcome{
+            makeBranchInfo(primary), primary.taken, primary.mispredicted, true
+        };
     }
 };
 /**

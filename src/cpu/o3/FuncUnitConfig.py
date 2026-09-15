@@ -87,7 +87,9 @@ class IntMult(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3) ]
 
 class FP_SLOW(FUDesc):
-    opList = [ OpDesc(opClass='FloatDiv', opLat=14),
+    # XiangShan's scalar divider accepts one operation at a time and keeps
+    # the FEX divider token busy until the result is bypassed.
+    opList = [ OpDesc(opClass='FloatDiv', opLat=14, pipelined=False),
                OpDesc(opClass='FloatSqrt', opLat=17)]
 
 class FP_ALU(FUDesc):

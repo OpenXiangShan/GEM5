@@ -7,7 +7,6 @@
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
 #include "base/trace.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPUseful.hh"
@@ -110,7 +109,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
     std::vector<TagePrediction> preds;
     for (auto &btb_entry : btbEntries) {
         if (btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid) {
-            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx, always taken %d\n", btb_entry.pc, btb_entry.alwaysTaken);
+            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx\n", btb_entry.pc);
             bool provided = false;
             bool alt_provided = false;
 
@@ -316,7 +315,8 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
 }
 
 void
-BTBITTAGE::update(const FetchTarget &stream)
+BTBITTAGE::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     int &resetCnt = usesTidPartitionedStorage() ?
         usefulResetCntByThread[stream.tid] : usefulResetCnt;
@@ -325,26 +325,6 @@ BTBITTAGE::update(const FetchTarget &stream)
     }
     Addr startAddr = stream.getRealStartPC();
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
-    // update at the basis of btb entries
-    auto all_entries_to_update = stream.updateBTBEntries;
-
-    // add new entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        all_entries_to_update.push_back(stream.updateNewBTBEntry);
-    }
-
-    // // only update indirect branches that are not returns
-    if (getResolvedUpdate()) {
-        auto remove_it =
-            std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                           [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn && e.resolved); });
-        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                                        [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
-        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
-    }
-
     // get tage predictions from meta
     // TODO: use component idx
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
@@ -354,15 +334,18 @@ BTBITTAGE::update(const FetchTarget &stream)
     auto updateIndexFoldedHist = meta->indexFoldedHist;
     
     // update each branch
-    for (auto &btb_entry : all_entries_to_update) {
-        bool this_indirect_actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+    for (const auto &branch : update.branches) {
+        if (!(branch.isIndirect && !branch.isReturn)) {
+            continue;
+        }
+        const auto btb_entry = BTBEntry(makeBranchInfo(branch));
         auto pred_it = preds.find(btb_entry.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = stream.squashType == SQUASH_CTRL && stream.squashPC == btb_entry.pc;
-        Addr exe_target = stream.exeBranchInfo.target;
+        bool mispred = branch.mispredicted;
+        Addr exe_target = branch.target;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics
@@ -673,17 +656,20 @@ BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
  */
 void
 BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-                        const FetchTarget &entry,
+                        const HistoryRecoveryContext &context,
                         const PathHistoryUpdate &update)
 {
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<TageMeta> predMeta =
+        std::static_pointer_cast<TageMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
+    doUpdateHist(
+        history, update.taken, update.pc, update.target, context.tid);
 }
 
 void
@@ -716,15 +702,17 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
 }
 
 void
-BTBITTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBITTAGE::commitBranch(const PredictionUpdateContext &context,
+                        const BranchOutcome &outcome)
 {
-    if (!(inst->isIndirectCtrl() && !inst->isReturn())) {
+    if (!(outcome.isIndirect && !outcome.isReturn)) {
         // ittage only cares about indirect non-return branches
         return;
     }
-    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->getPC();
-    auto npc = inst->getNPC();
+    auto meta = std::static_pointer_cast<TageMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto pc = outcome.pc;
+    auto npc = outcome.target;
     auto pred_it = meta->preds.find(pc);
     bool this_branch_hit = false;
     Addr pred_npc;
@@ -732,7 +720,7 @@ BTBITTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         this_branch_hit = true;
         pred_npc = (pred_it->second).target;
     }
-    bool iscalled = inst->isCall();
+    bool iscalled = outcome.isCall;
 
      // Update commit statistics
     if (this_branch_hit) {

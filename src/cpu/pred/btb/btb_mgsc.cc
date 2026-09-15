@@ -13,7 +13,6 @@ namespace debug {
 }
 }
 #else
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/MGSC.hh"
 
 #endif
@@ -417,8 +416,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                                   const TageInfoForMGSC &tage_info,
                                   ThreadID tid, uint8_t asidHash)
 {
-    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n", btb_entry.pc,
-            btb_entry.alwaysTaken);
+    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx\n",
+            btb_entry.pc);
     const auto &state = historyState(tid);
 
     // Calculate indices for all tables
@@ -571,7 +570,7 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            results.push_back({btb_entry.pc, pred.taken});
         }
     }
 }
@@ -666,31 +665,6 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
             generateSinglePrediction(btb_entry, startAddr, tage_info->second,
                                      pred.tid, pred.asidHash);
     }
-}
-
-/**
- * @brief Prepare BTB entries for update by filtering and processing
- *
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
-std::vector<BTBEntry>
-BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
-{
-    auto all_entries = stream.updateBTBEntries;
-
-    // Filter out non-conditional and always-taken branches
-    auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-                                    [](const BTBEntry &e) { return !e.isCond && !e.alwaysTaken; });
-    all_entries.erase(remove_it, all_entries.end());
-
-    // Handle potential new BTB entry
-    auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond && !potential_new_entry.alwaysTaken) {
-        all_entries.push_back(potential_new_entry);
-    }
-
-    return all_entries;
 }
 
 /**
@@ -894,14 +868,15 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
  * This function updates the MGSC predictor state based on the actual branch outcome
  * and allocates new entries in various tables if they don't already exist.
  *
- * @param entry The BTB entry being updated
+ * @param pc The branch PC being updated
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
  * @param stream The fetch stream containing update information
  */
 void
-BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream)
+BTBMGSC::updateSinglePredictor(
+    Addr pc, bool actual_taken, const MgscPrediction &pred,
+    const PredictionUpdateContext &stream)
 {
     // Extract prediction information
     auto total_sum = pred.total_sum;
@@ -914,7 +889,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
 #ifndef UNIT_TEST
     // Write trace record
-    if (enableDB && (focusBranchPC == 0 || entry.pc == focusBranchPC)) {
+    if (enableDB && (focusBranchPC == 0 || pc == focusBranchPC)) {
         auto effective_gate = pred.tage_conf_high ? (total_thres / 2)
             : (pred.tage_conf_mid ? (total_thres / 4) : (total_thres / 8));
         auto margin = std::abs(total_sum) - effective_gate;
@@ -922,8 +897,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
             return idx < indices.size() ? indices[idx] : 0;
         };
         MgscTrace t;
-        t.set(entry.pc,
-            stream.startPC, getOffset(entry.pc),
+        t.set(pc,
+            stream.startPC, getOffset(pc),
             tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
             pred.bw_percsum, pred.l_percsum, pred.i_percsum,
             pred.g_percsum, pred.p_percsum, pred.bias_percsum,
@@ -955,48 +930,49 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         }
 
         // Update BW tables
-        updatePredTable(bwTable, pred.bwIndex, bwTableNum, entry.pc, actual_taken);
-        updateWeightTable(bwWeightTable, weightTableIdx, entry.pc, pred.bw_weight_scale_diff,
+        updatePredTable(bwTable, pred.bwIndex, bwTableNum, pc, actual_taken);
+        updateWeightTable(bwWeightTable, weightTableIdx, pc, pred.bw_weight_scale_diff,
                           (pred.bw_percsum >= 0) == actual_taken);
 
         // Update L tables
-        updatePredTable(lTable, pred.lIndex, lTableNum, entry.pc, actual_taken);
-        updateWeightTable(lWeightTable, weightTableIdx, entry.pc, pred.l_weight_scale_diff,
+        updatePredTable(lTable, pred.lIndex, lTableNum, pc, actual_taken);
+        updateWeightTable(lWeightTable, weightTableIdx, pc, pred.l_weight_scale_diff,
                           (pred.l_percsum >= 0) == actual_taken);
 
         // Update I tables
-        updatePredTable(iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
-        updateWeightTable(iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
+        updatePredTable(iTable, pred.iIndex, iTableNum, pc, actual_taken);
+        updateWeightTable(iWeightTable, weightTableIdx, pc, pred.i_weight_scale_diff,
                           (pred.i_percsum >= 0) == actual_taken);
 
         // Update G tables
-        updatePredTable(gTable, pred.gIndex, gTableNum, entry.pc, actual_taken);
-        updateWeightTable(gWeightTable, weightTableIdx, entry.pc, pred.g_weight_scale_diff,
+        updatePredTable(gTable, pred.gIndex, gTableNum, pc, actual_taken);
+        updateWeightTable(gWeightTable, weightTableIdx, pc, pred.g_weight_scale_diff,
                           (pred.g_percsum >= 0) == actual_taken);
 
         // Update P tables
-        updatePredTable(pTable, pred.pIndex, pTableNum, entry.pc, actual_taken);
-        updateWeightTable(pWeightTable, weightTableIdx, entry.pc, pred.p_weight_scale_diff,
+        updatePredTable(pTable, pred.pIndex, pTableNum, pc, actual_taken);
+        updateWeightTable(pWeightTable, weightTableIdx, pc, pred.p_weight_scale_diff,
                           (pred.p_percsum >= 0) == actual_taken);
 
         // Update bias tables
-        updatePredTable(biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
-        updateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
+        updatePredTable(biasTable, pred.biasIndex, biasTableNum, pc, actual_taken);
+        updateWeightTable(biasWeightTable, weightTableIdx, pc, pred.bias_weight_scale_diff,
                           (pred.bias_percsum >= 0) == actual_taken);
 
         // Update PC-indexed threshold table (only if enabled)
         if (enablePCThreshold) {
-            updatePCThresholdTable(entry.pc, stream.asidHash,
+            updatePCThresholdTable(pc, stream.asidHash,
                                    sc_pred_taken != actual_taken);
         }
 
         // Update global threshold table
-        updateGlobalThreshold(entry.pc, sc_pred_taken != actual_taken);
+        updateGlobalThreshold(pc, sc_pred_taken != actual_taken);
     }
 }
 
 void
-BTBMGSC::update(const FetchTarget &stream)
+BTBMGSC::update(
+    const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No update if disabled
@@ -1004,24 +980,24 @@ BTBMGSC::update(const FetchTarget &stream)
     Addr startAddr = stream.getRealStartPC();
     DPRINTF(MGSC, "update startAddr: %#lx\n", startAddr);
 
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
-
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
     auto &preds = meta->preds;
 
     // Process each BTB entry
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        auto pred_it = preds.find(btb_entry.pc);
+    for (const auto &branch : update.branches) {
+        if (!branch.isCond) {
+            continue;
+        }
+        const bool actual_taken = branch.taken;
+        auto pred_it = preds.find(branch.pc);
 
         if (pred_it == preds.end()) {
             continue;
         }
 
         // Update predictor state and check if need to allocate new entry
-        updateSinglePredictor(btb_entry, actual_taken, pred_it->second, stream);
+        updateSinglePredictor(branch.pc, actual_taken, pred_it->second, stream);
     }
 
     DPRINTF(MGSC, "end update\n");
@@ -1291,17 +1267,22 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history,
+                     const HistoryRecoveryContext &context,
+                     const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < gTableNum; i++) {
         state.indexGFoldedHist[i].recover(predMeta->indexGFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken, state.indexGFoldedHist);
+    doUpdateHist(
+        history, update.shamt, update.taken, state.indexGFoldedHist);
 }
 
 /**
@@ -1319,14 +1300,16 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
  */
 void
 BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
-                      const FetchTarget &entry,
+                      const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < pTableNum; i++) {
         state.indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
@@ -1348,17 +1331,22 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history,
+                       const HistoryRecoveryContext &context,
+                       const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < bwTableNum; i++) {
         state.indexBwFoldedHist[i].recover(predMeta->indexBwFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken, state.indexBwFoldedHist);
+    doUpdateHist(
+        history, update.shamt, update.taken, state.indexBwFoldedHist);
 }
 
 /**
@@ -1375,19 +1363,23 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverIHist(const HistoryRecoveryContext &context,
+                      const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (int i = 0; i < iTableNum; i++) {
         state.indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
-    doUpdateHist(dummy, shamt, cond_taken, state.indexIFoldedHist);
+    doUpdateHist(
+        dummy, update.shamt, update.taken, state.indexIFoldedHist);
 }
 
 /**
@@ -1404,22 +1396,27 @@ BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken)
+BTBMGSC::recoverLHist(
+    const std::vector<boost::dynamic_bitset<>> &history,
+    const HistoryRecoveryContext &context,
+    const DirectionHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
-    auto &state = historyState(entry.tid);
-    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    auto &state = historyState(context.tid);
+    std::shared_ptr<MgscMeta> predMeta =
+        std::static_pointer_cast<MgscMeta>(
+            context.predMetas[getComponentIdx()]);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
         for (int i = 0; i < lTableNum; i++) {
             state.indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
         }
     }
     const Addr localHistoryIndex =
-        getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories), entry.asidHash);
-    doUpdateHist(history[localHistoryIndex], shamt, cond_taken,
+        getPcIndex(context.startPC, log2(numEntriesFirstLocalHistories),
+                   context.asidHash);
+    doUpdateHist(history[localHistoryIndex], update.shamt, update.taken,
                  state.indexLFoldedHist[localHistoryIndex]);
 }
 
@@ -1486,14 +1483,16 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 
 #ifndef UNIT_TEST
 void
-BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
+BTBMGSC::commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome)
 {
-    if (!inst->isCondCtrl()) {
+    if (!outcome.isCond) {
         // tage olnly deals with conditional branches
         return;
     }
-    auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->getPC();
+    auto meta = std::static_pointer_cast<MgscMeta>(
+        context.predMetas[getComponentIdx()]);
+    auto pc = outcome.pc;
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;
     bool sc_taken = false;
@@ -1503,7 +1502,7 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         tage_taken = pred_it->second.taken_before_sc;
         pred_hit = true;
     }
-    auto actual_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    auto actual_taken = outcome.taken;
     if (pred_hit) {
         mgscStats.predHit++;
         if (sc_taken == actual_taken) {

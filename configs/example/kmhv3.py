@@ -64,6 +64,8 @@ def setKmhV3Params(args, system):
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
         cpu.scheduler.disableAllRegArb()
+        for iq in cpu.scheduler.IQs:
+            iq.deferNewEnqueueSelection = not args.smt
         cpu.scheduler.enableMainRdpOpt = False
         cpu.scheduler.intRegfileBanks = 1
         # intiq0
@@ -117,9 +119,9 @@ def setKmhV3Params(args, system):
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=True)
 
-            cpu.branchPred.mbtb.resolvedUpdate = True
-            cpu.branchPred.tage.resolvedUpdate = True
-            cpu.branchPred.ittage.resolvedUpdate = True
+            cpu.branchPred.mbtb.trainingStage = "Resolve"
+            cpu.branchPred.tage.trainingStage = "Resolve"
+            cpu.branchPred.ittage.trainingStage = "Resolve"
 
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = True

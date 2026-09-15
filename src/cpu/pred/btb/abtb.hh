@@ -104,7 +104,6 @@ class AheadBTB : public TimedBaseBTBPredictor
      * - target: branch target address
      * - size: branch instruction size
      * - isCond/isIndirect/isCall/isReturn: branch type flags
-     * - alwaysTaken: whether this conditional branch is always taken
      * - ctr: 2-bit counter for conditional branch prediction
      */
     typedef struct TickedBTBEntry : public BTBEntry
@@ -130,7 +129,8 @@ class AheadBTB : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
@@ -162,7 +162,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     bool lastPredHasEntries(ThreadID tid) const;
 
-    void recoverState(const FetchTarget &entry);
+    void recoverState(ThreadID tid);
 
 #ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per
@@ -182,14 +182,16 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream) override;
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
 
 
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
-            cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
+            cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
+            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect,
+            e.isCall, e.isReturn, tick);
     }
 
     std::vector<BTBEntry> collectEntriesToUpdateFromS3Pred(
@@ -361,32 +363,26 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing prediction info
      *  @return Previous PC
      */
-    Addr getPreviousPC(const FetchTarget &stream);
+    Addr getPreviousPC(const PredictionUpdateContext &context);
 
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream,
-                           const BTBMeta* meta);
-
-    /** Collect entries that need to be updated
-     *  @param old_entries Processed old entries
-     *  @param stream Fetch stream with update info
-     *  @return Vector of entries to update
-     */
-    std::vector<BTBEntry> collectEntriesToUpdate(
-        const std::vector<BTBEntry>& old_entries,
-        const FetchTarget &stream);
+    void checkPredictionHit(const PredictionUpdateContext &context,
+                            const BTBMeta* meta,
+                            const PreparedUpdate &update);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry
      *  @param btb_tag Tag of the BTB entry
      *  @param entry Entry to update/replace
-     *  @param stream Fetch stream with update info
+     *  @param actual_taken Whether this entry was actually taken
+     *  @param actual_target Actual target when this entry was taken
      */
-    void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
-                                    const BranchInfo takenbranchinfo,const bool isTaken);
+    void updateBTBEntry(
+        Addr btb_idx, Addr btb_tag, const BTBEntry &entry,
+        bool actual_taken, Addr actual_target);
 
     /*
      * Comparator for MRU heap

@@ -58,7 +58,6 @@ struct BranchInfo {
 ```cpp
 struct BTBEntry : BranchInfo {
     bool valid;               // Entry is valid
-    bool alwaysTaken;         // Conditional branch always taken
     int ctr;                  // Saturating counter (-2 to 1)
     Addr tag;                 // Tag bits for lookup
 };

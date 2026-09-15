@@ -54,6 +54,7 @@
 #include "base/stats/info.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -104,6 +105,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       wbCycle(0),
       iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
+      vectorMemCompletionDelay(params.vectorMemCompletionDelay),
       enableStoreSetTrain(params.enable_storeSet_train),
       mdpViolationAtCommit(params.mdp_violation_timing == "atCommit"),
       numThreads(params.numThreads),
@@ -230,6 +232,25 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Cumulative count of insts sent to commit"),
     ADD_STAT(writebackCount, statistics::units::Count::get(),
              "Cumulative count of insts written-back"),
+    ADD_STAT(vectorMemCompletionDelayedInsts, statistics::units::Count::get(),
+             "Cumulative count of vector memory completions delayed before "
+             "IEW writeback"),
+    ADD_STAT(vectorMemCompletionDelayedLoads, statistics::units::Count::get(),
+             "Cumulative count of vector memory load completions delayed "
+             "before IEW writeback"),
+    ADD_STAT(vectorMemCompletionDelayedStores, statistics::units::Count::get(),
+             "Cumulative count of vector memory store completions delayed "
+             "before IEW writeback"),
+    ADD_STAT(vectorMemCompletionDelayCycles, statistics::units::Cycle::get(),
+             "Cumulative cycles spent in vector memory completion delay"),
+    ADD_STAT(vectorMemCompletionDelayQueueOccupancy,
+             statistics::units::Count::get(),
+             "Sum of vector memory completion delay queue occupancy sampled "
+             "once per IEW tick"),
+    ADD_STAT(vectorMemCompletionDelaySquashedInsts,
+             statistics::units::Count::get(),
+             "Cumulative count of delayed vector memory completions dropped "
+             "on squash"),
     ADD_STAT(producerInst, statistics::units::Count::get(),
              "Number of instructions producing a value"),
     ADD_STAT(consumerInst, statistics::units::Count::get(),
@@ -456,6 +477,17 @@ IEW::startupStage()
 void
 IEW::clearStates(ThreadID tid)
 {
+    for (auto it = delayedVectorMemCompletionQ.begin();
+         it != delayedVectorMemCompletionQ.end();) {
+        const auto &inst = it->inst;
+        if (inst && inst->threadNumber == tid) {
+            assert(delayedVectorMemCompletionCount[tid] > 0);
+            --delayedVectorMemCompletionCount[tid];
+            it = delayedVectorMemCompletionQ.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void
@@ -651,6 +683,11 @@ IEW::isDrained() const
         return false;
     }
 
+    if (!delayedVectorMemCompletionQ.empty()) {
+        DPRINTF(Drain, "Vector memory completion delay queue not drained.\n");
+        return false;
+    }
+
     for (int i=0;i<numThreads;i++) {
         if (!fixedbuffer[i].empty()) {
             DPRINTF(Drain, "%i: Insts not empty.\n", i);
@@ -681,6 +718,8 @@ IEW::takeOverFrom()
 
     instQueue.takeOverFrom();
     ldstQueue.takeOverFrom();
+    delayedVectorMemCompletionQ.clear();
+    delayedVectorMemCompletionCount.fill(0);
 
     startupStage();
     cpu->activityThisCycle();
@@ -716,9 +755,20 @@ IEW::squash(ThreadID tid)
 
     // Tell the LDSTQ to start squashing.
     ldstQueue.squash(fromCommit->commitInfo[tid].doneSeqNum, tid);
+    squashDelayedVectorMemCompletions(tid);
     updatedQueues = true;
 
-    fixedbuffer[tid].clear();
+    // Selectively remove only instructions younger than squash boundary
+    {
+        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+        for (auto it = fixedbuffer[tid].begin(); it != fixedbuffer[tid].end(); ) {
+            if ((*it)->seqNum > squash_seq) {
+                it = fixedbuffer[tid].erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 
     stallSig->blockRename[tid] = true;
 
@@ -740,6 +790,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum;
         toCommit->squash[tid] = true;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
@@ -782,6 +833,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
     // the squash.
     if (!toCommit->squash[tid] || inst->seqNum <= toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum - 1;
         toCommit->squash[tid] = true;
 
         toCommit->squashedSeqNum[tid] = inst->seqNum;
@@ -818,6 +870,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
             tid, inst->pcState(), inst->seqNum);
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum;
         toCommit->squash[tid] = true;
 
         toCommit->valuePredictionError[tid] = true;
@@ -846,6 +899,85 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
     }
 
     cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
+
+    stallSig->blockRename[tid] = true;
+}
+
+
+std::list<DynInstPtr>&
+IEW::getRobInstList(ThreadID tid)
+{
+    return rob->getInstList(tid);
+}
+
+DynInstPtr
+IEW::readRobTailInst(ThreadID tid)
+{
+    return rob->readTailInst(tid);
+}
+
+DynInstPtr
+IEW::findRobInst(ThreadID tid, InstSeqNum seqNum)
+{
+    return rob->findInst(tid, seqNum);
+}
+
+void
+IEW::squashDueToLongLatencyLoad(const DynInstPtr &loadInst,
+                                const DynInstPtr &squashFromInst,
+                                ThreadID tid,
+                                bool includeSquashInst)
+{
+    recordThreadSquash(tid);
+
+    DPRINTF(IEW, "[tid:%i] Long-latency flush: load [sn:%llu], "
+            "squash from [sn:%llu], includeSquashInst=%d\n",
+            tid, loadInst->seqNum, squashFromInst->seqNum,
+            (int)includeSquashInst);
+
+    // Long-latency flush is a non-essential, lowest-priority squash.
+    // It proceeds when ANY of the following holds:
+    //   (a) No other squash is pending;
+    //   (b) This flush has an older boundary than the existing squash;
+    //   (c) Same boundary as the existing squash, but the existing squash does
+    //       NOT include the boundary instruction (!toCommit->includeSquashInst).
+    //       In this case the flush is strictly more aggressive and can override.
+    // Conversely, if an existing squash already includes the boundary instruction
+    // (e.g., branch mispredict or mem-order violation), it has higher priority
+    // and this flush must yield.
+    if (!toCommit->squash[tid] || squashFromInst->seqNum < toCommit->squashedSeqNum[tid] ||
+        (squashFromInst->seqNum == toCommit->squashedSeqNum[tid] &&
+         includeSquashInst && !toCommit->includeSquashInst[tid])) {
+        toFetch->iewInfo[tid].redirectPending = true;
+        toCommit->squash[tid] = true;
+        toCommit->squashedSeqNum[tid] = squashFromInst->seqNum;
+        toCommit->squashedTargetId[tid] = squashFromInst->getFtqId();
+        toCommit->squashedLoopIter[tid] = squashFromInst->getLoopIteration();
+        set(toCommit->pc[tid], squashFromInst->pcState());
+        if (!includeSquashInst) {
+            // squashFromInst itself is NOT squashed
+            if (squashFromInst->isControl() && !(squashFromInst->isExecuted())) {
+                // Control instruction: use predicted PC from frontend
+                set(toCommit->pc[tid], squashFromInst->readPredTarg());
+            } else {
+                // Non-control instruction: sequential next PC
+                squashFromInst->staticInst->advancePC(*toCommit->pc[tid]);
+            }
+        }
+        toCommit->mispredictInst[tid] = NULL;
+        toCommit->branchTaken[tid] = false;
+        toCommit->valuePredictionError[tid] = false;
+        toCommit->includeSquashInst[tid] = includeSquashInst;
+        toCommit->longLatencyFlush[tid] = true;
+        wroteToTimeBuffer = true;
+
+        DPRINTF(DecoupleBP,
+                "long-latency flush (pc=%#lx) set target id "
+                "to %lu, loop iter to %u\n",
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
+    }
 
     stallSig->blockRename[tid] = true;
 }
@@ -888,6 +1020,109 @@ IEW::cacheUnblocked()
 
 void
 IEW::readyToFinish(const DynInstPtr& inst)
+{
+    if (shouldDelayVectorMemCompletion(inst)) {
+        enqueueVectorMemCompletionDelay(inst);
+        return;
+    }
+
+    enqueueWritebackNow(inst);
+}
+
+bool
+IEW::isVectorMemCompletionDelayInst(const DynInstPtr& inst) const
+{
+    if (!inst) {
+        return false;
+    }
+
+    const auto op = inst->opClass();
+    const bool vector_load =
+        op >= enums::VectorUnitStrideLoad &&
+        op <= enums::VectorWholeRegisterLoad;
+    const bool vector_store =
+        op >= enums::VectorUnitStrideStore &&
+        op <= enums::VectorWholeRegisterStore;
+
+    return vector_load || vector_store;
+}
+
+bool
+IEW::shouldDelayVectorMemCompletion(const DynInstPtr& inst) const
+{
+    return vectorMemCompletionDelay > Cycles(0) &&
+           isVectorMemCompletionDelayInst(inst) &&
+           !inst->isSquashed() &&
+           inst->isExecuted() &&
+           inst->getFault() == NoFault;
+}
+
+void
+IEW::enqueueVectorMemCompletionDelay(const DynInstPtr& inst)
+{
+    const Tick ready_tick = cpu->clockEdge(vectorMemCompletionDelay);
+    delayedVectorMemCompletionQ.push_back({ready_tick, curTick(), inst});
+    ++delayedVectorMemCompletionCount[inst->threadNumber];
+
+    ++iewStats.vectorMemCompletionDelayedInsts;
+    if (inst->isLoad()) {
+        ++iewStats.vectorMemCompletionDelayedLoads;
+    } else if (inst->isStore()) {
+        ++iewStats.vectorMemCompletionDelayedStores;
+    }
+
+    recordThreadWork(inst->threadNumber);
+    DPRINTF(IEW,
+            "[tid:%i] [sn:%llu] Delay vector memory completion until "
+            "tick %llu, opClass=%s\n",
+            inst->threadNumber, inst->seqNum,
+            static_cast<unsigned long long>(ready_tick),
+            enums::OpClassStrings[inst->opClass()]);
+}
+
+void
+IEW::processDelayedVectorMemCompletions()
+{
+    while (!delayedVectorMemCompletionQ.empty() &&
+           delayedVectorMemCompletionQ.front().readyTick <= curTick()) {
+        auto entry = delayedVectorMemCompletionQ.front();
+        delayedVectorMemCompletionQ.pop_front();
+
+        auto inst = entry.inst;
+        ThreadID tid = inst->threadNumber;
+        assert(delayedVectorMemCompletionCount[tid] > 0);
+        --delayedVectorMemCompletionCount[tid];
+
+        recordThreadWork(tid);
+
+        if (inst->isSquashed()) {
+            ++iewStats.vectorMemCompletionDelaySquashedInsts;
+            DPRINTF(IEW,
+                    "[tid:%i] [sn:%llu] Drop squashed delayed vector "
+                    "memory completion\n",
+                    tid, inst->seqNum);
+            continue;
+        }
+
+        const Cycles delay_cycles =
+            cpu->ticksToCycles(curTick() - entry.enqueueTick);
+        iewStats.vectorMemCompletionDelayCycles +=
+            static_cast<uint64_t>(delay_cycles);
+
+        DPRINTF(IEW,
+                "[tid:%i] [sn:%llu] Release delayed vector memory "
+                "completion after %llu cycles, opClass=%s\n",
+                tid, inst->seqNum,
+                static_cast<unsigned long long>(
+                    static_cast<uint64_t>(delay_cycles)),
+                enums::OpClassStrings[inst->opClass()]);
+
+        enqueueWritebackNow(inst);
+    }
+}
+
+void
+IEW::enqueueWritebackNow(const DynInstPtr& inst)
 {
     // This function should not be called after writebackInsts in a
     // single cycle.  That will cause problems with an instruction
@@ -953,6 +1188,30 @@ IEW::readyToFinish(const DynInstPtr& inst)
 }
 
 void
+IEW::squashDelayedVectorMemCompletions(ThreadID tid)
+{
+    const InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+
+    for (auto it = delayedVectorMemCompletionQ.begin();
+         it != delayedVectorMemCompletionQ.end();) {
+        auto inst = it->inst;
+        if (inst && inst->threadNumber == tid && inst->seqNum > squash_seq) {
+            inst->setSquashed();
+            assert(delayedVectorMemCompletionCount[tid] > 0);
+            --delayedVectorMemCompletionCount[tid];
+            ++iewStats.vectorMemCompletionDelaySquashedInsts;
+            DPRINTF(IEW,
+                    "[tid:%i] [sn:%llu] Squash delayed vector memory "
+                    "completion, squash_seq=%llu\n",
+                    tid, inst->seqNum, squash_seq);
+            it = delayedVectorMemCompletionQ.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void
 IEW::updateActivate()
 {
     bool any_unblocking = false;
@@ -962,7 +1221,8 @@ IEW::updateActivate()
     // unblocking, then there is no internal activity for the IEW stage.
     instQueue.iqIOStats.intInstQueueReads++;
     if (_status == Active && !instQueue.hasReadyInsts() &&
-        !ldstQueue.willWB() && !any_unblocking) {
+        !ldstQueue.willWB() && delayedVectorMemCompletionQ.empty() &&
+        !any_unblocking) {
         DPRINTF(IEW, "IEW switching to idle\n");
 
         deactivateStage();
@@ -970,6 +1230,7 @@ IEW::updateActivate()
         _status = Inactive;
     } else if (_status == Inactive && (instQueue.hasReadyInsts() ||
                                        ldstQueue.willWB() ||
+                                       !delayedVectorMemCompletionQ.empty() ||
                                        any_unblocking)) {
         // Otherwise there is internal activity.  Set to active.
         DPRINTF(IEW, "IEW switching to active\n");
@@ -1119,7 +1380,8 @@ bool
 IEW::threadHasStageWork(ThreadID tid)
 {
     if (!fixedbuffer[tid].empty() || scheduler->getIQInsts(tid) != 0 ||
-        ldstQueue.getCount(tid) != 0) {
+        ldstQueue.getCount(tid) != 0 ||
+        delayedVectorMemCompletionCount[tid] != 0) {
         return true;
     }
 
@@ -1800,14 +2062,6 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
-    if (inst->isControl()) {
-        auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
-        TimeStruct::IewComm::ResolvedCFIEntry entry;
-        entry.ftqId = inst->getFtqId();
-        entry.pc = inst->getPC();
-        resolved_cfis.push_back(entry);
-    }
-
     if (!fetchRedirect[tid] ||
         !toCommit->squash[tid] ||
         toCommit->squashedSeqNum[tid] > inst->seqNum) {
@@ -1820,6 +2074,11 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
             new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
             inst->pcState(*new_pc);
+        }
+
+        if (inst->isControl() && !inst->isNonSpeculative()) {
+            auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
+            resolved_cfis.push_back(makeBranchOutcome(inst));
         }
 
         if (inst->mispredicted() && !loadNotExecuted &&
@@ -2166,20 +2425,23 @@ IEW::tick()
     updatedQueues = false;
     cycleThreadWork.fill(false);
     cycleThreadSquash.fill(false);
+    iewStats.vectorMemCompletionDelayQueueOccupancy +=
+        delayedVectorMemCompletionQ.size();
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         toFetch->iewInfo[tid].redirectPending = false;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = 0;
         toFetch->iewInfo[tid].resolvedCFIs.clear();
     }
 
     scheduler->tick();
     ldstQueue.tick();
-    
+
     // Update LSQ borrowing donor status for LQ and SQ
     // A thread becomes a donor if it has no buffered rename instructions and is stalled
     // Use hold cycles to avoid frequent donor state transitions
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         bool has_buffered_rename = !fixedbuffer[tid].empty();
-        
+
         // For LQ: determine if thread should be a donor
         bool lq_donor = false;
         lq_donor = smtHasBorrowThrottleLQStall(toFetch->iewInfo[tid]);
@@ -2188,7 +2450,7 @@ IEW::tick()
         } else {
             ldstQueue.setLQBorrowingDonor(tid, false);
         }
-        
+
         // For SQ: determine if thread should be a donor
         bool sq_donor = false;
         sq_donor = smtHasBorrowThrottleSQStall(toFetch->iewInfo[tid]);
@@ -2198,7 +2460,7 @@ IEW::tick()
             ldstQueue.setSQBorrowingDonor(tid, false);
         }
     }
-    
+
     // Add borrowing state hold cycle for LSQ
     ldstQueue.addBorrowingStateHoldCycle();
 
@@ -2242,6 +2504,8 @@ IEW::tick()
         instQueue.scheduleReadyInsts();
 
         executeInsts();
+
+        processDelayedVectorMemCompletions();
 
         writebackInsts();
     }

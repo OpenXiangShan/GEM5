@@ -101,7 +101,6 @@ class MBTB : public TimedBaseBTBPredictor
      * - target: branch target address
      * - size: branch instruction size
      * - isCond/isIndirect/isCall/isReturn: branch type flags
-     * - alwaysTaken: whether this conditional branch is always taken
      * - ctr: 2-bit counter for conditional branch prediction
      */
     typedef struct TickedBTBEntry : public BTBEntry
@@ -128,7 +127,8 @@ class MBTB : public TimedBaseBTBPredictor
 
     void tick() override;
 
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+    void commitBranch(const PredictionUpdateContext &context,
+                      const BranchOutcome &outcome) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
@@ -158,28 +158,20 @@ class MBTB : public TimedBaseBTBPredictor
                                const boost::dynamic_bitset<> &history,
                                FullBTBPrediction &pred) override;
 
-    /**
-     * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
-     *        only in L1BTB will this function be called before update
-     * 
-     * @param stream 
-     */
-    void getAndSetNewBTBEntry(FetchTarget &stream);
-
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
      *  1. Updates existing entries with new information
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchTarget &stream) override;
-
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    void update(const PredictionUpdateContext &context,
+                const PreparedUpdate &update) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
-            cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
+            cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
+            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect,
+            e.isCall, e.isReturn, tick);
     }
 
     void printTickedBTBEntry(const TickedBTBEntry &e) {
@@ -288,19 +280,26 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream,
-                           const BTBMeta* meta);
+    void checkPredictionHit(const PredictionUpdateContext &context,
+                            const BTBMeta* meta,
+                            const PreparedUpdate &update);
 
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream);
+    void updateBTBEntry(
+        const BTBEntry &entry,
+        bool actual_taken,
+        Addr actual_target,
+        const PredictionUpdateContext &context);
 
-    // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
-    BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
+    // Helper: build updated entry (counter/indirect target/tag)
+    BTBEntry buildUpdatedEntry(const BTBEntry &entry,
+                               bool actual_taken,
+                               Addr actual_target,
                                const BTBEntry* existing_entry,
-                               const FetchTarget &stream);
+                               const PredictionUpdateContext &context);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,

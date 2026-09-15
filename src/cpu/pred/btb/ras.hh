@@ -96,13 +96,17 @@ namespace btb_pred {
 
         void specUpdateState(FullBTBPrediction &pred);
 
-        void recoverState(const FetchTarget &entry);
+        void recoverState(const HistoryRecoveryContext &context,
+                          const BranchInfo &actualBranch,
+                          bool actuallyTaken);
 
-        void update(const FetchTarget &entry) override;
+        void update(const PredictionUpdateContext &context,
+                    const PreparedUpdate &update) override;
 
-        // RAS prediction statistics require a concrete DynInst in production.
+        // Record RAS prediction statistics from stage-neutral commit facts.
 #ifndef UNIT_TEST
-        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+        void commitBranch(const PredictionUpdateContext &context,
+                          const BranchOutcome &outcome) override;
 #endif
 
         Addr getTopAddrFromMetas(const FetchTarget &stream);

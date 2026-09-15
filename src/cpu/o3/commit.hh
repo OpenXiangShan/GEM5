@@ -593,6 +593,12 @@ class Commit
     /** Updates commit stats based on this instruction. */
     void updateComInstStats(const DynInstPtr &inst);
 
+    /** Accumulate actual facts and emit a block at an FTQ-ID boundary. */
+    void recordCommittedInst(const DynInstPtr &inst);
+
+    /** Drop thread-local protocol state during context replacement. */
+    void clearCommittedFetchBlock(ThreadID tid);
+
     // Difftest
     void diffInst(ThreadID tid, const DynInstPtr &inst);
 
@@ -604,6 +610,10 @@ class Commit
 
     uint64_t committedTargetId[MaxThreads];
     uint64_t committedLoopIter[MaxThreads];
+
+    bool committedFetchBlockValid[MaxThreads] = {};
+    branch_prediction::btb_pred::CommittedFetchBlock
+        committedFetchBlocks[MaxThreads];
 
     struct CommitStats : public statistics::Group
     {
@@ -679,6 +689,7 @@ class Commit
         statistics::Vector squashDueToTrap;
         statistics::Vector squashDueToTC;
         statistics::Vector squashDueToSquashAfter;
+        statistics::Vector squashDueToLongLatencyFlush;
         statistics::Formula totalSquash;
 
         statistics::Vector ROBFull;

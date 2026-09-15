@@ -625,7 +625,7 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
         for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
             auto& inst = *it;
             if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted() ||
-                 // If this inst contains a raw violation that is only 
+                 // If this inst contains a raw violation that is only
                  // handled during a commit, do not bypass it.
                  inst->memDepInfo.violationPending ||
                  // An external snoop can still turn a possible violation into a
