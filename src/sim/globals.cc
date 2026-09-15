@@ -123,4 +123,9 @@ Globals::unserialize(CheckpointIn &cp)
      }
 }
 
+void
+Globals::memtrace_init()
+{
+    unserializedCurTick = 100;
+}
 } // namespace gem5
