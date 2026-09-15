@@ -221,6 +221,8 @@ class IssueQue : public SimObject
         statistics::Scalar arbFailed;
         statistics::Scalar tagRefillBlock;
         statistics::Scalar issueOccupy;
+        /** Late load-cancel recoveries found during issue selection. */
+        statistics::Scalar lateLoadCancel;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
         statistics::Vector portissued;
