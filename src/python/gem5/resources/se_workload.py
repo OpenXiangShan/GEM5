@@ -444,7 +444,10 @@ class ResourceCatalog:
                 if download_path.exists():
                     download_path.unlink()
 
-            if not self._hash_matches(destination, metadata):
+            if (
+                metadata.get("md5sum") is not None
+                and not self._hash_matches(destination, metadata)
+            ):
                 destination.unlink()
                 raise ResourceCatalogError(
                     "Downloaded resource '{}' failed its MD5 check."
@@ -453,6 +456,10 @@ class ResourceCatalog:
         return str(destination)
 
     def _read_json_url(self, url: str, max_attempts: int = 3):
+        if parse.urlparse(url).scheme != "https":
+            raise ResourceCatalogError(
+                "Remote resource catalogs must use HTTPS: '{}'".format(url)
+            )
         error = None
         for attempt in range(max_attempts):
             try:
@@ -470,6 +477,10 @@ class ResourceCatalog:
 
     @staticmethod
     def _download_url(url: str, destination: Path, max_attempts: int = 3):
+        if parse.urlparse(url).scheme != "https":
+            raise ResourceCatalogError(
+                "Remote resources must use HTTPS: '{}'".format(url)
+            )
         error = None
         for attempt in range(max_attempts):
             try:
@@ -489,7 +500,7 @@ class ResourceCatalog:
     def _hash_matches(path: Path, metadata: Dict) -> bool:
         expected = metadata.get("md5sum")
         if expected is None:
-            return True
+            return False
         digest = hashlib.md5()
         with path.open("rb") as resource_file:
             for chunk in iter(lambda: resource_file.read(1024 * 1024), b""):

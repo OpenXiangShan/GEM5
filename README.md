@@ -39,8 +39,11 @@ We are grateful for their contributions and hope to continue to work together to
 
 ## Features
 
-XS-GEM5 is not as easy to use as official GEM5, because it only supports full-system simulation
-with Xiangshan's specific formats, refer to [Workflows](#workflows-how-to-run-workloads) for more details.
+Full-system simulation with Xiangshan-specific checkpoint formats is the
+primary XS-GEM5 workflow. Limited syscall-emulation support for RISC-V Linux
+user-space ELF files and upstream SE workloads is available through
+`configs/example/se.py`. Refer to [Workflows](#workflows-how-to-run-workloads)
+for more details.
 
 XS-GEM5 is enhanced with
 - Xiangshan RVGCpt: a cross-platform full-system checkpoint for RISC-V.

@@ -100,6 +100,34 @@ class SEWorkloadResourceTestSuite(unittest.TestCase):
             4814352,
         )
 
+    def test_cached_file_without_md5_is_replaced(self):
+        workload = self.catalog.obtain_se_workload(
+            "se-test-binary-no-md5",
+            resource_directory=self.resource_dir.name,
+        )
+        executable = Path(workload.executable)
+        expected = executable.read_bytes()
+        executable.write_bytes(b"bad cache entry")
+
+        workload = self.catalog.obtain_se_workload(
+            "se-test-binary-no-md5",
+            resource_directory=self.resource_dir.name,
+        )
+        self.assertEqual(Path(workload.executable).read_bytes(), expected)
+
+    def test_remote_sources_require_https(self):
+        destination = Path(self.resource_dir.name) / "file"
+        for url in ("http://example.com/resource", "file:///tmp/resource"):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(
+                    ResourceCatalogError, "must use HTTPS"
+                ):
+                    self.catalog._read_json_url(url)
+                with self.assertRaisesRegex(
+                    ResourceCatalogError, "must use HTTPS"
+                ):
+                    self.catalog._download_url(url, destination)
+
     def test_unsupported_function_is_rejected(self):
         with self.assertRaisesRegex(
             ResourceCatalogError, "unsupported function"

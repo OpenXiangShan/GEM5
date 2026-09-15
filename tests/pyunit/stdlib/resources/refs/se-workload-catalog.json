@@ -61,6 +61,14 @@
     "md5sum": "9aad28150d896f304cb4e52348442c1b"
   },
   {
+    "id": "se-test-binary-no-md5",
+    "resource_version": "1.0.0",
+    "category": "binary",
+    "url": "../../../../test-progs/se-smoke/data/input.txt",
+    "is_zipped": false,
+    "architecture": "RISCV"
+  },
+  {
     "id": "se-unsupported-workload",
     "resource_version": "1.0.0",
     "category": "workload",
