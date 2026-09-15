@@ -64,6 +64,7 @@ from common.FileSystemConfig import config_filesystem
 from common.Caches import *
 from common.cpu2000 import *
 from common.FUScheduler import *
+from gem5.resources.se_workload import ResourceCatalog, ResourceCatalogError
 
 def get_processes(args):
     """Interprets provided args and returns a list of processes"""
@@ -117,6 +118,63 @@ def get_processes(args):
         return multiprocesses, 1
 
 
+def get_resource_process(args):
+    """Resolve an upstream resource workload into an SE Process."""
+
+    catalog = ResourceCatalog(source=args.resource_json)
+    workload_id = args.workload
+    workload_version = args.resource_version
+
+    if args.suite:
+        suite = catalog.get_suite(args.suite, args.resource_version)
+        member = suite.get_workload(args.suite_workload)
+        workload_id = member.id
+        workload_version = member.resource_version
+
+    workload = catalog.obtain_se_workload(
+        resource_id=workload_id,
+        resource_version=workload_version,
+        resource_directory=args.resource_directory,
+    )
+    if (
+        workload.architecture
+        and workload.architecture.lower() != buildEnv['TARGET_ISA'].lower()
+    ):
+        raise ResourceCatalogError(
+            "Workload '{}' targets {}, but this gem5 binary targets {}."
+            .format(
+                workload.id,
+                workload.architecture,
+                buildEnv['TARGET_ISA'],
+            )
+        )
+
+    process = Process(pid=100)
+    process.executable = workload.executable
+    process.cwd = os.getcwd()
+    process.gid = os.getgid()
+    process.cmd = [workload.executable] + list(workload.arguments)
+    if args.options:
+        process.cmd = [workload.executable] + args.options.split()
+
+    if args.env:
+        with open(args.env, 'r') as env_file:
+            process.env = [line.rstrip() for line in env_file]
+    elif workload.env_list is not None:
+        process.env = list(workload.env_list)
+
+    input_path = args.input or workload.stdin_file
+    output_path = args.output or workload.stdout_file
+    errout_path = args.errout or workload.stderr_file
+    if input_path:
+        process.input = input_path
+    if output_path:
+        process.output = output_path
+    if errout_path:
+        process.errout = errout_path
+    return [process], 1
+
+
 parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 Options.addSEOptions(parser)
@@ -157,6 +215,16 @@ set_se_defaults(parser)
 
 args = parser.parse_args()
 
+resource_selections = sum(bool(value) for value in (
+    args.cmd, args.bench, args.workload, args.suite
+))
+if resource_selections > 1:
+    fatal("Select exactly one of --cmd, --bench, --workload, or --suite.")
+if args.suite and not args.suite_workload:
+    fatal("--suite requires a stable member ID via --suite-workload.")
+if args.suite_workload and not args.suite:
+    fatal("--suite-workload requires --suite.")
+
 if args.no_l3cache:
     args.l3cache = False
 
@@ -178,7 +246,12 @@ if args.fast_forward:
 multiprocesses = []
 numThreads = 1
 
-if args.bench:
+if args.workload or args.suite:
+    try:
+        multiprocesses, numThreads = get_resource_process(args)
+    except ResourceCatalogError as error:
+        fatal(str(error))
+elif args.bench:
     apps = args.bench.split("-")
     if len(apps) != args.num_cpus:
         print("number of benchmarks not equal to set num_cpus!")
