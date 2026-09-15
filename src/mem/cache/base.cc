@@ -880,7 +880,9 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         handleTimingReqMiss(pkt, blk, forward_time, request_time);
 
-        ppMiss->notify(pkt);
+        if (!pkt->mshrAliasFailed() && !pkt->mshrArbFailed() && !pkt->isHitInWriteBuffer()) {
+            ppMiss->notify(pkt);
+        }
     }
 
 
