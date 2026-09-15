@@ -29,7 +29,64 @@ bash ./init.sh  # 克隆并构建DRAMSim3，只需要执行一次，后续构建
 3. 构建GEM5：
 ```bash
 scons build/RISCV/gem5.opt --gold-linker -j$(nproc) # 用gold-linker链接，可以加快编译速度
-export gem5_home=`pwd`
+export GEM5_HOME=$(pwd)
+```
+
+## 运行 Linux 用户态 ELF（SE模式）
+
+只需快速评估一个RISC-V Linux用户态程序时，可以直接使用SE（Syscall
+Emulation）模式，无需准备Linux镜像、NEMU参考模型或GCPT切片。建议先使用静态链接的ELF：
+
+```bash
+./build/RISCV/gem5.opt -d m5out/se-hello \
+    configs/example/se.py \
+    -c /path/to/riscv64-linux-program \
+    --options="arg1 arg2" \
+    --maxinsts=100000000
+```
+
+`se.py`默认使用`DerivO3CPU`和KmhV3-like资源配置，包括主要流水线宽度、ROB/LSQ容量、scheduler、2MB L2和32MB L3。它仍省略FS和精确RTL对齐配置，因此不能与`kmhv3.py`的GCPT性能结果直接比较。命令行参数可以覆盖默认值，例如用轻量内存配置做功能验证：
+
+```bash
+./build/RISCV/gem5.opt -d m5out/se-smoke \
+    configs/example/se.py \
+    -c /path/to/riscv64-linux-program \
+    --mem-type=SimpleMemory --no-pf --no-l3cache
+```
+
+常用参数：
+
+- `-c`/`--cmd`：ELF路径；多个程序可用分号分隔。
+- `-o`/`--options`：传给程序的参数；多个程序的参数同样用分号分隔。
+- `--input`、`--output`、`--errout`：重定向标准输入、输出和错误。
+- `--env`：从文件逐行读取环境变量。
+- `--redirects=/guest/path=/host/path`：把程序访问的guest路径映射到host目录；可重复指定。程序内的`/tmp`默认映射到本次输出目录下的`fs/tmp`，不会直接访问host的`/tmp`。
+- `--warmup-insts-no-switch=N`：默认O3从头执行，在提交N条指令时先dump再清空统计；默认值为100000，设为0可关闭。启用后`stats.txt`包含预热和正式统计两个区段，读取同名计数器时应取最后一个值。
+- `--maxinsts=N`：限制从程序启动开始提交的总指令数；它不是清空统计后额外执行的指令数。
+
+当前边界：SE模式不启动Linux内核、不连接NEMU Difftest，系统调用支持范围也不等同于完整Linux；动态链接程序还需要提供匹配的解释器/库。当前配置入口仅支持`DerivO3CPU`及其派生类，也暂不支持`--fast-forward`进行Atomic到O3切换，因为切换后的O3仍需要完整配置和独立预热。遇到这些需求时应使用`kmhv3.py`全系统/GCPT流程。
+
+### 运行仓库内置SE smoke workload
+
+这个小程序覆盖argv、环境变量、guest到host路径映射、文件读取和stdout，可用于检查本机SE环境：
+
+```bash
+sudo apt install gcc-riscv64-linux-gnu
+make -C tests/test-progs/se-smoke
+
+gem5_root=$(pwd)
+./build/RISCV/gem5.opt -d m5out/se-smoke \
+    configs/example/se.py \
+    -c "$gem5_root/tests/test-progs/se-smoke/bin/riscv/linux/se-smoke" \
+    --options=/se-smoke/input.txt \
+    --env="$gem5_root/tests/test-progs/se-smoke/data/env.txt" \
+    --redirects=/se-smoke="$gem5_root/tests/test-progs/se-smoke/data" \
+    --output="$gem5_root/m5out/se-smoke/program.out" \
+    --mem-type=SimpleMemory --no-pf --no-l3cache \
+    --warmup-insts-no-switch=0
+
+cat m5out/se-smoke/program.out
+# SE smoke passed: argc=2 env=works file=read-ok
 ```
 
 ## 最简单运行起来
