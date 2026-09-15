@@ -1478,6 +1478,20 @@ Commit::commitInsts()
 
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
 
+    // Interrupt delivery must also run after the pipeline drains, when no
+    // commit group remains to enter the retirement loop. Interrupts currently
+    // target thread 0, so use its transaction state even in SMT mode.
+    if (interrupt != NoFault) {
+        if (executingHtmTransaction(0)) {
+            cpu->clearInterrupts(0);
+            toIEW->commitInfo[0].clearInterrupt = true;
+            interrupt = NoFault;
+            avoidQuiesceLiveLock = true;
+        } else {
+            handleInterrupt();
+        }
+    }
+
     unsigned num_committed = 0;
     std::array<unsigned, MaxThreads> num_committed_per_thread = {};
     std::array<unsigned, MaxThreads> commit_width_per_thread = {};
@@ -1509,24 +1523,6 @@ Commit::commitInsts()
                (commitStatus[commit_thread] == Running ||
                 commitStatus[commit_thread] == Idle ||
                 commitStatus[commit_thread] == FetchTrapPending)) {
-            // hardware transactionally memory
-            // If executing within a transaction,
-            // need to handle interrupts specially
-
-            // Check for any interrupt that we've already squashed for
-            // and start processing it.
-            if (interrupt != NoFault) {
-                // If inside a transaction, postpone interrupts
-                if (executingHtmTransaction(commit_thread)) {
-                    cpu->clearInterrupts(0);
-                    toIEW->commitInfo[0].clearInterrupt = true;
-                    interrupt = NoFault;
-                    avoidQuiesceLiveLock = true;
-                } else {
-                    handleInterrupt();
-                }
-            }
-
             head_inst = rob->readHeadInst(commit_thread);
 
             if (!rob->isHeadGroupReady(commit_thread)) {
