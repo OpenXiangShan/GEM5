@@ -743,11 +743,19 @@ class Fetch
     /** The width of decode in instructions. */
     unsigned decodeWidth;
 
-    /** Is the cache blocked?  If so no threads can access it. */
-    bool cacheBlocked;
+    /** cacheBlocked/retryPkt are always arrays indexed by fetchSlot(tid):
+     *  per-thread mode (fetch_per_thread=true) uses slot=tid; global mode
+     *  (fetch_per_thread=false, default) uses shared slot 0 = original
+     *  single-flag/single-queue behavior. */
+    bool cacheBlocked[MaxThreads];
+    std::vector<PacketPtr> retryPkt[MaxThreads];
 
-    /** Packets waiting for the next cache-issued retry callback. */
-    std::vector<PacketPtr> retryPkt;
+    /** When true, fetch cacheBlocked/retryPkt are per-thread; when false
+     *  (default), all threads share slot 0 (original global behavior). */
+    bool fetchPerThread = false;
+
+    /** Slot index for cacheBlocked/retryPkt: tid if per-thread, 0 if global. */
+    ThreadID fetchSlot(ThreadID tid) const { return fetchPerThread ? tid : 0; }
 
     /** Cache block size. */
     unsigned int cacheBlkSize;
