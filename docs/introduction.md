@@ -5,7 +5,7 @@
 ## 项目特点
 
 XS-GEM5是专门为香山处理器定制的GEM5模拟器，相比官方GEM5：
-- 主要支持全系统模拟（Full System Simulation），SE模式初步支持
+- 主要支持全系统模拟（Full System Simulation），同时可通过SE模式直接运行RISC-V Linux用户态ELF
 - 支持香山特有的格式和功能
 - 包含多个香山特有的功能增强
 
@@ -50,10 +50,11 @@ XS-GEM5**不支持**以下功能：
 1. **无法运行Boom的裸机应用程序**
    - 我们只支持[Abstract Machine](https://github.com/OpenXiangShan/nexus-am)裸机环境或香山的Linux系统
 
-2. **无法带difftest运行ELF文件**
-   - 支持GEM5的系统调用模拟（[什么是系统调用模拟](https://stackoverflow.com/questions/48986597/when-to-use-full-system-fs-vs-syscall-emulation-se-with-userland-programs-in-gem)）
-   - 支持QEMU的用户空间模拟（[什么是用户空间模拟](https://www.qemu.org/docs/master/user/main.html)）
-   - 不支持带Difftest做验证的运行ELF文件，当前XS-GEM5 的Difftest(NEMU) 只支持全系统模拟，不支持SE模式
+2. **SE模式的限制**
+   - 支持GEM5的系统调用模拟（[什么是系统调用模拟](https://stackoverflow.com/questions/48986597/when-to-use-full-system-fs-vs-syscall-emulation-se-with-userland-programs-in-gem)），推荐先使用静态链接的RISC-V Linux ELF
+   - SE不是QEMU用户态模拟，也不启动Linux内核；依赖内核行为、设备或尚未实现系统调用的程序仍需使用全系统模式
+   - 当前Difftest（NEMU）只支持全系统模拟，不能用于SE模式下的ELF验证
+   - `configs/example/se.py`当前仅支持`DerivO3CPU`及其派生类，暂不支持Atomic到O3的fast-forward；可使用默认O3直接运行，并通过`--warmup-insts-no-switch`排除预热阶段的统计
 
 3. **检查点不兼容**
    - 不能生成GEM5的SE检查点或m5检查点
@@ -75,7 +76,7 @@ XS-GEM5**不支持**以下功能：
 
 ### 不使用检查点运行
 
-运行工作负载的典型流程与[NEMU](https://github.com/OpenXiangShan/NEMU/)、[XS-GEM5](https://github.com/OpenXiangShan/GEM5)和[香山处理器](https://github.com/OpenXiangShan/XiangShan)类似。它们都只支持全系统模拟。为了准备全系统模拟的工作负载，用户需要构建裸机应用程序或在操作系统中运行用户程序。
+如需进行Difftest、运行操作系统或使用设备，典型流程与[NEMU](https://github.com/OpenXiangShan/NEMU/)、XS-GEM5全系统模式和[香山处理器](https://github.com/OpenXiangShan/XiangShan)类似：用户需要构建裸机应用程序，或准备包含用户程序的Linux镜像。只需评估Linux用户态程序时，也可以直接使用SE模式，省去制作镜像和切片的步骤。
 
 ```mermaid
 graph TD;

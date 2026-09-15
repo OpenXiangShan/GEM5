@@ -124,11 +124,10 @@ Options.addSEOptions(parser)
 if '--ruby' in sys.argv:
     Ruby.define_options(parser)
 
-def setDefaultArgs(args):
-    """Set default configurations to match xiangshan.py SE mode defaults"""
+def set_se_defaults(parser):
+    """Set XiangShan SE defaults without overriding explicit CLI options."""
 
-    # Set defaults only if not already specified by user
-    defaults = {
+    parser.set_defaults(**{
         'cpu_type': 'DerivO3CPU',
         'mem_size': '8GB',
         'mem_type': 'DRAMsim3',
@@ -140,32 +139,41 @@ def setDefaultArgs(args):
         'l1d_assoc': 4,
         'l1d_hwp_type': 'XSCompositePrefetcher',
         'l2cache': True,
-        'l2_size': '1MB',
+        'l2_size': '2MB',
         'l2_assoc': 8,
         'l2_hwp_type': 'PrefetcherForwarder',
         'l3cache': True,
-        'l3_size': '16MB',
+        'l3_size': '32MB',
         'l3_assoc': 16,
         'l3_hwp_type': 'WorkerPrefetcher',
         'l1_to_l2_pf_hint': True,
         'l2_to_l3_pf_hint': True,
         'bp_type': 'DecoupledBPUWithBTB',
         'warmup_insts_no_switch': 100000
-    }   # default warmup 100k instructions!
+    })
 
-    for key, value in defaults.items():
-        # if not hasattr(args, key) or getattr(args, key) is None:
-        setattr(args, key, value)
 
-    # Set dramsim3_ini path
-    if not hasattr(args, 'dramsim3_ini') or args.dramsim3_ini is None:
-        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        args.dramsim3_ini = os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+set_se_defaults(parser)
 
 args = parser.parse_args()
 
-# Set default configurations
-setDefaultArgs(args)
+if args.no_l3cache:
+    args.l3cache = False
+
+if args.dramsim3_ini is None:
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    args.dramsim3_ini = os.path.join(
+        root_dir,
+        'ext/dramsim3/xiangshan_configs/'
+        'xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+
+if args.fast_forward:
+    # Atomic fast-forward also needs the future O3 CPU to receive the full
+    # XiangShan configuration and an O3 warmup phase after the switch.
+    fatal(
+        "--fast-forward is not supported by the XiangShan SE "
+        "configuration yet. Run DerivO3CPU directly and use "
+        "--warmup-insts-no-switch to exclude O3 warmup statistics.")
 
 multiprocesses = []
 numThreads = 1
@@ -198,6 +206,12 @@ else:
 
 
 (CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(args)
+# Keep this entry point honest until its O3-specific scheduler, cache, and
+# register-optimization settings are split from CPU-independent SE setup.
+if not issubclass(CPUClass, BaseO3CPU):
+    fatal(
+        "configs/example/se.py currently supports DerivO3CPU and its "
+        "subclasses only; got --cpu-type=%s." % args.cpu_type)
 CPUClass.numThreads = numThreads
 
 # Check -- do not allow SMT with multiple CPUs
@@ -238,8 +252,8 @@ if args.elastic_trace_en:
 # frequency.
 for cpu in system.cpu:
     cpu.clk_domain = system.cpu_clk_domain
-    # Add scheduler for RISCV CPUs
-    if buildEnv['TARGET_ISA'] == 'riscv':
+    # The XiangShan scheduler is an O3-only parameter.
+    if buildEnv['TARGET_ISA'] == 'riscv' and isinstance(cpu, BaseO3CPU):
         cpu.scheduler = DefaultScheduler()
 
 if ObjectList.is_kvm_cpu(CPUClass) or ObjectList.is_kvm_cpu(FutureClass):
@@ -283,6 +297,62 @@ for i in range(np):
         system.cpu[i].branchPred.indirectBranchPred = indirectBPClass()
 
     system.cpu[i].createThreads()
+
+
+def set_kmhv3_se_params(args, system):
+    """Apply the stable, user-visible shape of the KmhV3 O3 profile.
+
+    SE remains a fast bring-up and screening path. It intentionally omits
+    FS-only state and detailed RTL-alignment knobs, so its performance is not
+    directly comparable with configs/example/kmhv3.py.
+    """
+
+    print(
+        "Using the KmhV3-like SE profile; results are not "
+        "FS/GCPT performance-equivalent.")
+
+    for cpu in system.cpu:
+        # Frontend and pipeline width/latency.
+        cpu.fetchWidth = 32
+        cpu.iewToFetchDelay = 4
+        cpu.commitToFetchDelay = 4
+        cpu.fetchQueueSize = 64
+        cpu.fetchToDecodeDelay = 3
+        cpu.decodeWidth = 8
+        cpu.renameWidth = 8
+        cpu.commitWidth = 8
+        cpu.squashWidth = 8
+
+        # Rename, dispatch, scheduler, and ROB resources.
+        cpu.numPhysIntRegs = 224
+        cpu.numPhysFloatRegs = 256
+        cpu.enableDispatchStage = False
+        cpu.numDQEntries = [8, 8, 8]
+        cpu.dispWidth = [8, 8, 8]
+        cpu.scheduler = KMHV3Scheduler()
+        cpu.phyregReleaseWidth = 8
+        cpu.RobCompressPolicy = 'none'
+        cpu.numROBEntries = 352
+        cpu.CROB_instPerGroup = 2
+
+        # Major load/store queue capacities and completion bandwidths.
+        cpu.LQEntries = 120
+        cpu.SQEntries = 64
+        cpu.StoreQueueMultiple = 2
+        cpu.RARQEntries = 96
+        cpu.RAWQEntries = 56
+        cpu.LoadCompletionWidth = 8
+        cpu.StoreCompletionWidth = 4
+        cpu.RARDequeuePerCycle = 4
+        cpu.RAWDequeuePerCycle = 4
+        cpu.SbufferEntries = 16
+        cpu.SbufferEvictThreshold = 8
+        cpu.StoreWbStage = 4
+
+        if args.bp_type == 'DecoupledBPUWithBTB':
+            cpu.branchPred.ftq_size = 64
+            cpu.branchPred.fsq_size = 64
+
 
 def setKmhV3IdealParams(args, system):
     # Change to BTB for v3 and recreate branch predictors
@@ -384,16 +454,20 @@ system.workload = SEWorkload.init_compatible(mp0_path)
 if args.wait_gdb:
     system.workload.wait_for_remote_gdb = True
 
-# Set ideal parameters here with the highest priority, over command-line arguments
+# Keep the existing ideal SE preset independent from the default KmhV3-like
+# profile. Combining both would create a hybrid with unclear resource meaning.
 if args.ideal_kmhv3:
     setKmhV3IdealParams(args, system)
+else:
+    set_kmhv3_se_params(args, system)
 
 # SE trap/syscall register writes bypass normal rename/writeback. Disable
 # rename-time operand folding/elimination to keep architectural register
 # updates visible to userland regardless of the selected CPU tuning preset.
 for cpu in system.cpu:
-    cpu.enableMoveElimination = False
-    cpu.enableConstantFolding = False
+    if isinstance(cpu, BaseO3CPU):
+        cpu.enableMoveElimination = False
+        cpu.enableConstantFolding = False
 
 root = Root(full_system = False, system = system)
 Simulation.run(args, root, system, FutureClass)
