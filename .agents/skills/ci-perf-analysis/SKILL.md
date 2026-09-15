@@ -1,6 +1,6 @@
 ---
 name: ci-perf-analysis
-description: 用于从 GitHub Actions 的 gem5 性能 CI 中定位 summary、score.txt 和归档目录，并结合本地 gem5_data_proc 对 spec06/spec17 结果做 weighted score、benchmark 子项对比和通用 stats 归因。适用于用户给出 run URL/run id、commit、workflow run，或要求分析 CI 跑分变化来源时。
+description: 定位 GEM5 性能 CI 的归档与分数，比较 run 的 benchmark 表现并用 stats 分析变化。
 ---
 
 # CI 性能分析

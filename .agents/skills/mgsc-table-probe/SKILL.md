@@ -1,6 +1,6 @@
 ---
 name: mgsc-table-probe
-description: 分析香山 MGSC/SC 在前端微测试上的效果。适用于以下场景：(1) 用 off/l_only/g_only/i_only/full 等 A/B profile 批量运行 mgsc_test；(2) 比较不同 profile 下的 topMispredictsByBranch.csv 和 stats.txt；(3) 使用 bp.db 里的 MGSCTRACE 将每个分支的收益/损失归因到具体 SC 表；(4) 决定如何为 Global 或 IMLI 表设计新的测试。
+description: 运行或分析 MGSC 微测试的 SC 子表 A/B 实验，用分支与 MGSCTRACE 统计归因并改进测试。
 ---
 
 # MGSC 表探测
