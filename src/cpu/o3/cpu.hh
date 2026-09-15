@@ -700,9 +700,9 @@ class CPU : public BaseCPU
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
         /** BadSpec Bound */
-        statistics::Value badSpecBound;
+        statistics::Vector badSpecBound;
         /** Branch Miss Prediction Bound */
-        statistics::Value branchMissPrediction;
+        statistics::Vector branchMissPrediction;
         /** Machine clears */
         statistics::Formula machineClears;
         /** Backend Bound */
