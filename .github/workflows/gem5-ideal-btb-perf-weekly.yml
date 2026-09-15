@@ -60,6 +60,17 @@ jobs:
       check_result: false
       timeout_minutes: 720
 
+  smt_test_spec17:
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: configs/example/smt_idealkmhv3.py
+      benchmark_type: "custom-spec17"
+      checkpoint_path: "/nfs/home/share/cirunner/spec17_gcc16_rva23_novec_2harts_260911"
+      extra_args: "--mem-size=16GB"
+      distributed_servers: "default"
+      distributed_jobs_per_server: 32
+      timeout_minutes: 720
+
   perf_test_spec06_gcc12_dynpf:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:

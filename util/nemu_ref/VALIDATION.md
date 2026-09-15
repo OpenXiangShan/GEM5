@@ -1,5 +1,22 @@
 # NEMU 统一版本验证记录
 
+## 2026-09-15：SMT 16GiB REF
+
+当前 release 为 `d30fff1ece9e-gem5-r3-multi16g-zfa-cbo`，源码和依赖
+继续使用下文锁定版本。`multi` SHA256：
+`28b4a25960390b917dfa9f2364b487a2bf928f431695cffeedeaaa195bc85a95`。
+其余三个变体二进制与 r3 完全一致，发布 manifest 记录 `carried_from_release`。
+
+- SPEC17 SMT 完整 CI [34924968908](https://github.com/OpenXiangShan/GEM5/actions/runs/34924968908)：
+  1913/1914 切片完成，0 guest kernel panic；mcf_0 abort，尚非全通过。
+- 旧 GCC12 SMT 默认 8GiB GEM5 与新 REF 会触发内存大小断言；
+  因此统一切换时必须同时指定 `--mem-size=16GB`。
+- GCC12 SPEC06 SMT mcf/10688：使用新 REF 和 16GiB GEM5，通过本地
+  1M 指令 difftest 冒烟测试；该本地构建包含此前的中断和 CBO 修复。
+- GCC12 SPEC06 SMT 的完整兼容性和 Ruby/CHI 真双核回归待 CI 验证。
+
+## 以下为 2026-09-10 r3 的历史验证
+
 日期：2026-09-10。当前 GEM5 分支：`codex/spec17-gcc16-profile`。
 主线 `89e4b9e06f` 已通过 merge commit `c7b4907015` 合并；
 下面测试包含本 PR 的 FCSR、memdedup 和向量异常标志修复，不能把 merge SHA
