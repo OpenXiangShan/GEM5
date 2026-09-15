@@ -587,10 +587,30 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * arbitration failure flag on the packet, corrects statistics, and
      * returns false.
      *
+     * Supports two modes based on the pkt parameter:
+     * - pkt == nullptr: peek mode, only checks availability without allocation
+     * - pkt != nullptr: allocate mode, checks and allocates arbitration quota
+     *
      * @param pkt The memory request packet that requires an MSHR.
+     *            Pass nullptr for peek-only checks.
      * @return True if arbitration succeeds, false otherwise.
      */
     bool checkAndAllocateMSHRCycle(PacketPtr pkt);
+
+    /**
+     * @brief Helper function to compute the last tick of the cycle containing
+     * the given tick. Eliminates code duplication for cycle-end alignment.
+     *
+     * @param t The tick to query.
+     * @return The last tick of the cycle containing t.
+     */
+    Tick endOfCycle(Tick tick) const
+    {
+        // When the input is at the clock edge, align to the last tick of the current cycle.
+        if (tick % clockPeriod() == 0)
+            return tick + clockPeriod() - 1;
+        return cyclesToTicks(ticksToCycles(tick)) - 1;
+    }
 
     /*
      * Handle a timing request that hit in the cache
@@ -1368,6 +1388,13 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         /** Number of prefetch req Tag read fail because of load. */
         mutable statistics::Scalar prefetchTagReadFails;
+
+        /**
+         * Number of prefetch-demand conflicts in MSHR arbitration.
+         * This counter measures how often prefetches are deferred due to
+         * the "demand-priority + prefetch-deferral" policy.
+         */
+        statistics::Scalar pfMSHRArbConflicts;
 
         /** Number of data expansions. */
         statistics::Scalar dataExpansions;

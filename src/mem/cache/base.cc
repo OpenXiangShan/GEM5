@@ -46,6 +46,7 @@
 #include "mem/cache/base.hh"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 
 #include "base/compiler.hh"
@@ -376,26 +377,41 @@ BaseCache::checkAndAllocateMSHRCycle(PacketPtr pkt)
     if (mshrAllocPerCycle < 0)
         return true;
 
-    uint64_t curCycle = ticksToCycles(curTick());
+    // Determine mode: nullptr = peek (check only), non-null = allocate
+    const bool allocate = (pkt != nullptr);
+
+    // Use floor-division to compute the cycle number, avoiding any rounding
+    // that could mistakenly promote mid-cycle ticks to the next cycle.
+    uint64_t curCycle = curTick() / clockPeriod();
 
     // New cycle: reset counter and grant.
     if (lastMSHRAllocCycle != curCycle) {
-        accessCounter = 1;
-        lastMSHRAllocCycle = curCycle;
+        // In peek mode, counter and cycle are not modified;
+        // in allocate mode, initialize counter for the new cycle.
+        if (allocate) {
+            accessCounter = 1;
+            lastMSHRAllocCycle = curCycle;
+        }
         return true;
     }
 
     // Same cycle: allow up to mshrAllocPerCycle grants.
     if (accessCounter < mshrAllocPerCycle) {
-        accessCounter++;
+        if (allocate)
+            accessCounter++;
         return true;
     }
 
     // Exceeded per-cycle limit: fail and account.
     stats.MSHRArbFails++;
-    pkt->setMshrArbFailed();
-    pkt->req->decAccessDepth();
-    stats.cmdStats(pkt).misses[pkt->req->requestorId()]--;
+
+    // Support nullptr for prefetch arbitration pre-check
+    if (pkt) {
+        pkt->setMshrArbFailed();
+        pkt->req->decAccessDepth();
+        stats.cmdStats(pkt).misses[pkt->req->requestorId()]--;
+    }
+
     return false;
 }
 
@@ -1516,6 +1532,26 @@ BaseCache::getNextQueueEntry()
     if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
         bool has_pending_pkt = prefetcher->hasPendingPacket();
+
+        // Cache the condition to avoid redundant checks
+        const bool enableMSHRArb = (cacheLevel == 1 && !isReadOnly);
+
+        // Perform non-allocating peek: check allocation availability without
+        // allocating arbitration quota.
+        if (has_pending_pkt && enableMSHRArb &&
+            !checkAndAllocateMSHRCycle(nullptr)) {
+            DPRINTF(HWPrefetch, "Prefetch MSHR arbitration failed, "
+                    "will retry next cycle\n");
+            // Record one prefetch-demand conflict in MSHR arbitration.
+            stats.pfMSHRArbConflicts++;
+            // Arbitration failed: don't get packet, it stays in queue
+            // Will automatically retry next cycle
+            return nullptr;
+        }
+        // Verify prefetch is issued at cycle end
+        if (enableMSHRArb && curTick() != cyclesToTicks(ticksToCycles(curTick())) - 1)
+            return nullptr;
+
         PacketPtr pkt = nullptr;
         if (cacheLevel == 1) {
             // load & prefetch share a limited number of cache tag read ports
@@ -1555,6 +1591,16 @@ BaseCache::getNextQueueEntry()
                 // free the request and packet
                 delete pkt;
             } else {
+                // Perform the actual allocation-stage arbitration before allocation.
+                // Prevents quota overrun due to race between peek and allocate.
+                if (enableMSHRArb) {
+                    // Since peek passed and no interruption occurs within this flow,
+                    // the second-stage allocation must succeed.
+                    if (!checkAndAllocateMSHRCycle(pkt)) {
+                        panic("Prefetch MSHR second-stage allocation failed unexpectedly "
+                              "after successful peek");
+                    }
+                }
                 // Update statistic on number of prefetches issued
                 // (hwpf_mshr_misses)
                 assert(pkt->req->requestorId() < system->maxRequestors());
@@ -3177,6 +3223,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of hits in write buffer when missing in cache"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
+    ADD_STAT(pfMSHRArbConflicts, statistics::units::Count::get(),
+             "number of prefetch-demand conflicts in MSHR arbitration"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
              "number of data expansions"),
     ADD_STAT(dataContractions, statistics::units::Count::get(),
@@ -3667,12 +3715,22 @@ BaseCache::CacheReqPacketQueue::sendDeferredPacket()
         }
     }
 
-    // if we succeeded and are not waiting for a retry, schedule the
-    // next send considering when the next queue is ready, note that
-    // snoop responses have their own packet queue and thus schedule
-    // their own events
+    // If we succeeded and are not waiting for a retry, schedule the next send.
+    // If there's no earlier specific time:
+    // - For prefetch requests, align to the end of the next cycle.
+    // - Otherwise, use nextQueueReadyTime() as-is.
     if (!waitingOnRetry) {
         to_schedule = to_schedule ? to_schedule : cache.nextQueueReadyTime();
+        // When both MSHR and WriteBuffer are empty,
+        // the next cycle will allocate MSHR for pf requests.
+        const bool enableMSHRArb = cache.cacheLevel == 1 && !cache.isReadOnly;
+        bool isPrefetch = (cache.prefetcher && to_schedule == cache.nextPrefetchReadyTime()) &&
+                          (to_schedule != cache.mshrQueue.nextReadyTime()) &&
+                          (to_schedule != cache.writeBuffer.nextReadyTime());
+        if (isPrefetch && enableMSHRArb) {
+            assert(to_schedule == cache.nextQueueReadyTime());
+            to_schedule = cache.endOfCycle(std::max(to_schedule, curTick()));
+        }
         schedSendEvent(to_schedule);
     }
 }
