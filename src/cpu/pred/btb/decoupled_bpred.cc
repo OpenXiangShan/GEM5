@@ -986,19 +986,25 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter, const bool fromCommit)
+                            const unsigned &currentLoopIter, const bool fromCommit,
+                            bool fromPredecode)
 {
-    if (fromCommit) {
+    // Get branch type information
+    bool is_conditional = static_inst->isCondCtrl();
+    bool is_indirect = static_inst->isIndirectCtrl();
+
+    // Classify the recovery request before checking the FTQ target.  A
+    // request without a target is still a request from the corresponding
+    // recovery owner and must remain visible in the source statistics.
+    if (fromPredecode) {
+        dbpBtbStats.controlSquashFromPredecode++;
+    } else if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
         auto branchClass = classifyBranch(static_inst);
         addControlSquashCommitStat(branchClass);
     } else {
         dbpBtbStats.controlSquashFromDecode++;
     }
-
-    // Get branch type information
-    bool is_conditional = static_inst->isCondCtrl();
-    bool is_indirect = static_inst->isIndirectCtrl();
 
     if (!ftq.hasTarget(target_id, tid)) {
         threads[tid].redirectPending = false;
