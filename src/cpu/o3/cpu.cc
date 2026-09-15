@@ -42,6 +42,7 @@
 
 #include "cpu/o3/cpu.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
 
@@ -480,7 +481,11 @@ CPU::CPUStats::CPUStats(CPU *cpu)
         .precision(6);
     totalIpc = sum(committedInsts) / cpu->baseStats.numCycles;
 
-    baseRetiring = committedInsts / (cpu->issueWidth * cpu->baseStats.numCycles);
+    // Topdown slots count backend ops, so use committedOps to match the
+    // dispatchedInsts population below. Architectural instructions which do
+    // not enter an issue queue must not make retiring exceed dispatch.
+    baseRetiring = committedOps /
+        (cpu->issueWidth * cpu->baseStats.numCycles);
 
     frontendBound = cpu->fetch.getFetchStats().fetchBubbles /
         (cpu->issueWidth * cpu->baseStats.numCycles);
@@ -489,12 +494,47 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
     frontendBandwidthBound = frontendBound - frontendLatencyBound;
 
-    // badSpecBound = (INST_SPEC - INST_RETIRED + RECOVERY_BUBBLE)/(IssueBW * CPU_CYCLES)
-    badSpecBound = (cpu->iew.getIEWStats().dispatchedInsts - committedInsts + cpu->commit.getCommitStats().recovery_bubble) /
-         (cpu->issueWidth * cpu->baseStats.numCycles);
+    // badSpecBound =
+    //   (OPS_SPEC - OPS_RETIRED + RECOVERY_BUBBLE) / available slots.
+    // Clamp only reset-boundary skew: instructions already in flight when a
+    // stats reset occurs may retire before their dispatch is counted in the
+    // new interval.
+    badSpecBound
+        .functor([this, cpu] {
+            const auto cycles = cpu->baseStats.numCycles.value();
+            if (cycles == 0) {
+                return 0.0;
+            }
 
-    // branchMissPrediction = Bad Speculation * BR_MIS_PRED/TOTAL_FLUSH
-    branchMissPrediction = badSpecBound * cpu->commit.getCommitStats().branchMispredicts / cpu->commit.getCommitStats().totalSquash;
+            const auto speculative_ops =
+                cpu->iew.getIEWStats().dispatchedInsts.total();
+            const auto retired_ops = committedOps.total();
+            const auto recovery_slots =
+                cpu->commit.getCommitStats().recovery_bubble.total();
+            const auto available_slots = cpu->issueWidth * cycles;
+
+            return std::max(
+                0.0,
+                (speculative_ops - retired_ops + recovery_slots) /
+                    available_slots);
+        })
+        .precision(6);
+
+    // branchMissPrediction = Bad Speculation * BR_MIS_PRED / TOTAL_FLUSH.
+    // An interval without a squash has no branch-misprediction component.
+    branchMissPrediction
+        .functor([this, cpu] {
+            const auto total_squashes =
+                cpu->commit.getCommitStats().totalSquash.total();
+            if (total_squashes == 0) {
+                return 0.0;
+            }
+
+            return badSpecBound.value() *
+                cpu->commit.getCommitStats().branchMispredicts.total() /
+                total_squashes;
+        })
+        .precision(6);
 
     machineClears = badSpecBound - branchMissPrediction;
 
