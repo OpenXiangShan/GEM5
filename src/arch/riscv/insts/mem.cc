@@ -58,6 +58,10 @@ std::string
 Store::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
+    if (memAccessFlags & Request::CACHE_BLOCK_ZERO) {
+        ss << mnemonic << " (" << registerName(srcRegIdx(0)) << ')';
+        return ss.str();
+    }
     ss << mnemonic << ' ' << registerName(srcRegIdx(1)) << ", " <<
         offset << '(' << registerName(srcRegIdx(0)) << ')';
     return ss.str();

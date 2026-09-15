@@ -3001,7 +3001,11 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     if (!isLoad && !isAtomic) {
         // store inst temporally saves its data in memData
         inst->memData = new uint8_t[size];
-        memcpy(inst->memData, data, size);
+        if (flags & Request::STORE_NO_DATA) {
+            memset(inst->memData, 0, size);
+        } else {
+            memcpy(inst->memData, data, size);
+        }
     }
 
     /* This is the place were instructions get the effAddr. */

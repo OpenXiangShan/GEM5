@@ -2639,8 +2639,16 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
             Addr vaddr = request->getVaddr();
             Addr paddr = request->mainReq()->getPaddr();
             DPRINTF(LSQUnit, "Store [sn:%lli] insert into sbuffer\n", inst->seqNum);
+            // Cache-block zero requests can exceed the SQ data array size.
+            // Materialize their data only when handing them to the sbuffer.
+            std::vector<uint8_t> zeros;
+            auto *data = reinterpret_cast<uint8_t *>(storeWBIt->data());
+            if (storeWBIt->isAllZeros()) {
+                zeros.resize(request->_size, 0);
+                data = zeros.data();
+            }
             bool success = insertStoreBuffer(
-                vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size,
+                vaddr, paddr, data, request->_size,
                 request->mainReq()->getByteEnable(), inst->seqNum);
             if (!success) {
                 offload_fail[lsqID] = true;

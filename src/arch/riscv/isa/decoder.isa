@@ -586,6 +586,26 @@ decode QUADRANT {
                 0x1: fence_i({{
                 }}, uint64_t, IsNonSpeculative, IsSerializeAfter, No_OpClass);
             }
+            0x2: decode RD {
+                0x0: decode FUNCT12 {
+                    0x4: CBMOp::cbo_zero({{
+                        auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                        bool virt = xc->readMiscReg(MISCREG_VIRMODE);
+                        bool men = bits(xc->readMiscReg(MISCREG_MENVCFG), 7);
+                        bool sen = bits(xc->readMiscReg(MISCREG_SENVCFG), 7);
+                        bool hen = bits(xc->readMiscReg(MISCREG_HENVCFG), 7);
+                        if ((pm != PRV_M && !men) ||
+                            (!virt && pm == PRV_U && !sen)) {
+                            return std::make_shared<IllegalInstFault>(
+                                "cbo.zero disabled by envcfg", machInst);
+                        }
+                        if (virt && (!hen || (pm == PRV_U && !sen))) {
+                            return std::make_shared<HVFault>(machInst);
+                        }
+                        Mem = 0;
+                    }}, mem_flags=[CACHE_BLOCK_ZERO]);
+                }
+            }
         }
 
         0x04: decode FUNCT3 {
