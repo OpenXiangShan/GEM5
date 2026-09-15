@@ -95,6 +95,7 @@ def setKmhV3Params(args, system):
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
+        cpu.vectorMemCompletionDelay = 3
 
         # lsq
         cpu.LQEntries = 120
