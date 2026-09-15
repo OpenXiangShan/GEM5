@@ -13,6 +13,17 @@ rename width 8, group commit window 8 and successful-retirement quota 16.
 Existing non-Load fusion remains active. The default `commitInstWidth=0`
 preserves the old retirement loop's behavior for every compression policy.
 
+The standard `configs/example/kmhv3.py` entry point can select the same mode
+through the existing parameter interface:
+
+```sh
+--param='system.cpu[0].RobCompressPolicy=hybrid'
+```
+
+When this policy is selected, `kmhv3.py` supplies the Hybrid prerequisites
+automatically. Other `--param` assignments are applied afterward and can
+override the group size, widths, or retirement quota explicitly.
+
 ## Automated boundary tests
 
 ```sh
