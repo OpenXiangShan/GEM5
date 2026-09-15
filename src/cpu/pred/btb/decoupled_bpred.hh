@@ -448,6 +448,13 @@ class DecoupledBPUWithBTB : public BPredUnit
         return {id, target.startPC, target.predEndPC, target.predTaken,
                 target.predBranchInfo.pc, target.predBranchInfo.target};
     }
+    // Value prediction still needs the full FetchTarget so it can fold
+    // speculative history. Fetch itself should keep using ftqFetchBlock().
+    const FetchTarget &ftqFetchingTarget(ThreadID tid) const
+    {
+        assert(ftqHasFetching(tid));
+        return ftq.get(ftq.fetchId(tid), tid);
+    }
     bool ftqHasNext(ThreadID tid) const
     {
         return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);

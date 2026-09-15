@@ -14,11 +14,21 @@ int
 CompositeValuePredictorFixedPriorityArb::choose(
         const std::vector<VPChooserCandidate> &candidates)
 {
-    for (const auto &candidate : candidates) {
-        if (candidate.speculative) {
-            return candidate.childIndex;
+    constexpr ValuePredType priority[] = {
+        ValuePredType::VTAGE,
+        ValuePredType::EStride,
+        ValuePredType::EgDiff,
+    };
+
+    for (const auto predictorType : priority) {
+        for (const auto &candidate : candidates) {
+            if (candidate.speculative &&
+                    candidate.predictorType == predictorType) {
+                return candidate.childIndex;
+            }
         }
     }
+
     return -1;
 }
 

@@ -111,10 +111,9 @@ def setKmhV3IdealParams(args, system):
                 # Keep this order stable: it defines the fixed-priority order
                 # and the tie-break order for confidence arbitration.
                 predictor_types = [
-                    "egdiff",
                     "vtage",
                     "estride",
-                    "ideal-constant",
+                    "egdiff",
                 ]
             else:
                 predictor_types = [vp_type]
