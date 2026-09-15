@@ -993,12 +993,9 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
 
-    if (!ftq.hasTarget(target_id, tid)) {
-        threads[tid].redirectPending = false;
-        DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
-        return;
-    }
-
+    // Classify the recovery request before checking the FTQ target.  A
+    // request without a target is still a request from the corresponding
+    // recovery owner and must remain visible in the source statistics.
     if (fromPredecode) {
         dbpBtbStats.controlSquashFromPredecode++;
     } else if (fromCommit) {
@@ -1007,6 +1004,12 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
         addControlSquashCommitStat(branchClass);
     } else {
         dbpBtbStats.controlSquashFromDecode++;
+    }
+
+    if (!ftq.hasTarget(target_id, tid)) {
+        threads[tid].redirectPending = false;
+        DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
+        return;
     }
     auto &target = ftq.get(target_id, tid);
     // Get target address

@@ -2337,14 +2337,15 @@ Fetch::classifyPredecodeFault(const DynInstPtr &instruction,
 {
     if (instruction->readPredTaken() && !staticInst->isControl())
         return PredecodeFault::NonCfiTaken;
-    if (staticInst->isReturn() && !instruction->readPredTaken())
+    if (staticInst->isReturn() && !staticInst->isNonSpeculative() &&
+        !instruction->readPredTaken())
         return PredecodeFault::ReturnNotTaken;
     if (staticInst->isDirectCtrl()) {
         if (!instruction->readPredTaken() && staticInst->isUncondCtrl())
             return PredecodeFault::DirectNotTaken;
         if (instruction->readPredTaken()) {
             const auto target = instruction->branchTarget();
-            if (target->instAddr() != instruction->readPredTarg().instAddr())
+            if (*target != instruction->readPredTarg())
                 return PredecodeFault::DirectTargetMismatch;
         }
     }
@@ -2388,10 +2389,17 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
     instruction->setPredTaken(actuallyTaken);
     instruction->setPredTarg(target);
     assert(dbpbtb);
-    dbpbtb->controlSquash(
-        instruction->getFtqId(), instruction->pcState(), target,
-        instruction->staticInst, instruction->getInstBytes(), actuallyTaken,
-        instruction->seqNum, tid, instruction->getLoopIteration(), false, true);
+    if (fault == PredecodeFault::NonCfiTaken) {
+        dbpbtb->nonControlSquash(
+            instruction->getFtqId(), instruction->pcState(),
+            instruction->seqNum, tid, instruction->getLoopIteration());
+    } else {
+        dbpbtb->controlSquash(
+            instruction->getFtqId(), instruction->pcState(), target,
+            instruction->staticInst, instruction->getInstBytes(),
+            actuallyTaken, instruction->seqNum, tid,
+            instruction->getLoopIteration(), false, true);
+    }
 
     // The faulting instruction is already registered. Preserve older entries
     // that may still be waiting for Decode; squash only removes younger work.
@@ -2680,6 +2688,20 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 instruction->threadNumber, pc, *next_pc);
     }
 
+    // Value prediction must run before a predecode recovery can return early.
+    if (valuePred && instruction->canLVP()) {
+        valuepred::VPPredictRequest predictRequest;
+        predictRequest.pc = instruction->getPC();
+        predictRequest.seqNo = instruction->seqNum;
+        predictRequest.tid = tid;
+        // ExampleValuePredictor shows how a predictor can extend the public
+        // request with extra fetch-time inputs without changing core fields.
+        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
+                curTick(), instruction->opClass());
+        instruction->vpResult =
+            valuePred->valuePredict(predictRequest, instruction->vpRecord);
+    }
+
     predecodeRedirected = false;
     if (predecodeEnabled(tid, staticInst, curMacroop) &&
         !false_hit) {
@@ -2707,20 +2729,6 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Update the main PC state for the next instruction.
     set(pc, *next_pc);
-
-    // Do the value prediction
-    if (valuePred && instruction->canLVP()) {
-        valuepred::VPPredictRequest predictRequest;
-        predictRequest.pc = instruction->getPC();
-        predictRequest.seqNo = instruction->seqNum;
-        predictRequest.tid = tid;
-        // ExampleValuePredictor shows how a predictor can extend the public
-        // request with extra fetch-time inputs without changing core fields.
-        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
-                curTick(), instruction->opClass());
-        instruction->vpResult =
-            valuePred->valuePredict(predictRequest, instruction->vpRecord);
-    }
 
     return predictedBranch;
 }
