@@ -161,14 +161,16 @@ void
 L2CompositeWithWorkerPrefetcher::regProbeListeners()
 {
     CompositeWithWorkerPrefetcher::regProbeListeners();
-    lldp->regProbeListeners();
+    if (enableLLDP)
+        lldp->regProbeListeners();
 }
 
 void
 L2CompositeWithWorkerPrefetcher::setPacketReadyCallback(
     std::function<void(Tick)> callback)
 {
-    lldp->setPacketReadyCallback(callback);
+    if (enableLLDP)
+        lldp->setPacketReadyCallback(callback);
     Base::setPacketReadyCallback(std::move(callback));
 }
 
@@ -182,9 +184,18 @@ L2CompositeWithWorkerPrefetcher::hasPendingPacket()
 PacketPtr
 L2CompositeWithWorkerPrefetcher::getPacket()
 {
-    if (enableLLDP && lldp->nextPrefetchReadyTime() <= curTick())
+    const bool lldpReady = enableLLDP &&
+        lldp->nextPrefetchReadyTime() <= curTick();
+    const bool queuedReady = Queued::nextPrefetchReadyTime() <= curTick();
+    if (lldpReady && (!queuedReady || preferLLDP)) {
+        preferLLDP = false;
         return lldp->getPacket();
-    return Queued::getPacket();
+    }
+    if (queuedReady) {
+        preferLLDP = true;
+        return Queued::getPacket();
+    }
+    return nullptr;
 }
 
 Tick

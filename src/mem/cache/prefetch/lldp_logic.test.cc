@@ -101,6 +101,25 @@ TEST(LldpChain, SourceFormDoesNotMeanReplaySupport)
     EXPECT_EQ(other.dualSrcRegisterOps, 0);
 }
 
+TEST(LldpConfidence, ImmediateChangesOnlyAfterConfidenceExpires)
+{
+    int64_t immediate = 8;
+    uint8_t confidence = 3;
+
+    EXPECT_FALSE(updateConfirmedImmediate(16, immediate, confidence, 1, 7));
+    EXPECT_EQ(immediate, 8);
+    EXPECT_EQ(confidence, 2);
+    EXPECT_FALSE(updateConfirmedImmediate(16, immediate, confidence, 1, 7));
+    EXPECT_EQ(immediate, 8);
+    EXPECT_EQ(confidence, 1);
+    EXPECT_TRUE(updateConfirmedImmediate(16, immediate, confidence, 1, 7));
+    EXPECT_EQ(immediate, 16);
+    EXPECT_EQ(confidence, 1);
+
+    EXPECT_FALSE(updateConfirmedImmediate(16, immediate, confidence, 1, 7));
+    EXPECT_EQ(confidence, 2);
+}
+
 TEST(LldpChain, MixedChainsStayExcludedAndLoadRestarts)
 {
     auto single = Chain::start(0x100).extend(decodeOperation("addi", 8));

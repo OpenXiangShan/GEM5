@@ -1,5 +1,6 @@
 #include "mem/cache/xs_l2/L2CacheWrapper.hh"
 
+#include <algorithm>
 #include <cmath>
 
 #include "base/trace.hh"
@@ -42,24 +43,33 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), &sliced_cache_accessor, 1 << block_bits);
         prefetcher->setPacketReadyCallback(
-            [this](Tick) { scheduleSendPrefetch(); });
+            [this](Tick ready) { scheduleSendPrefetch(ready); });
     }
 }
 
 bool
 L2CacheWrapper::needPrefetch()
 {
-    return prefetcher && (prefetcher->hasPendingPacket() || outstanding_prefetch) && !prefetch_blocked;
+    return prefetcher && (prefetcher->nextPrefetchReadyTime() != MaxTick ||
+                          outstanding_prefetch) && !prefetch_blocked;
 }
 
 void
-L2CacheWrapper::scheduleSendPrefetch()
+L2CacheWrapper::scheduleSendPrefetch(Tick ready)
 {
-    if (needPrefetch() && !sendPrefetchEvent.scheduled()) {
-        // schedule at the last tick of next cycle
-        // because prefetch has lower priority than other requests
-        schedule(sendPrefetchEvent, nextCycleLastTick());
-    }
+    if (!needPrefetch())
+        return;
+
+    Tick nextReady = outstanding_prefetch ? curTick() :
+        prefetcher->nextPrefetchReadyTime();
+    if (ready != MaxTick)
+        nextReady = std::min(nextReady, ready);
+    const Tick sendTick = std::max(nextCycleLastTick(), nextReady);
+
+    if (!sendPrefetchEvent.scheduled())
+        schedule(sendPrefetchEvent, sendTick);
+    else if (sendPrefetchEvent.when() != sendTick)
+        reschedule(sendPrefetchEvent, sendTick);
 }
 
 void
@@ -69,11 +79,13 @@ L2CacheWrapper::processSendPrefetchEvent()
         return;
     }
 
-    if (!outstanding_prefetch && prefetcher && prefetcher->hasPendingPacket()) {
+    if (!outstanding_prefetch && prefetcher && prefetcher->hasPendingPacket() &&
+        prefetcher->nextPrefetchReadyTime() <= curTick()) {
         outstanding_prefetch = prefetcher->getPacket();
     }
 
     if (!outstanding_prefetch) {
+        scheduleSendPrefetch();
         return;
     }
 

@@ -42,6 +42,30 @@ struct Operation
     bool operator!=(const Operation &b) const { return !(*this == b); }
 };
 
+// Keep replaying a confirmed load displacement until contrary training has
+// exhausted its confidence.  A newly selected displacement starts over at
+// the configured initial confidence.
+inline bool
+updateConfirmedImmediate(int64_t observed, int64_t &confirmed,
+                         uint8_t &confidence, uint8_t initialConfidence,
+                         uint8_t maxConfidence)
+{
+    if (observed == confirmed) {
+        if (confidence < maxConfidence)
+            ++confidence;
+        return false;
+    }
+
+    if (confidence)
+        --confidence;
+    if (confidence)
+        return false;
+
+    confirmed = observed;
+    confidence = initialConfidence;
+    return true;
+}
+
 inline unsigned category(Op op)
 {
     switch (op) {

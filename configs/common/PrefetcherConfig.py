@@ -484,8 +484,9 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
         prefetcher.enable_cplx = True
     if hasattr(options, 'l1d_enable_lldp'):
         prefetcher.enable_lldp = options.l1d_enable_lldp
-        if options.l1d_enable_lldp and hasattr(prefetcher, 'lldp'):
-            prefetcher.lldp.training_cpu = options._lldp_training_cpu
+        if hasattr(prefetcher, 'lldp'):
+            prefetcher.lldp.training_cpu = (
+                options._lldp_training_cpu if options.l1d_enable_lldp else NULL)
 
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
@@ -601,14 +602,22 @@ def create_prefetcher(cpu, cache_level, options):
         return prefetcher
 
     if prefetcher_name == 'MultiPrefetcher':
+        enable_lldp = (
+            getattr(options, 'l1d_enable_lldp', False)
+            if cache_level == 'l1d' else
+            getattr(options, 'l2_enable_lldp', False))
+        training_cpu = cpu if cache_level == 'l1d' else NULL
         for child in prefetcher.prefetchers:
             if hasattr(child, 'training_cpu'):
-                child.training_cpu = cpu if cache_level == 'l1d' else NULL
+                child.training_cpu = training_cpu
+            if hasattr(child, 'lldp') and hasattr(child.lldp, 'training_cpu'):
+                child.lldp.training_cpu = training_cpu
             if hasattr(child, 'enable_lldp'):
-                child.enable_lldp = (
-                    getattr(options, 'l1d_enable_lldp', False)
-                    if cache_level == 'l1d' else
-                    getattr(options, 'l2_enable_lldp', False))
+                child.enable_lldp = enable_lldp
+        if enable_lldp:
+            lldp = LLDPrefetcher(is_sub_prefetcher=True)
+            lldp.training_cpu = training_cpu
+            prefetcher.prefetchers = list(prefetcher.prefetchers) + [lldp]
 
 
     if prefetcher_name == 'XSCompositePrefetcher':

@@ -1357,8 +1357,7 @@ class MultiPrefetcher(BasePrefetcher):
     on_inst  = False
 
     prefetchers = VectorParam.BasePrefetcher(
-        [XSCompositePrefetcher(), BOPPrefetcher(),
-         LLDPrefetcher(is_sub_prefetcher=True)],
+        [XSCompositePrefetcher(), BOPPrefetcher()],
         "Array of prefetchers")
 
 class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):

@@ -156,14 +156,11 @@ LLDPrefetcher::makeUpdate(Training train)
         if (!allocate)
             entry.pConf = std::min<unsigned>(maxConf, entry.pConf + 1);
     } else {
-        if (sub.loadImm == train.loadImm)
-            sub.immConf = std::min<unsigned>(maxConf, sub.immConf + 1);
-        else if (sub.immConf)
-            --sub.immConf;
+        lldp::updateConfirmedImmediate(train.loadImm, sub.loadImm,
+                                       sub.immConf, initialConf, maxConf);
         sub.cConf = std::min<unsigned>(maxConf, sub.cConf + 1);
     }
     sub.chain = train.chain;
-    sub.loadImm = train.loadImm;
     entry.replacement.touch(col);
     return {train, row, entry};
 }

@@ -241,6 +241,7 @@ class XSCompositePrefetcher : public Queued
     const bool enableOpt;
     const bool enableXsstream;
     const bool enableLLDP;
+    bool preferLLDP{false};
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
 

@@ -8,6 +8,7 @@
 #include "mem/cache/prefetch/cmc.hh"
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "mem/cache/prefetch/despacito_stream.hh"
+#include "mem/cache/prefetch/lldp.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
 namespace gem5
@@ -72,6 +73,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     const bool enableDespacitoStream;
     LLDPrefetcher *lldp;
     const bool enableLLDP;
+    bool preferLLDP{false};
 
     bool offloadLowAccuracy = true;
     protected:

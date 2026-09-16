@@ -865,14 +865,16 @@ void
 XSCompositePrefetcher::regProbeListeners()
 {
     Queued::regProbeListeners();
-    lldp->regProbeListeners();
+    if (enableLLDP)
+        lldp->regProbeListeners();
 }
 
 void
 XSCompositePrefetcher::setPacketReadyCallback(
     std::function<void(Tick)> callback)
 {
-    lldp->setPacketReadyCallback(callback);
+    if (enableLLDP)
+        lldp->setPacketReadyCallback(callback);
     Base::setPacketReadyCallback(std::move(callback));
 }
 
@@ -886,9 +888,18 @@ XSCompositePrefetcher::hasPendingPacket()
 PacketPtr
 XSCompositePrefetcher::getPacket()
 {
-    if (enableLLDP && lldp->nextPrefetchReadyTime() <= curTick())
+    const bool lldpReady = enableLLDP &&
+        lldp->nextPrefetchReadyTime() <= curTick();
+    const bool queuedReady = Queued::nextPrefetchReadyTime() <= curTick();
+    if (lldpReady && (!queuedReady || preferLLDP)) {
+        preferLLDP = false;
         return lldp->getPacket();
-    return Queued::getPacket();
+    }
+    if (queuedReady) {
+        preferLLDP = true;
+        return Queued::getPacket();
+    }
+    return nullptr;
 }
 
 Tick

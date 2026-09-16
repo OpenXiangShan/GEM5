@@ -39,8 +39,6 @@
 
 #include <utility>
 
-#include "mem/cache/prefetch/lldp.hh"
-#include "mem/cache/prefetch/sms.hh"
 #include "params/MultiPrefetcher.hh"
 
 namespace gem5
@@ -69,27 +67,15 @@ void
 Multi::regProbeListeners()
 {
     Base::regProbeListeners();
-    for (auto pf : prefetchers) {
-        if (auto *lldp = dynamic_cast<LLDPrefetcher *>(pf)) {
-            lldp->regProbeListeners();
-        } else if (auto *composite =
-                   dynamic_cast<XSCompositePrefetcher *>(pf)) {
-            composite->regProbeListeners();
-        }
-    }
+    for (auto pf : prefetchers)
+        pf->regProbeListeners();
 }
 
 void
 Multi::setPacketReadyCallback(std::function<void(Tick)> callback)
 {
-    for (auto pf : prefetchers) {
-        if (auto *lldp = dynamic_cast<LLDPrefetcher *>(pf)) {
-            lldp->setPacketReadyCallback(callback);
-        } else if (auto *composite =
-                   dynamic_cast<XSCompositePrefetcher *>(pf)) {
-            composite->setPacketReadyCallback(callback);
-        }
-    }
+    for (auto pf : prefetchers)
+        pf->setPacketReadyCallback(callback);
     Base::setPacketReadyCallback(std::move(callback));
 }
 
