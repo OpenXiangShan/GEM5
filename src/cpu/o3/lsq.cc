@@ -1480,10 +1480,9 @@ LSQ::processWriteback()
     storeBufferWriteback();
 
 
-    if (storeBufferBlocked()) {
-        DPRINTF(StoreBuffer, "Store buffer is blocking, skip SQ offload\n");
-        return;
-    }
+    // Output backpressure is independent from SQ->SBuffer enqueue ready.
+    // Continue offering entries that can allocate or merge; the blocked
+    // eviction/replay is retried by its own path below.
 
     std::vector<uint32_t> offload_quota(numThreads, 0);
     std::vector<uint32_t> offload_demand(numThreads, 0);
