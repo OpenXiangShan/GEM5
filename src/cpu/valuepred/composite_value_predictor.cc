@@ -123,6 +123,9 @@ CompositeValuePredictor::update(const VPUpdateInfo &updateInfo,
         childFeedback.wouldHaveBeenCorrect =
             childFeedback.offeredPrediction &&
             childFeedback.predictedValue == updateInfo.actualValue;
+        childFeedback.overallPredictionMade = feedback.overallPredictionMade;
+        childFeedback.overallPredictionCorrect =
+            feedback.overallPredictionCorrect;
         if (childFeedback.offeredPrediction) {
             offeredChildren++;
             compositeStats.childOffered[i]++;
@@ -159,7 +162,7 @@ CompositeValuePredictor::update(const VPUpdateInfo &updateInfo,
         }
     }
 
-    if (offeredChildren) {
+    if (offeredChildren > 1) {
         compositeStats.multiCandidatePredictions++;
     }
 
