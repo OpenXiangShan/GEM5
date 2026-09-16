@@ -614,7 +614,11 @@ def create_prefetcher(cpu, cache_level, options):
                 child.lldp.training_cpu = training_cpu
             if hasattr(child, 'enable_lldp'):
                 child.enable_lldp = enable_lldp
-        if enable_lldp:
+        has_enabled_lldp_child = any(
+            hasattr(child, 'lldp') and
+            getattr(child, 'enable_lldp', False)
+            for child in prefetcher.prefetchers)
+        if enable_lldp and not has_enabled_lldp_child:
             lldp = LLDPrefetcher(is_sub_prefetcher=True)
             lldp.training_cpu = training_cpu
             prefetcher.prefetchers = list(prefetcher.prefetchers) + [lldp]
