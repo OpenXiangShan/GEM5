@@ -586,8 +586,11 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         // * this cache is mostly exclusive and will not fill (since
         //   it does not fill it will have to writeback the dirty data
         //   immediately which generates uneccesary writebacks).
-        bool force_clean_rsp = isReadOnly || clusivity == enums::mostly_excl;
-        cmd = needsWritable ? MemCmd::ReadExReq :
+        const bool pdb_prefetch =
+            pdbEnabled && cpu_pkt->cmd == MemCmd::HardPFReq;
+        bool force_clean_rsp =
+            isReadOnly || clusivity == enums::mostly_excl || pdb_prefetch;
+        cmd = needsWritable && !pdb_prefetch ? MemCmd::ReadExReq :
             (force_clean_rsp ? MemCmd::ReadCleanReq : MemCmd::ReadSharedReq);
     }
     PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
@@ -1167,6 +1170,21 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
     // original packet up front
     bool invalidate = pkt->isInvalidate();
     [[maybe_unused]] bool needs_writable = pkt->needsWritable();
+
+    const int pdb_index = findPdbEntry(pkt->getBlockAddr(blkSize),
+                                       pkt->isSecure());
+    if (pdb_index >= 0 &&
+        (pdbEntries[pdb_index].state == PdbEntryState::Resident ||
+         pdbEntries[pdb_index].state == PdbEntryState::MovePending)) {
+        if (invalidate || needs_writable) {
+            invalidatePdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure());
+        } else if (pkt->mustCheckAbove()) {
+            pkt->setBlockCached();
+        } else if (pkt->isRead()) {
+            // PDB and tags share one snoop-filter port and holder bit.
+            pkt->setHasSharers();
+        }
+    }
 
     // at the moment we could get an uncacheable write which does not
     // have the invalidate flag, and we need a suitable way of dealing

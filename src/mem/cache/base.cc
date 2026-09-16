@@ -416,12 +416,16 @@ BaseCache::storePdbFill(PacketPtr pkt)
     const Addr block_addr = pkt->getBlockAddr(blkSize);
     const bool secure = pkt->isSecure();
     const int index = findPdbEntry(block_addr, secure);
-    if (index < 0 || !pkt->hasData() || pkt->getSize() != blkSize) {
+    if (index < 0 || pdbEntries[index].state != PdbEntryState::Reserved ||
+        !pkt->hasData() || pkt->getSize() != blkSize) {
         stats.pdbFillDrops++;
         if (index >= 0)
             cancelPdbReservation(block_addr, secure);
         return false;
     }
+    panic_if(pkt->cacheResponding() && !pkt->hasSharers(),
+             "%s: PDB cannot retain dirty ownership for %#llx\n",
+             name(), block_addr);
     auto &entry = pdbEntries[index];
     std::copy(pkt->getConstPtr<uint8_t>(),
               pkt->getConstPtr<uint8_t>() + blkSize,
@@ -475,6 +479,7 @@ BaseCache::tryPdbHit(PacketPtr pkt, Cycles &lat)
 {
     pdbHitLastAccess = false;
     if (!pdbEnabled || !pkt->isDemand() || !pkt->isRead() ||
+        pkt->needsWritable() || pkt->isLLSC() || pkt->isLockedRMW() ||
         pkt->req->isUncacheable())
         return false;
     stats.pdbLookups++;
@@ -516,6 +521,7 @@ BaseCache::schedulePdbMove(unsigned entry)
     if (!pdbEnabled || entry >= pdbEntries.size() ||
         pdbEntries[entry].state != PdbEntryState::Resident)
         return;
+
     if (pdbMovesInFlight >= pdbMoveSlots) {
         stats.pdbMoveDeferred++;
         stats.pdbMoveSlotStalls++;
@@ -539,27 +545,48 @@ BaseCache::processPdbMove(unsigned entry, uint64_t generation)
         return;
     assert(pdbMovesInFlight > 0);
     --pdbMovesInFlight;
+
     auto &pdb_entry = pdbEntries[entry];
-    Request::Flags flags = pdb_entry.secure ?
+    const Addr addr = pdb_entry.blockAddr;
+    const bool secure = pdb_entry.secure;
+    if (mshrQueue.findMatch(addr, secure) ||
+        writeBuffer.findMatch(addr, secure) || writeBuffer.isFull()) {
+        pdb_entry.state = PdbEntryState::Resident;
+        stats.pdbMoveDeferred++;
+        return;
+    }
+    // A demand fill may have won the race. Never overwrite its newer data.
+    if (tags->findBlock(addr, secure)) {
+        pdb_entry.state = PdbEntryState::Invalid;
+        stats.pdbMoveCanceled++;
+        updatePdbOccupancyStats();
+        return;
+    }
+    Request::Flags flags = secure ?
         Request::Flags(Request::SECURE) : Request::Flags(0);
-    RequestPtr req = std::make_shared<Request>(pdb_entry.blockAddr, blkSize,
-                                                flags, Request::wbRequestorId);
-    PacketPtr pkt = new Packet(req, MemCmd::ReadResp);
-    pkt->allocate();
+    RequestPtr req = std::make_shared<Request>(
+        addr, blkSize, flags, Request::wbRequestorId);
+    Packet pkt(req, MemCmd::ReadResp);
+    pkt.allocate();
+    pkt.setHasSharers();
     std::copy(pdb_entry.data.begin(), pdb_entry.data.end(),
-              pkt->getPtr<uint8_t>());
+              pkt.getPtr<uint8_t>());
     PacketList writebacks;
-    CacheBlk *blk = tags->findBlock(pdb_entry.blockAddr, pdb_entry.secure);
-    blk = handleFill(pkt, blk, writebacks, true);
-    if (blk == tempBlock && tempBlock->isValid())
-        evictBlock(blk, writebacks);
+    CacheBlk *blk = handleFill(
+        &pkt, nullptr, writebacks, true, PrefetchSourceType::PF_NONE,
+        nullptr, false);
+    if (!blk) {
+        // The PDB remains the coherent clean copy until a later hit retries.
+        pdb_entry.state = PdbEntryState::Resident;
+        stats.pdbMoveDeferred++;
+    } else {
+        stats.pdbMoveCompleted++;
+        stats.pdbBytesMoved += blkSize;
+        pdb_entry.state = PdbEntryState::Invalid;
+        writePdbDbRecord(6, addr, secure, blkSize);
+    }
     doWritebacks(writebacks, clockEdge(fillLatency));
-    stats.pdbMoveCompleted++;
-    stats.pdbBytesMoved += blkSize;
-    pdb_entry.state = PdbEntryState::Invalid;
     updatePdbOccupancyStats();
-    writePdbDbRecord(6, pdb_entry.blockAddr, pdb_entry.secure, blkSize);
-    delete pkt;
 }
 
 void
@@ -1385,7 +1412,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     assert(doFastWriteline ? !mshr->wasWholeLineWrite || pkt->isInvalidate() : true);
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
-    const bool pdb_only_fill = pdbEnabled && pure_prefetch_fill && is_fill;
+    const bool pdb_only_fill =
+        pdbEnabled && pure_prefetch_fill && is_fill && !blk;
     if (pdb_only_fill && !is_error) {
         storePdbFill(pkt);
     } else if (pdb_only_fill && is_error) {
@@ -1398,6 +1426,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     bool dcache_refill_need_data_read = false;
 
     if (is_fill && !is_error && !pdb_only_fill) {
+        // A normal response won the race with a resident or pending PDB
+        // copy. Keep a single physical copy behind this snoop-filter port.
+        if (pdbEnabled)
+            invalidatePdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure());
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
 
@@ -1661,6 +1693,8 @@ BaseCache::functionalAccess(PacketPtr pkt, bool from_cpu_side)
 {
     Addr blk_addr = pkt->getBlockAddr(blkSize);
     bool is_secure = pkt->isSecure();
+    if (pdbEnabled && (pkt->isWrite() || pkt->isInvalidate()))
+        invalidatePdbEntry(blk_addr, is_secure);
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), is_secure);
     MSHR *mshr = mshrQueue.findMatch(blk_addr, is_secure);
 
@@ -2616,7 +2650,8 @@ BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 CacheBlk*
 BaseCache::handleFill(
     PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
-    PrefetchSourceType prefetch_fill_source, bool *refill_need_data_read)
+    PrefetchSourceType prefetch_fill_source, bool *refill_need_data_read,
+    bool allow_temp)
 {
     assert(pkt->isResponse());
     Addr addr = pkt->getAddr();
@@ -2644,6 +2679,8 @@ BaseCache::handleFill(
                 refill_need_data_read) : nullptr;
 
         if (!blk) {
+            if (!allow_temp)
+                return nullptr;
             // No replaceable block or a mostly exclusive
             // cache... just use temporary storage to complete the
             // current request and then get rid of it

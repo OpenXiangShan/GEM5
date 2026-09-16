@@ -976,7 +976,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     CacheBlk *handleFill(
         PacketPtr pkt, CacheBlk *blk, PacketList &writebacks, bool allocate,
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
-        bool *refill_need_data_read = nullptr);
+        bool *refill_need_data_read = nullptr, bool allow_temp = true);
 
     /**
      * Allocate a new block and perform any necessary writebacks
