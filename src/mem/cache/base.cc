@@ -3523,9 +3523,22 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
         pkt->clearMshrArbFailed();
         pkt->clearMshrAliasFailed();
         pkt->clearHitInWriteBuffer();
-        cache.recvTimingReq(pkt);
+        pkt->sbufferMergeFailed = false;
+        if (pkt->sbufferMergeTarget) {
+            assert(cache.level() == 1 && !cache.isReadOnly);
+            assert(pkt->isDcacheMainPipeSbufferReq());
+            auto *mshr = cache.mshrQueue.findMatch(
+                pkt->getBlockAddr(cache.blkSize), pkt->isSecure());
+            pkt->sbufferMergeFailed =
+                !mshr || !mshr->canMergeSbufferStore(pkt->sbufferMergeTarget);
+        }
+        // Reject before access() can satisfy a late same-line store as a
+        // cache hit while an older target still awaits its CPU response.
+        if (!pkt->sbufferMergeFailed) {
+            cache.recvTimingReq(pkt);
+        }
         if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
-            pkt->isHitInWriteBuffer()) {
+            pkt->isHitInWriteBuffer() || pkt->sbufferMergeFailed) {
             // If the MSHR arbitration failed, we need to retry later.
             // We will schedule a retry event to try again.
             if (sendRetryEvent.scheduled()) {

@@ -144,7 +144,7 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
     bool full_forward = true;
     auto *lsq = lsqreq->_port.getLsq();
     auto *inflight_entry = lsq->find_inflight_store_buffer_entry(
-        blockPaddr, load_tid);
+        blockPaddr, load_tid, load_seq);
     bool miss_forward = false;
     auto byteEligible = [&](StoreBufferEntry *entry, int byte_idx) {
         return entry && entry->tid == load_tid && entry->seqNum < load_seq &&
@@ -152,6 +152,8 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
     };
     for (int i = 0; i < req->getSize(); i++) {
         assert(goffset + i < lsqreq->_size);
+        auto *inflight_byte = lsq->find_inflight_store_buffer_entry(
+            blockPaddr, load_tid, load_seq, offset + i);
         const bool vice_eligible = byteEligible(vice, offset + i);
         const bool self_eligible = byteEligible(this, offset + i);
         if (vice_eligible) {
@@ -165,11 +167,11 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
                 LSQRequest::FWDPacket{
                     .idx = goffset + i, .byte = blockDatas[offset + i]});
             miss_forward |= this == inflight_entry;
-        } else if (byteEligible(inflight_entry, offset + i)) {
+        } else if (inflight_byte) {
             lsqreq->SBforwardPackets.push_back(
                 LSQRequest::FWDPacket{
                     .idx = goffset + i,
-                    .byte = inflight_entry->blockDatas[offset + i]});
+                    .byte = inflight_byte->blockDatas[offset + i]});
             miss_forward = true;
         } else {
             full_forward = false;
@@ -428,6 +430,8 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Outstanding store misses whose SBuffer entries are released"),
       ADD_STAT(sbufferMissSameLineReplay, statistics::units::Count::get(),
                "S2 store retries waiting for an outstanding same-line store"),
+      ADD_STAT(sbufferMissMerged, statistics::units::Count::get(),
+               "Store misses accepted into an outstanding store-origin MSHR"),
       ADD_STAT(sbufferMissForward, statistics::units::Count::get(),
                "Load forwarding queries using accepted store miss data"),
       ADD_STAT(sbufferDcacheReqBlocked, statistics::units::Count::get(),
@@ -1749,8 +1753,23 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
 
     // Issue to the real classic cache only at fake S2 so StoreBuffer misses
     // cannot allocate or merge MSHRs at fake-pipe admission time.
-    if (sbufferMissRequests.count(data_pkt->getAddr())) {
-        ++stats.sbufferMissSameLineReplay;
+    auto pending = sbufferMissRequests.find(data_pkt->getAddr());
+    const bool same_line = pending != sbufferMissRequests.end();
+    bool compatible = true;
+    data_pkt->sbufferMergeTarget = nullptr;
+    data_pkt->sbufferMergeFailed = false;
+    if (same_line) {
+        auto *previous = pending->second.back();
+        const auto *previous_entry = previous->sbuffer_entry;
+        // Do not merge different SMT threads or virtual aliases. The cache
+        // additionally checks that the predecessor is still in a mergeable
+        // store-origin MSHR, rather than only awaiting its CPU response.
+        compatible = previous_entry->tid == request->sbuffer_entry->tid &&
+            getDcacheSetKey(previous_entry->blockVaddr) ==
+            getDcacheSetKey(request->sbuffer_entry->blockVaddr);
+        data_pkt->sbufferMergeTarget = previous->mainPacket();
+    }
+    if (!compatible) {
         result = DcacheMainPipeS2Result::Blocked;
     } else if (!cacheBlocked() && cachePortAvailable(false)) {
         if (!dcachePort.sendTimingReq(data_pkt)) {
@@ -1759,6 +1778,15 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
         }
     } else {
         result = DcacheMainPipeS2Result::Blocked;
+    }
+    data_pkt->sbufferMergeTarget = nullptr;
+    if (same_line) {
+        if (result == DcacheMainPipeS2Result::Blocked) {
+            ++stats.sbufferMissSameLineReplay;
+        } else {
+            assert(!data_pkt->isDcacheMainPipeSbufferHit());
+            ++stats.sbufferMissMerged;
+        }
     }
 
     if (result == DcacheMainPipeS2Result::GoToS3) {
@@ -1810,19 +1838,18 @@ LSQ::release_sbuffer_miss_entry(SbufferRequest *request)
     request->mainPacket()->deleteData();
     request->mainPacket()->dataStatic(request->_data);
 
-    const auto [iterator, inserted] = sbufferMissRequests.emplace(
-        entry->blockPaddr, request);
-    assert(inserted);
+    sbufferMissRequests[entry->blockPaddr].push_back(request);
+    ++sbufferMissRequestCount;
     sbufferMissSeqs[entry->tid].insert(entry->seqNum);
     entry->request = nullptr;
     storeBuffer.release(entry);
     ++stats.sbufferMissEntriesReleased;
-    stats.sbufferMissPending = sbufferMissRequests.size();
+    stats.sbufferMissPending = sbufferMissRequestCount;
     DPRINTF(StoreBuffer,
             "[tid:%u] Release sbuffer entry[%#lx] on miss acceptance, "
             "sbuffer size: %llu, pending misses: %llu\n",
             request->sbuffer_entry->tid, request->mainReq()->getPaddr(),
-            storeBuffer.size(), sbufferMissRequests.size());
+            storeBuffer.size(), sbufferMissRequestCount);
 }
 
 void
@@ -1847,13 +1874,20 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
         auto *entry = request->sbuffer_entry;
         auto pending = sbufferMissRequests.find(entry->blockPaddr);
         assert(pending != sbufferMissRequests.end());
-        assert(pending->second == request);
-        sbufferMissRequests.erase(pending);
+        auto &requests = pending->second;
+        auto target = std::find(requests.begin(), requests.end(), request);
+        assert(target != requests.end());
+        requests.erase(target);
+        if (requests.empty()) {
+            sbufferMissRequests.erase(pending);
+        }
+        assert(sbufferMissRequestCount > 0);
+        --sbufferMissRequestCount;
         auto &sequences = sbufferMissSeqs[entry->tid];
         auto sequence = sequences.find(entry->seqNum);
         assert(sequence != sequences.end());
         sequences.erase(sequence);
-        stats.sbufferMissPending = sbufferMissRequests.size();
+        stats.sbufferMissPending = sbufferMissRequestCount;
     } else {
         storeBuffer.release(request->sbuffer_entry);
     }
@@ -2841,7 +2875,7 @@ LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid,
 {
     auto entry = storeBuffer.get(load_tid, block_paddr);
     if (!entry) {
-        entry = find_inflight_store_buffer_entry(block_paddr, load_tid);
+        entry = find_inflight_store_buffer_entry(block_paddr, load_tid, load_seq);
     }
     if (!entry) {
         return nullptr;
@@ -2853,20 +2887,29 @@ LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid,
     }
 
     auto *inflight_entry = find_inflight_store_buffer_entry(
-        block_paddr, load_tid);
+        block_paddr, load_tid, load_seq);
     return inflight_entry && inflight_entry->seqNum < load_seq ?
         inflight_entry : nullptr;
 }
 
 LSQ::StoreBufferEntry *
-LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid) const
+LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid,
+                                      InstSeqNum load_seq, int byte_idx) const
 {
     auto pending = sbufferMissRequests.find(block_paddr);
-    if (pending == sbufferMissRequests.end() ||
-        pending->second->sbuffer_entry->tid != load_tid) {
+    if (pending == sbufferMissRequests.end()) {
         return nullptr;
     }
-    return pending->second->sbuffer_entry;
+    // Each list is bounded by accepted cache targets and pending responses.
+    for (auto it = pending->second.rbegin(); it != pending->second.rend();
+         ++it) {
+        auto *entry = (*it)->sbuffer_entry;
+        if (entry->tid == load_tid && entry->seqNum < load_seq &&
+            (byte_idx < 0 || entry->validMask[byte_idx])) {
+            return entry;
+        }
+    }
+    return nullptr;
 }
 
 void
@@ -3390,7 +3433,7 @@ LSQ::SbufferRequest::SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, ui
     lsq = port->getLsq();
     port->numSBufferRequest++;
     assert(port->numSBufferRequest <= lsq->getSbufferEntries() +
-           lsq->sbufferMissRequests.size());
+           lsq->sbufferMissRequestCount);
 }
 
 LSQ::SbufferRequest::~SbufferRequest() {

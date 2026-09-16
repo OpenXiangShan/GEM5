@@ -1091,7 +1091,8 @@ class LSQ
                                                      ThreadID load_tid,
                                                      InstSeqNum load_seq) const;
     StoreBufferEntry *find_inflight_store_buffer_entry(
-        Addr block_paddr, ThreadID load_tid) const;
+        Addr block_paddr, ThreadID load_tid,
+        InstSeqNum load_seq, int byte_idx = -1) const;
     void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
                                         const std::vector<bool> &byte_enable);
 
@@ -1491,7 +1492,10 @@ class LSQ
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
-    std::unordered_map<Addr, SbufferRequest *> sbufferMissRequests;
+    // Keep each accepted target alive until its own cache response. The
+    // per-line order also supplies youngest-eligible-byte forwarding.
+    std::unordered_map<Addr, std::vector<SbufferRequest *>> sbufferMissRequests;
+    unsigned sbufferMissRequestCount = 0;
     std::multiset<InstSeqNum> sbufferMissSeqs[MaxThreads];
     void release_sbuffer_miss_entry(SbufferRequest *request);
     bool _storeBufferFlushing[MaxThreads] = {false};
@@ -1592,6 +1596,7 @@ class LSQ
         statistics::Scalar sbufferMissEntriesReleased;
         statistics::Average sbufferMissPending;
         statistics::Scalar sbufferMissSameLineReplay;
+        statistics::Scalar sbufferMissMerged;
         statistics::Scalar sbufferMissForward;
         statistics::Scalar sbufferDcacheReqBlocked;
         statistics::Scalar sbufferDcacheReqBlockedByMainPipe;
