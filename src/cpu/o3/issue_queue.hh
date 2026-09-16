@@ -226,7 +226,7 @@ class IssueQue : public SimObject
         statistics::Vector portissued;
         statistics::Vector portBusy;
         statistics::Average avgInsts;
-        statistics::Vector instsNum; 
+        statistics::Vector instsNum;
     }* iqstats = nullptr;
 
     void replay(const DynInstPtr& inst);
@@ -350,6 +350,12 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
+        statistics::Scalar lldpWakeups;
+        statistics::Scalar lldpChains;
+        statistics::Scalar lldpSingleSrcImmediateArithmetic;
+        statistics::Scalar lldpDualSrcRegisterArithmetic;
+        statistics::Distribution lldpChainLengths;
+        statistics::Vector lldpArithmeticTypes;
     } stats;
 
     struct disp_policy
