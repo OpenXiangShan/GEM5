@@ -53,10 +53,42 @@ BOP::BOP(const BOPPrefetcherParams &p)
       enableAdaptOffset(p.enable_adaptoffset),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
+      enableDirectQualityGate(p.enable_direct_quality_gate),
+      directQualityKind(p.direct_quality_kind),
+      directQualityGate(),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
       bestScore(0), round(0), stats(this)
 {
+    if (enableDirectQualityGate) {
+        DirectQualityGate::Config config;
+        config.qualityEntries = p.direct_quality_entries;
+        config.qualityWays = p.direct_quality_ways;
+        config.qualityTagBits = p.direct_quality_tag_bits;
+        config.feedbackEntries = p.direct_quality_feedback_entries;
+        config.feedbackWays = p.direct_quality_feedback_ways;
+        config.feedbackTagBits = p.direct_quality_feedback_tag_bits;
+        config.horizon = p.direct_quality_horizon;
+        config.minSamples = p.direct_quality_min_samples;
+        config.observeSamplePeriod = p.direct_quality_observe_sample_period;
+        config.openSamplePeriod = p.direct_quality_open_sample_period;
+        config.blockProbePeriod = p.direct_quality_block_probe_period;
+        config.borderlineBlockProbePeriod =
+            p.direct_quality_borderline_block_probe_period;
+        config.unusedPerUseful = p.direct_quality_unused_per_useful;
+        config.blockGuard = p.direct_quality_block_guard;
+        config.strictUnusedPerUseful =
+            p.direct_quality_strict_unused_per_useful;
+        config.strictBlockGuard = p.direct_quality_strict_block_guard;
+        config.reopenUnusedPerUseful =
+            p.direct_quality_reopen_unused_per_useful;
+        config.reopenGuard = p.direct_quality_reopen_guard;
+        config.decayPeriod = p.direct_quality_decay_period;
+        config.epochBits = p.direct_quality_epoch_bits;
+        config.epochShift = p.direct_quality_epoch_shift;
+        config.epochTimeout = p.direct_quality_epoch_timeout;
+        directQualityGate = std::make_shared<DirectQualityGate>(config);
+    }
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
     }
@@ -465,11 +497,22 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // prefetch at most per access
     if (issuePrefetchRequests) {
         Addr prefetch_addr = addr + (bestOffset * (1ULL << lBlkSize));
-        stats.issuedOffsetDist.sample(bestOffset);
-        sendPFWithFilter(pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
-        DPRINTF(BOPPrefetcher,
-                "Generated prefetch %#lx offset: %d\n",
-                prefetch_addr, bestOffset);
+        bool cqf_allowed = true;
+        if (enableDirectQualityGate && directQualityGate && pfi.hasPC()) {
+            const auto decision = directQualityGate->admit(
+                pfi.getPC(), static_cast<uint8_t>(directQualityKind), addr,
+                blockAddress(prefetch_addr));
+            cqf_allowed = decision.allowed;
+            updateDirectQualityStats();
+        }
+        if (cqf_allowed) {
+            stats.issuedOffsetDist.sample(bestOffset);
+            sendPFWithFilter(pfi, prefetch_addr, addresses, 32,
+                             PrefetchSourceType::HWP_BOP);
+            DPRINTF(BOPPrefetcher,
+                    "Generated prefetch %#lx offset: %d\n",
+                    prefetch_addr, bestOffset);
+        }
     } else {
         stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
@@ -524,9 +567,91 @@ BOP::BopStats::BopStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
       ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
-      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches")
+      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches"),
+      ADD_STAT(directQualityCandidates, statistics::units::Count::get(),
+               "Raw BOP candidates evaluated by CQF"),
+      ADD_STAT(directQualityAllowed, statistics::units::Count::get(),
+               "Raw BOP candidates allowed by CQF"),
+      ADD_STAT(directQualitySuppressed, statistics::units::Count::get(),
+               "Raw BOP candidates suppressed by CQF"),
+      ADD_STAT(directQualitySampled, statistics::units::Count::get(),
+               "Raw BOP candidates sampled by CQF"),
+      ADD_STAT(directQualityUseful, statistics::units::Count::get(),
+               "CQF useful outcomes"),
+      ADD_STAT(directQualityUnused, statistics::units::Count::get(),
+               "CQF unused outcomes"),
+      ADD_STAT(directQualityFeedbackConflicts, statistics::units::Count::get(),
+               "CQF feedback conflicts"),
+      ADD_STAT(directQualityFeedbackReplacements, statistics::units::Count::get(),
+               "CQF feedback replacements"),
+      ADD_STAT(directQualityFeedbackCoalesced, statistics::units::Count::get(),
+               "CQF coalesced feedback candidates"),
+      ADD_STAT(directQualityNonCanonicalFeedbackCandidates,
+               statistics::units::Count::get(),
+               "CQF candidates using folded non-canonical addresses"),
+      ADD_STAT(directQualityNonCanonicalFeedbackDemands,
+               statistics::units::Count::get(),
+               "CQF demands using folded non-canonical addresses"),
+      ADD_STAT(directQualityFeedbackExpiries, statistics::units::Count::get(),
+               "CQF feedback expiries"),
+      ADD_STAT(directQualityUnknownDrops, statistics::units::Count::get(),
+               "CQF censored feedback drops"),
+      ADD_STAT(directQualityOrphanOutcomes, statistics::units::Count::get(),
+               "CQF orphan outcomes"),
+      ADD_STAT(directQualityStateTransitions, statistics::units::Count::get(),
+               "CQF state transitions"),
+      ADD_STAT(directQualityPeakOutstanding, statistics::units::Count::get(),
+               "Peak CQF feedback entries")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
+}
+
+void
+BOP::updateDirectQualityStats()
+{
+    if (!directQualityGate)
+        return;
+    stats.directQualityCandidates = directQualityGate->candidates();
+    stats.directQualityAllowed = directQualityGate->allowed();
+    stats.directQualitySuppressed = directQualityGate->suppressed();
+    stats.directQualitySampled = directQualityGate->sampled();
+    stats.directQualityUseful = directQualityGate->useful();
+    stats.directQualityUnused = directQualityGate->unused();
+    stats.directQualityFeedbackConflicts = directQualityGate->feedbackConflicts();
+    stats.directQualityFeedbackReplacements = directQualityGate->feedbackReplacements();
+    stats.directQualityFeedbackCoalesced = directQualityGate->feedbackCoalesced();
+    stats.directQualityNonCanonicalFeedbackCandidates =
+        directQualityGate->nonCanonicalFeedbackCandidates();
+    stats.directQualityNonCanonicalFeedbackDemands =
+        directQualityGate->nonCanonicalFeedbackDemands();
+    stats.directQualityFeedbackExpiries = directQualityGate->feedbackExpiries();
+    stats.directQualityUnknownDrops = directQualityGate->unknownDrops();
+    stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();
+    stats.directQualityStateTransitions = directQualityGate->stateTransitions();
+    stats.directQualityPeakOutstanding = directQualityGate->peakOutstanding();
+}
+
+void
+BOP::shareDirectQualityGateWith(BOP &other)
+{
+    if (enableDirectQualityGate != other.enableDirectQualityGate)
+        fatal("Large and Small BOP must agree on CQF enablement\n");
+    if (!enableDirectQualityGate)
+        return;
+    if (!directQualityGate->configMatches(*other.directQualityGate))
+        fatal("Large and Small BOP must use matching CQF parameters\n");
+    if (directQualityKind == other.directQualityKind)
+        fatal("Large and Small BOP must use different CQF kinds\n");
+    other.directQualityGate = directQualityGate;
+}
+
+void
+BOP::notifyDirectQualityDemand(Addr paddr)
+{
+    if (!enableDirectQualityGate || !directQualityGate)
+        return;
+    directQualityGate->observeDemand(blockAddress(paddr));
+    updateDirectQualityStats();
 }
 
 } // namespace prefetch
