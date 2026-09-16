@@ -257,6 +257,18 @@ class LLDPrefetcher(QueuedPrefetcher):
     producer_threshold = Param.Unsigned(2, "Producer hint confidence threshold")
     consumer_threshold = Param.Unsigned(3, "Consumer replay confidence threshold")
     immediate_threshold = Param.Unsigned(3, "Load immediate stability threshold")
+class FTQICachePrefetcher(QueuedPrefetcher):
+    type = 'FTQICachePrefetcher'
+    cxx_class = 'gem5::prefetch::FTQICachePrefetcher'
+    cxx_header = "mem/cache/prefetch/ftq.hh"
+
+    use_virtual_addresses = True
+    prefetch_on_access = False
+    prefetch_on_pf_hit = False
+    on_read = False
+    on_write = False
+    on_data = False
+    on_inst = False
 
 
 class XSStridePrefetcher(QueuedPrefetcher):

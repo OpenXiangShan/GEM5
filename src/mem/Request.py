@@ -44,5 +44,7 @@ class PrefetchSourceType(Enum):
         "CDP",
         "SOpt",
         "DespacitoStream",
+<<<<<<< HEAD
         "LLDP",
+        "FTQ",
     ]

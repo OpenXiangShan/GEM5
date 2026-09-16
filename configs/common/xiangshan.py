@@ -644,6 +644,12 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         if args.xiangshan_ecore and args.no_l3cache:
             args.l2_size = '4MB'
 
+        # The classic XiangShan path uses the decoupled FTQ as the source of
+        # instruction-cache prefetch hints. Ruby/CHI keeps its L1I path
+        # unchanged because it does not pass through CacheConfig.
+        if not args.no_pf and getattr(args, 'l1i_hwp_type', None) is None:
+            args.l1i_hwp_type = 'FTQICachePrefetcher'
+
         CacheConfig.config_cache(args, test_sys)
 
         MemConfig.config_mem(args, test_sys)

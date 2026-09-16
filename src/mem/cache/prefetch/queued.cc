@@ -138,6 +138,9 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
 
     req->setFlags(Request::PREFETCH);
+    if (pf_src == PrefetchSourceType::FTQ) {
+        req->setFlags(Request::INST_FETCH);
+    }
     const PrefetchSourceType safe_pf_src =
         owner->sanitizePfControlSourceType(pf_src);
     req->setXsMetadata(Request::XsMetadata(safe_pf_src, prf_depth));
@@ -168,9 +171,13 @@ Queued::DeferredPacket::startTranslation(BaseTLB *tlb)
         ongoingTranslation = true;
         // Prefetchers only operate in Timing mode
         if (owner->functionalTLB) {
-            tlb->translateFunctional(translationRequest, tc, this, BaseMMU::Read);
+            const auto mode = pfInfo.getXsMetadata().prefetchSource ==
+                    PrefetchSourceType::FTQ ? BaseMMU::Execute : BaseMMU::Read;
+            tlb->translateFunctional(translationRequest, tc, this, mode);
         } else {
-            tlb->translateTiming(translationRequest, tc, this, BaseMMU::Read);
+            const auto mode = pfInfo.getXsMetadata().prefetchSource ==
+                    PrefetchSourceType::FTQ ? BaseMMU::Execute : BaseMMU::Read;
+            tlb->translateTiming(translationRequest, tc, this, mode);
         }
     }
 }
@@ -273,6 +280,12 @@ Queued::~Queued()
 {
     // Delete the queued prefetch packets
     for (DeferredPacket &p : pfq) {
+        delete p.pkt;
+    }
+    for (DeferredPacket &p : pfqMissingTranslation) {
+        delete p.pkt;
+    }
+    for (DeferredPacket &p : pfqSquashed) {
         delete p.pkt;
     }
 }
@@ -1451,6 +1464,82 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
 }
 
 
+
+void
+Queued::enqueueVirtualPrefetch(const FTQPrefetchHint &hint)
+{
+    if (tlb == nullptr || system == nullptr ||
+        hint.contextId == InvalidContextID ||
+        hint.contextId >= system->threads.size()) {
+        DPRINTF(HWPrefetch, "Dropping FTQ hint without translation context "
+                "tid=%d ftq=%llu\n", hint.tid,
+                static_cast<unsigned long long>(hint.ftqId));
+        return;
+    }
+
+    RequestPtr trigger_req = std::make_shared<Request>();
+    trigger_req->setVirt(hint.vaddr, blkSize, Request::INST_FETCH,
+                         requestorId, hint.pc);
+    trigger_req->setContext(hint.contextId);
+    trigger_req->setPaddr(hint.vaddr);
+    PacketPtr trigger = new Packet(trigger_req, MemCmd::ReadReq);
+    PrefetchInfo pfi(trigger, hint.vaddr, true,
+                     Request::XsMetadata(PrefetchSourceType::FTQ));
+    delete trigger;
+
+    if (queueFilter && (alreadyInQueue(pfq, pfi, hint.priority) ||
+                        alreadyInQueue(pfqMissingTranslation, pfi,
+                                       hint.priority))) {
+        return;
+    }
+
+    RequestPtr translation_req = std::make_shared<Request>();
+    translation_req->setVirt(hint.vaddr, blkSize, Request::INST_FETCH,
+                             requestorId, hint.pc);
+    translation_req->setContext(hint.contextId);
+    translation_req->setPFSource(PrefetchSourceType::FTQ);
+    translation_req->setXsMetadata(Request::XsMetadata(
+        PrefetchSourceType::FTQ));
+
+    DeferredPacket dpp(this, pfi, 0, hint.priority);
+    dpp.ftqTid = hint.tid;
+    dpp.ftqId = hint.ftqId;
+    dpp.ftqGeneration = hint.generation;
+    dpp.setTranslationRequest(translation_req);
+    dpp.tc = system->threads[hint.contextId];
+    addToQueue(pfqMissingTranslation, dpp);
+    if (!tlbReqEvent.scheduled()) {
+        schedule(tlbReqEvent, nextCycle());
+    }
+}
+
+void
+Queued::squashFTQGeneration(ThreadID tid, uint64_t generation)
+{
+    auto remove_old = [this, tid, generation](std::list<DeferredPacket> &queue) {
+        for (auto it = queue.begin(); it != queue.end();) {
+            if (it->ftqTid == tid && it->ftqGeneration < generation) {
+                if ((&queue == &pfqMissingTranslation ||
+                     &queue == &pfqSquashed) && it->ongoingTranslation) {
+                    if (&queue == &pfqSquashed) {
+                        ++it;
+                        continue;
+                    }
+                    auto old = it++;
+                    pfqSquashed.splice(pfqSquashed.end(), queue, old);
+                } else {
+                    delete it->pkt;
+                    it = queue.erase(it);
+                }
+            } else {
+                ++it;
+            }
+        }
+    };
+    remove_old(pfq);
+    remove_old(pfqMissingTranslation);
+    remove_old(pfqSquashed);
+}
 
 RequestPtr
 Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src, int pf_depth)

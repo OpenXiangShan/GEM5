@@ -80,6 +80,21 @@ struct CustomPfInfo
     float coverage;
 };
 
+/** Address hint produced by the decoupled instruction frontend. */
+struct FTQPrefetchHint
+{
+    ThreadID tid = 0;
+    uint64_t ftqId = 0;
+    uint64_t generation = 0;
+    Addr vaddr = 0;
+    Addr pc = 0;
+    Addr predEndPC = 0;
+    Addr target = 0;
+    bool predTaken = false;
+    ContextID contextId = InvalidContextID;
+    int32_t priority = 0;
+};
+
 class Base : public ClockedObject
 {
     public:
@@ -1222,6 +1237,12 @@ class Base : public ClockedObject
      * @param tlb pointer to the BaseTLB object to add
      */
     virtual void addTLB(BaseTLB *tlb, bool functional);
+
+    /** Submit a frontend FTQ instruction-cache prefetch hint. */
+    virtual bool submitFTQHint(const FTQPrefetchHint &hint) { return false; }
+
+    /** Drop queued frontend hints older than the supplied generation. */
+    virtual void squashFTQHints(ThreadID tid, uint64_t generation) {}
 
   protected:
     Base *hintDownStream{nullptr};

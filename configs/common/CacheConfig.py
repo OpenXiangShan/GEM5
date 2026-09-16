@@ -303,6 +303,15 @@ def config_cache(options, system):
         if options.caches:
             icache = icache_class(**_get_cache_opts(system.cpu[i], 'l1i', options))
             dcache = dcache_class(**_get_cache_opts(system.cpu[i], 'l1d', options))
+            if (icache.prefetcher != NULL and
+                    getattr(options, 'l1i_hwp_type', None) == 'FTQICachePrefetcher' and
+                    options.cpu_type == 'DerivO3CPU'):
+                system.cpu[i].add_ftq_prefetcher(icache.prefetcher)
+                # MSHRQueue keeps one compatibility slot in addition to the
+                # explicit demand reserve; 15 total entries therefore leave
+                # ten entries available to instruction prefetches.
+                icache.mshrs = 15
+                icache.demand_mshr_reserve = 4
             if dcache.prefetcher != NULL and options.cpu_type == 'DerivO3CPU':
                 system.cpu[i].add_pf_downstream(dcache.prefetcher)
 

@@ -25,7 +25,9 @@ PF_SOURCE_NAMES = [
     "CDP",
     "SOpt",
     "DespacitoStream",
+<<<<<<< HEAD
     "LLDP",
+    "FTQ",
 ]
 
 
@@ -435,9 +437,10 @@ def _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled):
     if hasattr(prefetcher, 'queue_filter'):
         prefetcher.queue_filter = not pf_buffer_enabled
 
-def _register_prefetcher_tlb(prefetcher, cpu):
+def _register_prefetcher_tlb(prefetcher, cpu, cache_level):
     if cpu != NULL:
-        prefetcher.registerTLB(cpu.mmu.dtb, cpu.mmu.functional)
+        tlb = cpu.mmu.itb if cache_level == 'l1i' else cpu.mmu.dtb
+        prefetcher.registerTLB(tlb, cpu.mmu.functional)
 
 def _configure_xs_composite_common(prefetcher, options):
     # Keep only option/profile-dependent overrides here. Stable model defaults
@@ -593,7 +596,7 @@ def create_prefetcher(cpu, cache_level, options):
     _apply_pf_control(prefetcher, pf_control_config)
     _apply_pf_adaptive(prefetcher, cache_level, pf_control_config)
 
-    _register_prefetcher_tlb(prefetcher, cpu)
+    _register_prefetcher_tlb(prefetcher, cpu, cache_level)
 
     if prefetcher_name == 'LLDPrefetcher':
         prefetcher.use_pf_buffer = False

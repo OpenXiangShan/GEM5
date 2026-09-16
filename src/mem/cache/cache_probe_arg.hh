@@ -75,6 +75,13 @@ struct CacheAccessor
     /** Determine if cache is coalescing writes */
     virtual bool coalesce() const = 0;
 
+    /**
+     * Determine if a new prefetch may allocate an MSHR.  Non-classic cache
+     * accessors that do not expose MSHR capacity retain the conservative
+     * default; classic BaseCache overrides this with its demand reservation.
+     */
+    virtual bool canPrefetch() const { return true; }
+
     virtual const uint8_t* findBlock(Addr addr, bool is_secure) const = 0;
 };
 

@@ -65,6 +65,7 @@
 #include "cpu/valuepred/example_value_predictor_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Drain.hh"
+#include "debug/FTQPrefetch.hh"
 #include "debug/Fetch.hh"
 #include "debug/FetchFault.hh"
 #include "debug/FetchVerbose.hh"
@@ -640,6 +641,13 @@ Fetch::clearStates(ThreadID tid)
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
+    ++icachePrefetchGeneration[tid];
+    icachePrefetchPtr[tid] = 1;
+    icachePrefetchNeedsResync[tid] = true;
+    if (cpu->ftqPrefetcher) {
+        cpu->ftqPrefetcher->squashFTQHints(
+            tid, icachePrefetchGeneration[tid]);
+    }
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -671,6 +679,9 @@ Fetch::resetStage()
 
         threads[tid].reset();
         ftqEntryFetchedInsts[tid] = 0;
+        icachePrefetchPtr[tid] = 1;
+        ++icachePrefetchGeneration[tid];
+        icachePrefetchNeedsResync[tid] = true;
 
         fetchQueue[tid].clear();
 
@@ -689,6 +700,10 @@ Fetch::resetStage()
     assert(dbpbtb);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         dbpbtb->resetPC(tid, threads[tid].fetchpc->instAddr());
+        if (cpu->ftqPrefetcher) {
+            cpu->ftqPrefetcher->squashFTQHints(tid,
+                                               icachePrefetchGeneration[tid]);
+        }
     }
 }
 
@@ -1439,6 +1454,13 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Force a new I-cache request for the next FTQ head after squash.
     threads[tid].valid = false;
     ftqEntryFetchedInsts[tid] = 0;
+    ++icachePrefetchGeneration[tid];
+    icachePrefetchPtr[tid] = dbpbtb ? dbpbtb->ftqFetchId(tid) + 1 : 1;
+    icachePrefetchNeedsResync[tid] = true;
+    if (cpu->ftqPrefetcher) {
+        cpu->ftqPrefetcher->squashFTQHints(
+            tid, icachePrefetchGeneration[tid]);
+    }
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1538,9 +1560,91 @@ Fetch::tick()
     // - then run fetch using the supplied FTQ entry (if any)
     assert(dbpbtb);
     dbpbtb->tick();
+    issueIcachePrefetchHints();
 
     // Perform fetch operations and instruction delivery
     fetchAndProcessInstructions(status_change);
+}
+
+void
+Fetch::issueIcachePrefetchHints()
+{
+    if (cpu->ftqPrefetcher == nullptr || dbpbtb == nullptr) {
+        return;
+    }
+
+    constexpr Addr CacheLineSize = 64;
+    constexpr Addr PageSize = 4096;
+    using branch_prediction::btb_pred::FetchTargetId;
+    constexpr FetchTargetId MaxAhead = 32;
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        const FetchTargetId demand = dbpbtb->ftqFetchId(tid);
+        if (icachePrefetchNeedsResync[tid]) {
+            // The redirect/squash path may update the FTQ after doSquash()
+            // sampled its old fetch id.  This pass runs after dbpbtb->tick(),
+            // so the BPU cursor is now the authoritative post-squash value.
+            icachePrefetchPtr[tid] = demand + 1;
+            icachePrefetchNeedsResync[tid] = false;
+        }
+        if (icachePrefetchPtr[tid] <= demand) {
+            icachePrefetchPtr[tid] = demand + 1;
+        }
+
+        const FetchTargetId stable = dbpbtb->ftqPrefetchBoundary(tid);
+        if (stable == 0 || icachePrefetchPtr[tid] > stable ||
+            icachePrefetchPtr[tid] - demand > MaxAhead ||
+            !dbpbtb->ftqHasTarget(tid, icachePrefetchPtr[tid])) {
+            continue;
+        }
+
+        auto submit_target = [&](FetchTargetId id) {
+            const auto target = dbpbtb->ftqFetchBlockById(tid, id);
+            const Addr line = target.startPC & ~(CacheLineSize - 1);
+            prefetch::FTQPrefetchHint hint;
+            hint.tid = tid;
+            hint.ftqId = id;
+            hint.generation = icachePrefetchGeneration[tid];
+            hint.vaddr = line;
+            hint.pc = target.startPC;
+            hint.predEndPC = target.endPC;
+            hint.target = target.target;
+            hint.predTaken = target.taken;
+            hint.contextId = cpu->thread[tid]->contextId();
+            hint.priority = -static_cast<int32_t>(id - demand);
+
+            bool accepted = cpu->ftqPrefetcher->submitFTQHint(hint);
+            if (target.endPC > line + CacheLineSize) {
+                prefetch::FTQPrefetchHint next = hint;
+                next.vaddr = line + CacheLineSize;
+                accepted = cpu->ftqPrefetcher->submitFTQHint(next) &&
+                           accepted;
+            }
+            DPRINTF(FTQPrefetch,
+                    "hint tid=%d ftq=%llu gen=%llu start=%#lx end=%#lx "
+                    "line=%#lx accepted=%d\n", tid,
+                    static_cast<unsigned long long>(id),
+                    static_cast<unsigned long long>(hint.generation),
+                    target.startPC, target.endPC, line, accepted);
+            return accepted;
+        };
+
+        if (!submit_target(icachePrefetchPtr[tid])) {
+            continue;
+        }
+        const auto first = dbpbtb->ftqFetchBlockById(
+            tid, icachePrefetchPtr[tid]);
+        FetchTargetId advance = 1;
+        const FetchTargetId next_id = icachePrefetchPtr[tid] + 1;
+        if (dbpbtb->ftqHasTarget(tid, next_id) && next_id <= stable &&
+            (first.startPC / PageSize) ==
+                (dbpbtb->ftqFetchBlockById(tid, next_id).startPC / PageSize) &&
+            icachePrefetchPtr[tid] - demand + 1 <= MaxAhead &&
+            submit_target(next_id)) {
+            advance = 2;
+        }
+        icachePrefetchPtr[tid] += advance;
+    }
 }
 
 bool

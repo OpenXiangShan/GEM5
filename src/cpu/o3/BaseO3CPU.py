@@ -107,11 +107,13 @@ class BaseO3CPU(BaseCPU):
     cxx_header = 'cpu/o3/dyn_inst.hh'
     cxx_exports = [
         PyBindMethod("addHintDownStream"),
+        PyBindMethod("addFTQPrefetcher"),
     ]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._downstream_pf = []
+        self._ftq_prefetcher = None
 
     # Override the normal SimObject::regProbeListeners method and
     # register deferred event handlers.
@@ -120,12 +122,20 @@ class BaseO3CPU(BaseCPU):
         assert len(self._downstream_pf) <= 1
         if len(self._downstream_pf):
             self.getCCObject().addHintDownStream(self._downstream_pf[0].getCCObject())
+        if getattr(self, "_ftq_prefetcher", None) is not None:
+            self.getCCObject().addFTQPrefetcher(
+                self._ftq_prefetcher.getCCObject())
         self.getCCObject().regProbeListeners()
 
     def add_pf_downstream(self, other_prefetcher):
         if not isinstance(other_prefetcher, SimObject):
             raise TypeError("other_prefetcher must be a SimObject type")
         self._downstream_pf.append(other_prefetcher)
+
+    def add_ftq_prefetcher(self, prefetcher):
+        if not isinstance(prefetcher, SimObject):
+            raise TypeError("prefetcher must be a SimObject type")
+        self._ftq_prefetcher = prefetcher
 
     @classmethod
     def memory_mode(cls):

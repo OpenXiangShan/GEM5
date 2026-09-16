@@ -66,6 +66,7 @@
 #include "enums/SMTDecodePolicy.hh"
 #include "enums/SMTFetchBlockPolicy.hh"
 #include "enums/SMTFetchPolicy.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/eventq.hh"
@@ -498,6 +499,8 @@ class Fetch
     /** Squashes a specific thread and resets the PC. */
     void doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
             ThreadID tid);
+
+    void issueIcachePrefetchHints();
 
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
      * remove any instructions between fetch and decode
@@ -1052,6 +1055,16 @@ class Fetch
     // Number of dynamic instructions fetched within the current FTQ entry.
     // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
     unsigned ftqEntryFetchedInsts[MaxThreads]{};
+
+    /** Shadow FTQ cursor used to issue frontend-driven I-cache prefetch hints. */
+    branch_prediction::btb_pred::FetchTargetId icachePrefetchPtr[MaxThreads]{};
+    uint64_t icachePrefetchGeneration[MaxThreads]{};
+    /**
+     * A squash may update the BPU FTQ after doSquash() has sampled its
+     * cursor.  Re-read the cursor on the next prefetch pass so that the
+     * shadow cursor cannot remain ahead of the redirected FTQ head.
+     */
+    bool icachePrefetchNeedsResync[MaxThreads]{};
 
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;

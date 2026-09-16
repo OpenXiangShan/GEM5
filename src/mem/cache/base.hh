@@ -1721,6 +1721,11 @@ public:
         return mshrQueue.findMatch(addr, is_secure);
     }
 
+    bool canPrefetch() const override {
+        return mshrQueue.canPrefetchWithExtraAllocated(
+            dcacheMainPipeHeldMSHRCredits);
+    }
+
     bool coalesce() const override;
 
     double getMshrAvgEntryNum() const;

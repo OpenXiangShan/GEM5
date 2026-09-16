@@ -111,6 +111,9 @@ class Queued : public Base
         int32_t priority;
         bool pfahead;
         int pfahead_host;
+        ThreadID ftqTid = 0;
+        uint64_t ftqId = 0;
+        uint64_t ftqGeneration = 0;
         /** Request used when a translation is needed */
         RequestPtr translationRequest;
         ThreadContext *tc;
@@ -447,6 +450,12 @@ class Queued : public Base
     size_t getMaxPermittedPrefetches(size_t total) const;
 
     RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src, int prf_depth);
+
+    /** Queue a virtual address supplied by the instruction FTQ. */
+    void enqueueVirtualPrefetch(const FTQPrefetchHint &hint);
+
+    /** Remove queued FTQ requests from generations older than @p generation. */
+    void squashFTQGeneration(ThreadID tid, uint64_t generation);
 
     unsigned offloadBandwidth{1};
 
