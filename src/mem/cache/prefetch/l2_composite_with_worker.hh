@@ -22,7 +22,8 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
   public:
     L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p);
 
-    using CompositeWithWorkerPrefetcher::prefetchUnused;
+    using Queued::notifyPrefetchUseful;
+    using Queued::prefetchUnused;
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override {}
 

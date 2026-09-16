@@ -988,6 +988,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                         blockAddress(itr->pfInfo.getAddr()));
                 late_in_pfq = true;  // hit in pf queue
                 late_pfq_src = itr->pfInfo.getXsMetadata().prefetchSource;
+                prefetchDropped(*itr);
                 delete itr->pkt;
                 itr = pfq.erase(itr);
                 statsQueued.pfRemovedDemand++;
@@ -1379,6 +1380,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                     it->translationRequest->getPaddr());
             Addr target_paddr = it->translationRequest->getPaddr();
             if (rejectTranslatedPrefetch(*it, target_paddr)) {
+                prefetchDropped(*it);
                 pfqMissingTranslation.erase(it);
                 return;
             }
@@ -1388,8 +1390,10 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 statsQueued.pfInCache++;
                 DPRINTF(HWPrefetch, "Dropping redundant in "
                         "cache/MSHR prefetch addr:%#x\n", target_paddr);
+                prefetchDropped(*it);
             } else if (!system->isMemAddr(target_paddr)) {
                 DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
+                prefetchDropped(*it);
 
             } else {
                 Tick pf_time = curTick() + clockPeriod() * latency;
@@ -1401,6 +1405,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
             DPRINTF(HWPrefetch, "%s Translation of vaddr %#x failed, dropping "
                     "prefetch request %#x \n", tlb->name(),
                     it->translationRequest->getVaddr());
+            prefetchDropped(*it);
         }
         pfqMissingTranslation.erase(it);
     } else {
@@ -1660,6 +1665,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
                 queue.size(), it->pfInfo.getAddr());
         statsQueued.pfRemovedFull_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
+        prefetchDropped(*it);
 
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;

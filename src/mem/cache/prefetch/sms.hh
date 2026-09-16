@@ -167,6 +167,9 @@ class XSCompositePrefetcher : public Queued
   public:
     XSCompositePrefetcher(const XSCompositePrefetcherParams &p);
 
+    using Queued::notifyPrefetchUseful;
+    using Queued::prefetchUnused;
+
     // dummy implementation, calc(3 args) will not call it
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
     {

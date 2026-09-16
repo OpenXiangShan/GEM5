@@ -429,6 +429,8 @@ class Queued : public Base
     virtual bool rejectPrefetchCandidate(const PrefetchInfo &pfi,
                                          const AddrPriority &addr_prio)
     { return false; }
+    virtual void prefetchDropped(const DeferredPacket &dpp)
+    {}
 
     /**
      * Checks whether the specified prefetch request is already in the

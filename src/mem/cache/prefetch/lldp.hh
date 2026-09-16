@@ -148,7 +148,8 @@ class LLDPrefetcher : public Queued
             returnedHints, staleHints;
         statistics::Scalar candidates, filtered, duplicates, unsupported;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
-            candidateMerged, candidateUseful, candidateUnused, candidateLate;
+            candidateDropped, candidateMerged, candidateUseful, candidateUnused,
+            candidateLate;
         statistics::Scalar candidateCacheHit, candidateMshrHit, candidateWbHit;
         statistics::Vector childrenAtReplacement, childrenAtDump;
         statistics::Vector pcpActiveHistogram;
@@ -180,6 +181,7 @@ class LLDPrefetcher : public Queued
                                   Addr paddr) override;
     bool rejectPrefetchCandidate(const PrefetchInfo &pfi,
                                  const AddrPriority &addr_prio) override;
+    void prefetchDropped(const DeferredPacket &dpp) override;
 
   public:
     LLDPrefetcher(const LLDPrefetcherParams &p);

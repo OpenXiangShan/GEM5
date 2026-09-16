@@ -49,6 +49,7 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
       ADD_STAT(candidateGenerated, statistics::units::Count::get(), "Candidate lifecycles generated"),
       ADD_STAT(candidateQueued, statistics::units::Count::get(), "Candidate lifecycles queued"),
       ADD_STAT(candidateIssued, statistics::units::Count::get(), "Candidate lifecycles issued"),
+      ADD_STAT(candidateDropped, statistics::units::Count::get(), "Candidate lifecycles dropped before issue"),
       ADD_STAT(candidateMerged, statistics::units::Count::get(), "Candidate lifecycles merged with demand"),
       ADD_STAT(candidateUseful, statistics::units::Count::get(), "Candidate lifecycles useful"),
       ADD_STAT(candidateUnused, statistics::units::Count::get(), "Candidate lifecycles unused"),
@@ -240,6 +241,15 @@ LLDPrefetcher::rejectPrefetchCandidate(const PrefetchInfo &pfi,
         tlbFilterSet.count(blockAddress(pfi.getAddr()));
     stats.filtered += reject;
     return reject;
+}
+
+void
+LLDPrefetcher::prefetchDropped(const DeferredPacket &dpp)
+{
+    const auto metadata = dpp.pfInfo.getXsMetadata();
+    if (metadata.prefetchCandidateId &&
+        candidateOwners.erase(metadata.prefetchCandidateId))
+        stats.candidateDropped++;
 }
 
 void
@@ -656,13 +666,16 @@ LLDPrefetcher::rxHint(BaseMMU::Translation *translation)
         dpp.pkt->req->getXsMetadata().prefetchCandidateId &&
         tlbFilterSet.count(blockAddress(dpp.pfInfo.getAddr()))) {
         stats.filtered++;
+        prefetchDropped(dpp);
         delete dpp.pkt;
         return;
     }
     if (admitPfControlDeferredPacket(dpp))
         addToQueue(pfq, dpp);
-    else
+    else {
+        prefetchDropped(dpp);
         delete dpp.pkt;
+    }
 }
 
 void
