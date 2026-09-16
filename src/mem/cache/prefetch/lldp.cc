@@ -39,7 +39,8 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
       ADD_STAT(byteOffsetHist, statistics::units::Count::get(), "Load-size and byte-offset histogram"),
       ADD_STAT(hints, statistics::units::Count::get(), "Hints retained on cache misses"),
       ADD_STAT(hitHintsDiscarded, statistics::units::Count::get(), "Hints discarded on cache hits"),
-      ADD_STAT(hitHintsRetained, statistics::units::Count::get(), "Hints retained on cache hits"),
+      ADD_STAT(hitHintsRetained, statistics::units::Count::get(),
+               "Deprecated retained-hit counter (must remain zero)"),
       ADD_STAT(returnedHints, statistics::units::Count::get(), "MSHR targets returning hinted data"),
       ADD_STAT(staleHints, statistics::units::Count::get(), "Hints whose producer generation was evicted"),
       ADD_STAT(candidates, statistics::units::Count::get(), "LLDP virtual address candidates"),
@@ -563,11 +564,13 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
         dependenceTrain(meta);
     auto hint = pfHint(pkt);
     if (hint.valid) {
-        if (spatial_pf)
-            stats.spatialHints++;
-        if (miss) stats.hints++;
-        else {
-            stats.hitHintsRetained++;
+        if (miss) {
+            stats.hints++;
+            if (spatial_pf)
+                stats.spatialHints++;
+        } else {
+            stats.hitHintsDiscarded++;
+            hint.valid = false;
         }
     }
     return hint;

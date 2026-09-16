@@ -807,10 +807,6 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     pkt->lldpHint = prefetcher ? prefetcher->loadTrain(pkt, !satisfied) : lldp::Hint();
 
     if (satisfied) {
-        if (prefetcher && pkt->lldpHint.valid && blk && !pkt->isWrite()) {
-            prefetcher->hintData(pkt->lldpHint, pkt, blk->data, blkSize);
-            pkt->lldpHint.valid = false;
-        }
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
         if (blk && !pkt->isWrite()) {
