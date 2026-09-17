@@ -203,7 +203,11 @@ class LSQ
         // must go to a vice entry instead of mutating this entry's payload.
         bool evictionInProgress() const
         {
-            return sending || inDcacheMainPipe || replayQueued;
+            // getEvict() removes this entry from the mergeable LRU before
+            // building its request. Even if S0 admission fails, that request
+            // owns a fixed byte mask/payload and younger stores need a vice.
+            return request != nullptr || sending || inDcacheMainPipe ||
+                replayQueued;
         }
     };
 
