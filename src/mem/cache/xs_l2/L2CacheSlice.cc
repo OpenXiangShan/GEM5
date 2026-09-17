@@ -181,6 +181,7 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
 
     // Then the request is from L1 MSHR(ReadEx/ReadShare etc.) or L2 PF,
     // we can buffer it
+    TaskSource source = is_prefetch ? TaskSource::L2PF : TaskSource::L1MSHR;
     if (inner_cache_blocked || !requestBuffer.empty()) {
         // If the Wrapper is waiting for inner cache's retry or some pending requestes
         // are in the buffer, we cannot forward it directly to inner cache
@@ -189,14 +190,13 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
             pending_l1_retry = true;
             return false;
         }
-        requestBuffer.push(pkt);
+        requestBuffer.push(pkt, source);
         DPRINTF(L2CacheSlice, "Request buffered, buffer size: %d\n", requestBuffer.size());
         return true;
     }
     // If the Wrapper is not waiting for inner cache's retry and
     // there is no pending request in the buffer,
     // we can try to forward it directly to inner cache
-    TaskSource source = is_prefetch ? TaskSource::L2PF : TaskSource::L1MSHR;
     if (!innerCpuPortSendTimingReq(pkt, source)) {
         inner_cache_blocked = true;
         DPRINTF(L2CacheSlice, "Inner cache busy, try buffering request and blocking\n");
@@ -205,7 +205,7 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
             pending_l1_retry = true;
             return false;
         }
-        requestBuffer.push(pkt);
+        requestBuffer.push(pkt, source);
         DPRINTF(L2CacheSlice, "Request buffered, buffer size: %d\n", requestBuffer.size());
         return true;
     }
@@ -245,9 +245,9 @@ L2CacheSlice::trySendFromBuffer()
     DPRINTF(L2CacheSlice, "Attempting to send delayed request from buffer, buffer size: %d\n",
             requestBuffer.size());
 
-    PacketPtr pkt = requestBuffer.front();
+    const RequestBuffer::Entry entry = requestBuffer.front();
 
-    if (!innerCpuPortSendTimingReq(pkt, TaskSource::L1MSHR)) {
+    if (!innerCpuPortSendTimingReq(entry.pkt, entry.source)) {
         DPRINTF(L2CacheSlice, "Send delayed request failed, blocking again\n");
         inner_cache_blocked = true;
     } else {
