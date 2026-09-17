@@ -103,10 +103,8 @@ def setKmhV3Params(args, system):
                     tagBits=16,
                     confidenceBits=9,
                     usefulBits=2,
-                    # A zero value uses maxConfidence; experiments can
-                    # override this parameter with an explicit decrement.
-                    confidencePenalty=0,
-                    resetConfidence=True,
+                    confidencePenalty=128,
+                    resetConfidence=False,
                     thresholdPercent=100,
                 ),
                 # ExampleValuePredictor(),
