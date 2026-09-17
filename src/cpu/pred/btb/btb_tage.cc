@@ -301,7 +301,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
-                                 uint8_t asidHash) const
+                                 uint8_t asidHash,
+                                 const SecondBlockLookupContext *lookupContext) const
 {
     DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
     const auto &state = historyState(tid);
@@ -314,20 +315,28 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
+    const Addr indexPC = lookupContext ? lookupContext->indexPC : startPC;
+    const Addr tagPC = lookupContext ? lookupContext->tagPC : startPC;
+    unsigned position = getBranchIndexInBlock(btb_entry.pc, tagPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(
-            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
-                              : getTageIndex(
-            startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
-        Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(),
-                            position, asidHash)
-                        : getTageTag(startPC, i, state.tagFoldedHist[i].get(),
-                                     state.altTagFoldedHist[i].get(), position, asidHash);
+        const uint64_t indexFolded = lookupContext ?
+            lookupContext->indexFoldedHist[i] :
+            (predMeta ? predMeta->indexFoldedHist[i].get() :
+                        state.indexFoldedHist[i].get());
+        const uint64_t tagFolded = lookupContext ?
+            lookupContext->tagFoldedHist[i] :
+            (predMeta ? predMeta->tagFoldedHist[i].get() :
+                        state.tagFoldedHist[i].get());
+        const uint64_t altTagFolded = lookupContext ?
+            lookupContext->altTagFoldedHist[i] :
+            (predMeta ? predMeta->altTagFoldedHist[i].get() :
+                        state.altTagFoldedHist[i].get());
+        Addr index = getTageIndex(indexPC, i, indexFolded, asidHash, tid);
+        Addr tag = getTageTag(tagPC, i, tagFolded, altTagFolded,
+                              position, asidHash);
 
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
@@ -467,6 +476,115 @@ BTBTAGE::lookupNoSideEffect(const Addr &startPC,
     }
 }
 
+BTBTAGE::SecondBlockLookupContext
+BTBTAGE::makeSecondBlockLookupContext(const FullBTBPrediction &firstPred,
+                                      Addr block1Start, Addr block2Start,
+                                      ThreadID tid, uint8_t asidHash,
+                                      const bitset *historyOverride) const
+{
+    SecondBlockLookupContext context;
+    context.indexPC = block1Start;
+    context.tagPC = block2Start;
+    context.tid = tid;
+    context.asidHash = asidHash;
+
+    // The first block's lookup metadata is a prediction-time snapshot.  It
+    // must be copied before constructing H2, since the thread state has
+    // already advanced to the next fetch block by the checker call site.
+    std::shared_ptr<TageMeta> meta;
+    if (tid < threadMeta.size()) {
+        meta = threadMeta[tid];
+    }
+    const auto &state = historyState(tid);
+    if (meta) {
+        context.history = historyOverride ? *historyOverride : meta->history;
+        context.indexFoldedHist.reserve(meta->indexFoldedHist.size());
+        context.tagFoldedHist.reserve(meta->tagFoldedHist.size());
+        context.altTagFoldedHist.reserve(meta->altTagFoldedHist.size());
+        for (unsigned i = 0; i < numPredictors; ++i) {
+            context.indexFoldedHist.push_back(meta->indexFoldedHist[i].get());
+            context.tagFoldedHist.push_back(meta->tagFoldedHist[i].get());
+            context.altTagFoldedHist.push_back(
+                meta->altTagFoldedHist[i].get());
+        }
+    } else {
+        // A checker can be requested before a normal prediction has created
+        // metadata (for example during a test or recovery edge case).  Keep
+        // the lookup side-effect free and use the current folded state; a
+        // zero history of the configured maximum length is sufficient for
+        // the direction/path update API in this fallback.
+        if (historyOverride) {
+            context.history = *historyOverride;
+        } else {
+            context.history.resize(maxHistLen);
+        }
+        context.indexFoldedHist.reserve(numPredictors);
+        context.tagFoldedHist.reserve(numPredictors);
+        context.altTagFoldedHist.reserve(numPredictors);
+        for (unsigned i = 0; i < numPredictors; ++i) {
+            context.indexFoldedHist.push_back(state.indexFoldedHist[i].get());
+            context.tagFoldedHist.push_back(state.tagFoldedHist[i].get());
+            context.altTagFoldedHist.push_back(
+                state.altTagFoldedHist[i].get());
+        }
+    }
+
+    // Block2 shares block1's H1 index history.  Only the tag histories see
+    // the speculative outcome of the first block, producing H2 for the
+    // second-block tag.  This mirrors the normal history update semantics:
+    // path history updates only on a taken exit, while direction history
+    // shifts by the number of conditional branches in the block.
+    auto firstPredCopy = firstPred;
+    if (usePathHistory) {
+        const auto update = firstPredCopy.getPHistUpdate();
+        if (update.taken) {
+            for (unsigned i = 0; i < numPredictors; ++i) {
+                TageFoldedHist tagHist = meta ? meta->tagFoldedHist[i] :
+                                                state.tagFoldedHist[i];
+                TageFoldedHist altHist = meta ? meta->altTagFoldedHist[i] :
+                                                state.altTagFoldedHist[i];
+                tagHist.update(context.history, update.shamt, update.taken,
+                               update.pc, update.target);
+                altHist.update(context.history, update.shamt, update.taken,
+                               update.pc, update.target);
+                context.tagFoldedHist[i] = tagHist.get();
+                context.altTagFoldedHist[i] = altHist.get();
+            }
+        }
+    } else {
+        const auto update = firstPredCopy.getGHistUpdate();
+        if (update.shamt != 0) {
+            for (unsigned i = 0; i < numPredictors; ++i) {
+                TageFoldedHist tagHist = meta ? meta->tagFoldedHist[i] :
+                                                state.tagFoldedHist[i];
+                TageFoldedHist altHist = meta ? meta->altTagFoldedHist[i] :
+                                                state.altTagFoldedHist[i];
+                tagHist.update(context.history, update.shamt, update.taken);
+                altHist.update(context.history, update.shamt, update.taken);
+                context.tagFoldedHist[i] = tagHist.get();
+                context.altTagFoldedHist[i] = altHist.get();
+            }
+        }
+    }
+
+    return context;
+}
+
+void
+BTBTAGE::lookupSecondBlockNoSideEffect(
+    const SecondBlockLookupContext &context,
+    const std::vector<BTBEntry> &btbEntries, CondTakens &results) const
+{
+    for (const auto &btb_entry : btbEntries) {
+        if (btb_entry.isCond && btb_entry.valid) {
+            const auto pred = generateSinglePrediction(
+                btb_entry, context.tagPC, nullptr, context.tid,
+                context.asidHash, &context);
+            results.push_back({btb_entry.pc, pred.taken});
+        }
+    }
+}
+
 void
 BTBTAGE::dryRunCycle(Addr startPC) {
     // No operation in dry run cycle for BTBTAGE
@@ -538,12 +656,32 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
                                const bitset &history,
                                FullBTBPrediction &pred)
 {
+    refreshPredictionMetaInternal(startPC, history, pred, nullptr);
+}
+
+void
+BTBTAGE::refreshSecondBlockPredictionMeta(
+    Addr startPC, const bitset &history, FullBTBPrediction &pred,
+    const SecondBlockLookupContext &lookupContext)
+{
+    refreshPredictionMetaInternal(startPC, history, pred, &lookupContext);
+}
+
+void
+BTBTAGE::refreshPredictionMetaInternal(
+    Addr startPC, const bitset &history, FullBTBPrediction &pred,
+    const SecondBlockLookupContext *lookupContext)
+{
     auto &state = historyState(pred.tid);
     threadMeta[pred.tid] = std::make_shared<TageMeta>();
     auto &meta = threadMeta[pred.tid];
     meta->tagFoldedHist = state.tagFoldedHist;
     meta->altTagFoldedHist = state.altTagFoldedHist;
     meta->indexFoldedHist = state.indexFoldedHist;
+    if (lookupContext) {
+        meta->hasSecondBlockContext = true;
+        meta->secondBlockContext = *lookupContext;
+    }
     meta->history = history;
 
     pred.tageInfoForMgscs.clear();
@@ -553,7 +691,8 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
         }
 
         auto tage_pred = generateSinglePrediction(
-            btb_entry, startPC, nullptr, pred.tid, pred.asidHash);
+            btb_entry, startPC, nullptr, pred.tid, pred.asidHash,
+            lookupContext);
         meta->preds[btb_entry.pc] = tage_pred;
 
         auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];
@@ -760,14 +899,28 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     // 2) weak and not-useful way
     // 3) any not-useful way
 
-    // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    // Second-block entries share block1's set index and use block2's tag
+    // context. The same context was used to produce the FTQ prediction meta.
+    const Addr indexPC = meta->hasSecondBlockContext ?
+        meta->secondBlockContext.indexPC : startPC;
+    const Addr tagPC = meta->hasSecondBlockContext ?
+        meta->secondBlockContext.tagPC : startPC;
+    unsigned position = getBranchIndexInBlock(entry.pc, tagPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
+        const uint64_t indexFolded = meta->hasSecondBlockContext ?
+            meta->secondBlockContext.indexFoldedHist[ti] :
+            meta->indexFoldedHist[ti].get();
+        const uint64_t tagFolded = meta->hasSecondBlockContext ?
+            meta->secondBlockContext.tagFoldedHist[ti] :
+            meta->tagFoldedHist[ti].get();
+        const uint64_t altTagFolded = meta->hasSecondBlockContext ?
+            meta->secondBlockContext.altTagFoldedHist[ti] :
+            meta->altTagFoldedHist[ti].get();
         Addr newIndex = getTageIndex(
-            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
-        Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position, asidHash);
+            indexPC, ti, indexFolded, asidHash, tid);
+        Addr newTag = getTageTag(tagPC, ti, tagFolded, altTagFolded,
+                                 position, asidHash);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -942,7 +1095,10 @@ BTBTAGE::update(
         if (updateOnRead) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
-                                                 stream.tid, stream.asidHash);
+                                                 stream.tid, stream.asidHash,
+                                                 predMeta->hasSecondBlockContext ?
+                                                     &predMeta->secondBlockContext :
+                                                     nullptr);
             // Track differences for statistics
             auto it = predMeta->preds.find(btb_entry.pc);
             if (it != predMeta->preds.end() &&

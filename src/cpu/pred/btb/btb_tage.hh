@@ -154,10 +154,42 @@ class BTBTAGE : public TimedBaseBTBPredictor
                             ThreadID tid = 0,
                             uint8_t asidHash = 0) const;
 
+    /** Explicit lookup context for a second block that shares block1's set
+     * index but uses block2's PC/history in the tag.
+     */
+    struct SecondBlockLookupContext
+    {
+        Addr indexPC{0};
+        Addr tagPC{0};
+        ThreadID tid{0};
+        uint8_t asidHash{0};
+        bitset history;
+        std::vector<uint64_t> indexFoldedHist;
+        std::vector<uint64_t> tagFoldedHist;
+        std::vector<uint64_t> altTagFoldedHist;
+    };
+
+    SecondBlockLookupContext makeSecondBlockLookupContext(
+        const FullBTBPrediction &firstPred, Addr block1Start,
+        Addr block2Start, ThreadID tid = 0, uint8_t asidHash = 0,
+        const bitset *historyOverride = nullptr) const;
+
+    void lookupSecondBlockNoSideEffect(
+        const SecondBlockLookupContext &context,
+        const std::vector<BTBEntry> &btbEntries,
+        CondTakens &results) const;
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
                                FullBTBPrediction &pred) override;
+
+    // Refresh metadata for a second-block prediction whose MainTAGE lookup
+    // uses block1's index context and block2's tag context.
+    void refreshSecondBlockPredictionMeta(
+        Addr startAddr, const boost::dynamic_bitset<> &history,
+        FullBTBPrediction &pred,
+        const SecondBlockLookupContext &lookupContext);
 
     // Update folded history from GHR when configured in direction-history mode.
     void specUpdateGHist(const boost::dynamic_bitset<> &history,
@@ -465,6 +497,10 @@ public:
         std::vector<TageFoldedHist> tagFoldedHist;
         std::vector<TageFoldedHist> altTagFoldedHist;
         std::vector<TageFoldedHist> indexFoldedHist;
+        // Second-block lookup histories differ from the speculative history
+        // checkpoint used when recovering after a squash. Keep both views.
+        bool hasSecondBlockContext{false};
+        SecondBlockLookupContext secondBlockContext;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;
@@ -492,7 +528,8 @@ private:
                                            const Addr &startPC,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
                                            ThreadID tid = 0,
-                                           uint8_t asidHash = 0) const;
+                                           uint8_t asidHash = 0,
+                                           const SecondBlockLookupContext *lookupContext = nullptr) const;
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
@@ -509,6 +546,11 @@ private:
                                  uint8_t asidHash,
                                  ThreadID tid,
                                  AllocationTraceInfo &allocInfo);
+
+    void refreshPredictionMetaInternal(
+        Addr startAddr, const boost::dynamic_bitset<> &history,
+        FullBTBPrediction &pred,
+        const SecondBlockLookupContext *lookupContext);
 
 
     // Helper methods for LRU management

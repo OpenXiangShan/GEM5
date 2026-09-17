@@ -112,6 +112,8 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
             cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
             cpu.branchPred.microtage.usingS3Pred = True
+            cpu.branchPred.pairtage.enabled = True
+            cpu.branchPred.pairtage.enableSecondBlock = True
             # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
