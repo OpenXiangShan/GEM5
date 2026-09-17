@@ -263,6 +263,12 @@ class SnoopFilter : public SimObject
      */
     void eraseIfNullEntry(SnoopFilterCache::iterator& sf_it);
 
+    /**
+     * Refresh the statistics that track how many lines are currently held in
+     * the filter and the maximum observed so far.
+     */
+    void updateCachedLocationsStats();
+
     /** Simple hash set of cached addresses. */
     SnoopFilterCache cachedLocations;
 
@@ -329,6 +335,24 @@ class SnoopFilter : public SimObject
         statistics::Scalar totSnoops;
         statistics::Scalar hitSingleSnoops;
         statistics::Scalar hitMultiSnoops;
+
+        /**
+         * Clean evictions that were reported by a cache which the filter did
+         * not track as a holder of the line. Expected for lines that a cache
+         * keeps only in its prefetch data buffer, where the release of the
+         * holder bit may race with a snoop that already cleared it.
+         */
+        statistics::Scalar untrackedCleanEvictions;
+
+        /**
+         * Number of cache lines currently tracked by the filter, and the
+         * highest value observed so far. The filter panics when the tracked
+         * set exceeds max_capacity, so this exposes the headroom of the
+         * bookkeeping, e.g. for caches that keep prefetched lines outside
+         * their tag array.
+         */
+        statistics::Scalar cachedLocationsCurrent;
+        statistics::Scalar cachedLocationsPeak;
     } stats;
 };
 

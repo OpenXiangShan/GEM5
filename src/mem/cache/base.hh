@@ -420,6 +420,32 @@ class BaseCache : public ClockedObject, public CacheAccessor
         const char *description() const override { return "PDB move"; }
     };
 
+    /** A line that only lived in the PDB and has just been dropped. */
+    struct PdbRelease
+    {
+        Addr addr;
+        bool secure;
+    };
+
+    /**
+     * Reports dropped PDB-only lines to the memory system. The report is
+     * deferred to a scheduled event, because releasing a line directly from
+     * the middle of the cache's own send path would schedule the request
+     * queue's send event while it is still deciding whether the current
+     * packet needs a retry, which breaks the queue's retry bookkeeping.
+     */
+    class PdbReleaseEvent : public Event
+    {
+      private:
+        BaseCache &cache;
+
+      public:
+        PdbReleaseEvent(BaseCache &cache) :
+            Event(Minimum_Pri), cache(cache) {}
+        void process() override { cache.processPdbReleases(); }
+        const char *description() const override { return "PDB release"; }
+    };
+
 
   protected:
 
@@ -477,13 +503,32 @@ class BaseCache : public ClockedObject, public CacheAccessor
     std::vector<PdbEntry> pdbEntries;
     unsigned pdbMovesInFlight = 0;
     bool pdbHitLastAccess = false;
+    /** Lines that are waiting to be released from the crossbar accounting. */
+    std::vector<PdbRelease> pendingPdbReleases;
+    PdbReleaseEvent pdbReleaseEvent;
 
     int findPdbEntry(Addr block_addr, bool secure) const;
     int choosePdbVictim() const;
     bool reservePdbEntry(PacketPtr pkt);
     bool storePdbFill(PacketPtr pkt);
     void cancelPdbReservation(Addr block_addr, bool secure);
-    void invalidatePdbEntry(Addr block_addr, bool secure);
+    /**
+     * Drop a PDB entry. When @p release_line is set and the dropped entry
+     * holds data that is not backed by the tag array, the cache also reports
+     * the loss of the line downwards, see releasePdbLine().
+     */
+    void invalidatePdbEntry(Addr block_addr, bool secure,
+                            bool release_line = true);
+    /**
+     * Report that a line which this cache only kept in the PDB is gone, so
+     * that the crossbar's snoop filter stops tracking this cache as a holder
+     * of the line. Pure prefetch fills never allocate a tag block, hence
+     * without this the snoop filter would keep one entry per prefetched line
+     * forever and eventually overflow.
+     */
+    void releasePdbLine(Addr block_addr, bool secure);
+    /** Drain pendingPdbReleases and report them downwards. */
+    void processPdbReleases();
     bool tryPdbHit(PacketPtr pkt, Cycles &lat);
     void schedulePdbMove(unsigned entry);
     void processPdbMove(unsigned entry, uint64_t generation);
@@ -1423,6 +1468,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar pdbDemandMerges;
         statistics::Scalar pdbReservationCanceled;
         statistics::Scalar pdbCoherenceInvalidations;
+        statistics::Scalar pdbLineReleases;
         statistics::Scalar pdbMoveRequests;
         statistics::Scalar pdbMoveCompleted;
         statistics::Scalar pdbMoveDeferred;

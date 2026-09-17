@@ -53,6 +53,16 @@ namespace gem5
 const int SnoopFilter::SNOOP_MASK_SIZE;
 
 void
+SnoopFilter::updateCachedLocationsStats()
+{
+    const unsigned tracked = cachedLocations.size();
+    stats.cachedLocationsCurrent = tracked;
+    if (tracked > stats.cachedLocationsPeak.value()) {
+        stats.cachedLocationsPeak = tracked;
+    }
+}
+
+void
 SnoopFilter::eraseIfNullEntry(SnoopFilterCache::iterator& sf_it)
 {
     SnoopItem& sf_item = sf_it->second;
@@ -60,6 +70,7 @@ SnoopFilter::eraseIfNullEntry(SnoopFilterCache::iterator& sf_it)
         cachedLocations.erase(sf_it);
         DPRINTF(SnoopFilter, "%s:   Removed SF entry.\n",
                 __func__);
+        updateCachedLocationsStats();
     }
 }
 
@@ -91,6 +102,7 @@ SnoopFilter::lookupRequest(const Packet* cpkt, const ResponsePort&
     if (!is_hit) {
         reqLookupResult.it =
             cachedLocations.emplace(line_addr, SnoopItem()).first;
+        updateCachedLocationsStats();
     }
     SnoopItem& sf_item = reqLookupResult.it->second;
     SnoopMask interested = sf_item.holder | sf_item.requested;
@@ -141,12 +153,25 @@ SnoopFilter::lookupRequest(const Packet* cpkt, const ResponsePort&
     } else { // if (!cpkt->needsResponse())
         assert(cpkt->isEviction());
         // make sure that the sender actually had the line
-        panic_if((sf_item.holder & req_port).none(), "requestor %x is not a " \
-                 "holder :( SF value %x.%x\n", req_port,
-                 sf_item.requested, sf_item.holder);
-        // CleanEvicts and Writebacks -> the sender and all caches above
-        // it may not have the line anymore.
-        if (!cpkt->isBlockCached()) {
+        //
+        // A clean eviction of a line that is not tracked as held by the
+        // sender is tolerated. A cache that keeps a prefetched line only in
+        // its prefetch data buffer (PDB) does not back the line with its tag
+        // array and reports the drop explicitly, while the holder bit may
+        // already have been dropped (e.g. by an invalidating snoop that was
+        // forwarded before the cache released its copy). Everything else is
+        // still considered a bookkeeping bug.
+        if ((sf_item.holder & req_port).none()) {
+            panic_if(!cpkt->isCleanEviction(),
+                     "requestor %x is not a holder :( SF value %x.%x\n",
+                     req_port, sf_item.requested, sf_item.holder);
+            stats.untrackedCleanEvictions++;
+            DPRINTF(SnoopFilter, "%s:   untracked clean eviction, "
+                    "SF value %x.%x\n", __func__, sf_item.requested,
+                    sf_item.holder);
+        } else if (!cpkt->isBlockCached()) {
+            // CleanEvicts and Writebacks -> the sender and all caches above
+            // it may not have the line anymore.
             sf_item.holder &= ~req_port;
             DPRINTF(SnoopFilter, "%s:   new SF value %x.%x\n",
                     __func__,  sf_item.requested, sf_item.holder);
@@ -277,7 +302,9 @@ SnoopFilter::updateSnoopResponse(const Packet* cpkt,
     }
     SnoopMask rsp_mask = portToMask(rsp_port);
     SnoopMask req_mask = portToMask(req_port);
+    // Note that this inserts an entry if the filter did not track the line.
     SnoopItem& sf_item = cachedLocations[line_addr];
+    updateCachedLocationsStats();
 
     DPRINTF(SnoopFilter, "%s:   old SF value %x.%x\n",
             __func__,  sf_item.requested, sf_item.holder);
@@ -418,7 +445,14 @@ SnoopFilter::SnoopFilterStats::SnoopFilterStats(statistics::Group *parent)
                "holder of the requested data."),
       ADD_STAT(hitMultiSnoops, statistics::units::Count::get(),
                "Number of snoops hitting in the snoop filter with multiple "
-               "(>1) holders of the requested data.")
+               "(>1) holders of the requested data."),
+      ADD_STAT(untrackedCleanEvictions, statistics::units::Count::get(),
+               "Number of clean evictions received for lines this cache was "
+               "not tracked as holding."),
+      ADD_STAT(cachedLocationsCurrent, statistics::units::Count::get(),
+               "Number of cache lines currently tracked by the filter."),
+      ADD_STAT(cachedLocationsPeak, statistics::units::Count::get(),
+               "Maximum number of cache lines tracked by the filter.")
 {}
 
 void

@@ -156,6 +156,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       pdbMoveSlots(p.pdb_move_slots),
       pdbMoveLatency(p.pdb_move_latency),
       pdbDbEnable(p.pdb_db_enable && p.cache_level == 1),
+      pdbReleaseEvent(*this),
       writeAllocator(p.write_allocator),
       writebackClean(p.writeback_clean),
       tempBlockWriteback(nullptr),
@@ -391,6 +392,10 @@ BaseCache::reservePdbEntry(PacketPtr pkt)
         else
             stats.pdbUnusedEvictions++;
         stats.pdbBytesEvicted += blkSize;
+        // The victim loses its only copy of the line (PDB lines are not
+        // backed by the tag array), so the crossbar must stop tracking this
+        // cache as a holder of the block.
+        releasePdbLine(entry.blockAddr, entry.secure);
     }
     entry.state = PdbEntryState::Reserved;
     entry.blockAddr = block_addr;
@@ -452,7 +457,7 @@ BaseCache::cancelPdbReservation(Addr block_addr, bool secure)
 }
 
 void
-BaseCache::invalidatePdbEntry(Addr block_addr, bool secure)
+BaseCache::invalidatePdbEntry(Addr block_addr, bool secure, bool release_line)
 {
     const int index = findPdbEntry(block_addr, secure);
     if (index < 0)
@@ -472,6 +477,70 @@ BaseCache::invalidatePdbEntry(Addr block_addr, bool secure)
     updatePdbOccupancyStats();
     writePdbDbRecord(7, block_addr, secure,
                      static_cast<uint64_t>(state));
+
+    // Reserved entries have not received data yet, so the fill response that
+    // is still in flight owns the (future) holder bit and there is nothing to
+    // release here. Entries that already hold data are only tracked by the
+    // PDB, hence dropping them has to be reported downwards.
+    if (release_line && (state == PdbEntryState::Resident ||
+                         state == PdbEntryState::MovePending)) {
+        releasePdbLine(block_addr, secure);
+    }
+}
+
+void
+BaseCache::releasePdbLine(Addr block_addr, bool secure)
+{
+    if (!pdbEnabled)
+        return;
+
+    // The report is sent from an event, see PdbReleaseEvent, so the state is
+    // checked again when the event is processed.
+    for (const auto &release : pendingPdbReleases) {
+        if (release.addr == block_addr && release.secure == secure)
+            return;
+    }
+    pendingPdbReleases.push_back({block_addr, secure});
+    if (!pdbReleaseEvent.scheduled())
+        schedule(pdbReleaseEvent, clockEdge());
+}
+
+void
+BaseCache::processPdbReleases()
+{
+    PacketList writebacks;
+
+    for (const auto &release : pendingPdbReleases) {
+        // A copy in the tag array owns the holder bit and its eviction will
+        // release it, and a line that was filled into the PDB again is held
+        // here as well. Only lines that this cache no longer holds anywhere
+        // have to be released, otherwise the crossbar would stop tracking a
+        // line that this cache still keeps.
+        if (tags->findBlock(release.addr, release.secure) ||
+            findPdbEntry(release.addr, release.secure) >= 0) {
+            continue;
+        }
+
+        // Creating a zero sized write, a message to the snoop filter, exactly
+        // as a tag eviction of a clean block would do.
+        Request::Flags flags = release.secure ?
+            Request::Flags(Request::SECURE) : Request::Flags(0);
+        RequestPtr req = std::make_shared<Request>(
+            release.addr, blkSize, flags, Request::wbRequestorId);
+        req->setXsMetadata(Request::XsMetadata());
+
+        PacketPtr pkt = new Packet(req, MemCmd::CleanEvict);
+        pkt->allocate();
+
+        DPRINTF(Cache, "Release PDB line %#llx (%s) %s\n", release.addr,
+                release.secure ? "s" : "ns", pkt->print());
+        stats.pdbLineReleases++;
+        writebacks.push_back(pkt);
+    }
+
+    pendingPdbReleases.clear();
+    if (!writebacks.empty())
+        doWritebacks(writebacks, clockEdge());
 }
 
 bool
@@ -1415,9 +1484,17 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     const bool pdb_only_fill =
         pdbEnabled && pure_prefetch_fill && is_fill && !blk;
     if (pdb_only_fill && !is_error) {
-        storePdbFill(pkt);
+        if (!storePdbFill(pkt) &&
+            findPdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure()) < 0) {
+            // The response is dropped and nothing in this cache keeps the
+            // line, but the fill response has already marked this cache as a
+            // holder in the crossbar. Report the loss of the line again.
+            releasePdbLine(pkt->getBlockAddr(blkSize), pkt->isSecure());
+        }
     } else if (pdb_only_fill && is_error) {
         cancelPdbReservation(pkt->getBlockAddr(blkSize), pkt->isSecure());
+        if (findPdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure()) < 0)
+            releasePdbLine(pkt->getBlockAddr(blkSize), pkt->isSecure());
     }
     if (pdb_only_fill)
         blk = nullptr;
@@ -1427,9 +1504,11 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     if (is_fill && !is_error && !pdb_only_fill) {
         // A normal response won the race with a resident or pending PDB
-        // copy. Keep a single physical copy behind this snoop-filter port.
+        // copy. Keep a single physical copy behind this snoop-filter port,
+        // the tag fill that follows owns the holder bit from now on.
         if (pdbEnabled)
-            invalidatePdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure());
+            invalidatePdbEntry(pkt->getBlockAddr(blkSize), pkt->isSecure(),
+                               false);
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
 
@@ -3586,6 +3665,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of reserved PDB entries canceled before fill"),
     ADD_STAT(pdbCoherenceInvalidations, statistics::units::Count::get(),
              "number of resident PDB entries invalidated by writes/maintenance"),
+    ADD_STAT(pdbLineReleases, statistics::units::Count::get(),
+             "number of PDB-only lines released from the snoop filter"),
     ADD_STAT(pdbMoveRequests, statistics::units::Count::get(),
              "number of PDB-to-DCache move requests"),
     ADD_STAT(pdbMoveCompleted, statistics::units::Count::get(),
