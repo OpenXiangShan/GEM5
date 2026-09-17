@@ -62,7 +62,6 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/trace/TraceFetch.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
-#include "cpu/valuepred/example_value_predictor_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
@@ -106,8 +105,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this),
-      valuePred(params.valuePred)
+      finishTranslationEvent(this), fetchStats(_cpu, this)
 {
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
@@ -2197,20 +2195,6 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Update the main PC state for the next instruction.
     set(pc, *next_pc);
-
-    // Do the value prediction
-    if (valuePred && instruction->canLVP()) {
-        valuepred::VPPredictRequest predictRequest;
-        predictRequest.pc = instruction->getPC();
-        predictRequest.seqNo = instruction->seqNum;
-        predictRequest.tid = tid;
-        // ExampleValuePredictor shows how a predictor can extend the public
-        // request with extra fetch-time inputs without changing core fields.
-        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
-                curTick(), instruction->opClass());
-        instruction->vpResult =
-            valuePred->valuePredict(predictRequest, instruction->vpRecord);
-    }
 
     return predictedBranch;
 }

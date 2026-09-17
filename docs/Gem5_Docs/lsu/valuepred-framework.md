@@ -61,9 +61,10 @@
 
 ## 2. 当前 O3 流水怎样调用值预测
 
-### 2.1 Fetch 侧
+### 2.1 Decode 侧
 
-`src/cpu/o3/fetch.cc` 在发起值预测前构造 `VPPredictRequest`。
+`src/cpu/o3/decode.cc` 在有效指令进入 rename 前构造
+`VPPredictRequest`。
 
 当前公共字段来自：
 
@@ -71,7 +72,7 @@
 - `instruction->seqNum`
 - `tid`
 
-示例 predictor 额外演示了如何在 fetch 侧挂 predictor-specific 信息：
+示例 predictor 额外演示了如何在 decode 侧挂 predictor-specific 信息：
 
 - `curTick()`
 - `instruction->opClass()`
@@ -146,7 +147,7 @@
 - `predictTick`
 - `opClass`
 
-这类字段通常来自 fetch 调用点，而不是所有 predictor 都共享的稳定核心字段。
+这类字段通常来自 predict 调用点，而不是所有 predictor 都共享的稳定核心字段。
 
 ### 4.2 如何定义 update info 扩展
 
@@ -235,9 +236,9 @@
 
 ### 第四步：在 O3 调用点挂接扩展
 
-如果你的 predictor 需要 fetch/commit 侧的额外信息，就在：
+如果你的 predictor 需要 predict/commit 侧的额外信息，就在：
 
-- `src/cpu/o3/fetch.cc`
+- `src/cpu/o3/decode.cc`
 - `src/cpu/o3/commit.cc`
 
 构造请求时 `emplaceExt<YourExt>(...)`。
@@ -303,7 +304,7 @@ cpu.valuePred = CompositeValuePredictor(
 2. `src/cpu/valuepred/valuepred_metadata.hh`
 3. `src/cpu/valuepred/composite_value_predictor.hh`
 4. `src/cpu/valuepred/composite_value_predictor_arb.hh`
-5. `src/cpu/o3/fetch.cc`
+5. `src/cpu/o3/decode.cc`
 6. `src/cpu/o3/commit.cc`
 7. `src/cpu/valuepred/example_value_predictor.hh`
 8. `src/cpu/valuepred/example_value_predictor.cc`

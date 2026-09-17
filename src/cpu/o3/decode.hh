@@ -49,6 +49,7 @@
 #include "cpu/o3/fetch.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 
 namespace gem5
 {
@@ -182,6 +183,9 @@ class Decode
     // Interfaces to objects outside of decode.
     /** CPU interface. */
     CPU *cpu;
+
+    /** Value predictor. */
+    valuepred::VPUnit *valuePred;
 
     /** Fetch interface. */
     Fetch *fetch_ptr;

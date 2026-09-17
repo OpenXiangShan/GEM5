@@ -48,6 +48,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/valuepred/example_value_predictor_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
 #include "debug/Decode.hh"
@@ -68,6 +69,7 @@ namespace o3
 
 Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     : cpu(_cpu),
+      valuePred(params.valuePred),
       renameToDecodeDelay(params.renameToDecodeDelay),
       iewToDecodeDelay(params.iewToDecodeDelay),
       commitToDecodeDelay(params.commitToDecodeDelay),
@@ -784,6 +786,17 @@ Decode::decodeInsts(ThreadID tid)
             decode_stalls.push(StallReason::InstSquashed);
 
             continue;
+        }
+
+        if (valuePred && inst->canLVP()) {
+            valuepred::VPPredictRequest predictRequest;
+            predictRequest.pc = inst->getPC();
+            predictRequest.seqNo = inst->seqNum;
+            predictRequest.tid = tid;
+            predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
+                    curTick(), inst->opClass());
+            inst->vpResult =
+                valuePred->valuePredict(predictRequest, inst->vpRecord);
         }
 
         // Also check if instructions have no source registers.  Mark

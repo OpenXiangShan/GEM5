@@ -19,7 +19,7 @@ class ExamplePredictRequestExt : public VPPredictRequestExtension
     {
     }
 
-    // Example of fetch-time information that is not part of the stable
+    // Example of prediction-time information that is not part of the stable
     // VPPredictRequest core fields.
     Tick predictTick = 0;
     OpClass opClass = No_OpClass;

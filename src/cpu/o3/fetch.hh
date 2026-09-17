@@ -60,7 +60,6 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
-#include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/SMTFetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -1158,9 +1157,6 @@ public:
   private:
 
     bool waitForVsetvl [MaxThreads];
-
-    /** Value predictor */
-    valuepred::VPUnit *valuePred;
 };
 
 } // namespace o3
