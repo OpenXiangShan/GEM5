@@ -4,7 +4,7 @@
 
 发生流水线 flush 后，Fetch 会丢弃错误路径上的指令和取指状态，并从新的正确地址重新开始取指。当前模型中的 `fetchQueue[tid]` 承担 IBuffer 的作用：Fetch 将指令放入该队列，然后 `sendInstructionsToDecode()` 在同一个 Fetch 周期内把队列内容写入 `toDecode`，形成 Fetch 到 Decode 的直接旁路。
 
-对于 flush 后重新取到的第一批指令，如果其中包含 `vsetvli`、`vsetivli` 或 `vsetvl`，这批指令不能沿用直接旁路路径。它们必须先完整地写入 IBuffer，下一周期再由 IBuffer 送往 Decode。
+对于 flush 后重新取到的第一批指令，如果其中包含 `vsetvli` 或 `vsetivli`，这批指令不能沿用直接旁路路径。它们必须先完整地写入 IBuffer，下一周期再由 IBuffer 送往 Decode。`vsetvl` 不属于这一类，因为它不携带立即数形式的 `vtype`；`vsetvl` 执行后会根据更新后的向量配置重新取指并执行后续指令。
 
 ## 时序
 
@@ -28,16 +28,17 @@
 ## 实现
 
 - `Fetch::doSquash()` 清空对应线程的 `fetchQueue` 后，设置一次性的 `deferVsetvlDecode[tid]` 标志。
-- Fetch 在 flush 后首次形成非空 fetch queue 时记录该批次的长度；`Fetch::sendInstructionsToDecode()` 只扫描这段首批指令是否包含 `staticInst->isVectorConfig()`，避免后续批次被误计入。
-- 如果不含 vset，标志立即清除，指令继续使用正常旁路。
-- 如果包含 vset，标志立即清除，但本周期不填充 `toDecode`，整批指令留在 IBuffer 中；下一周期恢复正常发送。
+- Fetch 在 flush 后首次形成非空 fetch queue 时记录该批次的长度；`Fetch::sendInstructionsToDecode()` 只扫描这段首批指令是否包含 `vsetvli` 或 `vsetivli`，避免后续批次被误计入。实现上使用 `VConfOp::vtypeIsImm` 区分这两类指令与 `vsetvl`。
+- 如果不含 `vsetvli`/`vsetivli`，标志立即清除，指令继续使用正常旁路。
+- 如果包含 `vsetvli`/`vsetivli`，标志立即清除，但本周期不填充 `toDecode`，整批指令留在 IBuffer 中；下一周期恢复正常发送。
 - 标志按线程维护，并在启动、状态清理和重新初始化时复位，避免一个线程的 flush 恢复延迟影响其他线程。
 
-该规则只改变 flush 后首批指令的 Fetch→Decode 传递路径，不改变 vset 的解码、执行、提交或 `waitForVsetvl` 语义。
+该规则只改变 flush 后首批指令的 Fetch→Decode 传递路径，不改变 `vsetvli`、`vsetivli` 或 `vsetvl` 的解码、执行、提交或 `waitForVsetvl` 语义。`vsetvl` 按原有路径在执行后重新取指。
 
 ## 验证要点
 
 使用 `Fetch` 调试输出或流水线 trace 检查以下两种情况：
 
 1. flush 后首批不含 vset：指令仍按原有旁路时序到达 Decode。
-2. flush 后首批含 vset：日志出现 `Deferring post-squash vector-config batch`，该批次在一个周期内只停留于 IBuffer，随后整体到达 Decode。
+2. flush 后首批含 `vsetvli`/`vsetivli`：日志出现 `Deferring post-squash vsetvli/vsetivli batch`，该批次在一个周期内只停留于 IBuffer，随后整体到达 Decode。
+3. flush 后首批仅含 `vsetvl`：不触发上述 IBuffer 延迟；`vsetvl` 执行后重新取指执行后续指令。

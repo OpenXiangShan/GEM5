@@ -1803,16 +1803,20 @@ Fetch::sendInstructionsToDecode()
         if (deferVsetvlDecode[tid] && postSquashFetchBatchSize[tid] > 0) {
             const auto batch_end = insts.begin() +
                 std::min<size_t>(postSquashFetchBatchSize[tid], insts.size());
-            const bool has_vset = std::any_of(
+            const bool has_vsetvli = std::any_of(
                     insts.begin(), batch_end,
                     [](const DynInstPtr& inst) {
-                        return inst->staticInst->isVectorConfig();
+                        if (!inst->staticInst->isVectorConfig())
+                            return false;
+                        const auto *vset = static_cast<const RiscvISA::VConfOp *>(
+                            inst->staticInst.get());
+                        return vset->vtypeIsImm;
                     });
             deferVsetvlDecode[tid] = false;
             postSquashFetchBatchSize[tid] = 0;
-            if (has_vset) {
+            if (has_vsetvli) {
                 DPRINTF(Fetch,
-                        "[tid:%i] Deferring post-squash vector-config batch "
+                        "[tid:%i] Deferring post-squash vsetvli/vsetivli batch "
                         "in fetch queue for one cycle.\n",
                         tid);
                 measureFrontendBubbles(0, tid);
