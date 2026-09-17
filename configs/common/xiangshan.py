@@ -1060,6 +1060,13 @@ def xiangshan_system_init():
              "(default: fixed-priority).",
     )
     parser.add_argument(
+        "--vp-no-issue",
+        action="store_true",
+        default=False,
+        help="Keep value predictors training but never issue a prediction "
+             "to the pipeline (for would-be accuracy evaluation).",
+    )
+    parser.add_argument(
         "--vp-throttle-virt-sq",
         type=str,
         default=None,

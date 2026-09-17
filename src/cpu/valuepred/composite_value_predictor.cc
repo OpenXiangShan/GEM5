@@ -13,6 +13,7 @@ CompositeValuePredictor::CompositeValuePredictor(const Params &params)
     : VPUnit(params),
       predictors(params.predictors.begin(), params.predictors.end()),
       arb(params.arb),
+      noIssue(params.noIssue),
       compositeStats(this)
 {
     fatal_if(predictors.empty(),
@@ -75,7 +76,8 @@ CompositeValuePredictor::predict(const VPPredictRequest &request)
     }
     compositeRecord->chooserCandidates = chooserCandidates;
 
-    compositeRecord->selectedChild = arb->choose(chooserCandidates);
+    compositeRecord->selectedChild =
+        noIssue ? -1 : arb->choose(chooserCandidates);
     if (compositeRecord->selectedChild != -1) {
         auto &selectedChild =
             compositeRecord->children[compositeRecord->selectedChild];
@@ -125,7 +127,7 @@ CompositeValuePredictor::latePredict(const VPLatePredictRequest &request,
             "Composite record size mismatch");
 
     // A value already propagated at rename must not be replaced at issue.
-    if (compositeRecord->selectedChild != -1) {
+    if (noIssue || compositeRecord->selectedChild != -1) {
         return compositeCandidate;
     }
 

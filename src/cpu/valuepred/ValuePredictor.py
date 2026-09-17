@@ -153,6 +153,9 @@ class CompositeValuePredictor(ValuePredictor):
     arb = Param.CVPArb(
         CVPFixedPriorityArb(),
         "Arbitration policy for selecting among speculative child candidates")
+    noIssue = Param.Bool(False,
+        "Train and score child predictors but never issue a prediction "
+        "to the pipeline")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

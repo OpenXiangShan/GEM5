@@ -125,6 +125,7 @@ def setKmhV3IdealParams(args, system):
             cpu.valuePred = CompositeValuePredictor(
                 predictors=predictors,
                 arb=make_value_predictor_arbiter(arb_type),
+                noIssue=getattr(args, "vp_no_issue", False),
             )
             frac = getattr(args, "vp_throttle_virt_sq", None)
             if getattr(args, "vp_throttle_virt_sq_full", False) and not frac:

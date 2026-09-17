@@ -37,6 +37,7 @@ class CompositeValuePredictor : public VPUnit
 
     std::vector<VPUnit *> predictors;
     CompositeValuePredictorArb *arb;
+    const bool noIssue;
 
     struct CompositeStats : public statistics::Group
     {
