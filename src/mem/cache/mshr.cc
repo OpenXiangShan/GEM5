@@ -64,7 +64,7 @@ MSHR::MSHR(const std::string &name)
         downstreamPending(false),
         pendingModified(false),
         postInvalidate(false), postDowngrade(false),
-        wasWholeLineWrite(false), isForward(false),
+        wasWholeLineWrite(false), isForward(false), blkOffset(0),
         targets(name + ".targets"),
         deferredTargets(name + ".deferredTargets")
 {
@@ -338,6 +338,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
+    blkOffset = 0;
 
     targets.init(blkAddr, blkSize);
     deferredTargets.init(blkAddr, blkSize);
@@ -348,6 +349,8 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
         Target::FromPrefetcher : Target::FromCPU;
     DPRINTF(MSHR, "New MSHR allocated: %s, from cpu: %i\n", target->print(), Target::FromCPU);
     targets.add(target, when_ready, _order, source, true, alloc_on_fill);
+    if (target->lldpHint.valid)
+        blkOffset = target->lldpHint.offset;
 
     // All targets must refer to the same block
     assert(target->matchBlockAddr(targets.front().pkt, blkSize));
@@ -404,6 +407,9 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
     // assume we'd never issue a prefetch when we've got an
     // outstanding miss
     assert(pkt->cmd != MemCmd::HardPFReq);
+
+    if (pkt->lldpHint.valid)
+        blkOffset = pkt->lldpHint.offset;
 
     // if there's a request already in service for this MSHR, we will
     // have to defer the new target until after the response if any of

@@ -92,6 +92,34 @@ class LLDPrefetcher : public Queued
     };
     std::array<Entry, TableEntries> table{};
     lldp::PLRU<TableEntries> replacement;
+
+    static constexpr unsigned AddressTableWays = 4;
+    static constexpr unsigned SamplerEntries = 256;
+    static constexpr unsigned SamplerSets =
+        SamplerEntries / AddressTableWays;
+    static constexpr unsigned MetaEntries = 1024;
+    static constexpr unsigned MetaSets = MetaEntries / AddressTableWays;
+    static constexpr uint8_t SamplerThreshold = 1;
+    struct SamplerEntry
+    {
+        bool valid{false};
+        Addr addrP{0};
+        Addr addrC{0};
+        uint8_t cnt{0};
+    };
+    struct MetaEntry
+    {
+        bool valid{false};
+        Addr addrP{0};
+        Addr addrC{0};
+    };
+    std::array<std::array<SamplerEntry, AddressTableWays>, SamplerSets>
+        samplerTable{};
+    std::array<lldp::PLRU<AddressTableWays>, SamplerSets>
+        samplerReplacement{};
+    std::array<std::array<MetaEntry, AddressTableWays>, MetaSets>
+        metaTable{};
+    std::array<lldp::PLRU<AddressTableWays>, MetaSets> metaReplacement{};
     uint64_t generation{0};
     uint64_t candidateId{0};
     uint64_t version{0};
@@ -99,12 +127,14 @@ class LLDPrefetcher : public Queued
     static constexpr unsigned TlbFilterEntries = 64;
     std::deque<Addr> tlbFilter;
     std::unordered_set<Addr> tlbFilterSet;
+    std::unordered_map<Addr, Addr> tlbFilterTranslations;
     struct CandidateOwner
     {
         unsigned row;
         unsigned col;
         uint64_t generation;
         Addr consumerPC;
+        PrefetchSourceType source;
     };
     std::unordered_map<uint64_t, CandidateOwner> candidateOwners;
     std::optional<Training> s0;
@@ -147,6 +177,9 @@ class LLDPrefetcher : public Queued
         statistics::Scalar hints, hitHintsDiscarded, hitHintsRetained,
             returnedHints, staleHints;
         statistics::Scalar candidates, filtered, duplicates, unsupported;
+        statistics::Scalar samplerOutputsToMeta, metaTableHits,
+            metaTablePrefetches, samplerValidEntries, metaValidEntries;
+        statistics::Vector samplerReplacementCnt;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,
             candidateLate;
@@ -176,6 +209,16 @@ class LLDPrefetcher : public Queued
     unsigned validChildren(const Entry &entry) const;
     lldp::Hint pfHint(const PacketPtr &pkt);
     bool isSpatialPrefetch(const PacketPtr &pkt) const;
+    static bool isLldpSource(PrefetchSourceType source);
+    unsigned samplerSet(Addr addr_p) const;
+    unsigned metaSet(Addr addr_p) const;
+    void trainAddressPair(Addr addr_p, Addr addr_c);
+    void updateMetaTable(Addr addr_p, Addr addr_c);
+    std::optional<Addr> lookupMetaTable(Addr addr_p);
+    bool queueCandidate(const PacketPtr &demand, const lldp::Hint &hint,
+                        Addr addr_p, Addr addr_c,
+                        PrefetchSourceType source,
+                        std::optional<unsigned> consumer);
     bool filterCandidate(Addr line);
     bool rejectTranslatedPrefetch(const DeferredPacket &dpp,
                                   Addr paddr) override;
@@ -190,7 +233,7 @@ class LLDPrefetcher : public Queued
     void dependenceTrain(const o3::XsDynInstMetaPtr &meta);
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void hintData(const lldp::Hint &hint, const PacketPtr &demand,
-                  const uint8_t *data, unsigned size) override;
+                  Addr addr_p, const uint8_t *data, unsigned size) override;
     void notifyPrefetchUseful(PrefetchSourceType source) override;
     void notifyPrefetchUseful(PrefetchSourceType source,
                               uint64_t candidate_id) override;

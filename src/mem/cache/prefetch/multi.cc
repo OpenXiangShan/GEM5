@@ -106,10 +106,10 @@ Multi::loadTrain(const PacketPtr &pkt, bool miss)
 
 void
 Multi::hintData(const lldp::Hint &hint, const PacketPtr &demand,
-                const uint8_t *data, unsigned size)
+                Addr addr_p, const uint8_t *data, unsigned size)
 {
     for (auto pf : prefetchers)
-        pf->hintData(hint, demand, data, size);
+        pf->hintData(hint, demand, addr_p, data, size);
 }
 
 void

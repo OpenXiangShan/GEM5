@@ -203,10 +203,11 @@ L2CompositeWithWorkerPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
 void
 L2CompositeWithWorkerPrefetcher::hintData(const lldp::Hint &hint,
                                            const PacketPtr &demand,
-                                           const uint8_t *data, unsigned size)
+                                           Addr addr_p, const uint8_t *data,
+                                           unsigned size)
 {
     if (enableLLDP)
-        lldp->hintData(hint, demand, data, size);
+        lldp->hintData(hint, demand, addr_p, data, size);
 }
 
 void

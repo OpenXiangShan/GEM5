@@ -1554,7 +1554,9 @@ BaseCache::getNextQueueEntry()
                 pkt->lldpHint = prefetcher->loadTrain(pkt, false);
                 if (pkt->lldpHint.valid) {
                     prefetcher->hintData(
-                        pkt->lldpHint, pkt, pf_blk->data, blkSize);
+                        pkt->lldpHint, pkt,
+                        pf_addr | pkt->lldpHint.offset,
+                        pf_blk->data, blkSize);
                     pkt->lldpHint.valid = false;
                 }
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "

@@ -85,6 +85,9 @@ using enums::StoreStream;
 using enums::CDP;
 using enums::SOpt;
 using enums::DespacitoStream;
+using enums::LLDP;
+using enums::LLDPS;
+using enums::LLDPT;
 
 static constexpr unsigned NUM_PF_SOURCES = enums::Num_PrefetchSourceType;
 
@@ -397,6 +400,7 @@ class Request
         Addr prefetchProducerPC;
         uint64_t prefetchGeneration;
         uint64_t prefetchCandidateId;
+        Addr prefetchLldpAddrP;
         uint16_t prefetchDataOffset;
         uint8_t prefetchDataSize;
         bool prefetchDataSignExtend;
@@ -406,7 +410,8 @@ class Request
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
             prefetchDepth(0), prefetchProducerPC(0), prefetchGeneration(0),
-            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchCandidateId(0), prefetchLldpAddrP(0),
+            prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
@@ -414,7 +419,8 @@ class Request
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE), prefetchDepth(0),
             prefetchProducerPC(0), prefetchGeneration(0),
-            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchCandidateId(0), prefetchLldpAddrP(0),
+            prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
@@ -422,7 +428,8 @@ class Request
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(0),
             prefetchProducerPC(0), prefetchGeneration(0),
-            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchCandidateId(0), prefetchLldpAddrP(0),
+            prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
@@ -430,7 +437,8 @@ class Request
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(pfDepth),
             prefetchProducerPC(0), prefetchGeneration(0),
-            prefetchCandidateId(0), prefetchDataOffset(0),
+            prefetchCandidateId(0), prefetchLldpAddrP(0),
+            prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         XsMetadata(PrefetchSourceType pfSource, int pfDepth,
@@ -440,7 +448,8 @@ class Request
               prefetchSource(pfSource), prefetchDepth(pfDepth),
               prefetchProducerPC(producer_pc),
               prefetchGeneration(generation),
-              prefetchCandidateId(candidate_id), prefetchDataOffset(0),
+              prefetchCandidateId(candidate_id), prefetchLldpAddrP(0),
+              prefetchDataOffset(0),
               prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
         void invalidate() {
@@ -451,6 +460,7 @@ class Request
             prefetchProducerPC = 0;
             prefetchGeneration = 0;
             prefetchCandidateId = 0;
+            prefetchLldpAddrP = 0;
             prefetchDataOffset = 0;
             prefetchDataSize = 0;
             prefetchDataSignExtend = false;

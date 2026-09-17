@@ -1528,7 +1528,10 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     Addr target_paddr;
     bool has_target_pa = false;
     RequestPtr translation_req = nullptr;
-    if (addr_prio.forceTranslation) {
+    if (!addr_prio.isVA) {
+        target_paddr = new_pfi.getAddr();
+        has_target_pa = true;
+    } else if (addr_prio.forceTranslation) {
         if (!tlb || !pkt->req->hasContextId())
             return false;
         translation_req = createPrefetchRequest(new_pfi.getAddr(), new_pfi,

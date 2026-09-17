@@ -1,6 +1,7 @@
 #include "mem/cache/prefetch/lldp.hh"
 
 #include <algorithm>
+#include <limits>
 #include <set>
 
 #include "cpu/base.hh"
@@ -47,6 +48,18 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
       ADD_STAT(filtered, statistics::units::Count::get(), "Candidates filtered by recent TLB-line history"),
       ADD_STAT(duplicates, statistics::units::Count::get(), "Duplicate candidate cache lines"),
       ADD_STAT(unsupported, statistics::units::Count::get(), "Chains or data unsafe to replay"),
+      ADD_STAT(samplerOutputsToMeta, statistics::units::Count::get(),
+               "Stable address pairs emitted from SamplerTable to MetaTable"),
+      ADD_STAT(metaTableHits, statistics::units::Count::get(),
+               "loadTrain addresses hitting MetaTable"),
+      ADD_STAT(metaTablePrefetches, statistics::units::Count::get(),
+               "Prefetches queued directly from MetaTable"),
+      ADD_STAT(samplerValidEntries, statistics::units::Count::get(),
+               "Current valid SamplerTable entries"),
+      ADD_STAT(metaValidEntries, statistics::units::Count::get(),
+               "Current valid MetaTable entries"),
+      ADD_STAT(samplerReplacementCnt, statistics::units::Count::get(),
+               "SamplerTable victim count distribution"),
       ADD_STAT(candidateGenerated, statistics::units::Count::get(), "Candidate lifecycles generated"),
       ADD_STAT(candidateQueued, statistics::units::Count::get(), "Candidate lifecycles queued"),
       ADD_STAT(candidateIssued, statistics::units::Count::get(), "Candidate lifecycles issued"),
@@ -95,6 +108,7 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
       ADD_STAT(consumerDemandHits, statistics::units::Count::get(), "Consumer candidate demand matches"),
       ADD_STAT(validProducers, statistics::units::Count::get(), "Current valid LLDT producers")
 {
+    samplerReplacementCnt.init(256);
     immValueHist.init(256);
     lineDeltaHist.init(129);
     offsetDeltaHist.init(127);
@@ -207,6 +221,97 @@ LLDPrefetcher::isSpatialPrefetch(const PacketPtr &pkt) const
 }
 
 bool
+LLDPrefetcher::isLldpSource(PrefetchSourceType source)
+{
+    return source == PrefetchSourceType::LLDP ||
+        source == PrefetchSourceType::LLDPS ||
+        source == PrefetchSourceType::LLDPT;
+}
+
+unsigned
+LLDPrefetcher::samplerSet(Addr addr_p) const
+{
+    return (addr_p ^ (addr_p >> 6)) & (SamplerSets - 1);
+}
+
+unsigned
+LLDPrefetcher::metaSet(Addr addr_p) const
+{
+    return (addr_p ^ (addr_p >> 6)) & (MetaSets - 1);
+}
+
+void
+LLDPrefetcher::updateMetaTable(Addr addr_p, Addr addr_c)
+{
+    const unsigned set = metaSet(addr_p);
+    auto &ways = metaTable[set];
+    for (unsigned way = 0; way < AddressTableWays; ++way) {
+        if (ways[way].valid && ways[way].addrP == addr_p) {
+            ways[way].addrC = addr_c;
+            metaReplacement[set].touch(way);
+            return;
+        }
+    }
+
+    unsigned victim = metaReplacement[set].victim();
+    for (unsigned way = 0; way < AddressTableWays; ++way) {
+        if (!ways[way].valid) {
+            victim = way;
+            break;
+        }
+    }
+    ways[victim] = {true, addr_p, addr_c};
+    metaReplacement[set].touch(victim);
+}
+
+void
+LLDPrefetcher::trainAddressPair(Addr addr_p, Addr addr_c)
+{
+    const unsigned set = samplerSet(addr_p);
+    auto &ways = samplerTable[set];
+    for (unsigned way = 0; way < AddressTableWays; ++way) {
+        auto &entry = ways[way];
+        if (!entry.valid || entry.addrP != addr_p || entry.addrC != addr_c)
+            continue;
+        const uint8_t old_cnt = entry.cnt;
+        if (entry.cnt != std::numeric_limits<uint8_t>::max())
+            ++entry.cnt;
+        samplerReplacement[set].touch(way);
+        if (old_cnt < SamplerThreshold && entry.cnt >= SamplerThreshold) {
+            updateMetaTable(addr_p, addr_c);
+            stats.samplerOutputsToMeta++;
+        }
+        return;
+    }
+
+    unsigned victim = samplerReplacement[set].victim();
+    for (unsigned way = 0; way < AddressTableWays; ++way) {
+        if (!ways[way].valid) {
+            victim = way;
+            break;
+        }
+    }
+    if (ways[victim].valid)
+        stats.samplerReplacementCnt[ways[victim].cnt]++;
+    ways[victim] = {true, addr_p, addr_c, 0};
+    samplerReplacement[set].touch(victim);
+}
+
+std::optional<Addr>
+LLDPrefetcher::lookupMetaTable(Addr addr_p)
+{
+    const unsigned set = metaSet(addr_p);
+    auto &ways = metaTable[set];
+    for (unsigned way = 0; way < AddressTableWays; ++way) {
+        if (ways[way].valid && ways[way].addrP == addr_p) {
+            metaReplacement[set].touch(way);
+            return ways[way].addrC;
+        }
+    }
+    return std::nullopt;
+}
+
+bool
 LLDPrefetcher::filterCandidate(Addr line)
 {
     if (tlbFilterSet.count(line))
@@ -214,6 +319,7 @@ LLDPrefetcher::filterCandidate(Addr line)
     tlbFilter.push_back(line);
     tlbFilterSet.insert(line);
     if (tlbFilter.size() > TlbFilterEntries) {
+        tlbFilterTranslations.erase(tlbFilter.front());
         tlbFilterSet.erase(tlbFilter.front());
         tlbFilter.pop_front();
     }
@@ -222,12 +328,22 @@ LLDPrefetcher::filterCandidate(Addr line)
 
 bool
 LLDPrefetcher::rejectTranslatedPrefetch(const DeferredPacket &dpp,
-                                        Addr)
+                                        Addr paddr)
 {
     const auto metadata = dpp.pfInfo.getXsMetadata();
     if (!metadata.prefetchCandidateId)
         return false;
-    if (!filterCandidate(blockAddress(dpp.pfInfo.getAddr())))
+    const bool translated_source =
+        metadata.prefetchSource == PrefetchSourceType::LLDP ||
+        metadata.prefetchSource == PrefetchSourceType::LLDPS;
+    if (translated_source) {
+        trainAddressPair(metadata.prefetchLldpAddrP, blockAddress(paddr));
+    }
+    const Addr virtual_line = blockAddress(dpp.pfInfo.getAddr());
+    const bool duplicate = filterCandidate(virtual_line);
+    if (translated_source)
+        tlbFilterTranslations[virtual_line] = blockAddress(paddr);
+    if (!duplicate)
         return false;
     stats.filtered++;
     return true;
@@ -237,9 +353,21 @@ bool
 LLDPrefetcher::rejectPrefetchCandidate(const PrefetchInfo &pfi,
                                        const AddrPriority &addr_prio)
 {
-    const bool reject = addr_prio.pfSource == PrefetchSourceType::LLDP &&
+    const bool translated_source =
+        addr_prio.pfSource == PrefetchSourceType::LLDP ||
+        addr_prio.pfSource == PrefetchSourceType::LLDPS;
+    const Addr virtual_line = blockAddress(pfi.getAddr());
+    const bool reject = translated_source &&
         pfi.getXsMetadata().prefetchCandidateId &&
-        tlbFilterSet.count(blockAddress(pfi.getAddr()));
+        tlbFilterSet.count(virtual_line);
+    if (reject) {
+        const auto translation = tlbFilterTranslations.find(virtual_line);
+        if (translation != tlbFilterTranslations.end()) {
+            trainAddressPair(
+                pfi.getXsMetadata().prefetchLldpAddrP,
+                translation->second);
+        }
+    }
     stats.filtered += reject;
     return reject;
 }
@@ -564,6 +692,15 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
         dependenceTrain(meta);
     auto hint = pfHint(pkt);
     if (hint.valid) {
+        hint.spatial = spatial_pf;
+        const Addr addr_p = blockAddress(pkt->req->getPaddr()) | hint.offset;
+        if (const auto addr_c = lookupMetaTable(addr_p)) {
+            stats.metaTableHits++;
+            queueCandidate(pkt, hint, addr_p, *addr_c,
+                           PrefetchSourceType::LLDPT, std::nullopt);
+            hint.valid = false;
+            return hint;
+        }
         if (miss) {
             stats.hints++;
             if (spatial_pf)
@@ -576,9 +713,60 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
     return hint;
 }
 
+bool
+LLDPrefetcher::queueCandidate(const PacketPtr &demand,
+                              const lldp::Hint &hint, Addr addr_p,
+                              Addr addr_c, PrefetchSourceType source,
+                              std::optional<unsigned> consumer)
+{
+    stats.candidates++;
+    stats.candidateGenerated++;
+    if (!admitPfControlCandidate(source))
+        return false;
+    const Addr origin_addr = demand->req->hasVaddr() ?
+        demand->req->getVaddr() : demand->req->getPaddr();
+    PrefetchInfo origin(demand, origin_addr, true,
+                        Request::XsMetadata(source));
+    PrefetchInfo candidate(origin, addr_c);
+    candidateId = (candidateId + 1) & ((uint64_t(1) << 48) - 1);
+    if (!candidateId)
+        ++candidateId;
+    const uint64_t id = (uint64_t(requestorId) << 48) | candidateId;
+    auto metadata = Request::XsMetadata(
+        source, 0, hint.producerPC, hint.generation, id);
+    metadata.prefetchLldpAddrP = addr_p;
+    candidate.setXsMetadata(metadata);
+
+    AddrPriority command(addr_c, 0, source);
+    command.isVA = source != PrefetchSourceType::LLDPT;
+    command.forceTranslation = command.isVA;
+    statsQueued.pfIdentified++;
+
+    const int row = findProducer(
+        hint.producerPC, demand->req->contextId());
+    if (row >= 0 && table[row].generation == hint.generation) {
+        table[row].candidateCount++;
+        if (consumer && *consumer < SubEntries)
+            table[row].consumers[*consumer].candidateCount++;
+    }
+    if (!insert(demand, candidate, command))
+        return false;
+
+    stats.candidateQueued++;
+    if (source == PrefetchSourceType::LLDPT)
+        stats.metaTablePrefetches++;
+    if (row >= 0 && consumer && *consumer < SubEntries) {
+        const auto &sub = table[row].consumers[*consumer];
+        candidateOwners[id] = {
+            unsigned(row), *consumer, hint.generation, sub.consumerPC,
+            source};
+    }
+    return true;
+}
+
 void
 LLDPrefetcher::hintData(const lldp::Hint &hint, const PacketPtr &demand,
-                       const uint8_t *data, unsigned size)
+                       Addr addr_p, const uint8_t *data, unsigned size)
 {
     if (!hint.valid || !data || hint.offset + hint.size > size)
         return;
@@ -599,10 +787,6 @@ LLDPrefetcher::hintData(const lldp::Hint &hint, const PacketPtr &demand,
         (value & (uint64_t(1) << (hint.size * 8 - 1))))
         value |= (~uint64_t(0)) << (hint.size * 8);
     std::set<Addr> generated;
-    const Addr originAddr = demand->req->hasVaddr() ?
-        demand->req->getVaddr() : demand->req->getPaddr();
-    PrefetchInfo origin(demand, originAddr, true,
-                         Request::XsMetadata(PrefetchSourceType::LLDP));
     for (unsigned col = 0; col < SubEntries; ++col) {
         auto &sub = table[row].consumers[col];
         if (!sub.valid || sub.cConf < consumerThreshold || sub.immConf < immediateThreshold)
@@ -620,30 +804,9 @@ LLDPrefetcher::hintData(const lldp::Hint &hint, const PacketPtr &demand,
             stats.duplicates++;
             continue;
         }
-        stats.candidates++;
-        stats.candidateGenerated++;
-        if (!admitPfControlCandidate(PrefetchSourceType::LLDP))
-            continue;
-        PrefetchInfo candidate(origin, address);
-        candidateId = (candidateId + 1) & ((uint64_t(1) << 48) - 1);
-        if (!candidateId)
-            ++candidateId;
-        const uint64_t id = (uint64_t(requestorId) << 48) | candidateId;
-        candidate.setXsMetadata(Request::XsMetadata(
-            PrefetchSourceType::LLDP, 0, hint.producerPC,
-            hint.generation, id));
-        AddrPriority command(address, 0, PrefetchSourceType::LLDP);
-        // All LLDP values are virtual pointers and require a TLB lookup,
-        // even if they happen to be on the trigger's page.
-        command.forceTranslation = true;
-        statsQueued.pfIdentified++;
-        table[row].candidateCount++;
-        sub.candidateCount++;
-        if (insert(demand, candidate, command)) {
-            stats.candidateQueued++;
-            candidateOwners[id] = {
-                unsigned(row), col, hint.generation, sub.consumerPC};
-        }
+        const auto source = hint.spatial ? PrefetchSourceType::LLDPS :
+            PrefetchSourceType::LLDP;
+        queueCandidate(demand, hint, addr_p, address, source, col);
         DPRINTF(LLDPrefetcher, "prefetch PCp=%#x PCc=%#x value=%#x va=%#x offset=%u\n",
                 hint.producerPC, sub.consumerPC, value, address, hint.offset);
     }
@@ -686,6 +849,14 @@ LLDPrefetcher::preDumpStats()
 {
     Queued::preDumpStats();
     stats.validProducers = 0;
+    stats.samplerValidEntries = 0;
+    stats.metaValidEntries = 0;
+    for (const auto &set : samplerTable)
+        for (const auto &entry : set)
+            stats.samplerValidEntries += entry.valid;
+    for (const auto &set : metaTable)
+        for (const auto &entry : set)
+            stats.metaValidEntries += entry.valid;
     for (unsigned i = 0; i <= SubEntries; ++i)
         stats.childrenAtDump[i] = 0;
     for (unsigned i = 0; i <= SubEntries; ++i)
@@ -742,7 +913,7 @@ void
 LLDPrefetcher::notifyPrefetchUseful(PrefetchSourceType source)
 {
     Queued::notifyPrefetchUseful(source);
-    if (source == PrefetchSourceType::LLDP)
+    if (isLldpSource(source))
         stats.candidateUseful++;
 }
 
@@ -751,7 +922,7 @@ LLDPrefetcher::notifyPrefetchUseful(PrefetchSourceType source,
                                     uint64_t candidate_id)
 {
     Queued::notifyPrefetchUseful(source);
-    if (source == PrefetchSourceType::LLDP && candidate_id) {
+    if (isLldpSource(source) && candidate_id) {
         stats.candidateUseful++;
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() &&
@@ -769,7 +940,7 @@ void
 LLDPrefetcher::prefetchUnused(PrefetchSourceType source)
 {
     Queued::prefetchUnused(source);
-    if (source == PrefetchSourceType::LLDP)
+    if (isLldpSource(source))
         stats.candidateUnused++;
 }
 
@@ -778,7 +949,7 @@ LLDPrefetcher::prefetchUnused(PrefetchSourceType source,
                               uint64_t candidate_id)
 {
     Queued::prefetchUnused(source);
-    if (source == PrefetchSourceType::LLDP && candidate_id) {
+    if (isLldpSource(source) && candidate_id) {
         stats.candidateUnused++;
         candidateOwners.erase(candidate_id);
     }
@@ -815,7 +986,7 @@ LLDPrefetcher::notifyCandidateDemand(uint64_t candidate_id,
     auto &entry = table[it->second.row];
     entry.lastDemandPC = demand->req->hasPC() ? demand->req->getPC() : 0;
     entry.lastDemandChainId = it->second.generation;
-    entry.lastDemandSource = PrefetchSourceType::LLDP;
+    entry.lastDemandSource = it->second.source;
     entry.demandHitCount++;
     entry.consumers[it->second.col].demandHitCount++;
 }
@@ -824,7 +995,7 @@ void
 LLDPrefetcher::pfHitInCache(PrefetchSourceType source)
 {
     Queued::pfHitInCache(source);
-    if (source == PrefetchSourceType::LLDP) {
+    if (isLldpSource(source)) {
         stats.candidateCacheHit++;
         stats.candidateLate++;
     }
@@ -835,11 +1006,11 @@ LLDPrefetcher::pfHitInCache(PrefetchSourceType source,
                             uint64_t candidate_id)
 {
     Queued::pfHitInCache(source);
-    if (source == PrefetchSourceType::LLDP) {
+    if (isLldpSource(source)) {
         stats.candidateCacheHit++;
         stats.candidateLate++;
     }
-    if (source == PrefetchSourceType::LLDP && candidate_id) {
+    if (isLldpSource(source) && candidate_id) {
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() &&
             table[it->second.row].generation == it->second.generation &&
@@ -856,7 +1027,7 @@ void
 LLDPrefetcher::pfHitInMSHR(PrefetchSourceType source)
 {
     Queued::pfHitInMSHR(source);
-    if (source == PrefetchSourceType::LLDP) {
+    if (isLldpSource(source)) {
         stats.candidateMshrHit++;
         stats.candidateLate++;
     }
@@ -867,11 +1038,11 @@ LLDPrefetcher::pfHitInMSHR(PrefetchSourceType source,
                            uint64_t candidate_id)
 {
     Queued::pfHitInMSHR(source);
-    if (source == PrefetchSourceType::LLDP) {
+    if (isLldpSource(source)) {
         stats.candidateMshrHit++;
         stats.candidateLate++;
     }
-    if (source == PrefetchSourceType::LLDP && candidate_id) {
+    if (isLldpSource(source) && candidate_id) {
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() &&
             table[it->second.row].generation == it->second.generation &&
@@ -888,7 +1059,7 @@ void
 LLDPrefetcher::pfHitInWB(PrefetchSourceType source)
 {
     Queued::pfHitInWB(source);
-    if (source == PrefetchSourceType::LLDP) {
+    if (isLldpSource(source)) {
         stats.candidateWbHit++;
         stats.candidateLate++;
     }
@@ -899,11 +1070,11 @@ LLDPrefetcher::pfHitInWB(PrefetchSourceType source,
                          uint64_t candidate_id)
 {
     Queued::pfHitInWB(source);
-    if (source == PrefetchSourceType::LLDP) {
+    if (isLldpSource(source)) {
         stats.candidateWbHit++;
         stats.candidateLate++;
     }
-    if (source == PrefetchSourceType::LLDP && candidate_id) {
+    if (isLldpSource(source) && candidate_id) {
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() &&
             table[it->second.row].generation == it->second.generation &&

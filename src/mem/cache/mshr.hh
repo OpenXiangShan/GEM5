@@ -126,6 +126,9 @@ class MSHR : public QueueEntry, public Printable
     /** True if the entry is just a simple forward from an upper level */
     bool isForward;
 
+    /** Cache-line offset retained only from requests carrying an LLDP hint. */
+    Addr blkOffset;
+
     class Target : public QueueEntry::Target
     {
       public:

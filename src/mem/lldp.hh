@@ -183,6 +183,7 @@ struct Hint
     uint32_t offset{0};
     uint8_t size{0};
     bool signExtend{false};
+    bool spatial{false};
 };
 
 // A small binary tree PLRU, also used by the 4-way consumer subtable.

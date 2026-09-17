@@ -1033,7 +1033,7 @@ class Base : public ClockedObject
     // LLDP sideband ports are synchronous at the cache tag/data boundary.
     virtual lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) { return {}; }
     virtual void hintData(const lldp::Hint &hint, const PacketPtr &demand,
-                          const uint8_t *data, unsigned size) {}
+                          Addr addr_p, const uint8_t *data, unsigned size) {}
     std::function<void(Tick)> packetReady;
 
     virtual void setPacketReadyCallback(std::function<void(Tick)> callback)

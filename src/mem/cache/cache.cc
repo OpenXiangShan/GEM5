@@ -784,7 +784,8 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                     line = pkt->getConstPtr<uint8_t>();
                     bytes = pkt->getSize();
                 }
-                prefetcher->hintData(target.lldpHint, tgt_pkt, line, bytes);
+                prefetcher->hintData(target.lldpHint, tgt_pkt,
+                    mshr->blkAddr | mshr->blkOffset, line, bytes);
                 target.lldpHint.valid = false;
             }
 
@@ -982,7 +983,8 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                     bytes = pkt->getSize();
                 }
                 prefetcher->hintData(
-                    target.lldpHint, tgt_pkt, line, bytes);
+                    target.lldpHint, tgt_pkt,
+                    mshr->blkAddr | mshr->blkOffset, line, bytes);
                 target.lldpHint.valid = false;
             }
 
