@@ -114,6 +114,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       numFetchTargetThreads(params.smtNumFetchTargetThreads),
+      enablePredecode(params.enablePredecode),
       icachePort(this, _cpu),
       finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
@@ -231,6 +232,18 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
 Fetch::~Fetch() = default;
 
+Fetch::PredecodeEntry::PredecodeEntry() = default;
+Fetch::PredecodeEntry::~PredecodeEntry() = default;
+Fetch::PredecodeStage::~PredecodeStage() = default;
+
+void
+Fetch::PredecodeStage::clear()
+{
+    for (unsigned i = 0; i < size; ++i)
+        entries[i].instruction = nullptr;
+    size = 0;
+}
+
 void
 Fetch::clearRedirectPending(ThreadID tid)
 {
@@ -274,6 +287,8 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of branches that fetch encountered"),
     ADD_STAT(predictedBranches, statistics::units::Count::get(),
              "Number of branches that fetch has predicted taken"),
+    ADD_STAT(predecodeRedirects, statistics::units::Count::get(),
+             "Redirects issued by predecode"),
     ADD_STAT(cycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has run and was not squashing or "
              "blocked"),
@@ -640,6 +655,7 @@ Fetch::clearStates(ThreadID tid)
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
+    clearPredecodePipeline(tid);
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -673,6 +689,7 @@ Fetch::resetStage()
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
+        clearPredecodePipeline(tid);
 
         priorityList.push_back(tid);
         waitForVsetvl[tid] = false;
@@ -1015,13 +1032,15 @@ Fetch::deactivateThread(ThreadID tid)
 bool
 Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                              bool allow_two_fetch,
-                             bool &continued_to_next_target)
+                             bool &continued_to_next_target,
+                             bool &false_hit)
 {
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
     // this function updates it.
     bool predict_taken = false;
     continued_to_next_target = false;
+    false_hit = false;
 
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
@@ -1059,7 +1078,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
 
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
-    const bool false_hit = run_out && prediction.taken && !predict_taken;
+    false_hit = run_out && prediction.taken && !predict_taken;
     if (false_hit) {
         DPRINTF(DecoupleBP,
                 "False BTB hit at FTQ %lu: stream [%#lx, %#lx) "
@@ -1428,6 +1447,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Empty fetch queue
     fetchQueue[tid].clear();
+    clearPredecodePipeline(tid);
 
     // microops are being squashed, it is not known wheather the
     // youngest non-squashed microop was  marked delayed commit
@@ -1592,6 +1612,8 @@ Fetch::initializeTickState()
 void
 Fetch::fetchAndProcessInstructions(bool status_change)
 {
+    advancePredecodePipeline();
+
     // Fetch instructions from active threads
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
@@ -2512,6 +2534,158 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 }
 
 bool
+Fetch::predecodePipelineEnabled(ThreadID tid) const
+{
+    return enablePredecode && numThreads == 1 && tid < numThreads &&
+        !isTraceMode();
+}
+
+bool
+Fetch::predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
+                        const StaticInstPtr &curMacroop) const
+{
+    return predecodePipelineEnabled(tid) &&
+        !curMacroop && staticInst && !staticInst->isMacroop() &&
+        !staticInst->isVectorConfig();
+}
+
+void
+Fetch::clearPredecodePipeline(ThreadID tid)
+{
+    predecodeStage0[tid].clear();
+    predecodeStage1[tid].clear();
+}
+
+bool
+Fetch::processPredecodeStage(ThreadID tid)
+{
+    auto &stage = predecodeStage1[tid];
+    for (unsigned i = 0; i < stage.size; ++i) {
+        const DynInstPtr instruction = stage.entries[i].instruction;
+        if (!instruction || instruction->isSquashed())
+            continue;
+
+        const auto fault = classifyPredecodeFault(
+            instruction, instruction->staticInst);
+        instruction->setPredecodeChecked();
+        DPRINTF(Fetch,
+                "[tid:%i] Predecode checker at PC %#lx, seq=%llu, fault=%u\n",
+                tid, instruction->pcState().instAddr(), instruction->seqNum,
+                static_cast<unsigned>(fault));
+        if (fault != PredecodeFault::None) {
+            handlePredecodeFault(tid, instruction, fault);
+            return true;
+        }
+    }
+    stage.clear();
+    return false;
+}
+
+void
+Fetch::advancePredecodePipeline()
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!predecodePipelineEnabled(tid))
+            continue;
+
+        if (processPredecodeStage(tid))
+            continue;
+
+        predecodeStage1[tid] = std::move(predecodeStage0[tid]);
+        predecodeStage0[tid].clear();
+    }
+}
+
+Fetch::PredecodeFault
+Fetch::classifyPredecodeFault(const DynInstPtr &instruction,
+                              const StaticInstPtr &staticInst) const
+{
+    if (instruction->readPredTaken() && !staticInst->isControl())
+        return PredecodeFault::NonCfiTaken;
+    if (staticInst->isReturn() && !staticInst->isNonSpeculative() &&
+        !instruction->readPredTaken())
+        return PredecodeFault::ReturnNotTaken;
+    if (staticInst->isDirectCtrl()) {
+        if (!instruction->readPredTaken() && staticInst->isUncondCtrl())
+            return PredecodeFault::DirectNotTaken;
+        if (instruction->readPredTaken()) {
+            const auto target = instruction->branchTarget();
+            if (target->instAddr() !=
+                instruction->readPredTarg().instAddr())
+                return PredecodeFault::DirectTargetMismatch;
+        }
+    }
+    return PredecodeFault::None;
+}
+
+void
+Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
+                            PredecodeFault fault)
+{
+    RiscvISA::PCState target = instruction->pcState().as<RiscvISA::PCState>();
+    bool actuallyTaken = true;
+    const char *faultName = "unknown";
+    switch (fault) {
+      case PredecodeFault::DirectNotTaken:
+        faultName = "direct-not-taken";
+        target = instruction->branchTarget()->as<RiscvISA::PCState>();
+        break;
+      case PredecodeFault::DirectTargetMismatch:
+        faultName = "direct-target-mismatch";
+        target = instruction->branchTarget()->as<RiscvISA::PCState>();
+        break;
+      case PredecodeFault::ReturnNotTaken:
+        faultName = "return-not-taken";
+        target.set(getPreservedReturnAddr(instruction));
+        break;
+      case PredecodeFault::NonCfiTaken:
+        faultName = "taken-non-cfi";
+        target.set(instruction->pcState().getFallThruPC());
+        actuallyTaken = false;
+        break;
+      case PredecodeFault::None:
+        return;
+    }
+
+    DPRINTF(Fetch,
+            "[tid:%i] Predecode redirect (%s) at PC %#lx to %#lx, seq=%llu\n",
+            tid, faultName, instruction->pcState().instAddr(),
+            target.instAddr(), instruction->seqNum);
+
+    instruction->setPredTaken(actuallyTaken);
+    instruction->setPredTarg(target);
+    assert(dbpbtb);
+    if (fault == PredecodeFault::NonCfiTaken) {
+        dbpbtb->nonControlSquash(
+            instruction->getFtqId(), instruction->pcState(),
+            instruction->seqNum, tid, instruction->getLoopIteration());
+    } else {
+        dbpbtb->controlSquash(
+            instruction->getFtqId(), instruction->pcState(), target,
+            instruction->staticInst, instruction->getInstBytes(),
+            actuallyTaken, instruction->seqNum, tid,
+            instruction->getLoopIteration(), false, true);
+    }
+
+    // The faulting instruction is already registered. Preserve older entries
+    // that may still be waiting for Decode; squash only removes younger work.
+    std::deque<DynInstPtr> preservedFetchEntries;
+    for (const auto &queued : fetchQueue[tid]) {
+        if (queued->seqNum <= instruction->seqNum)
+            preservedFetchEntries.push_back(queued);
+    }
+
+    // Redirect Fetch and mark younger in-flight front-end instructions as
+    // squashed. At this point they cannot have reached the ROB yet.
+    doSquash(target, instruction, instruction->seqNum, tid);
+    cpu->removeInstsUntil(instruction->seqNum, tid);
+    fetchQueue[tid] = std::move(preservedFetchEntries);
+    delayedCommit[tid] = !fetchQueue[tid].empty() &&
+        fetchQueue[tid].back()->isDelayedCommit();
+    ++fetchStats.predecodeRedirects;
+}
+
+bool
 Fetch::checkDecoupledFrontend(ThreadID tid)
 {
     assert(dbpbtb);
@@ -2769,12 +2943,38 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     set(next_pc, pc);
 
     // Handle branch prediction and update next_pc for both modes
+    bool false_hit = false;
     predictedBranch = lookupAndUpdateNextPC(
-        instruction, *next_pc, allow_two_fetch, continued_to_next_target);
+        instruction, *next_pc, allow_two_fetch, continued_to_next_target,
+        false_hit);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
                 instruction->threadNumber, pc, *next_pc);
+    }
+
+    // Value prediction must run before a predecode recovery can return early.
+    if (valuePred && instruction->canLVP()) {
+        valuepred::VPPredictRequest predictRequest;
+        predictRequest.pc = instruction->getPC();
+        predictRequest.seqNo = instruction->seqNum;
+        predictRequest.tid = tid;
+        // ExampleValuePredictor shows how a predictor can extend the public
+        // request with extra fetch-time inputs without changing core fields.
+        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
+                curTick(), instruction->opClass());
+        instruction->vpResult =
+            valuePred->valuePredict(predictRequest, instruction->vpRecord);
+    }
+
+    if (predecodeEnabled(tid, staticInst, curMacroop) &&
+        !false_hit) {
+        auto &stage = predecodeStage0[tid];
+        assert(stage.size < MaxWidth);
+        stage.entries[stage.size++].instruction = instruction;
+        DPRINTF(Fetch,
+                "[tid:%i] Predecode stage0 at PC %#lx, seq=%llu\n",
+                tid, instruction->pcState().instAddr(), instruction->seqNum);
     }
 
     if (isTraceMode()) {
@@ -2792,20 +2992,6 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Update the main PC state for the next instruction.
     set(pc, *next_pc);
-
-    // Do the value prediction
-    if (valuePred && instruction->canLVP()) {
-        valuepred::VPPredictRequest predictRequest;
-        predictRequest.pc = instruction->getPC();
-        predictRequest.seqNo = instruction->seqNum;
-        predictRequest.tid = tid;
-        // ExampleValuePredictor shows how a predictor can extend the public
-        // request with extra fetch-time inputs without changing core fields.
-        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
-                curTick(), instruction->opClass());
-        instruction->vpResult =
-            valuePred->valuePredict(predictRequest, instruction->vpRecord);
-    }
 
     return predictedBranch;
 }
@@ -2871,7 +3057,9 @@ Fetch::performInstructionFetch(ThreadID tid)
 
     // Log why fetch stopped
     if (stopFetchThisCycle) {
-        DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch instruction encountered.\n", tid);
+        DPRINTF(Fetch,
+                "[tid:%i] Done fetching, predicted branch instruction "
+                "encountered.\n", tid);
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);
     } else if (stall != StallReason::NoStall) {

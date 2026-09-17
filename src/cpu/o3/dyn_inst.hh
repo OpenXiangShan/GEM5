@@ -447,6 +447,10 @@ class DynInst : public ExecContext, public RefCounted
 
     Addr fallThruPC;
 
+    // Fetch-side RISC-V predecode has checked this instruction. Decode must
+    // not re-run its frontend redirect checks for it.
+    bool predecodeChecked = false;
+
     /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
     unsigned ftqId;
@@ -743,6 +747,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Returns whether the instruction was predicted taken or not. */
     bool readPredTaken() { return instFlags[PredTaken]; }
+
+    void setPredecodeChecked() { predecodeChecked = true; }
+    bool isPredecodeChecked() const
+    {
+        return predecodeChecked;
+    }
 
     void
     setPredTaken(bool predicted_taken)

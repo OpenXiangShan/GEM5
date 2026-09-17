@@ -916,7 +916,8 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 
         // Ensure that if it was predicted as a branch, it really is a
         // branch.
-        if (inst->readPredTaken() && !inst->isControl()) {
+        if (inst->readPredTaken() && !inst->isControl() &&
+            !inst->isPredecodeChecked()) {
             // panic("Instruction predicted as a branch!");
 
             ++stats.controlMispred;
@@ -939,7 +940,8 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         //（hasTraceCtrlFlowChange），则交由 trap/wrong-path 逻辑处理，不在 decode
         // 再做一次基于静态分支目标的校验，避免把 cond->trap 误统计为普通分支
         // mispredict，或在这里产生“错误”的 redirect。
-        if (!(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
+        if (!inst->isPredecodeChecked() &&
+            !(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
             inst->isDirectCtrl() &&
             (inst->isUncondCtrl() || inst->readPredTaken()))
         {
@@ -1001,7 +1003,9 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
             }
         }
         // unpredicted return can make use of ras results to get earlier resteer
-        if (inst->isReturn() && !inst->isNonSpeculative() && !inst->readPredTaken()) {
+        if (!inst->isPredecodeChecked() &&
+            inst->isReturn() && !inst->isNonSpeculative() &&
+            !inst->readPredTaken()) {
             ++stats.branchMispred;
             decode_stalls.push(StallReason::InstMisPred);
             breakDecode = StallReason::InstMisPred;
