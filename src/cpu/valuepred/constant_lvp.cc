@@ -11,6 +11,7 @@
 #include "base/stats/units.hh"
 #include "base/trace.hh"
 #include "debug/ConstantLVP.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -26,6 +27,8 @@ ConstantLVP::ConstantLVP(const Params &params)
       tagBits(params.tagBits),
       confidenceBits(params.confidenceBits),
       usefulBits(params.usefulBits),
+      numPredictionPorts(params.numPredictionPorts),
+      numUpdatePorts(params.numUpdatePorts),
       resetConfidence(params.resetConfidence),
       maxConfidence(mask(confidenceBits)),
       confidenceThreshold(static_cast<uint16_t>(std::max<double>(1.0,
@@ -47,6 +50,10 @@ ConstantLVP::ConstantLVP(const Params &params)
             "the confidence counter maximum");
     fatal_if(usefulBits == 0 || usefulBits > 16,
             "ConstantLVP usefulBits must be in [1, 16]");
+    fatal_if(numPredictionPorts == 0,
+            "ConstantLVP numPredictionPorts must be nonzero");
+    fatal_if(numUpdatePorts == 0,
+            "ConstantLVP numUpdatePorts must be nonzero");
     fatal_if(params.thresholdPercent == 0 ||
                     params.thresholdPercent > 100,
             "ConstantLVP thresholdPercent must be in [1, 100]");
@@ -62,16 +69,26 @@ ConstantLVP::ConstantLVP(const Params &params)
 
     DPRINTF(ConstantLVP,
             "params: ways=%u sets=%u tagBits=%u confidenceBits=%u "
-            "usefulBits=%u resetConfidence=%u confidenceThreshold=%u "
-            "confidencePenalty=%u\n",
+            "usefulBits=%u predictionPorts=%u updatePorts=%u "
+            "resetConfidence=%u confidenceThreshold=%u confidencePenalty=%u\n",
             numWays, numSets, tagBits, confidenceBits, usefulBits,
-            resetConfidence, confidenceThreshold, confidencePenalty);
+            numPredictionPorts, numUpdatePorts, resetConfidence,
+            confidenceThreshold, confidencePenalty);
 }
 
 ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(lookups, statistics::units::Count::get(),
               "ConstantLVP decode-time table lookups"),
+      ADD_STAT(predictionPortRequests, statistics::units::Count::get(),
+              "ConstantLVP decode-time prediction port requests"),
+      ADD_STAT(predictionPortDenied, statistics::units::Count::get(),
+              "ConstantLVP predictions dropped due to unavailable ports"),
+      ADD_STAT(predictionPortLimitedCycles, statistics::units::Count::get(),
+              "Cycles with at least one denied prediction port request"),
+      ADD_STAT(predictionPortDeniedRate, statistics::units::Ratio::get(),
+              "Fraction of prediction port requests denied",
+              predictionPortDenied / predictionPortRequests),
       ADD_STAT(lookupHits, statistics::units::Count::get(),
               "ConstantLVP decode-time tag hits"),
       ADD_STAT(lookupMisses, statistics::units::Count::get(),
@@ -80,6 +97,15 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
               "ConstantLVP tag hits below the prediction threshold"),
       ADD_STAT(updates, statistics::units::Count::get(),
               "ConstantLVP committed updates"),
+      ADD_STAT(updatePortRequests, statistics::units::Count::get(),
+              "ConstantLVP commit-time update port requests"),
+      ADD_STAT(updatePortDenied, statistics::units::Count::get(),
+              "ConstantLVP training updates dropped due to unavailable ports"),
+      ADD_STAT(updatePortLimitedCycles, statistics::units::Count::get(),
+              "Cycles with at least one denied update port request"),
+      ADD_STAT(updatePortDeniedRate, statistics::units::Ratio::get(),
+              "Fraction of update port requests denied",
+              updatePortDenied / updatePortRequests),
       ADD_STAT(updateHits, statistics::units::Count::get(),
               "ConstantLVP committed updates that hit an entry"),
       ADD_STAT(updateMisses, statistics::units::Count::get(),
@@ -99,6 +125,52 @@ ConstantLVP::ConstantLVPStats::ConstantLVPStats(statistics::Group *parent)
       ADD_STAT(usefulDecrements, statistics::units::Count::get(),
               "ConstantLVP useful counter decrements after allocation failure")
 {
+}
+
+bool
+ConstantLVP::acquirePredictionPort()
+{
+    constantStats.predictionPortRequests++;
+    if (predictionPortTick != curTick()) {
+        predictionPortTick = curTick();
+        predictionPortsUsed = 0;
+        predictionPortsLimited = false;
+    }
+
+    if (predictionPortsUsed >= numPredictionPorts) {
+        constantStats.predictionPortDenied++;
+        if (!predictionPortsLimited) {
+            predictionPortsLimited = true;
+            constantStats.predictionPortLimitedCycles++;
+        }
+        return false;
+    }
+
+    predictionPortsUsed++;
+    return true;
+}
+
+bool
+ConstantLVP::acquireUpdatePort()
+{
+    constantStats.updatePortRequests++;
+    if (updatePortTick != curTick()) {
+        updatePortTick = curTick();
+        updatePortsUsed = 0;
+        updatePortsLimited = false;
+    }
+
+    if (updatePortsUsed >= numUpdatePorts) {
+        constantStats.updatePortDenied++;
+        if (!updatePortsLimited) {
+            updatePortsLimited = true;
+            constantStats.updatePortLimitedCycles++;
+        }
+        return false;
+    }
+
+    updatePortsUsed++;
+    return true;
 }
 
 unsigned
@@ -188,6 +260,14 @@ VPPredictionCandidate
 ConstantLVP::predict(const VPPredictRequest &request)
 {
     assertValidTid(request.tid);
+    if (!acquirePredictionPort()) {
+        DPRINTF(ConstantLVP,
+                "[predict] tid=%u seq=%llu pc=%#llx denied by port limit\n",
+                request.tid,
+                static_cast<unsigned long long>(request.seqNo),
+                static_cast<unsigned long long>(request.pc));
+        return {};
+    }
     constantStats.lookups++;
 
     Location location;
@@ -244,6 +324,14 @@ ConstantLVP::update(const VPUpdateInfo &updateInfo,
     (void)record;
     (void)feedback;
     assertValidTid(updateInfo.tid);
+    if (!acquireUpdatePort()) {
+        DPRINTF(ConstantLVP,
+                "[update] tid=%u seq=%llu pc=%#llx denied by port limit\n",
+                updateInfo.tid,
+                static_cast<unsigned long long>(updateInfo.seqNo),
+                static_cast<unsigned long long>(updateInfo.pc));
+        return;
+    }
     constantStats.updates++;
 
     Location location;

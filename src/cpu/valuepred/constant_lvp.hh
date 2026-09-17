@@ -52,6 +52,8 @@ class ConstantLVP : public VPUnit
     const unsigned tagBits;
     const unsigned confidenceBits;
     const unsigned usefulBits;
+    const unsigned numPredictionPorts;
+    const unsigned numUpdatePorts;
     const bool resetConfidence;
     const uint16_t maxConfidence;
     const uint16_t confidenceThreshold;
@@ -61,6 +63,13 @@ class ConstantLVP : public VPUnit
     // [tid][way][set]
     std::vector<std::vector<std::vector<Entry>>> tables;
 
+    Tick predictionPortTick = 0;
+    Tick updatePortTick = 0;
+    unsigned predictionPortsUsed = 0;
+    unsigned updatePortsUsed = 0;
+    bool predictionPortsLimited = false;
+    bool updatePortsLimited = false;
+
     unsigned pcHashToWayIndex(Addr pc, unsigned way) const;
     uint64_t pcHashToTag(Addr pc, unsigned way) const;
     Location locationForWay(Addr pc, unsigned way) const;
@@ -68,6 +77,8 @@ class ConstantLVP : public VPUnit
     Entry *findEntry(Addr pc, ThreadID tid, Location &location);
     void allocate(Entry &entry, uint64_t tag, RegVal value);
     bool tryDecUseful(Entry &entry);
+    bool acquirePredictionPort();
+    bool acquireUpdatePort();
 
   public:
     explicit ConstantLVP(const Params &params);
@@ -92,10 +103,18 @@ class ConstantLVP : public VPUnit
     struct ConstantLVPStats : public statistics::Group
     {
         statistics::Scalar lookups;
+        statistics::Scalar predictionPortRequests;
+        statistics::Scalar predictionPortDenied;
+        statistics::Scalar predictionPortLimitedCycles;
+        statistics::Formula predictionPortDeniedRate;
         statistics::Scalar lookupHits;
         statistics::Scalar lookupMisses;
         statistics::Scalar lowConfidenceHits;
         statistics::Scalar updates;
+        statistics::Scalar updatePortRequests;
+        statistics::Scalar updatePortDenied;
+        statistics::Scalar updatePortLimitedCycles;
+        statistics::Formula updatePortDeniedRate;
         statistics::Scalar updateHits;
         statistics::Scalar updateMisses;
         statistics::Scalar valueMatches;

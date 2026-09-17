@@ -164,6 +164,10 @@ class ConstantLVP(ValuePredictor):
     confidenceBits = Param.Unsigned(
         9, "Constant confidence counter width; allocations start at one")
     usefulBits = Param.Unsigned(2, "Replacement useful counter width")
+    numPredictionPorts = Param.Unsigned(
+        8, "Maximum ConstantLVP prediction table accesses per cycle")
+    numUpdatePorts = Param.Unsigned(
+        8, "Maximum ConstantLVP update table accesses per cycle")
     confidencePenalty = Param.Unsigned(
         0,
         "Confidence decrement on a value mismatch; zero uses the maximum "

@@ -310,3 +310,22 @@ cpu.valuePred = CompositeValuePredictor(
 8. `src/cpu/valuepred/example_value_predictor.cc`
 
 看完这一圈，通常就已经能在当前框架上加一个新的 direct-value predictor 了。
+
+## 8. ConstantLVP 端口模型
+
+`ConstantLVP` 使用两个独立的每周期访问配额：
+
+- `numPredictionPorts`：Decode 阶段最多接受的查表请求数。
+- `numUpdatePorts`：Commit 阶段最多接受的训练请求数。
+
+两个参数默认都是 8。端口配额在新的 `curTick()` 首次访问时重置，单次
+访问和拒绝判定都是 O(1)。预测端口不足时，该指令本次不提供预测；更新端口
+不足时，该次训练被丢弃。模型不增加队列、重试或流水线反压。
+
+相关 stats 包括请求数、拒绝数、发生拒绝的周期数和拒绝比例。已有的
+`lookups` 与 `updates` 只统计真正获得端口并访问预测表的操作，因此应满足：
+
+```text
+predictionPortRequests = lookups + predictionPortDenied
+updatePortRequests = updates + updatePortDenied
+```
