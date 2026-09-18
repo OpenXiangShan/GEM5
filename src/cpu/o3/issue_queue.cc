@@ -2154,6 +2154,12 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
     }
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtBypassVal);
     DPRINTF(Schedule, "[sn:%llu] bypass write\n", inst->seqNum);
+    if (inst->isSquashed()) {
+        DPRINTF(Schedule,
+                "[sn:%llu] skip bypass-ready publication for squashed inst\n",
+                inst->seqNum);
+        return;
+    }
     for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {

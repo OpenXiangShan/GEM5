@@ -89,8 +89,7 @@ template<typename ElemType>
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 }};
 
@@ -303,8 +302,7 @@ template<typename ElemType>
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -450,8 +448,7 @@ template<typename ElemType>
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 }};
 
@@ -692,8 +689,7 @@ template<typename ElemType>
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -954,8 +950,7 @@ template<typename ElemType>
         this->microops.size());
     this->microops.push_back(microop);
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -1058,8 +1053,7 @@ template<typename ElemType>
         this->microops.size());
     this->microops.push_back(microop);
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -1154,8 +1148,7 @@ def template VMvWholeMacroConstructor {{
         this->microops.push_back(microop);
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -1374,8 +1367,7 @@ template<typename ElemType>
         microop->setDelayedCommit();
         this->microops.push_back(microop);
     }
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -1413,8 +1405,7 @@ template<typename ElemType>
     microop->setDelayedCommit();
     this->microops.push_back(microop);
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -2010,8 +2001,7 @@ template<typename ElemType, typename IndexType>
         }
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -2225,8 +2215,7 @@ template<typename ElemType>
     microop->setFlag(StaticInst::IsNonSpeculative);
     this->microops.push_back(microop);
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 }};
 
@@ -2394,8 +2383,7 @@ template<typename ElemType>
         }
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
@@ -2452,8 +2440,7 @@ template<typename ElemType>
         }
     }
 
-    this->microops.front()->setFirstMicroop();
-    this->microops.back()->setLastMicroop();
+    this->finalizeMicroops();
 }
 
 }};
