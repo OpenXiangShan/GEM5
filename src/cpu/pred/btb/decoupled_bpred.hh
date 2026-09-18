@@ -130,6 +130,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned smtFTQThreshold;
 
     FetchTargetQueue ftq;
+    // Explicit materialized prediction boundary used by FDIP.
+    FetchTargetId pnrPtr[MaxThreads]{};
 
     struct
     {
@@ -449,26 +451,37 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         return ftq.empty(tid) ? 0 : ftq.backId(tid);
     }
+    FetchTargetId ftqBpuPtr(ThreadID tid) const { return ftqBackId(tid); }
+    FetchTargetId ftqPnrPtr(ThreadID tid) const { return pnrPtr[tid]; }
     FetchTargetId ftqPrefetchBoundary(ThreadID tid) const
     {
-        const FetchTargetId back = ftqBackId(tid);
-        return back > numStages ? back - numStages : 0;
+        return ftqPnrPtr(tid);
     }
     FetchBlockPrediction ftqFetchBlockById(ThreadID tid,
                                             FetchTargetId id) const
     {
         assert(ftq.hasTarget(id, tid));
         const auto &target = ftq.get(id, tid);
-        return {id, target.startPC, target.predEndPC, target.predTaken,
-                target.predBranchInfo.pc, target.predBranchInfo.target};
+        FetchBlockPrediction result{id, target.startPC, target.predEndPC,
+            target.predTaken, target.predBranchInfo.pc,
+            target.predBranchInfo.target};
+        result.line0 = target.startPC & ~Addr(63);
+        result.isCrossLine = target.predEndPC > result.line0 + 64;
+        result.line1 = result.line0 + 64;
+        return result;
     }
     FetchBlockPrediction ftqFetchBlock(ThreadID tid, unsigned offset = 0) const
     {
         const FetchTargetId id = ftq.fetchId(tid) + offset;
         assert(ftq.hasTarget(id, tid));
         const auto &target = ftq.get(id, tid);
-        return {id, target.startPC, target.predEndPC, target.predTaken,
-                target.predBranchInfo.pc, target.predBranchInfo.target};
+        FetchBlockPrediction result{id, target.startPC, target.predEndPC,
+            target.predTaken, target.predBranchInfo.pc,
+            target.predBranchInfo.target};
+        result.line0 = target.startPC & ~Addr(63);
+        result.isCrossLine = target.predEndPC > result.line0 + 64;
+        result.line1 = result.line0 + 64;
+        return result;
     }
     bool ftqHasNext(ThreadID tid) const
     {

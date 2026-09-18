@@ -1653,6 +1653,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     std::unordered_set<PacketPtr> outstandingUncacheableWrites;
 
     const unsigned cacheLevel{0};
+    bool typedMshrAdmissionEnabled{false};
 
     //const unsigned maxCacheLevel;
 
@@ -1722,9 +1723,15 @@ public:
     }
 
     bool canPrefetch() const override {
+        if (typedMshrAdmissionEnabled) {
+            return mshrQueue.getAllocated() < 14 &&
+                mshrQueue.getPrefetchAllocated() < 10;
+        }
         return mshrQueue.canPrefetchWithExtraAllocated(
             dcacheMainPipeHeldMSHRCredits);
     }
+
+    bool typedMshrAdmission() const { return typedMshrAdmissionEnabled; }
 
     bool coalesce() const override;
 

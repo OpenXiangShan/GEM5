@@ -106,6 +106,24 @@ MSHRQueue::deallocate(MSHR* mshr)
             allocatedList.size(), numEntries);
 }
 
+unsigned
+MSHRQueue::getPrefetchAllocated() const
+{
+    unsigned count = 0;
+    for (auto *mshr : allocatedList) {
+        const auto *target = mshr->getTarget();
+        if (target && target->pkt && target->pkt->cmd == MemCmd::HardPFReq)
+            ++count;
+    }
+    return count;
+}
+
+unsigned
+MSHRQueue::getDemandAllocated() const
+{
+    return allocated - getPrefetchAllocated();
+}
+
 void
 MSHRQueue::resetOccupancyStats(Tick now)
 {

@@ -186,6 +186,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       system(p.system),
       stats(*this),
       cacheLevel(p.cache_level),
+      typedMshrAdmissionEnabled(p.typed_mshr_admission),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
       doFastWriteline(p.do_fast_writeline),
@@ -513,6 +514,19 @@ void
 BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                                Tick forward_time, Tick request_time)
 {
+    // Keep the FDIP L1I pools separate: four entries are reserved for
+    // demand misses and ten entries are available to HardPFReqs.  Existing
+    // MSHR merge handling remains in charge when an entry already exists.
+    if (typedMshrAdmissionEnabled && mshr == nullptr) {
+        const bool is_prefetch = pkt && pkt->cmd == MemCmd::HardPFReq;
+        const bool pool_full = is_prefetch ?
+            mshrQueue.getPrefetchAllocated() >= 10 :
+            mshrQueue.getDemandAllocated() >= 4;
+        if (pool_full) {
+            setBlocked(Blocked_NoMSHRs);
+            return;
+        }
+    }
     if (writeAllocator &&
         pkt && pkt->isWrite() && !pkt->req->isUncacheable()) {
         writeAllocator->updateMode(pkt->getAddr(), pkt->getSize(),

@@ -304,15 +304,24 @@ def config_cache(options, system):
             icache = icache_class(**_get_cache_opts(system.cpu[i], 'l1i', options))
             dcache = dcache_class(**_get_cache_opts(system.cpu[i], 'l1d', options))
             if (icache.prefetcher != NULL and
-                    getattr(options, 'l1i_hwp_type', None) == 'FTQICachePrefetcher' and
-                    options.cpu_type == 'DerivO3CPU'):
-                system.cpu[i].add_ftq_prefetcher(icache.prefetcher)
-                # MSHRQueue keeps one compatibility slot in addition to the
-                # explicit demand reserve; 15 total entries therefore leave
-                # ten entries available to instruction prefetches.
+                    getattr(options, 'l1i_hwp_type', None) == 'FDIPPrefetcher'):
+                if not hasattr(system.cpu[i], 'add_fdip_prefetcher'):
+                    fatal('FDIPPrefetcher requires an O3 CPU with FDIP binding')
+                if not hasattr(icache.prefetcher, 'registerTLB'):
+                    fatal('FDIPPrefetcher requires the prefetcher TLB binding API')
+                system.cpu[i].add_fdip_prefetcher(icache.prefetcher)
+                if not hasattr(system.cpu[i].mmu, 'itb'):
+                    fatal('FDIPPrefetcher requires an instruction TLB')
+                icache.prefetcher.registerTLB(
+                    system.cpu[i].mmu.itb, system.cpu[i].mmu.functional)
+                # FDIP uses typed admission in the classic L1I: four demand
+                # owners and ten HardPFReq owners.  Fifteen is retained as
+                # the underlying queue capacity for compatibility with the
+                # existing MSHR reserve machinery.
                 icache.mshrs = 15
                 icache.demand_mshr_reserve = 4
-            if dcache.prefetcher != NULL and options.cpu_type == 'DerivO3CPU':
+                icache.typed_mshr_admission = True
+            if dcache.prefetcher != NULL and hasattr(system.cpu[i], 'add_pf_downstream'):
                 system.cpu[i].add_pf_downstream(dcache.prefetcher)
 
             if options.ideal_cache:

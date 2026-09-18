@@ -127,6 +127,14 @@ class MSHRQueue : public Queue<MSHR>
         return numEntries;
     }
 
+    unsigned getAllocated() const { return allocated; }
+
+    /** Count MSHRs whose first target was allocated by a hardware prefetch. */
+    unsigned getPrefetchAllocated() const;
+
+    /** Count MSHRs currently owned by demand accesses. */
+    unsigned getDemandAllocated() const;
+
     bool isFullWithExtraAllocated(int extra) const
     {
         return allocated + extra >= numEntries - numReserve;

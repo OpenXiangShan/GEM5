@@ -92,6 +92,8 @@ class BaseCache(ClockedObject):
 
     mshrs = Param.Unsigned("Number of MSHRs (max outstanding requests)")
     demand_mshr_reserve = Param.Unsigned(1, "MSHRs reserved for demand access")
+    typed_mshr_admission = Param.Bool(False,
+        "Use the typed L1I demand/prefetch MSHR admission boundary")
     tgts_per_mshr = Param.Unsigned("Max number of accesses per MSHR")
     # Per-cycle limit for MSHR arbitration (allocations or target merges).
     # -1 means unlimited (no arbitration limit). Set per cache instance in
