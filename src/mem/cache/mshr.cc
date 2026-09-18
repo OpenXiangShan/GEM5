@@ -46,6 +46,7 @@
 
 #include "mem/cache/mshr.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <string>
 
@@ -335,6 +336,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     assert(target);
     isForward = false;
     wasWholeLineWrite = false;
+    sbufferStoreOrigin = target->isDcacheMainPipeSbufferReq();
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
@@ -392,6 +394,22 @@ MSHR::deallocate()
     targets.resetFlags();
     assert(deferredTargets.isReset());
     inService = false;
+}
+
+bool
+MSHR::canMergeSbufferStore(const Packet *predecessor) const
+{
+    if (!sbufferStoreOrigin || !deferredTargets.empty() ||
+        (inService && (hasPostInvalidate() || hasPostDowngrade() ||
+                       !isPendingModified() || isForward))) {
+        return false;
+    }
+    // Once refill has consumed the store target, a late CPU response does
+    // not keep the merge window open (nor does a reused MSHR for this line).
+    return std::any_of(targets.begin(), targets.end(),
+        [predecessor](const Target &target) {
+            return target.pkt == predecessor;
+        });
 }
 
 /*
@@ -584,7 +602,14 @@ MSHR::pushReadyTargets(TargetList &ready_targets, Target &tgt)
     // in the case when sbuffer store and load missed at the same block
     // make sure write packet is processed before read packet
     // so that load can get the right data after sbuffer store has updated the cache
-    if (tgt.pkt->isWrite()) {
+    if (tgt.pkt->isDcacheMainPipeSbufferReq()) {
+        // Preserve the existing store-before-load policy, but never reverse
+        // successive SBuffer writes: older bytes must not overwrite newer
+        // bytes when several stores share a miss.
+        auto pos = std::find_if(ready_targets.begin(), ready_targets.end(),
+            [](const Target &target) { return !target.pkt->isWrite(); });
+        ready_targets.insert(pos, tgt);
+    } else if (tgt.pkt->isWrite()) {
         ready_targets.push_front(tgt);
     } else {
         ready_targets.push_back(tgt);
