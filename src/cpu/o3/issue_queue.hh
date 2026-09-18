@@ -221,6 +221,8 @@ class IssueQue : public SimObject
         statistics::Scalar arbFailed;
         statistics::Scalar tagRefillBlock;
         statistics::Scalar issueOccupy;
+        /** Late load-cancel recoveries found during issue selection. */
+        statistics::Scalar lateLoadCancel;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
         statistics::Vector portissued;
@@ -333,7 +335,7 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
-    const int intel_fewops = 8;
+    const int intel_fewops = 4;
     bool old_disp = false;
     const int intRegfileBanks;
 

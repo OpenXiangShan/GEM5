@@ -564,6 +564,8 @@ class IEW
         statistics::Scalar unblockCycles;
         /** Stat for total number of instructions dispatched. */
         statistics::Vector dispatchedInsts;
+        /** Dispatched ops counted with the same filters as committedOps. */
+        statistics::Vector dispatchedOps;
         /** Stat for total number of squashed instructions dispatch skips. */
         statistics::Scalar dispSquashedInsts;
         /** Stat for total number of dispatched load instructions. */
