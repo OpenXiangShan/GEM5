@@ -3513,6 +3513,16 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
     }
     if (!cache.tryAccessTag(pkt)) {
         DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
+        // Fetch requests use the cache timing port directly (rather than the
+        // LSQ replay path), so a tag-port conflict must explicitly arrange a
+        // retry.  Without this event a rejected Fetch request remains in
+        // Fetch::retryPkt indefinitely when an instruction prefetch consumes
+        // the last tag-read port in the cycle.
+        if (sendRetryEvent.scheduled()) {
+            cache.reschedule(sendRetryEvent, cache.nextCycle());
+        } else {
+            cache.schedule(sendRetryEvent, cache.nextCycle());
+        }
         return false;
     }
     int sliceidx = cache.getSliceIdx(pkt->getAddr());

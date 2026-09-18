@@ -314,8 +314,6 @@ def config_cache(options, system):
                 system.cpu[i].add_fdip_prefetcher(icache.prefetcher)
                 if not hasattr(system.cpu[i].mmu, 'itb'):
                     fatal('FDIPPrefetcher requires an instruction TLB')
-                icache.prefetcher.registerTLB(
-                    system.cpu[i].mmu.itb, system.cpu[i].mmu.functional)
                 # FDIP uses typed admission in the classic L1I: four demand
                 # owners and ten HardPFReq owners.  Fifteen is retained as
                 # the underlying queue capacity for compatibility with the
