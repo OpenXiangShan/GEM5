@@ -115,14 +115,14 @@ class CPU : public BaseCPU
     {
         return hintDownStream != nullptr;
     }
-    gem5::prefetch::Base *ftqPrefetcher{nullptr};
-    void addFTQPrefetcher(gem5::prefetch::Base *prefetcher)
+    gem5::prefetch::Base *fdipPrefetcher{nullptr};
+    void addFDIPPrefetcher(gem5::prefetch::Base *prefetcher)
     {
-        ftqPrefetcher = prefetcher;
+        fdipPrefetcher = prefetcher;
     }
-    bool hasFTQPrefetcher() const
+    bool hasFDIPPrefetcher() const
     {
-        return ftqPrefetcher != nullptr;
+        return fdipPrefetcher != nullptr;
     }
     enum Status
     {

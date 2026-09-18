@@ -63,19 +63,19 @@ PrefetcherForwarder::rxHint(BaseMMU::Translation *dpp)
 }
 
 bool
-PrefetcherForwarder::submitFTQHint(const FTQPrefetchHint &hint)
+PrefetcherForwarder::submitFDIPHint(const FDIPPrefetchHint &hint)
 {
     if (real_pf) {
-        return real_pf->submitFTQHint(hint);
+        return real_pf->submitFDIPHint(hint);
     }
     return false;
 }
 
 void
-PrefetcherForwarder::squashFTQHints(ThreadID tid, uint64_t generation)
+PrefetcherForwarder::squashFDIPHints(ThreadID tid, uint64_t generation)
 {
     if (real_pf) {
-        real_pf->squashFTQHints(tid, generation);
+        real_pf->squashFDIPHints(tid, generation);
     }
 }
 

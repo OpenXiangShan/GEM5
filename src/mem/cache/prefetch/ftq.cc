@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-#include "debug/FTQPrefetch.hh"
+#include "debug/FDIP.hh"
 
 namespace gem5
 {
@@ -15,38 +15,37 @@ namespace gem5
 namespace prefetch
 {
 
-FTQICachePrefetcher::FTQStats::FTQStats(statistics::Group *parent)
+FDIPPrefetcher::FDIPStats::FDIPStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(hintsQueued, statistics::units::Count::get(),
-               "FTQ prefetch hints accepted into the delay queue"),
+               "FDIP hints accepted into the delay queue"),
       ADD_STAT(hintsDispatched, statistics::units::Count::get(),
-               "FTQ prefetch hints dispatched to the queued prefetcher"),
+               "FDIP hints dispatched to the queued prefetcher"),
       ADD_STAT(hintsCanceled, statistics::units::Count::get(),
-               "FTQ prefetch hints canceled by a squash"),
+               "FDIP hints canceled by a squash"),
       ADD_STAT(hintsDroppedStale, statistics::units::Count::get(),
-               "FTQ prefetch hints dropped due to stale generation"),
+               "FDIP hints dropped due to stale generation"),
       ADD_STAT(hintsDroppedFull, statistics::units::Count::get(),
-               "FTQ prefetch hints dropped due to a full delay queue"),
+               "FDIP hints dropped due to a full delay queue"),
       ADD_STAT(hintsDroppedTranslationFull, statistics::units::Count::get(),
-               "FTQ prefetch hints dropped due to a full translation queue"),
+               "FDIP hints dropped due to a full translation queue"),
       ADD_STAT(hintsDroppedMshrFull, statistics::units::Count::get(),
-               "FTQ prefetch hints dropped because no prefetch MSHR was available")
+               "FDIP hints dropped because no prefetch MSHR was available")
 {
 }
 
-FTQICachePrefetcher::FTQICachePrefetcher(
-        const FTQICachePrefetcherParams &p)
+FDIPPrefetcher::FDIPPrefetcher(const FDIPPrefetcherParams &p)
     : Queued(p), pendingHints(), generations(),
       hintEvent([this]{ processHints(); }, name()), stats(this)
 {
 }
 
 bool
-FTQICachePrefetcher::submitFTQHint(const FTQPrefetchHint &hint)
+FDIPPrefetcher::submitFDIPHint(const FDIPPrefetchHint &hint)
 {
     const auto it = generations.find(hint.tid);
     if (it != generations.end() && hint.generation < it->second) {
-        DPRINTF(FTQPrefetch, "Drop stale FTQ hint tid=%d ftq=%llu\n",
+        DPRINTF(FDIP, "Drop stale FDIP hint tid=%d ftq=%llu\n",
                 hint.tid, static_cast<unsigned long long>(hint.ftqId));
         stats.hintsDroppedStale++;
         return false;
@@ -56,7 +55,7 @@ FTQICachePrefetcher::submitFTQHint(const FTQPrefetchHint &hint)
     // when a target spans two lines and the second line is temporarily
     // blocked: Fetch can retry the target without accumulating another copy
     // of the first line in the delay queue.
-    const auto sameHint = [&hint](const FTQPrefetchHint &queued) {
+    const auto sameHint = [&hint](const FDIPPrefetchHint &queued) {
         return queued.tid == hint.tid && queued.ftqId == hint.ftqId &&
             queued.generation == hint.generation &&
             queued.vaddr == hint.vaddr;
@@ -70,9 +69,9 @@ FTQICachePrefetcher::submitFTQHint(const FTQPrefetchHint &hint)
     // so compare those fields directly for requests already dispatched to a
     // translation or ready queue.
     const auto sameDeferred = [&hint](const auto &deferred) {
-        return deferred.ftqTid == hint.tid &&
-            deferred.ftqId == hint.ftqId &&
-            deferred.ftqGeneration == hint.generation &&
+        return deferred.specTid == hint.tid &&
+            deferred.specId == hint.ftqId &&
+            deferred.specGeneration == hint.generation &&
             deferred.pfInfo.getAddr() == hint.vaddr;
     };
     for (const auto &deferred : pfq) {
@@ -87,7 +86,7 @@ FTQICachePrefetcher::submitFTQHint(const FTQPrefetchHint &hint)
     }
 
     if (pendingHints.size() >= queueSize) {
-        DPRINTF(FTQPrefetch, "Drop FTQ hint because hint queue is full tid=%d ftq=%llu\n",
+        DPRINTF(FDIP, "Drop FDIP hint because hint queue is full tid=%d ftq=%llu\n",
                 hint.tid, static_cast<unsigned long long>(hint.ftqId));
         stats.hintsDroppedFull++;
         return false;
@@ -98,8 +97,8 @@ FTQICachePrefetcher::submitFTQHint(const FTQPrefetchHint &hint)
     // translation queue has already reached its configured bound.
     if (pfqMissingTranslation.size() + pendingHints.size() >=
         missingTranslationQueueSize) {
-        DPRINTF(FTQPrefetch,
-                "Drop FTQ hint because translation queue is full "
+        DPRINTF(FDIP,
+                "Drop FDIP hint because translation queue is full "
                 "tid=%d ftq=%llu\n",
                 hint.tid, static_cast<unsigned long long>(hint.ftqId));
         stats.hintsDroppedTranslationFull++;
@@ -111,8 +110,8 @@ FTQICachePrefetcher::submitFTQHint(const FTQPrefetchHint &hint)
     // available, allowing a later cycle to retry it after demand pressure
     // subsides.
     if (cache != nullptr && !cache->canPrefetch()) {
-        DPRINTF(FTQPrefetch,
-                "Drop FTQ hint because cache has no prefetch MSHR "
+        DPRINTF(FDIP,
+                "Drop FDIP hint because cache has no prefetch MSHR "
                 "tid=%d ftq=%llu\n",
                 hint.tid, static_cast<unsigned long long>(hint.ftqId));
         stats.hintsDroppedMshrFull++;
@@ -124,22 +123,63 @@ FTQICachePrefetcher::submitFTQHint(const FTQPrefetchHint &hint)
     if (!hintEvent.scheduled()) {
         schedule(hintEvent, pendingHints.back().readyAt);
     }
-    DPRINTF(FTQPrefetch,
-            "Queue FTQ hint tid=%d ftq=%llu gen=%llu va=%#lx ready=%llu\n",
+    DPRINTF(FDIP,
+            "Queue FDIP hint tid=%d ftq=%llu gen=%llu va=%#lx ready=%llu\n",
             hint.tid, static_cast<unsigned long long>(hint.ftqId),
             static_cast<unsigned long long>(hint.generation), hint.vaddr,
             static_cast<unsigned long long>(pendingHints.back().readyAt));
     return true;
 }
 
+bool
+FDIPPrefetcher::submitFDIPBundle(const std::vector<FDIPPrefetchHint> &hints)
+{
+    if (hints.empty() || hints.size() > 2)
+        return false;
+
+    // S0 is an atomic handshake: reserve all lines before inserting any of
+    // them into the two-cycle delay queue.  This prevents pfPtr movement when
+    // only the second line would fit.
+    size_t newHints = 0;
+    for (const auto &hint : hints) {
+        const auto it = generations.find(hint.tid);
+        if (it != generations.end() && hint.generation < it->second)
+            return false;
+        bool duplicate = false;
+        for (const auto &pending : pendingHints) {
+            if (pending.hint.tid == hint.tid &&
+                pending.hint.ftqId == hint.ftqId &&
+                pending.hint.generation == hint.generation &&
+                pending.hint.vaddr == hint.vaddr) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate)
+            ++newHints;
+    }
+    if (pendingHints.size() + newHints > queueSize ||
+        pfqMissingTranslation.size() + pendingHints.size() + newHints >
+            missingTranslationQueueSize ||
+        (cache != nullptr && !cache->canPrefetch())) {
+        stats.hintsDroppedFull++;
+        return false;
+    }
+    for (const auto &hint : hints) {
+        if (!submitFDIPHint(hint))
+            return false;
+    }
+    return true;
+}
+
 void
-FTQICachePrefetcher::squashFTQHints(ThreadID tid, uint64_t generation)
+FDIPPrefetcher::squashFDIPHints(ThreadID tid, uint64_t generation)
 {
     generations[tid] = generation;
 
     for (auto it = pendingHints.begin(); it != pendingHints.end();) {
         if (it->hint.tid == tid && it->hint.generation < generation) {
-            DPRINTF(FTQPrefetch, "Cancel queued FTQ hint tid=%d ftq=%llu\n",
+            DPRINTF(FDIP, "Cancel queued FDIP hint tid=%d ftq=%llu\n",
                     tid, static_cast<unsigned long long>(it->hint.ftqId));
             stats.hintsCanceled++;
             it = pendingHints.erase(it);
@@ -148,14 +188,14 @@ FTQICachePrefetcher::squashFTQHints(ThreadID tid, uint64_t generation)
         }
     }
 
-    squashFTQGeneration(tid, generation);
+    squashSpeculation(tid, generation);
     if (!pendingHints.empty() && !hintEvent.scheduled()) {
         schedule(hintEvent, std::max(curTick(), pendingHints.front().readyAt));
     }
 }
 
 void
-FTQICachePrefetcher::processHints()
+FDIPPrefetcher::processHints()
 {
     while (!pendingHints.empty() && pendingHints.front().readyAt <= curTick()) {
         PendingHint pending = pendingHints.front();

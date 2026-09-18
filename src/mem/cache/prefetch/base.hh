@@ -81,7 +81,7 @@ struct CustomPfInfo
 };
 
 /** Address hint produced by the decoupled instruction frontend. */
-struct FTQPrefetchHint
+struct FDIPPrefetchHint
 {
     ThreadID tid = 0;
     uint64_t ftqId = 0;
@@ -1238,11 +1238,19 @@ class Base : public ClockedObject
      */
     virtual void addTLB(BaseTLB *tlb, bool functional);
 
-    /** Submit a frontend FTQ instruction-cache prefetch hint. */
-    virtual bool submitFTQHint(const FTQPrefetchHint &hint) { return false; }
+    /** Submit a frontend FDIP instruction-cache prefetch hint. */
+    virtual bool submitFDIPHint(const FDIPPrefetchHint &hint) { return false; }
+    virtual bool submitFDIPBundle(const std::vector<FDIPPrefetchHint> &hints)
+    {
+        for (const auto &hint : hints) {
+            if (!submitFDIPHint(hint))
+                return false;
+        }
+        return true;
+    }
 
     /** Drop queued frontend hints older than the supplied generation. */
-    virtual void squashFTQHints(ThreadID tid, uint64_t generation) {}
+    virtual void squashFDIPHints(ThreadID tid, uint64_t generation) {}
 
   protected:
     Base *hintDownStream{nullptr};

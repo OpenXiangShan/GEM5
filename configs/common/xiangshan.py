@@ -648,7 +648,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         # instruction-cache prefetch hints. Ruby/CHI keeps its L1I path
         # unchanged because it does not pass through CacheConfig.
         if not args.no_pf and getattr(args, 'l1i_hwp_type', None) is None:
-            args.l1i_hwp_type = 'FTQICachePrefetcher'
+            args.l1i_hwp_type = 'FDIPPrefetcher'
 
         CacheConfig.config_cache(args, test_sys)
 

@@ -138,7 +138,7 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
 
     req->setFlags(Request::PREFETCH);
-    if (pf_src == PrefetchSourceType::FTQ) {
+    if (pf_src == PrefetchSourceType::FDIP) {
         req->setFlags(Request::INST_FETCH);
     }
     const PrefetchSourceType safe_pf_src =
@@ -172,11 +172,11 @@ Queued::DeferredPacket::startTranslation(BaseTLB *tlb)
         // Prefetchers only operate in Timing mode
         if (owner->functionalTLB) {
             const auto mode = pfInfo.getXsMetadata().prefetchSource ==
-                    PrefetchSourceType::FTQ ? BaseMMU::Execute : BaseMMU::Read;
+                    PrefetchSourceType::FDIP ? BaseMMU::Execute : BaseMMU::Read;
             tlb->translateFunctional(translationRequest, tc, this, mode);
         } else {
             const auto mode = pfInfo.getXsMetadata().prefetchSource ==
-                    PrefetchSourceType::FTQ ? BaseMMU::Execute : BaseMMU::Read;
+                    PrefetchSourceType::FDIP ? BaseMMU::Execute : BaseMMU::Read;
             tlb->translateTiming(translationRequest, tc, this, mode);
         }
     }
@@ -1466,12 +1466,12 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
 
 
 void
-Queued::enqueueVirtualPrefetch(const FTQPrefetchHint &hint)
+Queued::enqueueVirtualPrefetch(const FDIPPrefetchHint &hint)
 {
     if (tlb == nullptr || system == nullptr ||
         hint.contextId == InvalidContextID ||
         hint.contextId >= system->threads.size()) {
-        DPRINTF(HWPrefetch, "Dropping FTQ hint without translation context "
+        DPRINTF(HWPrefetch, "Dropping FDIP hint without translation context "
                 "tid=%d ftq=%llu\n", hint.tid,
                 static_cast<unsigned long long>(hint.ftqId));
         return;
@@ -1484,7 +1484,7 @@ Queued::enqueueVirtualPrefetch(const FTQPrefetchHint &hint)
     trigger_req->setPaddr(hint.vaddr);
     PacketPtr trigger = new Packet(trigger_req, MemCmd::ReadReq);
     PrefetchInfo pfi(trigger, hint.vaddr, true,
-                     Request::XsMetadata(PrefetchSourceType::FTQ));
+                     Request::XsMetadata(PrefetchSourceType::FDIP));
     delete trigger;
 
     if (queueFilter && (alreadyInQueue(pfq, pfi, hint.priority) ||
@@ -1497,14 +1497,14 @@ Queued::enqueueVirtualPrefetch(const FTQPrefetchHint &hint)
     translation_req->setVirt(hint.vaddr, blkSize, Request::INST_FETCH,
                              requestorId, hint.pc);
     translation_req->setContext(hint.contextId);
-    translation_req->setPFSource(PrefetchSourceType::FTQ);
+    translation_req->setPFSource(PrefetchSourceType::FDIP);
     translation_req->setXsMetadata(Request::XsMetadata(
-        PrefetchSourceType::FTQ));
+        PrefetchSourceType::FDIP));
 
     DeferredPacket dpp(this, pfi, 0, hint.priority);
-    dpp.ftqTid = hint.tid;
-    dpp.ftqId = hint.ftqId;
-    dpp.ftqGeneration = hint.generation;
+    dpp.specTid = hint.tid;
+    dpp.specId = hint.ftqId;
+    dpp.specGeneration = hint.generation;
     dpp.setTranslationRequest(translation_req);
     dpp.tc = system->threads[hint.contextId];
     addToQueue(pfqMissingTranslation, dpp);
@@ -1514,11 +1514,11 @@ Queued::enqueueVirtualPrefetch(const FTQPrefetchHint &hint)
 }
 
 void
-Queued::squashFTQGeneration(ThreadID tid, uint64_t generation)
+Queued::squashSpeculation(ThreadID tid, uint64_t generation)
 {
     auto remove_old = [this, tid, generation](std::list<DeferredPacket> &queue) {
         for (auto it = queue.begin(); it != queue.end();) {
-            if (it->ftqTid == tid && it->ftqGeneration < generation) {
+            if (it->specTid == tid && it->specGeneration < generation) {
                 if ((&queue == &pfqMissingTranslation ||
                      &queue == &pfqSquashed) && it->ongoingTranslation) {
                     if (&queue == &pfqSquashed) {

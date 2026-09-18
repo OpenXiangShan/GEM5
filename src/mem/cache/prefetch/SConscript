@@ -40,7 +40,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'WorkerPrefetcher', 'DespacitoStreamPrefetcher',
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
     'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher', 'PrefetcherForwarder',
-    'LLDPrefetcher', 'FTQICachePrefetcher'])
+    'LLDPrefetcher', 'FDIPPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -61,7 +61,7 @@ DebugFlag('CDPdepth')
 DebugFlag('CMCPrefetcher')
 DebugFlag('DespacitoStreamPrefetcher')
 DebugFlag('LLDPrefetcher')
-DebugFlag('FTQPrefetch')
+DebugFlag('FDIP')
 
 GTest('context_key.test', 'context_key.test.cc')
 GTest('lldp_logic.test', 'lldp_logic.test.cc')

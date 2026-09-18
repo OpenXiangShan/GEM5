@@ -25,9 +25,8 @@ PF_SOURCE_NAMES = [
     "CDP",
     "SOpt",
     "DespacitoStream",
-<<<<<<< HEAD
     "LLDP",
-    "FTQ",
+    "FDIP",
 ]
 
 

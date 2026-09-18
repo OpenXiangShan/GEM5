@@ -3,14 +3,14 @@
  * All rights reserved.
  */
 
-#ifndef __MEM_CACHE_PREFETCH_FTQ_HH__
+#ifndef __MEM_CACHE_PREFETCH_FDIP_HH__
 #define __MEM_CACHE_PREFETCH_FTQ_HH__
 
 #include <deque>
 #include <unordered_map>
 
 #include "mem/cache/prefetch/queued.hh"
-#include "params/FTQICachePrefetcher.hh"
+#include "params/FDIPPrefetcher.hh"
 
 namespace gem5
 {
@@ -23,12 +23,12 @@ namespace prefetch
  * The normal cache-probe training path is deliberately disabled; Fetch is the
  * source of the prefetch stream.
  */
-class FTQICachePrefetcher : public Queued
+class FDIPPrefetcher : public Queued
 {
   private:
     struct PendingHint
     {
-        FTQPrefetchHint hint;
+        FDIPPrefetchHint hint;
         Tick readyAt = 0;
     };
 
@@ -36,9 +36,9 @@ class FTQICachePrefetcher : public Queued
     std::unordered_map<ThreadID, uint64_t> generations;
     EventFunctionWrapper hintEvent;
 
-    struct FTQStats : public statistics::Group
+    struct FDIPStats : public statistics::Group
     {
-        FTQStats(statistics::Group *parent);
+        FDIPStats(statistics::Group *parent);
         statistics::Scalar hintsQueued;
         statistics::Scalar hintsDispatched;
         statistics::Scalar hintsCanceled;
@@ -50,20 +50,21 @@ class FTQICachePrefetcher : public Queued
 
     void processHints();
   public:
-    FTQICachePrefetcher(const FTQICachePrefetcherParams &p);
-    ~FTQICachePrefetcher() override = default;
+    FDIPPrefetcher(const FDIPPrefetcherParams &p);
+    ~FDIPPrefetcher() override = default;
 
     void calculatePrefetch(const PrefetchInfo &,
                            std::vector<AddrPriority> &) override
     {}
     void notify(const PacketPtr &, const PrefetchInfo &) override {}
 
-    bool submitFTQHint(const FTQPrefetchHint &hint) override;
-    void squashFTQHints(ThreadID tid, uint64_t generation) override;
+    bool submitFDIPHint(const FDIPPrefetchHint &hint) override;
+    bool submitFDIPBundle(const std::vector<FDIPPrefetchHint> &hints) override;
+    void squashFDIPHints(ThreadID tid, uint64_t generation) override;
     void pfHitNotify(float, PrefetchSourceType, const PacketPtr &) override {}
 };
 
 } // namespace prefetch
 } // namespace gem5
 
-#endif // __MEM_CACHE_PREFETCH_FTQ_HH__
+#endif // __MEM_CACHE_PREFETCH_FDIP_HH__

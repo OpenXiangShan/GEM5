@@ -83,8 +83,8 @@ class PrefetcherForwarder : public Base
     void pfHitInWB(PrefetchSourceType pf_type) override;
 
     void recvPrefetchFromCache(const PacketPtr &pkt) override;
-    bool submitFTQHint(const FTQPrefetchHint &hint) override;
-    void squashFTQHints(ThreadID tid, uint64_t generation) override;
+    bool submitFDIPHint(const FDIPPrefetchHint &hint) override;
+    void squashFDIPHints(ThreadID tid, uint64_t generation) override;
 };
 
 } // namespace prefetch
