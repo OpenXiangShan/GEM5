@@ -398,6 +398,7 @@ class Request
         // the PC of the demand which triggered a spatial prefetch; the
         // remaining fields identify one LLDP candidate across its lifetime.
         Addr prefetchProducerPC;
+        Addr prefetchConsumerPC;
         uint64_t prefetchGeneration;
         uint64_t prefetchCandidateId;
         Addr prefetchLldpAddrP;
@@ -409,7 +410,8 @@ class Request
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0), prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchDepth(0), prefetchProducerPC(0), prefetchConsumerPC(0),
+            prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
@@ -418,7 +420,7 @@ class Request
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE), prefetchDepth(0),
-            prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
@@ -427,7 +429,7 @@ class Request
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(0),
-            prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
@@ -436,7 +438,7 @@ class Request
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(pfDepth),
-            prefetchProducerPC(0), prefetchGeneration(0),
+            prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
@@ -447,6 +449,7 @@ class Request
             : validXsMetadata(true), instXsMetadata(nullptr),
               prefetchSource(pfSource), prefetchDepth(pfDepth),
               prefetchProducerPC(producer_pc),
+              prefetchConsumerPC(0),
               prefetchGeneration(generation),
               prefetchCandidateId(candidate_id), prefetchLldpAddrP(0),
               prefetchDataOffset(0),
@@ -458,6 +461,7 @@ class Request
             prefetchSource = PF_NONE;
             prefetchDepth = 0;
             prefetchProducerPC = 0;
+            prefetchConsumerPC = 0;
             prefetchGeneration = 0;
             prefetchCandidateId = 0;
             prefetchLldpAddrP = 0;

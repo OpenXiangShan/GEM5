@@ -99,19 +99,39 @@ class LLDPrefetcher : public Queued
         SamplerEntries / AddressTableWays;
     static constexpr unsigned MetaEntries = 1024;
     static constexpr unsigned MetaSets = MetaEntries / AddressTableWays;
-    static constexpr uint8_t SamplerThreshold = 1;
+    static constexpr uint8_t SamplerThreshold = 3;
     struct SamplerEntry
     {
         bool valid{false};
         Addr addrP{0};
+        Addr producerPC{0};
+        Addr consumerPC{0};
+        ContextID context{InvalidContextID};
         Addr addrC{0};
-        uint8_t cnt{0};
+        uint8_t stableCount{0};
+        uint8_t mismatchCount{0};
+        uint8_t rrpv{3};
+        uint8_t matchesSincePromotion{0};
+        uint32_t lastSeenEpoch{0};
+        uint32_t promotionVersion{0};
     };
     struct MetaEntry
     {
         bool valid{false};
         Addr addrP{0};
         Addr addrC{0};
+        Addr producerPC{0};
+        Addr consumerPC{0};
+        ContextID context{InvalidContextID};
+        uint32_t generation{0};
+        uint8_t trainConf{0};
+        uint8_t qualityConf{0};
+        uint8_t timelyConf{0};
+        uint8_t tokens{0};
+        uint8_t outstanding{0};
+        uint8_t rrpv{3};
+        uint32_t lastTrainEpoch{0};
+        uint32_t lastUsefulEpoch{0};
     };
     std::array<std::array<SamplerEntry, AddressTableWays>, SamplerSets>
         samplerTable{};
@@ -128,6 +148,7 @@ class LLDPrefetcher : public Queued
     std::deque<Addr> tlbFilter;
     std::unordered_set<Addr> tlbFilterSet;
     std::unordered_map<Addr, Addr> tlbFilterTranslations;
+    uint32_t tableEpoch{0};
     struct CandidateOwner
     {
         unsigned row;
@@ -135,6 +156,10 @@ class LLDPrefetcher : public Queued
         uint64_t generation;
         Addr consumerPC;
         PrefetchSourceType source;
+        bool meta{false};
+        unsigned metaSet{0};
+        unsigned metaWay{0};
+        uint32_t metaGeneration{0};
     };
     std::unordered_map<uint64_t, CandidateOwner> candidateOwners;
     std::optional<Training> s0;
@@ -179,6 +204,8 @@ class LLDPrefetcher : public Queued
         statistics::Scalar candidates, filtered, duplicates, unsupported;
         statistics::Scalar samplerOutputsToMeta, metaTableHits,
             metaTablePrefetches, samplerValidEntries, metaValidEntries;
+        statistics::Scalar samplerTargetMismatch, samplerRepromotions,
+            metaInvalidations, metaTokenStalls, metaFallbacks;
         statistics::Vector samplerReplacementCnt;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,
@@ -212,13 +239,27 @@ class LLDPrefetcher : public Queued
     static bool isLldpSource(PrefetchSourceType source);
     unsigned samplerSet(Addr addr_p) const;
     unsigned metaSet(Addr addr_p) const;
-    void trainAddressPair(Addr addr_p, Addr addr_c);
-    void updateMetaTable(Addr addr_p, Addr addr_c);
-    std::optional<Addr> lookupMetaTable(Addr addr_p);
+    unsigned samplerVictim(unsigned set);
+    unsigned metaVictim(unsigned set);
+    void trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
+                          Addr consumer_pc, ContextID context);
+    void updateMetaTable(const SamplerEntry &sample);
+    struct MetaHit
+    {
+        Addr addrC{0};
+        unsigned set{0};
+        unsigned way{0};
+        uint32_t generation{0};
+    };
+    std::optional<MetaHit> lookupMetaTable(Addr addr_p, Addr producer_pc,
+                                           Addr consumer_pc, ContextID context);
+    void ageMetaTable();
+    void updateMetaOwner(uint64_t candidate_id, int result);
     bool queueCandidate(const PacketPtr &demand, const lldp::Hint &hint,
                         Addr addr_p, Addr addr_c,
                         PrefetchSourceType source,
-                        std::optional<unsigned> consumer);
+                        std::optional<unsigned> consumer,
+                        std::optional<MetaHit> meta_hit = std::nullopt);
     bool filterCandidate(Addr line);
     bool rejectTranslatedPrefetch(const DeferredPacket &dpp,
                                   Addr paddr) override;

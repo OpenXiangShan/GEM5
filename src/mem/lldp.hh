@@ -184,6 +184,7 @@ struct Hint
     uint8_t size{0};
     bool signExtend{false};
     bool spatial{false};
+    uint8_t metaCoveredMask{0};
 };
 
 // A small binary tree PLRU, also used by the 4-way consumer subtable.
