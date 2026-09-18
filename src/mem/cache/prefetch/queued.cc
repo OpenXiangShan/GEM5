@@ -193,7 +193,9 @@ Queued::DeferredPacket::finish(const Fault &fault,
 }
 
 Queued::Queued(const QueuedPrefetcherParams &p)
-    : Base(p), queueSize(p.queue_size),
+    : Base(p),
+      squashedQueueSize(p.max_prefetch_requests_with_pending_translation),
+      queueSize(p.queue_size),
       missingTranslationQueueSize(
         p.max_prefetch_requests_with_pending_translation),
       latency(p.latency), queueSquash(p.queue_squash),
@@ -254,7 +256,6 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       PFReqSendEvent(
           [this]{ PFSendEventWrapper(); },
           name())
-
 {
     panic_if(pfControl && pfControlWindow == Cycles(0),
              "pf_control_window must be non-zero when PF control "
@@ -1477,6 +1478,15 @@ Queued::enqueueVirtualPrefetch(const FDIPPrefetchHint &hint)
         return;
     }
 
+    // In-flight stale translations cannot be canceled by the TLB. Count
+    // them against the translation capacity until their callbacks arrive.
+    if (pfqMissingTranslation.size() + pfqSquashed.size() >=
+        squashedQueueSize) {
+        DPRINTF(HWPrefetch,
+                "Deferring FDIP hint while stale translations drain\n");
+        return;
+    }
+
     RequestPtr trigger_req = std::make_shared<Request>();
     trigger_req->setVirt(hint.vaddr, blkSize, Request::INST_FETCH,
                          requestorId, hint.pc);
@@ -1513,10 +1523,12 @@ Queued::enqueueVirtualPrefetch(const FDIPPrefetchHint &hint)
     }
 }
 
-void
+size_t
 Queued::squashSpeculation(ThreadID tid, uint64_t generation)
 {
-    auto remove_old = [this, tid, generation](std::list<DeferredPacket> &queue) {
+    size_t removed = 0;
+    auto remove_old = [this, tid, generation, &removed](
+                          std::list<DeferredPacket> &queue) {
         for (auto it = queue.begin(); it != queue.end();) {
             if (it->specTid == tid && it->specGeneration < generation) {
                 if ((&queue == &pfqMissingTranslation ||
@@ -1527,9 +1539,11 @@ Queued::squashSpeculation(ThreadID tid, uint64_t generation)
                     }
                     auto old = it++;
                     pfqSquashed.splice(pfqSquashed.end(), queue, old);
+                    ++removed;
                 } else {
                     delete it->pkt;
                     it = queue.erase(it);
+                    ++removed;
                 }
             } else {
                 ++it;
@@ -1539,6 +1553,7 @@ Queued::squashSpeculation(ThreadID tid, uint64_t generation)
     remove_old(pfq);
     remove_old(pfqMissingTranslation);
     remove_old(pfqSquashed);
+    return removed;
 }
 
 RequestPtr

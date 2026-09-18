@@ -72,7 +72,7 @@
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
-#include "mem/cache/prefetch/base.hh"
+#include "mem/cache/prefetch/fdip.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/process.hh"
 #include "sim/rolling.hh"
@@ -115,8 +115,8 @@ class CPU : public BaseCPU
     {
         return hintDownStream != nullptr;
     }
-    gem5::prefetch::Base *fdipPrefetcher{nullptr};
-    void addFDIPPrefetcher(gem5::prefetch::Base *prefetcher)
+    gem5::prefetch::FDIPPrefetcher *fdipPrefetcher{nullptr};
+    void addFDIPPrefetcher(gem5::prefetch::FDIPPrefetcher *prefetcher)
     {
         fdipPrefetcher = prefetcher;
     }

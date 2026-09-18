@@ -451,7 +451,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         return ftq.empty(tid) ? 0 : ftq.backId(tid);
     }
-    FetchTargetId ftqBpuPtr(ThreadID tid) const { return ftqBackId(tid); }
+    FetchTargetId ftqBpuPtr(ThreadID tid) const
+    {
+        return ftq.empty(tid) ? 0 : ftq.backId(tid) + 1;
+    }
     FetchTargetId ftqPnrPtr(ThreadID tid) const { return pnrPtr[tid]; }
     FetchTargetId ftqPrefetchBoundary(ThreadID tid) const
     {

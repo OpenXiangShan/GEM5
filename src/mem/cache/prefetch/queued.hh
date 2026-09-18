@@ -187,6 +187,9 @@ class Queued : public Base
     std::list<DeferredPacket> pfqMissingTranslation;
     std::list<DeferredPacket> pfqSquashed;
 
+    /** Number of stale translation requests retained until TLB completion. */
+    const unsigned squashedQueueSize;
+
     using const_iterator = std::list<DeferredPacket>::const_iterator;
     using iterator = std::list<DeferredPacket>::iterator;
 
@@ -455,7 +458,7 @@ class Queued : public Base
     void enqueueVirtualPrefetch(const FDIPPrefetchHint &hint);
 
     /** Remove speculative requests from generations older than @p generation. */
-    void squashSpeculation(ThreadID tid, uint64_t generation);
+    size_t squashSpeculation(ThreadID tid, uint64_t generation);
 
     unsigned offloadBandwidth{1};
 

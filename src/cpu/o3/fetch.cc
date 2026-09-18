@@ -1607,52 +1607,84 @@ Fetch::issueIcachePrefetchHints()
         }
 
         std::vector<prefetch::FDIPPrefetchHint> hints;
-        auto append_target = [&](FetchTargetId id) {
-            const auto target = dbpbtb->ftqFetchBlockById(tid, id);
-            auto add_line = [&](Addr line) {
-                line &= ~(CacheLineSize - 1);
-                if (std::find_if(hints.begin(), hints.end(),
-                        [line](const auto &hint) { return hint.vaddr == line; }) !=
-                    hints.end()) {
-                    return;
-                }
-                prefetch::FDIPPrefetchHint hint;
-                hint.tid = tid;
-                hint.ftqId = id;
-                hint.generation = icachePrefetchGeneration[tid];
-                hint.vaddr = line;
-                hint.pc = target.startPC;
-                hint.predEndPC = target.endPC;
-                hint.target = target.target;
-                hint.predTaken = target.taken;
-                hint.contextId = cpu->thread[tid]->contextId();
-                hint.priority = -static_cast<int32_t>(id - demand);
-                hints.push_back(hint);
-            };
-            add_line(target.line0);
-            if (target.isCrossLine &&
-                (target.line1 / PageSize) == (target.startPC / PageSize)) {
-                add_line(target.line1);
+        using prefetch::FDIPTwoPrefetchCase;
+        FDIPTwoPrefetchCase two_case = FDIPTwoPrefetchCase::Conflict;
+        auto add_line = [&](const auto &target, FetchTargetId id, Addr line) {
+            line &= ~(CacheLineSize - 1);
+            if (std::find_if(hints.begin(), hints.end(),
+                    [line](const auto &hint) { return hint.vaddr == line; }) !=
+                hints.end()) {
+                return;
             }
+            prefetch::FDIPPrefetchHint hint;
+            hint.tid = tid;
+            hint.ftqId = id;
+            hint.generation = icachePrefetchGeneration[tid];
+            hint.vaddr = line;
+            hint.pc = target.startPC;
+            hint.predEndPC = target.endPC;
+            hint.target = target.target;
+            hint.predTaken = target.taken;
+            hint.contextId = cpu->thread[tid]->contextId();
+            hint.priority = -static_cast<int32_t>(id - demand);
+            hints.push_back(hint);
+        };
+        auto append_target = [&](const auto &target, FetchTargetId id) {
+            add_line(target, id, target.line0);
+            if (target.isCrossLine)
+                add_line(target, id, target.line1);
         };
 
         const FetchTargetId first_id = icachePrefetchPtr[tid];
         const auto first = dbpbtb->ftqFetchBlockById(tid, first_id);
-        append_target(first_id);
         FetchTargetId advance = 1;
         const FetchTargetId next_id = icachePrefetchPtr[tid] + 1;
         if (dbpbtb->ftqHasTarget(tid, next_id) && next_id < pnr &&
             (first.startPC / PageSize) ==
                 (dbpbtb->ftqFetchBlockById(tid, next_id).startPC / PageSize) &&
             icachePrefetchPtr[tid] - demand + 1 <= MaxAhead) {
-            append_target(next_id);
-            advance = 2;
+            const auto second = dbpbtb->ftqFetchBlockById(tid, next_id);
+            if (first.line0 == second.line0) {
+                two_case = FDIPTwoPrefetchCase::SameLine;
+                add_line(first, first_id, first.line0);
+                if (first.isCrossLine) {
+                    add_line(first, first_id, first.line1);
+                } else if (second.isCrossLine) {
+                    add_line(second, next_id, second.line1);
+                }
+            } else if (first.isCrossLine && !second.isCrossLine &&
+                       first.line1 == second.line0) {
+                two_case = FDIPTwoPrefetchCase::Overlap1;
+                add_line(first, first_id, first.line0);
+                add_line(first, first_id, first.line1);
+            } else if (!first.isCrossLine && second.isCrossLine &&
+                       second.line1 == first.line0) {
+                two_case = FDIPTwoPrefetchCase::Overlap2;
+                add_line(second, next_id, second.line0);
+                add_line(second, next_id, second.line1);
+            } else if (!first.isCrossLine && !second.isCrossLine &&
+                       ((first.line0 / CacheLineSize) & 1) !=
+                           ((second.line0 / CacheLineSize) & 1)) {
+                two_case = FDIPTwoPrefetchCase::Interleave;
+                add_line(first, first_id, first.line0);
+                add_line(second, next_id, second.line0);
+            }
+            if (two_case != FDIPTwoPrefetchCase::Conflict)
+                advance = 2;
         }
+        if (two_case == FDIPTwoPrefetchCase::Conflict)
+            append_target(first, first_id);
+        for (auto &hint : hints)
+            hint.twoPrefetchCase = two_case;
         if (hints.empty() || !cpu->fdipPrefetcher->submitFDIPBundle(hints))
             continue;
-        DPRINTF(FDIP, "bundle tid=%d first=%llu targets=%u lines=%zu gen=%llu\n",
-                tid, static_cast<unsigned long long>(first_id), advance,
-                hints.size(), static_cast<unsigned long long>(
+        DPRINTF(FDIP, "bundle tid=%d pf=%llu bpu=%llu pnr=%llu "
+                "targets=%u lines=%zu case=%u gen=%llu\n",
+                tid, static_cast<unsigned long long>(first_id),
+                static_cast<unsigned long long>(bpu),
+                static_cast<unsigned long long>(pnr), advance,
+                hints.size(), static_cast<unsigned>(two_case),
+                static_cast<unsigned long long>(
                     icachePrefetchGeneration[tid]));
         icachePrefetchPtr[tid] += advance;
     }

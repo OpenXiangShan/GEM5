@@ -80,6 +80,15 @@ struct CustomPfInfo
     float coverage;
 };
 
+enum class FDIPTwoPrefetchCase : uint8_t
+{
+    Conflict,
+    SameLine,
+    Overlap1,
+    Overlap2,
+    Interleave
+};
+
 /** Address hint produced by the decoupled instruction frontend. */
 struct FDIPPrefetchHint
 {
@@ -93,6 +102,7 @@ struct FDIPPrefetchHint
     bool predTaken = false;
     ContextID contextId = InvalidContextID;
     int32_t priority = 0;
+    FDIPTwoPrefetchCase twoPrefetchCase = FDIPTwoPrefetchCase::Conflict;
 };
 
 class Base : public ClockedObject

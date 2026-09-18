@@ -86,6 +86,9 @@ class MSHR : public QueueEntry, public Printable
     /** Flag set by downstream caches */
     bool downstreamPending;
 
+    /** Request class that allocated this MSHR; merges do not change it. */
+    bool prefetchOwner;
+
     /**
      * Here we use one flag to track both if:
      *
@@ -333,6 +336,8 @@ class MSHR : public QueueEntry, public Printable
 
     /** True if we need to get a writable copy of the block. */
     bool needsWritable() const { return targets.needsWritable; }
+
+    bool isPrefetchOwner() const { return prefetchOwner; }
 
     bool isCleaning() const {
         PacketPtr pkt = targets.front().pkt;

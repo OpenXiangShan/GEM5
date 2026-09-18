@@ -111,8 +111,7 @@ MSHRQueue::getPrefetchAllocated() const
 {
     unsigned count = 0;
     for (auto *mshr : allocatedList) {
-        const auto *target = mshr->getTarget();
-        if (target && target->pkt && target->pkt->cmd == MemCmd::HardPFReq)
+        if (mshr->isPrefetchOwner())
             ++count;
     }
     return count;

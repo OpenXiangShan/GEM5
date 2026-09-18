@@ -305,6 +305,8 @@ def config_cache(options, system):
             dcache = dcache_class(**_get_cache_opts(system.cpu[i], 'l1d', options))
             if (icache.prefetcher != NULL and
                     getattr(options, 'l1i_hwp_type', None) == 'FDIPPrefetcher'):
+                if not isinstance(icache.prefetcher, FDIPPrefetcher):
+                    fatal('Configured L1I prefetcher is not FDIPPrefetcher')
                 if not hasattr(system.cpu[i], 'add_fdip_prefetcher'):
                     fatal('FDIPPrefetcher requires an O3 CPU with FDIP binding')
                 if not hasattr(icache.prefetcher, 'registerTLB'):

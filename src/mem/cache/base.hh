@@ -668,6 +668,25 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     bool dcacheMainPipeEffectiveMSHRFull() const;
     bool dcacheMainPipeCanPrefetch() const;
+
+    bool isPrefetchIssueBlocked() const
+    {
+        if (!typedMshrAdmissionEnabled)
+            return isBlocked();
+        const uint8_t demand_pool_flag = 1 << Blocked_NoMSHRs;
+        return blocked & ~demand_pool_flag;
+    }
+
+    bool canAllocateTypedMshr(PacketPtr pkt) const
+    {
+        if (!typedMshrAdmissionEnabled || pkt == nullptr)
+            return true;
+        if (mshrQueue.getAllocated() >= 14)
+            return false;
+        return pkt->cmd == MemCmd::HardPFReq ?
+            mshrQueue.getPrefetchAllocated() < 10 :
+            mshrQueue.getDemandAllocated() < 4;
+    }
     void registerDcacheMainPipeLSQ(o3::LSQ *lsq);
     void holdDcacheMainPipeMSHRCredit();
     void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick);

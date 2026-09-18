@@ -514,18 +514,12 @@ void
 BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                                Tick forward_time, Tick request_time)
 {
-    // Keep the FDIP L1I pools separate: four entries are reserved for
-    // demand misses and ten entries are available to HardPFReqs.  Existing
-    // MSHR merge handling remains in charge when an entry already exists.
-    if (typedMshrAdmissionEnabled && mshr == nullptr) {
-        const bool is_prefetch = pkt && pkt->cmd == MemCmd::HardPFReq;
-        const bool pool_full = is_prefetch ?
-            mshrQueue.getPrefetchAllocated() >= 10 :
-            mshrQueue.getDemandAllocated() >= 4;
-        if (pool_full) {
-            setBlocked(Blocked_NoMSHRs);
-            return;
-        }
+    // Demand requests that merge with an existing prefetch MSHR remain
+    // admissible.  Only a new demand owner consumes one of the four demand
+    // entries in the typed L1I pool.
+    if (mshr == nullptr && !canAllocateTypedMshr(pkt)) {
+        setBlocked(Blocked_NoMSHRs);
+        return;
     }
     if (writeAllocator &&
         pkt && pkt->isWrite() && !pkt->req->isUncacheable()) {
@@ -930,12 +924,18 @@ BaseCache::handleUncacheableWriteResp(PacketPtr pkt)
 bool
 BaseCache::dcacheMainPipeEffectiveMSHRFull() const
 {
+    if (typedMshrAdmissionEnabled)
+        return mshrQueue.getDemandAllocated() >= 4;
     return mshrQueue.isFullWithExtraAllocated(dcacheMainPipeHeldMSHRCredits);
 }
 
 bool
 BaseCache::dcacheMainPipeCanPrefetch() const
 {
+    if (typedMshrAdmissionEnabled) {
+        return mshrQueue.getAllocated() < 14 &&
+            mshrQueue.getPrefetchAllocated() < 10;
+    }
     return mshrQueue.canPrefetchWithExtraAllocated(
         dcacheMainPipeHeldMSHRCredits);
 }
@@ -979,7 +979,8 @@ BaseCache::releaseDcacheMainPipeMSHRCredit()
         clearBlocked(Blocked_NoMSHRs);
     }
 
-    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+    if (prefetcher && dcacheMainPipeCanPrefetch() &&
+        !isPrefetchIssueBlocked()) {
         Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
         if (next_pf_time != MaxTick) {
             schedMemSideSendEvent(next_pf_time);
@@ -1197,7 +1198,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
             // Request the bus for a prefetch if this deallocation freed enough
             // MSHRs for a prefetch to take place
-            if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+            if (prefetcher && dcacheMainPipeCanPrefetch() &&
+                !isPrefetchIssueBlocked()) {
                 Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
                 if (next_pf_time != MaxTick)
                     schedMemSideSendEvent(next_pf_time);
@@ -1535,7 +1537,8 @@ BaseCache::getNextQueueEntry()
 
     // fall through... no pending requests.  Try a prefetch.
     assert(!miss_mshr && !wq_entry);
-    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+    if (prefetcher && dcacheMainPipeCanPrefetch() &&
+        !isPrefetchIssueBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
         bool has_pending_pkt = prefetcher->hasPendingPacket();
         PacketPtr pkt = nullptr;
@@ -1586,6 +1589,11 @@ BaseCache::getNextQueueEntry()
                 // that we send the packet straight away, so do not
                 // schedule the send
                 DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
+                // canPrefetch() was checked before removing the packet from
+                // the prefetch queue.  This assertion keeps the actual
+                // allocation boundary tied to the typed owner pools without
+                // globally blocking demand traffic when the PF pool is full.
+                assert(canAllocateTypedMshr(pkt));
                 auto buf = allocateMissBuffer(pkt, curTick(), false);
                 return buf;
             }
@@ -1598,7 +1606,8 @@ BaseCache::getNextQueueEntry()
         }
     }
 
-    if (prefetcher && (!dcacheMainPipeCanPrefetch() || isBlocked()) &&
+    if (prefetcher && (!dcacheMainPipeCanPrefetch() ||
+        isPrefetchIssueBlocked()) &&
         prefetcher->hasHintDownStream() && Prefetch_CanOffload) {
         DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
@@ -2704,7 +2713,8 @@ BaseCache::nextQueueReadyTime() const
 
     // Don't signal prefetch ready time if no MSHRs available
     // Will signal once enoguh MSHRs are deallocated
-    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+    if (prefetcher && dcacheMainPipeCanPrefetch() &&
+        !isPrefetchIssueBlocked()) {
         nextReady = std::min(nextReady, nextPrefetchReadyTime());
     }
 

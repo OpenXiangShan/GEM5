@@ -633,7 +633,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 5. Add entry to fetch target queue
     ftq.insert(std::move(entry));
-    pnrPtr[tid] = ftq.backId(tid);
+    pnrPtr[tid] = ftq.backId(tid) + 1;
     threads[tid].nextPredictionAfterSquash = false;
     advancePairPhase(threads[tid].s0PairPhase);
     threads[tid].validprediction = false;
@@ -765,7 +765,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
     ftq.insert(std::move(entry));
-    pnrPtr[tid] = ftq.backId(tid);
+    pnrPtr[tid] = ftq.backId(tid) + 1;
     pairtage->recordTwoTakenBlockEnqueued();
     advancePairPhase(thread.s0PairPhase);
 
@@ -951,7 +951,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Remove targets after the squashed one
     ftq.squashAfter(target_id, tid);
-    pnrPtr[tid] = ftq.backId(tid);
+    pnrPtr[tid] = ftq.backId(tid) + 1;
 
     const auto &recovery_target = ftq.get(target_id, tid);
     const auto ghist_update = recovery_target.getGHistUpdateDuringSquash(
@@ -1121,7 +1121,7 @@ DecoupledBPUWithBTB::commit(
         if (ftq.empty(tid))
             pnrPtr[tid] = 0;
         else if (pnrPtr[tid] < ftq.frontId(tid))
-            pnrPtr[tid] = ftq.backId(tid);
+            pnrPtr[tid] = ftq.backId(tid) + 1;
         dbpBtbStats.fsqEntryCommitted++;
     }
 

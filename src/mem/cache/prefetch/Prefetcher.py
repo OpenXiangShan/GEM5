@@ -260,7 +260,7 @@ class LLDPrefetcher(QueuedPrefetcher):
 class FDIPPrefetcher(QueuedPrefetcher):
     type = 'FDIPPrefetcher'
     cxx_class = 'gem5::prefetch::FDIPPrefetcher'
-    cxx_header = "mem/cache/prefetch/ftq.hh"
+    cxx_header = "mem/cache/prefetch/fdip.hh"
 
     use_virtual_addresses = True
     prefetch_on_access = False

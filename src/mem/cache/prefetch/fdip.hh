@@ -4,7 +4,7 @@
  */
 
 #ifndef __MEM_CACHE_PREFETCH_FDIP_HH__
-#define __MEM_CACHE_PREFETCH_FTQ_HH__
+#define __MEM_CACHE_PREFETCH_FDIP_HH__
 
 #include <deque>
 #include <unordered_map>
@@ -36,6 +36,9 @@ class FDIPPrefetcher : public Queued
     std::unordered_map<ThreadID, uint64_t> generations;
     EventFunctionWrapper hintEvent;
 
+    bool isQueued(const FDIPPrefetchHint &hint) const;
+    void enqueuePendingHint(const FDIPPrefetchHint &hint);
+
     struct FDIPStats : public statistics::Group
     {
         FDIPStats(statistics::Group *parent);
@@ -46,6 +49,7 @@ class FDIPPrefetcher : public Queued
         statistics::Scalar hintsDroppedFull;
         statistics::Scalar hintsDroppedTranslationFull;
         statistics::Scalar hintsDroppedMshrFull;
+        statistics::Vector twoPrefetchCases;
     } stats;
 
     void processHints();

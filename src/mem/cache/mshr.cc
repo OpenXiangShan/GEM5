@@ -62,6 +62,7 @@ namespace gem5
 MSHR::MSHR(const std::string &name)
     :   QueueEntry(name),
         downstreamPending(false),
+        prefetchOwner(false),
         pendingModified(false),
         postInvalidate(false), postDowngrade(false),
         wasWholeLineWrite(false), isForward(false),
@@ -338,6 +339,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
+    prefetchOwner = target->cmd == MemCmd::HardPFReq;
 
     targets.init(blkAddr, blkSize);
     deferredTargets.init(blkAddr, blkSize);
@@ -392,6 +394,7 @@ MSHR::deallocate()
     targets.resetFlags();
     assert(deferredTargets.isReset());
     inService = false;
+    prefetchOwner = false;
 }
 
 /*
