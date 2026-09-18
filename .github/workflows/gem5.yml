@@ -223,7 +223,7 @@ jobs:
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core
           cd $GEM5_HOME/util/xs_scripts/test_multi_core
-          bash ../kmh-ruby-dual.sh /nfs/home/share/gem5_ci/checkpoints/multi_core_test.gz
+          bash ../kmh-ruby-dual.sh /nfs/home/share/gem5_ci/checkpoints/multi_core_test.gz --mem-size=16GB
 
   new_sim_script_test_gcbh:
     if: |

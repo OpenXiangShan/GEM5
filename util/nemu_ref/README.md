@@ -18,7 +18,11 @@ SPEC 年份不决定 REF：普通单核统一选择 normal 系列，H 和多核�
 
 公共配置固定 RVV、RVH、VCSR、FCSR 布局，寄存器区为 1376 字节，并支持 Sv48。
 普通单核通过 `scalar.config` 保留 Smstateen、Zacas 等此前 scalar REF 的扩展；
-H/多核不继承这些扩展增量，例如 H 的 SSTC 必须与 GEM5 H 执行路径匹配。
+H/多核不继承整个 scalar 配置，例如 H 的 SSTC 必须与 GEM5 H 执行路径匹配。
+`multi` 单独开启 Smstateen、Zacas、Zawrs、Zfa、CBO，并固定为 16GiB。
+使用它时 GEM5 必须指定 `--mem-size=16GB`，包括旧 8GiB SMT 切片；
+memdedup 的共享内存接口要求两侧内存大小一致。性能 CI 会自动设置此参数。
+新 release 的 normal、normal-dedup、h 二进制从 r3 原样保留，仅 multi 更新。
 `TVAL_EX_II`、`GUIDED_TVAL` 均开启。普通单核保留 SDTRIG 执行支持，但不将
 SDTRIG CSR 加入 regcpy 布局，因为 GEM5 尚未提供这些同步字段。
 
@@ -33,7 +37,7 @@ GEM5 正式同步并检查 `fcsr = (frm << 5) | fflags`。NEMU REF 不再兼容
 ```bash
 python3 util/nemu_ref/build.py \
   --source /path/to/NEMU \
-  --output /tmp/nemu-release/d30fff1ece9e-gem5-r3 \
+  --output /tmp/nemu-release/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo \
   --jobs 8
 ```
 
