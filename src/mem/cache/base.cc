@@ -362,6 +362,15 @@ BaseCache::updatePdbOccupancyStats()
         if (entry.state != PdbEntryState::Invalid)
             ++occupancy;
     }
+
+    // Integrate the occupancy over time: this is what makes the average
+    // residency of a PDB line (occupancy / fill rate) measurable.
+    if (lastPdbOccupancyTick != 0) {
+        stats.pdbOccupiedCycles += stats.pdbOccupancy.value() *
+            ((curTick() - lastPdbOccupancyTick) / clockPeriod());
+    }
+    lastPdbOccupancyTick = curTick();
+
     stats.pdbOccupancy = occupancy;
     if (occupancy > stats.pdbOccupancyMax.value())
         stats.pdbOccupancyMax = occupancy;
@@ -387,10 +396,29 @@ BaseCache::reservePdbEntry(PacketPtr pkt)
     auto &entry = pdbEntries[victim];
     const bool reusing = entry.state != PdbEntryState::Invalid;
     if (entry.state == PdbEntryState::Resident) {
-        if (entry.used)
+        const Tick residency_cycles = (curTick() - entry.fillTick) /
+                                      clockPeriod();
+        if (entry.used) {
             stats.pdbUsedEvictions++;
-        else
+        } else {
             stats.pdbUnusedEvictions++;
+            stats.pdbUnusedResidencyCycles += residency_cycles;
+            if (residency_cycles >
+                stats.pdbUnusedResidencyMaxCycles.value()) {
+                stats.pdbUnusedResidencyMaxCycles = residency_cycles;
+            }
+            if (residency_cycles < 64) {
+                stats.pdbUnusedEvictLt64Cycles++;
+            } else if (residency_cycles < 256) {
+                stats.pdbUnusedEvictLt256Cycles++;
+            } else if (residency_cycles < 1024) {
+                stats.pdbUnusedEvictLt1kCycles++;
+            } else if (residency_cycles < 4096) {
+                stats.pdbUnusedEvictLt4kCycles++;
+            } else {
+                stats.pdbUnusedEvictGe4kCycles++;
+            }
+        }
         stats.pdbBytesEvicted += blkSize;
         // The victim loses its only copy of the line (PDB lines are not
         // backed by the tag array), so the crossbar must stop tracking this
@@ -3681,12 +3709,28 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of used PDB entries evicted"),
     ADD_STAT(pdbUnusedEvictions, statistics::units::Count::get(),
              "number of unused PDB entries evicted"),
+    ADD_STAT(pdbUnusedResidencyCycles, statistics::units::Cycle::get(),
+             "cycles unused PDB entries spent in the PDB before eviction"),
+    ADD_STAT(pdbUnusedResidencyMaxCycles, statistics::units::Cycle::get(),
+             "longest residency of an unused PDB entry"),
+    ADD_STAT(pdbUnusedEvictLt64Cycles, statistics::units::Count::get(),
+             "unused PDB evictions after less than 64 cycles"),
+    ADD_STAT(pdbUnusedEvictLt256Cycles, statistics::units::Count::get(),
+             "unused PDB evictions after 64 to 255 cycles"),
+    ADD_STAT(pdbUnusedEvictLt1kCycles, statistics::units::Count::get(),
+             "unused PDB evictions after 256 to 1023 cycles"),
+    ADD_STAT(pdbUnusedEvictLt4kCycles, statistics::units::Count::get(),
+             "unused PDB evictions after 1024 to 4095 cycles"),
+    ADD_STAT(pdbUnusedEvictGe4kCycles, statistics::units::Count::get(),
+             "unused PDB evictions after 4096 cycles or more"),
     ADD_STAT(pdbEntryReuse, statistics::units::Count::get(),
              "number of PDB entry allocations reusing an old entry"),
     ADD_STAT(pdbOccupancy, statistics::units::Count::get(),
              "current PDB occupancy"),
     ADD_STAT(pdbOccupancyMax, statistics::units::Count::get(),
              "maximum PDB occupancy"),
+    ADD_STAT(pdbOccupiedCycles, statistics::units::Cycle::get(),
+             "PDB entry-cycles occupied (time integral of occupancy)"),
     ADD_STAT(pdbBytesIn, statistics::units::Byte::get(),
              "bytes entering the PDB"),
     ADD_STAT(pdbBytesOut, statistics::units::Byte::get(),

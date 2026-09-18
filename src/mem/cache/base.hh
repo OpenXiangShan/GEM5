@@ -503,6 +503,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     std::vector<PdbEntry> pdbEntries;
     unsigned pdbMovesInFlight = 0;
     bool pdbHitLastAccess = false;
+    /** Last tick at which the PDB occupancy was re-evaluated, used to
+     *  integrate the occupancy over time. */
+    Tick lastPdbOccupancyTick = 0;
     /** Lines that are waiting to be released from the crossbar accounting. */
     std::vector<PdbRelease> pendingPdbReleases;
     PdbReleaseEvent pdbReleaseEvent;
@@ -1476,9 +1479,20 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar pdbMoveSlotStalls;
         statistics::Scalar pdbUsedEvictions;
         statistics::Scalar pdbUnusedEvictions;
+        /** Residency (in cycles) of PDB lines evicted without ever being
+         *  used, and a coarse distribution of it. */
+        statistics::Scalar pdbUnusedResidencyCycles;
+        statistics::Scalar pdbUnusedResidencyMaxCycles;
+        statistics::Scalar pdbUnusedEvictLt64Cycles;
+        statistics::Scalar pdbUnusedEvictLt256Cycles;
+        statistics::Scalar pdbUnusedEvictLt1kCycles;
+        statistics::Scalar pdbUnusedEvictLt4kCycles;
+        statistics::Scalar pdbUnusedEvictGe4kCycles;
         statistics::Scalar pdbEntryReuse;
         statistics::Scalar pdbOccupancy;
         statistics::Scalar pdbOccupancyMax;
+        /** Time integral of the PDB occupancy, in entry-cycles. */
+        statistics::Scalar pdbOccupiedCycles;
         statistics::Scalar pdbBytesIn;
         statistics::Scalar pdbBytesOut;
         statistics::Scalar pdbBytesMoved;
