@@ -335,7 +335,7 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
-    const int intel_fewops = 8;
+    const int intel_fewops = 4;
     bool old_disp = false;
     const int intRegfileBanks;
 

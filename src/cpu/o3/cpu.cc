@@ -346,6 +346,7 @@ CPU::regProbePoints()
 
 CPU::CPUStats::CPUStats(CPU *cpu)
     : statistics::Group(cpu),
+      owner(*cpu),
       ADD_STAT(timesIdled, statistics::units::Count::get(),
                "Number of times that the entire CPU went into an idle state "
                "and unscheduled itself"),
@@ -508,38 +509,6 @@ CPU::CPUStats::CPUStats(CPU *cpu)
         .flags(statistics::total)
         .precision(6);
 
-    // These guarded values cannot be expressed by the Formula interface.
-    // Calculate them before each dump while preserving the original
-    // per-thread shape used by SMT stats consumers.
-    statistics::registerDumpCallback([this, cpu] {
-        auto &iew_stats = cpu->iew.getIEWStats();
-        auto &commit_stats = cpu->commit.getCommitStats();
-        statistics::VResult dispatched_ops;
-        statistics::VResult committed_ops;
-        statistics::VResult recovery_bubbles;
-        statistics::VResult branch_mispredicts;
-        statistics::VResult total_squashes;
-        iew_stats.dispatchedOps.result(dispatched_ops);
-        committedOps.result(committed_ops);
-        commit_stats.recovery_bubble.result(recovery_bubbles);
-        commit_stats.branchMispredicts.result(branch_mispredicts);
-        commit_stats.totalSquash.result(total_squashes);
-
-        const auto cycles = cpu->baseStats.numCycles.value();
-        const auto available_slots = cpu->issueWidth * cycles;
-        for (ThreadID tid = 0; tid < cpu->numThreads; ++tid) {
-            const auto bad_spec_slots = dispatched_ops[tid] -
-                committed_ops[tid] + recovery_bubbles[tid];
-            badSpecBound[tid] = available_slots == 0 ?
-                0.0 : std::max(0.0, bad_spec_slots / available_slots);
-
-            const auto squashes = total_squashes[tid];
-            branchMissPrediction[tid] = squashes == 0 ?
-                0.0 : badSpecBound[tid].value() *
-                    branch_mispredicts[tid] / squashes;
-        }
-    });
-
     machineClears = badSpecBound - branchMissPrediction;
 
     backendBound = 1 - (frontendBound + badSpecBound + baseRetiring);
@@ -603,6 +572,39 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
     miscRegfileWrites
         .prereq(miscRegfileWrites);
+}
+
+void
+CPU::CPUStats::preDumpStats()
+{
+    statistics::Group::preDumpStats();
+
+    auto &iew_stats = owner.iew.getIEWStats();
+    auto &commit_stats = owner.commit.getCommitStats();
+    statistics::VResult dispatched_ops;
+    statistics::VResult committed_ops;
+    statistics::VResult recovery_bubbles;
+    statistics::VResult branch_mispredicts;
+    statistics::VResult total_squashes;
+    iew_stats.dispatchedOps.result(dispatched_ops);
+    committedOps.result(committed_ops);
+    commit_stats.recovery_bubble.result(recovery_bubbles);
+    commit_stats.branchMispredicts.result(branch_mispredicts);
+    commit_stats.totalSquash.result(total_squashes);
+
+    const auto cycles = owner.baseStats.numCycles.value();
+    const auto available_slots = owner.issueWidth * cycles;
+    for (ThreadID tid = 0; tid < owner.numThreads; ++tid) {
+        const auto bad_spec_slots = dispatched_ops[tid] -
+            committed_ops[tid] + recovery_bubbles[tid];
+        badSpecBound[tid] = available_slots == 0 ?
+            0.0 : std::max(0.0, bad_spec_slots / available_slots);
+
+        const auto squashes = total_squashes[tid];
+        branchMissPrediction[tid] = squashes == 0 ?
+            0.0 : badSpecBound[tid].value() *
+                branch_mispredicts[tid] / squashes;
+    }
 }
 
 void

@@ -668,6 +668,9 @@ class CPU : public BaseCPU
     struct CPUStats : public statistics::Group
     {
         CPUStats(CPU *cpu);
+        void preDumpStats() override;
+
+        CPU &owner;
 
         /** Stat for total number of times the CPU is descheduled. */
         statistics::Scalar timesIdled;
