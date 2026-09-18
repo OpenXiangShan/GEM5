@@ -21,6 +21,7 @@
 #include "cpu/o3/smt_sched.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
+#include "enums/SMTQueuePolicy.hh"
 #include "params/BaseSelector.hh"
 #include "params/IssuePort.hh"
 #include "params/IssueQue.hh"
@@ -212,6 +213,12 @@ class IssueQue : public SimObject
     // iq per-thread occupancy counter, used for fetch-side feedback stats
     InstsCounter* instsCounter = nullptr;
 
+    // SMT IQ partitioning
+    SMTQueuePolicy smtIQPolicy = SMTQueuePolicy::Dynamic;
+    int smtIQWatermark = 0;
+    int numThreads = 1;
+    uint32_t threadEntries[MaxThreads] = {};
+
     struct IssueQueStats : public statistics::Group
     {
         IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name);
@@ -275,7 +282,7 @@ class IssueQue : public SimObject
     bool hasInstsCounter() const { return instsCounter != nullptr; }
 
     void tick();
-    bool ready();
+    bool ready(ThreadID tid);
     int emptyEntries() const { return iqsize - instNum; }
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);
@@ -399,9 +406,12 @@ class Scheduler : public SimObject
 
     std::vector<int> dispSeqVec;
 
+    // SMT IQ policy forwarded to each IssueQue in setCPU().
+    SMTQueuePolicy smtIQPolicy = SMTQueuePolicy::Dynamic;
+
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
-    bool ready(OpClass op, int disp_seq);
+    bool ready(OpClass op, ThreadID tid, int disp_seq);
 
   public:
     PendingWakeEventsType specWakeEvents;
