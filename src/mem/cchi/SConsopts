@@ -1,0 +1,24 @@
+# Copyright (c) 2026
+#
+# Build options for the CCHI (CHIron Cohestra) integration.
+# Declared here so that they become sticky per-build-directory variables,
+# settable on the scons command line (e.g. WITH_CCHI=True CHIRON_DIR=...).
+
+Import('*')
+
+sticky_vars.AddVariables(
+    BoolVariable('WITH_CCHI',
+        'Enable the CCHI (CHIron Cohestra) L1-fabric integration', False),
+    ('CHIRON_DIR',
+        'Path to the CHIron checkout; required when WITH_CCHI=True '
+        '(sticky variable or $CHIRON_DIR, no default)', ''),
+    BoolVariable('WITH_CCHI_RTL',
+        'Enable Verilator-based CCHI downstream RTL endpoints', False),
+    ('CCHI_RTL_TOP',
+        'Verilated top module name for the CCHI RTL endpoint', ''),
+    ('CCHI_RTL_SRCS',
+        'Space-separated RTL source files/dirs for the CCHI endpoint', ''),
+    ('CCHI_XSCACHE_DIR',
+        'Path to the XSCache checkout for the TestTop_L2OpenLLC RTL '
+        'endpoint (default: $XSCACHE_DIR; required only for that top)', ''),
+)
