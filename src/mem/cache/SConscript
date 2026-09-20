@@ -41,6 +41,12 @@ Source('noncoherent_cache.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
 
+GTest('partial_store.test',
+      'partial_store.test.cc',
+      '../packet.cc',
+      '../../sim/bufval.cc',
+      with_tag('gem5 trace'))
+
 DebugFlag('Cache')
 DebugFlag('CacheComp')
 DebugFlag('CachePort')
@@ -52,6 +58,7 @@ DebugFlag('HWPrefetch')
 DebugFlag('HWPrefetchOther')
 DebugFlag('StridePrefetcher')
 DebugFlag('MSHR')
+DebugFlag('PartialStore')
 DebugFlag('HWPrefetchQueue')
 
 # CacheTags is so outrageously verbose, printing the cache's entire tag
@@ -59,4 +66,3 @@ DebugFlag('HWPrefetchQueue')
 # it explicitly even above and beyond CacheAll.
 CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
                           'CacheVerbose', 'HWPrefetch', 'MSHR'])
-

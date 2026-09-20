@@ -133,6 +133,9 @@ class MSHR : public QueueEntry, public Printable
 
     MissKind missKind;
 
+    /** Newer data from a dirty writeback racing this read miss. */
+    PacketPtr writebackOverlay;
+
     /** True if the entry is just a simple forward from an upper level */
     bool isForward;
 
@@ -346,6 +349,19 @@ class MSHR : public QueueEntry, public Printable
 
     MissKind getMissKind() const { return missKind; }
     void setMissKind(MissKind kind) { missKind = kind; }
+
+    bool hasWritebackOverlay() const { return writebackOverlay != nullptr; }
+
+    /** Merge a dirty writeback into the pending read-fill overlay. */
+    void mergeWriteback(PacketPtr pkt);
+
+    PacketPtr
+    releaseWritebackOverlay()
+    {
+        PacketPtr pkt = writebackOverlay;
+        writebackOverlay = nullptr;
+        return pkt;
+    }
 
     bool isCleaning() const {
         PacketPtr pkt = targets.front().pkt;

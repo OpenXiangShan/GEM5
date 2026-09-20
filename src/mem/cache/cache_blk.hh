@@ -295,6 +295,27 @@ class CacheBlk : public TaggedEntry
         }
     }
 
+    bool
+    mergePartialFill(const uint8_t *fill_data, unsigned blk_size)
+    {
+        assert(isValid());
+        assert(data);
+        assert(fill_data);
+
+        if (!isPartial()) {
+            return false;
+        }
+
+        assert(validMask.size() == blk_size);
+        for (unsigned i = 0; i < blk_size; ++i) {
+            if (!validMask[i]) {
+                data[i] = fill_data[i];
+            }
+        }
+        clearPartial();
+        return true;
+    }
+
     /**
      * Sets the corresponding coherence bits.
      *

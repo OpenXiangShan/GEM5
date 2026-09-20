@@ -64,10 +64,48 @@ MSHR::MSHR(const std::string &name)
         downstreamPending(false),
         pendingModified(false),
         postInvalidate(false), postDowngrade(false),
-        wasWholeLineWrite(false), missKind(MissKind::Normal), isForward(false),
+        wasWholeLineWrite(false), missKind(MissKind::Normal),
+        writebackOverlay(nullptr), isForward(false),
         targets(name + ".targets"),
         deferredTargets(name + ".deferredTargets")
 {
+}
+
+void
+MSHR::mergeWriteback(PacketPtr pkt)
+{
+    assert(pkt);
+    assert(pkt->cmd == MemCmd::WritebackDirty);
+    assert(pkt->getBlockAddr(blkSize) == blkAddr);
+    assert(pkt->getSize() == blkSize);
+
+    if (!writebackOverlay) {
+        writebackOverlay = pkt;
+        return;
+    }
+
+    std::vector<bool> old_mask(blkSize, true);
+    if (writebackOverlay->isMaskedWrite()) {
+        old_mask = writebackOverlay->req->getByteEnable();
+    }
+    std::vector<bool> merged_mask(blkSize, true);
+    if (pkt->isMaskedWrite()) {
+        merged_mask = pkt->req->getByteEnable();
+    }
+    assert(old_mask.size() == blkSize);
+    assert(merged_mask.size() == blkSize);
+
+    const auto *old_data = writebackOverlay->getConstPtr<uint8_t>();
+    auto *merged_data = pkt->getPtr<uint8_t>();
+    for (unsigned i = 0; i < blkSize; ++i) {
+        if (!merged_mask[i] && old_mask[i]) {
+            merged_mask[i] = true;
+            merged_data[i] = old_data[i];
+        }
+    }
+    pkt->req->setByteEnable(merged_mask);
+    delete writebackOverlay;
+    writebackOverlay = pkt;
 }
 
 MSHR::TargetList::TargetList(const std::string &name)
@@ -336,6 +374,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     isForward = false;
     wasWholeLineWrite = false;
     missKind = MissKind::Normal;
+    assert(!writebackOverlay);
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
@@ -392,6 +431,7 @@ MSHR::deallocate()
     assert(targets.empty());
     targets.resetFlags();
     assert(deferredTargets.isReset());
+    assert(!writebackOverlay);
     inService = false;
 }
 
