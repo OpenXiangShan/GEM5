@@ -153,7 +153,6 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
       aggregateRenameWidth(renameWidth * numPreDispatchThreads),
       commitWidth(params.commitWidth),
-      commitInstWidth(params.commitInstWidth),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
       drainPending(false),
@@ -299,9 +298,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
                "number cycles where commit BW limit reached"),
-      ADD_STAT(commitInstWidthFullCycles, statistics::units::Cycle::get(),
-               "Cycles reaching commitInstWidth successful DynInst retirements; "
-               "does not imply additional ready instructions were blocked"),
+      ADD_STAT(hybridCommittedEntries, statistics::units::Count::get(),
+               "Hybrid physical entries released by successful retirement"),
+      ADD_STAT(hybridDrainedEntries, statistics::units::Count::get(),
+               "Hybrid physical entries released by squashed-head draining"),
       ADD_STAT(loadTriple, statistics::units::Cycle::get(),
                "load trip number"),
       ADD_STAT(loadEAReused, statistics::units::Cycle::get(),
@@ -360,8 +360,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .init(cpu->numThreads)
         .flags(total);
 
+    const auto &params = static_cast<const BaseO3CPUParams &>(cpu->params());
     numCommittedDist
-        .init(0,commit->commitWidth * 8,1)
+        .init(0, commit->commitWidth *
+              (params.RobCompressPolicy == ROBCompressPolicy::hybrid ?
+               params.CROB_instPerGroup : 8), 1)
         .flags(statistics::pdf).flags(statistics::nozero);
 
     segUnitStrideNF
@@ -1207,15 +1210,20 @@ Commit::commit()
             // then use one older sequence number.
             InstSeqNum squashed_inst = fromIEW->squashedSeqNum[tid];
 
-            if (fromIEW->includeSquashInst[tid]) {
-                squashed_inst--;
+            const auto redirect = rob->isHybrid() ?
+                rob->findInst(tid, squashed_inst) : nullptr;
+            if (redirect) {
+                squashed_inst = rob->squashHybrid(
+                    redirect, fromIEW->includeSquashInst[tid], tid);
+            } else {
+                if (fromIEW->includeSquashInst[tid]) {
+                    --squashed_inst;
+                }
+                rob->squash(squashed_inst, tid);
             }
 
-            // All younger instructions will be squashed. Set the sequence
-            // number as the youngest instruction in the ROB.
+            // All stages recover to the same retained prefix.
             youngestSeqNum[tid] = squashed_inst;
-
-            rob->squash(squashed_inst, tid);
             changedROBNumEntries[tid] = true;
 
             if (valuePred)
@@ -1418,9 +1426,13 @@ Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
 
     // Do not retire the violating load. Keep the last older instruction in
     // the ROB and refetch from the violating load's resolved PC.
-    const InstSeqNum squashed_inst = head_inst->seqNum - 1;
+    InstSeqNum squashed_inst = head_inst->seqNum - 1;
+    if (rob->isHybrid()) {
+        squashed_inst = rob->squashHybrid(head_inst, true, tid);
+    } else {
+        rob->squash(squashed_inst, tid);
+    }
     youngestSeqNum[tid] = squashed_inst;
-    rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
 
     if (valuePred) {
@@ -1469,6 +1481,8 @@ Commit::commitInsts()
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
 
     unsigned num_committed = 0;
+    unsigned completed_entries = 0;
+    uint64_t checked_entry = 0;
     std::array<unsigned, MaxThreads> num_committed_per_thread = {};
     std::array<unsigned, MaxThreads> commit_width_per_thread = {};
 
@@ -1476,7 +1490,7 @@ Commit::commitInsts()
 
     int commit_width = 0;
     for (ThreadID tid : *activeThreads) {
-        commit_width_per_thread[tid] =
+        commit_width_per_thread[tid] = rob->isHybrid() ? 0 :
             rob->countInstsOfGroups(tid, commitWidth);
         commit_width += commit_width_per_thread[tid];
     }
@@ -1493,9 +1507,12 @@ Commit::commitInsts()
             continue;
         }
 
-        while (num_committed < commit_width &&
-               num_committed_per_thread[commit_thread] <
-                   commit_width_per_thread[commit_thread] &&
+        while ((rob->isHybrid() ?
+                (completed_entries < commitWidth &&
+                 !rob->isEmpty(commit_thread)) :
+                (num_committed < commit_width &&
+                 num_committed_per_thread[commit_thread] <
+                     commit_width_per_thread[commit_thread])) &&
                (commitStatus[commit_thread] == Running ||
                 commitStatus[commit_thread] == Idle ||
                 commitStatus[commit_thread] == FetchTrapPending)) {
@@ -1519,7 +1536,16 @@ Commit::commitInsts()
 
             head_inst = rob->readHeadInst(commit_thread);
 
-            if (!rob->isHeadGroupReady(commit_thread)) {
+            if (!head_inst) {
+                break;
+            }
+            // Scan at most one bounded entry per selection. Fault/non-spec
+            // escape paths still require every following head to be ready.
+            const bool entry_ready = rob->isHybrid() &&
+                checked_entry == head_inst->hybridEntryId ?
+                head_inst->readyToCommit() :
+                rob->isHeadGroupReady(commit_thread);
+            if (!entry_ready) {
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
@@ -1533,19 +1559,15 @@ Commit::commitInsts()
             }
 
             ThreadID tid = head_inst->threadNumber;
+            checked_entry = head_inst->hybridEntryId;
+            const bool finishes_entry = rob->isHybrid() &&
+                rob->headGroupSize(tid) == 1;
 
             assert(tid == commit_thread);
 
             DPRINTF(Commit,
                     "Trying to commit head instruction, [tid:%i] [sn:%llu]\n",
                     tid, head_inst->seqNum);
-
-            // Squashed objects do not use the successful-retirement quota.
-            // Keep the existing group-window and squash-draining semantics.
-            if (!head_inst->isSquashed() && commitInstWidth != 0 &&
-                num_committed >= commitInstWidth) {
-                break;
-            }
 
             if (!head_inst->isSquashed() &&
                 handleMdpViolation(head_inst, tid)) {
@@ -1560,6 +1582,10 @@ Commit::commitInsts()
                         "ROB.\n");
 
                 rob->drainSquashedHead(commit_thread);
+                if (finishes_entry) {
+                    ++completed_entries;
+                    stats.hybridDrainedEntries++;
+                }
 
                 if (!mdpViolationAtCommit && head_inst->isLoad() &&
                     head_inst->memDepInfo.violatingStoreSeqNum &&
@@ -1589,11 +1615,9 @@ Commit::commitInsts()
                                                 num_committed_per_thread[tid]);
 
                 if (commit_success) {
-                    // Sample here so the final trace instruction also counts
-                    // if trace completion exits before the loop epilogue.
-                    if (commitInstWidth != 0 &&
-                        num_committed + 1 == commitInstWidth) {
-                        stats.commitInstWidthFullCycles++;
+                    if (finishes_entry) {
+                        ++completed_entries;
+                        stats.hybridCommittedEntries++;
                     }
                     recordCommittedInst(head_inst);
                     cpu->perfCCT->updateInstPos(head_inst->seqNum,
@@ -1919,8 +1943,11 @@ Commit::commitInsts()
     // if store was at head group and fronts were all readytocommit
     // then the store can be written to storebuffer
     for (int tid = 0; tid < MaxThreads; tid++) {
-        toIEW->commitInfo[tid].doneMemSeqNum =
-            std::max(toIEW->commitInfo[tid].doneSeqNum, rob->getHeadGroupLastDoneSeq(tid));
+        if (!rob->isHybrid() || !toIEW->commitInfo[tid].squash) {
+            toIEW->commitInfo[tid].doneMemSeqNum = std::max(
+                toIEW->commitInfo[tid].doneSeqNum,
+                rob->getHeadGroupLastDoneSeq(tid));
+        }
 
         InstSeqNum robheadSeqNum = 0;
         if (auto& it = rob->readHeadInst(tid)) {
@@ -1932,9 +1959,8 @@ Commit::commitInsts()
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
 
-    assert(commitInstWidth == 0 || num_committed <= commitInstWidth);
-
-    if (num_committed == commitWidth) {
+    assert(!rob->isHybrid() || completed_entries <= commitWidth);
+    if ((rob->isHybrid() ? completed_entries : num_committed) == commitWidth) {
         stats.commitEligibleSamples++;
     }
 }

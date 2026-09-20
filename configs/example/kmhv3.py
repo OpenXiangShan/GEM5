@@ -125,7 +125,6 @@ def setKmhV3Params(args, system):
             cpu.CROB_instPerGroup = 8
             cpu.renameWidth = 8
             cpu.commitWidth = 8
-            cpu.commitInstWidth = 16
 
         # lsu
         cpu.StoreWbStage = 4

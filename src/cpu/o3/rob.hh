@@ -43,6 +43,7 @@
 
 #include <cassert>
 #include <list>
+#include <optional>
 #include <queue>
 #include <string>
 #include <utility>
@@ -104,10 +105,57 @@ class ROB
 
     struct HybridGroup
     {
-        unsigned length;
+        unsigned formerLength;
+        unsigned latterLength;
         HybridGroupType type;
+
+        unsigned memberCount() const { return formerLength + latterLength; }
+        bool hasLatter() const { return latterLength != 0; }
     };
     using HybridPlan = std::vector<HybridGroup>;
+
+    enum class HybridEntryType { NORMAL, CC, CS, SC };
+
+    struct HybridEntryState
+    {
+        uint64_t id;
+        HybridEntryType type;
+        unsigned formerRemaining;
+        unsigned latterRemaining;
+
+        unsigned memberCount() const
+        { return formerRemaining + latterRemaining; }
+
+        // Returns true only for a surviving-former downgrade.
+        bool removeMember(bool former, bool retain_former)
+        {
+            auto &remaining = former ? formerRemaining : latterRemaining;
+            assert(remaining > 0);
+            --remaining;
+            if (!former && retain_former && latterRemaining == 0 &&
+                formerRemaining != 0 && type != HybridEntryType::NORMAL) {
+                type = HybridEntryType::NORMAL;
+                return true;
+            }
+            return false;
+        }
+    };
+
+    struct HybridSquashTarget
+    {
+        uint64_t entryId;
+        bool slotIsFormer;
+        bool flushItself;
+
+        bool removes(uint64_t id, bool former) const
+        {
+            if (id != entryId) {
+                return id > entryId;
+            }
+            return former ? (slotIsFormer && flushItself) :
+                            (slotIsFormer || flushItself);
+        }
+    };
 
     enum class HybridInstClass { Simple, Complex, NoCompress };
 
@@ -118,7 +166,7 @@ class ROB
     {
         assert(group_limit > 0);
         bool append = false;
-        if (!plan.empty() && plan.back().length < group_limit) {
+        if (!plan.empty() && plan.back().memberCount() < group_limit) {
             auto &group = plan.back();
             switch (group.type) {
               case HybridGroupType::NormalS:
@@ -147,13 +195,18 @@ class ROB
         }
 
         if (append) {
-            ++plan.back().length;
+            auto &group = plan.back();
+            if (group.type == HybridGroupType::NormalS) {
+                ++group.formerLength;
+            } else {
+                ++group.latterLength;
+            }
         } else {
             const auto type = inst_class == HybridInstClass::Simple ?
                 HybridGroupType::NormalS :
                 inst_class == HybridInstClass::Complex ?
                 HybridGroupType::NormalC : HybridGroupType::NormalN;
-            plan.push_back({1, type});
+            plan.push_back({1, 0, type});
         }
     }
 
@@ -182,6 +235,8 @@ class ROB
     HybridInstClass classifyHybridInst(const DynInstPtr &inst) const;
     void insertInstWithGroup(const DynInstPtr &inst, bool new_group);
     void assertHybridInvariants(ThreadID tid) const;
+    bool shouldSquash(const DynInstPtr &inst, ThreadID tid) const;
+    void startSquash(InstSeqNum squash_num, ThreadID tid);
 
     bool allocateGroup_none(const DynInstPtr inst, ThreadID tid);
     bool allocateGroup_kmhv2(const DynInstPtr inst, ThreadID tid);
@@ -310,8 +365,20 @@ class ROB
     bool canAllocate(ThreadID tid, unsigned entries) const;
 
     /** Returns the number of entries being used by a specific thread. */
-    unsigned getThreadEntries(ThreadID tid)
-    { return threadGroups[tid].size(); }
+    unsigned getThreadEntries(ThreadID tid) const
+    {
+        return isHybrid() ? hybridEntries[tid].size() :
+                            threadGroups[tid].size();
+    }
+
+    unsigned headGroupSize(ThreadID tid) const
+    {
+        if (isEmpty(tid)) {
+            return 0;
+        }
+        return isHybrid() ? hybridEntries[tid].front().memberCount() :
+                            threadGroups[tid].front();
+    }
 
     unsigned getTotalEntries() 
     { return numEntries; }
@@ -334,7 +401,7 @@ class ROB
       if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
           return numFreeEntries(tid) == 0;
       }
-      return threadGroups[tid].size() == numEntries;
+      return getThreadEntries(tid) == numEntries;
     }
 
     /** Returns if the ROB is empty. */
@@ -343,7 +410,7 @@ class ROB
 
     /** Returns if a specific thread's partition is empty. */
     bool isEmpty(ThreadID tid) const
-    { return threadGroups[tid].size() == 0; }
+    { return getThreadEntries(tid) == 0; }
 
     /** Executes the squash, marking squashed instructions. */
     void doSquash(ThreadID tid);
@@ -352,6 +419,10 @@ class ROB
      *  the specific thread.
      */
     void squash(InstSeqNum squash_num, ThreadID tid);
+
+    /** Squash by physical slot and return the retained sequence boundary. */
+    InstSeqNum squashHybrid(const DynInstPtr &redirect, bool flush_itself,
+                            ThreadID tid);
 
     /** Updates the head instruction with the new oldest instruction. */
     void updateHead();
@@ -383,6 +454,9 @@ class ROB
     size_t countInsts(ThreadID tid);
 
     uint32_t countGroupAllInst(ThreadID tid) {
+        if (isHybrid()) {
+            return instList[tid].size();
+        }
         int sum = 0;
         for (auto it : threadGroups[tid]) {
           assert(it);
@@ -418,6 +492,9 @@ class ROB
     unsigned instsPerGroup;
 
     std::deque<unsigned> threadGroups[MaxThreads];
+    std::deque<HybridEntryState> hybridEntries[MaxThreads];
+    uint64_t nextHybridEntryId = 1;
+    std::optional<HybridSquashTarget> hybridSquashTarget;
 
     uint64_t lastInsertCycle = 0;
 
@@ -495,6 +572,7 @@ class ROB
         statistics::Distribution instPergroup;
 
         statistics::Scalar hybridAllocatedGroups;
+        statistics::Scalar hybridDowngrades;
         statistics::Scalar hybridAllocatedInsts;
         statistics::Vector hybridGroupType;
         statistics::Distribution hybridGroupLength;
