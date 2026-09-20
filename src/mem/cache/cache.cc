@@ -538,6 +538,11 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     assert(!cpu_pkt->isEviction());
 
     bool blkValid = blk && blk->isValid();
+    const bool partial_store_miss = partialStoreEnabled() && !blkValid &&
+        cpu_pkt->cmd == MemCmd::WriteReq && cpu_pkt->isMaskedWrite() &&
+        cpu_pkt->isDcacheMainPipeSbufferReq();
+    const bool partial_data_fill = partialStoreEnabled() && blkValid &&
+        blk->isPartial() && cpu_pkt->isRead();
 
     if (cpu_pkt->req->isUncacheable() ||
         (!blkValid && cpu_pkt->isUpgrade()) ||
@@ -556,7 +561,11 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     // which will clobber the owned copy.
     const bool useUpgrades = true;
     assert(cpu_pkt->cmd != MemCmd::WriteLineReq || is_whole_line_write);
-    if (is_whole_line_write) {
+    if (partial_data_fill) {
+        cmd = MemCmd::ReadSharedReq;
+    } else if (partial_store_miss) {
+        cmd = MemCmd::StorePermReq;
+    } else if (is_whole_line_write) {
         assert(!blkValid || !blk->isSet(CacheBlk::WritableBit));
         // forward as invalidate to all other caches, this gives us
         // the line in Exclusive state, and invalidates all other
@@ -567,7 +576,9 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         // it to be writable
         assert(needsWritable);
         assert(!blk->isSet(CacheBlk::WritableBit));
-        cmd = cpu_pkt->isLLSC() ? MemCmd::SCUpgradeReq : MemCmd::UpgradeReq;
+        cmd = cpu_pkt->cmd == MemCmd::StorePermReq ?
+            MemCmd::StorePermReq :
+            (cpu_pkt->isLLSC() ? MemCmd::SCUpgradeReq : MemCmd::UpgradeReq);
     } else if (cpu_pkt->cmd == MemCmd::SCUpgradeFailReq ||
                cpu_pkt->cmd == MemCmd::StoreCondFailReq) {
         // Even though this SC will fail, we still need to send out the
@@ -592,6 +603,9 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     }
     PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
+    if (cmd == MemCmd::StorePermReq) {
+        pkt->setDcacheMainPipeSbufferReq();
+    }
 
     // if there are upstream caches that have already marked the
     // packet as having sharers (not passing writable), pass that info
@@ -774,6 +788,10 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
+            if (partialStoreEnabled() &&
+                pkt->cmd == MemCmd::StorePermResp && tgt_pkt->isRead()) {
+                stats.partialCoveredLoadHits++;
+            }
             if (prefetcher && target.lldpHint.valid && !is_error) {
                 const uint8_t *line = nullptr;
                 unsigned bytes = 0;
@@ -1240,6 +1258,9 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
 
     bool respond = false;
     bool blk_valid = blk && blk->isValid();
+    panic_if(blk_valid && blk->isPartial(),
+             "%s: snoop %s reached unsupported partial block %s",
+             name(), pkt->print(), blk->print());
     DPRINTF(Cache, "pkt %s is clean: %i\n", pkt->print(), pkt->isClean());
     if (pkt->isClean()) {
         if (blk_valid && blk->isSet(CacheBlk::DirtyBit)) {

@@ -130,6 +130,11 @@ MemCmd::commandInfo[] =
             UpgradeResp, "SCUpgradeReq" },
     /* UpgradeResp */
     { {IsUpgrade, IsResponse}, InvalidCmd, "UpgradeResp" },
+    /* StorePermReq - acquire write permission without fetching data. */
+    { {IsInvalidate, NeedsWritable, IsUpgrade, IsRequest, NeedsResponse,
+            FromCache}, StorePermResp, "StorePermReq" },
+    /* StorePermResp */
+    { {IsUpgrade, IsResponse}, InvalidCmd, "StorePermResp" },
     /* SCUpgradeFailReq: generates UpgradeFailResp but still gets the data */
     { {IsRead, NeedsWritable, IsInvalidate,
            IsLlsc, IsRequest, NeedsResponse, FromCache},
@@ -282,14 +287,18 @@ Packet::trySatisfyFunctional(Printable *obj, Addr addr, bool is_secure, int size
         std::max(val_start, func_start);
 
     if (isRead()) {
-        std::memcpy(getPtr<uint8_t>() + func_offset,
-               _data + val_offset,
-               overlap_size);
-
         // initialise the tracking of valid bytes if we have not
         // used it already
         if (bytesValid.empty())
             bytesValid.resize(getSize(), false);
+
+        // Keep data supplied by an earlier (closer) cache when a later
+        // source fills the remaining bytes of a partial functional read.
+        for (unsigned i = 0; i < overlap_size; ++i) {
+            if (!bytesValid[func_offset + i]) {
+                getPtr<uint8_t>()[func_offset + i] = _data[val_offset + i];
+            }
+        }
 
         // track if we are done filling the functional access
         bool all_bytes_valid = true;
@@ -310,9 +319,20 @@ Packet::trySatisfyFunctional(Printable *obj, Addr addr, bool is_secure, int size
 
         return all_bytes_valid;
     } else if (isWrite()) {
-        std::memcpy(_data + val_offset,
-               getConstPtr<uint8_t>() + func_offset,
-               overlap_size);
+        if (isMaskedWrite()) {
+            const auto &mask = req->getByteEnable();
+            assert(mask.size() == getSize());
+            for (unsigned i = 0; i < overlap_size; ++i) {
+                if (mask[func_offset + i]) {
+                    _data[val_offset + i] =
+                        getConstPtr<uint8_t>()[func_offset + i];
+                }
+            }
+        } else {
+            std::memcpy(_data + val_offset,
+                        getConstPtr<uint8_t>() + func_offset,
+                        overlap_size);
+        }
     } else {
         panic("Don't know how to handle command %s\n", cmdString());
     }

@@ -46,11 +46,14 @@
 #ifndef __MEM_CACHE_CACHE_BLK_HH__
 #define __MEM_CACHE_CACHE_BLK_HH__
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <iosfwd>
 #include <list>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/printable.hh"
 #include "base/types.hh"
@@ -107,6 +110,14 @@ class CacheBlk : public TaggedEntry
      * meaningful if the block is valid.
      */
     Tick whenReady = 0;
+
+  private:
+    /**
+     * A partial block has permission for the line, but only the bytes set in
+     * validMask contain usable data. Normal blocks leave the mask empty.
+     */
+    bool partialData = false;
+    std::vector<bool> validMask;
 
   protected:
     /**
@@ -192,6 +203,8 @@ class CacheBlk : public TaggedEntry
         setDemandHits(other.getDemandHits());
         setSrcRequestorId(other.getSrcRequestorId());
         std::swap(lockList, other.lockList);
+        partialData = other.partialData;
+        validMask = std::move(other.validMask);
 
         other.invalidate();
 
@@ -217,6 +230,69 @@ class CacheBlk : public TaggedEntry
         setDemandHits(0);
         setSrcRequestorId(Request::invldRequestorId);
         lockList.clear();
+        partialData = false;
+        validMask.clear();
+    }
+
+    bool isPartial() const { return isValid() && partialData; }
+
+    void
+    markPartial(unsigned blk_size)
+    {
+        assert(isValid());
+        partialData = true;
+        validMask = std::vector<bool>(blk_size, false);
+    }
+
+    void
+    clearPartial()
+    {
+        partialData = false;
+        validMask.clear();
+    }
+
+    const std::vector<bool> &getValidMask() const
+    {
+        assert(isPartial());
+        return validMask;
+    }
+
+    bool
+    hasValidData(unsigned offset, unsigned size) const
+    {
+        if (!isPartial()) {
+            return true;
+        }
+        assert(offset + size <= validMask.size());
+        return std::all_of(validMask.begin() + offset,
+                           validMask.begin() + offset + size,
+                           [](bool valid) { return valid; });
+    }
+
+    void
+    markValidData(const PacketPtr pkt, unsigned blk_size)
+    {
+        assert(isPartial());
+        const unsigned offset = pkt->getOffset(blk_size);
+        assert(offset + pkt->getSize() <= validMask.size());
+
+        if (pkt->isMaskedWrite()) {
+            const auto &byte_enable = pkt->req->getByteEnable();
+            assert(byte_enable.size() == pkt->getSize());
+            for (unsigned i = 0; i < pkt->getSize(); ++i) {
+                if (byte_enable[i]) {
+                    validMask[offset + i] = true;
+                }
+            }
+        } else {
+            std::fill(validMask.begin() + offset,
+                      validMask.begin() + offset + pkt->getSize(), true);
+        }
+
+        if (std::all_of(validMask.begin(), validMask.end(),
+                        [](bool valid) { return valid; })) {
+            clearPartial();
+        }
     }
 
     /**

@@ -151,6 +151,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.mshrs = 16
             cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
+            cpu.dcache.enable_partial_store = args.num_cpus == 1
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
