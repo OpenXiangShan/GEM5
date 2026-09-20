@@ -65,7 +65,7 @@ class CHI_L3 : public ClockedObject
     {
       public:
         InnerCacheReqPort(const std::string &name, CHI_L3 *owner)
-            : RequestPort(name, owner), owner(owner) {}
+            : RequestPort(name), owner(owner) {}
 
       protected:
         bool recvTimingResp(PacketPtr pkt) override;
@@ -85,7 +85,7 @@ class CHI_L3 : public ClockedObject
     {
       public:
         InnerCacheRespPort(const std::string &name, CHI_L3 *owner)
-            : ResponsePort(name, owner), owner(owner) {}
+            : ResponsePort(name), owner(owner) {}
 
       protected:
         bool recvTimingReq(PacketPtr pkt) override;

@@ -697,7 +697,8 @@ blockAddrForDebug(Addr addr)
     CHI_L2::CacheResponsePort::CacheResponsePort(const std::string &_name,
                                             CHI_L2 *wrapper,
                                             const std::string &_label)
-        : QueuedResponsePort(_name, wrapper, queue),
+        : QueuedResponsePort(_name, queue),
+        owner(*wrapper),
         queue(*wrapper, *this, true, _label),
         blocked(false), mustSendRetry(false),
         sendRetryEvent([this]{ processSendRetry(); }, _name)

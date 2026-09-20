@@ -70,6 +70,8 @@ namespace xsCHI {
         CacheResponsePort(const std::string &_name, CHI_L2 *wrapper,
                        const std::string &_label);
 
+        CHI_L2 &owner;
+
         /** A normal packet queue used to store responses. */
         RespPacketQueue queue;
 
@@ -133,7 +135,7 @@ namespace xsCHI {
         CacheRequestPort(const std::string &_name, CHI_L2 *wrapper,
                         ReqPacketQueue &_reqQueue,
                         SnoopRespPacketQueue &_snoopRespQueue) :
-            QueuedRequestPort(_name, wrapper, _reqQueue, _snoopRespQueue)
+            QueuedRequestPort(_name, _reqQueue, _snoopRespQueue)
         { }
 
         /**

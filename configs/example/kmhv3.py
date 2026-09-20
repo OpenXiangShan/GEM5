@@ -31,6 +31,8 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 def setKmhV3Params(args, system):
+    # CHI_L2 does not implement the InvalidateReq from fast whole-line writes.
+    fast_writeline = not args.CHI
     for cpu in system.cpu:
 
         # fetch (idealfetch not care)
@@ -149,7 +151,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
-            cpu.dcache.do_fast_writeline = True
+            cpu.dcache.do_fast_writeline = fast_writeline
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
@@ -160,7 +162,7 @@ def setKmhV3Params(args, system):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 4
                 system.l2_caches[i].wpu = NULL
-                system.l2_caches[i].do_fast_writeline = True
+                system.l2_caches[i].do_fast_writeline = fast_writeline
                 system.l2_caches[i].prefetch_can_offload = False
                 # Configure XSDRRIP replacement policy (DRRIP mode)
                 # L2: 2MB, 8-way, 64B line → 4096 sets
@@ -173,7 +175,7 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
-                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
+                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = fast_writeline
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
@@ -190,8 +192,8 @@ def setKmhV3Params(args, system):
                 LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
             ]
 
-    # l3 cache
-    if args.l3cache:
+    # CHI HN caches are configured by CacheConfig, outside system.l3.
+    if args.l3cache and not args.CHI:
         system.l3.mshrs = 64
         system.l3.do_fast_writeline = True
         system.l3.prefetch_can_offload = False

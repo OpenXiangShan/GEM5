@@ -109,7 +109,7 @@ L3CacheWrapper::getPort(const std::string &if_name, PortID idx)
 
 // --- CPUSidePort ---
 L3CacheWrapper::CPUSidePort::CPUSidePort(const std::string &name, L3CacheWrapper &owner)
-    : ResponsePort(name, &owner), owner(owner) {}
+    : ResponsePort(name), owner(owner) {}
 
 bool
 L3CacheWrapper::CPUSidePort::recvTimingSnoopResp(PacketPtr pkt)
@@ -175,7 +175,7 @@ L3CacheWrapper::CPUSidePort::getAddrRanges() const
 
 // --- SliceCPUSidePort ---
 L3CacheWrapper::SliceCPUSidePort::SliceCPUSidePort(const std::string& name, L3CacheWrapper &owner, PortID id)
-    : RequestPort(name, &owner), owner(owner), id(id) {}
+    : RequestPort(name), owner(owner), id(id) {}
 
 void
 L3CacheWrapper::SliceCPUSidePort::recvTimingSnoopReq(PacketPtr pkt)
