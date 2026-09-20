@@ -121,6 +121,9 @@ jobs:
             */kmhv3.py|*/kmhv2.py)
               artifact_name_prefix="score"
               ;;
+            */xiangshanCHI.py)
+              artifact_name_prefix="score-chi"
+              ;;
             */idealkmhv3.py)
               artifact_name_prefix="score-ideal"
               ;;

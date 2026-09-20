@@ -17,6 +17,7 @@ on:
         options:
           - 'kmhv2.py'
           - 'kmhv3.py'
+          - 'xiangshanCHI.py'
           - 'idealkmhv3.py'
           - 'smt_idealkmhv3.py'
       benchmark_type:
