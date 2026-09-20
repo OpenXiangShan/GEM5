@@ -4,6 +4,7 @@
 #include <cstring>
 #include <memory>
 
+#include "base/logging.hh"
 #include "mem/xsCHI/base/FlitOpType.hh"
 
 #include "vector"
@@ -373,7 +374,8 @@ namespace xsCHI
             } else if (opcode >= CHI_OP_TYPE::CHI_DAT_OP_START && opcode <= CHI_OP_TYPE::CHI_DAT_OP_END) {
                 return CHI_CHN_TYPE::CHI_CHN_TYPE_DATA;
             }
-            assert(false && "Invalid opcode for CHI_CHN_TYPE");
+            panic("Invalid opcode %u for CHI_CHN_TYPE",
+                  static_cast<unsigned>(opcode));
 
         }
 
