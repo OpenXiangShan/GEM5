@@ -172,6 +172,8 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
       ADD_STAT(tagRefillBlock, statistics::units::Count::get(), "count of blocked due to tag refill"),
       ADD_STAT(issueOccupy, statistics::units::Count::get(), "count of replayQ blocked"),
+      ADD_STAT(lateLoadCancel, statistics::units::Count::get(),
+               "late load-cancel recoveries found during issue selection"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
       ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
       ADD_STAT(portissued, statistics::units::Count::get(), "count each port issues"),
@@ -357,6 +359,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
                                                        inst->seqNum);
             assert(dst_inst);
             if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load, src[sn:%llu]", dst_inst->seqNum, inst->seqNum);
+            iqstats->lateLoadCancel++;
             warn_once(
                 "Tt's should not happen on classic cache, it may be wrong delay of load wake or missed loadcancel in "
                 "lsq\n");

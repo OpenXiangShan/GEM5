@@ -192,6 +192,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of cycles IEW is unblocking"),
     ADD_STAT(dispatchedInsts, statistics::units::Count::get(),
              "Number of instructions dispatched to IQ"),
+    ADD_STAT(dispatchedOps, statistics::units::Count::get(),
+             "Number of dispatched ops excluding NOPs and instruction "
+             "prefetches"),
     ADD_STAT(dispSquashedInsts, statistics::units::Count::get(),
              "Number of squashed instructions skipped by dispatch"),
     ADD_STAT(dispLoadInsts, statistics::units::Count::get(),
@@ -295,6 +298,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         .flags(statistics::total);
 
     dispatchedInsts
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    dispatchedOps
         .init(cpu->numThreads)
         .flags(statistics::total);
 
@@ -1588,6 +1595,9 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
         ppDispatch->notify(inst);
 
         ++iewStats.dispatchedInsts[tid];
+        if (!inst->isNop() && !inst->isInstPrefetch()) {
+            ++iewStats.dispatchedOps[tid];
+        }
 
         insts_to_dispatch.pop_front();
         dispatched++;
@@ -1689,6 +1699,9 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 }
             }
             ++iewStats.dispatchedInsts[tid];
+            if (!inst->isNop() && !inst->isInstPrefetch()) {
+                ++iewStats.dispatchedOps[tid];
+            }
             dispQue[id].push_back(inst);
 
             if (!inst->isNop() && !inst->isEliminated()) {
