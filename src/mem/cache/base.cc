@@ -188,6 +188,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       stats(*this),
       cacheLevel(p.cache_level),
       enablePartialStore(p.enable_partial_store),
+      partialStoreGranularityBytes(p.partial_store_granularity),
       enablePartialWritebackAllocate(p.enable_partial_writeback_allocate),
       partialLineMeta(enablePartialWritebackAllocate ?
                       p.partial_writeback_capacity / blk_size : 0),
@@ -231,6 +232,14 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
              (cacheLevel != 1 || isReadOnly || system->multiCore() ||
               compressor),
              "%s: partial stores require a single-core, uncompressed L1D",
+             name());
+    fatal_if(partialStoreGranularityBytes != 1 &&
+             partialStoreGranularityBytes != 4 &&
+             partialStoreGranularityBytes != 8,
+             "%s: partial store granularity must be 1, 4, or 8 bytes",
+             name());
+    fatal_if(blkSize % partialStoreGranularityBytes != 0,
+             "%s: partial store granularity must divide the cache line size",
              name());
     fatal_if(enablePartialWritebackAllocate &&
              (cacheLevel <= 1 || isReadOnly || system->multiCore() ||
@@ -2499,7 +2508,7 @@ BaseCache::handleFill(
 
     if (enablePartialStore && pkt->cmd == MemCmd::StorePermResp) {
         assert(!has_old_data);
-        blk->markPartial(blkSize);
+        blk->markPartial(blkSize, partialStoreGranularityBytes);
     }
 
     blk->setCoherenceBits(CacheBlk::ReadableBit);

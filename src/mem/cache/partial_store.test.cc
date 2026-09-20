@@ -59,6 +59,17 @@ makeRequest(const std::vector<bool> &mask)
 }
 
 PacketPtr
+makeStore(Addr addr, unsigned size, const std::vector<bool> &mask)
+{
+    auto req = std::make_shared<Request>(
+        addr, size, 0, Request::wbRequestorId);
+    req->setByteEnable(mask);
+    auto *pkt = new Packet(req, MemCmd::WriteReq);
+    pkt->allocate();
+    return pkt;
+}
+
+PacketPtr
 makeWriteback(const std::vector<bool> &mask, uint8_t value)
 {
     auto req = makeRequest(std::vector<bool>(BlkSize, true));
@@ -126,6 +137,36 @@ TEST(PartialStoreTest, FullyCoveredBlockRejectsOlderPartialFill)
     EXPECT_FALSE(blk.mergePartialFill(old_fill.data(), BlkSize));
     EXPECT_TRUE(std::all_of(block_data.begin(), block_data.end(),
                             [](uint8_t byte) { return byte == 0x05; }));
+}
+
+TEST(PartialStoreTest, GranularityTracksCompleteGranules)
+{
+    CacheBlk blk;
+    blk.insert(TestAddr, false);
+    blk.markPartial(BlkSize, 8);
+
+    std::unique_ptr<Packet> one_byte(
+        makeStore(TestAddr + 3, 1, std::vector<bool>(1, true)));
+    blk.markValidData(one_byte.get(), BlkSize);
+
+    EXPECT_TRUE(blk.isPartial());
+    EXPECT_FALSE(blk.hasValidData(0, 8));
+    const auto byte_mask_after_byte = blk.getValidMask();
+    EXPECT_FALSE(std::any_of(byte_mask_after_byte.begin(),
+                             byte_mask_after_byte.end(),
+                             [](bool valid) { return valid; }));
+
+    std::unique_ptr<Packet> one_granule(
+        makeStore(TestAddr, 8, std::vector<bool>(8, true)));
+    blk.markValidData(one_granule.get(), BlkSize);
+
+    EXPECT_TRUE(blk.isPartial());
+    EXPECT_TRUE(blk.hasValidData(0, 8));
+    const auto byte_mask = blk.getValidMask();
+    EXPECT_TRUE(std::all_of(byte_mask.begin(), byte_mask.begin() + 8,
+                            [](bool valid) { return valid; }));
+    EXPECT_TRUE(std::all_of(byte_mask.begin() + 8, byte_mask.end(),
+                            [](bool valid) { return !valid; }));
 }
 
 TEST(PartialStoreTest, MaskedWritebackPreservesDisabledBytes)

@@ -155,6 +155,20 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1d_size", type=str, default="64kB")
     parser.add_argument("--l1d_assoc", type=int, default=4)
 
+    parser.set_defaults(enable_partial_store=None)
+    parser.add_argument("--enable-partial-store", action="store_true",
+                        dest="enable_partial_store",
+                        help="Enable partial-store support in L1D")
+    parser.add_argument("--disable-partial-store", action="store_false",
+                        dest="enable_partial_store",
+                        help="Disable partial-store support in L1D")
+    parser.add_argument("--partial-store-granularity", type=int,
+                        choices=(1, 4, 8), default=1,
+                        help="Valid-data granularity for L1D partial stores")
+    parser.add_argument("--partial-writeback-capacity", type=str,
+                        default="64kB",
+                        help="L2 capacity reserved for partial writeback lines")
+
     parser.add_argument("--l1i_size", type=str, default="64kB")
     parser.add_argument("--l1i_assoc", type=int, default=4)
 

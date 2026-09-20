@@ -538,9 +538,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     assert(!cpu_pkt->isEviction());
 
     bool blkValid = blk && blk->isValid();
-    const bool partial_store_miss = partialStoreEnabled() && !blkValid &&
-        cpu_pkt->cmd == MemCmd::WriteReq && cpu_pkt->isMaskedWrite() &&
-        cpu_pkt->isDcacheMainPipeSbufferReq();
+    const bool partial_store_miss = !blkValid &&
+        isPartialStorePermissionRequest(cpu_pkt);
     const bool partial_data_fill = partialBlockEnabled() && blkValid &&
         blk->isPartial() && cpu_pkt->isRead();
 

@@ -6,6 +6,7 @@ import m5
 from m5.defines import buildEnv
 from m5.objects import *
 from m5.util import addToPath, fatal, warn
+from m5.util.convert import toMemorySize
 from m5.util.fdthelper import *
 
 addToPath('../')
@@ -151,13 +152,21 @@ def setKmhV3Params(args, system):
             cpu.dcache.mshrs = 16
             cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
-            cpu.dcache.enable_partial_store = args.num_cpus == 1
+            partial_store_default = args.num_cpus == 1
+            cpu.dcache.enable_partial_store = (
+                partial_store_default
+                if args.enable_partial_store is None
+                else args.enable_partial_store
+            )
+            cpu.dcache.partial_store_granularity = \
+                args.partial_store_granularity
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
     if args.l2cache:
-        partial_writeback_capacity = 64 * 1024
+        partial_writeback_capacity = toMemorySize(
+            args.partial_writeback_capacity)
         partial_writeback_enabled = args.num_cpus == 1
         for i in range(args.num_cpus):
             if args.classic_l2:
