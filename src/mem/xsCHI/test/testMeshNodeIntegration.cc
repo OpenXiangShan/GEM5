@@ -335,6 +335,17 @@ class MeshNodeIntegrationTest : public ::testing::Test
         params.power_state = nullptr;
         params.power_model = {};
         params.recv_buffer_size = 4;
+        params.rxbuf_num = 0;
+        params.skid_depth = 0;
+        params.initial_credit_count = 0;
+        params.credit_model = "legacy";
+        params.credit_return_direction = "internal";
+        params.credit_release_policy = "on_accept";
+        params.up_crd_lat_int = Cycles(1);
+        params.up_crd_lat_ext = Cycles(2);
+        params.dn_crd_lat_int = Cycles(2);
+        params.dn_crd_lat_ext = Cycles(1);
+        params.internal_crd_lat = Cycles(1);
         return std::make_unique<CHIPort>(params);
     }
 
@@ -359,6 +370,8 @@ class MeshNodeIntegrationTest : public ::testing::Test
         params.port_north = north;
         params.port_south = south;
         params.voq_depth = voqDepth;
+        params.ib_depth = 0;
+        params.voq_depth_per_ingress = true;
         return std::make_unique<MeshNode>(params);
     }
 
@@ -950,6 +963,17 @@ class MeshNodeHnDramIntegrationTest : public ::testing::Test
         params.power_state = nullptr;
         params.power_model = {};
         params.recv_buffer_size = 4;
+        params.rxbuf_num = 0;
+        params.skid_depth = 0;
+        params.initial_credit_count = 0;
+        params.credit_model = "legacy";
+        params.credit_return_direction = "internal";
+        params.credit_release_policy = "on_accept";
+        params.up_crd_lat_int = Cycles(1);
+        params.up_crd_lat_ext = Cycles(2);
+        params.dn_crd_lat_int = Cycles(2);
+        params.dn_crd_lat_ext = Cycles(1);
+        params.internal_crd_lat = Cycles(1);
         return std::make_unique<CHIPort>(params);
     }
 
@@ -974,6 +998,8 @@ class MeshNodeHnDramIntegrationTest : public ::testing::Test
         params.port_north = north;
         params.port_south = south;
         params.voq_depth = voqDepth;
+        params.ib_depth = 0;
+        params.voq_depth_per_ingress = true;
         return std::make_unique<MeshNode>(params);
     }
 

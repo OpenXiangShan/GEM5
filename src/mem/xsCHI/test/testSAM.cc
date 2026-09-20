@@ -15,9 +15,8 @@ TEST(TxnIDManagerTest, ValidCases) {
     NodeID L2ID = NodeID(0,0,0);
     NodeID L3ID = NodeID(1,1,0);
     NodeID dramID = NodeID(2,2,0);
-    std::list<uint32_t> HNs(0);
-    HNs.push_back(L3ID.getNodeID());
-    SystemAddressMapRN L2SAM = SystemAddressMapRN(HNs);
+    SystemAddressMapRN L2SAM;
+    L2SAM.addNodeID(L3ID.getNodeID());
     std::cout<<L2SAM.getTargetID(0x80000000)<<std::endl;
     EXPECT_EQ(L2SAM.getTargetID(0x80000000),L3ID.getNodeID());
 
