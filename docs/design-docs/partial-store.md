@@ -2,7 +2,10 @@
 
 ## 1. 背景与目标
 
-当前 classic cache 在 partial store miss 时发送 `ReadExReq`，同时取得写权限和完整 cacheline 数据。目标是在单核、无多核 snoop 的场景中，将该路径改为只申请权限，避免不必要的下层和 DDR 读流量。单核内 DTB walker 等 coherent client 发出的 shared read 仍需正确处理。
+当前 classic cache 在 partial store miss 时发送 `ReadExReq`，写权限和完整
+cacheline 数据同步返回。目标是让 L1D 先通过 `StorePermReq` 取得写权限并开始写，
+同时由 L2 异步取得完整 cacheline；L3 可以先返回权限，再返回数据。单核内 DTB
+walker 等 coherent client 发出的 shared read 仍需正确处理。
 
 当前实现只覆盖 classic timing L1D 的普通 cacheable StoreBuffer 写，不支持 Ruby、多核 snoop、AMO、LL/SC、uncacheable、压缩 cache 或 DMA coherence。权限请求的有效数据粒度可配置为 1、4 或 8 字节；默认 1 字节。
 
@@ -12,13 +15,17 @@
 
 ```text
 partial store miss
-    -> permission-only MSHR transaction
-    -> store 提前完成且不读取 cacheline
-    -> 后续未覆盖 load 延迟补全数据，或驱逐时 masked writeback
+    -> L1D permission MSHR + L2 full-data MSHR
+    -> L3 permission grant 先返回，L1D store 提前完成
+    -> L2 后台接收并安装完整 cacheline
+    -> L1D 后续未覆盖 load 延迟补全数据，或驱逐时 masked writeback
     -> 改变 MSHR、互连、读写队列和 DDR 流量
 ```
 
-权限请求复用现有 tag、MSHR、互连和响应资源，不增加独立延迟参数。未覆盖 load 仍承担正常 cacheline read 延迟；partial eviction 仍占用 Write Queue 和下层写带宽。
+权限请求复用现有 tag、MSHR、互连和响应资源，不增加独立延迟参数。L2 的完整
+数据读取仍占用下层读带宽，但不阻塞 L1D store 完成；未覆盖 load 在数据尚未到达
+L1D 时仍承担正常 cacheline read 延迟。partial eviction 仍占用 Write Queue 和
+下层写带宽。
 
 ## 3. L1D 状态模型
 
@@ -48,12 +55,19 @@ PartialModified + eviction -> masked WritebackDirty
 
 L1D 仅在 block invalid 且 StoreBuffer 写按配置粒度完整覆盖时生成 `StorePermReq`，代替 `ReadExReq`。如果写请求只覆盖某个粒度单元的一部分，则继续走 `ReadExReq`。已有完整 S/E/M block 上的写和 full-line write 保持现有行为。partial block 上只修改已有效粒度，或完整覆盖新粒度的写可以直接命中；部分覆盖无效粒度的写必须先补全 cacheline。
 
-下层 cache 按以下规则处理：
+L2 按以下规则处理：
 
 - writable hit：tag-only 完成并返回 `StorePermResp`；
-- read-only hit：继续向下申请 writable；
-- miss：不分配 block，继续转发；
-- 所有 cache miss：内存控制器返回无数据响应，不进入 DRAM 读写队列。
+- read-only hit：继续向下申请 writable，已有完整数据保持不变；
+- miss：将请求转换为带 split 标记的整行 `ReadExReq`，必须取得完整数据；
+- 收到下游 `StorePermGrantResp` 后立即向 L1D 返回 `StorePermResp`，但保留
+  L2 MSHR、路由和 ordering point，直到最终 `ReadExResp` 安装完整数据。
+
+L3 对带 split 标记的 `ReadExReq` 返回两阶段响应。请求成为 ordering point 后，
+先返回无数据的 `StorePermGrantResp`；命中时至少下一周期返回 `ReadExResp`，miss
+时则等待下游完整数据后返回。L2-to-L3 CoherentXBar 在中间响应后保留路由，
+snoop filter 仅在 permission grant 时更新一次 holder；最终数据响应只结束路由，
+不重复更新 holder。aligned L2 pipeline 的 permission grant 不占用 DataRead。
 
 普通 `UpgradeReq` 假定上层已有完整数据，因此不能直接复用其 dirty ownership 转移语义。`StorePermReq` 命中下层 Dirty block 时必须保留下层 Dirty 和完整数据，不能清 Dirty 或宣称整行数据已经转移给 L1。
 
@@ -94,10 +108,14 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 
 ## 8. 代码落点
 
-- `src/mem/packet.hh`、`packet.cc`：新增命令，令 masked write 判断覆盖 `WritebackDirty`。
+- `src/mem/packet.hh`、`packet.cc`：新增 permission、中间 grant 命令和 split
+  transaction 标记，令 masked write 判断覆盖 `WritebackDirty`。
 - `src/mem/cache/cache_blk.hh`：partial 状态、valid mask 和覆盖判断。
 - `src/mem/cache/cache.cc`、`base.cc`：miss 分类、partial hit、选择性 refill、masked eviction 和下层 bypass。
 - `src/mem/cache/mshr.hh`、`mshr.cc`：`MissKind`、snoop target、target 延迟和 store mask 合并。
+- `src/mem/coherent_xbar.cc`：中间 grant 保留响应路由，并避免最终数据响应重复
+  更新 snoop filter。
+- `src/mem/cache/xs_l2/L2MainPipe.cc`：permission grant 只占用目录和 grant 资源。
 - `src/mem/cache/base.cc`：同地址 masked writeback 合并。
 - `src/mem/packet.cc` 和 functional cache 路径：按 byte mask 组合 functional data，避免 queued partial writeback 被忽略。
 - `src/mem/abstract_mem.cc`、`mem_ctrl.cc` 和 `simple_mem.cc`：权限请求终止和 functional 数据合成。
@@ -119,9 +137,12 @@ Partial line eviction 生成 cacheline 大小的 `WritebackDirty`，携带数据
 4. L1/L2 驱逐后逐字节检查最终内存；
 5. 同地址 Write Queue 冲突和 permission MSHR 期间的 load/store 合并；
 6. `enable_partial_store=False/True` A/B 功能结果一致；
-7. 开启后 `ReadExReq`、`bytesReadSys` 和 StoreBuffer DDR read 减少，延迟补全与 masked write 流量能由新增统计解释。
+7. 开启后 L1D store completion 与 L2 data completion 解耦；L2/L3 的
+   `StorePermGrantResp`、`ReadExReq` 和 `ReadExResp` 数量能相互解释。
 8. DTB walker shared read 命中 partial block 时正确补全，且不产生 masked eviction writeback。
 9. `--partial-store-granularity=1/4/8` 下，不完整粒度覆盖使用 `ReadExReq`，完整粒度覆盖使用 `StorePermReq`。
+10. L3 permission grant 先于 data response；L2 grant 后仍保留 MSHR，最终完整
+    数据只安装到 L2，不向 L1D 重复发送 permission response。
 
 基础构建命令为：
 
@@ -140,13 +161,11 @@ build/RISCV/mem/cache/partial_store.test.opt
 
 实现验收不能只检查 store 提前返回，还必须证明补全、驱逐、functional access 和同地址写回顺序均保持数据正确。
 
-当前定向 workload 的开关 A/B 均输出 `partial-store: PASS`。统计重置后的
-partial run 产生 2056 次 permission request、47 次 data fill、107 次 covered
-load 和 2023 次 masked writeback；CPU demand memory read 从基线 139456 B
-降至 21824 B。改变 demand 时序可能诱发不同的 prefetch 流量，因此总 memory
-read 不作为该机制的单一验收指标，应结合 requestor 分类和上述 partial stats
-归因。内存控制器的普通 bytes-written 统计仍按 packet size 计数，不等同于
-`partialWritebackBytes` 记录的实际 enabled bytes。
+总 memory read 不作为该机制的单一验收指标，因为 L2 仍必须取得完整数据，且
+demand 时序变化可能诱发不同的 prefetch 流量。验收应同时检查 workload 数据
+正确性、L1D permission 数量、L2/L3 split grant 数量、最终 ReadEx 数据响应以及
+MSHR 未提前释放。内存控制器的普通 bytes-written 统计仍按 packet size 计数，
+不等同于 `partialWritebackBytes` 记录的实际 enabled bytes。
 
 性能 A/B 使用 `tests/test-progs/partial-store-perf/`。它通过 nexus-am 构建裸机
 镜像，在跨 cacheline 的单字节 cold-store 区间前后读取 `mcycle/minstret`，并用

@@ -44,7 +44,13 @@ L2MainPipe::getDirWriteStage() const
 inline PipelineResources
 L2MainPipe::getPipelineResources(PacketPtr pkt, TaskSource source) const
 {
-    return taskResourceMap.at(source) | getExtraResources(pkt, source);
+    PipelineResources resources =
+        taskResourceMap.at(source) | getExtraResources(pkt, source);
+    if (source == TaskSource::L2MSHRGrant &&
+        pkt->cmd == MemCmd::StorePermGrantResp) {
+        resources &= ~PipelineResources::DataRead;
+    }
+    return resources;
 }
 
 void

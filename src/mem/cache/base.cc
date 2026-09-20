@@ -495,6 +495,11 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
         }
     }
 
+    if (cacheLevel == 3 && pkt->isSplitStorePermReq()) {
+        sendSplitStorePermGrant(pkt, request_time);
+        request_time += clockPeriod();
+    }
+
     if (pkt->needsResponse() || pkt->isResponse()) {
         // These delays should have been consumed by now
         DPRINTF(Cache, "In handle timing hit, before make resp, pkt has data: %i\n", pkt->hasData());
@@ -543,6 +548,58 @@ BaseCache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, b
     if (cacheLevel != 1) {
         calculateSliceBusy(pkt, false);
     }
+}
+
+void
+BaseCache::sendSplitStorePermGrant(PacketPtr pkt, Tick response_time)
+{
+    assert(cacheLevel == 3);
+    assert(pkt->cmd == MemCmd::ReadExReq);
+    assert(pkt->isSplitStorePermReq());
+
+    PacketPtr grant = new Packet(pkt, false, false);
+    grant->cmd = MemCmd::StorePermGrantResp;
+    grant->headerDelay = grant->payloadDelay = 0;
+    DPRINTF(PartialStore,
+            "Sending split permission grant for %#llx; data will follow\n",
+            pkt->getAddr());
+    cpuSidePort.schedTimingResp(grant, response_time);
+}
+
+void
+BaseCache::handleSplitStorePermGrant(PacketPtr pkt)
+{
+    assert(cacheLevel == 2);
+    assert(pkt->cmd == MemCmd::StorePermGrantResp);
+
+    MSHR *mshr = dynamic_cast<MSHR *>(pkt->senderState);
+    assert(mshr);
+    panic_if(mshr->hasSplitStorePermGrant(),
+             "%s received duplicate split permission grant for %#llx",
+             name(), pkt->getAddr());
+    mshr->markSplitStorePermGrant();
+    DPRINTF(PartialStore,
+            "Received split permission grant for %#llx; retaining MSHR "
+            "for data\n", pkt->getAddr());
+
+    MSHR::TargetList targets = mshr->copyServiceableTargets(pkt);
+    for (auto &target : targets) {
+        PacketPtr target_pkt = target.pkt;
+        if (target.source != MSHR::Target::FromCPU ||
+            target_pkt->cmd != MemCmd::StorePermReq ||
+            target_pkt->isStorePermRespSent()) {
+            continue;
+        }
+
+        PacketPtr response = new Packet(target_pkt, false, false);
+        response->makeTimingResponse();
+        response->headerDelay = response->payloadDelay = 0;
+        target_pkt->setStorePermRespSent();
+        cpuSidePort.schedTimingResp(
+            response, clockEdge(responseLatency) + pkt->headerDelay);
+    }
+
+    delete pkt;
 }
 
 void
@@ -1066,6 +1123,11 @@ void
 BaseCache::recvTimingResp(PacketPtr pkt)
 {
     assert(pkt->isResponse());
+
+    if (pkt->cmd == MemCmd::StorePermGrantResp) {
+        handleSplitStorePermGrant(pkt);
+        return;
+    }
 
     stats.bytesRecv += pkt->getSize();
 
@@ -3152,6 +3214,14 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
             }
         }
         markInService(mshr, pending_modified_resp);
+
+        if (cacheLevel == 3 && tgt_pkt->isSplitStorePermReq() &&
+            sent_cmd == MemCmd::ReadExReq &&
+            !mshr->hasSplitStorePermGrant()) {
+            mshr->markSplitStorePermGrant();
+            sendSplitStorePermGrant(
+                tgt_pkt, clockEdge(responseLatency));
+        }
 
         if (pkt->isClean() && blk && blk->isSet(CacheBlk::DirtyBit)) {
             // A cache clean opearation is looking for a dirty

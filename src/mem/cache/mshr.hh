@@ -134,6 +134,9 @@ class MSHR : public QueueEntry, public Printable
 
     MissKind missKind;
 
+    /** Permission arrived for a split StorePerm transaction; data is pending. */
+    bool splitStorePermGrant;
+
     /** Newer bytes from a masked dirty writeback racing this read miss. */
     PacketPtr partialWriteback;
 
@@ -347,6 +350,13 @@ class MSHR : public QueueEntry, public Printable
 
     /** True if we need to get a writable copy of the block. */
     bool needsWritable() const { return targets.needsWritable; }
+
+    bool hasSplitStorePermGrant() const { return splitStorePermGrant; }
+    void markSplitStorePermGrant()
+    {
+        assert(!splitStorePermGrant);
+        splitStorePermGrant = true;
+    }
 
     MissKind getMissKind() const { return missKind; }
     void setMissKind(MissKind kind) { missKind = kind; }

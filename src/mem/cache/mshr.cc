@@ -65,6 +65,7 @@ MSHR::MSHR(const std::string &name)
         pendingModified(false),
         postInvalidate(false), postDowngrade(false),
         wasWholeLineWrite(false), missKind(MissKind::Normal),
+        splitStorePermGrant(false),
         partialWriteback(nullptr), isForward(false),
         targets(name + ".targets"),
         deferredTargets(name + ".deferredTargets")
@@ -370,6 +371,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     isForward = false;
     wasWholeLineWrite = false;
     missKind = MissKind::Normal;
+    splitStorePermGrant = false;
     assert(!partialWriteback);
     _isUncacheable = target->req->isUncacheable();
     inService = false;
@@ -430,6 +432,7 @@ MSHR::deallocate()
     assert(deferredTargets.isReset());
     assert(!partialWriteback);
     inService = false;
+    splitStorePermGrant = false;
 }
 
 /*

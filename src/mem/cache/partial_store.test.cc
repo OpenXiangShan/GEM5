@@ -81,6 +81,27 @@ TEST(PartialStoreTest, PermissionCommandHasNoData)
     EXPECT_EQ(cmd.responseCommand(), MemCmd::StorePermResp);
 }
 
+TEST(PartialStoreTest, SplitPermissionGrantIsIntermediateAndHasNoData)
+{
+    MemCmd grant(MemCmd::StorePermGrantResp);
+    EXPECT_TRUE(grant.isResponse());
+    EXPECT_TRUE(grant.isUpgrade());
+    EXPECT_FALSE(grant.isRead());
+    EXPECT_FALSE(grant.isWrite());
+    EXPECT_FALSE(grant.hasData());
+
+    Packet request(
+        makeRequest(std::vector<bool>(BlkSize, true)), MemCmd::ReadExReq);
+    request.setSplitStorePermReq();
+    EXPECT_TRUE(request.isSplitStorePermReq());
+
+    Packet target(
+        makeRequest(std::vector<bool>(BlkSize, true)), MemCmd::StorePermReq);
+    EXPECT_FALSE(target.isStorePermRespSent());
+    target.setStorePermRespSent();
+    EXPECT_TRUE(target.isStorePermRespSent());
+}
+
 TEST(PartialStoreTest, EvictionProbeCommandClassification)
 {
     for (const auto cmd : {MemCmd::WritebackDirty,

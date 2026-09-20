@@ -135,6 +135,8 @@ MemCmd::commandInfo[] =
             FromCache}, StorePermResp, "StorePermReq" },
     /* StorePermResp */
     { {IsUpgrade, IsResponse}, InvalidCmd, "StorePermResp" },
+    /* StorePermGrantResp - intermediate response; full data follows. */
+    { {IsUpgrade, IsResponse}, InvalidCmd, "StorePermGrantResp" },
     /* SCUpgradeFailReq: generates UpgradeFailResp but still gets the data */
     { {IsRead, NeedsWritable, IsInvalidate,
            IsLlsc, IsRequest, NeedsResponse, FromCache},

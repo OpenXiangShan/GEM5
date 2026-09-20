@@ -601,6 +601,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     virtual void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, bool first_acc_after_pf);
 
+    void sendSplitStorePermGrant(PacketPtr pkt, Tick response_time);
+    void handleSplitStorePermGrant(PacketPtr pkt);
+
     /*
      * Handle a timing request that missed in the cache
      *
