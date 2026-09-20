@@ -1434,7 +1434,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         if (enablePartialStore && pkt->cmd == MemCmd::WriteReq &&
             pkt->isMaskedWrite() &&
-            pkt->req->isDcacheMainPipeSbufferReq()) {
+            pkt->isDcacheMainPipeSbufferReq()) {
             mshr->setMissKind(MSHR::MissKind::PartialPermission);
         }
 

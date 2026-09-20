@@ -540,7 +540,7 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     bool blkValid = blk && blk->isValid();
     const bool partial_store_miss = partialStoreEnabled() && !blkValid &&
         cpu_pkt->cmd == MemCmd::WriteReq && cpu_pkt->isMaskedWrite() &&
-        cpu_pkt->req->isDcacheMainPipeSbufferReq();
+        cpu_pkt->isDcacheMainPipeSbufferReq();
     const bool partial_data_fill = partialStoreEnabled() && blkValid &&
         blk->isPartial() && cpu_pkt->isRead();
 
@@ -604,15 +604,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
 
-    // Propagate StoreBuffer classification through lower-level MSHR targets.
-    // The DDR flag is set only when the memory controller accepts the read.
-    if (cpu_pkt->req->isDcacheMainPipeSbufferReq() &&
-        cmd == MemCmd::ReadExReq) {
-        cpu_pkt->req->setDcacheMainPipeSbufferReadEx();
-        pkt->setDcacheMainPipeSbufferReq();
-        pkt->setDcacheMainPipeSbufferReadEx();
-    }
-    if (cmd == MemCmd::StorePermReq) {
+    // Preserve StoreBuffer classification across cache levels.
+    if (cpu_pkt->isDcacheMainPipeSbufferReq()) {
         pkt->setDcacheMainPipeSbufferReq();
     }
     // if there are upstream caches that have already marked the
