@@ -205,7 +205,8 @@ class LLDPrefetcher : public Queued
         statistics::Scalar samplerOutputsToMeta, metaTableHits,
             metaTablePrefetches, samplerValidEntries, metaValidEntries;
         statistics::Scalar samplerTargetMismatch, samplerRepromotions,
-            metaInvalidations, metaTokenStalls, metaFallbacks;
+            metaInvalidations, metaTargetSwitches, metaTokenStalls,
+            metaFallbacks;
         statistics::Vector samplerReplacementCnt;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,

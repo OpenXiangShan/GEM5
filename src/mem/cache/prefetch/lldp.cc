@@ -63,7 +63,9 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
       ADD_STAT(samplerRepromotions, statistics::units::Count::get(),
                "Sampler stable mappings refreshed into MetaTable"),
       ADD_STAT(metaInvalidations, statistics::units::Count::get(),
-               "MetaTable entries invalidated by negative feedback"),
+               "MetaTable entries invalidated or replaced by feedback"),
+      ADD_STAT(metaTargetSwitches, statistics::units::Count::get(),
+               "MetaTable entries installed with a new target address"),
       ADD_STAT(metaTokenStalls, statistics::units::Count::get(),
                "MetaTable lookups blocked by token or outstanding limits"),
       ADD_STAT(metaFallbacks, statistics::units::Count::get(),
@@ -276,29 +278,44 @@ unsigned
 LLDPrefetcher::metaVictim(unsigned set)
 {
     auto &ways = metaTable[set];
-    for (;;) {
-        unsigned victim = 0;
-        uint8_t best = 0;
-        for (unsigned way = 0; way < AddressTableWays; ++way) {
-            if (!ways[way].valid)
-                return way;
-            if (ways[way].rrpv >= best) {
-                best = ways[way].rrpv;
-                victim = way;
-            }
-        }
-        if (best >= 3)
-            return victim;
-        for (auto &entry : ways)
-            entry.rrpv = std::min<uint8_t>(3, entry.rrpv + 1);
+    for (unsigned way = 0; way < AddressTableWays; ++way) {
+        if (!ways[way].valid)
+            return way;
     }
+
+    unsigned victim = 0;
+    for (unsigned way = 1; way < AddressTableWays; ++way) {
+        const auto &candidate = ways[way];
+        const auto &current = ways[victim];
+        if (current.outstanding && !candidate.outstanding) {
+            victim = way;
+        } else if (candidate.outstanding == current.outstanding &&
+                   (candidate.qualityConf < current.qualityConf ||
+                    (candidate.qualityConf == current.qualityConf &&
+                     candidate.trainConf < current.trainConf) ||
+                    (candidate.qualityConf == current.qualityConf &&
+                     candidate.trainConf == current.trainConf &&
+                     candidate.timelyConf < current.timelyConf) ||
+                    (candidate.qualityConf == current.qualityConf &&
+                     candidate.trainConf == current.trainConf &&
+                     candidate.timelyConf == current.timelyConf &&
+                     candidate.lastUsefulEpoch < current.lastUsefulEpoch) ||
+                    (candidate.qualityConf == current.qualityConf &&
+                     candidate.trainConf == current.trainConf &&
+                     candidate.timelyConf == current.timelyConf &&
+                     candidate.lastUsefulEpoch == current.lastUsefulEpoch &&
+                     candidate.rrpv > current.rrpv))) {
+            victim = way;
+        }
+    }
+    return victim;
 }
 
 void
 LLDPrefetcher::updateMetaTable(const SamplerEntry &sample)
 {
     const unsigned set = metaSet(sample.addrP ^ sample.producerPC ^
-                                  sample.consumerPC);
+                                  sample.consumerPC ^ Addr(sample.context));
     auto &ways = metaTable[set];
     for (unsigned way = 0; way < AddressTableWays; ++way) {
         auto &entry = ways[way];
@@ -309,6 +326,20 @@ LLDPrefetcher::updateMetaTable(const SamplerEntry &sample)
             if (entry.addrC != sample.addrC) {
                 entry.trainConf = entry.trainConf > 1 ? entry.trainConf - 2 : 0;
                 entry.tokens = 0;
+                if (!entry.trainConf) {
+                    entry.addrC = sample.addrC;
+                    ++entry.generation;
+                    entry.trainConf = 3;
+                    entry.qualityConf = 4;
+                    entry.timelyConf = 4;
+                    entry.tokens = 2;
+                    entry.outstanding = 0;
+                    entry.lastTrainEpoch = tableEpoch;
+                    entry.lastUsefulEpoch = 0;
+                    entry.rrpv = 0;
+                    stats.metaInvalidations++;
+                    stats.metaTargetSwitches++;
+                }
                 return;
             }
             entry.trainConf = std::min<uint8_t>(7, entry.trainConf + 1);
@@ -341,7 +372,8 @@ void
 LLDPrefetcher::trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
                                 Addr consumer_pc, ContextID context)
 {
-    const unsigned set = samplerSet(addr_p);
+    const unsigned set = samplerSet(
+        addr_p ^ producer_pc ^ consumer_pc ^ Addr(context));
     auto &ways = samplerTable[set];
     for (unsigned way = 0; way < AddressTableWays; ++way) {
         auto &entry = ways[way];
@@ -399,13 +431,15 @@ std::optional<LLDPrefetcher::MetaHit>
 LLDPrefetcher::lookupMetaTable(Addr addr_p, Addr producer_pc,
                                Addr consumer_pc, ContextID context)
 {
-    const unsigned set = metaSet(addr_p ^ producer_pc ^ consumer_pc);
+    const unsigned set = metaSet(
+        addr_p ^ producer_pc ^ consumer_pc ^ Addr(context));
     auto &ways = metaTable[set];
     for (unsigned way = 0; way < AddressTableWays; ++way) {
         auto &entry = ways[way];
         if (entry.valid && entry.addrP == addr_p &&
             entry.producerPC == producer_pc &&
             entry.consumerPC == consumer_pc && entry.context == context) {
+            stats.metaTableHits++;
             if (entry.trainConf < 3 || entry.qualityConf < 2 ||
                 !entry.tokens || entry.outstanding) {
                 stats.metaTokenStalls++;
@@ -852,7 +886,6 @@ LLDPrefetcher::pfHint(const PacketPtr &pkt)
 lldp::Hint
 LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
 {
-    ageMetaTable();
     const bool spatial_pf = isSpatialPrefetch(pkt);
     if (!pkt->isRead() || (!pkt->isDemand() && !spatial_pf) ||
         pkt->req->isInstFetch() || pkt->req->isUncacheable() ||
@@ -872,6 +905,7 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
         dependenceTrain(meta);
     auto hint = pfHint(pkt);
     if (hint.valid) {
+        ageMetaTable();
         hint.spatial = spatial_pf;
         const Addr addr_p = blockAddress(pkt->req->getPaddr()) | hint.offset;
         const int producer = findProducer(
@@ -891,7 +925,6 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
                 pkt->req->contextId());
             if (!meta_hit)
                 continue;
-            stats.metaTableHits++;
             if (queueCandidate(pkt, hint, addr_p, meta_hit->addrC,
                                PrefetchSourceType::LLDPT, col, meta_hit))
                 covered |= uint8_t(1U << col);
