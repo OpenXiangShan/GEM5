@@ -68,6 +68,7 @@
 #include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
+#include "mem/cache/partial_line_meta.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/tags/base.hh"
@@ -1262,6 +1263,14 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar partialWritebackBypasses;
         statistics::Scalar partialWritebackMshrConflicts;
         statistics::Scalar partialFillStoreCompletions;
+        statistics::Scalar partialWritebackAllocAttempts;
+        statistics::Scalar partialWritebackAllocSuccesses;
+        statistics::Scalar partialWritebackAllocFallbacks;
+        statistics::Scalar partialWritebackAllocVictimEvictions;
+        statistics::Scalar partialWritebackHitMerges;
+        statistics::Scalar partialWritebackBecameFull;
+        statistics::Scalar partialMetaReplacements;
+        statistics::Scalar partialMetaProtectedFallbacks;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;
@@ -1418,6 +1427,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
     }
 
     bool partialStoreEnabled() const { return enablePartialStore; }
+    bool partialBlockEnabled() const
+    {
+        return enablePartialStore || enablePartialWritebackAllocate;
+    }
 
     size_t
     getActualSliceNum() const
@@ -1485,6 +1498,16 @@ class BaseCache : public ClockedObject, public CacheAccessor
         // schedule the send
         schedMemSideSendEvent(time);
     }
+
+    /** Install a masked dirty writeback as a partial local block. */
+    bool allocatePartialWriteback(PacketPtr pkt, CacheBlk *&blk,
+                                  PacketList &writebacks);
+
+    /** Make room in the bounded partial-line metadata table. */
+    bool makePartialMetaSpace(PacketList &writebacks);
+
+    /** Update metadata after a partial block gains valid bytes. */
+    void updatePartialMeta(CacheBlk *blk);
 
     /**
      * Returns true if the cache is blocked for accesses.
@@ -1675,6 +1698,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const unsigned cacheLevel{0};
 
     const bool enablePartialStore;
+    const bool enablePartialWritebackAllocate;
+    PartialLineMetaTable partialLineMeta;
 
     //const unsigned maxCacheLevel;
 

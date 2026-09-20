@@ -195,6 +195,14 @@ class BaseCache(ClockedObject):
         False,
         "Acquire write permission without fetching data for partial L1D stores",
     )
+    enable_partial_writeback_allocate = Param.Bool(
+        False,
+        "Allocate masked dirty writeback misses as partial local blocks",
+    )
+    partial_writeback_capacity = Param.MemorySize(
+        "0B",
+        "Maximum data capacity represented by partial writeback metadata",
+    )
 
 class Cache(BaseCache):
     type = 'Cache'

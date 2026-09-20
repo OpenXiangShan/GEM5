@@ -35,6 +35,7 @@
 
 #include "base/gtest/cur_tick_fake.hh"
 #include "mem/cache/cache_blk.hh"
+#include "mem/cache/partial_line_meta.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 
@@ -159,6 +160,30 @@ TEST(PartialStoreTest, NewerMaskedWritebackWinsInOverlay)
     EXPECT_EQ(fill[3], 0x22);
     EXPECT_EQ(fill[37], 0x22);
     EXPECT_EQ(fill[4], 0x5a);
+}
+
+TEST(PartialStoreTest, PartialLineMetaTracksLruAndCapacity)
+{
+    CacheBlk first;
+    CacheBlk second;
+    CacheBlk third;
+    PartialLineMetaTable meta(2);
+
+    meta.insert(&first);
+    meta.insert(&second);
+    EXPECT_TRUE(meta.full());
+    ASSERT_EQ(meta.oldestFirst().size(), 2);
+    EXPECT_EQ(meta.oldestFirst()[0], &first);
+
+    meta.touch(&first);
+    EXPECT_EQ(meta.oldestFirst()[0], &second);
+
+    meta.erase(&second);
+    EXPECT_FALSE(meta.full());
+    meta.insert(&third);
+    EXPECT_EQ(meta.size(), 2);
+    EXPECT_TRUE(meta.contains(&first));
+    EXPECT_TRUE(meta.contains(&third));
 }
 
 } // anonymous namespace

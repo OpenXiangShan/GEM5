@@ -541,7 +541,7 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     const bool partial_store_miss = partialStoreEnabled() && !blkValid &&
         cpu_pkt->cmd == MemCmd::WriteReq && cpu_pkt->isMaskedWrite() &&
         cpu_pkt->isDcacheMainPipeSbufferReq();
-    const bool partial_data_fill = partialStoreEnabled() && blkValid &&
+    const bool partial_data_fill = partialBlockEnabled() && blkValid &&
         blk->isPartial() && cpu_pkt->isRead();
 
     if (cpu_pkt->req->isUncacheable() ||
@@ -1258,6 +1258,17 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
 
     bool respond = false;
     bool blk_valid = blk && blk->isValid();
+
+    // Presence-only probes can be answered by a partial block without
+    // supplying data or changing coherence state.
+    if (blk_valid && blk->isPartial() &&
+        (pkt->isEviction() || pkt->mustCheckAbove())) {
+        DPRINTF(Cache, "Partial block present for cache probe %s\n",
+                pkt->print());
+        pkt->setBlockCached();
+        return snoop_delay;
+    }
+
     panic_if(blk_valid && blk->isPartial(),
              "%s: snoop %s reached unsupported partial block %s",
              name(), pkt->print(), blk->print());

@@ -157,9 +157,17 @@ def setKmhV3Params(args, system):
 
     # l2 caches
     if args.l2cache:
+        partial_writeback_capacity = 64 * 1024
+        partial_writeback_enabled = args.num_cpus == 1
         for i in range(args.num_cpus):
             if args.classic_l2:
-                system.l2_caches[i].slice_num = 4
+                system.l2_caches[i].enable_partial_writeback_allocate = \
+                    partial_writeback_enabled
+                system.l2_caches[i].partial_writeback_capacity = (
+                    f"{partial_writeback_capacity}B"
+                    if partial_writeback_enabled else "0B"
+                )
+                system.l2_caches[i].num_slices = 4
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].do_fast_writeline = True
                 system.l2_caches[i].prefetch_can_offload = False
@@ -172,7 +180,16 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_sram_banks = 1
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
+                assert partial_writeback_capacity % args.l2_slices == 0
+                assert (partial_writeback_capacity // args.l2_slices) % 64 == 0
                 for j in range(args.l2_slices):
+                    inner_cache = l2_wrapper.slices[j].inner_cache
+                    inner_cache.enable_partial_writeback_allocate = \
+                        partial_writeback_enabled
+                    inner_cache.partial_writeback_capacity = (
+                        f"{partial_writeback_capacity // args.l2_slices}B"
+                        if partial_writeback_enabled else "0B"
+                    )
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False

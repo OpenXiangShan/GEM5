@@ -38,11 +38,13 @@ Source('cache_blk.cc')
 Source('mshr.cc')
 Source('mshr_queue.cc')
 Source('noncoherent_cache.cc')
+Source('partial_line_meta.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
 
 GTest('partial_store.test',
       'partial_store.test.cc',
+      'partial_line_meta.cc',
       '../packet.cc',
       '../../sim/bufval.cc',
       with_tag('gem5 trace'))

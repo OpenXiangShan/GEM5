@@ -188,6 +188,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       stats(*this),
       cacheLevel(p.cache_level),
       enablePartialStore(p.enable_partial_store),
+      enablePartialWritebackAllocate(p.enable_partial_writeback_allocate),
+      partialLineMeta(enablePartialWritebackAllocate ?
+                      p.partial_writeback_capacity / blk_size : 0),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
       doFastWriteline(p.do_fast_writeline),
@@ -228,6 +231,23 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
              (cacheLevel != 1 || isReadOnly || system->multiCore() ||
               compressor),
              "%s: partial stores require a single-core, uncompressed L1D",
+             name());
+    fatal_if(enablePartialWritebackAllocate &&
+             (cacheLevel <= 1 || isReadOnly || system->multiCore() ||
+              compressor),
+             "%s: partial writeback allocation requires a single-core, "
+             "uncompressed writable cache below L1", name());
+    fatal_if(enablePartialWritebackAllocate &&
+             p.partial_writeback_capacity == 0,
+             "%s: partial writeback allocation requires non-zero capacity",
+             name());
+    fatal_if(enablePartialWritebackAllocate &&
+             p.partial_writeback_capacity % blkSize != 0,
+             "%s: partial writeback capacity must be a multiple of the "
+             "cache-line size", name());
+    fatal_if(!enablePartialWritebackAllocate &&
+             p.partial_writeback_capacity != 0,
+             "%s: partial writeback capacity requires allocation support",
              name());
 
     if (sliceNum > 0) {
@@ -645,7 +665,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 assert((pkt->needsWritable() &&
                     !blk->isSet(CacheBlk::WritableBit)) ||
                     pkt->req->isCacheMaintenance() ||
-                    (enablePartialStore && blk->isPartial() &&
+                    (partialBlockEnabled() && blk->isPartial() &&
                      pkt->isRead()));
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
@@ -1428,6 +1448,7 @@ BaseCache::functionalAccess(PacketPtr pkt, bool from_cpu_side)
             pkt->getBlockAddr(blkSize) == blk_addr &&
             pkt->getOffset(blkSize) + pkt->getSize() <= blkSize) {
             blk->markValidData(pkt, blkSize);
+            updatePartialMeta(blk);
         }
     }
 
@@ -1916,6 +1937,7 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
             updateBlockData(blk, pkt, true);
             if (blk->isPartial()) {
                 blk->markValidData(pkt, blkSize);
+                updatePartialMeta(blk);
             }
         }
         // Always mark the line as dirty (and thus transition to the
@@ -2049,6 +2071,10 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     Cycles tag_latency(0);
     blk = tags->accessBlock(pkt, tag_latency);
 
+    if (blk && partialLineMeta.contains(blk)) {
+        partialLineMeta.touch(blk);
+    }
+
     DPRINTF(Cache, "%s for %s %s, block access lat %lu\n", __func__, pkt->print(),
             blk ? "hit " + blk->print() : "miss", tag_latency);
 
@@ -2177,8 +2203,13 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         const bool has_old_data = blk && blk->isValid();
         if (!blk) {
             if (pkt->isMaskedWrite()) {
-                // A partial writeback cannot allocate an incomplete block.
-                // Forward it through this cache's write queue unchanged.
+                if (enablePartialWritebackAllocate && !pkt->hasSharers() &&
+                    allocatePartialWriteback(pkt, blk, writebacks)) {
+                    return true;
+                }
+
+                // Unsupported or temporarily unavailable partial blocks are
+                // forwarded unchanged to the next cache level.
                 stats.partialWritebackBypasses++;
                 incMissCount(pkt);
                 return false;
@@ -2220,6 +2251,11 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         assert(!pkt->needsResponse());
 
         updateBlockData(blk, pkt, has_old_data);
+        if (partialBlockEnabled() && blk->isPartial()) {
+            blk->markValidData(pkt, blkSize);
+            stats.partialWritebackHitMerges++;
+            updatePartialMeta(blk);
+        }
         DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
         incHitCount(pkt);
         incSquashedDemandHitCount(pkt, blk);
@@ -2313,11 +2349,11 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         return !pkt->writeThrough();
     }
 
-    const bool partial_read_miss = enablePartialStore && blk &&
+    const bool partial_read_miss = partialBlockEnabled() && blk &&
         blk->isPartial() && pkt->isRead() &&
         !blk->hasValidData(pkt->getOffset(blkSize), pkt->getSize());
 
-    if (enablePartialStore && blk && blk->isPartial() && pkt->isRead() &&
+    if (partialBlockEnabled() && blk && blk->isPartial() && pkt->isRead() &&
         !partial_read_miss) {
         stats.partialCoveredLoadHits++;
     }
@@ -2512,7 +2548,7 @@ BaseCache::handleFill(
         assert(pkt->hasData());
         assert(pkt->getSize() == blkSize);
 
-        if (enablePartialStore && has_old_data &&
+        if (partialBlockEnabled() && has_old_data &&
             (partial_data_fill || blk->isPartial())) {
             const bool merged = blk->mergePartialFill(
                 pkt->getConstPtr<uint8_t>(), blkSize);
@@ -2523,6 +2559,7 @@ BaseCache::handleFill(
                         "Ignoring fully covered partial fill for %#llx\n",
                         addr);
             }
+            updatePartialMeta(blk);
         } else {
             updateBlockData(blk, pkt, has_old_data);
         }
@@ -2642,9 +2679,110 @@ BaseCache::allocateBlock(
     return victim;
 }
 
+bool
+BaseCache::makePartialMetaSpace(PacketList &writebacks)
+{
+    assert(enablePartialWritebackAllocate);
+
+    if (!partialLineMeta.full()) {
+        return true;
+    }
+
+    for (CacheBlk *victim : partialLineMeta.oldestFirst()) {
+        if (!victim->isValid() || !victim->isPartial()) {
+            partialLineMeta.erase(victim);
+            if (!partialLineMeta.full()) {
+                return true;
+            }
+            continue;
+        }
+
+        const Addr addr = regenerateBlkAddr(victim);
+        if (mshrQueue.findMatch(addr, victim->isSecure())) {
+            continue;
+        }
+
+        DPRINTF(PartialStore,
+                "Partial metadata full; evicting LRU block %#llx\n", addr);
+        stats.partialMetaReplacements++;
+        evictBlock(victim, writebacks);
+        assert(!partialLineMeta.full());
+        return true;
+    }
+
+    stats.partialMetaProtectedFallbacks++;
+    return false;
+}
+
+void
+BaseCache::updatePartialMeta(CacheBlk *blk)
+{
+    if (!partialLineMeta.contains(blk)) {
+        return;
+    }
+
+    if (blk->isValid() && blk->isPartial()) {
+        partialLineMeta.touch(blk);
+        return;
+    }
+
+    partialLineMeta.erase(blk);
+    stats.partialWritebackBecameFull++;
+}
+
+bool
+BaseCache::allocatePartialWriteback(PacketPtr pkt, CacheBlk *&blk,
+                                     PacketList &writebacks)
+{
+    assert(enablePartialWritebackAllocate);
+    assert(pkt->cmd == MemCmd::WritebackDirty);
+    assert(pkt->isMaskedWrite());
+    assert(pkt->getSize() == blkSize);
+    assert(!blk || !blk->isValid());
+
+    stats.partialWritebackAllocAttempts++;
+
+    if (!makePartialMetaSpace(writebacks)) {
+        stats.partialWritebackAllocFallbacks++;
+        return false;
+    }
+
+    bool evicted_dirty = false;
+    CacheBlk *victim = allocateBlock(pkt, writebacks,
+                                     PrefetchSourceType::PF_NONE,
+                                     &evicted_dirty);
+    if (!victim) {
+        stats.partialWritebackAllocFallbacks++;
+        return false;
+    }
+
+    if (evicted_dirty) {
+        stats.partialWritebackAllocVictimEvictions++;
+    }
+
+    victim->markPartial(blkSize);
+    victim->setCoherenceBits(CacheBlk::ReadableBit | CacheBlk::DirtyBit |
+                             CacheBlk::WritableBit);
+    updateBlockData(victim, pkt, false);
+    victim->markValidData(pkt, blkSize);
+    assert(victim->isPartial());
+    assert(!partialLineMeta.full());
+    partialLineMeta.insert(victim);
+    victim->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
+                         std::max(cyclesToTicks(lookupLatency),
+                                  (uint64_t)pkt->payloadDelay));
+
+    incHitCount(pkt);
+    incSquashedDemandHitCount(pkt, victim);
+    stats.partialWritebackAllocSuccesses++;
+    blk = victim;
+    return true;
+}
+
 void
 BaseCache::invalidateBlock(CacheBlk *blk)
 {
+    partialLineMeta.erase(blk);
     static uint64_t _inval_cnt{0};
     // notify prefetcher to send some info to lower level per 128 cache invalidations
     if ((_inval_cnt++ % 128) == 127) {
@@ -2976,7 +3114,7 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
             }
         } else if (blk && blk->isPartial() && sent_cmd.isRead()) {
             mshr->setMissKind(MSHR::MissKind::PartialDataFill);
-            if (enablePartialStore) {
+            if (partialBlockEnabled()) {
                 stats.partialDataFillReqs++;
             }
         } else if (mshr->isWholeLineWrite()) {
@@ -3317,6 +3455,31 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
     ADD_STAT(partialFillStoreCompletions,
              statistics::units::Count::get(),
              "number of partial fills fully covered by newer stores"),
+    ADD_STAT(partialWritebackAllocAttempts,
+             statistics::units::Count::get(),
+             "number of masked writeback miss allocation attempts"),
+    ADD_STAT(partialWritebackAllocSuccesses,
+             statistics::units::Count::get(),
+             "number of masked writeback miss allocations"),
+    ADD_STAT(partialWritebackAllocFallbacks,
+             statistics::units::Count::get(),
+             "number of masked writeback allocation fallbacks"),
+    ADD_STAT(partialWritebackAllocVictimEvictions,
+             statistics::units::Count::get(),
+             "number of dirty tag victims evicted for partial allocation"),
+    ADD_STAT(partialWritebackHitMerges,
+             statistics::units::Count::get(),
+             "number of writebacks merged into resident partial blocks"),
+    ADD_STAT(partialWritebackBecameFull,
+             statistics::units::Count::get(),
+             "number of tracked partial blocks that became complete"),
+    ADD_STAT(partialMetaReplacements,
+             statistics::units::Count::get(),
+             "number of L2 lines evicted by partial metadata replacement"),
+    ADD_STAT(partialMetaProtectedFallbacks,
+             statistics::units::Count::get(),
+             "number of allocations bypassed because all metadata victims "
+             "had active MSHRs"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),
