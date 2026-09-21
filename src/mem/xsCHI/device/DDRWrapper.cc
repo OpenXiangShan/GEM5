@@ -19,6 +19,12 @@ namespace gem5
 {
 namespace xsCHI
 {
+namespace
+{
+
+constexpr uint64_t DiagnosticAgeWarnCycles = 10000;
+
+} // namespace
 
     DDRWrapper::DDRWrapper(const Params &p) :
     AbstractMemory(p),
@@ -298,6 +304,7 @@ DDRWrapper::sendResponse()
     if (req->dataTransferFinished()){
         responseQueue.pop();
         outstandingReadTransferMap.erase(reqIt);
+        readTracks.erase(pkt->getAddr());
     }
     DPRINTF(CHIDramsim, "Have %d read, %d write, %d responses outstanding\n",
                     nbrOutstandingReads, nbrOutstandingWrites,
