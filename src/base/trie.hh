@@ -198,6 +198,39 @@ class Trie
         return NULL;
     }
 
+    /**
+     * Look up the Handle for an exact key prefix. Unlike lookupHandle(key),
+     * this continues past a matching value with a shorter prefix.
+     */
+    Handle
+    lookupHandle(Key key, unsigned width)
+    {
+        assert(width <= MaxBits);
+
+        Key mask = ~(Key)0;
+        if (width < MaxBits)
+            mask <<= (MaxBits - width);
+        key &= mask;
+
+        Node *node = &head;
+        while (node) {
+            if (node->mask == mask)
+                return node->key == key && node->value ? node : NULL;
+
+            Node *next = NULL;
+            for (Node *kid : node->kids) {
+                if (kid && kid->matches(key) &&
+                    (kid->mask & mask) == kid->mask) {
+                    next = kid;
+                    break;
+                }
+            }
+            node = next;
+        }
+
+        return NULL;
+    }
+
   public:
     /**
      * Method which inserts a key/value pair into the trie.
@@ -304,6 +337,17 @@ class Trie
             return node->value;
         else
             return NULL;
+    }
+
+    /**
+     * Look up the Value associated with exactly width most-significant bits
+     * of key. Broader or narrower matching prefixes are ignored.
+     */
+    Value *
+    lookup(Key key, unsigned width)
+    {
+        Node *node = lookupHandle(key, width);
+        return node ? node->value : NULL;
     }
 
     /**
