@@ -200,6 +200,14 @@ class SnoopFilter : public SimObject
      */
     void updateResponse(const Packet *cpkt, const ResponsePort& cpu_side_port);
 
+    /**
+     * Record an intermediate split StorePerm grant without completing the
+     * outstanding request. The requester may start modifying and evicting
+     * the line, while the final data response is still in flight.
+     */
+    void updateStorePermGrant(const Packet *cpkt,
+                              const ResponsePort& cpu_side_port);
+
     virtual void regStats();
 
   protected:

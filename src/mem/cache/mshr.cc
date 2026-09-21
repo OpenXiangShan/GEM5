@@ -66,33 +66,38 @@ MSHR::MSHR(const std::string &name)
         postInvalidate(false), postDowngrade(false),
         wasWholeLineWrite(false), missKind(MissKind::Normal),
         splitStorePermGrant(false),
-        partialWriteback(nullptr), isForward(false),
+        splitStorePermData(false), writebackOverlay(nullptr), isForward(false),
         targets(name + ".targets"),
         deferredTargets(name + ".deferredTargets")
 {
 }
 
 void
-MSHR::mergePartialWriteback(PacketPtr pkt)
+MSHR::mergeWriteback(PacketPtr pkt)
 {
     assert(pkt);
     assert(pkt->cmd == MemCmd::WritebackDirty);
-    assert(pkt->isMaskedWrite());
     assert(pkt->getBlockAddr(blkSize) == blkAddr);
     assert(pkt->getSize() == blkSize);
 
-    if (!partialWriteback) {
-        partialWriteback = pkt;
+    if (!writebackOverlay) {
+        writebackOverlay = pkt;
         return;
     }
 
-    const auto &old_mask = partialWriteback->req->getByteEnable();
-    auto merged_mask = pkt->req->getByteEnable();
+    std::vector<bool> old_mask(blkSize, true);
+    if (writebackOverlay->isMaskedWrite()) {
+        old_mask = writebackOverlay->req->getByteEnable();
+    }
+    std::vector<bool> merged_mask(blkSize, true);
+    if (pkt->isMaskedWrite()) {
+        merged_mask = pkt->req->getByteEnable();
+    }
     assert(old_mask.size() == blkSize);
     assert(merged_mask.size() == blkSize);
 
-    const auto *old_data = partialWriteback->getConstPtr<uint8_t>();
-    auto *merged_data = const_cast<uint8_t *>(pkt->getConstPtr<uint8_t>());
+    const auto *old_data = writebackOverlay->getConstPtr<uint8_t>();
+    auto *merged_data = pkt->getPtr<uint8_t>();
     for (unsigned i = 0; i < blkSize; ++i) {
         if (!merged_mask[i] && old_mask[i]) {
             merged_mask[i] = true;
@@ -100,8 +105,8 @@ MSHR::mergePartialWriteback(PacketPtr pkt)
         }
     }
     pkt->req->setByteEnable(merged_mask);
-    delete partialWriteback;
-    partialWriteback = pkt;
+    delete writebackOverlay;
+    writebackOverlay = pkt;
 }
 
 MSHR::TargetList::TargetList(const std::string &name)
@@ -372,7 +377,8 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     wasWholeLineWrite = false;
     missKind = MissKind::Normal;
     splitStorePermGrant = false;
-    assert(!partialWriteback);
+    splitStorePermData = false;
+    assert(!writebackOverlay);
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
@@ -430,9 +436,10 @@ MSHR::deallocate()
     assert(targets.empty());
     targets.resetFlags();
     assert(deferredTargets.isReset());
-    assert(!partialWriteback);
+    assert(!writebackOverlay);
     inService = false;
     splitStorePermGrant = false;
+    splitStorePermData = false;
 }
 
 /*

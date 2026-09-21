@@ -621,15 +621,17 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
 
         // Coalesce unless it was a software prefetch (see above).
         if (pkt) {
-            if (pkt->isWriteback() && pkt->cmd == MemCmd::WritebackDirty &&
-                pkt->isMaskedWrite()) {
-                if (mshr->getTarget()->pkt->isRead()) {
-                    mshr->mergePartialWriteback(pkt);
-                    stats.partialWritebackMshrConflicts++;
+            if (pkt->isWriteback() && pkt->cmd == MemCmd::WritebackDirty) {
+                if (mshr->getTarget()->pkt->isRead() ||
+                    mshr->isSplitStorePermData()) {
+                    mshr->mergeWriteback(pkt);
+                    if (pkt->isMaskedWrite()) {
+                        stats.partialWritebackMshrConflicts++;
+                    }
                     DPRINTF(PartialStore,
-                            "Overlaying masked writeback on read MSHR for "
+                            "Overlaying dirty writeback on data MSHR for "
                             "%#llx\n", pkt->getBlockAddr(blkSize));
-                    if (debug::PartialStore) {
+                    if (debug::PartialStore && pkt->isMaskedWrite()) {
                         const auto &mask = pkt->req->getByteEnable();
                         const auto *data = pkt->getConstPtr<uint8_t>();
                         for (unsigned i = 0; i < mask.size(); ++i) {
@@ -641,7 +643,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                         DPRINTFR(PartialStore, "\n");
                     }
                 } else {
-                    // Keep a masked writeback behind non-read MSHRs. The
+                    // Keep a dirty writeback behind non-data MSHRs. The
                     // write queue ordering logic will issue it after the
                     // outstanding permission/upgrade transaction, avoiding
                     // an early partial allocation that could be overwritten
@@ -775,6 +777,10 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
             MSHR *new_mshr = allocateMissBuffer(pkt, forward_time);
+            if (cacheLevel == 2 && pkt->cmd == MemCmd::StorePermReq &&
+                (!blk || !blk->isValid())) {
+                new_mshr->markSplitStorePermData();
+            }
             if (partialBlockEnabled() && blk && blk->isPartial() &&
                 (pkt->isRead() ||
                  (pkt->isWrite() && !blk->canWrite(pkt, blkSize)))) {
@@ -1254,11 +1260,11 @@ BaseCache::recvTimingResp(PacketPtr pkt)
                 stats.DcacheRefillNotifyWithoutLSQ++;
             }
         }
-        PacketPtr partial_writeback = nullptr;
-        if (mshr->hasPartialWriteback()) {
-            partial_writeback = mshr->releasePartialWriteback();
+        PacketPtr writeback_overlay = nullptr;
+        if (mshr->hasWritebackOverlay()) {
+            writeback_overlay = mshr->releaseWritebackOverlay();
             assert(pkt->isRead() && pkt->hasData());
-            partial_writeback->writeDataToBlock(
+            writeback_overlay->writeDataToBlock(
                 pkt->getPtr<uint8_t>(), blkSize);
         }
 
@@ -1268,17 +1274,17 @@ BaseCache::recvTimingResp(PacketPtr pkt)
                 PrefetchSourceType::PF_NONE,
             &dcache_refill_need_data_read, mshr->isPartialFill());
         assert(blk != nullptr);
-        if (partial_writeback) {
+        if (writeback_overlay) {
             blk->setCoherenceBits(CacheBlk::DirtyBit);
-            if (partial_writeback->hasSharers()) {
+            if (writeback_overlay->hasSharers()) {
                 blk->clearCoherenceBits(CacheBlk::WritableBit);
             } else {
                 blk->setCoherenceBits(CacheBlk::WritableBit);
             }
             DPRINTF(PartialStore,
-                    "Applied masked writeback overlay to fill for %#llx\n",
+                    "Applied dirty writeback overlay to fill for %#llx\n",
                     pkt->getAddr());
-            delete partial_writeback;
+            delete writeback_overlay;
         }
         if (prefetcher) {
             prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
@@ -1286,12 +1292,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         ppFill->notify(pkt);
     }
 
-    if (is_error && mshr->hasPartialWriteback()) {
-        PacketPtr partial_writeback = mshr->releasePartialWriteback();
+    if (is_error && mshr->hasWritebackOverlay()) {
+        PacketPtr writeback_overlay = mshr->releaseWritebackOverlay();
         DPRINTF(PartialStore,
-                "Forwarding masked writeback after failed fill for %#llx\n",
-                partial_writeback->getAddr());
-        writebacks.push_back(partial_writeback);
+                "Forwarding dirty writeback after failed fill for %#llx\n",
+                writeback_overlay->getAddr());
+        writebacks.push_back(writeback_overlay);
     }
 
     // Don't want to promote the Locked RMW Read until
@@ -1301,11 +1307,16 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             // The block was marked not readable while there was a pending
             // cache maintenance operation, restore its flag.
             blk->setCoherenceBits(CacheBlk::ReadableBit);
+        }
 
-            // This was a cache clean operation (without invalidate)
-            // and we have a copy of the block already. Since there
-            // is no invalidation, we can promote targets that don't
-            // require a writable copy
+        if (mshr->getMissKind() != MSHR::MissKind::PartialPermission &&
+            blk && blk->isValid() &&
+            blk->isSet(CacheBlk::ReadableBit) && !pkt->isInvalidate()) {
+            // A partial store can initially force later reads onto the
+            // deferred list, then issue a normal UpgradeReq when the full
+            // line is already present. Once that upgrade completes, service
+            // those reads from the now-readable block instead of reissuing a
+            // read miss against a valid writable line.
             mshr->promoteReadable();
         }
 
@@ -2295,9 +2306,9 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         assert(blkSize == pkt->getSize());
 
         // Do not update an existing block while a transaction for the same
-        // line is outstanding. Read MSHRs can absorb the masked bytes as an
-        // overlay; other MSHRs must preserve the normal write ordering.
-        if (pkt->cmd == MemCmd::WritebackDirty && pkt->isMaskedWrite() &&
+        // line is outstanding. Data-producing MSHRs can absorb the newer
+        // writeback as an overlay; other MSHRs preserve normal ordering.
+        if (pkt->cmd == MemCmd::WritebackDirty &&
             mshrQueue.findMatch(pkt->getBlockAddr(blkSize),
                                 pkt->isSecure())) {
             lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
@@ -3555,7 +3566,7 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of masked writebacks bypassing miss allocation"),
     ADD_STAT(partialWritebackMshrConflicts,
              statistics::units::Count::get(),
-             "number of masked writebacks overlaid on read MSHRs"),
+             "number of masked writebacks overlaid on data MSHRs"),
     ADD_STAT(partialWritebackAllocAttempts,
              statistics::units::Count::get(),
              "number of masked writeback miss allocation attempts"),

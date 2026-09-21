@@ -538,10 +538,15 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     Tick packetFinishTime = clockEdge(headerLatency) + pkt->payloadDelay;
     DPRINTF(CoherentXBar, "Payload delay: %lu, header delay: %lu\n", pkt->payloadDelay, clockEdge(headerLatency));
 
-    if (snoopFilter && !system->bypassCaches() &&
-        !(pkt->isSplitStorePermReq() && !intermediate_store_perm)) {
-        // let the snoop filter inspect the response and update its state
-        snoopFilter->updateResponse(pkt, *cpuSidePorts[cpu_side_port_id]);
+    if (snoopFilter && !system->bypassCaches()) {
+        if (intermediate_store_perm) {
+            snoopFilter->updateStorePermGrant(
+                pkt, *cpuSidePorts[cpu_side_port_id]);
+        } else {
+            // The final data response completes the outstanding request.
+            snoopFilter->updateResponse(
+                pkt, *cpuSidePorts[cpu_side_port_id]);
+        }
     }
 
     // send the packet through the destination CPU-side port and pay for

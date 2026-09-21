@@ -137,8 +137,11 @@ class MSHR : public QueueEntry, public Printable
     /** Permission arrived for a split StorePerm transaction; data is pending. */
     bool splitStorePermGrant;
 
-    /** Newer bytes from a masked dirty writeback racing this read miss. */
-    PacketPtr partialWriteback;
+    /** This L2 StorePerm miss is fetching the complete line data. */
+    bool splitStorePermData;
+
+    /** Newer data from a dirty writeback racing this data-producing miss. */
+    PacketPtr writebackOverlay;
 
     /** True if the entry is just a simple forward from an upper level */
     bool isForward;
@@ -358,6 +361,13 @@ class MSHR : public QueueEntry, public Printable
         splitStorePermGrant = true;
     }
 
+    bool isSplitStorePermData() const { return splitStorePermData; }
+    void markSplitStorePermData()
+    {
+        assert(!splitStorePermData);
+        splitStorePermData = true;
+    }
+
     MissKind getMissKind() const { return missKind; }
     void setMissKind(MissKind kind) { missKind = kind; }
     bool isPartialFill() const
@@ -366,19 +376,19 @@ class MSHR : public QueueEntry, public Printable
             missKind == MissKind::PartialSnoopFill;
     }
 
-    bool hasPartialWriteback() const { return partialWriteback != nullptr; }
+    bool hasWritebackOverlay() const { return writebackOverlay != nullptr; }
 
     /**
-     * Merge a masked dirty writeback into the pending fill overlay.
+     * Merge a dirty writeback into the pending fill overlay.
      *
      * The newest packet is retained so its coherence flags take precedence.
      */
-    void mergePartialWriteback(PacketPtr pkt);
+    void mergeWriteback(PacketPtr pkt);
 
-    PacketPtr releasePartialWriteback()
+    PacketPtr releaseWritebackOverlay()
     {
-        PacketPtr pkt = partialWriteback;
-        partialWriteback = nullptr;
+        PacketPtr pkt = writebackOverlay;
+        writebackOverlay = nullptr;
         return pkt;
     }
 
