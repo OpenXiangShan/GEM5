@@ -368,9 +368,6 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
                 assert(size == inst->effSize);
 
                 if (inst->isAtomic()) {
-                    panic_if(size > sizeof(uint64_t),
-                             "Unexpected AMO size %zu at addr %#lx\n",
-                             size, addr);
                     // Preserve the DUT-observed old value until completeStore()
                     // derives the post-AMO memory image. Keep the actual
                     // response value for difftest, since the request may have
@@ -2412,7 +2409,7 @@ LSQUnit::writebackBlockedStore()
         system->multiContextDifftest() && inst->isAtomic() &&
         cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-        uint8_t issue_golden[8] = {};
+        uint8_t issue_golden[16] = {};
         panic_if(request->_size > sizeof(issue_golden),
                  "Unexpected AMO size %u at addr %#lx\n",
                  request->_size, request->mainReq()->getPaddr());
@@ -2487,7 +2484,7 @@ LSQUnit::directStoreToCache()
         if (system->multiContextDifftest() && inst->isAtomic() &&
             cpu->goldenMemManager() &&
             cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-            uint8_t issue_golden[8] = {};
+            uint8_t issue_golden[16] = {};
             panic_if(request->_size > sizeof(issue_golden),
                      "Unexpected AMO size %u at addr %#lx\n",
                      request->_size, request->mainReq()->getPaddr());
@@ -2642,8 +2639,16 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
             Addr vaddr = request->getVaddr();
             Addr paddr = request->mainReq()->getPaddr();
             DPRINTF(LSQUnit, "Store [sn:%lli] insert into sbuffer\n", inst->seqNum);
+            // Cache-block zero requests can exceed the SQ data array size.
+            // Materialize their data only when handing them to the sbuffer.
+            std::vector<uint8_t> zeros;
+            auto *data = reinterpret_cast<uint8_t *>(storeWBIt->data());
+            if (storeWBIt->isAllZeros()) {
+                zeros.resize(request->_size, 0);
+                data = zeros.data();
+            }
             bool success = insertStoreBuffer(
-                vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size,
+                vaddr, paddr, data, request->_size,
                 request->mainReq()->getByteEnable(), inst->seqNum);
             if (!success) {
                 offload_fail[lsqID] = true;
@@ -3106,13 +3111,18 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
         has_paddr &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
+
+        // adjust golden_mask according to the request->_size
+        // request->_size = 8 , mask = 0xff
+        // request->_size = 16 , mask = 0xffff
+        uint64_t golden_mask = (request->_size >= 64) ? ~0ULL :  ((1ULL << request->_size) - 1);
         if (!store_inst->isAtomic()) {
             DPRINTF(LSQUnit, "Store writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    paddr, *((uint64_t *)store_inst->memData), 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, 0xff,
+                    paddr, *((uint64_t *)store_inst->memData), golden_mask, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, golden_mask,
                                                      request->_size);
         } else {
-            uint8_t tmp_data[8];
+            uint8_t tmp_data[16];
             memset(tmp_data, 0, sizeof(tmp_data));
             assert(request->req()->getAtomicOpFunctor());
 
@@ -3125,8 +3135,8 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
 
             DPRINTF(LSQUnit, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
-                    paddr, *((uint64_t *)(tmp_data)), 0xff, request->_size);
-            cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
+                    paddr, *((uint64_t *)(tmp_data)), golden_mask, request->_size);
+            cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, golden_mask,
                                                      request->_size);
         }
     }

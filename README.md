@@ -39,8 +39,11 @@ We are grateful for their contributions and hope to continue to work together to
 
 ## Features
 
-XS-GEM5 is not as easy to use as official GEM5, because it only supports full-system simulation
-with Xiangshan's specific formats, refer to [Workflows](#workflows-how-to-run-workloads) for more details.
+Full-system simulation with Xiangshan-specific checkpoint formats is the
+primary XS-GEM5 workflow. Limited syscall-emulation support for RISC-V Linux
+user-space ELF files and upstream SE workloads is available through
+`configs/example/se.py`. Refer to [Workflows](#workflows-how-to-run-workloads)
+for more details.
 
 XS-GEM5 is enhanced with
 - Xiangshan RVGCpt: a cross-platform full-system checkpoint for RISC-V.
@@ -91,9 +94,16 @@ Because XS-GEM5 is currently under internal development, we have several branche
 
 - Cannot run Boom's baremetal app
   * We only support [Abstract Machine](https://github.com/OpenXiangShan/nexus-am) baremetal environment or Linux for Xiangshan.
-- Cannot directly run an ELF
-  * GEM5's System call emulation is not supported.([What is system call emulation](https://stackoverflow.com/questions/48986597/when-to-use-full-system-fs-vs-syscall-emulation-se-with-userland-programs-in-gem))
-  * QEMU's User space emulation is not supported.([What is user space emulation](https://www.qemu.org/docs/master/user/main.html))
+- SE mode does not support online Difftest with NEMU. RISC-V Linux user-space
+  ELF files can be run with `configs/example/se.py`; statically linked binaries
+  are the recommended starting point. Its default KmhV3-like profile matches
+  major core/cache capacities but is not FS/GCPT performance-equivalent. The
+  entry point can also download upstream gem5 SE workloads by resource ID. See
+  the [quick-start guide](docs/quick_start.md).
+- Atomic-to-O3 fast-forward is not supported by `configs/example/se.py` yet.
+  The configuration currently supports `DerivO3CPU` and its subclasses. Use
+  the default O3 CPU directly and `--warmup-insts-no-switch` when O3 warmup
+  statistics should be excluded.
 - Checkpoint is not compatible with GEM5's SE checkpoints or m5 checkpoints.
   * Cannot produce GEM5's SE checkpoints or m5 checkpoints
   * Cannot run GEM5's SE checkpoints or m5 checkpoints

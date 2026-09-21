@@ -64,6 +64,8 @@ def setKmhV3Params(args, system):
         cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4
         cpu.fetchQueueSize = 64
+        predecode_enabled = not getattr(args, "enable_trace_mode", False)
+        cpu.enablePredecode = predecode_enabled
 
         # decode
         cpu.fetchToDecodeDelay = 3
@@ -132,6 +134,7 @@ def setKmhV3Params(args, system):
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
+        cpu.vectorMemCompletionDelay = 3
 
         # lsq
         cpu.LQEntries = 120

@@ -48,6 +48,7 @@ class GoldenGloablMem
 
     bool isSfenceSafe(uint64_t addr, int len);
     bool inPmem(uint64_t addr);
+    bool inPmem(uint64_t addr, uint64_t len);
 
     uint8_t *getGoldenMemPtr() const { return goldenMem; }
 

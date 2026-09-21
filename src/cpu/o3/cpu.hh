@@ -191,6 +191,7 @@ class CPU : public BaseCPU
     /** Constructs a CPU with the given parameters. */
     CPU(const BaseO3CPUParams &params);
 
+    ProbePointArg<XsDynInstMetaPtr> *ppLldpDependenceTrain;
     ProbePointArg<PacketPtr> *ppInstAccessComplete;
     ProbePointArg<std::pair<DynInstPtr, PacketPtr> > *ppDataAccessComplete;
 
@@ -668,6 +669,9 @@ class CPU : public BaseCPU
     struct CPUStats : public statistics::Group
     {
         CPUStats(CPU *cpu);
+        void preDumpStats() override;
+
+        CPU &owner;
 
         /** Stat for total number of times the CPU is descheduled. */
         statistics::Scalar timesIdled;
@@ -700,9 +704,9 @@ class CPU : public BaseCPU
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
         /** BadSpec Bound */
-        statistics::Formula badSpecBound;
+        statistics::Vector badSpecBound;
         /** Branch Miss Prediction Bound */
-        statistics::Formula branchMissPrediction;
+        statistics::Vector branchMissPrediction;
         /** Machine clears */
         statistics::Formula machineClears;
         /** Backend Bound */

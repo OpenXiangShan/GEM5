@@ -221,19 +221,20 @@ class IssueQue : public SimObject
         statistics::Scalar arbFailed;
         statistics::Scalar tagRefillBlock;
         statistics::Scalar issueOccupy;
+        /** Late load-cancel recoveries found during issue selection. */
+        statistics::Scalar lateLoadCancel;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
         statistics::Vector portissued;
         statistics::Vector portBusy;
         statistics::Average avgInsts;
-        statistics::Vector instsNum; 
+        statistics::Vector instsNum;
     }* iqstats = nullptr;
 
     void replay(const DynInstPtr& inst);
     void addToFu(const DynInstPtr& inst);
     bool checkScoreboard(const DynInstPtr& inst);
-    bool isVectorMemInst(const DynInstPtr& inst) const;
-    bool needsVectorMemSplit(const DynInstPtr& inst) const;
+    bool isVectorNonContinuousMemInst(const DynInstPtr& inst) const;
     VectorSplitKind vectorSplitKind(const DynInstPtr& inst) const;
     const char* vectorSplitKindName(VectorSplitKind kind) const;
     bool isBlockingVectorSplitInst(const DynInstPtr& inst) const;
@@ -334,7 +335,7 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
-    const int intel_fewops = 8;
+    const int intel_fewops = 4;
     bool old_disp = false;
     const int intRegfileBanks;
 
@@ -351,6 +352,12 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
+        statistics::Scalar lldpWakeups;
+        statistics::Scalar lldpChains;
+        statistics::Scalar lldpSingleSrcImmediateArithmetic;
+        statistics::Scalar lldpDualSrcRegisterArithmetic;
+        statistics::Distribution lldpChainLengths;
+        statistics::Vector lldpArithmeticTypes;
     } stats;
 
     struct disp_policy

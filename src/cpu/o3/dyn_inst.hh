@@ -162,6 +162,16 @@ class DynInst : public ExecContext, public RefCounted
     /** the xs metadata for this instruction */
     const XsDynInstMetaPtr xsMeta;
 
+    // One chain per source prevents an unrelated operand wake/cancel from
+    // overwriting the address dependency. Populated only for IQ wakeups.
+    std::vector<lldp::Chain> lldpInputs;
+    lldp::Chain lldpChain;
+    int lldpSource{-1};
+    bool lldpIssued{false};
+    bool lldpCounted{false};
+    void selectLldpChain();
+
+
     /** Pointer to the Impl's CPU object. */
     CPU *cpu = nullptr;
 
@@ -321,7 +331,7 @@ class DynInst : public ExecContext, public RefCounted
     // Whether or not the source register is ready, one bit per register.
     uint8_t *_readySrcIdx;
 
-    uint64_t amoOldGoldenValue;
+    uint8_t amoOldGoldenValue[16];
 
   public:
     size_t numSrcs() const { return _numSrcs; }
@@ -441,6 +451,10 @@ class DynInst : public ExecContext, public RefCounted
 
     Addr fallThruPC;
 
+    // Fetch-side RISC-V predecode has checked this instruction. Decode must
+    // not re-run its frontend redirect checks for it.
+    bool predecodeChecked = false;
+
     /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
     unsigned ftqId;
@@ -519,7 +533,7 @@ class DynInst : public ExecContext, public RefCounted
     bool mdpPredStrictWait = false;
 
     /** If load data is from cache then it must be golden */
-    uint8_t goldenData[8] = {0};
+    uint8_t goldenData[16] = {0};
 
     int pf_source  = -1; // if load cache line is prefetched
     /////////////////////// TLB Miss //////////////////////
@@ -737,6 +751,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Returns whether the instruction was predicted taken or not. */
     bool readPredTaken() { return instFlags[PredTaken]; }
+
+    void setPredecodeChecked() { predecodeChecked = true; }
+    bool isPredecodeChecked() const
+    {
+        return predecodeChecked;
+    }
 
     void
     setPredTaken(bool predicted_taken)
@@ -999,7 +1019,7 @@ class DynInst : public ExecContext, public RefCounted
     /** Returns the logical register index of the i'th source register. */
     const RegId& srcRegIdx(int i) const { return staticInst->srcRegIdx(i); }
 
-    uint64_t getAmoOldGoldenValue() const { return amoOldGoldenValue; }
+    uint64_t getAmoOldGoldenValue() const { return *(const uint64_t *)amoOldGoldenValue; }
 
     void *getAmoOldGoldenValuePtr() { return (void *) &amoOldGoldenValue; }
 

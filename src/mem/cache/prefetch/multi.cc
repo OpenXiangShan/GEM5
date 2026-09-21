@@ -37,6 +37,8 @@
 
 #include "mem/cache/prefetch/multi.hh"
 
+#include <utility>
+
 #include "params/MultiPrefetcher.hh"
 
 namespace gem5
@@ -56,8 +58,44 @@ Multi::Multi(const MultiPrefetcherParams &p)
 void
 Multi::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size)
 {
+    Base::setParentInfo(sys, pm, _cache, blk_size);
     for (auto pf : prefetchers)
         pf->setParentInfo(sys, pm, _cache, blk_size);
+}
+
+void
+Multi::regProbeListeners()
+{
+    Base::regProbeListeners();
+    for (auto pf : prefetchers)
+        pf->regProbeListeners();
+}
+
+void
+Multi::setPacketReadyCallback(std::function<void(Tick)> callback)
+{
+    for (auto pf : prefetchers)
+        pf->setPacketReadyCallback(callback);
+    Base::setPacketReadyCallback(std::move(callback));
+}
+
+lldp::Hint
+Multi::loadTrain(const PacketPtr &pkt, bool miss)
+{
+    for (auto pf : prefetchers) {
+        const auto hint = pf->loadTrain(pkt, miss);
+        if (hint.valid)
+            return hint;
+    }
+    return {};
+}
+
+void
+Multi::hintData(const lldp::Hint &hint, const PacketPtr &demand,
+                const uint8_t *data, unsigned size)
+{
+    for (auto pf : prefetchers)
+        pf->hintData(hint, demand, data, size);
 }
 
 Tick
@@ -74,8 +112,13 @@ Multi::nextPrefetchReadyTime() const
 bool
 Multi::hasPendingPacket()
 {
-    uint8_t pf_turn = (lastChosenPf + 1) % prefetchers.size();
-    return (prefetchers[pf_turn]->nextPrefetchReadyTime() <= curTick());
+    if (prefetchers.empty())
+        return false;
+    for (auto *prefetcher : prefetchers) {
+        if (prefetcher->nextPrefetchReadyTime() <= curTick())
+            return true;
+    }
+    return false;
 }
 
 PacketPtr
