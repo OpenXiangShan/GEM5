@@ -765,13 +765,11 @@ class LSQ
     class SingleDataRequest : public LSQRequest
     {
       public:
-        static std::list<SingleDataRequest*> singleList;
         SingleDataRequest(LSQUnit* port, const DynInstPtr& inst,
                 bool isLoad, const Addr& addr, const uint32_t& size,
                 const Request::Flags& flags_, PacketDataPtr data=nullptr,
                 uint64_t* res=nullptr, AtomicOpFunctorPtr amo_op=nullptr);
 
-        virtual ~SingleDataRequest();
         virtual void markAsStaleTranslation();
         virtual void initiateTranslation();
         virtual void finish(const Fault &fault, const RequestPtr &req,

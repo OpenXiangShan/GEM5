@@ -260,7 +260,6 @@ class LSQUnit
     int sqFullUpperLimit = 0;
 
     uint64_t numSBufferRequest = 0;
-    uint64_t numSingleRequest = 0;
     uint64_t numSplitRequest = 0;
 
     /** Coverage of one address range with another */

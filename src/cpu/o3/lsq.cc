@@ -91,8 +91,6 @@ LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
     RequestPort(_cpu->name() + ".dcache_port"), lsq(_lsq), cpu(_cpu)
 {}
 
-std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
-
 void
 LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
                              uint64_t block_vaddr, uint64_t block_paddr,
@@ -3147,17 +3145,8 @@ LSQ::SingleDataRequest::SingleDataRequest(
     const Request::Flags& flags_, PacketDataPtr data,
     uint64_t* res, AtomicOpFunctorPtr amo_op) :
     LSQRequest(port, inst, isLoad, addr, size, flags_, data, res,
-                std::move(amo_op)) {
-    port->numSingleRequest++;
-    singleList.push_back(this);
-    assert(port->numSingleRequest <= 500);
-}
-
-LSQ::SingleDataRequest::~SingleDataRequest(){
-    assert(_port.numSingleRequest > 0);
-    _port.numSingleRequest--;
-    singleList.remove(this);
-}
+                std::move(amo_op))
+{}
 
 void
 LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,

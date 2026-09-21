@@ -424,7 +424,6 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
     unsigned storeCompletionWidth, unsigned loadPipeCount,
     unsigned storePipeCount)
     : numSBufferRequest(0),
-      numSingleRequest(0),
       numSplitRequest(0),
       lsqID(-1),
       storeQueue(sqEntries),
