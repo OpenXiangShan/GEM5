@@ -1059,6 +1059,11 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     Addr dcache_refill_addr = 0;
     bool dcache_refill_need_data_read = false;
 
+    if (is_fill && !is_error && pure_prefetch_fill &&
+        storePrefetchFill(pkt, mshr, writebacks)) {
+        is_fill = false;
+    }
+
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
@@ -1148,6 +1153,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         }
     };
 
+    bool mshr_deallocated = false;
     // We are stopping servicing targets early for the Locked RMW Read until
     // the write comes.
     if (!mshr->hasLockedRMWReadTarget()) {
@@ -1169,6 +1175,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             const bool was_full = dcacheMainPipeEffectiveMSHRFull();
             notify_dcache_refill(true);
             mshrQueue.deallocate(mshr);
+            mshr_deallocated = true;
             if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
                 clearBlocked(Blocked_NoMSHRs);
             }
@@ -1187,6 +1194,9 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             evictBlock(blk, writebacks);
         }
     }
+
+    if (mshr_deallocated)
+        onMSHRDeallocate(pkt, writebacks);
 
     if (!dcache_refill_notified) {
         notify_dcache_refill(false);
@@ -1335,6 +1345,8 @@ BaseCache::functionalAccess(PacketPtr pkt, bool from_cpu_side)
     bool have_data = blk && blk->isValid()
         && pkt->trySatisfyFunctional(&cbpw, blk_addr, is_secure, blkSize,
                                      blk->data);
+    bool extra_done = (!have_data || pkt->isWrite()) &&
+        functionalAccessExtra(pkt);
 
     // data we have is dirty if marked as such or if we have an
     // in-service MSHR that is pending a modified line
@@ -1346,7 +1358,8 @@ BaseCache::functionalAccess(PacketPtr pkt, bool from_cpu_side)
         cpuSidePort.trySatisfyFunctional(pkt) ||
         mshrQueue.trySatisfyFunctional(pkt) ||
         writeBuffer.trySatisfyFunctional(pkt) ||
-        memSidePort.trySatisfyFunctional(pkt);
+        memSidePort.trySatisfyFunctional(pkt) ||
+        extra_done;
 
     DPRINTF(CacheVerbose, "%s: %s %s%s%s\n", __func__,  pkt->print(),
             (blk && blk->isValid()) ? "valid " : "",
@@ -1530,7 +1543,8 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            if (tags->findBlock(pf_addr, pkt->isSecure()) ||
+                hasPrefetchData(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache(pf_type);
@@ -3154,7 +3168,7 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
     ADD_STAT(pfMergedWithDemand, statistics::units::Count::get(),
              "number of MSHR completions where prefetch was merged with demand"),
     ADD_STAT(pfOnlyFill, statistics::units::Count::get(),
-             "number of MSHR completions with only prefetch (no demand merge)"),
+             "pure prefetch fills into L1 or PDB (no demand merge)"),
     ADD_STAT(demandMergedIntoPfMSHR, statistics::units::Count::get(),
              "number of demand requests that merged into prefetch MSHR"),
     ADD_STAT(squashedDemandHits, statistics::units::Count::get(),

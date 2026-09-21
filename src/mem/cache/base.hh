@@ -664,6 +664,15 @@ class BaseCache : public ClockedObject, public CacheAccessor
     virtual void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                                     CacheBlk *blk) = 0;
 
+    virtual bool hasPrefetchData(Addr addr, bool secure) const
+    { return false; }
+
+    virtual bool storePrefetchFill(PacketPtr pkt, MSHR *mshr,
+                                   PacketList &writebacks)
+    { return false; }
+
+    virtual void onMSHRDeallocate(PacketPtr, PacketList &) {}
+
     virtual void sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt) = 0;
 
     bool dcacheMainPipeEffectiveMSHRFull() const;
@@ -728,6 +737,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @param fromCpuSide from the CPU side port or the memory side port
      */
     virtual void functionalAccess(PacketPtr pkt, bool from_cpu_side);
+
+    // Access storage outside tags; return true for a complete functional read.
+    virtual bool functionalAccessExtra(PacketPtr pkt) { return false; }
 
     /**
      * Update the data contents of a block. When no packet is provided no

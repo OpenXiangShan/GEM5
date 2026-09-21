@@ -195,6 +195,7 @@ class Cache(BaseCache):
     type = 'Cache'
     cxx_header = 'mem/cache/cache.hh'
     cxx_class = 'gem5::Cache'
+    pdb_entries = Param.Unsigned(0, "Number of clean prefetch lines held outside the tags")
 
 class NoncoherentCache(BaseCache):
     type = 'NoncoherentCache'

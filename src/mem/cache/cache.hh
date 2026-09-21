@@ -47,11 +47,17 @@
 #define __MEM_CACHE_CACHE_HH__
 
 #include <cstdint>
+#include <list>
+#include <map>
+#include <set>
 #include <unordered_set>
+#include <vector>
 
 #include "base/compiler.hh"
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/cache_blk.hh"
 #include "mem/packet.hh"
 
 namespace gem5
@@ -67,6 +73,50 @@ class MSHR;
 class Cache : public BaseCache
 {
   protected:
+
+    struct PdbLine
+    {
+        Addr addr;
+        bool secure;
+        std::vector<uint8_t> data;
+        CacheBlk blk;
+
+        PdbLine(Addr addr, bool secure, unsigned size);
+    };
+
+    using PdbKey = std::pair<Addr, bool>;
+    using PdbIterator = std::list<PdbLine>::iterator;
+
+    const unsigned pdbCapacity;
+    std::list<PdbLine> pdbLines;
+    std::map<PdbKey, PdbIterator> pdbIndex;
+    std::set<PdbKey> pendingPdbReleases;
+
+    struct PdbStats : statistics::Group
+    {
+        statistics::Scalar fills;
+        statistics::Scalar loadHits;
+        statistics::Scalar storeHits;
+        statistics::Scalar duplicatePrefetches;
+        statistics::Scalar evictions;
+        statistics::Scalar snoopInvalidations;
+        statistics::Scalar occupancy;
+
+        explicit PdbStats(Cache &cache);
+    } pdbStats;
+
+    PdbIterator findPdbLine(Addr addr, bool secure);
+    void queuePdbCleanEvict(Addr addr, bool secure, PacketList &writebacks);
+    void erasePdbLine(PdbIterator line, PacketList *writebacks = nullptr);
+    bool hasBeenPrefetched(Addr addr, bool secure) const override;
+    bool hasEverBeenPrefetched(Addr addr, bool secure) const override;
+    Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) override;
+    bool hasPrefetchData(Addr addr, bool secure) const override;
+    bool storePrefetchFill(PacketPtr pkt, MSHR *mshr,
+                           PacketList &writebacks) override;
+    void onMSHRDeallocate(PacketPtr pkt, PacketList &writebacks) override;
+    bool functionalAccessExtra(PacketPtr pkt) override;
+    void memInvalidate() override;
 
     /**
      * Store the outstanding requests that we are expecting snoop

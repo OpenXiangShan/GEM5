@@ -1127,6 +1127,8 @@ class Base : public ClockedObject
 
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
 
+    void recordPrefetchUseful(PrefetchSourceType source, bool miss);
+
     virtual void recordPfBadHit(PrefetchSourceType source)
     {
         const int source_idx = int(source);

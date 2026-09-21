@@ -471,6 +471,17 @@ Base::nofityHitToDownStream(const PacketPtr &pkt)
     hintDownStream->pfHitNotify(acc, pf_source, pkt);
 }
 void
+Base::recordPrefetchUseful(PrefetchSourceType source, bool miss)
+{
+    usefulPrefetches++;
+    prefetchStats.pfUseful++;
+    prefetchStats.pfUseful_srcs[source]++;
+    notifyPrefetchUseful(source);
+    if (miss)
+        prefetchStats.pfUsefulButMiss++;
+}
+
+void
 Base::probeNotify(const PacketPtr &pkt, bool miss)
 {
     DPRINTF(HWPrefetch, "ProbeNotify: %s for %s\n", miss ? "miss" : "hit",
@@ -502,15 +513,8 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     }
 
     if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
-        usefulPrefetches += 1;
-        prefetchStats.pfUseful++;
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
-        prefetchStats.pfUseful_srcs[pf_source]++;
-        notifyPrefetchUseful(pf_source);
-        if (miss)
-            // This case happens when a demand hits on a prefetched line
-            // that's not in the requested coherency state.
-            prefetchStats.pfUsefulButMiss++;
+        recordPrefetchUseful(pf_source, miss);
     }
 
     // Verify this access type is observed by prefetcher
