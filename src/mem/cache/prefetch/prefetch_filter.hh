@@ -13,6 +13,7 @@
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/context_key.hh"
 #include "mem/cache/prefetch/queued.hh"  // for AddrPriority and PrefetchSourceType
+#include "mem/cache/prefetch/sms_order.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 
 namespace gem5 {
@@ -37,6 +38,7 @@ class PrefetchFilter
         uint64_t PFlevel;      // prefetch level for this region, L1/L2/L3
         ContextID contextId;   // VA namespace of this region
         std::vector<std::unique_ptr<TriggerInfo>> bitTriggers;
+        std::vector<sms::OrderScore> orderScores;
 
         Entry()
             : TaggedEntry(), region_addr(0), region_bits(0), filter_bits(0), alias_bits(0),
@@ -52,7 +54,8 @@ class PrefetchFilter
               paddr_valid(other.paddr_valid),
               decr_mode(other.decr_mode),
               PFlevel(other.PFlevel),
-              contextId(other.contextId)
+              contextId(other.contextId),
+              orderScores(other.orderScores)
         {
             copyTriggers(other);
         }
@@ -69,6 +72,7 @@ class PrefetchFilter
                 decr_mode = other.decr_mode;
                 PFlevel = other.PFlevel;
                 contextId = other.contextId;
+                orderScores = other.orderScores;
                 copyTriggers(other);
             }
             return *this;
@@ -105,7 +109,8 @@ class PrefetchFilter
       unsigned entries = 16, unsigned region_size = DEFAULT_REGION_SIZE,
       unsigned blk_size = 64, statistics::Group *parent = nullptr,
       unsigned vaddr_hash_width = 2, PrefetchSourceType pf_source_type = PrefetchSourceType::PF_NONE,
-      const std::string &name = "prefetch_filter");
+      const std::string &name = "prefetch_filter",
+      bool use_first_touch_order = false);
     ~PrefetchFilter();
 
     // Lookup entry by virtual address (uses VA->region conversion and TaggedEntry tag)
@@ -131,7 +136,8 @@ class PrefetchFilter
     Entry* Insert(Addr region_addr = 0, uint64_t region_bits = 0, uint8_t alias_bits = 0,
       bool paddr_valid = false, bool decr_mode = false,
       bool is_secure = false, uint64_t PFlevel = 1,
-      const TriggerInfo *trigger = nullptr);
+      const TriggerInfo *trigger = nullptr,
+      const std::vector<sms::OrderScore> *order_scores = nullptr);
     // Get blocks still pending prefetch (region_bits & ~filter_bits)
     uint64_t pendingBlocks(Entry *e) const;
 
@@ -146,9 +152,14 @@ class PrefetchFilter
     unsigned rrIndex{0};
     const unsigned REGION_ADDR_RAW_WIDTH;
     const unsigned vaddrHashWidth; // width for vaddr hash (per chisel spec)
+    const bool useFirstTouchOrder;
 
     void ensureTriggerStorage(Entry &e);
     void storeTriggersForBits(Entry &e, uint64_t bits, const TriggerInfo *trigger);
+    void storeOrdersForBits(Entry &e, uint64_t existing_bits,
+                            uint64_t incoming_bits,
+                            const std::vector<sms::OrderScore> *order_scores);
+    unsigned selectRegionOffset(Entry &e, uint64_t pending);
 
     // Compute region-hash tag as described by chisel:
     // low  = region_tag[BLK_ADDR_RAW_WIDTH-1:0]
@@ -176,6 +187,10 @@ class PrefetchFilter
         statistics::Scalar l3Issued;
         statistics::Scalar hashcollisionCount;
         statistics::Scalar contextAliasCount;
+        statistics::Scalar orderSelections;
+        statistics::Scalar orderTieSelections;
+        statistics::Scalar orderChangedSelections;
+        statistics::Vector orderSelectedByRank;
     } stats;
     PrefetchSourceType pfSourceType;
     const std::string table_name;

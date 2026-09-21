@@ -25,7 +25,15 @@ PrefetchFilter::Stats::Stats(statistics::Group *parent, const std::string &name)
     ADD_STAT(l3Issued, statistics::units::Count::get(), "GetPFAddrL3 issued"),
     ADD_STAT(hashcollisionCount, statistics::units::Count::get(), "PrefetchFilter hash collision count"),
     ADD_STAT(contextAliasCount, statistics::units::Count::get(),
-             "same virtual regions retained for different ContextIDs")
+             "same virtual regions retained for different ContextIDs"),
+    ADD_STAT(orderSelections, statistics::units::Count::get(),
+             "offsets selected using SMS first-touch order"),
+    ADD_STAT(orderTieSelections, statistics::units::Count::get(),
+             "first-touch selections resolved by offset-index tie-break"),
+    ADD_STAT(orderChangedSelections, statistics::units::Count::get(),
+             "first-touch selections differing from legacy direction order"),
+    ADD_STAT(orderSelectedByRank, statistics::units::Count::get(),
+             "selected learned first-touch rank; final bucket is invalid")
 {
 
 }
@@ -36,7 +44,8 @@ PrefetchFilter::PrefetchFilter(gem5::BaseIndexingPolicy *idx_policy,
                                unsigned blk_size, statistics::Group *parent,
                    unsigned vaddr_hash_width,
                    PrefetchSourceType pf_source_type,
-                   const std::string &name)
+                   const std::string &name,
+                   bool use_first_touch_order)
         : table(entries, entries, idx_policy,rpl_policy, Entry()),
         regionSize(region_size),
         blkSize(blk_size),
@@ -44,10 +53,12 @@ PrefetchFilter::PrefetchFilter(gem5::BaseIndexingPolicy *idx_policy,
         rrIndex(0),
         REGION_ADDR_RAW_WIDTH(6),//align with rtl
         vaddrHashWidth(vaddr_hash_width),
+        useFirstTouchOrder(use_first_touch_order),
         stats(parent, name),
         pfSourceType(pf_source_type),
         table_name(name)
 {
+    stats.orderSelectedByRank.init(regionBlks + 1);
 }
 
 PrefetchFilter::~PrefetchFilter() = default;
@@ -120,14 +131,7 @@ PrefetchFilter::GetPFAddrL1(std::vector<AddrPriority> &addresses)
         if (!pending)
             continue;
 
-        unsigned region_offset = 0;
-        if (e->decr_mode) {
-            unsigned lz = __builtin_clzll(pending);
-            unsigned msb = 63 - lz;
-            region_offset = msb;
-        } else {
-            region_offset = __builtin_ctzll(pending);
-        }
+        const unsigned region_offset = selectRegionOffset(*e, pending);
 
     Addr region_num = e->region_addr;
     // Use bit operations to compute: region_num * regionSize + region_offset * blkSize
@@ -197,14 +201,7 @@ PrefetchFilter::GetPFAddrL2(std::vector<AddrPriority> &addresses)
         if (!pending)
             continue;
 
-        unsigned region_offset = 0;
-        if (e->decr_mode) {
-            unsigned lz = __builtin_clzll(pending);
-            unsigned msb = 63 - lz;
-            region_offset = msb;
-        } else {
-            region_offset = __builtin_ctzll(pending);
-        }
+        const unsigned region_offset = selectRegionOffset(*e, pending);
 
     Addr region_num = e->region_addr;
     // Use bit operations to compute: region_num * regionSize + region_offset * blkSize
@@ -276,14 +273,7 @@ PrefetchFilter::GetPFAddrL3(std::vector<AddrPriority> &addresses)
         if (!pending)
             continue;
 
-        unsigned region_offset = 0;
-        if (e->decr_mode) {
-            unsigned lz = __builtin_clzll(pending);
-            unsigned msb = 63 - lz;
-            region_offset = msb;
-        } else {
-            region_offset = __builtin_ctzll(pending);
-        }
+        const unsigned region_offset = selectRegionOffset(*e, pending);
 
     Addr region_num = e->region_addr;
     // Use bit operations to compute: region_num * regionSize + region_offset * blkSize
@@ -374,11 +364,60 @@ PrefetchFilter::storeTriggersForBits(PrefetchFilter::Entry &e, uint64_t bits,
     }
 }
 
+void
+PrefetchFilter::storeOrdersForBits(
+    PrefetchFilter::Entry &e, uint64_t existing_bits, uint64_t incoming_bits,
+    const std::vector<sms::OrderScore> *order_scores)
+{
+    if (!useFirstTouchOrder) {
+        return;
+    }
+
+    if (!order_scores) {
+        if (e.orderScores.size() != regionBlks) {
+            e.orderScores.assign(regionBlks, sms::InvalidOrder);
+        }
+        return;
+    }
+    sms::mergeNewOffsetOrders(existing_bits, incoming_bits, *order_scores,
+                              e.orderScores, regionBlks);
+}
+
+unsigned
+PrefetchFilter::selectRegionOffset(PrefetchFilter::Entry &e, uint64_t pending)
+{
+    const unsigned legacy_offset = sms::legacyOffset(pending, e.decr_mode);
+    if (!useFirstTouchOrder) {
+        return legacy_offset;
+    }
+
+    const unsigned selected =
+        sms::selectOffset(pending, e.orderScores, regionBlks);
+    stats.orderSelections++;
+    if (selected != legacy_offset) {
+        stats.orderChangedSelections++;
+    }
+    if (sms::hasBestOrderTie(pending, e.orderScores, regionBlks, selected)) {
+        stats.orderTieSelections++;
+    }
+
+    unsigned rank_bucket = regionBlks;
+    if (selected < e.orderScores.size() &&
+        e.orderScores[selected] != sms::InvalidOrder) {
+        rank_bucket = std::min<unsigned>(
+            e.orderScores[selected] >> sms::OrderFractionBits,
+            regionBlks - 1);
+    }
+    stats.orderSelectedByRank[rank_bucket]++;
+    return selected;
+}
+
 PrefetchFilter::Entry*
 PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bits,
                        bool paddr_valid, bool decr_mode, 
                        bool is_secure, uint64_t PFlevel,
-                       const TriggerInfo *trigger)
+                       const TriggerInfo *trigger,
+                       const std::vector<sms::OrderScore> *order_scores)
 {
     stats.insertCount++;
     ContextID context_id = InvalidContextID;
@@ -415,6 +454,7 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
     }
     if (e) {
         storeTriggersForBits(*e, region_bits, trigger);
+        storeOrdersForBits(*e, e->region_bits, region_bits, order_scores);
         e->region_bits |= region_bits;
         table.accessEntry(e);
         stats.queryHitCount++;
@@ -439,11 +479,13 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
     victim->_setSecure(is_secure);
     victim->PFlevel = PFlevel;
     victim->contextId = context_id;
+    victim->orderScores.assign(regionBlks, sms::InvalidOrder);
     ensureTriggerStorage(*victim);
     for (auto &slot : victim->bitTriggers) {
         slot.reset();
     }
     storeTriggersForBits(*victim, region_bits, trigger);
+    storeOrdersForBits(*victim, 0, region_bits, order_scores);
 
     table.insertEntry(tag, is_secure, victim);
     DPRINTF(HWPrefetch, "Insert miss: region=%#lx tag=%#lx bits=%#lx level=%lu\n",

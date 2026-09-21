@@ -73,7 +73,10 @@ class XSCompositePrefetcher : public Queued
         uint32_t depth;
         SatCounter8 lateConf;
         bool hasIncreasedPht;
-        ACTEntry(const SatCounter8 &conf)
+        std::vector<uint8_t> touchOrder;
+        uint64_t orderTrainedBits;
+        uint64_t orderPhtEpoch;
+        ACTEntry(const size_t region_blks, const SatCounter8 &conf)
             : TaggedEntry(),
               pc(~(0UL)),
               regionAddr(0),
@@ -84,7 +87,10 @@ class XSCompositePrefetcher : public Queued
               regionOffset(0),
               depth(0),
               lateConf(4, 7),
-              hasIncreasedPht(false)
+              hasIncreasedPht(false),
+              touchOrder(region_blks, UINT8_MAX),
+              orderTrainedBits(0),
+              orderPhtEpoch(0)
         {
         }
         bool inActivePage(unsigned region_blocks) {
@@ -120,7 +126,6 @@ class XSCompositePrefetcher : public Queued
     const unsigned streamDepthStep{4};  // # block changed in one step
 
     void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode,bool signal_update,Addr region_offset_now);
-
     // pattern history table
     class PhtEntry : public TaggedEntry
     {
@@ -129,12 +134,23 @@ class XSCompositePrefetcher : public Queued
         Addr pc;
         ContextID contextId;
         bool decr_mode;
+        std::vector<sms::OrderScore> orderScore;
+        uint64_t orderValid;
+        uint64_t orderEpoch;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
             : TaggedEntry(), hist(sz, conf),
-              contextId(InvalidContextID), decr_mode(false)
+              contextId(InvalidContextID), decr_mode(false),
+              orderScore(sz, sms::InvalidOrder), orderValid(0),
+              orderEpoch(0)
         {
         }
     };
+
+    void resetPhtOrder(PhtEntry *pht_entry);
+    void trainPhtOrder(ACTEntry *act_entry);
+    void trainPhtOrderDelta(ACTEntry *act_entry, PhtEntry *pht_entry,
+                            ACTEntry *source_entry, unsigned source_offset,
+                            unsigned hist_idx);
 
     AssociativeSet<PhtEntry> pht;
 
@@ -162,6 +178,7 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar strideTrainCount;
         statistics::Scalar streamTrainCount;
         statistics::Scalar totalTrainCount;
+        statistics::Scalar smsOrderUpdates;
     } stats;
 
   public:
@@ -244,6 +261,8 @@ class XSCompositePrefetcher : public Queued
     bool preferLLDP{false};
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
+    const bool enableSmsFirstTouchOrder;
+    uint64_t nextPhtOrderEpoch{0};
 
   public:
     void notifyIns(int ins_num) override
@@ -266,6 +285,7 @@ class XSCompositePrefetcher : public Queued
         bool is_secure;
         uint64_t PFlevel;
         TriggerInfo trigger;
+        std::vector<sms::OrderScore> orderScores;
         // phtsentInfo()
         //     : valid(false), region_addr(0), region_bits(0), alias_bits(0), paddr_valid(false),
         //       decr_mode(false), is_secure(false), PFlevel(0), trigger() {};

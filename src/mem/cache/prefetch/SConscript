@@ -64,6 +64,7 @@ DebugFlag('LLDPrefetcher')
 
 GTest('context_key.test', 'context_key.test.cc')
 GTest('lldp_logic.test', 'lldp_logic.test.cc')
+GTest('sms_order.test', 'sms_order.test.cc')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')

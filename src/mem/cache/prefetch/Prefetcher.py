@@ -1329,6 +1329,10 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     pht_early_update = Param.Bool(True, "Enable update pht earlier")
     neighbor_pht_update = Param.Bool(True, "Enable use nearby act entry to update pht")
+    enable_sms_first_touch_order = Param.Bool(
+        False,
+        "Order pending SMS offsets by learned historical first-touch order"
+    )
 
     enable_activepage = Param.Bool(False,"Enable activepage stream prefetcher")
     enable_xsstream = Param.Bool(False,"Enable xs_stream component")

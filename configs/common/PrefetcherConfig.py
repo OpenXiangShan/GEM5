@@ -468,6 +468,7 @@ def _configure_xs_composite_kmh_align(prefetcher):
     prefetcher.enable_xsstream = True
     prefetcher.enable_opt = False
     prefetcher.pht_pf_level = 2
+    prefetcher.enable_sms_first_touch_order = True
 
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
