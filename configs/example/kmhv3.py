@@ -155,8 +155,8 @@ def setKmhV3Params(args, system):
             #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
             # ]
 
-    # l3 cache
-    if args.l3cache:
+    # CHI HN caches are configured by CacheConfig, outside system.l3.
+    if args.l3cache and not args.CHI:
         system.l3.mshrs = 64
         system.l3.do_fast_writeline = False
         system.l3.prefetch_can_offload = False
