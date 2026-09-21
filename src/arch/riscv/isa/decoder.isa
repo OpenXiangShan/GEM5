@@ -793,6 +793,17 @@ decode QUADRANT {
                           new AtomicGenericOp<uint32_t>(Rs2_uw,
                                   [](uint32_t* b, uint32_t a){ *b = a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+                0x5: AtomicMemOp::amocas_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGeneric3Op<uint32_t>(Rs2_uw, Rd_sd,
+                                  [](uint32_t* b, uint32_t desired,
+                                     uint32_t expected) {
+                                      if (*b == expected)
+                                          *b = desired;
+                                  });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x4: AtomicMemOp::amoxor_w({{
                     Rd_sd = Mem_sw;
                 }}, {{
@@ -865,6 +876,17 @@ decode QUADRANT {
                     TypedAtomicOpFunctor<uint64_t> *amo_op =
                           new AtomicGenericOp<uint64_t>(Rs2_ud,
                                   [](uint64_t* b, uint64_t a){ *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+                0x5: AtomicMemOp::amocas_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                          new AtomicGeneric3Op<uint64_t>(Rs2_ud, Rd_sd,
+                                  [](uint64_t* b, uint64_t desired,
+                                     uint64_t expected) {
+                                      if (*b == expected)
+                                          *b = desired;
+                                  });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
                 0x4: AtomicMemOp::amoxor_d({{
                     Rd_sd = Mem_sd;
