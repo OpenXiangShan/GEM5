@@ -69,11 +69,11 @@ trap、TC 和已退休指令的 squash-after 继续使用 `squashAll()` 的架�
 - `commit.hybridCommittedEntries`：正常退休释放的 entry 数。
 - `commit.hybridDrainedEntries`：squashed-head draining 释放的 entry 数。
 
-ROB trace 记录分配 id、成员 slot、移除原因、保留边界及降级。`hybrid_trace_check.py` 重建成员顺序和 entry 状态，检查物理宽度、容量、恢复边界和成员守恒，不再检查 Hybrid 指令配额。
+ROB trace 记录分配 id、成员 slot、移除原因、保留边界及降级，可结合分配和退休统计检查物理宽度、容量、恢复边界和成员守恒。
 
 规划 O(renameWidth)，成员增删 O(1)。正常提交受 `commitWidth * CROB_instPerGroup` 限制；redirect 初始化最多扫描有界 ROB，逐拍 squash 沿用原有恢复宽度。完整不变量扫描只在 ROB debug 打开时执行。
 
-构建和验证命令、实测数据见 `src/cpu/o3/README.hybrid.md`。测试包括 planner 穷举、四种 slot squash、跨拍 latter 清除、部分提交、trace checker 正反例、CoreMark 和异常恢复 NEMU difftest，以及四种非 Hybrid 策略对照。
+构建和验证命令见 `src/cpu/o3/README.hybrid.md`。GTest 覆盖 planner 穷举、四种 slot squash、跨拍 latter 清除和部分提交；文档另提供 CoreMark/NEMU 全系统验证命令。
 
 ## 6. 建模边界
 
