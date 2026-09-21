@@ -124,7 +124,8 @@ class MSHR : public QueueEntry, public Printable
         Normal,
         WholeLineWrite,
         PartialPermission,
-        PartialDataFill
+        PartialDataFill,
+        PartialSnoopFill
     };
 
 
@@ -349,6 +350,11 @@ class MSHR : public QueueEntry, public Printable
 
     MissKind getMissKind() const { return missKind; }
     void setMissKind(MissKind kind) { missKind = kind; }
+    bool isPartialFill() const
+    {
+        return missKind == MissKind::PartialDataFill ||
+            missKind == MissKind::PartialSnoopFill;
+    }
 
     bool hasWritebackOverlay() const { return writebackOverlay != nullptr; }
 
@@ -479,7 +485,8 @@ class MSHR : public QueueEntry, public Printable
      * @param alloc_on_fill Should the cache allocate a block on fill
      */
     void allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
-                  Tick when_ready, Counter _order, bool alloc_on_fill);
+                  Tick when_ready, Counter _order, bool alloc_on_fill,
+                  Target::Source source = Target::FromCPU);
 
     void markInService(bool pending_modified_resp);
 
@@ -496,6 +503,7 @@ class MSHR : public QueueEntry, public Printable
      */
     void allocateTarget(PacketPtr target, Tick when, Counter order,
                         bool alloc_on_fill, bool force_defer = false);
+    void allocateSnoopTarget(PacketPtr target, Tick when, Counter order);
     bool handleSnoop(PacketPtr target, Counter order);
 
     /** A simple constructor. */

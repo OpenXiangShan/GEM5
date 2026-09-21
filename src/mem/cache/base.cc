@@ -139,7 +139,11 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     : ClockedObject(p),
       cpuSidePort (p.name + ".cpu_side_port", *this, "CpuSidePort"),
       memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
-      mshrQueue("MSHRs", p.mshrs, 0, p.demand_mshr_reserve, p.name),
+      mshrQueue("MSHRs", p.mshrs,
+                (p.enable_partial_store ||
+                 p.enable_partial_writeback_allocate) ?
+                    p.partial_snoop_mshr_reserve : 0,
+                p.demand_mshr_reserve, p.name),
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
       tags(p.tags),
       tagLoadReadPorts(p.tag_load_read_ports),
@@ -257,6 +261,10 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     fatal_if(!enablePartialWritebackAllocate &&
              p.partial_writeback_capacity != 0,
              "%s: partial writeback capacity requires allocation support",
+             name());
+    fatal_if(partialBlockEnabled() && p.partial_snoop_mshr_reserve == 0,
+             "%s: partial cache blocks require at least one snoop MSHR "
+             "reserve",
              name());
 
     if (sliceNum > 0) {
@@ -1183,7 +1191,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             pure_prefetch_fill ? mshr->getPFSource() :
                 PrefetchSourceType::PF_NONE,
             &dcache_refill_need_data_read,
-            mshr->getMissKind() == MSHR::MissKind::PartialDataFill);
+            mshr->isPartialFill());
         assert(blk != nullptr);
         if (writeback_overlay) {
             blk->setCoherenceBits(CacheBlk::DirtyBit);
@@ -1231,13 +1239,25 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     serviceMSHRTargets(mshr, pkt, blk);
 
-    if (enablePartialStore && pkt->cmd == MemCmd::StorePermResp &&
-        blk && blk->isValid() && !mshr->hasLockedRMWReadTarget()) {
-        const bool promoted = blk->isPartial() ?
-            mshr->promoteDeferredTargetsCovered(
-                blk->getValidMask(), blk->getValidGranularity()) :
-            mshr->promoteDeferredTargets();
-        if (promoted) {
+    if (partialBlockEnabled() && blk && blk->isValid() &&
+        !mshr->hasLockedRMWReadTarget()) {
+        // Servicing a target can complete another granule, or the entire
+        // line, and thereby make the next deferred read/write serviceable.
+        // Re-check coverage instead of relying on missKind, since a partial
+        // transaction can be reclassified after issuing an upgrade.
+        while (blk->isValid() &&
+               blk->isSet(CacheBlk::ReadableBit) &&
+               blk->isSet(CacheBlk::WritableBit) &&
+               !mshr->hasLockedRMWReadTarget()) {
+            const auto valid_mask = blk->isPartial() ?
+                blk->getValidMask() : std::vector<bool>(blkSize, true);
+            const unsigned granularity = blk->isPartial() ?
+                blk->getValidGranularity() : 1;
+            const bool promoted = mshr->promoteDeferredTargetsCovered(
+                valid_mask, granularity);
+            if (!promoted) {
+                break;
+            }
             serviceMSHRTargets(mshr, pkt, blk);
         }
     }
@@ -1270,6 +1290,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             // outstanding.. see comment in timingAccess()
             if (blk) {
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
+            }
+            if (partialBlockEnabled() && blk && blk->isPartial() &&
+                (mshr->getTarget()->pkt->isRead() ||
+                 (mshr->getTarget()->pkt->isWrite() &&
+                  !blk->canWrite(mshr->getTarget()->pkt, blkSize)))) {
+                mshr->setMissKind(MSHR::MissKind::PartialDataFill);
             }
             mshrQueue.markPending(mshr);
             schedMemSideSendEvent(clockEdge() + pkt->payloadDelay);
@@ -1742,10 +1768,16 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
             const MSHR* mshr =
                 mshrQueue.findMatch(regenerateBlkAddr(blk), blk->isSecure());
             if (mshr) {
-                // Must be an outstanding upgrade or clean request on a block
-                // we're about to replace
+                // A partial fill also protects its existing block: the fill
+                // response must merge only the bytes that are still invalid.
                 assert((!blk->isSet(CacheBlk::WritableBit) &&
-                    mshr->needsWritable()) || mshr->isCleaning());
+                    mshr->needsWritable()) || mshr->isCleaning() ||
+                    mshr->isPartialFill());
+                if (mshr->isPartialFill()) {
+                    stats.partialFillVictimConflicts++;
+                    DPRINTF(CacheRepl, "Rejecting partial-fill victim %s\n",
+                            blk->print());
+                }
                 return false;
             }
         }
@@ -2384,7 +2416,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         mshrQueue.findMatch(pkt->getBlockAddr(blkSize), pkt->isSecure()) :
         nullptr;
     const bool pending_partial_write = write_mshr &&
-        write_mshr->getMissKind() == MSHR::MissKind::PartialDataFill;
+        write_mshr->isPartialFill();
 
     if (partialBlockEnabled() && blk && blk->isPartial() && pkt->isRead() &&
         !partial_read_miss) {
@@ -3141,22 +3173,31 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // point
         bool pending_modified_resp = !pkt->hasSharers() &&
             pkt->cacheResponding();
-        if (sent_cmd == MemCmd::StorePermReq) {
-            mshr->setMissKind(MSHR::MissKind::PartialPermission);
-            if (enablePartialStore) {
-                stats.partialPermissionReqs++;
+        // Partial fills are classified before they can protect an existing
+        // partial block from replacement. Preserve that classification here.
+        if (mshr->getMissKind() != MSHR::MissKind::PartialSnoopFill) {
+            if (sent_cmd == MemCmd::StorePermReq) {
+                mshr->setMissKind(MSHR::MissKind::PartialPermission);
+                if (enablePartialStore) {
+                    stats.partialPermissionReqs++;
+                }
+            } else if (mshr->getMissKind() ==
+                           MSHR::MissKind::PartialDataFill ||
+                       (blk && blk->isPartial() && sent_cmd.isRead())) {
+                mshr->setMissKind(MSHR::MissKind::PartialDataFill);
+                if (partialBlockEnabled()) {
+                    stats.partialDataFillReqs++;
+                }
+            } else if (sent_cmd == MemCmd::InvalidateReq &&
+                       mshr->isWholeLineWrite()) {
+                mshr->setMissKind(MSHR::MissKind::WholeLineWrite);
+            } else {
+                mshr->setMissKind(MSHR::MissKind::Normal);
             }
-        } else if (blk && blk->isPartial() && sent_cmd.isRead()) {
-            mshr->setMissKind(MSHR::MissKind::PartialDataFill);
-            if (partialBlockEnabled()) {
-                stats.partialDataFillReqs++;
-            }
-        } else if (mshr->isWholeLineWrite()) {
-            mshr->setMissKind(MSHR::MissKind::WholeLineWrite);
-        } else {
-            mshr->setMissKind(MSHR::MissKind::Normal);
         }
         markInService(mshr, pending_modified_resp);
+        mshr->wasWholeLineWrite = sent_cmd == MemCmd::InvalidateReq &&
+            mshr->isWholeLineWrite();
 
         if (pkt->isClean() && blk && blk->isSet(CacheBlk::DirtyBit)) {
             // A cache clean opearation is looking for a dirty
@@ -3514,6 +3555,16 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              statistics::units::Count::get(),
              "number of allocations bypassed because all metadata victims "
              "had active MSHRs"),
+    ADD_STAT(partialSnoopFills, statistics::units::Count::get(),
+             "number of fills started to complete partial snoop hits"),
+    ADD_STAT(partialSnoopMerges, statistics::units::Count::get(),
+             "number of partial snoops merged into existing fills"),
+    ADD_STAT(partialSnoopFillLatency, statistics::units::Tick::get(),
+             "total ticks partial snoops waited for complete data"),
+    ADD_STAT(partialSnoopReserveFull, statistics::units::Count::get(),
+             "number of partial snoops that exhausted reserved MSHRs"),
+    ADD_STAT(partialFillVictimConflicts, statistics::units::Count::get(),
+             "number of replacements blocked by active partial fills"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),

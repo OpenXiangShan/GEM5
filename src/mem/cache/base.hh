@@ -1271,6 +1271,11 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar partialWritebackBecameFull;
         statistics::Scalar partialMetaReplacements;
         statistics::Scalar partialMetaProtectedFallbacks;
+        statistics::Scalar partialSnoopFills;
+        statistics::Scalar partialSnoopMerges;
+        statistics::Scalar partialSnoopFillLatency;
+        statistics::Scalar partialSnoopReserveFull;
+        statistics::Scalar partialFillVictimConflicts;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;
@@ -1472,6 +1477,26 @@ class BaseCache : public ClockedObject, public CacheAccessor
             schedMemSideSendEvent(time);
         }
 
+        return mshr;
+    }
+
+    MSHR *allocatePartialSnoopMissBuffer(PacketPtr pkt, Tick time)
+    {
+        if (mshrQueue.isCompletelyFull()) {
+            stats.partialSnoopReserveFull++;
+            panic("%s: no reserved MSHR available for partial snoop %s",
+                  name(), pkt->print());
+        }
+
+        MSHR *mshr = mshrQueue.allocate(
+            pkt->getBlockAddr(blkSize), blkSize, pkt, time, order++, false,
+            MSHR::Target::FromSnoop);
+        mshr->setMissKind(MSHR::MissKind::PartialSnoopFill);
+
+        if (dcacheMainPipeEffectiveMSHRFull()) {
+            setBlocked((BlockedCause)MSHRQueue_MSHRs);
+        }
+        schedMemSideSendEvent(time);
         return mshr;
     }
 

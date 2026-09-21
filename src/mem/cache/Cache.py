@@ -207,6 +207,10 @@ class BaseCache(ClockedObject):
         "0B",
         "Maximum data capacity represented by partial writeback metadata",
     )
+    partial_snoop_mshr_reserve = Param.Unsigned(
+        4,
+        "Emergency MSHRs reserved for completing partial blocks on snoops",
+    )
 
 class Cache(BaseCache):
     type = 'Cache'

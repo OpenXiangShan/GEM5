@@ -363,7 +363,8 @@ MSHR::TargetList::print(std::ostream &os, int verbosity,
 
 void
 MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
-               Tick when_ready, Counter _order, bool alloc_on_fill)
+               Tick when_ready, Counter _order, bool alloc_on_fill,
+               Target::Source source)
 {
     blkAddr = blk_addr;
     blkSize = blk_size;
@@ -382,11 +383,12 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     targets.init(blkAddr, blkSize);
     deferredTargets.init(blkAddr, blkSize);
 
-    // Don't know of a case where we would allocate a new MSHR for a
-    // snoop (mem-side request), so set source according to request here
-    Target::Source source = (target->cmd == MemCmd::HardPFReq) ?
-        Target::FromPrefetcher : Target::FromCPU;
-    DPRINTF(MSHR, "New MSHR allocated: %s, from cpu: %i\n", target->print(), Target::FromCPU);
+    if (target->cmd == MemCmd::HardPFReq) {
+        assert(source == Target::FromCPU);
+        source = Target::FromPrefetcher;
+    }
+    DPRINTF(MSHR, "New MSHR allocated: %s, source: %i\n",
+            target->print(), source);
     targets.add(target, when_ready, _order, source, true, alloc_on_fill);
 
     // All targets must refer to the same block
@@ -486,6 +488,14 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
     }
 
     DPRINTF(MSHR, "After target allocation: %s", print());
+}
+
+void
+MSHR::allocateSnoopTarget(PacketPtr pkt, Tick when_ready, Counter _order)
+{
+    targets.add(pkt, when_ready, _order, Target::FromSnoop, !inService,
+                false);
+    DPRINTF(MSHR, "After snoop target allocation: %s", print());
 }
 
 bool
