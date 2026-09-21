@@ -111,7 +111,6 @@ def setKmhV3Params(args, system):
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 16
         cpu.SbufferEvictThreshold = 8
-        cpu.releaseSbufferOnDcacheAccept = True
         cpu.store_prefetch_train = False
 
         # branch predictor
