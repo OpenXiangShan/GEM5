@@ -109,6 +109,9 @@ jobs:
         run: |
           export GEM5_HOME=$(pwd)
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+          if [[ "${{ inputs.benchmark_type }}" == "spec06-rva23-novec-gcc16-0.3c" ]]; then
+            export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          fi
           case "${{ inputs.vector_type }}" in
             "base")
               # use pgo profile to build gem5
@@ -136,6 +139,9 @@ jobs:
           GEM5_HOME: ${{ github.workspace }}
           GEM5_BUILD_TYPE: fast
         run: |
+          if [[ "${{ inputs.benchmark_type }}" == "spec06-rva23-novec-gcc16-0.3c" ]]; then
+            export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          fi
           mkdir -p $GEM5_HOME/util/xs_scripts/test
           cd $GEM5_HOME/util/xs_scripts/test
 
