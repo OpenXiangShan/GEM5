@@ -2491,6 +2491,13 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     const bool partial_write_miss = partialBlockEnabled() && blk &&
         blk->isPartial() && pkt->isWrite() &&
         !blk->canWrite(pkt, blkSize);
+    // A covered store must not bypass older stores waiting for a partial
+    // refill: they would overwrite it and forward stale data to later loads.
+    const MSHR *write_mshr = partialBlockEnabled() && pkt->isWrite() ?
+        mshrQueue.findMatch(pkt->getBlockAddr(blkSize), pkt->isSecure()) :
+        nullptr;
+    const bool pending_partial_write = write_mshr &&
+        write_mshr->isPartialFill();
 
     if (cacheLevel == 1 && pkt->cmd == MemCmd::ReadReq &&
         partial_read_miss) {
@@ -2503,6 +2510,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     }
 
     if (blk && !partial_read_miss && !partial_write_miss &&
+        !pending_partial_write &&
         (pkt->needsWritable() ?
             blk->isSet(CacheBlk::WritableBit) :
             blk->isSet(CacheBlk::ReadableBit))) {
@@ -3218,13 +3226,18 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
                 if (enablePartialStore) {
                     stats.partialDataFillReqs++;
                 }
-            } else if (mshr->isWholeLineWrite()) {
+            } else if (sent_cmd == MemCmd::InvalidateReq &&
+                       mshr->isWholeLineWrite()) {
                 mshr->setMissKind(MSHR::MissKind::WholeLineWrite);
             } else {
                 mshr->setMissKind(MSHR::MissKind::Normal);
             }
         }
         markInService(mshr, pending_modified_resp);
+        // Complete target coverage does not imply an invalidate transaction:
+        // StorePerm and partial data-fill requests take precedence.
+        mshr->wasWholeLineWrite = sent_cmd == MemCmd::InvalidateReq &&
+            mshr->isWholeLineWrite();
 
         if (cacheLevel == 3 && tgt_pkt->isSplitStorePermReq() &&
             sent_cmd == MemCmd::ReadExReq &&
