@@ -938,6 +938,33 @@ decode QUADRANT {
                         [](uint64_t* b, uint64_t a){ if (a > *b) *b = a; });
                 }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
             }
+            0x4: decode AMOFUNCT {
+                0x5: AtomicMemOp::amocas_q({{
+                    Rd = Mem_tud[0];
+                    RdHi = Mem_tud[1];
+                }}, {{
+                    if ((RD & 1) || (RS2 & 1)) {
+                        return std::make_shared<IllegalInstFault>(
+                                "AMOCAS.Q requires even rd and rs2",
+                                machInst);
+                    }
+
+                    Mem_tud = {Rd, RdHi};
+                    std::array<uint64_t, 2> desired = {Rs2, Rs2Hi};
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                        new AtomicGenericPair3Op<uint64_t>(
+                                Mem_tud, desired,
+                                [](uint64_t *memory,
+                                   std::array<uint64_t, 2> &expected,
+                                   std::array<uint64_t, 2> desired) {
+                                    if (memory[0] == expected[0] &&
+                                        memory[1] == expected[1]) {
+                                        memory[0] = desired[0];
+                                        memory[1] = desired[1];
+                                    }
+                                });
+                }}, mem_flags=ATOMIC_RETURN_OP, inst_flags=MemAtomicOp);
+            }
         }
         0x0c: decode FUNCT3 {
             format ROp {

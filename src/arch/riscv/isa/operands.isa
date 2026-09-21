@@ -37,6 +37,7 @@ def operand_types {{
     'uw' : 'uint32_t',
     'sd' : 'int64_t',
     'ud' : 'uint64_t',
+    'tud' : 'std::array<uint64_t, 2>',
     'sf' : 'float',
     'df' : 'double',
 
@@ -60,8 +61,12 @@ let {{
 def operands {{
 #General Purpose Integer Reg Operands
     'Rd': IntReg('ud', 'RD', 'IsInteger', 1),
+    'RdHi': IntReg('ud',
+        '((RD == 0 || (RD & 1)) ? 0 : RD + 1)', 'IsInteger', 2),
     'Rs1': IntReg('ud', 'RS1', 'IsInteger', 2),
     'Rs2': IntReg('ud', 'RS2', 'IsInteger', 3),
+    'Rs2Hi': IntReg('ud',
+        '((RS2 == 0 || (RS2 & 1)) ? 0 : RS2 + 1)', 'IsInteger', 4),
     'Rt': IntReg('ud', 'AMOTempReg', 'IsInteger', 4),
     'Rc1': IntReg('ud', 'RC1', 'IsInteger', 2),
     'Rc2': IntReg('ud', 'RC2', 'IsInteger', 3),

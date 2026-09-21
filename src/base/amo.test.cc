@@ -50,10 +50,13 @@ multiply3Op(int *b, int a, int c)
 }
 
 void
-addSubColumns(int *b, const std::array<int, 2>& a, const std::array<int, 2>& c)
+compareSwapPair(int *memory, const std::array<int, 2>& expected,
+                const std::array<int, 2>& desired)
 {
-    *b += a[0] + c[0];
-    *b -= a[1] + c[1];
+    if (memory[0] == expected[0] && memory[1] == expected[1]) {
+        memory[0] = desired[0];
+        memory[1] = desired[1];
+    }
 }
 
 TEST(AmoTest, AtomicOpMin)
@@ -235,13 +238,15 @@ TEST(AmoTest, AtomicGeneric3Op)
 
 TEST(AmoTest, AtomicGenericPair3Op)
 {
-    int test_int = 5;
+    std::array<int, 2> memory = {6, 3};
+    std::array<int, 2> expected = {6, 3};
+    std::array<int, 2> desired = {10, 8};
+    AtomicGenericPair3Op<int> amo_op(expected, desired, compareSwapPair);
 
-    std::array<int, 2> a = {6, 3};
-    std::array<int, 2> c = {10, 8};
-    TypedAtomicOpFunctor<int> *amo_op_int =
-         new AtomicGenericPair3Op<int>(a, c, addSubColumns);
-    amo_op_int->execute(&test_int);
+    amo_op.execute(memory.data());
+    EXPECT_EQ(memory, desired);
 
-    EXPECT_EQ(test_int, 10);
+    memory = {6, 4};
+    amo_op.execute(memory.data());
+    EXPECT_EQ(memory, (std::array<int, 2>{6, 4}));
 }
