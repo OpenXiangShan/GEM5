@@ -2303,6 +2303,9 @@ LSQUnit::commitLoad()
         }
     }
 
+    // A delayed PDB hit can live on the replay bus without an L1 fill to
+    // generate Bus_Clear. Keep its data available until the load retires.
+    lsq->bus.erase(inst->seqNum);
     loadQueue.front().clear();
     loadQueue.pop_front();
     lastClockLQPopEntries++;
@@ -2768,6 +2771,7 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         // remains on the architecturally valid path.
         loadQueue.back().instruction()->memDepInfo.violationPending = false;
 
+        lsq->bus.erase(loadQueue.back().instruction()->seqNum);
         // Clear the smart pointer to make sure it is decremented.
         loadQueue.back().instruction()->setSquashed();
         loadQueue.back().clear();

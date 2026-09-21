@@ -208,6 +208,8 @@ class Cache : public BaseCache
     /** Instantiates a basic cache object. */
     Cache(const CacheParams &p);
 
+    void resetStats() override;
+
     /**
      * Take an MSHR, turn it into a suitable downstream packet, and
      * send it out. This construct allows a queue entry to choose a suitable

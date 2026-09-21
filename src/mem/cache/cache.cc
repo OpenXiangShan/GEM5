@@ -79,6 +79,13 @@ Cache::Cache(const CacheParams &p)
     assert(p.replacement_policy);
 }
 
+void
+Cache::resetStats()
+{
+    BaseCache::resetStats();
+    pdbStats.occupancy = pdbLines.size();
+}
+
 Cache::PdbLine::PdbLine(Addr addr, bool secure, unsigned size)
     : addr(addr), secure(secure), data(size)
 {
@@ -570,7 +577,8 @@ Cache::handleTimingReqHit(PacketPtr pkt, CacheBlk *blk, Tick request_time, bool 
     // lookup
     assert(!pkt->req->isUncacheable());
 
-    if (!blk && pkt->cmd == MemCmd::ReadReq) {
+    if (!blk && pkt->cmd == MemCmd::ReadReq &&
+        hasPrefetchData(pkt->getBlockAddr(blkSize), pkt->isSecure())) {
         auto line = findPdbLine(pkt->getBlockAddr(blkSize), pkt->isSecure());
         if (line != pdbLines.end() && line->blk.wasPrefetched()) {
             pkt->req->setPFSource(line->blk.getXsMetadata().prefetchSource);

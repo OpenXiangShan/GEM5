@@ -1687,7 +1687,11 @@ public:
 
     // CacheAccessor overrided function
 
-    bool inCache(Addr addr, bool is_secure) const override { return tags->findBlock(addr, is_secure); }
+    bool inCache(Addr addr, bool is_secure) const override
+    {
+        return tags->findBlock(addr, is_secure) ||
+            hasPrefetchData(addr & ~(Addr(blkSize - 1)), is_secure);
+    }
 
     unsigned level() const override { return cacheLevel; }
 
