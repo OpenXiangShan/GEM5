@@ -1410,7 +1410,19 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         // if we used temp block, check to see if its valid and then clear it
         if (blk == tempBlock && tempBlock->isValid()) {
-            evictBlock(blk, writebacks);
+            PacketPtr temp_writeback = evictBlock(blk);
+            if (temp_writeback && mshr->isPartialFill() &&
+                temp_writeback->cmd == MemCmd::WritebackDirty) {
+                // The deferred refill and this partial writeback are ordered
+                // by the same MSHR. Keep the newer bytes local so a stale
+                // lower-level response cannot race ahead of the writeback.
+                mshr->mergeWriteback(temp_writeback);
+                DPRINTF(PartialStore,
+                        "Retained temp-block writeback on refill MSHR for "
+                        "%#llx\n", mshr->blkAddr);
+            } else if (temp_writeback) {
+                writebacks.push_back(temp_writeback);
+            }
         }
     }
 
