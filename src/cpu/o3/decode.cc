@@ -68,7 +68,11 @@ namespace o3
 {
 
 Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
-    : cpu(_cpu),
+    : compactionEnabled(params.enableDecodeFusionCompaction &&
+                        params.numThreads == 1 && !params.enableTraceMode),
+      compactionScanWidth(params.decodeFusionScanWidth),
+      compactionFetchReserve(params.fetchToDecodeDelay * params.decodeWidth),
+      cpu(_cpu),
       renameToDecodeDelay(params.renameToDecodeDelay),
       iewToDecodeDelay(params.iewToDecodeDelay),
       commitToDecodeDelay(params.commitToDecodeDelay),
@@ -79,7 +83,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       aggregateDecodeWidth(decodeWidth * numPreDispatchThreads),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
-      stats(_cpu)
+      stats(_cpu, params)
 {
     panic_if(numPreDispatchThreads == 0 ||
              numPreDispatchThreads > numThreads ||
@@ -90,6 +94,36 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     panic_if(aggregateDecodeWidth > MaxWidth,
              "aggregate SMT decode width (%u * %u) exceeds MaxWidth (%u)",
              decodeWidth, numPreDispatchThreads, MaxWidth);
+
+    if (params.enableDecodeFusionCompaction && !compactionEnabled) {
+        warn("Decode fusion compaction is inactive for SMT or Trace mode; "
+             "using the legacy Decode path");
+    }
+    if (compactionEnabled) {
+        fatal_if(params.enable_loadFusion || params.enableConstantFolding ||
+                 params.enableMovImmElimination,
+                 "Decode fusion compaction requires enable_loadFusion, "
+                 "enableConstantFolding and enableMovImmElimination=False");
+        fatal_if(decodeWidth == 0 || decodeWidth != params.renameWidth,
+                 "Decode fusion compaction requires nonzero, equal "
+                 "decodeWidth and renameWidth");
+        fatal_if(fetchToDecodeDelay < Cycles(1) ||
+                 fetchToDecodeDelay > Cycles(params.backComSize),
+                 "Decode fusion compaction requires fetchToDecodeDelay in "
+                 "[1, backComSize]");
+        fatal_if(params.enablePredecode && fetchToDecodeDelay < Cycles(3),
+                 "Decode fusion compaction with enablePredecode requires "
+                 "fetchToDecodeDelay >= 3");
+        fatal_if(compactionScanWidth == 0 ||
+                 params.decodeFusionBufferSize < compactionScanWidth ||
+                 params.decodeFusionBufferSize < compactionFetchReserve,
+                 "Invalid decodeFusionBufferSize/decodeFusionScanWidth: "
+                 "the FIFO must hold the scan window and in-flight fetch "
+                 "reserve, and the scan window must be nonzero");
+        compactionBuffer.set_capacity(params.decodeFusionBufferSize);
+        inform("Decode fusion compaction enabled: buffer=%u scan=%u output=%u",
+               params.decodeFusionBufferSize, compactionScanWidth, decodeWidth);
+    }
 
     // @todo: Make into a parameter
     for (int i=0;i<numThreads;i++) {
@@ -131,12 +165,21 @@ void
 Decode::clearStates(ThreadID tid)
 {
     decodedBranchHistory[tid].clear();
+    if (compactionEnabled) {
+        assert(tid == 0);
+        compactionBuffer.clear();
+        nextCompactionBundle = 0;
+    }
 }
 
 void
 Decode::resetStage()
 {
     _status = Inactive;
+    if (compactionEnabled) {
+        compactionBuffer.clear();
+        nextCompactionBundle = 0;
+    }
 }
 
 std::string
@@ -145,7 +188,7 @@ Decode::name() const
     return cpu->name() + ".decode";
 }
 
-Decode::DecodeStats::DecodeStats(CPU *cpu)
+Decode::DecodeStats::DecodeStats(CPU *cpu, const BaseO3CPUParams &params)
     : statistics::Group(cpu, "decode"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is idle"),
@@ -198,8 +241,43 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     //   ADD_STAT(decodedInstsDist, statistics::units::Count::get(),
     //            "Distribution of decoded instructions per cycle"),
       ADD_STAT(decodeEfficiency, statistics::units::Ratio::get(),
-               "Decode efficiency: actual decoded insts vs ideal width")
+               "Decode efficiency: actual decoded insts vs ideal width"),
+      ADD_STAT(compactionInputInsts, statistics::units::Count::get(),
+               "Raw entries received by compacting Decode"),
+      ADD_STAT(compactionRawInsts, statistics::units::Count::get(),
+               "Valid raw instructions consumed by compacting Decode"),
+      ADD_STAT(compactionDiscardedInsts, statistics::units::Count::get(),
+               "Invalid entries discarded inside the Decode scan window"),
+      ADD_STAT(compactionFlushedInsts, statistics::units::Count::get(),
+               "Queued entries removed by Decode squash"),
+      ADD_STAT(compactionFusedPairs, statistics::units::Count::get(),
+               "Pairs fused by compacting Decode"),
+      ADD_STAT(compactionOutputInsts, statistics::units::Count::get(),
+               "Actual objects sent to Rename by compacting Decode"),
+      ADD_STAT(compactionCrossBundleFusions, statistics::units::Count::get(),
+               "Fused pairs spanning two Fetch delivery bundles"),
+      ADD_STAT(compactionFetchBlockedCycles, statistics::units::Cycle::get(),
+               "Cycles compacting Decode blocks Fetch delivery"),
+      ADD_STAT(compactionRawPerCycle, statistics::units::Count::get(),
+               "Valid raw instructions consumed per compacting cycle"),
+      ADD_STAT(compactionOutputPerCycle, statistics::units::Count::get(),
+               "Rename objects produced per compacting cycle"),
+      ADD_STAT(compactionOccupancy, statistics::units::Count::get(),
+               "Compacting FIFO occupancy after consumption"),
+      ADD_STAT(compactionStopReasons, statistics::units::Count::get(),
+               "Reason compacting Decode stopped in each cycle")
 {
+    const bool compact = params.enableDecodeFusionCompaction &&
+                         params.numThreads == 1 && !params.enableTraceMode;
+    compactionRawPerCycle.init(0, compact ? params.decodeFusionScanWidth : 1, 1);
+    compactionOutputPerCycle.init(0, params.decodeWidth, 1);
+    compactionOccupancy.init(0, compact ? params.decodeFusionBufferSize : 1, 1);
+    compactionStopReasons.init(static_cast<unsigned>(CompactionStop::NumReasons));
+    const char *stop_names[] = {"inputEmpty", "outputFull", "scanLimit",
+        "vectorBoundary", "serialize", "redirect", "backendBlocked", "squash"};
+    for (unsigned i = 0; i < static_cast<unsigned>(CompactionStop::NumReasons); ++i)
+        compactionStopReasons.subname(i, stop_names[i]);
+
     // Get decodeWidth using helper function to work around protected member access
     
     idleCycles.prereq(idleCycles);
@@ -288,6 +366,9 @@ Decode::setActiveThreads(std::list<ThreadID> *at_ptr)
 void
 Decode::drainSanityCheck() const
 {
+    if (compactionEnabled) {
+        assert(compactionBuffer.empty());
+    }
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         assert(fixedbuffer[tid].empty());
     }
@@ -296,6 +377,9 @@ Decode::drainSanityCheck() const
 bool
 Decode::isDrained() const
 {
+    if (compactionEnabled && !compactionBuffer.empty()) {
+        return false;
+    }
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         if (!fixedbuffer[tid].empty())
             return false;
@@ -373,6 +457,10 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 
     stallSig->blockFetch[tid] = true; // tell fetch don't send new insts
 
+    if (compactionEnabled) {
+        stats.compactionFlushedInsts += compactionBuffer.size();
+        compactionBuffer.clear();
+    }
     fixedbuffer[tid].clear();
     squashBranchHistory(tid, squash_seq_num, false);
 
@@ -400,6 +488,25 @@ unsigned
 Decode::squash(ThreadID tid)
 {
     DPRINTF(Decode, "[tid:%i] Squashing.\n",tid);
+
+    if (compactionEnabled) {
+        const auto &info = fromCommit->commitInfo[tid];
+        const size_t queued = compactionBuffer.size();
+        for (size_t i = 0; i < queued; ++i) {
+            auto entry = compactionBuffer.front();
+            compactionBuffer.pop_front();
+            if (entry.inst->isSquashed() || entry.inst->seqNum > info.doneSeqNum) {
+                ++stats.compactionFlushedInsts;
+            } else {
+                // Preserve the baseline's selective squash boundary. Older
+                // survivors must also remain valid when admitted by Rename.
+                entry.inst->setVersion(info.squashVersion);
+                compactionBuffer.push_back(entry);
+            }
+        }
+        squashBranchHistory(tid, info.doneSeqNum, false);
+        return 0;
+    }
 
     // Selectively remove only instructions younger than squash boundary
     {
@@ -628,6 +735,10 @@ Decode::checkSquash()
 void
 Decode::tick()
 {
+    if (compactionEnabled) {
+        tickCompaction();
+        return;
+    }
     toRename->fetchStallReason = fromFetch->fetchStallReason;
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
@@ -805,6 +916,266 @@ Decode::tick()
     }
 }
 
+bool
+Decode::compactionInstInvalid(const DynInstPtr &inst) const
+{
+    return inst->isSquashed() ||
+           localSquashVer[inst->threadNumber].largerThan(inst->getVersion());
+}
+
+bool
+Decode::canFusePair(const DynInstPtr &first, const DynInstPtr &second) const
+{
+    const auto eligible = [this](const DynInstPtr &inst) {
+        return !compactionInstInvalid(inst) && !inst->faulted() &&
+               !inst->isFusion() && !inst->isMicroop() &&
+               !inst->isControl() && !inst->isVector() &&
+               !inst->staticInst->isVectorConfig() &&
+               !inst->isSerializeBefore() && !inst->isSerializeAfter() &&
+               !inst->isNonSpeculative() && !inst->readPredTaken();
+    };
+    return eligible(first) && eligible(second) &&
+           first->threadNumber == second->threadNumber &&
+           first->getVersion() == second->getVersion() &&
+           first->getFtqId() == second->getFtqId() &&
+           first->getLoopIteration() == second->getLoopIteration() &&
+           first->seqNum < second->seqNum &&
+           first->pcState().getFallThruPC() == second->getPC();
+}
+
+void
+Decode::receiveCompactionInsts()
+{
+    const int incoming = fromFetch->size;
+    panic_if(incoming < 0 || incoming > decodeWidth,
+             "Invalid compacting Decode input size: %d", incoming);
+    panic_if(compactionBuffer.size() + incoming > compactionBuffer.capacity(),
+             "Compacting Decode FIFO overflow: queued=%u incoming=%d "
+             "capacity=%u", compactionBuffer.size(), incoming,
+             compactionBuffer.capacity());
+    if (!incoming) {
+        return;
+    }
+
+    const uint64_t bundle = nextCompactionBundle++;
+    for (int i = 0; i < incoming; ++i) {
+        const auto &inst = fromFetch->insts[i];
+        assert(inst && inst->threadNumber == 0);
+        const auto &squash = fromCommit->commitInfo[0];
+        if (squash.squash && inst->seqNum <= squash.doneSeqNum &&
+            !inst->isSquashed()) {
+            inst->setVersion(squash.squashVersion);
+        }
+        if (compactionInstInvalid(inst)) {
+            inst->setSquashed();
+        }
+        // Keep invalid entries in place until scanned. Removing them here
+        // would hide an adjacency boundary and grant free scan bandwidth.
+        compactionBuffer.push_back({inst, bundle});
+    }
+    stats.compactionInputInsts += incoming;
+}
+
+void
+Decode::recordCompactionDecode(const DynInstPtr &inst)
+{
+    ++stats.decodedInsts;
+    cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDecode);
+#if TRACING_ON
+    if (debug::O3PipeView && inst->fetchTick != Tick(-1)) {
+        inst->decodeTick = curTick() - inst->fetchTick;
+    }
+#endif
+}
+
+void
+Decode::decodeCompactedInsts(unsigned &raw, unsigned &discarded,
+                            unsigned &fused, CompactionStop &stop)
+{
+    const unsigned window = std::min<size_t>(compactionScanWidth,
+                                             compactionBuffer.size());
+    unsigned scanned = 0;
+    bool first_valid = true;
+    bool scalar_head = false;
+    while (scanned < window && toRenameIndex < decodeWidth &&
+           !compactionBuffer.empty()) {
+        const CompactionEntry first = compactionBuffer.front();
+        if (compactionInstInvalid(first.inst)) {
+            first.inst->setSquashed();
+            compactionBuffer.pop_front();
+            ++scanned;
+            ++discarded;
+            ++stats.squashedInsts;
+            continue;
+        }
+        if (first_valid) {
+            scalar_head = !first.inst->isVector();
+            first_valid = false;
+        }
+        if (scalar_head && first.inst->isVector()) {
+            stop = CompactionStop::VectorBoundary;
+            blockReason = StallReason::OtherFragStall;
+            return;
+        }
+
+        StaticInstPtr prepared;
+        CompactionEntry second;
+        if (scanned + 1 < window && compactionBuffer.size() > 1) {
+            second = compactionBuffer[1];
+            if (canFusePair(first.inst, second.inst)) {
+                // Preparation may expire ignoreFusionPC, but must not
+                // consume input, redirect, or replace the global instList.
+                prepared = prepareFusion(first.inst, second.inst);
+            }
+        }
+
+        DynInstPtr output;
+        if (prepared) {
+            compactionBuffer.pop_front();
+            compactionBuffer.pop_front();
+            scanned += 2;
+            raw += 2;
+            ++fused;
+            recordCompactionDecode(first.inst);
+            recordCompactionDecode(second.inst);
+            output = applyFusion(first.inst, second.inst, prepared);
+            if (first.bundle != second.bundle) {
+                ++stats.compactionCrossBundleFusions;
+            }
+            // Preserve original O3PipeView records. Emitting another fetch
+            // record for the fused object would duplicate the first seqNum.
+            DPRINTF(Decode, "Compaction fusion: first=%llu second=%llu "
+                    "output=%llu bundles=%llu/%llu\n", first.inst->seqNum,
+                    second.inst->seqNum, output->seqNum, first.bundle,
+                    second.bundle);
+        } else {
+            compactionBuffer.pop_front();
+            ++scanned;
+            ++raw;
+            output = first.inst;
+            recordCompactionDecode(output);
+        }
+
+        if (output->numSrcRegs() == 0) {
+            output->setCanIssue();
+        }
+        assert(toRename->size < decodeWidth);
+        toRename->insts[toRename->size++] = output;
+        ++toRenameIndex;
+        wroteToTimeBuffer = true;
+
+        // Only a consumed single instruction may perform control effects.
+        // Fused pairs contain neither control nor serializing instructions.
+        if (!prepared) {
+            const StallReason control = processInstControl(output, 0);
+            if (control != StallReason::NoStall) {
+                blockReason = control;
+                stop = control == StallReason::SerializeStall ?
+                    CompactionStop::Serialize : CompactionStop::Redirect;
+                return;
+            }
+        }
+    }
+
+    if (toRenameIndex == decodeWidth) {
+        stop = CompactionStop::OutputFull;
+    } else if (compactionBuffer.empty()) {
+        stop = CompactionStop::InputEmpty;
+        blockReason = StallReason::FetchFragStall;
+    } else {
+        stop = CompactionStop::ScanLimit;
+        blockReason = discarded ? StallReason::InstSquashed :
+                                  StallReason::OtherFragStall;
+    }
+}
+
+void
+Decode::tickCompaction()
+{
+    assert(numThreads == 1);
+    assert(toRename->size == 0);
+    toRename->fetchStallReason = fromFetch->fetchStallReason;
+    wroteToTimeBuffer = false;
+    toRenameIndex = 0;
+    blockReason = StallReason::NoStall;
+    setAllStalls(StallReason::NoStall);
+
+    checkSquash();
+    receiveCompactionInsts();
+
+    unsigned raw = 0;
+    unsigned discarded = 0;
+    unsigned fused = 0;
+    CompactionStop stop = CompactionStop::InputEmpty;
+    const bool active = std::find(activeThreads->begin(), activeThreads->end(),
+                                  ThreadID(0)) != activeThreads->end();
+    if (fromCommit->commitInfo[0].squash) {
+        stop = CompactionStop::Squash;
+        blockReason = StallReason::CommitSquash;
+        ++stats.squashCycles;
+    } else if (stallSig->blockDecode[0] || !active) {
+        stop = CompactionStop::BackendBlocked;
+        blockReason = stallSig->decodeBlockReason[0];
+        ++stats.smtblockedCycles[0];
+    } else if (compactionBuffer.empty()) {
+        ++stats.idleCycles;
+        ++stats.smtidleCycles[0];
+        ++stats.smtnotactiveCycles[0];
+        blockReason = StallReason::OtherFetchStall;
+        for (const auto reason : fromFetch->fetchStallReason) {
+            if (reason != StallReason::NoStall) {
+                blockReason = reason;
+                break;
+            }
+        }
+    } else {
+        decodeCompactedInsts(raw, discarded, fused, stop);
+        ++stats.runCycles;
+    }
+
+    assert(raw >= fused && toRenameIndex == raw - fused);
+    assert(raw + discarded <= compactionScanWidth);
+    assert(toRenameIndex == toRename->size && toRenameIndex <= decodeWidth);
+    stats.compactionRawInsts += raw;
+    stats.compactionDiscardedInsts += discarded;
+    stats.compactionFusedPairs += fused;
+    stats.compactionOutputInsts += toRenameIndex;
+    stats.compactionRawPerCycle.sample(raw);
+    stats.compactionOutputPerCycle.sample(toRenameIndex);
+    stats.compactionOccupancy.sample(compactionBuffer.size());
+    ++stats.compactionStopReasons[static_cast<unsigned>(stop)];
+    stats.threadsDecodedPerCycle.sample(raw != 0);
+    stats.instsDecodedPerCycle.sample(raw);
+    measureDecodeBubbles(toRenameIndex, 0);
+
+    for (unsigned i = toRenameIndex; i < decodeWidth; ++i) {
+        decodeStalls[i] = blockReason;
+    }
+    toRename->decodeStallReason = decodeStalls;
+
+    // Decode precedes Fetch in CPU::tick. Reserve D-1 existing in-flight
+    // bundles plus the bundle Fetch may send this cycle, even if consumption
+    // stops completely next cycle. StallSignals persist across ticks.
+    const bool fifo_blocked = compactionBuffer.size() + compactionFetchReserve >
+                              compactionBuffer.capacity();
+    const bool redirect = toFetch->decodeInfo[0].squash;
+    stallSig->blockFetch[0] = redirect || fifo_blocked;
+    stallSig->fetchBlockReason[0] = redirect ? StallReason::InstMisPred :
+        fifo_blocked ? (stallSig->blockDecode[0] ?
+            stallSig->decodeBlockReason[0] : StallReason::OtherFragStall) :
+        StallReason::NoStall;
+    toFetch->decodeInfo[0].blockReason = stallSig->fetchBlockReason[0];
+    stats.compactionFetchBlockedCycles += stallSig->blockFetch[0];
+
+    DPRINTF(Decode, "Compaction: raw=%u discarded=%u fused=%u output=%u "
+            "queued=%u stop=%u\n", raw, discarded, fused, toRenameIndex,
+            compactionBuffer.size(), static_cast<unsigned>(stop));
+    updateActivate();
+    if (wroteToTimeBuffer || discarded) {
+        cpu->activityThisCycle();
+    }
+}
+
 void
 Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 {
@@ -902,147 +1273,11 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         }
 #endif
 
-        if (inst->staticInst->isVectorConfig()) {
-            inst->setSerializeBefore();
-            inst->setSerializeAfter();
-            decode_stalls.push(StallReason::SerializeStall);
-            breakDecode = StallReason::SerializeStall;
-            DPRINTF(Decode,
-                    "[tid:%i] [sn:%llu] Vector config decoded, set serialize barrier and stop decoding younger "
-                    "instructions.\n",
-                    tid, inst->seqNum);
+        const StallReason control_stall = processInstControl(inst, tid);
+        if (control_stall != StallReason::NoStall) {
+            decode_stalls.push(control_stall);
+            breakDecode = control_stall;
             break;
-        }
-
-        // Ensure that if it was predicted as a branch, it really is a
-        // branch.
-        if (inst->readPredTaken() && !inst->isControl() &&
-            !inst->isPredecodeChecked()) {
-            // panic("Instruction predicted as a branch!");
-
-            ++stats.controlMispred;
-
-            // Might want to set some sort of boolean and just do
-            // a check at the end
-            selfSquash(inst, inst->threadNumber);
-
-            decode_stalls.push(StallReason::InstMisPred);
-            breakDecode = StallReason::InstMisPred;
-
-            break;
-        }
-
-        // Go ahead and compute any PC-relative branches.
-        // This includes direct unconditional control and
-        // direct conditional control that is predicted taken.
-        //
-        // 在 trace 模式下，如果 trace 已标记该指令会触发 trap/异常等控制流改变
-        //（hasTraceCtrlFlowChange），则交由 trap/wrong-path 逻辑处理，不在 decode
-        // 再做一次基于静态分支目标的校验，避免把 cond->trap 误统计为普通分支
-        // mispredict，或在这里产生“错误”的 redirect。
-        if (!inst->isPredecodeChecked() &&
-            !(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
-            inst->isDirectCtrl() &&
-            (inst->isUncondCtrl() || inst->readPredTaken()))
-        {
-            ++stats.branchResolved;
-
-            std::unique_ptr<PCStateBase> target = inst->branchTarget();
-            // In trace mode, prefer ground-truth next PC from trace to avoid
-            // relying on possibly out-of-range immediates (e.g., JAL 20-bit).
-            if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
-                auto &t_override = target->as<RiscvISA::PCState>();
-                Addr trace_next = inst->traceBranchNextPC();
-                if (trace_next != t_override.pc()) {
-                    DPRINTF(DecoupleBP,
-                            "[tid:%i] [sn:%llu] Branch pc %s, Override target by trace: %s -> npc=%#lx\n",
-                            tid, inst->seqNum, inst->pcState(), *target, trace_next);
-                    t_override.pc(trace_next);
-                    // assuming 4-byte instruction for now since we don't have this trace inst
-                    t_override.npc(trace_next + 4);
-                    DPRINTF(DecoupleBP,
-                            "[tid:%i] [sn:%llu] After override target: %s, inst->branchTarget: %s\n",
-                            tid, inst->seqNum, *target, *inst->branchTarget());
-                }
-            }
-            auto &t = target->as<RiscvISA::PCState>();
-            auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
-            if (t.start_equals(pred) && !t.equals(pred)) {
-                DPRINTF(
-                    DecoupleBP,
-                    "Override useless npc, from %#lx->%#lx to %#lx->%#lx\n",
-                    pred.pc(), pred.npc(), t.pc(), t.npc());
-                inst->setPredTarg(t);
-            }
-            if (*target != inst->readPredTarg()) {
-                ++stats.branchMispred;
-
-                RiscvISA::PCState cpTarget = target->clone()->as<RiscvISA::PCState>();
-                RiscvISA::PCState cpPredTarget = inst->readPredTarg().clone()->as<RiscvISA::PCState>();
-
-                if (cpTarget.instAddr() != cpPredTarget.instAddr() && cpTarget.npc() == cpPredTarget.npc()) {
-                    ++stats.mispredictedByPC;
-                } else if (cpTarget.instAddr() == cpPredTarget.instAddr() && cpTarget.npc() != cpPredTarget.npc()) {
-                    ++stats.mispredictedByNPC;
-                }
-
-                // Might want to set some sort of boolean and just do
-                // a check at the end
-                selfSquash(inst, inst->threadNumber);
-
-                decode_stalls.push(StallReason::InstMisPred);
-                breakDecode = StallReason::InstMisPred;
-
-                DPRINTF(Decode,
-                        "[tid:%i] [sn:%llu] Updating predictions:"
-                        " Wrong predicted target: %s PredPC: %s\n",
-                        tid, inst->seqNum, inst->readPredTarg(), *target);
-                //The micro pc after an instruction level branch should be 0
-                inst->setPredTarg(*target);
-                break;
-            }
-        }
-        // unpredicted return can make use of ras results to get earlier resteer
-        if (!inst->isPredecodeChecked() &&
-            inst->isReturn() && !inst->isNonSpeculative() &&
-            !inst->readPredTaken()) {
-            ++stats.branchMispred;
-            decode_stalls.push(StallReason::InstMisPred);
-            breakDecode = StallReason::InstMisPred;
-            // return target cannot be computed in decode stage since it is an indirect branch
-            // need to inquire bpu to get the target
-            auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
-            auto target = std::make_unique<RiscvISA::PCState>(return_addr);
-            DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
-                    " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
-                    tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);
-            inst->setPredTaken(true);
-            inst->setPredTarg(*target);
-            // must squash after setting inst real target because it cannot be computed from static inst
-            selfSquash(inst, inst->threadNumber);
-            break;
-        }
-        if (inst->isNonSpeculative() && inst->readPredTaken()) {
-            // TODO: redirect to fall thru
-            std::unique_ptr<PCStateBase> npc(inst->pcState().clone());
-            npc->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
-            inst->setPredTaken(false);
-            inst->setPredTarg(*npc);
-        }
-
-        if (inst->isControl() &&
-            !(inst->isDirectCtrl() && inst->isUncondCtrl())) {
-            branchInfo branch_info = {
-                inst->isIndirectCtrl(),
-                inst->readPredTaken(),
-                inst->readPredTarg().instAddr(),
-                inst->seqNum,
-                inst->pcState().instAddr(),
-            };
-            decodedBranchHistory[tid].push_front(branch_info);
-            if (decodedBranchHistory[tid].size() > MAX_BRANCH_HISTORY) {
-                decodedBranchHistory[tid].pop_back();
-            }
         }
     }
     for (auto &fused_inst : fusionInst) {
@@ -1071,28 +1306,179 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
     }
 }
 
+StallReason
+Decode::processInstControl(const DynInstPtr &inst, ThreadID tid)
+{
+    if (inst->staticInst->isVectorConfig()) {
+        inst->setSerializeBefore();
+        inst->setSerializeAfter();
+        DPRINTF(Decode,
+                "[tid:%i] [sn:%llu] Vector config decoded, set serialize barrier and stop decoding younger "
+                "instructions.\n",
+                tid, inst->seqNum);
+        return StallReason::SerializeStall;
+    }
+
+    // Ensure that if it was predicted as a branch, it really is a
+    // branch.
+    if (inst->readPredTaken() && !inst->isControl() &&
+        !inst->isPredecodeChecked()) {
+        // panic("Instruction predicted as a branch!");
+
+        ++stats.controlMispred;
+
+        // Might want to set some sort of boolean and just do
+        // a check at the end
+        selfSquash(inst, inst->threadNumber);
+
+        return StallReason::InstMisPred;
+    }
+
+    // Go ahead and compute any PC-relative branches.
+    // This includes direct unconditional control and
+    // direct conditional control that is predicted taken.
+    //
+    // 在 trace 模式下，如果 trace 已标记该指令会触发 trap/异常等控制流改变
+    //（hasTraceCtrlFlowChange），则交由 trap/wrong-path 逻辑处理，不在 decode
+    // 再做一次基于静态分支目标的校验，避免把 cond->trap 误统计为普通分支
+    // mispredict，或在这里产生“错误”的 redirect。
+    if (!inst->isPredecodeChecked() &&
+        !(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
+        inst->isDirectCtrl() &&
+        (inst->isUncondCtrl() || inst->readPredTaken()))
+    {
+        ++stats.branchResolved;
+
+        std::unique_ptr<PCStateBase> target = inst->branchTarget();
+        // In trace mode, prefer ground-truth next PC from trace to avoid
+        // relying on possibly out-of-range immediates (e.g., JAL 20-bit).
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            auto &t_override = target->as<RiscvISA::PCState>();
+            Addr trace_next = inst->traceBranchNextPC();
+            if (trace_next != t_override.pc()) {
+                DPRINTF(DecoupleBP,
+                        "[tid:%i] [sn:%llu] Branch pc %s, Override target by trace: %s -> npc=%#lx\n",
+                        tid, inst->seqNum, inst->pcState(), *target, trace_next);
+                t_override.pc(trace_next);
+                // assuming 4-byte instruction for now since we don't have this trace inst
+                t_override.npc(trace_next + 4);
+                DPRINTF(DecoupleBP,
+                        "[tid:%i] [sn:%llu] After override target: %s, inst->branchTarget: %s\n",
+                        tid, inst->seqNum, *target, *inst->branchTarget());
+            }
+        }
+        auto &t = target->as<RiscvISA::PCState>();
+        auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
+        if (t.start_equals(pred) && !t.equals(pred)) {
+            DPRINTF(
+                DecoupleBP,
+                "Override useless npc, from %#lx->%#lx to %#lx->%#lx\n",
+                pred.pc(), pred.npc(), t.pc(), t.npc());
+            inst->setPredTarg(t);
+        }
+        if (*target != inst->readPredTarg()) {
+            ++stats.branchMispred;
+
+            RiscvISA::PCState cpTarget = target->clone()->as<RiscvISA::PCState>();
+            RiscvISA::PCState cpPredTarget = inst->readPredTarg().clone()->as<RiscvISA::PCState>();
+
+            if (cpTarget.instAddr() != cpPredTarget.instAddr() && cpTarget.npc() == cpPredTarget.npc()) {
+                ++stats.mispredictedByPC;
+            } else if (cpTarget.instAddr() == cpPredTarget.instAddr() && cpTarget.npc() != cpPredTarget.npc()) {
+                ++stats.mispredictedByNPC;
+            }
+
+            // Might want to set some sort of boolean and just do
+            // a check at the end
+            selfSquash(inst, inst->threadNumber);
+
+            DPRINTF(Decode,
+                    "[tid:%i] [sn:%llu] Updating predictions:"
+                    " Wrong predicted target: %s PredPC: %s\n",
+                    tid, inst->seqNum, inst->readPredTarg(), *target);
+            //The micro pc after an instruction level branch should be 0
+            inst->setPredTarg(*target);
+            return StallReason::InstMisPred;
+        }
+    }
+    // unpredicted return can make use of ras results to get earlier resteer
+    if (!inst->isPredecodeChecked() &&
+        inst->isReturn() && !inst->isNonSpeculative() &&
+        !inst->readPredTaken()) {
+        ++stats.branchMispred;
+        // return target cannot be computed in decode stage since it is an indirect branch
+        // need to inquire bpu to get the target
+        auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
+        auto target = std::make_unique<RiscvISA::PCState>(return_addr);
+        DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
+                " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
+                tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);
+        inst->setPredTaken(true);
+        inst->setPredTarg(*target);
+        // must squash after setting inst real target because it cannot be computed from static inst
+        selfSquash(inst, inst->threadNumber);
+        return StallReason::InstMisPred;
+    }
+    if (inst->isNonSpeculative() && inst->readPredTaken()) {
+        // TODO: redirect to fall thru
+        std::unique_ptr<PCStateBase> npc(inst->pcState().clone());
+        npc->as<RiscvISA::PCState>().set(inst->pcState().getFallThruPC());
+        inst->setPredTaken(false);
+        inst->setPredTarg(*npc);
+    }
+
+    if (inst->isControl() &&
+        !(inst->isDirectCtrl() && inst->isUncondCtrl())) {
+        branchInfo branch_info = {
+            inst->isIndirectCtrl(),
+            inst->readPredTaken(),
+            inst->readPredTarg().instAddr(),
+            inst->seqNum,
+            inst->pcState().instAddr(),
+        };
+        decodedBranchHistory[tid].push_front(branch_info);
+        if (decodedBranchHistory[tid].size() > MAX_BRANCH_HISTORY) {
+            decodedBranchHistory[tid].pop_back();
+        }
+    }
+    return StallReason::NoStall;
+}
+
 void
 Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
 {
     if (vec.empty()) {
         return;
     }
-    if (vec.back()->faulted() || cur->faulted()) {
+    auto fused_inst = prepareFusion(vec.back(), cur);
+    if (!fused_inst) {
         return;
     }
-    if (!enableLoadFusion && (vec.back()->isLoad() || cur->isLoad())) {
-        return;
+    const DynInstPtr first = vec.back();
+    vec.pop_back();
+    cur = applyFusion(first, cur, fused_inst);
+}
+
+StaticInstPtr
+Decode::prepareFusion(const DynInstPtr &first_inst,
+                      const DynInstPtr &second_inst)
+{
+    if (first_inst->faulted() || second_inst->faulted()) {
+        return nullptr;
     }
-    if (vec.back()->getPC() >= ignoreFusionPC && vec.back()->getPC() < ignoreFusionPC + 8) {
+    if (!enableLoadFusion && (first_inst->isLoad() || second_inst->isLoad())) {
+        return nullptr;
+    }
+    if (first_inst->getPC() >= ignoreFusionPC && first_inst->getPC() < ignoreFusionPC + 8) {
         // ignore fusion for this pc range
         if (cpu->ticksToCycles(curTick() - lastSetIgnoreTick) > keepIgnoreFusionCycles) {
             ignoreFusionPC = 0;
         }
-        return;
+        return nullptr;
     }
 
     // first search
-    auto first = (StaticInst*)vec.back()->staticInst.get();
+    auto first = (StaticInst*)first_inst->staticInst.get();
     std::type_index first_type = typeid(0);
     auto it = RiscvISA::deCompressMap.find(typeid(*first));
     if (it != RiscvISA::deCompressMap.end()) {
@@ -1101,12 +1487,12 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
         first_type = typeid(*first);
     }
     auto finder = RiscvISA::fusionMap.find(RiscvISA::FusionKey(first_type, first->getImm()));
-    if (finder == RiscvISA::fusionMap.end()) return ; // no fusion
+    if (finder == RiscvISA::fusionMap.end()) return nullptr; // no fusion
 
     // second search
     assert(finder->second.index() == 1);
 
-    auto second = cur->staticInst.get();
+    auto second = second_inst->staticInst.get();
     std::type_index typeid_second = typeid(0);
     auto it_second = RiscvISA::deCompressMap.find(typeid(*second));
     if (it_second != RiscvISA::deCompressMap.end()) {
@@ -1116,23 +1502,35 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     }
     auto map = std::get<1>(finder->second);
     finder = map->find(RiscvISA::FusionKey(typeid_second, second->getImm()));
-    if (finder == map->end()) return; // no fusion
+    if (finder == map->end()) return nullptr; // no fusion
 
     assert(finder->second.index() == 0);
     auto creator = std::get<0>(finder->second);
 
-    const std::vector<DynInstPtr> inst_pair = {vec.back(), cur};
+    const std::vector<DynInstPtr> inst_pair = {first_inst, second_inst};
     auto fused_inst = creator(inst_pair);
-    if (!fused_inst) return;
-    vec.pop_back();
+    if (!fused_inst) return nullptr;
+    return fused_inst;
 
+}
+
+DynInstPtr
+Decode::applyFusion(const DynInstPtr &first_inst,
+                    const DynInstPtr &second_inst,
+                    const StaticInstPtr &fused_inst)
+{
+    const std::vector<DynInstPtr> inst_pair = {first_inst, second_inst};
     DynInst::Arrays arrays;
     arrays.numSrcs = fused_inst->numSrcRegs();
     arrays.numDests = fused_inst->numDestRegs();
 
     // ugly but works for now
     RiscvISA::PCState thispc, predPC;
-    thispc.set(inst_pair[0]->getPC());
+    if (compactionEnabled) {
+        thispc.update(inst_pair[0]->pcState());
+    } else {
+        thispc.set(inst_pair[0]->getPC());
+    }
     thispc.setNPC(inst_pair[1]->getNPC());
     predPC.update(thispc);
     predPC.advance();
@@ -1146,6 +1544,14 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     instruction->setTid(inst_pair[1]->threadNumber);
     instruction->thread = inst_pair[1]->thread;
     instruction->setFtqId(inst_pair[1]->ftqId);
+    if (compactionEnabled) {
+        instruction->setLoopIteration(inst_pair[1]->getLoopIteration());
+        instruction->fallThruPC = inst_pair[1]->pcState().getFallThruPC();
+        if (inst_pair[0]->isPredecodeChecked() &&
+            inst_pair[1]->isPredecodeChecked()) {
+            instruction->setPredecodeChecked();
+        }
+    }
 
     instruction->instListIt = cpu->instList.insert(inst_pair[0]->instListIt, instruction);
     cpu->instList.erase(inst_pair[0]->instListIt);
@@ -1153,7 +1559,6 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
 
     dynamic_cast<RiscvISA::FusionInst*>(fused_inst.get())->setFusedInst(instruction);
 
-    cur = instruction;
     stats.numFusedInsts++;
 
     if (fusionType.find(fused_inst->getMnemonic()) == fusionType.end()) {
@@ -1161,6 +1566,7 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     } else {
         fusionType[fused_inst->getMnemonic()]++;
     }
+    return instruction;
 }
 
 void
