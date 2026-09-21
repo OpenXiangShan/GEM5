@@ -169,6 +169,31 @@ TEST(PartialStoreTest, GranularityTracksCompleteGranules)
                             [](bool valid) { return !valid; }));
 }
 
+TEST(PartialStoreTest, GranularWriteRequiresCompleteInvalidGranules)
+{
+    CacheBlk blk;
+    blk.insert(TestAddr, false);
+    blk.markPartial(BlkSize, 8);
+
+    std::vector<bool> half_granule(BlkSize, false);
+    std::fill(half_granule.begin() + 8, half_granule.begin() + 12, true);
+    Packet half_write(makeRequest(half_granule), MemCmd::WriteReq);
+    half_write.allocate();
+    EXPECT_FALSE(blk.canWrite(&half_write, BlkSize));
+    blk.markValidData(&half_write, BlkSize);
+    EXPECT_FALSE(blk.hasValidData(8, 4));
+
+    std::vector<bool> full_granule(BlkSize, false);
+    std::fill(full_granule.begin() + 8, full_granule.begin() + 16, true);
+    Packet full_write(makeRequest(full_granule), MemCmd::WriteReq);
+    full_write.allocate();
+    EXPECT_TRUE(blk.canWrite(&full_write, BlkSize));
+    blk.markValidData(&full_write, BlkSize);
+    EXPECT_TRUE(blk.hasValidData(8, 8));
+
+    EXPECT_TRUE(blk.canWrite(&half_write, BlkSize));
+}
+
 TEST(PartialStoreTest, MaskedWritebackPreservesDisabledBytes)
 {
     std::vector<bool> mask(BlkSize, false);

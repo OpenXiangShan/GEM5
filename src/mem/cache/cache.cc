@@ -542,6 +542,9 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         isPartialStorePermissionRequest(cpu_pkt);
     const bool partial_data_fill = partialBlockEnabled() && blkValid &&
         blk->isPartial() && cpu_pkt->isRead();
+    const bool partial_write_fill = partialBlockEnabled() && blkValid &&
+        blk->isPartial() && cpu_pkt->isWrite() &&
+        !blk->canWrite(cpu_pkt, blkSize);
 
     if (cpu_pkt->req->isUncacheable() ||
         (!blkValid && cpu_pkt->isUpgrade()) ||
@@ -561,7 +564,10 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     const bool useUpgrades = true;
     assert(cpu_pkt->cmd != MemCmd::WriteLineReq || is_whole_line_write);
     if (partial_data_fill) {
-        cmd = MemCmd::ReadSharedReq;
+        cmd = cpu_pkt->needsWritable() ? MemCmd::ReadExReq :
+            MemCmd::ReadSharedReq;
+    } else if (partial_write_fill) {
+        cmd = MemCmd::ReadExReq;
     } else if (partial_store_miss) {
         cmd = MemCmd::StorePermReq;
     } else if (is_whole_line_write) {

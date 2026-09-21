@@ -325,6 +325,50 @@ class CacheBlk : public TaggedEntry
                            [](bool valid) { return valid; });
     }
 
+    /**
+     * Check whether this write fully covers every newly touched invalid
+     * granule. Existing valid granules may still be updated partially.
+     */
+    bool
+    canWrite(const PacketPtr pkt, unsigned blk_size) const
+    {
+        assert(isPartial());
+        assert(validMask.size() * validGranularity == blk_size);
+        const unsigned offset = pkt->getOffset(blk_size);
+        assert(offset + pkt->getSize() <= blk_size);
+
+        const std::vector<bool> *byte_enable = nullptr;
+        if (pkt->isMaskedWrite()) {
+            byte_enable = &pkt->req->getByteEnable();
+            assert(byte_enable->size() == pkt->getSize());
+        }
+        auto covered = [&](unsigned byte) {
+            if (byte < offset || byte >= offset + pkt->getSize()) {
+                return false;
+            }
+            return pkt->isMaskedWrite() ? (*byte_enable)[byte - offset] : true;
+        };
+
+        for (unsigned granule = 0; granule < validMask.size(); ++granule) {
+            const unsigned begin = granule * validGranularity;
+            const unsigned end = begin + validGranularity;
+            bool touched = false;
+            for (unsigned byte = begin; byte < end; ++byte) {
+                touched |= covered(byte);
+            }
+            if (!touched || validMask[granule]) {
+                continue;
+            }
+            for (unsigned byte = begin; byte < end; ++byte) {
+                if (!covered(byte)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     void
     markValidData(const PacketPtr pkt, unsigned blk_size)
     {
